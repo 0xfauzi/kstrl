@@ -10,15 +10,27 @@ from pathlib import Path
 import pytest
 
 from kstrl.decompose import (
+    SPEC_ISSUES_EVENT,
+    ExcludedHistory,
     SpecBlockerError,
+    SpecConvergence,
     SpecIssue,
     _build_convergence,
+    _counted_audits,
+    _excluded_history,
+    _excluded_lines,
+    _excluded_projects,
     _extract_json,
     _issue_dicts,
+    _journal_snapshot,
     _parse_spec_issues,
+    _spec_audits,
+    _stored_issues,
     _validate_decompose_output,
+    _windowed_audits,
     decompose_spec,
 )
+from kstrl.evolution import EvolutionConfig, EvolutionJournal
 from kstrl.prd import PRD
 from kstrl.ui.plain import PlainUI
 
@@ -773,6 +785,13 @@ def _run_decompose(
     return buffer.getvalue()
 
 
+def _journal_with(tmp_path: Path, entries: list[dict[str, object]]) -> EvolutionJournal:
+    """A real journal on disk holding ``entries``, written its own way."""
+    journal = EvolutionJournal(EvolutionConfig.load(tmp_path))
+    journal.append_entries(entries)
+    return journal
+
+
 def _read_spec_issue_events(tmp_path: Path) -> list[dict[str, object]]:
     journal = tmp_path / ".kstrl" / "evolution.jsonl"
     assert journal.exists(), "journal event was not written"
@@ -1147,6 +1166,520 @@ class TestSpecConvergenceReport:
         assert report.repeated == 2
 
 
+class TestExcludedHistory:
+    """#280: the audit history the report does not count, named."""
+
+    def _entry(
+        self,
+        project: str,
+        spec_file: str = "spec.md",
+        event_type: str = SPEC_ISSUES_EVENT,
+        timestamp: str = "2026-08-20T00:00:00Z",
+    ) -> dict[str, object]:
+        return {
+            "event_type": event_type,
+            "project": project,
+            "spec_file": spec_file,
+            "timestamp": timestamp,
+        }
+
+    def _history(
+        self,
+        journal: EvolutionJournal,
+        project: str,
+        spec_file: str = "mine.md",
+        lookback: int = 10,
+    ) -> ExcludedHistory:
+        return _excluded_history(_journal_snapshot(journal)[0], project, spec_file, lookback)
+
+    def _lines(
+        self,
+        journal: EvolutionJournal,
+        project: str,
+        spec_file: str = "mine.md",
+        counted: int = 0,
+    ) -> str:
+        """The rendered note lines for ``project``, joined."""
+        return "\n".join(
+            _excluded_lines(self._history(journal, project, spec_file), project, counted)
+        )
+
+    def test_a_journal_of_one_project_excludes_no_other_project(self) -> None:
+        entries = [self._entry("writers-room"), self._entry("writers-room")]
+
+        assert _excluded_projects(entries, "writers-room", "spec.md") == ()
+
+    def test_another_project_is_counted_with_the_files_it_read(self) -> None:
+        entries = [
+            self._entry("writers-room", "spec.md"),
+            self._entry("writers-room", "spec.md"),
+            self._entry("writers-room-slice1", "spec-slice-1.md"),
+        ]
+
+        excluded = _excluded_projects(entries, "writers-room-slice1", "spec-slice-1.md")
+
+        assert len(excluded) == 1
+        assert excluded[0].project == "writers-room"
+        assert excluded[0].audits == 2
+        assert excluded[0].spec_files == ("spec.md",)
+        assert excluded[0].read_this_spec is False
+        assert excluded[0].last_recorded == "2026-08-20T00:00:00Z"
+
+    def test_only_spec_audits_count(self) -> None:
+        """The journal carries component results and experiments too.
+        Counting those would inflate the number the operator reads."""
+        entries = [
+            self._entry("other", event_type="component_result"),
+            self._entry("other", event_type=SPEC_ISSUES_EVENT),
+        ]
+
+        excluded = _excluded_projects(entries, "mine", "mine.md")
+
+        assert [(e.project, e.audits) for e in excluded] == [("other", 1)]
+
+    def test_an_entry_without_a_project_is_not_evidence(self) -> None:
+        """An unnamed project cannot be somewhere the operator can go
+        and look, so it is not history worth pointing at."""
+        entries: list[dict[str, object]] = [{"event_type": SPEC_ISSUES_EVENT}]
+
+        assert _excluded_projects(entries, "mine", "mine.md") == ()
+
+    def test_a_json_null_project_is_not_a_project_named_none(self) -> None:
+        """Round 1 of review: ``str(entry.get("project", ""))`` renders
+        a JSON null as the literal "None", which then passes the
+        emptiness guard and prints a phantom project. A null field is
+        an absent field, and ``get_spec_issue_runs`` promises nothing
+        is assumed about an entry beyond it being a JSON object."""
+        entries: list[dict[str, object]] = [
+            {
+                "event_type": SPEC_ISSUES_EVENT,
+                "project": None,
+                "spec_file": None,
+                "timestamp": None,
+            }
+        ]
+
+        assert _excluded_projects(entries, "mine", "mine.md") == ()
+
+    def test_a_non_string_spec_file_and_timestamp_are_dropped_not_stringified(
+        self,
+    ) -> None:
+        """The same rule on the other two fields: a hand-edited journal
+        must not put a file literally named ``None`` or ``7`` in the
+        list, nor a date the operator cannot act on."""
+        entries: list[dict[str, object]] = [
+            {
+                "event_type": SPEC_ISSUES_EVENT,
+                "project": "other",
+                "spec_file": 7,
+                "timestamp": None,
+            }
+        ]
+
+        excluded = _excluded_projects(entries, "mine", "mine.md")
+
+        assert excluded[0].spec_files == ()
+        assert excluded[0].last_recorded == ""
+
+    def test_projects_are_ordered_by_how_much_history_they_hold(self) -> None:
+        entries = [
+            self._entry("a"),
+            self._entry("b"),
+            self._entry("b"),
+            self._entry("c"),
+        ]
+
+        excluded = _excluded_projects(entries, "mine", "mine.md")
+
+        assert [(e.project, e.audits) for e in excluded] == [("b", 2), ("a", 1), ("c", 1)]
+
+    def test_a_project_that_read_this_spec_file_sorts_first(self) -> None:
+        """#280's first arm: the project that audited the file this run
+        audited is the strongest evidence of a plain rename, so it
+        leads even though it holds the least history here."""
+        entries = [self._entry("busy") for _ in range(9)] + [self._entry("renamed", "mine.md")]
+
+        excluded = _excluded_projects(entries, "mine", "mine.md")
+
+        assert [e.project for e in excluded] == ["renamed", "busy"]
+        assert excluded[0].read_this_spec is True
+        assert excluded[1].read_this_spec is False
+
+    def test_the_last_recorded_timestamp_is_the_newest_entry_in_file_order(
+        self,
+    ) -> None:
+        """The journal is append-only, so the last entry for a project
+        is its most recent audit."""
+        entries = [
+            self._entry("other", timestamp="2026-01-01T00:00:00Z"),
+            self._entry("other", timestamp="2026-06-30T12:00:00Z"),
+        ]
+
+        excluded = _excluded_projects(entries, "mine", "mine.md")
+
+        assert excluded[0].last_recorded == "2026-06-30T12:00:00Z"
+
+    def test_distinct_spec_files_are_deduplicated_and_sorted(self) -> None:
+        entries = [
+            self._entry("other", "b.md"),
+            self._entry("other", "a.md"),
+            self._entry("other", "b.md"),
+            self._entry("other", ""),
+        ]
+
+        excluded = _excluded_projects(entries, "mine", "mine.md")
+
+        assert excluded[0].audits == 4
+        assert excluded[0].spec_files == ("a.md", "b.md")
+
+    def test_no_journal_excludes_nothing(self) -> None:
+        assert _excluded_history([], "writers-room", "spec.md", 10).is_empty
+
+    def test_the_read_covers_the_whole_journal(self, tmp_path: Path) -> None:
+        journal = _journal_with(tmp_path, [self._entry("writers-room", "spec.md")] * 2)
+
+        assert self._lines(journal, "writers-room-slice1", "spec-slice-1.md") == (
+            "Note: audits are matched by project name, and this report covers "
+            "'writers-room-slice1'. This journal also records 2 spec audit(s) under "
+            "'writers-room' (2 audit(s), spec.md, last 2026-08-20)."
+        )
+
+    def test_a_journal_holding_only_this_project_names_no_other(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        journal = _journal_with(tmp_path, [self._entry("writers-room")] * 3)
+
+        assert self._history(journal, "writers-room", "spec.md").projects == ()
+
+    def test_this_projects_own_audits_are_counted_unwindowed(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The count the accounting line rests on. Not windowed by
+        ``lookback_runs``, because a count of what the trend does not
+        cover that was itself windowed would omit history silently."""
+        monkeypatch.setenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", "2")
+        journal = _journal_with(tmp_path, [self._entry("writers-room")] * 6)
+
+        assert self._history(journal, "writers-room", "spec.md", lookback=2).own_recorded == 6
+
+    def test_a_missing_journal_file_excludes_nothing(self, tmp_path: Path) -> None:
+        journal = EvolutionJournal(EvolutionConfig.load(tmp_path))
+
+        assert self._history(journal, "writers-room", "spec.md").is_empty
+
+    def test_a_torn_line_does_not_cost_the_note(self, tmp_path: Path) -> None:
+        """The journal is append-only and a crash mid-write leaves a
+        torn tail; the rest of the history still has to be readable."""
+        journal = _journal_with(tmp_path, [self._entry("writers-room", "spec.md")])
+        with open(journal.config.journal_path, "a", encoding="utf-8") as handle:
+            handle.write('{"event_type": "spec_iss')
+
+        assert "records 1 spec audit(s)" in self._lines(journal, "writers-room-slice1")
+
+    def test_many_projects_are_summarised_rather_than_all_named(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """A display cap on the names, never on the count: the total
+        still covers every audit the report leaves out."""
+        journal = _journal_with(tmp_path, [self._entry(f"p{n}", f"s{n}.md") for n in range(6)])
+
+        line = self._lines(journal, "mine")
+
+        assert "records 6 spec audit(s)" in line
+        assert (
+            "'p0' (1 audit(s), s0.md, last 2026-08-20), "
+            "'p1' (1 audit(s), s1.md, last 2026-08-20), "
+            "'p2' (1 audit(s), s2.md, last 2026-08-20) and 3 more project(s)" in line
+        )
+
+    def test_every_project_that_read_this_spec_file_survives_the_cap(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Round 1 of review: the sort put spec-file matches first but
+        the cap then truncated them, so four projects that had all read
+        the current spec file - a repo that split one spec across
+        several names, which is #280's own shape - printed three and
+        "and 1 more project(s)". The cap now applies only to projects
+        that did NOT read it."""
+        journal = _journal_with(
+            tmp_path,
+            [self._entry(f"p{n}", "mine.md") for n in range(4)]
+            + [self._entry(f"q{n}", "other.md") for n in range(4)],
+        )
+
+        line = self._lines(journal, "mine")
+
+        for name in ("p0", "p1", "p2"):
+            assert f"'{name}' (1 audit(s), mine.md" in line
+        assert "and 1 more project(s) that read this spec file" in line
+        assert "and 1 more project(s)." in line
+        assert "'q3'" not in line
+
+    def test_many_spec_files_under_one_project_are_summarised_too(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        journal = _journal_with(tmp_path, [self._entry("other", f"s{n}.md") for n in range(5)])
+
+        assert "'other' (5 audit(s), s0.md, s1.md, s2.md and 2 more file(s), last " in (
+            self._lines(journal, "mine")
+        )
+
+    def test_an_entry_with_no_timestamp_names_the_project_without_a_date(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        journal = _journal_with(tmp_path, [self._entry("other", "o.md", timestamp="")])
+
+        assert "'other' (1 audit(s), o.md)." in self._lines(journal, "mine")
+
+
+class TestJournalFieldsAreReadNotStringified:
+    """#280 round 2, finding 1: a null field is an absent field, on
+    every site that reads one, not just the site that was patched."""
+
+    def _run_with_history(self, tmp_path: Path, entry: dict[str, object]) -> str:
+        journal = tmp_path / ".kstrl" / "evolution.jsonl"
+        journal.parent.mkdir(parents=True)
+        journal.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+        return _run_decompose(
+            tmp_path,
+            _single_component_output([_story()], spec_issues=[BLOCKER_ISSUE]),
+            spec_name="spec.md",
+            project_name="mine",
+        )
+
+    def test_a_null_spec_file_is_not_a_phantom_rename(self, tmp_path: Path) -> None:
+        """``str(entry.get("spec_file", ""))`` yields 'None' when the
+        key is PRESENT and null, so the rename line fired comparing
+        'None' with the real file: "the previous audit read None"."""
+        output = self._run_with_history(
+            tmp_path,
+            {
+                "event_type": SPEC_ISSUES_EVENT,
+                "project": "mine",
+                "spec_file": None,
+                "timestamp": "2026-08-20T00:00:00Z",
+                "issues": [{"severity": "blocker", "kind": "ambiguity", "summary": "old"}],
+            },
+        )
+
+        assert "previous audit read None" not in output
+        assert "Runs are matched by project name" not in output
+
+    def test_an_unscoreable_severity_does_not_put_a_false_zero_in_the_trend(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The worse half of the same class. ``_issue_counts`` buckets
+        by severity, so seven issues stored with a null severity were
+        counted as nothing: "Previous run raised 0 issue(s)" and a 0 in
+        the blocker trend for a run that raised seven. The audit is now
+        refused and reported instead of part-scored."""
+        output = self._run_with_history(
+            tmp_path,
+            {
+                "event_type": SPEC_ISSUES_EVENT,
+                "project": "mine",
+                "spec_file": "spec.md",
+                "timestamp": "2026-08-20T00:00:00Z",
+                "issues": [
+                    {"severity": None, "kind": "ambiguity", "summary": f"old-{n}"} for n in range(7)
+                ],
+            },
+        )
+
+        assert "Previous run raised 0 issue(s)" not in output
+        assert "0, 1 (blockers" not in output
+        assert "could not be scored" in output
+
+    def test_a_severity_outside_the_three_is_refused_by_the_rehydrator(self) -> None:
+        entry: dict[str, object] = {
+            "issues": [{"severity": "critical", "kind": "ambiguity", "summary": "x"}]
+        }
+
+        assert _stored_issues(entry) is None
+
+    def test_a_well_formed_issue_list_still_rehydrates(self) -> None:
+        entry: dict[str, object] = {
+            "issues": [{"severity": "minor", "kind": "ambiguity", "summary": "x"}]
+        }
+        stored = _stored_issues(entry)
+
+        assert stored is not None
+        assert [i.severity for i in stored] == ["minor"]
+
+
+class TestUnattributedAudits:
+    """#280 round 2, finding 2: audits belonging to no project name."""
+
+    def test_they_are_counted_by_a_third_bucket(self) -> None:
+        """They satisfy neither ``own_recorded`` nor ``_excluded_projects``,
+        so three audits on disk were reported as one."""
+        entries: list[dict[str, object]] = [
+            {"event_type": SPEC_ISSUES_EVENT, "project": None, "spec_file": "a.md"},
+            {"event_type": SPEC_ISSUES_EVENT, "spec_file": "b.md"},
+            {"event_type": SPEC_ISSUES_EVENT, "project": "other", "spec_file": "c.md"},
+        ]
+
+        history = _excluded_history(entries, "mine", "mine.md", 10)
+
+        assert history.own_recorded == 0
+        assert history.other_audits == 1
+        assert history.unattributed == 2
+
+    def test_every_spec_audit_lands_in_exactly_one_bucket(self) -> None:
+        """The property the accounting docstring claims, checked rather
+        than asserted in prose."""
+        entries: list[dict[str, object]] = [
+            {"event_type": SPEC_ISSUES_EVENT, "project": "mine"},
+            {"event_type": SPEC_ISSUES_EVENT, "project": "mine"},
+            {"event_type": SPEC_ISSUES_EVENT, "project": "other"},
+            {"event_type": SPEC_ISSUES_EVENT, "project": None},
+            {"event_type": "component_result", "project": "mine"},
+        ]
+
+        history = _excluded_history(entries, "mine", "mine.md", 10)
+        audits = sum(1 for e in entries if e.get("event_type") == SPEC_ISSUES_EVENT)
+
+        assert history.own_recorded + history.other_audits + history.unattributed == audits
+
+
+class TestOneJournalRead:
+    """#280 round 2, findings 6 and 7: one read, and a pin on the
+    layering shortcut that read takes."""
+
+    def _journal(self, tmp_path: Path, entries: list[dict[str, object]]) -> EvolutionJournal:
+        journal = EvolutionJournal(EvolutionConfig.load(tmp_path))
+        journal.append_entries(entries)
+        return journal
+
+    def test_the_journal_is_parsed_once_per_report(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The trend and the accounting used to read the same file
+        twice. The call site has both in scope, so one read feeds both
+        and they cannot disagree because the file moved between them."""
+        import kstrl.decompose
+
+        reads: list[Path] = []
+        real = kstrl.decompose.read_progress_events
+
+        def counting(path: Path) -> list[dict[str, object]]:
+            reads.append(path)
+            return real(path)
+
+        monkeypatch.setattr(kstrl.decompose, "read_progress_events", counting)
+        _run_decompose(
+            tmp_path,
+            _single_component_output([_story()], spec_issues=[BLOCKER_ISSUE]),
+            project_name="mine",
+        )
+
+        assert len(reads) == 1
+
+    def test_the_windowing_rule_matches_the_journals_own(self, tmp_path: Path) -> None:
+        """``_journal_snapshot`` reaches past ``EvolutionJournal`` to its
+        storage path and ``_windowed_audits`` restates the window rule
+        that ``get_spec_issue_runs`` owns. Both are deferrals to
+        #314, and a deferral needs a mechanism: if the journal ever
+        compacts, rotates or gains a second segment, or if the window
+        rule changes, the two stop agreeing and this fails. Silent loss
+        of the accounting is the defect #280 exists to fix.
+        """
+        entries: list[dict[str, object]] = [
+            {
+                "event_type": SPEC_ISSUES_EVENT,
+                "project": "mine" if n % 2 else "other",
+                "spec_file": "spec.md",
+                "timestamp": f"2026-08-{n + 1:02d}T00:00:00Z",
+            }
+            for n in range(9)
+        ]
+        journal = self._journal(tmp_path, entries)
+
+        for last_n in (0, 1, 3, 10):
+            assert _windowed_audits(
+                _spec_audits(_journal_snapshot(journal)[0]), "mine", last_n
+            ) == journal.get_spec_issue_runs("mine", last_n=last_n)
+
+    def test_no_journal_reads_nothing_and_windows_nothing(self) -> None:
+        assert _journal_snapshot(None) == ([], 0)
+
+
+class TestExcludedAccountingLine:
+    """#280 round 1, finding 2: the same-project half of the accounting."""
+
+    def _history(self, own: int, lookback: int = 10) -> ExcludedHistory:
+        return ExcludedHistory(own_recorded=own, projects=(), lookback=lookback)
+
+    def test_nothing_is_said_when_the_trend_counted_everything(self) -> None:
+        assert _excluded_lines(self._history(3), "mine", 3) == []
+
+    def test_a_windowed_out_audit_is_a_trend_footnote_not_a_warning(self) -> None:
+        """Round 2 of review: once a project has more audits than
+        ``lookback_runs`` this holds on every run forever, so a Note
+        would be permanent noise. It is a footnote on the trend line
+        instead; see ``_surface_trend``."""
+        history = self._history(40, lookback=10)
+
+        assert _excluded_lines(history, "mine", 10) == []
+        assert history.windowed_out(10) == 30
+        assert history.unreadable(10) == 0
+
+    def test_an_audit_the_window_offered_but_could_not_be_scored_is_named(self) -> None:
+        """The anomaly half of the same gap, which does deserve a line."""
+        history = self._history(3, lookback=10)
+
+        assert history.unreadable(0) == 3
+        assert _excluded_lines(history, "mine", 0) == [
+            "Note: 3 earlier audit(s) of 'mine' fall inside the lookback window but "
+            "could not be scored, so the trend does not count them. An audit is "
+            "skipped when it records no issue list, or an issue whose severity is "
+            "not blocker, major or minor."
+        ]
+
+    def test_the_two_causes_are_separated_when_both_apply(self) -> None:
+        history = self._history(40, lookback=10)
+
+        assert history.unreadable(7) == 3
+        assert history.windowed_out(7) == 30
+
+    def test_audits_with_no_project_name_are_their_own_line(self) -> None:
+        """Round 2 of review: an entry whose ``project`` is null or
+        absent was counted by neither axis, so three audits on disk
+        were reported as one."""
+        history = ExcludedHistory(own_recorded=0, projects=(), unattributed=2, lookback=10)
+
+        assert _excluded_lines(history, "mine", 0) == [
+            "Note: 2 spec audit(s) in this journal record no project name, so neither "
+            "the trend nor the line above counts them."
+        ]
+        assert not history.is_empty
+
+    def test_counted_audits_is_read_off_the_rendered_trend(self) -> None:
+        """So the accounting line can never disagree with the trend
+        printed directly above it."""
+        report = SpecConvergence(
+            current_counts={"blocker": 0, "major": 0, "minor": 0},
+            previous_counts={"blocker": 0, "major": 0, "minor": 0},
+            current_spec_file="spec.md",
+            previous_spec_file="spec.md",
+            repeated=0,
+            blocker_trend=(1, 1, 0),
+        )
+
+        assert _counted_audits(report) == 2
+        assert _counted_audits(None) == 0
+
+
 class TestSpecConvergenceThroughDecompose:
     """The report as the operator meets it, on the real code path."""
 
@@ -1227,10 +1760,225 @@ class TestSpecConvergenceThroughDecompose:
         assert "the previous audit read spec.md, this one read spec-slice-1.md" in output
 
     def test_a_different_project_has_its_own_history(self, tmp_path: Path) -> None:
+        """Still its own trend, but no longer its own silence (#280).
+
+        This test previously asserted the whole section was absent,
+        which is exactly the loss #280 reports: the operator was told
+        nothing at all about the audits the trend had just dropped.
+        """
         self._run(tmp_path, [BLOCKER_ISSUE], project_name="writers-room")
         output = self._run(tmp_path, [BLOCKER_ISSUE], project_name="deckgen")
 
+        assert "Trend:" not in output
+        assert "No earlier audit of this project is recorded." in output
+        assert "also records 1 spec audit(s)" in output
+        assert "'writers-room' (1 audit(s), spec.md, last " in output
+
+    def test_the_rename_that_lost_two_runs_now_says_so(self, tmp_path: Path) -> None:
+        """#280's own shape, end to end: five audits, a project AND
+        spec rename between runs 2 and 3, and a trend that covers only
+        the last three. The trend is unchanged; what is new is the line
+        that says the other two exist."""
+        for spec, project in [
+            ("spec.md", "writers-room"),
+            ("spec.md", "writers-room"),
+            ("spec-slice-1.md", "writers-room-slice1"),
+            ("spec-slice-1.md", "writers-room-slice1"),
+        ]:
+            self._run(tmp_path, [BLOCKER_ISSUE], spec_name=spec, project_name=project)
+        output = self._run(
+            tmp_path,
+            [BLOCKER_ISSUE],
+            spec_name="spec-slice-1.md",
+            project_name="writers-room-slice1",
+        )
+
+        assert "1, 1, 1 (blockers, oldest run first)" in output
+        assert (
+            "Note: audits are matched by project name, and this report covers "
+            "'writers-room-slice1'. This journal also records 2 spec audit(s) under "
+            "'writers-room' (2 audit(s), spec.md, last " in output
+        )
+        # The trend counted every audit of this project, so neither the
+        # anomaly line nor the trend footnote has anything to say.
+        assert "earlier audit(s) of 'writers-room-slice1'" not in output
+        assert "outside the lookback window" not in output
+
+    def test_an_ordinary_single_project_history_prints_no_note(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The false-positive check. A warning that always fires is
+        noise, and noise is how a report stops being read."""
+        for _ in range(4):
+            self._run(tmp_path, [BLOCKER_ISSUE])
+        output = self._run(tmp_path, [BLOCKER_ISSUE])
+
+        assert "1, 1, 1, 1, 1 (blockers, oldest run first)" in output
+        assert "Note:" not in output
+
+    def test_a_genuine_two_project_repo_is_told_the_truth(self, tmp_path: Path) -> None:
+        """The measured cost of keying the note on "any other project"
+        rather than on a matching spec file: a repo holding two real
+        projects sees the line on every decompose of either.
+
+        Pinned rather than hidden, because it is the price of covering
+        #280's own session, where the spec file was renamed at the same
+        moment as the project and a spec-file match would have found
+        nothing. The line names the other project and the file it read,
+        so an operator on 'billing' dismisses 'auth' (auth.md) at a
+        glance instead of investigating.
+        """
+        self._run(tmp_path, [BLOCKER_ISSUE], spec_name="auth.md", project_name="auth")
+        self._run(tmp_path, [BLOCKER_ISSUE], spec_name="billing.md", project_name="billing")
+        output = self._run(
+            tmp_path,
+            [BLOCKER_ISSUE],
+            spec_name="billing.md",
+            project_name="billing",
+        )
+
+        assert "1, 1 (blockers, oldest run first)" in output
+        assert "this report covers 'billing'" in output
+        assert "also records 1 spec audit(s) under 'auth' (1 audit(s), auth.md, last " in output
+
+    def test_a_rename_within_one_project_prints_no_note(self, tmp_path: Path) -> None:
+        """The spec file moving is already reported by the rename line;
+        the note is about the OTHER half of the key and must stay out
+        of it."""
+        self._run(tmp_path, [BLOCKER_ISSUE], spec_name="spec.md")
+        output = self._run(tmp_path, [BLOCKER_ISSUE], spec_name="spec-slice-1.md")
+
+        assert "the previous audit read spec.md" in output
+        assert "Note:" not in output
+
+    def test_no_note_when_the_journal_is_off(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A disabled journal reads nothing, so it can claim nothing."""
+        self._run(tmp_path, [BLOCKER_ISSUE], project_name="writers-room")
+        monkeypatch.setenv("KSTRL_EVOLUTION_ENABLED", "0")
+        output = self._run(tmp_path, [BLOCKER_ISSUE], project_name="deckgen")
+
         assert "Spec Convergence" not in output
+
+    def test_the_note_is_not_windowed_by_the_lookback(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``lookback_runs`` bounds how far back the trend reaches. A
+        note about history the trend excludes that were itself windowed
+        would omit history silently, which is the bug it fixes."""
+        monkeypatch.setenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", "2")
+        for _ in range(4):
+            self._run(tmp_path, [BLOCKER_ISSUE], project_name="writers-room")
+        output = self._run(tmp_path, [BLOCKER_ISSUE], project_name="deckgen")
+
+        assert "also records 4 spec audit(s)" in output
+
+    def test_a_windowed_out_run_is_counted_not_swallowed(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Round 1 of review, finding 2: the note counted only
+        cross-project audits while its wording claimed everything the
+        journal holds, so same-project audits dropped by
+        ``lookback_runs`` went silently missing. That is #280's own
+        defect on the other axis. Reachable on the DEFAULT lookback of
+        10 after 11 audits, so not an exotic config.
+        """
+        monkeypatch.setenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", "2")
+        for _ in range(6):
+            self._run(tmp_path, [BLOCKER_ISSUE], project_name="mine")
+        output = self._run(tmp_path, [BLOCKER_ISSUE], project_name="mine")
+
+        assert (
+            "1, 1, 1 (blockers, oldest run first; 4 older audit(s) outside the "
+            "lookback window)" in output
+        )
+        # Round 2 of review: this is the configured steady state, so it
+        # qualifies the trend in place rather than firing a warning that
+        # would print on every run forever.
+        assert "could not be scored" not in output
+
+    def test_no_earlier_audit_is_claimed_only_when_none_is_recorded(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Round 1 of review, finding 1: with ``lookback_runs=0`` the
+        trend reads nothing, and the report announced that no earlier
+        audit of this project was recorded while three of them sat on
+        disk. A confident statement over less data than the journal
+        holds is the defect #280 is about.
+        """
+        for _ in range(3):
+            self._run(tmp_path, [BLOCKER_ISSUE], project_name="mine")
+        monkeypatch.setenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", "0")
+        output = self._run(tmp_path, [BLOCKER_ISSUE], project_name="mine")
+
+        assert "No earlier audit of this project is recorded." not in output
+        assert (
+            "No earlier audit of 'mine' could be compared, though this journal records 3." in output
+        )
+
+    def test_a_legacy_entry_with_no_issue_list_is_counted_not_denied(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The second route to the same false line: entries the trend
+        cannot compare because they carry no issue list, which is the
+        legacy journal shape ``_stored_issues`` exists to tolerate."""
+        journal = tmp_path / ".kstrl" / "evolution.jsonl"
+        journal.parent.mkdir(parents=True)
+        journal.write_text(
+            "".join(
+                json.dumps(
+                    {
+                        "event_type": SPEC_ISSUES_EVENT,
+                        "project": "mine",
+                        "spec_file": "spec.md",
+                        "timestamp": "2026-08-20T00:00:00Z",
+                        "counts": {"blocker": 1, "major": 0, "minor": 0},
+                    }
+                )
+                + "\n"
+                for _ in range(3)
+            ),
+            encoding="utf-8",
+        )
+
+        output = self._run(tmp_path, [BLOCKER_ISSUE], project_name="mine")
+
+        assert "No earlier audit of this project is recorded." not in output
+        assert (
+            "No earlier audit of 'mine' could be compared, though this journal records 3." in output
+        )
+        assert (
+            "Note: 3 earlier audit(s) of 'mine' fall inside the lookback window but "
+            "could not be scored" in output
+        )
+
+    def test_the_journal_reader_agrees_with_the_event_name_written(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Round 1 of review, finding 5. ``SPEC_ISSUES_EVENT`` names the
+        discriminator this module writes and reads, but
+        ``EvolutionJournal.get_spec_issue_runs`` hardcodes the same
+        literal independently and that file is under concurrent edit on
+        another branch. This is the mechanism that makes the two
+        diverging impossible to ship quietly: change the constant alone
+        and the trend the journal reader feeds goes empty here.
+        """
+        self._run(tmp_path, [BLOCKER_ISSUE], project_name="writers-room")
+        runs = EvolutionJournal(EvolutionConfig.load(tmp_path)).get_spec_issue_runs("writers-room")
+
+        assert [r["event_type"] for r in runs] == [SPEC_ISSUES_EVENT]
 
     def test_a_clean_audit_still_reports_the_drop(self, tmp_path: Path) -> None:
         self._run(tmp_path, [BLOCKER_ISSUE])
@@ -1250,7 +1998,10 @@ class TestSpecConvergenceThroughDecompose:
             self._run(tmp_path, [BLOCKER_ISSUE])
         output = self._run(tmp_path, [BLOCKER_ISSUE])
 
-        assert "1, 1, 1 (blockers, oldest run first)" in output
+        assert (
+            "1, 1, 1 (blockers, oldest run first; 1 older audit(s) outside the "
+            "lookback window)" in output
+        )
 
     def test_no_report_when_the_journal_is_off(
         self,
