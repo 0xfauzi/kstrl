@@ -34,6 +34,7 @@ import pytest
 
 import kstrl.atomicio
 from kstrl.atomicio import atomic_write_json, atomic_write_text
+from kstrl.init_cmd import _atomic_replace
 from kstrl.workqueue import atomic_write
 
 #: A string whose utf-8 and latin-1 encodings differ, so a test that
@@ -45,6 +46,47 @@ NON_ASCII = "naive cafe: éèü £€ 你好 \U0001f600"
 #: in this suite locates it (test_prompt_versions, test_state_dir_scope,
 #: test_config_preflight).
 KSTRL_PACKAGE = Path(__file__).resolve().parent.parent / "kstrl"
+
+
+def run_under_c_locale(tmp_path: Path, body: str, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run ``body`` in a child interpreter under a POSIX/ASCII locale.
+
+    ``locale.getpreferredencoding`` is read at interpreter start, so
+    setting LC_ALL inside this process would change nothing: the only way
+    to make a claim about locale independence is to be a different
+    process. PYTHONUTF8 and PYTHONCOERCECLOCALE are switched off because
+    modern CPython would otherwise quietly rescue the very thing under
+    test, and the result is what a minimal container gives you.
+
+    The script is written as PURE ASCII and the payload is embedded in it
+    with ``ascii()`` rather than passed in argv. An earlier version used
+    ``python -c`` with the text inline and died on Linux CI with "Unable
+    to decode the command from the command line", failing on exactly the
+    condition it exists to exercise; macOS never caught it because its
+    argv is UTF-8 whatever the locale says. ``encoding="ascii"`` on the
+    write is what keeps that true rather than hoped for.
+
+    The child's stdout is ASCII too, so a caller that wants to see a
+    non-ASCII value back must print ``ascii(value)``.
+    """
+    repo_root = Path(kstrl.atomicio.__file__).parent.parent
+    script = tmp_path / "under_c_locale.py"
+    script.write_text(
+        "import sys\n" + f"sys.path.insert(0, {ascii(str(repo_root))})\n" + body,
+        encoding="ascii",
+    )
+    return subprocess.run(
+        [sys.executable, str(script), *args],
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "LC_ALL": "C",
+            "LANG": "C",
+            "PYTHONCOERCECLOCALE": "0",
+            "PYTHONUTF8": "0",
+        },
+    )
 
 
 def _mode(path: Path) -> int:
@@ -66,6 +108,11 @@ WRITERS: list[tuple[str, Callable[[Path, str], None]]] = [
     ("atomicio.atomic_write_json", lambda p, t: atomic_write_json(p, {"t": t})),
     ("workqueue.atomic_write", atomic_write),
 ]
+
+#: The subset that writes the caller's text through unchanged. The JSON
+#: writer escapes non-ASCII on its way past, so a "these bytes are on
+#: disk" assertion is not a statement about it.
+TEXT_WRITERS = [w for w in WRITERS if "json" not in w[0]]
 
 
 @pytest.mark.parametrize("name,write", WRITERS, ids=[w[0] for w in WRITERS])
@@ -157,10 +204,19 @@ class TestNewFileModeTracksTheUmask:
 
 
 class TestEncodingIsPinnedNotInherited:
-    @pytest.mark.parametrize("name,write", WRITERS, ids=[w[0] for w in WRITERS])
+    @pytest.mark.parametrize("name,write", TEXT_WRITERS, ids=[w[0] for w in TEXT_WRITERS])
     def test_the_bytes_on_disk_are_utf8(
         self, name: str, write: Callable[[Path, str], None], tmp_path: Path
     ) -> None:
+        """The text writers put the characters on disk as themselves.
+
+        ``atomic_write_json`` is not in this table because it escapes
+        non-ASCII before the text writer ever sees it, so there are no
+        raw utf-8 bytes to find. Its encoding is pinned by
+        ``test_json_is_written_utf8_with_one_trailing_newline`` instead,
+        which asserts the stronger property that its output is pure
+        ASCII.
+        """
         target = tmp_path / "text.md"
         write(target, NON_ASCII)
         assert NON_ASCII.encode("utf-8") in target.read_bytes(), f"{name} did not write utf-8"
@@ -172,8 +228,11 @@ class TestEncodingIsPinnedNotInherited:
         raw = target.read_bytes()
         assert raw.endswith(b"\n")
         assert not raw.endswith(b"\n\n")
-        # ensure_ascii=False, so the character is itself and not \uXXXX.
-        assert NON_ASCII.encode("utf-8") in raw
+        # ASCII on disk, because ensure_ascii is left at its default: the
+        # document is then readable under any locale rather than only
+        # under one that can decode utf-8. See atomic_write_json.
+        assert all(b < 128 for b in raw), "JSON output should be pure ASCII"
+        assert json.loads(raw.decode("ascii"))["k"] == NON_ASCII
         assert json.loads(raw.decode("utf-8"))["k"] == NON_ASCII
 
     def test_the_bytes_do_not_depend_on_the_locale(self, tmp_path: Path) -> None:
@@ -185,39 +244,16 @@ class TestEncodingIsPinnedNotInherited:
         and PYTHONUTF8 disabled, which is what a minimal container gives
         you, and requires byte-for-byte identical output.
 
-        The payload travels in a SCRIPT FILE whose source is pure ASCII
-        (``ascii()`` escapes every non-ASCII character), never through
-        argv. A first version passed the text to ``python -c`` and died
-        on Linux CI with "Unable to decode the command from the command
-        line": under LC_ALL=C the child cannot decode a non-ASCII argv,
-        so the test failed on the very condition it exists to exercise.
-        macOS did not catch it because its argv is UTF-8 regardless.
+        How the payload reaches the child, and why, is in
+        ``run_under_c_locale``.
         """
-        repo_root = Path(kstrl.atomicio.__file__).parent.parent
-        source = (
-            "import sys\n"
-            "from pathlib import Path\n"
-            f"sys.path.insert(0, {ascii(str(repo_root))})\n"
-            "from kstrl.atomicio import atomic_write_text\n"
-            f"atomic_write_text(Path(sys.argv[1]), {ascii(NON_ASCII)})\n"
-        )
-        script = tmp_path / "write_under_c_locale.py"
-        # Raises rather than mojibaking if anything non-ASCII survived,
-        # which is what keeps the guarantee above true.
-        script.write_text(source, encoding="ascii")
-
         target = tmp_path / "from_c_locale.txt"
-        result = subprocess.run(
-            [sys.executable, str(script), str(target)],
-            capture_output=True,
-            text=True,
-            env={
-                **os.environ,
-                "LC_ALL": "C",
-                "LANG": "C",
-                "PYTHONCOERCECLOCALE": "0",
-                "PYTHONUTF8": "0",
-            },
+        result = run_under_c_locale(
+            tmp_path,
+            "from pathlib import Path\n"
+            "from kstrl.atomicio import atomic_write_text\n"
+            f"atomic_write_text(Path(sys.argv[1]), {ascii(NON_ASCII)})\n",
+            str(target),
         )
         assert result.returncode == 0, result.stderr
         assert target.read_bytes() == NON_ASCII.encode("utf-8")
@@ -342,8 +378,8 @@ def _called_names(source: Path) -> list[tuple[str, int]]:
     """(callee name, line) for every call in ``source``.
 
     AST-walked rather than grepped, which is the difference between a
-    claim about the code and a claim about the prose describing it: both
-    nets below run over files whose docstrings name the very thing being
+    claim about the code and a claim about the prose describing it: the
+    net below runs over files whose docstrings name the very thing being
     forbidden, and a text search would need an exclusion list that rots.
     """
     tree = ast.parse(source.read_text(encoding="utf-8"))
@@ -404,57 +440,43 @@ class TestTheReadSideNamesTheSameEncoding:
     #: writes into a component description or an acceptance criterion.
     CURLY = "the operator\u2019s \u00e9\u00e8\u00fc \u2713"
 
-    def _probe(self, tmp_path: Path, body: str) -> subprocess.CompletedProcess[str]:
-        """Run ``body`` in a child under a POSIX/ASCII locale.
+    #: These write the file as RAW utf-8 rather than through
+    #: ``atomic_write_json``, deliberately. kstrl's own writer leaves
+    #: ``ensure_ascii`` at its default and so emits pure ASCII, which
+    #: every locale can read whether or not the reader named an
+    #: encoding: a round trip through it would therefore pass with the
+    #: pins reverted and prove nothing. The case these defend is a file
+    #: somebody hand-edited, or an agent rewrote, into real utf-8, which
+    #: for a git-tracked PRD or manifest is an ordinary thing to happen.
 
-        The script is pure ASCII for the reason the locale test above
-        gives: under ``LC_ALL=C`` a child cannot decode a non-ASCII argv
-        or source file.
-        """
-        repo_root = Path(kstrl.atomicio.__file__).parent.parent
-        script = tmp_path / "probe.py"
-        script.write_text(
-            "import sys\n" + f"sys.path.insert(0, {ascii(str(repo_root))})\n" + body,
-            encoding="ascii",
-        )
-        # The child's stdout is ASCII under this locale too, so a probe
-        # prints ascii(value) rather than the value: printing it directly
-        # raises UnicodeEncodeError and would fail the test for a reason
-        # that has nothing to do with whether the READ worked.
-        return subprocess.run(
-            [sys.executable, str(script), str(tmp_path)],
-            capture_output=True,
-            text=True,
-            env={
-                **os.environ,
-                "LC_ALL": "C",
-                "LANG": "C",
-                "PYTHONCOERCECLOCALE": "0",
-                "PYTHONUTF8": "0",
-            },
-        )
+    def _probe(self, tmp_path: Path, body: str) -> subprocess.CompletedProcess[str]:
+        """``run_under_c_locale`` with the directory as the child's argv."""
+        return run_under_c_locale(tmp_path, body, str(tmp_path))
 
     def test_a_manifest_written_here_loads_under_the_c_locale(self, tmp_path: Path) -> None:
         target = tmp_path / "manifest.json"
-        atomic_write_json(
-            target,
-            {
-                "version": "1",
-                "specFile": "spec.md",
-                "projectName": "p",
-                "baseBranch": "main",
-                "singlePr": False,
-                "components": [
-                    {
-                        "id": "comp-a",
-                        "title": "T",
-                        "description": self.CURLY,
-                        "dependencies": [],
-                        "prdPath": "p.json",
-                        "branchName": "b",
-                    }
-                ],
-            },
+        target.write_bytes(
+            json.dumps(
+                {
+                    "version": "1",
+                    "specFile": "spec.md",
+                    "projectName": "p",
+                    "baseBranch": "main",
+                    "singlePr": False,
+                    "components": [
+                        {
+                            "id": "comp-a",
+                            "title": "T",
+                            "description": self.CURLY,
+                            "dependencies": [],
+                            "prdPath": "p.json",
+                            "branchName": "b",
+                        }
+                    ],
+                },
+                indent=2,
+                ensure_ascii=False,
+            ).encode("utf-8")
         )
         assert not all(b < 128 for b in target.read_bytes()), (
             "the payload must actually be non-ASCII on disk, or this test "
@@ -472,21 +494,24 @@ class TestTheReadSideNamesTheSameEncoding:
         assert ascii(self.CURLY) in result.stdout
 
     def test_a_prd_written_here_loads_under_the_c_locale(self, tmp_path: Path) -> None:
-        atomic_write_json(
-            tmp_path / "prd.json",
-            {
-                "branchName": "b",
-                "userStories": [
-                    {
-                        "id": "US-001",
-                        "title": self.CURLY,
-                        "acceptanceCriteria": ["AC1"],
-                        "priority": 1,
-                        "passes": False,
-                        "notes": "",
-                    }
-                ],
-            },
+        (tmp_path / "prd.json").write_bytes(
+            json.dumps(
+                {
+                    "branchName": "b",
+                    "userStories": [
+                        {
+                            "id": "US-001",
+                            "title": self.CURLY,
+                            "acceptanceCriteria": ["AC1"],
+                            "priority": 1,
+                            "passes": False,
+                            "notes": "",
+                        }
+                    ],
+                },
+                indent=2,
+                ensure_ascii=False,
+            ).encode("utf-8")
         )
         result = self._probe(
             tmp_path,
@@ -503,9 +528,17 @@ class TestTheReadSideNamesTheSameEncoding:
         snapshot, so a decode error there did not even surface as one: it
         escaped the handler entirely, because ``UnicodeDecodeError`` is a
         ``ValueError`` and the handler names ``OSError``."""
-        atomic_write_json(
-            tmp_path / "comp-a.json",
-            {"component_id": "comp-a", "fixture_count": 0, "entries": [], "note": self.CURLY},
+        (tmp_path / "comp-a.json").write_bytes(
+            json.dumps(
+                {
+                    "component_id": "comp-a",
+                    "fixture_count": 0,
+                    "entries": [],
+                    "note": self.CURLY,
+                },
+                indent=2,
+                ensure_ascii=False,
+            ).encode("utf-8")
         )
         result = self._probe(
             tmp_path,
@@ -520,12 +553,9 @@ class TestTheReadSideNamesTheSameEncoding:
 class TestTheDescriptorIsOwnedBeforeAnythingCanFail:
     """#291 round two: a failing ``fchmod`` leaked the raw descriptor.
 
-    ``_create_temp`` hands back a raw fd. With the ``fchmod`` outside the
-    ``fdopen``, a destination whose filesystem refuses it raised straight
-    past that fd with nothing owning it. Measured before the fix: 20
-    failed writes leaked 20 descriptors. NFS with root-squash, exFAT and
-    SMB all return EPERM or EROFS here, and inside the serve daemon or a
-    retrying worker that accumulates to EMFILE.
+    Why the descriptor is handed to a context manager first is argued in
+    ``kstrl/atomicio.py``. These pin the count it was measured at, and
+    the empty-temp property the reordering could have broken.
     """
 
     def _open_fd_count(self) -> int:
@@ -594,8 +624,6 @@ class TestReplaceRefusesAMissingTargetWithoutRenamingTheError:
     """
 
     def test_a_missing_target_is_refused(self, tmp_path: Path) -> None:
-        from kstrl.init_cmd import _atomic_replace
-
         with pytest.raises(FileNotFoundError, match="expects an existing file"):
             _atomic_replace(tmp_path / "never-created.md", "x")
         assert not (tmp_path / "never-created.md").exists(), (
@@ -603,8 +631,6 @@ class TestReplaceRefusesAMissingTargetWithoutRenamingTheError:
         )
 
     def test_an_unreadable_parent_keeps_its_own_errno(self, tmp_path: Path) -> None:
-        from kstrl.init_cmd import _atomic_replace
-
         locked = tmp_path / "locked"
         locked.mkdir()
         target = locked / "prompt.md"

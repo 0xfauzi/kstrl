@@ -126,8 +126,8 @@ def append_to_agent_learnings(
     falls back to honest manual instructions instead of guessing a
     location."""
     try:
-        content = claude_md.read_text()
-    except OSError:
+        content = claude_md.read_text(encoding="utf-8")
+    except (OSError, ValueError):
         return False
     marker = "## Agent Learnings"
     idx = content.find(marker)

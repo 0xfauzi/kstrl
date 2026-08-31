@@ -26,24 +26,19 @@ import pytest
 from kstrl.agents.proc import DeadlineStreamer, kill_active_process_groups
 from kstrl.factory import (
     ComponentResult,
-    FactoryResult,
     _abort_inflight,
+    _resolve_max_parallel,
     _wait_interruptible,
     run_factory,
 )
 from kstrl.shutdown import StopController, install_signal_handlers
+from kstrl.tui.bridge import start_command_thread
 from kstrl.ui.plain import PlainUI
+from tests import spine_utils
 from tests.helpers.procs import (
     kill_group,
     read_pid,
     wait_for_group_to_die,
-)
-from tests.spine_utils import (
-    base_config,
-    component,
-    factory_config,
-    init_kstrl_repo,
-    make_manifest,
 )
 from tests.test_event_stream import (
     _component,
@@ -426,21 +421,26 @@ class TestWorkerSigterm:
 
         "REAL pool worker" is asserted, not assumed. The version this
         replaces asked for `max_parallel=2` and silently got
-        `_InlineExecutor`, because its `_factory_config` helper defaults
-        to `use_worktrees=False` and `run_factory` forces `max_parallel=1`
-        when worktrees are off. So there was no worker, nothing was
-        SIGTERMed, and the class name and this docstring were both wrong.
-        Worse, the inline executor runs the component synchronously in
-        the calling thread, which is why the stop could not be observed
-        until the agent had already exited.
+        `_InlineExecutor`, because `test_event_stream._factory_config`
+        defaults to `use_worktrees=False` and `run_factory` forces
+        `max_parallel=1` when worktrees are off. So there was no worker,
+        nothing was SIGTERMed, and the class name and this docstring were
+        both wrong. The inline executor also runs the component in the
+        CALLING thread, which is why the stop could not be observed until
+        the agent had already exited on its own.
 
         The spine harness is used instead, because a real pool needs a
         real git repository to make worktrees in, and `use_worktrees=True`
-        is what stops `max_parallel` being forced back to 1.
+        is what stops `max_parallel` being forced back to 1. It is
+        reached through the `spine_utils` module rather than by importing
+        its builders, because this file also imports the same five
+        builders from `test_event_stream` under a leading underscore, and
+        the pair that differ only by that underscore differ exactly in
+        `use_worktrees`.
         """
         root = tmp_path / "repo"
-        init_kstrl_repo(root, ("comp-a",))
-        manifest = make_manifest([component("comp-a")])
+        spine_utils.init_kstrl_repo(root, ("comp-a",))
+        manifest = spine_utils.make_manifest([spine_utils.component("comp-a")])
 
         # The agent reports two pids and then becomes the sleep. `$$` is
         # its own, kept across `exec`, and DeadlineStreamer starts it with
@@ -449,7 +449,7 @@ class TestWorkerSigterm:
         # that a separate worker ran it.
         agent_pidfile = tmp_path / "agent.pid"
         worker_pidfile = tmp_path / "worker.pid"
-        base = base_config(
+        base = spine_utils.base_config(
             root,
             agent_cmd=(
                 f"echo $PPID > {worker_pidfile}; "
@@ -457,27 +457,15 @@ class TestWorkerSigterm:
                 f"exec sleep {AGENT_SLEEP_SECONDS}"
             ),
         )
-        config = factory_config(max_parallel=2)
+        config = spine_utils.factory_config(max_parallel=2)
         stop = StopController()
-        # Read while the agent is alive: after the shutdown there is no
-        # process left to ask.
-        observed: dict[str, int] = {}
 
-        def stop_soon() -> None:
-            try:
-                observed["agent_pgid"] = os.getpgid(read_pid(agent_pidfile, timeout=60.0))
-                observed["worker_pid"] = read_pid(worker_pidfile, timeout=10.0)
-            except (AssertionError, ProcessLookupError):
-                pass
-            # Requested even when the agent never appeared, so a miss
-            # surfaces as the explicit assertion below rather than as
-            # run_factory blocking for the full sleep.
-            stop.request("sigterm spine test")
-
-        results: list[FactoryResult] = []
-
-        def run() -> None:
-            results.append(
+        # `start_command_thread` is how the TUI runs a command core off
+        # the main thread, and it boxes an exception instead of losing it
+        # to the threading excepthook. Reused rather than hand-rolled so
+        # a `run_factory` that RAISES is reported as itself.
+        handle = start_command_thread(
+            lambda: (
                 run_factory(
                     manifest,
                     config,
@@ -485,54 +473,73 @@ class TestWorkerSigterm:
                     PlainUI(no_color=True, file=io.StringIO()),
                     root,
                     stop=stop,
-                )
-            )
+                ).exit_code
+            ),
+            stop=stop,
+            name="sigterm-spine-test",
+        )
 
-        watcher = threading.Thread(target=stop_soon)
-        watcher.start()
-        # Daemon so a hang cannot wedge the interpreter at exit; the
-        # bounded join below is what turns a hang into a failure.
-        runner = threading.Thread(target=run, daemon=True)
-        runner.start()
+        agent_pgid: int | None = None
+        worker_pid: int | None = None
         try:
-            runner.join(timeout=RUN_FACTORY_BOUND_SECONDS)
-            assert not runner.is_alive(), (
+            try:
+                # Read on THIS thread while the agent is alive: after the
+                # shutdown there is no process left to ask.
+                agent_pgid = os.getpgid(read_pid(agent_pidfile, timeout=60.0))
+                worker_pid = read_pid(worker_pidfile, timeout=10.0)
+            finally:
+                # Requested even when the agent never appeared, so a miss
+                # surfaces as the explicit assertion below rather than as
+                # run_factory blocking for the full sleep.
+                stop.request("sigterm spine test")
+
+            handle.join(RUN_FACTORY_BOUND_SECONDS)
+            assert handle.done(), (
                 f"run_factory did not return within {RUN_FACTORY_BOUND_SECONDS}s "
                 f"of the stop being requested; it is waiting for the agent to "
                 f"finish rather than aborting it"
             )
-            assert results and results[0].exit_code == 130
+            assert not handle.error_box, f"run_factory raised: {handle.error_box[0]!r}"
+            assert handle.exit_code == 130
 
             # An agent that never started cannot leave an orphan either,
             # so without this the test could pass having observed nothing.
-            assert "agent_pgid" in observed, "never observed the agent subprocess start"
+            assert agent_pgid is not None, "never observed the agent subprocess start"
 
             # The precondition the old version silently lost. If the agent
-            # ran in THIS process there was no worker to SIGTERM, and
-            # everything below would be measuring the inline path instead.
-            assert observed["worker_pid"] != os.getpid(), (
+            # was spawned by THIS process there was no worker to SIGTERM,
+            # and everything below would be measuring the inline path.
+            assert worker_pid != os.getpid(), (
                 "the agent was spawned by the test process itself, so no "
                 "pool worker exists and this test is not exercising the "
                 "SIGTERM forwarding it claims to; check that use_worktrees "
                 "is on and max_parallel survived to the executor choice"
             )
 
-            pgid = observed["agent_pgid"]
             # The invariant that makes a group-scoped assertion safe to
             # make at all: killing our own group would kill the harness,
-            # the footgun agents/proc.py::_signal_group documents.
-            assert pgid != os.getpgrp()
+            # the footgun agents/proc.py::_signal_group documents. The
+            # worker shares our group, being a plain fork, which is also
+            # why the cleanup below never touches the WORKER's group.
+            assert agent_pgid != os.getpgrp()
 
-            # The agent still had ~10 minutes of sleep left, so a dead
-            # group here can only have been killed.
-            assert wait_for_group_to_die(pgid), (
-                f"agent subprocess orphaned: process group {pgid} still has a "
-                f"live member after the worker was told to stop"
+            assert wait_for_group_to_die(agent_pgid), (
+                f"agent subprocess orphaned: process group {agent_pgid} still "
+                f"has a live member after the worker was told to stop"
             )
         finally:
-            watcher.join(timeout=20)
-            if "agent_pgid" in observed:
-                kill_group(observed["agent_pgid"])
+            # `sleep 600` outliving a failed run would poison every later
+            # run on this machine, which is the #292 failure mode itself.
+            # Rediscovered here rather than assumed, because the paths
+            # that skip the read above are exactly the ones that leave it
+            # running.
+            if agent_pgid is None:
+                try:
+                    agent_pgid = os.getpgid(read_pid(agent_pidfile, timeout=1.0))
+                except (AssertionError, ProcessLookupError):
+                    agent_pgid = None
+            if agent_pgid is not None:
+                kill_group(agent_pgid)
 
 
 class TestTheOrphanCheckIsScopedToItsOwnGroup:
@@ -639,3 +646,56 @@ class TestTheOrphanCheckIsScopedToItsOwnGroup:
             parent.wait(timeout=10)
             if pgid > 1:
                 kill_group(pgid)
+
+
+class TestTheParallelismDecisionIsAnnounced:
+    """#292's root cause, as a unit.
+
+    `_run_factory_locked` silently rewrote a configured `max_parallel`
+    whenever worktrees were off, and said only "running sequentially" at
+    info level without naming the knob. That is how the spine test above
+    could ask for 2, get 1 and therefore `_InlineExecutor`, and stay
+    green for months while measuring nothing: no operator and no test
+    author was ever told the number had been discarded.
+
+    So the decision now has a name, and it reports every setting it
+    throws away.
+    """
+
+    def _ui(self) -> tuple[PlainUI, io.StringIO]:
+        buffer = io.StringIO()
+        return PlainUI(no_color=True, file=buffer), buffer
+
+    def test_parallelism_survives_when_worktrees_are_on(self) -> None:
+        ui, buffer = self._ui()
+        config = spine_utils.factory_config(max_parallel=4)
+        assert _resolve_max_parallel(config, ui) == 4
+        assert buffer.getvalue() == ""
+
+    def test_disabling_worktrees_forces_one_and_says_what_it_discarded(self) -> None:
+        ui, buffer = self._ui()
+        config = spine_utils.factory_config(max_parallel=8, use_worktrees=False)
+        assert _resolve_max_parallel(config, ui) == 1
+        out = buffer.getvalue()
+        assert "max_parallel" in out, "the discarded knob must be named"
+        assert "8" in out, "the operator's configured value must appear"
+
+    def test_it_stays_quiet_when_it_discards_nothing(self) -> None:
+        """The old line fired unconditionally, so it was noise at
+        max_parallel=1 and therefore easy to stop reading."""
+        ui, buffer = self._ui()
+        config = spine_utils.factory_config(max_parallel=1, use_worktrees=False)
+        assert _resolve_max_parallel(config, ui) == 1
+        assert buffer.getvalue() == ""
+
+    def test_single_pr_forces_one_and_says_so(self) -> None:
+        ui, buffer = self._ui()
+        config = spine_utils.factory_config(max_parallel=4, single_pr=True)
+        assert _resolve_max_parallel(config, ui) == 1
+        assert "4" in buffer.getvalue()
+
+    def test_single_pr_at_one_is_not_a_discard(self) -> None:
+        ui, buffer = self._ui()
+        config = spine_utils.factory_config(max_parallel=1, single_pr=True)
+        assert _resolve_max_parallel(config, ui) == 1
+        assert buffer.getvalue() == ""

@@ -156,9 +156,8 @@ def atomic_write_text(target: Path, content: str) -> None:
         # descriptors from 20 failed writes, which inside the serve
         # daemon or a retrying worker accumulates to EMFILE.
         #
-        # The ``fchmod`` still runs BEFORE the first write, so the file
-        # is empty for the whole window in which it carries the wrong
-        # mode, and replacing a 0600 file never exposes its contents.
+        # The ``fchmod`` still precedes the first write, preserving the
+        # empty-temp property the module docstring states.
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             if mode is not None:
                 os.fchmod(handle.fileno(), mode)
@@ -179,11 +178,33 @@ def atomic_write_json(target: Path, payload: Any) -> None:
     every hand-rolled copy of this wrote and what the committed fixtures
     and the pre-commit end-of-file hook both expect.
 
-    ``ensure_ascii=False`` for the same reason the encoding is pinned:
-    the file is utf-8, so a non-ASCII character belongs in it as itself
-    rather than as a ``\\uXXXX`` escape. It also matches what kstrl's
-    other JSON writers already pass (``workqueue``, ``serve``,
-    ``statedir``, ``intake_github``), so there is one on-disk shape
-    instead of one per writer.
+    ``ensure_ascii`` is left at its default, so the output is pure ASCII
+    and any locale can read it back. A first version passed
+    ``ensure_ascii=False`` to keep a non-ASCII character as itself, on
+    the grounds that the file is utf-8 anyway and that it matched what
+    kstrl's other JSON writers pass. Both legs were wrong.
+
+    The second is simply false, counted rather than remembered: ten call
+    sites pass ``ensure_ascii=False`` and twenty-eight leave the default,
+    so ``False`` created a second on-disk shape rather than settling on
+    the existing one. ``inbox`` writes its log through
+    ``atomic_write_text`` at the default and would have had its two files
+    disagree with each other.
+
+    The first is cosmetic, and it was paid for by every reader. Escaping
+    is what decides whether kstrl is a SOURCE of non-ASCII bytes.
+    Defaulted, a reader that forgot to name utf-8 only breaks on a file
+    somebody hand-edited. With ``False``, one curly quote in an LLM's
+    component description, which is ordinary output rather than a rare
+    event, makes the file unreadable under ``LC_ALL=C`` for every reader
+    that forgot. Measured, that was six readers, and
+    ``UnicodeDecodeError`` is a ``ValueError``, so it escaped the
+    ``except OSError`` handlers that exist to fail closed.
+
+    That is the same trade this module refuses over the ``mode``
+    parameter: a nicety for one writer, bought with an obligation on
+    everyone else. The readers are pinned anyway, because a hand-edited
+    file is still real, but they are now defence rather than the only
+    thing holding the format up.
     """
-    atomic_write_text(target, json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+    atomic_write_text(target, json.dumps(payload, indent=2) + "\n")

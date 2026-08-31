@@ -2416,6 +2416,42 @@ def _wait_interruptible(
             return set(), False
 
 
+def _resolve_max_parallel(factory_config: FactoryConfig, ui: UI) -> int:
+    """Effective parallelism, and a warning for every setting it discards.
+
+    Extracted from ``_run_factory_locked`` (#292) so the decision has a
+    name and can be tested. It is also the decision that hid a fake test
+    for months: the spine SIGTERM test asked for ``max_parallel=2``,
+    silently got 1 and therefore ``_InlineExecutor``, and nothing said so.
+
+    Both discards are REPORTED, and only when they actually discard
+    something. The worktree branch used to fire unconditionally as an
+    info line that never named ``max_parallel``, so an operator who
+    configured 8 was never told the 8 was thrown away.
+    ``ui.kv("Max parallel", ...)`` prints the effective value, which
+    cannot distinguish "I asked for 1" from "I asked for 8 and lost it".
+    """
+    max_parallel = factory_config.max_parallel
+    if not factory_config.use_worktrees:
+        if max_parallel > 1:
+            ui.warn(
+                f"worktrees disabled: components cannot run in parallel; "
+                f"forcing max_parallel=1 (you configured {max_parallel})"
+            )
+        return 1
+    if factory_config.single_pr and max_parallel > 1:
+        # R0.5 (H-8): single_pr components all live on ONE branch, and a
+        # branch can only be checked out in one worktree at a time -
+        # parallel same-tier components would hard-fail on "already
+        # checked out". Sequential is the only layout that works.
+        ui.warn(
+            f"single_pr mode: components share one branch; forcing "
+            f"max_parallel=1 (you configured {max_parallel})"
+        )
+        return 1
+    return max_parallel
+
+
 def _abort_inflight(
     executor: ProcessPoolExecutor | _InlineExecutor,
     running_futures: dict[Future[ComponentResult], str],
@@ -3149,18 +3185,7 @@ def _run_factory_locked(
     # Re-poll before scheduling so confirmed merges unblock dependents.
     pipeline.repoll_merge_pending()
 
-    # Determine effective parallelism
-    max_parallel = factory_config.max_parallel
-    if not factory_config.use_worktrees:
-        max_parallel = 1
-        ui.info("Worktrees disabled: running sequentially")
-    if factory_config.single_pr and max_parallel > 1:
-        # R0.5 (H-8): single_pr components all live on ONE branch, and a
-        # branch can only be checked out in one worktree at a time -
-        # parallel same-tier components would hard-fail on "already
-        # checked out". Sequential is the only layout that works.
-        max_parallel = 1
-        ui.info("single_pr mode: components share one branch; forcing max_parallel=1")
+    max_parallel = _resolve_max_parallel(factory_config, ui)
 
     # R0.1: TimeoutConfig is the single source for the agent-iteration and
     # component wall-clock limits. Enforcement layers: the adapters kill

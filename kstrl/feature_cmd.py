@@ -143,10 +143,15 @@ def _build_repair_prd(
         "branchName": params.prd_doc.branch_name,
         "userStories": [repair_story],
     }
-    with open(repair_path, "w") as handle:
+    # utf-8 on both, because this document is read back by ``PRD.load``,
+    # which names utf-8: a writer left on the locale codec would let the
+    # factory write a repair PRD it could not read on a non-utf-8
+    # machine. The acceptance criteria here are copied verbatim from the
+    # operator's PRD, so non-ASCII in them is ordinary.
+    with open(repair_path, "w", encoding="utf-8") as handle:
         json.dump(repair_doc, handle, indent=2)
         handle.write("\n")
-    with open(latest_path, "w") as handle:
+    with open(latest_path, "w", encoding="utf-8") as handle:
         json.dump(repair_doc, handle, indent=2)
         handle.write("\n")
 

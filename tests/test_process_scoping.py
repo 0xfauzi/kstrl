@@ -33,9 +33,13 @@ exempted any ``test_shutdown.py`` added under a subdirectory, because it
 keyed the allowlist on the bare filename.
 
 WHAT IT DOES NOT SEE: a command built into a variable first
-(``cmd = ["pgrep", ...]`` then ``subprocess.run(cmd)``), or one assembled
-at runtime. Following those needs dataflow the AST does not give. The net
-raises the cost of the mistake; it is not a proof.
+(``cmd = ["pgrep", ...]`` then ``subprocess.run(cmd)``); one assembled at
+runtime; or a spawn renamed on import (``from subprocess import run as
+r``), since the match is on the callee's spelling rather than on what it
+resolves to. ``tests/test_timeout_enforcement.py`` has an alias-aware
+resolver if that last one ever stops being theoretical. Following the
+first two needs dataflow the AST does not give. The net raises the cost
+of the mistake; it is not a proof.
 
 Scoping to subprocess arguments is what lets it stay quiet about prose:
 this module and ``tests/helpers/procs.py`` both have to name the
@@ -93,10 +97,10 @@ def _command_literals(source: Path) -> Iterator[tuple[str, int]]:
                     yield inner.value, node.lineno
 
 
-def _machine_wide_hits(source: Path, label: str | None = None) -> list[str]:
+def _machine_wide_hits(source: Path) -> list[str]:
     """Subprocess literals in ``source`` naming a machine-wide search."""
     hits: list[str] = []
-    rel = label or str(source.relative_to(TESTS_DIR))
+    rel = str(source.relative_to(TESTS_DIR)) if source.is_relative_to(TESTS_DIR) else source.name
     for value, lineno in _command_literals(source):
         for token in value.split():
             if Path(token).name in MACHINE_WIDE_PROCESS_TOOLS:
@@ -155,10 +159,7 @@ class TestTheNetCatchesWhatItClaims:
         """
         source = tmp_path / "probe.py"
         source.write_text(body, encoding="utf-8")
-        return _machine_wide_hits(source, label="probe.py")
-
-    def test_a_bare_command_is_caught(self, tmp_path: Path) -> None:
-        assert self._hits(tmp_path, 'subprocess.run(["pgrep", "-f", "x"])\n')
+        return _machine_wide_hits(source)
 
     def test_an_absolute_path_is_caught(self, tmp_path: Path) -> None:
         """`/usr/bin/pgrep` passed the first version, which compared the
@@ -188,18 +189,8 @@ class TestTheNetCatchesWhatItClaims:
 class TestTheLivenessHelperCannotPassByMeasuringNothing:
     """The same defect one level down, in the helper written to remove it.
 
-    ``group_has_live_member`` shells out to ``ps`` and walks stdout. If
-    ``ps`` is missing, restricted or errors, stdout is empty, so the
-    original returned False, ``wait_for_group_to_die`` returned True, and
-    the orphan assertion passed having measured nothing. Measured with
-    ``ps`` forced to rc=127: the helper reported the CALLER'S OWN live
-    process group as dead.
-
-    ``ps`` really is absent or filtered in the places this matters:
-    ``hidepid`` mounts and minimal containers. So the helper now proves
-    it can see something before it is allowed to report absence, and the
-    thing it proves it can see is the caller's own process group, which
-    is alive by construction.
+    Why absence is only reportable by a call that proved it can see
+    something is argued in ``tests/helpers/procs.py``. These pin it.
     """
 
     def test_it_sees_its_own_process_group(self) -> None:

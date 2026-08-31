@@ -45,7 +45,7 @@ def read_pid(pidfile: Path, timeout: float = 5.0) -> int:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            text = pidfile.read_text().strip()
+            text = pidfile.read_text(encoding="utf-8").strip()
             if text:
                 return int(text)
         except (FileNotFoundError, ValueError):
