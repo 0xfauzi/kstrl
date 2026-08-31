@@ -41,6 +41,7 @@ from kstrl import events as ev
 from kstrl import git
 from kstrl.adequacy import AdequacyConfig
 from kstrl.agents.base import (
+    ARCHITECT_COMPONENT,
     ARCHITECT_ROLE,
     CEILING_AXES,
     CeilingCoverage,
@@ -591,10 +592,17 @@ class ComponentPipeline:
         metered call rather than leaving it invisible to the coverage
         accounting.
 
-        Component id and phase are both ``ARCHITECT_ROLE``, which is the
-        key `ks decompose` already writes (``ARCHITECT_COMPONENT``) and
-        the one ``serve.read_run_spend`` reads. Pairing them HERE is why
-        the constant exists rather than a literal per surface.
+        The component id is ``ARCHITECT_COMPONENT``, the namespaced key
+        `ks decompose` already writes and the one
+        ``serve.read_run_spend`` reads; the phase is the bare
+        ``ARCHITECT_ROLE``. Pairing them HERE is why the constants exist
+        rather than a literal per surface.
+
+        They stopped being the same string in #281. A bare component key
+        shared a keyspace with LLM-emitted component ids, so a component
+        genuinely named `architect` merged with this row - folding its
+        spend into the architect's, and clearing the honesty flag on
+        ``serve.RunSpend`` for a run whose architect never reported.
 
         ``None`` or zero calls records nothing: a run resumed from a
         manifest never ran an architect, and an agent that reported no
@@ -602,7 +610,7 @@ class ComponentPipeline:
         """
         if totals is None:
             return
-        self._record_usage(ARCHITECT_ROLE, ARCHITECT_ROLE, totals)
+        self._record_usage(ARCHITECT_COMPONENT, ARCHITECT_ROLE, totals)
 
     def record_injected_knowledge(
         self,

@@ -68,7 +68,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Final, Protocol
 
-from kstrl.agents.base import ARCHITECT_ROLE
+from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.runid import run_kind
 from kstrl.statedir import (
     CONTROL_SPEND,
@@ -727,6 +727,23 @@ def read_run_spend(root_dir: Path, run_id: str) -> RunSpend:
     previous run's spend and could be classified from a stale manifest.
     An empty id now returns zeros instead of silently reading someone
     else's run.
+
+    #281: the architect's row moved to ``ARCHITECT_COMPONENT``, so a run
+    recorded before that change - whose stream says ``"architect"`` -
+    reads here as having no architect row, and the day's total is
+    reported as a FLOOR rather than exact. That is the pessimistic
+    direction, and it is the same answer this function already gives for
+    a resume, a blocker halt and an adapter that reports nothing.
+
+    There is deliberately no fallback to the old bare key. It would be
+    unsafe rather than merely redundant: on a NEW run whose architect did
+    not report and which happens to contain a component named
+    `architect`, the fallback would read that component's calls as the
+    architect's and clear the honesty flag - which is exactly the bug
+    #281 removes. The narrower thing is not worth building either,
+    because ``owned_run_spend`` only ever reads run dirs created inside
+    the launch window it is charging, so the daemon never reads a
+    pre-#281 run at all.
     """
     if not run_id:
         return RunSpend()
@@ -736,7 +753,7 @@ def read_run_spend(root_dir: Path, run_id: str) -> RunSpend:
         state, _source = load_run_state(root_dir, run_id)
     except OSError:
         return RunSpend()
-    architect = state.components.get(ARCHITECT_ROLE)
+    architect = state.components.get(ARCHITECT_COMPONENT)
     return RunSpend(
         cost_usd=state.cost_usd,
         cost_calls=state.cost_calls,

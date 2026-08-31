@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kstrl import events as ev
+from kstrl.agents.base import ARCHITECT_COMPONENT
 
 DEFAULT_RUN_ID = "factory-20260720-120000.000000-fake"
 
@@ -352,39 +353,47 @@ def write_fake_decompose_run(
     minors: int = 1,
     attempts: int = 1,
     components: tuple[str, ...] = ("database", "api"),
+    architect_key: str = ARCHITECT_COMPONENT,
 ) -> Path:
     """A decompose-kind run: architect attempts, spec issues, the
     forming DAG, per-component PRD artifacts (TUI surface C4).
-    ``blockers`` > 0 makes it a halted run (no plan, no PRDs)."""
+    ``blockers`` > 0 makes it a halted run (no plan, no PRDs).
+
+    ``architect_key`` is what the dir calls the architect's
+    pseudo-component. It is a parameter so a test can write a run the
+    PRE-#281 way ("architect"), which is what every dir already on disk
+    says: run directories are the durable record, and a reader that only
+    knows the new key rendered a completed historical run as failed.
+    """
     paths = ev.RunPaths.for_run(root, run_id)
     bus = ev.EventBus(
         ev.JsonlSink(paths.events_file),
         run_id=run_id,
-        component="architect",
+        component=architect_key,
     )
     bus.emit(ev.RunStarted(project="fake-project", components=0))
     bus.emit(
         ev.RunPlan(
-            components=({"id": "architect", "title": "Architect / PRD red-team", "deps": []},)
+            components=({"id": architect_key, "title": "Architect / PRD red-team", "deps": []},)
         )
     )
-    bus.emit(ev.ComponentStarted(component="architect"))
-    log_path = paths.engineer_log("architect")
+    bus.emit(ev.ComponentStarted(component=architect_key))
+    log_path = paths.engineer_log(architect_key)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     for attempt in range(1, attempts + 1):
-        bus.emit(ev.PhaseStarted(component="architect", phase="decompose", attempt=attempt))
+        bus.emit(ev.PhaseStarted(component=architect_key, phase="decompose", attempt=attempt))
         with open(log_path, "a", encoding="utf-8") as log:
             log.write(f'{{"components": [... attempt {attempt} ...]}}\n')
         bus.emit(
             ev.PhaseCompleted(
-                component="architect",
+                component=architect_key,
                 phase="decompose",
                 passed=attempt == attempts,
                 duration_seconds=30.0,
                 detail="" if attempt == attempts else "JSON extraction failed",
             )
         )
-    bus.emit(ev.PhaseStarted(component="architect", phase="audit", attempt=1))
+    bus.emit(ev.PhaseStarted(component=architect_key, phase="audit", attempt=1))
     for n in range(blockers):
         bus.emit(
             ev.SpecIssueRecorded(
@@ -406,7 +415,7 @@ def write_fake_decompose_run(
     bus.emit(ev.ArtifactWritten(label="spec_issues", path="scripts/kstrl/spec-issues.json"))
     bus.emit(
         ev.PhaseCompleted(
-            component="architect",
+            component=architect_key,
             phase="audit",
             passed=blockers == 0,
             detail=f"{blockers} blocker(s)" if blockers else "",
@@ -416,7 +425,7 @@ def write_fake_decompose_run(
     if blockers:
         bus.emit(
             ev.ComponentFailed(
-                component="architect",
+                component=architect_key,
                 error=f"spec halted: {blockers} blocker-severity issue(s)",
             )
         )
@@ -426,7 +435,7 @@ def write_fake_decompose_run(
     bus.emit(
         ev.RunPlan(
             components=(
-                {"id": "architect", "title": "Architect / PRD red-team", "deps": []},
+                {"id": architect_key, "title": "Architect / PRD red-team", "deps": []},
                 *(
                     {"id": cid, "title": cid.title(), "deps": [components[i - 1]] if i else []}
                     for i, cid in enumerate(components)
@@ -444,7 +453,7 @@ def write_fake_decompose_run(
         )
     bus.emit(ev.ArtifactWritten(label="manifest", path="scripts/kstrl/manifest.json"))
     bus.emit(
-        ev.ComponentCompleted(component="architect", duration_seconds=35.0, iterations=attempts)
+        ev.ComponentCompleted(component=architect_key, duration_seconds=35.0, iterations=attempts)
     )
     bus.emit(ev.RunCompleted(completed=1, failed=0, skipped=0, duration_seconds=35.0))
     bus.close()

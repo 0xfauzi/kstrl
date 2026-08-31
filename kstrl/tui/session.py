@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kstrl.agents.base import ARCHITECT_COMPONENT
 from kstrl.commandrun import open_command_run
 from kstrl.config import KstrlConfig
 from kstrl.events import CallbackSink, EventBus, RunPaths
@@ -267,7 +268,7 @@ def _prepare_decompose(
                 ui,
                 root_dir,
                 "decompose",
-                component="architect",
+                component=ARCHITECT_COMPONENT,
                 run_id=run_id,
             )
             try:
@@ -281,7 +282,7 @@ def _prepare_decompose(
                         ui=ui,
                         root_dir=root_dir,
                         bus=command_run.bus,
-                        transcript=command_run.transcript_writer("architect"),
+                        transcript=command_run.transcript_writer(ARCHITECT_COMPONENT),
                     )
                     ui.ok(f"Decomposed into {len(manifest.components)} components")
                     return 0
