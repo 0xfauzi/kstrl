@@ -1299,11 +1299,15 @@ class TestSpecConvergenceThroughDecompose:
     ) -> None:
         """The other ValueError path into EvolutionConfig.load.
 
-        Scoped to the halt path on purpose: a malformed kstrl.toml also
-        fails LinearConfig.load further down decompose, which is
-        pre-existing behaviour this change does not touch. The halt
-        raises before that point, and the halt is the case where the
-        artifact is the only record the operator gets.
+        Scoped to the halt path on purpose, and the reason narrowed when
+        #272 landed. It used to be that a malformed kstrl.toml ALSO
+        failed LinearConfig.load further down decompose, after the
+        architect had been paid for; ``ks decompose`` now rejects the
+        file at command entry and never reaches this function, which
+        ``tests/test_config_preflight.py`` pins. What this still covers
+        is the direct call: ``decompose_spec`` invoked in-process, where
+        the halt raises before the Linear load and the artifact is the
+        only record the operator gets.
         """
         (tmp_path / "kstrl.toml").write_text("[evolution\nenabled = true\n")
 

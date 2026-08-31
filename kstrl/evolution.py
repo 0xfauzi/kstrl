@@ -129,16 +129,32 @@ class EvolutionConfig:
         Which exceptions that means is stated here rather than at a call
         site, because it is a fact about :meth:`load`: ``ValueError``
         from malformed TOML or a non-integer ``lookback_runs`` (from the
-        file or from ``KSTRL_EVOLUTION_LOOKBACK_RUNS``), and ``OSError``
-        from an unreadable ``kstrl.toml``. A future coercion added to
+        file or from ``KSTRL_EVOLUTION_LOOKBACK_RUNS``), ``TypeError``
+        from a toml array where a number belongs, and ``OSError`` from
+        an unreadable ``kstrl.toml``. A future coercion added to
         ``load`` is then covered here instead of silently escaping a
         guard somebody wrote around a call.
+
+        ``TypeError`` was added when #272 gave the same section an entry
+        check: ``config_preflight.REJECTIONS`` treats it as operator
+        input, and two lists that disagree would degrade the same value
+        at startup and then raise on it mid-run.
+
+        The cost of that widening, stated because it is real: a
+        ``TypeError`` from a DEFECT inside :meth:`load` - a None where a
+        path belongs, a signature that stopped matching - now reads as
+        "config unreadable, skipping journal" rather than surfacing. It
+        cannot be narrowed to the toml-array case without inspecting the
+        message, which would be guessing. The journal going quiet is the
+        signal that a defect is hiding here, so treat a "skipping
+        journal" warning on a config that looks correct as a bug report
+        about this method rather than about the operator's file.
 
         Degrades loudly: ``warn`` is called with the parse failure.
         """
         try:
             return cls.load(root_dir)
-        except (ValueError, OSError) as exc:
+        except (ValueError, TypeError, OSError) as exc:
             warn(f"Evolution config unreadable, skipping journal: {exc}")
             return None
 
