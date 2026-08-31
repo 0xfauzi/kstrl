@@ -30,12 +30,39 @@ What this file protects against:
    asserts it is enrolled in ``_PROMPTS``. Adding ``NEW_FANCY_PROMPT``
    without wiring up versioning fails the test.
 
+   What the walk keys on is the target NAME plus a literal value: an
+   assignment at any nesting depth whose name ends in ``_PROMPT`` and
+   whose right-hand side is a string or f-string. It is therefore blind
+   to a body never bound to such a name, which is how two reviewer-facing
+   blocks in ``kstrl/git.py`` shipped unversioned until #299. Hoisting
+   such text to an enrolled constant is the rule; see H3-NOTE for what
+   that leaves uncovered.
+
+5. **Enrolled but unguarded.** The per-prompt hash check is parametrized
+   over ``_PROMPTS`` rather than hand-written one test per prompt. The
+   hand-written form checked only the prompts somebody remembered to
+   write a test for: VERIFY_COMMANDS_PROMPT sat in all three dicts from
+   #261 with no test calling ``_check_snapshot`` on it, so its body was
+   editable with the suite staying green (#299).
+
+6. **Enrolled but not the text that ships.** A constant a function has
+   stopped interpolating would match its snapshot for ever while the role
+   received different words. The two change-source functions are asserted
+   to render exactly their enrolled body (#299).
+
 H3-NOTE on enforcement limits: a sufficiently determined developer can
 edit a prompt and update both the snapshot hash AND the version constant
 to keep the *previous* number (e.g. leave version at 1.0.0 while moving
 the hash). This is unenforceable in code; it requires reviewer
 discipline. The H3 policy makes that bypass require explicit deceit in
 the snapshot file, which is the audit trail.
+
+A second residual, found by #299 and NOT closed by it: nothing detects
+instruction text that is never bound to a ``*_PROMPT`` name at all --
+returned straight out of a function, or bound to a local called
+something else. The walk can only flag a body somebody named. #299
+hoisted the two known instances by hand and wrote the rule into H3;
+keeping to it is reviewer discipline, not a check.
 """
 
 from __future__ import annotations
@@ -47,7 +74,16 @@ from pathlib import Path
 
 import pytest
 
+from kstrl import git
 from kstrl.decompose import DECOMPOSE_PROMPT, DECOMPOSE_PROMPT_VERSION
+from kstrl.git import (
+    PASTED_CHANGE_SOURCE_PROMPT,
+    PASTED_CHANGE_SOURCE_PROMPT_VERSION,
+    REPO_CHANGE_SOURCE_PROMPT,
+    REPO_CHANGE_SOURCE_PROMPT_VERSION,
+    pasted_change_source,
+    repo_change_source,
+)
 from kstrl.init_cmd import (
     DEFAULT_PROMPT,
     DEFAULT_PROMPT_VERSION,
@@ -69,6 +105,8 @@ _PROMPTS: dict[str, str] = {
     "DISTILL_PROMPT": DISTILL_PROMPT,
     "DEFAULT_PROMPT": DEFAULT_PROMPT,
     "VERIFY_COMMANDS_PROMPT": VERIFY_COMMANDS_PROMPT,
+    "REPO_CHANGE_SOURCE_PROMPT": REPO_CHANGE_SOURCE_PROMPT,
+    "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT,
 }
 
 _VERSIONS: dict[str, str] = {
@@ -78,6 +116,8 @@ _VERSIONS: dict[str, str] = {
     "DISTILL_PROMPT": DISTILL_PROMPT_VERSION,
     "DEFAULT_PROMPT": DEFAULT_PROMPT_VERSION,
     "VERIFY_COMMANDS_PROMPT": VERIFY_COMMANDS_PROMPT_VERSION,
+    "REPO_CHANGE_SOURCE_PROMPT": REPO_CHANGE_SOURCE_PROMPT_VERSION,
+    "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT_VERSION,
 }
 
 # Joint snapshot: (sha256_hash, semver_version). Both must move together
@@ -120,6 +160,11 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # unreleased draft of the same change, revised in review and never
     # pinned here; the version moved with the body rather than being
     # reused, so each round carries its own audit trail.
+    #
+    # Scope (H3-engineer): the per-project scripts/kstrl/prompt.md is
+    # user-editable, but this harness-shipped template is the
+    # adversarial-role definition for the engineer phase and is
+    # snapshot-protected on the same terms as the role prompts.
     "DEFAULT_PROMPT": (
         "392eb698daf71d486a9d4573698df3bb2b3ca4be87c178657accc8a66c54f384",
         "1.3.0",
@@ -131,6 +176,20 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # command values are the operator's and are interpolated at run time.
     "VERIFY_COMMANDS_PROMPT": (
         "2b78ef192783332e3693d197fc135460a46275df30411a500d55902d0a9c5e4b",
+        "1.0.0",
+    ),
+    # 1.0.0 (#299): both bodies already reached a reviewer's prompt on
+    # every run; #299 only hoisted them out of the functions that built
+    # them, and the text did not change by a byte. So 1.0.0 opens a
+    # series for a body whose earlier edits predate any version at all -
+    # the footing VERIFY_COMMANDS_PROMPT was enrolled on in #261.
+    # Back-dating to 1.1.0 would imply a 1.0.0 that never existed.
+    "REPO_CHANGE_SOURCE_PROMPT": (
+        "a631e04c744b55157f9e023d352b572eb8f5e6a5148c9f9114eaf26f6a359cb5",
+        "1.0.0",
+    ),
+    "PASTED_CHANGE_SOURCE_PROMPT": (
+        "a1e6082933043d31c9efc513c0e16466629ccf770f6e6e828ace39565736d0d5",
         "1.0.0",
     ),
 }
@@ -203,29 +262,58 @@ def _check_snapshot(name: str) -> None:
     assert actual == expected, _drift_message(name, expected, actual)
 
 
-def test_decompose_prompt_snapshot_unchanged() -> None:
-    _check_snapshot("DECOMPOSE_PROMPT")
+@pytest.mark.parametrize("name", sorted(_PROMPTS))
+def test_prompt_snapshot_unchanged(name: str) -> None:
+    """Every enrolled prompt's (hash, version) matches its snapshot.
+
+    Parametrized over ``_PROMPTS`` so enrollment is the only thing anyone
+    has to remember; see module docstring item 5 for why."""
+    _check_snapshot(name)
 
 
-def test_reviewer_prompt_snapshot_unchanged() -> None:
-    _check_snapshot("REVIEWER_PROMPT")
+# A snapshot pins the constant, not what the role is sent. Both blocks
+# below are assembled at call time, so the constant could rot into an
+# orphan -- still hashing clean while the function builds its own copy of
+# the words, or wraps unhashed instructions around it. Each test asserts
+# the render EQUALS the enrolled body (catching added or dropped words),
+# then patches the constant and asserts the render followed (catching a
+# copy that happens to be byte-identical today). Only these two are
+# covered: this is a guard on the change-source pair, not a general
+# mechanism over the enrolled set.
 
 
-def test_security_prompt_snapshot_unchanged() -> None:
-    _check_snapshot("SECURITY_PROMPT")
+def test_repo_change_source_renders_the_enrolled_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert repo_change_source("BASE_SHA") == REPO_CHANGE_SOURCE_PROMPT.format(
+        base_ref="BASE_SHA"
+    ), "repo_change_source renders something other than its enrolled body."
+    monkeypatch.setattr(git, "REPO_CHANGE_SOURCE_PROMPT", "SENTINEL {base_ref}")
+    assert repo_change_source("BASE_SHA") == "SENTINEL BASE_SHA", (
+        "repo_change_source does not read REPO_CHANGE_SOURCE_PROMPT, so the "
+        "enrolled constant is an orphan and the reviewer's words are not "
+        "under H3 snapshot protection."
+    )
 
 
-def test_distill_prompt_snapshot_unchanged() -> None:
-    _check_snapshot("DISTILL_PROMPT")
-
-
-def test_default_engineer_prompt_snapshot_unchanged() -> None:
-    """H3-engineer: the per-project ``scripts/kstrl/prompt.md`` is
-    user-editable, but the harness-shipped DEFAULT_PROMPT template at
-    ``kstrl/init_cmd.py`` is the adversarial-role definition for the
-    engineer phase. Snapshot-protected on the same terms as the other
-    role prompts."""
-    _check_snapshot("DEFAULT_PROMPT")
+def test_pasted_change_source_renders_the_enrolled_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    block, token = pasted_change_source("DIFF BODY")
+    assert block == PASTED_CHANGE_SOURCE_PROMPT.format(
+        data_delimiter=token, diff_content="DIFF BODY"
+    ), "pasted_change_source renders something other than its enrolled body."
+    monkeypatch.setattr(
+        git,
+        "PASTED_CHANGE_SOURCE_PROMPT",
+        "SENTINEL {data_delimiter} {diff_content}",
+    )
+    block, token = pasted_change_source("DIFF BODY")
+    assert block == f"SENTINEL {token} DIFF BODY", (
+        "pasted_change_source does not read PASTED_CHANGE_SOURCE_PROMPT, so "
+        "the enrolled constant is an orphan and the reviewer's words are not "
+        "under H3 snapshot protection."
+    )
 
 
 def test_engineer_prompt_bump_reaches_existing_projects() -> None:
