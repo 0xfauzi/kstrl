@@ -49,7 +49,9 @@ from kstrl.verify import (
     CheckResult,
     VerificationResult,
     VerifyConfig,
+    _scope_checks,
     check_diff_scope,
+    check_scope_unreadable,
     run_mechanical_verification,
 )
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
@@ -330,32 +332,31 @@ class TestExcludeRejectionFlowsThroughRetryLoop:
 
 
 class TestDiffScopeFailsClosed:
-    """PRD-load failure fails the check; unconfigured scope still
-    passes with the existing message."""
+    """PRD-load failure fails a check of its OWN (#294); unconfigured
+    scope still passes with the existing message."""
 
-    def test_allowed_paths_error_fails_check(self, tmp_path: Path) -> None:
-        result = check_diff_scope(
-            tmp_path,
-            "main",
-            allowed_paths=None,
-            allowed_paths_error="PRD failed to parse: bad JSON",
-        )
+    def test_allowed_paths_error_fails_check(self) -> None:
+        result = check_scope_unreadable("PRD failed to parse: bad JSON")
         assert result.passed is False
-        assert result.name == "diff_scope"
+        assert result.name == "scope_unreadable"
         assert "failing closed" in result.message
         assert any("PRD failed to parse" in d for d in result.details)
 
     def test_error_wins_even_with_allowed_paths(self, tmp_path: Path) -> None:
         """A half-loaded state (paths recovered but an error was
         recorded) must still fail closed rather than judge scope on
-        possibly-stale paths."""
-        result = check_diff_scope(
+        possibly-stale paths. The decision moved to ``_scope_checks``
+        with #294, so it is exercised through the entry point."""
+        result = _scope_checks(
             tmp_path,
             "main",
             allowed_paths=["src/"],
             allowed_paths_error="PRD not found: prd.json",
+            harness_paths=None,
+            compare=True,
         )
-        assert result.passed is False
+        assert [c.name for c in result] == ["scope_unreadable"]
+        assert result[0].passed is False
 
     def test_unconfigured_scope_still_passes(self, tmp_path: Path) -> None:
         result = check_diff_scope(tmp_path, "main", allowed_paths=None)
@@ -399,8 +400,10 @@ class TestDiffScopeFailsClosed:
             config,
             allowed_paths_error="PRD failed to parse: bad JSON",
         )
-        diff_scope = next(c for c in verification.checks if c.name == "diff_scope")
-        assert diff_scope.passed is False
+        names = [c.name for c in verification.checks]
+        assert "diff_scope" not in names, "the diff comparison had nothing to compare"
+        unreadable = next(c for c in verification.checks if c.name == "scope_unreadable")
+        assert unreadable.passed is False
         assert verification.passed is False
 
 

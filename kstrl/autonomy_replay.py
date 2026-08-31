@@ -38,6 +38,7 @@ from kstrl.autonomy import (
     AutonomyState,
     DemotionTrigger,
 )
+from kstrl.verify import SCOPE_UNREADABLE_CHECK
 
 DEFAULT_EXPERIMENTS_PATH = Path(".kstrl/experiments.tsv")
 
@@ -45,7 +46,24 @@ DEFAULT_EXPERIMENTS_PATH = Path(".kstrl/experiments.tsv")
 #: than a judgement. Derived from the recorded failure taxonomy: `pr:` is
 #: push/create/merge plumbing. Kept as a prefix tuple so a new plumbing
 #: failure family is one entry, not a new code path.
-INFRA_FAILURE_PREFIXES: tuple[str, ...] = ("pr:", "git:", "infra:", "timeout:")
+#:
+#: `scope_unreadable:` (#294) is the harness failing to establish its own
+#: input: the component's scope could not be read from the pre-run tree,
+#: so nothing was ever measured about the change. The same reasoning that
+#: attaches `Finding.infrastructure_error` to that check applies to the
+#: signature stream, and it was missed there first: a run dominated by it
+#: was counted DECISIVE and fed autonomy promotion and demotion as
+#: evidence about the factory's judgement. #294 makes that more likely
+#: rather than less, because refusing the component before its engineer
+#: runs makes this the modal signature of the run instead of one of
+#: three retries.
+INFRA_FAILURE_PREFIXES: tuple[str, ...] = (
+    "pr:",
+    "git:",
+    "infra:",
+    "timeout:",
+    f"{SCOPE_UNREADABLE_CHECK}:",
+)
 
 
 @dataclass

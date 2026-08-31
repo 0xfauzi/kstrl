@@ -351,6 +351,10 @@ class TestAnUnresolvedScopeCannotBeSwitchedOff:
     guard is inert too, so the component ran and merged with no scope
     enforcement at all and nothing said (#293 review). Same argument
     ``check_prd_stories`` makes for carrying the tamper refusal.
+
+    #294 moved the refusal onto its own check, ``scope_unreadable``. The
+    toggle still cannot reach it: what changed is the NAME the failure
+    reports under, not whether it reports.
     """
 
     def _verify(
@@ -386,7 +390,10 @@ class TestAnUnresolvedScopeCannotBeSwitchedOff:
         _setup_project(tmp_path)
         result = self._verify(tmp_path, check_diff_scope=check_diff_scope)
         assert not result.passed
-        assert [c.name for c in result.checks if not c.passed] == ["diff_scope"]
+        assert [c.name for c in result.checks if not c.passed] == ["scope_unreadable"]
+        # Not merely renamed: the comparison is not reported at all, so
+        # nothing claims a passing scope beside the refusal.
+        assert "diff_scope" not in [c.name for c in result.checks]
 
     def test_the_toggle_still_removes_the_comparison(self, tmp_path: Path) -> None:
         """It must not become "diff_scope always runs": with no error

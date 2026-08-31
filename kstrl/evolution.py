@@ -18,6 +18,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from kstrl.verify import SCOPE_UNREADABLE_CHECK, SCOPE_UNREADABLE_ERROR_PREFIX
+
 if TYPE_CHECKING:
     from kstrl.factory import FactoryResult
     from kstrl.findings import Finding
@@ -282,9 +284,27 @@ def _normalize_error(error: str) -> str:
 
 
 def _classify_check(error: str) -> tuple[str, str]:
-    """Return (check_name, category) inferred from the error text."""
+    """Return (check_name, category) inferred from the error text.
+
+    The legacy fallback, used wherever a component has no in-memory
+    ``failure_signatures`` entry - which is EVERY ``ks evolve`` or
+    metrics read over a manifest written by an earlier process. So a
+    failure whose text lands here unrecognised is filed as
+    unknown/iteration no matter how carefully it was categorised at the
+    time it happened.
+
+    #294 round 2: that is what happened to the scope refusal. Its own
+    ``_CATEGORY_BY_CHECK`` row and its own ``propose_improvements`` arm
+    were both unreachable on this path, so ``ks evolve`` still emitted
+    the generic "add this to CLAUDE.md" proposal - agent advice for a
+    state no agent can influence, which is the thing the arm exists to
+    prevent. Matched FIRST because the text also contains words the
+    later rules claim.
+    """
     lower = error.lower()
 
+    if SCOPE_UNREADABLE_ERROR_PREFIX.lower() in lower:
+        return SCOPE_UNREADABLE_CHECK, "verification"
     if any(kw in lower for kw in ("ruff", "flake8", "pylint", "lint")):
         return "linter", "verification"
     if any(kw in lower for kw in ("mypy", "pyright", "typecheck", "type error")):
@@ -322,6 +342,9 @@ _CATEGORY_BY_CHECK = {
     "typecheck": "verification",
     "test_suite": "verification",
     "diff_scope": "verification",
+    # #294 split this out of diff_scope; diff_scope stays because
+    # journal entries written before the split carry its signatures.
+    SCOPE_UNREADABLE_CHECK: "verification",
     "bad_patterns": "verification",
     "self_critique": "verification",
     "dead_code": "verification",
@@ -371,7 +394,24 @@ def split_signature(signature: str) -> tuple[str, str]:
 
 
 def category_for_check(check_name: str) -> str:
-    """Map a check/gate name to a FailurePattern category."""
+    """Map a check/gate name to a FailurePattern category.
+
+    An unlisted name falls through to "iteration", which files a Phase 1
+    gate under the engineer loop. Enrolling a new check in
+    ``_CATEGORY_BY_CHECK`` is a convention with no mechanism, and
+    measured on this tree the convention does not hold: AST-walking
+    ``kstrl/`` for ``CheckResult`` names finds ``fixtures``,
+    ``policy_envelope`` and ``test_adequacy`` absent from the table, so
+    three verification gates are already miscategorised here (#315).
+    That predates #294 and correcting it changes recorded
+    categorisation, so it is not that change's to make.
+
+    ``tests/test_check_name_enrolment.py`` is the mechanism: it
+    AST-walks ``kstrl/`` for every constructed check name and fails on
+    one this table does not carry, with those three grandfathered by
+    name so the gate could land without the behaviour change. A new
+    check cannot join them quietly.
+    """
     return _CATEGORY_BY_CHECK.get(check_name, "iteration")
 
 
@@ -1024,6 +1064,50 @@ class EvolutionJournal:
                             f"> Security reviewer repeatedly flags "
                             f"'{pattern.error_signature}'. Follow the secure "
                             f"pattern for this category from the start."
+                        ),
+                        source_patterns=[pattern.description],
+                    )
+                )
+
+            # #294: the one check here that no agent can act on. The
+            # generic branch below writes CLAUDE.md advice aimed at the
+            # ENGINEER, and a scope the harness could not establish at
+            # plan time is not something the engineer can take extra
+            # care about. Reaching this arm at all depends on
+            # _classify_check recognising the failure text, which is why
+            # that function matches the error prefix first.
+            elif pattern.check_name == SCOPE_UNREADABLE_CHECK:
+                proposals.append(
+                    HarnessProposal(
+                        id=proposal_id,
+                        title=(
+                            f"Repair the component scopes that would not "
+                            f"resolve ({pattern.frequency} runs)"
+                        ),
+                        description=(
+                            f"No trustworthy scope could be established for a "
+                            f"component in {pattern.frequency} runs, across "
+                            f"{', '.join(pattern.affected_components[:5])}. "
+                            f"The component is refused before its engineer "
+                            f"runs, because the snapshot is fixed for the life "
+                            f"of the run. No agent can clear it: the scope is "
+                            f"read from the main checkout, outside every "
+                            f"worktree."
+                        ),
+                        proposal_type="computational",
+                        target="repository",
+                        suggested_change=(
+                            "Two faults produce this, and the run's failure "
+                            "record says which. A pre-run PRD that would not "
+                            "read: check that every component's `prdPath` "
+                            "names a readable, parseable file in the main "
+                            "checkout, and that decompose is writing it. No "
+                            "plan-time scope resolved for the component at "
+                            "all: the PRD is fine and the manifest disagrees "
+                            "with the resolved run scope, which is a harness "
+                            "fault. A run-wide `--allowed-paths` fixes "
+                            "neither: scope resolution refuses before it "
+                            "reaches the flag."
                         ),
                         source_patterns=[pattern.description],
                     )

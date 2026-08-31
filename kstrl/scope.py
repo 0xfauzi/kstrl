@@ -24,7 +24,8 @@ the resulting :class:`ComponentScope` is what both guards read:
 - the in-loop guard, through ``factory._submit_args`` ->
   ``factory._run_component`` -> ``loop.run_loop``;
 - the Phase 1 gate, through ``pipeline.ComponentPipeline`` ->
-  ``verify.check_diff_scope``.
+  ``verify.check_diff_scope`` (or ``verify.check_scope_unreadable``, when
+  the snapshot is ``unresolved``).
 
 Neither re-reads a PRD to answer the scope question, so there is
 nothing for an agent to widen and nothing to compare. The snapshot is
@@ -114,8 +115,10 @@ class ComponentScope:
     origin: str = ""
     #: Set only for ``unresolved``. Refuses the component at
     #: ``factory._preflight_component_scope`` before any engineer call,
-    #: and reaches ``check_diff_scope`` as ``allowed_paths_error``,
-    #: which fails the check closed, if it ever gets past that.
+    #: and, if it ever gets past that, reaches Phase 1 as
+    #: ``allowed_paths_error``, where ``verify.check_scope_unreadable``
+    #: fails closed on it under its own name (#294) instead of under
+    #: ``diff_scope``, whose retry context reads as "narrow the diff".
     error: str | None = None
 
     @property
@@ -169,7 +172,7 @@ class ComponentScope:
         flag - R1.5's own principle, moved to plan time - and the
         component gets an ``unresolved`` snapshot that
         ``factory._preflight_component_scope`` refuses before any spend
-        and ``check_diff_scope`` fails closed on if it ever gets past
+        and ``check_scope_unreadable`` fails closed on if it ever gets past
         that.
 
         An earlier version of this docstring justified the opposite

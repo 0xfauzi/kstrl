@@ -1116,24 +1116,146 @@ def _diff_scope_details(
     ]
 
 
+#: The Phase 1 check name for "no trustworthy scope could be read".
+#:
+#: Deliberately NOT ``scope_source``, which is already taken in the same
+#: substrate: ``events.ComponentScopeResolved.scope_source`` is a
+#: payload FIELD naming which authority supplied a component's
+#: allowlist (component_prd / run_flag / unconstrained / unresolved).
+#: A check of that name reaches the same ``events.jsonl`` as a VALUE in
+#: ``VerificationResultEvent.checks``, so one token would carry two
+#: unrelated meanings for the dashboards that read that file.
+SCOPE_UNREADABLE_CHECK = "scope_unreadable"
+
+
+#: Opening words of the failure recorded when a component is refused for
+#: an unreadable scope. Load bearing twice over, so it is a constant
+#: rather than a literal: ``evolution._classify_check`` matches on it to
+#: recover the check name from a manifest written by an earlier process,
+#: and it is what an operator sees first in the inbox, the notification
+#: and ``comp.error``.
+SCOPE_UNREADABLE_ERROR_PREFIX = "Component scope could not be read; retrying cannot change it"
+
+
+def scope_unreadable_error(cause: str) -> str:
+    """The recorded error for an unreadable scope, carrying its cause.
+
+    ``pipeline.fail`` writes this to ``comp.error``, the
+    ``ComponentFailed`` event, ``notify.fire_first_failure`` and the
+    HALTED_RUN inbox item's detail. A fixed string left all four saying
+    only THAT the scope was unreadable, while the file to restore sat in
+    the check's details, where none of them look.
+    ``factory._preflight_component_scope`` names the file in its own
+    refusal; every refusal for this cause should read alike.
+    """
+    return f"{SCOPE_UNREADABLE_ERROR_PREFIX}. {cause}"
+
+
+#: Rendered in place of an empty ``allowed_paths_error``. A fail-closed
+#: check must not pass on an ambiguous sentinel (round 2), and it must
+#: not refuse while naming no cause either (round 1). It refuses, and
+#: says the cause is missing.
+NO_CAUSE_RECORDED = "(no cause recorded; the scope resolver supplied an empty error)"
+
+
+def check_scope_unreadable(allowed_paths_error: str) -> CheckResult:
+    """Report that no trustworthy scope could be established (R1.5, #294).
+
+    Fails CLOSED: no allowlist could be read, so no diff can be proven
+    in-scope, and silently skipping the guard is the hole R1.5 exists to
+    close. Distinct from ``allowed_paths=None`` reaching
+    ``check_diff_scope``, which means no scope was CONFIGURED -- a
+    legitimate pass.
+
+    Its own check, and not a branch of ``diff_scope``, because the two
+    name different faults and the name is what a reader acts on (#294).
+    ``diff_scope`` means "the diff touched files outside the allowlist",
+    so its retry context is read as "narrow the diff". Here there was no
+    allowlist to be outside of: it is resolved once at plan time from
+    the pre-run checkout (``scope.ComponentScope``), which is OUTSIDE
+    every worktree and fixed for the life of the run, so nothing the
+    engineer writes can move this verdict.
+
+    TWO producers, with different remedies, which is why the text points
+    at the ``Error:`` line rather than asserting a cause:
+
+    - ``ComponentScope.resolve`` could not read or parse the component's
+      pre-run PRD. Restore that file.
+    - ``RunScope.for_component`` had no snapshot for the component at
+      all and returned its fail-closed stand-in. The PRD is fine; the
+      manifest and the resolved run scope disagree about which
+      components exist, which is a harness fault.
+
+    An earlier version asserted the first cause unconditionally, so on
+    the second it sent an operator to inspect a file that reads
+    perfectly. That is round-1 finding 1 again: a remediation naming an
+    action that cannot fix the failure.
+
+    Neither remedy is ``--allowed-paths``. ``resolve`` returns
+    ``unresolved`` BEFORE it consults the run-wide flag, on the argument
+    that a scope nobody could read is not a scope that does not exist,
+    so a run restarted with the flag hits the identical refusal.
+
+    Carries an infrastructure ``Finding`` because this is the harness
+    failing to establish its own input, not a judgement about the
+    change. Without it a run that dies here leaves an empty finding
+    stream, and every consumer using ``len(findings) == 0`` as "ran
+    cleanly" reads a hard stop as clean.
+
+    Whether it runs at all is ``_scope_checks``'s decision, and it is
+    ungated there.
+    """
+    start = time.monotonic()
+    cause = allowed_paths_error or NO_CAUSE_RECORDED
+    return CheckResult(
+        name=SCOPE_UNREADABLE_CHECK,
+        passed=False,
+        message="Scope could not be read at plan time; failing closed",
+        details=[
+            f"Error: {cause}",
+            "The allowedPaths this component must be judged against "
+            "could not be established before the run started, so no "
+            "diff can be proven in-scope. This is NOT a diff violation, "
+            "and NOT something an engineer can fix from inside the "
+            "worktree: the scope is read from the pre-run checkout, "
+            "outside this worktree, and is fixed for the life of the "
+            "run, so neither narrowing nor widening the diff changes "
+            "this verdict.",
+            "The Error line above names which of two faults this is. A "
+            "pre-run PRD that would not read or parse: restore that "
+            "file in the main checkout and start a new run. No "
+            "plan-time scope resolved for this component at all: the "
+            "PRD is not the problem, the manifest and the run's "
+            "resolved scope disagree about which components exist, and "
+            "that is a harness fault to report rather than a file to "
+            "repair. A run-wide --allowed-paths fixes neither: scope "
+            "resolution refuses before it reaches the flag, so a re-run "
+            "with it set fails identically.",
+        ],
+        findings=[
+            Finding.infrastructure_error(
+                "verify",
+                f"component scope could not be established at plan time: {cause}",
+            )
+        ],
+        duration_seconds=time.monotonic() - start,
+    )
+
+
 def check_diff_scope(
     cwd: Path,
     base_branch: str,
     allowed_paths: list[str] | None = None,
-    allowed_paths_error: str | None = None,
+    *,
     harness_paths: list[str] | None = None,
 ) -> CheckResult:
     """Check that git diff is within expected scope.
 
-    ``allowed_paths_error`` marks a failure to establish a TRUSTWORTHY
-    scope at PLAN time (#269): the pre-run PRD carrying allowedPaths was
-    missing or unparseable and no run-wide ``--allowed-paths`` supplied
-    one. The check then fails CLOSED: the diff cannot be proven
-    in-scope, and silently skipping the guard is exactly the hole R1.5
-    closes. This is distinct from ``allowed_paths=None``, which means no
-    scope was configured -- a legitimate pass.
+    One question only: did the diff touch a file outside the allowlist?
+    The allowlist not being READABLE is a different fault with a
+    different audience, and it is ``check_scope_unreadable`` (#294).
 
-    It no longer carries PRD TAMPERING. That refusal moved to
+    It no longer carries PRD TAMPERING either. That refusal moved to
     ``check_prd_stories`` when the plan-time snapshot took the scope
     question away from the worktree PRD: the file can still be rewritten
     and the stories still have to be defended, but the scope this check
@@ -1147,28 +1269,18 @@ def check_diff_scope(
     the failure message still shows the operator what they authorised.
     They never create a scope where none was configured: with
     ``allowed_paths`` unset the check still passes unconditionally.
+
+    Keyword-only, because #294 deleted an ``allowed_paths_error``
+    parameter that sat in the 4th positional slot and this argument
+    would otherwise have inherited it. Measured on the intermediate
+    version: an unported caller passing the error string positionally
+    got ``passed=True`` / "No scope constraints" where it intended a
+    hard refusal, and with a non-empty ``allowed_paths`` the string
+    splatted character by character into the effective allowlist. A
+    silent fail-open is the one failure mode this check exists to
+    prevent.
     """
     start = time.monotonic()
-
-    if allowed_paths_error:
-        return CheckResult(
-            name="diff_scope",
-            passed=False,
-            message=(
-                "Scope configuration could not be trusted; failing closed "
-                "(scope-source error, not a diff violation)"
-            ),
-            details=[
-                f"Error: {allowed_paths_error}",
-                "The allowedPaths this diff must be judged against could "
-                "not be established before the run started, so the diff "
-                "cannot be proven in-scope. Restore a valid PRD file "
-                "carrying the allowedPaths this component should have, "
-                "or set --allowed-paths for the run; do not treat this "
-                "as permission to widen the diff.",
-            ],
-            duration_seconds=time.monotonic() - start,
-        )
 
     if not allowed_paths:
         return CheckResult(
@@ -1887,22 +1999,67 @@ def check_dead_code(
     )
 
 
-def _diff_scope_runs(config: VerifyConfig, allowed_paths_error: str | None) -> bool:
-    """Whether Phase 1 appends the ``diff_scope`` check at all.
+def _scope_checks(
+    cwd: Path,
+    base_branch: str,
+    *,
+    allowed_paths: list[str] | None,
+    allowed_paths_error: str | None,
+    harness_paths: list[str] | None,
+    compare: bool,
+) -> list[CheckResult]:
+    """The scope checks Phase 1 appends, at most one of two.
 
-    ``[verify] check_diff_scope`` turns off the scope COMPARISON. It
-    does NOT turn off the report that no trustworthy scope could be
-    established (#293 review): left gated on the toggle alone, that
-    signal was dropped entirely, and with a None authored list the
-    in-loop guard is inert too, so the component ran and merged with no
-    scope enforcement at all and nothing said. Same argument
-    ``check_prd_stories`` makes for carrying the tamper refusal rather
-    than leaving it on a check an operator can switch off.
+    An unreadable scope source and an out-of-scope diff are alternatives
+    rather than a check with a mode (#294), so the choice is made once,
+    here, instead of inside a check that would then be named for the
+    wrong one of them:
 
-    Costs no git call in that second case: ``check_diff_scope`` returns
-    on the error before it reads a diff.
+    - ``allowed_paths_error`` non-empty: ``scope_unreadable`` alone,
+      UNGATED. The comparison is not merely turned off, it is
+      unavailable - there is no trustworthy allowlist to compare
+      against - so running ``check_diff_scope`` too would report a PASS
+      ("no scope constraints") beside the refusal, which is the
+      fail-open reading of the same state. The error wins even when a
+      caller also supplies a list: a half-loaded state must not be
+      judged on paths that may be stale.
+
+      ``is not None``, not truthiness. Both review rounds hit this from
+      opposite sides and both were right about the defect: truthiness
+      lets an empty-string sentinel PASS a ``diff_scope`` that had no
+      allowlist to compare, which is a fail-open in the one check whose
+      job is to fail closed; ``is not None`` alone refused while naming
+      no cause, rendering the bare "Error: ". Neither problem requires
+      the other. This refuses on any non-None value and
+      ``check_scope_unreadable`` substitutes
+      :data:`NO_CAUSE_RECORDED` for the empty one, so an ambiguous
+      sentinel is never read as permission and the refusal always says
+      something. ``ComponentScope.resolve`` never produces "", but
+      ``run_mechanical_verification`` is a public entry point.
+    - otherwise ``diff_scope``, gated on ``compare``, which is
+      ``[verify] check_diff_scope`` and nothing else. The one flag
+      rather than the whole ``VerifyConfig``: this is the only field
+      the decision reads, and the two ``list[str] | None`` arguments
+      beside it are keyword-only so a transposition of the authored
+      allowlist and the harness carve-out cannot type-check clean.
+
+    Returns a list rather than taking the branch in
+    ``run_mechanical_verification``: that function is already over the
+    cyclomatic ratchet and is judged against its own previous value, so
+    an ``if``/``elif`` there is a refusal at commit time.
     """
-    return config.check_diff_scope or allowed_paths_error is not None
+    if allowed_paths_error is not None:
+        return [check_scope_unreadable(allowed_paths_error)]
+    if compare:
+        return [
+            check_diff_scope(
+                cwd,
+                base_branch,
+                allowed_paths,
+                harness_paths=harness_paths,
+            )
+        ]
+    return []
 
 
 def run_mechanical_verification(
@@ -1936,6 +2093,14 @@ def run_mechanical_verification(
     is also where ``allowed_paths`` comes from; ``ks sense`` leaves both
     None because it judges an operator's diff, not a factory
     component's.
+
+    ``allowed_paths_error`` (#269) is that snapshot reporting that it
+    could not read the component's scope at all. It replaces the
+    ``diff_scope`` comparison with ``scope_unreadable``, an ungated
+    fail-closed refusal named for its own cause (#294) - see
+    ``_scope_checks``. Any non-None value refuses, empty included. ``ks sense`` never sets it: it
+    has no plan-time snapshot, so its scope is whatever
+    ``--allowed-paths`` gave it.
 
     ``pre_run_prd_path`` (#269) is the copy of ``prd_path`` the run
     started with, forwarded to ``check_prd_stories``, which fails closed
@@ -1989,16 +2154,16 @@ def run_mechanical_verification(
         )
     )
 
-    if _diff_scope_runs(config, allowed_paths_error):
-        checks.append(
-            check_diff_scope(
-                worktree_path,
-                base_branch,
-                allowed_paths,
-                allowed_paths_error=allowed_paths_error,
-                harness_paths=harness_paths,
-            )
+    checks.extend(
+        _scope_checks(
+            worktree_path,
+            base_branch,
+            allowed_paths=allowed_paths,
+            allowed_paths_error=allowed_paths_error,
+            harness_paths=harness_paths,
+            compare=config.check_diff_scope,
         )
+    )
 
     if config.check_bad_patterns:
         checks.append(check_bad_patterns(worktree_path, base_branch))

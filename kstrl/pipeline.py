@@ -90,7 +90,12 @@ from kstrl.review import (
 from kstrl.sandbox import SandboxConfig
 from kstrl.scope import RunScope
 from kstrl.security import SecurityMode, SecurityResult
-from kstrl.verify import VerificationResult
+from kstrl.verify import (
+    SCOPE_UNREADABLE_CHECK,
+    CheckResult,
+    VerificationResult,
+    scope_unreadable_error,
+)
 
 if TYPE_CHECKING:
     from kstrl.config import KstrlConfig
@@ -342,6 +347,41 @@ class PipelineHooks:
     # to reintroduce the rebuild through this struct.
     measure_fact_utilization: Callable[..., dict[str, int]]
     cleanup_worktree: Callable[[str, Path, str], None]
+
+
+def _verify_routing(failing: list[CheckResult]) -> tuple[FailureAction, str]:
+    """How a failed Phase 1 transitions, and what the record says.
+
+    #294: a scope that could not be READ is a wall, not a gate. Every
+    other Phase 1 check measures the engineer's work, so a retry
+    re-measures something that changed. This one measures the HARNESS's
+    own input, resolved once at plan time from the pre-run checkout and
+    frozen for the life of the run (``scope.RunScope``), so attempt two
+    runs the identical prompt against the identical snapshot into the
+    identical refusal. ``FailureAction.FAIL`` is written for exactly
+    that: "a wall retrying can never fix... fail directly without
+    burning engineer iterations".
+
+    Reaching here at all means the component got past
+    ``factory``'s two pre-engineer refusals, which is the cheap place to
+    catch this and where the cost is actually saved. This is the
+    backstop for a caller that has neither.
+
+    Any other failing check alongside it still fails rather than
+    retries: a readable scope is a precondition for judging the rest, so
+    an unreadable one is decisive whatever else also failed. A check
+    that is NOT it retries exactly as before.
+
+    Its own function so ``_phase_verify`` spends no cognitive complexity
+    on the choice: that method is already over the repo's gate and is
+    judged against its own previous value, so ternaries inline there are
+    a refusal at commit time.
+    """
+    for check in failing:
+        if check.name == SCOPE_UNREADABLE_CHECK:
+            cause = check.details[0] if check.details else check.message
+            return FailureAction.FAIL, scope_unreadable_error(cause)
+    return FailureAction.RETRY_OR_FAIL, "Mechanical verification failed"
 
 
 class ComponentPipeline:
@@ -2544,12 +2584,13 @@ class ComponentPipeline:
             # journal instead of the flattened string.
             from kstrl.evolution import signatures_from_verification
 
+            action, error = _verify_routing(failing)
             return VerifyPhaseResult(
                 ran=True,
                 verification=verification,
                 failure=PhaseFailure(
-                    action=FailureAction.RETRY_OR_FAIL,
-                    error="Mechanical verification failed",
+                    action=action,
+                    error=error,
                     phase="verify",
                     check=", ".join(c.name for c in failing),
                     context_json=ctx.to_json(),
