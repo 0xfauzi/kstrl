@@ -864,6 +864,20 @@ class V1CompatSink:
     by construction: the progress.jsonl line format, and the R7.4
     ``ProgressSink`` observers attached to the log (e.g. Linear).
     v2-only events are dropped silently - that is the point.
+
+    KNOWN LIMITATION, v1 has no room for it (#288 review round 2).
+    ``VerificationResultEvent`` gained ``phase`` and ``advisory``; the
+    v1 ``ProgressLog.verification_result`` signature has neither, and
+    widening it would change the progress.jsonl line format this sink
+    exists to hold still. So a v1 reader sees an ADVISORY report and a
+    GATE verdict as the same row: ``summarize_events`` cannot tell them
+    apart, and ``_phase_for_event`` reports the component in phase
+    "verify", a phase `ks feature` does not have.
+
+    Nothing is wrong today, because `ks feature` is the only command
+    that emits advisory reports and it attaches no ``V1CompatSink``. The
+    moment a command does both, forward both fields, which means a v2
+    progress-log format rather than an edit here.
     """
 
     def __init__(self, progress_log: ProgressLog) -> None:

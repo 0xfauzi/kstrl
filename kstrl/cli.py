@@ -1628,6 +1628,11 @@ def _understand_core(
     help="Use ASCII characters only",
 )
 @click.option(
+    "--no-verify",
+    is_flag=True,
+    help="Skip the advisory verification reports (raw loops, no post-checks)",
+)
+@click.option(
     "--tui/--no-tui",
     "tui",
     default=None,
@@ -1653,6 +1658,7 @@ def feature(
     ui: str,
     no_color: bool,
     ascii: bool,
+    no_verify: bool,
     tui: bool | None,
 ) -> None:
     """Run feature understanding, then implementation.
@@ -1841,6 +1847,7 @@ def feature(
         understand_prompt_file=understand_prompt_file,
         prompt_file=engineer_prompt_file,
         implementation_auto_run=implementation_auto_run,
+        no_verify=no_verify,
         repair_max_runs=repair_max_runs,
         repair_iterations=repair_iterations,
         repair_agent_cmd=repair_agent_cmd,

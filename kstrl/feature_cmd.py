@@ -66,7 +66,11 @@ from kstrl.events import (
     RunPlan,
     RunStarted,
 )
-from kstrl.feature_verify import report_verification, resolve_feature_verify_config
+from kstrl.feature_verify import (
+    baseline_skip_reason,
+    report_verification,
+    resolve_feature_verify_config,
+)
 from kstrl.interaction import (
     InteractionChannel,
     PromptKind,
@@ -109,6 +113,16 @@ class FeatureParams:
     #: only by luck; nothing failed when they diverged.
     prompt_file: Path
     implementation_auto_run: bool
+    #: ``--no-verify``. False runs the #288 advisory reports; True runs
+    #: none of them and threads no ``verify_config`` into any loop, so
+    #: the engineer prompt loses the VERIFY_COMMANDS_PROMPT block too.
+    #: `ks run` and `ks factory` have always offered this; `ks feature`
+    #: did not, and #288 gave it an unconditional ``2 + repair_max_runs``
+    #: full test-suite runs with no way to decline (review round 2).
+    #: Setting ``[verify] test_command`` to a no-op is not the same
+    #: escape: the SAME config feeds the engineer's prompt, so that
+    #: workaround lies to the agent about what will be run on its work.
+    no_verify: bool
     repair_max_runs: int
     repair_iterations: int
     repair_agent_cmd: str | None
@@ -277,7 +291,7 @@ def run_feature(
     # understand loop is deliberately left on the default None: no gate
     # runs on an understand file, so #261's rule that None states nothing
     # is still the correct and truthful value there.
-    verify_config = resolve_feature_verify_config(root_dir)
+    verify_config = resolve_feature_verify_config(root_dir, no_verify=params.no_verify)
 
     emit(PhaseStarted(component=component, phase="understand", attempt=1))
     phase_start = time.monotonic()
@@ -424,7 +438,14 @@ def run_feature(
     # all test suite, against 317-348s for the engineer loop it precedes.
     # It also front-loads the answer - an operator learns their tree is
     # already broken before paying for an agent, rather than after.
-    already_failing = report_verification(
+    #
+    # ``baseline_skip_reason`` is the third of the three ways the two
+    # sides of the comparison could stop being the same measurement, and
+    # the only one that cannot be fixed by resolving something once:
+    # ``run_loop`` checks out the PRD's branch AFTER this point, so on a
+    # PRD naming an existing branch that is not the current one, this
+    # would measure a tree the loop never sees. It refuses there.
+    baseline_failing = report_verification(
         ui,
         emit,
         component,
@@ -432,6 +453,7 @@ def run_feature(
         verify_config,
         "baseline",
         stop_check=stop_check,
+        skip_reason=baseline_skip_reason(run_config, root_dir),
     )
 
     emit(PhaseStarted(component=component, phase="implement", attempt=1))
@@ -469,7 +491,13 @@ def run_feature(
     # engineer loop's own and stays comparable to a pre-#288 run. The
     # report carries its own duration on its event.
     phase_duration = round(time.monotonic() - phase_start, 2)
-    already_failing = report_verification(
+    # The return is DISCARDED here and at every repair report. Only the
+    # baseline's failing set may be carried, because "already failing
+    # before the implement loop" is a claim about the tree as it was
+    # before the loop and about nothing else. Re-assigning it made every
+    # repair report excuse the failure the implement loop had just caused
+    # (#288 review round 2).
+    report_verification(
         ui,
         emit,
         component,
@@ -478,7 +506,7 @@ def run_feature(
         "implement",
         loop_result=result,
         stop_check=stop_check,
-        already_failing=already_failing,
+        baseline_failing=baseline_failing,
     )
     implementation_completed = result.completed and result.exit_code == 0
     implementation_detail = phase_detail(
@@ -585,7 +613,7 @@ def run_feature(
             fail(detail)
             raise
         phase_duration = round(time.monotonic() - phase_start, 2)
-        already_failing = report_verification(
+        report_verification(
             ui,
             emit,
             component,
@@ -594,7 +622,7 @@ def run_feature(
             f"repair-{attempt}",
             loop_result=repair_result,
             stop_check=stop_check,
-            already_failing=already_failing,
+            baseline_failing=baseline_failing,
         )
         repair_completed = repair_result.completed and repair_result.exit_code == 0
         repair_detail = phase_detail(

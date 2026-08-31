@@ -803,7 +803,17 @@ def _default_typecheck_command(cwd: Path) -> str:
         try:
             with pyproject.open("rb") as fh:
                 data = tomllib.load(fh)
-        except (tomllib.TOMLDecodeError, OSError):
+        except (ValueError, OSError):
+            # ``ValueError`` rather than ``TOMLDecodeError``, which it
+            # subclasses. ``tomllib.load`` decodes the stream as utf-8
+            # itself, so a pyproject.toml carrying one non-utf-8 byte -
+            # a latin-1 name, a stray 0x80 - raises UnicodeDecodeError,
+            # which IS a ValueError and escaped this fail-closed except
+            # entirely (#288 review round 2). It reached an ADVISORY
+            # verification report through resolve_verify_commands and
+            # took `ks feature` down before the agent had run. This is
+            # the encoding rule CLAUDE.md states: a reader of any file
+            # must catch ValueError alongside OSError.
             return DEFAULT_TYPECHECK_COMMAND
         mypy_section = data.get("tool", {}).get("mypy", {})
         if isinstance(mypy_section, dict):
@@ -859,6 +869,37 @@ class ResolvedVerifyCommands:
             typecheck=self.typecheck,
             lint=self.lint,
         )
+
+
+def pin_verify_commands(config: VerifyConfig, cwd: Path) -> VerifyConfig:
+    """A copy of ``config`` whose three command fields are already resolved.
+
+    Resolution is not a pure function of the config: ``resolve_typecheck_command``
+    falls back to ``_default_typecheck_command(cwd)``, which re-reads
+    ``cwd/pyproject.toml`` and answers ``uv run mypy`` when
+    ``[tool.mypy] files`` or ``packages`` is present and ``uv run mypy .``
+    when it is not. Adding a mypy scope is an ordinary engineer story, so
+    a caller that resolves more than once during a run can get two
+    different commands from one config (#288 review round 2).
+
+    Pinning is what makes every later resolution the identity: once the
+    fields are non-None, ``resolve_*_command`` returns them unchanged. So
+    the report's announcement, the command that actually runs, and the
+    ``VERIFY_COMMANDS_PROMPT`` block ``build_project_context`` renders
+    for the engineer are provably one string per command for the whole
+    run, rather than three independent reads that agree by luck.
+
+    Do NOT use this on the factory's per-component path without thinking:
+    there each component has its own worktree, and the right pyproject to
+    resolve against is that worktree's, not the caller's ``cwd``.
+    """
+    resolved = resolve_verify_commands(config, cwd)
+    return replace(
+        config,
+        test_command=resolved.test,
+        typecheck_command=resolved.typecheck,
+        lint_command=resolved.lint,
+    )
 
 
 def resolve_verify_commands(config: VerifyConfig, cwd: Path) -> ResolvedVerifyCommands:
@@ -2172,8 +2213,61 @@ def self_critique_progress_path(
     return None
 
 
+def run_undiffed_verification(
+    worktree_path: Path,
+    config: VerifyConfig,
+) -> VerificationResult:
+    """Mechanical verification over a tree with no base to diff against.
+
+    The ONLY safe entry point for that case, and it is a function rather
+    than a documented convention because :func:`narrow_to_undiffed`
+    cannot deliver the guarantee its name promises (#288 review round
+    2). Its ``replace`` reaches four of the six
+    :data:`DIFF_DEPENDENT_CHECKS`; ``policy_envelope`` and
+    ``test_adequacy`` are gated by ``policy_config`` and
+    ``adequacy_config``, which are separate ARGUMENTS to
+    :func:`run_mechanical_verification`, and ``allowed_paths_error``
+    outranks the ``check_diff_scope`` toggle entirely because
+    :func:`_scope_checks` reads it first and appends the ungated
+    ``scope_unreadable`` on any non-None value. So a second caller
+    writing ``config=narrow_to_undiffed(cfg), policy_config=pc`` gets
+    ``policy_envelope`` reporting a PASS over an empty diff: the exact
+    defect the narrowing is named for, reintroduced by an argument the
+    narrowing cannot see.
+
+    This owns all of them. There is no parameter here for anything that
+    consumes a diff, so the four suppressed by config and the three
+    suppressed by argument are suppressed the same way: by not being
+    reachable. ``read_only=True`` for the same reason ``ks sense`` uses
+    it (R10.1) - the two checks that would rewrite the tree they measure
+    are forbidden.
+
+    ``base_branch=""`` is the honest value for "there is no base here"
+    and is never read, because nothing left running consumes one.
+    ``prd_path=None`` skips the PRD-derived checks: ``prd_stories``
+    re-reads a flag the agent itself set, which is a self-report rather
+    than an independent measurement.
+
+    The structural version of this - one object owning every argument
+    that decides whether a check can honestly run - is tracked on #305.
+    """
+    return run_mechanical_verification(
+        worktree_path=worktree_path,
+        prd_path=None,
+        base_branch="",
+        allowed_paths=None,
+        allowed_paths_error=None,
+        config=narrow_to_undiffed(config),
+        read_only=True,
+    )
+
+
 def narrow_to_undiffed(config: VerifyConfig) -> VerifyConfig:
     """``config`` with every :data:`DIFF_DEPENDENT_CHECKS` toggle off.
+
+    Prefer :func:`run_undiffed_verification`, which owns the arguments
+    this cannot reach. Exported on its own only because the announcement
+    side of a report needs the narrowed config to say what will run.
 
     For a caller whose tree has no base it can honestly diff against -
     `ks feature` (#288), where nothing commits for the agent and the

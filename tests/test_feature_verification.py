@@ -11,7 +11,10 @@ the code path that reaches it.
 from __future__ import annotations
 
 import dataclasses
+import inspect
 import json
+import subprocess
+import time
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -23,11 +26,14 @@ from kstrl.feature_cmd import FeatureParams, run_feature
 from kstrl.feature_verify import resolve_feature_verify_config
 from kstrl.loop import STOP_EXIT_CODE, LoopResult
 from kstrl.verify import (
+    DEFAULT_TYPECHECK_COMMAND,
     DIFF_DEPENDENT_CHECKS,
     CheckResult,
     VerificationResult,
     VerifyConfig,
+    _default_typecheck_command,
     run_mechanical_verification,
+    run_undiffed_verification,
 )
 from tests.test_feature_cmd import (
     NOOP_VERIFY_COMMAND,
@@ -144,16 +150,88 @@ def _uncapped(root: Path) -> list[CheckResult]:
     was built from still carries every line, so nothing is lost from the
     ``parsed`` payload the factory's repair loop reads.
     """
-    result = run_mechanical_verification(
-        worktree_path=root,
-        prd_path=None,
-        base_branch="",
-        allowed_paths_error=None,
-        allowed_paths=None,
-        config=resolve_feature_verify_config(root),
-        read_only=True,
-    )
+    result = run_undiffed_verification(root, resolve_feature_verify_config(root))
     return list(result.checks)
+
+
+#: Seconds a stubbed measurement blocks for, when a test needs the
+#: report's duration to be distinguishable from the stubbed loop's. Big
+#: enough to survive rounding to 2dp and scheduler jitter, small enough
+#: that two reports per driven run cost under a second.
+_SLOW = 0.25
+
+
+def _slow_verification() -> Any:
+    """``run_undiffed_verification`` that really takes ``_SLOW`` seconds."""
+
+    def slow(root: Path, config: VerifyConfig) -> VerificationResult:
+        time.sleep(_SLOW)
+        return run_undiffed_verification(root, config)
+
+    return slow
+
+
+def _phases(captured: list[ev.Event]) -> list[str]:
+    return [e.phase for e in _verifications(captured)]
+
+
+def _run_git(root: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+
+
+def _init_repo(root: Path) -> None:
+    """A real repository with one commit on ``main``.
+
+    Real git, because the question ``baseline_skip_reason`` asks is
+    whether a checkout would move the working tree, and that is a fact
+    about a repository rather than about a mock.
+    """
+    _run_git(root, "init", "-q", "-b", "main", ".")
+    _run_git(root, "config", "user.email", "test@example.com")
+    _run_git(root, "config", "user.name", "Test")
+    (root / "seed.txt").write_text("seed\n", encoding="utf-8")
+    _run_git(root, "add", "-A")
+    _run_git(root, "commit", "-q", "-m", "seed")
+
+
+def _run_config(params: FeatureParams) -> KstrlConfig:
+    """The KstrlConfig ``run_feature`` hands the implement loop, as far as
+    the branch decision is concerned."""
+    config = KstrlConfig()
+    config.prd_file = params.prd_path
+    if params.branch_override is not None:
+        config.kstrl_branch = params.branch_override
+        config.kstrl_branch_explicit = True
+    return config
+
+
+def _name_the_branch(params: FeatureParams, branch: str) -> FeatureParams:
+    """Point the PRD at ``branch``, on disk as well as in memory.
+
+    ``loop.determine_branch`` re-reads ``config.prd_file``; it never sees
+    ``params.prd_doc``. A test that set only the object would be testing
+    a branch decision nothing makes.
+    """
+    params.prd_doc.branch_name = branch
+    params.prd_path.write_text(
+        json.dumps(
+            {
+                "branchName": branch,
+                "userStories": [
+                    {
+                        "id": "US-0",
+                        "title": "story 0",
+                        "acceptanceCriteria": ["tests pass"],
+                        "priority": 1,
+                        "passes": False,
+                        "notes": "",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return params
 
 
 def _report(captured: list[ev.Event], phase: str) -> ev.VerificationResultEvent:
@@ -301,18 +379,25 @@ class TestOnlyHonestChecksRun:
         ``scope_unreadable``, which is ungated and fails closed by
         design.
 
-        Both halves are measured here, because the comment at the call
-        site is prose and no CI job reads prose. This flow has no
-        component scope and never had one, so a scope_unreadable row in
-        an advisory report would be a verdict invented rather than
-        measured.
+        Three halves, in the end. This flow has no component scope and
+        never had one, so a scope_unreadable row in an advisory report
+        would be a verdict invented rather than measured; the argument
+        really is live, so the refusal is load bearing rather than
+        incidental; and since round 2 the guarantee is STRUCTURAL rather
+        than conventional - ``run_undiffed_verification`` has no
+        parameter for it, so no caller can supply one by mistake.
         """
         _write_kstrl_toml(tmp_path)
         _, captured, _ = _drive(tmp_path)
         assert "scope_unreadable" not in set(_report(captured, "implement").checks)
 
-        # The other half: the argument really is live, so the call site
-        # leaving it None is load bearing rather than incidental.
+        # Structural: the safe entry point owns every argument that could
+        # turn a diff-consuming check back on, so none of them is a
+        # parameter a caller could pass.
+        params = set(inspect.signature(run_undiffed_verification).parameters)
+        assert params == {"worktree_path", "config"}, params
+
+        # And the argument it refuses to expose really would refuse.
         config = resolve_feature_verify_config(tmp_path)
         with_error = run_mechanical_verification(
             worktree_path=tmp_path,
@@ -374,86 +459,6 @@ class TestOnlyHonestChecksRun:
         assert config.test_command == commands["test"]
         assert config.typecheck_command == commands["typecheck"]
         assert config.lint_command == commands["lint"]
-
-
-class TestBaselineAttribution:
-    """#288 review finding 5: the report measures the whole checkout, so
-    without a before-picture pre-existing breakage reads as the agent's.
-    """
-
-    def test_a_baseline_runs_before_the_implement_loop(self, tmp_path: Path) -> None:
-        _write_kstrl_toml(tmp_path)
-        _, captured, text = _drive(tmp_path)
-
-        baseline = _report(captured, "baseline")
-        implement = _report(captured, "implement")
-        assert baseline.seq < implement.seq
-        # Before the loop, not merely before the report of it.
-        started = next(
-            e for e in captured if isinstance(e, ev.PhaseStarted) and e.phase == "implement"
-        )
-        assert baseline.seq < started.seq
-        assert "Verification report (baseline)" in text
-
-    def test_pre_existing_breakage_is_named_as_pre_existing(self, tmp_path: Path) -> None:
-        """The whole point. Lint was already red before the agent ran, so
-        the implement verdict must not read as the agent breaking it."""
-        _write_kstrl_toml(tmp_path, failing="lint")
-        _, captured, text = _drive(tmp_path)
-
-        assert _report(captured, "baseline").failures == ("Linter failed (exit code 1)",)
-        assert "already failing before the implement loop: linter" in text
-
-    def test_a_failure_the_baseline_did_not_have_is_not_excused(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """The other half: a check that was green at baseline and red
-        afterwards must NOT be labelled pre-existing.
-
-        The lint command is fixed for the whole run (resolved once), and
-        it fails only if a marker file exists. The stubbed implement loop
-        creates that file, which is what an agent breaking lint looks
-        like to this flow.
-        """
-        root = tmp_path
-        root.mkdir(parents=True, exist_ok=True)
-        broken = "the-agent-broke-lint"
-        lint = f"if [ -f {broken} ]; then echo '{SABOTAGE_LINE}'; exit 1; fi"
-        (root / "kstrl.toml").write_text(
-            "[verify]\n"
-            f"test_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n"
-            f"typecheck_command = {json.dumps(NOOP_VERIFY_COMMAND)}\n"
-            f"lint_command = {json.dumps(lint)}\n",
-            encoding="utf-8",
-        )
-        calls: list[int] = []
-
-        def fake(config: Any, ui: Any, agent: Any, *args: Any, **kwargs: Any) -> LoopResult:
-            calls.append(1)
-            if len(calls) == 2:  # the implement loop
-                (root / broken).write_text("", encoding="utf-8")
-            return LoopResult(completed=True, iterations=1, exit_code=0)
-
-        _, captured, text = _drive(tmp_path, loop=fake)
-
-        assert _report(captured, "baseline").passed is True
-        assert _report(captured, "implement").failures == ("Linter failed (exit code 1)",)
-        assert "already failing before the implement loop" not in text
-
-    def test_the_baseline_is_machine_readable_without_the_terminal(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Under --implementation-auto-run the event stream is the report,
-        so the attribution has to be derivable from it alone."""
-        _write_kstrl_toml(tmp_path, failing="lint")
-        _, captured, _ = _drive(tmp_path)
-
-        pre_existing = set(_report(captured, "baseline").failures) & set(
-            _report(captured, "implement").failures
-        )
-        assert pre_existing == {"Linter failed (exit code 1)"}
 
 
 class TestExitPathRule:
@@ -572,10 +577,10 @@ class TestTheReportCannotKillTheRun:
         propagate out of an advisory report and truncate the run record."""
         _write_kstrl_toml(tmp_path)
 
-        def boom(**kwargs: Any) -> VerificationResult:
+        def boom(*args: Any, **kwargs: Any) -> VerificationResult:
             raise OSError(24, "Too many open files")
 
-        with patch("kstrl.feature_verify.run_mechanical_verification", boom):
+        with patch("kstrl.feature_verify.run_undiffed_verification", boom):
             code, captured, text = _drive(tmp_path)
 
         assert code == 0
@@ -588,16 +593,58 @@ class TestTheReportCannotKillTheRun:
         assert report.checks == ()
         assert report.failures == ("OSError: [Errno 24] Too many open files",)
 
+    def test_resolving_the_commands_cannot_kill_the_run_either(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#288 review round 2 finding 2: round 1's wrapper started one
+        statement too low.
+
+        ``resolve_verify_commands``, ``self_critique_progress_path`` and
+        the announcement all ran OUTSIDE the try, and the first of those
+        does file I/O: it reaches ``_default_typecheck_command``, which
+        opens and parses pyproject.toml. Anything it raises escaped an
+        ADVISORY report and took the command down at the BASELINE, before
+        the agent had run.
+        """
+        _write_kstrl_toml(tmp_path)
+
+        def boom(*args: Any, **kwargs: Any) -> Any:
+            raise UnicodeDecodeError("utf-8", b"\x80", 0, 1, "invalid start byte")
+
+        with patch("kstrl.feature_verify.resolve_verify_commands", boom):
+            code, captured, text = _drive(tmp_path)
+
+        assert code == 0
+        assert "verification: could not run" in text
+        for phase in ("baseline", "implement"):
+            report = _report(captured, phase)
+            assert report.passed is False
+            assert report.checks == ()
+        assert any(isinstance(e, ev.RunCompleted) for e in captured)
+
+    def test_a_pyproject_that_is_not_utf_8_does_not_raise(self, tmp_path: Path) -> None:
+        """The concrete producer, at the site that let it through.
+
+        ``tomllib.load`` decodes as utf-8 itself, so one stray byte
+        raises UnicodeDecodeError, which IS a ValueError and so walked
+        straight past ``except (TOMLDecodeError, OSError)``. This is the
+        rule CLAUDE.md states: catch ValueError alongside OSError.
+        """
+        (tmp_path / "pyproject.toml").write_bytes(b'[project]\nname = "d\x80emo"\nversion = "0"\n')
+        # Would have raised UnicodeDecodeError before the widening.
+        assert _default_typecheck_command(tmp_path) == DEFAULT_TYPECHECK_COMMAND
+
     def test_the_run_record_is_still_complete(self, tmp_path: Path) -> None:
         """The failure mode: events.jsonl ending at phase_started with no
         phase_completed and no run_completed, which a dashboard reads as a
         component running forever."""
         _write_kstrl_toml(tmp_path)
 
-        def boom(**kwargs: Any) -> VerificationResult:
+        def boom(*args: Any, **kwargs: Any) -> VerificationResult:
             raise OSError(24, "Too many open files")
 
-        with patch("kstrl.feature_verify.run_mechanical_verification", boom):
+        with patch("kstrl.feature_verify.run_undiffed_verification", boom):
             _, captured, _ = _drive(tmp_path)
 
         assert any(isinstance(e, ev.PhaseCompleted) and e.phase == "implement" for e in captured)
@@ -608,26 +655,34 @@ class TestTheReportCannotKillTheRun:
 class TestTheReportDoesNotDistortTheRunRecord:
     def test_the_phase_duration_excludes_the_report(self, tmp_path: Path) -> None:
         """The implement phase's duration is the engineer loop's own, so
-        it stays comparable to a pre-#288 run. Asserted structurally, not
-        against a wall-clock threshold: the report is emitted inside the
-        phase bracket, which is exactly the position that would have
-        folded its duration in, and the phase's own reported duration must
-        be no larger than the wall clock available before the report
-        started."""
+        it stays comparable to a pre-#288 run.
+
+        The previous version of this test asserted
+        ``implement.duration < report.duration + 1.0``, which held in
+        BOTH worlds and so measured nothing (#288 review round 2). The
+        fix is to give the report a duration the stubbed loop cannot
+        reach: a measurement that takes ``_SLOW`` seconds separates the
+        two worlds by that whole margin, because folding it into the
+        phase is precisely what the defect does.
+        """
         _write_kstrl_toml(tmp_path)
-        _, captured, _ = _drive(tmp_path)
+        with patch(
+            "kstrl.feature_verify.run_undiffed_verification",
+            _slow_verification(),
+        ):
+            _, captured, _ = _drive(tmp_path)
 
         implement = next(
             e for e in captured if isinstance(e, ev.PhaseCompleted) and e.phase == "implement"
         )
         report = _report(captured, "implement")
         assert report.seq < implement.seq
-        # The report's own measurement is not inside the phase's figure.
-        # Both are wall clocks, so this is an ordering claim, not an
-        # equality one: an implement duration that included the report
-        # would be at least as large as the report's own duration, and
-        # the stubbed loop does no work at all.
-        assert implement.duration_seconds < report.duration_seconds + 1.0
+        # The report really was slow, so the margin exists to be missed.
+        assert report.duration_seconds >= _SLOW, report.duration_seconds
+        # And the phase did not pay for it. The stubbed loop returns
+        # immediately, so anything at or above _SLOW here is the report's
+        # own time folded in.
+        assert implement.duration_seconds < _SLOW, implement.duration_seconds
 
     def test_the_announced_command_is_the_command_that_ran(self, tmp_path: Path) -> None:
         """#288 review finding 9: the announcement and the run must not
@@ -724,31 +779,3 @@ class TestTheReportDoesNotDistortTheRunRecord:
         assert "more line(s) not shown" in text
         assert "mod_10.py:10 [F401]" not in text
         assert _report(captured, "implement").failures == ("Linter failed (exit code 1)",)
-
-
-class TestVerifyConfigThreading:
-    def test_understand_states_nothing_and_the_engineer_loops_state_the_gate(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """#261 is preserved, not reversed: None still means "no gate
-        runs", and it is still true for the understand loop, because no
-        gate runs on an understand file."""
-        commands = _write_kstrl_toml(tmp_path)
-        seen: list[VerifyConfig | None] = []
-
-        def fake(config: Any, ui: Any, agent: Any, *args: Any, **kwargs: Any) -> LoopResult:
-            seen.append(kwargs.get("verify_config"))
-            code = 0 if len(seen) != 2 else 1
-            return LoopResult(completed=code == 0, iterations=1, exit_code=code)
-
-        params = _feature_params(tmp_path, repair_max_runs=1)
-        _drive(tmp_path, params=params, loop=fake)
-
-        assert len(seen) == 3  # understand, implement, repair-1
-        assert seen[0] is None
-        assert seen[1] is not None
-        assert seen[1].lint_command == commands["lint"]
-        # ONE object, so the commands the engineer is told about cannot
-        # drift from the commands the report runs.
-        assert seen[2] is seen[1]

@@ -88,6 +88,7 @@ def _params(
     stories: int = 1,
     repair_max_runs: int = 0,
     implementation_auto_run: bool = False,
+    no_verify: bool = False,
 ) -> FeatureParams:
     feature_dir = tmp_path / "scripts" / "kstrl" / "feature" / "demo"
     feature_dir.mkdir(parents=True, exist_ok=True)
@@ -121,6 +122,7 @@ def _params(
         understand_prompt_file=None,
         prompt_file=tmp_path / "scripts" / "kstrl" / "prompt.md",
         implementation_auto_run=implementation_auto_run,
+        no_verify=no_verify,
         repair_max_runs=repair_max_runs,
         repair_iterations=2,
         repair_agent_cmd=None,

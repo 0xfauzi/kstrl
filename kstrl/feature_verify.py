@@ -22,25 +22,42 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kstrl import git
 from kstrl.events import Event, VerificationResultEvent
-from kstrl.loop import STOP_EXIT_CODE, LoopResult
+from kstrl.loop import STOP_EXIT_CODE, LoopResult, determine_branch
 from kstrl.verify import (
     DIFF_DEPENDENT_CHECKS,
     ResolvedVerifyCommands,
     VerificationResult,
     VerifyConfig,
     narrow_to_undiffed,
+    pin_verify_commands,
     resolve_verify_commands,
-    run_mechanical_verification,
+    run_undiffed_verification,
     self_critique_progress_path,
 )
 
 if TYPE_CHECKING:
+    from kstrl.config import KstrlConfig
     from kstrl.ui.base import UI
 
 
-def resolve_feature_verify_config(root_dir: Path) -> VerifyConfig:
+def resolve_feature_verify_config(
+    root_dir: Path,
+    *,
+    no_verify: bool = False,
+) -> VerifyConfig | None:
     """The project's ``[verify]`` config, narrowed to what it can measure here.
+
+    ``no_verify`` (``--no-verify``) returns None, which is the sentinel
+    `ks run` and `ks factory` already use and which #261 defines as "no
+    gate runs, so state nothing": the loops get no
+    VERIFY_COMMANDS_PROMPT block and the reports do not run. It is a
+    keyword here rather than a conditional at the call site because
+    ``run_feature`` is grandfathered at the cognitive ratchet, so a new
+    branch there is a refusal at commit time - and because there is one
+    right answer to "what config does this flow use", which belongs in
+    the one function that answers it.
 
     The narrowing is ``verify.narrow_to_undiffed``, which lives next to
     the checks it turns off and to ``verify.DIFF_DEPENDENT_CHECKS``, the
@@ -72,7 +89,62 @@ def resolve_feature_verify_config(root_dir: Path) -> VerifyConfig:
     ``feature``), so a ``kstrl.toml`` that would fail here has already
     stopped the command before this flow was entered.
     """
-    return narrow_to_undiffed(VerifyConfig.load(root_dir))
+    if no_verify:
+        return None
+    return narrow_to_undiffed(pin_verify_commands(VerifyConfig.load(root_dir), root_dir))
+
+
+def baseline_skip_reason(run_config: KstrlConfig, root_dir: Path) -> str | None:
+    """Why the pre-implement baseline must not run here, or None.
+
+    The baseline exists to say which failures were already present
+    BEFORE the engineer loop, and that claim is only sound if it
+    measured the tree the loop actually starts from. It does not always:
+    ``run_feature`` reports before it calls ``run_loop``, and ``run_loop``
+    checks out the PRD's ``branchName`` in its own preflight (#288 review
+    round 2). On a PRD naming an existing branch that is not the one
+    checked out now, ``git checkout <branch> --`` swaps the working
+    tree's content, so the baseline measured tree A and every later
+    report measures tree B - and subtracting one from the other both
+    hides failures the agent caused and invents ones it did not.
+
+    This is the same class as #288's own committed-versus-uncommitted
+    measurement: a comparison is worth nothing until both sides are
+    provably the same measurement.
+
+    Refuses rather than repairs. Doing the checkout here instead would
+    put a tree-mutating git call into a flow whose whole contract is that
+    it reports and changes nothing, and would narrate the branch twice.
+    So the rule is: run the baseline only where the loop's checkout
+    provably cannot move the tree.
+
+    - not a repo, ``auto_checkout`` off, or no branch resolved: no
+      checkout happens at all.
+    - the branch does not exist yet: ``git checkout -b`` branches from
+      HEAD and the working tree is untouched.
+    - the branch exists and is the one already checked out: a no-op.
+
+    Anything else refuses, including a detached HEAD, where
+    ``current_branch`` returns None and no name can match.
+    """
+    if not git.is_git_repo(root_dir):
+        return None
+    if not run_config.auto_checkout:
+        return None
+    branch, _ = determine_branch(run_config)
+    if not branch:
+        return None
+    if not git.branch_exists(branch, root_dir):
+        return None
+    current = git.current_branch(root_dir)
+    if current == branch:
+        return None
+    return (
+        f"the implement loop will check out the existing branch {branch}, and this "
+        f"checkout is on {current or 'a detached HEAD'}. A measurement here would be "
+        "of a tree the loop never sees, so there is nothing it could honestly be "
+        "compared against."
+    )
 
 
 #: Detail lines printed per failing check. A failing gate's details are
@@ -88,9 +160,10 @@ def _announce_verification(
     ui: UI,
     commands: ResolvedVerifyCommands,
     progress_path: Path | None,
+    config: VerifyConfig,
     phase: str,
 ) -> None:
-    """Say what is about to run, BEFORE it runs.
+    """Say what is about to run, BEFORE it runs, and what will not.
 
     The gates capture their output, so the terminal is otherwise dead for
     as long as the project's test suite takes - measured on this repo at
@@ -102,8 +175,15 @@ def _announce_verification(
     and it is announced because it is a FOURTH check: an operator who set
     ``[verify] require_self_critique`` plus ``progress_file_path`` used to
     get a row in the table that this announcement never mentioned and the
-    runbook said could not run (#288 review). Announcing whatever that
-    one resolver returns is what keeps the two in step.
+    runbook said could not run (#288 review).
+
+    The harder half is the OPT-IN THAT DID NOT TAKE (round 2).
+    ``prd_path`` is always None on this path, so an operator who set
+    ``require_self_critique`` and NOT ``progress_file_path`` gets None
+    back: there is no PRD to derive a sibling progress log from, the
+    check silently does not run, and the report reads as a complete PASS
+    over three checks. A skip an operator explicitly asked against has to
+    be named, or the report is answering a question it never asked.
     """
     ui.section(f"Verification report ({phase})")
     ui.info(
@@ -115,16 +195,28 @@ def _announce_verification(
     ui.info(f"  running: {commands.lint}")
     if progress_path is not None:
         ui.info(f"  reading: {progress_path} (self_critique)")
+    elif config.require_self_critique:
+        ui.warn(
+            "  NOT running self_critique: [verify] require_self_critique is on but "
+            "progress_file_path is unset, and this report has no PRD to derive the "
+            "progress log from. Set [verify] progress_file_path to the same file as "
+            "[paths] progress."
+        )
 
 
 def _narrate_verification(
     ui: UI,
     result: VerificationResult,
-    already_failing: frozenset[str],
+    baseline_failing: frozenset[str],
 ) -> None:
     """Print one line per check, then the verdict and its attribution.
 
-    ``already_failing`` is the pre-implement baseline's failing set. A
+    ``baseline_failing`` is the pre-implement baseline's failing set, and
+    ONLY ever that. It used to be re-assigned from each report's own
+    result, so a failure the implement loop caused was labelled "already
+    failing before the implement loop" by the repair report that followed
+    it: the feature telling the operator to ignore the one failure the
+    agent actually caused (#288 review round 2). A
     verdict here is about the WHOLE checkout, not about the diff, so
     without it a checkout whose lint was already red before the agent
     started reads as the agent having broken lint. Naming the overlap is
@@ -139,7 +231,7 @@ def _narrate_verification(
         ui.ok(f"verification: PASS ({len(result.checks)} checks)")
     else:
         ui.warn(f"verification: FAIL ({len(failed)} of {len(result.checks)} checks failed)")
-    pre_existing = sorted(failed & already_failing)
+    pre_existing = sorted(failed & baseline_failing)
     if pre_existing:
         ui.warn(
             f"  already failing before the implement loop: {', '.join(pre_existing)}. "
@@ -152,19 +244,25 @@ def report_verification(
     emit: Callable[[Event], None],
     component: str,
     root_dir: Path,
-    verify_config: VerifyConfig,
+    verify_config: VerifyConfig | None,
     phase: str,
     *,
     loop_result: LoopResult | None = None,
     stop_check: Callable[[], bool] | None = None,
-    already_failing: frozenset[str] = frozenset(),
+    skip_reason: str | None = None,
+    baseline_failing: frozenset[str] = frozenset(),
 ) -> frozenset[str]:
     """Run the read-only mechanical checks and REPORT what they found.
 
-    Returns the set of check names that FAILED, which the caller carries
-    forward as the next report's ``already_failing``. A report that did
-    not run returns ``already_failing`` unchanged, so the chain never
-    loses the baseline.
+    Returns the set of check names that FAILED. ONLY the BASELINE call's
+    return may be kept: it is the before-picture every later report is
+    attributed against, and the later reports' returns must be discarded.
+    Re-assigning it was #288 review round 2's first finding, and it
+    inverted the feature - the repair report labelled the failure the
+    implement loop had just caused as "already failing before the
+    implement loop". A report that did not run returns
+    ``baseline_failing`` unchanged, so a skipped or stopped report never
+    silently empties the chain.
 
     Report only. `ks feature` keeps its control flow and its exit codes:
     a failing check does not halt the flow, does not change what it
@@ -224,44 +322,45 @@ def report_verification(
     if loop_result is not None and (
         loop_result.iterations == 0 or loop_result.exit_code == STOP_EXIT_CODE
     ):
-        return already_failing
+        return baseline_failing
     if stop_check is not None and stop_check():
-        return already_failing
+        return baseline_failing
+    if verify_config is None:
+        # ``--no-verify``, the same sentinel `ks run` and `ks factory`
+        # already use. One line rather than a section: the operator asked
+        # for this, and the engineer prompt is losing its
+        # VERIFY_COMMANDS_PROMPT block for the same reason, which is the
+        # consequence worth naming once per report rather than not at all.
+        ui.info(f"Verification report ({phase}) skipped: --no-verify")
+        return baseline_failing
+    if skip_reason is not None:
+        # Said out loud, never silently. No VerificationResultEvent: the
+        # skip measured nothing and did not fail, and the two shapes this
+        # function does emit both mean something ran or tried to. A
+        # consumer reading events.jsonl sees no row for this phase, which
+        # is the correct "there is no baseline to subtract".
+        ui.warn(f"Verification report ({phase}) skipped: {skip_reason}")
+        return baseline_failing
 
-    commands = resolve_verify_commands(verify_config, root_dir)
-    progress_path = self_critique_progress_path(verify_config, root_dir, None)
-    _announce_verification(ui, commands, progress_path, phase)
     started = time.monotonic()
     try:
-        result = run_mechanical_verification(
-            worktree_path=root_dir,
-            prd_path=None,
-            # Never read: ``narrow_to_undiffed`` turned off every check
-            # that consumes a diff, and the two it cannot reach are
-            # suppressed by not being passed at all. The empty string is
-            # the honest value for "there is no base here", and
-            # tests/test_feature_verification.py pins the set of checks
-            # this call can produce so a new one cannot quietly start
-            # resolving it into a phantom base.
-            base_branch="",
-            # Left None deliberately, and it matters more since #294
-            # rewrote how this argument is read. ``_scope_checks`` now
-            # consults it BEFORE the toggles, and ANY non-None value,
-            # the empty string included, appends
-            # ``scope_unreadable``, which is UNGATED and fails closed
-            # unconditionally. Measured on this branch: None gives
-            # [test_suite, typecheck, linter] and passed=True; "" gives
-            # the same three plus scope_unreadable=False and
-            # passed=False. In an advisory report over a checkout that
-            # has no component scope and never had one, that verdict
-            # would be invented rather than measured.
-            allowed_paths_error=None,
-            allowed_paths=None,
-            # policy and adequacy read the same diff. Omitted rather than
-            # disabled, because that is what their None defaults mean.
-            config=verify_config,
-            read_only=True,
-        )
+        # INSIDE the try, all of it. Resolution is not free of I/O:
+        # resolve_verify_commands reaches _default_typecheck_command,
+        # which opens and parses pyproject.toml, and a file with one
+        # non-utf-8 byte raised UnicodeDecodeError - a ValueError - past
+        # a fail-closed `except (TOMLDecodeError, OSError)` and out of an
+        # ADVISORY report, taking `ks feature` down at the BASELINE
+        # before the agent had run (#288 review round 2). That except is
+        # widened too, but the boundary is what makes the guarantee
+        # structural: nothing this function does to produce a report may
+        # escape it, not just the measurement.
+        commands = resolve_verify_commands(verify_config, root_dir)
+        progress_path = self_critique_progress_path(verify_config, root_dir, None)
+        _announce_verification(ui, commands, progress_path, verify_config, phase)
+        # Every argument that decides whether a check can honestly run is
+        # owned by this callee, so no diff-consuming check is reachable
+        # from here by construction rather than by convention.
+        result = run_undiffed_verification(root_dir, verify_config)
     except Exception as exc:  # noqa: BLE001 - an advisory report may not halt the flow
         detail = f"{type(exc).__name__}: {exc}"
         ui.err(f"verification: could not run ({detail})")
@@ -280,10 +379,10 @@ def report_verification(
                 advisory=True,
             )
         )
-        return already_failing
+        return baseline_failing
 
     duration = round(time.monotonic() - started, 2)
-    _narrate_verification(ui, result, already_failing)
+    _narrate_verification(ui, result, baseline_failing)
 
     # The same event type the factory's Phase 1 emits for a result of
     # this same function, so `events.jsonl` carries one shape for one

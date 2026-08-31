@@ -46,6 +46,7 @@ from kstrl.verify import (
     resolve_verify_commands,
     scrub_stale_verify_commands,
 )
+from tests.test_feature_cmd import _write_fast_verify_toml
 
 # The chained command from the repo that found this bug: a Python
 # backend plus a TypeScript frontend, which is the only way to gate a
@@ -157,26 +158,6 @@ def _feature_cli_args(root: Path, *, auto_run: bool = False) -> list[str]:
     return args
 
 
-def _write_noop_verify_toml(root: Path) -> None:
-    """Point [verify] at three commands that succeed without executing.
-
-    Shares its shape with tests.test_feature_cmd._write_fast_verify_toml;
-    both leave an existing kstrl.toml alone so a test can write its own.
-    The commands run through verify.run_scrubbed, which hands a string to
-    /bin/sh, so this costs one shell fork and no exec. POSIX-only, like
-    the rest of this suite.
-    """
-    config = root / "kstrl.toml"
-    if config.exists():
-        return
-    config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(
-        '[verify]\ntest_command = "exit 0"\n'
-        'typecheck_command = "exit 0"\nlint_command = "exit 0"\n',
-        encoding="utf-8",
-    )
-
-
 def _write_feature_prd(root: Path) -> None:
     feature_dir = root / "scripts" / "kstrl" / "feature" / "demo"
     feature_dir.mkdir(parents=True, exist_ok=True)
@@ -188,7 +169,7 @@ def _write_feature_prd(root: Path) -> None:
     # 0.32s for a CLI feature test against 0.01s for its siblings, with
     # "collected 0 items" in the captured output. On a cold runner each
     # command can block up to [verify] subprocess_timeout (300s).
-    _write_noop_verify_toml(root)
+    _write_fast_verify_toml(root)
     # ks feature refuses to start without one.
     (root / "scripts" / "kstrl" / "codebase_map.md").write_text("# map\n")
     (feature_dir / "prd.json").write_text(

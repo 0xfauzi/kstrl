@@ -640,7 +640,7 @@ def run_loop(
     elif not config.auto_checkout:
         ui.info("Branch: auto_checkout disabled; using current branch")
     else:
-        branch, source = _determine_branch(config)
+        branch, source = determine_branch(config)
         if branch:
             if not git.checkout_branch(branch, ui, cwd, source):
                 ui.err(f"Failed to checkout branch: {branch}")
@@ -938,13 +938,18 @@ def run_loop(
     )
 
 
-def _determine_branch(config: KstrlConfig) -> tuple[str | None, str | None]:
+def determine_branch(config: KstrlConfig) -> tuple[str | None, str | None]:
     """Determine which branch to use.
 
     Returns:
         Tuple of (branch_name, source) where:
         - branch_name: Branch to checkout, "" to skip, None if not configured
         - source: Source description (e.g. "from KSTRL_BRANCH", "from PRD")
+
+    Public since #288 review round 2: ``feature_verify.baseline_skip_reason``
+    has to know which branch this loop will check out BEFORE the loop
+    runs, and a second copy of the precedence rule is a second thing that
+    can disagree with the checkout that actually happens.
     """
     # If a branch is configured directly on the config, prefer it.
     # `kstrl_branch_explicit` is used to indicate whether it came from KSTRL_BRANCH/--branch.

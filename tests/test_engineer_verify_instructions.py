@@ -25,6 +25,7 @@ from typing import Any
 from unittest.mock import patch
 
 from kstrl.contract import ContractConfig
+from kstrl.feature_verify import resolve_feature_verify_config
 from kstrl.init_cmd import DEFAULT_KSTRL_TOML, DEFAULT_PROMPT
 from kstrl.loop import LoopResult
 from kstrl.policy import ENFORCEMENT_MACHINERY_PATHS
@@ -32,6 +33,7 @@ from kstrl.verify import (
     DEFAULT_TEST_COMMAND,
     VERIFY_COMMANDS_PROMPT,
     VerifyConfig,
+    resolve_verify_commands,
 )
 from tests.test_verify_command_contract import (
     _block_is_injected,
@@ -194,24 +196,43 @@ class TestStepNineWhenNoBlockIsInjected:
         assert seen[0] is None
         assert seen[1] is not None
 
-    def test_ks_feature_gives_the_understand_loop_this_body_and_the_floor(
+    def test_ks_feature_splits_the_two_prompts_end_to_end(
         self,
         tmp_path: Path,
     ) -> None:
-        """End to end through the real CLI.
+        """End to end through the real CLI, on BOTH prompts.
+
+        The previous version took ``[0]`` only and pointed at a sibling
+        for the implement half. That sibling calls ``_engineer_prompt``
+        directly and never goes through `ks feature`, so nothing asserted
+        that the prompt the implement loop actually receives carries the
+        block: a wiring regression would have been caught only by an
+        ``is not None`` on a kwarg (#288 review round 2 finding 10). That
+        wiring is the half of #288 which is not the report.
 
         ``--implementation-auto-run`` is load-bearing: without it the
         command halts at the interactive review checkpoint and only the
-        understand prompt is ever built. Prompt 0 is that understand
-        loop, and it is the one that still lands on this branch. The
-        implement prompt is the sibling assertion in
-        ``TestStepNineDefersToTheInjectedBlock``.
+        understand prompt is ever built.
         """
         _write_feature_prd(tmp_path)
-        understand = _prompts_from_cli(_feature_cli_args(tmp_path, auto_run=True))[0]
+        prompts = _prompts_from_cli(_feature_cli_args(tmp_path, auto_run=True))
+        assert len(prompts) == 2, len(prompts)
+        understand, implement = prompts
+
+        # The understand loop gates nothing, so it states nothing and
+        # gets the floor instead (#261).
         assert _step_nine(DEFAULT_PROMPT) in understand
         assert not _block_is_injected(understand)
         assert "run the project's own typecheck and tests yourself" in _unwrapped(understand)
+
+        # The implement loop gets the block, carrying the RESOLVED
+        # commands the report will then run: the same three strings, from
+        # the same pinned config, so the prompt cannot name one command
+        # while another produces the verdict.
+        assert _block_is_injected(implement)
+        commands = resolve_verify_commands(resolve_feature_verify_config(tmp_path), tmp_path)
+        for command in (commands.test, commands.typecheck, commands.lint):
+            assert command in implement, command
 
     def test_ks_understand_renders_this_body_and_gets_no_block(self, tmp_path: Path) -> None:
         """The other, narrower way in: no understand_prompt.md was
