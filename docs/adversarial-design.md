@@ -221,13 +221,18 @@ H1 of the hardening roadmap: the assistant does not run `/code-review` on its ow
 
 H2: when an adversarial prompt changes, calibration is re-run. A prompt edit without a calibration delta is treated as untested.
 
-H3: every adversarial prompt has a `*_PROMPT_VERSION` semver constant next to its body and a `(hash, version)` snapshot in `tests/test_prompt_versions.py::_EXPECTED_SNAPSHOTS`. The joint snapshot catches three drift modes:
+H3: every adversarial prompt has a `*_PROMPT_VERSION` semver constant next to its body and a `(hash, version)` snapshot in `tests/test_prompt_versions.py::_EXPECTED_SNAPSHOTS`. The enrolled set is `_PROMPTS` in that file, eight as of #299 (`DECOMPOSE_PROMPT`, `REVIEWER_PROMPT`, `SECURITY_PROMPT`, `DISTILL_PROMPT`, `VERIFY_COMMANDS_PROMPT`, `REPO_CHANGE_SOURCE_PROMPT`, `PASTED_CHANGE_SOURCE_PROMPT`, and `DEFAULT_PROMPT` for the engineer role). It is not only the LLM-driven role prompts: the engineer template (`init_cmd.DEFAULT_PROMPT`, scaffolded into per-project `scripts/kstrl/prompt.md`), the verification-commands block, and the two reviewer change-acquisition bodies are all enrolled on the same terms.
+
+The joint snapshot plus its companion tests catch six drift modes:
 
 1. **Prompt edit without snapshot bump**: hash differs from recorded hash, test fails.
 2. **Version constant change without snapshot bump**: live version differs from snapshot version, test fails.
-3. **New `*_PROMPT` added without enrollment**: `test_no_unenrolled_prompt_constants` AST-walks `kstrl/` and fails on any unprotected prompt.
+3. **New `*_PROMPT` added without enrollment**: `test_no_unenrolled_prompt_constants` AST-walks `kstrl/` and fails on any unprotected prompt. The walk keys on the target NAME plus a literal value, at any nesting depth, and since #299 a value assembled with `+` or `str.join` counts as literal enough to flag.
+4. **Enrolled but never hash-checked**: the per-prompt check is parametrized over `_PROMPTS`, so enrollment alone puts a prompt under snapshot. `VERIFY_COMMANDS_PROMPT` sat enrolled and unchecked from #261 to #299 because that check used to be hand-written per prompt.
+5. **Enrolled but not the text that ships**: `test_renderer_renders_the_enrolled_body` patches each constant and asserts its production renderer returns that and nothing else, so a constant cannot rot into an orphan while the role receives different words. `test_every_prompt_has_a_renderer` stops the renderer table falling behind the enrolled set.
+6. **Enrolled body dropped by its caller**: `test_change_source_reaches_the_reviewer_prompts` asserts the change-acquisition body still arrives inside the reviewer and security prompts, which a leaf render guard cannot see.
 
-The engineer prompt template (`init_cmd.DEFAULT_PROMPT`, used to scaffold per-project `scripts/kstrl/prompt.md`) is also enrolled, not just the four LLM-driven role prompts.
+What H3 does NOT catch: instruction text that is never bound to a `*_PROMPT` name at all, returned straight out of a function or bound to a local called something else. #299 hoisted the two known instances by hand; `docs/adversarial-roadmap.md` H3 states the hoisting rule, and keeping to it is reviewer discipline rather than a check. `tests/test_prompt_versions.py` H3-NOTE records this residual, and issue #303 tracks the sites the H3a sweep found.
 
 The audit trail is the PR diff with prompt body + version constant + snapshot tuple all moving together. That is what makes the H2 calibration step a real gate rather than a polite suggestion. H3 cannot prevent a determined developer from leaving the version pinned while updating both hash and snapshot to the *previous* version number; that bypass requires explicit deception in the snapshot file and is the irreducible limit of code-side enforcement.
 

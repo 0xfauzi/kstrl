@@ -26,9 +26,11 @@ What this file protects against:
    both version stores) is out of in-process reach; see H3-NOTE below.
 
 4. **New prompt without enrollment.** ``test_no_unenrolled_prompt_constants``
-   AST-walks kstrl/ for any module-level ``*_PROMPT`` constant and
-   asserts it is enrolled in ``_PROMPTS``. Adding ``NEW_FANCY_PROMPT``
-   without wiring up versioning fails the test.
+   AST-walks kstrl/ for any ``*_PROMPT`` constant and asserts it is
+   enrolled in ``_PROMPTS``. Adding ``NEW_FANCY_PROMPT`` without wiring
+   up versioning fails the test. That walk and its regression guards
+   live in ``tests/test_prompt_enrollment_walk.py``; this file owns the
+   enrolled set and the snapshots, that one owns discovery.
 
    What the walk keys on is the target NAME plus a literal value: an
    assignment at any nesting depth whose name ends in ``_PROMPT`` and
@@ -47,8 +49,16 @@ What this file protects against:
 
 6. **Enrolled but not the text that ships.** A constant a function has
    stopped interpolating would match its snapshot for ever while the role
-   received different words. The two change-source functions are asserted
-   to render exactly their enrolled body (#299).
+   received different words. Every enrolled prompt that has a renderer is
+   asserted to render exactly its enrolled body, parametrized over
+   ``_RENDERERS``; a prompt in neither ``_RENDERERS`` nor
+   ``_RENDER_EXEMPT`` fails ``test_every_prompt_has_a_renderer`` (#299).
+
+7. **Enrolled body dropped from the prompt that carries it.** A leaf
+   renderer can keep reading its constant while its CALLER stops calling
+   it. ``test_change_source_reaches_the_reviewer_prompts`` patches the
+   change-source body and asserts it still arrives inside the reviewer
+   and security prompts (#299).
 
 H3-NOTE on enforcement limits: a sufficiently determined developer can
 edit a prompt and update both the snapshot hash AND the version constant
@@ -67,14 +77,15 @@ keeping to it is reviewer discipline, not a check.
 
 from __future__ import annotations
 
-import ast
 import hashlib
 import re
+from collections.abc import Callable
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
-from kstrl import git, verify
+from kstrl import decompose, git, knowledge, review, security, verify
 from kstrl.decompose import DECOMPOSE_PROMPT, DECOMPOSE_PROMPT_VERSION
 from kstrl.git import (
     PASTED_CHANGE_SOURCE_PROMPT,
@@ -89,13 +100,16 @@ from kstrl.init_cmd import (
     DEFAULT_PROMPT_VERSION,
 )
 from kstrl.knowledge import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
+from kstrl.manifest import Component
 from kstrl.review import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION
 from kstrl.security import SECURITY_PROMPT, SECURITY_PROMPT_VERSION
 from kstrl.verify import (
     VERIFY_COMMANDS_PROMPT,
     VERIFY_COMMANDS_PROMPT_VERSION,
     ResolvedVerifyCommands,
+    VerificationResult,
 )
+from tests.helpers.component_prd import write_component_prd
 
 
 def _sha256(text: str) -> str:
@@ -200,27 +214,6 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
 
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
-# Exemption set for the auto-discovery scan. These are user-facing
-# scaffolding templates emitted by ``ks init`` (progress log files,
-# codebase_map.md, the understand/feature understand instructions); they
-# generate documentation outputs, not adversarial-role outputs, and are
-# out of scope for H3 snapshot protection.
-#
-# If you add a NEW template that produces user-facing content rather
-# than adversarial-role output, add its name here with a one-line
-# rationale. (DEFAULT_PRD_PROMPT was previously enrolled here but was
-# deleted along with the manual `kstrl prd create` path during the
-# legacy-purge cleanup -- the factory is now the only PRD path.)
-_ENROLLMENT_EXEMPT_NAMES = frozenset(
-    {
-        "DEFAULT_PROGRESS",
-        "DEFAULT_CODEBASE_MAP",
-        "DEFAULT_FEATURE_UNDERSTAND",
-        "DEFAULT_UNDERSTAND_PROMPT",
-        "DEFAULT_FEATURE_UNDERSTAND_PROMPT",
-    }
-)
-
 
 def _drift_message(name: str, expected: tuple[str, str], actual: tuple[str, str]) -> str:
     exp_hash, exp_ver = expected
@@ -275,72 +268,135 @@ def test_prompt_snapshot_unchanged(name: str) -> None:
     _check_snapshot(name)
 
 
-# A snapshot pins the constant, not what the role is sent. Both blocks
-# below are assembled at call time, so the constant could rot into an
-# orphan -- still hashing clean while the function builds its own copy of
-# the words, or wraps unhashed instructions around it. Each test asserts
-# the render EQUALS the enrolled body (catching added or dropped words),
-# then patches the constant and asserts the render followed (catching a
-# copy that happens to be byte-identical today).
+# A snapshot pins the constant, not what the role is sent. Every enrolled
+# body below is assembled at call time, so the constant can rot into an
+# orphan: still hashing clean while the renderer builds its own copy of
+# the words, wraps unhashed instructions around it, or stops reading it
+# altogether.
 #
-# Covered: the three prompts whose renderer takes no arguments this test
-# cannot supply. Seven of the eight enrolled prompts are rendered through
-# `.format` (DEFAULT_PROMPT alone ships verbatim); DECOMPOSE_PROMPT
-# (decompose.py), REVIEWER_PROMPT (review.py), SECURITY_PROMPT
-# (security.py) and DISTILL_PROMPT (knowledge.py) carry the same orphan
-# exposure and have no guard. This is a guard on three renderers, not a
-# general mechanism over the enrolled set.
+# The guard patches the constant to a marker carrying no fields, then
+# asserts the renderer returns THAT and nothing else. ``str.format``
+# ignores keyword arguments a template does not use, so one fieldless
+# marker works for every renderer whatever its field set, and the test
+# never has to recompute what the production builder passes in. Wrapping,
+# truncating or ignoring the constant each break the equality.
+#
+# Parametrized over _RENDERERS rather than hand-written per prompt: the
+# hand-written form is what left VERIFY_COMMANDS_PROMPT unguarded from
+# #261 to #299, and repeating it here would rebuild that defect one level
+# down.
+
+_ORPHAN_MARKER = "<<<H3-RENDER-GUARD-START>>><<<H3-RENDER-GUARD-END>>>"
 
 
-def test_repo_change_source_renders_the_enrolled_body(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    assert repo_change_source("BASE_SHA") == REPO_CHANGE_SOURCE_PROMPT.format(
-        base_ref="BASE_SHA"
-    ), "repo_change_source renders something other than its enrolled body."
-    monkeypatch.setattr(git, "REPO_CHANGE_SOURCE_PROMPT", "SENTINEL {base_ref}")
-    assert repo_change_source("BASE_SHA") == "SENTINEL BASE_SHA", (
-        "repo_change_source does not read REPO_CHANGE_SOURCE_PROMPT, so the "
-        "enrolled constant is an orphan and the reviewer's words are not "
-        "under H3 snapshot protection."
+def _reviewer_render(tmp_path: Path) -> str:
+    prd_path = write_component_prd(tmp_path, "prd.json")
+    return review.build_review_prompt(
+        prd_path, "BASE_SHA", VerificationResult(passed=True, checks=[])
     )
 
 
-def test_pasted_change_source_renders_the_enrolled_body(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    block, token = pasted_change_source("DIFF BODY")
-    assert block == PASTED_CHANGE_SOURCE_PROMPT.format(
-        data_delimiter=token, diff_content="DIFF BODY"
-    ), "pasted_change_source renders something other than its enrolled body."
-    monkeypatch.setattr(
-        git,
-        "PASTED_CHANGE_SOURCE_PROMPT",
-        "SENTINEL {data_delimiter} {diff_content}",
+def _distill_render(_tmp_path: Path) -> str:
+    component = Component(
+        id="C1",
+        title="T",
+        description="D",
+        dependencies=[],
+        prd_path="prd.json",
+        branch_name="b",
     )
-    block, token = pasted_change_source("DIFF BODY")
-    assert block == f"SENTINEL {token} DIFF BODY", (
-        "pasted_change_source does not read PASTED_CHANGE_SOURCE_PROMPT, so "
-        "the enrolled constant is an orphan and the reviewer's words are not "
-        "under H3 snapshot protection."
+    return knowledge.build_distill_prompt(component, 5, "PRD", "FACTS", "DIFF")
+
+
+def _verify_render(_tmp_path: Path) -> str:
+    commands = ResolvedVerifyCommands(test="T", typecheck="TC", lint="L")
+    return commands.format_for_prompt()
+
+
+#: ``{enrolled prompt: (module holding the constant, production renderer)}``.
+#: The module is the patch target; the renderer is the path the role's
+#: text actually travels.
+_RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
+    "DECOMPOSE_PROMPT": (
+        decompose,
+        lambda _p: decompose.build_decompose_prompt("PROJECT", "SPEC"),
+    ),
+    "REVIEWER_PROMPT": (review, _reviewer_render),
+    "SECURITY_PROMPT": (
+        security,
+        lambda _p: security._build_security_prompt("PRD", "CHANGE SOURCE", "TOKEN"),
+    ),
+    "DISTILL_PROMPT": (knowledge, _distill_render),
+    "VERIFY_COMMANDS_PROMPT": (verify, _verify_render),
+    "REPO_CHANGE_SOURCE_PROMPT": (git, lambda _p: repo_change_source("BASE_SHA")),
+    "PASTED_CHANGE_SOURCE_PROMPT": (git, lambda _p: pasted_change_source("DIFF")[0]),
+}
+
+#: Enrolled prompts with no renderer, and why. DEFAULT_PROMPT is written
+#: to disk verbatim by ``ks init`` and read back by ``run_loop``; it is
+#: never interpolated, so there is no render step to orphan. Its reach is
+#: covered by H3b's scaffold ledger instead
+#: (``test_engineer_prompt_bump_reaches_existing_projects``).
+_RENDER_EXEMPT = frozenset({"DEFAULT_PROMPT"})
+
+
+def test_every_prompt_has_a_renderer() -> None:
+    """A ninth enrolled prompt gets a hash check for free; without this it
+    would get a render guard only if its author remembered."""
+    unclassified = sorted(set(_PROMPTS) - set(_RENDERERS) - _RENDER_EXEMPT)
+    assert not unclassified, (
+        f"Enrolled prompts with no orphan guard: {unclassified}. Add each "
+        "to _RENDERERS with the production function that renders it, or to "
+        "_RENDER_EXEMPT with a written reason why it has no render step to "
+        "orphan."
     )
 
 
-def test_verify_commands_render_the_enrolled_body(
-    monkeypatch: pytest.MonkeyPatch,
+def test_no_stale_renderer_entries() -> None:
+    """Neither table may name a prompt that is no longer enrolled, or the
+    entry rots into dead configuration nothing exercises."""
+    stale = sorted((set(_RENDERERS) | _RENDER_EXEMPT) - set(_PROMPTS))
+    assert not stale, f"_RENDERERS/_RENDER_EXEMPT name unenrolled prompts: {stale}."
+
+
+@pytest.mark.parametrize("name", sorted(_RENDERERS))
+def test_renderer_renders_the_enrolled_body(
+    name: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """VERIFY_COMMANDS_PROMPT reaches the engineer through
-    ``ResolvedVerifyCommands.format_for_prompt`` (kstrl/verify.py), which
-    carries the same orphan exposure as the change-source pair."""
-    commands = ResolvedVerifyCommands(test="TEST CMD", typecheck="TYPECHECK CMD", lint="LINT CMD")
-    assert commands.format_for_prompt() == VERIFY_COMMANDS_PROMPT.format(
-        test="TEST CMD", typecheck="TYPECHECK CMD", lint="LINT CMD"
-    ), "format_for_prompt renders something other than its enrolled body."
-    monkeypatch.setattr(verify, "VERIFY_COMMANDS_PROMPT", "SENTINEL {test} {typecheck} {lint}")
-    assert commands.format_for_prompt() == "SENTINEL TEST CMD TYPECHECK CMD LINT CMD", (
-        "format_for_prompt does not read VERIFY_COMMANDS_PROMPT, so the "
-        "enrolled constant is an orphan and the engineer's words are not "
-        "under H3 snapshot protection."
+    module, render = _RENDERERS[name]
+    monkeypatch.setattr(module, name, _ORPHAN_MARKER)
+    assert render(tmp_path) == _ORPHAN_MARKER, (
+        f"{module.__name__} does not render {name} verbatim, so the "
+        "enrolled constant is not what the role receives. Either the "
+        "renderer stopped reading it (an orphan constant that will match "
+        "its snapshot for ever), or it wraps text around it that no "
+        "snapshot covers."
+    )
+
+
+def test_change_source_reaches_the_reviewer_prompts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The leaf guard proves ``repo_change_source`` reads its constant. It
+    cannot prove the CALLERS still call it: drop
+    ``change_source=git.repo_change_source(...)`` from ``review.py`` or
+    ``security.py`` and every other test here stays green while the
+    reviewer is told how to obtain the change by words under no snapshot.
+    This closes that second link."""
+    monkeypatch.setattr(git, "REPO_CHANGE_SOURCE_PROMPT", _ORPHAN_MARKER)
+
+    reviewer = _reviewer_render(tmp_path)
+    assert _ORPHAN_MARKER in reviewer, (
+        "REVIEWER_PROMPT no longer carries repo_change_source's enrolled "
+        "body, so the reviewer's change-acquisition instructions are "
+        "outside H3 snapshot protection."
+    )
+
+    secure = security._build_security_prompt("PRD", git.repo_change_source("BASE_SHA"))
+    assert _ORPHAN_MARKER in secure, (
+        "SECURITY_PROMPT no longer carries repo_change_source's enrolled "
+        "body, so the security reviewer's change-acquisition instructions "
+        "are outside H3 snapshot protection."
     )
 
 
@@ -427,232 +483,24 @@ def test_every_version_has_a_prompt() -> None:
         )
 
 
+def test_every_snapshot_has_a_prompt() -> None:
+    """The reverse of ``test_every_prompt_has_a_recorded_snapshot``.
+
+    The hash check is now derived from ``_PROMPTS``, so a snapshot row
+    whose prompt was deleted is parametrized over by nothing and silently
+    stops meaning what it says. That is what happened to
+    DEFAULT_PRD_PROMPT. Dead rows rot; remove them."""
+    for name in _EXPECTED_SNAPSHOTS:
+        assert name in _PROMPTS, (
+            f"_EXPECTED_SNAPSHOTS has a row for {name!r}, which is not an "
+            "enrolled prompt. If the prompt was deleted, delete its "
+            "snapshot row too: nothing checks it any more."
+        )
+
+
 def test_every_prompt_has_a_recorded_snapshot() -> None:
     for name in _PROMPTS:
         assert name in _EXPECTED_SNAPSHOTS, (
             f"{name} is missing a recorded snapshot in _EXPECTED_SNAPSHOTS. "
             "Every adversarial prompt must be snapshot-protected."
         )
-
-
-# ---------------------------------------------------------------------------
-# Auto-discovery: a new *_PROMPT in kstrl/ without enrollment is a bug
-# ---------------------------------------------------------------------------
-
-
-def _is_prompt_value(value: ast.expr | None) -> bool:
-    """True when ``value`` is the AST of a string literal or f-string,
-    i.e. plausibly a prompt body. ``None`` arises for annotated
-    assignments without a right-hand side (``X: str``) and is treated
-    as not-a-prompt."""
-    if value is None:
-        return False
-    if isinstance(value, ast.Constant) and isinstance(value.value, str):
-        return True
-    if isinstance(value, ast.JoinedStr):
-        return True
-    return False
-
-
-def _module_level_prompt_constants(
-    package_root: Path | None = None,
-) -> dict[str, list[str]]:
-    """Walk ``package_root`` (default: the real kstrl/) and find every
-    assignment of a string literal or f-string to a ``NAME`` ending in
-    ``_PROMPT``. Returns ``{module_filename: [const_name, ...]}``.
-
-    Catches **all** forms a developer might use to declare a prompt:
-
-    - Plain assignment: ``NAME = "..."``  (``ast.Assign``)
-    - Typed assignment: ``NAME: str = "..."``  (``ast.AnnAssign``)
-    - Nested inside functions / classes / conditionals (via
-      ``ast.walk``, not just ``tree.body``)
-
-    Used by ``test_no_unenrolled_prompt_constants`` to enforce that
-    every prompt-shaped constant in ``kstrl/`` is enrolled in
-    ``_PROMPTS``. The walker errs on the side of inclusion -- a const
-    that ``ends in _PROMPT`` and has a string-shaped value is treated
-    as a prompt regardless of nesting depth or annotation style.
-
-    ``package_root`` exists so the regression-guard tests below can
-    exercise THIS function against synthetic modules instead of
-    re-implementing the walk inline (which would guard nothing).
-    """
-    found: dict[str, list[str]] = {}
-    kstrl = package_root or (Path(__file__).resolve().parent.parent / "kstrl")
-    for py_file in sorted(kstrl.rglob("*.py")):
-        try:
-            tree = ast.parse(py_file.read_text(encoding="utf-8"))
-        except SyntaxError:
-            continue
-        names: list[str] = []
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign):
-                if not _is_prompt_value(node.value):
-                    continue
-                for target in node.targets:
-                    if not isinstance(target, ast.Name):
-                        continue
-                    if not target.id.endswith("_PROMPT"):
-                        continue
-                    if target.id in _ENROLLMENT_EXEMPT_NAMES:
-                        continue
-                    names.append(target.id)
-            elif isinstance(node, ast.AnnAssign):
-                # Typed assignment: ``NAME: str = "..."``.
-                if not _is_prompt_value(node.value):
-                    continue
-                target = node.target
-                if not isinstance(target, ast.Name):
-                    continue
-                if not target.id.endswith("_PROMPT"):
-                    continue
-                if target.id in _ENROLLMENT_EXEMPT_NAMES:
-                    continue
-                names.append(target.id)
-        if names:
-            # Stable order: preserve first-seen ordering of AST walk.
-            seen: set[str] = set()
-            unique: list[str] = []
-            for name in names:
-                if name not in seen:
-                    seen.add(name)
-                    unique.append(name)
-            found[str(py_file.relative_to(kstrl.parent))] = unique
-    return found
-
-
-def test_no_unenrolled_prompt_constants() -> None:
-    """If someone adds ``NEW_PROMPT = \"...\"`` to a kstrl module
-    without wiring it into ``_PROMPTS`` / ``_VERSIONS`` /
-    ``_EXPECTED_SNAPSHOTS``, this test fails so the new prompt cannot
-    silently slip past H3 protection."""
-    discovered = _module_level_prompt_constants()
-    enrolled = set(_PROMPTS.keys())
-    leaked: list[str] = []
-    for module_file, names in discovered.items():
-        for name in names:
-            if name not in enrolled:
-                leaked.append(f"{module_file}::{name}")
-    assert not leaked, (
-        "Module-level *_PROMPT constants found in kstrl/ that are NOT "
-        "enrolled in H3 snapshot protection:\n  " + "\n  ".join(leaked) + "\n\nFor each, either:\n"
-        "  - Add a matching *_PROMPT_VERSION constant next to it and "
-        "enroll in tests/test_prompt_versions.py::_PROMPTS, "
-        "_VERSIONS, and _EXPECTED_SNAPSHOTS.\n"
-        "  - OR add the constant name to _ENROLLMENT_EXEMPT_NAMES with a "
-        "comment explaining why it is not an adversarial-role prompt."
-    )
-
-
-def _synthetic_module(tmp_path: Path, source: str) -> Path:
-    """Write ``source`` as a module inside a synthetic package root and
-    return the root, so the REAL walker can be pointed at it."""
-    pkg = tmp_path / "synth_pkg"
-    pkg.mkdir()
-    (pkg / "mod.py").write_text(source)
-    return pkg
-
-
-def test_ast_walker_catches_plain_assignment(tmp_path: Path) -> None:
-    """Baseline regression guard for the real walker: the plain
-    ``NAME = "..."`` form is discovered."""
-    pkg = _synthetic_module(tmp_path, 'PLAIN_PROMPT = "you are a hostile reviewer"\n')
-    assert _module_level_prompt_constants(pkg) == {
-        "synth_pkg/mod.py": ["PLAIN_PROMPT"],
-    }
-
-
-def test_ast_walker_catches_typed_assignment(tmp_path: Path) -> None:
-    """Regression guard: the REAL walker must catch ``NAME: str = "..."``
-    in addition to ``NAME = "..."``. Without this, a developer can
-    type-annotate the assignment and bypass H3 protection."""
-    pkg = _synthetic_module(
-        tmp_path,
-        'TYPED_PROMPT: str = "you are a hostile reviewer"\n',
-    )
-    assert _module_level_prompt_constants(pkg) == {
-        "synth_pkg/mod.py": ["TYPED_PROMPT"],
-    }, "AST walker failed to catch typed-assignment prompt declaration."
-
-
-def test_ast_walker_catches_nested_declaration(tmp_path: Path) -> None:
-    """Regression guard: the REAL walker must catch ``NAME = "..."``
-    declared inside a function or class body, not just at module level.
-    Without this, wrapping a prompt declaration in
-    ``def _build_default(): ...`` bypasses H3."""
-    pkg = _synthetic_module(
-        tmp_path,
-        (
-            "def _build_default():\n"
-            '    NESTED_PROMPT = "you are a hostile reviewer"\n'
-            "    return NESTED_PROMPT\n"
-        ),
-    )
-    assert _module_level_prompt_constants(pkg) == {
-        "synth_pkg/mod.py": ["NESTED_PROMPT"],
-    }, "AST walker failed to catch nested prompt declaration."
-
-
-def test_ast_walker_skips_enrollment_exempt_names(tmp_path: Path) -> None:
-    """The REAL walker must honor _ENROLLMENT_EXEMPT_NAMES (exempt
-    scaffolding templates are not flagged) while still catching a
-    non-exempt prompt in the same module."""
-    pkg = _synthetic_module(
-        tmp_path,
-        (
-            'DEFAULT_UNDERSTAND_PROMPT = "scaffolding template"\n'
-            'REAL_PROMPT = "you are a hostile reviewer"\n'
-        ),
-    )
-    assert _module_level_prompt_constants(pkg) == {
-        "synth_pkg/mod.py": ["REAL_PROMPT"],
-    }
-
-
-def test_enrollment_exempt_names_are_not_stale() -> None:
-    """Every entry in ``_ENROLLMENT_EXEMPT_NAMES`` must reference a
-    real module-level string assignment somewhere in kstrl/. If you
-    delete an exempt constant (e.g. you remove DEFAULT_CODEBASE_MAP
-    from init_cmd.py), the exempt entry would become dead code that
-    silently masks a future name collision.
-
-    The test fails fast and forces the developer to remove the stale
-    entry instead of letting it rot.
-    """
-    discovered_anywhere: set[str] = set()
-    kstrl = Path(__file__).resolve().parent.parent / "kstrl"
-    for py_file in sorted(kstrl.rglob("*.py")):
-        try:
-            tree = ast.parse(py_file.read_text(encoding="utf-8"))
-        except SyntaxError:
-            continue
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign):
-                if not _is_prompt_value(node.value):
-                    continue
-                for target in node.targets:
-                    if isinstance(target, ast.Name):
-                        discovered_anywhere.add(target.id)
-            elif isinstance(node, ast.AnnAssign):
-                if not _is_prompt_value(node.value):
-                    continue
-                if isinstance(node.target, ast.Name):
-                    discovered_anywhere.add(node.target.id)
-    stale = [name for name in _ENROLLMENT_EXEMPT_NAMES if name not in discovered_anywhere]
-    assert not stale, (
-        f"_ENROLLMENT_EXEMPT_NAMES has stale entries that no longer "
-        f"correspond to a module-level string constant in kstrl/: "
-        f"{stale}. Remove them, otherwise the exemption silently "
-        "masks any future name collision."
-    )
-
-
-def test_ast_walker_ignores_typed_assignment_without_value(
-    tmp_path: Path,
-) -> None:
-    """``NAME: str`` with no right-hand side is not a prompt
-    declaration -- ``_is_prompt_value(None)`` returns False, so the
-    REAL walker reports nothing for it."""
-    pkg = _synthetic_module(tmp_path, "EMPTY_PROMPT: str\n")
-    assert _module_level_prompt_constants(pkg) == {}
