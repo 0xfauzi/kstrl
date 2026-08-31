@@ -337,9 +337,8 @@ class Manifest:
         }
 
         path.parent.mkdir(parents=True, exist_ok=True)
-        # #291: shared so the manifest keeps the mode the operator gave
-        # it. This file is git-tracked, and the copy that used to live
-        # here rewrote it 0o600 in the locale encoding.
+        # Atomic, and keeps the mode the operator gave this git-tracked
+        # file; see kstrl.atomicio (#291).
         atomic_write_json(path, data)
 
     @classmethod

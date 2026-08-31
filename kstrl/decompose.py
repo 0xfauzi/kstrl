@@ -807,17 +807,6 @@ def _surface_spec_issues(issues: list[SpecIssue], ui: UI) -> None:
 SPEC_ISSUES_REL_PATH = Path("scripts") / "kstrl" / "spec-issues.json"
 
 
-def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    """Atomic JSON write for the artifacts decompose persists.
-
-    Delegates to ``atomicio`` since #291: its own copy of the pattern
-    took ``scripts/kstrl/manifest.json`` and each component's
-    ``prd.json`` - both git-tracked and operator-owned - from 0o644 to
-    0o600 on every rewrite, and wrote them in the locale encoding.
-    """
-    atomic_write_json(path, payload)
-
-
 def _issue_dicts(issues: list[SpecIssue]) -> list[dict[str, str]]:
     return [
         {
@@ -866,7 +855,7 @@ def persist_spec_issues(
         "issues": _issue_dicts(issues),
     }
     path.parent.mkdir(parents=True, exist_ok=True)
-    _atomic_write_json(path, payload)
+    atomic_write_json(path, payload)
     return path
 
 
@@ -1156,7 +1145,7 @@ def _generate_component_prd(
     feature_dir: Path = root_dir / "scripts" / "kstrl" / "feature" / comp_id
     feature_dir.mkdir(parents=True, exist_ok=True)
     prd_path = feature_dir / "prd.json"
-    _atomic_write_json(prd_path, prd_data)
+    atomic_write_json(prd_path, prd_data)
     return prd_path
 
 

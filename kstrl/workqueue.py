@@ -585,13 +585,10 @@ class JournalEntry:
 def atomic_write(target: Path, content: str) -> None:
     """Write ``content`` to ``target`` atomically, creating its directory.
 
-    The write itself is ``atomicio.atomic_write_text``; this adds the
-    ``mkdir`` that queue callers rely on, because they write into staging
-    directories they have not created yet.
-
-    Before #291 this carried its own ``mkstemp`` copy, which took a
-    git-tracked 0o644 spec file to 0o600 on every rewrite and left the
-    encoding to the locale.
+    The write is ``atomicio.atomic_write_text`` (#291, where the mode and
+    encoding rules are explained). What this adds is the ``mkdir``, for
+    callers that write into a directory they have not created yet, which
+    is every publish path in this module.
     """
     target.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(target, content)

@@ -1171,13 +1171,20 @@ def _atomic_replace(target: Path, content: str) -> None:
     hand-rolled until now.
 
     REPLACE, not create, is the part that stays here, because it is this
-    caller's contract rather than the writer's. The one caller only ever
-    rewrites a file the ledger already classified, so a missing target is
-    a bug, not a case to handle: ``stat`` raises and the run stops rather
-    than quietly doing a non-atomic create under a name that promises
-    otherwise. ``atomic_write_text`` would happily create it.
+    caller's contract rather than the writer's, and a ``must_exist=``
+    flag on the shared writer would be a special case carried by nine
+    callers that do not want it. The one caller only ever rewrites a file
+    the ledger already classified, so a missing target is a bug rather
+    than a case to handle: the run stops instead of quietly doing a
+    non-atomic create under a name that promises otherwise, which is what
+    ``atomic_write_text`` on its own would do.
     """
-    target.stat()
+    if not target.is_file():
+        raise FileNotFoundError(
+            f"_atomic_replace expects an existing file, got {target}: this "
+            f"function only rewrites templates the scaffold ledger already "
+            f"classified, so a missing target means the caller is wrong"
+        )
     atomic_write_text(target, content)
 
 

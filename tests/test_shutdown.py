@@ -14,6 +14,7 @@ import io
 import os
 import signal
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -31,6 +32,11 @@ from kstrl.factory import (
 )
 from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.ui.plain import PlainUI
+from tests.helpers.procs import (
+    kill_group,
+    read_pid,
+    wait_for_group_to_die,
+)
 from tests.test_event_stream import (
     _component,
     _factory_config,
@@ -373,114 +379,11 @@ class TestLoopStopCheck:
 # ---------------------------------------------------------------------------
 # #292: the orphan check is about ONE process group, not about the machine
 #
-# This used to assert that `pgrep -f "sleep 60"` found nothing, with no
-# scoping at all. `pgrep -f` matches a substring of the full command line
-# machine-wide, so the assertion failed whenever ANY process anywhere had
-# "sleep 60" in its command line - a `sleep 600` monitor loop in another
-# session matches, because "sleep 60" is a prefix of it. The confirmed
-# instance was exactly that. It read as "timing-sensitive under load" to
-# roughly six agents in a row, several of whom ran controlled A/B
-# comparisons against a clean ref before concluding, correctly and
-# expensively, that it had nothing to do with their diff. It is not
-# timing-sensitive, it is machine-state-sensitive; load only correlates
-# because a busy machine is likelier to be running another sleep. CI
-# stayed green because a runner is a clean machine.
-#
-# The claim the test actually wants to make is "the worker killed ITS
-# agent's process group". That is a statement about one specific group,
-# so the assertion below names that group and never searches a command
-# line. Command-line matching survives only in DISCOVERY, where it is
-# scoped to this process's own descendants, which is a set no other
-# session can add to.
-#
-# LIVENESS IS NOT killpg(pgid, 0). Measured while writing this: with the
-# agent's parent alive and not yet reaping, `os.killpg(pgid, 0)` reported
-# a SIGKILLed group as still present for the entire 6s observation window
-# and never converged, because a zombie stays signalable. Taking that as
-# the primitive would have replaced a machine-state flake with a
-# reap-timing flake. Group membership from `ps`, with zombies excluded,
-# was correct immediately in the same measurement.
-
-
-def _ps_rows() -> list[tuple[int, int, int, str, str]]:
-    """(pid, ppid, pgid, state, args) for every process on the machine.
-
-    ``-w -w`` asks for untruncated command lines on both GNU and BSD ps;
-    the trailing ``=`` on each key suppresses the header.
-    """
-    out = subprocess.run(
-        ["ps", "-A", "-w", "-w", "-o", "pid=,ppid=,pgid=,stat=,args="],
-        capture_output=True,
-        text=True,
-    )
-    rows: list[tuple[int, int, int, str, str]] = []
-    for line in out.stdout.splitlines():
-        parts = line.split(None, 4)
-        if len(parts) < 5:
-            continue
-        try:
-            pid, ppid, pgid = int(parts[0]), int(parts[1]), int(parts[2])
-        except ValueError:
-            continue
-        rows.append((pid, ppid, pgid, parts[3], parts[4]))
-    return rows
-
-
-def _descendant_pids(rows: list[tuple[int, int, int, str, str]], root_pid: int) -> set[int]:
-    """Every pid below ``root_pid`` in the process tree ``rows`` describes."""
-    children: dict[int, list[int]] = {}
-    for pid, ppid, _pgid, _state, _args in rows:
-        children.setdefault(ppid, []).append(pid)
-    seen: set[int] = set()
-    stack = [root_pid]
-    while stack:
-        for child in children.get(stack.pop(), []):
-            if child not in seen:
-                seen.add(child)
-                stack.append(child)
-    return seen
-
-
-def _find_descendant_group(needle: str) -> int | None:
-    """The process group of a descendant of THIS process matching ``needle``.
-
-    Our own group is excluded and so are pgids 0 and 1. That guard is
-    load-bearing rather than defensive: a pool worker is a plain fork, so
-    it shares our process group, and returning that pgid to a caller that
-    goes on to signal it would be ``killpg`` on the harness's own group -
-    the same footgun ``agents/proc.py::_signal_group`` documents. An
-    early draft of this helper did exactly that and killed its own test
-    run.
-    """
-    rows = _ps_rows()
-    descendants = _descendant_pids(rows, os.getpid())
-    ours = os.getpgrp()
-    for pid, _ppid, pgid, _state, args in rows:
-        if pid in descendants and needle in args and pgid not in (ours, 0, 1):
-            return pgid
-    return None
-
-
-def _group_has_live_member(pgid: int) -> bool:
-    """Whether any non-zombie process is still in process group ``pgid``.
-
-    A zombie is a process that has already died and is only waiting to be
-    reaped, so it is not an orphaned agent and must not count as one.
-    """
-    return any(pgid == row[2] and not row[3].startswith("Z") for row in _ps_rows())
-
-
-def _kill_group(pgid: int) -> None:
-    """Best-effort SIGKILL of a process group, for test cleanup.
-
-    A test that fails without this leaves the agent alive, and a stray
-    `sleep 60` on a shared machine is precisely what #292 is about: the
-    old test's own failures poisoned every later run of it.
-    """
-    try:
-        os.killpg(pgid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError, OSError):
-        pass
+# The full argument, and the rule it produced, live in
+# tests/helpers/procs.py. In short: this used to assert that
+# `pgrep -f "sleep 60"` found nothing MACHINE-WIDE, so an unrelated
+# `sleep 600` in another session failed it. The test now names the group
+# its own agent reported and nothing here searches a command line.
 
 
 @pytest.mark.spine
@@ -495,23 +398,26 @@ class TestWorkerSigterm:
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
         base = _make_base_config(root)
-        base.agent_cmd = "sleep 60"
+        # The agent reports its own pid before becoming the sleep, so the
+        # test never has to go looking for it. `exec` keeps the pid, and
+        # DeadlineStreamer starts it with start_new_session=True, so that
+        # pid also leads its own process group.
+        pidfile = tmp_path / "agent.pid"
+        base.agent_cmd = f"echo $$ > {pidfile}; exec sleep 60"
         config = _factory_config(root, max_parallel=2)
         stop = StopController()
-        # Written by the watcher thread, read by the assertions below.
+        # Captured by the watcher thread while the agent is still alive:
+        # after the shutdown there is no process left to ask.
         agent_pgid: list[int] = []
 
         def stop_soon() -> None:
-            deadline = time.monotonic() + 15
-            while time.monotonic() < deadline:
-                pgid = _find_descendant_group("sleep 60")
-                if pgid is not None:
-                    agent_pgid.append(pgid)
-                    break
-                time.sleep(0.2)
-            # Requested even when discovery failed, so a miss surfaces as
-            # the explicit assertion below rather than as run_factory
-            # blocking until its own timeout.
+            try:
+                agent_pgid.append(os.getpgid(read_pid(pidfile, timeout=15.0)))
+            except (AssertionError, ProcessLookupError):
+                pass
+            # Requested even when the agent never appeared, so a miss
+            # surfaces as the explicit assertion below rather than as
+            # run_factory blocking until its own timeout.
             stop.request("sigterm spine test")
 
         watcher = threading.Thread(target=stop_soon)
@@ -532,17 +438,21 @@ class TestWorkerSigterm:
             assert agent_pgid, "never observed the agent subprocess start"
 
             pgid = agent_pgid[0]
-            deadline = time.monotonic() + 10
-            while time.monotonic() < deadline and _group_has_live_member(pgid):
-                time.sleep(0.2)
-            assert not _group_has_live_member(pgid), (
+            # The invariant that makes a group-scoped assertion safe to
+            # make at all. A pool worker is a plain fork and shares our
+            # process group, so a group that WERE ours would make the
+            # cleanup below `killpg` the harness itself, which is the
+            # footgun agents/proc.py::_signal_group documents.
+            assert pgid != os.getpgrp()
+
+            assert wait_for_group_to_die(pgid), (
                 f"agent subprocess orphaned: process group {pgid} still has a "
                 f"live member after the worker was told to stop"
             )
         finally:
             watcher.join(timeout=20)
             for pgid in agent_pgid:
-                _kill_group(pgid)
+                kill_group(pgid)
 
 
 class TestTheOrphanCheckIsScopedToItsOwnGroup:
@@ -551,7 +461,8 @@ class TestTheOrphanCheckIsScopedToItsOwnGroup:
     The old assertion and the new one are run against the same machine
     state, so this pins the difference rather than asserting the new one
     in isolation: with a decoy running, `pgrep -f "sleep 60"` finds
-    something (the old test would have failed) while the group check
+    something (the old test would have failed, and does - verified by
+    running the pre-fix file with a decoy alive) while the group check
     correctly reports the sentinel's own group as gone.
     """
 
@@ -579,17 +490,14 @@ class TestTheOrphanCheckIsScopedToItsOwnGroup:
             os.killpg(sentinel_pgid, signal.SIGKILL)
             sentinel.wait(timeout=10)
 
-            deadline = time.monotonic() + 10
-            while time.monotonic() < deadline and _group_has_live_member(sentinel_pgid):
-                time.sleep(0.1)
-
             # The new check: the group the test owned is gone.
-            assert not _group_has_live_member(sentinel_pgid)
+            assert wait_for_group_to_die(sentinel_pgid)
 
             # The old check, on that same machine state: still matches,
             # because "sleep 60" is a prefix of the decoy's "sleep 600".
             # This is the assertion that used to fail runs, and it is
-            # here so the fix cannot be quietly reverted to it.
+            # here so the fix cannot be quietly reverted to it. The AST
+            # net in tests/test_atomicio.py allows this one line by name.
             stale = subprocess.run(["pgrep", "-f", "sleep 60"], capture_output=True)
             assert stale.returncode == 0, (
                 "expected the decoy to still match the old machine-wide "
@@ -603,29 +511,51 @@ class TestTheOrphanCheckIsScopedToItsOwnGroup:
                 sentinel.kill()
                 sentinel.wait(timeout=10)
 
-    def test_discovery_never_returns_our_own_process_group(self) -> None:
-        """The guard that stops a group kill from reaching the harness.
+    def test_a_zombie_does_not_count_as_a_live_member(self) -> None:
+        """Why the check reads `ps` state instead of `killpg(pgid, 0)`.
 
-        A pool worker is a plain fork and shares our process group, so a
-        descendant matching on command line is NOT enough on its own.
+        The parent here never reaps, so the killed sentinel stays a
+        zombie. Measured against the real production spelling of the
+        killpg check: it reports that group as present for as long as
+        nothing reaps, so a test built on it would hang to its deadline
+        on every run where the pool worker is slow.
+
+        The assertion on `process_group_alive` is deliberately pinning a
+        FLAW, not a contract. `serve.terminate_process_group` uses it to
+        decide whether a run was reaped, so it inherits the blind spot;
+        that is a production issue of its own and out of #292's scope,
+        but if somebody fixes it this test should start failing and be
+        turned into the ordinary assertion.
         """
-        # This test's own interpreter is a descendant-free match for its
-        # own argv, and every direct child of it shares our group.
-        child = subprocess.Popen(
-            ["sleep", "60"],  # no start_new_session: stays in OUR group
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+        from kstrl.serve import process_group_alive
+
+        parent = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                "import subprocess,sys,time;"
+                "p=subprocess.Popen(['sleep','60'],start_new_session=True);"
+                "print(p.pid,flush=True);"
+                "time.sleep(30)",  # deliberately never reaps
+            ],
+            stdout=subprocess.PIPE,
+            text=True,
         )
+        pgid = -1
         try:
-            assert os.getpgid(child.pid) == os.getpgrp()
-            # Present as a descendant, matching the needle, and still
-            # refused because signalling that group would kill the run.
-            deadline = time.monotonic() + 5
-            while time.monotonic() < deadline:
-                if any(row[0] == child.pid for row in _ps_rows()):
-                    break
-                time.sleep(0.1)
-            assert _find_descendant_group("sleep 60") is None
+            assert parent.stdout is not None
+            pgid = os.getpgid(int(parent.stdout.readline().strip()))
+            os.killpg(pgid, signal.SIGKILL)
+
+            assert wait_for_group_to_die(pgid), (
+                "a reaped-pending zombie was counted as a live member"
+            )
+
+            # The primitive this check exists instead of, on the same
+            # group at the same moment, still saying it is alive.
+            assert process_group_alive(pgid) is True
         finally:
-            child.kill()
-            child.wait(timeout=10)
+            parent.kill()
+            parent.wait(timeout=10)
+            if pgid > 1:
+                kill_group(pgid)

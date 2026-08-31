@@ -1,9 +1,19 @@
 """The one atomic file write, so its mode and encoding rules live in one place.
 
-#291. Seven copies of "``tempfile.mkstemp`` in the destination directory,
-write, ``os.replace``" had grown across the package. Six of them shared
-two defects, and the shape of the defects is what argues for one owner
-rather than seven careful call sites.
+#291. TEN copies of "``tempfile.mkstemp`` in the destination directory,
+write, ``os.replace``" had grown across the package: ``manifest``,
+``prd``, ``decompose``, ``knowledge``, ``workqueue``, ``autonomy``,
+``inbox``, ``fixtures``, ``factory`` and ``init_cmd``. NINE carried the
+mode defect below (all but ``init_cmd``, fixed in #290), and FIVE of
+those also left the encoding to the locale.
+
+Those counts are the argument, so they are stated once. The issue was
+filed against four call sites, which is the point rather than a
+complaint about the issue: ten copies of a fifteen-line pattern is a
+thing nobody can see the whole of, and a careful call site does not stay
+careful. This docstring is the only place the reasoning is written out;
+call sites point here instead of restating it, so a correction lands in
+one file.
 
 MODE. ``mkstemp`` creates its file 0600 and ``os.replace`` carries that
 onto the destination, so every one of those writers silently tightened
@@ -23,7 +33,7 @@ file it wrote through the mkstemp pattern was 0600 (29 knowledge facts).
 Same tree, same owner, same day; the mode tracked nothing but which
 writer happened to run. So there are not two correct behaviours here
 needing two helpers, there is one behaviour and an implementation detail
-that leaked into six copies of it.
+that leaked into most copies of it.
 
 Hence the rule, and the whole of it: an atomic write leaves the
 destination's mode exactly as it found it, and a file that did not exist
@@ -55,7 +65,19 @@ the temp file is created in the destination's own directory, so the
 A crash before the replace leaves the destination untouched and the temp
 file removed.
 
-Stdlib only, and imported by nothing: this module is a leaf so that
+IDENTITY is NOT preserved, and this is the one property a reader of
+"keeps its mode" is likely to assume and not get. ``os.replace`` swaps
+the directory entry, so a destination that was a symlink becomes a
+regular file and a destination that shared an inode with a hard link
+stops sharing it. #290 measured exactly that on
+``scripts/kstrl/prompt.md``, and the caller that cares about it
+(``init_cmd._rewrite_blockers``) refuses such a target BEFORE calling a
+writer. Guarding it here instead would put a special case in shared
+infrastructure for the one caller that has an opinion, and would silently
+change what the other nine do; the property is documented so a future
+caller decides deliberately.
+
+Stdlib only and importing nothing: this module is a leaf so that
 ``init_cmd`` can use it without pulling ``kstrl.workqueue`` into
 ``kstrl.loop``'s static import closure, which #274's
 ``tests/test_state_dir_scope.py`` refuses.
@@ -145,5 +167,12 @@ def atomic_write_json(target: Path, payload: Any) -> None:
     Two-space indent and exactly one trailing newline, which is the shape
     every hand-rolled copy of this wrote and what the committed fixtures
     and the pre-commit end-of-file hook both expect.
+
+    ``ensure_ascii=False`` for the same reason the encoding is pinned:
+    the file is utf-8, so a non-ASCII character belongs in it as itself
+    rather than as a ``\\uXXXX`` escape. It also matches what kstrl's
+    other JSON writers already pass (``workqueue``, ``serve``,
+    ``statedir``, ``intake_github``), so there is one on-disk shape
+    instead of one per writer.
     """
-    atomic_write_text(target, json.dumps(payload, indent=2) + "\n")
+    atomic_write_text(target, json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
