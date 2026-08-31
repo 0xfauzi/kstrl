@@ -230,8 +230,13 @@ class ConfigScreen(Screen[None]):
             # A rejected section costs its rows rather than the whole
             # report (#272). Saying so is the difference between "this
             # section has no rows" and "this section is silently absent".
+            # The REASON lives in `ks config show`, which names the key
+            # and the value; this report carries only section names, and
+            # only for the sections it renders.
             self.app.notify(
-                "unusable, so not shown: " + ", ".join(f"[{s}]" for s in report.unresolved),
+                "unusable, so not shown: "
+                + ", ".join(f"[{s}]" for s in report.unresolved)
+                + " - run `ks config show` for the key and value",
                 severity="error",
             )
         self._render_report(self.query_one(Input).value)

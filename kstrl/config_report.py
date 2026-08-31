@@ -362,29 +362,51 @@ def build_config_report(
     The base config still raises, because a malformed document or a bad
     ``[run]`` value leaves nothing to render beside the failure.
     """
+    from kstrl.config import toml_parse_scope
+    from kstrl.config_preflight import REJECTIONS
+
     toml_path = resolve_config_file(root_dir)
     phase_sections = _phase_sections()
-    unresolved: list[str] = []
 
-    def _resolve(name: str, loader: Any) -> Any:
+    def _resolve(loader: Any) -> Any:
+        """The section, or None when it rejects the configuration.
+
+        The rejection set is IMPORTED, not restated: it has already
+        widened twice, and a local copy that missed the third widening
+        would let the new exception escape and kill the whole report
+        before a single row printed, which is the defect this tolerance
+        was added to remove. WHY a section was rejected is
+        ``config_preflight``'s job to report; None here means only "no
+        row can be built from this".
+        """
         try:
             return loader(root_dir)
-        except (ValueError, TypeError, RuntimeError):
-            # The same rejection set config_preflight._REJECTIONS states.
-            # WHY it was rejected is that module's job to report; this
-            # one records only that the rows cannot be built.
-            if name not in unresolved:
-                unresolved.append(name)
+        except REJECTIONS:
             return None
 
-    resolved_base = KstrlConfig.load(root_dir)
-    phase_resolved = {name: _resolve(name, loader) for name, loader, _ in phase_sections}
-    with scrubbed_environ():
-        noenv_base = KstrlConfig.load(root_dir)
-        phase_noenv = {name: _resolve(name, loader) for name, loader, _ in phase_sections}
-    phase_toml_keys = {
-        name: set(load_toml_section(toml_path, name).keys()) for name, _, _ in phase_sections
-    }
+    # One parse of kstrl.toml for the whole report. Without this the
+    # loader calls and section reads below lex the same bytes 32 times:
+    # counted, and measured on the shipped 21 KB kstrl.toml.example at
+    # 13.34 ms against 0.82 ms with it. The TUI config screen pays that
+    # again on every refresh. Per call, so that screen's
+    # re-read-on-demand keeps seeing the file as it is now.
+    with toml_parse_scope():
+        resolved_base = KstrlConfig.load(root_dir)
+        phase_resolved = {name: _resolve(loader) for name, loader, _ in phase_sections}
+        with scrubbed_environ():
+            noenv_base = KstrlConfig.load(root_dir)
+            phase_noenv = {name: _resolve(loader) for name, loader, _ in phase_sections}
+        # Derived rather than accumulated: a loader never returns None, so
+        # the two passes ARE the record of which sections failed, and the
+        # skip below cannot drift from the reason for it.
+        unresolved = tuple(
+            name
+            for name, _, _ in phase_sections
+            if phase_resolved[name] is None or phase_noenv[name] is None
+        )
+        phase_toml_keys = {
+            name: set(load_toml_section(toml_path, name).keys()) for name, _, _ in phase_sections
+        }
 
     defaults_base = kstrl_config_defaults(root_dir)
 
@@ -413,5 +435,5 @@ def build_config_report(
         toml_path=toml_path,
         toml_exists=toml_path.exists(),
         rows=tuple(rows),
-        unresolved=tuple(unresolved),
+        unresolved=unresolved,
     )

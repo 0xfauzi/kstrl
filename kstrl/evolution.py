@@ -136,7 +136,7 @@ class EvolutionConfig:
         guard somebody wrote around a call.
 
         ``TypeError`` was added when #272 gave the same section an entry
-        check: ``config_preflight._REJECTIONS`` treats it as operator
+        check: ``config_preflight.REJECTIONS`` treats it as operator
         input, and two lists that disagree would degrade the same value
         at startup and then raise on it mid-run.
 

@@ -16,7 +16,6 @@ classified as degrading still degrades.
 from __future__ import annotations
 
 import ast
-import io
 import json
 import sys
 from pathlib import Path
@@ -566,14 +565,6 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
         assert "[verify]" in result.output
 
 
-class _Tty(io.StringIO):
-    """A stream that claims to be a terminal, so the bare-`ks` branch
-    takes the home-shell path instead of printing help."""
-
-    def isatty(self) -> bool:
-        return True
-
-
 class TestTheHomeShellIsNotAFifthExemption:
     """Bare `ks` on a TTY runs the GROUP callback, so
     ``_KstrlCommand.invoke`` never fires for it. That made the home shell
@@ -596,13 +587,17 @@ class TestTheHomeShellIsNotAFifthExemption:
         monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("KSTRL_NO_TUI", raising=False)
         opened: list[Path] = []
-        monkeypatch.setattr(
-            home_mod,
-            "run_home_shell",
-            lambda root: (opened.append(root), 0)[1],
-        )
-        monkeypatch.setattr(sys, "stdout", _Tty())
-        monkeypatch.setattr(sys, "stdin", _Tty())
+
+        def _fake_home_shell(root: Path) -> int:
+            opened.append(root)
+            return 0
+
+        monkeypatch.setattr(home_mod, "run_home_shell", _fake_home_shell)
+        # The live streams, so the refusal is still visible to capsys.
+        # Replacing them wholesale would swallow the message this branch
+        # exists to print.
+        monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
 
         try:
             cli.main([], standalone_mode=False)
@@ -614,6 +609,7 @@ class TestTheHomeShellIsNotAFifthExemption:
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         code, opened = self._bare_ks(
             tmp_path,
@@ -623,6 +619,8 @@ class TestTheHomeShellIsNotAFifthExemption:
 
         assert opened == []
         assert code == 1
+        # And the operator is told which section, not just refused.
+        assert "[linear]" in capsys.readouterr().err
 
     def test_a_usable_config_still_opens_the_shell(
         self,
@@ -690,6 +688,65 @@ class TestConfigShowIsTheSurfaceThatAlwaysWorks:
 
         assert result.exit_code == 0, result.output
         assert "Rejected sections" not in result.output
+
+
+class TestTheSeamCannotBeBypassedByDeclaration:
+    """Two drift guards, both for the same failure: a command that gets
+    no check, or gets one against the wrong root, and says nothing.
+
+    Mirrors ``tests/test_prompt_versions.py``, which fails on a prompt
+    constant that was added without being enrolled.
+    """
+
+    @staticmethod
+    def _walk(group: click.Group, path: tuple[str, ...] = ()) -> list[tuple[tuple[str, ...], Any]]:
+        found: list[tuple[tuple[str, ...], Any]] = []
+        for name, command in group.commands.items():
+            here = (*path, name)
+            if isinstance(command, click.Group):
+                found.append((here, command))
+                found.extend(TestTheSeamCannotBeBypassedByDeclaration._walk(command, here))
+            else:
+                found.append((here, command))
+        return found
+
+    def test_every_command_goes_through_the_seam(self) -> None:
+        """A command that is not a ``_KstrlCommand`` never reaches the
+        check, which is how the home shell became a fifth exemption."""
+        leaves = {
+            path: type(command).__name__
+            for path, command in self._walk(cli)
+            if not isinstance(command, click.Group)
+        }
+
+        assert {p: n for p, n in leaves.items() if n != "_KstrlCommand"} == {}
+
+    def test_only_the_root_group_runs_without_a_subcommand(self) -> None:
+        """``invoke_without_command`` means the GROUP callback does work,
+        and a group callback is not a ``_KstrlCommand``. The root one is
+        the home shell, which preflights explicitly; a second such group
+        would silently reintroduce #272."""
+        groups = [path for path, command in self._walk(cli) if isinstance(command, click.Group)]
+
+        assert [p for p in groups if cli.commands[p[0]].invoke_without_command] == []
+        assert cli.invoke_without_command is True
+
+    def test_a_command_declaring_a_root_option_records_a_decision(self) -> None:
+        """`_preflight_root` reads --prompt / --prd / --understand-prompt
+        only for the commands that DERIVE their root from them. A command
+        that declares one without being listed either way would be
+        checked against a root it does not use, and pass."""
+        declaring = {
+            path[0]
+            for path, command in self._walk(cli)
+            if not isinstance(command, click.Group)
+            and {p.name for p in command.params} & {"prompt", "prd", "understand_prompt"}
+        }
+
+        # `ks config show` declares --prompt and --prd as [paths]
+        # OVERRIDES and still roots itself at the cwd, which is why the
+        # rule is keyed by command rather than by "declares the option".
+        assert declaring - cli_mod._ROOT_FROM_PROMPT == {"config"}
 
 
 class TestTheExemptionKeysOffTheTopLevelName:

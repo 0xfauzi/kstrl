@@ -541,7 +541,7 @@ def _timestamp() -> str:
 # Keyed by the TOP-LEVEL command name (see `_KstrlCommand._top_level_name`),
 # so `ks config show` is covered by "config" while a later `ks queue init`
 # is not exempted by its leaf name.
-_PREFLIGHT_EXEMPT = frozenset({"init", "config", "sense", "serve"})
+_PREFLIGHT_EXEMPT = frozenset({"init", "config", "sense"})
 
 # Sections a command is ABOUT, promoted from degrading to fatal for that
 # command only. `[evolution]` degrades everywhere because the journal is
@@ -553,6 +553,22 @@ _PREFLIGHT_REQUIRED: dict[str, frozenset[str]] = {
     "evolve": frozenset({"evolution"}),
 }
 
+# Exit code for a rejected configuration, per command. 1 unless the
+# command documents otherwise. `ks serve` is the only entry here: it
+# promises exit 2 for "cannot run", and reading that from the seam is
+# what makes the ORDERING structural. Calling the check in its body
+# instead left `--print-plist` in front of it, returning before the
+# check ran and then exiting 1 through the group handler; the next early
+# return would have done the same.
+_PREFLIGHT_EXIT: dict[str, int] = {"serve": 2}
+
+# The commands that derive their root from a prompt or PRD path, and so
+# the only ones whose `--prompt` / `--prd` / `--understand-prompt` (and
+# PROMPT_FILE / PRD_FILE) the entry check may read. See `_preflight_root`
+# for why this is a list of commands and not "whichever command declares
+# the option".
+_ROOT_FROM_PROMPT = frozenset({"run", "understand", "feature"})
+
 
 def _preflight_warn(message: str) -> None:
     """A degrading section's warning, on STDERR.
@@ -563,20 +579,19 @@ def _preflight_warn(message: str) -> None:
     click.echo(f"warning: {message}", err=True)
 
 
-def _config_failure_detail(root_dir: Path, exc: ValueError) -> str:
-    """The seam's wording for a failure `config show` met on its own.
+def _echo_config_problems(problems: list[str]) -> None:
+    """`ks config show`'s rejected-section block, in ONE shape.
 
-    Falls back to the raw exception when the check disagrees (it found
-    nothing, or the document itself will not parse), so this can only
-    ever add information.
+    Both of that command's failure paths print it: the one where no row
+    could be built, and the one where the rows printed and some section
+    was still rejected. Two renderings 35 lines apart is how an operator
+    piping stderr gets a different answer for the same fault.
     """
-    from kstrl.config_preflight import collect_config_problems
-
-    try:
-        problems = collect_config_problems(root_dir, warn=_preflight_warn)
-    except ValueError as document_exc:
-        return str(document_exc)
-    return "\n  ".join(problems) if problems else str(exc)
+    click.echo("# Rejected sections (every other command refuses while these stand)")
+    for problem in problems:
+        click.echo(f"  {problem}")
+    click.echo("")
+    click.echo(f"error: {len(problems)} unusable config section(s)", err=True)
 
 
 def _preflight_root(ctx: click.Context) -> Path:
@@ -584,33 +599,31 @@ def _preflight_root(ctx: click.Context) -> Path:
 
     Reuses ``_resolve_root`` - the same inputs, in the same precedence -
     so the file the preflight validates is the file the command will
-    load. A command with none of them gets the cwd, which is what those
-    commands do themselves.
+    load. Every other command uses ``root or Path.cwd()``, which is what
+    this returns for them.
 
-    An input counts ONLY when the command DECLARES the matching option,
-    env vars included, and that is the whole correctness argument. Only
-    `run`, `understand` and `feature` derive a root from a prompt or PRD
-    path; the rest use ``root or Path.cwd()`` and never read
-    ``PROMPT_FILE``. Reading it for them broke this both ways with one
-    stale export: ``ks status`` refused on a broken kstrl.toml belonging
-    to an unrelated checkout, and - worse, because nothing shows it -
-    ``ks status`` in a project whose OWN config was broken PASSED, by
-    validating that other checkout instead.
+    The prompt and PRD inputs are read ONLY for the commands in
+    ``_ROOT_FROM_PROMPT``, and that is the whole correctness argument.
+    Reading them for every command broke this both ways with one stale
+    ``PROMPT_FILE`` export: ``ks status`` refused on a broken kstrl.toml
+    belonging to an unrelated checkout, and - worse, because nothing
+    shows it - ``ks status`` in a project whose OWN config was broken
+    PASSED, by validating that other checkout instead.
 
-    ``understand_prompt`` is read beside ``prompt`` because that is the
-    option `ks feature` feeds to ``_resolve_root``. No command declares
-    both, so asking for both cannot be ambiguous.
+    Keyed by command rather than by "declares the option", which reads
+    like the same rule and is not: `ks config show` declares ``--prompt``
+    and ``--prd`` as ``[paths]`` OVERRIDES and still roots itself at the
+    cwd, so the proxy already pointed that command at another checkout.
+    ``tests/test_config_preflight.py`` fails on any new command that
+    declares one of these options without a decision being recorded here.
     """
-
-    def _declared(name: str) -> bool:
-        return name in ctx.params
 
     def _param(name: str) -> str | None:
         value = ctx.params.get(name)
         return str(value) if value else None
 
-    def _path(names: tuple[str, ...], env_var: str) -> Path | None:
-        if not any(_declared(name) for name in names):
+    def _path(*names: str, env_var: str) -> Path | None:
+        if _KstrlCommand._top_level_name(ctx) not in _ROOT_FROM_PROMPT:
             return None
         for name in names:
             value = _param(name)
@@ -622,8 +635,10 @@ def _preflight_root(ctx: click.Context) -> Path:
     root = _param("root")
     return _resolve_root(
         Path(root) if root else None,
-        _path(("prompt", "understand_prompt"), "PROMPT_FILE"),
-        _path(("prd",), "PRD_FILE"),
+        # `ks feature` names its prompt option --understand-prompt and
+        # feeds THAT to _resolve_root. No command declares both.
+        _path("prompt", "understand_prompt", env_var="PROMPT_FILE"),
+        _path("prd", env_var="PRD_FILE"),
     )
 
 
@@ -707,7 +722,10 @@ class _KstrlGroup(click.Group):
     def invoke(self, ctx: click.Context) -> Any:
         try:
             return super().invoke(ctx)
-        except (BudgetConfigError, ConfigError) as exc:
+        except ConfigError as exc:
+            click.echo(f"error: {exc}", err=True)
+            sys.exit(_PREFLIGHT_EXIT.get(ctx.invoked_subcommand or "", 1))
+        except BudgetConfigError as exc:
             click.echo(f"error: {exc}", err=True)
             sys.exit(1)
 
@@ -738,8 +756,12 @@ def cli(ctx: click.Context) -> None:
         # and decompose_spec directly). A bad [linear] value would have
         # paid for the architect and then aborted: the original #272
         # defect, on the path a user reaches by typing `ks`.
-        preflight_config(Path.cwd(), warn=_preflight_warn)
-        ctx.exit(run_home_shell(Path.cwd()))
+        #
+        # Bound once: the point of the check is that the root it
+        # validates is the root the shell opens.
+        root_dir = Path.cwd()
+        preflight_config(root_dir, warn=_preflight_warn)
+        ctx.exit(run_home_shell(root_dir))
     click.echo(ctx.get_help())
     ctx.exit(2)
 
@@ -2882,14 +2904,25 @@ def config_show(
             prd_default=root_dir / "scripts/kstrl/prd.json",
         )
 
+    from kstrl.config_preflight import collect_config_problems
+
+    def _problems() -> list[str]:
+        try:
+            return collect_config_problems(root_dir, warn=_preflight_warn)
+        except ValueError as document_exc:
+            # The document will not parse, so no section resolved and
+            # the parse error IS the whole report.
+            return [str(document_exc)]
+
     try:
         report = build_config_report(root_dir, overlay=_overlay)
     except ValueError as exc:
         # No rows are possible: the base config itself was rejected, or
-        # the document will not parse. Say it the way every other command
-        # says it, with the section, the key and the offending value,
-        # rather than the bare coercion message this used to print.
-        click.echo(f"error: {_config_failure_detail(root_dir, exc)}", err=True)
+        # the document will not parse. Report it in the same shape as the
+        # success-with-problems path below, and in the seam's words -
+        # section, key, offending value - rather than the bare coercion
+        # message this used to print.
+        _echo_config_problems(_problems() or [str(exc)])
         sys.exit(1)
 
     toml_path = report.toml_path
@@ -2908,21 +2941,13 @@ def config_show(
     click.echo("")
 
     # Every command refuses on an unusable section, so ONE command has to
-    # always run and always explain: this one. The rows above are printed
-    # first and cover what resolved (a rejected section is skipped, not
-    # fatal, and named in `report.unresolved`); the problems below cover
-    # every section, the eleven this report does not render included,
-    # with the section, the key and the offending value that the rest of
-    # the CLI reports.
-    from kstrl.config_preflight import collect_config_problems
-
-    problems = collect_config_problems(root_dir, warn=_preflight_warn)
+    # always run and always explain: this one. The rows above cover what
+    # resolved (a rejected section costs its rows, not the report); the
+    # problems below cover every section, the eleven this report does not
+    # render included, in the words the rest of the CLI uses.
+    problems = _problems()
     if problems:
-        click.echo("# Rejected sections (every other command refuses while these stand)")
-        for problem in problems:
-            click.echo(f"  {problem}")
-        click.echo("")
-        click.echo(f"error: {len(problems)} unusable config section(s)", err=True)
+        _echo_config_problems(problems)
         sys.exit(1)
 
     sys.exit(0)
@@ -5017,7 +5042,6 @@ def serve(
     Only infrastructure failures are retried, and only with positive
     evidence. Spec-level failures go to poison/ and wait for a human.
     """
-    from kstrl.config_preflight import preflight_config
     from kstrl.serve import (
         REQUIRE_TIMEOUT_ENV,
         ServeConfig,
@@ -5036,22 +5060,6 @@ def serve(
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
-
-    # BEFORE the --print-plist branch, which returns without reaching the
-    # load below. That branch used to skip the check entirely and then
-    # exit 1 through the group's ConfigError handler, contradicting this
-    # command's documented exit 2 for a bad kstrl.toml. The check is also
-    # the WHOLE configuration, not just [serve]: this daemon spawns
-    # `ks factory` children and classifies their exit codes, so one typo
-    # in [verify] would poison queue items one after another until the
-    # breaker tripped, and the operator would be reading poison reports
-    # instead of a parse error. That is why `serve` is exempt from the
-    # entry seam and not from the check.
-    try:
-        preflight_config(root_dir, warn=_preflight_warn)
-    except ValueError as exc:
-        ui_impl.err(str(exc))
-        sys.exit(2)
 
     if print_plist:
         # Printed rather than installed: writing into ~/Library/LaunchAgents

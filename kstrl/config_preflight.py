@@ -87,7 +87,7 @@ from kstrl.config_report import scrubbed_environ
 #: the domain errors that derive from IT: ``ServeError`` rejects
 #: ``[serve] max_consecutive_poison = 0`` that way, and ``QueueError``,
 #: ``InboxError`` and ``IntakeError`` are its siblings.
-_REJECTIONS = (ValueError, TypeError, RuntimeError)
+REJECTIONS = (ValueError, TypeError, RuntimeError)
 
 
 @dataclass(frozen=True)
@@ -238,7 +238,7 @@ def collect_config_problems(
         for section in config_sections():
             try:
                 section.loader(root_dir)
-            except _REJECTIONS as exc:
+            except REJECTIONS as exc:
                 detail = _detail(section, toml_path, root_dir, exc)
                 if section.fatal or not required.isdisjoint(section.sections):
                     problems.append(detail)
@@ -290,9 +290,18 @@ def _blamed_env_var(
 
     An EMPTY environment is tried first, and a loader that still fails
     there ends the search: the file is at fault, and no variable can be.
-    That gate is what keeps a file fault at one extra load rather than
-    one per variable (measured with 83 variables set: 34.3 ms of
-    fruitless sweep before the gate, 0.5 ms after).
+    That gate keeps a file fault at one extra load rather than one per
+    variable. Measured on a file fault with the 21 KB example config,
+    INSIDE the parse scope: 0.54 ms with the gate against 0.84 ms
+    without at 83 variables, and 0.95 against 2.09 at 303. The saving is
+    small and linear in the size of the environment, which is the honest
+    reason to keep it: CI environments are the big ones.
+
+    An earlier version of this docstring claimed 34.3 ms for the
+    ungated sweep. That was measured before ``toml_parse_scope`` covered
+    the blame helpers, when every one of those loads reparsed the file.
+    It is off by 40x now, which is why it is written down here re-taken
+    rather than carried forward.
 
     Runs whenever a section is REJECTED, which includes a degrading
     section on an otherwise successful command. Both are before the
@@ -307,7 +316,7 @@ def _blamed_env_var(
         except Exception:
             return None
 
-    culprits: list[str] = []
+    blamed: str | None = None
     for name in sorted(os.environ):
         saved = os.environ.pop(name)
         try:
@@ -317,15 +326,18 @@ def _blamed_env_var(
             # this variable is not the one thing to change.
             continue
         else:
+            if blamed is not None:
+                # A second variable that fixes it on its own. Neither is
+                # "the one to change", so the sweep stops here rather
+                # than finishing to discard the answer.
+                return None
             # The value is echoed only where the loader's own message
             # already quotes it. Nothing has decided that an arbitrary
             # environment value may be printed, so nothing prints one.
-            culprits.append(
-                f"set by {name}={saved}" if repr(saved) in message else f"set by {name}"
-            )
+            blamed = f"set by {name}={saved}" if repr(saved) in message else f"set by {name}"
         finally:
             os.environ[name] = saved
-    return culprits[0] if len(culprits) == 1 else None
+    return blamed
 
 
 def _blamed_toml_value(
@@ -343,7 +355,7 @@ def _blamed_toml_value(
     """
     hits = []
     for name in sections:
-        with suppress(*_REJECTIONS, OSError):
+        with suppress(*REJECTIONS, OSError):
             for key, value in load_toml_section(toml_path, name).items():
                 if repr(value) in message:
                     hits.append(f"kstrl.toml has [{name}] {key} = {value!r}")
