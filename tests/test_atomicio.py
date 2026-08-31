@@ -183,29 +183,40 @@ class TestEncodingIsPinnedNotInherited:
         interpreter under a POSIX/ASCII locale with PYTHONCOERCECLOCALE
         and PYTHONUTF8 disabled, which is what a minimal container gives
         you, and requires byte-for-byte identical output.
-        """
-        import kstrl.atomicio
 
+        The payload travels in a SCRIPT FILE whose source is pure ASCII
+        (``ascii()`` escapes every non-ASCII character), never through
+        argv. A first version passed the text to ``python -c`` and died
+        on Linux CI with "Unable to decode the command from the command
+        line": under LC_ALL=C the child cannot decode a non-ASCII argv,
+        so the test failed on the very condition it exists to exercise.
+        macOS did not catch it because its argv is UTF-8 regardless.
+        """
         repo_root = Path(kstrl.atomicio.__file__).parent.parent
-        script = (
-            "import sys; from pathlib import Path;"
-            f"sys.path.insert(0, {str(repo_root)!r});"
-            "from kstrl.atomicio import atomic_write_text;"
-            f"atomic_write_text(Path(sys.argv[1]), {NON_ASCII!r})"
+        source = (
+            "import sys\n"
+            "from pathlib import Path\n"
+            f"sys.path.insert(0, {ascii(str(repo_root))})\n"
+            "from kstrl.atomicio import atomic_write_text\n"
+            f"atomic_write_text(Path(sys.argv[1]), {ascii(NON_ASCII)})\n"
         )
+        script = tmp_path / "write_under_c_locale.py"
+        # Raises rather than mojibaking if anything non-ASCII survived,
+        # which is what keeps the guarantee above true.
+        script.write_text(source, encoding="ascii")
+
         target = tmp_path / "from_c_locale.txt"
-        env = {
-            **os.environ,
-            "LC_ALL": "C",
-            "LANG": "C",
-            "PYTHONCOERCECLOCALE": "0",
-            "PYTHONUTF8": "0",
-        }
         result = subprocess.run(
-            [sys.executable, "-c", script, str(target)],
+            [sys.executable, str(script), str(target)],
             capture_output=True,
             text=True,
-            env=env,
+            env={
+                **os.environ,
+                "LC_ALL": "C",
+                "LANG": "C",
+                "PYTHONCOERCECLOCALE": "0",
+                "PYTHONUTF8": "0",
+            },
         )
         assert result.returncode == 0, result.stderr
         assert target.read_bytes() == NON_ASCII.encode("utf-8")
