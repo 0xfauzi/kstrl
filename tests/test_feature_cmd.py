@@ -78,6 +78,7 @@ def _params(tmp_path: Path, *, stories: int = 1, repair_max_runs: int = 0) -> Fe
         log_dir=tmp_path / ".kstrl" / "logs" / "feature_demo",
         understand_iterations=2,
         understand_prompt_file=None,
+        prompt_file=tmp_path / "scripts" / "kstrl" / "prompt.md",
         implementation_auto_run=False,
         repair_max_runs=repair_max_runs,
         repair_iterations=2,

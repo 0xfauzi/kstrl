@@ -1577,21 +1577,41 @@ def feature(
         max_budget_usd=base_config.agent_budget_usd,
     )
 
+    # ``understand_prompt_file`` is the OVERRIDE feature_cmd applies, so
+    # None means "leave the understand loop on the resolved config".
+    # ``understand_reads`` is the file that loop will actually open,
+    # which is what the #286 preflight has to be pointed at; they differ
+    # in exactly the PROMPT_FILE case.
     if _use_cli_value(ctx, "understand_prompt"):
         understand_prompt_file: Path | None = _resolve_path(
             root_dir, understand_prompt, kstrl_dir / "feature_understand_prompt.md"
         )
+        understand_reads = understand_prompt_file
     elif "PROMPT_FILE" not in os.environ:
         understand_prompt_file = kstrl_dir / "feature_understand_prompt.md"
+        understand_reads = understand_prompt_file
     else:
         understand_prompt_file = None
+        understand_reads = base_config.prompt_file
 
-    # #286: both prompts this command reads, once they are both
-    # resolved. ``understand_prompt_file`` is None when PROMPT_FILE
-    # points the understand phase elsewhere, and the helper takes that
-    # as "nothing to say" rather than making this caller branch.
-    _check_prompt_preflight(base_config.prompt_file, ui_impl)
-    _check_prompt_preflight(understand_prompt_file, ui_impl)
+    # #286: the two prompts this command actually opens, and only those.
+    #
+    # The engineer prompt is the scaffolded file rather than
+    # ``base_config.prompt_file``: `ks feature` has always run its
+    # implement and repair loops on `scripts/kstrl/prompt.md`, ignoring
+    # [paths] prompt and PROMPT_FILE. Warning about the resolved path
+    # would name a file the command never opens and stay silent about
+    # the stale one it does. That was a literal in feature_cmd matching
+    # a literal here; it is now passed on FeatureParams below, so the
+    # path warned about and the path read cannot drift apart.
+    #
+    # ``understand_reads`` is resolved above: checking the engineer path
+    # alone lost the PROMPT_FILE case, where the understand loop stays on
+    # the resolved config because feature_cmd only overrides it for a
+    # non-None ``understand_prompt_file``.
+    engineer_prompt_file = kstrl_dir / "prompt.md"
+    _check_prompt_preflight(engineer_prompt_file, ui_impl)
+    _check_prompt_preflight(understand_reads, ui_impl)
 
     params = FeatureParams(
         prd_path=prd_path,
@@ -1602,6 +1622,7 @@ def feature(
         log_dir=log_dir,
         understand_iterations=understand_iterations_value,
         understand_prompt_file=understand_prompt_file,
+        prompt_file=engineer_prompt_file,
         implementation_auto_run=implementation_auto_run,
         repair_max_runs=repair_max_runs,
         repair_iterations=repair_iterations,

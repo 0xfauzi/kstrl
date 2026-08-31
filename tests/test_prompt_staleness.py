@@ -1,4 +1,4 @@
-"""#286: a scaffolded prompt that is an older kstrl template says so.
+"""#286: what the scaffold ledger says about a prompt file on disk.
 
 `ks init` writes ``scripts/kstrl/prompt.md`` through
 ``_create_if_missing``, which by design never overwrites, and
@@ -25,6 +25,10 @@ the mechanism existed. Two kinds of test live here:
 The 1.1.1 row was validated during development against a real
 installation: the owner's writers-room project carries a prompt.md whose
 digest is exactly that row.
+
+What kstrl DOES about a stale file - the `ks init` report, the upgrade
+and its guards, and the operator-facing surfaces - is in
+tests/test_prompt_upgrade.py, which imports the fixtures below.
 """
 
 from __future__ import annotations
@@ -34,10 +38,8 @@ import hashlib
 from pathlib import Path
 
 import pytest
-from click.testing import CliRunner, Result
 
 from kstrl import init_cmd
-from kstrl.cli import cli
 from kstrl.init_cmd import (
     DEFAULT_PROMPT,
     DEFAULT_PROMPT_VERSION,
@@ -47,7 +49,6 @@ from kstrl.init_cmd import (
     classify_scaffolded_path,
     staleness_notice,
 )
-from tests.spine_utils import git as spine_git
 from tests.test_init_cmd import run_init_capturing
 
 OLD_BODY = "# old engineer instructions\n"
@@ -180,7 +181,7 @@ class TestWarningText:
         notice = staleness_notice(path)
         assert notice is not None
         assert "9.0.0" in notice.headline
-        assert "only rewrites the copy under scripts/kstrl/" in notice.advice
+        assert "not the copy under scripts/kstrl/" in notice.advice
         assert "Run `ks init --upgrade-prompts`" not in notice.advice
 
     def test_the_oldest_body_names_itself_not_the_one_above_it(
@@ -328,141 +329,3 @@ class TestLedgerIntegrity:
         run_init_capturing(tmp_path)
         for template in SCAFFOLDED_TEMPLATES:
             assert (tmp_path / "scripts" / "kstrl" / template.filename).exists()
-
-
-class TestInitReportsAndUpgrades:
-    def test_rerun_reports_a_stale_scaffold(
-        self, tmp_path: Path, synthetic_ledger: ScaffoldedTemplate
-    ) -> None:
-        _prompt_at(tmp_path, OLD_BODY)
-        _, output = run_init_capturing(tmp_path)
-        assert "prompt.md already exists" in output
-        assert "9.0.0" in output
-        assert "ks init --upgrade-prompts" in output
-
-    def test_rerun_stays_quiet_on_a_current_scaffold(self, tmp_path: Path) -> None:
-        run_init_capturing(tmp_path)
-        _, output = run_init_capturing(tmp_path)
-        assert "prompt.md already exists" in output
-        assert "upgrade-prompts" not in output
-
-    def test_upgrade_rewrites_a_pristine_older_scaffold(
-        self, tmp_path: Path, synthetic_ledger: ScaffoldedTemplate
-    ) -> None:
-        path = _prompt_at(tmp_path, OLD_BODY)
-        _, output = run_init_capturing(tmp_path, upgrade_prompts=True)
-        assert path.read_text() == NEW_BODY
-        assert "9.0.0 -> 9.1.0" in output
-        assert "no local edits" in output
-
-    def test_upgrade_never_touches_an_edited_prompt(self, tmp_path: Path) -> None:
-        edited = DEFAULT_PROMPT + "\nalways run the fuzzer\n"
-        path = _prompt_at(tmp_path, edited)
-        _, output = run_init_capturing(tmp_path, upgrade_prompts=True)
-        assert path.read_text() == edited
-        assert "matches no template kstrl has shipped" in output
-        assert "left alone" in output
-
-    def test_upgrade_is_a_no_op_on_a_current_scaffold(self, tmp_path: Path) -> None:
-        run_init_capturing(tmp_path)
-        before = (tmp_path / "scripts" / "kstrl" / "prompt.md").read_text()
-        _, output = run_init_capturing(tmp_path, upgrade_prompts=True)
-        assert (tmp_path / "scripts" / "kstrl" / "prompt.md").read_text() == before
-        assert f"already at {DEFAULT_PROMPT_VERSION}" in output
-
-    @pytest.mark.parametrize(
-        ("extra_args", "expected_body"),
-        [
-            # `ks init` stays non-destructive unless the operator says so.
-            ([], OLD_BODY),
-            (["--upgrade-prompts"], NEW_BODY),
-        ],
-        ids=["off-by-default", "opted-in"],
-    )
-    def test_the_flag_is_the_only_thing_that_rewrites(
-        self,
-        tmp_path: Path,
-        synthetic_ledger: ScaffoldedTemplate,
-        extra_args: list[str],
-        expected_body: str,
-    ) -> None:
-        path = _prompt_at(tmp_path, OLD_BODY)
-        result = CliRunner().invoke(
-            cli, ["init", str(tmp_path), *extra_args, "--ui", "plain", "--no-color"]
-        )
-        assert result.exit_code == 0, result.output
-        assert path.read_text() == expected_body
-
-
-class TestOperatorActuallySeesIt:
-    """The warning has to land on the operator's terminal.
-
-    #275's migration warning went to the worker bus (``run_loop`` runs in
-    a pool worker whose UI writes to that component's engineer.jsonl) and
-    never reached the parent, which is why the check lives in the CLI
-    preflight instead of beside the read in ``run_loop``. These tests
-    drive the real command through CliRunner and assert on what it
-    printed.
-    """
-
-    def _project(self, tmp_path: Path, body: str) -> Path:
-        project = tmp_path / "project"
-        kstrl_dir = project / "scripts" / "kstrl"
-        kstrl_dir.mkdir(parents=True)
-        (kstrl_dir / "prompt.md").write_text(body)
-        (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
-        (project / "kstrl.toml").write_text('[factory]\nreview_mode = "skip"\n')
-        spine_git("init", "-q", "-b", "main", cwd=project)
-        spine_git("config", "user.email", "cli@test", cwd=project)
-        spine_git("config", "user.name", "CLI Test", cwd=project)
-        spine_git("add", "-A", cwd=project)
-        spine_git("commit", "-q", "-m", "init", cwd=project)
-        return project
-
-    def _invoke_run(self, project: Path) -> Result:
-        return CliRunner().invoke(
-            cli,
-            [
-                "run",
-                "1",
-                "--root",
-                str(project),
-                "--agent-cmd",
-                "printf '<promise>COMPLETE</promise>\\n'",
-                "--sleep",
-                "0",
-                "--no-verify",
-                "--ui",
-                "plain",
-                "--no-color",
-            ],
-        )
-
-    def test_ks_run_prints_the_warning_before_it_starts(
-        self, tmp_path: Path, synthetic_ledger: ScaffoldedTemplate
-    ) -> None:
-        result = self._invoke_run(self._project(tmp_path, OLD_BODY))
-        assert result.exit_code == 0, result.output
-        assert "9.0.0" in result.output
-        assert "ks init --upgrade-prompts" in result.output
-        # Before any agent work, not buried after it. "Preflight" is
-        # deliberately NOT the anchor: run_loop prints that from inside
-        # the worker, whose output never reaches this stream at all,
-        # which is the whole reason the check is not in run_loop.
-        assert "Preflight" not in result.output
-        assert result.output.index("upgrade-prompts") < result.output.index(
-            "Factory: Validating DAG"
-        )
-
-    def test_ks_run_stays_silent_on_a_current_prompt(
-        self, tmp_path: Path, synthetic_ledger: ScaffoldedTemplate
-    ) -> None:
-        result = self._invoke_run(self._project(tmp_path, NEW_BODY))
-        assert result.exit_code == 0, result.output
-        assert "upgrade-prompts" not in result.output
-
-    def test_ks_run_stays_silent_on_an_edited_prompt(self, tmp_path: Path) -> None:
-        """The real ledger, an ordinary hand-written prompt: no nag."""
-        result = self._invoke_run(self._project(tmp_path, "just do the thing\n"))
-        assert result.exit_code == 0, result.output
-        assert "upgrade-prompts" not in result.output

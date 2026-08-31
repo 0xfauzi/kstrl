@@ -16,7 +16,12 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from kstrl.init_cmd import ScaffoldAction, _detect_project_context, gitignore_plan
+from kstrl.init_cmd import (
+    ScaffoldAction,
+    _detect_project_context,
+    classify_scaffold,
+    gitignore_plan,
+)
 
 # The documented kstrl.toml [agent] type vocabulary (empty = auto).
 AGENT_TYPES = ("", "claude-code", "claude-sdk", "codex")
@@ -34,6 +39,13 @@ _AGENT_STOCK_PREFIXES = {
 class ScaffoldEntry:
     path: Path
     action: ScaffoldAction  # create = written; keep = left alone; append = added to
+    #: For a scaffolded prompt that is an unedited OLDER kstrl template,
+    #: the label it was shipped under (#286). "keep" is the honest action
+    #: for it - the wizard's run_init call does leave it alone - but
+    #: "exists - kept" on its own reads as "your scaffold is fine", which
+    #: is precisely the belief #286 exists to correct. None for
+    #: everything else, including a prompt the operator has edited.
+    stale_label: str | None = None
 
 
 def plan_scaffold(root: Path) -> list[ScaffoldEntry]:
@@ -59,7 +71,25 @@ def plan_scaffold(root: Path) -> list[ScaffoldEntry]:
         root / "CLAUDE.md",
         root / "AGENTS.md",
     ]
-    entries = [ScaffoldEntry(path=p, action="keep" if p.exists() else "create") for p in paths]
+    # One pass over the templates rather than a per-path lookup: the
+    # only paths that can carry a label are the three under
+    # scripts/kstrl/ that classify_scaffold already covers, and asking
+    # it once keeps "which statuses are speakable" written in init_cmd
+    # alone. Absent, current, edited and unknown all say nothing, the
+    # same rule as the run-time warning.
+    stale = {
+        state.path: state.shipped_label
+        for state in classify_scaffold(root)
+        if state.status == "stale"
+    }
+    entries = [
+        ScaffoldEntry(
+            path=p,
+            action="keep" if p.exists() else "create",
+            stale_label=stale.get(p),
+        )
+        for p in paths
+    ]
     entries.append(ScaffoldEntry(path=root / ".gitignore", action=gitignore_plan(root)))
     return entries
 

@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -750,6 +751,65 @@ def classify_scaffold(root: Path) -> list[TemplateState]:
     return [_classify(t, kstrl_dir / t.filename) for t in SCAFFOLDED_TEMPLATES]
 
 
+def _rewrite_blockers(path: Path, root: Path | None = None) -> list[str]:
+    """Every reason `ks init --upgrade-prompts` would not rewrite ``path``.
+
+    The upgrade replaces bytes with ``os.replace``, which swaps the
+    directory entry. Wherever that entry is shared, replacing it
+    silently un-shares it: the project moves to the new body, the source
+    every other project reads stays on the old one, and nobody is told.
+    That is the outcome #286 exists to prevent, produced by the fix for
+    it. Measured on this tree before the guard: a symlinked prompt.md
+    became a regular file with the shared source untouched, and a
+    hard-linked one had its inode replaced with the same result.
+
+    Following the link instead of refusing is the other option, and is
+    rejected on scope: `ks init <dir>` must not rewrite a file outside
+    <dir>, and a shared prompt is by definition read by projects this
+    invocation was not pointed at. Naming the target costs the operator
+    one command and keeps the decision theirs.
+
+    ``root``, when given, adds the check only a caller that knows the
+    project can make: a symlinked ``scripts/kstrl`` directory puts the
+    file outside <dir> with no link on the leaf at all. (`ks init` has
+    always CREATED straight through such a link; this only refuses to
+    REWRITE through it.) Reasons compose rather than shadowing each
+    other, so an operator with two of them is told about both.
+    """
+    blockers: list[str] = []
+    if path.is_symlink():
+        blockers.append(f"a symlink to {path.resolve()}")
+    else:
+        try:
+            links = path.stat().st_nlink
+        except OSError:
+            links = 1
+        if links > 1:
+            blockers.append(f"a hard link shared with {links - 1} other name(s)")
+    if root is not None and root.resolve() not in path.resolve().parents:
+        blockers.append(f"outside this project, at {path.resolve()}")
+    if not path.parent.match("scripts/kstrl"):
+        blockers.append("not the copy under scripts/kstrl/ that `ks init` upgrades")
+    return blockers
+
+
+def _upgrade_remedy(path: Path, root: Path | None = None) -> str:
+    """The one sentence that says what to do about a stale ``path``.
+
+    Shared by the run-time warning and by `ks init --upgrade-prompts`
+    itself, so the advice an operator reads and the behaviour they then
+    get cannot be worded into disagreement.
+    """
+    blockers = _rewrite_blockers(path, root)
+    if not blockers:
+        return "Run `ks init --upgrade-prompts` to take the current one."
+    return (
+        "`ks init --upgrade-prompts` will not touch this one: it is "
+        + ", and ".join(blockers)
+        + ". Update the file it shares, or replace this one by hand."
+    )
+
+
 class StalenessNotice(NamedTuple):
     """The two operator-facing lines about one stale scaffold."""
 
@@ -772,17 +832,10 @@ def staleness_notice(path: Path) -> StalenessNotice | None:
     # a number an operator cannot reconcile with the changelog. The two
     # labels are the actionable fact and both are exact.
     #
-    # The remedy is only offered where it works. `ks init` scaffolds and
-    # upgrades under scripts/kstrl/ only, so pointing an operator whose
-    # [paths] prompt lives elsewhere at --upgrade-prompts would name an
-    # action that silently does nothing to their file.
-    if path.parent.match("scripts/kstrl"):
-        remedy = "Run `ks init --upgrade-prompts` to take the current one."
-    else:
-        remedy = (
-            "`ks init --upgrade-prompts` only rewrites the copy under "
-            "scripts/kstrl/, so move this one there or replace it by hand."
-        )
+    # The remedy is only offered where it works, and _upgrade_remedy is
+    # the single place that decides that, so this warning cannot promise
+    # something `ks init --upgrade-prompts` then refuses to do.
+    remedy = _upgrade_remedy(path)
     return StalenessNotice(
         headline=(
             f"{path} is the {state.template.filename} kstrl shipped at "
@@ -1100,30 +1153,56 @@ def _create_if_missing(path: Path, content: str, ui: UI) -> None:
             ui.warn(f"  {notice.headline}")
             ui.info(f"  {notice.advice}")
     else:
-        path.write_text(content)
+        # utf-8 pinned to match _read_text_or_none: what init writes has
+        # to read back byte-identical for the #286 digest to mean
+        # anything, on any locale.
+        path.write_text(content, encoding="utf-8")
         ui.ok(f"  Created {path.name}")
 
 
-def _atomic_write(target: Path, content: str) -> None:
-    """``tempfile.mkstemp`` in the destination directory + ``os.replace``.
+def _atomic_replace(target: Path, content: str) -> None:
+    """Replace an EXISTING file's bytes atomically, keeping its mode.
 
-    The house pattern (``manifest.py``, ``knowledge.write_facts``,
+    ``tempfile.mkstemp`` in the destination directory + ``os.replace``,
+    the house pattern (``manifest.py``, ``knowledge.write_facts``,
     ``decompose._atomic_write_json``), written out here rather than
     imported from ``workqueue.atomic_write``. That import would put
     ``kstrl.workqueue`` in ``kstrl.loop``'s static import closure, via
     loop's deferred ``init_cmd`` import, and #274's
-    ``tests/test_state_dir_scope.py`` refuses that: the loop must not be
+    ``tests/test_state_dir_scope.py`` refuses it: the loop must not be
     able to reach a module that writes the state entries the scope guard
-    still counts. ``decompose`` carries its own copy for its own
-    reasons, so this is the second, not the first.
+    still counts.
+
+    MODE. ``mkstemp`` creates 0600 and ``os.replace`` carries that onto
+    the destination, so the bare house pattern silently tightens a file
+    ``_create_if_missing`` wrote at the umask default: measured 0o644
+    before an upgrade and 0o600 after. A container image or CI job that
+    runs `ks init` as one uid and the factory as another then fails on
+    the worker's ``prompt_source.read_text()``. ``os.fchmod`` on the
+    descriptor already in hand copies the destination's mode across with
+    no second path lookup to race.
+
+    This is NOT special to `ks init`: measured on this tree, both
+    ``workqueue.atomic_write`` and ``decompose._atomic_write_json`` turn
+    a 0o644 file into 0o600 the same way, on git-tracked operator files
+    (``scripts/kstrl/manifest.json``, per-component ``prd.json``), and
+    neither pins an encoding either. Fixing those is a change to the
+    work queue and the manifest writer and is out of #286's scope; this
+    copy is fixed here because #286 is what introduced its call site.
+
+    REPLACE, not create. The one caller only ever rewrites a file the
+    ledger already classified, so a missing target is a bug, not a case
+    to handle: ``stat`` raises and the run stops rather than quietly
+    doing a non-atomic create under a name that promises otherwise.
     """
-    target.parent.mkdir(parents=True, exist_ok=True)
+    mode = stat.S_IMODE(target.stat().st_mode)
     fd, tmp_path = tempfile.mkstemp(
         dir=str(target.parent),
         prefix=f".{target.name}-",
         suffix=".tmp",
     )
     try:
+        os.fchmod(fd, mode)
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(content)
         os.replace(tmp_path, str(target))
@@ -1143,7 +1222,12 @@ def _upgrade_scaffolded_templates(root: Path, ui: UI) -> None:
     the operator's in it to lose. Anything the history does not
     recognise is left alone and reported, never merged or guessed at.
 
-    The write is atomic (``_atomic_write`` below) rather than a plain
+    "Nothing of the operator's to lose" is about the BYTES. The
+    directory entry is a second thing they own, so a prompt they share
+    by link, or one that resolves outside this project, is reported and
+    left alone: see ``_rewrite_blockers``.
+
+    The write is atomic (``_atomic_replace``) rather than a plain
     ``Path.write_text``: this is the one path in `ks init` that REPLACES
     bytes rather than creating a file, and an interruption mid-write
     would truncate the very prompt this feature exists to protect, into
@@ -1152,7 +1236,12 @@ def _upgrade_scaffolded_templates(root: Path, ui: UI) -> None:
     for state in classify_scaffold(root):
         name = state.path.name
         if state.status == "stale":
-            _atomic_write(state.path, state.template.body)
+            blockers = _rewrite_blockers(state.path, root)
+            if blockers:
+                ui.warn(f"  {name} is {blockers[0]}; left alone")
+                ui.info(f"    {_upgrade_remedy(state.path, root)}")
+                continue
+            _atomic_replace(state.path, state.template.body)
             ui.ok(
                 f"  {name}: {state.shipped_label} -> "
                 f"{state.template.current_label} (it held no local edits)"
@@ -1189,9 +1278,19 @@ def _read_text_or_none(path: Path) -> str | None:
     ValueError: a .gitignore that is not UTF-8 crashed `ks init` and
     the TUI scaffold preview with a traceback (#201 review). A
     directory in the file's place raises IsADirectoryError, an OSError.
+
+    UTF-8 is pinned rather than left to the locale because #286's
+    classification is byte equality against a template `ks init` wrote:
+    if the read and the write can disagree about the encoding, then on a
+    non-UTF-8 locale a template carrying one non-ASCII character would
+    scaffold and immediately classify as ``unrecognised``, and so would
+    never be reported or upgraded. Every shipped body is ASCII today,
+    which is exactly why this is cheap to pin now. It also makes the
+    .gitignore read deterministic across machines; a file that is not
+    UTF-8 still degrades to None and is still left alone, as before.
     """
     try:
-        return path.read_text()
+        return path.read_text(encoding="utf-8")
     except (OSError, ValueError):
         return None
 
