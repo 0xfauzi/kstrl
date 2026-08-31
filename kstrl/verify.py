@@ -901,8 +901,8 @@ def scrub_project_claude_md(
     policies (#261).
     """
     try:
-        claude_md = (root / "CLAUDE.md").read_text()
-    except OSError:
+        claude_md = (root / "CLAUDE.md").read_text(encoding="utf-8")
+    except (OSError, ValueError):
         return None
     return scrub_stale_verify_commands(claude_md, commands)
 

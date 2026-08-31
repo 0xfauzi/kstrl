@@ -47,6 +47,7 @@ from kstrl.loop import run_loop
 from kstrl.manifest import Component, Manifest
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
+from tests.helpers.procs import read_pid
 
 # Generous bound for "killed within the deadline": 1s deadline + 5s
 # SIGTERM grace + slack. A hang would previously block forever.
@@ -67,17 +68,9 @@ def _wait_pid_dead(pid: int, timeout: float = 8.0) -> bool:
     return False
 
 
-def _read_pid(pidfile: Path, timeout: float = 5.0) -> int:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            text = pidfile.read_text().strip()
-            if text:
-                return int(text)
-        except (FileNotFoundError, ValueError):
-            pass
-        time.sleep(0.05)
-    raise AssertionError(f"pid file never appeared: {pidfile}")
+# Moved to tests/helpers/procs.py when #292 gave it a second consumer;
+# aliased rather than renamed at every call site below.
+_read_pid = read_pid
 
 
 def _git(*args: str, cwd: Path) -> None:

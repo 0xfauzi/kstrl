@@ -6,13 +6,12 @@ import hashlib
 import json
 import os
 import re
-import stat
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NamedTuple
 
 from kstrl import git
+from kstrl.atomicio import atomic_write_text
 from kstrl.prd import PRD
 
 if TYPE_CHECKING:
@@ -1055,9 +1054,9 @@ def run_init(directory: Path, ui: UI, *, upgrade_prompts: bool = False) -> int:
     prd_file = kstrl_dir / "prd.json"
 
     try:
-        with open(prd_file) as f:
+        with open(prd_file, encoding="utf-8") as f:
             data = json.load(f)
-    except json.JSONDecodeError as e:
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
         ui.err(f"Invalid JSON in prd.json: {e}")
         return 1
 
@@ -1163,55 +1162,30 @@ def _create_if_missing(path: Path, content: str, ui: UI) -> None:
 def _atomic_replace(target: Path, content: str) -> None:
     """Replace an EXISTING file's bytes atomically, keeping its mode.
 
-    ``tempfile.mkstemp`` in the destination directory + ``os.replace``,
-    the house pattern (``manifest.py``, ``knowledge.write_facts``,
-    ``decompose._atomic_write_json``), written out here rather than
-    imported from ``workqueue.atomic_write``. That import would put
-    ``kstrl.workqueue`` in ``kstrl.loop``'s static import closure, via
-    loop's deferred ``init_cmd`` import, and #274's
-    ``tests/test_state_dir_scope.py`` refuses it: the loop must not be
-    able to reach a module that writes the state entries the scope guard
-    still counts.
+    The write is ``atomicio.atomic_write_text``, which since #291 is the
+    one owner of the mode and encoding rules this used to spell out for
+    itself. ``atomicio`` is a stdlib-only leaf, so importing it here does
+    NOT put ``kstrl.workqueue`` in ``kstrl.loop``'s static import
+    closure via loop's deferred ``init_cmd`` import, which is what #274's
+    ``tests/test_state_dir_scope.py`` refuses and what kept this copy
+    hand-rolled until now.
 
-    MODE. ``mkstemp`` creates 0600 and ``os.replace`` carries that onto
-    the destination, so the bare house pattern silently tightens a file
-    ``_create_if_missing`` wrote at the umask default: measured 0o644
-    before an upgrade and 0o600 after. A container image or CI job that
-    runs `ks init` as one uid and the factory as another then fails on
-    the worker's ``prompt_source.read_text()``. ``os.fchmod`` on the
-    descriptor already in hand copies the destination's mode across with
-    no second path lookup to race.
-
-    This is NOT special to `ks init`: measured on this tree, both
-    ``workqueue.atomic_write`` and ``decompose._atomic_write_json`` turn
-    a 0o644 file into 0o600 the same way, on git-tracked operator files
-    (``scripts/kstrl/manifest.json``, per-component ``prd.json``), and
-    neither pins an encoding either. Fixing those is a change to the
-    work queue and the manifest writer and is out of #286's scope; this
-    copy is fixed here because #286 is what introduced its call site.
-
-    REPLACE, not create. The one caller only ever rewrites a file the
-    ledger already classified, so a missing target is a bug, not a case
-    to handle: ``stat`` raises and the run stops rather than quietly
-    doing a non-atomic create under a name that promises otherwise.
+    REPLACE, not create, is the part that stays here, because it is this
+    caller's contract rather than the writer's, and a ``must_exist=``
+    flag on the shared writer would be a special case carried by nine
+    callers that do not want it. The one caller only ever rewrites a file
+    the ledger already classified, so a missing target is a bug rather
+    than a case to handle: the run stops instead of quietly doing a
+    non-atomic create under a name that promises otherwise, which is what
+    ``atomic_write_text`` on its own would do.
     """
-    mode = stat.S_IMODE(target.stat().st_mode)
-    fd, tmp_path = tempfile.mkstemp(
-        dir=str(target.parent),
-        prefix=f".{target.name}-",
-        suffix=".tmp",
-    )
-    try:
-        os.fchmod(fd, mode)
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(content)
-        os.replace(tmp_path, str(target))
-    except BaseException:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
+    if not target.is_file():
+        raise FileNotFoundError(
+            f"_atomic_replace expects an existing file, got {target}: this "
+            f"function only rewrites templates the scaffold ledger already "
+            f"classified, so a missing target means the caller is wrong"
+        )
+    atomic_write_text(target, content)
 
 
 def _upgrade_scaffolded_templates(root: Path, ui: UI) -> None:
@@ -1746,7 +1720,6 @@ def bootstrap_claude_md(root: Path, ui: UI, ctx: dict[str, str]) -> None:
     file. When the prompt tells agents to "update AGENTS.md", they are
     writing to CLAUDE.md.
     """
-    import os
 
     ui.section("Agent context files")
 

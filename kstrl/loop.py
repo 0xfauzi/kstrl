@@ -445,7 +445,7 @@ def build_project_context(
     sections: list[str] = []
     claude_md_path = cwd / "CLAUDE.md"
     if claude_md_path.exists():
-        claude_md = claude_md_path.read_text()
+        claude_md = claude_md_path.read_text(encoding="utf-8")
         if commands is not None:
             # A CLAUDE.md scaffolded before #261 still carries verification
             # bullets that disagree with the gate. Drop the divergent ones
@@ -570,7 +570,7 @@ def run_loop(
     from string import Template
 
     if config.prompt_file.exists():
-        raw_prompt = config.prompt_file.read_text()
+        raw_prompt = config.prompt_file.read_text(encoding="utf-8")
     else:
         from kstrl.init_cmd import DEFAULT_PROMPT
 

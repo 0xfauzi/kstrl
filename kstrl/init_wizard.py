@@ -125,8 +125,8 @@ def apply_agent_settings(
     if not wanted:
         return False
     try:
-        content = toml_path.read_text()
-    except OSError:
+        content = toml_path.read_text(encoding="utf-8")
+    except (OSError, ValueError):
         return False
     lines = content.splitlines(keepends=True)
     for key, value in wanted.items():

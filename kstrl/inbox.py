@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -44,6 +43,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from kstrl.atomicio import atomic_write_text
 from kstrl.statedir import CONTROL_INBOX, control_file, control_lock, ensure_control_state
 
 INBOX_SCHEMA_VERSION = 1
@@ -627,34 +627,26 @@ class Inbox:
         """Rewrite the log as one line per item from the folded state.
 
         Never called implicitly - history is the audit trail. Returns the
-        number of items retained. Atomic (mkstemp + os.replace), matching
-        the manifest pattern.
+        number of items retained. Atomic, through the one helper that
+        owns that pattern (#291).
         """
         items = self.items()
         ensure_control_state(self.root_dir)
         path = self.path
         path.parent.mkdir(parents=True, exist_ok=True)
         with control_lock(self.root_dir):
-            fd, tmp_path = tempfile.mkstemp(
-                dir=str(path.parent),
-                suffix=".tmp",
-                prefix=".inbox-",
+            atomic_write_text(
+                path,
+                "".join(
+                    json.dumps(
+                        {"schema_version": INBOX_SCHEMA_VERSION, **item.to_dict()},
+                        separators=(",", ":"),
+                        default=str,
+                    )
+                    + "\n"
+                    for item in items
+                ),
             )
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                    for item in items:
-                        payload = {
-                            "schema_version": INBOX_SCHEMA_VERSION,
-                            **item.to_dict(),
-                        }
-                        handle.write(json.dumps(payload, separators=(",", ":"), default=str) + "\n")
-                os.replace(tmp_path, str(path))
-            except BaseException:
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-                raise
         return len(items)
 
 

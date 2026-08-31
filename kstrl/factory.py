@@ -9,7 +9,6 @@ import shutil
 import signal
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from collections import Counter
@@ -21,6 +20,7 @@ from typing import IO, TYPE_CHECKING, Any, TextIO
 
 from kstrl.agents.base import UsageTotals, collect_usage, print_usage_rollup
 from kstrl.agents.proc import kill_active_process_groups
+from kstrl.atomicio import atomic_write_json
 from kstrl.autonomy import (
     AutonomyConfig,
     AutonomyLevel,
@@ -1737,32 +1737,17 @@ def _write_partial_usage(path: Path, totals: UsageTotals) -> None:
 
     The worker owns its UsageRecords in memory; the abort path
     (``_abort_inflight``) SIGKILLs the process, so without this file the
-    spend of a killed worker is simply lost. mkstemp + os.replace is the
-    repo's atomic-write convention (manifest.py:381) and is what makes
-    the file safe to read from a process that may be killing the writer:
-    a reader sees the previous complete snapshot or the new one, never a
-    torn one.
+    spend of a killed worker is simply lost. ``atomicio`` owns the
+    atomic-write convention (#291) and is what makes the file safe to
+    read from a process that may be killing the writer: a reader sees the
+    previous complete snapshot or the new one, never a torn one.
 
     Accounting only - every failure is swallowed. A worker must not die
     because its usage file could not be written.
     """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp_path = tempfile.mkstemp(
-            dir=str(path.parent),
-            suffix=".tmp",
-            prefix=".usage-",
-        )
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump(totals.to_dict(), fh)
-            os.replace(tmp_path, str(path))
-        except BaseException:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            raise
+        atomic_write_json(path, totals.to_dict())
     except (OSError, TypeError, ValueError):
         return
 
@@ -2024,12 +2009,20 @@ def _run_component(
         max_budget_usd=agent_budget_usd,
     )
 
-    # Copy PRD into worktree if needed
+    # Copy PRD into worktree if needed.
+    #
+    # shutil.copyfile, not read_text/write_text: these are COPIES, and a
+    # copy that decodes and re-encodes is only byte-exact when the
+    # locale's codec round-trips. #291 made the PRD utf-8 on disk, which
+    # under LC_ALL=C a bare read_text cannot decode at all, and #286's
+    # scaffold digests depend on prompt.md copying byte for byte. A byte
+    # copy removes the encoding question rather than answering it four
+    # times.
     worktree_prd = worktree_path / prd_path_str
     prd_source = root_dir / prd_path_str
     if not worktree_prd.exists() and prd_source.exists():
         worktree_prd.parent.mkdir(parents=True, exist_ok=True)
-        worktree_prd.write_text(prd_source.read_text())
+        shutil.copyfile(prd_source, worktree_prd)
 
     # The prompt template's $prd_path placeholder (shipped in
     # DEFAULT_PROMPT >= 1.1.0 and the scaffolded prompt.md) is substituted
@@ -2042,7 +2035,7 @@ def _run_component(
     prompt_source = root_dir / prompt_file_str
     if not worktree_prompt.exists() and prompt_source.exists():
         worktree_prompt.parent.mkdir(parents=True, exist_ok=True)
-        worktree_prompt.write_text(prompt_source.read_text())
+        shutil.copyfile(prompt_source, worktree_prompt)
 
     # Copy CLAUDE.md / AGENTS.md into the worktree from root_dir. When
     # use_worktrees=False, worktree_path IS the repo root so the files are
@@ -2050,7 +2043,7 @@ def _run_component(
     claude_dest = worktree_path / "CLAUDE.md"
     claude_src = root_dir / "CLAUDE.md"
     if not claude_dest.exists() and claude_src.exists():
-        claude_dest.write_text(claude_src.read_text())
+        shutil.copyfile(claude_src, claude_dest)
     agents_dest = worktree_path / "AGENTS.md"
     agents_src = root_dir / "AGENTS.md"
     if not agents_dest.exists():
@@ -2058,7 +2051,7 @@ def _run_component(
             # Preserve the AGENTS.md -> CLAUDE.md symlink convention.
             agents_dest.symlink_to("CLAUDE.md")
         elif agents_src.exists():
-            agents_dest.write_text(agents_src.read_text())
+            shutil.copyfile(agents_src, agents_dest)
         elif claude_dest.exists():
             agents_dest.symlink_to("CLAUDE.md")
 
@@ -2419,6 +2412,42 @@ def _wait_interruptible(
             return done, False
         if remaining is not None and remaining <= slice_seconds:
             return set(), False
+
+
+def _resolve_max_parallel(factory_config: FactoryConfig, ui: UI) -> int:
+    """Effective parallelism, and a warning for every setting it discards.
+
+    Extracted from ``_run_factory_locked`` (#292) so the decision has a
+    name and can be tested. It is also the decision that hid a fake test
+    for months: the spine SIGTERM test asked for ``max_parallel=2``,
+    silently got 1 and therefore ``_InlineExecutor``, and nothing said so.
+
+    Both discards are REPORTED, and only when they actually discard
+    something. The worktree branch used to fire unconditionally as an
+    info line that never named ``max_parallel``, so an operator who
+    configured 8 was never told the 8 was thrown away.
+    ``ui.kv("Max parallel", ...)`` prints the effective value, which
+    cannot distinguish "I asked for 1" from "I asked for 8 and lost it".
+    """
+    max_parallel = factory_config.max_parallel
+    if not factory_config.use_worktrees:
+        if max_parallel > 1:
+            ui.warn(
+                f"worktrees disabled: components cannot run in parallel; "
+                f"forcing max_parallel=1 (you configured {max_parallel})"
+            )
+        return 1
+    if factory_config.single_pr and max_parallel > 1:
+        # R0.5 (H-8): single_pr components all live on ONE branch, and a
+        # branch can only be checked out in one worktree at a time -
+        # parallel same-tier components would hard-fail on "already
+        # checked out". Sequential is the only layout that works.
+        ui.warn(
+            f"single_pr mode: components share one branch; forcing "
+            f"max_parallel=1 (you configured {max_parallel})"
+        )
+        return 1
+    return max_parallel
 
 
 def _abort_inflight(
@@ -3179,18 +3208,7 @@ def _run_factory_locked(
     # Re-poll before scheduling so confirmed merges unblock dependents.
     pipeline.repoll_merge_pending()
 
-    # Determine effective parallelism
-    max_parallel = factory_config.max_parallel
-    if not factory_config.use_worktrees:
-        max_parallel = 1
-        ui.info("Worktrees disabled: running sequentially")
-    if factory_config.single_pr and max_parallel > 1:
-        # R0.5 (H-8): single_pr components all live on ONE branch, and a
-        # branch can only be checked out in one worktree at a time -
-        # parallel same-tier components would hard-fail on "already
-        # checked out". Sequential is the only layout that works.
-        max_parallel = 1
-        ui.info("single_pr mode: components share one branch; forcing max_parallel=1")
+    max_parallel = _resolve_max_parallel(factory_config, ui)
 
     # R0.1: TimeoutConfig is the single source for the agent-iteration and
     # component wall-clock limits. Enforcement layers: the adapters kill

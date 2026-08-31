@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
-import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -21,6 +19,7 @@ from kstrl.agents.base import (
     print_usage_rollup,
     usage_cursor,
 )
+from kstrl.atomicio import atomic_write_json
 from kstrl.delimiters import generate_data_delimiter
 from kstrl.events import (
     ArtifactWritten,
@@ -790,24 +789,6 @@ def _surface_spec_issues(issues: list[SpecIssue], ui: UI) -> None:
 SPEC_ISSUES_REL_PATH = Path("scripts") / "kstrl" / "spec-issues.json"
 
 
-def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    """Atomic JSON write: temp file in the same directory then
-    ``os.replace`` (same pattern as ``Manifest.save`` and
-    ``knowledge.write_facts``)."""
-    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp", prefix=f".{path.name}-")
-    try:
-        with os.fdopen(fd, "w") as f:
-            json.dump(payload, f, indent=2)
-            f.write("\n")
-        os.replace(tmp_name, str(path))
-    except BaseException:
-        try:
-            os.unlink(tmp_name)
-        except OSError:
-            pass
-        raise
-
-
 def _issue_dicts(issues: list[SpecIssue]) -> list[dict[str, str]]:
     return [
         {
@@ -856,7 +837,7 @@ def persist_spec_issues(
         "issues": _issue_dicts(issues),
     }
     path.parent.mkdir(parents=True, exist_ok=True)
-    _atomic_write_json(path, payload)
+    atomic_write_json(path, payload)
     return path
 
 
@@ -1146,7 +1127,7 @@ def _generate_component_prd(
     feature_dir: Path = root_dir / "scripts" / "kstrl" / "feature" / comp_id
     feature_dir.mkdir(parents=True, exist_ok=True)
     prd_path = feature_dir / "prd.json"
-    _atomic_write_json(prd_path, prd_data)
+    atomic_write_json(prd_path, prd_data)
     return prd_path
 
 

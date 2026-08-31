@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 import time
 from collections import deque
 from collections.abc import Callable
@@ -13,6 +11,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from kstrl.atomicio import atomic_write_json
 from kstrl.findings import Finding
 from kstrl.names import validate_branch_name, validate_component_id
 
@@ -231,8 +230,15 @@ class Manifest:
 
     @classmethod
     def load(cls, path: Path) -> Manifest:
-        """Load manifest from JSON file."""
-        with open(path) as f:
+        """Load manifest from JSON file.
+
+        utf-8 pinned to match ``save``: the manifest is written as utf-8
+        (#291) and a bare ``open`` would decode it with the locale codec,
+        so one non-ASCII character in a component description made the
+        file unreadable under ``LC_ALL=C``. Measured before this pin:
+        ``UnicodeDecodeError: 'ascii' codec can't decode byte 0xe2``.
+        """
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
 
         errors = cls.validate_schema(data)
@@ -338,20 +344,9 @@ class Manifest:
         }
 
         path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Atomic write: temp file in same directory then os.replace
-        fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp", prefix=".manifest-")
-        try:
-            with os.fdopen(fd, "w") as f:
-                json.dump(data, f, indent=2)
-                f.write("\n")
-            os.replace(tmp_path, str(path))
-        except BaseException:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            raise
+        # Atomic, and keeps the mode the operator gave this git-tracked
+        # file; see kstrl.atomicio (#291).
+        atomic_write_json(path, data)
 
     @classmethod
     def validate_schema(cls, data: Any) -> list[str]:

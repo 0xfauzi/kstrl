@@ -47,7 +47,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-import tempfile
 import warnings
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -55,6 +54,7 @@ from enum import IntEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from kstrl.atomicio import atomic_write_json
 from kstrl.statedir import (
     CONTROL_AUTONOMY,
     control_file,
@@ -411,7 +411,7 @@ class AutonomyState:
         return state
 
     def save(self, root_dir: Path) -> None:
-        """Atomic write (mkstemp + os.replace), mirroring manifest.py."""
+        """Atomic write, through the one helper that owns the pattern (#291)."""
         ensure_control_state(root_dir)
         path = self.path_for(root_dir)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -428,22 +428,7 @@ class AutonomyState:
             "history": [asdict(h) for h in self.history],
         }
         with control_lock(root_dir):
-            fd, tmp_path = tempfile.mkstemp(
-                dir=str(path.parent),
-                suffix=".tmp",
-                prefix=".autonomy-",
-            )
-            try:
-                with os.fdopen(fd, "w") as handle:
-                    json.dump(payload, handle, indent=2)
-                    handle.write("\n")
-                os.replace(tmp_path, str(path))
-            except BaseException:
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-                raise
+            atomic_write_json(path, payload)
 
     # -- transitions -------------------------------------------------------
     def _reset_level_counters(self) -> None:

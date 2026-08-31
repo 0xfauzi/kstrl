@@ -23,13 +23,13 @@ from __future__ import annotations
 import json
 import os
 import re
-import tempfile
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from kstrl.atomicio import atomic_write_text
 from kstrl.decompose import (
     AgentOutputTooLarge,
     _extract_json,
@@ -434,24 +434,10 @@ def write_facts(
         content = _render_fact_md(fact)
         target = run_dir / f"{fact.id}.md"
         try:
-            fd, tmp_path = tempfile.mkstemp(
-                dir=str(run_dir),
-                suffix=".tmp",
-                prefix=f".{fact.id}-",
-            )
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    f.write(content)
-                os.replace(tmp_path, str(target))
-                written += 1
-            except BaseException:
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-                raise
+            atomic_write_text(target, content)
         except OSError:
             continue
+        written += 1
 
     return written
 
