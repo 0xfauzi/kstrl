@@ -6,7 +6,7 @@ import json
 import logging
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -49,6 +49,7 @@ from kstrl.manifest import (
     Manifest,
 )
 from kstrl.names import validate_branch_name, validate_component_id
+from kstrl.observability import read_progress_events
 from kstrl.prd import PRD
 
 logger = logging.getLogger(__name__)
@@ -788,6 +789,10 @@ def _surface_spec_issues(issues: list[SpecIssue], ui: UI) -> None:
 # next to manifest.json so one directory holds the decompose outputs.
 SPEC_ISSUES_REL_PATH = Path("scripts") / "kstrl" / "spec-issues.json"
 
+# The journal's discriminator for one recorded spec audit. Named because
+# this module both writes it and reads it back, and the two must agree.
+SPEC_ISSUES_EVENT = "spec_issues"
+
 
 def _issue_dicts(issues: list[SpecIssue]) -> list[dict[str, str]]:
     return [
@@ -886,7 +891,7 @@ def _record_spec_issues_event(
     entry: dict[str, Any] = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "project": project_name,
-        "event_type": "spec_issues",
+        "event_type": SPEC_ISSUES_EVENT,
         "spec_file": spec_file,
         "halted": halted,
         "counts": _issue_counts(issues),
@@ -1030,12 +1035,110 @@ def _spec_convergence(
     )
 
 
-def _surface_convergence(report: SpecConvergence | None, ui: UI) -> None:
+@dataclass(frozen=True)
+class ExcludedProject:
+    """Spec audits this journal holds under one OTHER project name (#280).
+
+    Not a claim that they are the same work. The report cannot know
+    that, and #280 is explicit that it should not try: the operator
+    renamed a project and its spec file in the same moment, so neither
+    half of the key survives to link the two histories. What this
+    carries is the evidence the operator needs to judge it themselves -
+    the other project's name, how many audits it holds, and which spec
+    files those audits read.
+
+    ``audits`` is not derivable from ``spec_files``: the files are
+    deduplicated and the count is per audit, so one project auditing
+    one file ten times is (10, one file).
+    """
+
+    project: str
+    audits: int
+    spec_files: tuple[str, ...]
+
+
+def _excluded_projects(
+    entries: list[dict[str, Any]],
+    project_name: str,
+    spec_file: str,
+) -> tuple[ExcludedProject, ...]:
+    """Spec audits in ``entries`` recorded under some other project.
+
+    Ordered so the display cap can only ever drop the weakest evidence.
+    A project that audited the file this run audited sorts first: that
+    is #280's first arm, the strongest hint of a plain project rename,
+    and it is a guarantee rather than a coincidence of the cap. The
+    rest follow by how much history they hold.
+
+    Entries with no project name are skipped rather than grouped under
+    "": an unnamed project is not somewhere the operator can go and
+    look, so pointing at it is not evidence.
+    """
+    by_project: dict[str, list[str]] = {}
+    for entry in entries:
+        if entry.get("event_type") != SPEC_ISSUES_EVENT:
+            continue
+        project = str(entry.get("project", ""))
+        if not project or project == project_name:
+            continue
+        by_project.setdefault(project, []).append(str(entry.get("spec_file", "")))
+    excluded = [
+        ExcludedProject(
+            project=project,
+            audits=len(files),
+            spec_files=tuple(sorted({f for f in files if f})),
+        )
+        for project, files in by_project.items()
+    ]
+    return tuple(
+        sorted(excluded, key=lambda e: (spec_file not in e.spec_files, -e.audits, e.project))
+    )
+
+
+def _excluded_history(
+    journal: EvolutionJournal | None,
+    project_name: str,
+    spec_file: str,
+) -> tuple[ExcludedProject, ...]:
+    """Every spec audit this journal holds under another project (#280).
+
+    Empty for the ordinary single-project repo, so the line it feeds
+    never fires on the common case.
+
+    Read through ``read_progress_events`` rather than
+    ``get_spec_issue_runs``, which filters to one project inside the
+    reader by design and so cannot see the entries this asks about. It
+    is the same tolerant read the journal itself delegates to, over the
+    same public path. A reader on ``EvolutionJournal`` would be the
+    better home and would collapse this into the read the trend already
+    does; measured at 0.099 ms on this repo's journal, so the second
+    read buys nothing worth a worse layering to avoid.
+
+    Deliberately NOT windowed by ``lookback_runs``. That knob bounds
+    how far back the *trend* reaches; a count of the history the trend
+    excludes that was itself windowed would omit history silently,
+    which is the bug it exists to fix.
+    """
+    if journal is None:
+        return ()
+    return _excluded_projects(
+        read_progress_events(journal.config.journal_path),
+        project_name,
+        spec_file,
+    )
+
+
+def _surface_convergence(
+    report: SpecConvergence | None,
+    excluded: tuple[ExcludedProject, ...],
+    project_name: str,
+    ui: UI,
+) -> None:
     """Render the convergence report, or nothing on the first run.
 
-    ``None`` (no journal, or no previous audit of this project) renders
-    silently, so the common first-run case prints no noise and the
-    caller has no branch to carry.
+    No report and nothing excluded (no journal, or a first audit in a
+    repo whose journal holds nothing else) renders silently, so the
+    common first-run case prints no noise.
 
     Counts, deltas and the trend, with no "this spec is converging"
     verdict attached: no measured threshold separates converging from
@@ -1043,10 +1146,54 @@ def _surface_convergence(report: SpecConvergence | None, ui: UI) -> None:
     and the rise from 1 to 3 happened while the operator was resolving
     real issues. The numbers are the evidence; the judgement about
     whether to pay for another round is the operator's.
+
+    No report next to a non-empty ``excluded`` is #280's own shape: the
+    audit that renamed the project starts a fresh trend, and the moment
+    the history is lost is the moment worth saying so. That case says
+    the absence out loud, because a note under a bare section header
+    would leave the operator to infer it from silence.
     """
-    if report is None:
+    if report is None and not excluded:
         return
     ui.section("Spec Convergence")
+    if report is None:
+        ui.info("No earlier audit of this project is recorded.")
+    else:
+        _surface_trend(report, ui)
+    if excluded:
+        ui.info(_excluded_line(excluded, project_name))
+
+
+# How many names one line spells out before summarising the rest. A
+# display cap on line length, not a threshold on meaning: nothing is
+# dropped from the counts, only from the list of names.
+_EXCLUDED_NAMES_SHOWN = 3
+
+
+def _join_capped(items: Sequence[str], noun: str) -> str:
+    """Join ``items``, naming at most ``_EXCLUDED_NAMES_SHOWN`` of them."""
+    shown = items[:_EXCLUDED_NAMES_SHOWN]
+    rest = len(items) - len(shown)
+    joined = ", ".join(shown)
+    return f"{joined} and {rest} more {noun}" if rest else joined
+
+
+def _excluded_line(excluded: tuple[ExcludedProject, ...], project_name: str) -> str:
+    """The one line naming the audit history this report does not cover."""
+    phrases: list[str] = []
+    for entry in excluded:
+        files = _join_capped(entry.spec_files, "file(s)")
+        phrases.append(f"'{entry.project}' ({files})" if files else f"'{entry.project}'")
+    return (
+        "Note: audits are matched by project name, and this report covers "
+        f"'{project_name}'. This journal holds {sum(e.audits for e in excluded)} "
+        f"more spec audit(s) that it does not count, under "
+        f"{_join_capped(phrases, 'project(s)')}."
+    )
+
+
+def _surface_trend(report: SpecConvergence, ui: UI) -> None:
+    """The comparison itself: counts, deltas, trend and overlap."""
     for severity in _SEVERITY_ORDER:
         current = report.current_counts[severity]
         previous = report.previous_counts[severity]
@@ -1431,8 +1578,16 @@ def _decompose_spec_impl(
     # this run is appended to the journal below - otherwise the
     # "previous run" the report compares against would be this one.
     journal = _spec_audit_journal(root_dir, ui)
+    # #280: the trend is keyed on the project name, so a rename starts a
+    # fresh one and the runs before it drop out of view. Keying
+    # differently would be worse (the spec is edited every round, so a
+    # content hash never matches, and #260's own loop renamed the file
+    # too), so what is fixed is the silence rather than the key.
+    excluded = _excluded_history(journal, project_name, spec_path.name)
     _surface_convergence(
         _spec_convergence(spec_issues, journal, project_name, spec_path.name),
+        excluded,
+        project_name,
         ui,
     )
     _record_spec_issues_event(
