@@ -29,7 +29,13 @@ from kstrl.agents import (
     CodexAgent,
     get_agent,
 )
-from kstrl.agents.base import Agent, UsageTotals, collect_usage, usage_cursor
+from kstrl.agents.base import (
+    ARCHITECT_COMPONENT,
+    Agent,
+    UsageTotals,
+    collect_usage,
+    usage_cursor,
+)
 from kstrl.agents.liveness import CLAUDE_FAMILY, PROBE_ENV_VAR, probe_family
 from kstrl.agents.logging import LoggingAgent
 from kstrl.breaker import BreakerConfig
@@ -2056,7 +2062,7 @@ def decompose(
                 ui=core_ui,
                 root_dir=root_dir,
                 bus=command_run.bus,
-                transcript=command_run.transcript_writer("architect"),
+                transcript=command_run.transcript_writer(ARCHITECT_COMPONENT),
             )
             core_ui.ok(f"Decomposed into {len(manifest.components)} components")
             return 0
@@ -2098,7 +2104,7 @@ def decompose(
                 embed_ctx.ui,
                 root_dir,
                 "decompose",
-                component="architect",
+                component=ARCHITECT_COMPONENT,
                 run_id=embed_ctx.run_id,
             )
             try:
@@ -2122,7 +2128,7 @@ def decompose(
         ui_impl,
         root_dir,
         "decompose",
-        component="architect",
+        component=ARCHITECT_COMPONENT,
     )
     try:
         code = _decompose_core(ui_impl, command_run)

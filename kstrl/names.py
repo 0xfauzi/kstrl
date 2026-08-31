@@ -15,6 +15,7 @@ typecheck is ``mypy --strict``, which implies ``--no-implicit-reexport``, so
 from __future__ import annotations
 
 import re
+from typing import Final
 
 # R0.6 input hygiene: component ids and branch names are LLM-emitted
 # (architect output) and flow into filesystem paths
@@ -24,6 +25,56 @@ import re
 # deliberate - silent sanitizing would hide architect drift.
 COMPONENT_ID_PATTERN = r"^[a-z0-9][a-z0-9._-]{0,63}$"
 _COMPONENT_ID_RE = re.compile(COMPONENT_ID_PATTERN)
+
+# #281: kstrl's own ROLE rows are written into surfaces that are
+# otherwise keyed by an LLM-emitted component id - the usage meter, the
+# run's event stream, the reducer's component table, the evolution
+# journal, and serve's spend ledger. While a role key was a bare word
+# ("architect") it shared that keyspace, so a spec that led the
+# architect to emit a component genuinely called `architect` merged the
+# two rows: the component's engineer/review/security/distill spend
+# folded into the role's, and - worse - `RunSpend.architect_calls` went
+# non-zero for a run whose architect may never have reported, clearing
+# `unmetered_phases` and letting the daemon call a day's total exact on
+# no evidence.
+#
+# The prefix removes the CLASS rather than one name: it namespaces every
+# role row, including ones added later. It lives beside
+# COMPONENT_ID_PATTERN because that is what makes it safe - the pattern
+# anchors the first character to [a-z0-9], and '@' is outside the
+# charset besides, so no valid component id can ever be spelled this
+# way. That is a property of two constants in one file, and
+# tests/test_input_hygiene.py pins them together, so loosening the
+# pattern fails a test instead of silently re-merging the meter.
+#
+# '@' rather than a punctuation mark that reads more like prose,
+# because a role key is not only a dict key: `ks decompose` opens the
+# architect's transcript at
+# .kstrl/runs/<run>/components/<key>/engineer.log, so the prefix becomes
+# a PATH SEGMENT. '@' is unremarkable in a path on every filesystem
+# kstrl targets and needs no quoting in a shell; ':' is neither.
+# validate_branch_name rejects '@' too, so a role key that ever reached
+# a git ref would be a loud rejection rather than a silent bad ref.
+ROLE_KEY_PREFIX: Final = "@"
+
+
+def role_component_key(role: str) -> str:
+    """The component-table key for a kstrl ROLE rather than a component.
+
+    Roles are kstrl's own vocabulary; component ids are the architect
+    LLM's. Both are written to the same keyed surfaces, so the role side
+    is namespaced and the component side is left exactly as the operator
+    and the architect wrote it (#281). No compatibility break falls on
+    manifests: nothing a manifest carries changes.
+
+    ``role`` is the bare role name and stays bare wherever it is a PHASE
+    key or an operator-facing label - phase keys are kstrl's vocabulary
+    on both sides, so they never collided in the first place, and
+    prefixing a label would only make the honesty warnings harder to
+    read.
+    """
+    return f"{ROLE_KEY_PREFIX}{role}"
+
 
 # ASCII allowlist for branch names. Anything outside it (whitespace,
 # ':', control characters, unicode dash confusables like U+2011) is

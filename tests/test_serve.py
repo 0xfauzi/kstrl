@@ -21,6 +21,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.findings import Finding
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.manifest import Component, ComponentStatus, Manifest
@@ -2159,10 +2160,16 @@ class TestRunOwnership:
     ) -> None:
         """The seat #257 piece B writes to and the one serve reads from
         are the same key, which is the only reason the check above can
-        distinguish a metered architect from a silent one."""
+        distinguish a metered architect from a silent one.
+
+        #281 moved that key into the role namespace. Both sides are
+        spelled from the one constant here, so a future move keeps them
+        together rather than leaving this test passing on a literal the
+        writer no longer uses.
+        """
         state = RunState(cost_usd=2.0, cost_calls=1, usage_calls=1)
-        state.components["architect"] = ComponentState(
-            component_id="architect",
+        state.components[ARCHITECT_COMPONENT] = ComponentState(
+            component_id=ARCHITECT_COMPONENT,
             usage_calls=1,
             cost_calls=1,
             cost_usd=2.0,
@@ -2171,6 +2178,61 @@ class TestRunOwnership:
             load.return_value = (state, None)
             spend = REAL_READ_RUN_SPEND(tmp_path, "factory-abc")
         assert spend.architect_calls == 1
+
+    def test_a_bare_architect_key_never_clears_the_honesty_flag(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#281, and the consequence that is not cosmetic.
+
+        ONE state, because two readings of it are indistinguishable here
+        and that is the whole argument:
+
+        - a NEW run whose architect never reported (a resume, or an
+          adapter that reports no usage) which also carries a component
+          the architect genuinely NAMED `architect` - a legal id, and an
+          ordinary one for a spec about design tooling; or
+        - an OLD run, recorded before the role key moved, whose stream
+          still says ``"architect"`` for the role itself.
+
+        Both put ``usage_calls`` on a component row spelled
+        ``architect``. While the role's own row was keyed by that same
+        bare word, the first case answered "did the architect report?"
+        with a different role's calls, cleared ``unmetered_phases``, and
+        let the daemon announce a day's total as exact on no evidence -
+        the honesty property #257 piece B exists to establish.
+
+        Both now read as unmetered. For the first that is correct; for
+        the second it is a lost decimal place - the money is still
+        counted, only the exactness claim degrades - and it is the same
+        answer already given for a resume, a blocker halt and a silent
+        adapter. Never a false exact.
+
+        This is also why there is no fallback to the old key: nothing at
+        this seam can tell the two readings apart, so a fallback would
+        reintroduce case one in order to prettify case two.
+        ``read_run_spend`` states why nothing narrower is worth building.
+        """
+        state = RunState(cost_usd=2.0, cost_calls=1, usage_calls=1)
+        state.components[ARCHITECT_ROLE] = ComponentState(
+            component_id=ARCHITECT_ROLE,
+            usage_calls=1,
+            cost_calls=1,
+            cost_usd=2.0,
+        )
+        with patch("kstrl.reducer.load_run_state") as load:
+            load.return_value = (state, None)
+            spend = REAL_READ_RUN_SPEND(tmp_path, "factory-abc")
+
+        assert spend.architect_calls == 0, "a component's calls are not the architect's"
+        assert spend.unmetered_phases == (ARCHITECT_ROLE,)
+        assert spend.cost_usd == 2.0, "the money is still read; only the claim degrades"
+        # ``RunSpend.lower_bound`` is the per-axis coverage question
+        # (usage_calls vs cost_calls) and is deliberately NOT asserted
+        # here: it is ``DailySpend.lower_bound`` that reads
+        # ``unmetered_phases`` and brands the day a floor, which
+        # ``test_an_architect_that_reached_no_run_dir_is_named_unmetered``
+        # already covers end to end.
 
     def test_a_decompose_run_dir_never_supplies_the_architect_row(
         self,

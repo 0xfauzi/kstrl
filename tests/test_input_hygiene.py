@@ -30,7 +30,12 @@ from kstrl.manifest import (
     Component,
     Manifest,
 )
-from kstrl.names import validate_branch_name, validate_component_id
+from kstrl.names import (
+    ROLE_KEY_PREFIX,
+    role_component_key,
+    validate_branch_name,
+    validate_component_id,
+)
 from kstrl.pr import push_branch
 from kstrl.ui.plain import PlainUI
 
@@ -141,6 +146,64 @@ class TestValidateComponentId:
         assert error is not None
         assert "../../repo" in error
         assert "must match" in error
+
+
+class TestRoleKeysCannotBeComponentIds:
+    """#281: kstrl's own role rows share keyed surfaces with LLM-emitted
+    component ids, and are namespaced so the two cannot collide.
+
+    That namespacing is safe only because ``ROLE_KEY_PREFIX`` is
+    unreachable by ``COMPONENT_ID_PATTERN``. Both constants live in
+    ``names.py``, and this is the mechanism that keeps them agreeing: a
+    later relaxation of the pattern - or a prefix changed to something
+    an architect could emit - fails HERE, loudly, instead of silently
+    re-merging the usage meter and the spend ledger.
+    """
+
+    #: Every role kstrl meters today plus the shapes a future one could
+    #: take. The point of the fix is that it is a property of the
+    #: namespace rather than of the word `architect`, so the guard is
+    #: parametrized rather than pinned to the one role that has a row.
+    ROLES = [
+        "architect",
+        "engineer",
+        "review",
+        "security",
+        "distill",
+        "understand",
+        "a",
+        "some-future-role",
+        "role.with.dots",
+        "x" * 64,
+    ]
+
+    @pytest.mark.parametrize("role", ROLES)
+    def test_a_role_key_is_never_a_valid_component_id(self, role: str) -> None:
+        assert validate_component_id(role_component_key(role)) is not None
+
+    @pytest.mark.parametrize("role", ROLES)
+    def test_the_bare_role_name_stays_a_valid_component_id(self, role: str) -> None:
+        """The compatibility half, and the reason option 1 was taken
+        over reserving the name: an operator or an architect may still
+        call a component `architect`, and a manifest that already does
+        keeps loading."""
+        assert validate_component_id(role) is None
+
+    def test_a_role_key_is_never_a_valid_branch_name(self) -> None:
+        """A role key is not only a dict key - it reaches disk as a run
+        directory segment. Being rejected as a ref too means a leak into
+        git argv is a loud failure rather than a silent bad ref."""
+        assert validate_branch_name(role_component_key("architect")) is not None
+
+    def test_the_prefix_is_not_empty(self) -> None:
+        """The degenerate case the guards above cannot see: with an
+        empty prefix ``role_component_key`` is the identity, every
+        assertion about role keys becomes an assertion about bare role
+        names, and the collision is back with the tests still green.
+        Measured - an earlier draft of the #281 meter tests passed in
+        exactly that state."""
+        assert ROLE_KEY_PREFIX != ""
+        assert role_component_key("architect") != "architect"
 
 
 class TestValidateBranchName:

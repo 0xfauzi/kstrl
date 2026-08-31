@@ -11,6 +11,7 @@ from rich.text import Text
 from textual.coordinate import Coordinate
 from textual.widgets import DataTable
 
+from kstrl.agents.base import ARCHITECT_COMPONENT
 from kstrl.cli import cli
 from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.dispatch import initial_screens_for_kind
@@ -108,10 +109,32 @@ class TestDecomposeScreen:
 
             # A replaced event stream may contain a smaller plan; rows
             # from the old fold must not survive the rebuild.
-            app.store.state.plan_order = ["architect", "database"]
+            app.store.state.plan_order = [ARCHITECT_COMPONENT, "database"]
             app.store.state.components.pop("api")
             table.update_state(app.store.state)
             assert {key.value for key in table.rows} == {"database"}
+
+    async def test_a_component_named_architect_is_not_filtered_out_of_the_dag(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#281 in the TUI. ``DagTable`` hides the architect's pseudo
+        row by comparing plan ids against the role's key, so while that
+        key was the bare word a component the architect genuinely NAMED
+        `architect` was excluded from the DAG view - present in the plan,
+        holding real dependencies, and invisible.
+
+        Asserted as membership rather than against the constant: with the
+        namespace collapsed both spellings are the same word, and any
+        assertion phrased in constants would be satisfied by the row
+        being absent.
+        """
+        run_dir = write_fake_decompose_run(tmp_path, components=("architect", "api"))
+        app = _decompose_app(tmp_path, run_dir)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause(0.2)
+            table = app.screen.query_one(DagTable)
+            assert {key.value for key in table.rows} == {"architect", "api"}
 
     async def test_state_update_after_header_removed_is_safe(
         self,

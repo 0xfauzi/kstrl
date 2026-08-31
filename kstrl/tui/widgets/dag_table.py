@@ -13,17 +13,23 @@ clear()+rebuild per poll (spike finding 3).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from rich.text import Text
 from textual.widgets import DataTable
 
+from kstrl.agents.base import ARCHITECT_COMPONENT
 from kstrl.tui import theme
 
 if TYPE_CHECKING:
     from kstrl.reducer import ComponentState, RunState
 
-ARCHITECT_ID = "architect"
+#: Re-exported from ``agents.base`` rather than restated (#281). It WAS
+#: a second declaration of the literal "architect", and this table
+#: filters the plan by it: a component the architect genuinely named
+#: `architect` was dropped from the DAG view entirely, on the strength
+#: of a string two modules happened to agree on.
+ARCHITECT_ID: Final = ARCHITECT_COMPONENT
 COLUMNS = ("component", "tier", "deps", "prd")
 _CYCLE_TIER = -1
 

@@ -455,6 +455,15 @@ def _role_usage_entries(
     pseudo-component that spends before any component exists and never
     appears in a manifest.
 
+    "Never" became structural in #281. This split is a set difference
+    against the manifest's ids, so while role keys were bare words a
+    component genuinely named `architect` swallowed the role row: the
+    difference was empty, the spend was attributed to the component's
+    ``usage`` field, and no ``role_usage`` row was written at all.
+    ``names.role_component_key`` puts role keys where no component id can
+    be spelled, so the two sets are now disjoint by construction rather
+    than by what the architect happened to name things.
+
     A distinct ``event_type`` rather than a synthetic
     ``component_result``, because every field that row carries - status,
     retries, findings, failed_phase - is meaningless for something that

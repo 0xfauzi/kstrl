@@ -32,6 +32,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kstrl.agents.base import (
+    ARCHITECT_COMPONENT,
+    ARCHITECT_ROLE,
     UsageRecord,
     UsageTotals,
     collect_usage,
@@ -58,6 +60,7 @@ from kstrl.factory import (
 from kstrl.inbox import Inbox, InboxConfig
 from kstrl.loop import COMPLETION_MARKER, LoopBudget, run_loop
 from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.names import validate_component_id
 from kstrl.observability import ProgressLog
 from kstrl.shutdown import StopController
 from kstrl.ui.plain import PlainUI
@@ -5187,6 +5190,8 @@ class _SeededRun:
 def _run_with_architect_spend(
     tmp_path: Path,
     architect_usage: UsageTotals | None,
+    *,
+    component_id: str = "comp-a",
     **config: Any,
 ) -> _SeededRun:
     """A one-component run whose engineer is cheap and whose architect
@@ -5194,9 +5199,13 @@ def _run_with_architect_spend(
 
     The scaffolding lives here rather than at each call site because only
     the architect's spend and the ceiling ever vary between them.
+
+    ``component_id`` exists for one caller: #281 needs a run whose single
+    component is genuinely NAMED `architect`, which is a legal id an
+    architect asked for a spec about design tooling may well emit.
     """
-    root = _setup_project(tmp_path, ["comp-a"])
-    manifest = _make_manifest([_component("comp-a")])
+    root = _setup_project(tmp_path, [component_id])
+    manifest = _make_manifest([_component(component_id)])
     launched: list[str] = []
     console = io.StringIO()
 
@@ -5291,7 +5300,14 @@ class TestArchitectSpendCountsAgainstTheCeiling:
     ) -> None:
         """One ``component_usage`` event, under the role name, on the
         pseudo-component `ks decompose` already reports under - so both
-        commands write the architect to the same key."""
+        commands write the architect to the same key.
+
+        #281: that key is namespaced, and the assertion spells it from
+        the constant rather than restating it. A literal here would keep
+        passing against a writer that had moved on, which is exactly how
+        the role row and the component keyspace drifted together in the
+        first place.
+        """
         run = _run_with_architect_spend(
             tmp_path,
             _architect_usage(1.5),
@@ -5300,7 +5316,7 @@ class TestArchitectSpendCountsAgainstTheCeiling:
 
         events = run.usage_events("architect")
         assert len(events) == 1
-        assert events[0]["component"] == "architect"
+        assert events[0]["component"] == ARCHITECT_COMPONENT
         assert events[0]["data"]["cost_usd"] == pytest.approx(1.5)
 
     def test_a_run_with_no_architect_records_no_phantom_row(
@@ -5645,8 +5661,8 @@ class TestTheJournalKeepsTheArchitectRow:
 
         roles = [e for e in _read_journal(run.root) if e.get("event_type") == "role_usage"]
         assert len(roles) == 1
-        assert roles[0]["component_id"] == "architect"
-        assert roles[0]["usage"]["architect"]["cost_usd"] == pytest.approx(1.5)
+        assert roles[0]["component_id"] == ARCHITECT_COMPONENT
+        assert roles[0]["usage"][ARCHITECT_ROLE]["cost_usd"] == pytest.approx(1.5)
 
     def test_the_journal_rows_sum_to_the_run_total(self, tmp_path: Path) -> None:
         """The property that was broken, asserted as arithmetic rather
@@ -5684,6 +5700,137 @@ class TestTheJournalKeepsTheArchitectRow:
 
         results = [e for e in _read_journal(run.root) if e.get("event_type") == "component_result"]
         assert [e["component_id"] for e in results] == ["comp-a"]
+
+
+class TestAComponentNamedArchitectDoesNotMergeWithTheRoleRow:
+    """#281: `architect` is a legal component id.
+
+    ``validate_component_id`` enforces a charset and a length and has no
+    reserved-name list, and the id is chosen by the architect LLM - so a
+    spec about design tooling, which is an ordinary thing to point kstrl
+    at, can produce a component genuinely called `architect`. While the
+    role's own row was keyed by the bare word, the two merged in every
+    surface that keys by component id.
+
+    The whole class is asserted against ONE run: a real component named
+    `architect`, plus a metered architect role, in the same run. That is
+    the run that used to be wrong, and each test below reads a different
+    surface off it.
+    """
+
+    @staticmethod
+    def _collided_run(tmp_path: Path) -> _SeededRun:
+        return _run_with_architect_spend(
+            tmp_path,
+            _architect_usage(1.5),
+            component_id=ARCHITECT_ROLE,
+        )
+
+    def test_the_two_rows_are_separate_in_the_meter(self, tmp_path: Path) -> None:
+        """The property the issue names first. The component's engineer
+        spend and the architect's spend are two rows, not one.
+
+        Read off the event stream rather than off the in-memory meter
+        because the stream is what every later surface is rebuilt from -
+        the reducer, the dashboard, ``serve``'s ledger. A meter that
+        separated them and a stream that did not would be the same bug
+        one layer down.
+        """
+        run = self._collided_run(tmp_path)
+
+        architect = run.usage_events(ARCHITECT_ROLE)
+        engineer = run.usage_events("engineer")
+        assert len(architect) == len(engineer) == 1
+
+        # Stated as a DIFFERENCE, not as equality against
+        # ARCHITECT_COMPONENT. Measured: an earlier draft of this test
+        # asserted each key equals its constant and passed with the
+        # namespace collapsed to "" - because both constants collapse to
+        # the same word alongside a component that carries it. An
+        # assertion that survives the bug it names is not evidence.
+        assert architect[0]["component"] != engineer[0]["component"], (
+            "the role row and a component named for the role must not share a key"
+        )
+        assert engineer[0]["component"] == ARCHITECT_ROLE, "the component keeps its own name"
+        assert architect[0]["data"]["cost_usd"] == pytest.approx(1.5)
+        assert engineer[0]["data"]["cost_usd"] == pytest.approx(0.01)
+
+    def test_the_component_keeps_the_name_the_architect_gave_it(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The compatibility half of the fix, stated as a test.
+
+        #281 lists rejecting the name at validation as option 2. This is
+        the assertion that says option 1 was taken instead: the operator
+        and the LLM keep the keyspace they already had, and kstrl moved
+        its own rows out of it. Nothing a manifest carries changed.
+        """
+        run = self._collided_run(tmp_path)
+
+        assert [c.id for c in run.manifest.components] == [ARCHITECT_ROLE]
+        assert validate_component_id(ARCHITECT_ROLE) is None
+        results = [e for e in _read_journal(run.root) if e.get("event_type") == "component_result"]
+        assert [e["component_id"] for e in results] == [ARCHITECT_ROLE]
+
+    def test_the_journal_still_writes_the_role_row(self, tmp_path: Path) -> None:
+        """``_role_usage_entries`` splits usage keys from manifest ids by
+        SET DIFFERENCE. A component named `architect` used to empty that
+        difference: no ``role_usage`` row was written at all, and the
+        architect's money was reattributed to the component's own
+        ``usage`` field, where three readers that aggregate over
+        ``component_result`` would then count it.
+        """
+        run = self._collided_run(tmp_path)
+        journal = _read_journal(run.root)
+
+        roles = [e for e in journal if e.get("event_type") == "role_usage"]
+        assert [e["component_id"] for e in roles] == [ARCHITECT_COMPONENT]
+        assert roles[0]["usage"][ARCHITECT_ROLE]["cost_usd"] == pytest.approx(1.5)
+
+        component = [e for e in journal if e.get("event_type") == "component_result"][0]
+        assert set(component["usage"]) == {"engineer"}, "the role's money is not the component's"
+
+    def test_the_journal_rows_still_sum_to_the_run_total(self, tmp_path: Path) -> None:
+        """The arithmetic the #257 review pinned, re-asserted on the
+        colliding run. Splitting a key is the kind of change that can
+        drop a row instead of moving it, and the sum is what notices.
+        """
+        run = self._collided_run(tmp_path)
+
+        rows = sum(
+            phase["cost_usd"]
+            for e in _read_journal(run.root)
+            if e.get("event_type") in ("component_result", "role_usage")
+            for phase in e.get("usage", {}).values()
+        )
+        tsv = (run.root / ".kstrl" / "experiments.tsv").read_text().splitlines()
+        totals = dict(zip(tsv[0].split("\t"), tsv[-1].split("\t"), strict=True))
+        assert rows == pytest.approx(1.51)
+        assert rows == pytest.approx(float(totals["total_cost_usd"]))
+
+    def test_the_rollup_prints_the_two_rows_under_different_labels(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """What the operator actually reads.
+
+        Counted as DISTINCT labels rather than matched against the
+        constants, for the reason given above: with the namespace
+        collapsed both constants are the same word, and an assertion
+        that each is present would be satisfied by the single merged row
+        that is the bug.
+        """
+        run = self._collided_run(tmp_path)
+
+        # The rollup's component column is fixed-width and left-aligned,
+        # so the first token of a row is its key.
+        labels = {
+            line.split()[0]
+            for line in run.printed.splitlines()
+            if line.split() and ARCHITECT_ROLE in line.split()[0]
+        }
+        assert len(labels) == 2, f"expected a role row and a component row, got {labels}"
 
 
 class TestNoConfigLoadStandsBetweenTheMoneyAndTheRun:

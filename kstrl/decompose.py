@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl.agents.base import (
+    ARCHITECT_COMPONENT,
     ARCHITECT_ROLE,
     Agent,
     collect_usage,
@@ -1168,13 +1169,6 @@ def _generate_component_prd(
     return prd_path
 
 
-#: The architect is a one-role pseudo-component, so its component id and
-#: its role name are deliberately the same string. Aliased rather than
-#: restated so a rename cannot move one without the other and silently
-#: drop the architect to the tail of the usage rollup.
-ARCHITECT_COMPONENT = ARCHITECT_ROLE
-
-
 def _report_architect_usage(
     agent: Agent,
     ui: UI,
@@ -1195,11 +1189,16 @@ def _report_architect_usage(
 
     The component id is the pseudo-component ``_decompose_spec_impl``
     already announced in the plan, so the event lands on an existing row
-    rather than conjuring one. The PHASE key is that same word because a
-    meter's phase key is the ROLE name - it is what the coverage footer
-    prints - and the taxonomy's fifth role is the architect. It is
-    deliberately not ``decompose``/``audit``, the lifecycle phases this
-    component reports elsewhere, which name steps rather than roles.
+    rather than conjuring one. The PHASE key is the bare role name
+    because a meter's phase key is the ROLE - it is what the coverage
+    footer prints - and the taxonomy's fifth role is the architect. It
+    is deliberately not ``decompose``/``audit``, the lifecycle phases
+    this component reports elsewhere, which name steps rather than roles.
+
+    The two keys are no longer the same string (#281): the phase axis is
+    kstrl's vocabulary on both sides, but the component axis is one the
+    architect LLM also writes to, so ``ARCHITECT_COMPONENT`` carries the
+    role namespace and ``ARCHITECT_ROLE`` stays bare.
 
     Called from a ``finally``, so it must not raise: ``collect_usage``
     already swallows a malformed record set, and zero calls (an agent

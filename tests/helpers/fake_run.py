@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kstrl import events as ev
+from kstrl.agents.base import ARCHITECT_COMPONENT
 
 DEFAULT_RUN_ID = "factory-20260720-120000.000000-fake"
 
@@ -360,31 +361,33 @@ def write_fake_decompose_run(
     bus = ev.EventBus(
         ev.JsonlSink(paths.events_file),
         run_id=run_id,
-        component="architect",
+        component=ARCHITECT_COMPONENT,
     )
     bus.emit(ev.RunStarted(project="fake-project", components=0))
     bus.emit(
         ev.RunPlan(
-            components=({"id": "architect", "title": "Architect / PRD red-team", "deps": []},)
+            components=(
+                {"id": ARCHITECT_COMPONENT, "title": "Architect / PRD red-team", "deps": []},
+            )
         )
     )
-    bus.emit(ev.ComponentStarted(component="architect"))
-    log_path = paths.engineer_log("architect")
+    bus.emit(ev.ComponentStarted(component=ARCHITECT_COMPONENT))
+    log_path = paths.engineer_log(ARCHITECT_COMPONENT)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     for attempt in range(1, attempts + 1):
-        bus.emit(ev.PhaseStarted(component="architect", phase="decompose", attempt=attempt))
+        bus.emit(ev.PhaseStarted(component=ARCHITECT_COMPONENT, phase="decompose", attempt=attempt))
         with open(log_path, "a", encoding="utf-8") as log:
             log.write(f'{{"components": [... attempt {attempt} ...]}}\n')
         bus.emit(
             ev.PhaseCompleted(
-                component="architect",
+                component=ARCHITECT_COMPONENT,
                 phase="decompose",
                 passed=attempt == attempts,
                 duration_seconds=30.0,
                 detail="" if attempt == attempts else "JSON extraction failed",
             )
         )
-    bus.emit(ev.PhaseStarted(component="architect", phase="audit", attempt=1))
+    bus.emit(ev.PhaseStarted(component=ARCHITECT_COMPONENT, phase="audit", attempt=1))
     for n in range(blockers):
         bus.emit(
             ev.SpecIssueRecorded(
@@ -406,7 +409,7 @@ def write_fake_decompose_run(
     bus.emit(ev.ArtifactWritten(label="spec_issues", path="scripts/kstrl/spec-issues.json"))
     bus.emit(
         ev.PhaseCompleted(
-            component="architect",
+            component=ARCHITECT_COMPONENT,
             phase="audit",
             passed=blockers == 0,
             detail=f"{blockers} blocker(s)" if blockers else "",
@@ -416,7 +419,7 @@ def write_fake_decompose_run(
     if blockers:
         bus.emit(
             ev.ComponentFailed(
-                component="architect",
+                component=ARCHITECT_COMPONENT,
                 error=f"spec halted: {blockers} blocker-severity issue(s)",
             )
         )
@@ -426,7 +429,7 @@ def write_fake_decompose_run(
     bus.emit(
         ev.RunPlan(
             components=(
-                {"id": "architect", "title": "Architect / PRD red-team", "deps": []},
+                {"id": ARCHITECT_COMPONENT, "title": "Architect / PRD red-team", "deps": []},
                 *(
                     {"id": cid, "title": cid.title(), "deps": [components[i - 1]] if i else []}
                     for i, cid in enumerate(components)
@@ -444,7 +447,9 @@ def write_fake_decompose_run(
         )
     bus.emit(ev.ArtifactWritten(label="manifest", path="scripts/kstrl/manifest.json"))
     bus.emit(
-        ev.ComponentCompleted(component="architect", duration_seconds=35.0, iterations=attempts)
+        ev.ComponentCompleted(
+            component=ARCHITECT_COMPONENT, duration_seconds=35.0, iterations=attempts
+        )
     )
     bus.emit(ev.RunCompleted(completed=1, failed=0, skipped=0, duration_seconds=35.0))
     bus.close()

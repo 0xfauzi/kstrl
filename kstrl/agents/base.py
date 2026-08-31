@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Protocol
 
+from kstrl.names import role_component_key
+
 if TYPE_CHECKING:
     from kstrl.ui.base import UI
 
@@ -421,14 +423,34 @@ def usage_coverage(
     )
 
 
-#: The architect's role name, which is also its pseudo-component id
-#: (``decompose.ARCHITECT_COMPONENT`` aliases this). Stated HERE because
-#: the ordering tuple below has to agree with it and cannot import
-#: ``decompose`` - the dependency runs the other way. The same reasoning
-#: as ``CEILING_AXES`` above: a name re-derived locally is a name two
-#: surfaces can disagree about, and here the disagreement would be
-#: silent, dropping the architect to the tail of the rollup.
+#: The architect's role name: its PHASE key in the meter, the word the
+#: coverage footer prints, and the label ``RunSpend.unmetered_phases``
+#: hands the operator. Stated HERE because the ordering tuple below has
+#: to agree with it and cannot import ``decompose`` - the dependency runs
+#: the other way. The same reasoning as ``CEILING_AXES`` above: a name
+#: re-derived locally is a name two surfaces can disagree about, and here
+#: the disagreement would be silent, dropping the architect to the tail
+#: of the rollup.
+#:
+#: Phase keys are kstrl's own vocabulary on both sides of the mapping, so
+#: this one is deliberately left bare. The COMPONENT axis is the one an
+#: LLM also writes to, and that is what ``ARCHITECT_COMPONENT`` below
+#: namespaces (#281).
 ARCHITECT_ROLE: Final = "architect"
+
+#: The architect's pseudo-component id: the key it occupies in the usage
+#: meter, in ``ComponentUsage`` events, in the reducer's component table,
+#: in the evolution journal and in ``serve.read_run_spend``.
+#:
+#: It is NOT ``ARCHITECT_ROLE``. It was, until #281: the architect is a
+#: one-role pseudo-component, so using one word for both read as an
+#: economy. It was in fact a collision, because component ids are chosen
+#: by the architect LLM and a component genuinely named `architect` is
+#: an ordinary thing to ask for. ``role_component_key`` puts kstrl's own
+#: rows in a namespace no component id can reach, which fixes every
+#: role row that exists and every one added later, rather than this one
+#: name.
+ARCHITECT_COMPONENT: Final = role_component_key(ARCHITECT_ROLE)
 
 # Rollup row order for the R3.1 usage table, in the order the roles run:
 # the architect decomposes the spec before any component's engineer loop
