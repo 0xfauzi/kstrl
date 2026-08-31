@@ -352,7 +352,7 @@ class TestAnUnresolvedScopeCannotBeSwitchedOff:
     enforcement at all and nothing said (#293 review). Same argument
     ``check_prd_stories`` makes for carrying the tamper refusal.
 
-    #294 moved the refusal onto its own check, ``scope_source``. The
+    #294 moved the refusal onto its own check, ``scope_unreadable``. The
     toggle still cannot reach it: what changed is the NAME the failure
     reports under, not whether it reports.
     """
@@ -390,7 +390,7 @@ class TestAnUnresolvedScopeCannotBeSwitchedOff:
         _setup_project(tmp_path)
         result = self._verify(tmp_path, check_diff_scope=check_diff_scope)
         assert not result.passed
-        assert [c.name for c in result.checks if not c.passed] == ["scope_source"]
+        assert [c.name for c in result.checks if not c.passed] == ["scope_unreadable"]
         # Not merely renamed: the comparison is not reported at all, so
         # nothing claims a passing scope beside the refusal.
         assert "diff_scope" not in [c.name for c in result.checks]

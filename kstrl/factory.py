@@ -1560,7 +1560,7 @@ def _preflight_component_scope(
 
     - An ``unresolved`` snapshot: the pre-run PRD would not read and no
       run-wide flag stood in for it (#293 review). This is the one
-      verdict the engineer cannot change. ``check_scope_source``
+      verdict the engineer cannot change. ``check_scope_unreadable``
       fails closed on ``scope.error``, and the snapshot is FIXED for the life
       of the run, so every retry re-runs an identical attempt into an
       identical failure - the measured cost above, in the one branch

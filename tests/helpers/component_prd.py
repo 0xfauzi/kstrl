@@ -2,7 +2,7 @@
 
 ``factory._preflight_component_scope`` refuses a component whose
 pre-run PRD will not read: the plan-time scope snapshot (#269) then has
-no scope, ``check_scope_source`` fails closed on that error, and because
+no scope, ``check_scope_unreadable`` fails closed on that error, and because
 the snapshot is fixed for the life of the run every retry reproduces
 the identical failure. Refusing before the first engineer call is the
 whole point of that preflight.

@@ -51,7 +51,7 @@ from kstrl.verify import (
     VerifyConfig,
     _scope_checks,
     check_diff_scope,
-    check_scope_source,
+    check_scope_unreadable,
     run_mechanical_verification,
 )
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
@@ -336,9 +336,9 @@ class TestDiffScopeFailsClosed:
     scope still passes with the existing message."""
 
     def test_allowed_paths_error_fails_check(self) -> None:
-        result = check_scope_source("PRD failed to parse: bad JSON")
+        result = check_scope_unreadable("PRD failed to parse: bad JSON")
         assert result.passed is False
-        assert result.name == "scope_source"
+        assert result.name == "scope_unreadable"
         assert "failing closed" in result.message
         assert any("PRD failed to parse" in d for d in result.details)
 
@@ -355,7 +355,7 @@ class TestDiffScopeFailsClosed:
             harness_paths=None,
             compare=True,
         )
-        assert [c.name for c in result] == ["scope_source"]
+        assert [c.name for c in result] == ["scope_unreadable"]
         assert result[0].passed is False
 
     def test_unconfigured_scope_still_passes(self, tmp_path: Path) -> None:
@@ -402,8 +402,8 @@ class TestDiffScopeFailsClosed:
         )
         names = [c.name for c in verification.checks]
         assert "diff_scope" not in names, "the diff comparison had nothing to compare"
-        scope_source = next(c for c in verification.checks if c.name == "scope_source")
-        assert scope_source.passed is False
+        unreadable = next(c for c in verification.checks if c.name == "scope_unreadable")
+        assert unreadable.passed is False
         assert verification.passed is False
 
 

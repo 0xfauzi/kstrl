@@ -312,7 +312,7 @@ _CATEGORY_BY_CHECK = {
     "diff_scope": "verification",
     # #294 split this out of diff_scope; diff_scope stays because
     # journal entries written before the split carry its signatures.
-    "scope_source": "verification",
+    "scope_unreadable": "verification",
     "bad_patterns": "verification",
     "self_critique": "verification",
     "dead_code": "verification",
@@ -370,14 +370,15 @@ def category_for_check(check_name: str) -> str:
     measured on this tree the convention does not hold: AST-walking
     ``kstrl/`` for ``CheckResult`` names finds ``fixtures``,
     ``policy_envelope`` and ``test_adequacy`` absent from the table, so
-    three verification gates are already miscategorised here. That
-    predates #294 and correcting it changes recorded categorisation, so
-    it is not that change's to make; it is noted so the table is not
-    read as evidence that remembering is working. The repo has the
-    instrument for it - ``tests/test_prompt_versions.py``,
-    ``tests/test_atomicio.py`` and ``tests/test_process_scoping.py`` all
-    AST-walk for exactly this shape of unenrolled declaration - and
-    nothing points one at this table yet.
+    three verification gates are already miscategorised here (#315).
+    That predates #294 and correcting it changes recorded
+    categorisation, so it is not that change's to make.
+
+    ``tests/test_check_name_enrolment.py`` is the mechanism: it
+    AST-walks ``kstrl/`` for every constructed check name and fails on
+    one this table does not carry, with those three grandfathered by
+    name so the gate could land without the behaviour change. A new
+    check cannot join them quietly.
     """
     return _CATEGORY_BY_CHECK.get(check_name, "iteration")
 
@@ -1029,6 +1030,45 @@ class EvolutionJournal:
                             f"> Security reviewer repeatedly flags "
                             f"'{pattern.error_signature}'. Follow the secure "
                             f"pattern for this category from the start."
+                        ),
+                        source_patterns=[pattern.description],
+                    )
+                )
+
+            # #294: the one check here that no agent can act on. The
+            # generic branch below writes CLAUDE.md advice aimed at the
+            # ENGINEER, and a scope the harness could not read at plan
+            # time is not something the engineer can take extra care
+            # about. Kept as a literal to match the rest of this
+            # module's check names; the constant is
+            # ``verify.SCOPE_UNREADABLE_CHECK``.
+            elif pattern.check_name == "scope_unreadable":
+                proposals.append(
+                    HarnessProposal(
+                        id=proposal_id,
+                        title=(
+                            f"Repair the component PRDs that would not read "
+                            f"({pattern.frequency} runs)"
+                        ),
+                        description=(
+                            f"Scope resolution could not read a component's "
+                            f"pre-run PRD in {pattern.frequency} runs, across "
+                            f"{', '.join(pattern.affected_components[:5])}. "
+                            f"Phase 1 fails closed and the component is failed "
+                            f"without retrying, because the snapshot is fixed "
+                            f"for the life of the run. No agent can clear this: "
+                            f"the file is in the main checkout, outside every "
+                            f"worktree."
+                        ),
+                        proposal_type="computational",
+                        target="repository",
+                        suggested_change=(
+                            "Check that every component's `prdPath` names a "
+                            "readable, parseable file in the main checkout "
+                            "before the run starts, and that decompose is "
+                            "writing it. A run-wide `--allowed-paths` does NOT "
+                            "stand in: scope resolution refuses before it "
+                            "reaches the flag."
                         ),
                         source_patterns=[pattern.description],
                     )
