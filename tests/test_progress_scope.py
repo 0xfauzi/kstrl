@@ -209,17 +209,9 @@ def _pipeline(
                 passed=True,
                 mode="advisory",
             ),
-            run_chunked_review=lambda *a, **k: ReviewResult(
-                passed=True,
-                mode="hard",
-            ),
             run_security_review=lambda *a, **k: SecurityResult(
                 passed=True,
                 mode="advisory",
-            ),
-            run_chunked_security_review=lambda *a, **k: SecurityResult(
-                passed=True,
-                mode="hard",
             ),
             distill_facts=lambda *a, **k: (1, "1 fact written"),
             measure_fact_utilization=(

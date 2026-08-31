@@ -6,7 +6,6 @@ import json
 import logging
 import os
 import re
-import secrets
 import tempfile
 import time
 from collections.abc import Callable
@@ -22,6 +21,7 @@ from kstrl.agents.base import (
     print_usage_rollup,
     usage_cursor,
 )
+from kstrl.delimiters import generate_data_delimiter
 from kstrl.events import (
     ArtifactWritten,
     ComponentCompleted,
@@ -89,25 +89,6 @@ class SpecBlockerError(Exception):
             "Spec has blocker-severity issues; resolve before re-running:\n"
             + "\n".join(summary_lines),
         )
-
-
-# R5.3 injection separation: every adversarial prompt wraps its untrusted
-# input sections between delimiter lines carrying a per-run random token,
-# so injected text inside the data cannot forge a section boundary or
-# masquerade as harness instructions. Shared by review / security /
-# knowledge (they already import their JSON helpers from this module).
-_DATA_DELIMITER_PREFIX = "KSTRL-DATA"
-
-
-def generate_data_delimiter() -> str:
-    """Return a fresh untrusted-data delimiter token for one prompt build.
-
-    128 bits of randomness: an attacker who controls data INSIDE a
-    section cannot guess the token, so they cannot authentically close
-    the section or open a new one. Callers must generate a new token per
-    prompt build, never reuse a constant.
-    """
-    return f"{_DATA_DELIMITER_PREFIX}-{secrets.token_hex(16)}"
 
 
 DECOMPOSE_PROMPT_VERSION = "1.4.2"

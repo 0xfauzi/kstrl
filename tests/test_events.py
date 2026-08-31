@@ -80,9 +80,6 @@ def _sample_events() -> list[ev.Event]:
         ev.MergePendingV1(component="comp-a", pr_url="http://pr/1", error="not confirmed"),
         ev.PhaseSkipped(component="comp-a", phase="security", reason="budget"),
         ev.DiffFetchFailed(component="comp-a", error="git failed"),
-        ev.DiffUnsplittable(component="comp-a", error="one hunk", diff_chars=99999),
-        ev.DiffChunked(component="comp-a", chunks=3, diff_chars=50000),
-        ev.ChunkBudgetInsufficient(component="comp-a", phase="review", chunks=4, remaining=2),
         ev.ReviewDivergence(
             component="comp-a",
             attempts=(1, 2, 3),
@@ -484,19 +481,6 @@ class TestV1CompatGoldenParity:
         direct.emit("diff_fetch_failed", "comp-a", {"error": "git failed"})
         bus.emit(ev.DiffFetchFailed(component="comp-a", error="git failed"))
 
-        direct.emit("diff_unsplittable", "comp-a", {"error": "one hunk", "diff_chars": 99999})
-        bus.emit(ev.DiffUnsplittable(component="comp-a", error="one hunk", diff_chars=99999))
-
-        direct.emit("diff_chunked", "comp-a", {"chunks": 3, "diff_chars": 50000})
-        bus.emit(ev.DiffChunked(component="comp-a", chunks=3, diff_chars=50000))
-
-        direct.emit(
-            "chunk_budget_insufficient", "comp-a", {"phase": "review", "chunks": 4, "remaining": 2}
-        )
-        bus.emit(
-            ev.ChunkBudgetInsufficient(component="comp-a", phase="review", chunks=4, remaining=2)
-        )
-
         direct.emit(
             "adversarial_agent_selected",
             data={
@@ -522,7 +506,7 @@ class TestV1CompatGoldenParity:
         direct_lines = [_strip_ts(e) for e in read_progress_events(direct_path)]
         compat_lines = [_strip_ts(e) for e in read_progress_events(compat_path)]
         assert compat_lines == direct_lines
-        assert len(direct_lines) == 20  # every v1-named event type exercised
+        assert len(direct_lines) == 17  # every v1-named event type exercised
 
     def test_v2_only_events_are_dropped(self, tmp_path: Path) -> None:
         compat_path = tmp_path / "compat.jsonl"

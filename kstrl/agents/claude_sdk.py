@@ -41,6 +41,7 @@ from kstrl.agents.base import UsageRecord
 from kstrl.agents.proc import DeadlineStreamer, timeout_message
 from kstrl.sandbox import (
     SandboxConfig,
+    claude_review_sandbox_settings,
     claude_sandbox_drops_skip_permissions,
     claude_sandbox_settings,
 )
@@ -70,6 +71,7 @@ class ClaudeSdkAgent:
         sandbox: SandboxConfig | None = None,
         max_budget_usd: float | None = None,
         workspace_guard: bool = True,
+        read_only: bool = False,
     ):
         """Initialize the SDK adapter.
 
@@ -86,12 +88,17 @@ class ClaudeSdkAgent:
             workspace_guard: Default-on PreToolUse hook denying file
                 tools (Write/Edit/MultiEdit/NotebookEdit) that target
                 paths outside the run's working directory.
+            read_only: #266 - the agent may read the tree and must not
+                write it (the reviewer roles). OVERRIDES ``sandbox``;
+                the SAME permission-layer payload the CLI adapter uses
+                rides ``ClaudeAgentOptions.settings``.
         """
         self._model = model
         self._effort = effort
         self._sandbox = sandbox
         self._max_budget_usd = max_budget_usd
         self._workspace_guard = workspace_guard
+        self._read_only = read_only
         self._final_message: str | None = None
         self._usage_records: list[UsageRecord] = []
         # Test hook: the R0.1 battery points the SDK at fake CLIs.
@@ -137,8 +144,16 @@ class ClaudeSdkAgent:
             "prompt": prompt,
             "model": self._model,
             "effort": self._effort,
-            "settings": claude_sandbox_settings(self._sandbox),
-            "bypass_permissions": not claude_sandbox_drops_skip_permissions(self._sandbox),
+            "settings": (
+                claude_review_sandbox_settings(self._sandbox)
+                if self._read_only
+                else claude_sandbox_settings(self._sandbox)
+            ),
+            # #266: never bypass permissions for a read-only reviewer;
+            # the read-only restrictions ARE permission rules.
+            "bypass_permissions": (
+                not self._read_only and not claude_sandbox_drops_skip_permissions(self._sandbox)
+            ),
             "max_budget_usd": self._max_budget_usd,
             "workspace_guard": self._workspace_guard,
             "cwd": str(cwd) if cwd else None,

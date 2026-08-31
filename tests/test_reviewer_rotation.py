@@ -40,18 +40,16 @@ from kstrl.observability import read_progress_events
 from kstrl.pr import _generate_pr_body
 from kstrl.review import (
     ReviewMode,
-    ReviewResult,
-    merge_review_results,
     run_review,
 )
 from kstrl.security import (
     SecurityConfig,
     SecurityResult,
-    merge_security_results,
     run_security_review,
 )
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult
+from tests.conftest import ReviewRepo
 from tests.helpers.agent_probe import set_cli_availability, stub_probe
 
 
@@ -318,51 +316,46 @@ class CrashingAgent(MockAgent):
         yield ""  # pragma: no cover
 
 
-REVIEW_OUTPUT_WITH_CONCERN = json.dumps(
-    {
-        "stories": [
-            {
-                "storyId": "US-001",
-                "storyTitle": "Test",
-                "criteria": [
-                    {
-                        "criterion": "AC1",
-                        "verdict": "fail",
-                        "explanation": "not implemented",
-                        "suggestion": "implement it",
-                    }
-                ],
-            }
-        ],
-        "concerns": [
-            {
-                "category": "dead_code",
-                "severity": "advisory",
-                "location": "a.py:1",
-                "explanation": "unused helper",
-                "suggestion": "remove",
-            }
-        ],
-        "exhaustively_searched": True,
-        "overallNotes": "",
-    }
-)
+# #266: a canned reviewer reply must carry the repo's REAL diffstat, or
+# the coverage check discards the verdict and ``as_findings()`` leads
+# with an infrastructure finding - so a test about CONCERN tagging would
+# assert against a finding that is not a concern. ``ReviewRepo`` builds
+# the matching envelope; only the payload under test is spelled out here.
 
-SECURITY_OUTPUT_WITH_FINDING = json.dumps(
+_REVIEW_STORIES: list[object] = [
     {
-        "findings": [
+        "storyId": "US-001",
+        "storyTitle": "Test",
+        "criteria": [
             {
-                "category": "hardcoded_secret",
-                "severity": "high",
-                "location": "b.py:3",
-                "explanation": "API key in source",
-                "suggestion": "move to env",
+                "criterion": "AC1",
+                "verdict": "fail",
+                "explanation": "not implemented",
+                "suggestion": "implement it",
             }
         ],
-        "exhaustively_searched": True,
-        "overallNotes": "",
     }
-)
+]
+
+_REVIEW_CONCERNS: list[object] = [
+    {
+        "category": "dead_code",
+        "severity": "advisory",
+        "location": "a.py:1",
+        "explanation": "unused helper",
+        "suggestion": "remove",
+    }
+]
+
+_SECURITY_FINDINGS: list[object] = [
+    {
+        "category": "hardcoded_secret",
+        "severity": "high",
+        "location": "b.py:3",
+        "explanation": "API key in source",
+        "suggestion": "move to env",
+    }
+]
 
 
 def _write_prd(tmp_path: Path) -> Path:
@@ -388,21 +381,25 @@ def _write_prd(tmp_path: Path) -> Path:
 
 
 class TestModelTagEndToEnd:
-    def test_review_findings_carry_model_tag(self, tmp_path: Path) -> None:
-        prd_path = _write_prd(tmp_path)
-        agent = MockAgent(REVIEW_OUTPUT_WITH_CONCERN)
+    def test_review_findings_carry_model_tag(self, review_repo: ReviewRepo) -> None:
+        prd_path = _write_prd(review_repo.path)
+        agent = MockAgent(
+            review_repo.review_json(
+                stories=_REVIEW_STORIES,
+                concerns=_REVIEW_CONCERNS,
+            )
+        )
         result = run_review(
             agent,
             prd_path,
-            tmp_path,
-            "main",
+            review_repo.path,
+            review_repo.base_branch,
             VerificationResult(
                 passed=True,
                 checks=[CheckResult("test_suite", True, "ok")],
             ),
             ReviewMode.HARD,
             PlainUI(no_color=True),
-            diff_content="+change\n",
         )
         assert result.reviewer_model == "codex (gpt-5)"
         findings = result.as_findings()
@@ -415,18 +412,17 @@ class TestModelTagEndToEnd:
         # PR body names the reviewer model.
         assert "**Reviewer model**: codex (gpt-5)" in result.as_pr_body_section()
 
-    def test_review_crash_still_attributes_reviewer(self, tmp_path: Path) -> None:
-        prd_path = _write_prd(tmp_path)
+    def test_review_crash_still_attributes_reviewer(self, review_repo: ReviewRepo) -> None:
+        prd_path = _write_prd(review_repo.path)
         agent = CrashingAgent("", name="codex (gpt-5)")
         result = run_review(
             agent,
             prd_path,
-            tmp_path,
-            "main",
+            review_repo.path,
+            review_repo.base_branch,
             VerificationResult(passed=True, checks=[]),
             ReviewMode.HARD,
             PlainUI(no_color=True),
-            diff_content="+change\n",
         )
         assert result.infrastructure_error is True
         assert result.reviewer_model == "codex (gpt-5)"
@@ -434,16 +430,18 @@ class TestModelTagEndToEnd:
         assert finding.is_infrastructure_error
         assert finding_model(finding) == "codex (gpt-5)"
 
-    def test_security_findings_carry_model_tag(self, tmp_path: Path) -> None:
-        agent = MockAgent(SECURITY_OUTPUT_WITH_FINDING, name="codex")
+    def test_security_findings_carry_model_tag(self, review_repo: ReviewRepo) -> None:
+        agent = MockAgent(
+            review_repo.security_json(findings=_SECURITY_FINDINGS),
+            name="codex",
+        )
         result = run_security_review(
             agent,
-            tmp_path / "missing-prd.json",
-            tmp_path,
-            "main",
+            review_repo.path / "missing-prd.json",
+            review_repo.path,
+            review_repo.base_branch,
             SecurityConfig(mode="advisory"),
             PlainUI(no_color=True),
-            diff_content="+change\n",
         )
         assert result.reviewer_model == "codex"
         findings = result.as_findings()
@@ -460,17 +458,44 @@ class TestModelTagEndToEnd:
         )
         assert "**Reviewer model**: codex (gpt-5)" in result.as_pr_body_section()
 
-    def test_merges_carry_reviewer_model(self) -> None:
-        chunks_r = [
-            ReviewResult(passed=True, mode="hard", reviewer_model="codex"),
-            ReviewResult(passed=True, mode="hard", reviewer_model="codex"),
-        ]
-        assert merge_review_results(chunks_r, "hard").reviewer_model == "codex"
-        chunks_s = [
-            SecurityResult(passed=True, mode="hard", reviewer_model="codex"),
-            SecurityResult(passed=True, mode="hard", reviewer_model="codex"),
-        ]
-        assert merge_security_results(chunks_s, "hard").reviewer_model == "codex"
+    def test_unverified_coverage_still_attributes_reviewer(
+        self,
+        review_repo: ReviewRepo,
+    ) -> None:
+        """#266 replaced the chunk-merge path this used to guard. The
+        property is the same one R7.1 cares about: a result that did NOT
+        come back clean must still name the model that produced it, or
+        the journal cannot attribute the miss to a family.
+
+        A reviewer reporting a diffstat that is not git's is the new way
+        a review can be discarded, so that is the path checked here."""
+        prd_path = _write_prd(review_repo.path)
+        agent = MockAgent(
+            review_repo.review_json(
+                observedDiffstat={"files": 99, "insertions": 99, "deletions": 99},
+            ),
+            name="codex (gpt-5)",
+        )
+        result = run_review(
+            agent,
+            prd_path,
+            review_repo.path,
+            review_repo.base_branch,
+            VerificationResult(passed=True, checks=[]),
+            ReviewMode.HARD,
+            PlainUI(no_color=True),
+        )
+        assert result.infrastructure_error is True
+        assert result.reviewer_model == "codex (gpt-5)"
+        findings = result.as_findings()
+        # The synthetic infra finding leads, and the reviewer's own
+        # concerns follow it rather than being dropped (#266). Every one
+        # of them has to name the model, or the journal cannot attribute
+        # the outcome to a family.
+        assert findings[0].is_infrastructure_error
+        assert len(findings) > 1
+        for finding in findings:
+            assert finding_model(finding) == "codex (gpt-5)"
 
     def test_model_tag_is_idempotent_and_composes_with_attempt(self) -> None:
         f = Finding.from_review_concern(
@@ -497,18 +522,22 @@ class TestModelTagEndToEnd:
         rendered = render_findings_markdown([f])
         assert "Reviewer model: codex (gpt-5)" in rendered
 
-    def test_pr_body_names_reviewer_model(self, tmp_path: Path) -> None:
-        prd_path = _write_prd(tmp_path)
-        agent = MockAgent(REVIEW_OUTPUT_WITH_CONCERN)
+    def test_pr_body_names_reviewer_model(self, review_repo: ReviewRepo) -> None:
+        prd_path = _write_prd(review_repo.path)
+        agent = MockAgent(
+            review_repo.review_json(
+                stories=_REVIEW_STORIES,
+                concerns=_REVIEW_CONCERNS,
+            )
+        )
         result = run_review(
             agent,
             prd_path,
-            tmp_path,
-            "main",
+            review_repo.path,
+            review_repo.base_branch,
             VerificationResult(passed=True, checks=[]),
             ReviewMode.HARD,
             PlainUI(no_color=True),
-            diff_content="+change\n",
         )
         comp = Component(
             id="comp-a",

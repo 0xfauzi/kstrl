@@ -465,6 +465,7 @@ class TestPhaseTranscripts:
         from kstrl.review import ReviewMode, run_review
         from kstrl.ui.plain import PlainUI as _PlainUI
         from kstrl.verify import VerificationResult
+        from tests.conftest import make_review_repo
 
         class _Agent:
             @property
@@ -480,17 +481,17 @@ class TestPhaseTranscripts:
             def final_message(self) -> str | None:
                 return None
 
-        (tmp_path / "prd.json").write_text('{"branchName": "b", "userStories": []}')
+        repo = make_review_repo(tmp_path / "repo")
+        (repo.path / "prd.json").write_text('{"branchName": "b", "userStories": []}')
         seen: list[str] = []
         run_review(
             _Agent(),
-            tmp_path / "prd.json",
-            tmp_path,
-            "main",
+            repo.path / "prd.json",
+            repo.path,
+            repo.base_branch,
             VerificationResult(passed=True, checks=[]),
             ReviewMode.ADVISORY,
             _PlainUI(no_color=True, file=io.StringIO()),
-            diff_content="+x\n",
             on_line=seen.append,
         )
         assert seen == ["line-a", "line-b"]

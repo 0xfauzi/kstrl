@@ -14,6 +14,7 @@ from kstrl.agents.base import UsageRecord
 from kstrl.agents.proc import DeadlineStreamer, timeout_message
 from kstrl.sandbox import (
     SandboxConfig,
+    claude_review_sandbox_args,
     claude_sandbox_args,
     claude_sandbox_drops_skip_permissions,
 )
@@ -36,6 +37,7 @@ class ClaudeCodeAgent:
         model: str | None = None,
         effort: str | None = None,
         sandbox: SandboxConfig | None = None,
+        read_only: bool = False,
     ):
         """Initialize Claude Code agent.
 
@@ -45,10 +47,17 @@ class ClaudeCodeAgent:
             sandbox: OS-level sandbox intent (R7.5); passed to the CLI
                 via --settings (claude 2.1.x has no dedicated flag,
                 measured - see kstrl.sandbox)
+            read_only: #266 - the agent may read the tree and must not
+                write it (the reviewer roles). OVERRIDES ``sandbox``;
+                enforced at the permission layer here rather than the
+                OS layer, which is why it also drops
+                ``--dangerously-skip-permissions`` (see kstrl.sandbox
+                for the measurement).
         """
         self._model = model
         self._effort = effort
         self._sandbox = sandbox
+        self._read_only = read_only
         self._final_message: str | None = None
         self._saw_result: bool = False
         self._usage_records: list[UsageRecord] = []
@@ -64,6 +73,23 @@ class ClaudeCodeAgent:
     def is_available(cls) -> bool:
         """Check if claude CLI is available."""
         return shutil.which("claude") is not None
+
+    def _permission_argv(self) -> tuple[bool, list[str]]:
+        """``(pass --dangerously-skip-permissions, settings argv)``.
+
+        Both halves of the posture in one place, because they are one
+        decision: claude's sandbox scoping and the #266 read-only rules
+        are BOTH enforced at the permission layer, and skip-permissions
+        is exactly what turns that layer off (measured - see
+        kstrl.sandbox). A method rather than two branches inside
+        ``run``, which is already the most complex function here.
+        """
+        if self._read_only:
+            return False, claude_review_sandbox_args(self._sandbox)
+        return (
+            not claude_sandbox_drops_skip_permissions(self._sandbox),
+            claude_sandbox_args(self._sandbox),
+        )
 
     def run(
         self,
@@ -96,13 +122,14 @@ class ClaudeCodeAgent:
         # skipping auto-approves every domain (measured; see
         # kstrl.sandbox). File tools are re-allowed via the settings
         # JSON instead.
-        if not claude_sandbox_drops_skip_permissions(self._sandbox):
+        skip_permissions, sandbox_argv = self._permission_argv()
+        if skip_permissions:
             cmd.append("--dangerously-skip-permissions")
         if self._model:
             cmd.extend(["--model", self._model])
         if self._effort:
             cmd.extend(["--effort", self._effort])
-        cmd.extend(claude_sandbox_args(self._sandbox))
+        cmd.extend(sandbox_argv)
 
         try:
             streamer = DeadlineStreamer(

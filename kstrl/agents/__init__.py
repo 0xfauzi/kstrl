@@ -66,6 +66,7 @@ def get_agent(
     agent_type: str | None = None,
     sandbox: SandboxConfig | None = None,
     max_budget_usd: float | None = None,
+    read_only: bool = False,
 ) -> Agent:
     """Get appropriate agent based on configuration.
 
@@ -89,6 +90,13 @@ def get_agent(
             engineer iterations (R8) and at phase boundaries (R3.1) -
             adapter-agnostic, but coarser: it cannot interrupt a call
             already in flight.
+        read_only: #266 - the agent reads the tree it is judging and
+            must not write it (the review and security roles). Applied
+            by the claude-code, claude-sdk, and codex adapters and
+            OVERRIDES ``sandbox`` there. A CustomAgent command has no
+            generic sandbox surface, so - exactly as with ``sandbox`` -
+            the setting is ignored and callers that need the guarantee
+            must not use one.
     """
     if agent_cmd:
         return CustomAgent(agent_cmd)
@@ -116,6 +124,7 @@ def get_agent(
             model=model,
             effort=model_reasoning_effort,
             sandbox=sandbox,
+            read_only=read_only,
         )
     if agent_type == "claude-sdk":
         return ClaudeSdkAgent(
@@ -123,12 +132,14 @@ def get_agent(
             effort=model_reasoning_effort,
             sandbox=sandbox,
             max_budget_usd=max_budget_usd,
+            read_only=read_only,
         )
     if agent_type == "codex":
         return CodexAgent(
             model=model,
             reasoning_effort=model_reasoning_effort,
             sandbox=sandbox,
+            read_only=read_only,
         )
     # Auto-detect: prefer claude-code, fall back to codex
     if agent_type is None or agent_type == "auto":
@@ -137,9 +148,11 @@ def get_agent(
                 model=model,
                 effort=model_reasoning_effort,
                 sandbox=sandbox,
+                read_only=read_only,
             )
     return CodexAgent(
         model=model,
         reasoning_effort=model_reasoning_effort,
         sandbox=sandbox,
+        read_only=read_only,
     )
