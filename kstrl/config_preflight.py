@@ -58,7 +58,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from kstrl.config import (
     ConfigError,
@@ -88,6 +88,16 @@ from kstrl.config_report import scrubbed_environ
 #: ``[serve] max_consecutive_poison = 0`` that way, and ``QueueError``,
 #: ``InboxError`` and ``IntakeError`` are its siblings.
 REJECTIONS = (ValueError, TypeError, RuntimeError)
+
+#: :data:`REJECTIONS` plus the read failure a long-lived surface has to
+#: survive. The entry check never needs it: it reads the document once
+#: itself and turns an unreadable file into a ``ConfigError`` before any
+#: loader runs. A screen re-reading the file minutes later has no such
+#: pass in front of it, and a ``chmod`` between two refreshes raises
+#: ``OSError`` straight out of ``load_toml_section``.
+SURFACE_REJECTIONS = (*REJECTIONS, OSError)
+
+T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -239,7 +249,7 @@ def collect_config_problems(
             try:
                 section.loader(root_dir)
             except REJECTIONS as exc:
-                detail = _detail(section, toml_path, root_dir, exc)
+                detail = _detail(section, toml_path, root_dir, exc, blame_env=True)
                 if section.fatal or not required.isdisjoint(section.sections):
                     problems.append(detail)
                 else:
@@ -247,21 +257,85 @@ def collect_config_problems(
     return problems
 
 
+def load_or_report(
+    loader: Callable[[Path], T],
+    root_dir: Path,
+    *,
+    blame_env: bool,
+) -> tuple[T | None, str | None]:
+    """One section, resolved, or the line this module would have printed.
+
+    Exactly one of the pair is ever None. For a long-lived surface that
+    loads a section AFTER command entry - a TUI screen the home shell
+    opens - and so has no seam in front of it to fail on its behalf.
+    The message is produced by the same ``_detail`` the entry check
+    uses, so the same broken file reads the same way on both surfaces,
+    which is what #289 was about; ``tests/test_tui_config_guard.py``
+    pins the two strings equal rather than trusting that.
+
+    ``blame_env`` is required rather than defaulted because getting it
+    wrong is not a cosmetic mistake. Naming the offending variable means
+    measuring it (``_blamed_env_var``), and measuring it means clearing
+    ``os.environ``, which is PROCESS-WIDE. At command entry nothing else
+    of ours is running; on a screen a launched run may be on another
+    thread, spawning subprocesses that inherit the environment. Pass
+    False there and the line keeps everything except the variable's
+    name. ``kstrl.tui.config_guard`` is where that decision is made.
+
+    Wider than :data:`REJECTIONS` by ``OSError``: see
+    :data:`SURFACE_REJECTIONS`.
+    """
+    section = _section_for(loader)
+    toml_path = resolve_config_file(root_dir)
+    # Scoped per call, never across calls: a screen's refresh action
+    # exists to see the file as it is NOW (see ``toml_parse_scope``).
+    with toml_parse_scope():
+        try:
+            return loader(root_dir), None
+        except SURFACE_REJECTIONS as exc:
+            return None, _detail(section, toml_path, root_dir, exc, blame_env=blame_env)
+
+
+def _section_for(loader: Callable[[Path], Any]) -> ConfigSection:
+    """The registry entry for ``loader``.
+
+    A caller passes the loader rather than a section name so that it
+    cannot label itself with a section the entry check does not know,
+    and so that the label and the blame helpers come from the one table
+    :func:`config_sections` already keeps complete.
+
+    Compared with ``==``, not ``is``: ``EvolutionConfig.load`` is a bound
+    classmethod and Python builds a fresh object on every attribute
+    access, so ``is`` is False even for the same method, while ``==``
+    compares ``__func__`` and ``__self__``.
+    """
+    for section in config_sections():
+        if section.loader == loader:
+            return section
+    raise LookupError(f"{loader!r} is not a loader config_sections() names")
+
+
 def _detail(
     section: ConfigSection,
     toml_path: Path,
     root_dir: Path,
     exc: Exception,
+    *,
+    blame_env: bool,
 ) -> str:
     """One line: which section, what the loader said, and which input.
 
     The environment is asked FIRST because the environment wins: with
     the same bad value in both places, the variable is the one taking
     effect, so naming the file's key would send the operator to a line
-    that changing does not help.
+    that changing does not help. ``blame_env`` False skips that question
+    entirely rather than answering it unsafely; the caller that passes
+    False says why (:func:`load_or_report`).
     """
     message = str(exc)
-    blamed = _blamed_env_var(section.loader, root_dir, message) or _blamed_toml_value(
+    blamed = (
+        _blamed_env_var(section.loader, root_dir, message) if blame_env else None
+    ) or _blamed_toml_value(
         section.sections,
         toml_path,
         message,

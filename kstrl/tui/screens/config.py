@@ -25,6 +25,7 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Input, Static
 
 from kstrl.tui import theme
+from kstrl.tui.config_guard import env_scrub_is_safe
 from kstrl.tui.widgets.context_bar import ContextBar
 
 if TYPE_CHECKING:
@@ -205,10 +206,10 @@ class ConfigScreen(Screen[None]):
 
     def action_refresh(self) -> None:
         # The env-scrub is process-wide: never while a launched
-        # session's thread could be reading os.environ.
-        run_context = getattr(self.app, "run_context", None)
-        handle = run_context.handle if run_context is not None else None
-        if handle is not None and not handle.done():
+        # session's thread could be reading os.environ. The predicate
+        # lives in config_guard because the evolve and inbox screens
+        # ask the same question about the same scrub (#289).
+        if not env_scrub_is_safe(self.app):
             self.app.notify(
                 "config refresh is disabled while a run is in flight "
                 "(source detection scrubs the environment)",

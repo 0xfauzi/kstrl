@@ -31,6 +31,7 @@ from kstrl.evolution import EvolutionConfig, EvolutionJournal
 from kstrl.interaction import PromptKind, PromptRequest
 from kstrl.proposals import Proposal, apply_proposal, list_proposals
 from kstrl.tui import theme
+from kstrl.tui.config_guard import ConfigProblemBanner, load_config
 from kstrl.tui.screens.options import OptionsModal
 from kstrl.tui.widgets.context_bar import ContextBar
 
@@ -92,6 +93,10 @@ class EvolveScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         yield ContextBar("evolve", "the harness improving itself")
+        # Above the tabs, not inside one: an unreadable [evolution]
+        # section empties patterns AND trends, and the operator may be
+        # looking at proposals when it happens.
+        yield ConfigProblemBanner(id="config-problem")
         with TabbedContent(id="evolve-tabs"):
             with TabPane("proposals", id="tab-proposals"):
                 with Horizontal(id="proposals-split"):
@@ -175,9 +180,23 @@ class EvolveScreen(Screen[None]):
             )
 
     def _load_patterns_and_trends(self, root_dir: Path) -> None:
-        journal = EvolutionJournal(EvolutionConfig.load(root_dir))
+        """Both journal-backed tabs, or the reason neither can be shown.
+
+        Guarded because this screen is reachable from the home shell,
+        which is not a click command and so never runs the entry check
+        that would have stopped `ks evolve` (#289). Degrading to two
+        empty tables would be worse than the traceback it replaces:
+        "no patterns yet" is a real state on this screen.
+        """
+        config, problem = load_config(self.app, EvolutionConfig.load, root_dir)
+        self.query_one(ConfigProblemBanner).show(problem)
         patterns_table = self.query_one("#patterns-table", DataTable)
         patterns_table.clear()
+        trends_table = self.query_one("#trends-table", DataTable)
+        trends_table.clear()
+        if config is None:
+            return
+        journal = EvolutionJournal(config)
         for pattern in journal.get_cross_run_patterns():
             patterns_table.add_row(
                 Text(pattern.check_name, style="bold"),
@@ -186,8 +205,6 @@ class EvolveScreen(Screen[None]):
                 Text(str(len(pattern.affected_components)), justify="right"),
                 Text(pattern.category, style=theme.MUTED),
             )
-        trends_table = self.query_one("#trends-table", DataTable)
-        trends_table.clear()
         for row in journal.get_experiment_trends(last_n=TREND_ROWS):
             trends_table.add_row(*self._trend_cells(row))
 

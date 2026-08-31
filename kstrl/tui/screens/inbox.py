@@ -27,6 +27,7 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static
 
 from kstrl.inbox import Inbox, InboxConfig, InboxError, InboxItem
+from kstrl.tui.config_guard import ConfigProblemBanner, load_config
 from kstrl.tui.widgets.context_bar import ContextBar
 
 _PRIORITY_STYLE = {"high": "bold red", "normal": "", "low": "dim"}
@@ -57,10 +58,12 @@ class InboxScreen(Screen[None]):
         self._root = Path(root_dir) if root_dir else Path.cwd()
         self._show_decided = False
         self._items: list[InboxItem] = []
+        self._unreadable = False
 
     # -- composition -------------------------------------------------------
     def compose(self) -> ComposeResult:
         yield ContextBar("inbox")
+        yield ConfigProblemBanner(id="config-problem")
         with Horizontal():
             yield DataTable(id="inbox-table")
             yield Static("", id="inbox-detail")
@@ -73,14 +76,28 @@ class InboxScreen(Screen[None]):
         self.action_refresh()
 
     # -- data --------------------------------------------------------------
-    def _inbox(self) -> Inbox:
-        return Inbox(self._root, InboxConfig.load(self._root))
+    def _inbox(self) -> Inbox | None:
+        """The inbox, or None with the banner saying why (#289).
+
+        Re-read per call rather than cached: this screen outlives edits
+        to kstrl.toml, which is the same reason the config screen has a
+        refresh action. That is also why the guard is here and not only
+        at mount - the file can break between two keystrokes.
+        """
+        config, problem = load_config(self.app, InboxConfig.load, self._root)
+        self.query_one(ConfigProblemBanner).show(problem)
+        self._unreadable = problem is not None
+        return None if config is None else Inbox(self._root, config)
 
     def action_refresh(self) -> None:
         box = self._inbox()
-        self._items = box.items() if self._show_decided else box.open_items()
         table = self.query_one("#inbox-table", DataTable)
         table.clear()
+        if box is None:
+            self._items = []
+            self._render_detail()
+            return
+        self._items = box.items() if self._show_decided else box.open_items()
         for item in self._items:
             repeat = f" x{item.occurrences}" if item.occurrences > 1 else ""
             table.add_row(
@@ -106,9 +123,12 @@ class InboxScreen(Screen[None]):
         detail = self.query_one("#inbox-detail", Static)
         item = self._selected()
         if item is None:
+            # "Inbox clear" is a claim about the log. It must never be
+            # made from an empty list that only means the config would
+            # not load - the banner is carrying that answer instead.
             detail.update(
                 Text("Inbox clear: nothing is waiting on you.", style="dim")
-                if not self._items
+                if not self._items and not self._unreadable
                 else Text("")
             )
             return
@@ -141,6 +161,11 @@ class InboxScreen(Screen[None]):
         if item is None:
             return
         box = self._inbox()
+        if box is None:
+            # The file broke since the list was drawn. Redraw through
+            # the one path that renders that state.
+            self.action_refresh()
+            return
         try:
             if action == "approve":
                 box.approve(item.id, actor=self._actor(), comment=comment)
