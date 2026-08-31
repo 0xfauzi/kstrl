@@ -1197,6 +1197,7 @@ def _understand_core(
             interaction=interaction,
             stop_check=stop_check,
             guard_ignored_paths=understand_harness_paths,
+            guard_state_root=root_dir,
         )
     except Exception as exc:
         duration = round(time.monotonic() - started, 2)

@@ -48,6 +48,7 @@ from kstrl.policy import (
     evaluate_policy,
 )
 from kstrl.prd import PRD
+from kstrl.statedir import STATE_DIR_NAME
 
 # R2.6 env scrub: verification subprocesses execute agent-authored code
 # (the project's tests, linters run over agent files, CLI fixtures), so
@@ -1687,8 +1688,25 @@ def check_dead_code(
         # belt over braces: --no-fix already keeps the count at zero.
         if not read_only and ruff_fixed_count > 0:
             try:
-                # Stage all changes ruff made
-                run_scrubbed("git add -A", cwd=cwd, timeout=30)
+                # Stage all changes ruff made, EXCEPT the state directory
+                # (#274 review). Under use_worktrees=False this runs with
+                # cwd at the project root, so a bare `git add -A` commits
+                # kstrl's own live `.kstrl/` journals onto the component
+                # branch the moment ruff fixes one finding - and
+                # check_diff_scope is deliberately un-carved, so the next
+                # pass fails on them and they ride into the PR. In a
+                # worktree the same exclusion is wanted for the opposite
+                # reason: a `.kstrl/` there is the agent's, and this
+                # function must not commit it on the agent's behalf.
+                #
+                # A list, not a string: run_scrubbed only shells out for a
+                # string, and the `:(exclude)` pathspec must reach git
+                # unmangled.
+                run_scrubbed(
+                    ["git", "add", "-A", "--", ".", f":(exclude){STATE_DIR_NAME}"],
+                    cwd=cwd,
+                    timeout=30,
+                )
                 run_scrubbed(
                     'git commit -m "chore: auto-remove dead code (ruff F401/F811/F841)"',
                     cwd=cwd,

@@ -2151,6 +2151,12 @@ def _run_component(
             on_iteration_usage=on_iteration_usage,
             guard_base_ref=base_branch,
             guard_ignored_paths=harness_paths,
+            # #274: the project root, NOT worktree_path. The two are the
+            # same directory only under use_worktrees=False, which is
+            # exactly when `.kstrl/` reaches the guard's walk; in a real
+            # worktree they differ and the loop carves nothing out, so a
+            # `.kstrl/` the AGENT wrote there stays a violation.
+            guard_state_root=root_dir,
             verify_config=verify_config,
         )
         # Report which limit fired so the retry/fail path can act on it

@@ -53,12 +53,205 @@ CONTROL_FILENAMES: tuple[str, ...] = (
     CONTROL_GITHUB_PROCESSED,
 )
 
+#: Directories kstrl creates directly under ``.kstrl/``. A statement of
+#: FACT about what the package writes, kept complete: which of them the
+#: scope guard actually carves out is the separate policy in
+#: ``STATE_NOT_CARVED`` below. Complete because this is the one place to
+#: read what kstrl puts in its state directory, and because the AST
+#: drift net and the exclusion policy are both checked against it.
+#:
+#: kstrl fills each of these with names it invents at runtime - a run
+#: id, a component id, a queue item, a fact digest - so a carved one is
+#: emitted as a directory PREFIX. That is the narrowest form available
+#: for a tree whose leaf names do not exist until the run does, and it
+#: means everything beneath a carved prefix is uncounted by the in-loop
+#: guard. ``state_dir_carve_out`` says what that does and does not buy.
+#:
+#: Every name here is written by kstrl and by nothing else:
+#:
+#: - ``contract``   ``contract.py`` throwaway merge worktrees
+#: - ``debug``      ``pipeline.py`` per-component debug dumps
+#: - ``knowledge``  ``knowledge.py`` distilled facts (default root)
+#: - ``logs``       ``cli.py`` feature transcripts, ``serve.py`` launchd logs
+#: - ``proposals``  ``cli.py`` evolution proposals
+#: - ``queue``      ``workqueue.py`` (``QUEUE_DIR_NAME``)
+#: - ``runs``       ``events.py`` event journals and transcripts
+#: - ``snapshots``  ``fixtures.py`` (``FixturesConfig.snapshot_dir``)
+#: - ``worktrees``  ``factory.py`` component worktrees and their locks
+#:
+#: ``tests/test_state_dir_scope.py`` AST-walks ``kstrl/`` for the entries
+#: the package names and fails on one that is missing here. Its reach is
+#: exactly the two spellings kstrl uses today - a ``/`` join off the
+#: state directory (``root / ".kstrl" / "runs"``,
+#: ``state_dir(root) / QUEUE_DIR_NAME``) and a literal ``.kstrl/<name>``
+#: inside a string. It would NOT see a local alias, an f-string or an
+#: ``os.path.join``, so it is a net under the current idiom, not a proof
+#: about the next one. Write a new state path in one of those two forms
+#: and the net catches the omission; write it another way and this list
+#: is what has to be updated by hand.
+#:
+#: ``queue`` re-spells ``workqueue.QUEUE_DIR_NAME`` as a literal because
+#: ``workqueue`` imports this module; importing back would cycle. The
+#: AST net is what keeps the two in step.
+STATE_SUBDIRS: tuple[str, ...] = (
+    "contract",
+    "debug",
+    "knowledge",
+    "logs",
+    "proposals",
+    "queue",
+    "runs",
+    "snapshots",
+    "worktrees",
+)
+
+#: Single files kstrl writes directly in the state directory. Exact
+#: paths, never prefixes. The last two are the flat legacy in-tree
+#: control files; R8.9 moved live control state to the XDG directory,
+#: but a repository that has not run a control command since still has
+#: them here. The other three legacy control files live under ``queue/``
+#: and are covered by that subtree.
+STATE_FILES: tuple[str, ...] = (
+    CONTROL_RELOCATED_MARKER,
+    "evolution.jsonl",
+    "experiments.tsv",
+    "factory.lock",
+    "progress.jsonl",
+    CONTROL_AUTONOMY,
+    CONTROL_INBOX,
+)
+
+#: Entries kstrl creates but the guard deliberately keeps COUNTING
+#: (#274 review). Two criteria, and BOTH must hold before a name goes
+#: here:
+#:
+#: 1. It carries AUTHORITY over what kstrl does next, so losing sight of
+#:    it is worse than a false scope failure. ``queue`` is the in-tree
+#:    work queue ``ks serve`` drains (``workqueue.py``), so a file
+#:    written there can admit work; the pause marker, spend ledger and
+#:    GitHub processed-ids sit inside it. ``proposals`` is what
+#:    ``ks evolve --apply`` reads to mutate config and prompts, and
+#:    ``[evolution] auto_apply_computational`` can skip its confirmation.
+#:    ``autonomy.json`` is the autonomy level itself and ``inbox.jsonl``
+#:    the human-decision stream. All five are exactly
+#:    ``policy.ENFORCEMENT_MACHINERY_PATHS``, where touching one is a
+#:    non-overridable hard fail; a guard that stopped reporting them
+#:    would disagree with the envelope about the same files.
+#: 2. NOTHING reachable from ``run_loop`` writes it, so keeping it
+#:    countable cannot reintroduce the failure this carve-out exists to
+#:    fix. They are written only by ``serve.py`` and ``cli.py`` command
+#:    entry points, and ``serve`` moves a queue item to running BEFORE it
+#:    launches the factory and to a terminal state after it returns, so
+#:    its writes bracket the run rather than land inside it. The R8.9
+#:    migration only ever moves a control file OUT, and a deletion is
+#:    not a violation. ``tests/test_state_dir_scope.py`` checks this
+#:    against the loop's static import closure rather than leaving it as
+#:    a claim.
+#:
+#: Criterion 2 is affordable because the guard already subtracts
+#: whatever was on disk when the agent started
+#: (``git.capture_workspace_baseline``). Measured, not assumed: an
+#: operator running ``ks serve`` against this repo does not trip over
+#: queue items that predate the run, only over one written while the
+#: agent was working, which is the case worth seeing.
+STATE_NOT_CARVED: tuple[str, ...] = (
+    CONTROL_AUTONOMY,
+    CONTROL_INBOX,
+    "proposals",
+    "queue",
+)
+
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
 def state_dir(root_dir: Path) -> Path:
     """Return the in-tree artifact/lock directory for ``root_dir``."""
     return root_dir / STATE_DIR_NAME
+
+
+def _same_directory(left: Path, right: Path) -> bool:
+    """Whether two paths name one directory, symlinks resolved.
+
+    ``realpath`` rather than ``Path.resolve`` because neither side is
+    required to exist - the walk root may be a worktree the caller is
+    about to create - and because macOS reaches ``/tmp`` through a
+    symlink, so the project root and the loop's ``cwd`` are routinely
+    the same directory spelled two ways. Falls back to ``normpath`` if
+    the filesystem refuses to answer.
+    """
+    try:
+        return os.path.realpath(left) == os.path.realpath(right)
+    except OSError:
+        return os.path.normpath(left) == os.path.normpath(right)
+
+
+def state_dir_carve_out(walk_root: Path, state_root: Path | None) -> list[str]:
+    """Paths under ``.kstrl/`` the scope guard must not count (#274).
+
+    The in-loop scope guard walks UNTRACKED files
+    (``git ls-files --others --exclude-standard``) and counts every one
+    against the component's ``allowedPaths``. kstrl writes its own run
+    journals, locks and queue into ``<state_root>/.kstrl/`` while that
+    walk is happening, so in a repository that does not ignore
+    ``.kstrl/`` the harness trips over its own artifacts and the
+    operator pays an engineer iteration for it. ``ks init`` now
+    scaffolds a ``.gitignore`` (#273), which cannot reach a repository
+    that already exists; this carve-out travels with the harness
+    instead.
+
+    **Not a blanket ``.kstrl/`` bypass**, which is what
+    ``guards.check_violations`` warns against and what
+    ``decompose._ALLOWED_PATHS_EXCLUDE`` refuses to let an architect
+    authorise. The return value is ``STATE_SUBDIRS`` and ``STATE_FILES``
+    minus ``STATE_NOT_CARVED``, so a NEW top-level name under the state
+    directory - ``.kstrl/notes.md``, ``.kstrl/payload.py`` - is still a
+    violation.
+
+    **What it does NOT claim.** The carved subtrees are directory
+    PREFIXES, so a file the agent places INSIDE one
+    (``.kstrl/runs/x/evil.py``) is not counted by the in-loop guard. No
+    exact-path form exists for those trees, because kstrl invents their
+    leaf names at runtime, and a shape constraint on the leaves would be
+    a mechanism an agent satisfies by choosing a filename. The residual
+    is accepted and pinned by test rather than papered over, and it is
+    bounded three ways: ``STATE_NOT_CARVED`` keeps every
+    authority-carrying entry countable, so what is left is audit and
+    artifact trees; Phase 1's ``verify.check_diff_scope`` is
+    deliberately un-carved, so anything the agent COMMITS under
+    ``.kstrl/`` still fails there and never reaches a PR; and it applies
+    only where the walk root IS the state root, so a component worktree
+    gets nothing.
+
+    None of this is prevention. The agent has a filesystem; a scope
+    guard reports out-of-bounds edits, it does not authenticate
+    journals. What changes here is only what gets REPORTED, and
+    reporting under ``.kstrl/`` was already off in every repository
+    whose ``.gitignore`` lists it.
+
+    ``walk_root`` is the tree the guard is about to walk;
+    ``state_root`` is the project root whose ``.kstrl/`` kstrl actually
+    writes, which only the caller knows. Empty unless the two name the
+    same directory, so a component worktree - whose ``.kstrl/`` can only
+    be the agent's, because kstrl writes nothing there - keeps full
+    guard visibility. ``state_root=None`` means the caller has no state
+    directory to declare and also yields nothing: a caller that forgets
+    to pass it gets the pre-#274 behaviour, which fails loudly on
+    kstrl's own artifacts, rather than a carve-out applied to a tree
+    kstrl does not own.
+
+    Entries are relative to the walk root because that is what
+    ``git ls-files`` reports and what ``guards.path_is_allowed``
+    matches on. Directory entries carry a trailing slash so
+    ``path_is_allowed`` treats them as prefixes; file entries do not.
+    """
+    if state_root is None or not _same_directory(walk_root, state_root):
+        return []
+    prefix = f"{STATE_DIR_NAME}/"
+    carved = (
+        *(f"{name}/" for name in STATE_SUBDIRS if name not in STATE_NOT_CARVED),
+        *(name for name in STATE_FILES if name not in STATE_NOT_CARVED),
+    )
+    return sorted(f"{prefix}{name}" for name in carved)
 
 
 def _utc_now_iso() -> str:
