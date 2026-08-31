@@ -2994,24 +2994,30 @@ def config_show(
             prd_default=root_dir / "scripts/kstrl/prd.json",
         )
 
-    from kstrl.config_preflight import collect_config_problems
+    from kstrl.config_preflight import SURFACE_REJECTIONS, collect_config_problems
 
     def _problems() -> list[str]:
         try:
             return collect_config_problems(root_dir, warn=_preflight_warn)
-        except ValueError as document_exc:
+        except SURFACE_REJECTIONS as document_exc:
             # The document will not parse, so no section resolved and
             # the parse error IS the whole report.
             return [str(document_exc)]
 
     try:
         report = build_config_report(root_dir, overlay=_overlay)
-    except ValueError as exc:
+    except SURFACE_REJECTIONS as exc:
         # No rows are possible: the base config itself was rejected, or
         # the document will not parse. Report it in the same shape as the
         # success-with-problems path below, and in the seam's words -
         # section, key, offending value - rather than the bare coercion
         # message this used to print.
+        #
+        # The tuple is IMPORTED, and `config` being preflight-exempt is
+        # exactly why it has to be: no entry seam catches this first.
+        # `except ValueError` here let `[run] max_iterations = ["3"]`
+        # out as a raw TypeError traceback, from the one command whose
+        # whole job is explaining a broken config (#289).
         _echo_config_problems(_problems() or [str(exc)])
         sys.exit(1)
 

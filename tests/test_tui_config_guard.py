@@ -21,7 +21,6 @@ evolve screen is the screen that section is about.
 
 from __future__ import annotations
 
-import ast
 import os
 import stat
 from collections.abc import AsyncIterator
@@ -328,13 +327,60 @@ class TestSharedGuard:
 
     def test_an_unenrolled_loader_is_a_defect_not_a_message(self, tmp_path: Path) -> None:
         """The label comes from config_sections(), so a screen cannot
-        invent a section the entry check does not know."""
+        invent a section the entry check does not know.
 
-        def _not_a_registered_loader(_root: Path) -> int:
-            return 1
+        Raised on the FAILURE path only: the lookup moved into the
+        except branch because `config_sections()` costs a measured
+        6.2 ms on its first call and the happy path never needs a
+        label. An unenrolled loader that resolves cleanly has nothing
+        to mislabel.
+        """
+
+        def _rejecting_unenrolled_loader(_root: Path) -> int:
+            raise ValueError("nope")
 
         with pytest.raises(LookupError):
-            load_or_report(_not_a_registered_loader, tmp_path, blame_env=False)
+            load_or_report(_rejecting_unenrolled_loader, tmp_path, blame_env=False)
+
+        def _clean_unenrolled_loader(_root: Path) -> int:
+            return 1
+
+        assert load_or_report(_clean_unenrolled_loader, tmp_path, blame_env=False) == (1, None)
+
+    def test_a_bare_runtimeerror_is_re_raised_not_blamed_on_the_operator(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Round-one review, finding 10.
+
+        SURFACE_REJECTIONS names RuntimeError for the domain errors
+        that DERIVE from it, which are operator input. A bare one is a
+        kstrl defect, and rendering it as "configuration unreadable"
+        would blame the operator's file and eat the traceback. This is
+        the same line EvolutionConfig.load_or_none draws.
+        """
+        import kstrl.evolution
+
+        def _explode(root_dir: Path | None = None) -> None:
+            raise RuntimeError("journal config exploded")
+
+        monkeypatch.setattr(kstrl.evolution.EvolutionConfig, "load", _explode)
+        with pytest.raises(RuntimeError, match="journal config exploded"):
+            load_or_report(EvolutionConfig.load, tmp_path, blame_env=False)
+
+    def test_a_domain_runtimeerror_is_still_reported(self, tmp_path: Path) -> None:
+        """The other side of the same line: ServeError and friends are
+        operator input and must still reach the banner."""
+        from kstrl.serve import ServeConfig
+
+        (tmp_path / "kstrl.toml").write_text(
+            "[serve]\nmax_consecutive_poison = 0\n",
+            encoding="utf-8",
+        )
+        _config, problem = load_or_report(ServeConfig.load, tmp_path, blame_env=False)
+        assert problem is not None
+        assert "[serve]" in problem
 
     @pytest.mark.skipif(os.name == "nt" or os.getuid() == 0, reason="root reads a 0000 file")
     def test_an_unreadable_file_is_reported_not_raised(self, tmp_path: Path) -> None:
@@ -422,124 +468,156 @@ def test_build_config_report_raises_what_its_tui_callers_now_catch(tmp_path: Pat
 
 
 # --------------------------------------------------------------------------
-# The mechanism, not the memory
+# Round-one review findings, each with the measurement that found it
 # --------------------------------------------------------------------------
-#: Sites that resolve config in kstrl/tui/ and are deliberately not
-#: routed through the banner, keyed by (file, enclosing function). Each
-#: still has to catch SURFACE_REJECTIONS; this only records that the
-#: banner is not the right renderer for it.
-_NOT_THE_BANNER = frozenset(
-    {
-        # Reads pyproject.toml through resolve_verify_commands, and
-        # renders its own labelled row inside a block with no space for
-        # a section and a value.
-        ("kstrl/tui/screens/init_wizard.py", "_detected_text"),
-    }
-)
+def test_ks_config_show_names_the_section_instead_of_a_traceback(tmp_path: Path) -> None:
+    """Finding 1. `config` is preflight-EXEMPT, which is exactly why its
+    own guard has to be the shared tuple: nothing catches it first."""
+    from click.testing import CliRunner
+
+    from kstrl.cli import cli
+
+    (tmp_path / "kstrl.toml").write_text(ARRAY_FOR_A_RUN_NUMBER, encoding="utf-8")
+    result = CliRunner().invoke(cli, ["config", "show", "--root", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "Traceback" not in result.output
+    assert "[run]" in result.output
 
 
-def _guarded_by_the_shared_tuple(node: ast.Try) -> bool:
-    for handler in node.handlers:
-        if handler.type is None:
-            continue
-        for name in ast.walk(handler.type):
-            if isinstance(name, ast.Name) and name.id == "SURFACE_REJECTIONS":
-                return True
-    return False
+def test_the_env_scrub_predicate_sees_all_three_readers() -> None:
+    """Finding 2 and 3.
 
-
-def _config_loads(tree: ast.AST) -> list[ast.Call]:
-    """Calls that resolve a kstrl.toml section from disk."""
-    found: list[ast.Call] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        func = node.func
-        if isinstance(func, ast.Name) and func.id == "build_config_report":
-            found.append(node)
-        elif (
-            isinstance(func, ast.Attribute)
-            and func.attr == "load"
-            and isinstance(func.value, ast.Name)
-            and func.value.id.endswith("Config")
-        ):
-            found.append(node)
-    return found
-
-
-def _guarded_call_ids(function: ast.FunctionDef | ast.AsyncFunctionDef) -> set[int]:
-    """Ids of the config loads inside a try that catches the tuple."""
-    guarded: set[int] = set()
-    for node in ast.walk(function):
-        if isinstance(node, ast.Try) and _guarded_by_the_shared_tuple(node):
-            guarded.update(id(call) for call in _config_loads(node))
-    return guarded
-
-
-def _unguarded_config_loads(tree: ast.AST) -> list[tuple[int, str]]:
-    """(line, enclosing function) for every unguarded config load."""
-    found: list[tuple[int, str]] = []
-    for function in ast.walk(tree):
-        if not isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef):
-            continue
-        guarded = _guarded_call_ids(function)
-        found += [
-            (call.lineno, function.name)
-            for call in _config_loads(function)
-            if id(call) not in guarded
-        ]
-    return found
-
-
-def test_no_tui_surface_loads_config_behind_a_hand_written_guard() -> None:
-    """The house pattern is a walk, not a memory (CLAUDE.md).
-
-    Every site the #289 survey found was a hand-written exception tuple
-    that had drifted one exception narrower than the entry check, and
-    two of them were missed on the first pass of this very fix. So the
-    rule is enforced rather than remembered: inside kstrl/tui/, a call
-    that resolves a config section must either go through the banner's
-    ``load`` (which routes to ``config_preflight.load_or_report``) or
-    sit inside a ``try`` that catches ``SURFACE_REJECTIONS``.
+    The safe-mode worker reads KSTRL_* every 5 seconds in EVERY mode,
+    and an embedded orchestrator hangs off a different attribute than a
+    home-launched session. A predicate that reads only run_context is
+    not a guard, it is a lie with a docstring.
     """
+
+    class _Handle:
+        def __init__(self, done: bool) -> None:
+            self._done = done
+
+        def done(self) -> bool:
+            return self._done
+
+    class _Ctx:
+        def __init__(self, handle: object | None) -> None:
+            self.handle = handle
+
+    class _App:
+        def __init__(
+            self,
+            ctx: object | None = None,
+            orchestrator: object | None = None,
+            safe_mode: bool = False,
+        ) -> None:
+            self.run_context = ctx
+            self.orchestrator = orchestrator
+            self._safe_mode_running = safe_mode
+
+    assert env_scrub_is_safe(_App()) is True
+    assert env_scrub_is_safe(_App(ctx=_Ctx(_Handle(True)))) is True
+    assert env_scrub_is_safe(_App(ctx=_Ctx(_Handle(False)))) is False
+    # Finding 3: EMBEDDED mode keeps the live handle here, not on
+    # run_context, whose handle stays None (RunContext.observe).
+    assert env_scrub_is_safe(_App(orchestrator=_Handle(False))) is False
+    assert env_scrub_is_safe(_App(orchestrator=_Handle(True))) is True
+    # Finding 2: the app's own 5-second safe-mode worker.
+    assert env_scrub_is_safe(_App(safe_mode=True)) is False
+
+
+def test_the_safe_mode_worker_still_reads_the_environment() -> None:
+    """The reason finding 2's clause exists, pinned in the source it
+    depends on. If safe_mode_reasons stops loading config, this clause
+    is dead weight and should go; if it keeps loading it, the clause
+    must stay."""
     root = Path(__file__).resolve().parent.parent
-    offenders = [
-        f"{path.relative_to(root).as_posix()}:{lineno} in {name}()"
-        for path in sorted((root / "kstrl" / "tui").rglob("*.py"))
-        for lineno, name in _unguarded_config_loads(ast.parse(path.read_text(encoding="utf-8")))
-    ]
-    assert offenders == [], (
-        "config resolved in kstrl/tui/ without SURFACE_REJECTIONS or the banner: "
-        + ", ".join(offenders)
+    safemode = (root / "kstrl" / "safemode.py").read_text(encoding="utf-8")
+    assert "AutonomyConfig.load" in safemode
+    assert "PolicyConfig.load" in safemode
+    assert "QueueConfig.load" in safemode
+    app = (root / "kstrl" / "tui" / "app.py").read_text(encoding="utf-8")
+    assert "SAFE_MODE_INTERVAL_SECONDS" in app
+    assert "self._safe_mode_running = True" in app
+
+
+def test_a_non_utf8_experiments_file_does_not_crash_the_evolve_screen(
+    tmp_path: Path,
+) -> None:
+    """Finding 4, and the crash class #289 is about.
+
+    UnicodeDecodeError IS a ValueError, so it escaped the `except
+    OSError` in get_experiment_trends and raised out of on_mount two
+    lines after the config banner. CLAUDE.md names this rule verbatim.
+    """
+    from kstrl.evolution import EvolutionJournal
+
+    kstrl_dir = tmp_path / ".kstrl"
+    kstrl_dir.mkdir()
+    (kstrl_dir / "experiments.tsv").write_bytes(b"run_id\tcompleted\n2026-\xe9x\t1\n")
+    journal = EvolutionJournal(EvolutionConfig.load(tmp_path))
+    assert journal.get_experiment_trends(last_n=5) == []
+
+
+def test_a_non_utf8_proposal_does_not_crash_the_evolve_screen(tmp_path: Path) -> None:
+    """The same defect one line earlier in the same on_mount:
+    list_proposals read with no encoding behind `except OSError`."""
+    from kstrl.proposals import existing_proposal_titles, list_proposals
+
+    proposals = tmp_path / ".kstrl" / "proposals"
+    proposals.mkdir(parents=True)
+    (proposals / "prop-001.md").write_bytes(
+        b"# PROP-001: \xe9\xe9\xe9 title\n**Type**: computational\n"
     )
+    assert list_proposals(proposals) == []
+    assert existing_proposal_titles(proposals) == set()
 
 
-def test_every_named_exception_to_the_banner_still_exists() -> None:
-    """An allow-list nobody prunes is a lie. These are guarded by
-    SURFACE_REJECTIONS and render their own message instead."""
+async def test_the_evolve_screen_survives_both_undecodable_files(tmp_path: Path) -> None:
+    """The two above, through the screen, which is where it mattered."""
+    kstrl_dir = tmp_path / ".kstrl"
+    (kstrl_dir / "proposals").mkdir(parents=True)
+    (kstrl_dir / "proposals" / "prop-001.md").write_bytes(b"# PROP-001: \xe9\xe9\xe9\n")
+    (kstrl_dir / "experiments.tsv").write_bytes(b"run_id\tcompleted\n2026-\xe9x\t1\n")
+    async with _evolve(tmp_path) as (screen, _pilot):
+        assert screen.query_one("#trends-table", DataTable).row_count == 0
+        assert screen.query_one("#proposals-table", DataTable).row_count == 0
+        # The config itself is fine, so the banner must NOT claim it is
+        # unreadable: these are data files, not configuration.
+        assert screen.query_one(ConfigProblemBanner).display is False
+
+
+def test_experiments_tsv_is_written_with_the_encoding_it_is_read_with(tmp_path: Path) -> None:
+    """Encoding is a two-sided contract (CLAUDE.md): naming utf-8 on the
+    read while the write follows the locale just moves the failure."""
     root = Path(__file__).resolve().parent.parent
-    for rel, function in _NOT_THE_BANNER:
-        source = (root / rel).read_text(encoding="utf-8")
-        assert f"def {function}(" in source, f"{rel} no longer defines {function}"
-        assert "SURFACE_REJECTIONS" in source, f"{rel} no longer imports the shared tuple"
+    source = (root / "kstrl" / "evolution.py").read_text(encoding="utf-8")
+    assert 'open(self.config.experiments_path, "a", encoding="utf-8")' in source
+    assert 'read_text(encoding="utf-8")' in source
 
 
-def test_the_walk_would_have_caught_the_original_defect() -> None:
-    """The walk is only worth having if it fails on the bug."""
-    unguarded = ast.parse(
-        "def reload(self):\n    journal = EvolutionJournal(EvolutionConfig.load(root_dir))\n"
-    ).body[0]
-    assert isinstance(unguarded, ast.FunctionDef)
-    assert len(_config_loads(unguarded)) == 1
+async def test_the_config_screen_refresh_reports_the_seam_wording(tmp_path: Path) -> None:
+    """Finding 8.
 
-    guarded = ast.parse(
-        "def reload(self):\n"
-        "    try:\n"
-        "        return EvolutionConfig.load(root_dir)\n"
-        "    except SURFACE_REJECTIONS:\n"
-        "        return None\n"
-    ).body[0]
-    assert isinstance(guarded, ast.FunctionDef)
-    tries = [n for n in ast.walk(guarded) if isinstance(n, ast.Try)]
-    assert _guarded_by_the_shared_tuple(tries[0]) is True
-    assert len(_config_loads(tries[0])) == 1
+    This is the screen an operator opens to look at configuration, so
+    "int() argument must be a string ... not 'list'" with no section,
+    key or value is the one place that answer is least useful. The
+    notify now carries collect_config_problems' lines, which is the
+    same traversal `ks config show` prints.
+    """
+    from kstrl.tui.screens.config import ConfigScreen
+
+    (tmp_path / "kstrl.toml").write_text(ARRAY_FOR_A_RUN_NUMBER, encoding="utf-8")
+    app = _home_app(tmp_path)
+    notices: list[str] = []
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.pause(0.2)
+        app.push_screen(ConfigScreen())
+        await pilot.pause(0.2)
+        screen = app.screen
+        assert isinstance(screen, ConfigScreen)
+        app.notify = lambda message, **kw: notices.append(str(message))  # type: ignore[method-assign,assignment]
+        screen.action_refresh()
+        await pilot.pause(0.2)
+    assert notices, "refresh reported nothing"
+    assert any("[run]" in n for n in notices), notices

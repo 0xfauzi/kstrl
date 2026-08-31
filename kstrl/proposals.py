@@ -58,8 +58,8 @@ def existing_proposal_titles(proposals_dir: Path) -> set[str]:
         return titles
     for path in sorted(proposals_dir.glob("prop-*.md")):
         try:
-            first_line = path.read_text().splitlines()[0]
-        except (OSError, IndexError):
+            first_line = path.read_text(encoding="utf-8").splitlines()[0]
+        except (OSError, ValueError, IndexError):
             continue
         m = PROPOSAL_TITLE_RE.match(first_line)
         if m:
@@ -77,7 +77,7 @@ def parse_proposal_file(path: Path) -> Proposal:
         "applied": "",
     }
     convention_lines: list[str] = []
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         m = PROPOSAL_TITLE_RE.match(line)
         if m and not parsed["id"]:
             parsed["id"], parsed["title"] = m.group(1), m.group(2)
@@ -110,7 +110,11 @@ def list_proposals(proposals_dir: Path) -> list[Proposal]:
     for path in sorted(proposals_dir.glob("prop-*.md")):
         try:
             proposals.append(parse_proposal_file(path))
-        except OSError:
+        except (OSError, ValueError):
+            # ValueError beside OSError because UnicodeDecodeError is
+            # one: measured, a single non-utf-8 byte in a prop-*.md
+            # raised out of EvolveScreen.on_mount, one line BEFORE the
+            # #289 banner guard (CLAUDE.md, encoding is two-sided).
             continue
     return proposals
 
@@ -144,7 +148,7 @@ def append_to_agent_learnings(
     if not head.endswith("\n"):
         head += "\n"
     try:
-        claude_md.write_text(head + entry + content[insert_at:])
+        claude_md.write_text(head + entry + content[insert_at:], encoding="utf-8")
     except OSError:
         return False
     return True
@@ -153,7 +157,7 @@ def append_to_agent_learnings(
 def mark_applied(path: Path, when: str | None = None) -> str:
     """Stamp the proposal file as applied; returns the timestamp."""
     applied_at = when or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    with open(path, "a") as f:
+    with open(path, "a", encoding="utf-8") as f:
         f.write(f"\n**Applied**: {applied_at}\n")
     return applied_at
 

@@ -183,7 +183,13 @@ class InboxScreen(Screen[None]):
             self.notify(str(exc), severity="error")
             return
         self.notify(f"{action}d: {item.title}")
-        self.action_refresh()
+        # _redraw, not action_refresh: this holds the Inbox already and
+        # `box.items()` re-reads the log from disk, so the post-decision
+        # state renders identically with one config load instead of two.
+        # Throwing the answer away to load it again is the exact waste
+        # _redraw was split out to prevent, and on a broken kstrl.toml
+        # it doubled the os.environ scrub window per keystroke.
+        self._redraw(box)
 
     @staticmethod
     def _actor() -> str:

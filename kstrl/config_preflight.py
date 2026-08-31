@@ -292,15 +292,41 @@ def load_or_report(
     Wider than :data:`REJECTIONS` by ``OSError``: see
     :data:`SURFACE_REJECTIONS`.
     """
-    section = _section_for(loader)
-    toml_path = resolve_config_file(root_dir)
     # Scoped per call, never across calls: a screen's refresh action
     # exists to see the file as it is NOW (see ``toml_parse_scope``).
     with toml_parse_scope():
         try:
             return loader(root_dir), None
         except SURFACE_REJECTIONS as exc:
-            return None, _detail(section, toml_path, root_dir, exc, blame_env=blame_env)
+            if type(exc) is RuntimeError:
+                # A BARE RuntimeError is a defect in kstrl, not the
+                # operator's file, and reporting it as "configuration
+                # unreadable" would blame them for it and eat the
+                # traceback. REJECTIONS names RuntimeError only for the
+                # domain errors that DERIVE from it - ServeError,
+                # QueueError, InboxError, IntakeError - which are
+                # operator input and are still reported here. This is
+                # the same line EvolutionConfig.load_or_none draws, and
+                # it is drawn here too because that method's reason (a
+                # widening can only ever swallow a defect) is about the
+                # exception, not about the call site.
+                raise
+            # Looked up HERE, not before the try: `_section_for` calls
+            # `config_sections()`, whose 22 deferred imports cost a
+            # measured 6.2 ms on their first call in a process that has
+            # imported kstrl.tui.app, and that first call otherwise
+            # lands on the Textual event loop inside on_mount even when
+            # kstrl.toml is perfectly valid (4.7 us warm). Only the
+            # failure path needs a label, so only it pays. An
+            # unenrolled loader still raises LookupError, on the path
+            # that would have had to name it.
+            return None, _detail(
+                _section_for(loader),
+                resolve_config_file(root_dir),
+                root_dir,
+                exc,
+                blame_env=blame_env,
+            )
 
 
 def _section_for(loader: Callable[[Path], Any]) -> ConfigSection:

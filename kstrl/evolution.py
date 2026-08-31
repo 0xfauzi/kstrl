@@ -713,7 +713,9 @@ class EvolutionJournal:
                 not self.config.experiments_path.exists()
                 or self.config.experiments_path.stat().st_size == 0
             )
-            with open(self.config.experiments_path, "a") as f:
+            # The other side of the two-sided contract: this is the
+            # file get_experiment_trends decodes as utf-8.
+            with open(self.config.experiments_path, "a", encoding="utf-8") as f:
                 if needs_header:
                     f.write(header + "\n")
                 f.write(row + "\n")
@@ -1251,10 +1253,20 @@ class EvolutionJournal:
     # ------------------------------------------------------------------
 
     def get_experiment_trends(self, last_n: int = 10) -> list[dict[str, Any]]:
-        """Read experiments.tsv and return the last N entries as dicts."""
+        """Read experiments.tsv and return the last N entries as dicts.
+
+        Encoding is named and ``ValueError`` is caught beside
+        ``OSError``, which is the house rule for a reader of any file
+        kstrl writes (CLAUDE.md): ``UnicodeDecodeError`` IS a
+        ``ValueError`` and escapes a fail-closed ``except OSError``.
+        Measured before this line: a single non-utf-8 byte in
+        experiments.tsv raised straight out of ``EvolveScreen.on_mount``
+        two lines after the #289 config banner, which is that issue's
+        own crash from that issue's own screen.
+        """
         try:
-            text = self.config.experiments_path.read_text()
-        except OSError:
+            text = self.config.experiments_path.read_text(encoding="utf-8")
+        except (OSError, ValueError):
             return []
 
         reader = csv.DictReader(io.StringIO(text), delimiter="\t")

@@ -15,6 +15,7 @@ about LIVE diff updates starving input, which does not apply here.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rich.text import Text
@@ -205,6 +206,24 @@ class ConfigScreen(Screen[None]):
             return
         self.app.pop_screen()
 
+    @staticmethod
+    def _problem_lines(root_dir: Path, exc: Exception) -> list[str]:
+        """The entry check's lines for this root, or the raw failure.
+
+        Safe to blame the environment here: the caller has already
+        established through `env_scrub_is_safe` that no thread of ours
+        is reading it, which is the same condition `build_config_report`
+        needed to run at all.
+        """
+        from kstrl.config_preflight import collect_config_problems
+
+        try:
+            return collect_config_problems(root_dir, warn=lambda _m: None) or [str(exc)]
+        except SURFACE_REJECTIONS as document_exc:
+            # The document will not parse, so no section resolved and
+            # that parse error is the whole report.
+            return [str(document_exc)]
+
     def action_refresh(self) -> None:
         # The env-scrub is process-wide: never while a launched
         # session's thread could be reading os.environ. The predicate
@@ -229,7 +248,17 @@ class ConfigScreen(Screen[None]):
             # out of int(), which `except ValueError` let through and
             # which this refresh action can meet, because it exists to
             # re-read a file the operator has just edited (#289).
-            self.app.notify(f"config failed to resolve: {exc}", severity="error")
+            #
+            # Reported in the SEAM's words, not the bare coercion
+            # message: this is the screen an operator opens to look at
+            # configuration, so "int() argument must be a string ... not
+            # 'list'" with no section, key or value is the one place
+            # that answer is least useful. collect_config_problems is
+            # the same traversal `ks config show` prints.
+            self.app.notify(
+                "config failed to resolve:\n" + "\n".join(self._problem_lines(root_dir, exc)),
+                severity="error",
+            )
             return
         self.app.config_report = report  # type: ignore[attr-defined]
         if report.unresolved:

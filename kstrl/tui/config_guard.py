@@ -43,24 +43,64 @@ without taking a banner it does not show.
 from __future__ import annotations
 
 
+def _handle_is_live(handle: object) -> bool:
+    """A command handle that exists and has not finished."""
+    done = getattr(handle, "done", None)
+    return handle is not None and callable(done) and not bool(done())
+
+
 def env_scrub_is_safe(app: object) -> bool:
-    """Whether clearing ``os.environ`` right now would race a run.
+    """Whether clearing ``os.environ`` right now would race a thread.
 
-    ``app`` is typed ``object`` rather than ``App`` on purpose: the
-    attributes read here belong to ``KstrlTuiApp``, not to Textual's
-    ``App``, and the screens are also mounted on bare test harnesses
-    that have neither. Absent means "no run", which is the safe answer
-    for a harness and the true one for a shell that has launched
-    nothing.
+    THREE readers, and missing any one of them makes this predicate a
+    lie rather than a guard:
 
-    Deliberately NOT ``KstrlTuiApp.session_in_flight``, which walks the
-    same three attributes but also requires ``Mode.HOME``. The hazard
-    does not care which mode the app is in: a dash or embedded run is
-    just as able to read the environment while it is empty.
+    1. A home-launched session (``run_context.handle``), which runs the
+       factory on another thread whose subprocesses inherit the
+       environment.
+    2. An EMBEDDED-mode orchestrator (``app.orchestrator``). Same
+       hazard, DIFFERENT attribute: ``embed.py`` starts the command
+       thread and passes it as ``orchestrator=``, while ``run_context``
+       comes from ``RunContext.observe``, which leaves ``handle`` None.
+       Reading only ``run_context`` returned True with an agent
+       mid-spawn.
+    3. The app's own safe-mode worker (``_safe_mode_running``).
+       ``app.py`` schedules ``_check_safe_mode`` every 5 seconds in
+       EVERY mode, and ``safemode.safe_mode_reasons`` loads
+       ``AutonomyConfig``, ``PolicyConfig`` and ``QueueConfig``, all of
+       which read ``KSTRL_*``. Measured before this clause existed:
+       with 84 variables set, a thread polling
+       ``KSTRL_AUTONOMY_LEVEL`` across 50 blaming ``load_or_report``
+       calls saw it MISSING for 95990 of 36.8M reads. A safe-mode tick
+       landing in that window reports the default ladder, so a degraded
+       factory reads nominal on the chip for one tick, which is the
+       silent wrong answer the chip exists to prevent.
+
+    WHY A FLAG READ IS ENOUGH, AND NO LOCK IS NEEDED. Every caller runs
+    on the Textual UI thread (a message handler or an action), the
+    scrub that follows is synchronous and never awaits, and a worker is
+    only ever STARTED from that same thread by a timer callback. So no
+    worker can begin between this check and the scrub, and
+    ``_safe_mode_running`` is cleared in the worker's ``finally`` only
+    after its last config read, which makes True strictly wider than
+    the danger window. Calling this off the UI thread would break that
+    argument, and nothing does.
+
+    ``app`` is typed ``object`` rather than ``App`` on purpose: these
+    attributes belong to ``KstrlTuiApp``, not to Textual's ``App``, and
+    the screens are also mounted on bare test harnesses that have
+    neither. Absent means "not running", which is the safe answer for a
+    harness and the true one for a shell that has launched nothing.
+
+    Deliberately NOT ``KstrlTuiApp.session_in_flight``, which reads one
+    of the three and also requires ``Mode.HOME``. The hazard does not
+    care which mode the app is in.
     """
-    run_context = getattr(app, "run_context", None)
-    handle = getattr(run_context, "handle", None)
-    return handle is None or bool(handle.done())
+    if _handle_is_live(getattr(getattr(app, "run_context", None), "handle", None)):
+        return False
+    if _handle_is_live(getattr(app, "orchestrator", None)):
+        return False
+    return not bool(getattr(app, "_safe_mode_running", False))
 
 
 __all__ = ["env_scrub_is_safe"]
