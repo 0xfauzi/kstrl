@@ -13,7 +13,7 @@ clear()+rebuild per poll (spike finding 3).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
 
 from rich.text import Text
 from textual.widgets import DataTable
@@ -24,12 +24,6 @@ from kstrl.tui import theme
 if TYPE_CHECKING:
     from kstrl.reducer import ComponentState, RunState
 
-#: Re-exported from ``agents.base`` rather than restated (#281). It WAS
-#: a second declaration of the literal "architect", and this table
-#: filters the plan by it: a component the architect genuinely named
-#: `architect` was dropped from the DAG view entirely, on the strength
-#: of a string two modules happened to agree on.
-ARCHITECT_ID: Final = ARCHITECT_COMPONENT
 COLUMNS = ("component", "tier", "deps", "prd")
 _CYCLE_TIER = -1
 
@@ -86,7 +80,11 @@ class DagTable(DataTable[Text | str]):
             self.add_column(column, key=column)
 
     def update_state(self, state: RunState) -> None:
-        order = [cid for cid in state.plan_order if cid != ARCHITECT_ID]
+        # The architect's own pseudo-row is filtered out; a COMPONENT the
+        # architect named `architect` is not. Those were one string until
+        # #281, and this table had its own declaration of it, so a real
+        # component with that name vanished from the DAG entirely.
+        order = [cid for cid in state.plan_order if cid != ARCHITECT_COMPONENT]
         deps_map = {cid: state.components[cid].deps for cid in order if cid in state.components}
         tiers = compute_tiers(deps_map)
         prds = {a["component"] for a in state.artifacts if a.get("label") == "prd"}

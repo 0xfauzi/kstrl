@@ -158,6 +158,30 @@ def _spec_finding() -> Finding:
     )
 
 
+def _spend_with_component_keyed(tmp_path: Path, key: str) -> RunSpend:
+    """``read_run_spend`` over a run whose ONE component row is ``key``.
+
+    The double is a REAL ``RunState``: a hand-rolled object carrying only
+    the fields this function read at the time silently became wrong the
+    moment it read another (#257 piece B).
+
+    Shared because #281's two cases differ only in that key - the role's
+    namespaced row, versus the bare word that is now only ever a
+    component (or a pre-#281 role row, which reads the same way and is
+    the reason no compat fallback is safe).
+    """
+    state = RunState(cost_usd=2.0, cost_calls=1, usage_calls=1)
+    state.components[key] = ComponentState(
+        component_id=key,
+        usage_calls=1,
+        cost_calls=1,
+        cost_usd=2.0,
+    )
+    with patch("kstrl.reducer.load_run_state") as load:
+        load.return_value = (state, None)
+        return REAL_READ_RUN_SPEND(tmp_path, "factory-abc")
+
+
 def _stub_runner(
     outcome: RunOutcome,
     calls: list[dict[str, object]] | None = None,
@@ -2162,21 +2186,13 @@ class TestRunOwnership:
         are the same key, which is the only reason the check above can
         distinguish a metered architect from a silent one.
 
-        #281 moved that key into the role namespace. Both sides are
-        spelled from the one constant here, so a future move keeps them
-        together rather than leaving this test passing on a literal the
-        writer no longer uses.
+        #281 moved that key into the role namespace. It is spelled from
+        the constant, so a future move keeps writer and reader together
+        rather than leaving this passing on a literal the writer no
+        longer uses.
         """
-        state = RunState(cost_usd=2.0, cost_calls=1, usage_calls=1)
-        state.components[ARCHITECT_COMPONENT] = ComponentState(
-            component_id=ARCHITECT_COMPONENT,
-            usage_calls=1,
-            cost_calls=1,
-            cost_usd=2.0,
-        )
-        with patch("kstrl.reducer.load_run_state") as load:
-            load.return_value = (state, None)
-            spend = REAL_READ_RUN_SPEND(tmp_path, "factory-abc")
+        spend = _spend_with_component_keyed(tmp_path, ARCHITECT_COMPONENT)
+
         assert spend.architect_calls == 1
 
     def test_a_bare_architect_key_never_clears_the_honesty_flag(
@@ -2213,16 +2229,7 @@ class TestRunOwnership:
         reintroduce case one in order to prettify case two.
         ``read_run_spend`` states why nothing narrower is worth building.
         """
-        state = RunState(cost_usd=2.0, cost_calls=1, usage_calls=1)
-        state.components[ARCHITECT_ROLE] = ComponentState(
-            component_id=ARCHITECT_ROLE,
-            usage_calls=1,
-            cost_calls=1,
-            cost_usd=2.0,
-        )
-        with patch("kstrl.reducer.load_run_state") as load:
-            load.return_value = (state, None)
-            spend = REAL_READ_RUN_SPEND(tmp_path, "factory-abc")
+        spend = _spend_with_component_keyed(tmp_path, ARCHITECT_ROLE)
 
         assert spend.architect_calls == 0, "a component's calls are not the architect's"
         assert spend.unmetered_phases == (ARCHITECT_ROLE,)

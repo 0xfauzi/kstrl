@@ -31,7 +31,6 @@ from kstrl.manifest import (
     Manifest,
 )
 from kstrl.names import (
-    ROLE_KEY_PREFIX,
     role_component_key,
     validate_branch_name,
     validate_component_id,
@@ -160,34 +159,25 @@ class TestRoleKeysCannotBeComponentIds:
     re-merging the usage meter and the spend ledger.
     """
 
-    #: Every role kstrl meters today plus the shapes a future one could
-    #: take. The point of the fix is that it is a property of the
+    #: The role that has a row today, plus the two shapes a future one
+    #: could take that the prefix has to survive: the shortest legal id,
+    #: and one long enough that the prefix pushes it over the 64-char
+    #: limit. The point of the fix is that rejection is a property of the
     #: namespace rather than of the word `architect`, so the guard is
-    #: parametrized rather than pinned to the one role that has a row.
-    ROLES = [
-        "architect",
-        "engineer",
-        "review",
-        "security",
-        "distill",
-        "understand",
-        "a",
-        "some-future-role",
-        "role.with.dots",
-        "x" * 64,
-    ]
+    #: parametrized rather than pinned to the one role.
+    ROLES = ["architect", "a", "x" * 64]
 
     @pytest.mark.parametrize("role", ROLES)
     def test_a_role_key_is_never_a_valid_component_id(self, role: str) -> None:
         assert validate_component_id(role_component_key(role)) is not None
 
-    @pytest.mark.parametrize("role", ROLES)
-    def test_the_bare_role_name_stays_a_valid_component_id(self, role: str) -> None:
-        """The compatibility half, and the reason option 1 was taken
-        over reserving the name: an operator or an architect may still
-        call a component `architect`, and a manifest that already does
-        keeps loading."""
-        assert validate_component_id(role) is None
+    def test_the_bare_role_name_stays_a_valid_component_id(self) -> None:
+        """The compatibility half, and the reason option 1 was taken over
+        reserving the name: an operator or an architect may still call a
+        component `architect`, and a manifest that already does keeps
+        loading. Only the real role is asserted - the generic id shapes
+        are ``ACCEPTED_COMPONENT_IDS``' job, not this class's."""
+        assert validate_component_id("architect") is None
 
     def test_a_role_key_is_never_a_valid_branch_name(self) -> None:
         """A role key is not only a dict key - it reaches disk as a run
@@ -202,7 +192,6 @@ class TestRoleKeysCannotBeComponentIds:
         names, and the collision is back with the tests still green.
         Measured - an earlier draft of the #281 meter tests passed in
         exactly that state."""
-        assert ROLE_KEY_PREFIX != ""
         assert role_component_key("architect") != "architect"
 
 

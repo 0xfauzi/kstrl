@@ -22,11 +22,12 @@ from textual.css.query import NoMatches
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static
 
+from kstrl.agents.base import ARCHITECT_COMPONENT
 from kstrl.tui import theme
 from kstrl.tui.messages import StateChanged
 from kstrl.tui.widgets.context_bar import ContextBar
 from kstrl.tui.widgets.cost_meter import CostMeter
-from kstrl.tui.widgets.dag_table import ARCHITECT_ID, DagTable
+from kstrl.tui.widgets.dag_table import DagTable
 from kstrl.tui.widgets.header import RunHeader
 from kstrl.tui.widgets.transcript import TranscriptTail
 
@@ -45,7 +46,7 @@ _SEVERITY_STYLES = {
 def _issue_strip(state: RunState) -> Text:
     text = Text()
     counts = state.spec_issue_counts
-    architect = state.components.get(ARCHITECT_ID)
+    architect = state.components.get(ARCHITECT_COMPONENT)
     audit_ran = architect is not None and any(
         p.get("phase") == "audit" for p in architect.phase_history
     )
@@ -80,7 +81,7 @@ def _issue_strip(state: RunState) -> Text:
 
 def _attempt_strip(state: RunState) -> Text:
     text = Text()
-    architect = state.components.get(ARCHITECT_ID)
+    architect = state.components.get(ARCHITECT_COMPONENT)
     if architect is None:
         text.append("waiting for the architect...", style=theme.MUTED)
         return text
@@ -104,11 +105,11 @@ def _summary(state: RunState) -> Text | None:
     if not state.finished:
         return None
     text = Text()
-    architect = state.components.get(ARCHITECT_ID)
+    architect = state.components.get(ARCHITECT_COMPONENT)
     if architect is None or architect.status != "completed":
         text.append("✗ decompose did not complete", style=f"bold {theme.ERROR}")
         return text
-    planned = [c for c in state.plan_order if c != ARCHITECT_ID]
+    planned = [c for c in state.plan_order if c != ARCHITECT_COMPONENT]
     prds = [a for a in state.artifacts if a.get("label") == "prd"]
     manifest = next(
         (a for a in state.artifacts if a.get("label") == "manifest"),
@@ -133,7 +134,7 @@ class DecomposeScreen(Screen[None]):
         super().__init__()
         # The app's duck-typed poll contract (A3): refresh_state +
         # the architect's bounded transcript tail.
-        self.transcript_component = ARCHITECT_ID
+        self.transcript_component = ARCHITECT_COMPONENT
         self._following = True
 
     def compose(self) -> ComposeResult:
@@ -260,7 +261,7 @@ class SpecTriageScreen(Screen[None]):
             key=lambda i: _SEVERITY_ORDER.get(i.get("severity", ""), 9),
         )
         banner = self.query_one("#triage-banner", Static)
-        architect = state.components.get(ARCHITECT_ID)
+        architect = state.components.get(ARCHITECT_COMPONENT)
         halted = (
             bool(state.spec_issue_counts.get("blocker"))
             and architect is not None
