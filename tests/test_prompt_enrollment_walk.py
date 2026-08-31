@@ -17,15 +17,33 @@ H3-NOTE in ``tests/test_prompt_versions.py``.
 from __future__ import annotations
 
 import ast
+import functools
 from pathlib import Path
 
+import pytest
+
+from kstrl import cli
 from tests.test_prompt_versions import _PROMPTS
 
 # Exemption set for the auto-discovery scan. These are user-facing
 # scaffolding templates emitted by ``ks init`` (progress log files,
-# codebase_map.md, the understand/feature understand instructions); they
-# generate documentation outputs, not adversarial-role outputs, and are
-# out of scope for H3 snapshot protection.
+# the understand and feature-understand instructions); they generate
+# documentation outputs, not adversarial-role outputs, and are out of
+# scope for H3 snapshot protection.
+#
+# Only names ending in ``_PROMPT`` can ever reach this set, because the
+# walk filters on the suffix first. DEFAULT_PROGRESS, DEFAULT_CODEBASE_MAP
+# and DEFAULT_FEATURE_UNDERSTAND were listed here until #299 round 2 and
+# were inert: the suffix filter excluded them before the exemption was
+# consulted, and the staleness check below dropped the suffix filter
+# purely to keep them looking alive. Dead configuration that teaches the
+# next reader a rule that does not exist.
+#
+# Whether these two belong here at all is an open question: both are full
+# instruction bodies fed to an LLM through ``run_loop`` on ``ks
+# understand`` and ``ks feature``, which H3a's wording arguably already
+# covers. Recorded on #303; the exemption predates H3a and is left alone
+# here.
 #
 # If you add a NEW template that produces user-facing content rather
 # than adversarial-role output, add its name here with a one-line
@@ -34,51 +52,87 @@ from tests.test_prompt_versions import _PROMPTS
 # legacy-purge cleanup -- the factory is now the only PRD path.)
 _ENROLLMENT_EXEMPT_NAMES = frozenset(
     {
-        "DEFAULT_PROGRESS",
-        "DEFAULT_CODEBASE_MAP",
-        "DEFAULT_FEATURE_UNDERSTAND",
         "DEFAULT_UNDERSTAND_PROMPT",
         "DEFAULT_FEATURE_UNDERSTAND_PROMPT",
     }
 )
 
 
+#: Builtins whose call result cannot be a string. A ``*_PROMPT``-suffixed
+#: name bound to one of these is not a prompt: ``kstrl/cli.py`` really
+#: holds ``_ROOT_FROM_PROMPT = frozenset({"run", "understand", "feature"})``,
+#: a set of command names. Kept small on purpose. Anything not named here
+#: is treated as a possible prompt body, so the cost of an omission is a
+#: spurious enrollment demand a human can answer, not a prompt that ships
+#: unversioned.
+_NOT_STRING_BUILTINS = frozenset(
+    {
+        "bool",
+        "bytes",
+        "dict",
+        "float",
+        "frozenset",
+        "int",
+        "list",
+        "set",
+        "tuple",
+    }
+)
+
+
 def _is_prompt_value(value: ast.expr | None) -> bool:
-    """True when ``value`` is the AST of something that evaluates to a
-    prompt body. ``None`` arises for annotated assignments without a
-    right-hand side (``X: str``) and is treated as not-a-prompt.
+    """True when ``value`` could evaluate to a string, so a ``*_PROMPT``
+    name bound to it has to be enrolled or exempted.
 
-    Accepts four shapes. A plain string literal and an f-string are the
-    obvious two. The other two close a bypass #299 found: a name ending
-    in ``_PROMPT`` escaped the walk entirely if its value was
-    ``"a" + "b"`` (an ``ast.BinOp``) or ``"\n".join([...])`` (an
-    ``ast.Call``), because both fail a literal-only test while passing
-    the name test. H3a says naming a constant to dodge the walk is not an
-    option; assembling its value out of pieces is the same dodge one
-    level down, and unlike instruction text never bound to a ``*_PROMPT``
-    name at all, this one IS mechanically detectable.
+    **This predicate is default-deny for prompts, not default-allow.**
+    #299 round 1 tried the other way round, enumerating the shapes that
+    ARE prompt bodies: string literal, f-string, ``"a" + "b"``,
+    ``"lit".join(...)``. Round 2 measured that against the shapes a real
+    multi-part prompt actually uses and found seven that slipped through
+    with a ``*_PROMPT`` name at module level, among them
+    ``textwrap.dedent(body)``, ``body.strip()``, ``A + B`` with both
+    operands names, ``SEP.join([...])``, ``"..." % v``, a ternary, and a
+    bare alias ``X_PROMPT = BASE``. An allowlist of shapes can only
+    ever be as complete as the last person's imagination, and the whole
+    point of H3 is that a prompt cannot ship unversioned by accident.
 
-    Both additions are deliberately narrow, because this predicate also
-    decides what is NOT a prompt. Concatenation counts only when a string
-    literal appears somewhere in the tree, and a call counts only when it
-    is ``<string literal>.join(...)``. So ``_ROOT_FROM_PROMPT =
-    frozenset({...})`` in ``kstrl/cli.py``, a set of command names whose
-    name happens to end in ``_PROMPT``, stays correctly invisible.
+    So the question asked here is the negative one: is this value
+    PROVABLY not a string? Only three answers count as proof, and each is
+    visible in the syntax without resolving a name:
+
+    - a non-string literal (``X_PROMPT = 3``),
+    - a collection display (``{...}``, ``[...]``, ``(...)``, and the
+      comprehension forms),
+    - a call to a builtin that cannot return a string
+      (``_NOT_STRING_BUILTINS``).
+
+    Everything else, including every call, name, attribute, ternary and
+    operator, is treated as a possible prompt body. ``None`` arises for
+    an annotated assignment with no right-hand side (``X: str``) and is
+    not a binding at all.
+
+    The failure this trades for is a spurious demand to enrol something
+    that is not a prompt. That is a conversation with a human, resolved
+    by a line in ``_ENROLLMENT_EXEMPT_NAMES`` with a written reason. The
+    failure it removes is a prompt reaching a role with no version, no
+    hash and no calibration obligation, which nothing catches later.
     """
     if value is None:
         return False
-    if isinstance(value, ast.Constant) and isinstance(value.value, str):
-        return True
-    if isinstance(value, ast.JoinedStr):
-        return True
-    if isinstance(value, ast.BinOp) and isinstance(value.op, ast.Add):
-        return _is_prompt_value(value.left) or _is_prompt_value(value.right)
-    if isinstance(value, ast.Call):
-        func = value.func
-        return (
-            isinstance(func, ast.Attribute) and func.attr == "join" and _is_prompt_value(func.value)
-        )
-    return False
+    if isinstance(value, ast.Constant):
+        return isinstance(value.value, str)
+    if isinstance(
+        value,
+        ast.Set | ast.List | ast.Dict | ast.Tuple | ast.SetComp | ast.ListComp | ast.DictComp,
+    ):
+        return False
+    if (
+        isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Name)
+        and value.func.id in _NOT_STRING_BUILTINS
+    ):
+        return False
+    return True
 
 
 def _assigned_names(node: ast.AST) -> list[str]:
@@ -112,12 +166,24 @@ def _iter_prompt_names(tree: ast.AST) -> list[str]:
     return list(dict.fromkeys(names))
 
 
-def _iter_modules(package_root: Path | None = None) -> list[tuple[Path, ast.AST, Path]]:
+@functools.cache
+def _iter_modules(package_root: Path | None = None) -> tuple[tuple[Path, ast.AST, Path], ...]:
     """Parse every module under ``package_root`` (default: the real kstrl/).
 
     Returns ``(path, tree, root)`` triples, skipping anything that will
-    not parse. One traversal shared by both consumers below: they used to
-    rglob, read and parse all 123 files twice over.
+    not parse.
+
+    Memoized, and the memo is the point. #299 round 1 claimed "one
+    traversal shared by both consumers" while memoizing nothing, which
+    made this file SLOWER than the two walks it replaced. Measured with
+    the cache in place: 124 files, 127 ms on the first call, under a
+    microsecond on every later one, one miss and five hits per session.
+    A tuple rather than a list because a cached mutable return is a
+    booby trap for the next caller.
+
+    Safe to cache because the tree on disk does not change inside one
+    test session, and the synthetic-module tests each build a fresh
+    ``tmp_path`` so their keys never collide.
     """
     root = package_root or (Path(__file__).resolve().parent.parent / "kstrl")
     parsed: list[tuple[Path, ast.AST, Path]] = []
@@ -127,7 +193,7 @@ def _iter_modules(package_root: Path | None = None) -> list[tuple[Path, ast.AST,
         except SyntaxError:
             continue
         parsed.append((py_file, tree, root))
-    return parsed
+    return tuple(parsed)
 
 
 def _module_level_prompt_constants(
@@ -173,8 +239,11 @@ def test_no_unenrolled_prompt_constants() -> None:
             if name not in enrolled:
                 leaked.append(f"{module_file}::{name}")
     assert not leaked, (
-        "Module-level *_PROMPT constants found in kstrl/ that are NOT "
-        "enrolled in H3 snapshot protection:\n  " + "\n  ".join(leaked) + "\n\nFor each, either:\n"
+        "*_PROMPT constants found in kstrl/ that are NOT enrolled in H3 "
+        "snapshot protection (the walk is depth-agnostic: a binding "
+        "inside a function or class body counts too):\n  "
+        + "\n  ".join(leaked)
+        + "\n\nFor each, either:\n"
         "  - Add a matching *_PROMPT_VERSION constant next to it and "
         "enroll in tests/test_prompt_versions.py::_PROMPTS, "
         "_VERSIONS, and _EXPECTED_SNAPSHOTS.\n"
@@ -185,10 +254,24 @@ def test_no_unenrolled_prompt_constants() -> None:
 
 def _synthetic_module(tmp_path: Path, source: str) -> Path:
     """Write ``source`` as a module inside a synthetic package root and
-    return the root, so the REAL walker can be pointed at it."""
+    return the root, so the REAL walker can be pointed at it.
+
+    ``source`` is compiled first, and that check is load-bearing rather
+    than tidiness. ``_iter_modules`` skips a file that will not parse, so
+    a fixture with an escaping slip yields no findings at all: a
+    "catches" test then fails for the wrong reason, and worse, an
+    "ignores" test PASSES while asserting nothing. Two of the fixtures
+    below had exactly that slip while this was being written.
+
+    utf-8 on write to match the utf-8 read in ``_iter_modules``. The
+    repo's encoding contract is two-sided (#291): a locale-default write
+    under LC_ALL=C raises on the first curly quote, which is precisely
+    the character LLM output puts in a prompt body.
+    """
     pkg = tmp_path / "synth_pkg"
     pkg.mkdir()
-    (pkg / "mod.py").write_text(source)
+    compile(source, "<synthetic fixture>", "exec")
+    (pkg / "mod.py").write_text(source, encoding="utf-8")
     return pkg
 
 
@@ -232,60 +315,86 @@ def test_ast_walker_catches_nested_declaration(tmp_path: Path) -> None:
     }, "AST walker failed to catch nested prompt declaration."
 
 
-def test_ast_walker_catches_concatenated_body(tmp_path: Path) -> None:
-    """Regression guard (#299): a name ending in ``_PROMPT`` whose value
-    is built with ``+`` must still be discovered.
+#: Ways a real prompt body gets assembled. Every one of these was
+#: INVISIBLE to the walk until #299 round 2 measured them: the predicate
+#: enumerated the shapes that ARE prompts, so it only ever caught the
+#: ones somebody had thought of. A body reaching a role through any of
+#: these with no enrollment is a prompt with no version, no hash and no
+#: calibration obligation.
+_ASSEMBLED_BODIES: dict[str, str] = {
+    "dedent": "import textwrap\nX_PROMPT = textwrap.dedent(BODY)\n",
+    "strip": "X_PROMPT = BODY.strip()\n",
+    "percent": 'X_PROMPT = "you are %s" % role\n',
+    "sep_join": 'SEP = "\\n"\nX_PROMPT = SEP.join(PARTS)\n',
+    "name_plus_name": "X_PROMPT = HEADER + BODY\n",
+    "literal_plus_name": 'X_PROMPT = "you are " + ROLE\n',
+    "literal_join": 'X_PROMPT = "\\n".join(PARTS)\n',
+    "ternary": "X_PROMPT = HARD if strict else SOFT\n",
+    "bare_alias": "X_PROMPT = _SHARED_BODY\n",
+    "function_call": "X_PROMPT = build_body()\n",
+    "attribute": "X_PROMPT = templates.reviewer\n",
+    "fstring": 'X_PROMPT = f"you are {role}"\n',
+}
 
-    Before this, ``X_PROMPT = _HEADER + "...instructions..."`` at module
-    level passed the name test and failed the literal-only value test, so
-    a prompt could ship with no version, no hash and no audit trail while
-    ``test_no_unenrolled_prompt_constants`` stayed green. H3a calls naming
-    a constant to dodge the walk not an option; this is the same dodge by
-    value instead of by name, and it IS mechanically detectable."""
-    pkg = _synthetic_module(
-        tmp_path,
-        'HEADER = "you are "\nCONCAT_PROMPT = HEADER + "a hostile reviewer"\n',
+#: Values that are PROVABLY not strings. These must stay invisible, or
+#: the walk starts demanding enrollment for things that are not prompts.
+#: The first is real: ``kstrl/cli.py`` holds ``_ROOT_FROM_PROMPT =
+#: frozenset({...})``, a set of command names.
+_NOT_BODIES: dict[str, str] = {
+    "frozenset_call": 'X_PROMPT = frozenset({"run", "understand"})\n',
+    "set_display": 'X_PROMPT = {"run", "understand"}\n',
+    "list_display": 'X_PROMPT = ["run"]\n',
+    "dict_display": 'X_PROMPT = {"a": 1}\n',
+    "tuple_display": 'X_PROMPT = ("a", "b")\n',
+    "int_literal": "X_PROMPT = 50_000\n",
+    "none_literal": "X_PROMPT = None\n",
+}
+
+
+@pytest.mark.parametrize("shape", sorted(_ASSEMBLED_BODIES))
+def test_ast_walker_catches_assembled_body(shape: str, tmp_path: Path) -> None:
+    """Regression guard (#299): a ``*_PROMPT`` name must be discovered
+    however its value was put together.
+
+    The predicate asks whether a value is PROVABLY not a string, rather
+    than whether it matches a known prompt shape, precisely so this table
+    does not have to be complete to be safe. A shape nobody listed here
+    is flagged anyway."""
+    pkg = _synthetic_module(tmp_path, _ASSEMBLED_BODIES[shape])
+    assert _module_level_prompt_constants(pkg) == {"synth_pkg/mod.py": ["X_PROMPT"]}, (
+        f"the {shape} shape escaped the enrollment walk"
     )
-    assert _module_level_prompt_constants(pkg) == {
-        "synth_pkg/mod.py": ["CONCAT_PROMPT"],
-    }, "AST walker failed to catch a concatenated prompt body."
 
 
-def test_ast_walker_catches_joined_body(tmp_path: Path) -> None:
-    """Regression guard (#299): the ``"\n".join([...])`` shape, the other
-    way to assemble a body out of pieces at module level."""
-    pkg = _synthetic_module(
-        tmp_path,
-        'JOINED_PROMPT = "\\n".join(["you are", "a hostile reviewer"])\n',
+@pytest.mark.parametrize("shape", sorted(_NOT_BODIES))
+def test_ast_walker_ignores_non_string_values(shape: str, tmp_path: Path) -> None:
+    """The widened predicate must not sweep in everything.
+
+    Its default is "could be a prompt", so the only things that stay out
+    are the ones the syntax proves are not strings. Get this wrong and
+    the walk demands enrollment for a set of command names."""
+    pkg = _synthetic_module(tmp_path, _NOT_BODIES[shape])
+    assert _module_level_prompt_constants(pkg) == {}, (
+        f"the {shape} shape was wrongly treated as a prompt body"
     )
-    assert _module_level_prompt_constants(pkg) == {
-        "synth_pkg/mod.py": ["JOINED_PROMPT"],
-    }, "AST walker failed to catch a joined prompt body."
-
-
-def test_ast_walker_ignores_non_string_calls(tmp_path: Path) -> None:
-    """The widened value test must not sweep in every call.
-
-    ``kstrl/cli.py`` really does hold ``_ROOT_FROM_PROMPT =
-    frozenset({...})``, a set of command names whose name happens to end
-    in ``_PROMPT``. It is not a prompt and must not be forced into
-    enrollment, so a call counts only when it is
-    ``<string literal>.join(...)``."""
-    pkg = _synthetic_module(
-        tmp_path,
-        'SET_FROM_PROMPT = frozenset({"run", "understand"})\n',
-    )
-    assert _module_level_prompt_constants(pkg) == {}
 
 
 def test_real_walk_does_not_flag_the_cli_command_set() -> None:
-    """The same negative case, against the real kstrl/ tree rather than a
-    synthetic one, so the exemption stays honest if cli.py moves."""
-    discovered = _module_level_prompt_constants()
-    flagged = [n for names in discovered.values() for n in names]
+    """The same negative case against the real kstrl/ tree, so it stays
+    honest if cli.py moves.
+
+    The ``hasattr`` anchor is load-bearing: without it this passes
+    vacuously the moment ``_ROOT_FROM_PROMPT`` is renamed or deleted,
+    asserting nothing while still paying for a tree walk (#299 round 2)."""
+    assert hasattr(cli, "_ROOT_FROM_PROMPT"), (
+        "kstrl.cli._ROOT_FROM_PROMPT is gone, so this negative case no "
+        "longer proves anything. Point it at whatever non-prompt "
+        "*_PROMPT-suffixed name exists now, or delete it."
+    )
+    flagged = [name for names in _module_level_prompt_constants().values() for name in names]
     assert "_ROOT_FROM_PROMPT" not in flagged, (
         "_ROOT_FROM_PROMPT is a frozenset of command names, not a prompt. "
-        "The widened _is_prompt_value must not force it into enrollment."
+        "The predicate must not force it into enrollment."
     )
 
 
@@ -314,14 +423,13 @@ def test_enrollment_exempt_names_are_not_stale() -> None:
     a future name collision. Fail fast and make the developer remove the
     stale entry instead of letting it rot.
 
-    Reuses ``_iter_modules`` / ``_iter_prompt_names`` rather than walking
-    kstrl/ a second time, and deliberately does NOT filter on the
-    ``_PROMPT`` suffix: most exempt names (DEFAULT_PROGRESS,
-    DEFAULT_CODEBASE_MAP) do not carry it.
+    Filters on the ``_PROMPT`` suffix exactly as the walker does. Until
+    #299 round 2 it deliberately did not, which kept three names alive in
+    the exempt set that the walker's suffix filter could never consult.
     """
     discovered: set[str] = set()
     for _py_file, tree, _root in _iter_modules():
-        discovered.update(_iter_prompt_names(tree))
+        discovered.update(n for n in _iter_prompt_names(tree) if n.endswith("_PROMPT"))
     stale = sorted(name for name in _ENROLLMENT_EXEMPT_NAMES if name not in discovered)
     assert not stale, (
         "_ENROLLMENT_EXEMPT_NAMES has stale entries that no longer "

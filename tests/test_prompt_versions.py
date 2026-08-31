@@ -56,9 +56,18 @@ What this file protects against:
 
 7. **Enrolled body dropped from the prompt that carries it.** A leaf
    renderer can keep reading its constant while its CALLER stops calling
-   it. ``test_change_source_reaches_the_reviewer_prompts`` patches the
-   change-source body and asserts it still arrives inside the reviewer
-   and security prompts (#299).
+   it. ``test_change_source_reaches_the_role`` drives ``run_review`` and
+   ``run_security_review`` themselves and asserts the change-source body
+   reaches the prompt each role is sent. It goes through the phase entry
+   points, not the builders: an earlier version passed that block in as
+   an argument the test computed, so it could not see security.py hand
+   the role a lookalike literal instead (#299).
+
+8. **Enrolled template that cannot render.** Hashing a template and
+   patching it away never executes it, so a body whose placeholders its
+   renderer does not supply passed every H3 test and raised in
+   production. ``test_the_real_enrolled_body_renders`` renders each real
+   body through its production renderer (#299).
 
 H3-NOTE on enforcement limits: a sufficiently determined developer can
 edit a prompt and update both the snapshot hash AND the version constant
@@ -101,15 +110,18 @@ from kstrl.init_cmd import (
 )
 from kstrl.knowledge import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
 from kstrl.manifest import Component
-from kstrl.review import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION
-from kstrl.security import SECURITY_PROMPT, SECURITY_PROMPT_VERSION
+from kstrl.review import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION, ReviewMode
+from kstrl.security import SECURITY_PROMPT, SECURITY_PROMPT_VERSION, SecurityConfig, SecurityMode
+from kstrl.ui import PlainUI
 from kstrl.verify import (
     VERIFY_COMMANDS_PROMPT,
     VERIFY_COMMANDS_PROMPT_VERSION,
     ResolvedVerifyCommands,
     VerificationResult,
 )
+from tests.conftest import make_review_repo
 from tests.helpers.component_prd import write_component_prd
+from tests.test_review_payload import RecordingAgent
 
 
 def _sha256(text: str) -> str:
@@ -286,7 +298,23 @@ def test_prompt_snapshot_unchanged(name: str) -> None:
 # #261 to #299, and repeating it here would rebuild that defect one level
 # down.
 
-_ORPHAN_MARKER = "<<<H3-RENDER-GUARD-START>>><<<H3-RENDER-GUARD-END>>>"
+_MARKER_HEAD = "<<<H3-RENDER-GUARD-START>>>"
+_MARKER_TAIL = "<<<H3-RENDER-GUARD-END>>>"
+
+#: Deliberately longer than the largest cap in the codebase, and sized
+#: FROM that constant so it tracks it. #299 round 2 measured the earlier
+#: 52-character marker against a renderer that appended ``[:4000]`` and
+#: found all nine guards green: the marker never reached the cap, so
+#: truncation was invisible to a test whose comment claimed it caught
+#: truncation. A renderer reintroducing a size cap ships a clipped role
+#: prompt, and ``git.truncate_diff_for_prompt`` already exists and is
+#: used at other paste sites, so this is a live shape rather than a
+#: hypothetical one.
+#:
+#: The honest limit: this catches any cap at or below the marker length.
+#: A renderer that capped ABOVE it would still pass, and no fixed marker
+#: can close that.
+_ORPHAN_MARKER = _MARKER_HEAD + "." * (git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT + 1) + _MARKER_TAIL
 
 
 def _reviewer_render(tmp_path: Path) -> str:
@@ -360,42 +388,112 @@ def test_no_stale_renderer_entries() -> None:
 
 
 @pytest.mark.parametrize("name", sorted(_RENDERERS))
+def test_the_real_enrolled_body_renders(name: str, tmp_path: Path) -> None:
+    """The enrolled template must actually format with the fields its
+    production renderer supplies.
+
+    Every other H3 test either hashes the template or patches it away, so
+    until #299 round 2 nothing in the suite ever rendered a real body.
+    Measured: adding ``Extra note about {bogus_field}.`` to
+    VERIFY_COMMANDS_PROMPT and updating hash and version, which is
+    exactly the flow ``_drift_message`` prescribes, passed all 37 H3
+    tests while production ``format_for_prompt()`` raised
+    ``KeyError: 'bogus_field'``.
+
+    This also carries the cost of #299's own change. Both change-source
+    bodies were f-strings before it and are ``.format()`` templates
+    after, which demotes an unbalanced or stray brace from a SyntaxError
+    at ``import kstrl.git`` to a KeyError or ValueError at call time. A
+    prompt body asking for JSON output is exactly where a stray brace
+    appears. This test is what puts that error back in the suite."""
+    _module, render = _RENDERERS[name]
+    rendered = render(tmp_path)
+    assert rendered.strip(), f"{name} rendered empty through its production renderer."
+
+
+@pytest.mark.parametrize("name", sorted(_RENDERERS))
 def test_renderer_renders_the_enrolled_body(
     name: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module, render = _RENDERERS[name]
     monkeypatch.setattr(module, name, _ORPHAN_MARKER)
-    assert render(tmp_path) == _ORPHAN_MARKER, (
-        f"{module.__name__} does not render {name} verbatim, so the "
-        "enrolled constant is not what the role receives. Either the "
-        "renderer stopped reading it (an orphan constant that will match "
-        "its snapshot for ever), or it wraps text around it that no "
-        "snapshot covers."
+    rendered = render(tmp_path)
+    if rendered != _ORPHAN_MARKER:
+        pytest.fail(
+            f"{module.__name__} does not render {name} verbatim, so the "
+            "enrolled constant is not what the role receives. Either the "
+            "renderer stopped reading it (an orphan constant that will "
+            "match its snapshot for ever), it wraps text around it that "
+            "no snapshot covers, or it truncates it.\n"
+            f"  expected {len(_ORPHAN_MARKER)} chars, got {len(rendered)}\n"
+            f"  head: {rendered[:80]!r}\n"
+            f"  tail: {rendered[-80:]!r}"
+        )
+
+
+def _run_and_capture_prompt(which: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
+    """Drive the real phase entry point and return the prompt it sent.
+
+    Both phases are exercised through ``run_review`` / ``run_security_review``
+    rather than through the builders they call. #299 round 1 asserted on
+    ``_build_security_prompt(prd, git.repo_change_source(sha))``, which
+    passes the change-source block in as an argument the TEST computed,
+    so it could never observe ``security.py`` handing the reviewer
+    something else. Measured: replacing that call site with a lookalike
+    f-string left all 480 selected tests green while the review half of
+    the same mutation failed. The asymmetry was the tell.
+    """
+    repo = make_review_repo(tmp_path / f"repo-{which}")
+    (repo.path / "prd.json").write_text(
+        '{"branchName": "test", "userStories": []}', encoding="utf-8"
     )
+    agent = RecordingAgent("not valid json")
+    ui = PlainUI(no_color=True)
+
+    if which == "review":
+        review.run_review(
+            agent,
+            repo.path / "prd.json",
+            repo.path,
+            repo.base_branch,
+            VerificationResult(passed=True, checks=[]),
+            ReviewMode.ADVISORY,
+            ui,
+        )
+    else:
+        security.run_security_review(
+            agent,
+            repo.path / "prd.json",
+            repo.path,
+            repo.base_branch,
+            SecurityConfig(mode=SecurityMode.ADVISORY.value),
+            ui,
+        )
+
+    assert agent.prompts, (
+        f"the {which} phase never called its agent, so this test proves "
+        "nothing about what the role was sent."
+    )
+    return agent.prompts[0]
 
 
-def test_change_source_reaches_the_reviewer_prompts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("which", ["review", "security"])
+def test_change_source_reaches_the_role(
+    which: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The leaf guard proves ``repo_change_source`` reads its constant. It
-    cannot prove the CALLERS still call it: drop
-    ``change_source=git.repo_change_source(...)`` from ``review.py`` or
-    ``security.py`` and every other test here stays green while the
-    reviewer is told how to obtain the change by words under no snapshot.
-    This closes that second link."""
+    """The leaf guard proves ``repo_change_source`` reads its constant.
+    It cannot prove the CALLER still calls it.
+
+    Drop ``change_source=git.repo_change_source(...)`` from ``review.py``
+    or ``security.py``, or replace it with a lookalike literal, and every
+    other test here stays green while the role is told how to obtain the
+    change by words under no snapshot. That is the exact H3 hole #299 was
+    filed for, one call site further out."""
     monkeypatch.setattr(git, "REPO_CHANGE_SOURCE_PROMPT", _ORPHAN_MARKER)
-
-    reviewer = _reviewer_render(tmp_path)
-    assert _ORPHAN_MARKER in reviewer, (
-        "REVIEWER_PROMPT no longer carries repo_change_source's enrolled "
-        "body, so the reviewer's change-acquisition instructions are "
-        "outside H3 snapshot protection."
-    )
-
-    secure = security._build_security_prompt("PRD", git.repo_change_source("BASE_SHA"))
-    assert _ORPHAN_MARKER in secure, (
-        "SECURITY_PROMPT no longer carries repo_change_source's enrolled "
-        "body, so the security reviewer's change-acquisition instructions "
+    prompt = _run_and_capture_prompt(which, tmp_path, monkeypatch)
+    assert _MARKER_HEAD in prompt and _MARKER_TAIL in prompt, (
+        f"the {which} prompt no longer carries repo_change_source's "
+        "enrolled body, so that role's change-acquisition instructions "
         "are outside H3 snapshot protection."
     )
 
