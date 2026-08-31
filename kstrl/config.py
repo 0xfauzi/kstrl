@@ -219,12 +219,14 @@ def component_harness_paths(
     violation in the first place. ``config.reconcile_progress_config``
     documents that configuration as supported.
 
-    Callers normally reach this through
+    Every caller reaches this through
     ``KstrlConfig.component_harness_files``, or
     ``standalone_harness_files`` for the loop whose progress log is not
-    a sibling of a component PRD. ``factory._run_component`` is the one
-    direct caller: it runs in a pool worker that is handed the three
-    paths as strings and has no config to ask.
+    a sibling of a component PRD. ``factory._run_component`` used to
+    call it directly, from a pool worker that had the three paths as
+    strings and no config to ask; #269 stopped that, because the worker
+    now receives the carve-out as part of the plan-time scope snapshot
+    rather than rebuilding one that merely agreed with Phase 1's.
     """
     return sorted(
         {Path(p).as_posix() for p in (prd_path, progress_path, codebase_map_path)},

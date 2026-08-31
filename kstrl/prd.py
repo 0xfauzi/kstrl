@@ -363,13 +363,16 @@ class PRD:
         authored. Returns one clause per change, empty when the PRD is
         untouched in every pinned respect.
 
-        ``allowedPaths`` is the one field compared LOOSELY, and only
-        additions count - see ``pipeline._widened_scope``. Everything
-        else is compared for equality, ORDER INCLUDED, because the
-        engineer is not meant to touch these fields at all: any
-        difference is a rewrite, and the remedy ("restore the file") is
-        always available. Order carries no meaning for path matching,
-        which is why the scope comparison alone can afford to ignore it.
+        ``allowedPaths`` is deliberately NOT compared (#269), and that
+        comparison is gone rather than relaxed: the scope both guards
+        enforce is resolved before the run starts, so editing this field
+        changes nothing and refusing an edit to it could only ever be a
+        false positive. ``kstrl.scope`` records why.
+
+        Everything that IS compared is compared for equality, ORDER
+        INCLUDED, because the engineer is not meant to touch these
+        fields at all: any difference is a rewrite, and the remedy
+        ("restore the file") is always available.
         """
         changes: list[str] = []
         if pre_run.branch_name != self.branch_name:

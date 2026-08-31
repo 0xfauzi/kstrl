@@ -554,8 +554,68 @@ def check_self_critique(
     )
 
 
-def check_prd_stories(prd_path: Path) -> CheckResult:
-    """Re-read PRD from disk and verify all stories have passes=true."""
+def _tamper_changes(prd: PRD, pre_run_prd_path: Path | None) -> list[str]:
+    """How ``prd`` differs from the pre-run copy in ways no engineer may.
+
+    Defence in depth for #264's carve-out, kept deliberately after #269
+    made the SCOPE half of this comparison unnecessary. The plan-time
+    snapshot (``kstrl.scope``) settles what a component may write, so an
+    ``allowedPaths`` the agent edits is inert and is no longer compared:
+    see that module for why comparing a value the agent can rewrite is
+    the weaker answer.
+
+    What the snapshot does NOT cover is everything else that reads this
+    file, and a lot does: ``check_prd_stories`` below, the approved
+    fixtures oracle, the acceptance criteria handed to the reviewer, the
+    R10.3 set-point sensor. None can be served from a snapshot, because
+    the agent setting ``passes`` is the whole job, so the live file has
+    to be trusted and a comparison is the only answer available for it.
+    Drop this and an agent can delete an acceptance criterion or neuter
+    an executable oracle and pass a gate it authored.
+
+    WHICH fields are the engineer's to write is the PRD's own business
+    and lives in ``PRD.tamper_changes``, beside the fields it pins.
+
+    Empty when there is nothing to compare, which is not the same as
+    waving something through:
+
+    - ``pre_run_prd_path`` is None. The caller has no trustworthy copy
+      to offer: ``ks sense`` judges an operator's own working tree.
+    - The pre-run copy will not load. A harness or operator condition,
+      not something an agent can arrange from inside its worktree.
+    - It is the SAME file, which is ``use_worktrees=False``: both reads
+      return the same document and the comparison is empty by
+      arithmetic rather than by a special case. That mode has no
+      isolation boundary, so this check cannot be what gives it one.
+      Scope is the part of the answer that does survive there, because
+      #269 reads it before the agent starts.
+    """
+    if pre_run_prd_path is None:
+        return []
+    try:
+        pre_run = PRD.load(pre_run_prd_path)
+    except (OSError, ValueError):
+        return []
+    return prd.tamper_changes(pre_run)
+
+
+def check_prd_stories(prd_path: Path, pre_run_prd_path: Path | None = None) -> CheckResult:
+    """Re-read PRD from disk and verify all stories have passes=true.
+
+    ``pre_run_prd_path`` (#269) is the copy of the same PRD the run
+    started with, which lives outside every worktree and so is not
+    agent-writable. Given one, this check also refuses a PRD the
+    component rewrote in its own favour (``_tamper_changes``).
+
+    This is the check that carries that refusal, rather than
+    ``diff_scope``, for two reasons. It is a statement about the
+    STORIES, which is what this check reads and what a rewrite attacks;
+    scope stopped being the question when #269 made the plan-time
+    snapshot the only scope source. And ``diff_scope`` is switchable off
+    (``[verify] check_diff_scope``), while this one runs whenever there
+    is a PRD at all: defence in depth an unrelated toggle can disable is
+    not defence in depth.
+    """
     start = time.monotonic()
     try:
         prd = PRD.load(prd_path)
@@ -564,6 +624,27 @@ def check_prd_stories(prd_path: Path) -> CheckResult:
             name="prd_stories",
             passed=False,
             message=f"Failed to load PRD: {exc}",
+            duration_seconds=time.monotonic() - start,
+        )
+
+    tampered = _tamper_changes(prd, pre_run_prd_path)
+    if tampered:
+        return CheckResult(
+            name="prd_stories",
+            passed=False,
+            message="The PRD is not the one this run started with; failing closed",
+            details=[
+                f"It {'; '.join(tampered)}. A component may set `passes` "
+                "and `notes` on its own stories and nothing else: it may "
+                "not rewrite the criteria or the fixtures it is judged "
+                "against.",
+                "Every gate that reads this file - these stories, the "
+                "approved fixtures, the criteria the reviewer is given - "
+                "is judging a document the component rewrote. Restore it "
+                "to what the run started with; do not treat this as "
+                "permission to change what the component is measured "
+                "against.",
+            ],
             duration_seconds=time.monotonic() - start,
         )
 
@@ -1045,13 +1126,19 @@ def check_diff_scope(
     """Check that git diff is within expected scope.
 
     ``allowed_paths_error`` marks a failure to establish a TRUSTWORTHY
-    scope: the PRD carrying allowedPaths was missing or unparseable, or
-    (#264) the worktree copy's allowedPaths no longer match the pre-run
-    copy the harness recorded. The check then fails CLOSED: the diff
-    cannot be proven in-scope, and silently skipping the guard is
-    exactly the hole R1.5 closes. This is distinct from
-    ``allowed_paths=None``, which means no scope was configured -- a
-    legitimate pass.
+    scope at PLAN time (#269): the pre-run PRD carrying allowedPaths was
+    missing or unparseable and no run-wide ``--allowed-paths`` supplied
+    one. The check then fails CLOSED: the diff cannot be proven
+    in-scope, and silently skipping the guard is exactly the hole R1.5
+    closes. This is distinct from ``allowed_paths=None``, which means no
+    scope was configured -- a legitimate pass.
+
+    It no longer carries PRD TAMPERING. That refusal moved to
+    ``check_prd_stories`` when the plan-time snapshot took the scope
+    question away from the worktree PRD: the file can still be rewritten
+    and the stories still have to be defended, but the scope this check
+    enforces is not something the rewrite can reach any more, so saying
+    "scope could not be established" about it was untrue.
 
     ``harness_paths`` (#264) is kstrl's OWN per-component carve-out from
     ``config.component_harness_paths``: exact files kstrl's other checks
@@ -1074,10 +1161,11 @@ def check_diff_scope(
             details=[
                 f"Error: {allowed_paths_error}",
                 "The allowedPaths this diff must be judged against could "
-                "not be established from a trustworthy PRD, so the diff "
+                "not be established before the run started, so the diff "
                 "cannot be proven in-scope. Restore a valid PRD file "
-                "carrying the allowedPaths the run started with; do not "
-                "treat this as permission to widen the diff.",
+                "carrying the allowedPaths this component should have, "
+                "or set --allowed-paths for the run; do not treat this "
+                "as permission to widen the diff.",
             ],
             duration_seconds=time.monotonic() - start,
         )
@@ -1807,6 +1895,7 @@ def run_mechanical_verification(
     config: VerifyConfig,
     allowed_paths_error: str | None = None,
     harness_paths: list[str] | None = None,
+    pre_run_prd_path: Path | None = None,
     fixtures_config: FixturesConfig | None = None,
     policy_config: PolicyConfig | None = None,
     adequacy_config: AdequacyConfig | None = None,
@@ -1824,9 +1913,16 @@ def run_mechanical_verification(
     exactly as it does with a real path.
 
     ``harness_paths`` (#264) is the per-component carve-out for kstrl's
-    OWN files, forwarded to ``check_diff_scope``. The factory computes it
-    with ``config.component_harness_paths``; ``ks sense`` leaves it None
-    because it judges an operator's diff, not a factory component's.
+    OWN files, forwarded to ``check_diff_scope``. It reaches the factory
+    from the run's plan-time scope snapshot (``scope.RunScope``), which
+    is also where ``allowed_paths`` comes from; ``ks sense`` leaves both
+    None because it judges an operator's diff, not a factory
+    component's.
+
+    ``pre_run_prd_path`` (#269) is the copy of ``prd_path`` the run
+    started with, forwarded to ``check_prd_stories``, which fails closed
+    on a PRD the component rewrote. Also None for ``ks sense``: there is
+    no pre-run copy to compare an operator's working tree against.
 
     ``fixtures_config`` (R7.2): when provided AND ``.enabled`` is true,
     the approved-fixtures oracle runs against the PRD's ``fixtures``
@@ -1846,7 +1942,7 @@ def run_mechanical_verification(
     checks: list[CheckResult] = []
 
     if prd_path is not None:
-        checks.append(check_prd_stories(prd_path))
+        checks.append(check_prd_stories(prd_path, pre_run_prd_path))
 
     checks.append(
         check_test_suite(

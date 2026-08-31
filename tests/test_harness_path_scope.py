@@ -37,7 +37,7 @@ import pytest
 
 from kstrl.cli import _understand_core
 from kstrl.commandrun import CommandRun
-from kstrl.config import component_harness_paths
+from kstrl.config import KstrlConfig, component_harness_paths
 from kstrl.decompose import _SCOPE_HAZARD_ADVICE
 from kstrl.events import EventBus
 from kstrl.factory import (
@@ -56,6 +56,7 @@ from kstrl.guards import (
 )
 from kstrl.loop import LoopResult
 from kstrl.manifest import Component, Manifest
+from kstrl.scope import ComponentScope, RunScope
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import check_diff_scope
 from tests.test_progress_scope import _base_config, _pipeline
@@ -124,6 +125,18 @@ def _write_prd(
     if fixtures is not None:
         body["fixtures"] = fixtures
     path.write_text(json.dumps(body))
+
+
+def _scope(root: Path | None = None) -> ComponentScope:
+    """The component's plan-time snapshot (#269).
+
+    Resolved from a real project tree when one is given, so the value
+    under test is the one ``RunScope`` produces; built by hand only
+    where the test has no tree to resolve from.
+    """
+    if root is not None:
+        return ComponentScope.resolve(_component(), root, _base_config(root))
+    return ComponentScope(list(AUTHORED), list(HARNESS), "component_prd", PRD_REL)
 
 
 def _spy_run_loop(
@@ -245,7 +258,9 @@ class TestInLoopGuard:
 
         loop.run_loop returns early on a guard violation, so Phase 1
         never ran. The carve-out has to arrive here or the fix is
-        unreachable.
+        unreachable. Since #269 the worker is HANDED the carve-out
+        rather than deriving one, so what this pins is that the value it
+        was given reaches the guard unaltered.
         """
         _setup_project(tmp_path)
         seen, fake_run_loop = _spy_run_loop()
@@ -262,7 +277,7 @@ class TestInLoopGuard:
                 reasoning=None,
                 agent_type=None,
                 sleep_seconds=0.0,
-                allowed_paths=list(AUTHORED),
+                scope=_scope(),
                 redirect_output=False,
             )
 
@@ -294,7 +309,7 @@ class TestInLoopGuard:
                 reasoning=None,
                 agent_type=None,
                 sleep_seconds=0.0,
-                allowed_paths=list(AUTHORED),
+                scope=_scope(),
                 redirect_output=False,
             )
 
@@ -384,11 +399,21 @@ class TestPhase1DiffScope:
 # ---------------------------------------------------------------------------
 
 
+def _preflight(manifest: Manifest, root: Path, base: KstrlConfig) -> list[str]:
+    """The preflight as the factory runs it (#269).
+
+    Against the plan-time snapshot, never a re-derivation: the list this
+    refuses has to be the identical list both guards will enforce, or
+    the refusal is about a scope nothing uses.
+    """
+    return _preflight_component_scope(manifest, RunScope.resolve(manifest, root, base))
+
+
 class TestPreflightComponentScope:
     def test_a_compliant_component_passes(self, tmp_path: Path) -> None:
         _setup_project(tmp_path)
         assert (
-            _preflight_component_scope(
+            _preflight(
                 _manifest([_component()]),
                 tmp_path,
                 _base_config(tmp_path),
@@ -404,7 +429,7 @@ class TestPreflightComponentScope:
         to fall outside of."""
         _setup_project(tmp_path, allowed=None)
         assert (
-            _preflight_component_scope(
+            _preflight(
                 _manifest([_component()]),
                 tmp_path,
                 _base_config(tmp_path),
@@ -478,7 +503,7 @@ class TestPreflightComponentScope:
         was meant to cover became a violation - the same unwinnable
         loop, from the other end."""
         _setup_project(tmp_path, allowed=[entry.format(root=tmp_path)])
-        errors = _preflight_component_scope(
+        errors = _preflight(
             _manifest([_component()]),
             tmp_path,
             _base_config(tmp_path),
@@ -489,14 +514,14 @@ class TestPreflightComponentScope:
         assert f"plus harness artifacts: {', '.join(HARNESS)}" in errors[0]
 
     def test_one_bad_entry_is_reported_once(self, tmp_path: Path) -> None:
-        """_component_scope falls back to the run-wide --allowed-paths
+        """Scope resolution falls back to the run-wide --allowed-paths
         flag, so one bad entry there is shared by every component and
         must not repeat its paragraph once per component."""
         _setup_project(tmp_path, allowed=None)
         base = _base_config(tmp_path)
         base.allowed_paths = ["/abs/src/"]
         manifest = _manifest([_component(), _component(), _component()])
-        assert len(_preflight_component_scope(manifest, tmp_path, base)) == 1
+        assert len(_preflight(manifest, tmp_path, base)) == 1
 
     def test_an_absolute_harness_path_is_supported_not_refused(
         self,
@@ -515,7 +540,7 @@ class TestPreflightComponentScope:
         base = _base_config(tmp_path)
         base.progress_file = Path("/var/log/shared/progress.txt")
         base.codebase_map_file = Path("/elsewhere/codebase_map.md")
-        assert _preflight_component_scope(_manifest([_component()]), tmp_path, base) == []
+        assert _preflight(_manifest([_component()]), tmp_path, base) == []
 
     def test_run_factory_refuses_without_paying_for_an_engineer_call(
         self,
@@ -684,11 +709,20 @@ def test_both_guards_judge_the_same_carve_out(tmp_path: Path) -> None:
     Neither side is re-derived here. The in-loop value is captured from
     the ``guard_ignored_paths`` the worker actually hands ``run_loop``,
     and the Phase 1 value from the pipeline's own scope resolution, so a
-    drift in either site's argument assembly fails this test.
+    drift in either site's argument assembly fails this test. Since #269
+    both come from one snapshot, which is what the third assertion pins:
+    the value is not merely equal at the two sites, it is the plan-time
+    one at both.
     """
     _setup_project(tmp_path)
     wt = tmp_path / "wt"
     _write_prd(wt / PRD_REL, AUTHORED)
+    comp = _component()
+    snapshot = RunScope.resolve(
+        _manifest([comp]),
+        tmp_path,
+        _base_config(tmp_path),
+    ).for_component(comp.id)
     seen: list[Any] = []
 
     def fake_run_loop(*args: Any, **kwargs: Any) -> LoopResult:
@@ -711,10 +745,10 @@ def test_both_guards_judge_the_same_carve_out(tmp_path: Path) -> None:
                 PRD_REL,
                 tmp_path,
             ),
-            allowed_paths=list(AUTHORED),
+            scope=snapshot,
             redirect_output=False,
         )
 
-    comp = _component()
-    phase1 = _pipeline(tmp_path, comp, wt)._resolve_verify_scope(comp, wt)
+    phase1 = _pipeline(tmp_path, comp, wt).run_scope.for_component(comp.id)
     assert seen and seen[0] == phase1.harness_paths == HARNESS
+    assert snapshot.harness_paths == HARNESS

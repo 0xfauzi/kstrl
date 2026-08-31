@@ -456,23 +456,16 @@ class TestFactoryScopeSiteFailsClosed:
 
         captured: dict[str, Any] = {}
 
-        def spy_rmv(
-            worktree_path: Path,
-            prd_path: Path,
-            base_branch: str,
-            allowed_paths: list[str] | None,
-            verify_config: VerifyConfig,
-            allowed_paths_error: str | None = None,
-            harness_paths: list[str] | None = None,
-            fixtures_config: object | None = None,
-            policy_config: object | None = None,
-            adequacy_config: object | None = None,
-            autonomy_level: int = 0,
-            component_id: str | None = None,
-        ) -> VerificationResult:
-            captured["allowed_paths"] = allowed_paths
-            captured["allowed_paths_error"] = allowed_paths_error
-            captured["harness_paths"] = harness_paths
+        def spy_rmv(*args: Any, **kwargs: Any) -> VerificationResult:
+            # *args/**kwargs, not the real 13-parameter signature
+            # restated: a stub that repeats it fails at call time
+            # with a TypeError that reads as a test bug the next time a
+            # keyword is added, and this test asserts on three values.
+            # allowed_paths is positional index 3 at the one call site
+            # (pipeline._phase_verify).
+            captured["allowed_paths"] = args[3]
+            captured["allowed_paths_error"] = kwargs.get("allowed_paths_error")
+            captured["harness_paths"] = kwargs.get("harness_paths")
             return VerificationResult(
                 passed=True,
                 checks=[CheckResult("diff_scope", True, "ok")],
@@ -497,21 +490,14 @@ class TestFactoryScopeSiteFailsClosed:
         # No PRD file written at all.
         captured: dict[str, Any] = {}
 
-        def spy_rmv(
-            worktree_path: Path,
-            prd_path: Path,
-            base_branch: str,
-            allowed_paths: list[str] | None,
-            verify_config: VerifyConfig,
-            allowed_paths_error: str | None = None,
-            harness_paths: list[str] | None = None,
-            fixtures_config: object | None = None,
-            policy_config: object | None = None,
-            adequacy_config: object | None = None,
-            autonomy_level: int = 0,
-            component_id: str | None = None,
-        ) -> VerificationResult:
-            captured["allowed_paths_error"] = allowed_paths_error
+        def spy_rmv(*args: Any, **kwargs: Any) -> VerificationResult:
+            # *args/**kwargs, not the real 13-parameter signature
+            # restated: a stub that repeats it fails at call time
+            # with a TypeError that reads as a test bug the next time a
+            # keyword is added, and this test asserts on three values.
+            # allowed_paths is positional index 3 at the one call site
+            # (pipeline._phase_verify).
+            captured["allowed_paths_error"] = kwargs.get("allowed_paths_error")
             return VerificationResult(
                 passed=True,
                 checks=[CheckResult("diff_scope", True, "ok")],
@@ -558,23 +544,16 @@ class TestFactoryScopeSiteFailsClosed:
 
         captured: dict[str, Any] = {}
 
-        def spy_rmv(
-            worktree_path: Path,
-            prd_path: Path,
-            base_branch: str,
-            allowed_paths: list[str] | None,
-            verify_config: VerifyConfig,
-            allowed_paths_error: str | None = None,
-            harness_paths: list[str] | None = None,
-            fixtures_config: object | None = None,
-            policy_config: object | None = None,
-            adequacy_config: object | None = None,
-            autonomy_level: int = 0,
-            component_id: str | None = None,
-        ) -> VerificationResult:
-            captured["allowed_paths"] = allowed_paths
-            captured["allowed_paths_error"] = allowed_paths_error
-            captured["harness_paths"] = harness_paths
+        def spy_rmv(*args: Any, **kwargs: Any) -> VerificationResult:
+            # *args/**kwargs, not the real 13-parameter signature
+            # restated: a stub that repeats it fails at call time
+            # with a TypeError that reads as a test bug the next time a
+            # keyword is added, and this test asserts on three values.
+            # allowed_paths is positional index 3 at the one call site
+            # (pipeline._phase_verify).
+            captured["allowed_paths"] = args[3]
+            captured["allowed_paths_error"] = kwargs.get("allowed_paths_error")
+            captured["harness_paths"] = kwargs.get("harness_paths")
             return VerificationResult(
                 passed=True,
                 checks=[CheckResult("diff_scope", True, "ok")],

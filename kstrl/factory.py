@@ -12,6 +12,7 @@ import sys
 import tempfile
 import threading
 import time
+from collections import Counter
 from collections.abc import Callable, Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from dataclasses import dataclass, field, replace
@@ -34,7 +35,6 @@ from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import start_heartbeat as _start_heartbeat
 from kstrl.config import (
     KstrlConfig,
-    component_harness_paths,
     component_progress_path,
     relative_to_root,
 )
@@ -50,6 +50,7 @@ from kstrl.events import (
     AdversarialAgentSelected,
     AutonomyLevelApplied,
     ComponentFailed,
+    ComponentScopeResolved,
     ComponentStarted,
     EventBus,
     EventSink,
@@ -95,13 +96,13 @@ from kstrl.observability import (
 from kstrl.pipeline import ComponentPipeline, PipelineHooks, _iso_now
 from kstrl.policy import PolicyConfig
 from kstrl.pr import create_prs_in_order, create_single_pr
-from kstrl.prd import PRD
 from kstrl.review import (
     ReviewMode,
     run_chunked_review,
     run_review,
 )
 from kstrl.sandbox import SandboxConfig
+from kstrl.scope import ComponentScope, RunScope
 from kstrl.security import (
     SecurityConfig,
     SecurityMode,
@@ -1409,40 +1410,6 @@ def _prune_stale_worktrees(
         )
 
 
-def _component_scope(
-    comp: Component,
-    root_dir: Path,
-    base_config: KstrlConfig,
-) -> list[str] | None:
-    """The scope the in-loop guard enforces for one component.
-
-    The component's architect-emitted ``allowedPaths``, falling back to
-    the run-wide ``--allowed-paths`` flag when the PRD carries none
-    (legacy PRDs predate the field).
-
-    Fails OPEN, unlike Phase 1's ``check_diff_scope``, and the asymmetry
-    is deliberate. This guard is an early, cheap tripwire; Phase 1 is the
-    gate. A PRD that cannot be read here returns None, the loop runs
-    unguarded, and Phase 1 still fails CLOSED on the same unreadable PRD
-    (R1.5) - so nothing merges unverified. Failing closed here instead
-    would convert an unreadable PRD into an immediate component failure
-    before the engineer has done anything, which is a worse trade for a
-    tripwire whose only job is to save iterations.
-    """
-    try:
-        prd = PRD.load(root_dir / comp.prd_path)
-    except (OSError, ValueError):
-        # OSError, not FileNotFoundError (R8 review finding 5): a PRD
-        # path that is a DIRECTORY raises IsADirectoryError, and an
-        # unreadable one PermissionError - both OSError subclasses that
-        # escaped the narrower catch and aborted SCHEDULING, before
-        # Phase 1 ever ran. This runs per component while the run is
-        # being planned, so an escape here takes the whole run down for
-        # one bad file. ValueError covers the parse/schema failures.
-        return base_config.allowed_paths or None
-    return prd.allowed_paths or base_config.allowed_paths or None
-
-
 def _preflight_component_branches(
     manifest: Manifest,
     root_dir: Path,
@@ -1558,16 +1525,18 @@ def _authored_scope_errors(
 
 def _preflight_component_scope(
     manifest: Manifest,
-    root_dir: Path,
-    base_config: KstrlConfig,
+    run_scope: RunScope,
 ) -> list[str]:
     """Refuse a component whose scope cannot work, before any spend.
 
-    Pure path comparison against data the manifest and the config
-    already hold: no git, no agent, no LLM. The measured failure this
-    backstops (#264) cost $14.49 and 41 minutes across three engineer
-    attempts that each produced the identical ``diff_scope`` rejection.
-    One line of output in the first second is the right price for that.
+    Pure path comparison against the plan-time snapshot: no git, no
+    agent, no LLM, and (#269) no second reading of a PRD - the list
+    judged here is the identical object both guards will enforce, so a
+    scope this accepts cannot be a different scope by the time it is
+    used. The measured failure this backstops (#264) cost $14.49 and 41
+    minutes across three engineer attempts that each produced the
+    identical ``diff_scope`` rejection. One line of output in the first
+    second is the right price for that.
 
     Two checks the issue asked for are deliberately NOT here, both
     because they would assert something that cannot happen:
@@ -1590,29 +1559,67 @@ def _preflight_component_scope(
 
     What is left is narrow and real: an authored ``allowedPaths`` entry
     that cannot match a changed file at all. Each distinct SCOPE is
-    examined once, not each component: ``_component_scope``'s fallback
-    is the run-wide ``--allowed-paths`` flag, so one bad entry there is
-    shared by every component and N copies of the same paragraph help
-    nobody. Two components with genuinely different authored lists are
-    both reported, each naming its own complete list.
+    examined once, not each component: the snapshot's fallback is the
+    run-wide ``--allowed-paths`` flag, so one bad entry there is shared
+    by every component and N copies of the same paragraph help nobody.
+    Two components with genuinely different authored lists are both
+    reported, each naming its own complete list.
     """
     errors: list[str] = []
     seen: set[tuple[str, ...]] = set()
     for comp in manifest.components:
         if comp.status != ComponentStatus.PENDING.value:
             continue
-        allowed = _component_scope(comp, root_dir, base_config)
-        if not allowed or tuple(allowed) in seen:
+        scope = run_scope.for_component(comp.id)
+        if scope.allowed_paths is None or tuple(scope.allowed_paths) in seen:
             continue
-        seen.add(tuple(allowed))
-        errors.extend(
-            _authored_scope_errors(
-                comp.id,
-                allowed,
-                base_config.component_harness_files(comp.prd_path, root_dir),
+        seen.add(tuple(scope.allowed_paths))
+        errors.extend(_authored_scope_errors(comp.id, scope.allowed_paths, scope.harness_paths))
+    return errors
+
+
+def _record_run_scope(run_scope: RunScope, bus: EventBus, ui: UI) -> None:
+    """Write down what each component may change, and why (#269).
+
+    A scope resolved once has to be RECORDED once, or the only way to
+    answer "why was this component allowed to write that?" after the run
+    is to re-derive it from files the run has since changed - which is
+    the thing the snapshot exists to stop anyone doing. One
+    ``component_scope_resolved`` event per component carries the
+    authored list, kstrl's carve-out, and which authority supplied them.
+
+    The terminal gets a summary rather than N paragraphs, because the
+    per-component detail is already in the journal and an operator
+    watching a 12-component run does not need 12 identical lines. The
+    exception is a component whose scope could not be established: that
+    one is named, because it is the case that will fail Phase 1 closed
+    later and the operator should hear it now rather than then.
+    """
+    resolved = run_scope.by_component
+    if not resolved:
+        return
+    for comp_id, scope in resolved.items():
+        bus.emit(
+            ComponentScopeResolved(
+                component=comp_id,
+                scope_source=scope.source,
+                origin=scope.origin,
+                allowed_paths=tuple(scope.allowed_paths or ()),
+                harness_paths=tuple(scope.harness_paths),
+                error=scope.error or "",
             )
         )
-    return errors
+    counts = Counter(scope.source for scope in resolved.values())
+    ui.info(
+        f"  Scope resolved for {len(resolved)} component(s): "
+        + ", ".join(f"{count} from {source}" for source, count in sorted(counts.items()))
+    )
+    for comp_id, scope in resolved.items():
+        if scope.error:
+            ui.warn(
+                f"  No trustworthy scope for '{comp_id}' "
+                f"({scope.error}); Phase 1 will fail it closed"
+            )
 
 
 def _report_preflight(ui: UI, headline: str, errors: list[str]) -> bool:
@@ -1655,8 +1662,8 @@ def _warn_claude_md_divergence(
 
 def _run_preflights(
     manifest: Manifest,
+    run_scope: RunScope,
     root_dir: Path,
-    base_config: KstrlConfig,
     factory_config: FactoryConfig,
     run_id: str,
     ui: UI,
@@ -1677,7 +1684,7 @@ def _run_preflights(
     if _report_preflight(
         ui,
         "components cannot pass the scope check",
-        _preflight_component_scope(manifest, root_dir, base_config),
+        _preflight_component_scope(manifest, run_scope),
     ):
         return False
     if not factory_config.use_worktrees:
@@ -1819,6 +1826,27 @@ def _clear_partial_usage(path: Path) -> bool:
     return True
 
 
+def _worker_scope(scope: ComponentScope | None) -> tuple[list[str], list[str]]:
+    """The snapshot's two halves as the worker's guard wants them.
+
+    Its own function so ``_run_component`` spends no branching on
+    unpacking an argument: that function is already the largest in this
+    module and the complexity ratchet judges it against its own previous
+    value, so a fix that reads as two harmless ternaries there is a
+    refusal at commit time.
+
+    ``None`` means the caller declared no scope, which is the documented
+    no-guard behaviour: an empty authored list leaves
+    ``guards.enforce_allowed_paths`` inert, and an empty carve-out
+    declares nothing (reporting more, never less). Fresh lists, so the
+    worker's config cannot write back into a snapshot the parent holds
+    for the rest of the run.
+    """
+    if scope is None:
+        return [], []
+    return list(scope.allowed_paths or ()), list(scope.harness_paths)
+
+
 def _run_component(
     component_id: str,
     prd_path_str: str,
@@ -1841,7 +1869,7 @@ def _run_component(
     component_timeout: float = 7200.0,
     max_iterations: int = 10,
     interactive: bool = False,
-    allowed_paths: list[str] | None = None,
+    scope: ComponentScope | None = None,
     breaker_iterations: int = 3,
     breaker_test_command: str | None = None,
     breaker_test_timeout: float = 300.0,
@@ -1898,6 +1926,19 @@ def _run_component(
     configured a progress path; None means "derive it next to this
     component's PRD", which is what keeps the file inside the
     component's allowedPaths (see config.component_progress_path).
+
+    #269: ``scope`` is the component's plan-time scope snapshot,
+    resolved once by ``scope.RunScope`` before any engineer ran and
+    handed down WHOLE rather than as two lists. This function derives
+    nothing and reads no PRD to obtain it, which is what makes the
+    in-loop guard's scope a value the agent never had access to, in
+    worktree mode and under ``use_worktrees=False`` alike. One argument
+    rather than two because the two halves are one decision: split into
+    separate positional slots they would be kept in step by index
+    alignment across two files, and the provenance recorded with them
+    would stop at the pool boundary. ``None`` is the documented
+    no-scope behaviour - the in-loop guard is inert without an authored
+    list, and declares no carve-out.
     """
     from kstrl.agents import (
         get_agent,
@@ -2040,25 +2081,16 @@ def _run_component(
         prd_path_str,
         progress_file_str,
     )
-    # #264: the three files kstrl's own checks require this engineer to
-    # write, as exact root-relative paths. Reported as the run's failure
-    # message showed: the guard fired on `scripts/kstrl/codebase_map.md`,
-    # the component PRD and the progress log while every line of product
-    # code was in scope. Phase 1 applies the SAME carve-out
-    # (pipeline._phase_verify -> check_diff_scope(harness_paths=...));
-    # this guard fires first, so both sites need it or the loop still
-    # dies before Phase 1 is reached.
-    #
-    # The one direct call to component_harness_paths rather than to
-    # KstrlConfig.component_harness_files, which owns the derivation
-    # everywhere else: this runs in a pool worker handed the three paths
-    # as strings, with no config to ask. The strings come from
-    # _submit_args, which built them with that method's own inputs.
-    harness_paths = component_harness_paths(
-        prd_path_str,
-        component_progress_rel,
-        codebase_map_file_str,
-    )
+    # #264/#269: the plan-time snapshot handed down by _submit_args.
+    # The worker derives NOTHING from it. It used to rebuild the
+    # carve-out here from its own three path strings, which agreed with
+    # Phase 1 only because both derivations happened to be fed the same
+    # inputs; the snapshot makes that agreement structural, and it is
+    # the same value Phase 1 reads (pipeline._phase_verify ->
+    # check_diff_scope). This guard fires FIRST, so a scope only one of
+    # them had would still kill the component before Phase 1 was
+    # reached.
+    authored_paths, harness_paths = _worker_scope(scope)
     config = KstrlConfig(
         max_iterations=max_iterations,
         prompt_file=worktree_prompt,
@@ -2067,7 +2099,7 @@ def _run_component(
         codebase_map_file=worktree_path / codebase_map_file_str,
         sleep_seconds=sleep_seconds,
         interactive=interactive,
-        allowed_paths=list(allowed_paths) if allowed_paths else [],
+        allowed_paths=authored_paths,
         kstrl_branch="",
         kstrl_branch_explicit=True,
         agent_cmd=agent_cmd,
@@ -2197,7 +2229,7 @@ def _run_component(
                 f"do NOT `git checkout {base_branch} -- <path>`, revert "
                 "only your own out-of-scope commits/edits). "
                 f"Allowed paths (complete list): "
-                f"{', '.join(allowed_paths or [])}; "
+                f"{', '.join(authored_paths)}; "
                 # #264: the two sets stay separate. The harness artifacts
                 # are already in scope, so naming them here stops the
                 # retry agent reading its own PRD or progress log as the
@@ -2902,6 +2934,18 @@ def _run_factory_locked(
     # still be alive, so their worktrees are never cleaned up here.
     leaked_component_ids: set[str] = set()
 
+    # #269: every component's write scope, resolved HERE and nowhere
+    # else. Both guards read this one snapshot - the in-loop guard
+    # through _submit_args -> _run_component -> run_loop, and Phase 1
+    # through the pipeline below - so neither has to read a PRD to learn
+    # what a component may write, and the file the agent is allowed to
+    # edit stops being the file that decides what it may edit. Resolved
+    # before the pipeline exists and long before the scheduler can
+    # launch anything, which is what makes the value one the agent never
+    # had access to, with or without worktrees.
+    run_scope = RunScope.resolve(manifest, root_dir, base_config)
+    _record_run_scope(run_scope, bus, ui)
+
     # R7.3: the per-component phase chain and every component state
     # transition live in ComponentPipeline. Hooks are resolved from this
     # module's globals HERE, at run start, so tests patching
@@ -2933,6 +2977,7 @@ def _run_factory_locked(
         security_selection=security_selection,
         knowledge_config=knowledge_config,
         factory_result=factory_result,
+        run_scope=run_scope,
         hooks=PipelineHooks(
             run_mechanical_verification=run_mechanical_verification,
             run_review=run_review,
@@ -3134,8 +3179,8 @@ def _run_factory_locked(
 
     if not _run_preflights(
         manifest,
+        run_scope,
         root_dir,
-        base_config,
         factory_config,
         run_id,
         ui,
@@ -3246,6 +3291,7 @@ def _run_factory_locked(
     def _submit_args(comp: Component, wt_path: Path) -> tuple[Any, ...]:
         ctx_json = component_contexts.get(comp.id)
         engineer_usage = pipeline.engineer_usage_totals()
+        scope = run_scope.for_component(comp.id)
         knowledge_prefix = ""
         if knowledge_config.enabled:
             try:
@@ -3303,13 +3349,16 @@ def _run_factory_locked(
             # component, versus ~$2.50 for the single iteration it takes
             # to catch it here.
             #
-            # Read from root_dir, NOT the worktree: Phase 1 deliberately
-            # re-reads the PRD from the worktree (fail-closed on load
-            # error), but an in-loop guard sourced from a file the agent
-            # may edit would let the agent widen its own scope mid-run.
-            # The pre-run PRD is the honest input for enforcement; the
-            # worktree copy remains the input for verification.
-            _component_scope(comp, root_dir, base_config),
+            # #269: the plan-time snapshot, resolved from root_dir
+            # before the first engineer call and the SAME object Phase 1
+            # is judged with. Read here rather than re-derived per
+            # submission, which is what makes a retry inherit the scope
+            # the run started with: this closure runs once per attempt,
+            # so a per-attempt re-read would let an agent that edited
+            # the PRD in attempt 1 widen its own guard for attempt 2
+            # (which, under use_worktrees=False, it can do to the file
+            # this used to read).
+            scope,
             # R7.5: no-progress circuit breaker limits.
             breaker_cfg.no_progress_iterations,
             breaker_cfg.test_command,
