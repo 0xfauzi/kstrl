@@ -90,11 +90,18 @@ from kstrl.config_report import scrubbed_environ
 REJECTIONS = (ValueError, TypeError, RuntimeError)
 
 #: :data:`REJECTIONS` plus the read failure a long-lived surface has to
-#: survive. The entry check never needs it: it reads the document once
-#: itself and turns an unreadable file into a ``ConfigError`` before any
-#: loader runs. A screen re-reading the file minutes later has no such
-#: pass in front of it, and a ``chmod`` between two refreshes raises
-#: ``OSError`` straight out of ``load_toml_section``.
+#: survive, for anything loading config AFTER command entry.
+#:
+#: ``OSError`` carries two unrelated rationales and both are why this
+#: cannot be fixed by normalizing it inside ``load_toml_document``.
+#: First, the entry check reads the document once itself and turns an
+#: unreadable kstrl.toml into a ``ConfigError`` before any loader runs;
+#: a screen re-reading the file minutes later has no such pass in front
+#: of it, and a ``chmod`` between two refreshes raises ``OSError``
+#: straight out of ``load_toml_section``. Second, a loader may read a
+#: file that is not kstrl.toml at all: ``resolve_verify_commands``
+#: reads the project's pyproject.toml, so ``init_wizard._detected_text``
+#: needs ``OSError`` for a document this module never opens.
 SURFACE_REJECTIONS = (*REJECTIONS, OSError)
 
 T = TypeVar("T")
@@ -333,13 +340,11 @@ def _detail(
     False says why (:func:`load_or_report`).
     """
     message = str(exc)
-    blamed = (
-        _blamed_env_var(section.loader, root_dir, message) if blame_env else None
-    ) or _blamed_toml_value(
-        section.sections,
-        toml_path,
-        message,
-    )
+    # Two statements, not one expression: the environment-then-file
+    # order is the rule the docstring above states, and an `or` split
+    # across a ternary hides it.
+    blamed = _blamed_env_var(section.loader, root_dir, message) if blame_env else None
+    blamed = blamed or _blamed_toml_value(section.sections, toml_path, message)
     line = f"{section.label} {message}"
     return f"{line} ({blamed})" if blamed else line
 
@@ -429,7 +434,7 @@ def _blamed_toml_value(
     """
     hits = []
     for name in sections:
-        with suppress(*REJECTIONS, OSError):
+        with suppress(*SURFACE_REJECTIONS):
             for key, value in load_toml_section(toml_path, name).items():
                 if repr(value) in message:
                     hits.append(f"kstrl.toml has [{name}] {key} = {value!r}")

@@ -120,8 +120,10 @@ DataTable {
 /* Same alert grammar as the safe-mode banner, but height: auto - this
  * one carries a section, a loader message and the input that set it,
  * and a truncated repair instruction is not a repair instruction. It
- * collapses to nothing while the config resolves (display: none). */
-#config-problem {
+ * collapses to nothing while the config resolves (display: none).
+ * Selected by TYPE, not by id: a screen that mistyped an id would get
+ * an unstyled, always-visible bar and no error saying so. */
+ConfigProblemBanner {
     display: none;
     height: auto;
     background: $error 18%;

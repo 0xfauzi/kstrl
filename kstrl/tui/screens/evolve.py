@@ -31,8 +31,8 @@ from kstrl.evolution import EvolutionConfig, EvolutionJournal
 from kstrl.interaction import PromptKind, PromptRequest
 from kstrl.proposals import Proposal, apply_proposal, list_proposals
 from kstrl.tui import theme
-from kstrl.tui.config_guard import ConfigProblemBanner, load_config
 from kstrl.tui.screens.options import OptionsModal
+from kstrl.tui.widgets.config_problem import ConfigProblemBanner
 from kstrl.tui.widgets.context_bar import ContextBar
 
 TREND_ROWS = 14
@@ -96,7 +96,7 @@ class EvolveScreen(Screen[None]):
         # Above the tabs, not inside one: an unreadable [evolution]
         # section empties patterns AND trends, and the operator may be
         # looking at proposals when it happens.
-        yield ConfigProblemBanner(id="config-problem")
+        yield ConfigProblemBanner()
         with TabbedContent(id="evolve-tabs"):
             with TabPane("proposals", id="tab-proposals"):
                 with Horizontal(id="proposals-split"):
@@ -188,8 +188,7 @@ class EvolveScreen(Screen[None]):
         empty tables would be worse than the traceback it replaces:
         "no patterns yet" is a real state on this screen.
         """
-        config, problem = load_config(self.app, EvolutionConfig.load, root_dir)
-        self.query_one(ConfigProblemBanner).show(problem)
+        config = self.query_one(ConfigProblemBanner).load(EvolutionConfig.load, root_dir)
         patterns_table = self.query_one("#patterns-table", DataTable)
         patterns_table.clear()
         trends_table = self.query_one("#trends-table", DataTable)

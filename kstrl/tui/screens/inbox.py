@@ -27,7 +27,7 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static
 
 from kstrl.inbox import Inbox, InboxConfig, InboxError, InboxItem
-from kstrl.tui.config_guard import ConfigProblemBanner, load_config
+from kstrl.tui.widgets.config_problem import ConfigProblemBanner
 from kstrl.tui.widgets.context_bar import ContextBar
 
 _PRIORITY_STYLE = {"high": "bold red", "normal": "", "low": "dim"}
@@ -58,12 +58,11 @@ class InboxScreen(Screen[None]):
         self._root = Path(root_dir) if root_dir else Path.cwd()
         self._show_decided = False
         self._items: list[InboxItem] = []
-        self._unreadable = False
 
     # -- composition -------------------------------------------------------
     def compose(self) -> ComposeResult:
         yield ContextBar("inbox")
-        yield ConfigProblemBanner(id="config-problem")
+        yield ConfigProblemBanner()
         with Horizontal():
             yield DataTable(id="inbox-table")
             yield Static("", id="inbox-detail")
@@ -84,13 +83,18 @@ class InboxScreen(Screen[None]):
         refresh action. That is also why the guard is here and not only
         at mount - the file can break between two keystrokes.
         """
-        config, problem = load_config(self.app, InboxConfig.load, self._root)
-        self.query_one(ConfigProblemBanner).show(problem)
-        self._unreadable = problem is not None
+        config = self.query_one(ConfigProblemBanner).load(InboxConfig.load, self._root)
         return None if config is None else Inbox(self._root, config)
 
     def action_refresh(self) -> None:
-        box = self._inbox()
+        self._redraw(self._inbox())
+
+    def _redraw(self, box: Inbox | None) -> None:
+        """The table and detail for a box already loaded, or for None.
+
+        Split from the load so a caller holding the answer does not
+        throw it away and load again to get the same one.
+        """
         table = self.query_one("#inbox-table", DataTable)
         table.clear()
         if box is None:
@@ -125,10 +129,12 @@ class InboxScreen(Screen[None]):
         if item is None:
             # "Inbox clear" is a claim about the log. It must never be
             # made from an empty list that only means the config would
-            # not load - the banner is carrying that answer instead.
+            # not load, so the banner is asked rather than a second
+            # copy of its answer being kept beside it.
+            unreadable = self.query_one(ConfigProblemBanner).problem is not None
             detail.update(
                 Text("Inbox clear: nothing is waiting on you.", style="dim")
-                if not self._items and not self._unreadable
+                if not self._items and not unreadable
                 else Text("")
             )
             return
@@ -162,9 +168,9 @@ class InboxScreen(Screen[None]):
             return
         box = self._inbox()
         if box is None:
-            # The file broke since the list was drawn. Redraw through
-            # the one path that renders that state.
-            self.action_refresh()
+            # The file broke since the list was drawn. Render that
+            # state from the answer already in hand.
+            self._redraw(None)
             return
         try:
             if action == "approve":

@@ -140,6 +140,18 @@ class EvolutionConfig:
         input, and two lists that disagree would degrade the same value
         at startup and then raise on it mid-run.
 
+        It is deliberately NOT
+        ``config_preflight.SURFACE_REJECTIONS``, which is this tuple
+        plus ``RuntimeError``. #289 tried importing that instead, on
+        the reasoning above, and
+        ``test_decompose.py::test_the_artifact_is_written_before_any_journal_work``
+        failed: that test raises ``RuntimeError`` from :meth:`load` on
+        purpose, to assert that an error the guard does NOT catch still
+        leaves the halt artifact on disk. No coercion in :meth:`load`
+        produces one, so widening to it could only ever swallow a
+        defect, and the entry check degrading where this raises is the
+        price of keeping that defect visible mid-run.
+
         The cost of that widening, stated because it is real: a
         ``TypeError`` from a DEFECT inside :meth:`load` - a None where a
         path belongs, a signature that stopped matching - now reads as

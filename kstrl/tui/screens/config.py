@@ -24,6 +24,7 @@ from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Input, Static
 
+from kstrl.config_preflight import SURFACE_REJECTIONS
 from kstrl.tui import theme
 from kstrl.tui.config_guard import env_scrub_is_safe
 from kstrl.tui.widgets.context_bar import ContextBar
@@ -223,7 +224,11 @@ class ConfigScreen(Screen[None]):
             return
         try:
             report = build_config_report(root_dir)
-        except ValueError as exc:
+        except SURFACE_REJECTIONS as exc:
+            # Measured: `[run] max_iterations = ["3"]` raises TypeError
+            # out of int(), which `except ValueError` let through and
+            # which this refresh action can meet, because it exists to
+            # re-read a file the operator has just edited (#289).
             self.app.notify(f"config failed to resolve: {exc}", severity="error")
             return
         self.app.config_report = report  # type: ignore[attr-defined]
