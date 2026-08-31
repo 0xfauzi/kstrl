@@ -2994,15 +2994,11 @@ def config_show(
             prd_default=root_dir / "scripts/kstrl/prd.json",
         )
 
-    from kstrl.config_preflight import SURFACE_REJECTIONS, collect_config_problems
-
-    def _problems() -> list[str]:
-        try:
-            return collect_config_problems(root_dir, warn=_preflight_warn)
-        except SURFACE_REJECTIONS as document_exc:
-            # The document will not parse, so no section resolved and
-            # the parse error IS the whole report.
-            return [str(document_exc)]
+    from kstrl.config_preflight import (
+        SURFACE_REJECTIONS,
+        config_problem_lines,
+        raise_if_defect,
+    )
 
     try:
         report = build_config_report(root_dir, overlay=_overlay)
@@ -3018,7 +3014,12 @@ def config_show(
         # `except ValueError` here let `[run] max_iterations = ["3"]`
         # out as a raw TypeError traceback, from the one command whose
         # whole job is explaining a broken config (#289).
-        _echo_config_problems(_problems() or [str(exc)])
+        #
+        # Except when the RuntimeError is one kstrl never defined: that
+        # is our defect, and printing it under "configuration problems"
+        # both blames the operator and loses the traceback.
+        raise_if_defect(exc)
+        _echo_config_problems(config_problem_lines(root_dir, warn=_preflight_warn) or [str(exc)])
         sys.exit(1)
 
     toml_path = report.toml_path
@@ -3041,7 +3042,7 @@ def config_show(
     # resolved (a rejected section costs its rows, not the report); the
     # problems below cover every section, the eleven this report does not
     # render included, in the words the rest of the CLI uses.
-    problems = _problems()
+    problems = config_problem_lines(root_dir, warn=_preflight_warn)
     if problems:
         _echo_config_problems(problems)
         sys.exit(1)

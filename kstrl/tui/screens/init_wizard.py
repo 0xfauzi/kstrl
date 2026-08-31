@@ -22,7 +22,7 @@ from textual.message import Message
 from textual.screen import Screen
 from textual.widgets import Button, Footer, Input, Select, Static
 
-from kstrl.config_preflight import SURFACE_REJECTIONS
+from kstrl.config_preflight import SURFACE_REJECTIONS, raise_if_defect
 from kstrl.init_cmd import run_init
 from kstrl.init_wizard import (
     AGENT_TYPES,
@@ -85,7 +85,8 @@ def _detected_text(root: Path) -> Text:
     ]
     try:
         commands = resolve_verify_commands(VerifyConfig.load(root), root)
-    except SURFACE_REJECTIONS:
+    except SURFACE_REJECTIONS as exc:
+        raise_if_defect(exc)
         rows.append(("verify", "kstrl.toml is unreadable; cannot show gate commands"))
     else:
         rows += [

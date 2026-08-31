@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 from kstrl.agents.base import ARCHITECT_COMPONENT
 from kstrl.commandrun import open_command_run
 from kstrl.config import KstrlConfig
-from kstrl.config_preflight import SURFACE_REJECTIONS
+from kstrl.config_preflight import SURFACE_REJECTIONS, raise_if_defect
 from kstrl.events import CallbackSink, EventBus, RunPaths
 from kstrl.git import resolve_base_branch
 from kstrl.interaction import QueueInteractionChannel
@@ -202,6 +202,10 @@ def _prepare_factory(spec: FactoryLaunch, root_dir: Path) -> PreparedLaunch:
         # float() and escaped, taking the shell down at launch (#289).
         # Reachable only by editing kstrl.toml with the shell already
         # open, because the entry check rejects that file otherwise.
+        #
+        # A RuntimeError kstrl did not define is not a launch problem to
+        # report to the operator, it is a bug of ours wearing one.
+        raise_if_defect(exc)
         raise LaunchError(f"failed to load configuration: {exc}") from exc
     _preflight_agent(base_config)
     if spec.max_parallel is not None:
@@ -251,7 +255,9 @@ def _prepare_decompose(
     try:
         config = KstrlConfig.load(root_dir)
     except SURFACE_REJECTIONS as exc:
-        # The same widening as _prepare_factory, for the same reason.
+        # The same widening as _prepare_factory, for the same reason,
+        # and the same guard against it hiding one of our own defects.
+        raise_if_defect(exc)
         raise LaunchError(f"failed to load configuration: {exc}") from exc
     _preflight_agent(config)
     agent = get_agent(

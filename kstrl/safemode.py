@@ -120,9 +120,18 @@ def _autonomy_reasons(root_dir: Path) -> list[SafeModeReason]:
         AutonomyState,
         resolve_runtime_level,
     )
+    from kstrl.config_report import environ_lock
     from kstrl.policy import PolicyConfig
 
-    config = AutonomyConfig.load(root_dir)
+    # These loaders read KSTRL_AUTONOMY_* and KSTRL_POLICY_*, and this
+    # function runs on a worker thread every 5 seconds in every TUI
+    # mode. A surface blanking os.environ to work out which variable
+    # broke a config would otherwise make this read the DEFAULT ladder
+    # and report a degraded factory as nominal, which is the silent
+    # wrong answer the safe-mode chip exists to prevent (#289).
+    with environ_lock():
+        config = AutonomyConfig.load(root_dir)
+        policy_enabled = PolicyConfig.load(root_dir).enabled
     if not config.enabled:
         # A ladder that is switched off is not a ladder that fell down.
         # ``[autonomy] enabled`` is False by default, so reporting a
@@ -138,7 +147,7 @@ def _autonomy_reasons(root_dir: Path) -> list[SafeModeReason]:
     level, clamps = resolve_runtime_level(
         state,
         config,
-        policy_enabled=PolicyConfig.load(root_dir).enabled,
+        policy_enabled=policy_enabled,
         root_dir=root_dir,
     )
     if int(level) < state.level:
@@ -157,9 +166,13 @@ def _autonomy_reasons(root_dir: Path) -> list[SafeModeReason]:
 
 
 def _queue_reasons(root_dir: Path) -> list[SafeModeReason]:
+    from kstrl.config_report import environ_lock
     from kstrl.workqueue import Queue, QueueConfig
 
-    pause = Queue(root_dir, QueueConfig.load(root_dir)).pause_state()
+    # KSTRL_QUEUE_*; see _autonomy_reasons for why the lock is here.
+    with environ_lock():
+        config = QueueConfig.load(root_dir)
+    pause = Queue(root_dir, config).pause_state()
     # ``active`` rather than ``paused``: a lapsed ``resume_after`` means
     # the queue is admitting work again, which is what the daemon's own
     # ``is_paused`` asks.

@@ -50,41 +50,38 @@ def _handle_is_live(handle: object) -> bool:
 
 
 def env_scrub_is_safe(app: object) -> bool:
-    """Whether clearing ``os.environ`` right now would race a thread.
+    """Whether clearing ``os.environ`` right now would race a run.
 
-    THREE readers, and missing any one of them makes this predicate a
-    lie rather than a guard:
+    TWO readers, both of them a live command handle, because both spawn
+    SUBPROCESSES that inherit the environment and a subprocess cannot be
+    made to wait on a lock:
 
-    1. A home-launched session (``run_context.handle``), which runs the
-       factory on another thread whose subprocesses inherit the
-       environment.
+    1. A home-launched session (``run_context.handle``).
     2. An EMBEDDED-mode orchestrator (``app.orchestrator``). Same
        hazard, DIFFERENT attribute: ``embed.py`` starts the command
        thread and passes it as ``orchestrator=``, while ``run_context``
        comes from ``RunContext.observe``, which leaves ``handle`` None.
        Reading only ``run_context`` returned True with an agent
        mid-spawn.
-    3. The app's own safe-mode worker (``_safe_mode_running``).
-       ``app.py`` schedules ``_check_safe_mode`` every 5 seconds in
-       EVERY mode, and ``safemode.safe_mode_reasons`` loads
-       ``AutonomyConfig``, ``PolicyConfig`` and ``QueueConfig``, all of
-       which read ``KSTRL_*``. Measured before this clause existed:
-       with 84 variables set, a thread polling
-       ``KSTRL_AUTONOMY_LEVEL`` across 50 blaming ``load_or_report``
-       calls saw it MISSING for 95990 of 36.8M reads. A safe-mode tick
-       landing in that window reports the default ladder, so a degraded
-       factory reads nominal on the chip for one tick, which is the
-       silent wrong answer the chip exists to prevent.
 
-    WHY A FLAG READ IS ENOUGH, AND NO LOCK IS NEEDED. Every caller runs
-    on the Textual UI thread (a message handler or an action), the
-    scrub that follows is synchronous and never awaits, and a worker is
-    only ever STARTED from that same thread by a timer callback. So no
-    worker can begin between this check and the scrub, and
-    ``_safe_mode_running`` is cleared in the worker's ``finally`` only
-    after its last config read, which makes True strictly wider than
-    the danger window. Calling this off the UI thread would break that
-    argument, and nothing does.
+    THE THIRD READER IS NOT HERE, AND THAT IS THE POINT. The app's own
+    safe-mode worker also reads ``KSTRL_*``, every 5 seconds, in every
+    mode. Round one of #289 added it to THIS condition, and that was
+    wrong: it closed a race by making two working features
+    intermittent. Measured on an EMPTY project with no run of any kind,
+    ``run_context`` None, the worker's flag was set for 51 to 84 ms out
+    of every 5 s, so ``ConfigScreen.action_refresh`` was denied at
+    random with a message falsely blaming a launched run, and the
+    evolve banner silently dropped the variable it exists to name. On a
+    project whose events.jsonl makes the check exceed its own interval
+    (``app.py`` measures 5.65 s at 500 MiB) the flag never clears and
+    the refusal is permanent.
+
+    That reader is SERIALIZED instead, on ``config_report.environ_lock``,
+    which ``safemode`` takes around its config loads and every scrub
+    takes for its whole duration. The scrub waits at most a few
+    milliseconds rather than being refused, and the race is still
+    closed. Refusal is kept only where waiting cannot work.
 
     ``app`` is typed ``object`` rather than ``App`` on purpose: these
     attributes belong to ``KstrlTuiApp``, not to Textual's ``App``, and
@@ -93,14 +90,12 @@ def env_scrub_is_safe(app: object) -> bool:
     harness and the true one for a shell that has launched nothing.
 
     Deliberately NOT ``KstrlTuiApp.session_in_flight``, which reads one
-    of the three and also requires ``Mode.HOME``. The hazard does not
-    care which mode the app is in.
+    of the two and also requires ``Mode.HOME``. The hazard does not care
+    which mode the app is in.
     """
     if _handle_is_live(getattr(getattr(app, "run_context", None), "handle", None)):
         return False
-    if _handle_is_live(getattr(app, "orchestrator", None)):
-        return False
-    return not bool(getattr(app, "_safe_mode_running", False))
+    return not _handle_is_live(getattr(app, "orchestrator", None))
 
 
 __all__ = ["env_scrub_is_safe"]

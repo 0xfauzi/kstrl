@@ -15,7 +15,6 @@ about LIVE diff updates starving input, which does not apply here.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rich.text import Text
@@ -25,7 +24,11 @@ from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Input, Static
 
-from kstrl.config_preflight import SURFACE_REJECTIONS
+from kstrl.config_preflight import (
+    SURFACE_REJECTIONS,
+    config_problem_lines,
+    raise_if_defect,
+)
 from kstrl.tui import theme
 from kstrl.tui.config_guard import env_scrub_is_safe
 from kstrl.tui.widgets.context_bar import ContextBar
@@ -206,24 +209,6 @@ class ConfigScreen(Screen[None]):
             return
         self.app.pop_screen()
 
-    @staticmethod
-    def _problem_lines(root_dir: Path, exc: Exception) -> list[str]:
-        """The entry check's lines for this root, or the raw failure.
-
-        Safe to blame the environment here: the caller has already
-        established through `env_scrub_is_safe` that no thread of ours
-        is reading it, which is the same condition `build_config_report`
-        needed to run at all.
-        """
-        from kstrl.config_preflight import collect_config_problems
-
-        try:
-            return collect_config_problems(root_dir, warn=lambda _m: None) or [str(exc)]
-        except SURFACE_REJECTIONS as document_exc:
-            # The document will not parse, so no section resolved and
-            # that parse error is the whole report.
-            return [str(document_exc)]
-
     def action_refresh(self) -> None:
         # The env-scrub is process-wide: never while a launched
         # session's thread could be reading os.environ. The predicate
@@ -254,9 +239,20 @@ class ConfigScreen(Screen[None]):
             # configuration, so "int() argument must be a string ... not
             # 'list'" with no section, key or value is the one place
             # that answer is least useful. collect_config_problems is
-            # the same traversal `ks config show` prints.
+            # the same traversal `ks config show` prints - the same
+            # FUNCTION, since #304: this screen carried a copy of it
+            # that had already drifted from the CLI's in the empty case.
+            #
+            # A RuntimeError kstrl never defined is our defect, not a
+            # configuration problem, and must not be notified as one.
+            raise_if_defect(exc)
+            # Safe to blame the environment inside that traversal: the
+            # refusal above has established that no thread of ours is
+            # reading os.environ, which is the same condition
+            # build_config_report needed to run at all.
             self.app.notify(
-                "config failed to resolve:\n" + "\n".join(self._problem_lines(root_dir, exc)),
+                "config failed to resolve:\n"
+                + "\n".join(config_problem_lines(root_dir, warn=lambda _m: None) or [str(exc)]),
                 severity="error",
             )
             return

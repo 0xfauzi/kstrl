@@ -409,12 +409,20 @@ def read_progress_events(path: Path) -> list[dict[str, Any]]:
     Malformed lines (a crash mid-write leaves at most one) are skipped
     rather than raised: the log is an observability surface and a torn
     tail line must not make `ks status` unusable.
+
+    ``encoding="utf-8"`` is named and ``ValueError`` is caught for the
+    same reason: kstrl writes this file as utf-8 through ``atomicio``,
+    so a reader that leaves the codec to the locale decodes it wrongly
+    under ``LC_ALL=C``, and ``UnicodeDecodeError`` is a ``ValueError``,
+    which walks straight out of a fail-closed ``except OSError``. Two
+    callers meet that: ``ks status``, and ``EvolutionJournal`` on the
+    TUI evolve screen, where it reached the Textual event loop (#289).
     """
     if not path.exists():
         return []
     events: list[dict[str, Any]] = []
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -425,7 +433,11 @@ def read_progress_events(path: Path) -> list[dict[str, Any]]:
                     continue
                 if isinstance(parsed, dict):
                     events.append(parsed)
-    except OSError:
+    except (OSError, ValueError):
+        # ValueError is UnicodeDecodeError: bytes this reader cannot
+        # decode at all, as opposed to the torn line the inner handler
+        # skips. Same answer as an unreadable file - no events - because
+        # the alternative is a traceback out of an observability read.
         return []
     return events
 

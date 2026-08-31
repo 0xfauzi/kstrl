@@ -1128,9 +1128,17 @@ class EvolutionJournal:
             )
 
             try:
-                filepath.write_text(content)
+                # encoding named, ValueError caught: the description
+                # and suggested_change come from an LLM, so one curly
+                # quote makes this a UnicodeEncodeError under LC_ALL=C,
+                # and that is a ValueError, which the OSError handler
+                # below does not catch (measured: US-ASCII preferred
+                # encoding, write_text raises). A proposal write is
+                # explicitly non-fatal; without this it took the run
+                # down instead.
+                filepath.write_text(content, encoding="utf-8")
                 written.append(filepath)
-            except OSError as exc:
+            except (OSError, ValueError) as exc:
                 logger.warning(
                     "proposal write failed (non-fatal): %s: %s",
                     filepath,

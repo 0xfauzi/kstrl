@@ -35,19 +35,24 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Static
 
 from kstrl.config import ConfigError
-from kstrl.config_preflight import collect_config_problems, load_or_report, preflight_config
+from kstrl.config_preflight import (
+    collect_config_problems,
+    config_problem_lines,
+    load_or_report,
+    preflight_config,
+    raise_if_defect,
+)
 from kstrl.config_report import build_config_report
 from kstrl.evolution import EvolutionConfig
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.launch import FactoryLaunch
 from kstrl.timeout import TimeoutConfig
-from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.config_guard import env_scrub_is_safe
-from kstrl.tui.screens.evolve import EvolveScreen
 from kstrl.tui.screens.inbox import InboxScreen
 from kstrl.tui.screens.init_wizard import _detected_text
 from kstrl.tui.session import LaunchError, start_run_session
 from kstrl.tui.widgets.config_problem import ConfigProblemBanner
+from tests.helpers.tui_screens import evolve_screen, home_app
 from tests.spine_utils import make_manifest
 
 BAD_KNOB = '[evolution]\nlookback_runs = "many"\n'
@@ -64,29 +69,6 @@ class _Harness(App[None]):
 
 def _banner_text(screen: Screen[Any]) -> str:
     return str(screen.query_one(ConfigProblemBanner).render())
-
-
-def _home_app(tmp_path: Path) -> KstrlTuiApp:
-    return KstrlTuiApp(root_dir=tmp_path, mode=Mode.HOME, poll_interval=0.05)
-
-
-@asynccontextmanager
-async def _evolve(tmp_path: Path) -> AsyncIterator[tuple[EvolveScreen, Pilot[None]]]:
-    """The evolve screen open on ``tmp_path``.
-
-    The 0.2s pauses mirror ``tests/test_evolve_screen.py``, which is
-    the empirical precedent for THIS screen: it composes a
-    TabbedContent whose panes mount on a later frame, and every test
-    there waits the same way.
-    """
-    app = _home_app(tmp_path)
-    async with app.run_test(size=(140, 40)) as pilot:
-        await pilot.pause(0.2)
-        app.push_screen(EvolveScreen())
-        await pilot.pause(0.2)
-        screen = app.screen
-        assert isinstance(screen, EvolveScreen)
-        yield screen, pilot
 
 
 @asynccontextmanager
@@ -136,7 +118,7 @@ def test_ks_evolve_still_stops_on_the_same_file(tmp_path: Path) -> None:
 class TestEvolveScreen:
     async def test_a_bad_knob_is_named_instead_of_raised(self, tmp_path: Path) -> None:
         (tmp_path / "kstrl.toml").write_text(BAD_KNOB, encoding="utf-8")
-        async with _evolve(tmp_path) as (screen, _pilot):
+        async with evolve_screen(tmp_path) as (screen, _pilot):
             text = _banner_text(screen)
             assert "configuration unreadable" in text
             # The section name survives: it is bracketed, and Rich reads
@@ -153,14 +135,14 @@ class TestEvolveScreen:
     ) -> None:
         """Not a silent degrade: no rows, and a line saying why."""
         (tmp_path / "kstrl.toml").write_text(BAD_KNOB, encoding="utf-8")
-        async with _evolve(tmp_path) as (screen, _pilot):
+        async with evolve_screen(tmp_path) as (screen, _pilot):
             assert screen.query_one("#patterns-table", DataTable).row_count == 0
             assert screen.query_one("#trends-table", DataTable).row_count == 0
             assert "[evolution]" in _banner_text(screen)
 
     async def test_a_malformed_document_is_named_too(self, tmp_path: Path) -> None:
         (tmp_path / "kstrl.toml").write_text(BAD_DOCUMENT, encoding="utf-8")
-        async with _evolve(tmp_path) as (screen, _pilot):
+        async with evolve_screen(tmp_path) as (screen, _pilot):
             text = _banner_text(screen)
             assert "Invalid TOML" in text
             assert "line 1" in text
@@ -171,7 +153,7 @@ class TestEvolveScreen:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.setenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", "lots")
-        async with _evolve(tmp_path) as (screen, _pilot):
+        async with evolve_screen(tmp_path) as (screen, _pilot):
             assert "set by KSTRL_EVOLUTION_LOOKBACK_RUNS=lots" in _banner_text(screen)
 
     async def test_the_banner_is_hidden_on_a_config_that_resolves(
@@ -179,7 +161,7 @@ class TestEvolveScreen:
         tmp_path: Path,
     ) -> None:
         (tmp_path / "kstrl.toml").write_text(GOOD_KNOB, encoding="utf-8")
-        async with _evolve(tmp_path) as (screen, _pilot):
+        async with evolve_screen(tmp_path) as (screen, _pilot):
             assert screen.query_one(ConfigProblemBanner).display is False
             assert screen.query_one(ConfigProblemBanner).problem is None
 
@@ -189,7 +171,7 @@ class TestEvolveScreen:
     ) -> None:
         toml = tmp_path / "kstrl.toml"
         toml.write_text(BAD_KNOB, encoding="utf-8")
-        async with _evolve(tmp_path) as (screen, pilot):
+        async with evolve_screen(tmp_path) as (screen, pilot):
             assert screen.query_one(ConfigProblemBanner).display is True
             toml.write_text(GOOD_KNOB, encoding="utf-8")
             screen.action_reload()
@@ -369,6 +351,77 @@ class TestSharedGuard:
         with pytest.raises(RuntimeError, match="journal config exploded"):
             load_or_report(EvolutionConfig.load, tmp_path, blame_env=False)
 
+    @pytest.mark.parametrize(
+        "defect",
+        [
+            RuntimeError("bare"),
+            NotImplementedError("abstract loader"),
+            RecursionError("cycle in the config graph"),
+        ],
+        ids=["bare", "not_implemented", "recursion"],
+    )
+    def test_every_runtimeerror_kstrl_did_not_define_is_re_raised(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        defect: RuntimeError,
+    ) -> None:
+        """Round-two review, finding 2.
+
+        The first cut of the test above wrote ``type(exc) is
+        RuntimeError``, which is true only of a BARE one.
+        NotImplementedError and RecursionError are direct RuntimeError
+        subclasses and unambiguously defects, and both were reported to
+        the operator as "configuration unreadable" with the traceback
+        eaten. RecursionError is the one that hurts: a cycle in the
+        config graph would have been rendered as their broken file.
+        """
+        import kstrl.evolution
+
+        def _explode(root_dir: Path | None = None) -> None:
+            raise defect
+
+        monkeypatch.setattr(kstrl.evolution.EvolutionConfig, "load", _explode)
+        with pytest.raises(type(defect)):
+            load_or_report(EvolutionConfig.load, tmp_path, blame_env=False)
+
+    def test_the_domain_rule_is_derived_from_kstrl_not_listed(self) -> None:
+        """No ledger to go stale.
+
+        The reviewer's suggested fix was a tuple of the four domain
+        errors named in REJECTIONS' docstring. kstrl defines TEN
+        RuntimeError subclasses, so that tuple would have been wrong on
+        the day it was written and staler with each new one. The rule
+        asks a derivable question instead - did kstrl define this class
+        - and this test walks the package to check the answer holds for
+        every one of them.
+        """
+        import ast
+        import importlib
+
+        src = Path(__file__).resolve().parent.parent / "kstrl"
+        subclasses: list[type[BaseException]] = []
+        for path in sorted(src.rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            module = path.relative_to(src.parent).with_suffix("").as_posix().replace("/", ".")
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.ClassDef):
+                    continue
+                if not any(
+                    isinstance(base, ast.Name) and base.id == "RuntimeError" for base in node.bases
+                ):
+                    continue
+                subclasses.append(getattr(importlib.import_module(module), node.name))
+        assert len(subclasses) >= 10, subclasses
+        for cls in subclasses:
+            raise_if_defect(cls("operator input"))  # must not raise
+        for defect in (RuntimeError, NotImplementedError, RecursionError):
+            with pytest.raises(defect):
+                raise_if_defect(defect("ours"))
+        # And nothing outside RuntimeError is this rule's business.
+        raise_if_defect(ValueError("a knob"))
+        raise_if_defect(OSError("a file"))
+
     def test_a_domain_runtimeerror_is_still_reported(self, tmp_path: Path) -> None:
         """The other side of the same line: ServeError and friends are
         operator input and must still reach the banner."""
@@ -484,13 +537,23 @@ def test_ks_config_show_names_the_section_instead_of_a_traceback(tmp_path: Path)
     assert "[run]" in result.output
 
 
-def test_the_env_scrub_predicate_sees_all_three_readers() -> None:
-    """Finding 2 and 3.
+def test_the_env_scrub_predicate_sees_both_launched_run_handles() -> None:
+    """Round 1 finding 3, and the correction round 2 made to finding 2.
 
-    The safe-mode worker reads KSTRL_* every 5 seconds in EVERY mode,
-    and an embedded orchestrator hangs off a different attribute than a
-    home-launched session. A predicate that reads only run_context is
-    not a guard, it is a lie with a docstring.
+    An embedded orchestrator hangs off a different attribute than a
+    home-launched session, so a predicate that reads only run_context
+    is not a guard, it is a lie with a docstring. Both handles are read.
+
+    The app's own 5-second safe-mode worker is NOT one of them, and the
+    reason is the difference between refusal and serialization: a
+    launched run spawns subprocesses that inherit the environment at
+    exec and cannot wait on a lock, so the scrub must be refused while
+    one is live; the safe-mode worker is our own bounded thread and can
+    simply take the lock. Round 1 put it in the refusal condition
+    instead, and the measured cost was that the flag is set for 51 to
+    84 ms of every 5 s tick on an empty project, which made the config
+    screen's refresh and the banner's env blame intermittent on a
+    machine with no run at all.
     """
 
     class _Handle:
@@ -522,78 +585,32 @@ def test_the_env_scrub_predicate_sees_all_three_readers() -> None:
     # run_context, whose handle stays None (RunContext.observe).
     assert env_scrub_is_safe(_App(orchestrator=_Handle(False))) is False
     assert env_scrub_is_safe(_App(orchestrator=_Handle(True))) is True
-    # Finding 2: the app's own 5-second safe-mode worker.
-    assert env_scrub_is_safe(_App(safe_mode=True)) is False
+    # Round 2 findings 3 and 4: the app's own safe-mode worker is
+    # serialized against the scrub, not refused around it.
+    assert env_scrub_is_safe(_App(safe_mode=True)) is True
 
 
-def test_the_safe_mode_worker_still_reads_the_environment() -> None:
-    """The reason finding 2's clause exists, pinned in the source it
-    depends on. If safe_mode_reasons stops loading config, this clause
-    is dead weight and should go; if it keeps loading it, the clause
-    must stay."""
-    root = Path(__file__).resolve().parent.parent
-    safemode = (root / "kstrl" / "safemode.py").read_text(encoding="utf-8")
+def test_the_safe_mode_worker_takes_the_lock_the_scrub_holds() -> None:
+    """The mechanism that replaced round 1's refusal clause.
+
+    The worker still reads KSTRL_* every 5 seconds in every mode, so
+    the race round 1 found is real. It is closed by serialization now:
+    both config loads in safemode.py sit inside ``environ_lock()``, the
+    same reentrant lock ``scrubbed_environ`` holds while os.environ is
+    empty, so the worker waits a few milliseconds instead of the config
+    screen refusing to work for the duration of the flag.
+    """
+    src = Path(__file__).resolve().parent.parent / "kstrl"
+    safemode = (src / "safemode.py").read_text(encoding="utf-8")
     assert "AutonomyConfig.load" in safemode
     assert "PolicyConfig.load" in safemode
     assert "QueueConfig.load" in safemode
-    app = (root / "kstrl" / "tui" / "app.py").read_text(encoding="utf-8")
+    assert safemode.count("with environ_lock():") == 2
+    report = (src / "config_report.py").read_text(encoding="utf-8")
+    assert "_ENVIRON_LOCK = threading.RLock()" in report
+    app = (src / "tui" / "app.py").read_text(encoding="utf-8")
     assert "SAFE_MODE_INTERVAL_SECONDS" in app
     assert "self._safe_mode_running = True" in app
-
-
-def test_a_non_utf8_experiments_file_does_not_crash_the_evolve_screen(
-    tmp_path: Path,
-) -> None:
-    """Finding 4, and the crash class #289 is about.
-
-    UnicodeDecodeError IS a ValueError, so it escaped the `except
-    OSError` in get_experiment_trends and raised out of on_mount two
-    lines after the config banner. CLAUDE.md names this rule verbatim.
-    """
-    from kstrl.evolution import EvolutionJournal
-
-    kstrl_dir = tmp_path / ".kstrl"
-    kstrl_dir.mkdir()
-    (kstrl_dir / "experiments.tsv").write_bytes(b"run_id\tcompleted\n2026-\xe9x\t1\n")
-    journal = EvolutionJournal(EvolutionConfig.load(tmp_path))
-    assert journal.get_experiment_trends(last_n=5) == []
-
-
-def test_a_non_utf8_proposal_does_not_crash_the_evolve_screen(tmp_path: Path) -> None:
-    """The same defect one line earlier in the same on_mount:
-    list_proposals read with no encoding behind `except OSError`."""
-    from kstrl.proposals import existing_proposal_titles, list_proposals
-
-    proposals = tmp_path / ".kstrl" / "proposals"
-    proposals.mkdir(parents=True)
-    (proposals / "prop-001.md").write_bytes(
-        b"# PROP-001: \xe9\xe9\xe9 title\n**Type**: computational\n"
-    )
-    assert list_proposals(proposals) == []
-    assert existing_proposal_titles(proposals) == set()
-
-
-async def test_the_evolve_screen_survives_both_undecodable_files(tmp_path: Path) -> None:
-    """The two above, through the screen, which is where it mattered."""
-    kstrl_dir = tmp_path / ".kstrl"
-    (kstrl_dir / "proposals").mkdir(parents=True)
-    (kstrl_dir / "proposals" / "prop-001.md").write_bytes(b"# PROP-001: \xe9\xe9\xe9\n")
-    (kstrl_dir / "experiments.tsv").write_bytes(b"run_id\tcompleted\n2026-\xe9x\t1\n")
-    async with _evolve(tmp_path) as (screen, _pilot):
-        assert screen.query_one("#trends-table", DataTable).row_count == 0
-        assert screen.query_one("#proposals-table", DataTable).row_count == 0
-        # The config itself is fine, so the banner must NOT claim it is
-        # unreadable: these are data files, not configuration.
-        assert screen.query_one(ConfigProblemBanner).display is False
-
-
-def test_experiments_tsv_is_written_with_the_encoding_it_is_read_with(tmp_path: Path) -> None:
-    """Encoding is a two-sided contract (CLAUDE.md): naming utf-8 on the
-    read while the write follows the locale just moves the failure."""
-    root = Path(__file__).resolve().parent.parent
-    source = (root / "kstrl" / "evolution.py").read_text(encoding="utf-8")
-    assert 'open(self.config.experiments_path, "a", encoding="utf-8")' in source
-    assert 'read_text(encoding="utf-8")' in source
 
 
 async def test_the_config_screen_refresh_reports_the_seam_wording(tmp_path: Path) -> None:
@@ -608,7 +625,7 @@ async def test_the_config_screen_refresh_reports_the_seam_wording(tmp_path: Path
     from kstrl.tui.screens.config import ConfigScreen
 
     (tmp_path / "kstrl.toml").write_text(ARRAY_FOR_A_RUN_NUMBER, encoding="utf-8")
-    app = _home_app(tmp_path)
+    app = home_app(tmp_path)
     notices: list[str] = []
     async with app.run_test(size=(140, 40)) as pilot:
         await pilot.pause(0.2)
@@ -621,3 +638,62 @@ async def test_the_config_screen_refresh_reports_the_seam_wording(tmp_path: Path
         await pilot.pause(0.2)
     assert notices, "refresh reported nothing"
     assert any("[run]" in n for n in notices), notices
+
+
+def test_the_config_screen_and_ks_config_show_share_one_problem_reporter() -> None:
+    """Round-two review, finding 10.
+
+    The screen carried its own ``_problem_lines`` next to the CLI's
+    ``_problems``: same traversal, same fallback, two copies, and they
+    had already drifted on the empty case. One function now, and the
+    only thing either caller supplies is where warnings go.
+    """
+    src = Path(__file__).resolve().parent.parent / "kstrl"
+    screen = (src / "tui" / "screens" / "config.py").read_text(encoding="utf-8")
+    cli = (src / "cli.py").read_text(encoding="utf-8")
+    assert "def _problem_lines" not in screen
+    assert "def _problems()" not in cli
+    assert "config_problem_lines(root_dir, warn=" in screen
+    assert "config_problem_lines(root_dir, warn=" in cli
+
+
+def test_the_shared_reporter_gives_the_document_error_when_nothing_parses(
+    tmp_path: Path,
+) -> None:
+    """The case the two copies had drifted on."""
+    (tmp_path / "kstrl.toml").write_text(BAD_DOCUMENT, encoding="utf-8")
+    lines = config_problem_lines(tmp_path, warn=lambda _m: None)
+    assert len(lines) == 1
+    assert "kstrl.toml" in lines[0]
+
+
+def test_a_report_survives_a_section_whose_loader_hits_the_filesystem(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Round-two review, finding 9.
+
+    ``build_config_report._resolve`` caught the ENTRY set, which has no
+    OSError in it, so an unreadable file met while resolving one phase
+    section killed the whole report - on the one screen whose job is
+    showing configuration, the same defect #272 removed for coercion
+    errors. A rejected section costs its rows and is named in
+    ``unresolved``; it does not cost the report.
+    """
+    import kstrl.config_report
+
+    real = kstrl.config_report._phase_sections
+
+    def _one_unreadable_section() -> list[tuple[str, object, list[str]]]:
+        sections = real()
+        name, _loader, knobs = sections[0]
+
+        def _unreadable(_root: Path) -> object:
+            raise PermissionError(13, "Permission denied")
+
+        return [(name, _unreadable, knobs), *sections[1:]]
+
+    monkeypatch.setattr(kstrl.config_report, "_phase_sections", _one_unreadable_section)
+    report = build_config_report(tmp_path)
+    assert report.unresolved == (real()[0][0],)
+    assert report.rows, "the rest of the report was lost with the section"
