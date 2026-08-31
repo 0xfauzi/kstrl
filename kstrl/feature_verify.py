@@ -244,8 +244,17 @@ def report_verification(
             # this call can produce so a new one cannot quietly start
             # resolving it into a phantom base.
             base_branch="",
-            # Left None deliberately: ``_diff_scope_runs`` re-enables
-            # diff_scope for a non-None value even with the toggle off.
+            # Left None deliberately, and it matters more since #294
+            # rewrote how this argument is read. ``_scope_checks`` now
+            # consults it BEFORE the toggles, and ANY non-None value,
+            # the empty string included, appends
+            # ``scope_unreadable``, which is UNGATED and fails closed
+            # unconditionally. Measured on this branch: None gives
+            # [test_suite, typecheck, linter] and passed=True; "" gives
+            # the same three plus scope_unreadable=False and
+            # passed=False. In an advisory report over a checkout that
+            # has no component scope and never had one, that verdict
+            # would be invented rather than measured.
             allowed_paths_error=None,
             allowed_paths=None,
             # policy and adequacy read the same diff. Omitted rather than

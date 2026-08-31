@@ -2187,11 +2187,17 @@ def narrow_to_undiffed(config: VerifyConfig) -> VerifyConfig:
     So the only honest answer is not to run those checks, which is what
     this does.
 
-    Note what it does NOT cover, because the toggles cannot: ``policy``
+    Note what it does NOT cover, because the toggles cannot. ``policy``
     and ``adequacy`` are separate config objects and are suppressed by
-    not being passed at all, and ``diff_scope`` also runs when
-    ``allowed_paths_error`` is set (see :func:`_diff_scope_runs`), so a
-    caller relying on this must leave that argument None.
+    not being passed at all. And ``allowed_paths_error`` outranks
+    ``check_diff_scope`` entirely: :func:`_scope_checks` reads it first
+    and, on ANY non-None value, appends :func:`check_scope_unreadable`
+    instead, which is ungated by this config and fails closed by design
+    (#294). So a caller relying on this narrowing must still leave that
+    argument None, but for the opposite reason to the one that held
+    before #294: the risk is no longer a ``diff_scope`` PASS over a diff
+    it never saw, it is a hard scope_unreadable FAIL over a scope the
+    caller never had.
     """
     return replace(
         config,

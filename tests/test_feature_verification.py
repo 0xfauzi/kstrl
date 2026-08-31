@@ -290,6 +290,43 @@ class TestOnlyHonestChecksRun:
         for name in produced - set(HONEST_CHECKS):
             assert name in text
 
+    def test_the_report_never_hands_the_checker_a_scope_error(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """``allowed_paths_error`` is a call argument, not a config field,
+        so no kstrl.toml can drive it and the assertion above cannot see
+        it. #294 rewrote how it is read: ``_scope_checks`` consults it
+        BEFORE the toggles and, on any non-None value, appends
+        ``scope_unreadable``, which is ungated and fails closed by
+        design.
+
+        Both halves are measured here, because the comment at the call
+        site is prose and no CI job reads prose. This flow has no
+        component scope and never had one, so a scope_unreadable row in
+        an advisory report would be a verdict invented rather than
+        measured.
+        """
+        _write_kstrl_toml(tmp_path)
+        _, captured, _ = _drive(tmp_path)
+        assert "scope_unreadable" not in set(_report(captured, "implement").checks)
+
+        # The other half: the argument really is live, so the call site
+        # leaving it None is load bearing rather than incidental.
+        config = resolve_feature_verify_config(tmp_path)
+        with_error = run_mechanical_verification(
+            worktree_path=tmp_path,
+            prd_path=None,
+            base_branch="",
+            allowed_paths_error="",  # empty is still non-None, and still refuses
+            allowed_paths=None,
+            config=config,
+            read_only=True,
+        )
+        produced = {check.name: check.passed for check in with_error.checks}
+        assert produced.get("scope_unreadable") is False, produced
+        assert with_error.passed is False
+
     def test_self_critique_is_announced_when_the_operator_opts_into_it(
         self,
         tmp_path: Path,
