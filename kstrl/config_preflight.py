@@ -275,8 +275,12 @@ def collect_config_problems(
     # 9.4 ms without it and 0.6 ms with it.
     with toml_parse_scope():
         if toml_path.exists():
-            # The document first: a syntax error breaks every section,
-            # and one line naming the line and column beats 22 saying so.
+            # The document first: a file that will not parse breaks
+            # every section, and one line naming the fault beats 22
+            # saying so. TWO faults reach here, not one - a syntax
+            # error and a non-utf-8 byte (#318) - and only the first
+            # carries a line and column. Both arrive as ``ConfigError``
+            # and pass straight through this ``except`` on purpose.
             try:
                 load_toml_document(toml_path)
             except OSError as exc:

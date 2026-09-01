@@ -800,20 +800,26 @@ def _default_typecheck_command(cwd: Path) -> str:
 
     pyproject = cwd / "pyproject.toml"
     if pyproject.is_file():
+        # The read is outside the guard for the same reason it is in
+        # ``config.load_toml_document``: an I/O fault is not a parse
+        # fault. Here it makes no difference to the caller, since both
+        # end at the same default, but a rule applied at one of two
+        # sites and not the other is a rule the next author has to guess
+        # at.
         try:
-            with pyproject.open("rb") as fh:
-                data = tomllib.load(fh)
-        except (ValueError, OSError):
-            # ``ValueError`` rather than ``TOMLDecodeError``, which it
-            # subclasses. ``tomllib.load`` decodes the stream as utf-8
-            # itself, so a pyproject.toml carrying one non-utf-8 byte -
-            # a latin-1 name, a stray 0x80 - raises UnicodeDecodeError,
-            # which IS a ValueError and escaped this fail-closed except
-            # entirely (#288 review round 2). It reached an ADVISORY
-            # verification report through resolve_verify_commands and
-            # took `ks feature` down before the agent had run. This is
-            # the encoding rule CLAUDE.md states: a reader of any file
-            # must catch ValueError alongside OSError.
+            raw = pyproject.read_bytes()
+        except OSError:
+            return DEFAULT_TYPECHECK_COMMAND
+        try:
+            data = tomllib.loads(raw.decode())
+        except Exception:
+            # ``Exception``, not an enumeration of what tomllib is
+            # believed to raise: see ``kstrl.config.load_toml_document``
+            # for the argument and ``tests/test_toml_readers.py`` for
+            # the guard. The one fact local to THIS site is that a
+            # pyproject.toml is not the operator's kstrl.toml, so it
+            # fails to a documented default rather than to an error,
+            # which is why catching the whole class costs nothing here.
             return DEFAULT_TYPECHECK_COMMAND
         mypy_section = data.get("tool", {}).get("mypy", {})
         if isinstance(mypy_section, dict):

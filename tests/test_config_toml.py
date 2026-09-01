@@ -6,7 +6,16 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.config import KstrlConfig
+from kstrl.config import ConfigError, KstrlConfig, load_toml_document
+from tests.helpers.bad_toml import (
+    ACTIVE_FAULTS,
+    ALL_FRAGMENTS,
+    BROAD_FRAGMENT,
+    DEEP_NEST_TOML,
+    INT_LIMIT_ENABLED,
+    INT_LIMIT_TOML,
+    TOML_PARSE_FAULTS,
+)
 
 
 def _write_toml(path: Path, content: str) -> None:
@@ -124,6 +133,195 @@ def test_from_toml_malformed_raises_clear_error(tmp_path: Path) -> None:
     _write_toml(toml_path, "this is not = valid = toml = [\n")
     with pytest.raises(ValueError, match="Invalid TOML"):
         KstrlConfig.from_toml(toml_path, tmp_path)
+
+
+@pytest.mark.parametrize(("body", "fragment"), TOML_PARSE_FAULTS)
+def test_load_toml_document_reports_every_parse_fault_as_a_config_error(
+    tmp_path: Path,
+    body: bytes,
+    fragment: str,
+) -> None:
+    """#318, both rounds. Each of these escaped as a raw traceback at
+    some point: the encoding fault past a handler naming only
+    ``TOMLDecodeError``, and the integer-limit fault past that AND past
+    the ``UnicodeDecodeError`` handler added to catch the first.
+
+    Real bytes and real digits on disk, never a patched decoder or a
+    raising stub. The whole defect both times was which exception the
+    standard library actually raises here, so a test that supplies the
+    exception itself would have passed in both broken states.
+    """
+    toml_path = tmp_path / "kstrl.toml"
+    toml_path.write_bytes(body)
+
+    with pytest.raises(ConfigError) as caught:
+        load_toml_document(toml_path)
+
+    message = str(caught.value)
+    # Which file, in every one of them: the operator may have more than
+    # one checkout and the parser's own message names none of them.
+    assert str(toml_path) in message
+    # EXCLUSIVELY its own fragment. ``fragment in message`` alone would
+    # pass for a message that also carried another handler's line, which
+    # is what a mis-ordered ladder produces; see
+    # ``test_the_broad_handler_must_come_last``.
+    assert {f for f in ALL_FRAGMENTS if f in message} == {fragment}
+    # The cause survives, so the parser's own detail - a line and
+    # column, a byte offset, a digit count, a recursion limit - is still
+    # there to find. Asserted as ``Exception`` and not ``ValueError``,
+    # because ``RecursionError`` is a ``RuntimeError``: narrowing this
+    # to ``ValueError`` is the exact assumption that let round 3
+    # through, and it would fail here rather than pass.
+    assert isinstance(caught.value.__cause__, Exception)
+
+
+def test_the_broad_handler_must_come_last(tmp_path: Path) -> None:
+    """The one ordering constraint among the handlers, pinned so that
+    violating it fails.
+
+    ``TOMLDecodeError`` and ``UnicodeDecodeError`` are SIBLINGS - both
+    derive from ``ValueError``, neither from the other - so swapping
+    those two changes nothing, and the round-1 test that claimed to pin
+    "the handler order" passed with them reversed. It pinned nothing.
+
+    The broad ``except Exception`` is the real constraint: it is a
+    supertype of every clause above it, so moved above one it swallows
+    that fault and relabels it as an unspecified parse failure, taking
+    the remedy with it. This asserts the property directly - each fault
+    keeps its OWN message - rather than asserting the source order,
+    which a test cannot see.
+
+    It exists beside the parametrized test above, which carries the same
+    exclusivity check per fault, because a failure that reads "you moved
+    the broad handler" is worth more than several reading "wrong
+    fragment".
+
+    Watched failing with the handler moved, with ``__pycache__`` purged
+    and ``PYTHONDONTWRITEBYTECODE=1``: permuting handlers leaves the file
+    byte-identical, and two writes inside the same mtime second are
+    served from a stale ``.pyc``, so the round-2 run of this proof was
+    not sound even though its conclusion held.
+    """
+    messages: dict[str, str] = {}
+    for name, body, _ in ACTIVE_FAULTS:
+        toml_path = tmp_path / f"{name}.toml"
+        toml_path.write_bytes(body)
+        with pytest.raises(ConfigError) as caught:
+            load_toml_document(toml_path)
+        messages[name] = str(caught.value)
+
+    # The faults with an established cause say what it is, and do NOT
+    # fall through to the catch-all's deliberately vaguer line.
+    assert BROAD_FRAGMENT not in messages["syntax"]
+    assert BROAD_FRAGMENT not in messages["encoding"]
+    # The ones with no established cause are the only ones that get it.
+    assert BROAD_FRAGMENT in messages["deep_nest"]
+    # Each message carries exactly one fragment, so no two rungs have
+    # collapsed into each other. NOT ``len(set(messages.values())) == N``,
+    # which a first cut asserted and which is VACUOUS: every message
+    # interpolates the file path and the faults are written to different
+    # paths, so it passes even with all handlers collapsed into one.
+    # Measured that way, not reasoned about.
+    assert [{f for f in ALL_FRAGMENTS if f in m} for m in messages.values()] == [
+        {fragment} for _, _, fragment in ACTIVE_FAULTS
+    ]
+
+
+@pytest.mark.skipif(not INT_LIMIT_ENABLED, reason="integer-string limit disabled")
+def test_the_catch_all_does_not_diagnose_a_cause_it_has_not_established(
+    tmp_path: Path,
+) -> None:
+    """Fail closed without overclaiming.
+
+    The round-1 fix reported a cause the handler knew (`not valid
+    UTF-8`). Widening that message to cover the whole family would tell
+    an operator whose file is perfectly good utf-8 to re-save it as
+    utf-8 - a silent semantic substitution one step on from swallowing
+    the error.
+    """
+    toml_path = tmp_path / "kstrl.toml"
+    toml_path.write_bytes(INT_LIMIT_TOML)
+
+    with pytest.raises(ConfigError) as caught:
+        load_toml_document(toml_path)
+
+    message = str(caught.value)
+    assert "UTF-8" not in message
+    # What it DOES pass on is the parser's own line, which is the
+    # actionable part and the only part it can honestly claim.
+    assert "4300 digits" in message
+
+
+def test_a_recursion_error_is_reported_not_raised(tmp_path: Path) -> None:
+    """#318 round 3, stated as its own case rather than only as a table
+    row, because the CLASS of the escaping exception is the whole point.
+
+    ``RecursionError`` derives from ``RuntimeError``, NOT from
+    ``ValueError``, so every handler rounds 1 and 2 shipped let it
+    through - and round 2's docstring, AST guard and CLAUDE.md line all
+    asserted that ``ValueError`` was the whole class. The assertion is on
+    the ``__cause__``'s type, so narrowing the handler back to
+    ``ValueError`` fails here loudly instead of reintroducing the escape
+    quietly. It deliberately does NOT also assert
+    ``not isinstance(cause, ValueError)``: the line above has already
+    fixed the class, so that would assert CPython's lattice rather than
+    this code, and a test that cannot fail is not a test.
+    """
+    toml_path = tmp_path / "kstrl.toml"
+    toml_path.write_bytes(DEEP_NEST_TOML)
+
+    with pytest.raises(ConfigError) as caught:
+        load_toml_document(toml_path)
+
+    assert isinstance(caught.value.__cause__, RecursionError)
+    assert BROAD_FRAGMENT in str(caught.value)
+
+
+def test_open_failures_are_not_relabelled_as_parse_failures() -> None:
+    """The I/O is outside the guard, so its faults keep their own type.
+
+    A path with an embedded null byte raises ``ValueError`` from the read
+    itself - before any bytes exist to parse - and the round-2 catch-all
+    reported it as "could not be parsed as TOML" for a file it had never
+    opened. That is the same overclaiming the catch-all's wording is
+    written to avoid, arriving through the try block's extent instead of
+    through its message.
+    """
+    with pytest.raises(ValueError) as caught:
+        load_toml_document(Path("bad\x00path.toml"))
+
+    assert not isinstance(caught.value, ConfigError)
+    assert BROAD_FRAGMENT not in str(caught.value)
+
+
+@pytest.mark.parametrize("kind", ["missing", "directory"])
+def test_an_unreadable_file_still_raises_oserror_not_configerror(tmp_path: Path, kind: str) -> None:
+    """The contract ``config_preflight.SURFACE_REJECTIONS`` is built on.
+
+    Before the catch-all widened past ``ValueError`` this held by
+    accident, because ``OSError`` is not one. It now holds because the
+    read happens BEFORE the guard, so no widening of the guard can reach
+    it. An intermediate draft instead re-raised from an ``except
+    OSError:`` clause inside the guard; this test was written claiming
+    to pin that clause, and did not, because the read already failed one
+    line above the ``try``. Hoisting the I/O out made the clause
+    unreachable and the honest fix was to delete it, not to keep a
+    special case no test could enter.
+
+    Two kinds, because one file-shaped fault is not the population:
+    a path that does not exist, and a path that exists and is not a
+    regular file.
+    """
+    if kind == "missing":
+        target = tmp_path / "nope" / "kstrl.toml"
+    else:
+        target = tmp_path / "kstrl.toml"
+        target.mkdir()
+
+    with pytest.raises(OSError) as caught:
+        load_toml_document(target)
+
+    assert not isinstance(caught.value, ConfigError)
 
 
 def test_from_toml_resolves_absolute_paths(tmp_path: Path) -> None:
