@@ -603,7 +603,7 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
     case named the file.
     """
 
-    @pytest.mark.parametrize(("toml", "fragment"), BAD_TOML, ids=[f for _, f in BAD_TOML])
+    @pytest.mark.parametrize(("toml", "fragment"), BAD_TOML, ids=["syntax", "encoding"])
     def test_config_show_still_explains_the_file_it_cannot_load(
         self,
         toml: str | bytes,
@@ -617,7 +617,7 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
         # more than one checkout cannot act on the codec message alone.
         assert "kstrl.toml" in result.output
 
-    @pytest.mark.parametrize(("toml", "fragment"), BAD_TOML, ids=[f for _, f in BAD_TOML])
+    @pytest.mark.parametrize(("toml", "fragment"), BAD_TOML, ids=["syntax", "encoding"])
     def test_init_still_scaffolds_next_to_a_broken_file(
         self,
         toml: str | bytes,
@@ -631,7 +631,7 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
         assert fragment not in result.output
         assert "Created prompt.md" in result.output
 
-    @pytest.mark.parametrize(("toml", "fragment"), BAD_TOML, ids=[f for _, f in BAD_TOML])
+    @pytest.mark.parametrize(("toml", "fragment"), BAD_TOML, ids=["syntax", "encoding"])
     def test_sense_keeps_its_exit_2_and_its_json_envelope(
         self,
         toml: str | bytes,
