@@ -47,6 +47,32 @@ def package_sources() -> list[Path]:
     return sorted(KSTRL_PACKAGE.rglob("*.py"))
 
 
+#: Source text -> its parsed tree. Three walkers in this file cross the
+#: whole package, and each used to parse it for itself.
+_PARSED: dict[str, ast.Module] = {}
+
+
+def parsed(source_file: Path) -> ast.Module:
+    """The module's AST, parsed once and shared by the three walkers.
+
+    ``tests/test_state_dir_scope.py`` already carries this pattern with
+    its own measurement (85 ms a pass, two walkers). Measured here: 127
+    modules, 65,366 lines, 236,779 nodes, 162 ms a pass, and this file
+    made three of them, which was 0.20 s of the file's 0.71 s.
+
+    Keyed on the TEXT rather than the path, because the positive
+    controls below rewrite one ``other.py`` several times within a
+    single test, and a path-keyed cache would hand the second call the
+    first snippet's tree.
+    """
+    text = source_file.read_text(encoding="utf-8")
+    tree = _PARSED.get(text)
+    if tree is None:
+        tree = ast.parse(text)
+        _PARSED[text] = tree
+    return tree
+
+
 # --- the one-writer guard, in pieces small enough to read -----------------
 #
 # Two layers, because one of them is a net and the other is a message.
@@ -78,8 +104,130 @@ def package_sources() -> list[Path]:
 #: Names that resolve to the builtin ``open`` when they own the call.
 _OPEN_MODULES = frozenset({"builtins", "io", "os"})
 
+#: The two things a writer has to reach: the attribute that holds the
+#: path, and the filename it points at.
+JOURNAL_ATTRIBUTE = "journal_path"
+JOURNAL_FILENAME = "evolution.jsonl"
+
 #: Path methods that write without going through ``open``.
 _PATH_WRITE_METHODS = frozenset({"write_text", "write_bytes"})
+
+
+def folded_str(node: ast.AST) -> str | None:
+    """The string this expression is KNOWN to evaluate to, or None.
+
+    Round 2 of review on #327, F9: two writers defeated all three
+    layers by never spelling in one piece what they reach.
+
+        target = getattr(config, "journal_" + "path")
+        target = root / ".kstrl" / ("evolution" + ".jsonl")
+
+    Neither is exotic; both are what somebody writes to get past a
+    string search, and either reintroduces #312 with CI green. Constant
+    folding is the answer to both. CPython folds adjacent literals
+    (``"a" "b"``) into one ``Constant`` at parse time, so that case
+    needs nothing here; an f-string does NOT fold, measured on this
+    interpreter, so ``JoinedStr`` and ``FormattedValue`` are handled
+    explicitly alongside the ``+``.
+
+    Decidable cases only. Anything whose value needs the interpreter
+    (``"".join(parts)``, ``%``-formatting, ``str.replace``, a name, an
+    env var) returns None, and the docstring on the test says so
+    rather than the guard pretending otherwise.
+
+    Split across four functions because the recursion costs 23 on the
+    cognitive gate in one, and that hook fails rather than advises.
+    """
+    if isinstance(node, ast.Constant):
+        return node.value if isinstance(node.value, str) else None
+    if isinstance(node, ast.BinOp):
+        return folded_concat(node)
+    if isinstance(node, ast.FormattedValue):
+        return folded_placeholder(node)
+    if isinstance(node, ast.JoinedStr):
+        return folded_parts(node.values)
+    return None
+
+
+def folded_concat(node: ast.BinOp) -> str | None:
+    """``"journal_" + "path"``, and nothing else that uses ``+``."""
+    if not isinstance(node.op, ast.Add):
+        return None
+    return folded_parts([node.left, node.right])
+
+
+def folded_placeholder(node: ast.FormattedValue) -> str | None:
+    """The ``{...}`` of an f-string, when it is decidable.
+
+    ``!r`` and a format spec both change the result, so only the plain
+    case folds. Measured on this interpreter: ``ast.parse`` gives
+    ``conversion == -1`` for a plain placeholder and for one with a
+    format spec, and 114 for ``!r``; ``None`` never appears on the parse
+    path, so it is not tested for. Both halves have a control below,
+    because each was measured to be removable with the file green.
+    """
+    if node.conversion == -1 and node.format_spec is None:
+        return folded_str(node.value)
+    return None
+
+
+def folded_parts(nodes: list[ast.expr]) -> str | None:
+    """Every piece folded and joined, or None if any piece is unknown."""
+    parts: list[str] = []
+    for node in nodes:
+        folded = folded_str(node)
+        if folded is None:
+            return None
+        parts.append(folded)
+    return "".join(parts)
+
+
+def dynamic_attribute_read(node: ast.AST) -> bool:
+    """The attribute, reached without an ``ast.Attribute`` node.
+
+    ``getattr(x, "journal_path")`` however the name is assembled, and
+    the two subscript spellings of the same thing,
+    ``x.__dict__["journal_path"]`` and ``vars(x)["journal_path"]``. All
+    three are DECIDABLE, and round 2 of review on #327 is the record of
+    what it costs to leave a decidable shape undecided: the disclosure
+    below says only the undecidable half remains, so anything decidable
+    that is missed makes that disclosure false.
+    """
+    if isinstance(node, ast.Subscript):
+        return folded_str(node.slice) == JOURNAL_ATTRIBUTE and reads_a_namespace(node.value)
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "getattr"
+        and len(node.args) >= 2
+        and folded_str(node.args[1]) == JOURNAL_ATTRIBUTE
+    )
+
+
+def reads_a_namespace(node: ast.expr) -> bool:
+    """``x.__dict__`` or ``vars(x)``: an object's attribute table."""
+    if isinstance(node, ast.Attribute):
+        return node.attr == "__dict__"
+    return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "vars"
+
+
+def reaches_journal_dynamically(node: ast.expr) -> bool:
+    """Does this expression reach the journal without naming it plainly?
+
+    True for a ``getattr`` of the attribute and for any subexpression
+    whose folded value CONTAINS the journal's filename, at any depth, so
+    that ``root / ".kstrl" / ("evolution" + ".jsonl")`` counts. Contains
+    rather than equals, and the difference is not academic: with
+    equality, ``root / (".kstrl/evolution" + ".jsonl")`` folded fine,
+    the inventory counted it, and layer 2 threw the answer away and
+    reported nothing, so the author got a changed module count instead
+    of "this line writes to the journal". Same predicate as
+    :func:`folded_filename_sites` now.
+    """
+    return any(
+        dynamic_attribute_read(child) or JOURNAL_FILENAME in (folded_str(child) or "")
+        for child in ast.walk(node)
+    )
 
 
 def mode_argument(node: ast.Call, index: int) -> ast.expr | None:
@@ -164,7 +312,7 @@ def mentions_journal(rendered: str, names: set[str]) -> bool:
     the path counts: ``open(journal_path.resolve(), "a")`` was another
     round-1 miss.
     """
-    if "config.journal_path" in rendered:
+    if f"config.{JOURNAL_ATTRIBUTE}" in rendered:
         return True
     return any(re.search(rf"\b{re.escape(name)}\b", rendered) for name in names)
 
@@ -201,7 +349,7 @@ def alias_sweep(nodes: list[ast.AST], exempt: set[int], names: set[str]) -> set[
         targets, value = assignment_parts(node)
         if value is None or getattr(node, "lineno", -1) in exempt:
             continue
-        if mentions_journal(ast.unparse(value), names):
+        if mentions_journal(ast.unparse(value), names) or reaches_journal_dynamically(value):
             found.update(targets)
     return found
 
@@ -229,7 +377,7 @@ def append_entries_lines(nodes: list[ast.AST], source_file: Path) -> set[int]:
 
 def journal_writes_outside_append_entries(source_file: Path) -> list[str]:
     """Every write to the evolution journal in one file, bar the sanctioned one."""
-    nodes = list(ast.walk(ast.parse(source_file.read_text(encoding="utf-8"))))
+    nodes = list(ast.walk(parsed(source_file)))
     exempt = append_entries_lines(nodes, source_file)
     names = journal_aliases(nodes, exempt)
     opens = open_aliases(nodes)
@@ -238,8 +386,10 @@ def journal_writes_outside_append_entries(source_file: Path) -> list[str]:
         if not isinstance(node, ast.Call) or node.lineno in exempt:
             continue
         target = write_target(node, opens)
-        rendered = ast.unparse(target) if target is not None else ""
-        if rendered and mentions_journal(rendered, names):
+        if target is None:
+            continue
+        rendered = ast.unparse(target)
+        if mentions_journal(rendered, names) or reaches_journal_dynamically(target):
             found.append(f"{label(source_file)}:{node.lineno}: writes to {rendered}")
     return found
 
@@ -253,151 +403,30 @@ def journal_path_escapes(source_file: Path) -> list[str]:
     about, and pinning six extra sites costs one line each in the
     expected set while guessing costs a hole.
     """
-    tree = ast.parse(source_file.read_text(encoding="utf-8"))
+    tree = parsed(source_file)
     return [
         f"{label(source_file)}: {ast.unparse(node)}"
         for node in ast.walk(tree)
-        if isinstance(node, ast.Attribute) and node.attr == "journal_path"
+        if (isinstance(node, ast.Attribute) and node.attr == JOURNAL_ATTRIBUTE)
+        or dynamic_attribute_read(node)
     ]
 
 
-class TestTheGuardDetects:
-    """Positive controls: layer 2 fed source it is SUPPOSED to flag.
+def folded_filename_sites(source_file: Path) -> int:
+    """How many expressions in one module reduce to the journal's name.
 
-    Without these the whole of layer 2 could be replaced by ``return []``
-    and the three tests below would stay green, because their only
-    assertion is that the offender list is empty, and an empty list is
-    what a switched-off detector returns. Measured, before these existed:
-    stubbing ``is_write_mode``, ``mentions_journal``, ``write_target``,
-    ``journal_aliases``, ``open_aliases`` or
-    ``journal_writes_outside_append_entries`` itself to a constant left
-    all three passing. Only layer 1 noticed, and only because it asserts
-    a NON-empty expected set.
-
-    So each shape round 1 of review on #327 listed gets a case here, on
-    a snippet rather than on the package, which is what makes the
-    detector's own failure reachable.
+    Substring of the folded value, not equality, which is what lets
+    ONE inventory replace two: the ``EvolutionConfig`` default folds to
+    ``".kstrl/evolution.jsonl"`` and every prose mention folds to a
+    whole docstring, so an exact match saw one site where a text search
+    saw seven. Measured: substring-of-folded reproduces the text
+    search's seven modules exactly, and unlike the text search it also
+    sees ``("evolution" + ".jsonl")`` and cannot be fooled by a comment.
+    Counted per module so an unrelated edit does not fail it.
     """
-
-    def offenders(self, tmp_path: Path, source: str, name: str = "other.py") -> list[str]:
-        path = tmp_path / name
-        path.write_text(source, encoding="utf-8")
-        return journal_writes_outside_append_entries(path)
-
-    def test_a_positional_mode_is_a_write(self, tmp_path: Path) -> None:
-        found = self.offenders(tmp_path, 'open(config.journal_path, "a")\n')
-        assert found == ["other.py:1: writes to config.journal_path"]
-
-    def test_a_keyword_mode_is_a_write(self, tmp_path: Path) -> None:
-        """The hole round 1 found: ``mode=`` was never read."""
-        found = self.offenders(tmp_path, 'open(config.journal_path, mode="a")\n')
-        assert found == ["other.py:1: writes to config.journal_path"]
-
-    def test_r_plus_is_a_write(self, tmp_path: Path) -> None:
-        """Every letter that can write, not just the first one."""
-        found = self.offenders(tmp_path, 'open(config.journal_path, "r+")\n')
-        assert found == ["other.py:1: writes to config.journal_path"]
-
-    def test_a_plain_read_is_not_a_write(self, tmp_path: Path) -> None:
-        """The distinction the mode test buys, pinned so it can fail.
-
-        The journal has a legitimate reader; flagging it would make this
-        guard about touching the file rather than writing it.
-        """
-        assert self.offenders(tmp_path, 'open(config.journal_path, "r")\n') == []
-        assert self.offenders(tmp_path, "open(config.journal_path)\n") == []
-
-    def test_an_alias_chain_of_any_length_is_followed(self, tmp_path: Path) -> None:
-        """Single-hop resolution let ``target = journal_path`` through."""
-        source = 'journal_path = config.journal_path\ntarget = journal_path\nopen(target, "a")\n'
-        assert self.offenders(tmp_path, source) == ["other.py:3: writes to target"]
-
-    def test_an_annotated_assignment_binds_too(self, tmp_path: Path) -> None:
-        source = 'journal_path: Path = config.journal_path\nopen(journal_path, "a")\n'
-        assert self.offenders(tmp_path, source) == ["other.py:2: writes to journal_path"]
-
-    def test_an_alias_of_open_itself_is_followed(self, tmp_path: Path) -> None:
-        source = 'open_file = open\nopen_file(config.journal_path, "a")\n'
-        assert self.offenders(tmp_path, source) == ["other.py:2: writes to config.journal_path"]
-
-    def test_the_dotted_opens_are_covered(self, tmp_path: Path) -> None:
-        for owner in ("builtins", "io", "os"):
-            found = self.offenders(tmp_path, f'{owner}.open(config.journal_path, "a")\n')
-            assert found == ["other.py:1: writes to config.journal_path"], owner
-
-    def test_a_call_on_the_path_still_counts(self, tmp_path: Path) -> None:
-        source = 'journal_path = config.journal_path\nopen(journal_path.resolve(), "a")\n'
-        assert self.offenders(tmp_path, source) == ["other.py:2: writes to journal_path.resolve()"]
-
-    def test_the_path_write_methods_are_covered(self, tmp_path: Path) -> None:
-        for method in ("write_text", "write_bytes"):
-            found = self.offenders(tmp_path, f"config.journal_path.{method}(row)\n")
-            assert found == ["other.py:1: writes to config.journal_path"], method
-
-    def test_path_dot_open_is_covered(self, tmp_path: Path) -> None:
-        found = self.offenders(tmp_path, 'config.journal_path.open("a")\n')
-        assert found == ["other.py:1: writes to config.journal_path"]
-
-    def test_a_duplicate_basename_is_named_by_its_package_path(self) -> None:
-        """A key and a message that send the reader to the right file.
-
-        Measured on this tree: ten basenames occur twice under
-        ``kstrl/``, ``decompose.py`` among them. Both halves asserted,
-        because a ``label`` that returned the full absolute path would
-        satisfy the second line alone and break every pinned key.
-        """
-        assert label(KSTRL_PACKAGE / "decompose.py") == "decompose.py"
-        assert label(KSTRL_PACKAGE / "tui" / "screens" / "decompose.py") == str(
-            Path("tui") / "screens" / "decompose.py"
-        )
-
-    def test_an_unrelated_file_is_left_alone(self, tmp_path: Path) -> None:
-        """The false-positive side. Without this, "flag everything" passes."""
-        source = 'other_path = config.experiments_path\nopen(other_path, "a")\n'
-        assert self.offenders(tmp_path, source) == []
-
-    def test_the_sanctioned_writer_is_exempt(self, tmp_path: Path) -> None:
-        source = (
-            "class EvolutionJournal:\n"
-            "    def append_entries(self, entries):\n"
-            "        path = self.config.journal_path\n"
-            '        with open(path, "a+b") as handle:\n'
-            "            handle.write(b'{}')\n"
-        )
-        assert self.offenders(tmp_path, source, name="evolution.py") == []
-
-    def test_the_exemption_is_the_class_method_and_nothing_else(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Round 1 exempted anything anywhere named ``append_entries``."""
-        nested = (
-            "def record_run(self):\n"
-            "    def append_entries(rows):\n"
-            '        open(self.config.journal_path, "a")\n'
-        )
-        assert self.offenders(tmp_path, nested, name="evolution.py") == [
-            "evolution.py:3: writes to self.config.journal_path"
-        ]
-
-        elsewhere = (
-            "class Sneaky:\n"
-            "    def append_entries(self, config):\n"
-            '        open(config.journal_path, "a")\n'
-        )
-        assert self.offenders(tmp_path, elsewhere, name="evolution.py") == [
-            "evolution.py:3: writes to config.journal_path"
-        ]
-
-    def test_the_exemption_does_not_apply_in_another_module(self, tmp_path: Path) -> None:
-        source = (
-            "class EvolutionJournal:\n"
-            "    def append_entries(self, entries):\n"
-            '        open(self.config.journal_path, "a")\n'
-        )
-        assert self.offenders(tmp_path, source, name="autonomy.py") == [
-            "autonomy.py:3: writes to self.config.journal_path"
-        ]
+    return sum(
+        1 for node in ast.walk(parsed(source_file)) if JOURNAL_FILENAME in (folded_str(node) or "")
+    )
 
 
 #: Every place in ``kstrl/`` that reads or writes an attribute named
@@ -467,18 +496,30 @@ class TestOneWriter:
 
         ``EXPECTED_JOURNAL_PATH_SITES`` cannot see
         ``open(root / ".kstrl" / "evolution.jsonl", "a")``, because that
-        never touches the attribute. Counted per module rather than per
-        line, so an edit elsewhere in a file does not fail this, and
-        every module that names the file at all is accounted for: two
-        defaults, one inventory, and four mentions in prose.
-        """
-        spellings: dict[str, int] = {}
-        for source_file in package_sources():
-            hits = source_file.read_text(encoding="utf-8").count("evolution.jsonl")
-            if hits:
-                spellings[label(source_file)] = hits
+        never touches the attribute. Nor can a text search see
+        ``("evolution" + ".jsonl")``, which is how round 2 of review
+        defeated this half (F9). One inventory covers both: every
+        expression whose folded value CONTAINS the filename, counted
+        per module so an unrelated edit does not fail it.
 
-        assert spellings == {
+        Seven modules, and only one of them is a path: the
+        ``EvolutionConfig`` default, which folds to the whole relative
+        path, and the state-dir inventory, which is the bare name. The
+        other five are prose, and they fold to a whole docstring that
+        happens to contain the name.
+
+        What folding cannot decide, stated rather than implied:
+        ``"".join(("evolution", ".jsonl"))``, ``"%s.jsonl" % stem``, or
+        any name resolved at run time. The test below asserts that miss,
+        so this disclosure fails if it stops being true.
+        """
+        built: dict[str, int] = {}
+        for source_file in package_sources():
+            hits = folded_filename_sites(source_file)
+            if hits:
+                built[label(source_file)] = hits
+
+        assert built == {
             "atomicio.py": 1,  # prose in the module docstring
             "events.py": 1,  # prose in a docstring
             "evolution.py": 1,  # the EvolutionConfig default
@@ -487,8 +528,8 @@ class TestOneWriter:
             "pipeline.py": 1,  # prose in a docstring
             "statedir.py": 1,  # the state-dir inventory, by name
         }, (
-            "Somebody spelled the journal's filename instead of asking "
-            f"EvolutionConfig for it. Sites: {spellings}"
+            "Somebody spelled or assembled the journal's filename instead of "
+            f"asking EvolutionConfig for it. Sites: {built}"
         )
 
     def test_append_entries_is_the_only_writer_of_the_journal(self) -> None:
@@ -516,6 +557,17 @@ class TestOneWriter:
           file (layer 1 is what makes that true), so the write has to be
           added inside the exempt method itself, which is the one place
           a reviewer of this invariant is already reading.
+        - a path or a filename the INTERPRETER has to build. Round 2 of
+          review, F9, defeated every layer with two constant-foldable
+          shapes; those are folded now, positive controls and all, as
+          are the two subscript spellings of an attribute read. What
+          remains is the undecidable half, ``"".join(...)``,
+          ``%``-formatting, a name resolved at run time. Pinned by
+          ``test_a_filename_the_interpreter_has_to_build_is_missed``, so
+          the disclosure fails if it stops being true. The rule this
+          leaves behind: a shape a reader can decide by looking at it is
+          a shape this guard must decide, and anything else is disclosed
+          here.
         """
         offenders = [
             offender

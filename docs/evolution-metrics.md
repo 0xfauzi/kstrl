@@ -46,15 +46,21 @@ did. Reading one of these rows:
   with one would be one of the N and a single tear would shorten the
   history the metrics above are computed over. It counts towards
   nothing, by construction.
-- **What was lost.** The line IMMEDIATELY ABOVE the row is the
+- **What the line above the row is.** POSSIBLE loss, not confirmed
+  loss: the line IMMEDIATELY ABOVE the row is the
   interrupted write. If it is a complete JSON object it was a whole
   record that lost only its newline, and it is readable again. If it is
   a fragment, that record was never written and is unrecoverable. The
   row exists so the difference is visible rather than guessed at.
 - **Counting.** `ks evolve --status` prints the count when it is
-  non-zero (`EvolutionJournal.get_repair_count`). Two processes
+  non-zero (`EvolutionJournal.get_repair_count`), before the
+  no-experiments exit, because a journal can hold a repair long before
+  any factory run has written `experiments.tsv`. Two processes
   repairing the same tear write two rows, so the count is of rows, not
-  of incidents.
+  of incidents. It is also a LOWER bound: a write split part-way
+  through (residual 4 on `append_entries`) can land the newline that
+  isolates the fragment without landing the row, and the next append
+  then sees a terminated file and adds none.
 
 ### `component_result` fields
 

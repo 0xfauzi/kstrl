@@ -1422,9 +1422,14 @@ class EvolutionJournal:
         evolve --status`` prints this when it is non-zero.
 
         Counts rows, not incidents: :meth:`append_entries` residual 2
-        is how one tear can produce two. A non-zero count means at
-        least one crash left an unterminated tail, and the fragment
-        above each row is what was lost.
+        is how one tear can produce two, and residual 4 is how a repair
+        can happen and not be counted, so this is a lower bound. A
+        non-zero count means at least one crash left an unterminated
+        tail. It does NOT mean a record was lost: the line above each
+        row is either a fragment that was never readable or a whole
+        record that lost only its newline and is readable again, which
+        is the distinction ``docs/evolution-metrics.md`` and the status
+        line both draw.
         """
         return sum(
             1 for e in self._read_all_entries() if e.get("event_type") == JOURNAL_REPAIR_EVENT
@@ -1497,14 +1502,28 @@ class EvolutionJournal:
         no entry to protect and the next real append will do it.
 
         ONE file description does the probe and the append, in
-        ``"a+b"``. That is not an optimisation, it is what removes the
-        window in which the path could be replaced or a symlink
-        retargeted between the two, and what makes a journal this
-        process cannot READ raise out of the open rather than being
-        probed as "not torn" and appended to blind. It costs the
-        text-mode ``encoding="utf-8"``, so the bytes are encoded
-        explicitly instead, which is the same two-sided contract stated
-        at the other end.
+        ``"a+b"``, and the repair row plus the whole batch go in ONE
+        ``write``. Neither is an optimisation. The single description is
+        what removes the window in which the path could be replaced or a
+        symlink retargeted between the two, and what makes a journal
+        this process cannot READ raise out of the open rather than being
+        probed as "not torn" and appended to blind; the single write is
+        what stops another appender landing between the newline that
+        isolates a torn fragment and the entries the repair was for. It
+        costs the text-mode ``encoding="utf-8"``, so the bytes are
+        encoded explicitly instead, which is the same two-sided contract
+        stated at the other end.
+
+        Both are enforced by ``tests/test_journal_write_boundary.py``,
+        which counts descriptors and writes. Round 2 of review on #327
+        found that neither was, and the measurement here agrees: a
+        version that reopens the file for the append, and a version
+        that writes the newline, the marker and the batch separately,
+        each pass 284 tests and 1 xfail across
+        ``test_journal_torn_tail``, ``test_journal_one_writer``,
+        ``test_decompose``, ``test_autonomy_ladder`` and
+        ``test_config_control_plane``. An argument in a docstring is
+        not a mechanism.
 
         WHAT IS STILL NOT ATOMIC, precisely, because a docstring that
         implied otherwise would be worse than no docstring. This takes
@@ -1521,12 +1540,31 @@ class EvolutionJournal:
            and counted by none.
         3. O_APPEND makes each ``write`` land at the end, and the repair
            row plus the whole batch go in ONE ``write`` so that another
-           appender cannot land between them. That is not a guarantee:
-           ``BufferedWriter.write`` flushes and loops for a payload
-           larger than its buffer (``io.DEFAULT_BUFFER_SIZE``, 8192
-           here), so a large batch can still be split into several raw
-           writes and interleaved. Splitting predates this change; the
-           single call narrows it, it does not close it.
+           appender cannot land between them. That is not a guarantee,
+           but not for the reason it is tempting to write down. Measured
+           on this interpreter: ``BufferedWriter`` hands a payload of
+           ANY size to the raw layer in one ``write(2)`` (100 bytes to
+           5 MB, one raw call each), so the split is not size-driven and
+           ``io.DEFAULT_BUFFER_SIZE`` is not the threshold. It loops
+           only when the OS returns a SHORT write, which on a regular
+           file means a signal or ENOSPC. Rare, not impossible, and it
+           predates this change.
+        4. The repair is not two-phase-safe either. There is no gap
+           BETWEEN two calls, because there is only one call: the
+           newline that isolates the fragment, the marker and the batch
+           are one ``write``. What is left is a partial write INSIDE it,
+           which is residual 3's short write, landing the newline and
+           not the marker. That leaves a file that is terminated,
+           malformed one line up and carrying no repair row, and the
+           next append reads the last BYTE, finds a newline and adds
+           none. Nothing is at risk by then - the fragment is isolated,
+           which was the point - so this is an audit gap, not data loss,
+           and the isolated fragment line is still on disk to be read.
+           Closing it means parsing the last LINE on every append, which
+           would fire on any malformed tail rather than a torn one: a
+           different contract, not a bug fix.
+           ``test_a_terminated_but_malformed_tail_is_not_a_tear`` pins
+           it, so it cannot quietly stop being true.
 
         Neither 1 nor 3 is made worse by the probe: at cbdff7c the same
         two writers produced the same interleaving with no probe at all.

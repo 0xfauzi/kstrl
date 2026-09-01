@@ -33,57 +33,23 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from kstrl.evolution import (
-    EXPERIMENTS_HEADER,
-    JOURNAL_REPAIR_EVENT,
-    EvolutionConfig,
-    EvolutionJournal,
-)
+from kstrl.evolution import EXPERIMENTS_HEADER, JOURNAL_REPAIR_EVENT
 from kstrl.observability import handle_ends_without_newline, read_progress_events
-from tests.helpers.journal import DANGLING_UTF8, TORN_FRAGMENT, tear
-
-
-def audit(project: str) -> dict[str, Any]:
-    return {
-        "timestamp": "2026-08-20T00:00:00Z",
-        "project": project,
-        "event_type": "spec_issues",
-        "spec_file": f"{project}.md",
-    }
-
-
-def component_result(run_id: str, component_id: str) -> dict[str, Any]:
-    return {
-        "schema_version": 2,
-        "timestamp": "2026-08-20T00:00:00Z",
-        "run_id": run_id,
-        "project": "p",
-        "component_id": component_id,
-        "event_type": "component_result",
-        "failure_signatures": ["tests:assertion"],
-        "findings_summary": {"by_category": {"scope_creep": 1}},
-        "knowledge_utilization": {"measured": True, "injected": 3, "referenced": 2},
-    }
-
-
-def journal_at(tmp_path: Path) -> EvolutionJournal:
-    return EvolutionJournal(EvolutionConfig.load(tmp_path))
-
-
-def audits_in(path: Path) -> list[str]:
-    return [
-        str(entry.get("project"))
-        for entry in read_progress_events(path)
-        if entry.get("event_type") == "spec_issues"
-    ]
-
-
-def repair_rows_in(path: Path) -> list[dict[str, Any]]:
-    return [e for e in read_progress_events(path) if e.get("event_type") == JOURNAL_REPAIR_EVENT]
+from tests.helpers.journal import (
+    DANGLING_UTF8,
+    TORN_FRAGMENT,
+    audit,
+    audits_in,
+    component_result,
+    journal_at,
+    lose_the_newline,
+    repair_rows_in,
+    tear,
+    terminate,
+)
 
 
 class TestTheEntryAfterATear:
@@ -135,7 +101,7 @@ class TestTheEntryAfterATear:
         journal = journal_at(tmp_path)
         journal.append_entries([audit("a1"), audit("a2"), audit("a3")])
         path = journal.config.journal_path
-        path.write_bytes(path.read_bytes()[:-1])
+        lose_the_newline(path)
         assert audits_in(path) == ["a1", "a2", "a3"]
 
         journal.append_entries([audit("a4")])
@@ -209,6 +175,31 @@ class TestWhatIsNotATear:
         assert audits_in(journal.config.journal_path) == ["alpha"]
         assert repair_rows_in(journal.config.journal_path) == []
 
+    def test_a_terminated_but_malformed_tail_is_not_a_tear(self, tmp_path: Path) -> None:
+        """Residual 4 of ``append_entries``, pinned rather than implied.
+
+        The mechanism is argued there and summarised for operators in
+        ``docs/evolution-metrics.md``; this is the file it describes,
+        and the two assertions are what that argument claims: every
+        record survives, and the incident is invisible to the count.
+
+        Asserting 0 records an ACCEPTED residual, not a wish. Whoever
+        closes it has three things to change together and this is the
+        list: residual 4 on ``append_entries``, the "It is also a LOWER
+        bound" sentence in ``docs/evolution-metrics.md``, and the 0
+        below, which becomes 1.
+        """
+        journal = journal_at(tmp_path)
+        journal.append_entries([audit("alpha")])
+        path = journal.config.journal_path
+        tear(path)
+        terminate(path)
+
+        journal.append_entries([audit("beta")])
+
+        assert audits_in(path) == ["alpha", "beta"]
+        assert journal.get_repair_count() == 0
+
     def test_a_missing_journal_file_is_not_a_tear(self, tmp_path: Path) -> None:
         """``"a+b"`` creates it, and a zero-length file has no
         unterminated line in it. Distinct from the empty-file case above
@@ -273,7 +264,7 @@ class TestTheRepairIsReportable:
         only because ``csv.DictReader`` tolerates it, which is not
         evidence that --status reaches the repair line on a real file.
         """
-        path = tmp_path / ".kstrl" / "experiments.tsv"
+        path = journal_at(tmp_path).config.experiments_path
         path.parent.mkdir(parents=True, exist_ok=True)
         columns = EXPERIMENTS_HEADER.split("\t")
         row = ["r1", "2026-08-20T00:00:00Z"] + ["0"] * (len(columns) - 2)
@@ -293,6 +284,55 @@ class TestTheRepairIsReportable:
 
         assert "1 interrupted write(s) repaired" in output
         assert "journal_repair" in output
+
+    def test_a_repair_is_reported_when_there_are_no_experiments_yet(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#327 round 2, F7: the state that PRODUCES repairs reported none.
+
+        Only ``ks factory`` writes experiments.tsv; decompose and
+        autonomy write to the journal. So "a repaired journal and no
+        experiments" is the ordinary state of a project that ran
+        ``ks decompose`` and crashed, and --status used to exit on the
+        empty trends before it reached the repair line. No
+        experiments.tsv is created here, deliberately: the pair of this
+        test and the one above it is what pins the ORDER of those two
+        lines in ``cli.evolve``.
+        """
+        journal = journal_at(tmp_path)
+        journal.append_entries([audit("alpha")])
+        tear(journal.config.journal_path)
+        journal.append_entries([audit("beta")])
+        assert not journal.config.experiments_path.exists()
+
+        output = self.status_output(tmp_path)
+
+        assert "1 interrupted write(s) repaired" in output
+        assert "No experiments recorded yet" in output
+
+    def test_a_recovered_record_is_not_reported_as_lost(self, tmp_path: Path) -> None:
+        """#327 round 2, F8: possible loss reported as certain loss.
+
+        A tail that lost only its newline is a COMPLETE record, and the
+        repair is exactly what makes it readable again. Both audits are
+        readable below, so a status line saying the line above the
+        marker "was lost" reports data loss on the case this fix
+        RECOVERS. ``docs/evolution-metrics.md`` always described it
+        correctly; only the status wording was wrong.
+        """
+        journal = journal_at(tmp_path)
+        journal.append_entries([audit("alpha")])
+        path = journal.config.journal_path
+        lose_the_newline(path)
+        journal.append_entries([audit("beta")])
+        assert audits_in(path) == ["alpha", "beta"]
+
+        output = self.status_output(tmp_path)
+
+        assert "1 interrupted write(s) repaired" in output
+        assert "readable again" in output
+        assert "was lost" not in output
 
     def test_a_healthy_journal_says_nothing(self, tmp_path: Path) -> None:
         """Silence at zero is the point: a line that prints on every
@@ -447,6 +487,27 @@ class TestTheTearIsVisible:
             journal.append_entries([audit("beta")])
 
         assert any("did not end in a newline" in record.message for record in caplog.records)
+
+    def test_the_repair_row_says_what_was_and_was_not_lost(self, tmp_path: Path) -> None:
+        """The durable half of the F8 distinction, which nothing pinned.
+
+        ``ks evolve --status`` says the line above the marker is either
+        a lost fragment or a recovered record, and a test pins that. The
+        ROW says the same thing to whoever greps the file months later,
+        and until now only its first clause was pinned, so an edit to
+        the either/or half was caught by nothing. Not shared as one
+        constant with the CLI on purpose: this is data written into a
+        file, that is a line printed by a command, and they are read by
+        different people at different times.
+        """
+        journal = journal_at(tmp_path)
+        journal.append_entries([audit("alpha")])
+        tear(journal.config.journal_path)
+        journal.append_entries([audit("beta")])
+
+        detail = str(repair_rows_in(journal.config.journal_path)[0]["detail"])
+        assert "torn fragment that was never readable" in detail
+        assert "lost only its newline" in detail
 
     def test_one_tear_records_one_repair(self, tmp_path: Path) -> None:
         """The file ends in a newline once repaired, so later appends

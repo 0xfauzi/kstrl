@@ -338,12 +338,11 @@ class TestEvolveCommandTomlRoundTrip:
         (tmp_path / "kstrl.toml").write_text('[evolution]\njournal_path = "custom/evo.jsonl"\n')
         box: dict[str, Any] = {}
 
-        class FakeJournal:
+        # Subclasses the real journal so a second call does not AttributeError (#327 F7).
+        class FakeJournal(evolution_mod.EvolutionJournal):
             def __init__(self, config: EvolutionConfig) -> None:
+                super().__init__(config)
                 box["config"] = config
-
-            def get_experiment_trends(self, last_n: int = 10) -> list[Any]:
-                return []
 
         monkeypatch.setattr(evolution_mod, "EvolutionJournal", FakeJournal)
         runner = CliRunner()
