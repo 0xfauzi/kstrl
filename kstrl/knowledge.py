@@ -37,6 +37,7 @@ from kstrl.decompose import (
     collect_agent_output,
 )
 from kstrl.delimiters import generate_data_delimiter
+from kstrl.prd import prd_text_for_prompt
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent
@@ -975,7 +976,10 @@ def _read_prd_text(prd_path: Path) -> str:
         text = prd_path.read_text(encoding="utf-8")
     except OSError:
         return "(PRD not readable)"
-    return text
+    # DISTILL_PROMPT frames this as the acceptance criteria, and the
+    # routed spec findings are not criteria. See
+    # ``prd.PROMPT_EXCLUDED_KEYS`` (#260 F1).
+    return prd_text_for_prompt(text)
 
 
 def _parse_distill_output(raw_output: str) -> list[dict[str, Any]]:

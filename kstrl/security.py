@@ -32,6 +32,7 @@ from kstrl.decompose import (
 )
 from kstrl.delimiters import generate_data_delimiter
 from kstrl.findings import Finding, dump_raw_debug, tag_finding_with_model
+from kstrl.prd import prd_text_for_prompt
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent
@@ -659,7 +660,10 @@ def run_security_review(
 
     prd_text = ""
     try:
-        prd_text = prd_path.read_text(encoding="utf-8")
+        # SECURITY_PROMPT pastes this verbatim and untruncated under
+        # "what the implementer was asked to build". The strip and its
+        # measurement are ``prd.PROMPT_EXCLUDED_KEYS`` (#260 F1).
+        prd_text = prd_text_for_prompt(prd_path.read_text(encoding="utf-8"))
     except OSError:
         pass
 

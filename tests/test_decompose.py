@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 import json
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 import pytest
@@ -978,11 +978,21 @@ class TestPrdValidationInsideRetryLoop:
         real_generate = decompose_mod._generate_component_prd
         calls: list[str] = []
 
-        def flaky_generate(comp_data: dict[str, object], root_dir: Path, branch_name: str) -> Path:
+        def flaky_generate(
+            comp_data: dict[str, object],
+            root_dir: Path,
+            branch_name: str,
+            spec_issues: Sequence[dict[str, str]] = (),
+        ) -> Path:
             calls.append(str(comp_data["id"]))
             if len(calls) == 2:
                 raise OSError("disk full")
-            return real_generate(comp_data, root_dir, branch_name)  # type: ignore[arg-type]
+            return real_generate(  # type: ignore[arg-type]
+                comp_data,
+                root_dir,
+                branch_name,
+                spec_issues,
+            )
 
         monkeypatch.setattr(decompose_mod, "_generate_component_prd", flaky_generate)
 

@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import time
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -53,6 +54,12 @@ from kstrl.observability import read_progress_events
 from kstrl.prd import PRD
 
 logger = logging.getLogger(__name__)
+
+# What ``appliesTo`` says about a routed spec finding (#260). The
+# vocabulary lives with the code that writes it: ``prd`` holds the field
+# but validates nothing about its contents, so it has no use for these.
+SPEC_ISSUE_APPLIES_COMPONENT = "component"
+SPEC_ISSUE_APPLIES_SPEC = "spec"
 
 if TYPE_CHECKING:
     from kstrl.evolution import EvolutionJournal
@@ -804,17 +811,19 @@ SPEC_ISSUES_REL_PATH = Path("scripts") / "kstrl" / "spec-issues.json"
 SPEC_ISSUES_EVENT = "spec_issues"
 
 
+def _issue_dict(issue: SpecIssue) -> dict[str, str]:
+    """One issue as the five JSON keys every artifact writes it under."""
+    return {
+        "severity": issue.severity,
+        "kind": issue.kind,
+        "summary": issue.summary,
+        "location": issue.location,
+        "suggestion": issue.suggestion,
+    }
+
+
 def _issue_dicts(issues: list[SpecIssue]) -> list[dict[str, str]]:
-    return [
-        {
-            "severity": i.severity,
-            "kind": i.kind,
-            "summary": i.summary,
-            "location": i.location,
-            "suggestion": i.suggestion,
-        }
-        for i in issues
-    ]
+    return [_issue_dict(i) for i in issues]
 
 
 def _issue_counts(issues: list[SpecIssue]) -> dict[str, int]:
@@ -824,6 +833,136 @@ def _issue_counts(issues: list[SpecIssue]) -> dict[str, int]:
     journal by ``_stored_issues``) with the same code.
     """
     return {sev: sum(1 for i in issues if i.severity == sev) for sev in _SEVERITY_ORDER}
+
+
+# --- routing the audit into the component PRDs (#260) -------------------
+#
+# Everything below exists because the architect's non-blocker findings
+# had no reader. spec-issues.json is written on every decompose and
+# NOTHING in kstrl opens it: the majors and minors were printed once and
+# discarded, 91 of them across the five recorded writers-room runs. The
+# engineer that could have acted on them never saw one.
+#
+# The attachment signal is the issue's own ``location`` field, and it is
+# weaker than it sounds. Measured over those 117 real issues: the field
+# is populated every time (117/117) but it is PROSE quoting the spec,
+# never a repo path. Matching it against a component's ``allowedPaths``
+# is worthless - the one real decomposed component on disk declares
+# ``src/writers_room/``, ``tests/`` and ``scripts/kstrl/``, which every
+# sibling component would declare too.
+#
+# What does carry signal is the component's NAME. 31 of the 117
+# locations literally name the component ("Component 2, the claude
+# adapter: ..."), which is a labelled sample the rule can be scored
+# against. Measured on those 31, at the shipped word length of 5:
+# requiring two distinctive name words scores precision 1.00, recall
+# 0.53; requiring one scores precision 0.81, recall 0.81. Two wins
+# because the two error kinds do not cost the same: a MISS still
+# reaches every engineer through the spec-wide bucket below, while a
+# MISATTACHMENT hides the finding from the one component that needed
+# it. Precision is the number to protect.
+#
+# There is deliberately no stopword list. One was written and then
+# deleted, because it could not be shown to do anything: emptying it
+# left every score below and every distinctive-word set on the real data
+# byte-identical, and not one of its 31 entries even appeared in a
+# component name. The job it was meant to do is already done twice over,
+# by the distinctiveness filter (a word two components share tells them
+# apart for neither) and by the two-word threshold (one stray common
+# word cannot attach anything on its own). A second unmeasured mechanism
+# aimed at the same failure is a knob to maintain, not a guard.
+
+# A name word shorter than this is noise. Measured on the labelled 31,
+# holding the two-word threshold: four characters scores precision 0.90
+# and recall 0.56, five scores 1.00 and 0.53, because four lets ordinary
+# words a title happens to contain ("read", "file", "path") do the
+# matching. A component named in four characters simply broadcasts
+# instead, which is the safe direction.
+_ROUTE_MIN_WORD_LEN = 5
+
+# Distinctive name words an issue must share with a component before it
+# attaches there. See the precision/recall numbers above for why 2.
+_ROUTE_MIN_SHARED = 2
+
+_ROUTE_WORD_RE = re.compile(r"[a-z0-9]+")
+
+
+def _words(text: str) -> set[str]:
+    """Every word in ``text``, lowercased."""
+    return set(_ROUTE_WORD_RE.findall(text.lower()))
+
+
+def _name_words(text: str) -> set[str]:
+    """Words of a component's name long enough to identify it.
+
+    The length rule belongs here and nowhere else. Filtering the issue
+    text too would be inert: the only use of either set is their
+    intersection, and every member of this one already passes, so a
+    short word on the issue side can never match anything.
+    """
+    return {word for word in _words(text) if len(word) >= _ROUTE_MIN_WORD_LEN}
+
+
+def _distinctive_name_words(components: Sequence[dict[str, Any]]) -> dict[str, set[str]]:
+    """Per component id, the name words no sibling component shares.
+
+    The name is the id (separators read as spaces) plus the title. A
+    word two components share cannot tell them apart, so it is dropped
+    from both rather than attaching the issue to each: that is the
+    difference between "this finding is about the parser" and "this
+    finding says the word document".
+    """
+    per_component: dict[str, set[str]] = {}
+    for comp in components:
+        comp_id = str(comp.get("id", ""))
+        spaced = comp_id.replace("-", " ").replace("_", " ")
+        per_component[comp_id] = _name_words(f"{spaced} {comp.get('title', '')}")
+    shared: Counter[str] = Counter(word for words in per_component.values() for word in words)
+    return {
+        comp_id: {word for word in words if shared[word] == 1}
+        for comp_id, words in per_component.items()
+    }
+
+
+def route_spec_issues(
+    issues: Sequence[SpecIssue],
+    components: Sequence[dict[str, Any]],
+) -> dict[str, list[dict[str, str]]]:
+    """Which findings belong in which component's PRD (#260).
+
+    Returns one list of PRD-shaped entries per component id, in the
+    order the engineer should read them: the findings attributed to
+    that component first, then the ones that could not be attributed
+    anywhere.
+
+    Nothing is dropped. An issue that matches no component is not
+    silently binned, it is handed to EVERY component, because a finding
+    the rule cannot place is still a finding somebody has to answer.
+    An issue may also match several components; it goes to each of
+    them, which is the honest reading of a location naming two
+    surfaces.
+
+    Callers pass the non-blocker findings. Blockers halt before any PRD
+    is written, so routing them would be dead code today, and deciding
+    what a blocker means inside a PRD belongs with the change that
+    moves the halt rather than with this one.
+    """
+    distinctive = _distinctive_name_words(components)
+    attached: dict[str, list[dict[str, str]]] = {comp_id: [] for comp_id in distinctive}
+    spec_entries: list[dict[str, str]] = []
+    for issue in issues:
+        words = _words(f"{issue.location} {issue.summary}")
+        entry = _issue_dict(issue)
+        hits = [
+            comp_id
+            for comp_id, name_words in distinctive.items()
+            if len(name_words & words) >= _ROUTE_MIN_SHARED
+        ]
+        for comp_id in hits:
+            attached[comp_id].append({**entry, "appliesTo": SPEC_ISSUE_APPLIES_COMPONENT})
+        if not hits:
+            spec_entries.append({**entry, "appliesTo": SPEC_ISSUE_APPLIES_SPEC})
+    return {comp_id: own + spec_entries for comp_id, own in attached.items()}
 
 
 def persist_spec_issues(
@@ -1497,7 +1636,67 @@ def _component_branch(comp_id: str, project_name: str, single_pr: bool) -> str:
     return f"kstrl/factory/{comp_id}"
 
 
-def _build_prd_data(comp_data: dict[str, Any], branch_name: str) -> dict[str, Any]:
+def _routed_prd_issues(data: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
+    """The audit findings each component's PRD carries (#260).
+
+    Derived from the decompose payload rather than passed around, so
+    the retry-loop validation stage and the write phase can both call
+    it and R1.8's "what is validated is what is written" holds for this
+    field too. Pure, so calling it twice on one payload is free.
+
+    Blockers are filtered out here: they halt before any PRD exists.
+    """
+    non_blocking = [i for i in _parse_spec_issues(data) if i.severity != "blocker"]
+    return route_spec_issues(non_blocking, data["components"])
+
+
+def _prd_schema_errors(
+    data: dict[str, Any],
+    project_name: str,
+    single_pr: bool,
+) -> list[str]:
+    """PRD schema errors across every component of one decompose payload.
+
+    R1.8: this runs INSIDE the retry loop so a malformed story is a
+    retryable error the LLM gets to fix, not a post-loop crash. Nothing
+    is written to disk until every component's PRD payload validates.
+    """
+    routed_issues = _routed_prd_issues(data)
+    errors: list[str] = []
+    for comp_data in data["components"]:
+        branch = _component_branch(comp_data["id"], project_name, single_pr)
+        schema_errors = PRD.validate_schema(
+            _build_prd_data(comp_data, branch, routed_issues[comp_data["id"]])
+        )
+        if schema_errors:
+            errors.append(f"component '{comp_data['id']}' PRD schema: " + "; ".join(schema_errors))
+    return errors
+
+
+def _prd_summary_line(
+    comp_id: str,
+    story_count: int,
+    findings: Sequence[dict[str, str]],
+) -> str:
+    """The one line the operator sees per generated PRD.
+
+    "The audit reached the engineer" should be visible where the
+    operator is already looking rather than only inside the PRD, so the
+    findings ride along with the story count instead of getting a
+    section of their own.
+    """
+    line = f"  {comp_id}: {story_count} stories"
+    if not findings:
+        return line
+    own = sum(1 for e in findings if e["appliesTo"] == SPEC_ISSUE_APPLIES_COMPONENT)
+    return f"{line}, {len(findings)} spec findings ({own} on its own surface)"
+
+
+def _build_prd_data(
+    comp_data: dict[str, Any],
+    branch_name: str,
+    spec_issues: Sequence[dict[str, str]],
+) -> dict[str, Any]:
     """Assemble the PRD payload for one component.
 
     Shared by the retry-loop validation stage and the write phase so
@@ -1507,6 +1706,14 @@ def _build_prd_data(comp_data: dict[str, Any], branch_name: str) -> dict[str, An
         "branchName": branch_name,
         "userStories": comp_data["userStories"],
     }
+    # #260: the architect's non-blocker findings on this component's
+    # surface, plus the ones it could not place. Written here because
+    # the engineer's first instruction is to read this file, so the PRD
+    # is the mechanism that already reaches it - no new channel, and no
+    # prompt change. Omitted entirely when there is nothing to say, so
+    # a clean audit leaves the PRD byte-identical to before.
+    if spec_issues:
+        prd_data["specIssues"] = list(spec_issues)
     # allowedPaths is emitted by the architect (DECOMPOSE_PROMPT v1.1.0+)
     # and forwarded into the PRD verbatim. The factory then passes them
     # through to verify.check_diff_scope so the diff-scope guardrail
@@ -1522,6 +1729,7 @@ def _generate_component_prd(
     comp_data: dict[str, Any],
     root_dir: Path,
     branch_name: str,
+    spec_issues: Sequence[dict[str, str]] = (),
 ) -> Path:
     """Generate a standard PRD file for one component.
 
@@ -1534,7 +1742,7 @@ def _generate_component_prd(
     Returns the path to the generated prd.json.
     """
     comp_id: str = comp_data["id"]
-    prd_data = _build_prd_data(comp_data, branch_name)
+    prd_data = _build_prd_data(comp_data, branch_name, spec_issues)
 
     errors = PRD.validate_schema(prd_data)
     if errors:
@@ -1755,18 +1963,7 @@ def _decompose_spec_impl(
             data = None
             continue
 
-        # R1.8: PRD schema validation runs INSIDE the retry loop so a
-        # malformed story is a retryable error the LLM gets to fix,
-        # not a post-loop crash. Nothing is written to disk until every
-        # component's PRD payload validates.
-        prd_errors: list[str] = []
-        for comp_data in data["components"]:
-            branch = _component_branch(comp_data["id"], project_name, single_pr)
-            schema_errors = PRD.validate_schema(_build_prd_data(comp_data, branch))
-            if schema_errors:
-                prd_errors.append(
-                    f"component '{comp_data['id']}' PRD schema: " + "; ".join(schema_errors)
-                )
+        prd_errors = _prd_schema_errors(data, project_name, single_pr)
         if prd_errors:
             last_error = "; ".join(prd_errors)
             ui.warn(f"PRD validation failed: {last_error}")
@@ -1987,6 +2184,10 @@ def _decompose_spec_impl(
     manifest_components: list[Component] = []
     written_prds: list[Path] = []
     created_dirs: list[Path] = []
+    # #260: recomputed from the same payload the retry loop validated,
+    # so the specIssues block written below is the one that passed
+    # PRD.validate_schema up there.
+    routed_issues = _routed_prd_issues(data)
     try:
         for comp_data in data["components"]:
             comp_id = comp_data["id"]
@@ -1999,7 +2200,12 @@ def _decompose_spec_impl(
                 created_dirs.append(probe)
                 probe = probe.parent
 
-            prd_path = _generate_component_prd(comp_data, root_dir, branch)
+            prd_path = _generate_component_prd(
+                comp_data,
+                root_dir,
+                branch,
+                routed_issues[comp_id],
+            )
             written_prds.append(prd_path)
             rel_prd = prd_path.relative_to(root_dir).as_posix()
 
@@ -2017,7 +2223,13 @@ def _decompose_spec_impl(
                     linear_issue_identifier=(issue_ref.identifier if issue_ref else ""),
                 )
             )
-            ui.ok(f"  {comp_id}: {len(comp_data['userStories'])} stories")
+            ui.ok(
+                _prd_summary_line(
+                    comp_id,
+                    len(comp_data["userStories"]),
+                    routed_issues[comp_id],
+                )
+            )
 
         manifest = Manifest(
             version="1",
