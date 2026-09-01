@@ -80,9 +80,18 @@ def test_sense_passes_on_clean_tree(tmp_path: Path) -> None:
     result, document = _sense_json(root)
 
     assert result.exit_code == 0, result.output
-    assert document["schema_version"] == 1
+    # 2, not 1 (#306). The literal is pinned deliberately: this document
+    # is a published surface, and the bump is the only thing that tells
+    # a reader an ABSENT check row no longer means "turned off in
+    # kstrl.toml" - it can now also mean "asked for, measured nothing",
+    # which `not_measured` below disambiguates.
+    assert document["schema_version"] == 2
     assert document["path"] == str(root)
     assert document["passed"] is True
+    # Present and empty on a tree where every enabled check measured
+    # something: a reader can always index it, and an empty list is a
+    # positive statement rather than a missing key.
+    assert document["not_measured"] == []
     names = {c["name"] for c in document["checks"]}
     assert _ALWAYS_ON_CHECKS <= names
     for check in document["checks"]:
@@ -194,7 +203,7 @@ def test_sense_exit_2_on_missing_path(tmp_path: Path) -> None:
     assert result.exit_code == 2
     assert result.stderr.startswith("error:")
     document = json.loads(result.stdout)
-    assert document["schema_version"] == 1
+    assert document["schema_version"] == 2
     assert "error" in document
     assert missing in document["error"]
 
@@ -406,3 +415,53 @@ def test_sense_runs_without_git_when_no_check_reads_the_diff(
     assert document["passed"] is True
     names = {c["name"] for c in document["checks"]}
     assert names == {"test_suite", "typecheck", "linter"}
+
+
+def test_sense_reports_mutation_as_not_measured_not_as_a_pass(tmp_path: Path) -> None:
+    """#306 end to end, on a command that can NEVER measure this check.
+
+    `ks sense` is read-only and mutmut works by rewriting the files it
+    mutates, so an operator who turns mutation testing on gets no score
+    here, ever. Before #306 that produced a green ``mutation_testing``
+    row carrying a "skipped" message, which ``all(passed)`` and the LLM
+    reviewer's prompt both read as a pass. Removing the row alone would
+    be honest and mute. Both halves are asserted here: no row, and a
+    reason a human can read.
+    """
+    root = _make_repo(tmp_path)
+    (root / "kstrl.toml").write_text(_kstrl_toml() + "mutation_testing = true\n")
+
+    result, document = _sense_json(root)
+
+    assert result.exit_code == 0, result.output
+    assert [c for c in document["checks"] if c["name"] == "mutation_testing"] == []
+    assert document["not_measured"] == [
+        {
+            "check": "mutation_testing",
+            "reason": "read_only",
+            "detail": "mutmut rewrites the files it mutates and cannot run read-only",
+        }
+    ]
+    # Still a pass: a check that measured nothing neither passes nor
+    # fails, so the sidecar cannot become a gate by the back door.
+    assert document["passed"] is True
+
+
+def test_sense_table_names_what_it_did_not_measure(tmp_path: Path) -> None:
+    """The terminal half of the same fix.
+
+    Most operators read the table, not the JSON. If the gap reached only
+    ``--json`` the sidecar would serve machines and leave the human with
+    the silence that omission alone leaves.
+    """
+    root = _make_repo(tmp_path)
+    (root / "kstrl.toml").write_text(_kstrl_toml() + "mutation_testing = true\n")
+
+    result = _invoke("--root", str(root), "--ui", "plain", "--no-color")
+
+    assert result.exit_code == 0, result.output
+    assert "mutation_testing  not measured" in result.output
+    assert "cannot run read-only" in result.output
+    # The verdict line is unchanged: it counts checks, and a gap is not
+    # a check.
+    assert "sense: PASS" in result.output

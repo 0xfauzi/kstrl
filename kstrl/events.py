@@ -196,6 +196,12 @@ class VerificationResultEvent(Event):
     phase: str = ""
     #: True when nothing gated on this verdict.
     advisory: bool = False
+    #: ``"check:reason"`` per check that was asked for and measured
+    #: nothing (#306), e.g. ``"mutation_testing:tool_missing"``.
+    #: Deliberately NOT folded into ``checks``, which names what ran:
+    #: a consumer counting green checks must not count these. Defaults
+    #: empty, so payloads already on disk decode unchanged.
+    not_measured: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -873,6 +879,9 @@ class V1CompatSink:
     GATE verdict as the same row: ``summarize_events`` cannot tell them
     apart, and ``_phase_for_event`` reports the component in phase
     "verify", a phase `ks feature` does not have.
+
+    ``not_measured`` (#306) is dropped here for the same reason, and a
+    v1 reader is not told which enabled check measured nothing.
 
     Nothing is wrong today, because `ks feature` is the only command
     that emits advisory reports and it attaches no ``V1CompatSink``. The
