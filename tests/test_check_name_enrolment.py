@@ -13,7 +13,8 @@ This is the mechanism, in the shape the repo already uses three times
 that can reach ``category_for_check`` and fail on one the table does not
 carry.
 
-Two things the walk learned the hard way, both from its own tests:
+Three things the walk learned the hard way, each after a version of it
+claimed to be complete:
 
 - It resolves module-level string constants, not just literals, across
   module boundaries but only where a name means one thing package-wide.
@@ -31,12 +32,16 @@ Two things the walk learned the hard way, both from its own tests:
   the first version of this module claimed "no NEW check can join it
   quietly". That claim was false for every failure recorded outside a
   ``CheckResult``.
+- It resolves the ``phase=`` of a failure recorded with NEITHER of the
+  above (:func:`_phase_fallback_name`), which is how
+  ``provisioning:worktree-setup-failed`` sat unenrolled through two
+  rounds of this module claiming to have found every producer.
 
 What the walk CANNOT see, stated rather than left as a silent gap:
 ``evolution.signatures_from_findings`` composes ``"<phase>:<category>"``
 from a runtime ``phase`` argument, so the ``security`` and ``contract``
-prefixes appear in no literal anywhere in ``kstrl/``, and neither does
-``verification``, which only ever comes back out of
+prefixes appear in no literal anywhere in ``kstrl/``, and neither do
+``verification`` and ``unknown``, which only ever come back out of
 ``evolution._classify_check``. They are enrolled today, and
 :data:`ENROLLED_BUT_INVISIBLE` plus
 :meth:`TestEveryCheckNameIsEnrolled.test_the_walk_covers_every_enrolled_name_but_these`
@@ -52,8 +57,11 @@ enrolled name the walk stops seeing fails.
 
 #315 emptied the grandfathered set this module shipped with. All eight
 names it carried are enrolled, four of them into the ``infrastructure``
-category invented to hold them, so the guard now admits no exceptions at
-all.
+category invented to hold them, and the two the widened walk then
+surfaced are enrolled too. The guard has no exceptions left, which is a
+claim it made once before while a whole producer was invisible to it, so
+read it as "no exception this walk can see" and keep asking what it
+cannot.
 """
 
 from __future__ import annotations
