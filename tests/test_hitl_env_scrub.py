@@ -39,6 +39,7 @@ from kstrl.verify import (
     run_scrubbed,
     scrubbed_subprocess_env,
 )
+from tests.helpers import procs
 
 
 class ScriptedUI(PlainUI):
@@ -379,12 +380,15 @@ class TestTheVerifySignalGuardRoutesThroughProcgroup:
     had two tests for its copy of that rule and agents.proc had three;
     this copy had none, so nothing in the suite would have noticed the
     guard being deleted until `killpg(1, sig)` took the machine down.
-    """
 
-    def _fake_proc(self, pid: object) -> MagicMock:
-        proc = MagicMock(spec=subprocess.Popen)
-        proc.pid = pid
-        return proc
+    What is tested HERE is this call site's own behaviour - the two
+    fallback arms, the signal it carries through, and that it ROUTES
+    through the guard at all. The guard's decision table is
+    `tests/test_safe_pgid.py`'s, and re-pinning it here would reopen one
+    layer up the duplication #308 closed. The two routing cases kept are
+    the two that actually happened: a mocked Popen took down a CI runner,
+    and our own group takes down the run doing the signalling.
+    """
 
     def test_a_real_group_is_signalled_grandchild_and_all(
         self,
@@ -400,40 +404,31 @@ class TestTheVerifySignalGuardRoutesThroughProcgroup:
             cwd=tmp_path,
             start_new_session=True,
         )
+        pgid = os.getpgid(proc.pid)
         try:
-            deadline = time.monotonic() + 10.0
-            while not pid_file.exists() and time.monotonic() < deadline:
-                time.sleep(0.05)
-            grandchild = int(pid_file.read_text().strip())
+            # `procs.read_pid` also waits out the created-but-still-empty
+            # window that `> pidfile` opens, which a bare exists() check
+            # reads as ready and then parses as "".
+            grandchild = procs.read_pid(pid_file, timeout=10.0)
 
             _signal_process_group(proc, signal.SIGKILL)
 
             _assert_process_dies(grandchild)
         finally:
+            # Group-scoped, or a run where the kill under test did NOT
+            # land leaves the grandchild `sleep 300` behind for five
+            # minutes - the orphan class #292 is about, in the test whose
+            # own failure produces it.
+            procs.kill_group(pgid)
             proc.kill()
             proc.wait(timeout=10.0)
-
-    @pytest.mark.parametrize("bad_pid", [None, -1, 0, 1, True])
-    def test_an_unsignallable_pid_falls_back_to_the_direct_child(
-        self,
-        bad_pid: object,
-    ) -> None:
-        killpg_calls: list[tuple[int, int]] = []
-        proc = self._fake_proc(bad_pid)
-
-        with patch.object(os, "killpg", lambda pgid, sig: killpg_calls.append((pgid, sig))):
-            with patch.object(os, "getpgid", lambda pid: 99999):
-                _signal_process_group(proc, signal.SIGTERM)
-
-        assert killpg_calls == [], "kill(-1, sig) must never be issued"
-        proc.terminate.assert_called_once()
 
     def test_a_mocked_popen_falls_back_to_the_direct_child(self) -> None:
         """The exact CI-killer shape. A MagicMock pid coerces to 1 via
         `MagicMock.__index__`, so `getpgid` returns a real 1 rather than
         raising, and `killpg(1, sig)` is `kill(-1, sig)`."""
         killpg_calls: list[tuple[int, int]] = []
-        proc = self._fake_proc(MagicMock())
+        proc = procs.fake_popen(MagicMock())
 
         with patch.object(os, "killpg", lambda pgid, sig: killpg_calls.append((pgid, sig))):
             # A plausible group, so only the isinstance check can reject.
@@ -447,7 +442,7 @@ class TestTheVerifySignalGuardRoutesThroughProcgroup:
         """A pgid equal to ours means `start_new_session` never took, and
         signalling it would kill the verification run doing the signalling."""
         killpg_calls: list[tuple[int, int]] = []
-        proc = self._fake_proc(os.getpid())
+        proc = procs.fake_popen(os.getpid())
 
         with patch.object(os, "killpg", lambda pgid, sig: killpg_calls.append((pgid, sig))):
             _signal_process_group(proc, signal.SIGKILL)
@@ -457,7 +452,7 @@ class TestTheVerifySignalGuardRoutesThroughProcgroup:
 
     def test_sigkill_uses_kill_and_sigterm_uses_terminate(self) -> None:
         """The fallback must carry the SIGNAL through, not just fire."""
-        proc = self._fake_proc(1)
+        proc = procs.fake_popen(1)
 
         _signal_process_group(proc, signal.SIGTERM)
         proc.terminate.assert_called_once()
@@ -481,7 +476,7 @@ class TestTheVerifySignalGuardRoutesThroughProcgroup:
         """`safe_pgid` cleared the group, then the signal itself failed.
         Falling through is the point: the direct child may still be
         reachable, and giving up here would leak it."""
-        proc = self._fake_proc(4242)
+        proc = procs.fake_popen(4242)
 
         def refuse(pgid: int, sig: int) -> None:
             raise exc
@@ -499,7 +494,7 @@ class TestTheVerifySignalGuardRoutesThroughProcgroup:
         group already got it is not harmful, but it is not what the code
         says it does, and a test that cannot tell the arms apart cannot
         catch the `return` being lost."""
-        proc = self._fake_proc(4242)
+        proc = procs.fake_popen(4242)
 
         with patch.object(os, "killpg", lambda pgid, sig: None):
             with patch.object(os, "getpgid", lambda pid: 99999):

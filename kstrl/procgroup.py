@@ -274,9 +274,11 @@ def safe_pgid(process: subprocess.Popen[str]) -> int | None:
     remains the entry point for a bare pgid.
     """
     pid = process.pid
-    # ``killpg`` gates ``getpgid`` as much as itself: both are POSIX-only,
-    # and an absent one raises AttributeError, which no caller catches.
-    if not hasattr(os, "killpg") or not isinstance(pid, int) or pid <= 1:
+    # Each ``hasattr`` sits next to the call it guards: this one over
+    # ``getpgid`` below, and ``_may_signal_group``'s over ``killpg``. Both
+    # are POSIX-only, and an absent one raises AttributeError, which no
+    # caller catches.
+    if not hasattr(os, "getpgid") or not isinstance(pid, int) or pid <= 1:
         return None
     try:
         pgid = os.getpgid(pid)

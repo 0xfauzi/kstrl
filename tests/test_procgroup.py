@@ -30,7 +30,6 @@ from kstrl.procgroup import (
     GroupLiveness,
     _kernel_says_group_is_empty,
     _Listing,
-    _may_signal_group,
     _read_listing,
     read_group_liveness,
     signal_probe_alive,
@@ -164,45 +163,6 @@ class TestAGoneIsOnlyReportedWhenItIsEvidence:
         and a filtered listing can only ever show FEWER processes."""
         procs.fake_ps(monkeypatch, stdout="50 4242 Ss\n")
         assert read_group_liveness(4242) == GroupLiveness(True)
-
-
-class TestTheGroupIdIsGuardedBeforeAnySignal:
-    """#298 round 2: this module signals, so it carries the guard.
-
-    `killpg(1, sig)` is `kill(-1, sig)`, every process this user owns.
-    #308 moved the Popen-level guard here as `safe_pgid` (tested in
-    `tests/test_safe_pgid.py`), so serve, verify and agents.proc now come
-    through this module. `_may_signal_group` stays a function of its own
-    because the pgid entry points take an id from anywhere, and nothing
-    enforces that THEIR callers came through `safe_pgid`.
-    """
-
-    @pytest.mark.parametrize("pgid", [-1, 0, 1])
-    def test_a_broadcast_pgid_is_never_signalled(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        pgid: int,
-    ) -> None:
-        calls: list[tuple[int, int]] = []
-
-        def recording(target: int, sig: int) -> None:
-            calls.append((target, sig))
-
-        monkeypatch.setattr("kstrl.procgroup.os.killpg", recording)
-        assert _kernel_says_group_is_empty(pgid) is False
-        assert signal_probe_alive(pgid) is True
-        assert calls == [], "kill(-1, sig) must never be issued"
-
-    def test_the_refusals_fail_in_the_conservative_direction(self) -> None:
-        """Not empty, and alive: both keep a caller from calling a run
-        reaped on a question that was never asked."""
-        assert _may_signal_group(1) is False
-        assert _kernel_says_group_is_empty(1) is False
-        assert signal_probe_alive(1) is True
-
-    def test_a_real_group_is_still_signalled(self) -> None:
-        """The positive control, or the guard could be rejecting all."""
-        assert _may_signal_group(os.getpgrp()) is True
 
 
 class TestTheKernelControl:

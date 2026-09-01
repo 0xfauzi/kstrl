@@ -1781,19 +1781,11 @@ class TestProcessGroupSupervision:
                 assert terminate_process_group(fake).reaped is True
             assert killpg.call_count == 0, "must never signal a bogus group"
 
-    def test_our_own_process_group_is_never_signalled(self) -> None:
-        """Same routing question for `terminate_process_group`'s lazy
-        lookup: a pid whose group is ours must come back as None, so the
-        function takes its no-pgid branch and signals nothing."""
-        import subprocess as sp
-
-        fake = MagicMock(spec=sp.Popen)
-        fake.pid = os.getpid()
-        fake.poll.return_value = None
-        with patch("kstrl.serve.os.killpg") as killpg:
-            outcome = terminate_process_group(fake)
-            assert "no process-group id was available" in outcome.degraded
-            assert killpg.call_count == 0
+    # The own-group half of this routing question is
+    # `TestARefusedSignalIsNotAnUnknown::test_a_missing_pgid_is_reported_as_unmeasured`,
+    # which builds the identical fake and asserts the identical outcome
+    # WITHOUT patching `killpg`. That makes it the stronger of the two, so
+    # #308 deleted the copy that used to live here rather than keep both.
 
     def test_the_supervised_timeout_reaps_descendants(
         self,

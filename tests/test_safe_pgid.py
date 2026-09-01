@@ -1,20 +1,16 @@
-"""#308: the safe-pgid guard, tested once in the module that owns it.
+"""#308: the signal guard, tested once in the module that owns it.
 
 `procgroup.safe_pgid` is the one copy of a rule `serve._safe_pgid`,
 `verify._signal_process_group` and `agents.proc._signal_group` each wrote
-out for themselves. Driven over one matrix of pid / `getpgid` / `killpg`
-outcomes BEFORE the move, the three agreed on every safe-or-not decision
-and differed only in whether `getpgid`'s OSError escaped: serve let it
-out and both its call sites mapped it straight back to None, the other
-two swallowed it in place. So this file pins one decision table, not
-three, and each call site keeps its own test that it routes through here
-at all - the half a shared unit test cannot prove.
+out for themselves. Its rationale, and what was measured about the three
+copies before they were merged, is in its own docstring; this file pins
+the decision table rather than restating the argument.
 
-WHY THIS IS NOT IN `tests/test_procgroup.py`, where it otherwise belongs.
-That file was at 798 lines. The `file-length-ratchet` hook fails a file
-that was at or under 800 lines and is now over, so folding these in took
-it to 929 and broke the commit. Merging the two files back together will
-break it again.
+`_may_signal_group` is here too, because `safe_pgid` calls it and tests
+for one rule split across two files drift. It came out of
+`tests/test_procgroup.py`, which is about the `ps` READ: that file was at
+798 lines against a `file-length-ratchet` hook that fails a file crossing
+800, so the two halves needed separating anyway and this is the seam.
 """
 
 from __future__ import annotations
@@ -23,25 +19,66 @@ import ast
 import os
 import subprocess
 from pathlib import Path
-from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from kstrl import procgroup
+from kstrl.procgroup import (
+    _kernel_says_group_is_empty,
+    _may_signal_group,
+    signal_probe_alive,
+)
 from tests.helpers import procs
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-def _popen_with_pid(pid: object) -> subprocess.Popen[str]:
-    fake = MagicMock(spec=subprocess.Popen)
-    fake.pid = pid
-    return cast("subprocess.Popen[str]", fake)
+class TestTheGroupIdIsGuardedBeforeAnySignal:
+    """#298 round 2: this module signals, so it carries the guard.
+
+    `killpg(1, sig)` is `kill(-1, sig)`, every process this user owns.
+    `_may_signal_group` stays a function of its own, rather than folding
+    into `safe_pgid`, because `read_group_liveness` and
+    `signal_probe_alive` take a bare pgid from anywhere and nothing
+    enforces that THEIR callers came through `safe_pgid`.
+    """
+
+    @pytest.mark.parametrize("pgid", [-1, 0, 1])
+    def test_a_broadcast_pgid_is_never_signalled(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        pgid: int,
+    ) -> None:
+        calls: list[tuple[int, int]] = []
+
+        def recording(target: int, sig: int) -> None:
+            calls.append((target, sig))
+
+        monkeypatch.setattr("kstrl.procgroup.os.killpg", recording)
+        assert _kernel_says_group_is_empty(pgid) is False
+        assert signal_probe_alive(pgid) is True
+        assert calls == [], "kill(-1, sig) must never be issued"
+
+    def test_the_refusals_fail_in_the_conservative_direction(self) -> None:
+        """Not empty, and alive: both keep a caller from calling a run
+        reaped on a question that was never asked."""
+        assert _may_signal_group(1) is False
+        assert _kernel_says_group_is_empty(1) is False
+        assert signal_probe_alive(1) is True
+
+    def test_a_real_group_is_still_signalled(self) -> None:
+        """The positive control, or the guard could be rejecting all."""
+        assert _may_signal_group(os.getpgrp()) is True
 
 
 class TestSafePgidIsTheOneCopyOfThePopenGuard:
-    """Every branch of the decision, negative cases and the control."""
+    """Every branch of the decision, the negatives and the control.
+
+    This is the table. Each of the three call sites keeps its own test
+    that it ROUTES through here, which is the half a shared unit test
+    cannot prove, and does not re-pin the table on top of it.
+    """
 
     def test_a_real_child_still_gets_its_group(self) -> None:
         """The positive control. Every other test here asserts a None, so
@@ -71,7 +108,7 @@ class TestSafePgidIsTheOneCopyOfThePopenGuard:
         out of `getpgid`: it coerces to 1 through `MagicMock.__index__`
         (measured on this machine, `os.getpgid(MagicMock())` returns 1),
         and `killpg(1, sig)` is `kill(-1, sig)`."""
-        fake = _popen_with_pid(MagicMock())
+        fake = procs.fake_popen(MagicMock())
         # A plausible group, so the pgid checks cannot be what rejects it
         # and only the isinstance check can.
         with patch.object(os, "getpgid", lambda pid: 99999):
@@ -81,20 +118,20 @@ class TestSafePgidIsTheOneCopyOfThePopenGuard:
     def test_a_pid_that_cannot_own_a_group_is_refused(self, bad_pid: object) -> None:
         """`True` is in here on purpose: `isinstance(True, int)` is True,
         so `pid <= 1` is the only thing that rejects it."""
-        fake = _popen_with_pid(bad_pid)
+        fake = procs.fake_popen(bad_pid)
         with patch.object(os, "getpgid", lambda pid: 99999):
             assert procgroup.safe_pgid(fake) is None
 
     @pytest.mark.parametrize("broadcast", [-1, 0, 1])
     def test_a_broadcast_pgid_is_refused(self, broadcast: int) -> None:
-        fake = _popen_with_pid(4242)
+        fake = procs.fake_popen(4242)
         with patch.object(os, "getpgid", lambda pid: broadcast):
             assert procgroup.safe_pgid(fake) is None
 
     def test_our_own_group_is_refused(self) -> None:
         """Signalling our own group kills the process doing the
         signalling. Seeing ours back means `start_new_session` never took."""
-        fake = _popen_with_pid(os.getpid())
+        fake = procs.fake_popen(os.getpid())
         assert procgroup.safe_pgid(fake) is None
 
     @pytest.mark.parametrize(
@@ -106,11 +143,9 @@ class TestSafePgidIsTheOneCopyOfThePopenGuard:
         ],
     )
     def test_a_failed_lookup_is_a_none_and_not_a_raise(self, exc: OSError) -> None:
-        """The one place the three copies differed. serve let `getpgid`
-        raise and both its call sites mapped it straight back to None, so
-        swallowing here is the same decision with less ceremony - and the
-        two callers that always swallowed keep the behaviour they had."""
-        fake = _popen_with_pid(4242)
+        """The one place the three copies differed, so the one that had to
+        be decided rather than moved."""
+        fake = procs.fake_popen(4242)
 
         def raiser(pid: int) -> int:
             raise exc
@@ -118,16 +153,15 @@ class TestSafePgidIsTheOneCopyOfThePopenGuard:
         with patch.object(os, "getpgid", raiser):
             assert procgroup.safe_pgid(fake) is None
 
-    def test_a_platform_without_killpg_is_refused(
+    def test_a_platform_without_the_syscalls_is_refused(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """POSIX gating. `getpgid` is absent on the same platforms as
-        `killpg`, and an absent one raises AttributeError, which no caller
-        catches - so the hasattr has to come BEFORE the lookup, not after."""
+        """POSIX gating. An absent `getpgid` raises AttributeError, which
+        no caller catches, so its hasattr has to come BEFORE the lookup."""
         monkeypatch.delattr(os, "killpg")
         monkeypatch.delattr(os, "getpgid")
-        fake = _popen_with_pid(4242)
+        fake = procs.fake_popen(4242)
         assert procgroup.safe_pgid(fake) is None
 
 
@@ -138,8 +172,8 @@ class TestNoCallerCarriesItsOwnCopy:
     attribute on a name called `os`. That is how all three copies were
     spelled and how a fourth would most likely be spelled. It does NOT
     see `from os import getpgid` or a rebound module, which is a known
-    miss rather than a claim - the test below plants both spellings and
-    records which one is caught.
+    miss rather than a claim: the test below plants that spelling and
+    records that it goes through.
     """
 
     def _offenders(self, source: str) -> list[int]:

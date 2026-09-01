@@ -184,11 +184,8 @@ class DeadlineStreamer:
     def _signal_group(self, sig: signal.Signals) -> None:
         # Whether a group kill may proceed at all is `procgroup.safe_pgid`'s
         # question, not this method's: #308 made it the one copy of a rule
-        # that used to be written out here, in `serve` and in `verify`. The
-        # case it exists for is a mocked Popen, whose pid coerces to 1 via
-        # MagicMock.__index__ rather than raising, making killpg(1, sig)
-        # into kill(-1, sig) - every process this user can signal, which
-        # once took down the whole CI runner.
+        # that used to be written out here, in `serve` and in `verify`. A
+        # None from it is not an error; it degrades to the direct child.
         pgid = safe_pgid(self._proc)
         if pgid is not None:
             try:
