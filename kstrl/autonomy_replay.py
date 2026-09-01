@@ -43,23 +43,13 @@ from kstrl.verify import SCOPE_UNREADABLE_CHECK
 
 DEFAULT_EXPERIMENTS_PATH = Path(".kstrl/experiments.tsv")
 
-#: `common_failure` prefixes that mark an infrastructure casualty rather
-#: than a judgement. Kept as a prefix tuple so a new plumbing failure
-#: family is one entry, not a new code path.
+#: The prefixes this module adds to the ones the journal's own
+#: taxonomy supplies. It asks a WIDER question than that taxonomy does:
+#: the journal asks which part of the factory produced a failure, this
+#: asks whether the run yielded a verdict about the factory's JUDGEMENT
+#: at all, and a failure can be a gate's honest verdict and still answer
+#: that with no.
 #:
-#: #315: the first four come from `evolution.INFRASTRUCTURE_CHECKS`
-#: rather than being retyped here. The two consumers disagreed about
-#: `pr:merge-conflict` - plumbing to this module, an engineer-loop
-#: failure to the journal - and a taxonomy that answers a question twice
-#: will eventually answer it two ways. Deriving means enrolling a check
-#: as infrastructure in `_CATEGORY_BY_CHECK` reaches both in one edit,
-#: and the enrolment guard forces every emitted name through that table.
-#:
-#: _REPLAY_ONLY_PREFIXES is the deliberate remainder: this module asks a
-#: WIDER question than the journal's category does. The journal asks
-#: which part of the factory produced a failure; this asks whether the
-#: run yielded a verdict about the factory's JUDGEMENT at all, and a
-#: failure can be a gate's honest verdict and still answer that with no.
 #: `scope_unreadable:` (#294) is the harness failing to establish its own
 #: input: the component's scope could not be read from the pre-run tree,
 #: so nothing was ever measured about the change. The same reasoning that
@@ -90,6 +80,24 @@ _REPLAY_ONLY_PREFIXES: tuple[str, ...] = (
     "timeout:",
 )
 
+#: `common_failure` prefixes that mark an infrastructure casualty rather
+#: than a judgement. Kept as a prefix tuple so a new plumbing failure
+#: family is one entry, not a new code path.
+#:
+#: #315: every check the journal files as `infrastructure` is in here by
+#: construction, rather than being retyped. The two consumers disagreed
+#: about `pr:merge-conflict` - plumbing to this module, an engineer-loop
+#: failure to the journal - and a taxonomy that answers a question twice
+#: will eventually answer it two ways. Deriving means enrolling a check
+#: as infrastructure in `_CATEGORY_BY_CHECK` reaches both in one edit,
+#: and the enrolment guard forces every emitted name through that table.
+#: `_REPLAY_ONLY_PREFIXES` above is the deliberate remainder. The sorted
+#: tuple interleaves the two halves, so read the two sources, not the
+#: order.
+#:
+#: `tests/test_check_name_enrolment.py` pins the contents through
+#: `RunRecord.infra_aborted` rather than against this tuple, so a
+#: property that stopped consulting it would be caught.
 INFRA_FAILURE_PREFIXES: tuple[str, ...] = tuple(
     sorted({f"{check}:" for check in INFRASTRUCTURE_CHECKS} | set(_REPLAY_ONLY_PREFIXES))
 )

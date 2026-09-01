@@ -234,9 +234,7 @@ class FailurePattern:
     # "scope_creep" for a review concern) - the part after the colon in
     # the full "<check>:<code>" signature
     error_signature: str
-    # One of CATEGORIES, decided by category_for_check when the pattern
-    # is built and never written to the journal, so correcting the table
-    # also corrects what is reported about runs already recorded.
+    # A _CATEGORY_BY_CHECK value; see category_for_check.
     category: str
 
 
@@ -367,23 +365,29 @@ def _classify_check(error: str) -> str:
 # difference is the number.
 _DIGIT_RUN_RE = re.compile(r"\d+")
 
-#: The categories a FailurePattern can carry. ``"infrastructure"``
-#: (#315) is for a failure that is neither a gate's verdict on the
-#: change nor the engineer's loop: the run was shut down, hit the token
-#: ceiling, could not merge, could not fetch its own diff. Before it
-#: existed those fell through to ``"iteration"`` and ``ks evolve``
-#: reported them as engineer-loop problems, which is advice aimed at an
-#: agent that could not have prevented any of them.
-#:
-#: Not ``Finding.category``'s ``"infrastructure_error"``
-#: (:mod:`kstrl.findings`), which marks one ROLE RUN that failed to
-#: execute inside an otherwise healthy component. Different taxonomy,
-#: different consumer, deliberately different spelling so a grep for
-#: either does not silently return the other.
-CATEGORIES: frozenset[str] = frozenset(
-    {"verification", "review", "security", "contract", "infrastructure", "iteration"}
-)
-
+# The categories are verification, review, security, contract,
+# iteration and, since #315, infrastructure. That last one is for a
+# failure that is neither a gate's verdict on the change nor the
+# engineer's loop: the run was shut down, hit the token ceiling, could
+# not merge, could not fetch its own diff, could not provision a
+# worktree. Before it existed those fell through to "iteration", so the
+# journal filed them as engineer-loop problems and the evolve screen's
+# category column said so: a verdict about an agent that could not have
+# prevented any of them.
+#
+# NOT Finding.category's "infrastructure_error" (kstrl/findings.py),
+# which marks one ROLE RUN that failed to execute inside an otherwise
+# healthy component. Different taxonomy, different consumer,
+# deliberately different spelling so a grep for either does not silently
+# return the other. They also disagree, on purpose and measurably:
+# factory's live autonomy accounting asks the FINDING question
+# (`_infra_casualty`) while the replay asks the SIGNATURE question, and
+# `pr:merge-conflict` attaches no infrastructure finding. Reconciling
+# those two is not this table's job.
+#
+# tests/test_check_name_enrolment.py pins the whole table row by row, so
+# a new row, a dropped row or a typo in a category is a red test with
+# the diff as its audit trail.
 _CATEGORY_BY_CHECK = {
     "linter": "verification",
     "typecheck": "verification",
@@ -404,17 +408,30 @@ _CATEGORY_BY_CHECK = {
     "fixtures": "verification",
     "policy_envelope": "verification",
     "test_adequacy": "verification",
+    # #315 round 2: a failure recorded with no signatures= is filed
+    # under its PHASE (pipeline._record_failure_signatures), so these
+    # two are check names as much as any gate is. "verify" is the phase
+    # spelling of the mechanical gates above; "provisioning" is a
+    # worktree that would not build, which no agent can write code
+    # against.
+    "verify": "verification",
+    "provisioning": "infrastructure",
     # #315: recorded outside a CheckResult, by pipeline.fail(signatures=
     # ["<prefix>:<code>"]). None of these is a verdict on the change.
     "aborted": "infrastructure",
     "token_budget": "infrastructure",
     "pr": "infrastructure",
     "diff": "infrastructure",
-    # #315: the fallback already answers "iteration" for this one. The
-    # row is here so the table states every name kstrl emits rather than
-    # most of them, and so that a reader cannot tell an unenrolled name
-    # from a deliberate one by its absence.
+    # #315: the fallback already answers "iteration" for these two. The
+    # rows are here so the table states every name kstrl emits rather
+    # than most of them, and so that a reader cannot tell an unenrolled
+    # name from a deliberate one by its absence. "unknown" is what
+    # _classify_check returns when it cannot recognise a legacy error
+    # string: not the engineer's fault so much as nobody's, and inventing
+    # a category for "we could not tell" would be a worse answer than
+    # the one this table has always given.
     "engineer": "iteration",
+    "unknown": "iteration",
     "review": "review",
     "security": "security",
     "contract": "contract",
@@ -484,8 +501,11 @@ def category_for_check(check_name: str) -> str:
     uncategorised.
 
     The answer is computed here, at read time, and never stored in the
-    journal, so a correction to the table also corrects what
-    ``ks evolve`` reports about runs that already happened.
+    journal - measured: a ``record_run`` entry has no ``category`` key
+    and experiments.tsv records the signature only. So a correction to
+    the table also corrects what is reported about runs that already
+    happened. The one surface that displays it is the evolve screen's
+    patterns table; the ``ks evolve`` CLI prints the check name.
     """
     return _CATEGORY_BY_CHECK.get(check_name, "iteration")
 

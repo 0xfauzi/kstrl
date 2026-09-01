@@ -64,13 +64,8 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.autonomy_replay import _REPLAY_ONLY_PREFIXES, INFRA_FAILURE_PREFIXES
-from kstrl.evolution import (
-    _CATEGORY_BY_CHECK,
-    CATEGORIES,
-    INFRASTRUCTURE_CHECKS,
-    category_for_check,
-)
+from kstrl.autonomy_replay import INFRA_FAILURE_PREFIXES, RunRecord
+from kstrl.evolution import _CATEGORY_BY_CHECK, INFRASTRUCTURE_CHECKS
 
 KSTRL_DIR = Path(__file__).resolve().parent.parent / "kstrl"
 
@@ -79,6 +74,11 @@ KSTRL_DIR = Path(__file__).resolve().parent.parent / "kstrl"
 #: shared builder the three subprocess gates package their failures
 #: through.
 CHECK_NAME_CALLS = frozenset({"CheckResult", "_failed_gate_result"})
+
+#: Calls that record a component failure. When one carries no
+#: ``signatures=``, its ``phase=`` becomes the check name. See
+#: :func:`_phase_fallback_name`.
+PHASE_FALLBACK_CALLS = frozenset({"fail", "retry_or_fail"})
 
 #: Enrolled names the walk provably cannot see, with the reason each is
 #: invisible. Anything else in the table must be reachable by the walk,
@@ -90,23 +90,53 @@ ENROLLED_BUT_INVISIBLE = {
     # that one, and claiming otherwise would excuse a real blind spot.
     "security": "composed from a runtime phase argument",
     "contract": "composed from a runtime phase argument",
-    # _classify_check RETURNS this one for a legacy flattened error
-    # string. It is never an argument, so no call site carries it.
+    # _classify_check RETURNS these for a legacy flattened error string.
+    # They are never arguments, so no call site carries them.
     "verification": "returned by _classify_check, never passed to a call",
+    "unknown": "returned by _classify_check, never passed to a call",
 }
 
-#: What #315 decided, pinned name by name. The table is data, so a
-#: careless edit to it is a one-character behaviour change to ``ks
-#: evolve``; this is the test that has to be edited alongside it.
-CATEGORY_DECIDED_IN_315 = {
+#: The whole of ``_CATEGORY_BY_CHECK``, pinned row by row rather than in
+#: part. The table is data, so an edit to it is a behaviour change with
+#: no code diff to review: it decides what the journal calls a failure
+#: and, through ``INFRASTRUCTURE_CHECKS``, which runs the autonomy replay
+#: counts as evidence about the factory's judgement. Pinning all of it
+#: is the same audit-trail shape ``tests/test_prompt_versions.py`` uses:
+#: the table and its expectation move together in one diff, or CI is red.
+#: A partial mirror was tried first and gave a future author no rule for
+#: whether a new row belonged in it.
+EXPECTED_CATEGORIES = {
+    "linter": "verification",
+    "typecheck": "verification",
+    "test_suite": "verification",
+    "diff_scope": "verification",
+    "scope_unreadable": "verification",
+    "bad_patterns": "verification",
+    "self_critique": "verification",
+    "dead_code": "verification",
+    "mutation_testing": "verification",
+    "prd_stories": "verification",
+    "verification": "verification",
+    # #315: the three Phase 1 gates the table did not carry.
     "fixtures": "verification",
     "policy_envelope": "verification",
     "test_adequacy": "verification",
+    # #315 round 2: the phase names a failure recorded without
+    # signatures= is filed under.
+    "verify": "verification",
+    "provisioning": "infrastructure",
+    # #315: the category invented for the four failures that are neither
+    # a gate's verdict nor the engineer's loop.
     "aborted": "infrastructure",
     "token_budget": "infrastructure",
     "pr": "infrastructure",
     "diff": "infrastructure",
+    # #315: the fallback's answer, stated rather than inherited.
     "engineer": "iteration",
+    "unknown": "iteration",
+    "review": "review",
+    "security": "security",
+    "contract": "contract",
 }
 
 
@@ -173,6 +203,37 @@ def _signature_prefixes(node: ast.AST) -> list[str]:
             if _is_str_constant(element) and ":" in element.value:  # type: ignore[attr-defined]
                 found.append(element.value.split(":", 1)[0])  # type: ignore[attr-defined]
     return found
+
+
+def _phase_fallback_name(node: ast.AST) -> ast.expr | None:
+    """The ``phase=`` of a failure recorded with no ``signatures=``.
+
+    The THIRD producer, found by the #315 review after two rounds of
+    this file claiming to have them all. ``pipeline._record_failure_
+    signatures`` falls back to ``signature_for_error(phase or "unknown",
+    error)`` whenever a ``fail`` / ``retry_or_fail`` call omits
+    ``signatures=``, so the PHASE becomes the check name and reaches
+    ``category_for_check`` like any other. Measured before the walk saw
+    it: ``provisioning:worktree-setup-failed`` - a worktree that would
+    not provision, the purest infrastructure failure in the system - was
+    filed under the engineer loop, next to a docstring in this file
+    claiming the guard admitted no exceptions.
+
+    A ``phase=`` keyword is REQUIRED for a match, not just the callable
+    name: ``feature_cmd`` has a local helper also called ``fail``, and
+    matching on the name alone credited six of its call sites with the
+    check name "unknown". Requiring the keyword excludes them by shape
+    rather than by an exclusion list that would rot. The direction of
+    the remaining error matters: an unrelated future ``fail(phase=...)``
+    is over-matched and surfaces as an unenrolled name, which is a red
+    test a human resolves, not a silent skip.
+    """
+    if not isinstance(node, ast.Call) or _called_name(node.func) not in PHASE_FALLBACK_CALLS:
+        return None
+    keywords = {kw.arg: kw.value for kw in node.keywords}
+    if "signatures" in keywords:
+        return None
+    return keywords.get("phase")
 
 
 @lru_cache(maxsize=1)
@@ -249,7 +310,11 @@ def _check_names() -> dict[str, str]:
     for rel, tree in _parsed_modules():
         own = per_module[rel]
         for node in ast.walk(tree):
-            names = [_resolve(_name_argument(node), own, pool), *_signature_prefixes(node)]
+            names = [
+                _resolve(_name_argument(node), own, pool),
+                _resolve(_phase_fallback_name(node), own, pool),
+                *_signature_prefixes(node),
+            ]
             for name in names:
                 if name:
                     found.setdefault(name, rel)
@@ -265,6 +330,11 @@ class TestEveryCheckNameIsEnrolled:
         assert {"test_suite", "typecheck", "linter"} <= names, "module-constant resolution"
         assert {"diff_scope", "scope_unreadable", "prd_stories"} <= names, "literal names"
         assert {"pr", "engineer", "token_budget"} <= names, "signature prefixes"
+        # #315 round 2: failures recorded with no signatures= are filed
+        # under their phase, and the walk was blind to that whole
+        # producer. `provisioning` is the one that proves it resolves
+        # across modules: the call is in factory.py, not pipeline.py.
+        assert {"provisioning", "verify"} <= names, "phase= fallback names"
         # #306: this one was not pinned, and so was not protected.
         # Rewriting `CheckResult(name="mutation_testing", ...)` as
         # `name=name` off a function-local took the walk from 19 names
@@ -306,11 +376,13 @@ class TestEveryCheckNameIsEnrolled:
 
     def test_the_runtime_composed_phases_are_enrolled(self) -> None:
         """``signatures_from_findings`` builds these from a runtime
-        argument, so no literal exists for the walk to find. Asserted by
-        hand because the walk provably cannot cover them: removing
-        ``security`` from the table does not fail any other test here.
-        ``review`` is asserted with them because it is composed the same
-        way, even though a literal for it does exist elsewhere."""
+        argument, so for two of the three no literal exists for the walk
+        to find. Kept after #315 added a whole-table pin that also
+        catches a dropped row: this one names the REASON these three
+        cannot be dropped, and a pin is satisfied by editing the
+        expectation. ``review`` is asserted with them because it is
+        composed the same way, even though the walk does happen to see a
+        literal for it in ``pipeline``."""
         for phase in ("review", "security", "contract"):
             assert phase in _CATEGORY_BY_CHECK, (
                 f"{phase!r} is composed into failure signatures by "
@@ -318,29 +390,13 @@ class TestEveryCheckNameIsEnrolled:
                 f"the AST walk cannot see it."
             )
 
-    def test_every_row_carries_a_category_that_exists(self) -> None:
-        """A typo in a category value invents a category. Nothing else
-        would notice: ``category_for_check`` returns whatever the table
-        says, and the one consumer that displays it prints any string."""
-        unknown = {
-            name: category
-            for name, category in _CATEGORY_BY_CHECK.items()
-            if category not in CATEGORIES
-        }
-        assert not unknown, (
-            f"rows in _CATEGORY_BY_CHECK naming a category that is not in "
-            f"evolution.CATEGORIES: {unknown}."
-        )
-
-    @pytest.mark.parametrize(("name", "category"), sorted(CATEGORY_DECIDED_IN_315.items()))
-    def test_the_names_315_enrolled_keep_the_category_it_gave_them(
-        self, name: str, category: str
-    ) -> None:
-        """Each of these was filed under ``iteration`` by the fallback,
-        so ``ks evolve`` called a merge conflict or a policy-envelope
-        breach an engineer-loop problem."""
-        assert name in _check_names(), f"{name!r} is no longer emitted by kstrl/"
-        assert category_for_check(name) == category
+    def test_the_table_still_says_what_it_is_pinned_to_say(self) -> None:
+        """Every row, not a sample. A typo in a category value invents a
+        category nothing would reject; a dropped row silently re-files a
+        gate under the engineer loop; an added row can move a run out of
+        the autonomy replay's evidence. All three are one diff away and
+        none of them changes a line of code."""
+        assert _CATEGORY_BY_CHECK == EXPECTED_CATEGORIES
 
     def test_a_colliding_constant_resolves_to_nothing(self) -> None:
         """The wrong answer is worse than no answer: a name two modules
@@ -351,6 +407,27 @@ class TestEveryCheckNameIsEnrolled:
         assert "SHARED" not in unambiguous_pool(conflicting)
 
 
+def _run_dominated_by(signature: str) -> RunRecord:
+    """A recorded run whose modal failure was ``signature``.
+
+    Asserting through ``RunRecord`` rather than against
+    ``INFRA_FAILURE_PREFIXES`` on purpose: ``infra_aborted`` is what
+    decides a run's fate, and a test that reads the constant directly
+    would stay green if the property stopped consulting it.
+    """
+    return RunRecord(
+        run_id="r1",
+        timestamp="2026-01-01T00:00:00Z",
+        project="p",
+        components_total=1,
+        completed=0,
+        failed=1,
+        skipped=0,
+        retry_rate=0.0,
+        common_failure=signature,
+    )
+
+
 class TestTheTwoInfrastructureConsumersAgree:
     """#315: the journal and the autonomy replay both decide what counts
     as infrastructure, and before this they disagreed about
@@ -358,23 +435,42 @@ class TestTheTwoInfrastructureConsumersAgree:
     failure to the journal. The replay now derives its prefixes from the
     journal's table, so the shared part cannot drift. What is left is one
     deliberate difference, pinned here so that changing either side
-    without the other is a red test rather than a quiet divergence."""
+    without the other is a red test rather than a quiet divergence.
 
-    def test_every_infrastructure_check_is_an_infra_abort_for_the_replay(self) -> None:
-        for check in INFRASTRUCTURE_CHECKS:
-            assert f"{check}:any-code".startswith(INFRA_FAILURE_PREFIXES), (
-                f"{check!r} is 'infrastructure' in the journal but a decisive "
-                f"judgement failure to autonomy_replay."
-            )
+    Every assertion goes through ``RunRecord.infra_aborted``, the
+    property that actually decides whether a run counts as evidence
+    about the factory's judgement. An earlier version of this class
+    asserted ``startswith(INFRA_FAILURE_PREFIXES)`` instead, which
+    cannot fail while the tuple is built from ``INFRASTRUCTURE_CHECKS``:
+    it restated the constructor rather than testing anything."""
 
-    def test_the_replays_extra_prefixes_are_exactly_the_documented_ones(self) -> None:
-        """The replay asks a wider question than the journal's category:
-        not 'which part of the factory failed' but 'did this run yield a
-        verdict about the factory's judgement at all'. A gate's honest
-        verdict can still answer no. Anything beyond this list is an
-        undocumented divergence."""
-        derived = {f"{check}:" for check in INFRASTRUCTURE_CHECKS}
-        assert set(INFRA_FAILURE_PREFIXES) - derived == set(_REPLAY_ONLY_PREFIXES)
+    @pytest.mark.parametrize("check", sorted(INFRASTRUCTURE_CHECKS))
+    def test_an_infrastructure_check_costs_the_run_its_verdict(self, check: str) -> None:
+        assert _run_dominated_by(f"{check}:any-code").infra_aborted, (
+            f"{check!r} is 'infrastructure' in the journal but a decisive "
+            f"judgement failure to autonomy_replay."
+        )
+        assert not _run_dominated_by(f"{check}:any-code").decisive
+
+    def test_the_replay_treats_exactly_these_signatures_as_plumbing(self) -> None:
+        """The contents, not the derivation. The four rows beyond the
+        journal's own are the replay asking a WIDER question: not 'which
+        part of the factory failed' but 'did this run yield a verdict
+        about the factory's judgement at all', which a gate's honest
+        verdict can answer with no. Spelled out here so that adding a
+        fifth is a visible edit in two files."""
+        assert set(INFRA_FAILURE_PREFIXES) == {
+            "aborted:",
+            "diff:",
+            "pr:",
+            "provisioning:",
+            "token_budget:",
+            # Replay-only; see autonomy_replay._REPLAY_ONLY_PREFIXES.
+            "scope_unreadable:",
+            "git:",
+            "infra:",
+            "timeout:",
+        }
 
     def test_the_scope_refusal_is_the_deliberate_divergence(self) -> None:
         """``scope_unreadable`` is a Phase 1 gate result, so the journal
@@ -384,14 +480,16 @@ class TestTheTwoInfrastructureConsumersAgree:
         so the run says nothing about judgement. Both halves asserted,
         because the divergence is only defensible while it is on
         purpose."""
-        assert category_for_check("scope_unreadable") == "verification"
+        assert _CATEGORY_BY_CHECK["scope_unreadable"] == "verification"
         assert "scope_unreadable" not in INFRASTRUCTURE_CHECKS
-        assert "scope_unreadable:no-trustworthy-scope".startswith(INFRA_FAILURE_PREFIXES)
+        assert _run_dominated_by("scope_unreadable:no-trustworthy-scope").infra_aborted
 
-    def test_the_prefixes_cannot_swallow_a_neighbouring_check(self) -> None:
-        """``diff:`` must not match ``diff_scope:``: a scope violation is
-        the reviewer's verdict on the change and decisive evidence about
-        it. The colon is what separates them, so it is load-bearing and
-        tested rather than assumed."""
-        assert not "diff_scope:files-outside-allowed-scope".startswith(INFRA_FAILURE_PREFIXES)
-        assert not "review:scope_creep".startswith(INFRA_FAILURE_PREFIXES)
+    def test_a_judgement_failure_still_counts_as_evidence(self) -> None:
+        """The other direction, or the class above would pass with every
+        run called plumbing. ``diff:`` must not swallow ``diff_scope:``
+        either: a scope violation is a verdict on the change, and the
+        colon is the only thing separating the two names."""
+        assert not _run_dominated_by("diff_scope:files-outside-allowed-scope").infra_aborted
+        assert _run_dominated_by("diff_scope:files-outside-allowed-scope").decisive
+        assert not _run_dominated_by("review:scope_creep").infra_aborted
+        assert not _run_dominated_by("test_suite:assertion-error").infra_aborted
