@@ -37,6 +37,12 @@ from kstrl.events import (
     RunStarted,
     SpecIssueRecorded,
 )
+from kstrl.evolution import (
+    SPEC_ISSUES_EVENT,
+    EvolutionConfig,
+    EvolutionJournal,
+    entry_str,
+)
 from kstrl.guards import ScopeHazard, scope_entry_hazard
 from kstrl.linear import (
     LinearClient,
@@ -50,7 +56,6 @@ from kstrl.manifest import (
     Manifest,
 )
 from kstrl.names import validate_branch_name, validate_component_id
-from kstrl.observability import read_progress_events
 from kstrl.prd import PRD
 
 logger = logging.getLogger(__name__)
@@ -62,7 +67,6 @@ SPEC_ISSUE_APPLIES_COMPONENT = "component"
 SPEC_ISSUE_APPLIES_SPEC = "spec"
 
 if TYPE_CHECKING:
-    from kstrl.evolution import EvolutionJournal
     from kstrl.ui.base import UI
 
 
@@ -796,20 +800,6 @@ def _surface_spec_issues(issues: list[SpecIssue], ui: UI) -> None:
 # next to manifest.json so one directory holds the decompose outputs.
 SPEC_ISSUES_REL_PATH = Path("scripts") / "kstrl" / "spec-issues.json"
 
-# The journal's discriminator for one recorded spec audit. Named because
-# this module both writes it and reads it back, and the two must agree.
-#
-# It is NOT the only copy: ``EvolutionJournal.get_spec_issue_runs``
-# hardcodes the same literal, and that file is under concurrent edit on
-# another branch, so it is not converted here. The constant belongs on
-# the storage layer rather than on this writer; filed as #314. What
-# keeps the two from drifting meanwhile is a mechanism rather than this
-# comment - ``test_the_journal_reader_agrees_with_the_event_name_written``
-# writes an entry through this module and reads it back through the
-# journal, so changing this name alone fails that test and fourteen
-# others.
-SPEC_ISSUES_EVENT = "spec_issues"
-
 
 def _issue_dict(issue: SpecIssue) -> dict[str, str]:
     """One issue as the five JSON keys every artifact writes it under."""
@@ -1010,8 +1000,6 @@ def _spec_audit_journal(root_dir: Path, ui: UI) -> EvolutionJournal | None:
     Which exceptions that covers is ``load_or_none``'s to know, not
     this call site's.
     """
-    from kstrl.evolution import EvolutionConfig, EvolutionJournal
-
     config = EvolutionConfig.load_or_none(root_dir, warn=ui.warn)
     if config is None or not config.enabled:
         return None
@@ -1032,7 +1020,7 @@ def _record_spec_issues_event(
     but the failure is surfaced as a warning rather than swallowed:
     the journal is an audit trail, so a silent skip would defeat it.
     No ``run_id`` field: decompose runs before a factory run id exists,
-    which is why ``EvolutionJournal.get_spec_issue_runs`` reads these
+    which is why ``EvolutionJournal.get_spec_audits`` reads these
     entries rather than the run-windowed reader.
     """
     if journal is None:
@@ -1124,9 +1112,9 @@ def _stored_issues(entry: dict[str, Any]) -> list[SpecIssue] | None:
         return None
     stored = [
         SpecIssue(
-            severity=_entry_str(i, "severity"),
-            kind=_entry_str(i, "kind"),
-            summary=_entry_str(i, "summary"),
+            severity=entry_str(i, "severity"),
+            kind=entry_str(i, "kind"),
+            summary=entry_str(i, "summary"),
         )
         for i in raw
         if isinstance(i, dict)
@@ -1151,7 +1139,7 @@ def _build_convergence(
     for entry in history:
         stored = _stored_issues(entry)
         if stored is not None:
-            audits.append((_entry_str(entry, "spec_file"), stored))
+            audits.append((entry_str(entry, "spec_file"), stored))
             trend.append(sum(1 for i in stored if i.severity == "blocker"))
     if not audits:
         return None
@@ -1166,36 +1154,6 @@ def _build_convergence(
         previous_spec_file=previous_spec_file,
         repeated=sum(1 for i in previous_issues if _issue_identity(i) in current_ids),
         blocker_trend=(*trend, current_counts["blocker"]),
-    )
-
-
-def _spec_convergence(
-    issues: list[SpecIssue],
-    entries: list[dict[str, Any]],
-    project_name: str,
-    spec_file: str,
-    lookback: int,
-) -> SpecConvergence | None:
-    """Compare this run against this project's recorded audit history.
-
-    Runs are matched by project name, not by spec path or content
-    hash: the spec is edited between every round by construction (so a
-    content hash never matches), and the recorded loop in #260 renamed
-    the file mid-loop (so the path does not either). A previous audit
-    of a different file is still reported, with the file names named.
-
-    ``lookback`` is how far back the trend reaches: the journal's own
-    knob rather than a number invented here, read as "the last N spec
-    audits" - decompose writes one audit per run, with or without a
-    factory run behind it.
-
-    MUST be called on entries read BEFORE this run's own is appended to
-    the journal, or the "previous run" it compares against is this one.
-    """
-    return _build_convergence(
-        issues,
-        spec_file,
-        _windowed_audits(_spec_audits(entries), project_name, lookback),
     )
 
 
@@ -1293,48 +1251,39 @@ class ExcludedHistory:
         return max(0, self.own_recorded - counted - self.unreadable(counted))
 
 
-def _entry_str(entry: dict[str, Any], key: str) -> str:
-    """A string field of a journal entry, or "" for anything else.
-
-    NOT ``str(entry.get(key, ""))``: that renders a JSON ``null`` as
-    the literal ``"None"``, which round 1 of review reproduced as a
-    phantom project named 'None' passing the emptiness guard below and
-    a spec file printed as ``None``. A null field is an absent field.
-    """
-    value = entry.get(key)
-    return value if isinstance(value, str) else ""
-
-
 def _excluded_projects(
-    entries: list[dict[str, Any]],
+    audits: list[dict[str, Any]],
     project_name: str,
     spec_file: str,
 ) -> tuple[ExcludedProject, ...]:
-    """Spec audits in ``entries`` recorded under some other project.
+    """Recorded spec audits under some project OTHER than this one.
+
+    Takes audits, not raw journal entries: which rows are spec audits
+    is ``EvolutionJournal.get_spec_audits``'s to decide (#314), and a
+    second copy of that rule here is how the accounting and the trend
+    could come to disagree about the same journal.
 
     Ordered so the display cap drops only the weakest evidence: a
     project that audited the file this run audited sorts first, then
     the rest by how much history they hold. The cap itself never drops
     a spec-file match; see ``_excluded_line``.
 
-    Entries with no project name are skipped rather than grouped under
+    Audits with no project name are skipped rather than grouped under
     "": an unnamed project is not somewhere the operator can go and
     look, so pointing at it is not evidence.
     """
     by_project: dict[str, list[str]] = {}
     last_seen: dict[str, str] = {}
-    for entry in entries:
-        if entry.get("event_type") != SPEC_ISSUES_EVENT:
-            continue
-        project = _entry_str(entry, "project")
+    for entry in audits:
+        project = entry_str(entry, "project")
         if not project or project == project_name:
             continue
-        by_project.setdefault(project, []).append(_entry_str(entry, "spec_file"))
+        by_project.setdefault(project, []).append(entry_str(entry, "spec_file"))
         # Only a timestamp that exists replaces one that exists. Round 2
         # of review: assigning unconditionally let one trailing entry
         # with no timestamp erase a good date every earlier entry for
         # that project carried, losing evidence to a single bad row.
-        if timestamp := _entry_str(entry, "timestamp"):
+        if timestamp := entry_str(entry, "timestamp"):
             last_seen[project] = timestamp
     excluded = [
         ExcludedProject(
@@ -1349,34 +1298,8 @@ def _excluded_projects(
     return tuple(sorted(excluded, key=lambda e: (not e.read_this_spec, -e.audits, e.project)))
 
 
-def _spec_audits(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Just the recorded spec audits, in file order."""
-    return [e for e in entries if e.get("event_type") == SPEC_ISSUES_EVENT]
-
-
-def _windowed_audits(
-    audits: list[dict[str, Any]],
-    project_name: str,
-    last_n: int,
-) -> list[dict[str, Any]]:
-    """The trend's history: the last ``last_n`` audits of one project.
-
-    The same rule as ``EvolutionJournal.get_spec_issue_runs``, applied
-    to entries already in memory so one read serves both the trend and
-    the accounting below it. Round 2 of review: the call site has both
-    results in scope, so the second parse of the same file bought
-    nothing. ``test_the_windowing_rule_matches_the_journals_own``
-    pins this against the journal's copy, because a duplicated rule
-    that drifts would make the trend and the accounting disagree.
-    Folding both into the journal is filed as #314, and doing so leaves
-    ``get_spec_issue_runs`` with no production caller today.
-    """
-    mine = [e for e in audits if _entry_str(e, "project") == project_name]
-    return mine[-last_n:] if last_n > 0 else []
-
-
 def _excluded_history(
-    entries: list[dict[str, Any]],
+    audits: list[dict[str, Any]],
     project_name: str,
     spec_file: str,
     lookback: int,
@@ -1386,10 +1309,12 @@ def _excluded_history(
     Empty for a first audit in a fresh repo, so the lines it feeds
     never fire on the common case.
 
-    Takes ``entries`` rather than reading, so the caller reads once and
-    the trend and the accounting are computed over the same snapshot.
-    That also removes any chance of the two disagreeing because the
-    file changed between two reads.
+    Takes the audits rather than reading them, so the caller reads once
+    and the trend and the accounting are computed over the same
+    snapshot. That also removes any chance of the two disagreeing
+    because the file changed between two reads. Selecting the audits
+    out of the journal's entries is the journal's own job (#314), not a
+    rule restated here.
 
     Deliberately NOT windowed by ``lookback_runs``; ``lookback`` is
     carried only so the render can tell a windowed-out audit from one
@@ -1397,40 +1322,71 @@ def _excluded_history(
     excludes that was itself windowed would omit history silently,
     which is the bug this exists to fix.
     """
-    audits = _spec_audits(entries)
     return ExcludedHistory(
-        own_recorded=sum(1 for e in audits if _entry_str(e, "project") == project_name),
+        own_recorded=sum(1 for e in audits if entry_str(e, "project") == project_name),
         projects=_excluded_projects(audits, project_name, spec_file),
-        unattributed=sum(1 for e in audits if not _entry_str(e, "project")),
+        unattributed=sum(1 for e in audits if not entry_str(e, "project")),
         lookback=lookback,
     )
 
 
-def _journal_snapshot(journal: EvolutionJournal | None) -> tuple[list[dict[str, Any]], int]:
-    """Every entry in the journal, and how far back the trend may reach.
+@dataclass(frozen=True)
+class AuditSnapshot:
+    """One read of the recorded spec-audit history, in three views.
 
-    Both together because both callers need both, and because a
-    journal that is absent has no entries AND no window: returning
-    the pair keeps that single fact in one place instead of a
-    conditional at the call site.
+    A container rather than a tuple because ``audits`` and ``window``
+    are both ``list[dict[str, Any]]``: swapping them typechecks, and
+    they are exactly the pair #280 exists to keep straight - the trend
+    reads the window, the accounting under it reads everything the
+    window left out.
 
-    Read through ``read_progress_events`` rather than through
-    ``EvolutionJournal``, because no public reader on it returns the
-    whole entry set: ``get_spec_issue_runs`` filters to one project
-    inside the reader by design.
+    ``frozen=True`` for the rebinding guarantee, not to make this a
+    value that can key a dict. Because ``eq`` is on too, the decorator
+    would otherwise generate a ``__hash__`` that hashes the two lists
+    and raises ``TypeError: unhashable type: 'list'`` from inside a
+    method nobody wrote, so the class advertises a capability it does
+    not have. Tuples would not fix it: the elements are ``dict``, and
+    hashing a tuple hashes its elements, measured. ``__hash__ = None``
+    is the honest answer: set in the body, it is an explicit hash the
+    decorator leaves alone. It says unhashable, names THIS class when
+    somebody tries, and leaves ``==`` and the frozen fields untouched.
 
-    That is a layering compromise and not a free one. It reaches past
-    ``EvolutionJournal`` to that journal's own storage path, so a
-    journal that ever compacts, rotates or gains a second segment would
-    leave this reading less than the journal holds while the journal's
-    own reader kept working. Silent loss of the accounting is precisely
-    what #280 exists to fix, so the risk is pinned rather than trusted:
-    ``test_the_windowing_rule_matches_the_journals_own`` fails if the
-    two readers ever see different entries. A reader on
-    ``EvolutionJournal`` is the right home and would delete this
-    function; it is not added here because that file is under
-    concurrent edit on another branch. Filed as #314 rather than
-    raced.
+    Not generalised, deliberately. Measured: nine other frozen
+    dataclasses in ``kstrl/`` declare a top-level ``list``/``dict``/``set``
+    field and still advertise a hash that raises. They are left alone
+    here because this PR introduced ``AuditSnapshot`` and that is the one
+    it owns; a sweep of the other nine wants its own change with a guard
+    behind it, rather than nine edits nothing keeps true.
+    """
+
+    #: Every spec audit the journal holds, across every project.
+    audits: list[dict[str, Any]]
+    #: This project's last ``lookback`` audits: what the trend scores.
+    window: list[dict[str, Any]]
+    #: How far back the window reaches, carried so the render can tell
+    #: a windowed-out audit from one the trend could not score.
+    lookback: int
+
+    __hash__ = None  # type: ignore[assignment]
+
+
+def _journal_snapshot(journal: EvolutionJournal | None, project_name: str) -> AuditSnapshot:
+    """The recorded audit history behind one convergence report.
+
+    All three views from ONE read, because a journal that is absent has
+    none of the three: that keeps the fact here instead of three
+    conditionals at the call site.
+
+    Read through ``EvolutionJournal`` rather than through its storage
+    path, and windowed by ``get_spec_issue_runs`` rather than by a
+    second copy of its rule here (#314). Why each matters is on those
+    two methods; the short version is that a caller holding the path
+    survives no change of storage, and a second copy of the window rule
+    can drift from the one the accounting uses.
+
+    MUST be read BEFORE this run's own audit is appended to the
+    journal, or the "previous run" the trend compares against is this
+    one.
 
     One read per decompose, and the whole file: measured at 6.9 KB per
     factory run in this repo, so 1 MB is about 150 runs and 10 MB about
@@ -1438,8 +1394,14 @@ def _journal_snapshot(journal: EvolutionJournal | None) -> tuple[list[dict[str, 
     78 MB, against an architect call measured at 119 to 210 seconds.
     """
     if journal is None:
-        return [], 0
-    return read_progress_events(journal.config.journal_path), journal.config.lookback_runs
+        return AuditSnapshot(audits=[], window=[], lookback=0)
+    audits = journal.get_spec_audits()
+    lookback = journal.config.lookback_runs
+    return AuditSnapshot(
+        audits=audits,
+        window=journal.get_spec_issue_runs(project_name, lookback, audits=audits),
+        lookback=lookback,
+    )
 
 
 def _surface_convergence(
@@ -2047,15 +2009,15 @@ def _decompose_spec_impl(
     # ONE read feeds both the trend and the accounting under it, so the
     # two are computed over the same snapshot and cannot disagree
     # because the file changed between two reads.
-    entries, lookback = _journal_snapshot(journal)
+    snapshot = _journal_snapshot(journal, project_name)
     # #280: the trend is keyed on the project name, so a rename starts a
     # fresh one and the runs before it drop out of view. Keying
     # differently would be worse (the spec is edited every round, so a
     # content hash never matches, and #260's own loop renamed the file
     # too), so what is fixed is the silence rather than the key.
     _surface_convergence(
-        _spec_convergence(spec_issues, entries, project_name, spec_path.name, lookback),
-        _excluded_history(entries, project_name, spec_path.name, lookback),
+        _build_convergence(spec_issues, spec_path.name, snapshot.window),
+        _excluded_history(snapshot.audits, project_name, spec_path.name, snapshot.lookback),
         project_name,
         ui,
     )

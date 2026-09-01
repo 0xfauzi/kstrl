@@ -44,6 +44,15 @@ JOURNAL_SCHEMA_VERSION = 2
 # grepped: it is the only durable trace that a crash tore the file.
 JOURNAL_REPAIR_EVENT = "journal_repair"
 
+# #260: the event_type of one recorded spec audit. ``decompose`` writes
+# these rows and :meth:`EvolutionJournal.get_spec_audits` selects on
+# them, so the name belongs on the layer that defines the journal's
+# schema rather than on the writer (#314). It lived in ``decompose``
+# until then, with this module holding a second copy as a literal, and
+# the cost of that placement is the reason it moved: a reader added
+# HERE reaches for the nearest spelling, which was the literal.
+SPEC_ISSUES_EVENT = "spec_issues"
+
 
 # The header row record_run writes to experiments.tsv, at module scope so
 # that a test can assert against the columns the writer actually emits
@@ -480,6 +489,29 @@ def signatures_from_findings(phase: str, findings: Iterable[Finding]) -> list[st
 
 def _timestamp_now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def entry_str(entry: dict[str, Any], key: str) -> str:
+    """One string field of a JSON-decoded journal record, "" when absent.
+
+    A null or non-string field is an ABSENT field, not a value to be
+    stringified. ``str(None)`` renders the literal "None", which #280
+    round 1 reproduced as a phantom project named 'None' in the
+    convergence report and a spec file printed as ``None``. Nothing is
+    assumed about a record beyond it being a JSON object, so a journal
+    written by an older version, or edited by hand, still reads.
+
+    Lives here rather than in ``decompose`` (#314) because the window
+    in :meth:`EvolutionJournal.get_spec_issue_runs` matches a project
+    by this rule and the report's accounting matches by the same one.
+    Two copies of it would let the trend and the accounting disagree
+    about which audits belong to the project being reported on.
+
+    Applies to a record's nested objects too, which is what the stored
+    issue list is: same JSON, same rule.
+    """
+    value = entry.get(key)
+    return value if isinstance(value, str) else ""
 
 
 def _journal_line(entry: dict[str, Any]) -> str:
@@ -1436,31 +1468,71 @@ class EvolutionJournal:
         )
 
     # ------------------------------------------------------------------
-    # get_spec_issue_runs
+    # get_spec_audits / get_spec_issue_runs
     # ------------------------------------------------------------------
 
-    def get_spec_issue_runs(self, project: str, last_n: int = 10) -> list[dict[str, Any]]:
-        """The last N recorded spec audits for ``project``, oldest first (#260).
+    def get_spec_audits(self) -> list[dict[str, Any]]:
+        """Every recorded spec audit in the journal, oldest first (#314).
+
+        The whole set, across every project, because the caller that
+        accounts for the history a windowed trend leaves out needs
+        exactly what the window drops: filtering by project here would
+        hide the thing it is asking for.
+
+        This is the read surface a caller uses INSTEAD of opening
+        ``config.journal_path`` for itself. The difference is not
+        cosmetic: if the journal ever compacts, rotates or gains a
+        second segment, this method is what changes, while a caller
+        holding the path would quietly return less than the journal
+        holds - and silent loss of the excluded-history accounting is
+        the defect #280 exists to fix.
 
         Deliberately NOT routed through :meth:`_read_journal_entries`:
         that reader keeps only entries whose ``run_id`` is among the
-        last N distinct run ids, and a ``spec_issues`` entry carries no
-        ``run_id`` at all (decompose runs before a factory run id
-        exists), so every one of them is dropped there. Reading the raw
-        entries is what makes the architect's own history readable.
+        last N distinct run ids, and a spec audit carries no ``run_id``
+        at all (decompose runs before a factory run id exists), so
+        every one of them is dropped there. Reading the raw entries is
+        what makes the architect's own history readable.
+        """
+        return [e for e in self._read_all_entries() if e.get("event_type") == SPEC_ISSUES_EVENT]
+
+    def get_spec_issue_runs(
+        self,
+        project: str,
+        last_n: int = 10,
+        audits: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        """The last N recorded spec audits for ``project``, oldest first (#260).
+
+        The one place the window rule lives (#314). ``decompose`` had a
+        second copy of it, and two copies of one rule can drift: if
+        they had, the convergence trend and the accounting printed
+        under it would have disagreed about the same journal.
 
         ``last_n`` counts spec audits, not factory runs - a spec audit
         happens once per decompose, whether or not a factory run
         follows. Windowed here rather than by the caller, matching
         :meth:`get_experiment_trends`.
 
+        ``audits`` lets a caller that has already called
+        :meth:`get_spec_audits` window that snapshot instead of reading
+        the file a second time, so the window and any accounting over
+        the same entries cannot disagree because the file moved between
+        two reads. The event-type filter is applied either way, so
+        passing raw entries answers the same as passing audits.
+
         Nothing is assumed about an entry beyond it being a JSON
-        object, so journals written by older versions read cleanly.
+        object, so journals written by older versions read cleanly. A
+        project is matched by :func:`entry_str`, so a null or
+        non-string ``project`` field is an unattributed audit rather
+        than a project named "None".
         """
+        source = self.get_spec_audits() if audits is None else audits
         runs = [
             entry
-            for entry in self._read_all_entries()
-            if entry.get("event_type") == "spec_issues" and entry.get("project") == project
+            for entry in source
+            if entry.get("event_type") == SPEC_ISSUES_EVENT
+            and entry_str(entry, "project") == project
         ]
         return runs[-last_n:] if last_n > 0 else []
 
@@ -1606,8 +1678,8 @@ class EvolutionJournal:
         """Read JSONL journal and return entries from the last N distinct runs.
 
         Entries without a ``run_id`` are dropped, because the window is
-        defined in terms of runs. ``spec_issues`` entries are exactly
-        that case; :meth:`get_spec_issue_runs` reads those instead.
+        defined in terms of runs. Spec audits are exactly that case;
+        :meth:`get_spec_audits` reads those instead.
         """
         entries = self._read_all_entries()
         if not entries:

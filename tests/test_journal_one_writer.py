@@ -442,9 +442,11 @@ def folded_filename_sites(source_file: Path) -> int:
 #: progress log and the queue journal). They are pinned anyway, because
 #: separating them from the evolution journal by name alone is a guess
 #: and #324 is the record of what guessing costs.
+#: ``decompose.py`` had a row here until #314; it asks
+#: ``EvolutionJournal.get_spec_audits`` now, and that method's docstring
+#: is where the reason lives.
 EXPECTED_JOURNAL_PATH_SITES: dict[str, int] = {
     "cli.py: journal.config.journal_path": 1,
-    "decompose.py: journal.config.journal_path": 1,
     "evolution.py: config.journal_path": 5,
     "evolution.py: self.config.journal_path": 3,
     "pipeline.py: self.journal_path": 4,

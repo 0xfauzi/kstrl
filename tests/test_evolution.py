@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from kstrl.evolution import (
     JOURNAL_SCHEMA_VERSION,
+    SPEC_ISSUES_EVENT,
     EvolutionConfig,
     EvolutionJournal,
     FailurePattern,
@@ -19,6 +21,7 @@ from kstrl.evolution import (
 )
 from kstrl.factory import FactoryResult
 from kstrl.manifest import Component, ComponentStatus, Manifest
+from tests.helpers.journal import audit, journal_at
 
 
 def _make_manifest(
@@ -1110,3 +1113,114 @@ class TestSpecIssueRuns:
 
         entries = journal._read_journal_entries()
         assert [e["component"] for e in entries] == ["a"]
+
+
+class TestSpecAudits:
+    """#314: the unwindowed reader the excluded-history accounting needs,
+    and the one window rule built on it."""
+
+    def _journal(self, tmp_path: Path, entries: list[dict[str, Any]]) -> EvolutionJournal:
+        journal = journal_at(tmp_path)
+        journal.append_entries(entries)
+        return journal
+
+    def test_every_project_is_returned_unwindowed(self, tmp_path: Path) -> None:
+        """The accounting under the trend counts the history the trend
+        LEAVES OUT, so a reader that filtered by project or applied the
+        window would hide exactly what the caller is asking for (#280).
+        """
+        journal = self._journal(
+            tmp_path,
+            [audit("mine"), audit("other"), audit(None)],
+        )
+
+        assert [e.get("project") for e in journal.get_spec_audits()] == ["mine", "other", None]
+
+    def test_other_event_types_are_excluded(self, tmp_path: Path) -> None:
+        """The journal carries component results and repair rows too."""
+        journal = self._journal(
+            tmp_path,
+            [
+                {"run_id": "r1", "event_type": "component_result", "component": "a"},
+                audit("mine"),
+            ],
+        )
+
+        assert [e["event_type"] for e in journal.get_spec_audits()] == [SPEC_ISSUES_EVENT]
+
+    def test_a_supplied_snapshot_is_windowed_without_a_second_read(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``audits=`` is what lets ONE read feed both the trend and the
+        accounting computed over the same entries, so the two cannot
+        disagree because the file moved between two reads."""
+        journal = self._journal(tmp_path, [audit("mine", "on-disk.md")])
+        elsewhere = [audit("mine", "b.md"), audit("other", "c.md")]
+
+        def refuse(self: EvolutionJournal) -> list[dict[str, Any]]:
+            raise AssertionError("read the file despite being handed a snapshot")
+
+        monkeypatch.setattr(EvolutionJournal, "get_spec_audits", refuse)
+
+        runs = journal.get_spec_issue_runs("mine", audits=elsewhere)
+
+        assert [r["spec_file"] for r in runs] == ["b.md"]
+
+    def test_a_supplied_snapshot_answers_the_same_as_raw_entries(self, tmp_path: Path) -> None:
+        """The event-type filter is applied either way, so a caller that
+        hands over unfiltered entries gets the reader's own answer
+        rather than a component_result that happens to name a
+        project."""
+        entries: list[dict[str, Any]] = [
+            {"event_type": "component_result", "project": "mine", "spec_file": "wrong.md"},
+            audit("mine", "right.md"),
+        ]
+        journal = self._journal(tmp_path, entries)
+
+        assert journal.get_spec_issue_runs("mine", audits=entries) == journal.get_spec_issue_runs(
+            "mine"
+        )
+
+    def test_the_window_keeps_the_newest_audits_not_the_oldest(self, tmp_path: Path) -> None:
+        """``[-last_n:]``, and the sign is the whole point: "the last N
+        recorded audits" read backwards is a trend the operator has
+        already acted on. Measured before this test existed: inverting
+        the slice left the ENTIRE suite green, because every other
+        window test records audits that raise the same counts.
+        """
+        journal = self._journal(tmp_path, [audit("mine", f"spec-{n}.md") for n in range(5)])
+
+        assert [r["spec_file"] for r in journal.get_spec_issue_runs("mine", last_n=2)] == [
+            "spec-3.md",
+            "spec-4.md",
+        ]
+
+    def test_a_non_positive_window_reads_nothing(self, tmp_path: Path) -> None:
+        """``lookback_runs = 0`` means the trend reads nothing, and the
+        report says so out loud rather than claiming no audit exists."""
+        journal = self._journal(tmp_path, [audit("mine")])
+
+        assert journal.get_spec_issue_runs("mine", last_n=0) == []
+        assert journal.get_spec_issue_runs("mine", last_n=-1) == []
+
+    def test_an_unattributed_audit_belongs_to_no_project(self, tmp_path: Path) -> None:
+        """#314: the window matches a project through ``entry_str``, the
+        rule the report's accounting already used, so a null or
+        non-string ``project`` is an unattributed audit and not a
+        project whose name happens to be empty. Before the fold the
+        method compared the raw field, and the two answered differently
+        for a query on "": the report's rule counted these, the
+        journal's did not.
+        """
+        journal = self._journal(
+            tmp_path,
+            [audit(None, "null.md"), audit(7, "int.md"), audit("", "empty.md")],
+        )
+
+        assert [r["spec_file"] for r in journal.get_spec_issue_runs("")] == [
+            "null.md",
+            "int.md",
+            "empty.md",
+        ]
