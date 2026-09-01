@@ -29,6 +29,7 @@ from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.findings import Finding
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.procgroup import safe_pgid
 from kstrl.reducer import ComponentState, RunState
 from kstrl.serve import (
     BACKOFF_CAP_SECONDS,
@@ -1780,8 +1781,6 @@ class TestProcessGroupSupervision:
         so this was never silent overall - but this test did not pin
         what its name says.
         """
-        from kstrl.procgroup import safe_pgid
-
         fake = MagicMock()
         with (
             patch("kstrl.serve.safe_pgid", wraps=safe_pgid) as guard,

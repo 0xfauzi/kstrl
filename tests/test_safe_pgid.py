@@ -206,12 +206,9 @@ _TARGET_FUNC = "getpgid"
 class _Scan:
     """Everything the resolver needs, collected in ONE tree walk.
 
-    The first version of this took four walks per file: imports, class
-    bodies, a fixed-point pass that re-walked on every iteration, and the
-    calls. Measured over the 126 files this net sweeps, that was 942,444
-    node visits against 235,611, and it put the sweep at 0.41s against
-    0.19s for the literal matcher it replaced. Bucketing gets the same
-    answer on all 146 inputs checked, in 0.22s.
+    One walk rather than the four the first version took: 235,611 node
+    visits over the 126 files swept, against 942,444, and 0.22s against
+    0.41s. Same answer on all 146 inputs checked.
     """
 
     imports: list[ast.Import]
@@ -307,51 +304,74 @@ def _absorb(
     grew = False
     for target in targets:
         if isinstance(target, ast.Name):
-            if target.id not in direct:
-                direct.add(target.id)
-                grew = True
+            grew |= target.id not in direct
+            direct.add(target.id)
             # A class body's `lookup = os.getpgid` is reachable as
             # `Cls.lookup` as well, so it belongs in BOTH buckets.
-            if target.id in class_bound and target.id not in attrs:
+            if target.id in class_bound:
+                grew |= target.id not in attrs
                 attrs.add(target.id)
-                grew = True
-        elif isinstance(target, ast.Attribute) and target.attr not in attrs:
+        elif isinstance(target, ast.Attribute):
+            grew |= target.attr not in attrs
             attrs.add(target.attr)
-            grew = True
+    return grew
+
+
+def _absorb_module(targets: list[ast.expr], aliases: set[str]) -> bool:
+    """Bind the targets of an assignment whose value IS the os module.
+
+    Round-2 review defeated the first version of this resolver with
+    ``_o = os``: it resolved a rebound CALLABLE and not a rebound MODULE,
+    while three docstrings said it did both. Two characters, and a
+    complete working fourth guard went through again.
+
+    Only plain ``ast.Name`` targets. ``G.mod = os`` then
+    ``G.mod.getpgid(pid)`` needs an attribute-to-module map that nothing
+    else here would use; it is a recorded miss instead.
+    """
+    grew = False
+    for target in targets:
+        if isinstance(target, ast.Name):
+            grew |= target.id not in aliases
+            aliases.add(target.id)
     return grew
 
 
 def _bindings(scan: _Scan) -> tuple[set[str], set[str], set[str]]:
     """(names for the os module, names for the callable, attribute names).
 
-    Resolving IMPORTS AND REBINDS is the whole difference between this
-    net and the one #308 first shipped, which matched the literal shape
-    ``os.getpgid(...)`` and nothing else. Round-1 review defeated that
-    version by planting a complete working fourth guard behind
-    ``import os as operating_system``, and three further spellings went
-    through with it.
-
     THE TWO NAME BUCKETS ARE NOT ONE. ``direct`` is names that ARE the
-    callable, ``attrs`` is attribute names that resolve to it. Merging
-    them costs precision that ``_MUST_IGNORE`` pins: after
-    ``lookup = os.getpgid`` at module level, an unrelated
-    ``other.lookup(1)`` is not this callable, and one merged set cannot
-    say so.
+    callable, ``attrs`` is attribute names that resolve to it, and
+    ``_MUST_IGNORE`` pins the difference: one merged set cannot tell
+    ``other.lookup(1)`` from the callable after ``lookup = os.getpgid``.
+
+    WHERE ``attrs`` OVER-MATCHES, measured rather than assumed. It holds
+    bare attribute NAMES with no owner and no scope, so a file that binds
+    ``self.lookup = os.getpgid`` anywhere also flags an unrelated
+    ``something_else.lookup(1)``, and one unrelated class attribute named
+    ``lookup`` promotes a module-level rebind of the same name. Owner
+    tracking is the fix and it belongs in #324's shared resolver, not in
+    a twelfth private copy. The direction is the tolerable one: this net
+    fails loudly and a false positive costs a reader one look, where a
+    false negative is a fourth copy of the guard shipping unnoticed.
     """
     aliases = _module_aliases(scan)
     direct = _imported_callables(scan)
     attrs: set[str] = set()
 
-    # To a fixed point, so `a = os.getpgid; b = a; b(pid)` resolves. No
-    # iteration bound: both sets only grow, over the finite set of names
-    # in one file, so this terminates. An earlier version capped it at 16
-    # and called the cap cycle protection, which was two errors - a cycle
-    # cannot spin a monotonically growing set, and the cap silently
+    # To a fixed point, so `a = os.getpgid; b = a; b(pid)` resolves
+    # whatever order `ast.walk` happens to hand the assignments over in.
+    # No iteration bound: the sets only grow, over the finite set of
+    # names in one file, so this terminates. An earlier version capped it
+    # at 16 and called the cap cycle protection, which was two errors - a
+    # cycle cannot spin a monotonically growing set, and the cap silently
     # stopped resolving a rebind chain longer than itself.
     while True:
         grew = False
         for targets, value in scan.assigns:
-            if _reaches_target(value, aliases, direct, attrs):
+            if isinstance(value, ast.Name) and value.id in aliases:
+                grew |= _absorb_module(targets, aliases)
+            elif _reaches_target(value, aliases, direct, attrs):
                 grew |= _absorb(targets, scan.class_bound, direct, attrs)
         if not grew:
             return aliases, direct, attrs
@@ -366,12 +386,23 @@ def _getpgid_calls(source: str) -> list[int]:
     )
 
 
-#: Every spelling the net must flag. `module alias` is the one round-1
-#: review planted a working fourth copy of the guard behind; the three
-#: below it are the rest of what went through with it. The others are
-#: forms the sibling guards in this repo were each separately holed by,
-#: kept as regression cover against a matcher that starts reading
-#: arguments or scope again.
+#: Every spelling the net must flag.
+#:
+#: Four of these are spellings that a review round planted a COMPLETE,
+#: working fourth copy of the guard behind and watched go through:
+#: `module alias`, `from import`, `callable rebind` and `class attribute`
+#: in round 1, and `module rebind` in round 2. The rest are forms the
+#: sibling guards in this repo were each separately holed by, kept as
+#: regression cover against a matcher that starts reading arguments or
+#: scope again. Order here carries no meaning: `parametrize` sorts.
+#:
+#: Two rows exist to pin resolver machinery that nothing else reaches,
+#: which is why they read as contrived. `global installed later` is the
+#: only input where the fixed point changes the answer (every one of the
+#: 127 real files converges in a single pass), and `attribute assigned
+#: on self` is the only input that reaches `_absorb`'s attribute-target
+#: branch. Both were watched failing against a mutant that removes what
+#: they pin.
 _MUST_CATCH = {
     "direct": "import os\npgid = os.getpgid(pid)\n",
     "keyword argument": "import os\npgid = os.getpgid(pid=pid)\n",
@@ -381,6 +412,8 @@ _MUST_CATCH = {
         "        return os.getpgid(1)\n\n    return inner\n"
     ),
     "module alias": "import os as operating_system\npgid = operating_system.getpgid(pid)\n",
+    "module rebind": "import os\nx = os\npgid = x.getpgid(pid)\n",
+    "module rebind chain": "import os\na = os\nb = a\npgid = b.getpgid(pid)\n",
     "from import": "from os import getpgid\npgid = getpgid(pid)\n",
     "from import aliased": "from os import getpgid as gp\npgid = gp(pid)\n",
     "callable rebind": "import os\nlookup = os.getpgid\npgid = lookup(pid)\n",
@@ -394,6 +427,21 @@ _MUST_CATCH = {
     ),
     "instance attribute": (
         "import os\n\n\nclass G:\n    lookup = os.getpgid\n\n\npgid = G().lookup(pid)\n"
+    ),
+    # A module that installs its hook from one function and uses it from
+    # another defined above it. `ast.walk` hands the inner assignment over
+    # before the outer one, so a single resolution pass never sees it.
+    "global installed later": (
+        "import os\n\n_resolve = None\n\n\ndef derive(pid):\n"
+        "    hop = _resolve\n    return hop(pid)\n\n\ndef install():\n"
+        "    global _resolve\n\n    _resolve = os.getpgid\n"
+    ),
+    # An `ast.Attribute` on the LEFT of the assignment, which no other row
+    # here produces.
+    "attribute assigned on self": (
+        "import os\n\n\nclass Holder:\n    def __init__(self) -> None:\n"
+        "        self.lookup = os.getpgid\n\n"
+        "    def derive(self, pid):\n        return self.lookup(pid)\n"
     ),
 }
 
@@ -410,6 +458,9 @@ _MUST_IGNORE = {
     "a different os call": "import os\npid = os.getpid()\n",
     # Pins the precision the two name buckets buy: `lookup` is the
     # callable, `other.lookup` is somebody else's attribute of that name.
+    # This holds only while no attribute of that name is bound anywhere in
+    # the same file; `attrs` carries no owner. `_bindings` says where that
+    # over-matches and why the fix is #324's, not a twelfth private copy's.
     "the same name as an attribute of something else": (
         "import os\nlookup = os.getpgid\npgid = other.lookup(1)\n"
     ),
@@ -420,10 +471,11 @@ class TestNoCallerCarriesItsOwnCopy:
     """The point of #308: a fourth site would be invisible to the above.
 
     WHAT THIS NET SEES is a call that RESOLVES to `os.getpgid` - through
-    module aliases, from-imports, rebinds and class attributes - and not
-    just the literal shape `os.getpgid(...)` that #308 first shipped.
-    Round-1 review defeated that version by planting a complete working
-    guard behind `import os as operating_system`.
+    module aliases, module rebinds, from-imports, callable rebinds and
+    class attributes - and not just the literal shape `os.getpgid(...)`
+    that #308 first shipped. Two review rounds each defeated the version
+    before it by planting a complete working guard: round 1 behind
+    `import os as operating_system`, round 2 behind `_o = os`.
 
     WHAT IT DOES NOT SEE, so the assert message does not overclaim it: a
     fourth site that gets a pgid from somewhere OTHER than this lookup -
@@ -436,15 +488,22 @@ class TestNoCallerCarriesItsOwnCopy:
     missed `wait(timeout=None)` and `with Popen(...)`, then still missed
     `from subprocess import Popen as Spawn` after being repaired once;
     the toml guard fell to `import tomllib as _tl`; the journal guard to
-    `open(path, mode="a")`; and this one to a module alias. That is five
-    instances of one defect, of which this is the fifth. #324 tracks
-    factoring the resolution onto a shared helper, and two round-2
-    reviewers named `tests/test_toml_readers.py` as the closest existing
-    copy. This class does not solve that, and a reader should not take it
-    as though the problem were local.
+    `open(path, mode="a")`; and this one to a module alias, then to a
+    module rebind after being repaired once. #324 tracks factoring the
+    resolution onto a shared helper. Two of the existing copies already
+    hold pieces of it: `tests/test_toml_readers.py` resolves module
+    rebinds through a fixed point, which THIS net had to be taught twice,
+    and `tests/test_tui_config_walk.py` exposes a target-agnostic
+    `collect_bindings` that resolves 7 of the 14 rows below with no
+    changes. Neither was reused here (see the PR body for the measured
+    reasons), and that is itself the shape of the problem: the fix
+    already existed in the tree and the guard was holed anyway. This
+    class does not solve #324, and a reader should not take it as though
+    the problem were local.
 
-    WHAT IT STILL MISSES is recorded by `test_the_remaining_misses`, so
-    the reach is a measured fact rather than a claim.
+    WHAT IT STILL MISSES is recorded by `test_the_remaining_misses`,
+    which is a strict xfail, so a recorded miss cannot quietly stop being
+    one.
     """
 
     @pytest.mark.parametrize("spelling", sorted(_MUST_CATCH))
@@ -477,12 +536,13 @@ class TestNoCallerCarriesItsOwnCopy:
         assert _getpgid_calls(owner.read_text(encoding="utf-8")) != []
 
     @pytest.mark.xfail(
-        strict=False,
+        strict=True,
+        raises=AssertionError,
         reason=(
-            "known misses, recorded rather than fixed. Marked xfail and "
-            "written the way a PASS should read, so strengthening the "
-            "resolver under #324 reports XPASS instead of breaking a test "
-            "that asserted the hole stays open."
+            "known misses, recorded rather than fixed. Written the way a "
+            "PASS should read, so strengthening the resolver under #324 "
+            "fails this test and forces the row into `_MUST_CATCH` rather "
+            "than leaving a stale note behind."
         ),
     )
     @pytest.mark.parametrize(
@@ -491,11 +551,20 @@ class TestNoCallerCarriesItsOwnCopy:
             'import os\npgid = getattr(os, "getpgid")(pid)\n',
             'import importlib\npgid = importlib.import_module("os").getpgid(pid)\n',
             'import os\nTABLE = {"f": os.getpgid}\npgid = TABLE["f"](pid)\n',
+            "import os\n\n\nclass G:\n    mod = os\n\n\npgid = G.mod.getpgid(pid)\n",
+            "import os\n\nhop, other = _resolve, None\n_resolve = os.getpgid\npgid = hop(1)\n",
         ],
     )
     def test_the_remaining_misses(self, spelling: str) -> None:
-        """Each needs value tracking through a string or a container,
-        which is where a per-file AST net stops being the right tool.
-        They are also spellings nobody reaches for by accident, unlike
-        the module alias that got through round 1."""
+        """Each needs something this resolver does not do: value tracking
+        through a string or a container, an attribute-to-module map, or
+        destructuring a tuple assignment. That is where a per-file AST net
+        stops being the right tool.
+
+        `strict=True` and `raises=AssertionError` together are what make
+        this a ratchet rather than a note. Round-2 review measured the
+        first version: with `strict=False` and no `raises`, XFAIL, XPASS
+        and a resolver that raises on entry were all green, so the record
+        could go stale in silence. Now closing a hole fails here, and
+        gutting the resolver fails here."""
         assert _getpgid_calls(spelling) != []
