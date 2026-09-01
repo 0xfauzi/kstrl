@@ -63,7 +63,9 @@ Any change to an adversarial role should include either a calibration delta or a
 
 ### Halt over heroics
 
-The architect halts on blocker-severity spec issues; hard-mode reviewers halt on findings at or above the threshold. The pipeline should fail loudly when something is wrong, not silently degrade.
+The architect halts when it ESCALATES: a product, scope or risk judgement, or a choice between incompatible architectures that is expensive to unwind. Everything else it closes itself and records in `scripts/kstrl/decisions.json` (#260). Hard-mode reviewers halt on findings at or above the threshold. The pipeline should fail loudly when something is wrong, not silently degrade.
+
+Halting is not free. Five real runs against a real spec halted 5 of 5 on blocker-severity findings, and not one of the 26 blockers was a judgement only the owner could make: the architect halted on questions its own `suggestion` field had already answered. "Vague" means "the architect could not answer", not "the architect had a question".
 
 ### Audit trail
 

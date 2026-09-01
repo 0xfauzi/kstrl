@@ -302,7 +302,8 @@ class TestDecomposeBlockerOutput:
 
     def test_prints_artifact_path_on_halt(self, tmp_path: Path, monkeypatch) -> None:
         import kstrl.cli as cli_mod
-        from kstrl.decompose import SpecBlockerError, SpecIssue
+        from kstrl.decisions import SpecDecision
+        from kstrl.decompose import SpecBlockerError
 
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Vague spec")
@@ -311,10 +312,10 @@ class TestDecomposeBlockerOutput:
         def fake_decompose(**kwargs: object) -> None:
             raise SpecBlockerError(
                 [
-                    SpecIssue(
-                        severity="blocker",
-                        kind="ambiguity",
-                        summary="spec is too vague",
+                    SpecDecision(
+                        question="what is this product for",
+                        disposition="escalated",
+                        resolution="the owner must say",
                     )
                 ],
                 artifact_path=artifact,
@@ -339,7 +340,7 @@ class TestDecomposeBlockerOutput:
             ],
         )
         assert result.exit_code == 2
-        assert "spec is too vague" in result.output
+        assert "what is this product for" in result.output
         assert str(artifact) in result.output
 
 
@@ -583,7 +584,8 @@ class TestBaseBranchFlagDefaults:
     @staticmethod
     def _capture(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
         import kstrl.cli as cli_mod
-        from kstrl.decompose import SpecBlockerError, SpecIssue
+        from kstrl.decisions import SpecDecision
+        from kstrl.decompose import SpecBlockerError
 
         seen: dict[str, object] = {}
 
@@ -592,7 +594,13 @@ class TestBaseBranchFlagDefaults:
             # Halt before anything is provisioned; the assertion is on
             # what the CLI resolved, not on what decompose does with it.
             raise SpecBlockerError(
-                [SpecIssue(severity="blocker", kind="ambiguity", summary="halt")]
+                [
+                    SpecDecision(
+                        question="halt",
+                        disposition="escalated",
+                        resolution="the owner must say",
+                    )
+                ]
             )
 
         monkeypatch.setattr(cli_mod, "decompose_spec", fake_decompose)

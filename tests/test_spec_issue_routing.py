@@ -273,7 +273,7 @@ class TestFindingsReachThePrd:
 
 
 class TestHaltingIsUnchanged:
-    def test_a_blocker_still_halts_and_writes_no_prd(self, tmp_path: Path) -> None:
+    def test_an_escalation_still_halts_and_writes_no_prd(self, tmp_path: Path) -> None:
         blocker = {
             "severity": "blocker",
             "kind": "ambiguity",
@@ -281,11 +281,23 @@ class TestHaltingIsUnchanged:
             "location": "the whole spec",
             "suggestion": "Write it down",
         }
-        # A component alongside the blocker, so the no-PRD assertion
+        # A component alongside the escalation, so the no-PRD assertion
         # below can actually fail. With "components": [] the only PRD
         # writer loops over an empty list and the assertion is
         # arithmetic rather than evidence.
-        payload = json.dumps({"components": [DOCUMENT_FORMAT], "spec_issues": [blocker]})
+        payload = json.dumps(
+            {
+                "components": [DOCUMENT_FORMAT],
+                "spec_issues": [blocker],
+                "decisions": [
+                    {
+                        "question": "which format does the product commit to",
+                        "disposition": "escalated",
+                        "resolution": "the owner must choose",
+                    }
+                ],
+            }
+        )
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Spec\nBuild it.")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True, exist_ok=True)

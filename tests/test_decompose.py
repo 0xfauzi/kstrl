@@ -368,7 +368,7 @@ class TestSpecIssues:
         }
         assert _parse_spec_issues(data) == []
 
-    def test_empty_components_allowed_when_blocker_exists(self) -> None:
+    def test_empty_components_allowed_when_escalated(self) -> None:
         data = {
             "components": [],
             "spec_issues": [
@@ -378,16 +378,105 @@ class TestSpecIssues:
                     "summary": "spec is too vague",
                 }
             ],
+            "decisions": [
+                {
+                    "question": "which product ships first",
+                    "disposition": "escalated",
+                    "resolution": "the owner must name the smallest slice",
+                }
+            ],
         }
         assert _validate_decompose_output(data) == []
 
-    def test_empty_components_rejected_without_blockers(self) -> None:
+    def test_empty_components_rejected_without_escalation(self) -> None:
         data = {"components": []}
         errors = _validate_decompose_output(data)
         assert errors
         assert "components" in errors[0]
 
-    def test_decompose_raises_on_blocker(self, tmp_path: Path) -> None:
+    def test_a_blocker_without_an_escalation_is_rejected(self) -> None:
+        """#260: the halt keys on the escalation, so a blocker with no
+        escalated decision would proceed on a question the architect
+        called un-guessable and never closed. Retryable, not silent."""
+        data = json.loads(
+            _single_component_output([_story()], spec_issues=[BLOCKER_ISSUE], decisions=[])
+        )
+        errors = _validate_decompose_output(data)
+        assert any("escalated" in e for e in errors)
+
+    def test_an_escalation_without_a_blocker_is_rejected(self) -> None:
+        data = json.loads(
+            _single_component_output(
+                [_story()],
+                spec_issues=[MINOR_ISSUE],
+                decisions=[
+                    {
+                        "question": "which product ships first",
+                        "disposition": "escalated",
+                        "resolution": "the owner must name the smallest slice",
+                    }
+                ],
+            )
+        )
+        errors = _validate_decompose_output(data)
+        assert any("escalated" in e for e in errors)
+
+    def test_a_decision_naming_an_unknown_component_is_rejected(self) -> None:
+        """#260: the renderer matches the id exactly, so a typo would
+        silently demote a binding decision to the summary tier for every
+        engineer. Same join the validator already does for deps."""
+        data = json.loads(
+            _single_component_output(
+                [_story()],
+                decisions=[
+                    {
+                        "question": "what does the serializer emit",
+                        "disposition": "decided",
+                        "resolution": "an empty list",
+                        "component": "comp-typo",
+                    }
+                ],
+            )
+        )
+        errors = _validate_decompose_output(data)
+        assert any("unknown component 'comp-typo'" in e for e in errors)
+
+    def test_a_decision_binding_the_whole_run_names_no_component(self) -> None:
+        data = json.loads(
+            _single_component_output(
+                [_story()],
+                decisions=[
+                    {
+                        "question": "what does the serializer emit",
+                        "disposition": "decided",
+                        "resolution": "an empty list",
+                        "component": "",
+                    }
+                ],
+            )
+        )
+        assert _validate_decompose_output(data) == []
+
+    def test_a_disposed_issue_needs_no_escalation(self) -> None:
+        """The whole point of #260: an issue the architect closed itself
+        rides along with the components instead of stopping the run."""
+        data = json.loads(
+            _single_component_output(
+                [_story()],
+                spec_issues=[MINOR_ISSUE],
+                decisions=[
+                    {
+                        "question": "what does the empty-input path do",
+                        "disposition": "assumed",
+                        "resolution": "return an empty list; pinned by AC2",
+                        "component": "comp-a",
+                    }
+                ],
+            )
+        )
+        assert _validate_decompose_output(data) == []
+
+    def test_decompose_raises_on_escalation(self, tmp_path: Path) -> None:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Vague spec\nDo something good.")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
@@ -401,6 +490,13 @@ class TestSpecIssues:
                         "summary": "Spec is empty",
                         "location": "everywhere",
                         "suggestion": "Write actual requirements",
+                    }
+                ],
+                "decisions": [
+                    {
+                        "question": "what is this product for",
+                        "disposition": "escalated",
+                        "resolution": "the owner must say",
                     }
                 ],
                 "components": [],
@@ -418,8 +514,14 @@ class TestSpecIssues:
                 ui=ui,
                 root_dir=tmp_path,
             )
-        assert len(exc_info.value.issues) == 1
-        assert exc_info.value.issues[0].severity == "blocker"
+        assert len(exc_info.value.escalations) == 1
+        assert exc_info.value.escalations[0].question == "what is this product for"
+        # R1.7: the halt points at BOTH durable records. The audit holds
+        # the finding; only the register holds the question the owner
+        # has to answer and the reason it was not answered.
+        lines = exc_info.value.artifact_lines()
+        assert any("spec-issues.json" in line for line in lines)
+        assert any("decisions.json" in line for line in lines)
 
     def test_decompose_continues_on_non_blockers(self, tmp_path: Path) -> None:
         spec_file = tmp_path / "spec.md"
@@ -665,9 +767,30 @@ def _story(**overrides: object) -> dict[str, object]:
     return story
 
 
+def _escalations_for(spec_issues: list[dict[str, object]]) -> list[dict[str, object]]:
+    """One escalated decision per blocker, as the v2.0.0 prompt requires.
+
+    #260 made "blocker" severity and an escalated decision two views of
+    one fact, and ``_decision_register_errors`` rejects output where the
+    two counts disagree. Derived here rather than written out at every
+    call site so a test that adds a blocker cannot forget the half that
+    makes the halt real.
+    """
+    return [
+        {
+            "question": f"who decides: {issue['summary']}",
+            "disposition": "escalated",
+            "resolution": "the owner must choose",
+        }
+        for issue in spec_issues
+        if issue.get("severity") == "blocker"
+    ]
+
+
 def _single_component_output(
     stories: list[dict[str, object]],
     spec_issues: list[dict[str, object]] | None = None,
+    decisions: list[dict[str, object]] | None = None,
 ) -> str:
     payload: dict[str, object] = {
         "components": [
@@ -687,6 +810,9 @@ def _single_component_output(
     }
     if spec_issues is not None:
         payload["spec_issues"] = spec_issues
+        payload["decisions"] = _escalations_for(spec_issues) if decisions is None else decisions
+    elif decisions is not None:
+        payload["decisions"] = decisions
     return json.dumps(payload)
 
 
@@ -811,7 +937,13 @@ class TestSpecIssuesPersistence:
         spec_file.write_text("# Vague spec")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
-        output = json.dumps({"components": [], "spec_issues": [BLOCKER_ISSUE]})
+        output = json.dumps(
+            {
+                "components": [],
+                "spec_issues": [BLOCKER_ISSUE],
+                "decisions": _escalations_for([BLOCKER_ISSUE]),
+            }
+        )
         with pytest.raises(SpecBlockerError) as exc_info:
             decompose_spec(
                 spec_path=spec_file,
@@ -871,7 +1003,13 @@ class TestSpecIssuesPersistence:
         spec_file.write_text("# Vague spec")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
-        output = json.dumps({"components": [], "spec_issues": [BLOCKER_ISSUE]})
+        output = json.dumps(
+            {
+                "components": [],
+                "spec_issues": [BLOCKER_ISSUE],
+                "decisions": _escalations_for([BLOCKER_ISSUE]),
+            }
+        )
         with pytest.raises(SpecBlockerError):
             decompose_spec(
                 spec_path=spec_file,

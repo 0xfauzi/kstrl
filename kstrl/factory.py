@@ -46,6 +46,7 @@ from kstrl.contract import (
     ContractResult,
     run_contract_testing,
 )
+from kstrl.decisions import build_decisions_context, read_decisions
 from kstrl.events import (
     AdversarialAgentSelected,
     AutonomyLevelApplied,
@@ -1881,6 +1882,7 @@ def _run_component(
     scaffold_cmd: str | None = None,
     component_deps: list[str] | None = None,
     knowledge_prefix: str = "",
+    decisions_prefix: str = "",
     progress_file_str: str | None = None,
     codebase_map_file_str: str = "scripts/kstrl/codebase_map.md",
     agent_iteration_timeout: float = 1800.0,
@@ -2086,11 +2088,12 @@ def _run_component(
 
     # Build context prefix from previous retries
     context_prefix: str | None = None
-    parts: list[str] = []
-    if knowledge_prefix:
-        parts.append(knowledge_prefix)
-    if feedforward_prefix:
-        parts.append(feedforward_prefix)
+    # One list rather than one `if` per source: three context blocks
+    # reach the engineer the same way and differ only in where they were
+    # built, so adding the fourth should not mean adding a branch.
+    parts: list[str] = [
+        block for block in (knowledge_prefix, decisions_prefix, feedforward_prefix) if block
+    ]
     if previous_context_json:
         ctx = IterationContext.from_json(previous_context_json)
         formatted = ctx.format_for_prompt()
@@ -3432,6 +3435,12 @@ def _run_factory_locked(
             "max_context_tokens": fc.max_context_tokens,
         }
 
+    # #260: the architect's disposition register, read once for the run
+    # because it is a run-wide artifact the decompose wrote. Absent (a
+    # manifest built before this landed, or by hand) it reads as [] and
+    # every engineer prompt is byte-identical to before.
+    run_decisions = read_decisions(root_dir)
+
     def _submit_args(comp: Component, wt_path: Path) -> tuple[Any, ...]:
         ctx_json = component_contexts.get(comp.id)
         engineer_usage = pipeline.engineer_usage_totals()
@@ -3472,6 +3481,11 @@ def _run_factory_locked(
             comp.scaffold or None,
             comp.dependencies or None,
             knowledge_prefix,
+            # #260: rides the same context-prefix path the distilled
+            # facts already ride, so the register reaches the engineer
+            # without a second delivery mechanism. Per component: its
+            # own decisions in full, the rest of the run summarised.
+            build_decisions_context(run_decisions, comp.id),
             # Per-component, not run-wide: KstrlConfig.component_progress_file
             # keeps the engineer's progress log inside allowedPaths.
             base_config.component_progress_file(comp.prd_path, root_dir),

@@ -2075,10 +2075,12 @@ def decompose(
             return 0
         except SpecBlockerError as exc:
             core_ui.err(str(exc))
-            # R1.7: point at the durable artifact so the user iterates
-            # against a file, not scrollback.
-            if exc.artifact_path is not None:
-                core_ui.info(f"Spec issues written to: {exc.artifact_path}")
+            # R1.7: point at the durable artifacts so the user iterates
+            # against files, not scrollback. Plural, because after #260
+            # the audit holds the finding and the register holds the
+            # question the owner has to answer.
+            for line in exc.artifact_lines():
+                core_ui.info(line)
             return 2
         except ValueError as exc:
             core_ui.err(str(exc))
@@ -2570,12 +2572,13 @@ def factory(
                 root_dir=root_dir,
             )
         except SpecBlockerError as exc:
-            # Architect halted: spec has blocker-severity issues. Surface
-            # them and exit cleanly. The user fixes the spec and re-runs,
-            # iterating against the persisted artifact (R1.7).
+            # Architect halted: it escalated a question only the owner
+            # can answer (#260). Surface it and exit cleanly. The user
+            # answers, edits the spec and re-runs, iterating against the
+            # persisted artifacts (R1.7).
             ui_impl.err(str(exc))
-            if exc.artifact_path is not None:
-                ui_impl.info(f"Spec issues written to: {exc.artifact_path}")
+            for line in exc.artifact_lines():
+                ui_impl.info(line)
             sys.exit(2)
         except ValueError as exc:
             ui_impl.err(str(exc))

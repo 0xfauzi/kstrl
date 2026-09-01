@@ -43,6 +43,13 @@ BLOCKER_OUTPUT = json.dumps(
                 "suggestion": "Write actual requirements",
             }
         ],
+        "decisions": [
+            {
+                "question": "what is this product for",
+                "disposition": "escalated",
+                "resolution": "the owner must say",
+            }
+        ],
         "components": [],
     }
 )
@@ -145,6 +152,7 @@ class TestDecomposeRun:
         assert all(p["passed"] for p in architect.phase_history)
         assert [a["label"] for a in state.artifacts] == [
             "spec_issues",
+            "decisions",
             "prd",
             "prd",
             "manifest",
@@ -200,7 +208,7 @@ class TestDecomposeRun:
         audit = [p for p in architect.phase_history if p["phase"] == "audit"]
         assert audit and audit[0]["passed"] is False
         assert state.spec_issue_counts == {"blocker": 1}
-        assert [a["label"] for a in state.artifacts] == ["spec_issues"]
+        assert [a["label"] for a in state.artifacts] == ["spec_issues", "decisions"]
         # No plan beyond the architect: nothing was decomposed.
         assert state.plan_order == [ARCHITECT_COMPONENT]
 
@@ -243,7 +251,7 @@ class TestDecomposeRun:
         architect = state.components[ARCHITECT_COMPONENT]
         assert architect.status == "failed"
         assert architect.error == "OSError: manifest disk full"
-        assert [a["label"] for a in state.artifacts] == ["spec_issues"]
+        assert [a["label"] for a in state.artifacts] == ["spec_issues", "decisions"]
         assert list((tmp_path / "scripts" / "kstrl").rglob("prd.json")) == []
 
     def test_without_bus_no_run_dir_and_same_result(

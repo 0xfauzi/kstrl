@@ -5472,7 +5472,8 @@ class TestFactoryHandsTheArchitectSpendToTheRun:
         through.
         """
         from kstrl import cli as cli_mod
-        from kstrl.decompose import SpecBlockerError, SpecIssue
+        from kstrl.decisions import SpecDecision
+        from kstrl.decompose import SpecBlockerError
 
         captured: dict[str, Any] = {}
         agent = SimpleNamespace(name="fake", usage_records=[])
@@ -5494,10 +5495,10 @@ class TestFactoryHandsTheArchitectSpendToTheRun:
             if halt:
                 raise SpecBlockerError(
                     [
-                        SpecIssue(
-                            severity="blocker",
-                            kind="ambiguity",
-                            summary="the spec does not say",
+                        SpecDecision(
+                            question="the spec does not say",
+                            disposition="escalated",
+                            resolution="the owner must say",
                         )
                     ]
                 )

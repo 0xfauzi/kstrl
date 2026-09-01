@@ -153,9 +153,19 @@ _VERSIONS: dict[str, str] = {
 # Joint snapshot: (sha256_hash, semver_version). Both must move together
 # when a prompt is edited; the test fails if either is stale.
 _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
+    # 2.0.0 (#260): MAJOR, because the halt contract and the output
+    # schema both broke. The architect now has four ways to close a
+    # question - decided, assumed, spiked, escalated - recorded in a new
+    # top-level `decisions` array, and only an escalation halts. The
+    # sentence forcing `"components": []` on any blocker is gone, and
+    # "blocker" severity is redefined to mean "you escalated this", with
+    # the harness rejecting output whose blocker and escalation counts
+    # disagree. Five real runs against a real spec halted 5 of 5 on
+    # findings the architect had already answered in its own
+    # suggestions; 2 of 117 were judgements only the owner could make.
     "DECOMPOSE_PROMPT": (
-        "8bce50b09f19220e58d941fe0b99a0f45d0c4e003d90a40c7570a4af542b1452",
-        "1.4.2",
+        "3b7b4008023cf5bf4d496927bf9a1ca01498993f8b085eeea83f56e875b425d3",
+        "2.0.0",
     ),
     # 2.0.0 (#266): MAJOR, because the change-acquisition contract and
     # the output schema both broke. Neither prompt carries a diff any
