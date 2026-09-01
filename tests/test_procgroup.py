@@ -170,10 +170,11 @@ class TestTheGroupIdIsGuardedBeforeAnySignal:
     """#298 round 2: this module signals, so it carries the guard.
 
     `killpg(1, sig)` is `kill(-1, sig)`, every process this user owns.
-    `serve._safe_pgid` has this rule and the module docstring used to
-    appeal to it, which is a convention, not a mechanism: nothing
-    enforces that callers came through it. The triplication across
-    serve / verify / agents.proc is #308; this is procgroup's own half.
+    #308 moved the Popen-level guard here as `safe_pgid` (tested in
+    `tests/test_safe_pgid.py`), so serve, verify and agents.proc now come
+    through this module. `_may_signal_group` stays a function of its own
+    because the pgid entry points take an id from anywhere, and nothing
+    enforces that THEIR callers came through `safe_pgid`.
     """
 
     @pytest.mark.parametrize("pgid", [-1, 0, 1])

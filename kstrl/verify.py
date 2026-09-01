@@ -48,6 +48,7 @@ from kstrl.policy import (
     evaluate_policy,
 )
 from kstrl.prd import PRD
+from kstrl.procgroup import safe_pgid
 from kstrl.statedir import STATE_DIR_NAME
 
 # R2.6 env scrub: verification subprocesses execute agent-authored code
@@ -105,27 +106,30 @@ _SCRUB_TERM_GRACE_SECONDS = 5.0
 def _signal_process_group(proc: subprocess.Popen[str], sig: signal.Signals) -> None:
     """Signal the child's whole process group, direct-child fallback.
 
-    The pid/pgid guards are load-bearing: a mocked Popen's pid coerces to
-    1 via ``MagicMock.__index__`` and ``killpg(1, sig)`` is ``kill(-1,
-    sig)`` - signal every process this user owns. ``start_new_session=True``
-    makes the child its own group leader, so a pgid at or below 1 or equal
-    to ours means something is wrong and the group kill must not proceed.
+    The pid/pgid guards that decide whether a group kill may proceed at
+    all live in :func:`kstrl.procgroup.safe_pgid`, which #308 made the one
+    copy of a rule this function used to write out for itself. A None from
+    it - a mocked ``Popen``, a non-POSIX platform, an unsafe pgid, a child
+    already reaped - is not an error here: it degrades to signalling the
+    direct child, which is the whole reason the guard can afford to be
+    strict.
     """
-    pid = proc.pid
-    try:
-        if hasattr(os, "killpg") and isinstance(pid, int) and pid > 1:
-            pgid = os.getpgid(pid)
-            if pgid > 1 and pgid != os.getpgrp():
-                os.killpg(pgid, sig)
-                return
-    except (ProcessLookupError, PermissionError, OSError):
-        pass
+    pgid = safe_pgid(proc)
+    if pgid is not None:
+        try:
+            os.killpg(pgid, sig)
+        except OSError:
+            # ESRCH (the group went between the lookup and the signal) or
+            # EPERM. Fall through and try the direct child instead.
+            pass
+        else:
+            return
     try:
         if sig == signal.SIGKILL:
             proc.kill()
         else:
             proc.terminate()
-    except (ProcessLookupError, OSError):
+    except OSError:
         pass
 
 

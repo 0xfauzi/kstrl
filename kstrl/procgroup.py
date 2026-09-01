@@ -232,18 +232,61 @@ def _may_signal_group(pgid: int) -> bool:
     """Whether ``killpg(pgid, ...)`` is safe to issue at all.
 
     ``killpg(1, sig)`` is ``kill(-1, sig)``: every process this user owns.
-    ``serve._safe_pgid``, ``verify._signal_process_group`` and
-    ``agents.proc`` each carry a copy of this rule (#308); this module
-    needs its own because nothing enforces that its callers came through
-    one of them, and a docstring saying they do is a convention, not a
-    mechanism.
+    ``serve``, ``verify`` and ``agents.proc`` each used to carry a copy of
+    this rule; #308 moved it here and they now reach it through
+    :func:`safe_pgid`. This stays a function of its own because the pgid
+    entry points below take an id from anywhere, so nothing enforces that
+    THEIR callers came through ``safe_pgid``.
 
-    This module only ever sends signal 0, so unlike those three it does
-    NOT exclude the caller's own group: probing it is harmless and is a
-    question the suite legitimately asks. The broadcast pgid is the part
-    that must be refused whatever the signal.
+    The own-group exclusion is deliberately NOT here. The callers inside
+    this module only ever send signal 0, where probing our own group is
+    harmless and is a question the suite legitimately asks;
+    :func:`safe_pgid`, whose callers send real signals, adds that
+    exclusion on top. The broadcast pgid is the part that must be refused
+    whatever the signal.
     """
     return hasattr(os, "killpg") and pgid > 1
+
+
+def safe_pgid(process: subprocess.Popen[str]) -> int | None:
+    """A child's process-group id, or None when group-signalling is unsafe.
+
+    The single copy of the guard ``serve._safe_pgid``,
+    ``verify._signal_process_group`` and ``agents.proc._signal_group``
+    used to write out three times (#308). Driven over one matrix of pid,
+    ``getpgid`` and ``killpg`` outcomes before the move, the three agreed
+    on which pgid was safe for every input; they differed only in the
+    error channel, ``serve`` letting ``getpgid`` raise where the other two
+    swallowed. This takes the swallowing form, so a caller no longer wraps
+    the call in ``except OSError`` to get a None.
+
+    Three things make a pgid unsafe. A pid that is not an ``int``, because
+    a mocked ``Popen``'s pid coerces to 1 through ``MagicMock.__index__``
+    rather than raising - measured on this machine,
+    ``os.getpgid(MagicMock())`` returns 1. A pgid of 1 or below, because
+    ``killpg(1, sig)`` is ``kill(-1, sig)``, every process this user owns,
+    which is how a CI runner was once taken down. And our OWN group,
+    because ``start_new_session=True`` gives the child a group of its own,
+    so seeing ours back means the child never got one and the signal would
+    land on the harness doing the signalling.
+
+    This is the entry point for a ``Popen``. :func:`_may_signal_group`
+    remains the entry point for a bare pgid.
+    """
+    pid = process.pid
+    # ``killpg`` gates ``getpgid`` as much as itself: both are POSIX-only,
+    # and an absent one raises AttributeError, which no caller catches.
+    if not hasattr(os, "killpg") or not isinstance(pid, int) or pid <= 1:
+        return None
+    try:
+        pgid = os.getpgid(pid)
+    except OSError:
+        # ESRCH (already reaped) or EPERM. Either way there is no group id
+        # here that we are entitled to signal.
+        return None
+    if not _may_signal_group(pgid) or pgid == os.getpgrp():
+        return None
+    return pgid
 
 
 def read_group_liveness(pgid: int) -> GroupLiveness:
