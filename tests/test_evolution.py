@@ -1186,6 +1186,28 @@ class TestSpecAudits:
             "mine"
         )
 
+    def test_the_window_keeps_the_newest_audits_not_the_oldest(self, tmp_path: Path) -> None:
+        """``[-last_n:]``, and the sign is the whole point: "the last N
+        recorded audits" read backwards is a trend the operator has
+        already acted on. Measured before this test existed: inverting
+        the slice left the ENTIRE suite green, because every other
+        window test records audits that raise the same counts.
+        """
+        journal = self._journal(tmp_path, [self._audit("mine", f"spec-{n}.md") for n in range(5)])
+
+        assert [r["spec_file"] for r in journal.get_spec_issue_runs("mine", last_n=2)] == [
+            "spec-3.md",
+            "spec-4.md",
+        ]
+
+    def test_a_non_positive_window_reads_nothing(self, tmp_path: Path) -> None:
+        """``lookback_runs = 0`` means the trend reads nothing, and the
+        report says so out loud rather than claiming no audit exists."""
+        journal = self._journal(tmp_path, [self._audit("mine")])
+
+        assert journal.get_spec_issue_runs("mine", last_n=0) == []
+        assert journal.get_spec_issue_runs("mine", last_n=-1) == []
+
     def test_an_unattributed_audit_belongs_to_no_project(self, tmp_path: Path) -> None:
         """#314: the window matches a project through ``entry_str``, the
         rule the report's accounting already used, so a null or

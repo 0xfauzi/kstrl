@@ -752,6 +752,12 @@ MINOR_ISSUE: dict[str, object] = {
 }
 
 
+def _blockers(count: int) -> list[dict[str, object]]:
+    """``count`` blockers the de-duplicator keeps apart, so an audit's
+    recorded blocker count is the number asked for."""
+    return [{**BLOCKER_ISSUE, "summary": f"blocker {n}"} for n in range(count)]
+
+
 def _run_decompose(
     tmp_path: Path,
     output: str,
@@ -2069,6 +2075,26 @@ class TestSpecConvergenceThroughDecompose:
             "1, 1, 1 (blockers, oldest run first; 1 older audit(s) outside the "
             "lookback window)" in output
         )
+
+    def test_the_window_keeps_the_newest_audits(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Direction, not just size. Every other window test in this
+        file records audits that raise the same count, so ``[:last_n]``
+        and ``[-last_n:]`` produce identical output and the whole suite
+        stays green with the trend reading the OLDEST audits: measured,
+        with the rule inverted, before this test existed. The counts
+        differ per run here, so the trend line says which end was kept.
+        """
+        monkeypatch.setenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", "2")
+        for count in (1, 2, 3):
+            self._run(tmp_path, _blockers(count))
+        output = self._run(tmp_path, _blockers(4))
+
+        assert "2, 3, 4 (blockers, oldest run first" in output
+        assert "1, 2, 4" not in output
 
     def test_no_report_when_the_journal_is_off(
         self,
