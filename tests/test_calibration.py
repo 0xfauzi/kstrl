@@ -55,6 +55,7 @@ from pathlib import Path
 import pytest
 
 from kstrl import calibration
+from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.decompose import (
     SpecIssue,
     _extract_agent_json,
@@ -430,10 +431,45 @@ def _get_reviewer_calibration_agent():
     )
 
 
+# Per-run wall-clock cap for one calibration agent call.
+#
+# Production does not cap this at all: `_decompose_spec_impl` calls
+# `agent.run(retry_prompt, cwd=root_dir)` with no timeout, so any cap
+# here is a calibration-harness artifact and must be large enough that
+# it never decides the result.
+#
+# Measured on the largest architect fixture (03_ambiguous_perf, haiku,
+# three runs each): DECOMPOSE_PROMPT 1.4.2 finished in 37.8 / 41.3 /
+# 44.8s emitting 5.7 to 6.2 KB, and 2.0.0 in 188.0 / 215.1 / 226.9s
+# emitting 17.1 to 19.9 KB. The v2 prompt asks for more work (it closes
+# every finding it raises, and it returns components where v1 returned
+# none), so it legitimately runs about five times longer. At the old
+# 300s cap that put real runs inside the tail: 4 of 24 runs across two
+# captures were killed mid-generation.
+#
+# 900s is a hang bound, not a performance target. The measurement says
+# the work takes ~200s; the cap only has to be far enough above that to
+# stop measuring speed, while still killing a CLI that has wedged.
+AGENT_RUN_TIMEOUT_S = 900.0
+
+
 def _collect(agent, prompt: str, cwd: Path) -> list[str]:
+    """Drain one agent run, raising if the deadline killed it.
+
+    Every adapter yields `timeout_message` as its last line when the
+    deadline fires (`kstrl.loop` keys on the same prefix). Without this
+    check the caller sees a short, JSON-free output and scores it as a
+    behavioral miss with `error=False`, so a killed process is recorded
+    as "the model failed to find the planted issue". That is the wrong
+    fact: nothing was observed. Raising lets the caller classify it as
+    `_AgentUnavailable`, which the consistency gate excludes from its
+    denominator.
+    """
     output: list[str] = []
-    for line in agent.run(prompt, cwd=cwd, timeout=300.0):
+    for line in agent.run(prompt, cwd=cwd, timeout=AGENT_RUN_TIMEOUT_S):
         output.append(line)
+    if output and output[-1].startswith(TIMEOUT_MESSAGE_PREFIX):
+        raise RuntimeError(output[-1])
     return output
 
 
