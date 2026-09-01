@@ -379,11 +379,26 @@ _DIGIT_RUN_RE = re.compile(r"\d+")
 # which marks one ROLE RUN that failed to execute inside an otherwise
 # healthy component. Different taxonomy, different consumer,
 # deliberately different spelling so a grep for either does not silently
-# return the other. They also disagree, on purpose and measurably:
-# factory's live autonomy accounting asks the FINDING question
-# (`_infra_casualty`) while the replay asks the SIGNATURE question, and
-# `pr:merge-conflict` attaches no infrastructure finding. Reconciling
-# those two is not this table's job.
+# return the other.
+#
+# They also disagree, on purpose and measurably. factory's live autonomy
+# accounting asks the FINDING question (`_infra_casualty`) while the
+# replay asks the SIGNATURE question, and #339 review counted the
+# divergence rather than leaving it at the one example this comment used
+# to give. Six signatures, in both directions:
+#
+#   - the whole `pr:` family, `provisioning:` and `aborted:shutdown` are
+#     infrastructure to the replay and attach no finding at all, so the
+#     live side calls them judgement;
+#   - `review:infrastructure` and `security:infrastructure` are the
+#     reverse: a finding is attached, but `review`/`security` are not
+#     infrastructure prefixes, so the replay counts them as evidence;
+#   - `scope_unreadable:` depends on which producer fired - the Phase 1
+#     gate attaches a finding, the pre-launch refusal in factory does
+#     not.
+#
+# Reconciling those is not this table's job (#332 holds factory.py), but
+# an undercount was, because it read as a single known exception.
 #
 # tests/test_check_name_enrolment.py pins the whole table row by row, so
 # a new row, a dropped row or a typo in a category is a red test with
@@ -494,11 +509,31 @@ def category_for_check(check_name: str) -> str:
     four of them into the ``"infrastructure"`` category that had to be
     invented to hold them, and nothing is grandfathered any more.
 
-    ``tests/test_check_name_enrolment.py`` is the mechanism: it
-    AST-walks ``kstrl/`` for every constructed check name and every
-    ``signatures=["<prefix>:<code>"]`` literal, and fails on one this
-    table does not carry. A new gate cannot reach the journal
-    uncategorised.
+    ``tests/test_check_name_enrolment.py`` is the mechanism, and #339
+    review corrected what it establishes. It AST-walks ``kstrl/`` for
+    the four places a component's failure signatures are written - a
+    ``CheckResult`` name, a ``signatures=`` argument, the ``phase=`` of
+    a failure recorded with neither, and a direct
+    ``component_failure_signatures[...] = [...]`` assignment - and fails
+    on a name this table does not carry. What it does NOT establish is
+    that no gate can reach the journal uncategorised, which is what this
+    docstring claimed while the fourth producer was invisible to it and
+    eight of nine shape mutations survived.
+
+    What it establishes now, in three files and stated as three separate
+    claims because they hold three separate things:
+
+    - a producer site the walk RECOGNISES and cannot read is enumerated
+      in its ``BLIND_SITES`` ledger rather than dropped, which is what
+      the old walk did;
+    - ``tests/test_signature_spellings.py`` pins every signature-shaped
+      string in the package whatever container it sits in, so a producer
+      in a shape nobody has thought of still has to appear somewhere;
+    - ``tests/test_check_name_shapes.py`` pins what the walk SAYS about
+      each shape, including the shapes it says nothing about, because a
+      shape the walk does not recognise leaves no trace in either of the
+      two above. That is a limit, not a proof, and it is the limit
+      ``pipeline._fail_pr_flow`` lived in until #339 review.
 
     The answer is computed here, at read time, and never stored in the
     journal - measured: a ``record_run`` entry has no ``category`` key

@@ -50,6 +50,13 @@ DEFAULT_EXPERIMENTS_PATH = Path(".kstrl/experiments.tsv")
 #: at all, and a failure can be a gate's honest verdict and still answer
 #: that with no.
 #:
+#: ONE OF THE FOUR IS LIVE. `scope_unreadable:` is emitted by kstrl and
+#: is the reason this constant exists; `git:`, `infra:` and `timeout:`
+#: match nothing this code can produce, and the paragraph below says how
+#: that was measured. Stated here as well as there because a reader who
+#: takes the list at face value inherits the wrong prior about how much
+#: of the ladder's evidence these four remove.
+#:
 #: `scope_unreadable:` (#294) is the harness failing to establish its own
 #: input: the component's scope could not be read from the pre-run tree,
 #: so nothing was ever measured about the change. The same reasoning that
@@ -63,14 +70,28 @@ DEFAULT_EXPERIMENTS_PATH = Path(".kstrl/experiments.tsv")
 #: it IS a Phase 1 gate result, and #294 gave it its own gate, its own
 #: table row and its own proposal arm on that basis. That divergence is
 #: the point of splitting this constant in two, and
-#: `tests/test_check_name_enrolment.py` pins both halves of it.
+#: `tests/test_infrastructure_category_consumers.py` pins both halves of
+#: it, through the property rather than against this tuple.
 #:
 #: `git:`, `infra:` and `timeout:` name families no version of kstrl has
 #: ever emitted: measured with `git log -S`, all three strings entered
 #: the tree in 606cbb1, the commit that created this tuple, and no call
-#: site produces them. Kept because an experiments.tsv row outlives the
-#: code that wrote it and the cost of a prefix that matches nothing is
-#: zero. They are NOT enrolled in `_CATEGORY_BY_CHECK`: that table
+#: site produces them. #339 re-measured it four ways and got the same
+#: answer: none of the three appears in `kstrl/` as a signature prefix,
+#: none is in `_CATEGORY_BY_CHECK`, none is in `_classify_check`'s range,
+#: and none is producible by any of the four check-name producers
+#: `tests/test_check_name_enrolment.py` enumerates.
+#:
+#: Kept, and #339 review is why that needs saying carefully: an earlier
+#: draft of this comment defended them as protecting historical rows,
+#: which cannot be true alongside the sentence above it. If no version
+#: ever emitted the strings then no experiments.tsv row contains them,
+#: and deleting them would change nothing that exists. They stay because
+#: a prefix that matches nothing costs nothing to carry and because
+#: removing them is a decision about what this constant is FOR - whether
+#: it guards against families kstrl has never written - which is worth
+#: making on its own rather than as a tidy-up inside a categorisation
+#: fix. They are NOT enrolled in `_CATEGORY_BY_CHECK`: that table
 #: describes names kstrl emits, and the enrolment guard would make any
 #: real `git:` gate enrol itself on the day it lands.
 _REPLAY_ONLY_PREFIXES: tuple[str, ...] = (
@@ -95,8 +116,8 @@ _REPLAY_ONLY_PREFIXES: tuple[str, ...] = (
 #: tuple interleaves the two halves, so read the two sources, not the
 #: order.
 #:
-#: `tests/test_check_name_enrolment.py` pins the contents through
-#: `RunRecord.infra_aborted` rather than against this tuple, so a
+#: `tests/test_infrastructure_category_consumers.py` pins the contents
+#: through `RunRecord.infra_aborted` rather than against this tuple, so a
 #: property that stopped consulting it would be caught.
 INFRA_FAILURE_PREFIXES: tuple[str, ...] = tuple(
     sorted({f"{check}:" for check in INFRASTRUCTURE_CHECKS} | set(_REPLAY_ONLY_PREFIXES))
@@ -181,7 +202,22 @@ class ReplayReport:
     decisive_runs: int
     infra_aborted_runs: int
     projects: list[str]
+    #: Merges in DECISIVE runs only, which is the population the ladder
+    #: promotes on. #339: this used to sum every row, so a run Ctrl-C'd
+    #: after merging 24 components printed "Components merged: 24" two
+    #: lines under "infra-aborted: 1 (excluded)" while contributing
+    #: nothing to a promotion. Two populations, one label.
     components_merged: int
+    #: The merges the line above deliberately leaves out, so the total is
+    #: still recoverable and the exclusion is visible rather than a
+    #: number that quietly got smaller. Rendered only when non-zero,
+    #: unlike the infra-aborted count above it, because a report with
+    #: nothing excluded has nothing to disclose.
+    #:
+    #: No default: a hand-built report would otherwise claim silently
+    #: that nothing was excluded, which is the exact under-report this
+    #: field exists to stop.
+    merged_in_excluded_runs: int
     would_promote: list[str] = field(default_factory=list)
     would_demote: list[str] = field(default_factory=list)
     final_level: int = int(AutonomyLevel.L1_SUPERVISED)
@@ -200,7 +236,12 @@ class ReplayReport:
             f"Runs recorded:        {self.total_runs}",
             f"  decisive:           {self.decisive_runs}",
             f"  infra-aborted:      {self.infra_aborted_runs} (excluded)",
-            f"Components merged:    {self.components_merged}",
+            f"Components merged:    {self.components_merged} (in decisive runs)",
+            *(
+                [f"  in excluded runs:   {self.merged_in_excluded_runs} (not counted)"]
+                if self.merged_in_excluded_runs
+                else []
+            ),
             f"Projects:             {', '.join(self.projects) or '(none)'}",
             "",
             "Thresholds replayed (ALL UNMEASURED PLACEHOLDERS):",
@@ -254,7 +295,8 @@ def replay(runs: list[RunRecord]) -> ReplayReport:
         decisive_runs=sum(1 for r in runs if r.decisive),
         infra_aborted_runs=sum(1 for r in runs if r.infra_aborted),
         projects=sorted({r.project for r in runs if r.project}),
-        components_merged=sum(r.completed for r in runs),
+        components_merged=sum(r.completed for r in runs if r.decisive),
+        merged_in_excluded_runs=sum(r.completed for r in runs if not r.decisive),
     )
     for run in runs:
         if not run.decisive:
