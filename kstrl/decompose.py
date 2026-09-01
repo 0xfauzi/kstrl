@@ -1330,34 +1330,39 @@ def _excluded_history(
     )
 
 
-def _journal_snapshot(
-    journal: EvolutionJournal | None,
-    project_name: str,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+@dataclass(frozen=True)
+class AuditSnapshot:
+    """One read of the recorded spec-audit history, in three views.
+
+    A container rather than a tuple because ``audits`` and ``window``
+    are both ``list[dict[str, Any]]``: swapping them typechecks, and
+    they are exactly the pair #280 exists to keep straight - the trend
+    reads the window, the accounting under it reads everything the
+    window left out.
+    """
+
+    #: Every spec audit the journal holds, across every project.
+    audits: list[dict[str, Any]]
+    #: This project's last ``lookback`` audits: what the trend scores.
+    window: list[dict[str, Any]]
+    #: How far back the window reaches, carried so the render can tell
+    #: a windowed-out audit from one the trend could not score.
+    lookback: int
+
+
+def _journal_snapshot(journal: EvolutionJournal | None, project_name: str) -> AuditSnapshot:
     """The recorded audit history behind one convergence report.
 
-    Three things from ONE read: every spec audit the journal holds,
-    this project's window of them, and how far back that window
-    reaches. Together because a journal that is absent has none of the
-    three, which keeps that single fact here instead of three
+    All three views from ONE read, because a journal that is absent has
+    none of the three: that keeps the fact here instead of three
     conditionals at the call site.
 
     Read through ``EvolutionJournal`` rather than through its storage
-    path (#314). The journal's own reader is the only one that would
-    survive the file compacting, rotating or gaining a second segment;
-    a caller holding the path would quietly return less than the
-    journal holds while the trend kept printing, and silent loss of
-    the excluded-history accounting is the defect #280 exists to fix.
-
-    The window comes from ``get_spec_issue_runs`` rather than from a
-    second copy of its rule here, so the trend and the accounting
-    printed under it cannot disagree about which audits belong to this
-    project. Runs are matched by project NAME, not by spec path or
-    content hash: the spec is edited between every round by
-    construction (so a content hash never matches), and the recorded
-    loop in #260 renamed the file mid-loop (so the path does not
-    either). A previous audit of a different file is still reported,
-    with the file names named.
+    path, and windowed by ``get_spec_issue_runs`` rather than by a
+    second copy of its rule here (#314). Why each matters is on those
+    two methods; the short version is that a caller holding the path
+    survives no change of storage, and a second copy of the window rule
+    can drift from the one the accounting uses.
 
     MUST be read BEFORE this run's own audit is appended to the
     journal, or the "previous run" the trend compares against is this
@@ -1369,11 +1374,14 @@ def _journal_snapshot(
     78 MB, against an architect call measured at 119 to 210 seconds.
     """
     if journal is None:
-        return [], [], 0
+        return AuditSnapshot(audits=[], window=[], lookback=0)
     audits = journal.get_spec_audits()
     lookback = journal.config.lookback_runs
-    window = journal.get_spec_issue_runs(project_name, lookback, audits=audits)
-    return audits, window, lookback
+    return AuditSnapshot(
+        audits=audits,
+        window=journal.get_spec_issue_runs(project_name, lookback, audits=audits),
+        lookback=lookback,
+    )
 
 
 def _surface_convergence(
@@ -1981,15 +1989,15 @@ def _decompose_spec_impl(
     # ONE read feeds both the trend and the accounting under it, so the
     # two are computed over the same snapshot and cannot disagree
     # because the file changed between two reads.
-    audits, history, lookback = _journal_snapshot(journal, project_name)
+    snapshot = _journal_snapshot(journal, project_name)
     # #280: the trend is keyed on the project name, so a rename starts a
     # fresh one and the runs before it drop out of view. Keying
     # differently would be worse (the spec is edited every round, so a
     # content hash never matches, and #260's own loop renamed the file
     # too), so what is fixed is the silence rather than the key.
     _surface_convergence(
-        _build_convergence(spec_issues, spec_path.name, history),
-        _excluded_history(audits, project_name, spec_path.name, lookback),
+        _build_convergence(spec_issues, spec_path.name, snapshot.window),
+        _excluded_history(snapshot.audits, project_name, spec_path.name, snapshot.lookback),
         project_name,
         ui,
     )

@@ -26,7 +26,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from kstrl.evolution import JOURNAL_REPAIR_EVENT, EvolutionConfig, EvolutionJournal
+from kstrl.evolution import (
+    JOURNAL_REPAIR_EVENT,
+    SPEC_ISSUES_EVENT,
+    EvolutionConfig,
+    EvolutionJournal,
+)
 from kstrl.observability import read_progress_events
 
 #: A partial JSONL line: valid JSON up to the point the process died,
@@ -70,12 +75,20 @@ def terminate(path: Path) -> None:
     path.write_bytes(path.read_bytes() + b"\n")
 
 
-def audit(project: str) -> dict[str, Any]:
+def audit(project: Any, spec_file: str | None = None) -> dict[str, Any]:
+    """One recorded spec audit.
+
+    ``project`` is typed ``Any`` because a hand-edited or foreign
+    journal can carry a null or a number there, and the readers promise
+    to tolerate it; ``spec_file`` defaults to one named after the
+    project and is passed explicitly when a test needs the rows told
+    apart.
+    """
     return {
         "timestamp": "2026-08-20T00:00:00Z",
         "project": project,
-        "event_type": "spec_issues",
-        "spec_file": f"{project}.md",
+        "event_type": SPEC_ISSUES_EVENT,
+        "spec_file": f"{project}.md" if spec_file is None else spec_file,
     }
 
 
@@ -101,7 +114,7 @@ def audits_in(path: Path) -> list[str]:
     return [
         str(entry.get("project"))
         for entry in read_progress_events(path)
-        if entry.get("event_type") == "spec_issues"
+        if entry.get("event_type") == SPEC_ISSUES_EVENT
     ]
 
 

@@ -6,10 +6,12 @@ import io
 import json
 from collections.abc import Iterator, Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from kstrl.decompose import (
+    AuditSnapshot,
     ExcludedHistory,
     SpecBlockerError,
     SpecConvergence,
@@ -30,7 +32,7 @@ from kstrl.decompose import (
 from kstrl.evolution import SPEC_ISSUES_EVENT, EvolutionConfig, EvolutionJournal
 from kstrl.prd import PRD
 from kstrl.ui.plain import PlainUI
-from tests.helpers.journal import tear
+from tests.helpers.journal import audit, journal_at, tear
 
 
 class MockDecomposeAgent:
@@ -1204,7 +1206,7 @@ class TestExcludedHistory:
         spec_file: str = "mine.md",
         lookback: int = 10,
     ) -> ExcludedHistory:
-        audits = _journal_snapshot(journal, project)[0]
+        audits = _journal_snapshot(journal, project).audits
         return _excluded_history(audits, project, spec_file, lookback)
 
     def _lines(
@@ -1257,7 +1259,8 @@ class TestExcludedHistory:
             ]
         )
 
-        excluded = _excluded_projects(_journal_snapshot(journal, "mine")[0], "mine", "mine.md")
+        audits = _journal_snapshot(journal, "mine").audits
+        excluded = _excluded_projects(audits, "mine", "mine.md")
 
         assert [(e.project, e.audits) for e in excluded] == [("other", 1)]
 
@@ -1576,7 +1579,7 @@ class TestUnattributedAudits:
         journal = EvolutionJournal(EvolutionConfig.load(tmp_path))
         journal.append_entries(entries)
 
-        audits = _journal_snapshot(journal, "mine")[0]
+        audits = _journal_snapshot(journal, "mine").audits
         history = _excluded_history(audits, "mine", "mine.md", 10)
 
         assert len(audits) == 4
@@ -1587,18 +1590,17 @@ class TestOneJournalRead:
     """#280 round 2, findings 6 and 7, and #314: one read, taken through
     ``EvolutionJournal`` rather than past it."""
 
-    def _journal(self, tmp_path: Path, entries: list[dict[str, object]]) -> EvolutionJournal:
-        journal = EvolutionJournal(EvolutionConfig.load(tmp_path))
+    def _journal(
+        self,
+        tmp_path: Path,
+        entries: list[dict[str, Any]],
+        lookback_runs: int | None = None,
+    ) -> EvolutionJournal:
+        journal = journal_at(tmp_path)
+        if lookback_runs is not None:
+            journal.config.lookback_runs = lookback_runs
         journal.append_entries(entries)
         return journal
-
-    def _audit(self, project: str, spec_file: str) -> dict[str, object]:
-        return {
-            "event_type": SPEC_ISSUES_EVENT,
-            "project": project,
-            "spec_file": spec_file,
-            "timestamp": "2026-08-20T00:00:00Z",
-        }
 
     def test_the_journal_is_parsed_once_per_report(
         self,
@@ -1637,25 +1639,22 @@ class TestOneJournalRead:
     ) -> None:
         """#314 item 1. ``_journal_snapshot`` used to open
         ``journal.config.journal_path`` itself, which works only while
-        the file is the whole story: if the journal ever compacts,
-        rotates or gains a second segment, the caller holding the path
-        keeps printing a trend while the accounting under it goes
-        quiet, and silent loss of that accounting is the defect #280
-        exists to fix.
+        the file is the whole story; ``get_spec_audits`` says what that
+        costs when it stops being.
 
         Proved by giving the journal a reader that answers something
         the file does not contain. A snapshot that reaches for the path
         cannot see it, so this fails on the shortcut rather than on the
         hypothetical second segment nobody has written yet.
         """
-        journal = self._journal(tmp_path, [self._audit("mine", "on-disk.md")])
-        elsewhere = [self._audit("mine", "b.md"), self._audit("other", "c.md")]
+        journal = self._journal(tmp_path, [audit("mine", "on-disk.md")])
+        elsewhere = [audit("mine", "b.md"), audit("other", "c.md")]
         monkeypatch.setattr(EvolutionJournal, "get_spec_audits", lambda self: elsewhere)
 
-        audits, window, _ = _journal_snapshot(journal, "mine")
+        snapshot = _journal_snapshot(journal, "mine")
 
-        assert [a["spec_file"] for a in audits] == ["b.md", "c.md"]
-        assert [w["spec_file"] for w in window] == ["b.md"]
+        assert [a["spec_file"] for a in snapshot.audits] == ["b.md", "c.md"]
+        assert [w["spec_file"] for w in snapshot.window] == ["b.md"]
 
     def test_the_window_is_the_journals_own_over_the_journals_own_lookback(
         self,
@@ -1668,19 +1667,19 @@ class TestOneJournalRead:
         the snapshot has to reach it with the journal's own
         ``lookback_runs`` rather than a number of its own.
         """
-        entries: list[dict[str, object]] = [
-            self._audit("mine" if n % 2 else "other", f"spec-{n}.md") for n in range(9)
-        ]
-        journal = self._journal(tmp_path, entries)
+        entries = [audit("mine" if n % 2 else "other", f"spec-{n}.md") for n in range(9)]
 
         for lookback in (1, 3, 10):
-            journal.config.lookback_runs = lookback
-            assert _journal_snapshot(journal, "mine")[1] == journal.get_spec_issue_runs(
+            # A journal of its own per lookback: one file appended to
+            # three times would compare a growing history against
+            # itself and pass whatever the window did.
+            journal = self._journal(tmp_path / f"lookback-{lookback}", entries, lookback)
+            assert _journal_snapshot(journal, "mine").window == journal.get_spec_issue_runs(
                 "mine", last_n=lookback
             )
 
     def test_no_journal_reads_nothing_and_windows_nothing(self) -> None:
-        assert _journal_snapshot(None, "mine") == ([], [], 0)
+        assert _journal_snapshot(None, "mine") == AuditSnapshot(audits=[], window=[], lookback=0)
 
 
 class TestExcludedAccountingLine:

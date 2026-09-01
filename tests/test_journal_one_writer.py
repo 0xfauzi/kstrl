@@ -442,12 +442,9 @@ def folded_filename_sites(source_file: Path) -> int:
 #: progress log and the queue journal). They are pinned anyway, because
 #: separating them from the evolution journal by name alone is a guess
 #: and #324 is the record of what guessing costs.
-#: ``decompose.py`` had a row here until #314. It read the path to get
-#: the spec-audit history that ``EvolutionJournal`` had no public reader
-#: for; it now asks ``get_spec_audits`` instead, so the row is gone and
-#: putting it back fails this test - which is the point, because a read
-#: that holds the path is one compaction away from silently returning
-#: less than the journal holds (#280).
+#: ``decompose.py`` had a row here until #314; it asks
+#: ``EvolutionJournal.get_spec_audits`` now, and that method's docstring
+#: is where the reason lives.
 EXPECTED_JOURNAL_PATH_SITES: dict[str, int] = {
     "cli.py: journal.config.journal_path": 1,
     "evolution.py: config.journal_path": 5,
