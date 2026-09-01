@@ -51,13 +51,15 @@ from kstrl.manifest import (
 )
 from kstrl.names import validate_branch_name, validate_component_id
 from kstrl.observability import read_progress_events
-from kstrl.prd import (
-    PRD,
-    SPEC_ISSUE_APPLIES_COMPONENT,
-    SPEC_ISSUE_APPLIES_SPEC,
-)
+from kstrl.prd import PRD
 
 logger = logging.getLogger(__name__)
+
+# What ``appliesTo`` says about a routed spec finding (#260). The
+# vocabulary lives with the code that writes it: ``prd`` holds the field
+# but validates nothing about its contents, so it has no use for these.
+SPEC_ISSUE_APPLIES_COMPONENT = "component"
+SPEC_ISSUE_APPLIES_SPEC = "spec"
 
 if TYPE_CHECKING:
     from kstrl.evolution import EvolutionJournal

@@ -106,3 +106,48 @@ class TestEngineerLoopPlumbing:
         assert (worktree / "result.txt").read_text() == "implemented\n"
         assert git("log", "-1", "--format=%s", cwd=worktree) == ("engineer output")
         assert git("status", "--porcelain", cwd=worktree) == ""
+
+    def test_an_existing_worktree_prd_is_not_reseeded_from_the_root(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Provisioning is seed-once, not sync.
+
+        #260 routes the architect's non-blocker findings into the PRD as
+        an informational ``specIssues`` block and documents that an
+        engineer may edit or delete it: nothing checks, and a deletion
+        is not undone on a later iteration. That last clause is this
+        guard. Overwrite the worktree copy per iteration and the
+        engineer's edits would be reverted underneath it, and a block it
+        had already dealt with would come back every time.
+        """
+        root = tmp_path / "repo"
+        init_kstrl_repo(root, (COMP,))
+        worktree = _setup_worktree(COMP, BRANCH, "main", root, RUN_ID)
+
+        # The state a second iteration starts from: a copy already in
+        # place, differing from the root's.
+        edited = '{"branchName": "kstrl/factory/comp-a", "userStories": []}\n'
+        (worktree / PRD_REL).parent.mkdir(parents=True, exist_ok=True)
+        (worktree / PRD_REL).write_text(edited, encoding="utf-8")
+        assert (root / PRD_REL).read_text(encoding="utf-8") != edited
+
+        agent_bin = tmp_path / "bin" / "fake-agent"
+        agent_bin.parent.mkdir()
+        agent_bin.write_text("#!/bin/bash\ncat >/dev/null\necho '<promise>COMPLETE</promise>'\n")
+        agent_bin.chmod(0o755)
+
+        _run_component(
+            COMP,
+            PRD_REL,
+            str(worktree),
+            str(root),
+            PROMPT_REL,
+            str(agent_bin),
+            None,  # model
+            None,  # reasoning
+            None,  # agent_type
+            0.0,  # sleep_seconds
+        )
+
+        assert (worktree / PRD_REL).read_text(encoding="utf-8") == edited

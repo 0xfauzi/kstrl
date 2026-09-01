@@ -21,21 +21,23 @@ from typing import Any
 import pytest
 
 from kstrl.decompose import (
+    SPEC_ISSUE_APPLIES_COMPONENT,
+    SPEC_ISSUE_APPLIES_SPEC,
     SpecBlockerError,
     SpecIssue,
     _routed_prd_issues,
     decompose_spec,
     route_spec_issues,
 )
-from kstrl.prd import (
-    PRD,
-    SPEC_ISSUE_APPLIES_COMPONENT,
-    SPEC_ISSUE_APPLIES_SPEC,
-)
+from kstrl.knowledge import _read_prd_text
+from kstrl.prd import _OPTIONAL_KEYS, PRD, PROMPT_EXCLUDED_KEYS, prd_text_for_prompt
+from kstrl.security import SecurityConfig, SecurityMode, run_security_review
 from kstrl.ui.plain import PlainUI
+from tests.conftest import make_review_repo
 from tests.helpers.component_prd import write_component_prd
 from tests.test_decompose import MockDecomposeAgent, _run_decompose
 from tests.test_prd_allowed_paths import _make_prd_payload
+from tests.test_review_payload import RecordingAgent
 
 # Component names in the shape the architect really produces. The first
 # is verbatim from the one decomposed component on disk in the
@@ -279,7 +281,11 @@ class TestHaltingIsUnchanged:
             "location": "the whole spec",
             "suggestion": "Write it down",
         }
-        payload = json.dumps({"components": [], "spec_issues": [blocker]})
+        # A component alongside the blocker, so the no-PRD assertion
+        # below can actually fail. With "components": [] the only PRD
+        # writer loops over an empty list and the assertion is
+        # arithmetic rather than evidence.
+        payload = json.dumps({"components": [DOCUMENT_FORMAT], "spec_issues": [blocker]})
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Spec\nBuild it.")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True, exist_ok=True)
@@ -296,6 +302,23 @@ class TestHaltingIsUnchanged:
                 root_dir=tmp_path,
             )
         assert list(tmp_path.rglob("prd.json")) == []
+
+    def test_the_same_payload_without_the_blocker_does_write_a_prd(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The positive control for the test above. Its "no prd.json"
+        assertion is only evidence if this payload can produce one, so
+        the same component with the severity downgraded must."""
+        major = {
+            "severity": "major",
+            "kind": "ambiguity",
+            "summary": "The document format is not specified at all",
+            "location": "the whole spec",
+            "suggestion": "Write it down",
+        }
+        _run_decompose(tmp_path, _payload(major))
+        assert _prd_path(tmp_path, "document-format").exists()
 
     def test_a_blocker_is_not_routed_alongside_the_others(self) -> None:
         """Blockers halt before a PRD exists. Routing them would be dead
@@ -393,37 +416,42 @@ class TestPrdSchema:
     def _errors(self, spec_issues: Any) -> list[str]:
         return PRD.validate_schema(_make_prd_payload(specIssues=spec_issues))
 
-    def test_a_well_formed_block_validates(self) -> None:
+    def test_the_shape_the_harness_writes_validates(self) -> None:
         assert self._errors([self.ENTRY]) == []
 
-    def test_an_empty_array_is_refused(self) -> None:
-        assert any("non-empty when present" in e for e in self._errors([]))
-
     def test_a_non_array_is_refused(self) -> None:
-        assert any("must be an array" in e for e in self._errors("nope"))
+        """The one thing still checked, because ``PRD.save`` writes the
+        value straight back out and a scalar there is a corrupt file
+        rather than an annotation."""
+        assert any("specIssues must be an array" in e for e in self._errors("nope"))
 
-    def test_an_entry_that_is_not_an_object_is_refused(self) -> None:
-        assert any("specIssues[0]: must be an object" in e for e in self._errors(["nope"]))
+    @pytest.mark.parametrize(
+        ("edit", "value"),
+        [
+            ("resolve them all, leaving the block empty", []),
+            ("mark one resolved with a new key", [{**ENTRY, "resolved": "true"}]),
+            ("reuse appliesTo to say so", [{**ENTRY, "appliesTo": "resolved"}]),
+            (
+                "drop the suggestion as noise",
+                [{k: v for k, v in ENTRY.items() if k != "suggestion"}],
+            ),
+            ("collapse the block to plain strings", ["Encoding is unspecified"]),
+        ],
+    )
+    def test_an_engineer_annotation_is_accepted(self, edit: str, value: Any) -> None:
+        """These five, and only these five, are the edits that hard-failed
+        the run under review round 1's strict validator. Each failed
+        inside ``PRD.load``, so ``check_prd_stories`` reported "Failed to
+        load PRD" and never reached the tamper comparison: the operator
+        got a schema error, after paying for the whole component, for
+        annotating a note no gate reads.
 
-    def test_an_unknown_applies_to_is_refused(self) -> None:
-        errors = self._errors([{**self.ENTRY, "appliesTo": "everywhere"}])
-        assert any("appliesTo" in e for e in errors)
-
-    def test_an_extra_key_is_refused(self) -> None:
-        errors = self._errors([{**self.ENTRY, "owner": "me"}])
-        assert any("unexpected keys: owner" in e for e in errors)
-
-    def test_a_missing_key_is_refused(self) -> None:
-        entry = {k: v for k, v in self.ENTRY.items() if k != "kind"}
-        assert any("missing keys: kind" in e for e in self._errors([entry]))
-
-    def test_a_non_string_field_is_refused(self) -> None:
-        errors = self._errors([{**self.ENTRY, "severity": 3}])
-        assert any("severity: must be a string" in e for e in errors)
-
-    def test_an_empty_summary_is_refused(self) -> None:
-        errors = self._errors([{**self.ENTRY, "summary": ""}])
-        assert any("summary: must be non-empty" in e for e in errors)
+        A reword is deliberately absent: it passed the strict validator
+        too, so it would prove nothing about the change. That it also
+        survives the tamper check is
+        ``TestFindingsAreNotPinned::test_editing_the_findings_is_not_tampering``.
+        """
+        assert self._errors(value) == [], edit
 
     # The two optional arrays that were here first now share this
     # field's rule (``prd._OPTIONAL_ARRAYS``). Their behaviour is
@@ -470,3 +498,152 @@ class TestFindingsAreNotPinned:
             "PRD gained or lost a field; decide whether tamper_changes "
             "must compare it and record the reason either way"
         )
+
+
+class TestTheReviewersAreNotShownTheFindings:
+    """#260 review F1. Two ENROLLED prompts paste this PRD verbatim and
+    untruncated: SECURITY_PROMPT under "what the implementer was asked
+    to build", DISTILL_PROMPT under "ACCEPTANCE CRITERIA (from PRD)".
+    Routed findings are neither, and delivering them moved the quantity
+    H2 governs without editing a prompt constant. They are stripped on
+    both paths; ``prd.PROMPT_EXCLUDED_KEYS`` carries the measurement.
+    """
+
+    FINDING: dict[str, str] = {
+        "severity": "major",
+        "kind": "missing_detail",
+        "summary": "ROUTED-FINDING-MARKER encoding is unspecified",
+        "location": "Writing to disk",
+        "suggestion": "Name the codec",
+        "appliesTo": SPEC_ISSUE_APPLIES_SPEC,
+    }
+
+    @staticmethod
+    def _prd_text(**overrides: Any) -> str:
+        story = {"title": "KEPT-STORY-MARKER parse a document"}
+        payload = _make_prd_payload(
+            userStories=[{**_make_prd_payload()["userStories"][0], **story}],  # type: ignore[index]
+            **overrides,
+        )
+        return json.dumps(payload, indent=2) + "\n"
+
+    def test_the_security_reviewer_prompt_carries_the_stories_not_the_findings(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        repo = make_review_repo(tmp_path / "repo")
+        prd_path = repo.path / "prd.json"
+        prd_path.write_text(self._prd_text(specIssues=[self.FINDING]), encoding="utf-8")
+        agent = RecordingAgent(repo.security_json())
+        run_security_review(
+            agent,
+            prd_path,
+            repo.path,
+            repo.base_branch,
+            SecurityConfig(mode=SecurityMode.ADVISORY.value),
+            PlainUI(no_color=True, file=io.StringIO()),
+        )
+        assert agent.calls == 1
+        prompt = agent.prompts[0]
+        assert "ROUTED-FINDING-MARKER" not in prompt
+        # The PRD itself still arrives; only the block it never asked
+        # for is gone.
+        assert "KEPT-STORY-MARKER" in prompt
+
+    def test_the_distiller_prompt_carries_the_stories_not_the_findings(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        prd_path = tmp_path / "prd.json"
+        prd_path.write_text(self._prd_text(specIssues=[self.FINDING]), encoding="utf-8")
+        text = _read_prd_text(prd_path)
+        assert "ROUTED-FINDING-MARKER" not in text
+        assert "KEPT-STORY-MARKER" in text
+
+    def test_a_prd_with_no_findings_is_passed_through_byte_for_byte(self) -> None:
+        """The strip must be invisible to every PRD written before this
+        change, or it is a prompt change of its own."""
+        raw = self._prd_text()
+        assert prd_text_for_prompt(raw) == raw
+
+    def test_text_that_is_not_a_prd_is_left_alone(self) -> None:
+        """A filter, not a validator. Both call sites already paste
+        whatever they read."""
+        assert prd_text_for_prompt("not json at all") == "not json at all"
+        assert prd_text_for_prompt("[1, 2, 3]") == "[1, 2, 3]"
+
+    def test_a_new_prd_key_is_decided_rather_than_leaking_into_the_prompts(
+        self,
+    ) -> None:
+        """``PROMPT_EXCLUDED_KEYS`` is a denylist, so a top-level key
+        added later reaches both enrolled prompts by default and nothing
+        would say so. This is the thing that says so: every key the
+        schema allows is listed as one both roles should read, or is
+        excluded. F1 was exactly this omission going unnoticed.
+        """
+        shown = {
+            # Both prompts are framed around what was asked for.
+            "branchName",
+            "userStories",
+            # Bounded, and scope is what a security reviewer judges a
+            # diff against.
+            "allowedPaths",
+            # The executable oracle: what "done" was defined as.
+            "fixtures",
+        }
+        allowed = {"branchName", "userStories"} | set(_OPTIONAL_KEYS)
+        assert shown | PROMPT_EXCLUDED_KEYS == allowed, (
+            "the PRD schema gained or lost a top-level key; decide "
+            "whether the security reviewer and the distiller should "
+            "read it, then list it here or in PROMPT_EXCLUDED_KEYS"
+        )
+        assert not shown & PROMPT_EXCLUDED_KEYS
+
+
+class TestTheNamePartsThatCarrySignal:
+    """#260 review F3: three production decisions the round-1 suite
+    could not tell apart from their mutants."""
+
+    @staticmethod
+    def _attached(components: list[dict[str, Any]], location: str) -> set[str]:
+        issue = SpecIssue(severity="major", kind="ambiguity", summary="x", location=location)
+        routed = route_spec_issues([issue], components)
+        return {
+            comp_id
+            for comp_id, entries in routed.items()
+            if any(e["appliesTo"] == SPEC_ISSUE_APPLIES_COMPONENT for e in entries)
+        }
+
+    def test_the_id_names_the_component_when_the_title_does_not(self) -> None:
+        """Both round-1 fixtures had ids whose words their titles
+        repeated, so dropping the id half of the name changed nothing.
+        A terse title is the case that depends on it, and titles may be
+        terse or empty: decompose only requires a string."""
+        components = [
+            {"id": "telemetry-exporter", "title": "Ships numbers"},
+            {"id": "agent-adapter", "title": "The adapter"},
+        ]
+        assert self._attached(components, "telemetry exporter emits no schema") == {
+            "telemetry-exporter"
+        }
+
+    def test_a_five_letter_name_word_counts(self) -> None:
+        """The floor's low edge was pinned and its high edge was not, so
+        raising it from 5 to 6 survived. Every qualifying word here is
+        exactly five characters, which is the worked example the source
+        comment gives."""
+        components = [
+            {"id": "audit", "title": "Parse write"},
+            {"id": "agent-adapter", "title": "The adapter"},
+        ]
+        assert self._attached(components, "parse and write are unspecified") == {"audit"}
+
+    def test_a_digit_is_part_of_a_name_word(self) -> None:
+        """Two components separated only by the digits in their names.
+        Drop digits from the tokenizer and both collapse onto the same
+        words, so neither is distinctive and nothing attaches."""
+        components = [
+            {"id": "slice1-stage2", "title": "The parser"},
+            {"id": "slice3-stage4", "title": "The parser"},
+        ]
+        assert self._attached(components, "slice1 stage2 is unspecified") == {"slice1-stage2"}

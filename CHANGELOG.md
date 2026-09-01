@@ -95,9 +95,15 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   cannot place is not dropped: it goes into every component's PRD as
   `appliesTo: spec`, so nothing the audit produced is lost. Halting is
   untouched, a blocker still stops the decomposition before any PRD is
-  written, and `spec-issues.json` remains the full durable record.
-  Nothing gates on the new field, so an engineer editing it is not
-  tampering, for the same reason `allowedPaths` is not compared.
+  written, and `spec-issues.json` remains the full durable record. The
+  field is deliberately the loosest thing in the PRD: validated only as
+  an array, not compared by `PRD.tamper_changes`, and stripped out
+  before the PRD is pasted into the security reviewer's or the
+  knowledge distiller's prompt, neither of which asked for it. So an
+  engineer may annotate, resolve or delete the block and nothing will
+  report it. That is the trade a note nothing is judged against should
+  make, and it is the opposite of `fixtures`, which is strict because
+  it is both pinned and executed.
 - Safe mode: one name, and one question, for the four degraded states
   kstrl already entered separately. An untrusted control directory stops
   the daemon spending, a damaged `autonomy.json` falls back to L1
