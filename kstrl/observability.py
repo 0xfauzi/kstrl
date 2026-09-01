@@ -403,6 +403,42 @@ class NullProgressLog(ProgressLog):
         pass
 
 
+def ends_without_newline(path: Path) -> bool:
+    """True when ``path`` exists, holds bytes, and its last one is not ``\\n``.
+
+    The write-side companion to :func:`read_progress_events`, and here
+    rather than in the one module that calls it today because it is the
+    generic half of #312 with no policy in it. That defect is one an
+    appender to any JSONL file in this package can have: a crash leaves
+    an unterminated tail, the next append concatenates onto it, and the
+    tolerant reader above drops BOTH lines. Measured on this tree, four
+    other appenders still can (``ProgressLog.emit``, ``JsonlSink``,
+    ``workqueue``, ``inbox``); what each of them should WRITE on finding
+    a tear differs per file, so only the predicate is shared. #291 is
+    the argument for hoisting it before the second copy rather than
+    after the tenth.
+
+    Read in BINARY, which is the point: the last byte of a file torn
+    mid-utf-8-sequence cannot be decoded, and a text-mode probe would
+    raise ``UnicodeDecodeError`` on exactly the file that most needs the
+    repair.
+
+    An unreadable file answers False: it is not evidence of a tear, and
+    a caller about to write will raise the same ``OSError`` itself. A
+    missing file answers False through the same path, since
+    ``FileNotFoundError`` is an ``OSError``.
+    """
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                return False
+            handle.seek(-1, os.SEEK_END)
+            return handle.read(1) != b"\n"
+    except OSError:
+        return False
+
+
 def read_progress_events(path: Path) -> list[dict[str, Any]]:
     """Read all events from a JSONL progress log.
 

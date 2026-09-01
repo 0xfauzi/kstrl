@@ -778,7 +778,7 @@ def commit_transition(
     """
     state.save(root_dir)
 
-    from kstrl.evolution import JOURNAL_SCHEMA_VERSION, EvolutionConfig
+    from kstrl.evolution import JOURNAL_SCHEMA_VERSION, EvolutionConfig, EvolutionJournal
 
     entry = {
         "schema_version": JOURNAL_SCHEMA_VERSION,
@@ -801,12 +801,14 @@ def commit_transition(
         root_dir,
         warn=lambda message: warnings.warn(message, RuntimeWarning, stacklevel=2),
     )
+    # Through append_entries (the one writer of the line format, #312)
+    # rather than a second raw open. EvolutionJournal is constructed
+    # directly rather than through .open(), which would also gate on
+    # config.enabled and stop recording transitions this function
+    # records today.
     try:
         if config is not None:
-            journal_path = config.journal_path
-            journal_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(journal_path, "a") as handle:
-                handle.write(json.dumps(entry, separators=(",", ":")) + "\n")
+            EvolutionJournal(config).append_entries([entry])
     except OSError as exc:
         warnings.warn(
             f"autonomy: journal append failed (non-fatal): {exc}",

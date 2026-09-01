@@ -33,6 +33,7 @@ from kstrl.decompose import (
 from kstrl.evolution import EvolutionConfig, EvolutionJournal
 from kstrl.prd import PRD
 from kstrl.ui.plain import PlainUI
+from tests.helpers.journal import tear
 
 
 class MockDecomposeAgent:
@@ -1382,10 +1383,14 @@ class TestExcludedHistory:
 
     def test_a_torn_line_does_not_cost_the_note(self, tmp_path: Path) -> None:
         """The journal is append-only and a crash mid-write leaves a
-        torn tail; the rest of the history still has to be readable."""
+        torn tail; the rest of the history still has to be readable.
+
+        The write side of the same tear is
+        ``tests/test_journal_torn_tail.py`` (#312), and the fragment is
+        shared rather than copied so the two cannot drift apart.
+        """
         journal = _journal_with(tmp_path, [self._entry("writers-room", "spec.md")])
-        with open(journal.config.journal_path, "a", encoding="utf-8") as handle:
-            handle.write('{"event_type": "spec_iss')
+        tear(journal.config.journal_path)
 
         assert "records 1 spec audit(s)" in self._lines(journal, "writers-room-slice1")
 

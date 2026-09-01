@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from kstrl.observability import ends_without_newline
 from kstrl.verify import SCOPE_UNREADABLE_CHECK, SCOPE_UNREADABLE_ERROR_PREFIX
 
 if TYPE_CHECKING:
@@ -34,6 +35,14 @@ logger = logging.getLogger("kstrl.evolution")
 # pre-R6 shape); wave 1 (R4.1) archived the polluted v1 journals to
 # .kstrl/archive/, so fresh journals contain v2 entries only.
 JOURNAL_SCHEMA_VERSION = 2
+
+# #312: the event_type of the row append_entries writes when it finds the
+# journal not newline-terminated. Its own type rather than a synthetic
+# component_result, for the reason _role_usage_entries gives: every
+# aggregate in this module selects on event_type, so a row of this type
+# counts towards nothing and cannot invent an outcome. It exists to be
+# grepped: it is the only durable trace that a crash tore the file.
+JOURNAL_REPAIR_EVENT = "journal_repair"
 
 # #191: what a component_result entry records when no fact-utilization
 # measurement reached the journal - the component never got past the
@@ -460,6 +469,33 @@ def signatures_from_findings(phase: str, findings: Iterable[Finding]) -> list[st
 
 def _timestamp_now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _journal_line(entry: dict[str, Any]) -> str:
+    """One JSONL line, terminator included. The journal's line format."""
+    return json.dumps(entry, separators=(",", ":")) + "\n"
+
+
+def _repair_entry() -> dict[str, Any]:
+    """The row :meth:`EvolutionJournal.append_entries` writes on finding
+    an unterminated tail.
+
+    Carries no ``run_id`` on purpose: ``_read_journal_entries`` keeps the
+    last N distinct run_ids, so a repair row with one of its own would be
+    one of the N and a single tear would shorten the history every
+    aggregate reads by a whole run.
+    """
+    return {
+        "schema_version": JOURNAL_SCHEMA_VERSION,
+        "timestamp": _timestamp_now(),
+        "event_type": JOURNAL_REPAIR_EVENT,
+        "detail": (
+            "the preceding line was not newline-terminated when this append "
+            "ran, so a write was interrupted. It is either a torn fragment "
+            "that was never readable, or a complete record that lost only its "
+            "newline; both are on their own line now."
+        ),
+    }
 
 
 def _summarize_findings(findings: list[Finding]) -> dict[str, Any]:
@@ -1401,15 +1437,59 @@ class EvolutionJournal:
     def append_entries(self, entries: list[dict[str, Any]]) -> None:
         """Append entries to the journal in JSONL form.
 
-        The one writer of the journal's line format. Raises ``OSError``
-        rather than handling it, because the two callers surface a
-        failed write differently: :meth:`record_run` logs it, while
-        decompose warns through the run's UI.
+        The one writer of the journal's line format, enforced by
+        ``tests/test_journal_torn_tail.py``. Raises ``OSError`` rather
+        than handling it, because the two callers surface a failed write
+        differently: :meth:`record_run` logs it, while decompose warns
+        through the run's UI.
+
+        #312: a crash mid-write leaves a tail with no newline, and an
+        append onto that tail concatenates the two into one unparseable
+        line, so the tolerant reader drops the NEW entry as well. The
+        cost is measured, not assumed, and it is not always one entry: a
+        tail that lost only its newline is a COMPLETE record, and
+        concatenating onto it destroys that record too. Writing a
+        newline first repairs the tail into a line of its own, which
+        drops a genuine fragment (unavoidable, it was never written) and
+        RECOVERS a record that lost only its terminator.
+
+        Healing forward rather than raising, because the caller is a
+        record-keeper: refusing to append would answer the loss of one
+        record by losing every later one. So the repair is recorded
+        instead, twice, per "if it's worth deciding, it's worth
+        recording" - a ``JOURNAL_REPAIR_EVENT`` row in the file itself,
+        which is what an operator greps months later, and a warning on
+        this module's logger for whoever is watching now. The row is
+        durable where the log line is not: the process that tore the
+        file is exactly the process whose stderr nobody kept.
+
+        An empty append writes nothing, so it repairs nothing: there is
+        no entry to protect and the next real append will do it.
+
+        Probe-then-append is a read-modify-write, and this file takes no
+        lock. Two appenders racing onto a torn file both see the tear and
+        both repair it, which costs a blank line and a second repair row,
+        and the reader skips both. The window where a probe goes stale
+        needs another writer to crash mid-write inside it, and that is
+        the case this method already loses to today, so the probe makes
+        an unlocked append no less safe than it was.
         """
-        self.config.journal_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.config.journal_path, "a") as f:
+        path = self.config.journal_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        repairing = bool(entries) and ends_without_newline(path)
+        with open(path, "a", encoding="utf-8") as f:
+            if repairing:
+                f.write("\n" + _journal_line(_repair_entry()))
             for entry in entries:
-                f.write(json.dumps(entry, separators=(",", ":")) + "\n")
+                f.write(_journal_line(entry))
+        if repairing:
+            logger.warning(
+                "evolution journal did not end in a newline, so a crash tore it: "
+                "%s. A newline and a %s row were written before this append, so "
+                "the unterminated tail cannot swallow the entries after it.",
+                path,
+                JOURNAL_REPAIR_EVENT,
+            )
 
     # ------------------------------------------------------------------
     # Internal helpers
