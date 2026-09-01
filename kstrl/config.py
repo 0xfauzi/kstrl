@@ -467,6 +467,18 @@ class ConfigError(ValueError):
     """
 
 
+#: What :func:`load_toml_document`'s catch-all says when the parser
+#: rejected the file for a reason it has not established. Deliberately
+#: says nothing about the cause; see that function's docstring.
+#:
+#: A named constant because the tests assert on its ABSENCE from the two
+#: specific handlers' messages, which is how the handler order is
+#: pinned. A reworded literal restated in a test would make those
+#: assertions vacuously true rather than failing, so the test imports
+#: this. Same reason ``agents.proc.TIMEOUT_MESSAGE_PREFIX`` is a
+#: constant the tests import rather than a string they repeat.
+UNPARSEABLE_TOML_MESSAGE = "could not be parsed as TOML"
+
 #: Documents parsed inside the innermost :func:`toml_parse_scope`, or
 #: None outside one. A ContextVar rather than a module global so a
 #: scope cannot leak into another thread or task.
@@ -509,32 +521,64 @@ def toml_parse_scope() -> Iterator[None]:
 def load_toml_document(path: Path) -> dict[str, Any]:
     """Load and parse a TOML file.
 
-    Raises :class:`ConfigError` for BOTH ways the parse can fail: a
-    syntax error, and a file that is not utf-8. ``OSError`` passes
-    through un-normalized.
+    Raises :class:`ConfigError` for EVERY way the parse can fail, naming
+    the file in all of them. ``OSError`` passes through un-normalized.
 
     Inside a :func:`toml_parse_scope` the parsed document is reused
     rather than re-read.
 
-    The encoding half is the reason this has two handlers.
-    ``tomllib.load`` decodes the stream itself before it lexes anything,
-    so one non-utf-8 byte raises ``UnicodeDecodeError`` - which is a
-    ``ValueError`` and NOT a ``TOMLDecodeError``, and so walked past a
-    handler naming only the latter. That is the encoding rule CLAUDE.md
-    states from #291, and ``verify._default_typecheck_command`` is where
-    the same defect was fixed for pyproject.toml in #288. Here it landed
-    on the seam every non-exempt command sits behind, so one byte took
-    that whole set down as a raw traceback (#318).
+    ``tomllib.load`` raises ``ValueError`` for a whole family of bad
+    input, and the family is not enumerable from the outside:
 
-    Two handlers rather than one wide ``except ValueError``: the
-    remedies differ (a line and column against re-saving the file), and
-    a ``ValueError`` from ``tomllib`` that is NEITHER of these is a
-    defect in kstrl, which keeps its traceback rather than being
-    reported to the operator as a bad byte they do not have - the
-    distinction ``config_preflight.raise_if_defect`` draws for the same
-    reason. ``TOMLDecodeError`` is matched first because it SUBCLASSES
-    ``ValueError``; on the wide clause that order would not matter, but
-    on this one reversing it would relabel every syntax error.
+    - ``TOMLDecodeError`` for a syntax error.
+    - ``UnicodeDecodeError`` for a file that is not utf-8, because
+      ``tomllib.load`` decodes the stream ITSELF before it lexes
+      anything. It is a ``ValueError`` and NOT a ``TOMLDecodeError``,
+      and a handler naming only the latter is what #318 was: on the seam
+      every non-exempt command sits behind, so one byte took that whole
+      set down as a raw traceback. Same defect as
+      ``verify._default_typecheck_command`` fixed for pyproject.toml in
+      #288, and the encoding rule CLAUDE.md states from #291.
+    - A plain ``ValueError`` for input the parser accepts and Python
+      then refuses to build. ``[run] max_iterations = <4301 digits>``
+      raises "Exceeds the limit (4300 digits) for integer string
+      conversion" from ``sys.get_int_max_str_digits``, and walked past
+      BOTH specific handlers.
+
+    The third one is why the catch-all is here at all. This function
+    twice enumerated the subclasses it believed were exhaustive and was
+    twice wrong, so the rule it now follows is that a parser's error
+    taxonomy belongs to the parser: a reader cannot enumerate it and has
+    to fail closed on the whole class.
+
+    Fail closed WITHOUT overclaiming, though. The catch-all names the
+    file and repeats what the parser said; it does not diagnose a cause
+    it has not established. Telling an operator to re-save a file that
+    is already good utf-8 would be a silent semantic substitution one
+    step on from swallowing the error.
+
+    That is what earns the ``UnicodeDecodeError`` rung specifically: the
+    remedy "re-save as utf-8" is nowhere in ``str(exc)``, so a reader
+    who saw only the catch-all's line would lose it. It is NOT what
+    earns the ``TOMLDecodeError`` rung, and saying so would be
+    over-fitting the rule to two cases. That rung's ``{exc}`` carries
+    the line and column, and the catch-all interpolates ``{exc}``
+    identically, so it would lose nothing diagnostic. What keeps it is
+    narrower and duller: "Invalid TOML" is a message contract, asserted
+    at thirteen sites across five test files including the TUI banner an
+    operator reads. It stays for compatibility, not because it tells
+    anyone more.
+
+    Order is load-bearing, and only because of the third.
+    ``TOMLDecodeError`` and ``UnicodeDecodeError`` are SIBLINGS - both
+    derive from ``ValueError``, neither from the other - so their
+    relative order is free, and a round-1 test that claimed to pin it
+    passed with the two reversed. The broad clause is the real
+    constraint: it is a SUPERTYPE of both, so it must come last or it
+    swallows them and relabels every syntax error and every bad byte as
+    an unspecified parse failure.
+    ``test_the_broad_value_error_handler_must_come_last`` fails if it
+    moves, and was watched failing with it moved.
 
     ``OSError`` is deliberately NOT normalized here; see
     ``config_preflight.SURFACE_REJECTIONS``.
@@ -551,6 +595,10 @@ def load_toml_document(path: Path) -> dict[str, Any]:
         raise ConfigError(
             f"{path} is not valid UTF-8, which TOML requires; re-save the file as UTF-8: {exc}"
         ) from exc
+    except ValueError as exc:
+        # LAST: a supertype of both of the above. Says what the parser
+        # said and names the file; claims no cause beyond that.
+        raise ConfigError(f"{path} {UNPARSEABLE_TOML_MESSAGE}: {exc}") from exc
     if scope is not None:
         scope[path] = data
     return data

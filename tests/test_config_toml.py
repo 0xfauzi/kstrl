@@ -7,6 +7,13 @@ from pathlib import Path
 import pytest
 
 from kstrl.config import ConfigError, KstrlConfig, load_toml_document
+from tests.helpers.bad_toml import (
+    ALL_FRAGMENTS,
+    BROAD_FRAGMENT,
+    FAULT_IDS,
+    INT_LIMIT_TOML,
+    TOML_PARSE_FAULTS,
+)
 
 
 def _write_toml(path: Path, content: str) -> None:
@@ -126,42 +133,112 @@ def test_from_toml_malformed_raises_clear_error(tmp_path: Path) -> None:
         KstrlConfig.from_toml(toml_path, tmp_path)
 
 
-def test_load_toml_document_names_the_file_it_cannot_decode(tmp_path: Path) -> None:
-    """#318: ``tomllib.load`` decodes the stream as utf-8 itself, so one
-    non-utf-8 byte raises ``UnicodeDecodeError`` - a ``ValueError``, not
-    a ``TOMLDecodeError`` - and it escaped the loader as a raw traceback.
+@pytest.mark.parametrize(("body", "fragment"), TOML_PARSE_FAULTS, ids=FAULT_IDS)
+def test_load_toml_document_reports_every_parse_fault_as_a_config_error(
+    tmp_path: Path,
+    body: bytes,
+    fragment: str,
+) -> None:
+    """#318, both rounds. Each of these escaped as a raw traceback at
+    some point: the encoding fault past a handler naming only
+    ``TOMLDecodeError``, and the integer-limit fault past that AND past
+    the ``UnicodeDecodeError`` handler added to catch the first.
 
-    Real bytes rather than a patched decoder: the whole defect is which
-    exception the standard library actually raises here.
+    Real bytes and real digits on disk, never a patched decoder or a
+    raising stub. The whole defect both times was which exception the
+    standard library actually raises here, so a test that supplies the
+    exception itself would have passed in both broken states.
     """
     toml_path = tmp_path / "kstrl.toml"
-    toml_path.write_bytes(b'[agent]\nname = "\xe9"\n')
+    toml_path.write_bytes(body)
 
     with pytest.raises(ConfigError) as caught:
         load_toml_document(toml_path)
 
     message = str(caught.value)
+    # Which file, in every one of them: the operator may have more than
+    # one checkout and the parser's own message names none of them.
     assert str(toml_path) in message
-    assert "not valid UTF-8" in message
-    # The cause survives, so the byte offset is still there to find.
-    assert isinstance(caught.value.__cause__, UnicodeDecodeError)
+    # EXCLUSIVELY its own fragment. ``fragment in message`` alone would
+    # pass for a message that also carried another handler's line, which
+    # is what a mis-ordered ladder produces; see
+    # ``test_the_broad_value_error_handler_must_come_last``.
+    assert {f for f in ALL_FRAGMENTS if f in message} == {fragment}
+    # The cause survives, so the parser's own detail - a line and
+    # column, a byte offset, a digit count - is still there to find.
+    assert isinstance(caught.value.__cause__, ValueError)
 
 
-def test_load_toml_document_still_calls_a_syntax_error_a_syntax_error(
+def test_the_broad_value_error_handler_must_come_last(tmp_path: Path) -> None:
+    """The one ordering constraint among the three handlers, pinned so
+    that violating it fails.
+
+    ``TOMLDecodeError`` and ``UnicodeDecodeError`` are SIBLINGS - both
+    derive from ``ValueError``, neither from the other - so swapping
+    those two changes nothing, and the round-1 test that claimed to pin
+    "the handler order" passed with them reversed. It pinned nothing.
+
+    The broad ``except ValueError`` is the real constraint: it is a
+    supertype of both, so moved above either one it swallows that fault
+    and relabels it as an unspecified parse failure, taking the remedy
+    with it. This asserts the property directly - each fault keeps its
+    OWN message - rather than asserting the source order, which a test
+    cannot see.
+
+    It exists beside the parametrized test above, which now carries the
+    same exclusivity check per fault, because a failure that reads "you
+    moved the broad handler" is worth more than three that read "wrong
+    fragment". Watched failing with the handler moved.
+    """
+    messages: dict[str, str] = {}
+    for name, (body, _) in zip(FAULT_IDS, TOML_PARSE_FAULTS, strict=True):
+        toml_path = tmp_path / f"{name}.toml"
+        toml_path.write_bytes(body)
+        with pytest.raises(ConfigError) as caught:
+            load_toml_document(toml_path)
+        messages[name] = str(caught.value)
+
+    # The two faults with an established cause say what it is, and do
+    # NOT fall through to the catch-all's deliberately vaguer line.
+    assert BROAD_FRAGMENT not in messages["syntax"]
+    assert BROAD_FRAGMENT not in messages["encoding"]
+    # The one with no established cause is the only one that gets it.
+    assert BROAD_FRAGMENT in messages["int_limit"]
+    # Each message carries exactly one fragment, so no two rungs have
+    # collapsed into each other. NOT ``len(set(messages.values())) == 3``,
+    # which a first cut asserted and which is VACUOUS: every message
+    # interpolates the file path and the three faults are written to
+    # three different paths, so it passes even with all three handlers
+    # collapsed into one. Measured that way, not reasoned about.
+    assert [{f for f in ALL_FRAGMENTS if f in m} for m in messages.values()] == [
+        {"Invalid TOML"},
+        {"not valid UTF-8"},
+        {BROAD_FRAGMENT},
+    ]
+
+
+def test_the_catch_all_does_not_diagnose_a_cause_it_has_not_established(
     tmp_path: Path,
 ) -> None:
-    """The handler order is load-bearing: ``TOMLDecodeError`` subclasses
-    ``ValueError``, so matching the encoding case first would relabel
-    every syntax error and send the operator to re-save a file that is
-    already utf-8."""
+    """Fail closed without overclaiming.
+
+    The round-1 fix reported a cause the handler knew (`not valid
+    UTF-8`). Widening that message to cover the whole `ValueError`
+    family would tell an operator whose file is perfectly good utf-8 to
+    re-save it as utf-8 - a silent semantic substitution one step on
+    from swallowing the error.
+    """
     toml_path = tmp_path / "kstrl.toml"
-    _write_toml(toml_path, "[verify\ntest_command = 'pytest'\n")
+    toml_path.write_bytes(INT_LIMIT_TOML)
 
     with pytest.raises(ConfigError) as caught:
         load_toml_document(toml_path)
 
-    assert "Invalid TOML" in str(caught.value)
-    assert "not valid UTF-8" not in str(caught.value)
+    message = str(caught.value)
+    assert "UTF-8" not in message
+    # What it DOES pass on is the parser's own line, which is the
+    # actionable part and the only part it can honestly claim.
+    assert "4300 digits" in message
 
 
 def test_from_toml_resolves_absolute_paths(tmp_path: Path) -> None:

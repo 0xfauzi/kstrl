@@ -31,28 +31,8 @@ from kstrl.config import ConfigError, load_toml_document, toml_parse_scope
 from kstrl.config_preflight import config_sections, preflight_config
 from kstrl.factory import FactoryResult
 from tests.conftest import REPO_ROOT
+from tests.helpers.bad_toml import FAULT_IDS, MALFORMED_TOML, TOML_PARSE_FAULTS
 from tests.spine_utils import component, make_manifest
-
-MALFORMED_TOML = "[verify\ntest_command = 'pytest'\n"
-
-#: Syntactically perfect TOML that is not utf-8: one 0xe9, the byte an
-#: editor set to ISO-8859-1 writes for an e-acute. ``tomllib.load``
-#: decodes the stream itself, so this fails before the lexer ever runs,
-#: and it fails with ``UnicodeDecodeError`` - a ``ValueError``, not a
-#: ``TOMLDecodeError`` (#318). Real bytes rather than a patched decoder:
-#: the whole defect is which exception the standard library actually
-#: raises here.
-NON_UTF8_TOML = b'[agent]\nname = "\xe9"\n'
-
-#: Both shapes a kstrl.toml can be broken in, each with the fragment
-#: the operator is shown for it. One list so a surface that has to
-#: survive a broken file is asserted against every kind of broken file
-#: there is, rather than against whichever one was current when it was
-#: written.
-BAD_TOML: list[tuple[str | bytes, str]] = [
-    (MALFORMED_TOML, "Invalid TOML"),
-    (NON_UTF8_TOML, "not valid UTF-8"),
-]
 
 DECOMPOSE_ARGS = [
     "decompose",
@@ -75,8 +55,9 @@ def _invoke(args: list[str], *, toml: str | bytes | None = None) -> Result:
 
     ``toml`` takes ``bytes`` as well as ``str`` so a case can put a
     kstrl.toml on disk that no encoding of a ``str`` would produce; see
-    :data:`NON_UTF8_TOML`. One write for both, so the ``str`` cases are
-    utf-8 on a machine whose locale is not.
+    :data:`~tests.helpers.bad_toml.TOML_PARSE_FAULTS`. One write for
+    both, so the ``str`` cases are utf-8 on a machine whose locale is
+    not.
     """
     runner = CliRunner()
     with runner.isolated_filesystem() as fs:
@@ -369,12 +350,16 @@ class TestTheRootIsTheOneTheCommandWillUse:
     standing in."""
 
     @staticmethod
-    def _other_checkout(tmp_path: Path, toml: str) -> Path:
+    def _other_checkout(tmp_path: Path, toml: str | bytes) -> Path:
         """A second project, with a prompt file at the layout
-        ``_resolve_root`` recognises."""
+        ``_resolve_root`` recognises.
+
+        Takes ``bytes`` as well as ``str``, and writes bytes either way,
+        for the reason ``_invoke`` does.
+        """
         other = tmp_path / "other"
         (other / "scripts" / "kstrl").mkdir(parents=True)
-        (other / "kstrl.toml").write_text(toml)
+        (other / "kstrl.toml").write_bytes(toml.encode() if isinstance(toml, str) else toml)
         (other / "scripts" / "kstrl" / "prompt.md").write_text("# prompt\n")
         return other
 
@@ -465,7 +450,7 @@ class TestTheRootIsTheOneTheCommandWillUse:
     ) -> None:
         elsewhere = tmp_path / "project"
         elsewhere.mkdir()
-        (elsewhere / "kstrl.toml").write_text(MALFORMED_TOML)
+        (elsewhere / "kstrl.toml").write_bytes(MALFORMED_TOML)
         built = _no_agents(monkeypatch)
 
         result = _invoke([*DECOMPOSE_ARGS, "--root", str(elsewhere)])
@@ -488,7 +473,7 @@ class TestTheRootIsTheOneTheCommandWillUse:
         runner = CliRunner()
         with runner.isolated_filesystem() as fs:
             root = Path(fs)
-            (root / "kstrl.toml").write_text(MALFORMED_TOML)
+            (root / "kstrl.toml").write_bytes(MALFORMED_TOML)
             make_manifest([component("comp-a")]).save(clean / "m.json")
             result = runner.invoke(
                 cli,
@@ -508,14 +493,15 @@ class TestTheRootIsTheOneTheCommandWillUse:
         assert result.exit_code == 0, result.output
 
 
-#: Every command measured crashing on :data:`NON_UTF8_TOML` before
-#: #318, with the exit code each one documents for a rejected
-#: configuration. That set is exactly the commands NOT exempt from the
-#: seam, which is the point: the blast radius of the escaping
-#: ``UnicodeDecodeError`` was the seam itself, not any command's own
-#: config handling. ``test_the_table_names_every_command_the_seam_guards``
-#: keeps the list honest rather than a count in a comment doing it.
-NON_UTF8_CRASHED: list[tuple[list[str], int]] = [
+#: Every command the entry seam guards, with the exit code each one
+#: documents for a rejected configuration. That set is exactly the
+#: commands NOT exempt from the seam, which is the point: the blast
+#: radius of an escaping ``ValueError`` is the seam itself, not any
+#: command's own config handling, so every one of these was measured
+#: crashing in BOTH rounds of #318.
+#: ``test_the_table_names_every_command_the_seam_guards`` keeps the list
+#: honest rather than a count in a comment doing it.
+SEAM_COMMANDS: list[tuple[list[str], int]] = [
     (["autonomy", "status"], 1),
     (["dash"], 1),
     (DECOMPOSE_ARGS, 1),
@@ -532,46 +518,65 @@ NON_UTF8_CRASHED: list[tuple[list[str], int]] = [
 ]
 
 
-class TestANonUtf8ConfigIsReportedNotCrashed:
-    """#318: ``tomllib.load`` decodes the stream as utf-8 itself, so one
-    latin-1 byte in kstrl.toml raises ``UnicodeDecodeError``. That is a
-    ``ValueError`` and not a ``TOMLDecodeError``, so it walked past the
-    only handler ``load_toml_document`` had and out of the seam that
-    every non-exempt command sits behind."""
+class TestAConfigThatWillNotParseIsReportedNotCrashed:
+    """#318, both rounds, across every command the seam guards.
 
+    ``tomllib.load`` raises ``ValueError`` for a family of bad input,
+    and two members of that family escaped ``load_toml_document`` in
+    turn: ``UnicodeDecodeError`` past a handler naming only
+    ``TOMLDecodeError`` (round 1), then a plain ``ValueError`` from the
+    integer-digit limit past both (round 2). Same 13 commands, same raw
+    traceback, twice. So the matrix runs every command against every
+    fault rather than against the one that was current when it was
+    written - which is the property that would have caught round 2
+    before it shipped.
+    """
+
+    @pytest.mark.parametrize(("toml", "fragment"), TOML_PARSE_FAULTS, ids=FAULT_IDS)
     @pytest.mark.parametrize(
         ("args", "exit_code"),
-        NON_UTF8_CRASHED,
-        ids=[args[0] for args, _ in NON_UTF8_CRASHED],
+        SEAM_COMMANDS,
+        ids=[args[0] for args, _ in SEAM_COMMANDS],
     )
     def test_the_command_reports_the_file_instead_of_a_traceback(
         self,
         args: list[str],
         exit_code: int,
+        toml: bytes,
+        fragment: str,
     ) -> None:
-        result = _invoke(args, toml=NON_UTF8_TOML)
+        result = _invoke(args, toml=toml)
 
         # The regression itself, asserted as the escaped exception and
-        # not only as an exit code: before #318 every one of these ended
-        # with a UnicodeDecodeError out of `tomllib.load`, and an exit
-        # code of 1 is what click reports for that too.
-        assert not isinstance(result.exception, UnicodeDecodeError)
+        # not only as an exit code: every one of these ended with a raw
+        # ValueError out of `tomllib.load`, and an exit code of 1 is
+        # what click reports for that too. `ConfigError` IS a
+        # ValueError, so this only passes because the group handler
+        # turned it into an exit - which is exactly the claim.
+        assert not isinstance(result.exception, ValueError), result.exception
         assert result.exit_code == exit_code, result.output
         assert "error:" in result.output
-        assert "not valid UTF-8" in result.output
+        assert fragment in result.output
+        # Which file. The parser's own message names no path, and an
+        # operator may have more than one checkout.
+        assert "kstrl.toml" in result.output
 
+    @pytest.mark.parametrize(("toml", "fragment"), TOML_PARSE_FAULTS, ids=FAULT_IDS)
     def test_no_agent_is_constructed_on_the_paid_path(
         self,
         monkeypatch: pytest.MonkeyPatch,
+        toml: bytes,
+        fragment: str,
     ) -> None:
-        """The seam's whole promise, restated for this fault: `decompose`
+        """The seam's whole promise, restated for each fault: `decompose`
         stops before the architect rather than after it."""
         built = _no_agents(monkeypatch)
 
-        result = _invoke(DECOMPOSE_ARGS, toml=NON_UTF8_TOML)
+        result = _invoke(DECOMPOSE_ARGS, toml=toml)
 
         assert built == []
         assert result.exit_code == 1
+        assert fragment in result.output
 
     def test_the_table_names_every_command_the_seam_guards(self) -> None:
         """The drift guard, in the shape ``TestEverySectionIsEnrolled``
@@ -584,9 +589,9 @@ class TestANonUtf8ConfigIsReportedNotCrashed:
 
         The three exempt commands are covered by
         ``TestTheCommandsThatMustSurviveABrokenConfig``, which runs its
-        cases over :data:`BAD_TOML`.
+        cases over ``TOML_PARSE_FAULTS``.
         """
-        covered = {args[0] for args, _ in NON_UTF8_CRASHED}
+        covered = {args[0] for args, _ in SEAM_COMMANDS}
 
         assert covered == set(cli.commands) - cli_mod._PREFLIGHT_EXEMPT
 
@@ -596,17 +601,18 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
     the operator recovers with, or replace a machine contract with a
     weaker one.
 
-    The three parametrized cases run against BOTH shapes a kstrl.toml
-    can be broken in, because an exemption that survives one and not the
-    other is not an exemption. #318 was exactly that: `config show`
-    printed the codec message with no path in it while the syntax-error
-    case named the file.
+    The three parametrized cases run against EVERY shape a kstrl.toml
+    can fail to parse in (``TOML_PARSE_FAULTS``), because an exemption
+    that survives one fault and not another is not an exemption. #318 was
+    exactly that, twice: round 1, `config show` printed the codec
+    message with no path in it while the syntax case named the file;
+    round 2, a third fault escaped everything the first round added.
     """
 
-    @pytest.mark.parametrize(("toml", "fragment"), BAD_TOML, ids=["syntax", "encoding"])
+    @pytest.mark.parametrize(("toml", "fragment"), TOML_PARSE_FAULTS, ids=FAULT_IDS)
     def test_config_show_still_explains_the_file_it_cannot_load(
         self,
-        toml: str | bytes,
+        toml: bytes,
         fragment: str,
     ) -> None:
         result = _invoke(["config", "show"], toml=toml)
@@ -617,10 +623,10 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
         # more than one checkout cannot act on the codec message alone.
         assert "kstrl.toml" in result.output
 
-    @pytest.mark.parametrize(("toml", "fragment"), BAD_TOML, ids=["syntax", "encoding"])
+    @pytest.mark.parametrize(("toml", "fragment"), TOML_PARSE_FAULTS, ids=FAULT_IDS)
     def test_init_still_scaffolds_next_to_a_broken_file(
         self,
-        toml: str | bytes,
+        toml: bytes,
         fragment: str,
     ) -> None:
         result = _invoke(["init", "--ui", "plain", "--no-color"], toml=toml)
@@ -631,10 +637,10 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
         assert fragment not in result.output
         assert "Created prompt.md" in result.output
 
-    @pytest.mark.parametrize(("toml", "fragment"), BAD_TOML, ids=["syntax", "encoding"])
+    @pytest.mark.parametrize(("toml", "fragment"), TOML_PARSE_FAULTS, ids=FAULT_IDS)
     def test_sense_keeps_its_exit_2_and_its_json_envelope(
         self,
-        toml: str | bytes,
+        toml: bytes,
         fragment: str,
     ) -> None:
         result = _invoke(["sense", "--json"], toml=toml)
