@@ -97,3 +97,47 @@ these fixtures it returned `"components": []` and emitted no acceptance
 criteria at all. Note also that calibration measures SINGLE-SHOT
 parseability while `_decompose_spec_impl` retries with the parse error
 appended, so this figure is an upper bound on what a real run sees.
+
+## Note on `baseline-20260901-203244.json` (#260, DECOMPOSE_PROMPT 3.0.0)
+
+The H2 capture for the `2.0.0 -> 3.0.0` change, which replaced the halt
+gate's count comparison with an identity join (`spec_issues[].id` plus
+`decisions[].issue`) after review found that a disposition of
+`"Escalated"` made both counts zero and the two zeros agree. Same shape
+as the three above: architect only (`-k architect`), haiku, three runs
+per fixture, twelve agent calls, 39m 47s, $1.3520.
+
+| capture | architect | architect_allowed_paths | unparseable runs |
+|---|---|---|---|
+| `baseline-20260831-034641.json` | 1.00 | 1.00 | 0/12 |
+| `baseline-20260901-113221.json` | 0.89 | 1.00 | 1/12 |
+| `baseline-20260901-203244.json` | 0.89 | 1.00 | 1/12 |
+
+Level with 2.0.0, fixture for fixture: `spec-01` 3/3, `spec-02` 2/3,
+`spec-03` 3/3, `spec-04` 3/3 in both, and in both the single miss is
+`spec-02-unspecified-auth` with `error=False` and
+`json parse: No valid JSON found in output`, which is the single-shot
+parse failure diagnosed in the note above. `compare` reports PASS both
+against 1.4.2 (architect 1.00 -> 0.89, drop 0.11 against the 0.15
+threshold and the 0.65 floor) and against 2.0.0 (0.89 -> 0.89).
+
+## Which `DECOMPOSE_PROMPT` each #260 capture measured
+
+A capture records `model`, `timestamp` and `runs_per_fixture`, and
+nothing about the prompt it scored. That is a real gap: three of the
+five files below carry architect numbers, and only the commit messages
+say which prompt produced them. Until a capture can carry it, the
+mapping is reconstructed from git by extracting the body at each
+revision and hashing it.
+
+| revision | version | bytes | sha256 |
+|---|---|---|---|
+| `6a422ad` (where `baseline-20260831-034641` was recorded) | 1.4.2 | 7787 | `8bce50b09f19220e58d941fe0b99a0f45d0c4e003d90a40c7570a4af542b1452` |
+| `cbdff7c` (origin/main, #260's base) | 1.4.2 | 7787 | `8bce50b09f19220e58d941fe0b99a0f45d0c4e003d90a40c7570a4af542b1452` |
+| `0d936c9` (#260 step 3, first commit) | 2.0.0 | 11694 | `3b7b4008023cf5bf4d496927bf9a1ca01498993f8b085eeea83f56e875b425d3` |
+| `6332471` (#260 step 3, after two review rounds) | 3.0.0 | 12236 | `3632c88ab7813319ec3ccc76139ecb253c300bbea509b838436b1947bb50f147` |
+
+The first two rows are the same bytes, which is the point of listing
+both: `#266` landed between them and could have moved the body, so
+`baseline-20260831-034641.json` measuring 1.4.2 exactly as `cbdff7c`
+carries it is a checked fact rather than an assumption.
