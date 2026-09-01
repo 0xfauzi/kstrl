@@ -438,6 +438,31 @@ def with_observed_diffstat(raw_output: str, repo: ReviewRepo) -> str:
     return json.dumps(payload)
 
 
+@pytest.fixture(autouse=True)
+def isolate_abandoned_children() -> Generator[None, None, None]:
+    """A fresh ``procgroup._ABANDONED`` per test.
+
+    #309 round 2 added a module-level register of children a kill did not
+    reach, so that something can still reap them. Module-level means it
+    outlives any one test: a double left on it is swept by the next
+    test's read, and a test asserting the register is empty fails because
+    of what some earlier test abandoned. Both are the cross-test
+    contamination this conftest exists to prevent, so the reset lives
+    here once rather than in each of the three places that wanted it.
+
+    Only ours is reset. CPython's ``subprocess._active`` is process-wide
+    interpreter state that every ``Popen`` sweeps, and it drains itself.
+    """
+    from kstrl import procgroup
+
+    saved = procgroup._ABANDONED[:]
+    procgroup._ABANDONED.clear()
+    try:
+        yield
+    finally:
+        procgroup._ABANDONED[:] = saved
+
+
 @pytest.fixture
 def review_repo(tmp_path: Path) -> ReviewRepo:
     """The default one-file change, for tests that only need a repo."""

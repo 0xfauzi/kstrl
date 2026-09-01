@@ -228,6 +228,15 @@ class _FakePs:
     def kill(self) -> None:
         self._call.kills += 1
 
+    def poll(self) -> int | None:
+        """Non-blocking status, which is how ``_reap_abandoned`` sweeps.
+
+        A fake that was abandoned reports None forever, so it stays on
+        the register for the life of the test - which is what lets a test
+        assert it got there at all.
+        """
+        return self.returncode
+
     def wait(self, timeout: float | None = None) -> int:
         """The unbounded wait #309 exists to keep production out of.
 

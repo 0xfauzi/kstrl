@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 
+from kstrl import procgroup
 from kstrl.procgroup import (
     PS_ARGV,
     PS_KILL_GRACE_SECONDS,
@@ -357,9 +358,10 @@ class TestThePsCallIsBounded:
 
         Two deadlines are spent, not one: the read, then the grace the
         kill is given. The pipe pair is released rather than left to the
-        garbage collector, which is the leak half of #309; the child
-        itself is abandoned, and CPython's ``subprocess._active`` collects
-        it once the kernel lets it die.
+        garbage collector, which is the leak half of #309. What happens
+        to the child itself is `_register_abandoned`'s job and is tested
+        below; this used to claim `subprocess._active` collects it, which
+        round 2 measured false under warnings-as-errors.
         """
         monkeypatch.setattr("kstrl.procgroup.PS_TIMEOUT_SECONDS", 0.01)
         monkeypatch.setattr("kstrl.procgroup.PS_KILL_GRACE_SECONDS", 0.02)
@@ -388,13 +390,9 @@ class TestThePsCallIsBounded:
 
         The interrupt itself must still propagate: the caller asked to
         stop, and swallowing that would be a worse bug than the leak.
-        What must not happen is the leak on the way out.
-
         ``raises`` is the CLASS, so each raise is a fresh instance and the
-        interrupt arrives twice: once out of the read, and then again out
-        of the grace, which is the call that matters here. The two
-        deadlines in the log are the proof that it reached the disposal
-        rather than stopping at the read.
+        interrupt arrives twice; the two deadlines in the log are the
+        proof it reached the disposal rather than stopping at the read.
         """
         calls = procs.fake_ps(monkeypatch, raises=KeyboardInterrupt)
 
@@ -406,6 +404,73 @@ class TestThePsCallIsBounded:
         )
         assert calls[0].kills == 1, "the child is still killed before we let go"
         assert calls[0].closed == ["stdout", "stderr"]
+
+    def test_a_collected_child_is_not_registered(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The control. Without it the register could be growing on every
+        read, which is a leak wearing the costume of a fix."""
+        procs.fake_ps(monkeypatch, stdout="50 4242 Ss\n")
+        read_group_liveness(4242)
+        assert procgroup._ABANDONED == []
+
+    def test_the_register_drains_once_the_child_dies(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The register is only not-a-leak if something empties it.
+
+        A REAL child, because the sweep is ``poll()`` and a fake's poll is
+        whatever the fake says. This one is abandoned while alive, so it
+        lands on the register, and is then reaped by the next read.
+
+        Both halves of C1 are here: that an uncollected child is kept at
+        all, and that keeping it is not itself a leak. Why
+        ``Popen.__del__`` could not be trusted to do the keeping, with the
+        measurement, is in the ``kstrl.procgroup`` module docstring.
+        """
+        monkeypatch.setattr("kstrl.procgroup.PS_ARGV", ("sleep", "30"))
+        monkeypatch.setattr("kstrl.procgroup.PS_TIMEOUT_SECONDS", 0.05)
+        monkeypatch.setattr("kstrl.procgroup.PS_KILL_GRACE_SECONDS", 0.05)
+        # Nothing may be killed, so the child is genuinely abandoned alive.
+        monkeypatch.setattr("kstrl.procgroup.subprocess.Popen.kill", lambda self: None)
+        read_group_liveness(4242)
+        registered = list(procgroup._ABANDONED)
+        assert len(registered) == 1
+
+        child = registered[0]
+        child.terminate()
+        child.wait(timeout=10)
+        # The next read sweeps it, which is the whole contract.
+        monkeypatch.setattr("kstrl.procgroup.PS_ARGV", ("true",))
+        read_group_liveness(4242)
+        assert procgroup._ABANDONED == [], "a dead child must leave the register"
+
+    def test_a_real_child_is_disposed_of_without_leaking_a_descriptor(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The killable-but-slow case, against a REAL child.
+
+        Nothing else in the suite exercises the disposal against a real
+        ``Popen``: ``_FakePs`` stubs ``kill`` and ``communicate``, and its
+        ``close`` only appends to a list, so an fd leak or an unreaped
+        child would be invisible.
+        """
+        fd_dir = Path("/dev/fd")
+        if not fd_dir.is_dir():
+            pytest.skip("no /dev/fd on this platform")
+        monkeypatch.setattr("kstrl.procgroup.PS_ARGV", ("sleep", "30"))
+        monkeypatch.setattr("kstrl.procgroup.PS_TIMEOUT_SECONDS", 0.05)
+
+        before = len(os.listdir(fd_dir))
+        liveness = read_group_liveness(4242)
+        after = len(os.listdir(fd_dir))
+
+        assert liveness.live is None, "an unread group must not report as gone"
+        assert after == before, f"descriptors leaked: {before} -> {after}"
+        assert procgroup._ABANDONED == [], "a killable child must be reaped, not kept"
 
     def test_the_read_pins_its_encoding(
         self,
@@ -420,15 +485,22 @@ class TestThePsCallIsBounded:
 
 
 class TestTheFakeDoesNotAnswerForEveryCommand:
-    """`fake_ps` replaces the STDLIB `subprocess.run`, not procgroup's.
+    """`fake_ps` replaces the STDLIB `subprocess.Popen`, not procgroup's.
 
     `procgroup.subprocess` is the stdlib module object, so a setattr on
-    it is process-wide. Measured before the delegation guard existed: a
-    plain `subprocess.run(["git", "rev-parse", "HEAD"])` under
+    it is process-wide. Measured before the delegation guard existed,
+    when the seam was still on `run`: a plain
+    `subprocess.run(["git", "rev-parse", "HEAD"])` under
     `fake_ps(stdout="1 Ss\\n")` returned that stdout and
     `args=['ps','-A','-o','pgid=,stat=']`. A test that combined the
     helper with any other subprocess call would have measured nothing and
     passed, which is the #292 class the helper exists to prevent.
+
+    #309 moved the seam from `run` to `Popen`, which makes the guard
+    carry MORE: `subprocess.run` is itself built on `Popen`, so an
+    undelegated fake would now answer every `run` in the suite as well.
+    The test below calling `subprocess.run` is the proof it still does
+    not.
     """
 
     def test_another_command_reaches_the_real_subprocess(

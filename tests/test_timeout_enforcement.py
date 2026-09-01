@@ -1126,25 +1126,54 @@ def _wait_calls(tree: ast.AST) -> list[tuple[ast.Call, str]]:
     ]
 
 
-def _popen_names(tree: ast.AST) -> set[str]:
-    """Every name in this module that means ``Popen``, aliases included.
+def _subprocess_aliases(tree: ast.AST) -> tuple[set[str], dict[str, str]]:
+    """Names bound to the subprocess module, and LOCAL name -> real name.
 
-    ``from subprocess import Popen as Spawn`` is a Popen, and a bare name
-    match does not know it - measured: without this the ``Spawn`` form
-    produced no finding at all, which is the under-reporting direction and
-    the one that matters. Same resolution ``_subprocess_aliases`` does for
-    the spawn functions in the audit below.
+    The mapping half is #309 round 2, C2. This used to return a SET of
+    local names and every caller then compared them against the ORIGINAL
+    names (``called == "Popen"``, ``called in SPAWN_FUNCS``), so an ``as``
+    rename walked straight through. Measured on a planted module:
+    ``from subprocess import run as _run`` followed by
+    ``_run(argv, capture_output=True)`` with no timeout at all passed
+    clean, as did the same trick for ``Popen``.
 
-    KNOWN over-report, deliberately left: any ``x.Popen(...)`` counts, so
-    a hypothetical ``mock.Popen()`` would be flagged. That direction costs
-    a comment on a line that is not really a child process; the other
-    direction costs a hang.
+    ONE resolver for both gates in this file. Round 2 also found the
+    ``with``-on-a-Popen gate carrying a second, weaker copy of this, with
+    a paragraph asserting the two agreed - which is the same shape as the
+    bug above: two readings held level by prose. They are one function
+    now, so the question cannot be asked again.
+
+    KNOWN MISSES, so the reach is not overstated. Only an ``import``
+    statement is resolved. ``_P = subprocess.Popen`` rebinds through an
+    assignment and ``getattr(subprocess, "Popen")`` through a string, and
+    following either needs dataflow this walk does not do.
     """
-    names = {"Popen"}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module == "subprocess":
-            names.update(a.asname or a.name for a in node.names if a.name == "Popen")
-    return names
+    imports = [n for n in ast.walk(tree) if isinstance(n, ast.Import)]
+    from_imports = [
+        n for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module == "subprocess"
+    ]
+    module_aliases = {
+        alias.asname or alias.name
+        for node in imports
+        for alias in node.names
+        if alias.name == "subprocess"
+    }
+    direct_funcs = {
+        alias.asname or alias.name: alias.name for node in from_imports for alias in node.names
+    }
+    return module_aliases, direct_funcs
+
+
+def _popen_names(tree: ast.AST) -> set[str]:
+    """Every local name that means ``Popen``, derived not re-derived.
+
+    KNOWN over-report, deliberately left: ``_is_popen_call`` also accepts
+    any ``x.Popen(...)``, so a hypothetical ``mock.Popen()`` is flagged.
+    That direction costs a comment on a line that is not really a child
+    process; the other direction costs a hang.
+    """
+    _, direct = _subprocess_aliases(tree)
+    return {"Popen", *(local for local, real in direct.items() if real == "Popen")}
 
 
 def _is_popen_call(node: ast.expr, names: set[str]) -> bool:
@@ -1159,9 +1188,17 @@ def _is_popen_call(node: ast.expr, names: set[str]) -> bool:
 def _popen_bound_names(tree: ast.AST, names: set[str]) -> set[str]:
     """Names assigned a ``Popen(...)``, so ``with proc:`` is recognisable.
 
-    One level of resolution: the same depth ``tests/test_procgroup.py``
-    resolves argv constants at, and the same known miss - a Popen reached
-    through an attribute or out of a container is invisible here.
+    NAME COLLECTION, NOT SCOPE ANALYSIS, and the difference has teeth.
+    Every ``x = Popen(...)`` anywhere in the module contributes its name
+    to one flat set, so a ``with`` on a name bound in a different function
+    still matches, and a ``with`` on a PARAMETER matches only if the
+    parameter happens to share a name with some module-level binding.
+    Round 2 measured that: the planted mutation is caught today partly
+    because ``_kill_or_abandon``'s parameter is called ``process`` and so
+    is the binding in ``_read_ps``; renaming it to ``proc`` makes the
+    plant pass clean. A ``with`` on a Popen returned from a helper is
+    missed outright. Both want dataflow this walk does not do, and are
+    left for a follow-up rather than papered over here.
     """
     bound: set[str] = set()
     for node in ast.walk(tree):
@@ -1264,21 +1301,36 @@ class TestSubprocessTimeoutAudit:
         }
     )
 
-    @staticmethod
-    def _subprocess_aliases(tree: ast.Module) -> tuple[set[str], set[str]]:
-        """Names bound to the subprocess module / its spawn functions."""
-        module_aliases: set[str] = set()
-        direct_funcs: set[str] = set()
+    @classmethod
+    def _spawn_sites(cls, tree: ast.Module) -> list[tuple[ast.Call, str]]:
+        """``(call node, subprocess name)`` for every spawn call in the tree.
+
+        Split out of the test in #309 round 2 so it can be run over a
+        planted module. C2 was found by planting one by hand; a check
+        nobody can re-run is how the alias hole survived to be found by
+        hand in the first place.
+
+        ``called`` is always the name SUBPROCESS knows it by, never the
+        local alias, which is the C2 fix.
+        """
+        module_aliases, direct_funcs = _subprocess_aliases(tree)
+        sites: list[tuple[ast.Call, str]] = []
         for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name == "subprocess":
-                        module_aliases.add(alias.asname or alias.name)
-            elif isinstance(node, ast.ImportFrom):
-                if node.module == "subprocess":
-                    for alias in node.names:
-                        direct_funcs.add(alias.asname or alias.name)
-        return module_aliases, direct_funcs
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func
+            called: str | None = None
+            if (
+                isinstance(fn, ast.Attribute)
+                and isinstance(fn.value, ast.Name)
+                and fn.value.id in module_aliases
+            ):
+                called = fn.attr
+            elif isinstance(fn, ast.Name) and fn.id in direct_funcs:
+                called = direct_funcs[fn.id]
+            if called == "Popen" or called in cls.SPAWN_FUNCS:
+                sites.append((node, called))
+        return sites
 
     def test_every_subprocess_call_has_timeout(self) -> None:
         package_root = Path(__file__).resolve().parent.parent / "kstrl"
@@ -1289,30 +1341,13 @@ class TestSubprocessTimeoutAudit:
         for py_file in sorted(package_root.rglob("*.py")):
             rel = py_file.relative_to(package_root.parent).as_posix()
             tree = ast.parse(py_file.read_text(encoding="utf-8"))
-            module_aliases, direct_funcs = self._subprocess_aliases(tree)
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Call):
-                    continue
-                fn = node.func
-                called: str | None = None
-                if (
-                    isinstance(fn, ast.Attribute)
-                    and isinstance(fn.value, ast.Name)
-                    and fn.value.id in module_aliases
-                ):
-                    called = fn.attr
-                elif isinstance(fn, ast.Name) and fn.id in direct_funcs:
-                    called = fn.id
-                if called is None:
-                    continue
+            for node, called in self._spawn_sites(tree):
+                sites_seen += 1
                 if called == "Popen":
-                    sites_seen += 1
                     if rel not in self.POPEN_ALLOWLIST:
                         popen_violations.append(f"{rel}:{node.lineno}")
-                elif called in self.SPAWN_FUNCS:
-                    sites_seen += 1
-                    if not any(k.arg == "timeout" for k in node.keywords):
-                        violations.append(f"{rel}:{node.lineno} {called}")
+                elif not any(k.arg == "timeout" for k in node.keywords):
+                    violations.append(f"{rel}:{node.lineno} {called}")
 
         # If the walk ever finds nothing, the audit itself broke (import
         # style changed, package moved) - fail loudly, never vacuously.
@@ -1328,6 +1363,63 @@ class TestSubprocessTimeoutAudit:
             "Popen outside the deadline-managed allowlist (see class "
             "docstring):\n  " + "\n  ".join(popen_violations)
         )
+
+    @pytest.mark.parametrize(
+        ("body", "expected"),
+        [
+            # The plain forms, which always worked.
+            ("import subprocess\nsubprocess.run(argv)\n", [(2, "run")]),
+            ("import subprocess as sp\nsp.check_output(argv)\n", [(2, "check_output")]),
+            ("import subprocess\nsubprocess.Popen(argv)\n", [(2, "Popen")]),
+            # #309 round 2, C2. Every one of these passed the audit clean
+            # before the local-name mapping, including a brand new module
+            # calling run with no deadline at all.
+            ("from subprocess import run as _run\n_run(argv)\n", [(2, "run")]),
+            ("from subprocess import Popen as Spawn\nSpawn(argv)\n", [(2, "Popen")]),
+            (
+                "from subprocess import check_call as _cc\n_cc(argv)\n",
+                [(2, "check_call")],
+            ),
+            # The unrenamed from-import, which must keep working.
+            ("from subprocess import run\nrun(argv)\n", [(2, "run")]),
+        ],
+    )
+    def test_the_audit_resolves_a_renamed_import(
+        self,
+        body: str,
+        expected: list[tuple[int, str]],
+    ) -> None:
+        """C2's fix, as a mechanism instead of a sentence.
+
+        The audit compares against the name subprocess knows, so the
+        resolution has to hand it that name and not the local one. Planted
+        here because C2 was found by planting a module by hand, and a
+        check nobody can re-run is how the hole lasted.
+        """
+        sites = self._spawn_sites(ast.parse(body))
+        assert [(node.lineno, called) for node, called in sites] == expected, body
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            # Rebound through an assignment, not an import.
+            "import subprocess\n_P = subprocess.Popen\n_P(argv)\n",
+            # Reached through a string.
+            'import subprocess\ngetattr(subprocess, "Popen")(argv)\n',
+            # A different module's run.
+            "import other\nother.run(argv)\n",
+        ],
+    )
+    def test_the_audit_misses_these_and_says_so(self, body: str) -> None:
+        """The reach, executed rather than promised.
+
+        The first two are real holes, named in `_subprocess_aliases` and
+        left for a follow-up: closing them needs dataflow an AST walk does
+        not do. The third is not a hole, it is the scope. Pinned together
+        so the difference between "cannot see" and "does not care" stays
+        written down.
+        """
+        assert self._spawn_sites(ast.parse(body)) == [], body
 
     def test_no_allowlisted_module_waits_without_a_deadline(self) -> None:
         """#309's class: the allowlist admits a module, not a discipline.
@@ -1372,16 +1464,24 @@ class TestSubprocessTimeoutAudit:
         """
         package_root = Path(__file__).resolve().parent.parent / "kstrl"
         violations: list[str] = []
-        sites_seen = 0
+        blind: list[str] = []
 
         for rel in sorted(self.POPEN_ALLOWLIST):
             tree = ast.parse((package_root.parent / rel).read_text(encoding="utf-8"))
-            sites_seen += len(_wait_calls(tree))
+            if not _wait_calls(tree):
+                blind.append(rel)
             violations += [f"{rel}:{found}" for found in _unbounded_wait_findings(tree)]
 
-        assert sites_seen >= 10, (
-            f"audit only found {sites_seen} wait sites in the allowlisted "
-            "modules; the scan is broken, not the code clean"
+        # PER FILE, not a total. A global floor of 10 against an actual 11
+        # left one site of margin, so a legitimate refactor removing one
+        # wait failed CI with "the scan is broken" - a false diagnosis, and
+        # the kind of gate that gets deleted. A file on this allowlist is
+        # here because it manages a child process, so every one of them
+        # must show at least one wait; a file showing none means the walk
+        # stopped seeing that file, which is the thing worth failing on.
+        assert not blind, (
+            "these deadline-managed modules show no wait sites at all, so "
+            "the scan is broken rather than the code clean:\n  " + "\n  ".join(blind)
         )
         assert not violations, (
             "a deadline-managed module waits on a child without a "

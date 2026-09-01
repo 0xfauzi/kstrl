@@ -109,10 +109,42 @@ is running, no wait on it is unbounded any more.
 WHAT THAT COSTS, since a bound bought with nothing would be suspicious. A
 child the kill did NOT reach is ABANDONED rather than waited on: we close
 our two pipe ends, which cannot block on a read end, and report "cannot
-see". It is not a permanent zombie. ``Popen.__del__`` hands an unreaped
-child to CPython's ``subprocess._active``, which the next ``Popen``
-constructed anywhere in the process polls, so it is collected once the
-kernel lets it die. The caller's fallback for "cannot see" is the signal
+see".
+
+It is not a permanent zombie, and #309 round 2 is why that sentence now
+rests on code in this module rather than on CPython's. The claim used to
+be that ``Popen.__del__`` hands an unreaped child to
+``subprocess._active`` for a later ``Popen`` to poll. Read the order it
+does it in: it calls ``_warn(..., ResourceWarning)`` FIRST and appends to
+``_active`` after. Under warnings-as-errors that warn RAISES, ``__del__``
+aborts, the interpreter prints "Exception ignored in" and swallows it,
+and the registration never happens - so the object is freed with nobody
+left holding the pid, and the child stays a zombie for the life of the
+process. Measured on this tree: default warnings gives ``_active`` length
+1 and the child reaped; ``PYTHONWARNINGS=error`` gives length 0 and the
+child in state Z. That setting is not hypothetical here, and this file's
+own caller says so - ``serve._group_liveness_for_reap`` records that an
+earlier ``warnings.warn`` in the reap check took the daemon down under
+it, calling it "a common CI setting". A daemon that holds its lock for
+its whole life, abandoning up to five children per terminated run, is the
+worst place in the tree to rest on a ``__del__`` that may not finish.
+
+So ``_kill_or_abandon`` registers the child itself, on our own
+``_ABANDONED`` and on CPython's ``_active`` both; ``_register_abandoned``
+says why one of them is not enough. Holding the reference also means
+``__del__`` never runs, so the ResourceWarning that started this is not
+raised at all.
+
+THIS FIXES ONE SITE, NOT THE CLASS. ``verify.run_scrubbed``,
+``serve._wait_out_grace`` and ``agents.proc.DeadlineStreamer.kill`` each
+kill a child and give up on it the same way, and none of them registers
+what it drops. ``run_scrubbed`` is the wider window of the three by a
+long way - it needs no D-state child at all, only something outside the
+group holding the pipe write end, and it runs once per verification
+command rather than once per timed-out run. Tracked separately; said
+here so this section is not read as the class being handled.
+
+The caller's fallback for "cannot see" is the signal
 probe, whose only error is over-reporting alive. That claim was written
 here before it was true: #309 round 1 found the probe reporting GONE for
 any error it could not explain, which is the dangerous direction this
@@ -164,8 +196,18 @@ PS_TIMEOUT_SECONDS = 5.0
 #: child killed mid-run. 1.0s is ~890x the worse of the two. Raising it
 #: cannot rescue a D-state child, which is the only case that reaches
 #: the end of it; it would only lengthen the hang this bound exists to
-#: stop. The worst case for the whole read is the sum of the two: 6.0s.
+#: stop. The two together bound every WAIT on the child at 6.0s, which is
+#: not the same as bounding the call; see the docstring on ``_read_ps``.
 PS_KILL_GRACE_SECONDS = 1.0
+
+#: Children the kill did not reach, kept REFERENCED so they can still be
+#: reaped. The module docstring's #309 round 2 section is why this exists
+#: rather than ``Popen.__del__``. On a healthy machine it stays empty.
+#: Each entry can retain more than the object: measured at 18,833 bytes
+#: for a read that completed before the child was abandoned, almost all
+#: of it CPython's ``_fileobj2output`` holding the listing it had already
+#: buffered, against ~300 bytes for one abandoned before writing.
+_ABANDONED: list[subprocess.Popen[str]] = []
 
 #: Said once, because several branches report it and reflowed copies of
 #: one sentence are how the two answers drift apart.
@@ -224,8 +266,15 @@ def read_group_liveness(pgid: int) -> GroupLiveness:
 
 
 def _read_ps() -> subprocess.CompletedProcess[str]:
-    """One ``ps`` read that returns within ``PS_TIMEOUT_SECONDS`` plus
-    ``PS_KILL_GRACE_SECONDS``, whatever the child does.
+    """One ``ps`` read, with every wait on the child bounded.
+
+    ``PS_TIMEOUT_SECONDS`` for the read and ``PS_KILL_GRACE_SECONDS`` for
+    the disposal. NOT a flat ceiling on the call: process startup is
+    outside both, because ``Popen.__init__`` blocks on an ``os.read`` of
+    the exec error pipe that takes no timeout. Measured with a 3.0s stall
+    injected there and both constants at 0.05: 3.011s. The module
+    docstring's "WHAT THAT BOUND DOES NOT COVER" section has the rest,
+    including why that residual is not new.
 
     Why this is not ``subprocess.run``, and why no ``with`` block, is the
     #309 section of the module docstring: both of those wait on the child
@@ -236,6 +285,7 @@ def _read_ps() -> subprocess.CompletedProcess[str]:
     the rejected "our own pgid is listed" control satisfied by
     construction rather than merely usually true.
     """
+    _reap_abandoned()
     process = subprocess.Popen(
         PS_ARGV,
         stdout=subprocess.PIPE,
@@ -265,10 +315,19 @@ def _kill_or_abandon(process: subprocess.Popen[str]) -> None:
     """Kill the child, give the kill a bounded grace, then LET GO.
 
     The second ``communicate`` is the wait ``subprocess.run`` does
-    without a deadline. Reaching ITS timeout means the kill did not land,
-    which on POSIX means an uninterruptible sleep, which no further
-    waiting can shorten - so this returns instead, and the module
-    docstring records what that abandoned child costs.
+    without a deadline.
+
+    WHAT REACHING ITS TIMEOUT ACTUALLY MEANS, corrected in #309 round 2
+    because the first version stated a stronger thing as a POSIX fact.
+    ``communicate`` waits for EOF on both pipes and then for the process,
+    so the grace can expire with the direct child already dead and
+    reaped: anything that inherited the write ends still holds them open.
+    Demonstrated with a ``ps`` that forks - ``poll()`` returned 0 at kill
+    time and the full grace expired anyway, because a grandchild held the
+    pipes. It does not arise for ``PS_ARGV``, which forks nothing, but it
+    is why this says "let go" rather than "the kill did not land": what
+    is abandoned may be a descendant we never had a handle on, and no
+    amount of further waiting here is owed to it.
     """
     try:
         process.kill()
@@ -287,14 +346,81 @@ def _kill_or_abandon(process: subprocess.Popen[str]) -> None:
         # exceptions this names are not the only ones that get here. A
         # KeyboardInterrupt landing in the grace escapes both calls with
         # the pipe pair still held, which is the leak this whole path
-        # exists to avoid (#309 round 1, F3). Closing a pipe READ end
-        # cannot block, which is what makes this safe on a path whose
-        # contract is not to block, and a second close is a no-op, so the
-        # branch where ``communicate`` already closed them costs nothing.
-        for pipe in (process.stdout, process.stderr):
-            if pipe is not None:
-                with suppress(OSError):
-                    pipe.close()
+        # exists to avoid (#309 round 1, F3).
+        _release_pipes(process)
+        if process.returncode is None:
+            _register_abandoned(process)
+
+
+def _release_pipes(process: subprocess.Popen[str]) -> None:
+    """Close our ends of the pipes to a child we are done with.
+
+    Closing a pipe READ end cannot block, which is what makes this safe
+    on a path whose contract is not to block. A second close is a no-op,
+    so the branch where ``communicate`` already closed them costs
+    nothing.
+    """
+    for pipe in (process.stdout, process.stderr):
+        if pipe is not None:
+            with suppress(OSError):
+                pipe.close()
+
+
+def _register_abandoned(process: subprocess.Popen[str]) -> None:
+    """Keep an uncollected child reachable until something can reap it.
+
+    TWO registers, because they sweep at different rates and neither
+    rate alone is good enough (#309 round 2).
+
+    ``_ABANDONED`` is ours and is swept by the next read here. That is
+    the one this module can promise, and the one a test can see.
+
+    ``subprocess._active`` is CPython's, and every ``Popen`` constructed
+    anywhere in the process sweeps it in ``_cleanup``. This module's
+    reads are rare by design - the production caller asks once per
+    timed-out run - so ours alone would leave a corpse until the next
+    timeout, which may be days away. There are 70 spawn sites in
+    ``kstrl``, so ``_active`` collects it at the next git call or verify
+    command instead. That is what ``Popen.__del__`` would have done; we
+    do it up front precisely because ``__del__`` may not get there.
+    Guarded with ``getattr`` because it is CPython-private and is None on
+    Windows, which this module does not support anyway.
+
+    Registering also means ``__del__`` never runs, so the ResourceWarning
+    that made ``__del__`` unreliable is not raised at all.
+
+    ONLY SOMETHING ``_cleanup`` CAN POLL may go on ``_active``, which is
+    what the ``_internal_poll`` check is. ``_cleanup`` calls that method
+    on every entry, so anything else corrupts interpreter state for the
+    whole process: measured, a test double in there crashed the next real
+    spawn anywhere in the suite with ``AttributeError: '_FakePs' object
+    has no attribute '_internal_poll'``. That is a constraint of the
+    private list, not an accommodation for tests, and in production the
+    branch is always taken. Checked by attribute rather than by
+    ``isinstance``, because the name ``subprocess.Popen`` is itself
+    replaceable - the suite's own seam replaces it with a function, and
+    an ``isinstance`` against it then raises ``TypeError``.
+    """
+    _ABANDONED.append(process)
+    active = getattr(subprocess, "_active", None)
+    if active is not None and hasattr(process, "_internal_poll"):
+        active.append(process)
+
+
+def _reap_abandoned() -> None:
+    """Collect any abandoned child the kernel has since let die.
+
+    ``poll`` is ``waitpid(WNOHANG)``, so this cannot block - the only
+    reason it is safe to call on the path whose whole contract is not to
+    block. Swept before each fork because that is the moment the cost is
+    about to be paid again.
+
+    Rebuilt rather than removed from. ``list.remove`` is what CPython's
+    ``_cleanup`` does, and it has to guard the ``ValueError`` for an
+    entry another thread already dropped; a rebuild cannot raise that at
+    all, and walks the list once instead of once per corpse.
+    """
+    _ABANDONED[:] = [process for process in _ABANDONED if process.poll() is None]
 
 
 @dataclass(frozen=True)
