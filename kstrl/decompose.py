@@ -27,8 +27,10 @@ from kstrl.decisions import (
     DISPOSITION_ORDER,
     SpecDecision,
     decisions_payload_errors,
+    enum_field_error,
     escalations,
     parse_decisions,
+    required_field_error,
     write_decisions,
 )
 from kstrl.delimiters import generate_data_delimiter
@@ -655,13 +657,36 @@ def _validate_allowed_path_entry(entry: str) -> str | None:
     return None
 
 
-def _spec_issue_id_errors(data: dict[str, Any]) -> tuple[list[str], dict[str, str]]:
-    """Every raw spec issue needs a unique id, the join key (#260 r2).
+# Severities, worst first. The order ``_issue_counts`` counts in and
+# the convergence report renders in. ``_surface_spec_issues`` below
+# still enumerates its own three groups, because it pairs each with a
+# different UI emitter and a label that is not the severity name.
+_SEVERITY_ORDER = ("blocker", "major", "minor")
+_VALID_SEVERITIES = frozenset(_SEVERITY_ORDER)
+_VALID_KINDS = frozenset(
+    {
+        "ambiguity",
+        "missing_detail",
+        "contradiction",
+        "unstated_assumption",
+        "undefined_failure_mode",
+        "out_of_scope_creep",
+        "other",
+    }
+)
+
+
+def _spec_issue_errors(data: dict[str, Any]) -> tuple[list[str], dict[str, str]]:
+    """Every raw spec issue, validated for the #260 join.
 
     Returns the errors and, when there are none, ``{id: severity}`` for
-    the join below. Validated RAW: an entry ``_parse_spec_issues`` would
-    skip must be a rejection here, because a skipped blocker is a
-    blocker that never has to be closed.
+    the join below. Validated RAW against the SAME vocabularies
+    ``_parse_spec_issues`` uses, because the two must agree about which
+    entries exist: the round-2 /simplify pass measured a severity of
+    ``"Blocker"`` validating, being closed by a ``decided`` decision,
+    and then being dropped by the parser, so the issue reached neither
+    the halt gate nor ``spec-issues.json`` nor the UI. That is F1's
+    capital letter one field over.
     """
     raw = data.get("spec_issues")
     if raw is None:
@@ -683,8 +708,19 @@ def _spec_issue_id_errors(data: dict[str, Any]) -> tuple[list[str], dict[str, st
         if issue_id in severities:
             errors.append(f"{prefix}.id: {issue_id!r} is already used by an earlier issue")
             continue
-        severity = entry.get("severity")
-        severities[issue_id] = severity.strip() if isinstance(severity, str) else ""
+        entry_errors = [
+            error
+            for error in (
+                enum_field_error(prefix, "severity", entry.get("severity"), _VALID_SEVERITIES),
+                enum_field_error(prefix, "kind", entry.get("kind"), _VALID_KINDS),
+                required_field_error(prefix, "summary", entry.get("summary")),
+            )
+            if error is not None
+        ]
+        if entry_errors:
+            errors.extend(entry_errors)
+            continue
+        severities[issue_id] = str(entry["severity"])
     return errors, severities
 
 
@@ -703,13 +739,13 @@ def _decision_join_errors(
     errors: list[str] = []
     closed_by: dict[str, int] = {}
     for index, entry in enumerate(raw_decisions):
-        if not isinstance(entry, dict):
-            continue
-        issue_id = entry.get("issue")
-        disposition = entry.get("disposition")
-        if not isinstance(issue_id, str) or not isinstance(disposition, str):
-            continue
-        issue_id = issue_id.strip()
+        # No shape guards: the caller returns on any payload error, so
+        # every entry here is already a dict with a non-empty string
+        # 'issue' and a valid 'disposition'. A `continue` inside the
+        # gate that replaced the count comparison would be a silent
+        # skip, which is exactly the round-1 defect.
+        issue_id = str(entry["issue"]).strip()
+        disposition = str(entry["disposition"])
         prefix = f"decisions[{index}]"
         if issue_id not in issue_severity:
             errors.append(
@@ -752,11 +788,32 @@ def _decision_register_errors(data: dict[str, Any]) -> list[str]:
     ``"Escalated"``.
     """
     errors = decisions_payload_errors(data)
-    id_errors, issue_severity = _spec_issue_id_errors(data)
+    id_errors, issue_severity = _spec_issue_errors(data)
     errors.extend(id_errors)
     if errors:
         return errors
     return _decision_join_errors(data["decisions"], issue_severity)
+
+
+#: How many validator messages the retry prompt carries. Round 2
+#: replaced one aggregate message with one message per bad record, and
+#: the round-2 /simplify pass measured the result: an architect that
+#: got every field's type wrong on 32 decisions produced 224 messages,
+#: 11,480 characters, against round 1's single 278-character line for
+#: the same fault. That is pasted into a prompt that already carries
+#: the whole spec, up to ``max_retries`` times. Twenty indexed messages
+#: are enough for a retry to see the shape of what it got wrong; the
+#: count tells it how much more there is.
+_MAX_RETRY_MESSAGES = 20
+
+
+def _retry_feedback(errors: list[str]) -> str:
+    """Validator messages for the retry prompt, bounded."""
+    shown = "; ".join(errors[:_MAX_RETRY_MESSAGES])
+    extra = len(errors) - _MAX_RETRY_MESSAGES
+    if extra <= 0:
+        return shown
+    return f"{shown}; ... and {extra} more of the same kind"
 
 
 def _write_decompose_artifact(
@@ -767,20 +824,30 @@ def _write_decompose_artifact(
     ui: UI,
     emit: Callable[[Event], None],
     rel_display: Callable[[Path], str],
+    required: bool = False,
 ) -> Path | None:
     """Attempt one durable decompose artifact, and say what happened.
 
     The write policy the R1.7 audit and the #260 decision register
     share, in one place so the two cannot drift: attempt, announce,
-    emit, and on ``OSError`` be loud without masking - the halt, or the
-    decompose result, matters more than the file. Returns the path, or
-    ``None`` when the write failed, which is what the caller passes to
-    ``SpecBlockerError`` so the halt never points at a file that is not
-    there.
+    emit, and on ``OSError`` be loud without masking. Returns the path,
+    or ``None`` when the write failed, which is what the caller passes
+    to ``SpecBlockerError`` so the halt never points at a file that is
+    not there.
+
+    ``required`` says the artifact IS part of the result rather than a
+    record of it. The decision register beside a saved manifest is: a
+    later ``ks factory`` reads it to bind engineers, and a missing
+    register binds nothing and says nothing, so one swallowed write
+    error would silently disable the register for every run against
+    that manifest. The halting copy is not required, because the halt
+    reaches the operator through ``SpecBlockerError`` either way.
     """
     try:
         path = writer()
     except OSError as exc:
+        if required:
+            raise
         ui.err(f"Failed to persist {noun} to disk: {exc}")
         return None
     ui.ok(f"{noun.capitalize()} written: {path}")
@@ -995,25 +1062,6 @@ def _validate_decompose_output(data: Any) -> list[str]:
     errors.extend(_decision_component_errors(decisions, seen_ids))
 
     return errors
-
-
-# Severities, worst first. The order ``_issue_counts`` counts in and
-# the convergence report renders in. ``_surface_spec_issues`` below
-# still enumerates its own three groups, because it pairs each with a
-# different UI emitter and a label that is not the severity name.
-_SEVERITY_ORDER = ("blocker", "major", "minor")
-_VALID_SEVERITIES = frozenset(_SEVERITY_ORDER)
-_VALID_KINDS = frozenset(
-    {
-        "ambiguity",
-        "missing_detail",
-        "contradiction",
-        "unstated_assumption",
-        "undefined_failure_mode",
-        "out_of_scope_creep",
-        "other",
-    }
-)
 
 
 def _parse_spec_issues(data: Any) -> list[SpecIssue]:
@@ -2281,7 +2329,7 @@ def _decompose_spec_impl(
 
         validation_errors = _validate_decompose_output(data)
         if validation_errors:
-            last_error = "; ".join(validation_errors)
+            last_error = _retry_feedback(validation_errors)
             ui.warn(f"Validation failed: {last_error}")
             attempt_failed(last_error, started_at=phase_start)
             data = None
@@ -2289,7 +2337,7 @@ def _decompose_spec_impl(
 
         prd_errors = _prd_schema_errors(data, project_name, single_pr)
         if prd_errors:
-            last_error = "; ".join(prd_errors)
+            last_error = _retry_feedback(prd_errors)
             ui.warn(f"PRD validation failed: {last_error}")
             attempt_failed(last_error, started_at=phase_start)
             data = None
@@ -2623,6 +2671,7 @@ def _decompose_spec_impl(
                 spec_file=spec_path.name,
                 halted=False,
             ),
+            required=True,
         )
     except BaseException:
         for prd_file in written_prds:

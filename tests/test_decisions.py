@@ -15,6 +15,7 @@ and every class below is named for the one it holds:
 from __future__ import annotations
 
 import inspect
+import io
 import json
 from pathlib import Path
 from typing import Any
@@ -346,6 +347,35 @@ class TestNothingBindingThisComponentIsEverDropped:
         body = other_section.split("\n\n", 1)[1]
         assert len(body) // 4 <= MAX_OTHER_DECISION_TOKENS
 
+    def test_the_cap_is_a_parameter_and_the_parameter_is_the_cap(self) -> None:
+        """The round-2 /simplify pass proposed deleting
+        ``max_other_tokens`` because no test passed anything but the
+        default, which is a fair hit on the tests rather than on the
+        seam: an unexercised parameter is an unchecked one. Checked
+        here instead of removed, because it is the only way to measure
+        the cap without monkeypatching a module constant, and the F2
+        measurements in the PR body were taken through it.
+        """
+        others = [
+            _spec_decision(issue=f"o{i}", question=f"oq{i} " + "z" * 300, component="comp-b")
+            for i in range(500)
+        ]
+        tight = build_decisions_context(others, "comp-a", max_other_tokens=100)
+        loose = build_decisions_context(others, "comp-a", max_other_tokens=100000)
+        assert tight.count("- **[") < loose.count("- **[")
+        assert loose.count("- **[") == 500
+        tight_body = tight.split("### Decisions binding other components")[1]
+        assert len(tight_body.split("\n\n", 1)[1]) // 4 <= 100
+
+    def test_a_cap_of_zero_shows_nothing_and_says_so(self) -> None:
+        """The boundary, because a budget that admits one item at zero
+        is a budget that rounds permissive, which is the arithmetic
+        half of F2."""
+        others = [_spec_decision(issue="o0", component="comp-b")]
+        block = build_decisions_context(others, "comp-a", max_other_tokens=0)
+        assert "0 of 1 shown" in block
+        assert block.count("- **[") == 0
+
     def test_the_heading_reports_the_real_numbers(self) -> None:
         others = [
             _spec_decision(issue=f"o{i}", question=f"oq{i} " + "z" * 300, component="comp-b")
@@ -557,6 +587,47 @@ def _factory_inputs(root: Path) -> tuple[Any, Any, Any]:
     return config, base, PlainUI(no_color=True)
 
 
+class TestAManifestWithNoSpecBindsNothing:
+    """#260 round 3 (altitude 1). ``ks run`` was dead in any project
+    that had ever run ``ks factory``.
+
+    ``Manifest.from_prd`` sets ``spec_file=""``, so round 2's identity
+    check refused the register on every ``ks run`` in a decomposed
+    project, and told the operator to "re-run the decompose for this
+    spec" when ``ks run`` has no spec to decompose. The only exits were
+    deleting the register or not using the command.
+
+    ``spec_file == ""`` meant two different things at that call site,
+    "no spec" and "wrong spec", and the code read it as the second.
+    """
+
+    def _register(self) -> DecisionRegister:
+        return DecisionRegister(
+            decisions=(_spec_decision(component="main"),),
+            project="proj",
+            spec_file="spec.md",
+            halted=False,
+            status=REGISTER_OK,
+        )
+
+    def test_a_prd_derived_manifest_binds_nothing_and_does_not_refuse(self) -> None:
+        assert bind_register(self._register(), "proj", "") == ()
+
+    def test_the_real_from_prd_manifest_is_the_shape_this_protects(self, tmp_path: Path) -> None:
+        """The premise, taken from the constructor rather than assumed."""
+        from kstrl.manifest import Manifest
+
+        prd = tmp_path / "prd.json"
+        prd.write_text("{}", encoding="utf-8")
+        manifest = Manifest.from_prd(prd, "kstrl/auth", base_branch="main")
+        assert manifest.spec_file == ""
+        assert bind_register(self._register(), manifest.project_name, manifest.spec_file) == ()
+
+    def test_a_spec_derived_manifest_still_gets_the_identity_check(self) -> None:
+        with pytest.raises(DecisionRegisterError, match="belongs to project"):
+            bind_register(self._register(), "proj", "other.md")
+
+
 class TestTheSchedulerActuallyInjectsIt:
     """Mutation guard (review round 2).
 
@@ -609,7 +680,15 @@ class TestTheSchedulerActuallyInjectsIt:
 
     def test_a_foreign_register_stops_the_run_before_any_worker(self, tmp_path: Path) -> None:
         """F3 end to end. Project A's register, project B's manifest,
-        both with a component called comp-a."""
+        both with a component called comp-a.
+
+        Round 3: the refusal goes through ``_report_preflight`` and exit
+        code 2, the same way the scope and stale-branch refusals do. The
+        round-2 shape let ``DecisionRegisterError`` out of
+        ``run_factory``, and measured, that reached the operator as a
+        traceback and exit 1, so anything keying on 2 for "refused
+        before spend" saw a crash instead.
+        """
         from kstrl.factory import ComponentResult, run_factory
 
         root = _factory_project(tmp_path, "comp-a")
@@ -627,8 +706,12 @@ class TestTheSchedulerActuallyInjectsIt:
             spec_file="a.md",
             halted=False,
         )
+        from kstrl.ui.plain import PlainUI
+
         manifest = _one_component_manifest("project-b", "b.md")
-        config, base, ui = _factory_inputs(root)
+        config, base, _ = _factory_inputs(root)
+        ui_output = io.StringIO()
+        ui = PlainUI(no_color=True, file=ui_output)
         started: list[Any] = []
 
         def capture(*args: Any, **kwargs: Any) -> ComponentResult:
@@ -638,7 +721,10 @@ class TestTheSchedulerActuallyInjectsIt:
         with (
             patch("kstrl.factory._run_component", side_effect=capture),
             patch("kstrl.git.get_diff_content", return_value=""),
-            pytest.raises(DecisionRegisterError, match="belongs to project"),
         ):
-            run_factory(manifest, config, base, ui, root)
+            result = run_factory(manifest, config, base, ui, root)
+        assert result.exit_code == 2
         assert started == []
+        printed = ui_output.getvalue()
+        assert "Refusing to run: the architect decision register cannot bind" in printed
+        assert "belongs to project" in printed

@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -97,6 +97,13 @@ _CHARS_PER_TOKEN = 4
 
 DECISIONS_CONTEXT_PROMPT_VERSION = "1.0.0"
 
+#: An empty tier renders as nothing at all under its heading, and
+#: deliberately NOT as a "(none)" marker: that marker would be a second
+#: piece of harness-authored English reaching the engineer, needing its
+#: own constant, version and snapshot, and the H3 render guard cannot
+#: hold a fragment nested inside another enrolled template. One enrolled
+#: body per module is the point.
+#:
 #: H3/H3a: harness-authored instruction text that reaches the engineer.
 #: Round 1 built this block from inline f-strings, so the reviewer
 #: changed "binding" to "advisory" and all 61 prompt-version and
@@ -184,12 +191,26 @@ def bind_register(
 ) -> tuple[SpecDecision, ...]:
     """The decisions that may bind this manifest, or raise.
 
-    Missing is legal and returns nothing: a manifest written before this
-    feature has no register, and that is a fact rather than a fault.
+    Two things are legal and return nothing.
+
+    A MISSING register: a manifest written before this feature has none,
+    and that is a fact rather than a fault.
+
+    An empty ``spec_file``: that manifest did not come from a decompose.
+    ``Manifest.from_prd`` sets it to ``""``, so it is what ``ks run``
+    hands the factory, and the decompose path always sets
+    ``spec_path.name``. Round 3 caught this by measurement: without the
+    check, the register left by one successful ``ks factory`` refused
+    every later ``ks run`` in the same project, and the message told the
+    operator to "re-run the decompose for this spec" when ``ks run`` has
+    no spec to decompose. An architect's answers about spec.md do not
+    bind a run that is not building spec.md, so no spec means no
+    binding, quietly.
+
     Everything else is a refusal - unreadable, halted, or belonging to
     another project or another spec.
     """
-    if register.status == REGISTER_MISSING:
+    if register.status == REGISTER_MISSING or not spec_file:
         return ()
     if register.status != REGISTER_OK:
         raise DecisionRegisterError(
@@ -218,12 +239,38 @@ def _clean(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
-def _required_field_error(prefix: str, name: str, value: Any) -> str | None:
-    """One required string field, or the reason it is not one."""
+def required_field_error(prefix: str, name: str, value: Any) -> str | None:
+    """One required string field, or the reason it is not one.
+
+    Shared with ``decompose._spec_issue_errors``: the two raw validators
+    that guard the #260 join must word an identical fault identically,
+    or a retry sees two vocabularies for one mistake.
+    """
     if not isinstance(value, str):
         return f"{prefix}.{name}: must be a string, got {type(value).__name__}"
     if not value.strip():
         return f"{prefix}.{name}: must not be empty"
+    return None
+
+
+def enum_field_error(
+    prefix: str,
+    name: str,
+    value: Any,
+    valid: Collection[str],
+) -> str | None:
+    """One required field constrained to a fixed vocabulary.
+
+    The message names the whole vocabulary and says the match is exact,
+    because "is not one of" without the list sends a retry guessing. F1
+    was a capitalised ``disposition``; the round-2 /simplify pass found
+    the same hole one field over, in a spec issue's ``severity``, so
+    this is the one place both are now checked.
+    """
+    if not isinstance(value, str):
+        return f"{prefix}.{name}: must be a string, got {type(value).__name__}"
+    if value not in valid:
+        return f"{prefix}.{name}: {value!r} is not one of {sorted(valid)} (match is case-exact)"
     return None
 
 
@@ -242,17 +289,12 @@ def decision_entry_errors(index: int, entry: Any) -> list[str]:
         return [f"{prefix}: must be an object, got {type(entry).__name__}"]
     errors: list[str] = []
     for name in ("question", "resolution", "issue"):
-        error = _required_field_error(prefix, name, entry.get(name))
+        error = required_field_error(prefix, name, entry.get(name))
         if error is not None:
             errors.append(error)
-    disposition = entry.get("disposition")
-    if not isinstance(disposition, str):
-        errors.append(f"{prefix}.disposition: must be a string, got {type(disposition).__name__}")
-    elif disposition not in VALID_DISPOSITIONS:
-        errors.append(
-            f"{prefix}.disposition: {disposition!r} is not one of "
-            f"{sorted(VALID_DISPOSITIONS)} (match is case-exact)"
-        )
+    error = enum_field_error(prefix, "disposition", entry.get("disposition"), VALID_DISPOSITIONS)
+    if error is not None:
+        errors.append(error)
     for name in ("reason", "alternative", "component"):
         value = entry.get(name)
         if value is not None and not isinstance(value, str):
@@ -295,8 +337,9 @@ def parse_decisions(data: Any) -> list[SpecDecision]:
         return []
     decisions: list[SpecDecision] = []
     for entry in raw:
-        if not isinstance(entry, dict):
-            continue
+        # Non-dict entries included: ``decision_entry_errors`` rejects
+        # them by itself, so a separate isinstance guard here would be
+        # a second, silently divergent definition of a usable entry.
         if decision_entry_errors(0, entry):
             continue
         decisions.append(
@@ -393,10 +436,10 @@ def read_decisions(root_dir: Path) -> DecisionRegister:
         raw = json.loads(text)
     except ValueError as exc:
         return DecisionRegister(status=REGISTER_UNREADABLE, detail=f"{path}: {exc}")
-    if not isinstance(raw, dict):
-        return DecisionRegister(
-            status=REGISTER_UNREADABLE, detail=f"{path}: top level is not an object"
-        )
+    # No separate non-dict branch: ``decisions_payload_errors`` already
+    # answers "output must be a JSON object" for anything that is not a
+    # dict, and a second wording for one fault is a second thing to keep
+    # in step.
     entry_errors = decisions_payload_errors(raw)
     if entry_errors:
         return DecisionRegister(
@@ -423,22 +466,6 @@ def _render_full(decision: SpecDecision) -> str:
 
 def _render_summary(decision: SpecDecision) -> str:
     return f"- **[{decision.disposition}]** {decision.question} -> {decision.resolution}"
-
-
-def _render_tier(items: Sequence[SpecDecision], full: bool) -> str:
-    """One tier rendered whole, or "" when it is empty.
-
-    Deliberately NOT a "(none)" marker. That marker would be a second
-    piece of harness-authored English reaching the engineer, needing its
-    own enrolled constant, its own version and its own snapshot, and the
-    H3 render guard cannot hold a fragment nested inside another
-    enrolled template. An empty section under its heading says the same
-    thing and leaves exactly one enrolled body in this module.
-    """
-    if not items:
-        return ""
-    render = _render_full if full else _render_summary
-    return "\n".join(render(item) for item in items)
 
 
 def _pack_other(items: Sequence[SpecDecision], max_tokens: int) -> list[SpecDecision]:
@@ -502,9 +529,9 @@ def build_decisions_context(
     shown_other = _pack_other(other, max_other_tokens)
     return DECISIONS_CONTEXT_PROMPT.format(
         component_id=component_id,
-        own=_render_tier(own, full=True),
-        run_wide=_render_tier(run_wide, full=True),
+        own="\n".join(_render_full(d) for d in own),
+        run_wide="\n".join(_render_full(d) for d in run_wide),
         other_shown=len(shown_other),
         other_total=len(other),
-        other=_render_tier(shown_other, full=False),
+        other="\n".join(_render_summary(d) for d in shown_other),
     )
