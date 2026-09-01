@@ -47,6 +47,7 @@ def write_component_prd(
     allowed_paths: list[str] | None = None,
     stories: list[dict[str, object]] | None = None,
     fixtures: list[dict[str, object]] | None = None,
+    spec_issues: list[dict[str, str]] | None = None,
     body: str | None = None,
 ) -> Path:
     """Write a minimal loadable PRD at ``root / rel`` and return it.
@@ -63,6 +64,10 @@ def write_component_prd(
     set the engineer changed (#264/#268), so a pre-run copy with no
     stories beside a worktree copy with one reads as tampering. Give
     both the same stories, or use ``PASSING_STORY`` for both.
+
+    ``spec_issues`` is the architect's routed audit (#260). Absent by
+    default, because a fixture that is not about the audit should not
+    acquire one.
 
     ``body`` writes raw text instead, valid or not. The escape hatch
     for the tests that need an UNLOADABLE PRD at exactly this path:
@@ -82,5 +87,7 @@ def write_component_prd(
         document["allowedPaths"] = allowed_paths
     if fixtures is not None:
         document["fixtures"] = fixtures
+    if spec_issues is not None:
+        document["specIssues"] = spec_issues
     path.write_text(json.dumps(document))
     return path

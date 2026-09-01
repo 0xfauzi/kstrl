@@ -80,6 +80,24 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Added
 
+- The architect's non-blocker spec findings now reach the engineer. They
+  were written to `scripts/kstrl/spec-issues.json` on every decompose and
+  nothing in `kstrl/` ever opened that file: across five recorded runs
+  against one real spec, 91 majors and minors were printed once and
+  discarded. Each finding is now routed into the PRD of the component
+  whose surface it touches, under a new optional `specIssues` key that
+  carries the severity, kind, summary, location and suggestion verbatim
+  plus an `appliesTo` of `component` or `spec`. The rule matches the
+  distinctive words of a component's id and title against the finding's
+  own `location` and `summary` text and needs two of them, which scored
+  precision 1.00 and recall 0.53 against the 31 real findings whose
+  location names the component the architect meant. A finding the rule
+  cannot place is not dropped: it goes into every component's PRD as
+  `appliesTo: spec`, so nothing the audit produced is lost. Halting is
+  untouched, a blocker still stops the decomposition before any PRD is
+  written, and `spec-issues.json` remains the full durable record.
+  Nothing gates on the new field, so an engineer editing it is not
+  tampering, for the same reason `allowedPaths` is not compared.
 - Safe mode: one name, and one question, for the four degraded states
   kstrl already entered separately. An untrusted control directory stops
   the daemon spending, a damaged `autonomy.json` falls back to L1

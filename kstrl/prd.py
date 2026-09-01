@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,75 @@ _FIXTURE_EXPECTED_KEYS: dict[str, set[str]] = {
 }
 
 
+def _key_set_errors(prefix: str, actual: set[str], expected: set[str]) -> list[str]:
+    """How ``actual`` differs from the closed key set ``expected``.
+
+    Every strict entry validator in this module asks the same question
+    and phrases the answer the same way; #260 would have been the third
+    copy. Callers decide what a difference means: the fixture and spec
+    issue validators stop, because the per-field checks below them index
+    keys they can no longer trust.
+    """
+    errors: list[str] = []
+    missing = expected - actual
+    if missing:
+        errors.append(f"{prefix}: missing keys: {', '.join(sorted(missing))}")
+    extra = actual - expected
+    if extra:
+        errors.append(f"{prefix}: unexpected keys: {', '.join(sorted(extra))}")
+    return errors
+
+
+# --- Spec issue entry validation (#260) --------------------------------
+# The architect's non-blocker findings, routed into the PRD of the
+# component whose surface they touch. Validated as strictly as the
+# fixtures above even though nothing executes them: the entries reach an
+# LLM, and an unknown key here would mean the writer and the reader
+# disagree about the shape without anything saying so.
+
+# What ``appliesTo`` says about a finding. The PRD owns this vocabulary
+# because the PRD is where the value is read; ``decompose`` imports
+# these to write it.
+SPEC_ISSUE_APPLIES_COMPONENT = "component"
+SPEC_ISSUE_APPLIES_SPEC = "spec"
+
+_SPEC_ISSUE_KEYS = {
+    "severity",
+    "kind",
+    "summary",
+    "location",
+    "suggestion",
+    "appliesTo",
+}
+# Sorted once: the type-check loop below runs per entry, and a decompose
+# validates roughly 180 of them (20 findings across up to 9 components).
+_SPEC_ISSUE_KEYS_SORTED = tuple(sorted(_SPEC_ISSUE_KEYS))
+_SPEC_ISSUE_APPLIES = {SPEC_ISSUE_APPLIES_COMPONENT, SPEC_ISSUE_APPLIES_SPEC}
+
+
+def _validate_spec_issue_entry(prefix: str, entry: Any) -> list[str]:
+    if not isinstance(entry, dict):
+        return [f"{prefix}: must be an object"]
+    errors = _key_set_errors(prefix, set(entry.keys()), _SPEC_ISSUE_KEYS)
+    if errors:
+        return errors
+    errors.extend(
+        f"{prefix}.{key}: must be a string"
+        for key in _SPEC_ISSUE_KEYS_SORTED
+        if not isinstance(entry[key], str)
+    )
+    if errors:
+        return errors
+    if not entry["summary"]:
+        errors.append(f"{prefix}.summary: must be non-empty")
+    if entry["appliesTo"] not in _SPEC_ISSUE_APPLIES:
+        errors.append(
+            f"{prefix}.appliesTo: must be one of "
+            f"{sorted(_SPEC_ISSUE_APPLIES)} (got: {entry['appliesTo']!r})"
+        )
+    return errors
+
+
 def _validate_string_list(prefix: str, value: Any) -> list[str]:
     if not isinstance(value, list) or not all(isinstance(s, str) for s in value):
         return [f"{prefix}: must be an array of strings"]
@@ -55,14 +125,8 @@ def _validate_fixture_entry(prefix: str, entry: Any) -> list[str]:
     if not isinstance(entry, dict):
         return [f"{prefix}: must be an object"]
 
-    actual_keys = set(entry.keys())
-    missing = _FIXTURE_ENTRY_KEYS - actual_keys
-    extra = actual_keys - _FIXTURE_ENTRY_KEYS
-    if missing:
-        errors.append(f"{prefix}: missing keys: {', '.join(sorted(missing))}")
-    if extra:
-        errors.append(f"{prefix}: unexpected keys: {', '.join(sorted(extra))}")
-    if missing or extra:
+    errors.extend(_key_set_errors(prefix, set(entry.keys()), _FIXTURE_ENTRY_KEYS))
+    if errors:
         return errors
 
     description = entry["description"]
@@ -165,6 +229,66 @@ def _validate_fixture_entry(prefix: str, entry: Any) -> list[str]:
     return errors
 
 
+def _validate_allowed_path_items(key: str, value: list[Any]) -> list[str]:
+    if not all(isinstance(p, str) and p for p in value):
+        return [f"{key}: all items must be non-empty strings"]
+    return []
+
+
+def _entry_validator(
+    per_entry: Callable[[str, Any], list[str]],
+) -> Callable[[str, list[Any]], list[str]]:
+    """Lift a per-entry validator to one that checks a whole array."""
+
+    def validate(key: str, value: list[Any]) -> list[str]:
+        errors: list[str] = []
+        for i, entry in enumerate(value):
+            errors.extend(per_entry(f"{key}[{i}]", entry))
+        return errors
+
+    return validate
+
+
+# Every optional top-level PRD key follows the same rule: absent is
+# fine, present must be a non-empty array, and the items are checked by
+# the field's own validator. Stating it once keeps ``validate_schema``
+# from growing a near-identical block per field, and keeps the three
+# empty-array messages phrased the same way.
+_OPTIONAL_ARRAYS: tuple[tuple[str, str, Callable[[str, list[Any]], list[str]]], ...] = (
+    (
+        "allowedPaths",
+        "omit the field entirely to leave scope unconstrained",
+        _validate_allowed_path_items,
+    ),
+    (
+        "fixtures",
+        "omit the field entirely when there are none",
+        _entry_validator(_validate_fixture_entry),
+    ),
+    (
+        "specIssues",
+        "omit the field entirely when the audit found nothing",
+        _entry_validator(_validate_spec_issue_entry),
+    ),
+)
+
+
+def _validate_optional_arrays(data: dict[str, Any]) -> list[str]:
+    """Shape errors for the optional array-valued PRD keys."""
+    errors: list[str] = []
+    for key, empty_hint, item_validator in _OPTIONAL_ARRAYS:
+        if key not in data:
+            continue
+        value = data[key]
+        if not isinstance(value, list):
+            errors.append(f"{key} must be an array")
+        elif not value:
+            errors.append(f"{key} must be non-empty when present ({empty_hint})")
+        else:
+            errors.extend(item_validator(key, value))
+    return errors
+
+
 @dataclass
 class PRD:
     """Product Requirements Document."""
@@ -183,6 +307,13 @@ class PRD:
     # entries - parsing into runner objects lives in kstrl.fixtures
     # (which imports this module; the reverse import would be a cycle).
     fixtures: list[dict[str, Any]] | None = None
+    # The architect's non-blocker spec findings on this component's
+    # surface (#260), routed here by ``decompose.route_spec_issues``.
+    # Informational: no gate reads them. They are here because the
+    # engineer's first instruction is to read this file, and before
+    # this field the majors and minors were written to
+    # spec-issues.json, which nothing in kstrl opens.
+    spec_issues: list[dict[str, str]] | None = None
 
     @classmethod
     def load(cls, path: Path) -> PRD:
@@ -221,6 +352,7 @@ class PRD:
             user_stories=stories,
             allowed_paths=allowed_paths,
             fixtures=data.get("fixtures"),
+            spec_issues=data.get("specIssues"),
         )
 
     @classmethod
@@ -241,6 +373,9 @@ class PRD:
           with exactly the keys description / fixture_type / input_data /
           expected, validated strictly per type (see
           ``_validate_fixture_entry``; R7.2).
+        - specIssues (optional): non-empty array of architect findings,
+          each with exactly the keys severity / kind / summary /
+          location / suggestion / appliesTo, all strings (#260).
         - Field types are strictly enforced.
         """
         errors: list[str] = []
@@ -250,7 +385,7 @@ class PRD:
             return errors
 
         required_keys = {"branchName", "userStories"}
-        optional_keys = {"allowedPaths", "fixtures"}
+        optional_keys = {"allowedPaths", "fixtures", "specIssues"}
         actual_keys = set(data.keys())
         missing = required_keys - actual_keys
         extra = actual_keys - required_keys - optional_keys
@@ -262,32 +397,7 @@ class PRD:
                 errors.append(f"Unexpected keys: {', '.join(sorted(extra))}")
             return errors
 
-        # Validate optional allowedPaths shape
-        if "allowedPaths" in data:
-            ap = data["allowedPaths"]
-            if not isinstance(ap, list):
-                errors.append("allowedPaths must be an array")
-            elif not ap:
-                errors.append(
-                    "allowedPaths must be non-empty when present "
-                    "(omit the field entirely to leave scope unconstrained)"
-                )
-            elif not all(isinstance(p, str) and p for p in ap):
-                errors.append("allowedPaths: all items must be non-empty strings")
-
-        # Validate optional fixtures shape (strict; R7.2)
-        if "fixtures" in data:
-            fixtures = data["fixtures"]
-            if not isinstance(fixtures, list):
-                errors.append("fixtures must be an array")
-            elif not fixtures:
-                errors.append(
-                    "fixtures must be non-empty when present "
-                    "(omit the field entirely when there are none)"
-                )
-            else:
-                for i, entry in enumerate(fixtures):
-                    errors.extend(_validate_fixture_entry(f"fixtures[{i}]", entry))
+        errors.extend(_validate_optional_arrays(data))
 
         # Validate branchName
         branch_name = data.get("branchName")
@@ -376,6 +486,13 @@ class PRD:
         changes nothing and refusing an edit to it could only ever be a
         false positive. ``kstrl.scope`` records why.
 
+        ``specIssues`` is not compared either, for the same shape of
+        reason (#260). No gate reads it, so an edit cannot buy the
+        engineer a verdict it did not earn, and the durable copy is
+        spec-issues.json, written by the architect before any worktree
+        exists. Pinning it would only turn an agent tidying an
+        informational block into a failed run.
+
         Everything that IS compared is compared for equality, ORDER
         INCLUDED, because the engineer is not meant to touch these
         fields at all: any difference is a rewrite, and the remedy
@@ -417,9 +534,10 @@ class PRD:
         """Save PRD back to JSON file.
 
         Round-trips the optional fields: dropping ``allowedPaths`` on a
-        save would silently unbind the component's diff scope, and
-        dropping ``fixtures`` would silently disable the behavioral
-        oracle (R7.2).
+        save would silently unbind the component's diff scope, dropping
+        ``fixtures`` would silently disable the behavioral oracle
+        (R7.2), and dropping ``specIssues`` would take the architect's
+        findings back off the engineer's desk (#260).
         """
         data: dict[str, Any] = {
             "branchName": self.branch_name,
@@ -439,6 +557,8 @@ class PRD:
             data["allowedPaths"] = self.allowed_paths
         if self.fixtures is not None:
             data["fixtures"] = self.fixtures
+        if self.spec_issues is not None:
+            data["specIssues"] = self.spec_issues
         # R10.3: written atomically, through the shared helper that owns
         # that pattern for every file kstrl must not leave half-written
         # (#291; manifest.save, knowledge.write_facts, decompose's PRD
