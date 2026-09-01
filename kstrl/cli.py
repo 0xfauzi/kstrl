@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
 
 if TYPE_CHECKING:
-    from kstrl.evolution import EvolutionConfig
+    from kstrl.evolution import EvolutionConfig, EvolutionJournal
     from kstrl.interaction import InteractionChannel
 
 from dataclasses import replace
@@ -640,6 +640,44 @@ def _echo_config_problems(problems: list[str]) -> None:
         click.echo(f"  {problem}")
     click.echo("")
     click.echo(f"error: {len(problems)} unusable config section(s)", err=True)
+
+
+def _echo_journal_repairs(journal: EvolutionJournal, ui_impl: UI) -> None:
+    """`ks evolve --status`'s report of interrupted journal writes (#312).
+
+    Why the count exists at all is argued once, on
+    ``EvolutionJournal.get_repair_count``. What is decided HERE:
+
+    ``warn``, not ``err``: this command exits 0, and every other
+    ``ui_impl.err`` in this module precedes a non-zero exit, so printing
+    ERROR in red would make a repaired journal indistinguishable from
+    "Evolution is disabled in config".
+
+    Silent at zero, which is the whole reason this is worth a line at
+    all: a healthy journal that prints "0 repairs" every time teaches an
+    operator to skip the line that matters.
+
+    Only ``ks evolve --status`` calls it. The evolve TUI screen renders
+    the same trends and stays silent about repairs, which is #333:
+    ``get_repair_count`` is click-free and on the journal, so that
+    screen can ask for itself, but claiming this helper serves the TUI
+    would be false. It lives in the click module.
+
+    Takes the journal and asks IT for the path, rather than being handed
+    both: a count from one journal printed beside another one's path is
+    a report that cannot be wrong today and could be after any edit. A
+    helper rather than four lines inline because ``evolve`` is already
+    over the cognitive gate at 23, so a branch added there would fail
+    the staged complexity ratchet on a function this change is not
+    otherwise touching.
+    """
+    repairs = journal.get_repair_count()
+    if repairs:
+        ui_impl.warn(
+            f"  journal: {repairs} interrupted write(s) repaired. A crash left "
+            f"{journal.config.journal_path} without a trailing newline; the fragment "
+            "above each journal_repair row was lost."
+        )
 
 
 def _preflight_root(ctx: click.Context) -> Path:
@@ -3956,6 +3994,7 @@ def evolve(
                 f"failed={entry.get('failed', '?')} "
                 f"retry_rate={entry.get('retry_rate', '?')}"
             )
+        _echo_journal_repairs(journal, ui_impl)
         sys.exit(0)
 
     if apply_id:

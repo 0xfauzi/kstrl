@@ -10,7 +10,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import IO, Any, Protocol
 
 
 class ProgressSink(Protocol):
@@ -403,40 +403,46 @@ class NullProgressLog(ProgressLog):
         pass
 
 
-def ends_without_newline(path: Path) -> bool:
-    """True when ``path`` exists, holds bytes, and its last one is not ``\\n``.
+def handle_ends_without_newline(handle: IO[bytes]) -> bool:
+    """True when the open binary file holds bytes and the last is not ``\\n``.
 
     The write-side companion to :func:`read_progress_events`, and here
     rather than in the one module that calls it today because it is the
     generic half of #312 with no policy in it. That defect is one an
     appender to any JSONL file in this package can have: a crash leaves
     an unterminated tail, the next append concatenates onto it, and the
-    tolerant reader above drops BOTH lines. Measured on this tree, four
+    tolerant reader below drops BOTH lines. Measured on this tree, four
     other appenders still can (``ProgressLog.emit``, ``JsonlSink``,
-    ``workqueue``, ``inbox``); what each of them should WRITE on finding
-    a tear differs per file, so only the predicate is shared. #291 is
-    the argument for hoisting it before the second copy rather than
-    after the tenth.
+    ``workqueue``, ``inbox``), which is #331; what each of them should
+    WRITE on finding a tear differs per file, so only the predicate is
+    shared. #291 is the argument for hoisting it before the second copy
+    rather than after the tenth.
 
-    Read in BINARY, which is the point: the last byte of a file torn
+    Takes an OPEN HANDLE rather than a path, which is the whole design:
+
+    - the caller opens once, in ``"a+b"``, and probes and appends
+      through one file description, so there is no window between the
+      two in which the path can be replaced, retargeted or deleted;
+    - a file this process cannot read cannot be opened ``"a+b"`` at all,
+      so an unreadable journal raises ``PermissionError`` out of the
+      open instead of being reported as "not torn" and appended to
+      blind (#327 round 1, F3: a path-taking probe that answered False
+      on every ``OSError`` was fail-OPEN on a mode-0200 journal);
+    - a long-lived appender such as ``JsonlSink`` can ask this once when
+      it opens, which a path-taking predicate cannot serve.
+
+    Binary, which is the point: the last byte of a file torn
     mid-utf-8-sequence cannot be decoded, and a text-mode probe would
     raise ``UnicodeDecodeError`` on exactly the file that most needs the
-    repair.
-
-    An unreadable file answers False: it is not evidence of a tear, and
-    a caller about to write will raise the same ``OSError`` itself. A
-    missing file answers False through the same path, since
-    ``FileNotFoundError`` is an ``OSError``.
+    repair. Seeks are reads; in append mode the write position is the
+    end regardless, so this does not disturb where the caller's next
+    write lands. Raises nothing of its own: an IO error belongs to the
+    caller that owns the handle.
     """
-    try:
-        with open(path, "rb") as handle:
-            handle.seek(0, os.SEEK_END)
-            if handle.tell() == 0:
-                return False
-            handle.seek(-1, os.SEEK_END)
-            return handle.read(1) != b"\n"
-    except OSError:
+    if handle.seek(0, os.SEEK_END) == 0:
         return False
+    handle.seek(-1, os.SEEK_END)
+    return handle.read(1) != b"\n"
 
 
 def read_progress_events(path: Path) -> list[dict[str, Any]]:

@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.observability import ends_without_newline
+from kstrl.observability import handle_ends_without_newline, read_progress_events
 from kstrl.verify import SCOPE_UNREADABLE_CHECK, SCOPE_UNREADABLE_ERROR_PREFIX
 
 if TYPE_CHECKING:
@@ -43,6 +43,17 @@ JOURNAL_SCHEMA_VERSION = 2
 # counts towards nothing and cannot invent an outcome. It exists to be
 # grepped: it is the only durable trace that a crash tore the file.
 JOURNAL_REPAIR_EVENT = "journal_repair"
+
+
+# The header row record_run writes to experiments.tsv, at module scope so
+# that a test can assert against the columns the writer actually emits
+# rather than a shorter hand-typed row that csv.DictReader happens to
+# tolerate. Files written before R3.1 keep their shorter header.
+EXPERIMENTS_HEADER = (
+    "run_id\ttimestamp\tproject\tcomponents_total\tcompleted\tfailed\t"
+    "skipped\tavg_iterations\tavg_duration_s\tretry_rate\tcommon_failure\t"
+    "total_tokens\ttotal_cost_usd\tunreported_calls"
+)
 
 # #191: what a component_result entry records when no fact-utilization
 # measurement reached the journal - the component never got past the
@@ -771,11 +782,6 @@ class EvolutionJournal:
         else:
             total_tokens_col = total_cost_col = unreported_col = ""
 
-        header = (
-            "run_id\ttimestamp\tproject\tcomponents_total\tcompleted\tfailed\t"
-            "skipped\tavg_iterations\tavg_duration_s\tretry_rate\tcommon_failure\t"
-            "total_tokens\ttotal_cost_usd\tunreported_calls"
-        )
         row = (
             f"{run_id}\t{timestamp}\t{manifest.project_name}\t{total}\t"
             f"{completed}\t{failed}\t{skipped}\t{avg_iterations:.2f}\t"
@@ -793,7 +799,7 @@ class EvolutionJournal:
             # file get_experiment_trends decodes as utf-8.
             with open(self.config.experiments_path, "a", encoding="utf-8") as f:
                 if needs_header:
-                    f.write(header + "\n")
+                    f.write(EXPERIMENTS_HEADER + "\n")
                 f.write(row + "\n")
         except OSError as exc:
             logger.warning(
@@ -1402,6 +1408,29 @@ class EvolutionJournal:
         return rows[-last_n:]
 
     # ------------------------------------------------------------------
+    # get_repair_count
+    # ------------------------------------------------------------------
+
+    def get_repair_count(self) -> int:
+        """How many interrupted writes this journal has been repaired from.
+
+        The read surface for ``JOURNAL_REPAIR_EVENT`` (#327 round 1,
+        F5). Writing the row was only half of "if it's worth deciding,
+        it's worth recording": a row no command reports is reachable
+        only by an operator who already suspects the problem, and the
+        logger warning goes to orchestrator.log under the TUI. ``ks
+        evolve --status`` prints this when it is non-zero.
+
+        Counts rows, not incidents: :meth:`append_entries` residual 2
+        is how one tear can produce two. A non-zero count means at
+        least one crash left an unterminated tail, and the fragment
+        above each row is what was lost.
+        """
+        return sum(
+            1 for e in self._read_all_entries() if e.get("event_type") == JOURNAL_REPAIR_EVENT
+        )
+
+    # ------------------------------------------------------------------
     # get_spec_issue_runs
     # ------------------------------------------------------------------
 
@@ -1438,10 +1467,10 @@ class EvolutionJournal:
         """Append entries to the journal in JSONL form.
 
         The one writer of the journal's line format, enforced by
-        ``tests/test_journal_torn_tail.py``. Raises ``OSError`` rather
-        than handling it, because the two callers surface a failed write
-        differently: :meth:`record_run` logs it, while decompose warns
-        through the run's UI.
+        ``tests/test_journal_one_writer.py``. Raises ``OSError`` rather
+        than handling it, because the three callers surface a failed
+        write differently: :meth:`record_run` logs it, decompose warns
+        through the run's UI, and ``autonomy.commit_transition`` warns.
 
         #312: a crash mid-write leaves a tail with no newline, and an
         append onto that tail concatenates the two into one unparseable
@@ -1458,30 +1487,58 @@ class EvolutionJournal:
         record by losing every later one. So the repair is recorded
         instead, twice, per "if it's worth deciding, it's worth
         recording" - a ``JOURNAL_REPAIR_EVENT`` row in the file itself,
-        which is what an operator greps months later, and a warning on
-        this module's logger for whoever is watching now. The row is
-        durable where the log line is not: the process that tore the
-        file is exactly the process whose stderr nobody kept.
+        which is what ``ks evolve --status`` counts and an operator
+        greps months later, and a warning on this module's logger for
+        whoever is watching now. The row is durable where the log line
+        is not: the process that tore the file is exactly the process
+        whose stderr nobody kept.
 
         An empty append writes nothing, so it repairs nothing: there is
         no entry to protect and the next real append will do it.
 
-        Probe-then-append is a read-modify-write, and this file takes no
-        lock. Two appenders racing onto a torn file both see the tear and
-        both repair it, which costs a blank line and a second repair row,
-        and the reader skips both. The window where a probe goes stale
-        needs another writer to crash mid-write inside it, and that is
-        the case this method already loses to today, so the probe makes
-        an unlocked append no less safe than it was.
+        ONE file description does the probe and the append, in
+        ``"a+b"``. That is not an optimisation, it is what removes the
+        window in which the path could be replaced or a symlink
+        retargeted between the two, and what makes a journal this
+        process cannot READ raise out of the open rather than being
+        probed as "not torn" and appended to blind. It costs the
+        text-mode ``encoding="utf-8"``, so the bytes are encoded
+        explicitly instead, which is the same two-sided contract stated
+        at the other end.
+
+        WHAT IS STILL NOT ATOMIC, precisely, because a docstring that
+        implied otherwise would be worse than no docstring. This takes
+        no lock, and #330 tracks that:
+
+        1. Between this process's tail read and its write, another
+           process can append. If that other write is a complete line,
+           nothing is lost. If it crashed mid-line inside that window,
+           this append lands on the fragment and the pair is unreadable
+           - the #312 outcome, in the narrower window.
+        2. Two processes repairing one tear each write a newline and a
+           repair row, so a single incident can be recorded twice. Both
+           the blank line and the extra row are skipped by every reader
+           and counted by none.
+        3. O_APPEND makes each ``write`` land at the end, and the repair
+           row plus the whole batch go in ONE ``write`` so that another
+           appender cannot land between them. That is not a guarantee:
+           ``BufferedWriter.write`` flushes and loops for a payload
+           larger than its buffer (``io.DEFAULT_BUFFER_SIZE``, 8192
+           here), so a large batch can still be split into several raw
+           writes and interleaved. Splitting predates this change; the
+           single call narrows it, it does not close it.
+
+        Neither 1 nor 3 is made worse by the probe: at cbdff7c the same
+        two writers produced the same interleaving with no probe at all.
         """
         path = self.config.journal_path
         path.parent.mkdir(parents=True, exist_ok=True)
-        repairing = bool(entries) and ends_without_newline(path)
-        with open(path, "a", encoding="utf-8") as f:
+        with open(path, "a+b") as handle:
+            repairing = bool(entries) and handle_ends_without_newline(handle)
+            payload = "".join(_journal_line(entry) for entry in entries)
             if repairing:
-                f.write("\n" + _journal_line(_repair_entry()))
-            for entry in entries:
-                f.write(_journal_line(entry))
+                payload = "\n" + _journal_line(_repair_entry()) + payload
+            handle.write(payload.encode("utf-8"))
         if repairing:
             logger.warning(
                 "evolution journal did not end in a newline, so a crash tore it: "
@@ -1505,8 +1562,6 @@ class EvolutionJournal:
         policy rather than two. One unreadable line must not cost the
         reader the rest of the history.
         """
-        from kstrl.observability import read_progress_events
-
         return read_progress_events(self.config.journal_path)
 
     def _read_journal_entries(self, lookback_runs: int = 10) -> list[dict[str, Any]]:
