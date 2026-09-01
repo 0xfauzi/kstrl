@@ -35,7 +35,8 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import NoReturn
+from typing import NoReturn, cast
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -370,3 +371,18 @@ def kill_group(pgid: int) -> None:
         os.killpg(pgid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError, OSError):
         pass
+
+
+def fake_popen(pid: object) -> subprocess.Popen[str]:
+    """A mock ``Popen`` carrying ``pid`` and nothing else.
+
+    The pgid guard's whole subject is a pid that is not a real one, so
+    every suite testing it needs this shape and four of them had built it
+    inline (#308). ``pid`` is deliberately ``object``: the case the guard
+    exists for is a ``MagicMock`` pid, which coerces to 1 through
+    ``MagicMock.__index__`` rather than raising, so a signature that only
+    accepted ``int`` could not express the test that matters.
+    """
+    fake = MagicMock(spec=subprocess.Popen)
+    fake.pid = pid
+    return cast("subprocess.Popen[str]", fake)

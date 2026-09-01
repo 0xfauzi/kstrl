@@ -244,6 +244,13 @@ class TestEveryCheckNameIsEnrolled:
         assert {"test_suite", "typecheck", "linter"} <= names, "module-constant resolution"
         assert {"diff_scope", "scope_unreadable", "prd_stories"} <= names, "literal names"
         assert {"pr", "engineer", "token_budget"} <= names, "signature prefixes"
+        # #306: this one was not pinned, and so was not protected.
+        # Rewriting `CheckResult(name="mutation_testing", ...)` as
+        # `name=name` off a function-local took the walk from 19 names
+        # to 18 with nothing failing: the walk fails on an unenrolled
+        # name and cannot fail on one it cannot see. Measured on that
+        # branch before the fix.
+        assert "mutation_testing" in names, "check-name constant in the defining module"
 
     def test_no_unenrolled_name_beyond_the_grandfathered_set(self) -> None:
         missing = {

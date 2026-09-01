@@ -69,7 +69,7 @@ from pathlib import Path
 from typing import Any, Final, Protocol
 
 from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
-from kstrl.procgroup import read_group_liveness, signal_probe_alive
+from kstrl.procgroup import read_group_liveness, safe_pgid, signal_probe_alive
 from kstrl.runid import run_kind
 from kstrl.statedir import (
     CONTROL_SPEND,
@@ -1421,10 +1421,7 @@ def run_supervised(
 
     # Captured now, while the child is certainly alive: after it is
     # reaped the pgid is unrecoverable (#186 F1).
-    try:
-        pgid: int | None = _safe_pgid(process)
-    except OSError:
-        pgid = None
+    pgid: int | None = safe_pgid(process)
 
     if on_spawn is not None:
         on_spawn(process.pid)
@@ -1524,10 +1521,7 @@ def terminate_process_group(
     detect. Caught by the test that kills only the direct child.
     """
     if pgid is None:
-        try:
-            pgid = _safe_pgid(process)
-        except (ProcessLookupError, OSError):
-            pgid = None
+        pgid = safe_pgid(process)
     if pgid is None:
         # No group to signal and no id to check. Whether the direct child
         # is gone is the most that can honestly be said, and saying so is
@@ -1585,26 +1579,6 @@ def _wait_out_grace(
 def _confirm_group_gone(pgid: int) -> GroupTermination:
     alive, degraded = _group_liveness_for_reap(pgid)
     return GroupTermination(not alive, degraded=degraded)
-
-
-def _safe_pgid(process: subprocess.Popen[str]) -> int | None:
-    """The child's process-group id, or None when it is not safe to signal.
-
-    The guards are load-bearing and are the same ones
-    ``verify._signal_process_group`` documents: a mocked ``Popen``'s pid
-    coerces to 1 via ``MagicMock.__index__``, and ``killpg(1, sig)`` is
-    ``kill(-1, sig)`` - signal every process this user owns. With
-    ``start_new_session=True`` the child leads its own group, so a pgid at
-    or below 1, or equal to ours, means something is wrong and the group
-    kill must not proceed.
-    """
-    pid = process.pid
-    if not isinstance(pid, int) or pid <= 1 or not hasattr(os, "killpg"):
-        return None
-    pgid = os.getpgid(pid)
-    if pgid <= 1 or pgid == os.getpgrp():
-        return None
-    return pgid
 
 
 def _group_liveness_for_reap(pgid: int) -> tuple[bool, str]:

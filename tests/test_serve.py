@@ -29,6 +29,7 @@ from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.findings import Finding
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.procgroup import safe_pgid
 from kstrl.reducer import ComponentState, RunState
 from kstrl.serve import (
     BACKOFF_CAP_SECONDS,
@@ -67,7 +68,6 @@ from kstrl.serve import (
     serve_lock,
     terminate_process_group,
 )
-from kstrl.serve import _safe_pgid as _safe_pgid_of
 
 #: Captured at import, BEFORE the autouse _no_spend fixture patches
 #: kstrl.serve.read_run_spend. A test that imports the name in its body
@@ -1766,35 +1766,39 @@ class TestProcessGroupSupervision:
     def test_a_mocked_popen_never_signals_a_broad_group(self) -> None:
         """killpg(1, sig) is kill(-1, sig): every process this user owns.
 
-        A mocked Popen's pid coerces to 1 via MagicMock.__index__, so the
-        pgid guard is what stops a test from signalling the whole session.
-        ``verify._signal_process_group`` documents the same rule; this
-        pins it for the serve runner too.
+        The guard itself moved to `procgroup.safe_pgid` in #308 and is
+        unit-tested there. What stays here is the half that move cannot
+        prove: that THIS caller still routes through it, so a mocked Popen
+        reaching `terminate_process_group` signals nothing at all.
+
+        THE SPY IS LOAD-BEARING, not decoration. Round-1 review deleted
+        the `safe_pgid(process)` call from `terminate_process_group` and
+        this test stayed green: with no lookup, `pgid` is None, the
+        function takes its no-pgid branch, and "nothing was signalled" is
+        true for the wrong reason. Asserting the guard was ASKED is the
+        only thing here that tells the two apart. Complete removal of
+        signalling is still caught next door by the real-tree tests,
+        so this was never silent overall - but this test did not pin
+        what its name says.
         """
-        from unittest.mock import MagicMock
-
-        from kstrl.serve import _safe_pgid
-
         fake = MagicMock()
-        # Force getpgid to return a plausible group so the pgid<=1 guard
-        # cannot be what rejects it; only the isinstance check can.
-        with patch("kstrl.serve.os.getpgid", return_value=99999):
-            assert _safe_pgid(fake) is None
-
-        with patch("kstrl.serve.os.killpg") as killpg:
+        with (
+            patch("kstrl.serve.safe_pgid", wraps=safe_pgid) as guard,
+            patch("kstrl.serve.os.killpg") as killpg,
+        ):
+            # A plausible group, so the pgid guard cannot be what rejects
+            # it and only the isinstance check can.
             with patch("kstrl.serve.os.getpgid", return_value=99999):
                 fake.poll.return_value = 0
                 assert terminate_process_group(fake).reaped is True
+            guard.assert_called_once_with(fake)
             assert killpg.call_count == 0, "must never signal a bogus group"
 
-    def test_our_own_process_group_is_never_signalled(self) -> None:
-        import subprocess as sp
-
-        fake = MagicMock(spec=sp.Popen)
-        fake.pid = os.getpid()
-        fake.poll.return_value = None
-        # getpgid(our pid) == our group, which the guard must reject.
-        assert _safe_pgid_of(fake) is None
+    # The own-group half of this routing question is
+    # `TestARefusedSignalIsNotAnUnknown::test_a_missing_pgid_is_reported_as_unmeasured`,
+    # which builds the identical fake and asserts the identical outcome
+    # WITHOUT patching `killpg`. That makes it the stronger of the two, so
+    # #308 deleted the copy that used to live here rather than keep both.
 
     def test_the_supervised_timeout_reaps_descendants(
         self,
@@ -2253,7 +2257,12 @@ class TestARefusedSignalIsNotAnUnknown:
         """The other end of the same contract: `degraded` is empty only
         when the group was measured, and this path inspects no group."""
         fake = MagicMock(spec=subprocess.Popen)
-        fake.pid = os.getpid()  # our own group, which _safe_pgid refuses
+        # Our own group, which `procgroup.safe_pgid` refuses. Nothing here
+        # patches `killpg`, so this test is also the loudest proof the
+        # guard is live: with the own-group check removed it issues a real
+        # `killpg(<our pgid>, SIGTERM)` and kills the test runner (#308,
+        # measured - the run died on signal 15 during this test).
+        fake.pid = os.getpid()
         fake.poll.return_value = None
         result = terminate_process_group(fake)
         assert result.reaped is False

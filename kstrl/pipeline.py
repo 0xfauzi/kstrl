@@ -93,6 +93,7 @@ from kstrl.security import SecurityMode, SecurityResult
 from kstrl.verify import (
     SCOPE_UNREADABLE_CHECK,
     CheckResult,
+    MechanicalVerification,
     VerificationResult,
     scope_unreadable_error,
 )
@@ -334,7 +335,20 @@ class PipelineHooks:
     directly.
     """
 
-    run_mechanical_verification: Callable[..., VerificationResult]
+    # Typed by shape, not ``Callable[..., VerificationResult]`` (#316):
+    # Phase 1 is the seam that carries a component's SCOPE, and ``...``
+    # checks nothing about it. See ``verify.MechanicalVerification``.
+    #
+    # The three hooks below were NOT cleared, they were not done. Each
+    # carries the same hazard, measured: `run_review` and
+    # `run_security_review` take adjacent `prd_path` / `worktree_path`
+    # Paths and are called positionally below; `distill_facts` takes
+    # three Paths among ten positional arguments. Transposing any of
+    # those type-checks clean today, exactly as `harness_paths` did.
+    # Tightening them is not one character each - their call sites pass
+    # positionally, so it is a signature plus a call-site change plus a
+    # drift test per hook, in three more modules. Its own issue.
+    run_mechanical_verification: MechanicalVerification
     run_review: Callable[..., ReviewResult]
     run_security_review: Callable[..., SecurityResult]
     distill_facts: Callable[..., tuple[int, str]]
@@ -2433,6 +2447,22 @@ class ComponentPipeline:
             signatures=failure.signatures,
         )
 
+    def _warn_not_measured(self, comp: Component, verification: VerificationResult) -> None:
+        """Say out loud what Phase 1 was asked to measure and could not.
+
+        #306. Not a gate failure: a gap does not reach
+        ``verification.passed``, and it is deliberately kept out of
+        ``as_context`` too, because no engineer iteration can install a
+        missing binary and a retry would burn ``repair_max_runs``
+        proving it. Not nothing either: before #306 the row said PASS,
+        and omitting the row alone said nothing at all, so a
+        permanently broken mutation gate looked exactly like a working
+        one. This is the third option, and it is the only place the
+        pipeline says it.
+        """
+        for gap in verification.not_measured:
+            self.ui.warn(f"  {comp.id}: {gap.check} not measured ({gap.reason}) - {gap.detail}")
+
     def _phase_verify(
         self,
         comp: Component,
@@ -2566,8 +2596,11 @@ class ComponentPipeline:
                 checks=tuple(c.name for c in verification.checks),
                 failures=tuple(c.message for c in verification.checks if not c.passed),
                 duration_seconds=round(verify_duration, 2),
+                not_measured=tuple(g.as_token() for g in verification.not_measured),
             )
         )
+
+        self._warn_not_measured(comp, verification)
 
         if not verification.passed:
             failing = [c for c in verification.checks if not c.passed]

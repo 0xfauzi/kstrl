@@ -13,8 +13,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
 
 if TYPE_CHECKING:
-    from kstrl.evolution import EvolutionConfig
+    from kstrl.evolution import EvolutionConfig, EvolutionJournal
     from kstrl.interaction import InteractionChannel
+
+    # Annotation only, and the cheapest available: with
+    # `from __future__ import annotations` above, _sense_document's
+    # signature is a string at run time and this block never executes.
+    # Not a deferral - line 104 already imports kstrl.verify at module
+    # scope, so it is on `ks --help`'s import path either way (measured
+    # here at 5.2ms of cli.py's 84.7ms cumulative).
+    from kstrl.verify import VerificationResult
 
 from dataclasses import replace
 
@@ -640,6 +648,49 @@ def _echo_config_problems(problems: list[str]) -> None:
         click.echo(f"  {problem}")
     click.echo("")
     click.echo(f"error: {len(problems)} unusable config section(s)", err=True)
+
+
+def _echo_journal_repairs(journal: EvolutionJournal, ui_impl: UI) -> None:
+    """`ks evolve --status`'s report of interrupted journal writes (#312).
+
+    Why the count exists at all is argued once, on
+    ``EvolutionJournal.get_repair_count``. What is decided HERE:
+
+    ``warn``, not ``err``: this command exits 0, and every other
+    ``ui_impl.err`` in this module precedes a non-zero exit, so printing
+    ERROR in red would make a repaired journal indistinguishable from
+    "Evolution is disabled in config".
+
+    POSSIBLE loss, not confirmed loss (#327 round 2, F8): the line
+    names both outcomes and points at the one line that decides which.
+
+    Silent at zero, which is the whole reason this is worth a line at
+    all: a healthy journal that prints "0 repairs" every time teaches an
+    operator to skip the line that matters.
+
+    Only ``ks evolve --status`` calls it. The evolve TUI screen renders
+    the same trends and stays silent about repairs, which is #333:
+    ``get_repair_count`` is click-free and on the journal, so that
+    screen can ask for itself, but claiming this helper serves the TUI
+    would be false. It lives in the click module.
+
+    Takes the journal and asks IT for the path, rather than being handed
+    both: a count from one journal printed beside another one's path is
+    a report that cannot be wrong today and could be after any edit. A
+    helper rather than four lines inline because ``evolve`` is already
+    over the cognitive gate at 23, so a branch added there would fail
+    the staged complexity ratchet on a function this change is not
+    otherwise touching.
+    """
+    repairs = journal.get_repair_count()
+    if repairs:
+        ui_impl.warn(
+            f"  journal: {repairs} interrupted write(s) repaired. A crash left "
+            f"{journal.config.journal_path} without a trailing newline. The line above "
+            "each journal_repair row is what that write left behind: either a torn "
+            "fragment, which is lost, or a whole record that lost only its newline, "
+            "which is readable again. Read it to tell which."
+        )
 
 
 def _preflight_root(ctx: click.Context) -> Path:
@@ -3522,7 +3573,55 @@ def status(
         sys.exit(0)
 
 
-SENSE_SCHEMA_VERSION = 1
+#: 2 (#306): a ``not_measured`` array joined the document, and the
+#: meaning of an absent ``mutation_testing`` row changed with it. Under
+#: 1 that absence meant one thing, "turned off in kstrl.toml", because
+#: an enabled mutation check emitted a row even when it had measured
+#: nothing. Under 2 it also covers "asked for, measured nothing", and
+#: ``not_measured`` is what tells the two apart. A v1 reader inferring
+#: "absent means disabled" is wrong about a v2 document, which is why
+#: this is a bump and not a silent addition.
+#:
+#: Scoped to that one check on purpose, because that is all v2
+#: delivers. ``not_measured`` is not yet a complete index of every
+#: check that did not run: ``check_dead_code`` still reports three
+#: non-measurements as passing rows, and ``require_self_critique`` with
+#: no ``progress_file_path`` and no PRD emits neither a row nor a gap.
+#: Both predate this and both are follow-ups on #306; a reader must not
+#: read an empty array as "everything enabled was measured".
+SENSE_SCHEMA_VERSION = 2
+
+
+def _sense_document(path: Path, base: str, result: VerificationResult) -> dict[str, Any]:
+    """The ``ks sense --json`` document, at :data:`SENSE_SCHEMA_VERSION`.
+
+    Its own function because it is a published contract and ``sense``
+    is a 200-line command: a reader checking what v2 promises should not
+    have to find it among the preflight, the base resolution and the
+    terminal rendering.
+    """
+    return {
+        "schema_version": SENSE_SCHEMA_VERSION,
+        "path": str(path),
+        "base_branch": base,
+        "passed": result.passed,
+        "checks": [
+            {
+                "name": check.name,
+                "passed": check.passed,
+                "message": check.message,
+                "details": list(check.details),
+                "duration_seconds": check.duration_seconds,
+                "findings": [f.to_dict() for f in check.findings],
+            }
+            for check in result.checks
+        ],
+        # Beside ``checks``, never inside it: an entry here is a check
+        # that ran no measurement, and putting it in the array a reader
+        # folds with ``all(passed)`` is exactly the defect #306 closed.
+        # Empty for a tree where every enabled check measured something.
+        "not_measured": [gap.to_dict() for gap in result.not_measured],
+    }
 
 
 def _sense_error(message: str, as_json: bool) -> NoReturn:
@@ -3612,9 +3711,12 @@ def sense(
     not a worktree kstrl owns, so it writes nothing to .kstrl/ and never
     edits, stages, commits or leaves bytecode: the dead-code check
     reports what it would remove instead of removing it, and mutation
-    testing is skipped because mutmut works by rewriting source. The
-    exception is the project's OWN configured test / typecheck / lint
-    commands, which are your programs and write their own caches.
+    testing cannot run at all because mutmut works by rewriting source.
+    The exception is the project's OWN configured test / typecheck /
+    lint commands, which are your programs and write their own caches.
+
+    A check that could not run gets NO row: it is reported under
+    not_measured with the reason, never as a passing check (#306).
 
     Most checks read `git diff <base>...HEAD`, so the tree must be a git
     repository with a reachable base unless every diff-based check is
@@ -3706,24 +3808,7 @@ def sense(
     )
 
     if as_json:
-        document: dict[str, Any] = {
-            "schema_version": SENSE_SCHEMA_VERSION,
-            "path": str(path),
-            "base_branch": base,
-            "passed": result.passed,
-            "checks": [
-                {
-                    "name": check.name,
-                    "passed": check.passed,
-                    "message": check.message,
-                    "details": list(check.details),
-                    "duration_seconds": check.duration_seconds,
-                    "findings": [f.to_dict() for f in check.findings],
-                }
-                for check in result.checks
-            ],
-        }
-        click.echo(json.dumps(document, indent=2))
+        click.echo(json.dumps(_sense_document(path, base, result), indent=2))
         sys.exit(0 if result.passed else 1)
 
     force_rich = os.environ.get("GUM_FORCE") == "1"
@@ -3948,6 +4033,12 @@ def evolve(
     if show_status:
         ui_impl.section("Experiment Trends")
         trends = journal.get_experiment_trends(last_n=10)
+        # Before the empty-trends exit, not after (#327 round 2, F7).
+        # decompose and autonomy both write to the journal before any
+        # factory run has written experiments.tsv, so a repair with no
+        # trends is not an edge case: it is the state the operator most
+        # likely to HAVE a repair is in, and the exit below skipped it.
+        _echo_journal_repairs(journal, ui_impl)
         if not trends:
             ui_impl.info("No experiments recorded yet. Run `ks factory` first.")
             sys.exit(0)

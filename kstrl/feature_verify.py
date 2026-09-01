@@ -395,6 +395,22 @@ def report_verification(
     # ABSENT from it rather than recorded as passing skips: a machine
     # reader doing ``all(c.passed)`` must never see a check that measured
     # nothing counted as a pass.
+    # ``not_measured`` (#306) rides along for the same reason the two
+    # emitters share an event type at all: a check that was asked for
+    # and measured nothing must look the same in `events.jsonl`
+    # whichever loop ran it.
+    #
+    # UNREACHABLE here today, structurally and not by luck.
+    # ``narrow_to_undiffed`` rewrites the operator's toggles to False
+    # before the checks run, which erases the very bit the sidecar reads
+    # - "was this asked for" - so no gap can be produced on this path
+    # even though ``_announce_verification`` prints the six suppressed
+    # names in prose two lines earlier. Making those six say so in the
+    # field is a change to the suppression layer, not to this emitter,
+    # and it is the same "one owner for every argument that decides
+    # whether a check can honestly run" that #305 tracks. Wired anyway,
+    # because an emitter that drops a field it should carry is how the
+    # two of them come to disagree.
     emit(
         VerificationResultEvent(
             component=component,
@@ -404,6 +420,7 @@ def report_verification(
             duration_seconds=duration,
             phase=phase,
             advisory=True,
+            not_measured=tuple(gap.as_token() for gap in result.not_measured),
         )
     )
     return frozenset(check.name for check in result.checks if not check.passed)

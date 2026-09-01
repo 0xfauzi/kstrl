@@ -19,11 +19,12 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -33,10 +34,12 @@ from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import (
     VerifyConfig,
+    _signal_process_group,
     check_test_suite,
     run_scrubbed,
     scrubbed_subprocess_env,
 )
+from tests.helpers import procs
 
 
 class ScriptedUI(PlainUI):
@@ -367,3 +370,135 @@ class TestProcessGroupKill:
         assert "timed out" in result.message
         pid = int(pid_file.read_text().strip())
         _assert_process_dies(pid)
+
+
+class TestTheVerifySignalGuardRoutesThroughProcgroup:
+    """#308: `_signal_process_group`'s guard had no test at all.
+
+    The class above proves the group kill WORKS on a real tree. What was
+    never covered is the half that decides whether to attempt it. serve
+    had two tests for its copy of that rule and agents.proc had three;
+    this copy had none, so nothing in the suite would have noticed the
+    guard being deleted until `killpg(1, sig)` took the machine down.
+
+    What is tested HERE is this call site's own behaviour - the two
+    fallback arms, the signal it carries through, and that it ROUTES
+    through the guard at all. The guard's decision table is
+    `tests/test_safe_pgid.py`'s, and re-pinning it here would reopen one
+    layer up the duplication #308 closed. The two routing cases kept are
+    the two that actually happened: a mocked Popen took down a CI runner,
+    and our own group takes down the run doing the signalling.
+    """
+
+    def test_a_real_group_is_signalled_grandchild_and_all(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The positive control. Every other test here asserts that
+        killpg did NOT happen, so a guard that refused everything would
+        pass them all while quietly leaking every backgrounded server the
+        group kill exists to collect."""
+        pid_file = tmp_path / "grandchild.pid"
+        proc = subprocess.Popen(
+            ["sh", "-c", f"sleep 300 & echo $! > {pid_file}; wait"],
+            cwd=tmp_path,
+            start_new_session=True,
+        )
+        pgid = os.getpgid(proc.pid)
+        try:
+            # `procs.read_pid` also waits out the created-but-still-empty
+            # window that `> pidfile` opens, which a bare exists() check
+            # reads as ready and then parses as "".
+            grandchild = procs.read_pid(pid_file, timeout=10.0)
+
+            _signal_process_group(proc, signal.SIGKILL)
+
+            _assert_process_dies(grandchild)
+        finally:
+            # Group-scoped, or a run where the kill under test did NOT
+            # land leaves the grandchild `sleep 300` behind for five
+            # minutes - the orphan class #292 is about, in the test whose
+            # own failure produces it.
+            procs.kill_group(pgid)
+            proc.kill()
+            proc.wait(timeout=10.0)
+
+    def test_a_mocked_popen_falls_back_to_the_direct_child(self) -> None:
+        """The exact CI-killer shape. A MagicMock pid coerces to 1 via
+        `MagicMock.__index__`, so `getpgid` returns a real 1 rather than
+        raising, and `killpg(1, sig)` is `kill(-1, sig)`."""
+        killpg_calls: list[tuple[int, int]] = []
+        proc = procs.fake_popen(MagicMock())
+
+        with patch.object(os, "killpg", lambda pgid, sig: killpg_calls.append((pgid, sig))):
+            # A plausible group, so only the isinstance check can reject.
+            with patch.object(os, "getpgid", lambda pid: 99999):
+                _signal_process_group(proc, signal.SIGTERM)
+
+        assert killpg_calls == []
+        proc.terminate.assert_called_once()
+
+    def test_our_own_group_falls_back_to_the_direct_child(self) -> None:
+        """A pgid equal to ours means `start_new_session` never took, and
+        signalling it would kill the verification run doing the signalling."""
+        killpg_calls: list[tuple[int, int]] = []
+        proc = procs.fake_popen(os.getpid())
+
+        with patch.object(os, "killpg", lambda pgid, sig: killpg_calls.append((pgid, sig))):
+            _signal_process_group(proc, signal.SIGKILL)
+
+        assert killpg_calls == []
+        proc.kill.assert_called_once()
+
+    def test_sigkill_uses_kill_and_sigterm_uses_terminate(self) -> None:
+        """The fallback must carry the SIGNAL through, not just fire."""
+        proc = procs.fake_popen(1)
+
+        _signal_process_group(proc, signal.SIGTERM)
+        proc.terminate.assert_called_once()
+        proc.kill.assert_not_called()
+
+        _signal_process_group(proc, signal.SIGKILL)
+        proc.kill.assert_called_once()
+        proc.terminate.assert_called_once()
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            ProcessLookupError(3, "no such process"),
+            PermissionError(1, "operation not permitted"),
+        ],
+    )
+    def test_a_refused_group_signal_still_tries_the_direct_child(
+        self,
+        exc: OSError,
+    ) -> None:
+        """`safe_pgid` cleared the group, then the signal itself failed.
+        Falling through is the point: the direct child may still be
+        reachable, and giving up here would leak it."""
+        proc = procs.fake_popen(4242)
+
+        def refuse(pgid: int, sig: int) -> None:
+            raise exc
+
+        with patch.object(os, "killpg", refuse):
+            with patch.object(os, "getpgid", lambda pid: 99999):
+                _signal_process_group(proc, signal.SIGTERM)
+
+        proc.terminate.assert_called_once()
+
+    def test_a_group_signal_that_lands_does_not_also_signal_the_child(
+        self,
+    ) -> None:
+        """The `else: return` arm. Signalling the child as well after the
+        group already got it is not harmful, but it is not what the code
+        says it does, and a test that cannot tell the arms apart cannot
+        catch the `return` being lost."""
+        proc = procs.fake_popen(4242)
+
+        with patch.object(os, "killpg", lambda pgid, sig: None):
+            with patch.object(os, "getpgid", lambda pid: 99999):
+                _signal_process_group(proc, signal.SIGTERM)
+
+        proc.terminate.assert_not_called()
+        proc.kill.assert_not_called()

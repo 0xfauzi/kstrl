@@ -24,6 +24,8 @@ import weakref
 from collections.abc import Iterator
 from pathlib import Path
 
+from kstrl.procgroup import safe_pgid
+
 # Every adapter yields this line when its subprocess is killed on deadline
 # breach. loop.py matches on the prefix to count timed-out iterations; it is
 # a hint for error reporting, never a control-flow gate (a CustomAgent
@@ -180,23 +182,20 @@ class DeadlineStreamer:
         _ACTIVE.discard(self)
 
     def _signal_group(self, sig: signal.Signals) -> None:
-        pid = self._proc.pid
-        try:
-            # `isinstance(pid, int)` is load-bearing: a mocked Popen's pid
-            # coerces to 1 via MagicMock.__index__, and killpg(1, sig) is
-            # kill(-1, sig) - "signal every process this user can" - which
-            # kills the harness and its whole session. Same reason for the
-            # pgid > 1 and not-our-own-group guards: start_new_session=True
-            # makes the child its own group leader (pgid == child pid), so
-            # any pgid at or below 1, or equal to ours, means something is
-            # wrong and group-kill must not proceed.
-            if hasattr(os, "killpg") and isinstance(pid, int) and pid > 1:
-                pgid = os.getpgid(pid)
-                if pgid > 1 and pgid != os.getpgrp():
-                    os.killpg(pgid, sig)
-                    return
-        except (ProcessLookupError, PermissionError, OSError):
-            pass
+        # Whether a group kill may proceed at all is `procgroup.safe_pgid`'s
+        # question, not this method's: #308 made it the one copy of a rule
+        # that used to be written out here, in `serve` and in `verify`. A
+        # None from it is not an error; it degrades to the direct child.
+        pgid = safe_pgid(self._proc)
+        if pgid is not None:
+            try:
+                os.killpg(pgid, sig)
+            except OSError:
+                # ESRCH (the group went between the lookup and the signal)
+                # or EPERM. Fall through to the direct child.
+                pass
+            else:
+                return
         # Group already gone, non-POSIX platform, unsafe pgid, or a mocked
         # proc in tests: fall back to signalling the direct child only.
         try:
@@ -204,7 +203,7 @@ class DeadlineStreamer:
                 self._proc.kill()
             else:
                 self._proc.terminate()
-        except (ProcessLookupError, OSError):
+        except OSError:
             pass
 
     def _write_stdin(self, stdin_text: str | None) -> None:

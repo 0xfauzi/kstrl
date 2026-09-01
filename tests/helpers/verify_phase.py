@@ -13,11 +13,12 @@ where the repo puts this.
 from __future__ import annotations
 
 import io
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl.config import KstrlConfig
-from kstrl.events import EventBus, V1CompatSink
+from kstrl.events import CallbackSink, Event, EventBus, V1CompatSink
 from kstrl.factory import (
     AdversarialAgentSelection,
     ComponentResult,
@@ -27,7 +28,7 @@ from kstrl.factory import (
 from kstrl.knowledge import KnowledgeConfig
 from kstrl.manifest import Component, Manifest
 from kstrl.observability import NotifyConfig, NotifyHooks, ProgressLog
-from kstrl.pipeline import ComponentPipeline, FailureAction, PipelineHooks
+from kstrl.pipeline import ComponentPipeline, FailureAction, PipelineHooks, VerifyPhaseResult
 from kstrl.review import ReviewResult
 from kstrl.scope import RunScope
 from kstrl.security import SecurityResult
@@ -83,7 +84,18 @@ def verify_with_cheap_gates(
     )
 
 
-def _pipeline(root: Path, comp: Component, verification: VerificationResult) -> ComponentPipeline:
+def _pipeline(
+    root: Path,
+    comp: Component,
+    verification: VerificationResult,
+    *,
+    ui: PlainUI | None = None,
+) -> ComponentPipeline:
+    """``ui`` is for a caller that needs to READ the narration: the
+    default throws it away. Events are captured the way the rest of the
+    suite does it, with ``pipeline.bus.add_sink`` after construction -
+    ``ComponentPipeline.__init__`` emits nothing, so a sink attached
+    then sees every event a sink passed here would."""
     manifest = Manifest(
         version="1",
         spec_file="spec.md",
@@ -112,7 +124,7 @@ def _pipeline(root: Path, comp: Component, verification: VerificationResult) -> 
             review_mode="skip",
         ),
         base_config=KstrlConfig(),
-        ui=PlainUI(no_color=True, file=io.StringIO()),
+        ui=ui or PlainUI(no_color=True, file=io.StringIO()),
         root_dir=root,
         run_id="run-test",
         bus=EventBus(
@@ -145,17 +157,50 @@ def _pipeline(root: Path, comp: Component, verification: VerificationResult) -> 
 def phase_verify_action(root: Path, failing: list[CheckResult]) -> tuple[FailureAction, str]:
     """``(action, error)`` the REAL ``_phase_verify`` routes to.
 
-    Drives ``ComponentPipeline._phase_verify`` with the verification
-    hook stubbed, rather than re-deriving the condition in the test: a
-    test that reimplements the branch it checks passes when the branch
-    is deleted.
+    Drives ``ComponentPipeline._phase_verify`` rather than re-deriving
+    the condition in the test: a test that reimplements the branch it
+    checks passes when the branch is deleted. Through
+    :func:`phase_verify_surfaces`, so the shape of that call - which
+    ``ComponentResult`` fields Phase 1 needs - is written once in this
+    file and not twice.
+    """
+    surfaces = phase_verify_surfaces(root, VerificationResult(passed=False, checks=failing))
+    assert surfaces.result.failure is not None
+    return surfaces.result.failure.action, surfaces.result.failure.error
+
+
+@dataclass(frozen=True)
+class PhaseVerifySurfaces:
+    """Everything one ``_phase_verify`` call left behind.
+
+    ``phase_verify_action`` answers "what did Phase 1 route to".
+    This answers "what did an operator and an event consumer see",
+    which is the question #306's not-measured sidecar exists for.
+    """
+
+    result: VerifyPhaseResult
+    narration: str
+    events: list[Event]
+
+
+def phase_verify_surfaces(
+    root: Path,
+    verification: VerificationResult,
+) -> PhaseVerifySurfaces:
+    """Drive the REAL ``_phase_verify`` over ``verification``.
+
+    The hook is stubbed to return ``verification`` unchanged, so the
+    aggregation is not re-run here; what is exercised is everything
+    Phase 1 does with the object afterwards.
     """
     comp = component()
-    pipeline = _pipeline(root, comp, VerificationResult(passed=False, checks=failing))
+    narration = io.StringIO()
+    events: list[Event] = []
+    pipeline = _pipeline(root, comp, verification, ui=PlainUI(no_color=True, file=narration))
+    pipeline.bus.add_sink(CallbackSink(events.append))
     result = pipeline._phase_verify(
         comp,
         ComponentResult(comp.id, success=True, iterations=1, duration_seconds=1.0),
         root,
     )
-    assert result.failure is not None
-    return result.failure.action, result.failure.error
+    return PhaseVerifySurfaces(result, narration.getvalue(), events)

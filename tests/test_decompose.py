@@ -6,6 +6,7 @@ import io
 import json
 from collections.abc import Iterator, Sequence
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -13,7 +14,7 @@ import pytest
 from kstrl.decompose import (
     _MAX_RETRY_MESSAGES,
     DECOMPOSE_PROMPT,
-    SPEC_ISSUES_EVENT,
+    AuditSnapshot,
     ExcludedHistory,
     SpecBlockerError,
     SpecConvergence,
@@ -28,16 +29,15 @@ from kstrl.decompose import (
     _journal_snapshot,
     _parse_spec_issues,
     _retry_feedback,
-    _spec_audits,
     _stored_issues,
     _validate_decompose_output,
-    _windowed_audits,
     _write_decompose_artifact,
     decompose_spec,
 )
-from kstrl.evolution import EvolutionConfig, EvolutionJournal
+from kstrl.evolution import SPEC_ISSUES_EVENT, EvolutionConfig, EvolutionJournal
 from kstrl.prd import PRD
 from kstrl.ui.plain import PlainUI
+from tests.helpers.journal import audit, journal_at, tear
 
 
 class MockDecomposeAgent:
@@ -1367,6 +1367,20 @@ MINOR_ISSUE: dict[str, object] = {
 }
 
 
+def _blockers(count: int) -> list[dict[str, object]]:
+    """``count`` blockers the de-duplicator keeps apart, so an audit's
+    recorded blocker count is the number asked for.
+
+    The id varies with the summary because the v3.0.0 schema requires a
+    unique id per issue and ``_with_ids`` only fills one in when it is
+    absent: ``BLOCKER_ISSUE`` carries its own, so without this every
+    entry would repeat it and validation would reject the payload.
+    """
+    return [
+        {**BLOCKER_ISSUE, "id": f"blocker-{n}", "summary": f"blocker {n}"} for n in range(count)
+    ]
+
+
 def _run_decompose(
     tmp_path: Path,
     output: str,
@@ -1826,7 +1840,8 @@ class TestExcludedHistory:
         spec_file: str = "mine.md",
         lookback: int = 10,
     ) -> ExcludedHistory:
-        return _excluded_history(_journal_snapshot(journal)[0], project, spec_file, lookback)
+        audits = _journal_snapshot(journal, project).audits
+        return _excluded_history(audits, project, spec_file, lookback)
 
     def _lines(
         self,
@@ -1861,15 +1876,25 @@ class TestExcludedHistory:
         assert excluded[0].read_this_spec is False
         assert excluded[0].last_recorded == "2026-08-20T00:00:00Z"
 
-    def test_only_spec_audits_count(self) -> None:
+    def test_only_spec_audits_count(self, tmp_path: Path) -> None:
         """The journal carries component results and experiments too.
-        Counting those would inflate the number the operator reads."""
-        entries = [
-            self._entry("other", event_type="component_result"),
-            self._entry("other", event_type=SPEC_ISSUES_EVENT),
-        ]
+        Counting those would inflate the number the operator reads.
 
-        excluded = _excluded_projects(entries, "mine", "mine.md")
+        Through the snapshot rather than by handing this function a
+        component_result directly: since #314 the selection is
+        ``EvolutionJournal.get_spec_audits``'s, so the end-to-end path
+        is where the claim is still true.
+        """
+        journal = EvolutionJournal(EvolutionConfig.load(tmp_path))
+        journal.append_entries(
+            [
+                self._entry("other", event_type="component_result"),
+                self._entry("other", event_type=SPEC_ISSUES_EVENT),
+            ]
+        )
+
+        audits = _journal_snapshot(journal, "mine").audits
+        excluded = _excluded_projects(audits, "mine", "mine.md")
 
         assert [(e.project, e.audits) for e in excluded] == [("other", 1)]
 
@@ -2008,10 +2033,14 @@ class TestExcludedHistory:
 
     def test_a_torn_line_does_not_cost_the_note(self, tmp_path: Path) -> None:
         """The journal is append-only and a crash mid-write leaves a
-        torn tail; the rest of the history still has to be readable."""
+        torn tail; the rest of the history still has to be readable.
+
+        The write side of the same tear is
+        ``tests/test_journal_torn_tail.py`` (#312), and the fragment is
+        shared rather than copied so the two cannot drift apart.
+        """
         journal = _journal_with(tmp_path, [self._entry("writers-room", "spec.md")])
-        with open(journal.config.journal_path, "a", encoding="utf-8") as handle:
-            handle.write('{"event_type": "spec_iss')
+        tear(journal.config.journal_path)
 
         assert "records 1 spec audit(s)" in self._lines(journal, "writers-room-slice1")
 
@@ -2169,9 +2198,11 @@ class TestUnattributedAudits:
         assert history.other_audits == 1
         assert history.unattributed == 2
 
-    def test_every_spec_audit_lands_in_exactly_one_bucket(self) -> None:
+    def test_every_spec_audit_lands_in_exactly_one_bucket(self, tmp_path: Path) -> None:
         """The property the accounting docstring claims, checked rather
-        than asserted in prose."""
+        than asserted in prose. Read back through the journal, so the
+        component_result is dropped by the reader that owns that rule
+        (#314) and the buckets still sum to the audits on disk."""
         entries: list[dict[str, object]] = [
             {"event_type": SPEC_ISSUES_EVENT, "project": "mine"},
             {"event_type": SPEC_ISSUES_EVENT, "project": "mine"},
@@ -2179,19 +2210,29 @@ class TestUnattributedAudits:
             {"event_type": SPEC_ISSUES_EVENT, "project": None},
             {"event_type": "component_result", "project": "mine"},
         ]
+        journal = EvolutionJournal(EvolutionConfig.load(tmp_path))
+        journal.append_entries(entries)
 
-        history = _excluded_history(entries, "mine", "mine.md", 10)
-        audits = sum(1 for e in entries if e.get("event_type") == SPEC_ISSUES_EVENT)
+        audits = _journal_snapshot(journal, "mine").audits
+        history = _excluded_history(audits, "mine", "mine.md", 10)
 
-        assert history.own_recorded + history.other_audits + history.unattributed == audits
+        assert len(audits) == 4
+        assert history.own_recorded + history.other_audits + history.unattributed == len(audits)
 
 
 class TestOneJournalRead:
-    """#280 round 2, findings 6 and 7: one read, and a pin on the
-    layering shortcut that read takes."""
+    """#280 round 2, findings 6 and 7, and #314: one read, taken through
+    ``EvolutionJournal`` rather than past it."""
 
-    def _journal(self, tmp_path: Path, entries: list[dict[str, object]]) -> EvolutionJournal:
-        journal = EvolutionJournal(EvolutionConfig.load(tmp_path))
+    def _journal(
+        self,
+        tmp_path: Path,
+        entries: list[dict[str, Any]],
+        lookback_runs: int | None = None,
+    ) -> EvolutionJournal:
+        journal = journal_at(tmp_path)
+        if lookback_runs is not None:
+            journal.config.lookback_runs = lookback_runs
         journal.append_entries(entries)
         return journal
 
@@ -2202,17 +2243,21 @@ class TestOneJournalRead:
     ) -> None:
         """The trend and the accounting used to read the same file
         twice. The call site has both in scope, so one read feeds both
-        and they cannot disagree because the file moved between them."""
-        import kstrl.decompose
+        and they cannot disagree because the file moved between them.
 
-        reads: list[Path] = []
-        real = kstrl.decompose.read_progress_events
+        Counted at ``_read_all_entries``, the journal's single read
+        point, so dropping the ``audits=`` argument that lets the
+        window reuse the snapshot fails here rather than costing a
+        silent second parse.
+        """
+        reads: list[int] = []
+        real = EvolutionJournal._read_all_entries
 
-        def counting(path: Path) -> list[dict[str, object]]:
-            reads.append(path)
-            return real(path)
+        def counting(self: EvolutionJournal) -> list[dict[str, object]]:
+            reads.append(1)
+            return real(self)
 
-        monkeypatch.setattr(kstrl.decompose, "read_progress_events", counting)
+        monkeypatch.setattr(EvolutionJournal, "_read_all_entries", counting)
         _run_decompose(
             tmp_path,
             _single_component_output([_story()], spec_issues=[BLOCKER_ISSUE]),
@@ -2221,33 +2266,72 @@ class TestOneJournalRead:
 
         assert len(reads) == 1
 
-    def test_the_windowing_rule_matches_the_journals_own(self, tmp_path: Path) -> None:
-        """``_journal_snapshot`` reaches past ``EvolutionJournal`` to its
-        storage path and ``_windowed_audits`` restates the window rule
-        that ``get_spec_issue_runs`` owns. Both are deferrals to
-        #314, and a deferral needs a mechanism: if the journal ever
-        compacts, rotates or gains a second segment, or if the window
-        rule changes, the two stop agreeing and this fails. Silent loss
-        of the accounting is the defect #280 exists to fix.
-        """
-        entries: list[dict[str, object]] = [
-            {
-                "event_type": SPEC_ISSUES_EVENT,
-                "project": "mine" if n % 2 else "other",
-                "spec_file": "spec.md",
-                "timestamp": f"2026-08-{n + 1:02d}T00:00:00Z",
-            }
-            for n in range(9)
-        ]
-        journal = self._journal(tmp_path, entries)
+    def test_the_report_reads_through_the_journal_not_its_storage_path(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """#314 item 1. ``_journal_snapshot`` used to open
+        ``journal.config.journal_path`` itself, which works only while
+        the file is the whole story; ``get_spec_audits`` says what that
+        costs when it stops being.
 
-        for last_n in (0, 1, 3, 10):
-            assert _windowed_audits(
-                _spec_audits(_journal_snapshot(journal)[0]), "mine", last_n
-            ) == journal.get_spec_issue_runs("mine", last_n=last_n)
+        Proved by giving the journal a reader that answers something
+        the file does not contain. A snapshot that reaches for the path
+        cannot see it, so this fails on the shortcut rather than on the
+        hypothetical second segment nobody has written yet.
+        """
+        journal = self._journal(tmp_path, [audit("mine", "on-disk.md")])
+        elsewhere = [audit("mine", "b.md"), audit("other", "c.md")]
+        monkeypatch.setattr(EvolutionJournal, "get_spec_audits", lambda self: elsewhere)
+
+        snapshot = _journal_snapshot(journal, "mine")
+
+        assert [a["spec_file"] for a in snapshot.audits] == ["b.md", "c.md"]
+        assert [w["spec_file"] for w in snapshot.window] == ["b.md"]
+
+    def test_the_window_is_the_journals_own_over_the_journals_own_lookback(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#314 item 2. ``_windowed_audits`` was a second copy of the
+        rule ``get_spec_issue_runs`` owns, and two copies of one rule
+        can drift; if they had, the trend and the accounting would have
+        disagreed about the same journal. There is one copy now, and
+        the snapshot has to reach it with the journal's own
+        ``lookback_runs`` rather than a number of its own.
+        """
+        entries = [audit("mine" if n % 2 else "other", f"spec-{n}.md") for n in range(9)]
+
+        for lookback in (1, 3, 10):
+            # A journal of its own per lookback: one file appended to
+            # three times would compare a growing history against
+            # itself and pass whatever the window did.
+            journal = self._journal(tmp_path / f"lookback-{lookback}", entries, lookback)
+            assert _journal_snapshot(journal, "mine").window == journal.get_spec_issue_runs(
+                "mine", last_n=lookback
+            )
 
     def test_no_journal_reads_nothing_and_windows_nothing(self) -> None:
-        assert _journal_snapshot(None) == ([], 0)
+        assert _journal_snapshot(None, "mine") == AuditSnapshot(audits=[], window=[], lookback=0)
+
+    def test_the_snapshot_says_unhashable_instead_of_pretending(self) -> None:
+        """A frozen dataclass with ``eq`` on gets a generated
+        ``__hash__``, and this one holds two lists, so the generated one
+        raised ``unhashable type: 'list'`` from a method nobody wrote.
+        Nothing hashes a snapshot; making it hashable is not available
+        either, since tuple fields would still hold ``dict`` elements.
+        So it says so, and names itself when somebody tries.
+
+        Both halves asserted: the message alone would pass on a class
+        that had simply kept the broken generated hash.
+        """
+        snapshot = AuditSnapshot(audits=[{"project": "mine"}], window=[], lookback=3)
+
+        assert AuditSnapshot.__hash__ is None
+        with pytest.raises(TypeError, match="unhashable type: 'AuditSnapshot'"):
+            hash(snapshot)
+        assert snapshot == AuditSnapshot(audits=[{"project": "mine"}], window=[], lookback=3)
 
 
 class TestExcludedAccountingLine:
@@ -2603,13 +2687,17 @@ class TestSpecConvergenceThroughDecompose:
         self,
         tmp_path: Path,
     ) -> None:
-        """Round 1 of review, finding 5. ``SPEC_ISSUES_EVENT`` names the
-        discriminator this module writes and reads, but
-        ``EvolutionJournal.get_spec_issue_runs`` hardcodes the same
-        literal independently and that file is under concurrent edit on
-        another branch. This is the mechanism that makes the two
-        diverging impossible to ship quietly: change the constant alone
-        and the trend the journal reader feeds goes empty here.
+        """Round 1 of review, finding 5, and #314 item 3. There is one
+        ``SPEC_ISSUES_EVENT`` now, on ``evolution`` where the journal's
+        schema is defined, and the writer imports it; the second copy
+        this module used to hold, and the third the journal held as a
+        literal, are gone.
+
+        The end-to-end round trip is still worth its own test, because
+        one constant makes the two spellings agree by construction but
+        says nothing about the row actually reaching the reader: change
+        the constant and this passes, break the write path and it
+        fails.
         """
         self._run(tmp_path, [BLOCKER_ISSUE], project_name="writers-room")
         runs = EvolutionJournal(EvolutionConfig.load(tmp_path)).get_spec_issue_runs("writers-room")
@@ -2638,6 +2726,26 @@ class TestSpecConvergenceThroughDecompose:
             "1, 1, 1 (blockers, oldest run first; 1 older audit(s) outside the "
             "lookback window)" in output
         )
+
+    def test_the_window_keeps_the_newest_audits(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Direction, not just size. Every other window test in this
+        file records audits that raise the same count, so ``[:last_n]``
+        and ``[-last_n:]`` produce identical output and the whole suite
+        stays green with the trend reading the OLDEST audits: measured,
+        with the rule inverted, before this test existed. The counts
+        differ per run here, so the trend line says which end was kept.
+        """
+        monkeypatch.setenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", "2")
+        for count in (1, 2, 3):
+            self._run(tmp_path, _blockers(count))
+        output = self._run(tmp_path, _blockers(4))
+
+        assert "2, 3, 4 (blockers, oldest run first" in output
+        assert "1, 2, 4" not in output
 
     def test_no_report_when_the_journal_is_off(
         self,
