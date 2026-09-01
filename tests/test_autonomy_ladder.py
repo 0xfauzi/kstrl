@@ -851,18 +851,24 @@ class TestTransitionAudit:
         assert any(isinstance(e, AutonomyTransition) for e in seen)
 
     def test_journal_failure_is_not_fatal(self, tmp_path: Path) -> None:
-        # Losing the log must never strand the ladder unsaved.
+        """Losing the log must never strand the ladder unsaved.
+
+        A real failure on a real path (a directory where the journal
+        file should be) rather than a patched ``kstrl.autonomy.open``,
+        which stopped intercepting anything when #312 moved the write
+        into ``EvolutionJournal.append_entries``. A patched builtin pins
+        WHERE the code writes, which is not what this test is about.
+        """
         from kstrl.autonomy import commit_transition
+        from kstrl.evolution import EvolutionConfig
+
+        journal_path = EvolutionConfig.load(tmp_path).journal_path
+        journal_path.parent.mkdir(parents=True, exist_ok=True)
+        journal_path.mkdir()
 
         state = _eligible_state()
         record = state.promote(actor="human", ack="ok")
-        with (
-            patch(
-                "kstrl.autonomy.open",
-                side_effect=OSError("disk full"),
-            ),
-            pytest.warns(RuntimeWarning, match="journal append failed"),
-        ):
+        with pytest.warns(RuntimeWarning, match="journal append failed"):
             commit_transition(state, record, tmp_path)
         assert AutonomyState.load(tmp_path).level == int(AutonomyLevel.L2_GATED_MERGE)
 

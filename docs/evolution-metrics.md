@@ -20,8 +20,47 @@ migrations are detectable.
 | `event_type` | Written by | When |
 |---|---|---|
 | `component_result` | `EvolutionJournal.record_run` | Once per component at the end of every factory run |
-| `findings_superseded` | factory `_journal_superseded_findings` | When a retry supersedes an attempt's findings (R3.3) |
+| `findings_superseded` | pipeline `AttemptRecorder.journal_superseded_findings` | When a retry supersedes an attempt's findings (R3.3) |
 | `contract_result` | factory `_record_contract_event` | After every contract-test tier, pass or fail (R0.3) |
+| `role_usage` | `EvolutionJournal.record_run` | Once per role that spent tokens outside any manifest component (#257) |
+| `autonomy_transition` | `autonomy.commit_transition` | Every promotion or demotion of the autonomy ladder |
+| `spec_issues` | `decompose._record_spec_issues_event` | Once per spec audit (#280); carries no `run_id` |
+| `journal_repair` | `EvolutionJournal.append_entries` | When an append finds the file not newline-terminated, i.e. a previous write was interrupted (#312) |
+
+### `journal_repair`
+
+The journal is append-only, so a crash mid-write leaves an unterminated
+tail and the next append would concatenate onto it, making both lines
+unparseable. `append_entries` writes a newline first and records that it
+did. Reading one of these rows:
+
+| Field | Definition |
+|---|---|
+| `schema_version` | As above. |
+| `timestamp` | UTC ISO-8601 at repair time, NOT at crash time. |
+| `event_type` | `journal_repair`. |
+| `detail` | Fixed prose describing what was found. |
+
+- **Deliberately carries no `run_id` and no `project`.** Every run
+  aggregate windows by the last N distinct `run_id`s, so a repair row
+  with one would be one of the N and a single tear would shorten the
+  history the metrics above are computed over. It counts towards
+  nothing, by construction.
+- **What the line above the row is.** POSSIBLE loss, not confirmed
+  loss: the line IMMEDIATELY ABOVE the row is the
+  interrupted write. If it is a complete JSON object it was a whole
+  record that lost only its newline, and it is readable again. If it is
+  a fragment, that record was never written and is unrecoverable. The
+  row exists so the difference is visible rather than guessed at.
+- **Counting.** `ks evolve --status` prints the count when it is
+  non-zero (`EvolutionJournal.get_repair_count`), before the
+  no-experiments exit, because a journal can hold a repair long before
+  any factory run has written `experiments.tsv`. Two processes
+  repairing the same tear write two rows, so the count is of rows, not
+  of incidents. It is also a LOWER bound: a write split part-way
+  through (residual 4 on `append_entries`) can land the newline that
+  isolates the fragment without landing the row, and the next append
+  then sees a terminated file and adds none.
 
 ### `component_result` fields
 

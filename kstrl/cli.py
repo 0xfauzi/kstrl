@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
 
 if TYPE_CHECKING:
-    from kstrl.evolution import EvolutionConfig
+    from kstrl.evolution import EvolutionConfig, EvolutionJournal
     from kstrl.interaction import InteractionChannel
 
 from dataclasses import replace
@@ -640,6 +640,49 @@ def _echo_config_problems(problems: list[str]) -> None:
         click.echo(f"  {problem}")
     click.echo("")
     click.echo(f"error: {len(problems)} unusable config section(s)", err=True)
+
+
+def _echo_journal_repairs(journal: EvolutionJournal, ui_impl: UI) -> None:
+    """`ks evolve --status`'s report of interrupted journal writes (#312).
+
+    Why the count exists at all is argued once, on
+    ``EvolutionJournal.get_repair_count``. What is decided HERE:
+
+    ``warn``, not ``err``: this command exits 0, and every other
+    ``ui_impl.err`` in this module precedes a non-zero exit, so printing
+    ERROR in red would make a repaired journal indistinguishable from
+    "Evolution is disabled in config".
+
+    POSSIBLE loss, not confirmed loss (#327 round 2, F8): the line
+    names both outcomes and points at the one line that decides which.
+
+    Silent at zero, which is the whole reason this is worth a line at
+    all: a healthy journal that prints "0 repairs" every time teaches an
+    operator to skip the line that matters.
+
+    Only ``ks evolve --status`` calls it. The evolve TUI screen renders
+    the same trends and stays silent about repairs, which is #333:
+    ``get_repair_count`` is click-free and on the journal, so that
+    screen can ask for itself, but claiming this helper serves the TUI
+    would be false. It lives in the click module.
+
+    Takes the journal and asks IT for the path, rather than being handed
+    both: a count from one journal printed beside another one's path is
+    a report that cannot be wrong today and could be after any edit. A
+    helper rather than four lines inline because ``evolve`` is already
+    over the cognitive gate at 23, so a branch added there would fail
+    the staged complexity ratchet on a function this change is not
+    otherwise touching.
+    """
+    repairs = journal.get_repair_count()
+    if repairs:
+        ui_impl.warn(
+            f"  journal: {repairs} interrupted write(s) repaired. A crash left "
+            f"{journal.config.journal_path} without a trailing newline. The line above "
+            "each journal_repair row is what that write left behind: either a torn "
+            "fragment, which is lost, or a whole record that lost only its newline, "
+            "which is readable again. Read it to tell which."
+        )
 
 
 def _preflight_root(ctx: click.Context) -> Path:
@@ -3945,6 +3988,12 @@ def evolve(
     if show_status:
         ui_impl.section("Experiment Trends")
         trends = journal.get_experiment_trends(last_n=10)
+        # Before the empty-trends exit, not after (#327 round 2, F7).
+        # decompose and autonomy both write to the journal before any
+        # factory run has written experiments.tsv, so a repair with no
+        # trends is not an edge case: it is the state the operator most
+        # likely to HAVE a repair is in, and the exit below skipped it.
+        _echo_journal_repairs(journal, ui_impl)
         if not trends:
             ui_impl.info("No experiments recorded yet. Run `ks factory` first.")
             sys.exit(0)
