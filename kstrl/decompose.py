@@ -1339,6 +1339,24 @@ class AuditSnapshot:
     they are exactly the pair #280 exists to keep straight - the trend
     reads the window, the accounting under it reads everything the
     window left out.
+
+    ``frozen=True`` for the rebinding guarantee, not to make this a
+    value that can key a dict. Because ``eq`` is on too, the decorator
+    would otherwise generate a ``__hash__`` that hashes the two lists
+    and raises ``TypeError: unhashable type: 'list'`` from inside a
+    method nobody wrote, so the class advertises a capability it does
+    not have. Tuples would not fix it: the elements are ``dict``, and
+    hashing a tuple hashes its elements, measured. ``__hash__ = None``
+    is the honest answer: set in the body, it is an explicit hash the
+    decorator leaves alone. It says unhashable, names THIS class when
+    somebody tries, and leaves ``==`` and the frozen fields untouched.
+
+    Not generalised, deliberately. Measured: nine other frozen
+    dataclasses in ``kstrl/`` declare a top-level ``list``/``dict``/``set``
+    field and still advertise a hash that raises. They are left alone
+    here because this PR introduced ``AuditSnapshot`` and that is the one
+    it owns; a sweep of the other nine wants its own change with a guard
+    behind it, rather than nine edits nothing keeps true.
     """
 
     #: Every spec audit the journal holds, across every project.
@@ -1348,6 +1366,8 @@ class AuditSnapshot:
     #: How far back the window reaches, carried so the render can tell
     #: a windowed-out audit from one the trend could not score.
     lookback: int
+
+    __hash__ = None  # type: ignore[assignment]
 
 
 def _journal_snapshot(journal: EvolutionJournal | None, project_name: str) -> AuditSnapshot:

@@ -1,0 +1,572 @@
+"""An enrolled journal event name is spelled once, in ``kstrl/evolution.py``.
+
+``spec_issues`` used to be spelled twice: a constant in ``decompose``,
+which writes the row, and a literal in ``evolution``, which selects on
+it. The cost of that placement was not that the two disagreed - a
+round-trip test made that loud - but that a reader added in
+``evolution`` reaches for the nearest spelling, and the nearest spelling
+was the literal.
+
+Split out of ``tests/test_evolution.py`` on #336, and the seam is the one
+``tests/test_journal_one_writer.py`` already documents about its own
+split: that file is about what the journal DOES, measured against real
+rows in a real file, and this one is a static guard over the whole
+package with no journal in it at all. Different subject, different
+failure message, different reason to fail. The 800-line ratchet could not
+prompt the split, because it reports rather than fails once a file is
+already over, and ``test_evolution.py`` was at 1407 lines.
+
+TWO LAYERS, because one of them is a net and the other is a message.
+
+LAYER 1, :func:`event_name_spellings`, counts every expression in
+``kstrl/`` whose folded value IS an enrolled event name, per module. It
+is the net: a row cannot be written or selected by a name the module
+never spells, so a second spelling in any shape has to appear here
+first, whatever it does with the string afterwards. It resolves nothing
+and enumerates no node types, which is the point. #324 records that this
+repo has about eleven AST guards each re-implementing that resolution and
+each holed independently, and layer 2 below was the twelfth: round 1 of
+review on #336 measured six ordinary shapes walking straight past it.
+
+LAYER 2, :func:`literal_event_names`, enumerates shapes and names the
+offending line and its direction. It is not redundant. Layer 1 can only
+say "this module's spelling count moved", which is the wrong message when
+the answer is "you wrote a journal row with a bare literal, import the
+constant". Layer 1 in turn catches what layer 2 cannot, and after #336
+that is a longer list than layer 2's residual disclosure: a dispatch
+table keyed by the name, a read behind a function boundary, a parameter
+default, ``setattr``, a tuple-unpacked assignment, a function returning
+the bare name. All measured.
+
+What NEITHER layer sees is one thing, and it is disclosed on
+``folded_str`` next door and pinned in
+``tests/test_event_name_shapes.py``: a name the interpreter has to build.
+``"{}_issues".format("spec")``, ``"".join(...)``, ``%``-formatting, a
+run-time lookup. Constant folding answers ``None`` for all of them.
+"""
+
+from __future__ import annotations
+
+import ast
+from collections.abc import Iterable
+from pathlib import Path
+
+from kstrl.evolution import JOURNAL_REPAIR_EVENT, SPEC_ISSUES_EVENT
+from tests.test_journal_one_writer import (
+    assignment_parts,
+    folded_str,
+    label,
+    package_sources,
+    parsed,
+)
+
+#: The journal event names that have been hoisted to a constant, and so
+#: must never be spelled as a literal in ``kstrl/`` again. Five more are
+#: still bare literals (``component_result`` nine times in
+#: ``evolution.py`` alone, which is exactly what layer 2 counts there,
+#: plus ``role_usage``, ``contract_result``, ``autonomy_transition`` and
+#: ``findings_superseded``); converting them is a follow-up, and
+#: enrolling each one here is what makes that follow-up enforceable
+#: rather than merely intended.
+ENROLLED_EVENT_CONSTANTS = {
+    "SPEC_ISSUES_EVENT": SPEC_ISSUES_EVENT,
+    "JOURNAL_REPAIR_EVENT": JOURNAL_REPAIR_EVENT,
+}
+
+#: The journal column every row is written under and selected on. A bare
+#: literal of the COLUMN is not the defect; a bare literal of the event
+#: NAME attached to it is.
+EVENT_TYPE_KEY = "event_type"
+
+
+# --- layer 1: the net -----------------------------------------------------
+
+
+def event_name_spellings(source_file: Path) -> int:
+    """How many expressions in one module fold to an enrolled event name.
+
+    EQUALITY of the folded value, not substring, which is the opposite
+    of the choice ``folded_filename_sites`` makes next door and for the
+    opposite reason. That guard looks for a filename, and prose
+    mentioning ``evolution.jsonl`` folds to a whole docstring that
+    CONTAINS it. This one looks for a whole event name, and
+    ``DECOMPOSE_PROMPT`` spells ``spec_issues`` several times in a
+    prompt body that folds to thousands of characters. Substring would
+    put every one of those in the inventory and make the guard something
+    to be silenced; equality picks out the six places that actually hold
+    the bare string.
+
+    Counted per module so an unrelated edit does not fail it.
+    """
+    names = set(ENROLLED_EVENT_CONSTANTS.values())
+    return sum(1 for node in ast.walk(parsed(source_file)) if folded_str(node) in names)
+
+
+#: Every place in ``kstrl/`` that spells an enrolled event name outright,
+#: with how many times each module does it.
+#:
+#: Adding a row is not forbidden, it is the point: the diff that adds one
+#: is where somebody says why new code spells the name for itself instead
+#: of importing the constant. Three modules today, and only ONE of the
+#: six occurrences is the journal's own vocabulary. The other five are
+#: two other vocabularies that happen to share the word, which is why
+#: layer 2 draws its line at the ``event_type`` column rather than at the
+#: string, and why this layer is a pinned COUNT rather than an assertion
+#: that the count is zero.
+EXPECTED_EVENT_NAME_SPELLINGS: dict[str, int] = {
+    # The architect's own JSON key, twice (validation and _parse_spec_issues),
+    # plus the TUI artifact label emitted with ArtifactWritten.
+    "decompose.py": 3,
+    # The two declarations. This is the one home.
+    "evolution.py": 2,
+    # The TUI reading that artifact label back.
+    "tui/screens/decompose.py": 1,
+}
+
+
+# --- layer 2: the message -------------------------------------------------
+
+
+def literal_event_names(
+    tree: ast.Module,
+    event_name: str,
+    aliases: frozenset[str] | None = None,
+) -> list[str]:
+    """Every place this module names ``event_name`` as a bare literal.
+
+    Two directions, because a journal row is WRITTEN in one and SELECTED
+    in the other, and a bare spelling in either is the defect. The shapes
+    each direction covers are listed on :func:`_literal_event_writes`,
+    :func:`_call_event_hits` and :func:`_literal_event_reads`, and every
+    one of them has a positive control in
+    ``tests/test_event_name_shapes.py``, because a matcher that quietly
+    stops matching returns the same empty list as a clean tree.
+
+    Round 1 of review on #336 is why that list is long, and why layer 1
+    exists at all. This function looked at ``ast.Dict`` and at
+    ``ast.Compare`` and at nothing else, and six ordinary shapes walked
+    past it, all six measured rather than argued: ``dict(event_type=...)``,
+    an item assignment after the dict was built, ``setdefault``,
+    ``update(**kwargs)``, ``match``/``case`` and a walrus. Two were
+    planted as real methods on ``EvolutionJournal`` and the whole fast
+    tier stayed green. Every miss was in the skip direction, which is the
+    defect class #324 exists to record. Enumerating node types does not
+    converge by inspection, so coverage is layer 1's job now and this
+    layer's job is to say which line and which direction.
+
+    Deliberately NOT "the string appears in this file". ``spec_issues``
+    is also the architect's own JSON key and the TUI's artifact label, so
+    ``DECOMPOSE_PROMPT`` spells it in prose and ``_parse_spec_issues``
+    reads ``data.get("spec_issues")`` off the agent's output. Those are
+    other vocabularies that happen to share a word, and flagging them
+    would make this layer something to be silenced rather than obeyed.
+    ``TestTheOtherVocabularyIsLeftAlone`` feeds the matcher both kinds,
+    so neither half is taken on trust. The line is the ``event_type``
+    column: a spelling that never reaches it is somebody else's word, and
+    layer 1 is what still counts those.
+
+    ``aliases`` is a loop invariant the caller may hoist. It depends on
+    the tree alone, so recomputing it per event name is pure waste:
+    measured at 254 calls over 127 modules for two names, of which 127
+    were duplicates, and the guard test goes 0.61 s to 0.46 s with this
+    and the node walk hoisted. It is O(names x modules) on a computation
+    that does not depend on names, and this file commits to five more
+    names.
+    """
+    resolved = event_type_aliases(tree) if aliases is None else aliases
+    return [hit for node in ast.walk(tree) for hit in _hits_at(node, event_name, resolved)]
+
+
+def _hits_at(node: ast.AST, event_name: str, aliases: frozenset[str]) -> list[str]:
+    """One node, handed to whichever half of the guard owns its shape."""
+    if isinstance(node, ast.Compare):
+        return _literal_event_reads(node, event_name, aliases)
+    if isinstance(node, ast.Match):
+        return _match_event_reads(node, event_name, aliases)
+    if isinstance(node, ast.MatchMapping):
+        return _mapping_pattern_reads(node, event_name)
+    if isinstance(node, ast.Call):
+        return _call_event_hits(node, event_name, aliases)
+    return _literal_event_writes(node, event_name)
+
+
+# --- the writing half -----------------------------------------------------
+
+
+def _literal_event_writes(node: ast.AST, event_name: str) -> list[str]:
+    """Every shape that BINDS the event-type column to a bare name.
+
+    ``{"event_type": <name>}``, the same pair inside a dict
+    comprehension, a bare two-element pair (which is what
+    ``dict([("event_type", <name>)])`` is made of), and an assignment
+    whose TARGET is the column.
+
+    ``{**base, "event_type": <name>}`` needs nothing extra: the explicit
+    pair is still a pair, and the ``**`` entry is the ``None`` key this
+    skips. Measured, not assumed.
+    """
+    if isinstance(node, ast.Dict):
+        return _pair_hits(zip(node.keys, node.values, strict=True), event_name)
+    if isinstance(node, ast.DictComp):
+        return _pair_hits([(node.key, node.value)], event_name)
+    if isinstance(node, ast.Tuple | ast.List) and len(node.elts) == 2:
+        return _pair_hits([(node.elts[0], node.elts[1])], event_name)
+    if isinstance(node, ast.Assign | ast.AnnAssign):
+        return _assignment_hits(node, event_name)
+    return []
+
+
+def _pair_hits(
+    pairs: Iterable[tuple[ast.expr | None, ast.expr]],
+    event_name: str,
+) -> list[str]:
+    """``<the column>: <the name>`` pairs, whatever holds them.
+
+    Only the KEY is optional, and only because ``ast.Dict`` spells
+    ``{**base}`` as a ``None`` key. A value slot is never ``None``:
+    measured over 1626 dict literals in ``kstrl/`` and ``tests/``, zero.
+    """
+    return [
+        _write_hit(value)
+        for key, value in pairs
+        if key is not None and folded_str(key) == EVENT_TYPE_KEY and folded_str(value) == event_name
+    ]
+
+
+def _assignment_hits(node: ast.Assign | ast.AnnAssign, event_name: str) -> list[str]:
+    """``row["event_type"] = <name>`` and ``self.event_type = <name>``.
+
+    The column discipline, kept. An earlier version of this rule flagged
+    ANY assignment whose value folded to an enrolled name, so that a
+    second constant declaring the string was caught. That reached one
+    shape and broke the line every other rule here holds: it would fail
+    on ``SPEC_ISSUES_KEY = "spec_issues"``, which is the obvious next
+    cleanup of the architect's own JSON vocabulary in ``decompose.py``,
+    with a message telling the author to import the JOURNAL's constant.
+    It would also fail on ``kstrl/events.py`` lines 343 and 646, which
+    are the event STREAM's discriminator, the moment the enrolment
+    follow-up this file commits to reaches ``contract_result`` and
+    ``autonomy_transition``. A guard that fails the follow-up it exists
+    to enable is a guard that gets silenced.
+
+    A second constant is still caught, by layer 1, where "here is the row
+    and here is the reason" is the normal outcome rather than a failure
+    to argue with. That is what having a net underneath buys.
+    """
+    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+    if node.value is None or folded_str(node.value) != event_name:
+        return []
+    return [_write_hit(node.value) for target in targets if _names_the_column(target)]
+
+
+def _names_the_column(target: ast.expr) -> bool:
+    """``x["event_type"]`` or ``x.event_type`` as an assignment target."""
+    if isinstance(target, ast.Subscript):
+        return folded_str(target.slice) == EVENT_TYPE_KEY
+    return isinstance(target, ast.Attribute) and target.attr == EVENT_TYPE_KEY
+
+
+def _call_event_hits(node: ast.Call, event_name: str, aliases: frozenset[str]) -> list[str]:
+    """The three ways a CALL names the event with no dict literal in sight."""
+    return (
+        _keyword_hits(node, event_name)
+        + _keyed_argument_hits(node, event_name)
+        + _method_on_a_read_hits(node, event_name, aliases)
+    )
+
+
+def _keyword_hits(node: ast.Call, event_name: str) -> list[str]:
+    """``event_type=<name>`` on any call.
+
+    Any call rather than ``dict`` alone: the same keyword builds a
+    ``TypedDict``, a dataclass or model, a ``functools.partial`` and an
+    ``update(**kwargs)``, and singling out ``dict`` by name would leave
+    every one of those free. Ruff is no help either. This repo selects
+    ``E``, ``F``, ``I``, ``UP`` and ``B``, so ``C408`` is not on and
+    ``dict(event_type=...)`` lints clean. ``F401`` catches the shape in
+    ``decompose.py`` only by accident, because line 1031 is that module's
+    sole USE of the imported constant, so replacing it leaves the import
+    unused. Inside ``evolution.py``, where the constant is declared,
+    there is no import to go unused and nothing fires at all.
+    """
+    return [
+        _write_hit(keyword.value)
+        for keyword in node.keywords
+        if keyword.arg == EVENT_TYPE_KEY and folded_str(keyword.value) == event_name
+    ]
+
+
+def _keyed_argument_hits(node: ast.Call, event_name: str) -> list[str]:
+    """``<method>("event_type", <name>)``: the value, or the default.
+
+    ``setdefault`` writes the name. ``get`` and ``pop`` spell it as the
+    fallback, which is the same bare literal deciding the same thing:
+    ``entry.get("event_type", "component_result")`` is how four rows in
+    ``evolution.py`` classify an entry that predates the column. Matched
+    on the shape rather than on a list of method names, so a wrapper of
+    any of them counts too.
+
+    Folded EQUALITY on each remaining argument, not a deep walk, for the
+    same reason ``_assignment_hits`` keeps its column: an argument that
+    merely CONTAINS the name somewhere is a different claim.
+    """
+    if not _keys_on_the_column(node):
+        return []
+    return [_write_hit(arg) for arg in node.args[1:] if folded_str(arg) == event_name]
+
+
+def _keys_on_the_column(node: ast.AST) -> bool:
+    """``<anything>.<method>("event_type", ...)``.
+
+    Shared by both halves, because one call shape does both jobs:
+    ``get``, ``pop`` and ``setdefault`` name the column as their first
+    argument and are reads, and the same three spell the event name as
+    their second and are writes. ``operator.itemgetter("event_type")``
+    is the read half with no second argument at all.
+    """
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and bool(node.args)
+        and folded_str(node.args[0]) == EVENT_TYPE_KEY
+    )
+
+
+def _method_on_a_read_hits(
+    node: ast.Call,
+    event_name: str,
+    aliases: frozenset[str],
+) -> list[str]:
+    """``<a read>.startswith(<name>)``: a selection with no ``==`` in it.
+
+    A deep walk on the argument here, unlike ``_keyed_argument_hits``,
+    because the receiver has already established that this expression is
+    about the column, so ``in ("spec_issues", "other")``-style nesting on
+    the argument is the same claim rather than a wider one.
+    """
+    if not isinstance(node.func, ast.Attribute):
+        return []
+    if not _reads_event_type(node.func.value, aliases):
+        return []
+    return [_read_hit(arg) for arg in node.args if _names_the_event(arg, event_name)]
+
+
+# --- the reading half -----------------------------------------------------
+
+
+def _literal_event_reads(
+    node: ast.Compare,
+    event_name: str,
+    aliases: frozenset[str],
+) -> list[str]:
+    """``entry.get("event_type") == <literal>`` and its ``!=`` and ``in``
+    spellings, in either operand order."""
+    operands = [node.left, *node.comparators]
+    if not any(_reads_event_type(operand, aliases) for operand in operands):
+        return []
+    return [
+        _read_hit(operand)
+        for operand in operands
+        if not _reads_event_type(operand, aliases) and _names_the_event(operand, event_name)
+    ]
+
+
+def _match_event_reads(node: ast.Match, event_name: str, aliases: frozenset[str]) -> list[str]:
+    """``match entry.get("event_type"): case <name>:``, or-patterns and all.
+
+    ``ast.Match`` holds no comparison operator at all, so a guard that
+    walks ``ast.Compare`` cannot see a dispatch written this way even
+    though it is the shape somebody adding a reader of several event
+    types reaches for first.
+    """
+    if not _reads_event_type(node.subject, aliases):
+        return []
+    return [
+        _read_hit(value)
+        for case in node.cases
+        for value in _pattern_literals(case.pattern)
+        if folded_str(value) == event_name
+    ]
+
+
+def _mapping_pattern_reads(node: ast.MatchMapping, event_name: str) -> list[str]:
+    """``case {"event_type": <name>}``: the column and the value, in the
+    pattern itself.
+
+    Needs no subject read, because the pattern names the column.
+    """
+    return [
+        _read_hit(value)
+        for key, pattern in zip(node.keys, node.patterns, strict=True)
+        if folded_str(key) == EVENT_TYPE_KEY
+        for value in _pattern_literals(pattern)
+        if folded_str(value) == event_name
+    ]
+
+
+def _pattern_literals(pattern: ast.pattern) -> list[ast.expr]:
+    """The literals a case pattern matches against, at any depth."""
+    return [node.value for node in ast.walk(pattern) if isinstance(node, ast.MatchValue)]
+
+
+def _reads_event_type(node: ast.expr, aliases: frozenset[str]) -> bool:
+    """Does this expression read the event-type column, at any depth?
+
+    Walks rather than testing the top node alone, so ``str(e["event_type"])``,
+    the walrus ``(found := e.get("event_type"))`` and a local the module
+    bound to a read all count.
+    """
+    return any(_is_event_type_read(child, aliases) for child in ast.walk(node))
+
+
+def _is_event_type_read(node: ast.AST, aliases: frozenset[str]) -> bool:
+    """One node: ``x["event_type"]``, any method call whose first argument
+    is the column (``get``, ``pop``, ``setdefault``,
+    ``operator.itemgetter``), or a name bound to one of those."""
+    if isinstance(node, ast.Subscript):
+        return folded_str(node.slice) == EVENT_TYPE_KEY
+    if isinstance(node, ast.Name):
+        return node.id in aliases
+    return _keys_on_the_column(node)
+
+
+def _names_the_event(operand: ast.expr, event_name: str) -> bool:
+    """Does this operand spell the event name, at any depth?
+
+    Walks children so ``in ("spec_issues", "component_result")`` is seen,
+    and folds each one so an assembled spelling is not a way past.
+    """
+    return any(folded_str(child) == event_name for child in ast.walk(operand))
+
+
+# --- names that stand in for a read ---------------------------------------
+
+
+def event_type_aliases(tree: ast.Module) -> frozenset[str]:
+    """Local names bound to a read of the column, to a fixed point.
+
+    ``found = entry.get("event_type")`` on one line and ``found ==
+    "spec_issues"`` on the next is the plainest reader there is, and
+    neither half is an ``ast.Compare`` operand that reads the column. So
+    is the walrus bound on one line and compared on a later one.
+    Iterated to a fixed point the way ``journal_aliases`` does next door,
+    so a chain of any length closes.
+
+    Message quality rather than coverage, now that layer 1 exists: every
+    shape this reaches spells the name outright, so the net counts it
+    either way. What this buys is "line 42 compares event_type against
+    'spec_issues'" instead of "decompose.py's spelling count moved".
+
+    Collected per MODULE rather than per scope, which is the trade-off
+    that function makes too: a name bound to a read anywhere means "the
+    event type" everywhere in the file. That over-reports rather than
+    under-reports, and over-reporting is the direction a guard is allowed
+    to be wrong in. Measured: 1 of 127 modules in ``kstrl/`` binds any
+    alias at all.
+    """
+    nodes = list(ast.walk(tree))
+    names: frozenset[str] = frozenset()
+    while True:
+        found = _alias_sweep(nodes, names)
+        if found <= names:
+            return names
+        names |= found
+
+
+def _alias_sweep(nodes: list[ast.AST], names: frozenset[str]) -> frozenset[str]:
+    """The names ONE pass binds to a read, given what is known so far."""
+    found: set[str] = set()
+    for node in nodes:
+        targets, value = _bound_names(node)
+        if value is not None and _reads_event_type(value, names):
+            found.update(targets)
+    return frozenset(found)
+
+
+def _bound_names(node: ast.AST) -> tuple[list[str], ast.expr | None]:
+    """The plain names one binding binds, and what it binds them to.
+
+    ``assignment_parts`` next door already answers this for ``Assign``
+    and ``AnnAssign``. The walrus is added here rather than there because
+    it is both a binding and an operand, and the one-writer guard has no
+    use for it. Pinned by
+    ``test_a_walrus_bound_on_an_earlier_line``, because the walrus INSIDE
+    a compare is caught by ``_reads_event_type``'s deep walk and so does
+    not reach this branch at all.
+    """
+    if isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name):
+        return [node.target.id], node.value
+    return assignment_parts(node)
+
+
+# --- how a hit reads ------------------------------------------------------
+
+
+def _write_hit(value: ast.expr) -> str:
+    return f"line {value.lineno}: writes {ast.unparse(value)} as the event_type"
+
+
+def _read_hit(operand: ast.expr) -> str:
+    return f"line {operand.lineno}: compares event_type against {ast.unparse(operand)}"
+
+
+class TestJournalEventNamesHaveOneHome:
+    """#314 item 3, and #336 round 1 for the shape of the mechanism.
+
+    Two assertions, one per layer. Both are pinned inventories rather
+    than "this list is empty" alone, because an empty list is also what a
+    switched-off detector returns. The shape controls in
+    ``tests/test_event_name_shapes.py`` are what make layer 2's assertion
+    mean something: measured, every one of the twenty matcher functions
+    can be stubbed to a constant, and each stub is noticed there.
+    """
+
+    def test_nobody_spells_an_enrolled_event_name_for_themselves(self) -> None:
+        """Layer 1, the net: pin every spelling of the name itself.
+
+        A row cannot be written or selected by a name the module never
+        spells, so NEW code that spells one has to change this dict,
+        whatever shape it uses. That is why this layer resolves nothing
+        and enumerates no node types: an exact count of folded values has
+        no shape list to be incomplete.
+
+        Measured, on the shapes layer 2 discloses that it misses: a
+        dispatch table keyed by the name, a read behind a function
+        boundary, a parameter default, ``setattr``, a tuple-unpacked
+        assignment and a function returning the bare name are all caught
+        HERE. What survives both layers is one thing, disclosed on
+        ``folded_str`` and pinned in ``test_event_name_shapes.py``: a
+        name the interpreter has to build.
+        """
+        built: dict[str, int] = {}
+        for source_file in package_sources():
+            hits = event_name_spellings(source_file)
+            if hits:
+                built[label(source_file)] = hits
+
+        assert built == EXPECTED_EVENT_NAME_SPELLINGS, (
+            "The set of places that spell an enrolled journal event name changed. If "
+            "this is a journal row being written or selected, import the constant "
+            "evolution.py declares for it. If it is the architect's JSON key or the "
+            "TUI's artifact label, which share the word, add the row with a reason. "
+            f"Found: {built}"
+        )
+
+    def test_no_module_names_an_enrolled_event_as_a_literal(self) -> None:
+        """Layer 2, the message: name the offending line and its direction."""
+        found: dict[str, list[str]] = {}
+        for source_file in package_sources():
+            tree = parsed(source_file)
+            aliases = event_type_aliases(tree)
+            hits = [
+                f"{constant}: {hit}"
+                for constant, event_name in sorted(ENROLLED_EVENT_CONSTANTS.items())
+                for hit in literal_event_names(tree, event_name, aliases)
+            ]
+            if hits:
+                found[label(source_file)] = hits
+
+        assert found == {}, (
+            "A journal row is written or selected by a bare literal instead of the "
+            f"constant evolution.py declares for it. Import the constant. Sites: {found}"
+        )

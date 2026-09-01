@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import json
 from pathlib import Path
 from typing import Any
@@ -10,7 +9,6 @@ from typing import Any
 import pytest
 
 from kstrl.evolution import (
-    JOURNAL_REPAIR_EVENT,
     JOURNAL_SCHEMA_VERSION,
     SPEC_ISSUES_EVENT,
     EvolutionConfig,
@@ -24,12 +22,6 @@ from kstrl.evolution import (
 from kstrl.factory import FactoryResult
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from tests.helpers.journal import audit, journal_at
-from tests.test_journal_one_writer import (
-    folded_str,
-    label,
-    package_sources,
-    parsed,
-)
 
 
 def _make_manifest(
@@ -1232,176 +1224,3 @@ class TestSpecAudits:
             "int.md",
             "empty.md",
         ]
-
-
-# ---------------------------------------------------------------------------
-# Journal event names have one home (#314 item 3)
-# ---------------------------------------------------------------------------
-
-#: The journal event names that have been hoisted to a constant, and so
-#: must never be spelled as a literal in ``kstrl/`` again. Five more are
-#: still bare literals (``component_result`` nine times in this module
-#: alone, plus ``role_usage``, ``contract_result``,
-#: ``autonomy_transition`` and ``findings_superseded``); converting them
-#: is a follow-up, and enrolling each one here is what makes that
-#: follow-up enforceable rather than merely intended.
-ENROLLED_EVENT_CONSTANTS = {
-    "SPEC_ISSUES_EVENT": SPEC_ISSUES_EVENT,
-    "JOURNAL_REPAIR_EVENT": JOURNAL_REPAIR_EVENT,
-}
-
-
-def literal_event_names(tree: ast.Module, event_name: str) -> list[str]:
-    """Every place this module names ``event_name`` as a bare literal.
-
-    Two shapes, because a journal row is written in one and selected in
-    the other:
-
-    - a dict entry ``{"event_type": <literal>}``, which is a writer;
-    - a comparison of an ``event_type`` lookup against the literal,
-      which is a reader.
-
-    Deliberately NOT "the string appears in this file". ``spec_issues``
-    is also the architect's own JSON key, so ``DECOMPOSE_PROMPT`` spells
-    it several times in prose and ``_parse_spec_issues`` reads
-    ``data.get("spec_issues")`` off the agent's output. Those are a
-    different vocabulary that happens to share a word, and flagging them
-    would make this guard something to be silenced rather than obeyed.
-    ``TestJournalEventNamesHaveOneHome`` feeds the detector both kinds,
-    so neither half is taken on trust.
-
-    Literals are decided by ``test_journal_one_writer.folded_str``
-    rather than by a bare ``ast.Constant`` check, so ``"spec" +
-    "_issues"`` and the f-string spelling are seen as well. What folding
-    cannot decide is disclosed on that function and holds here
-    unchanged.
-    """
-    found: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Dict):
-            found.extend(_literal_event_writes(node, event_name))
-        if isinstance(node, ast.Compare):
-            found.extend(_literal_event_reads(node, event_name))
-    return found
-
-
-def _literal_event_writes(node: ast.Dict, event_name: str) -> list[str]:
-    """``{"event_type": <literal>}`` entries of one dict literal."""
-    return [
-        f"line {value.lineno}: writes {ast.unparse(value)} as the event_type"
-        for key, value in zip(node.keys, node.values, strict=True)
-        if key is not None and folded_str(key) == "event_type" and folded_str(value) == event_name
-    ]
-
-
-def _literal_event_reads(node: ast.Compare, event_name: str) -> list[str]:
-    """``entry.get("event_type") == <literal>`` and its ``!=`` and ``in``
-    spellings, in either operand order."""
-    operands = [node.left, *node.comparators]
-    if not any(_reads_event_type(operand) for operand in operands):
-        return []
-    return [
-        f"line {node.lineno}: compares event_type against {ast.unparse(operand)}"
-        for operand in operands
-        if not _reads_event_type(operand) and _names_the_event(operand, event_name)
-    ]
-
-
-def _reads_event_type(node: ast.expr) -> bool:
-    """``x.get("event_type", ...)`` or ``x["event_type"]``."""
-    if isinstance(node, ast.Subscript):
-        return folded_str(node.slice) == "event_type"
-    return (
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "get"
-        and bool(node.args)
-        and folded_str(node.args[0]) == "event_type"
-    )
-
-
-def _names_the_event(operand: ast.expr, event_name: str) -> bool:
-    """Does this operand spell the event name, at any depth?
-
-    Walks children so ``in ("spec_issues", "component_result")`` is
-    seen, and folds each one so an assembled spelling is not a way past.
-    """
-    return any(folded_str(child) == event_name for child in ast.walk(operand))
-
-
-class TestJournalEventNamesHaveOneHome:
-    """#314 item 3: an enrolled journal event name is spelled once, in
-    ``kstrl/evolution.py``, and imported everywhere else.
-
-    ``spec_issues`` used to be spelled twice: a constant in
-    ``decompose``, which writes the row, and a literal in this module,
-    which selects on it. The cost of that placement was not that the two
-    disagreed - a round-trip test made that loud - but that a reader
-    added HERE reaches for the nearest spelling, and the nearest
-    spelling was the literal.
-    """
-
-    def _hits(self, source: str, event_name: str = SPEC_ISSUES_EVENT) -> list[str]:
-        return literal_event_names(ast.parse(source), event_name)
-
-    def test_no_module_names_an_enrolled_event_as_a_literal(self) -> None:
-        found: dict[str, list[str]] = {}
-        for source_file in package_sources():
-            hits = [
-                f"{constant}: {hit}"
-                for constant, event_name in sorted(ENROLLED_EVENT_CONSTANTS.items())
-                for hit in literal_event_names(parsed(source_file), event_name)
-            ]
-            if hits:
-                found[label(source_file)] = hits
-
-        assert found == {}, (
-            "A journal row is written or selected by a bare literal instead of the "
-            f"constant evolution.py declares for it. Import the constant. Sites: {found}"
-        )
-
-    def test_the_detector_sees_a_literal_writer(self) -> None:
-        """A guard whose only assertion is that a list is empty cannot
-        notice its own detector being switched off."""
-        hits = self._hits('entry = {"event_type": "spec_issues", "project": p}')
-
-        assert hits == ["line 1: writes 'spec_issues' as the event_type"]
-
-    def test_the_detector_sees_a_literal_reader(self) -> None:
-        hits = self._hits('rows = [e for e in xs if e.get("event_type") == "spec_issues"]')
-
-        assert hits == ["line 1: compares event_type against 'spec_issues'"]
-
-    def test_the_detector_sees_the_reversed_and_membership_spellings(self) -> None:
-        """Neither operand order nor ``in`` is a way past it."""
-        reversed_hits = self._hits('flag = "spec_issues" == e["event_type"]')
-        membership = self._hits('flag = e.get("event_type") in ("spec_issues", "other")')
-
-        assert reversed_hits == ["line 1: compares event_type against 'spec_issues'"]
-        assert membership == ["line 1: compares event_type against ('spec_issues', 'other')"]
-
-    def test_an_assembled_spelling_is_not_a_way_past_it(self) -> None:
-        """``folded_str`` is why: a text search and a bare
-        ``ast.Constant`` check both miss these, and #327 round 2 is the
-        record of somebody reaching for exactly this shape."""
-        concatenated = self._hits('flag = e.get("event_type") == "spec" + "_issues"')
-        formatted = self._hits('flag = e.get("event_type") == f"spec_issues"')
-
-        assert concatenated == ["line 1: compares event_type against 'spec' + '_issues'"]
-        assert formatted == ["line 1: compares event_type against f'spec_issues'"]
-
-    def test_the_second_enrolled_name_is_detected_too(self) -> None:
-        """The walk is driven by ``ENROLLED_EVENT_CONSTANTS`` rather than
-        by one hardcoded name, so enrolling the next constant costs one
-        line instead of a copy of this file."""
-        hits = self._hits('flag = e.get("event_type") == "journal_repair"', JOURNAL_REPAIR_EVENT)
-
-        assert hits == ["line 1: compares event_type against 'journal_repair'"]
-
-    def test_the_architects_own_json_key_is_not_flagged(self) -> None:
-        """``spec_issues`` is also the key the architect returns its
-        findings under, and DECOMPOSE_PROMPT spells it in prose. A guard
-        that fired on those would be silenced rather than obeyed."""
-        assert self._hits('issues = data.get("spec_issues") or []') == []
-        assert self._hits('PROMPT = "return a spec_issues array"') == []
-        assert self._hits('payload = {"spec_issues": [], "components": []}') == []

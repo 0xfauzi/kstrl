@@ -1681,6 +1681,24 @@ class TestOneJournalRead:
     def test_no_journal_reads_nothing_and_windows_nothing(self) -> None:
         assert _journal_snapshot(None, "mine") == AuditSnapshot(audits=[], window=[], lookback=0)
 
+    def test_the_snapshot_says_unhashable_instead_of_pretending(self) -> None:
+        """A frozen dataclass with ``eq`` on gets a generated
+        ``__hash__``, and this one holds two lists, so the generated one
+        raised ``unhashable type: 'list'`` from a method nobody wrote.
+        Nothing hashes a snapshot; making it hashable is not available
+        either, since tuple fields would still hold ``dict`` elements.
+        So it says so, and names itself when somebody tries.
+
+        Both halves asserted: the message alone would pass on a class
+        that had simply kept the broken generated hash.
+        """
+        snapshot = AuditSnapshot(audits=[{"project": "mine"}], window=[], lookback=3)
+
+        assert AuditSnapshot.__hash__ is None
+        with pytest.raises(TypeError, match="unhashable type: 'AuditSnapshot'"):
+            hash(snapshot)
+        assert snapshot == AuditSnapshot(audits=[{"project": "mine"}], window=[], lookback=3)
+
 
 class TestExcludedAccountingLine:
     """#280 round 1, finding 2: the same-project half of the accounting."""
