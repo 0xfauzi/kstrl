@@ -2,22 +2,32 @@
 
 One table, imported by the loader tests and by the CLI seam tests, so
 that a fault discovered at one level is asserted at both. #318 shipped
-twice because that was not true: round 1 fixed the encoding fault at the
-loader and covered it across the CLI, and round 2 found a third fault
-that walked past the round-1 handler on all the same commands.
+three times because that was not true, and because each fix named a
+ceiling one notch too low:
+
+    round   handler added        what still escaped
+    0       TOMLDecodeError      UnicodeDecodeError (a ValueError)
+    1       UnicodeDecodeError   plain ValueError (4301-digit integer)
+    2       ValueError           RecursionError (a RuntimeError)
+    3       Exception            nothing that is about the document
+
+Every row below is a fault that a shipped version of `load_toml_document`
+converted into a raw traceback on thirteen of kstrl's sixteen commands.
 
 REAL BYTES, NEVER A STUB
 ------------------------
-Each entry is the file content, not the exception. Both #318 defects
-were about WHICH exception ``tomllib.load`` actually raises, so a
-fixture that supplies the exception itself would have passed in both
-broken states and proved nothing. The cost of that fidelity is one
-temp file per case, measured at well under a millisecond.
+Each entry is the file content, not the exception. All three defects were
+about WHICH exception `tomllib.load` actually raises, so a fixture that
+supplies the exception itself would have passed in every broken state and
+proved nothing. The cost of that fidelity is one temp file per case,
+measured at well under a millisecond.
 """
 
 from __future__ import annotations
 
 import sys
+
+import pytest
 
 from kstrl.config import UNPARSEABLE_TOML_MESSAGE
 
@@ -32,61 +42,106 @@ MALFORMED_TOML = b"[verify\ntest_command = 'pytest'\n"
 #: ``TOMLDecodeError``. That is #318 round 1.
 NON_UTF8_TOML = b'[agent]\nname = "\xe9"\n'
 
+#: True unless the interpreter has the integer-string limit DISABLED.
+#:
+#: ``PYTHONINTMAXSTRDIGITS=0`` (and ``sys.set_int_max_str_digits(0)``)
+#: are supported settings that switch the limit off entirely, and
+#: ``sys.get_int_max_str_digits()`` then returns 0. There is no digit
+#: count that fails in that configuration, so the fault does not exist
+#: to be tested and its cases skip rather than fail. Measured: without
+#: this, ``PYTHONINTMAXSTRDIGITS=0 pytest tests/test_config_toml.py``
+#: was 3 failed / 23 passed.
+INT_LIMIT_ENABLED = sys.get_int_max_str_digits() != 0
+
 #: Valid utf-8, valid TOML grammar, and still unparseable: an integer
 #: literal one digit past ``sys.get_int_max_str_digits()`` (4300 by
 #: default since 3.11). ``int()`` refuses to build it and raises a PLAIN
 #: ``ValueError`` - neither ``TOMLDecodeError`` nor
-#: ``UnicodeDecodeError`` - so it walked past both specific handlers.
-#: That is #318 round 2, and it is the case that proves the family is
-#: not enumerable from outside the parser.
+#: ``UnicodeDecodeError`` - so it walked past both handlers round 1
+#: shipped. That is #318 round 2.
 #:
-#: Written from the live limit rather than a hardcoded 4301 so the
-#: fixture stays one digit over the line if a future interpreter, or a
-#: process that called ``sys.set_int_max_str_digits``, moves it.
-INT_LIMIT_TOML = b"[run]\nmax_iterations = " + b"9" * (sys.get_int_max_str_digits() + 1) + b"\n"
+#: Sized from the live limit rather than a hardcoded 4301 so it stays one
+#: digit over the line if an interpreter or a caller moves it; when the
+#: limit is OFF, :data:`INT_LIMIT_ENABLED` skips the cases instead,
+#: because then no size works.
+_INT_DIGITS = (sys.get_int_max_str_digits() + 1) if INT_LIMIT_ENABLED else 1
+INT_LIMIT_TOML = b"[run]\nmax_iterations = " + b"9" * _INT_DIGITS + b"\n"
+
+#: How deep to nest. ``tomllib`` parses arrays by recursive descent, so
+#: nesting past the interpreter's recursion headroom raises
+#: ``RecursionError`` - which derives from ``RuntimeError``, NOT
+#: ``ValueError``, and so walked past everything round 2 shipped. That is
+#: #318 round 3.
+#:
+#: Measured by binary search on this machine: 496 standalone, 495 through
+#: the CLI (the seam's own frames cost one level). 600 is comfortably
+#: past both without being so deep that the file is slow to write, and it
+#: is scaled off ``sys.getrecursionlimit()`` so a run with a raised limit
+#: still nests past it. Inline tables recurse identically; arrays are
+#: used because they are terser per level.
+_NEST_DEPTH = max(600, sys.getrecursionlimit() + 100)
+
+#: Valid utf-8, and every bracket balanced: this is not a syntax error.
+#: The parser gives up on its own stack, not on the grammar.
+DEEP_NEST_TOML = b"a = " + b"[" * _NEST_DEPTH + b"]" * _NEST_DEPTH + b"\n"
 
 #: What the loader's catch-all says, IMPORTED from the production
 #: constant rather than restated. ``tests/test_config_toml.py`` asserts
-#: on this string's ABSENCE from the other two faults' messages, which
+#: on this string's ABSENCE from the specific handlers' messages, which
 #: is half of how the handler order is pinned - and an absence assertion
 #: against a stale literal passes vacuously instead of failing. Same
-#: reason ``agents.proc.TIMEOUT_MESSAGE_PREFIX`` is imported by its
-#: tests rather than repeated in them.
+#: reason ``agents.proc.TIMEOUT_MESSAGE_PREFIX`` is imported by its tests
+#: rather than repeated in them.
 BROAD_FRAGMENT = UNPARSEABLE_TOML_MESSAGE
 
-#: The one source: ``(name, file bytes, the message fragment the
-#: operator is shown)``. Private because every caller wants one of the
-#: two views below rather than all three fields, and a parametrize whose
-#: test never uses the name is how an unused argument gets written.
-_FAULTS: list[tuple[str, bytes, str]] = [
-    ("syntax", MALFORMED_TOML, "Invalid TOML"),
-    ("encoding", NON_UTF8_TOML, "not valid UTF-8"),
-    ("int_limit", INT_LIMIT_TOML, BROAD_FRAGMENT),
+#: The one source: ``(name, file bytes, fragment, skip reason or None)``.
+#: Private because every caller wants one of the views below rather than
+#: all four fields, and a parametrize whose test never uses a field is
+#: how an unused argument gets written.
+_FAULTS: list[tuple[str, bytes, str, str | None]] = [
+    ("syntax", MALFORMED_TOML, "Invalid TOML", None),
+    ("encoding", NON_UTF8_TOML, "not valid UTF-8", None),
+    (
+        "int_limit",
+        INT_LIMIT_TOML,
+        BROAD_FRAGMENT,
+        None if INT_LIMIT_ENABLED else "integer-string limit disabled on this interpreter",
+    ),
+    ("deep_nest", DEEP_NEST_TOML, BROAD_FRAGMENT, None),
 ]
 
-#: ``(file bytes, expected message fragment)``, the pair every
-#: parametrize in this suite takes. The fragment is what makes the table
-#: an ORDERING assertion as well as a coverage one: move the loader's
-#: broad handler above the specific ones and the first two entries stop
-#: matching their fragment and start matching :data:`BROAD_FRAGMENT`.
-TOML_PARSE_FAULTS: list[tuple[bytes, str]] = [(body, frag) for _, body, frag in _FAULTS]
+#: ``(file bytes, expected message fragment)`` as pytest params, ids and
+#: skip marks attached. The fragment is what makes the table an ORDERING
+#: assertion as well as a coverage one: move the loader's broad handler
+#: above the specific ones and the first two entries stop matching their
+#: fragment and start matching :data:`BROAD_FRAGMENT`.
+TOML_PARSE_FAULTS = [
+    pytest.param(
+        body,
+        fragment,
+        id=name,
+        marks=[pytest.mark.skipif(skip is not None, reason=skip or "")],
+    )
+    for name, body, fragment, skip in _FAULTS
+]
 
-#: Parametrize ids for :data:`TOML_PARSE_FAULTS`, in the same order.
-#: Single words, so `-k` and `--deselect` need no quoting. Derived from
-#: the same table rather than restated, so the two cannot drift apart.
-FAULT_IDS: list[str] = [name for name, _, _ in _FAULTS]
+#: ``(name, bytes, fragment)`` for the faults that RUN on this
+#: interpreter, for the one test that has to compare across all of them
+#: in a single body rather than through parametrize.
+ACTIVE_FAULTS: list[tuple[str, bytes, str]] = [
+    (name, body, fragment) for name, body, fragment, skip in _FAULTS if skip is None
+]
 
-#: Every fragment any of the three handlers can produce.
+#: Every fragment any handler can produce.
 #:
 #: This is what makes a fault's message assertable EXCLUSIVELY - "says
 #: its own fragment and none of the others" - rather than only
-#: inclusively. The distinction is the whole ordering guarantee: move
-#: the broad handler above the specific ones and each message still
-#: contains SOMETHING, so an inclusive assertion on the wrong fragment
-#: is the only thing that fails, and an assertion merely that the three
-#: messages differ fails nothing at all. (It cannot: every message
-#: interpolates the file path, and the three faults are written to
-#: three different paths. A first cut of the ordering test asserted
-#: exactly that and was vacuous - it passed with all three handlers
-#: collapsed into one.)
-ALL_FRAGMENTS: frozenset[str] = frozenset(frag for _, _, frag in _FAULTS)
+#: inclusively. The distinction is the whole ordering guarantee: move the
+#: broad handler above the specific ones and each message still contains
+#: SOMETHING, so an inclusive assertion is only caught on the wrong
+#: fragment, and an assertion merely that the messages differ catches
+#: nothing at all. (It cannot: every message interpolates the file path,
+#: and the faults are written to different paths. A first cut asserted
+#: exactly that and was vacuous - it passed with all handlers collapsed
+#: into one.)
+ALL_FRAGMENTS: frozenset[str] = frozenset(frag for _, _, frag, _ in _FAULTS)

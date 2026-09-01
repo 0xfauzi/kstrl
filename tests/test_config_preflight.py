@@ -31,7 +31,7 @@ from kstrl.config import ConfigError, load_toml_document, toml_parse_scope
 from kstrl.config_preflight import config_sections, preflight_config
 from kstrl.factory import FactoryResult
 from tests.conftest import REPO_ROOT
-from tests.helpers.bad_toml import FAULT_IDS, MALFORMED_TOML, TOML_PARSE_FAULTS
+from tests.helpers.bad_toml import MALFORMED_TOML, TOML_PARSE_FAULTS
 from tests.spine_utils import component, make_manifest
 
 DECOMPOSE_ARGS = [
@@ -532,7 +532,7 @@ class TestAConfigThatWillNotParseIsReportedNotCrashed:
     before it shipped.
     """
 
-    @pytest.mark.parametrize(("toml", "fragment"), TOML_PARSE_FAULTS, ids=FAULT_IDS)
+    @pytest.mark.parametrize(("toml", "fragment"), TOML_PARSE_FAULTS)
     @pytest.mark.parametrize(
         ("args", "exit_code"),
         SEAM_COMMANDS,
@@ -561,7 +561,7 @@ class TestAConfigThatWillNotParseIsReportedNotCrashed:
         # operator may have more than one checkout.
         assert "kstrl.toml" in result.output
 
-    @pytest.mark.parametrize(("toml", "fragment"), TOML_PARSE_FAULTS, ids=FAULT_IDS)
+    @pytest.mark.parametrize(("toml", "fragment"), TOML_PARSE_FAULTS)
     def test_no_agent_is_constructed_on_the_paid_path(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -609,7 +609,7 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
     round 2, a third fault escaped everything the first round added.
     """
 
-    @pytest.mark.parametrize(("toml", "fragment"), TOML_PARSE_FAULTS, ids=FAULT_IDS)
+    @pytest.mark.parametrize(("toml", "fragment"), TOML_PARSE_FAULTS)
     def test_config_show_still_explains_the_file_it_cannot_load(
         self,
         toml: bytes,
@@ -623,7 +623,7 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
         # more than one checkout cannot act on the codec message alone.
         assert "kstrl.toml" in result.output
 
-    @pytest.mark.parametrize(("toml", "fragment"), TOML_PARSE_FAULTS, ids=FAULT_IDS)
+    @pytest.mark.parametrize(("toml", "fragment"), TOML_PARSE_FAULTS)
     def test_init_still_scaffolds_next_to_a_broken_file(
         self,
         toml: bytes,
@@ -637,7 +637,7 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
         assert fragment not in result.output
         assert "Created prompt.md" in result.output
 
-    @pytest.mark.parametrize(("toml", "fragment"), TOML_PARSE_FAULTS, ids=FAULT_IDS)
+    @pytest.mark.parametrize(("toml", "fragment"), TOML_PARSE_FAULTS)
     def test_sense_keeps_its_exit_2_and_its_json_envelope(
         self,
         toml: bytes,

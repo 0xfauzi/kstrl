@@ -803,17 +803,27 @@ def _default_typecheck_command(cwd: Path) -> str:
         try:
             with pyproject.open("rb") as fh:
                 data = tomllib.load(fh)
-        except (ValueError, OSError):
-            # ``ValueError`` rather than ``TOMLDecodeError``, which it
-            # subclasses. ``tomllib.load`` decodes the stream as utf-8
-            # itself, so a pyproject.toml carrying one non-utf-8 byte -
-            # a latin-1 name, a stray 0x80 - raises UnicodeDecodeError,
-            # which IS a ValueError and escaped this fail-closed except
-            # entirely (#288 review round 2). It reached an ADVISORY
-            # verification report through resolve_verify_commands and
-            # took `ks feature` down before the agent had run. This is
-            # the encoding rule CLAUDE.md states: a reader of any file
-            # must catch ValueError alongside OSError.
+        except Exception:
+            # ``Exception``, not an enumeration of what tomllib is
+            # believed to raise. #288 widened this from
+            # ``TOMLDecodeError`` to ``(ValueError, OSError)`` because a
+            # non-utf-8 pyproject.toml raises ``UnicodeDecodeError``,
+            # which IS a ``ValueError`` and escaped the fail-closed
+            # except entirely - reaching an ADVISORY verification report
+            # through ``resolve_verify_commands`` and taking `ks feature`
+            # down before the agent had run.
+            #
+            # ``ValueError`` was still not the whole class. #318 round 3
+            # measured ~496 nested arrays raising ``RecursionError``,
+            # which derives from ``RuntimeError``, so it walked past this
+            # handler exactly as ``UnicodeDecodeError`` walked past the
+            # one before it. A pyproject.toml is not even the operator's
+            # kstrl.toml, so this site fails to a documented default
+            # rather than to an error: catching wide here costs nothing
+            # and closes the class. See
+            # ``kstrl.config.load_toml_document`` for the full argument
+            # and ``tests/test_toml_readers.py`` for the guard that now
+            # requires it.
             return DEFAULT_TYPECHECK_COMMAND
         mypy_section = data.get("tool", {}).get("mypy", {})
         if isinstance(mypy_section, dict):
