@@ -13,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from kstrl import git, licensing
 
@@ -1794,51 +1794,73 @@ def check_mutation_score(
     base_branch: str,
     threshold: float = 50.0,
     timeout: float = 600.0,
-    read_only: bool = False,
-) -> CheckResult:
+) -> CheckResult | None:
     """Run mutation testing on changed files using mutmut.
 
-    Only mutates Python files changed relative to base_branch.
-    Returns FAIL if mutation score is below threshold.
-    Requires mutmut to be installed (pip install mutmut).
+    Only mutates Python files changed relative to base_branch. Returns
+    FAIL if the mutation score is below threshold, and **None** - no row
+    at all - whenever no score was measured (#306). Four paths reach
+    None: mutmut is not on PATH, the diff changed no non-test Python
+    file, ``mutmut run`` hit ``timeout``, and mutmut generated no
+    mutants. The fifth, read-only, never reaches this function:
+    :func:`_mutation_checks` owns it.
 
-    ``read_only=True`` (``ks sense``, R10.1) skips the check outright:
-    mutmut works by rewriting the source files it mutates, so there is
-    no read-only way to run it. The skip is recorded as a passing check
-    naming the reason rather than dropped, so the measurement says what
-    it did not measure.
+    Each of the four used to return ``passed=True``, so a green
+    ``mutation_testing`` row meant "we did not look" as often as it
+    meant "we looked and it was fine" - and
+    :func:`kstrl.review.build_review_prompt` copied that row into the
+    LLM reviewer's prompt as ``mutation_testing: PASS``.
+
+    None rather than a not-measured STATUS on the row, because
+    ``passed`` is the only field every consumer reads: a third state
+    there still reads as a pass through ``all(c.passed ...)``,
+    ``report_lines``, ``ks sense --json`` and that reviewer prompt, for
+    every reader not yet taught the new field. Absence is also the
+    convention this repo already wrote down - see
+    :func:`kstrl.feature_verify` on its own suppressed checks, "the
+    suppressed checks are ABSENT from it rather than recorded as passing
+    skips: a machine reader doing ``all(c.passed)`` must never see a
+    check that measured nothing counted as a pass" - and what
+    ``mutation_testing = false`` and :func:`narrow_to_undiffed` have
+    always meant here, so no consumer may assume this row exists.
+
+    Nor does None become a FAIL on the two paths where something is
+    genuinely wrong rather than merely absent, missing mutmut and
+    timeout. A failing mechanical check is retry context for the
+    engineer, and installing a binary is not a thing an engineer
+    iteration can do, so a FAIL there spends ``repair_max_runs``
+    iterations on a diff that cannot change the outcome.
+
+    What None costs, stated rather than argued away. An operator who
+    sets ``mutation_testing = true`` with no mutmut on PATH now gets
+    silence where they got a green row; that is a smaller lie, not no
+    lie. And it erases the difference between infra failure (mutmut
+    absent, timed out) and legitimate non-applicability (nothing
+    mutable changed, no mutants generated), which is exactly the
+    distinction L3+ consumes. The placement that keeps both is a SIDECAR
+    on :class:`VerificationResult` - a ``not_measured`` list, or the
+    ``Finding.infrastructure_error`` stream ``check_test_adequacy``
+    already uses and :attr:`CheckResult.findings` already carries -
+    additive, breaking no consumer, and leaving absence-from-``checks``
+    exactly as it is here. Not built here because its consumer is not
+    built either: ``docs/dark-factory-roadmap.md`` puts "mutation infra
+    failure halts for a human rather than skipping
+    (``infrastructure_error`` convention)" in Layer 2 at L3+, and lists
+    that layer under "Not built, and not claimed". Halt is not fail, so
+    the honest state today is silence; what this fixes is silence being
+    spelled ``PASS``.
     """
     import shutil
 
     start = time.monotonic()
 
-    if read_only:
-        return CheckResult(
-            name="mutation_testing",
-            passed=True,
-            message=(
-                "Skipped: mutation testing rewrites the files it mutates and cannot run read-only"
-            ),
-            duration_seconds=time.monotonic() - start,
-        )
-
     if not shutil.which("mutmut"):
-        return CheckResult(
-            name="mutation_testing",
-            passed=True,
-            message="mutmut not installed, skipping",
-            duration_seconds=time.monotonic() - start,
-        )
+        return None
 
     changed = git.get_diff_names(base_branch, cwd)
     py_files = [f for f in changed if f.endswith(".py") and not f.startswith("test")]
     if not py_files:
-        return CheckResult(
-            name="mutation_testing",
-            passed=True,
-            message="No non-test Python files changed",
-            duration_seconds=time.monotonic() - start,
-        )
+        return None
 
     # Run mutmut on changed files only
     paths_arg = " ".join(py_files)
@@ -1849,12 +1871,7 @@ def check_mutation_score(
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        return CheckResult(
-            name="mutation_testing",
-            passed=True,
-            message=f"Mutation testing timed out after {timeout}s, skipping",
-            duration_seconds=time.monotonic() - start,
-        )
+        return None
 
     # Parse mutmut results
     try:
@@ -1887,12 +1904,7 @@ def check_mutation_score(
 
     total = killed + survived
     if total == 0:
-        return CheckResult(
-            name="mutation_testing",
-            passed=True,
-            message="No mutations generated",
-            duration_seconds=time.monotonic() - start,
-        )
+        return None
 
     score = (killed / total) * 100
     details = [
@@ -2170,6 +2182,53 @@ def _scope_checks(
     return []
 
 
+def _mutation_checks(
+    cwd: Path,
+    base_branch: str,
+    config: VerifyConfig,
+    *,
+    read_only: bool,
+) -> list[CheckResult]:
+    """The ``mutation_testing`` row, or no row at all (#306).
+
+    Every reason mutation testing might not produce a score lives here
+    or in :func:`check_mutation_score`, and all of them look the same
+    from outside: nothing is appended. Three are visible from this side
+    - the ``[verify] mutation_testing`` toggle, ``read_only``, and the
+    check's own None - and one place to read them is what stops the
+    caller re-learning any of them.
+
+    ``read_only`` is the one that cannot live inside the check. mutmut
+    works by rewriting the source files it mutates, so ``ks sense`` and
+    :func:`run_undiffed_verification` must not call it at all rather
+    than call it and have it decline: a flag threaded into a check just
+    to be refused is a flag that can return a row, which is how the
+    read-only skip came to report ``passed=True`` in the first place.
+
+    A list for the reason :func:`_scope_checks` returns one. Measured:
+    inlining both conditions at the call site takes
+    :func:`run_mechanical_verification` to cyclomatic 10 against a gate
+    of 10 and cognitive 15 against a gate of 15.
+
+    The other two conditions here - the toggle and ``read_only`` - are
+    decidable before anything runs, which makes this a candidate member
+    of the object #305 tracks (one owner for every argument that decides
+    whether a check can honestly run, alongside
+    :data:`DIFF_DEPENDENT_CHECKS` and :func:`run_undiffed_verification`).
+    The other three cannot join it: mutmut absent, timed out and no
+    mutants are only knowable after the check has run.
+    """
+    if not config.mutation_testing or read_only:
+        return []
+    result = check_mutation_score(
+        cwd,
+        base_branch,
+        config.mutation_threshold,
+        config.mutation_timeout,
+    )
+    return [] if result is None else [result]
+
+
 #: Every check :func:`run_mechanical_verification` appends that answers
 #: its question by reading ``git diff <base>...HEAD``.
 #:
@@ -2312,12 +2371,62 @@ def narrow_to_undiffed(config: VerifyConfig) -> VerifyConfig:
     )
 
 
+class MechanicalVerification(Protocol):
+    """The call shape of :func:`run_mechanical_verification` (#316).
+
+    ``PipelineHooks.run_mechanical_verification`` was typed
+    ``Callable[..., VerificationResult]``, and ``...`` means mypy checks
+    NOTHING about the arguments - which matters because that hook is how
+    the only call site carrying a real component's scope reaches the
+    function. Measured on this branch: with the hook typed ``...``,
+    swapping ``harness_paths=scope.harness_paths`` for
+    ``harness_paths=scope.error`` - a ``str | None`` into a
+    ``list[str] | None`` slot, an authored carve-out replaced by the
+    snapshot's failure to read one - left ``mypy --strict`` reporting
+    SUCCESS. With this Protocol the same swap is
+    ``error: Argument "harness_paths" to "__call__" of
+    "MechanicalVerification" has incompatible type "str | None";
+    expected "list[str] | None"``.
+
+    Making the arguments keyword-only stops a SLOT from being inherited
+    silently; it cannot stop a wrong value being handed to the right
+    name. Only a type can, and only if there is one.
+
+    The defaults below are spelled as real values rather than the
+    conventional ``= ...`` so that ``inspect.Signature`` equality can
+    compare this to the function in one assertion; a Protocol that has
+    drifted is worse than none, because it would type-check calls the
+    function rejects. See
+    ``test_the_protocol_says_exactly_what_the_function_says``.
+    """
+
+    def __call__(
+        self,
+        worktree_path: Path,
+        prd_path: Path | None,
+        base_branch: str,
+        allowed_paths: list[str] | None,
+        config: VerifyConfig,
+        *,
+        allowed_paths_error: str | None = None,
+        harness_paths: list[str] | None = None,
+        pre_run_prd_path: Path | None = None,
+        fixtures_config: FixturesConfig | None = None,
+        policy_config: PolicyConfig | None = None,
+        adequacy_config: AdequacyConfig | None = None,
+        autonomy_level: int = 0,
+        component_id: str | None = None,
+        read_only: bool = False,
+    ) -> VerificationResult: ...
+
+
 def run_mechanical_verification(
     worktree_path: Path,
     prd_path: Path | None,
     base_branch: str,
     allowed_paths: list[str] | None,
     config: VerifyConfig,
+    *,
     allowed_paths_error: str | None = None,
     harness_paths: list[str] | None = None,
     pre_run_prd_path: Path | None = None,
@@ -2329,6 +2438,13 @@ def run_mechanical_verification(
     read_only: bool = False,
 ) -> VerificationResult:
     """Run all mechanical checks. All checks run even if earlier ones fail.
+
+    Everything after ``config`` is keyword-only (#316), so an inserted
+    parameter cannot shift a later argument into a slot that means
+    something else - and three of the arguments here mean opposite
+    things in near-identical types (see :class:`MechanicalVerification`,
+    which covers the half that keyword-only does not). Cost: none. No
+    caller passed any of them positionally.
 
     ``prd_path=None`` (R10.1, ``ks sense``) skips the PRD-dependent
     checks: ``prd_stories``, the approved-fixtures oracle (fixtures are
@@ -2366,11 +2482,17 @@ def run_mechanical_verification(
     ``read_only=True`` (``ks sense``, R10.1) forbids the two checks that
     change the tree they measure: ``dead_code`` drops its ruff auto-fix
     and the ``git add -A`` / ``git commit`` that followed it, and
-    ``mutation_testing`` is skipped because mutmut works by rewriting
-    source. What remains still shells out to the project's OWN
-    configured test / typecheck / lint (and fixture) commands, which
-    are the operator's programs and write their own caches; kstrl
-    suppresses only kstrl's writes.
+    ``mutation_testing`` is not run at all. What remains still shells
+    out to the project's OWN configured test / typecheck / lint (and
+    fixture) commands, which are the operator's programs and write their
+    own caches; kstrl suppresses only kstrl's writes.
+
+    ``mutation_testing`` appends NO ROW rather than a passing one
+    whenever no score was measured, read-only being one of five such
+    reasons (#306). See :func:`_mutation_checks`. A consumer reading
+    ``checks`` must already tolerate the row's absence, because
+    ``[verify] mutation_testing`` defaults to false; what changed is
+    that absence is now the ONLY thing a non-measurement can look like.
     """
     checks: list[CheckResult] = []
 
@@ -2453,16 +2575,14 @@ def run_mechanical_verification(
             )
         )
 
-    if config.mutation_testing:
-        checks.append(
-            check_mutation_score(
-                worktree_path,
-                base_branch,
-                config.mutation_threshold,
-                config.mutation_timeout,
-                read_only=read_only,
-            )
+    checks.extend(
+        _mutation_checks(
+            worktree_path,
+            base_branch,
+            config,
+            read_only=read_only,
         )
+    )
 
     progress_path = self_critique_progress_path(config, worktree_path, prd_path)
     if progress_path is not None:

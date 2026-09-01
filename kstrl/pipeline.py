@@ -93,6 +93,7 @@ from kstrl.security import SecurityMode, SecurityResult
 from kstrl.verify import (
     SCOPE_UNREADABLE_CHECK,
     CheckResult,
+    MechanicalVerification,
     VerificationResult,
     scope_unreadable_error,
 )
@@ -334,7 +335,20 @@ class PipelineHooks:
     directly.
     """
 
-    run_mechanical_verification: Callable[..., VerificationResult]
+    # Typed by shape, not ``Callable[..., VerificationResult]`` (#316):
+    # Phase 1 is the seam that carries a component's SCOPE, and ``...``
+    # checks nothing about it. See ``verify.MechanicalVerification``.
+    #
+    # The three hooks below were NOT cleared, they were not done. Each
+    # carries the same hazard, measured: `run_review` and
+    # `run_security_review` take adjacent `prd_path` / `worktree_path`
+    # Paths and are called positionally below; `distill_facts` takes
+    # three Paths among ten positional arguments. Transposing any of
+    # those type-checks clean today, exactly as `harness_paths` did.
+    # Tightening them is not one character each - their call sites pass
+    # positionally, so it is a signature plus a call-site change plus a
+    # drift test per hook, in three more modules. Its own issue.
+    run_mechanical_verification: MechanicalVerification
     run_review: Callable[..., ReviewResult]
     run_security_review: Callable[..., SecurityResult]
     distill_facts: Callable[..., tuple[int, str]]
