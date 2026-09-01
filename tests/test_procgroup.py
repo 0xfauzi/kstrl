@@ -17,12 +17,15 @@ from __future__ import annotations
 import ast
 import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
 
+from kstrl import procgroup
 from kstrl.procgroup import (
     PS_ARGV,
+    PS_KILL_GRACE_SECONDS,
     PS_TIMEOUT_SECONDS,
     GroupLiveness,
     _kernel_says_group_is_empty,
@@ -100,9 +103,10 @@ class TestAGoneIsOnlyReportedWhenItIsEvidence:
     """The safety argument, and the two controls that could not carry it.
 
     The first asked whether the caller's own group appeared in the
-    listing. Measured: `subprocess.run` does not setpgid, so the `ps`
-    child runs in the caller's group and `ps -A` always lists it. It was
-    satisfied by construction.
+    listing. Measured: the read does not setpgid, so the `ps` child runs
+    in the caller's group and `ps -A` always lists it. It was satisfied
+    by construction, and `_read_ps` keeps it that way by declining
+    `start_new_session`.
 
     The second was "every listed row for this group is a zombie, so the
     listing can see this group". Seeing SOME of a group is not seeing all
@@ -289,15 +293,18 @@ class TestTheTriStateWhenPsGivesNoAnswer:
 
 
 class TestThePsCallIsBounded:
-    """The timeout is the only thing stopping a wedged ps hanging the daemon.
+    """The bound is the only thing stopping a wedged ps hanging the daemon.
 
     Deleting ``timeout=PS_TIMEOUT_SECONDS`` from ``read_group_liveness``
     left the whole suite green before this class existed: the wedged-ps
     case raises a pre-built TimeoutExpired from the fake whether or not
-    the kwarg was ever passed, so it could not detect the loss. A ps
-    stalled on a D-state read (NFS, a hung container runtime) would then
-    block ``subprocess.run`` forever inside the daemon's reap path while
-    PS_TIMEOUT_SECONDS still read as a tested constant.
+    the kwarg was ever passed, so it could not detect the loss.
+
+    Then #309 showed that pinning the kwarg does not establish that the
+    kwarg BOUNDS anything: it was passed, and a ``ps`` that could not be
+    killed hung the call anyway, for the reasons the ``kstrl.procgroup``
+    module docstring sets out. So the class now measures the clock as
+    well as the kwargs, against a child that refuses to die.
     """
 
     def test_the_read_passes_its_timeout(
@@ -307,7 +314,163 @@ class TestThePsCallIsBounded:
         calls = procs.fake_ps(monkeypatch, stdout="50 4242 Ss\n")
         read_group_liveness(4242)
         assert calls, "the fake must have intercepted the ps call"
-        assert calls[0]["kwargs"]["timeout"] == PS_TIMEOUT_SECONDS
+        assert calls[0].timeouts == [PS_TIMEOUT_SECONDS]
+
+    def test_an_unkillable_ps_returns_within_the_bound(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The #309 case, measured on a clock rather than asserted.
+
+        Both constants are shrunk so the test costs its own bound rather
+        than six seconds; the fake burns whatever deadline it is handed,
+        so the reading is real at either size. The margin is 10x the
+        configured bound, which is loose enough for a loaded CI runner and
+        still 60x tighter than the counterfactual below.
+
+        MEASURED against the pre-#309 body restored under this same fake:
+        the read took 60.06s and this assertion failed with exactly this
+        message (two runs, 60.065s and 60.060s). That is the two unbounded
+        waits, 30s each - the one ``subprocess.run``'s timeout handler
+        does after ``kill()``, and the one ``Popen.__exit__`` does after
+        it. Both are gone; that is what the clock here is measuring.
+        """
+        monkeypatch.setattr("kstrl.procgroup.PS_TIMEOUT_SECONDS", 0.05)
+        monkeypatch.setattr("kstrl.procgroup.PS_KILL_GRACE_SECONDS", 0.05)
+        calls = procs.unkillable_ps(monkeypatch)
+
+        started = time.monotonic()
+        liveness = read_group_liveness(4242)
+        elapsed = time.monotonic() - started
+
+        # A real ps answers in ~11ms, so without this the assertion below
+        # would pass just as well on a fake that never intercepted.
+        assert len(calls) == 1, "the wedged fake must have answered the read"
+        assert elapsed < 1.0, f"the read took {elapsed:.3f}s, so nothing bounded it"
+        assert liveness.live is None, "an unmeasurable group must not read as gone"
+        assert "failed to run" in liveness.reason
+
+    def test_an_unkillable_ps_is_killed_and_let_go_of(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The bound above is only honest if the child was dealt with.
+
+        Two deadlines are spent, not one: the read, then the grace the
+        kill is given. The pipe pair is released rather than left to the
+        garbage collector, which is the leak half of #309. What happens
+        to the child itself is `_register_abandoned`'s job and is tested
+        below; this used to claim `subprocess._active` collects it, which
+        round 2 measured false under warnings-as-errors.
+        """
+        monkeypatch.setattr("kstrl.procgroup.PS_TIMEOUT_SECONDS", 0.01)
+        monkeypatch.setattr("kstrl.procgroup.PS_KILL_GRACE_SECONDS", 0.02)
+        calls = procs.unkillable_ps(monkeypatch)
+
+        read_group_liveness(4242)
+
+        assert len(calls) == 1, "one read, not a retry loop"
+        assert calls[0].timeouts == [0.01, 0.02]
+        assert calls[0].kills == 1, "the child must be killed, not waited on"
+        assert calls[0].closed == ["stdout", "stderr"]
+
+    def test_an_interrupted_disposal_still_releases_the_pipes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """#309 round 1, F3.
+
+        The pipe close used to sit in the handler for
+        ``(OSError, ValueError, TimeoutExpired)``. A ``KeyboardInterrupt``
+        is none of those, so an operator stopping the daemon while it was
+        disposing of a wedged ``ps`` escaped with both fds still held -
+        the exact leak the disposal path exists to prevent, reached
+        through the one door it did not watch. The release is in a
+        ``finally`` now.
+
+        The interrupt itself must still propagate: the caller asked to
+        stop, and swallowing that would be a worse bug than the leak.
+        ``raises`` is the CLASS, so each raise is a fresh instance and the
+        interrupt arrives twice; the two deadlines in the log are the
+        proof it reached the disposal rather than stopping at the read.
+        """
+        calls = procs.fake_ps(monkeypatch, raises=KeyboardInterrupt)
+
+        with pytest.raises(KeyboardInterrupt):
+            read_group_liveness(4242)
+
+        assert calls[0].timeouts == [PS_TIMEOUT_SECONDS, PS_KILL_GRACE_SECONDS], (
+            "the interrupt must land in the disposal, not only in the read"
+        )
+        assert calls[0].kills == 1, "the child is still killed before we let go"
+        assert calls[0].closed == ["stdout", "stderr"]
+
+    def test_a_collected_child_is_not_registered(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The control. Without it the register could be growing on every
+        read, which is a leak wearing the costume of a fix."""
+        procs.fake_ps(monkeypatch, stdout="50 4242 Ss\n")
+        read_group_liveness(4242)
+        assert procgroup._ABANDONED == []
+
+    def test_the_register_drains_once_the_child_dies(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The register is only not-a-leak if something empties it.
+
+        A REAL child, because the sweep is ``poll()`` and a fake's poll is
+        whatever the fake says. This one is abandoned while alive, so it
+        lands on the register, and is then reaped by the next read.
+
+        Both halves of C1 are here: that an uncollected child is kept at
+        all, and that keeping it is not itself a leak. Why
+        ``Popen.__del__`` could not be trusted to do the keeping, with the
+        measurement, is in the ``kstrl.procgroup`` module docstring.
+        """
+        monkeypatch.setattr("kstrl.procgroup.PS_ARGV", ("sleep", "30"))
+        monkeypatch.setattr("kstrl.procgroup.PS_TIMEOUT_SECONDS", 0.05)
+        monkeypatch.setattr("kstrl.procgroup.PS_KILL_GRACE_SECONDS", 0.05)
+        # Nothing may be killed, so the child is genuinely abandoned alive.
+        monkeypatch.setattr("kstrl.procgroup.subprocess.Popen.kill", lambda self: None)
+        read_group_liveness(4242)
+        registered = list(procgroup._ABANDONED)
+        assert len(registered) == 1
+
+        child = registered[0]
+        child.terminate()
+        child.wait(timeout=10)
+        # The next read sweeps it, which is the whole contract.
+        monkeypatch.setattr("kstrl.procgroup.PS_ARGV", ("true",))
+        read_group_liveness(4242)
+        assert procgroup._ABANDONED == [], "a dead child must leave the register"
+
+    def test_a_real_child_is_disposed_of_without_leaking_a_descriptor(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The killable-but-slow case, against a REAL child.
+
+        Nothing else in the suite exercises the disposal against a real
+        ``Popen``: ``_FakePs`` stubs ``kill`` and ``communicate``, and its
+        ``close`` only appends to a list, so an fd leak or an unreaped
+        child would be invisible.
+        """
+        fd_dir = Path("/dev/fd")
+        if not fd_dir.is_dir():
+            pytest.skip("no /dev/fd on this platform")
+        monkeypatch.setattr("kstrl.procgroup.PS_ARGV", ("sleep", "30"))
+        monkeypatch.setattr("kstrl.procgroup.PS_TIMEOUT_SECONDS", 0.05)
+
+        before = len(os.listdir(fd_dir))
+        liveness = read_group_liveness(4242)
+        after = len(os.listdir(fd_dir))
+
+        assert liveness.live is None, "an unread group must not report as gone"
+        assert after == before, f"descriptors leaked: {before} -> {after}"
+        assert procgroup._ABANDONED == [], "a killable child must be reaped, not kept"
 
     def test_the_read_pins_its_encoding(
         self,
@@ -317,20 +480,27 @@ class TestThePsCallIsBounded:
         ValueError out of a function whose contract is not to raise."""
         calls = procs.fake_ps(monkeypatch, stdout="50 4242 Ss\n")
         read_group_liveness(4242)
-        assert calls[0]["kwargs"]["encoding"] == "utf-8"
-        assert calls[0]["kwargs"]["errors"] == "replace"
+        assert calls[0].kwargs["encoding"] == "utf-8"
+        assert calls[0].kwargs["errors"] == "replace"
 
 
 class TestTheFakeDoesNotAnswerForEveryCommand:
-    """`fake_ps` replaces the STDLIB `subprocess.run`, not procgroup's.
+    """`fake_ps` replaces the STDLIB `subprocess.Popen`, not procgroup's.
 
     `procgroup.subprocess` is the stdlib module object, so a setattr on
-    it is process-wide. Measured before the delegation guard existed: a
-    plain `subprocess.run(["git", "rev-parse", "HEAD"])` under
+    it is process-wide. Measured before the delegation guard existed,
+    when the seam was still on `run`: a plain
+    `subprocess.run(["git", "rev-parse", "HEAD"])` under
     `fake_ps(stdout="1 Ss\\n")` returned that stdout and
     `args=['ps','-A','-o','pgid=,stat=']`. A test that combined the
     helper with any other subprocess call would have measured nothing and
     passed, which is the #292 class the helper exists to prevent.
+
+    #309 moved the seam from `run` to `Popen`, which makes the guard
+    carry MORE: `subprocess.run` is itself built on `Popen`, so an
+    undelegated fake would now answer every `run` in the suite as well.
+    The test below calling `subprocess.run` is the proof it still does
+    not.
     """
 
     def test_another_command_reaches_the_real_subprocess(
@@ -381,22 +551,52 @@ class TestTheSignalProbeIsKeptAsTheDegradedReading:
         monkeypatch.setattr("kstrl.procgroup.os.killpg", refuse)
         assert signal_probe_alive(4242) is True
 
-    def test_any_other_oserror_reads_as_gone(
+    @pytest.mark.parametrize(
+        "errno_and_text",
+        [
+            (22, "Invalid argument"),
+            # The errno #309 round 1 reproduced it with.
+            (5, "Input/output error"),
+        ],
+    )
+    def test_an_unexplained_error_reads_as_alive_not_gone(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        errno_and_text: tuple[int, str],
+    ) -> None:
+        """#309 round 1, F1, and the assertion that was inverted before it.
+
+        This used to assert False, pinning the pre-#298 mapping as
+        "endorsed by nobody but carried over unchanged". "Gone" is the
+        unsafe direction, for the reason the `kstrl.procgroup` module
+        docstring opens with. It survived while this function was nearly
+        unreachable; #309 made it the routine fallback for every read
+        `ps` cannot answer, so it had to be decided rather than deferred.
+
+        Flipping this assertion is the point of the test: it fails on the
+        other choice, which is what the old one could not do for the
+        choice it pinned.
+        """
+        number, text = errno_and_text
+
+        def broken(pgid: int, sig: int) -> None:
+            raise OSError(number, text)
+
+        monkeypatch.setattr("kstrl.procgroup.os.killpg", broken)
+        assert signal_probe_alive(4242) is True
+
+    def test_esrch_is_still_the_one_thing_that_means_gone(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Pinned rather than endorsed. This is the pre-#298 mapping,
-        carried over unchanged: "gone" is the UNSAFE direction here,
-        because `terminate_process_group` turns it into "reaped" and the
-        item is released for another attempt. #298 shrank its reach from
-        every call to only the calls where `ps` also gave no answer, and
-        changing the mapping is a separate decision with its own
-        reasoning."""
+        """The control for the test above. Without it, that one would
+        pass just as well on a function that had been made to return True
+        unconditionally, which measures nothing."""
 
-        def broken(pgid: int, sig: int) -> None:
-            raise OSError(22, "Invalid argument")
+        def absent(pgid: int, sig: int) -> None:
+            raise ProcessLookupError(3, "No such process")
 
-        monkeypatch.setattr("kstrl.procgroup.os.killpg", broken)
+        monkeypatch.setattr("kstrl.procgroup.os.killpg", absent)
         assert signal_probe_alive(4242) is False
 
 

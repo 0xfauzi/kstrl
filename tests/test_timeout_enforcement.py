@@ -1108,6 +1108,156 @@ class TestCliTimeoutFlags:
 
 
 # ---------------------------------------------------------------------------
+# The #309 gate: a module on POPEN_ALLOWLIST must not wait without a deadline.
+# ---------------------------------------------------------------------------
+
+#: Methods that block on a child process. ``timeout=`` is optional on both.
+_WAIT_METHODS = frozenset({"wait", "communicate"})
+
+
+def _wait_calls(tree: ast.AST) -> list[tuple[ast.Call, str]]:
+    """Every ``.wait(...)`` / ``.communicate(...)`` call, with its method name."""
+    return [
+        (node, node.func.attr)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in _WAIT_METHODS
+    ]
+
+
+def _subprocess_aliases(tree: ast.AST) -> tuple[set[str], dict[str, str]]:
+    """Names bound to the subprocess module, and LOCAL name -> real name.
+
+    The mapping half is #309 round 2, C2. This used to return a SET of
+    local names and every caller then compared them against the ORIGINAL
+    names (``called == "Popen"``, ``called in SPAWN_FUNCS``), so an ``as``
+    rename walked straight through. Measured on a planted module:
+    ``from subprocess import run as _run`` followed by
+    ``_run(argv, capture_output=True)`` with no timeout at all passed
+    clean, as did the same trick for ``Popen``.
+
+    ONE resolver for both gates in this file. Round 2 also found the
+    ``with``-on-a-Popen gate carrying a second, weaker copy of this, with
+    a paragraph asserting the two agreed - which is the same shape as the
+    bug above: two readings held level by prose. They are one function
+    now, so the question cannot be asked again.
+
+    KNOWN MISSES, so the reach is not overstated. Only an ``import``
+    statement is resolved. ``_P = subprocess.Popen`` rebinds through an
+    assignment and ``getattr(subprocess, "Popen")`` through a string, and
+    following either needs dataflow this walk does not do.
+    """
+    imports = [n for n in ast.walk(tree) if isinstance(n, ast.Import)]
+    from_imports = [
+        n for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module == "subprocess"
+    ]
+    module_aliases = {
+        alias.asname or alias.name
+        for node in imports
+        for alias in node.names
+        if alias.name == "subprocess"
+    }
+    direct_funcs = {
+        alias.asname or alias.name: alias.name for node in from_imports for alias in node.names
+    }
+    return module_aliases, direct_funcs
+
+
+def _popen_names(tree: ast.AST) -> set[str]:
+    """Every local name that means ``Popen``, derived not re-derived.
+
+    KNOWN over-report, deliberately left: ``_is_popen_call`` also accepts
+    any ``x.Popen(...)``, so a hypothetical ``mock.Popen()`` is flagged.
+    That direction costs a comment on a line that is not really a child
+    process; the other direction costs a hang.
+    """
+    _, direct = _subprocess_aliases(tree)
+    return {"Popen", *(local for local, real in direct.items() if real == "Popen")}
+
+
+def _is_popen_call(node: ast.expr, names: set[str]) -> bool:
+    """Whether this expression constructs a ``Popen``."""
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    called = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+    return called in names
+
+
+def _popen_bound_names(tree: ast.AST, names: set[str]) -> set[str]:
+    """Names assigned a ``Popen(...)``, so ``with proc:`` is recognisable.
+
+    NAME COLLECTION, NOT SCOPE ANALYSIS, and the difference has teeth.
+    Every ``x = Popen(...)`` anywhere in the module contributes its name
+    to one flat set, so a ``with`` on a name bound in a different function
+    still matches, and a ``with`` on a PARAMETER matches only if the
+    parameter happens to share a name with some module-level binding.
+    Round 2 measured that: the planted mutation is caught today partly
+    because ``_kill_or_abandon``'s parameter is called ``process`` and so
+    is the binding in ``_read_ps``; renaming it to ``proc`` makes the
+    plant pass clean. A ``with`` on a Popen returned from a helper is
+    missed outright. Both want dataflow this walk does not do, and are
+    left for a follow-up rather than papered over here.
+    """
+    bound: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and _is_popen_call(node.value, names):
+            bound.update(t.id for t in node.targets if isinstance(t, ast.Name))
+    return bound
+
+
+def _bare_wait_findings(tree: ast.AST) -> list[tuple[int, str]]:
+    """Waits on a child that name no deadline, or name one that is None."""
+    found: list[tuple[int, str]] = []
+    for node, method in _wait_calls(tree):
+        deadline = next((kw.value for kw in node.keywords if kw.arg == "timeout"), None)
+        if deadline is None:
+            found.append((node.lineno, f".{method}() names no timeout="))
+        elif isinstance(deadline, ast.Constant) and deadline.value is None:
+            found.append((node.lineno, f".{method}(timeout=None) is not a deadline"))
+    return found
+
+
+def _with_popen_findings(tree: ast.AST) -> list[tuple[int, str]]:
+    """``with`` blocks on a Popen, whose ``__exit__`` waits with no deadline."""
+    names = _popen_names(tree)
+    bound = _popen_bound_names(tree, names)
+    found: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.With | ast.AsyncWith):
+            continue
+        for item in node.items:
+            context = item.context_expr
+            named = isinstance(context, ast.Name) and context.id in bound
+            if _is_popen_call(context, names) or named:
+                found.append((node.lineno, "`with` on a Popen: __exit__ waits with no deadline"))
+    return found
+
+
+def _unbounded_wait_findings(tree: ast.AST) -> list[str]:
+    """Every way this module can wait on a child process forever.
+
+    Three forms, because #309 round 1 found the first version of this
+    check catching only one of them:
+
+    * ``.wait()`` / ``.communicate()`` with no ``timeout=`` at all.
+    * the same with ``timeout=None``, which READS as a deadline and is
+      not one. The first version passed this.
+    * ``with Popen(...)``, where the wait is ``__exit__`` and there is no
+      Call node anywhere in the tree to inspect. The first version passed
+      this too.
+
+    KNOWN MISS, stated so the gate is not trusted past its reach: only a
+    LITERAL ``None`` is visible here. A ``timeout=`` whose value is a name
+    that happens to hold None at run time reads exactly like a real
+    deadline, and following it needs dataflow an AST walk does not do.
+    """
+    found = _bare_wait_findings(tree) + _with_popen_findings(tree)
+    return [f"{line} {text}" for line, text in sorted(found)]
+
+
+# ---------------------------------------------------------------------------
 # Static audit: no subprocess call without a timeout (A+ orchestration gate)
 # ---------------------------------------------------------------------------
 
@@ -1132,32 +1282,55 @@ class TestSubprocessTimeoutAudit:
       direct child, which on macOS is the caffeinate wrapper, so the
       factory itself outlived the timeout and the daemon requeued an
       item that was still executing.
+    - kstrl/procgroup.py: two bounded communicate(timeout) calls around a
+      kill, then the child is abandoned (#309). Popen is REQUIRED here
+      too, and for a different reason: subprocess.run's timeout handler
+      waits on the killed child with NO deadline and Popen.__exit__ waits
+      again, so `timeout=` cannot bound a ps that will not die. Measured
+      under a fake wedged child: 60.06s before, sub-second after
+      (tests/test_procgroup.py::TestThePsCallIsBounded).
     """
 
     SPAWN_FUNCS = frozenset({"run", "call", "check_call", "check_output"})
     POPEN_ALLOWLIST = frozenset(
         {
             "kstrl/agents/proc.py",
+            "kstrl/procgroup.py",
             "kstrl/serve.py",
             "kstrl/verify.py",
         }
     )
 
-    @staticmethod
-    def _subprocess_aliases(tree: ast.Module) -> tuple[set[str], set[str]]:
-        """Names bound to the subprocess module / its spawn functions."""
-        module_aliases: set[str] = set()
-        direct_funcs: set[str] = set()
+    @classmethod
+    def _spawn_sites(cls, tree: ast.Module) -> list[tuple[ast.Call, str]]:
+        """``(call node, subprocess name)`` for every spawn call in the tree.
+
+        Split out of the test in #309 round 2 so it can be run over a
+        planted module. C2 was found by planting one by hand; a check
+        nobody can re-run is how the alias hole survived to be found by
+        hand in the first place.
+
+        ``called`` is always the name SUBPROCESS knows it by, never the
+        local alias, which is the C2 fix.
+        """
+        module_aliases, direct_funcs = _subprocess_aliases(tree)
+        sites: list[tuple[ast.Call, str]] = []
         for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name == "subprocess":
-                        module_aliases.add(alias.asname or alias.name)
-            elif isinstance(node, ast.ImportFrom):
-                if node.module == "subprocess":
-                    for alias in node.names:
-                        direct_funcs.add(alias.asname or alias.name)
-        return module_aliases, direct_funcs
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func
+            called: str | None = None
+            if (
+                isinstance(fn, ast.Attribute)
+                and isinstance(fn.value, ast.Name)
+                and fn.value.id in module_aliases
+            ):
+                called = fn.attr
+            elif isinstance(fn, ast.Name) and fn.id in direct_funcs:
+                called = direct_funcs[fn.id]
+            if called == "Popen" or called in cls.SPAWN_FUNCS:
+                sites.append((node, called))
+        return sites
 
     def test_every_subprocess_call_has_timeout(self) -> None:
         package_root = Path(__file__).resolve().parent.parent / "kstrl"
@@ -1168,30 +1341,13 @@ class TestSubprocessTimeoutAudit:
         for py_file in sorted(package_root.rglob("*.py")):
             rel = py_file.relative_to(package_root.parent).as_posix()
             tree = ast.parse(py_file.read_text(encoding="utf-8"))
-            module_aliases, direct_funcs = self._subprocess_aliases(tree)
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Call):
-                    continue
-                fn = node.func
-                called: str | None = None
-                if (
-                    isinstance(fn, ast.Attribute)
-                    and isinstance(fn.value, ast.Name)
-                    and fn.value.id in module_aliases
-                ):
-                    called = fn.attr
-                elif isinstance(fn, ast.Name) and fn.id in direct_funcs:
-                    called = fn.id
-                if called is None:
-                    continue
+            for node, called in self._spawn_sites(tree):
+                sites_seen += 1
                 if called == "Popen":
-                    sites_seen += 1
                     if rel not in self.POPEN_ALLOWLIST:
                         popen_violations.append(f"{rel}:{node.lineno}")
-                elif called in self.SPAWN_FUNCS:
-                    sites_seen += 1
-                    if not any(k.arg == "timeout" for k in node.keywords):
-                        violations.append(f"{rel}:{node.lineno} {called}")
+                elif not any(k.arg == "timeout" for k in node.keywords):
+                    violations.append(f"{rel}:{node.lineno} {called}")
 
         # If the walk ever finds nothing, the audit itself broke (import
         # style changed, package moved) - fail loudly, never vacuously.
@@ -1207,3 +1363,208 @@ class TestSubprocessTimeoutAudit:
             "Popen outside the deadline-managed allowlist (see class "
             "docstring):\n  " + "\n  ".join(popen_violations)
         )
+
+    @pytest.mark.parametrize(
+        ("body", "expected"),
+        [
+            # The plain forms, which always worked.
+            ("import subprocess\nsubprocess.run(argv)\n", [(2, "run")]),
+            ("import subprocess as sp\nsp.check_output(argv)\n", [(2, "check_output")]),
+            ("import subprocess\nsubprocess.Popen(argv)\n", [(2, "Popen")]),
+            # #309 round 2, C2. Every one of these passed the audit clean
+            # before the local-name mapping, including a brand new module
+            # calling run with no deadline at all.
+            ("from subprocess import run as _run\n_run(argv)\n", [(2, "run")]),
+            ("from subprocess import Popen as Spawn\nSpawn(argv)\n", [(2, "Popen")]),
+            (
+                "from subprocess import check_call as _cc\n_cc(argv)\n",
+                [(2, "check_call")],
+            ),
+            # The unrenamed from-import, which must keep working.
+            ("from subprocess import run\nrun(argv)\n", [(2, "run")]),
+        ],
+    )
+    def test_the_audit_resolves_a_renamed_import(
+        self,
+        body: str,
+        expected: list[tuple[int, str]],
+    ) -> None:
+        """C2's fix, as a mechanism instead of a sentence.
+
+        The audit compares against the name subprocess knows, so the
+        resolution has to hand it that name and not the local one. Planted
+        here because C2 was found by planting a module by hand, and a
+        check nobody can re-run is how the hole lasted.
+        """
+        sites = self._spawn_sites(ast.parse(body))
+        assert [(node.lineno, called) for node, called in sites] == expected, body
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            # Rebound through an assignment, not an import.
+            "import subprocess\n_P = subprocess.Popen\n_P(argv)\n",
+            # Reached through a string.
+            'import subprocess\ngetattr(subprocess, "Popen")(argv)\n',
+            # A different module's run.
+            "import other\nother.run(argv)\n",
+        ],
+    )
+    def test_the_audit_misses_these_and_says_so(self, body: str) -> None:
+        """The reach, executed rather than promised.
+
+        The first two are real holes, named in `_subprocess_aliases` and
+        left for a follow-up: closing them needs dataflow an AST walk does
+        not do. The third is not a hole, it is the scope. Pinned together
+        so the difference between "cannot see" and "does not care" stays
+        written down.
+        """
+        assert self._spawn_sites(ast.parse(body)) == [], body
+
+    def test_no_allowlisted_module_waits_without_a_deadline(self) -> None:
+        """#309's class: the allowlist admits a module, not a discipline.
+
+        Being on POPEN_ALLOWLIST said only that the module promised to
+        manage its own deadline, and nothing checked the promise. #309 is
+        what that costs: ``procgroup`` passed ``timeout=`` to
+        ``subprocess.run``, satisfied the audit above, and hung anyway,
+        because the wait ``run`` performs after killing the timed-out
+        child has no deadline. A pinned kwarg is not a bound.
+
+        WHAT THIS DOES NOT COVER, said plainly because a mechanism cited
+        for a claim it does not carry is worse than none. It would NOT
+        have caught #309: that unbounded wait was inside CPython, not in
+        this tree, so no walk of ``kstrl/`` could see it. The thing that
+        catches a revert to ``subprocess.run`` is the clock in
+        ``tests/test_procgroup.py::TestThePsCallIsBounded``, which
+        measured 60.06s against the old body. What this catches is the
+        sibling the allowlist invites and nobody was checking: a
+        hand-rolled ``Popen`` in one of these four files that waits on
+        its child with no deadline. All 11 current sites already pass one,
+        so this lands green and stays a ratchet rather than a cleanup.
+
+        Scoped to the allowlisted files because ``.wait(...)`` outside
+        them is overwhelmingly ``threading.Event.wait``, whose unbounded
+        form is legitimate and common (``kstrl/commandrun.py``,
+        ``kstrl/interaction.py``, ``kstrl/shutdown.py``). Inside them it
+        is a child process, and there it must always name a deadline.
+
+        The wait half is a receiver-name check, so it catches ``x.wait()``
+        on anything, not only on a Popen. That is the conservative
+        direction for four files that exist to manage child processes; if
+        one of them ever needs an unbounded Event wait, that is a decision
+        worth writing down here rather than a false positive to widen
+        around.
+
+        The three forms it rejects, and the two that #309 round 1 found
+        the first version of this check passing, are in
+        ``_unbounded_wait_findings``. They are pinned as planted cases
+        below rather than by hand, because a gate verified once in a shell
+        session is a gate nobody can re-verify.
+        """
+        package_root = Path(__file__).resolve().parent.parent / "kstrl"
+        violations: list[str] = []
+        blind: list[str] = []
+
+        for rel in sorted(self.POPEN_ALLOWLIST):
+            tree = ast.parse((package_root.parent / rel).read_text(encoding="utf-8"))
+            if not _wait_calls(tree):
+                blind.append(rel)
+            violations += [f"{rel}:{found}" for found in _unbounded_wait_findings(tree)]
+
+        # PER FILE, not a total. A global floor of 10 against an actual 11
+        # left one site of margin, so a legitimate refactor removing one
+        # wait failed CI with "the scan is broken" - a false diagnosis, and
+        # the kind of gate that gets deleted. A file on this allowlist is
+        # here because it manages a child process, so every one of them
+        # must show at least one wait; a file showing none means the walk
+        # stopped seeing that file, which is the thing worth failing on.
+        assert not blind, (
+            "these deadline-managed modules show no wait sites at all, so "
+            "the scan is broken rather than the code clean:\n  " + "\n  ".join(blind)
+        )
+        assert not violations, (
+            "a deadline-managed module waits on a child without a "
+            "deadline, which is #309:\n  " + "\n  ".join(violations)
+        )
+
+    @pytest.mark.parametrize(
+        ("body", "expected"),
+        [
+            # The form the first version of this gate caught.
+            (
+                "proc.wait()\n",
+                ["1 .wait() names no timeout="],
+            ),
+            # #309 round 1, F4: a kwarg is present, so the first version
+            # reported clean. It waits forever all the same.
+            (
+                "proc.wait(timeout=None)\n",
+                ["1 .wait(timeout=None) is not a deadline"],
+            ),
+            (
+                "proc.communicate(timeout=None)\n",
+                ["1 .communicate(timeout=None) is not a deadline"],
+            ),
+            # F4 again: the wait is __exit__, so there is no Call node in
+            # the tree to inspect and the first version saw nothing.
+            (
+                "with subprocess.Popen(argv) as proc:\n    pass\n",
+                ["1 `with` on a Popen: __exit__ waits with no deadline"],
+            ),
+            (
+                "proc = subprocess.Popen(argv)\nwith proc:\n    pass\n",
+                ["2 `with` on a Popen: __exit__ waits with no deadline"],
+            ),
+            # Found in round 2: a bare name match reported this clean,
+            # which is the under-reporting direction.
+            (
+                "from subprocess import Popen as Spawn\nwith Spawn(argv) as p:\n    pass\n",
+                ["2 `with` on a Popen: __exit__ waits with no deadline"],
+            ),
+            (
+                "from subprocess import Popen as Spawn\np = Spawn(argv)\nwith p:\n    pass\n",
+                ["3 `with` on a Popen: __exit__ waits with no deadline"],
+            ),
+        ],
+    )
+    def test_the_gate_catches_each_planted_mutation(
+        self,
+        body: str,
+        expected: list[str],
+    ) -> None:
+        """The gate's own reach, measured rather than asserted.
+
+        #309 round 1 found the first version of this check passing two of
+        the three forms it exists to stop, and the manual verification
+        behind it had planted only the form it did catch. A guard that
+        reports clean on the bug it was written to prevent is the failure
+        this batch keeps repeating, so the planted forms live here as
+        cases rather than in a shell session nobody can re-run.
+        """
+        assert _unbounded_wait_findings(ast.parse(body)) == expected, body
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            # A real deadline, in each of the shapes the tree uses.
+            "proc.wait(timeout=5.0)\n",
+            "proc.communicate(timeout=self._remaining())\n",
+            "proc.wait(timeout=0)\n",
+            # Not a child process at all, and not a `with` on one.
+            "with open(path) as handle:\n    pass\n",
+            "with contextlib.suppress(OSError):\n    pass\n",
+            # A Popen that is never used as a context manager.
+            "proc = subprocess.Popen(argv)\nproc.wait(timeout=1)\n",
+        ],
+    )
+    def test_the_gate_stays_quiet_on_these(self, body: str) -> None:
+        assert _unbounded_wait_findings(ast.parse(body)) == [], body
+
+    def test_a_deadline_that_is_none_at_run_time_is_a_known_miss(self) -> None:
+        """The reach `_unbounded_wait_findings` claims, executed.
+
+        A docstring naming a limit is a claim; this is the measurement of
+        it, so the limit cannot quietly change into something else.
+        """
+        assert _unbounded_wait_findings(ast.parse("proc.wait(timeout=grace)\n")) == []
