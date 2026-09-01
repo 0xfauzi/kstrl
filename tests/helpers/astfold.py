@@ -82,10 +82,18 @@ def _is_str_constant(node: ast.expr | None) -> bool:
 def _string_bindings(node: ast.stmt) -> dict[str, str]:
     """``{name: value}`` for one statement, empty unless it binds a str.
 
-    Handles the annotated form as well as the plain one: ``gateparse``
-    declares ``GATE_TOOLS`` and friends with annotations, so an
-    ``ast.Assign``-only reader would silently drop a check name and
-    leave this whole module passing vacuously.
+    Handles the annotated form as well as the plain one. #339 review
+    measured what that is worth today and the honest answer is nothing:
+    ``kstrl/`` has three module-level annotated string constants
+    (``agents/base.ARCHITECT_ROLE``, ``names.ROLE_KEY_PREFIX``,
+    ``serve.SPAWNED_RUN_KIND``) and none is a check name, so deleting
+    the branch leaves the census identical. An earlier version of this
+    docstring claimed ``gateparse`` needed it; ``gateparse`` declares
+    ``GATE_TEST`` and friends with a plain ``ast.Assign``. The branch
+    stays because ``ast.Assign``-only readers are a logged defect class
+    in this repo (``assignment_parts`` in
+    ``tests/test_journal_one_writer.py`` carries the same note for the
+    same reason), but it is future-proofing, not a live requirement.
     """
     if isinstance(node, ast.AnnAssign):
         if isinstance(node.target, ast.Name) and _is_str_constant(node.value):
@@ -353,7 +361,7 @@ def signature_head(folded: Folded) -> str | None:
     if not _SIGNATURE_SHAPE.fullmatch(folded.text):
         return None
     head = folded.text.partition(":")[0]
-    return None if HOLE in head else head
+    return head
 
 
 @dataclass(frozen=True)

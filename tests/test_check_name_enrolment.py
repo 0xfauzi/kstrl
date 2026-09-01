@@ -550,6 +550,11 @@ def _signature_sites(node: ast.AST) -> list[ast.expr]:
         # A provably empty `signatures=` is not a signature the walk
         # failed to read, it is the absence of one, and a BLIND_SITES row
         # for `signatures=None` is a row no reader can act on.
+        #
+        # The first clause is a TYPE narrowing, not a condition:
+        # `_signatures_taken(None)` already answers False by its own
+        # contract, so the second clause covers the absent case. It is
+        # here because `_listed` takes `ast.expr`, not `ast.expr | None`.
         if signatures is not None and _signatures_taken(signatures) is not False:
             return _listed(signatures)
     return []
@@ -637,10 +642,16 @@ class TestEveryCheckNameIsEnrolled:
         # #339 review: the fourth producer, four direct assignments into
         # component_failure_signatures that are not calls at all.
         assert "contract" in names, "component_failure_signatures[...] = [...]"
-        # #339 review: the check name is the enclosing function's own
-        # argument, so it is decided by the callers and by nothing in
-        # the function that writes it.
-        assert "security" in names, "a check name resolved from the call sites"
+        # #339 review round 2 measured this line inert as first written
+        # ("security" in names): `security` is spelled at another site,
+        # so deleting the whole interprocedural rescue left it green.
+        # The property that actually moves is the rescue taking a row
+        # OUT of the ledger, so that is what is asserted.
+        assert (
+            "kstrl/pipeline.py",
+            "ComponentPipeline._coverage_failure",
+            "f'{phase}:coverage-unverified:{reason}'",
+        ) not in blind_sites(), "a check name resolved from the call sites"
         # #306: this one was not pinned, and so was not protected.
         # Rewriting `CheckResult(name="mutation_testing", ...)` as
         # `name=name` off a function-local took the walk from 19 names
@@ -736,22 +747,16 @@ class TestTheBlindSitesAreEnumerated:
             f"{sorted(set(pinned) - set(measured))} (delete its row)."
         )
 
+    # The property this class asserts on a FIXTURE - a detected producer
+    # whose name will not resolve must be reported rather than dropped -
+    # is pinned next door, by
+    # tests/test_check_name_shapes.py::test_a_pass_through_is_detected_and_unread.
+    # It was spelled twice on #339, in twelve lines here and three
+    # there, on the same fixture string; the shorter one asserts more.
+
     def test_every_blind_site_says_why(self) -> None:
         """A ledger row with no reason is a silencer. The reason is what
         a future reader needs to decide whether the limit is still
         acceptable."""
         for rel, qual, expr, why in BLIND_SITES:
             assert why.strip(), f"{rel} {qual} {expr} has no stated reason"
-
-    def test_a_producer_the_walk_cannot_read_is_not_dropped(self) -> None:
-        """The property, on a fixture, rather than on the tree. This is
-        what the old walk got wrong: it resolved what it could and said
-        nothing about the rest, so a producer moving out of reach looked
-        exactly like a producer that had gone away."""
-        tree = ast.parse('component_failure_signatures[c] = [f"{whatever}:code"]\n')
-        sites = [
-            (expr, scope) for node, scope in scoped_nodes(tree) for expr in _signature_sites(node)
-        ]
-        assert len(sites) == 1, "the assignment producer was not detected"
-        expr, scope = sites[0]
-        assert _names_in(expr, {}, scope) == frozenset(), "it must not resolve"

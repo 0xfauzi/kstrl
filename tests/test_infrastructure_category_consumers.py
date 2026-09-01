@@ -18,6 +18,8 @@ the timing, but the seam was already there.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from kstrl import autonomy_replay
@@ -62,15 +64,27 @@ class TestTheTwoInfrastructureConsumersAgree:
     about the factory's judgement. An earlier version of this class
     asserted ``startswith(INFRA_FAILURE_PREFIXES)`` instead, which
     cannot fail while the tuple is built from ``INFRASTRUCTURE_CHECKS``:
-    it restated the constructor rather than testing anything."""
+    it restated the constructor rather than testing anything.
+
+    ``decisive`` is asserted ONCE, in the test below, and not beside
+    every ``infra_aborted``. #339 review measured why: these records all
+    have ``completed + failed > 0``, so ``decisive`` reduces to ``not
+    infra_aborted`` and a second assertion beside the first is its own
+    negation restated. One case establishes that ``decisive`` consults
+    the property; the rest would only repeat the signature literal, and
+    a typo in the repeat would silently change what it tests."""
 
     @pytest.mark.parametrize("check", sorted(INFRASTRUCTURE_CHECKS))
     def test_an_infrastructure_check_costs_the_run_its_verdict(self, check: str) -> None:
-        assert _run_dominated_by(f"{check}:any-code").infra_aborted, (
+        run = _run_dominated_by(f"{check}:any-code")
+        assert run.infra_aborted, (
             f"{check!r} is 'infrastructure' in the journal but a decisive "
             f"judgement failure to autonomy_replay."
         )
-        assert not _run_dominated_by(f"{check}:any-code").decisive
+        # The one place `decisive` is asserted next to `infra_aborted`:
+        # it is what couples the property to the ladder's evidence, and
+        # asserting it again elsewhere would restate this negation.
+        assert not run.decisive
 
     def test_the_replay_treats_exactly_these_signatures_as_plumbing(self) -> None:
         """The contents, not the derivation. The four rows beyond the
@@ -100,8 +114,10 @@ class TestTheTwoInfrastructureConsumersAgree:
         so the run says nothing about judgement. Both halves asserted,
         because the divergence is only defensible while it is on
         purpose."""
+        # Not also `"scope_unreadable" not in INFRASTRUCTURE_CHECKS`:
+        # that set is comprehended from this table on the category, so
+        # the line above already entails it.
         assert _CATEGORY_BY_CHECK["scope_unreadable"] == "verification"
-        assert "scope_unreadable" not in INFRASTRUCTURE_CHECKS
         assert _run_dominated_by("scope_unreadable:no-trustworthy-scope").infra_aborted
 
     def test_a_judgement_failure_still_counts_as_evidence(self) -> None:
@@ -110,7 +126,6 @@ class TestTheTwoInfrastructureConsumersAgree:
         either: a scope violation is a verdict on the change, and the
         colon is the only thing separating the two names."""
         assert not _run_dominated_by("diff_scope:files-outside-allowed-scope").infra_aborted
-        assert _run_dominated_by("diff_scope:files-outside-allowed-scope").decisive
         assert not _run_dominated_by("review:scope_creep").infra_aborted
         assert not _run_dominated_by("test_suite:assertion-error").infra_aborted
 
@@ -122,7 +137,6 @@ class TestTheTwoInfrastructureConsumersAgree:
         fails at ``phase="pr"`` and the phase becomes the check name, so
         the ``pr`` row - real push, create and merge plumbing - swallowed
         it and the replay threw the whole run away."""
-        assert _run_dominated_by("review:hitl-rejected").decisive
         assert not _run_dominated_by("review:hitl-rejected").infra_aborted
 
     def test_asking_for_changes_is_a_verdict_too(self) -> None:
@@ -130,7 +144,6 @@ class TestTheTwoInfrastructureConsumersAgree:
         fixed. ``CheckpointDecision.RETRY`` is a human reading the change
         and asking for different work, which is a judgement about the
         change by the same argument that makes a rejection one."""
-        assert _run_dominated_by("review:hitl-changes-requested").decisive
         assert not _run_dominated_by("review:hitl-changes-requested").infra_aborted
 
     def test_the_unanswered_gate_stays_an_outage(self) -> None:
@@ -149,7 +162,6 @@ class TestTheTwoInfrastructureConsumersAgree:
         assert parked.startswith("pr:")
         assert _CATEGORY_BY_CHECK["pr"] == "infrastructure"
         assert _run_dominated_by(parked).infra_aborted
-        assert not _run_dominated_by(parked).decisive
 
 
 class TestTheTableMovesTheLadder:
@@ -204,13 +216,7 @@ class TestTheTableMovesTheLadder:
         ``sufficient_data`` flips with it, which is what changes
         ``ks autonomy replay``'s exit status from 0 to 2."""
         runs = [
-            run_record(
-                run_id=f"r{i}",
-                timestamp=f"2026-07-{(i % 28) + 1:02d}T00:00:00Z",
-                project="p",
-                common_failure="diff:could-not-fetch-diff",
-            )
-            for i in range(12)
+            replace(clean_run(i), common_failure="diff:could-not-fetch-diff") for i in range(12)
         ]
 
         monkeypatch.setattr(autonomy_replay, "INFRA_FAILURE_PREFIXES", _prefixes_without("diff:"))
