@@ -1769,16 +1769,30 @@ class TestProcessGroupSupervision:
         unit-tested there. What stays here is the half that move cannot
         prove: that THIS caller still routes through it, so a mocked Popen
         reaching `terminate_process_group` signals nothing at all.
+
+        THE SPY IS LOAD-BEARING, not decoration. Round-1 review deleted
+        the `safe_pgid(process)` call from `terminate_process_group` and
+        this test stayed green: with no lookup, `pgid` is None, the
+        function takes its no-pgid branch, and "nothing was signalled" is
+        true for the wrong reason. Asserting the guard was ASKED is the
+        only thing here that tells the two apart. Complete removal of
+        signalling is still caught next door by the real-tree tests,
+        so this was never silent overall - but this test did not pin
+        what its name says.
         """
-        from unittest.mock import MagicMock
+        from kstrl.procgroup import safe_pgid
 
         fake = MagicMock()
-        with patch("kstrl.serve.os.killpg") as killpg:
+        with (
+            patch("kstrl.serve.safe_pgid", wraps=safe_pgid) as guard,
+            patch("kstrl.serve.os.killpg") as killpg,
+        ):
             # A plausible group, so the pgid guard cannot be what rejects
             # it and only the isinstance check can.
             with patch("kstrl.serve.os.getpgid", return_value=99999):
                 fake.poll.return_value = 0
                 assert terminate_process_group(fake).reaped is True
+            guard.assert_called_once_with(fake)
             assert killpg.call_count == 0, "must never signal a bogus group"
 
     # The own-group half of this routing question is

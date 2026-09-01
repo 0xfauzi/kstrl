@@ -18,6 +18,7 @@ from __future__ import annotations
 import ast
 import os
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -70,6 +71,37 @@ class TestTheGroupIdIsGuardedBeforeAnySignal:
     def test_a_real_group_is_still_signalled(self) -> None:
         """The positive control, or the guard could be rejecting all."""
         assert _may_signal_group(os.getpgrp()) is True
+
+    def test_a_platform_with_getpgid_but_no_killpg_cannot_signal(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The `killpg` half of the POSIX gate, on its own.
+
+        Round-1 review found that deleting `hasattr(os, "killpg")` from
+        `_may_signal_group` left all 25 safe-pgid tests green, because
+        the only test that removed a syscall removed BOTH and stopped at
+        the `getpgid` gate in `safe_pgid`. The two gates guard two
+        different calls, so they need separating to be tested: this one
+        leaves `getpgid` in place, so every earlier check passes and the
+        `killpg` gate is the only thing left that can refuse.
+
+        POSIX always has both, so the case cannot arise here naturally.
+        `monkeypatch.delattr` is what makes it exercisable, and it is
+        exact: an absent `killpg` is an AttributeError at the call, which
+        no caller catches, so the wrong answer here is a crash in the
+        timeout path rather than a wrong pgid.
+        """
+        monkeypatch.delattr(os, "killpg")
+
+        assert _may_signal_group(99999) is False
+
+        fake = procs.fake_popen(4242)
+        with patch.object(os, "getpgid", lambda pid: 99999):
+            assert procgroup.safe_pgid(fake) is None, (
+                "a pgid handed back on a platform that cannot signal it is a "
+                "crash in the caller, not a kill"
+            )
 
 
 class TestSafePgidIsTheOneCopyOfThePopenGuard:
@@ -165,31 +197,265 @@ class TestSafePgidIsTheOneCopyOfThePopenGuard:
         assert procgroup.safe_pgid(fake) is None
 
 
+#: The module and callable the net looks for.
+_TARGET_MODULE = "os"
+_TARGET_FUNC = "getpgid"
+
+
+@dataclass(frozen=True)
+class _Scan:
+    """Everything the resolver needs, collected in ONE tree walk.
+
+    The first version of this took four walks per file: imports, class
+    bodies, a fixed-point pass that re-walked on every iteration, and the
+    calls. Measured over the 126 files this net sweeps, that was 942,444
+    node visits against 235,611, and it put the sweep at 0.41s against
+    0.19s for the literal matcher it replaced. Bucketing gets the same
+    answer on all 146 inputs checked, in 0.22s.
+    """
+
+    imports: list[ast.Import]
+    from_imports: list[ast.ImportFrom]
+    #: (targets, value) for every assignment, including class bodies.
+    assigns: list[tuple[list[ast.expr], ast.expr]]
+    #: Names bound in a class body, so reachable as an attribute too.
+    class_bound: set[str]
+    calls: list[ast.Call]
+
+
+def _assign_targets(node: ast.Assign | ast.AnnAssign) -> list[ast.expr]:
+    if isinstance(node, ast.Assign):
+        return list(node.targets)
+    return [node.target]
+
+
+def _class_body_names(node: ast.ClassDef) -> set[str]:
+    """Names a class body binds, so reachable as an attribute of the class."""
+    names: set[str] = set()
+    for stmt in node.body:
+        if isinstance(stmt, ast.Assign | ast.AnnAssign):
+            names.update(t.id for t in _assign_targets(stmt) if isinstance(t, ast.Name))
+    return names
+
+
+def _scan(tree: ast.Module) -> _Scan:
+    scan = _Scan([], [], [], set(), [])
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            scan.imports.append(node)
+        elif isinstance(node, ast.ImportFrom):
+            scan.from_imports.append(node)
+        elif isinstance(node, ast.Assign | ast.AnnAssign):
+            if node.value is not None:
+                scan.assigns.append((_assign_targets(node), node.value))
+        elif isinstance(node, ast.ClassDef):
+            scan.class_bound.update(_class_body_names(node))
+        elif isinstance(node, ast.Call):
+            scan.calls.append(node)
+    return scan
+
+
+def _reaches_target(
+    node: ast.expr,
+    aliases: set[str],
+    direct: set[str],
+    attrs: set[str],
+) -> bool:
+    """Whether this expression evaluates to ``os.getpgid``."""
+    if isinstance(node, ast.Attribute):
+        if (
+            node.attr == _TARGET_FUNC
+            and isinstance(node.value, ast.Name)
+            and node.value.id in aliases
+        ):
+            return True
+        if node.attr in attrs:
+            return True
+    return isinstance(node, ast.Name) and node.id in direct
+
+
+def _module_aliases(scan: _Scan) -> set[str]:
+    """Every name bound to the ``os`` module itself, aliases included."""
+    aliases = {_TARGET_MODULE}
+    for node in scan.imports:
+        for alias in node.names:
+            # `import os.path` binds `os`, which is already in the set.
+            if alias.asname is not None and alias.name == _TARGET_MODULE:
+                aliases.add(alias.asname)
+    return aliases
+
+
+def _imported_callables(scan: _Scan) -> set[str]:
+    """Every name `from os import getpgid` binds to the callable."""
+    direct: set[str] = set()
+    for node in scan.from_imports:
+        if node.module != _TARGET_MODULE or node.level != 0:
+            continue
+        for alias in node.names:
+            if alias.name == _TARGET_FUNC:
+                direct.add(alias.asname or alias.name)
+    return direct
+
+
+def _absorb(
+    targets: list[ast.expr],
+    class_bound: set[str],
+    direct: set[str],
+    attrs: set[str],
+) -> bool:
+    """Bind the targets of one resolving assignment. True if a set grew."""
+    grew = False
+    for target in targets:
+        if isinstance(target, ast.Name):
+            if target.id not in direct:
+                direct.add(target.id)
+                grew = True
+            # A class body's `lookup = os.getpgid` is reachable as
+            # `Cls.lookup` as well, so it belongs in BOTH buckets.
+            if target.id in class_bound and target.id not in attrs:
+                attrs.add(target.id)
+                grew = True
+        elif isinstance(target, ast.Attribute) and target.attr not in attrs:
+            attrs.add(target.attr)
+            grew = True
+    return grew
+
+
+def _bindings(scan: _Scan) -> tuple[set[str], set[str], set[str]]:
+    """(names for the os module, names for the callable, attribute names).
+
+    Resolving IMPORTS AND REBINDS is the whole difference between this
+    net and the one #308 first shipped, which matched the literal shape
+    ``os.getpgid(...)`` and nothing else. Round-1 review defeated that
+    version by planting a complete working fourth guard behind
+    ``import os as operating_system``, and three further spellings went
+    through with it.
+
+    THE TWO NAME BUCKETS ARE NOT ONE. ``direct`` is names that ARE the
+    callable, ``attrs`` is attribute names that resolve to it. Merging
+    them costs precision that ``_MUST_IGNORE`` pins: after
+    ``lookup = os.getpgid`` at module level, an unrelated
+    ``other.lookup(1)`` is not this callable, and one merged set cannot
+    say so.
+    """
+    aliases = _module_aliases(scan)
+    direct = _imported_callables(scan)
+    attrs: set[str] = set()
+
+    # To a fixed point, so `a = os.getpgid; b = a; b(pid)` resolves. No
+    # iteration bound: both sets only grow, over the finite set of names
+    # in one file, so this terminates. An earlier version capped it at 16
+    # and called the cap cycle protection, which was two errors - a cycle
+    # cannot spin a monotonically growing set, and the cap silently
+    # stopped resolving a rebind chain longer than itself.
+    while True:
+        grew = False
+        for targets, value in scan.assigns:
+            if _reaches_target(value, aliases, direct, attrs):
+                grew |= _absorb(targets, scan.class_bound, direct, attrs)
+        if not grew:
+            return aliases, direct, attrs
+
+
+def _getpgid_calls(source: str) -> list[int]:
+    """Line numbers of every call in ``source`` that reaches ``os.getpgid``."""
+    scan = _scan(ast.parse(source))
+    aliases, direct, attrs = _bindings(scan)
+    return sorted(
+        node.lineno for node in scan.calls if _reaches_target(node.func, aliases, direct, attrs)
+    )
+
+
+#: Every spelling the net must flag. `module alias` is the one round-1
+#: review planted a working fourth copy of the guard behind; the three
+#: below it are the rest of what went through with it. The others are
+#: forms the sibling guards in this repo were each separately holed by,
+#: kept as regression cover against a matcher that starts reading
+#: arguments or scope again.
+_MUST_CATCH = {
+    "direct": "import os\npgid = os.getpgid(pid)\n",
+    "keyword argument": "import os\npgid = os.getpgid(pid=pid)\n",
+    "inside a helper": "import os\n\n\ndef helper(pid):\n    return os.getpgid(pid)\n",
+    "nested function": (
+        "import os\n\n\ndef outer():\n    def inner():\n"
+        "        return os.getpgid(1)\n\n    return inner\n"
+    ),
+    "module alias": "import os as operating_system\npgid = operating_system.getpgid(pid)\n",
+    "from import": "from os import getpgid\npgid = getpgid(pid)\n",
+    "from import aliased": "from os import getpgid as gp\npgid = gp(pid)\n",
+    "callable rebind": "import os\nlookup = os.getpgid\npgid = lookup(pid)\n",
+    "rebind of a rebind": "import os\na = os.getpgid\nb = a\npgid = b(pid)\n",
+    "annotated assignment": (
+        "import os\nfrom collections.abc import Callable\n"
+        "lookup: Callable[[int], int] = os.getpgid\npgid = lookup(pid)\n"
+    ),
+    "class attribute": (
+        "import os\n\n\nclass G:\n    lookup = os.getpgid\n\n\npgid = G.lookup(pid)\n"
+    ),
+    "instance attribute": (
+        "import os\n\n\nclass G:\n    lookup = os.getpgid\n\n\npgid = G().lookup(pid)\n"
+    ),
+}
+
+#: Spellings that must NOT be flagged, or the net fails closed so hard
+#: that nobody keeps it. A name is not a binding.
+_MUST_IGNORE = {
+    "unrelated method of the same name": (
+        "class C:\n    def getpgid(self):\n        return 1\n\n\nC().getpgid()\n"
+    ),
+    "unrelated free function of the same name": (
+        "def getpgid(pid):\n    return 1\n\n\ngetpgid(2)\n"
+    ),
+    "the attribute without the call": "import os\nlookup = os.getpgid\n",
+    "a different os call": "import os\npid = os.getpid()\n",
+    # Pins the precision the two name buckets buy: `lookup` is the
+    # callable, `other.lookup` is somebody else's attribute of that name.
+    "the same name as an attribute of something else": (
+        "import os\nlookup = os.getpgid\npgid = other.lookup(1)\n"
+    ),
+}
+
+
 class TestNoCallerCarriesItsOwnCopy:
     """The point of #308: a fourth site would be invisible to the above.
 
-    WHAT THIS NET SEES is an `os.getpgid(...)` call written as an
-    attribute on a name called `os`. That is how all three copies were
-    spelled and how a fourth would most likely be spelled. It does NOT
-    see `from os import getpgid` or a rebound module, which is a known
-    miss rather than a claim: the test below plants that spelling and
-    records that it goes through.
+    WHAT THIS NET SEES is a call that RESOLVES to `os.getpgid` - through
+    module aliases, from-imports, rebinds and class attributes - and not
+    just the literal shape `os.getpgid(...)` that #308 first shipped.
+    Round-1 review defeated that version by planting a complete working
+    guard behind `import os as operating_system`.
+
+    WHAT IT DOES NOT SEE, so the assert message does not overclaim it: a
+    fourth site that gets a pgid from somewhere OTHER than this lookup -
+    a run record, a pidfile, an int off the wire - and signals it. That
+    is the bare-pgid hazard, it is real, and it is #329, not this.
+
+    THIS IS A LOCAL FIX TO A REPO-WIDE DEFECT, and saying so is the
+    point. About eleven AST guards in this tree each re-implement this
+    resolution, and they have been holed one at a time: the timeout audit
+    missed `wait(timeout=None)` and `with Popen(...)`, then still missed
+    `from subprocess import Popen as Spawn` after being repaired once;
+    the toml guard fell to `import tomllib as _tl`; the journal guard to
+    `open(path, mode="a")`; and this one to a module alias. That is five
+    instances of one defect, of which this is the fifth. #324 tracks
+    factoring the resolution onto a shared helper, and two round-2
+    reviewers named `tests/test_toml_readers.py` as the closest existing
+    copy. This class does not solve that, and a reader should not take it
+    as though the problem were local.
+
+    WHAT IT STILL MISSES is recorded by `test_the_remaining_misses`, so
+    the reach is a measured fact rather than a claim.
     """
 
-    def _offenders(self, source: str) -> list[int]:
-        found: list[int] = []
-        for node in ast.walk(ast.parse(source)):
-            if not isinstance(node, ast.Call):
-                continue
-            func = node.func
-            if (
-                isinstance(func, ast.Attribute)
-                and func.attr == "getpgid"
-                and isinstance(func.value, ast.Name)
-                and func.value.id == "os"
-            ):
-                found.append(node.lineno)
-        return found
+    @pytest.mark.parametrize("spelling", sorted(_MUST_CATCH))
+    def test_every_spelling_of_the_call_is_caught(self, spelling: str) -> None:
+        assert _getpgid_calls(_MUST_CATCH[spelling]) != [], (
+            f"a fourth copy written as {spelling!r} would go through the net"
+        )
+
+    @pytest.mark.parametrize("spelling", sorted(_MUST_IGNORE))
+    def test_a_name_is_not_a_binding(self, spelling: str) -> None:
+        assert _getpgid_calls(_MUST_IGNORE[spelling]) == []
 
     def test_no_module_outside_procgroup_derives_a_pgid(self) -> None:
         owner = REPO_ROOT / "kstrl" / "procgroup.py"
@@ -197,23 +463,39 @@ class TestNoCallerCarriesItsOwnCopy:
         for path in sorted((REPO_ROOT / "kstrl").rglob("*.py")):
             if path == owner:
                 continue
-            for lineno in self._offenders(path.read_text(encoding="utf-8")):
+            for lineno in _getpgid_calls(path.read_text(encoding="utf-8")):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno}")
         assert offenders == [], (
-            "os.getpgid outside procgroup means a fourth copy of the guard; "
-            "call procgroup.safe_pgid instead"
+            "deriving a process-group id outside procgroup is how a fourth "
+            "copy of the safe-pgid guard starts; call procgroup.safe_pgid"
         )
 
-    def test_the_net_still_catches_the_spelling_all_three_copies_used(self) -> None:
-        """The control. Without this the test above passes on an empty
-        walk, a broken parse or a matcher that matches nothing."""
-        assert self._offenders("import os\npgid = os.getpgid(pid)\n") == [2]
-
     def test_the_owner_is_the_only_file_excluded(self) -> None:
+        """The control on the sweep. Without it the test above passes on
+        an empty walk, a broken parse or a matcher that matches nothing."""
         owner = REPO_ROOT / "kstrl" / "procgroup.py"
-        assert self._offenders(owner.read_text(encoding="utf-8")) != []
+        assert _getpgid_calls(owner.read_text(encoding="utf-8")) != []
 
-    def test_a_bare_import_is_a_known_miss(self) -> None:
-        """Written down rather than fixed, so the net's reach is a
-        measured fact and not something a reader has to assume."""
-        assert self._offenders("from os import getpgid\npgid = getpgid(pid)\n") == []
+    @pytest.mark.xfail(
+        strict=False,
+        reason=(
+            "known misses, recorded rather than fixed. Marked xfail and "
+            "written the way a PASS should read, so strengthening the "
+            "resolver under #324 reports XPASS instead of breaking a test "
+            "that asserted the hole stays open."
+        ),
+    )
+    @pytest.mark.parametrize(
+        "spelling",
+        [
+            'import os\npgid = getattr(os, "getpgid")(pid)\n',
+            'import importlib\npgid = importlib.import_module("os").getpgid(pid)\n',
+            'import os\nTABLE = {"f": os.getpgid}\npgid = TABLE["f"](pid)\n',
+        ],
+    )
+    def test_the_remaining_misses(self, spelling: str) -> None:
+        """Each needs value tracking through a string or a container,
+        which is where a per-file AST net stops being the right tool.
+        They are also spellings nobody reaches for by accident, unlike
+        the module alias that got through round 1."""
+        assert _getpgid_calls(spelling) != []
