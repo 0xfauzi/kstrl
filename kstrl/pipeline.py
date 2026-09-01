@@ -2447,6 +2447,22 @@ class ComponentPipeline:
             signatures=failure.signatures,
         )
 
+    def _warn_not_measured(self, comp: Component, verification: VerificationResult) -> None:
+        """Say out loud what Phase 1 was asked to measure and could not.
+
+        #306. Not a gate failure: a gap does not reach
+        ``verification.passed``, and it is deliberately kept out of
+        ``as_context`` too, because no engineer iteration can install a
+        missing binary and a retry would burn ``repair_max_runs``
+        proving it. Not nothing either: before #306 the row said PASS,
+        and omitting the row alone said nothing at all, so a
+        permanently broken mutation gate looked exactly like a working
+        one. This is the third option, and it is the only place the
+        pipeline says it.
+        """
+        for gap in verification.not_measured:
+            self.ui.warn(f"  {comp.id}: {gap.check} not measured ({gap.reason}) - {gap.detail}")
+
     def _phase_verify(
         self,
         comp: Component,
@@ -2580,8 +2596,11 @@ class ComponentPipeline:
                 checks=tuple(c.name for c in verification.checks),
                 failures=tuple(c.message for c in verification.checks if not c.passed),
                 duration_seconds=round(verify_duration, 2),
+                not_measured=tuple(g.as_token() for g in verification.not_measured),
             )
         )
+
+        self._warn_not_measured(comp, verification)
 
         if not verification.passed:
             failing = [c for c in verification.checks if not c.passed]

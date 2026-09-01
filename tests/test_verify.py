@@ -12,12 +12,22 @@ from unittest.mock import patch
 
 import pytest
 
+from kstrl.events import VerificationResultEvent
 from kstrl.fixtures import FixturesConfig
 from kstrl.verify import (
+    MUTATION_TESTING_CHECK,
+    NOT_MEASURED_COMMAND_FAILED,
+    NOT_MEASURED_NO_MUTANTS,
+    NOT_MEASURED_NO_TARGET,
+    NOT_MEASURED_READ_ONLY,
+    NOT_MEASURED_TIMED_OUT,
+    NOT_MEASURED_TOOL_MISSING,
     CheckResult,
     MechanicalVerification,
+    NotMeasured,
     VerificationResult,
     VerifyConfig,
+    _count_before,
     check_bad_patterns,
     check_dead_code,
     check_diff_scope,
@@ -30,7 +40,7 @@ from kstrl.verify import (
     run_mechanical_verification,
 )
 from tests.helpers.tool_output import tool_output
-from tests.helpers.verify_phase import CHEAP_GATES
+from tests.helpers.verify_phase import CHEAP_GATES, phase_verify_surfaces
 
 VITEST_FAILURE_OUTPUT = tool_output("vitest-2.1.9-writers-room.txt")
 
@@ -811,15 +821,20 @@ MUTATION_GATES = replace(CHEAP_GATES, mutation_testing=True)
 
 def _verify_with_stub_mutation(
     root: Path,
-    measured: CheckResult | None,
+    measured: CheckResult | NotMeasured,
     *,
     config: VerifyConfig | None = None,
     **kwargs: bool,
 ) -> VerificationResult:
     """Phase 1 over ``root`` with ``check_mutation_score`` stubbed.
 
+    ``measured`` is whichever of the two things that function can now
+    return, so a caller has to say which arm it is exercising - a row or
+    a gap - instead of passing None and letting the plumbing decide.
+
     The whole result, not just the mutation rows: a test that only ever
-    sees the rows cannot tell whether a FAIL still fails the run.
+    sees the rows cannot tell whether a FAIL still fails the run, nor
+    whether a gap was recorded beside it.
     """
     with patch("kstrl.verify.check_mutation_score", return_value=measured):
         return run_mechanical_verification(
@@ -836,63 +851,131 @@ def _mutation_rows(result: VerificationResult) -> list[CheckResult]:
     return [c for c in result.checks if c.name == "mutation_testing"]
 
 
+def _gap(detail: str = "mutmut is not on PATH") -> NotMeasured:
+    """The record every not-measured test in this module works from."""
+    return NotMeasured(MUTATION_TESTING_CHECK, NOT_MEASURED_TOOL_MISSING, detail)
+
+
+def _result_with_gap() -> VerificationResult:
+    """A passing result carrying one gap beside one real row.
+
+    The row matters: a result with nothing in ``checks`` cannot show
+    that the gap stayed OUT of them.
+    """
+    return VerificationResult(
+        passed=True,
+        checks=[CheckResult("test_suite", True, "Tests passed")],
+        not_measured=[_gap()],
+    )
+
+
 class TestCheckMutationScore:
-    """#306: every path that measures no score returns None, not a pass.
+    """#306: every path that measures no score returns NotMeasured.
 
-    Why None and not a not-measured status is argued once, in
-    ``verify.check_mutation_score``.
-
-    ``is None`` rather than ``not result``: a falsy CheckResult would
-    satisfy the loose form, and the point is that there is no result at
-    all.
+    Each test names its own ``reason`` token AND asserts that the
+    collaborators downstream of the guard it is named for never ran.
+    Both halves are the round-2 fix, and they exist because round 1
+    asserted only ``result is None``: with that assertion, DELETING the
+    missing-binary guard, the no-Python-file guard or the timeout guard
+    left all three of their own tests passing, because a later exit also
+    returned None. Absence had five causes and the tests could not tell
+    them apart, which is the same defect that made the read-only test
+    wrong. A test that cannot fail for its own named reason is not a
+    test.
     """
 
     def test_mutmut_not_installed_measures_nothing(self, tmp_path: Path) -> None:
-        with patch("shutil.which", return_value=None):
-            result = check_mutation_score(tmp_path, "main")
-        assert result is None
-
-    def test_no_py_files_changed_measures_nothing(self, tmp_path: Path) -> None:
+        """Everything downstream is stubbed to SUCCEED, deliberately: a
+        deleted guard then reaches a 90% pass rather than an exception,
+        so this fails on its own reason and not on a TypeError."""
         with (
-            patch("shutil.which", return_value="/usr/bin/mutmut"),
-            patch("kstrl.verify.git.get_diff_names", return_value=["readme.md"]),
-        ):
-            result = check_mutation_score(tmp_path, "main")
-        assert result is None
-
-    def test_only_test_files_changed_measures_nothing(self, tmp_path: Path) -> None:
-        with (
-            patch("shutil.which", return_value="/usr/bin/mutmut"),
+            patch("shutil.which", return_value=None),
             patch(
                 "kstrl.verify.git.get_diff_names",
-                return_value=["test_main.py", "tests/test_foo.py"],
-            ),
+                return_value=["src/main.py"],
+            ) as diff_names,
+            patch(
+                "kstrl.verify.run_scrubbed",
+                return_value=_mutmut_completed("9 killed\n1 survived\n"),
+            ) as run_scrubbed,
         ):
             result = check_mutation_score(tmp_path, "main")
-        assert result is None
+        assert isinstance(result, NotMeasured)
+        assert result.reason == NOT_MEASURED_TOOL_MISSING
+        # The guard's own observable: nothing downstream of it ran.
+        diff_names.assert_not_called()
+        run_scrubbed.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "changed",
+        [["readme.md"], ["test_main.py", "tests/test_foo.py"]],
+        ids=["no-python", "only-test-python"],
+    )
+    def test_no_mutable_file_changed_measures_nothing(
+        self,
+        tmp_path: Path,
+        changed: list[str],
+    ) -> None:
+        """Both halves of the filter: the ``.py`` clause and the
+        ``startswith("test")`` clause."""
+        with (
+            patch("shutil.which", return_value="/usr/bin/mutmut"),
+            patch("kstrl.verify.git.get_diff_names", return_value=changed),
+            patch(
+                "kstrl.verify.run_scrubbed",
+                return_value=_mutmut_completed("9 killed\n1 survived\n"),
+            ) as run_scrubbed,
+        ):
+            result = check_mutation_score(tmp_path, "main")
+        assert isinstance(result, NotMeasured)
+        assert result.reason == NOT_MEASURED_NO_TARGET
+        # Delete the guard and mutmut is invoked with an EMPTY
+        # --paths-to-mutate and this stub hands back a 90% score, so the
+        # check reports a pass it never measured. That is the shape of
+        # #306 itself.
+        run_scrubbed.assert_not_called()
 
     def test_timeout_measures_nothing(self, tmp_path: Path) -> None:
         with (
             patch("shutil.which", return_value="/usr/bin/mutmut"),
-            patch(
-                "kstrl.verify.git.get_diff_names",
-                return_value=["src/main.py"],
-            ),
+            patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py"]),
             patch(
                 "kstrl.verify.run_scrubbed",
                 side_effect=TimeoutExpired("mutmut", 600),
-            ),
+            ) as run_scrubbed,
         ):
             result = check_mutation_score(tmp_path, "main", timeout=600)
-        assert result is None
+        assert isinstance(result, NotMeasured)
+        assert result.reason == NOT_MEASURED_TIMED_OUT
+        # Exactly the `mutmut run` call and no `mutmut results` after
+        # it: returning on timeout is the point, and falling through
+        # would read counts off a run that never finished.
+        assert run_scrubbed.call_count == 1
+        assert "mutmut run" in str(run_scrubbed.call_args)
+
+    def test_a_failing_mutmut_is_not_an_empty_one(self, tmp_path: Path) -> None:
+        """A broken mutation command and a clean run with nothing to do
+        produce byte-identical empty output; only ``returncode``
+        separates them, and round 1 reported both as the same silence."""
+        broken = CompletedProcess(
+            args="mutmut",
+            returncode=2,
+            stdout="",
+            stderr="error: unrecognised option --paths-to-mutate\n",
+        )
+        with (
+            patch("shutil.which", return_value="/usr/bin/mutmut"),
+            patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py"]),
+            patch("kstrl.verify.run_scrubbed", return_value=broken),
+        ):
+            result = check_mutation_score(tmp_path, "main")
+        assert isinstance(result, NotMeasured)
+        assert result.reason == NOT_MEASURED_COMMAND_FAILED
+        assert "unrecognised option" in result.detail
 
     def test_no_mutants_generated_measures_nothing(self, tmp_path: Path) -> None:
-        """mutmut ran and produced neither a killed nor a survived count.
-
-        The fifth path, and the same defect as the four the issue named:
-        0/0 is not a score, so it was reported as ``passed=True`` with
-        the message "No mutations generated".
-        """
+        """mutmut exited zero and produced neither count. 0/0 is not a
+        score, and round 1 reported it as ``passed=True``."""
         with (
             patch("shutil.which", return_value="/usr/bin/mutmut"),
             patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py"]),
@@ -902,11 +985,29 @@ class TestCheckMutationScore:
             ),
         ):
             result = check_mutation_score(tmp_path, "main")
-        assert result is None
+        assert isinstance(result, NotMeasured)
+        assert result.reason == NOT_MEASURED_NO_MUTANTS
+
+    def test_every_reason_is_a_distinct_token(self) -> None:
+        """Six reasons, six values. A token that duplicated another would
+        make two of them indistinguishable in `ks sense --json` and in
+        `events.jsonl` while every test above still passed."""
+        reasons = [
+            NOT_MEASURED_READ_ONLY,
+            NOT_MEASURED_TOOL_MISSING,
+            NOT_MEASURED_NO_TARGET,
+            NOT_MEASURED_TIMED_OUT,
+            NOT_MEASURED_COMMAND_FAILED,
+            NOT_MEASURED_NO_MUTANTS,
+        ]
+        assert len(set(reasons)) == len(reasons) == 6
 
     @pytest.mark.parametrize(
         "stdout, passed, pct",
-        [("9 killed\n1 survived\n", True, "90.0%"), ("1 killed\n9 survived\n", False, "10.0%")],
+        [
+            ("9 killed\n1 survived\n", True, "90.0%"),
+            ("1 killed\n9 survived\n", False, "10.0%"),
+        ],
         ids=["above-threshold", "below-threshold"],
     )
     def test_a_measured_score_is_the_only_thing_that_gets_a_row(
@@ -919,7 +1020,7 @@ class TestCheckMutationScore:
         """The other half of the contract: a real score still reports.
 
         Without these two the class would be satisfied by a function
-        that returns None unconditionally.
+        that returns NotMeasured unconditionally.
         """
         with (
             patch("shutil.which", return_value="/usr/bin/mutmut"),
@@ -927,23 +1028,76 @@ class TestCheckMutationScore:
             patch("kstrl.verify.run_scrubbed", return_value=_mutmut_completed(stdout)),
         ):
             result = check_mutation_score(tmp_path, "main", threshold=50.0)
-        assert result is not None
+        assert isinstance(result, CheckResult)
         assert result.name == "mutation_testing"
         assert result.passed is passed
         assert pct in result.message
 
 
+class TestCountBefore:
+    """The mutmut counter, extracted in #306 round 2."""
+
+    @pytest.mark.parametrize(
+        "text, expected",
+        [
+            ("12 killed", 12),
+            ("Killed: nope", 0),
+            ("", 0),
+            ("killed", 0),
+            ("3 killed\n7 killed\n", 7),
+            ("- 5 KILLED mutants", 5),
+        ],
+        ids=[
+            "plain",
+            "non-numeric",
+            "empty",
+            "no-preceding-token",
+            "last-wins",
+            "case-and-prose",
+        ],
+    )
+    def test_counts(self, text: str, expected: int) -> None:
+        assert _count_before("killed", text) == expected
+
+    def test_a_coloured_line_counts_as_zero(self) -> None:
+        """The limit, named rather than left to look robust.
+
+        Every other tool-output parser in this repo reads text that has
+        been through ``parsers.strip_ansi``; this one reads mutmut's
+        stdout raw, so an ANSI-coloured count is invisible to it. That
+        is pre-existing behaviour carried through the #306 extraction,
+        not something it introduced, and stripping here would be a
+        behaviour change with no measurement behind it. What it must not
+        do is go unrecorded: 0 killed and 0 survived is
+        ``no_mutants``, and this is a way to reach that wrongly.
+        """
+        assert _count_before("killed", "\x1b[32m12\x1b[0m killed") == 0
+
+    def test_words_do_not_bleed(self) -> None:
+        """``survived`` must not be read off a ``killed`` line. Two
+        independent loops made that structurally impossible; one shared
+        helper has to keep it true."""
+        text = "9 killed\n1 survived\n"
+        assert _count_before("killed", text) == 9
+        assert _count_before("survived", text) == 1
+
+
 class TestMutationRowOnlyExistsWhenMeasured:
-    """#306 at the level every consumer reads: the ``checks`` list."""
+    """#306 at the level every consumer reads: ``checks``, and the
+    sidecar beside it."""
 
-    def test_no_measurement_appends_no_row(self, tmp_path: Path) -> None:
-        assert _mutation_rows(_verify_with_stub_mutation(tmp_path, None)) == []
+    def test_no_measurement_appends_no_row_but_records_why(self, tmp_path: Path) -> None:
+        gap = _gap()
+        result = _verify_with_stub_mutation(tmp_path, gap)
+        assert _mutation_rows(result) == []
+        assert result.not_measured == [gap]
 
-    def test_a_measurement_appends_its_row(self, tmp_path: Path) -> None:
+    def test_a_measurement_appends_its_row_and_records_no_gap(self, tmp_path: Path) -> None:
         """The other half: without this, dropping every row would pass."""
         measured = CheckResult("mutation_testing", True, "Mutation score 90.0%")
         result = _verify_with_stub_mutation(tmp_path, measured)
         assert _mutation_rows(result) == [measured]
+        assert result.not_measured == []
         assert result.passed is True
 
     def test_a_failing_measurement_still_fails_the_run(self, tmp_path: Path) -> None:
@@ -958,9 +1112,11 @@ class TestMutationRowOnlyExistsWhenMeasured:
         assert _mutation_rows(result) == [measured]
         assert result.passed is False
 
-    def test_toggle_off_appends_no_row(self, tmp_path: Path) -> None:
-        """The pre-existing meaning of an absent row, unchanged: a
-        consumer already could not assume this row exists.
+    def test_toggle_off_records_nothing_at_all(self, tmp_path: Path) -> None:
+        """The sixth state, and the line the sidecar draws. A check the
+        operator turned OFF gets no row AND no gap: silence is a complete
+        answer to a question nobody asked, and an incomplete one to a
+        question they did.
 
         ``measured`` is a row deliberately, so a toggle read as ``True``
         would produce one and fail here.
@@ -971,6 +1127,116 @@ class TestMutationRowOnlyExistsWhenMeasured:
             config=CHEAP_GATES,
         )
         assert _mutation_rows(result) == []
+        assert result.not_measured == []
+
+
+class TestNotMeasuredIsReportedButNeverGates:
+    """#306 round 2: the sidecar is visible everywhere a human looks and
+    invisible everywhere a machine decides.
+
+    Round 1 omitted the row and stopped there, which was honest and
+    mute: an operator who set ``mutation_testing = true`` with no mutmut
+    installed got a clean report and a gate that silently never fired.
+    """
+
+    def test_a_gap_does_not_fail_the_run(self, tmp_path: Path) -> None:
+        """Through the real aggregation, not the constructor: a check
+        that measured nothing neither passes nor fails."""
+        assert _verify_with_stub_mutation(tmp_path, _gap()).passed is True
+
+    def test_a_gap_is_never_retry_context(self) -> None:
+        """``as_context`` feeds the engineer's next iteration. A missing
+        binary is not something a diff can fix, so it must not appear
+        there and spend ``repair_max_runs`` proving it."""
+        assert _result_with_gap().as_context() == ""
+
+    def test_a_gap_is_never_a_check_row(self) -> None:
+        """The #306 invariant: nothing in the sidecar can be read as a
+        pass by ``all(c.passed ...)``, ``report_lines``' verdict column,
+        the reviewer prompt or ``ks sense --json``'s ``checks`` array,
+        because it is not in ``checks``."""
+        assert [c.name for c in _result_with_gap().checks] == ["test_suite"]
+
+    def test_a_gap_is_rendered_in_the_report(self) -> None:
+        """The half that makes absence readable rather than merely
+        honest."""
+        lines = _result_with_gap().report_lines(durations=False)
+        assert any("mutation_testing  not measured" in line for line in lines)
+        assert any("mutmut is not on PATH" in line for line in lines)
+
+    def test_the_rendered_gap_never_says_pass(self) -> None:
+        """The word matters: `pass` in the verdict column is exactly what
+        #306 removed, so the sidecar line must not reintroduce it."""
+        line = next(
+            line for line in _result_with_gap().report_lines() if "mutation_testing" in line
+        )
+        assert "not measured" in line
+        assert "  pass  " not in line
+
+
+class TestPhase1SaysWhatItDidNotMeasure:
+    """#306 through the REAL Phase 1, not the dataclass.
+
+    ``TestNotMeasuredIsReportedButNeverGates`` above proves the object
+    behaves; this proves the pipeline actually carries it to the two
+    places anyone would look. Both are needed: a sidecar the pipeline
+    drops is the same silence as no sidecar, and it would leave every
+    assertion in that class green.
+    """
+
+    def test_the_operator_is_warned_with_the_reason_and_the_detail(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The warning is the whole point of round 2: before it, an
+        enabled mutation gate that could never run looked identical to
+        one that ran and passed."""
+        surfaces = phase_verify_surfaces(tmp_path, _result_with_gap())
+
+        assert "mutation_testing not measured" in surfaces.narration
+        assert f"({NOT_MEASURED_TOOL_MISSING})" in surfaces.narration
+        assert "mutmut is not on PATH" in surfaces.narration
+
+    def test_the_event_carries_the_gap_beside_the_checks_not_inside_them(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """``events.jsonl`` is the integration substrate. A consumer
+        counting ``checks`` must not see a gap there, and a consumer
+        asking "did anything go unmeasured" must have somewhere to
+        look."""
+        surfaces = phase_verify_surfaces(tmp_path, _result_with_gap())
+        emitted = [e for e in surfaces.events if isinstance(e, VerificationResultEvent)]
+
+        assert len(emitted) == 1
+        assert emitted[0].not_measured == ("mutation_testing:tool_missing",)
+        assert emitted[0].checks == ("test_suite",)
+        assert emitted[0].passed is True
+
+    def test_a_run_with_no_gaps_says_nothing(self, tmp_path: Path) -> None:
+        """The quiet default. If this warned on every run the warning
+        would be noise within a day and unread within a week."""
+        clean = VerificationResult(
+            passed=True,
+            checks=[CheckResult("test_suite", True, "Tests passed")],
+        )
+
+        surfaces = phase_verify_surfaces(tmp_path, clean)
+        emitted = [e for e in surfaces.events if isinstance(e, VerificationResultEvent)]
+
+        assert "not measured" not in surfaces.narration
+        assert len(emitted) == 1
+        assert emitted[0].not_measured == ()
+
+    def test_a_gap_does_not_route_phase_1_to_a_failure(self, tmp_path: Path) -> None:
+        """Stated once at the layer that decides. The no-FAIL reasoning
+        is that a missing binary is not something the engineer's next
+        diff can fix, so this must not become a retry or a halt by
+        arriving through the pipeline instead of the aggregation."""
+        surfaces = phase_verify_surfaces(tmp_path, _result_with_gap())
+
+        assert surfaces.result.ran is True
+        assert surfaces.result.failure is None
 
 
 class TestVerificationSignatureIsKeywordOnly:
@@ -1456,6 +1722,12 @@ class TestReadOnlyVerification:
 
         assert bool(_mutation_rows(result)) is expect_row
         assert any("mutmut" in c for c in seen) is expect_row
+        # And the round-2 half: the read-only case is not merely
+        # row-less, it says why. Without this, deleting the gate and
+        # letting some later path swallow the run would still show an
+        # absent row.
+        gaps = [g.reason for g in result.not_measured if g.check == "mutation_testing"]
+        assert gaps == ([] if expect_row else [NOT_MEASURED_READ_ONLY])
 
     def test_bad_patterns_writes_no_bytecode_beside_the_source(
         self,
