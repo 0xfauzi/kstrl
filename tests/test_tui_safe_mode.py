@@ -23,6 +23,7 @@ from kstrl.tui.widgets.safe_mode_chip import (
 )
 from kstrl.workqueue import Queue, QueueConfig
 from tests.helpers.fake_run import FakeRunSpec, write_fake_run
+from tests.helpers.settle import mounted, settled
 
 
 def _app(root: Path, run_dir: Path) -> KstrlTuiApp:
@@ -322,26 +323,34 @@ class TestReviewFindings:
         each other, so the checkpoint banner hid the safe-mode warning
         and the safe-mode warning hid the run header. Measured y=0,0,0
         before the fix. This also repairs a pre-existing bug: the
-        checkpoint banner has always covered the topbar."""
+        checkpoint banner has always covered the topbar.
+
+        The two pauses this used to count are what made it flaky: on a
+        loaded CI runner the banner had not been laid out when
+        `region.y` was read, so the zero region answered and the rows
+        came back `[0, 0, 1]`. The wait is now on the layout itself. It
+        is deliberately weaker than the assertion - "all three have been
+        laid out", not "their rows differ" - so that the defect this
+        test names still reaches the assertion below and fails there,
+        with its own message, rather than timing out here.
+        """
         from kstrl.tui.screens.overview import CheckpointBanner
 
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=2))
         app = _app(tmp_path, run_dir)
 
         async with app.run_test(size=(120, 36)) as pilot:
-            await pilot.pause()
-            screen = app.screen
-            banner = screen.query_one(SafeModeBanner)
-            checkpoint = screen.query_one(CheckpointBanner)
+            banner = await mounted(pilot, lambda: app.screen, SafeModeBanner)
+            checkpoint = await mounted(pilot, lambda: app.screen, CheckpointBanner)
+            topbar = await mounted(pilot, lambda: app.screen, "#topbar")
             banner.display = True
             checkpoint.display = True
-            await pilot.pause()
-            await pilot.pause()
-            rows = [
-                screen.query_one("#topbar").region.y,
-                banner.region.y,
-                checkpoint.region.y,
-            ]
+            await settled(
+                pilot,
+                lambda: all(w.region.height for w in (topbar, banner, checkpoint)),
+                what="the topbar and both banners to be laid out once shown",
+            )
+            rows = [topbar.region.y, banner.region.y, checkpoint.region.y]
 
         assert len(set(rows)) == 3, f"widgets share a row: {rows}"
         assert rows == sorted(rows)

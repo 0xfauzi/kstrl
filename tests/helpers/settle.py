@@ -1,0 +1,169 @@
+"""A bounded wait on a CONDITION, for tests that read async-settled state.
+
+A Textual test that counts pauses is asserting on a race it usually
+wins. ``tests/test_tui_safe_mode.py`` lost one on CI: two pauses, then
+``banner.region.y``, and the banner had not been laid out, so the read
+returned the zero region and the row assertion failed with ``[0, 0, 1]``.
+The same commit passed on rerun and passes locally, which is the whole
+point: a fixed pause count is not a settle condition however often it
+happens to be enough.
+
+WHY ONE PAUSE IS NOT ENOUGH, from the source rather than from folklore.
+``Pilot.pause`` is::
+
+    await self._wait_for_screen()      # drain what is queued RIGHT NOW
+    await wait_for_idle(0)             # or asyncio.sleep(delay)
+    self.app.screen._on_timer_update()  # then drive one refresh
+
+``_wait_for_screen`` snapshots ``screen.walk_children()`` and waits for
+the messages queued at that instant. Messages those messages go on to
+produce are not waited for, and the layout that ``_on_timer_update``
+kicks off at the END of the call is not waited for at all. So a cascade
+- set ``display``, get a refresh, get an arrange, get a region - takes
+an unknown number of pauses, and "two" is a guess that a loaded runner
+falsifies. The 5-second deadline below is wall-clock for the same
+reason: on a busy CI box an iteration count measures nothing.
+
+THE ANTI-SWALLOW RULE. :func:`settled` RAISES on timeout. It never
+returns having failed to observe the condition, because a helper that
+turned a real defect into a timeout-shaped pass would be the same defect
+one level up: the planted ``dock: top`` regression in
+``kstrl/tui/styles.tcss`` must still take
+``test_the_banners_do_not_overlap_each_other_or_the_topbar`` red, and
+``tests/test_settle_discipline.py`` plants it to prove that.
+
+The second half of that rule is that the predicate's own exceptions are
+NOT caught. A predicate that raises propagates at once, at the line that
+raised, instead of being folded into "it never settled" five seconds
+later. That is why ``mounted`` exists: ``query_one`` raises ``NoMatches``
+on a widget that has not mounted yet, which is the ordinary case rather
+than an error, so the predicate has to use ``query``, whose empty result
+is merely falsy. Write ``lambda: node.query(sel)``, never
+``lambda: node.query_one(sel)``.
+
+CHOOSING A PREDICATE. It must describe the state you are waiting FOR,
+and it must not already be true. ``settled`` checks before it pauses, so
+a predicate that is satisfied by the state you are trying to leave
+returns immediately and settles nothing. When what you want to assert IS
+the condition, wait for something weaker that the assertion depends on -
+"the three widgets have been laid out" rather than "their rows differ" -
+so that a real defect still reaches the assertion and fails there with
+its own message.
+
+Truthiness is the test, deliberately: an empty ``DOMQuery`` is falsy, and
+``[]`` is falsy too, so a predicate that has to tell "checked and clean"
+from "not checked yet" must spell ``is not None`` the way the tests that
+predate this helper already do.
+"""
+
+from __future__ import annotations
+
+import time
+from collections.abc import Callable
+from typing import Any, TypeVar, overload
+
+from textual.dom import DOMNode
+from textual.pilot import Pilot
+from textual.widget import Widget
+
+#: How long a settle may take before the test is called failed. Wall
+#: clock, not iterations. The bounded loops this helper replaces used
+#: 2.0s (40 x 0.05) and 5.0s; the longer of the two is kept, because the
+#: shorter one is what CI fell off.
+SETTLE_TIMEOUT = 5.0
+
+#: How long to wait between polls. Every poll is a ``pilot.pause``, so
+#: this is also how much settling each attempt buys.
+SETTLE_INTERVAL = 0.02
+
+W = TypeVar("W", bound=Widget)
+
+
+async def settled(
+    pilot: Pilot[Any],
+    predicate: Callable[[], object],
+    *,
+    what: str,
+    timeout: float = SETTLE_TIMEOUT,
+    interval: float = SETTLE_INTERVAL,
+) -> None:
+    """Pause until ``predicate`` is truthy, or fail saying what never was.
+
+    Args:
+        pilot: the pilot driving the app under test.
+        predicate: called before each pause and after each one. Must not
+            raise: an exception propagates rather than counting as "not
+            yet", so that a typo or a renamed attribute is reported at
+            the line that made it and not as a five-second silence.
+        what: named in the failure. Write the condition as a noun phrase
+            the reader can act on - "the config table to mount", not
+            "the thing".
+        timeout: wall-clock seconds before the wait is a failure.
+        interval: seconds per poll, passed to ``pilot.pause``.
+
+    Raises:
+        AssertionError: if the deadline passes with the predicate still
+            falsy. This is the only exit that is not the condition
+            holding, and it is a failure, never a pass.
+    """
+    deadline = time.monotonic() + timeout
+    polls = 0
+    while True:
+        if predicate():
+            return
+        polls += 1
+        if time.monotonic() >= deadline:
+            raise AssertionError(
+                f"waited {timeout:g}s ({polls} polls) for {what}, and it never settled"
+            )
+        await pilot.pause(interval)
+
+
+@overload
+async def mounted(
+    pilot: Pilot[Any],
+    node: Callable[[], DOMNode],
+    selector: str,
+    *,
+    timeout: float = ...,
+) -> Widget: ...
+
+
+@overload
+async def mounted(
+    pilot: Pilot[Any],
+    node: Callable[[], DOMNode],
+    selector: type[W],
+    *,
+    timeout: float = ...,
+) -> W: ...
+
+
+async def mounted(
+    pilot: Pilot[Any],
+    node: Callable[[], DOMNode],
+    selector: str | type[W],
+    *,
+    timeout: float = SETTLE_TIMEOUT,
+) -> Widget | W:
+    """Wait for ``selector`` to match under ``node``, and return the match.
+
+    The dominant shape of this defect by a long way: of the 48 tests
+    whose fixed pauses were measured to be load-bearing, 35 fail with
+    ``NoMatches`` when those pauses go, which is to say they were racing
+    a mount.
+
+    ``node`` is a callable and not a node, because the node is usually
+    ``app.screen`` and the screen is the thing being waited for. Passing
+    ``app.screen`` would capture the screen the push is replacing, and
+    the wait would then be for a widget to appear on a screen that is on
+    its way out.
+    """
+    await settled(
+        pilot,
+        lambda: node().query(selector),
+        what=f"{selector if isinstance(selector, str) else selector.__name__} to mount",
+        timeout=timeout,
+    )
+    found = node().query_one(selector)
+    return found
