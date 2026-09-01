@@ -17,6 +17,7 @@ from __future__ import annotations
 import ast
 import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -100,9 +101,10 @@ class TestAGoneIsOnlyReportedWhenItIsEvidence:
     """The safety argument, and the two controls that could not carry it.
 
     The first asked whether the caller's own group appeared in the
-    listing. Measured: `subprocess.run` does not setpgid, so the `ps`
-    child runs in the caller's group and `ps -A` always lists it. It was
-    satisfied by construction.
+    listing. Measured: the read does not setpgid, so the `ps` child runs
+    in the caller's group and `ps -A` always lists it. It was satisfied
+    by construction, and `_read_ps` keeps it that way by declining
+    `start_new_session`.
 
     The second was "every listed row for this group is a zombie, so the
     listing can see this group". Seeing SOME of a group is not seeing all
@@ -289,15 +291,18 @@ class TestTheTriStateWhenPsGivesNoAnswer:
 
 
 class TestThePsCallIsBounded:
-    """The timeout is the only thing stopping a wedged ps hanging the daemon.
+    """The bound is the only thing stopping a wedged ps hanging the daemon.
 
     Deleting ``timeout=PS_TIMEOUT_SECONDS`` from ``read_group_liveness``
     left the whole suite green before this class existed: the wedged-ps
     case raises a pre-built TimeoutExpired from the fake whether or not
-    the kwarg was ever passed, so it could not detect the loss. A ps
-    stalled on a D-state read (NFS, a hung container runtime) would then
-    block ``subprocess.run`` forever inside the daemon's reap path while
-    PS_TIMEOUT_SECONDS still read as a tested constant.
+    the kwarg was ever passed, so it could not detect the loss.
+
+    Then #309 showed that pinning the kwarg does not establish that the
+    kwarg BOUNDS anything: it was passed, and a ``ps`` that could not be
+    killed hung the call anyway, for the reasons the ``kstrl.procgroup``
+    module docstring sets out. So the class now measures the clock as
+    well as the kwargs, against a child that refuses to die.
     """
 
     def test_the_read_passes_its_timeout(
@@ -307,7 +312,64 @@ class TestThePsCallIsBounded:
         calls = procs.fake_ps(monkeypatch, stdout="50 4242 Ss\n")
         read_group_liveness(4242)
         assert calls, "the fake must have intercepted the ps call"
-        assert calls[0]["kwargs"]["timeout"] == PS_TIMEOUT_SECONDS
+        assert calls[0].timeouts == [PS_TIMEOUT_SECONDS]
+
+    def test_an_unkillable_ps_returns_within_the_bound(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The #309 case, measured on a clock rather than asserted.
+
+        Both constants are shrunk so the test costs its own bound rather
+        than six seconds; the fake burns whatever deadline it is handed,
+        so the reading is real at either size. The margin is 10x the
+        configured bound, which is loose enough for a loaded CI runner and
+        still 60x tighter than the counterfactual below.
+
+        MEASURED against the pre-#309 body restored under this same fake:
+        the read took 60.06s and this assertion failed with exactly this
+        message (two runs, 60.065s and 60.060s). That is the two unbounded
+        waits, 30s each - the one ``subprocess.run``'s timeout handler
+        does after ``kill()``, and the one ``Popen.__exit__`` does after
+        it. Both are gone; that is what the clock here is measuring.
+        """
+        monkeypatch.setattr("kstrl.procgroup.PS_TIMEOUT_SECONDS", 0.05)
+        monkeypatch.setattr("kstrl.procgroup.PS_KILL_GRACE_SECONDS", 0.05)
+        calls = procs.unkillable_ps(monkeypatch)
+
+        started = time.monotonic()
+        liveness = read_group_liveness(4242)
+        elapsed = time.monotonic() - started
+
+        # A real ps answers in ~11ms, so without this the assertion below
+        # would pass just as well on a fake that never intercepted.
+        assert len(calls) == 1, "the wedged fake must have answered the read"
+        assert elapsed < 1.0, f"the read took {elapsed:.3f}s, so nothing bounded it"
+        assert liveness.live is None, "an unmeasurable group must not read as gone"
+        assert "failed to run" in liveness.reason
+
+    def test_an_unkillable_ps_is_killed_and_let_go_of(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The bound above is only honest if the child was dealt with.
+
+        Two deadlines are spent, not one: the read, then the grace the
+        kill is given. The pipe pair is released rather than left to the
+        garbage collector, which is the leak half of #309; the child
+        itself is abandoned, and CPython's ``subprocess._active`` collects
+        it once the kernel lets it die.
+        """
+        monkeypatch.setattr("kstrl.procgroup.PS_TIMEOUT_SECONDS", 0.01)
+        monkeypatch.setattr("kstrl.procgroup.PS_KILL_GRACE_SECONDS", 0.02)
+        calls = procs.unkillable_ps(monkeypatch)
+
+        read_group_liveness(4242)
+
+        assert len(calls) == 1, "one read, not a retry loop"
+        assert calls[0].timeouts == [0.01, 0.02]
+        assert calls[0].kills == 1, "the child must be killed, not waited on"
+        assert calls[0].closed == ["stdout", "stderr"]
 
     def test_the_read_pins_its_encoding(
         self,
@@ -317,8 +379,8 @@ class TestThePsCallIsBounded:
         ValueError out of a function whose contract is not to raise."""
         calls = procs.fake_ps(monkeypatch, stdout="50 4242 Ss\n")
         read_group_liveness(4242)
-        assert calls[0]["kwargs"]["encoding"] == "utf-8"
-        assert calls[0]["kwargs"]["errors"] == "replace"
+        assert calls[0].kwargs["encoding"] == "utf-8"
+        assert calls[0].kwargs["errors"] == "replace"
 
 
 class TestTheFakeDoesNotAnswerForEveryCommand:

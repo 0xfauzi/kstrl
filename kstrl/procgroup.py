@@ -47,8 +47,8 @@ Anything else is "cannot see".
 
 TWO CONTROLS THAT DID NOT WORK, written down because each was claimed in
 this docstring before it was measured. The first checked that the
-caller's own process group appeared in the listing; ``subprocess.run``
-does not ``setpgid``, so the ``ps`` child runs in the caller's group and
+caller's own process group appeared in the listing; the read does not
+``setpgid``, so the ``ps`` child runs in the caller's group and
 ``ps -A`` always lists it - our own pgid appeared four times in every
 listing, the last row being ``ps`` itself. Satisfied by construction, it
 could never fire. The second was "every listed row is a zombie, so the
@@ -75,14 +75,46 @@ against a 246.5s suite, 0.11% of wall clock.
 
 POSIX only. ``ps`` group listings and ``killpg`` do not exist on Windows.
 
-WHAT THE ``ps`` TIMEOUT DOES NOT COVER, stated because an earlier version
-of this docstring claimed a bound it does not have. ``PS_TIMEOUT_SECONDS``
-bounds a ``ps`` that is slow but killable. It does NOT bound one wedged
-in an uninterruptible read (a hung NFS mount, a dead container runtime):
-CPython's ``subprocess.run`` handles its own timeout by calling
-``process.kill()`` and then ``process.wait()`` with NO timeout, and
-``Popen.__exit__`` waits again, so a D-state child that cannot be killed
-blocks the call indefinitely. Tracked as #309.
+WHY THE READ IS A ``Popen`` AND NOT ``subprocess.run`` (#309), because
+an earlier version of this docstring claimed a bound it did not have.
+``subprocess.run`` cannot give one. Read against the CPython 3.12.8 this
+tree runs: its timeout handler calls ``process.kill()`` and then
+``process.wait()`` with NO timeout, and the enclosing ``with Popen(...)``
+calls ``__exit__``, which calls ``self.wait()`` again, also unbounded. A
+``ps`` wedged in an uninterruptible read (a hung NFS mount, a dead
+container runtime) cannot be killed, so both waits block forever - and
+the one production caller is the daemon's reap path, which runs while
+``serve`` holds its singleton lock for the daemon's whole lifetime. The
+timeout named exactly the case it did not cover.
+
+So the read is a ``Popen`` driven by two BOUNDED ``communicate`` calls:
+``PS_TIMEOUT_SECONDS`` for the read itself, then a kill, then
+``PS_KILL_GRACE_SECONDS`` to collect a child the kill reached.
+``communicate(timeout=...)`` ends in ``wait(timeout=remaining)``, so
+every leg has a deadline and the call returns within the sum of the two.
+Nothing here uses ``with Popen(...)``: that is the second unbounded wait.
+
+WHAT THAT COSTS, since a bound bought with nothing would be suspicious. A
+child the kill did NOT reach is ABANDONED rather than waited on: we close
+our two pipe ends, which cannot block on a read end, and report "cannot
+see". It is not a permanent zombie. ``Popen.__del__`` hands an unreaped
+child to CPython's ``subprocess._active``, which the next ``Popen``
+constructed anywhere in the process polls, so it is collected once the
+kernel lets it die. The caller's fallback for "cannot see" is the signal
+probe, whose only error is over-reporting alive, so a bounded degraded
+answer is strictly better here than an unbounded exact one.
+
+THE COST IS PER READ, NOT PER RUN, and ``serve`` reads more than once.
+``_wait_out_grace`` waits out the direct child and then re-reads the
+group until its grace expires, and it checks the clock only at the top of
+that loop, so each read can overshoot by a whole 6.0s. Simulated over the
+two shapes that loop takes with a permanently wedged ``ps``: if the
+direct child outlives both graces, 2 reads and 37.00s; if it dies at once
+and a descendant holds on, 5 reads and 30.75s. So up to five abandoned
+children per terminated run, and a ``terminate_process_group`` worst case
+of 37s against the 25s an operator reads off ``GROUP_TERM_GRACE_SECONDS``
+plus the SIGKILL leg. Both numbers are finite, which is the change; the
+overshoot is worth knowing before anyone tunes either constant.
 
 This module is the only place in ``kstrl/`` or ``tests/`` that shells out
 to ``ps``, and ``tests/test_procgroup.py`` fails on a second one in
@@ -95,6 +127,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from contextlib import suppress
 from dataclasses import dataclass
 
 #: The three columns the question needs and no more. ``pid`` is there for
@@ -102,10 +135,21 @@ from dataclasses import dataclass
 #: docstring above for why each is load-bearing and what it costs.
 PS_ARGV = ("ps", "-A", "-o", "pid=,pgid=,stat=")
 
-#: A bound on how long a KILLABLE ``ps`` may stall the caller. 440x the
-#: 11.29ms measured for the call, so it cannot fire on a slow machine.
-#: It does not bound an unkillable one; see the docstring and #309.
+#: How long the ``ps`` read itself may take. 440x the 11.29ms measured
+#: for the call, so it cannot fire on a slow machine. Re-measured for
+#: #309 on a 914-process machine: median 11.47ms, max 13.35ms over 60
+#: samples.
 PS_TIMEOUT_SECONDS = 5.0
+
+#: How long a KILLED ``ps`` is given to be collected before it is
+#: abandoned. This buys the kill a scheduler round trip, not work, and
+#: measuring it says so: over 60 samples on the same machine, kill to
+#: reaped was max 0.236ms for ``ps`` and max 1.122ms for a ``sleep``
+#: child killed mid-run. 1.0s is ~890x the worse of the two. Raising it
+#: cannot rescue a D-state child, which is the only case that reaches
+#: the end of it; it would only lengthen the hang this bound exists to
+#: stop. The worst case for the whole read is the sum of the two: 6.0s.
+PS_KILL_GRACE_SECONDS = 1.0
 
 #: Said once, because several branches report it and reflowed copies of
 #: one sentence are how the two answers drift apart.
@@ -152,19 +196,7 @@ def read_group_liveness(pgid: int) -> GroupLiveness:
     earlier controls could not, are in the module docstring.
     """
     try:
-        out = subprocess.run(
-            PS_ARGV,
-            capture_output=True,
-            # Pinned rather than left to the locale, and non-decodable
-            # bytes are replaced rather than raised. A decode error here
-            # is a ValueError, which would escape a fail-closed
-            # ``except OSError`` and take the daemon down over a
-            # diagnostic (the repo's #291 lesson). Caught below as well,
-            # so a future edit cannot reintroduce it.
-            encoding="utf-8",
-            errors="replace",
-            timeout=PS_TIMEOUT_SECONDS,
-        )
+        out = _read_ps()
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
         return GroupLiveness(None, f"ps failed to run ({exc!r}). {_UNMEASURABLE}")
     if out.returncode != 0:
@@ -173,6 +205,68 @@ def read_group_liveness(pgid: int) -> GroupLiveness:
             f"ps failed (rc={out.returncode}): {out.stderr.strip()!r}. {_UNMEASURABLE}",
         )
     return _interpret(_read_listing(out.stdout, pgid), pgid)
+
+
+def _read_ps() -> subprocess.CompletedProcess[str]:
+    """One ``ps`` read that returns within ``PS_TIMEOUT_SECONDS`` plus
+    ``PS_KILL_GRACE_SECONDS``, whatever the child does.
+
+    Why this is not ``subprocess.run``, and why no ``with`` block, is the
+    #309 section of the module docstring: both of those wait on the child
+    without a deadline, which is the hang.
+
+    No ``start_new_session``, matching what ``subprocess.run`` did: the
+    ``ps`` child stays in the caller's process group, which is what makes
+    the rejected "our own pgid is listed" control satisfied by
+    construction rather than merely usually true.
+    """
+    process = subprocess.Popen(
+        PS_ARGV,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        # Pinned rather than left to the locale, and non-decodable bytes
+        # are replaced rather than raised. A decode error here is a
+        # ValueError, which would escape a fail-closed ``except OSError``
+        # and take the daemon down over a diagnostic (the repo's #291
+        # lesson). Caught by the caller as well, so a future edit cannot
+        # reintroduce it.
+        encoding="utf-8",
+        errors="replace",
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=PS_TIMEOUT_SECONDS)
+    except BaseException:
+        # Every exit that is not a completed read leaves a child behind,
+        # so every one of them goes through the same disposal.
+        # ``BaseException`` because a KeyboardInterrupt out of the daemon
+        # must not be the one path that leaks the child.
+        _kill_or_abandon(process)
+        raise
+    return subprocess.CompletedProcess(PS_ARGV, process.returncode, stdout, stderr)
+
+
+def _kill_or_abandon(process: subprocess.Popen[str]) -> None:
+    """Kill the child, give the kill a bounded grace, then LET GO.
+
+    The second ``communicate`` is the wait ``subprocess.run`` does
+    without a deadline. Reaching ITS timeout means the kill did not land,
+    which on POSIX means an uninterruptible sleep, which no further
+    waiting can shorten - so this returns instead, and the module
+    docstring records what that abandoned child costs.
+    """
+    try:
+        process.kill()
+        process.communicate(timeout=PS_KILL_GRACE_SECONDS)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        # One handler for both calls, because a kill that could not be
+        # sent leads to the same place as one that did not work: the
+        # child is not ours to collect, so let go of the pipes instead.
+        # Closing a pipe READ end cannot block, which is what makes this
+        # safe on a path whose whole contract is not to block.
+        for pipe in (process.stdout, process.stderr):
+            if pipe is not None:
+                with suppress(OSError):
+                    pipe.close()
 
 
 @dataclass(frozen=True)

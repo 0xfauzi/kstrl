@@ -33,7 +33,9 @@ import signal
 import subprocess
 import time
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
@@ -96,6 +98,27 @@ def group_has_live_member(pgid: int) -> bool:
     return liveness.live
 
 
+@dataclass
+class PsCall:
+    """One intercepted ``ps`` spawn, and everything a test asserts on it."""
+
+    #: What the ``Popen`` CONSTRUCTOR received. The deadlines are not here,
+    #: because ``Popen`` does not take one.
+    argv: list[str]
+    kwargs: dict[str, object]
+    #: One entry per ``communicate``, which IS where the bound lives.
+    timeouts: list[float | None] = field(default_factory=list)
+    #: How a test sees the abandoned-child path: the child was signalled,
+    #: and its pipe pair was released rather than left to the collector.
+    kills: int = 0
+    closed: list[str] = field(default_factory=list)
+
+
+#: What one ``communicate`` does with its deadline: answer with
+#: ``(returncode, stdout, stderr)``, or raise.
+Respond = Callable[[float | None], tuple[int, str, str]]
+
+
 def fake_ps(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -103,48 +126,171 @@ def fake_ps(
     stdout: str = "",
     stderr: str = "",
     raises: Callable[[], BaseException] | None = None,
-) -> list[dict[str, object]]:
+) -> list[PsCall]:
     """Answer ``kstrl.procgroup``'s ``ps`` with this. Returns the call log.
-
-    DELEGATES every other command to the real ``subprocess.run``. That is
-    load-bearing, not politeness: ``procgroup.subprocess`` IS the stdlib
-    module, so ``setattr`` on it replaces ``run`` for the whole process,
-    not for ``procgroup``. Measured before this guard existed: under
-    ``fake_ps(stdout="1 Ss\n")`` a plain
-    ``subprocess.run(["git", "rev-parse", "HEAD"])`` returned
-    ``stdout='1 Ss\n'`` and ``args=['ps','-A','-o','pgid=,stat=']``. Any
-    test that combined this helper with a git or fixture subprocess call
-    would have measured nothing and passed, which is the #292 class this
-    module exists to prevent.
 
     ``raises`` is a FACTORY rather than an instance. A module-level
     exception object re-raised by every parametrized case accumulates a
     traceback frame and an ``__context__`` per raise, so it retains every
     test frame and its locals until interpreter exit.
 
-    The returned list records the args and kwargs each intercepted ``ps``
-    call received, so a test can assert on what was passed - the
-    ``timeout=`` in particular, which is the only bound stopping a wedged
-    ``ps`` from hanging the daemon and which no test could otherwise see.
+    WHERE ``raises`` FIRES depends on what it is, because the two real
+    failures do not happen in the same place. A missing binary raises out
+    of the SPAWN; a timeout or a decode error raises out of the READ. The
+    handling under test is ``read_group_liveness``'s disposal of the
+    child, and it only has a child to dispose of in the second case, so
+    faking a spawn failure at the read would exercise a path that cannot
+    occur. ``OSError`` marks the first case; everything else is the
+    second.
     """
-    real_run = subprocess.run
-    calls: list[dict[str, object]] = []
+
+    def respond_for() -> Respond:
+        if raises is None:
+            return lambda _timeout: (returncode, stdout, stderr)
+        probe = raises()
+        if isinstance(probe, OSError):
+            raise probe
+
+        def fail(_timeout: float | None) -> tuple[int, str, str]:
+            # A FRESH instance per raise, which is the docstring's rule
+            # applied one level down. The read path raises TWICE - once
+            # from the read, once from the grace the kill is given - and
+            # capturing one instance here instead of the factory made the
+            # closure, the fake and the traceback a reference cycle:
+            # measured over 200 reads with gc off, 27 objects retained
+            # per read against 0 with this line.
+            raise raises()
+
+        return fail
+
+    return _patch_ps_popen(monkeypatch, respond_for)
+
+
+def unkillable_ps(monkeypatch: pytest.MonkeyPatch) -> list[PsCall]:
+    """Answer ``ps`` with a child that never dies. Returns the call log.
+
+    #309's fixture. A process in an uninterruptible sleep cannot be
+    produced on demand in CI, so this fakes the only property that
+    matters: every ``communicate`` burns its whole deadline and then
+    raises ``TimeoutExpired``, and ``kill`` does nothing. The deadline is
+    honoured rather than skipped so the test measures a real clock.
+    """
+    return _patch_ps_popen(monkeypatch, lambda: _wedge)
+
+
+#: What a wedged fake sleeps when handed no deadline. Long enough that a
+#: test asserting on a bound fails rather than hangs the suite, since
+#: pytest has no per-test timeout here.
+UNBOUNDED_WAIT_SECONDS = 30.0
+
+
+def _wedge(timeout: float | None) -> NoReturn:
+    """Spend the whole deadline, then report the call as never finishing.
+
+    Both halves of the wedged fake go through here: the ``communicate``
+    that has a deadline to burn, and the ``wait`` that has none and so
+    sleeps far past any bound a test allows.
+    """
+    time.sleep(UNBOUNDED_WAIT_SECONDS if timeout is None else timeout)
+    raise subprocess.TimeoutExpired(cmd=list(procgroup.PS_ARGV), timeout=timeout or 0.0)
+
+
+@dataclass
+class _FakePipe:
+    """A pipe end that records only whether it was closed."""
+
+    call: PsCall
+    name: str
+
+    def close(self) -> None:
+        self.call.closed.append(self.name)
+
+
+class _FakePs:
+    """A ``ps`` child that never really ran."""
+
+    def __init__(self, call: PsCall, respond: Respond) -> None:
+        self._call = call
+        self._respond = respond
+        self.returncode: int | None = None
+        self.stdout = _FakePipe(call, "stdout")
+        self.stderr = _FakePipe(call, "stderr")
+
+    def communicate(
+        self,
+        input: str | None = None,
+        timeout: float | None = None,
+    ) -> tuple[str, str]:
+        self._call.timeouts.append(timeout)
+        self.returncode, out, err = self._respond(timeout)
+        return out, err
+
+    def kill(self) -> None:
+        self._call.kills += 1
+
+    def wait(self, timeout: float | None = None) -> int:
+        """The unbounded wait #309 exists to keep production out of.
+
+        Sleeping rather than raising is deliberate: an exception here
+        could be swallowed by a fail-closed ``except``, and the defect
+        being tested is a hang, so the fake reproduces a hang.
+        """
+        _wedge(timeout)
+
+    def __enter__(self) -> _FakePs:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        """Faithful to ``Popen.__exit__``, which is half of the #309 hang.
+
+        It closes the pipes and then calls ``self.wait()`` with no
+        deadline. Reproducing that is what makes the bound test a
+        REGRESSION test: reinstating ``subprocess.run``, or wrapping the
+        read in ``with Popen(...)``, then costs the same unbounded sleep
+        here that it would cost the daemon, and the test fails on the
+        clock rather than on a missing method. Verified by running the
+        bound test against a reverted ``read_group_liveness``.
+        """
+        self.stdout.close()
+        self.stderr.close()
+        self.wait()
+
+
+def _patch_ps_popen(
+    monkeypatch: pytest.MonkeyPatch,
+    respond_for: Callable[[], Respond],
+) -> list[PsCall]:
+    """Route ``PS_ARGV`` to a fake child, everything else to the real ``Popen``.
+
+    The delegation is load-bearing, not politeness: ``procgroup.subprocess``
+    IS the stdlib module, so ``setattr`` on it replaces ``Popen`` for the
+    whole process, not for ``procgroup`` - and ``subprocess.run`` is built
+    on ``Popen``, so an undelegated fake would answer every ``run`` in the
+    suite too. Measured before this guard existed, when the seam was on
+    ``run``: under ``fake_ps(stdout="1 Ss\n")`` a plain
+    ``subprocess.run(["git", "rev-parse", "HEAD"])`` returned
+    ``stdout='1 Ss\n'`` and ``args=['ps','-A','-o','pgid=,stat=']``. A test
+    that combined the helper with a git or fixture subprocess call would
+    have measured nothing and passed, which is the #292 class this module
+    exists to prevent.
+
+    The seam is ``Popen`` rather than ``run`` because #309 moved the read
+    off ``run``; the module docstring of ``kstrl.procgroup`` says why.
+    """
+    real_popen = subprocess.Popen
+    calls: list[PsCall] = []
 
     def fake(*args: object, **kwargs: object) -> object:
         argv = list(args[0]) if args and isinstance(args[0], (list, tuple)) else []
         if argv != list(procgroup.PS_ARGV):
-            return real_run(*args, **kwargs)  # type: ignore[arg-type]
-        calls.append({"argv": argv, "kwargs": dict(kwargs)})
-        if raises is not None:
-            raise raises()
-        return subprocess.CompletedProcess(
-            args=argv,
-            returncode=returncode,
-            stdout=stdout,
-            stderr=stderr,
-        )
+            return real_popen(*args, **kwargs)  # type: ignore[arg-type]
+        call = PsCall(argv=argv, kwargs=dict(kwargs))
+        calls.append(call)
+        # Appended BEFORE the responder is built, so a fake that fails at
+        # the spawn is still a call the test can see.
+        return _FakePs(call, respond_for())
 
-    monkeypatch.setattr(procgroup.subprocess, "run", fake)
+    monkeypatch.setattr(procgroup.subprocess, "Popen", fake)
     return calls
 
 

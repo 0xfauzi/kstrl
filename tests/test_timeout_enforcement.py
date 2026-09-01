@@ -1132,12 +1132,20 @@ class TestSubprocessTimeoutAudit:
       direct child, which on macOS is the caffeinate wrapper, so the
       factory itself outlived the timeout and the daemon requeued an
       item that was still executing.
+    - kstrl/procgroup.py: two bounded communicate(timeout) calls around a
+      kill, then the child is abandoned (#309). Popen is REQUIRED here
+      too, and for a different reason: subprocess.run's timeout handler
+      waits on the killed child with NO deadline and Popen.__exit__ waits
+      again, so `timeout=` cannot bound a ps that will not die. Measured
+      under a fake wedged child: 60.06s before, sub-second after
+      (tests/test_procgroup.py::TestThePsCallIsBounded).
     """
 
     SPAWN_FUNCS = frozenset({"run", "call", "check_call", "check_output"})
     POPEN_ALLOWLIST = frozenset(
         {
             "kstrl/agents/proc.py",
+            "kstrl/procgroup.py",
             "kstrl/serve.py",
             "kstrl/verify.py",
         }
@@ -1206,4 +1214,67 @@ class TestSubprocessTimeoutAudit:
         assert not popen_violations, (
             "Popen outside the deadline-managed allowlist (see class "
             "docstring):\n  " + "\n  ".join(popen_violations)
+        )
+
+    #: Methods that block on a child. ``timeout=`` is optional on both, and
+    #: omitting it waits forever.
+    WAIT_METHODS = frozenset({"wait", "communicate"})
+
+    def test_no_allowlisted_module_waits_without_a_deadline(self) -> None:
+        """#309's class: the allowlist admits a module, not a discipline.
+
+        Being on POPEN_ALLOWLIST said only that the module promised to
+        manage its own deadline, and nothing checked the promise. #309 is
+        what that costs: ``procgroup`` passed ``timeout=`` to
+        ``subprocess.run``, satisfied the audit above, and hung anyway,
+        because the wait ``run`` performs after killing the timed-out
+        child has no deadline. A pinned kwarg is not a bound.
+
+        WHAT THIS DOES NOT COVER, said plainly because a mechanism cited
+        for a claim it does not carry is worse than none. It would NOT
+        have caught #309: that unbounded wait was inside CPython, not in
+        this tree, so no walk of ``kstrl/`` could see it. The thing that
+        catches a revert to ``subprocess.run`` is the clock in
+        ``tests/test_procgroup.py::TestThePsCallIsBounded``, which
+        measured 60.06s against the old body. What this catches is the
+        sibling the allowlist invites and nobody was checking: a
+        hand-rolled ``Popen`` in one of these four files that waits on
+        its child with no deadline. All 11 current sites already pass one,
+        so this lands green and stays a ratchet rather than a cleanup.
+
+        Scoped to the allowlisted files because ``.wait(...)`` outside
+        them is overwhelmingly ``threading.Event.wait``, whose unbounded
+        form is legitimate and common (``kstrl/commandrun.py``,
+        ``kstrl/interaction.py``, ``kstrl/shutdown.py``). Inside them it
+        is a child process, and there it must always name a deadline.
+
+        This is a receiver-name check, so it catches ``x.wait()`` on
+        anything, not only on a Popen. That is the conservative direction
+        for four files that exist to manage child processes; if one of
+        them ever needs an unbounded Event wait, that is a decision worth
+        writing down here rather than a false positive to widen around.
+        """
+        package_root = Path(__file__).resolve().parent.parent / "kstrl"
+        violations: list[str] = []
+        sites_seen = 0
+
+        for rel in sorted(self.POPEN_ALLOWLIST):
+            tree = ast.parse((package_root.parent / rel).read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                fn = node.func
+                if not isinstance(fn, ast.Attribute) or fn.attr not in self.WAIT_METHODS:
+                    continue
+                sites_seen += 1
+                if not any(k.arg == "timeout" for k in node.keywords):
+                    violations.append(f"{rel}:{node.lineno} .{fn.attr}()")
+
+        assert sites_seen >= 10, (
+            f"audit only found {sites_seen} wait sites in the allowlisted "
+            "modules; the scan is broken, not the code clean"
+        )
+        assert not violations, (
+            "a deadline-managed module waits on a child without a "
+            "deadline, which is #309:\n  " + "\n  ".join(violations)
         )
