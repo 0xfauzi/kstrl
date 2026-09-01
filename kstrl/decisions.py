@@ -21,17 +21,26 @@ blocker, and not one of the 26 was a judgement only the owner could
 make. The architect already knew most of the answers and had nowhere to
 write them down.
 
+Every decision carries ``issue``, the id of the ``spec_issues`` entry it
+closes. That join is what makes the halt gate a gate: round 1 of this
+change compared a COUNT of blockers against a COUNT of parsed
+escalations, and a disposition of ``"Escalated"`` parsed to nothing, so
+both counts fell to zero and agreed. A gate a capital letter disables is
+not a gate. Nothing in this module is allowed to turn a malformed entry
+into a zero: ``decision_entry_errors`` names the fault and the caller
+rejects the payload.
+
 The register is written next to ``manifest.json`` and rendered into the
 engineer prompt the way ``knowledge.build_knowledge_context`` renders
-distilled facts: a per-component context block, own decisions in full,
-the rest of the run summarised, the whole thing under one token budget.
+distilled facts: a per-component context block under one enrolled
+template.
 """
 
 from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -51,39 +60,157 @@ DISPOSITION_ESCALATED = "escalated"
 DISPOSITION_ORDER = (DISPOSITION_ESCALATED, "decided", "assumed", "spiked")
 VALID_DISPOSITIONS = frozenset(DISPOSITION_ORDER)
 
-# Token budget for the whole engineer-facing block, in the 4-chars-per-token
-# convention the feedforward and knowledge layers already use.
-#
-# Measured, not guessed: across the five recorded real runs the architect's
-# 117 findings averaged 471 characters of summary plus suggestion plus
-# location each, at 20 to 32 findings per run. Rendering those runs
-# uncapped, at one, two and three components, gives 8,315 to 17,323 bytes,
-# which is two to four times the entire 4,444-byte engineer prompt
-# template. So the budget has to bite, and the note below says out loud
-# when it did. 2000 tokens matches KnowledgeConfig's max_core_tokens, the
-# existing precedent for "one tier of context the engineer must read".
-MAX_DECISION_TOKENS = 2000
+# Register status, as ``read_decisions`` reports it. Three states rather
+# than a bool because the factory must treat them differently: a missing
+# register is a manifest built before this landed, an unreadable one is
+# a mechanism that silently disappeared, and only "ok" may bind an
+# engineer.
+REGISTER_OK = "ok"
+REGISTER_MISSING = "missing"
+REGISTER_UNREADABLE = "unreadable"
 
-_SECTION_TITLE = "## Architect Decisions"
-# The three tiers, named here rather than built at the call site. Same
-# discipline as ``knowledge._CORE_SECTION_PREFIX`` and for the same
-# reason: these headings share one prompt string with the knowledge
-# block, and a renderer whose titles live inline drifts silently.
-_OWN_SECTION_PREFIX = "Decisions binding this component ("
-_RUN_WIDE_SECTION_TITLE = "Decisions binding the whole run"
-_OTHER_SECTION_TITLE = "Decisions binding other components"
+#: Token budget for the OTHER-component tier of the engineer block, in
+#: the 4-chars-per-token convention the feedforward and knowledge layers
+#: already use.
+#:
+#: It bounds that tier ALONE, and the name says so. Round 1 called it
+#: ``MAX_DECISION_TOKENS`` and applied it to all three tiers with one
+#: greedy loop, which meant the tier ordering protected nothing:
+#: measured, 100 own decisions with 300-character questions rendered 22
+#: and dropped 78, one oversized own decision rendered an empty block,
+#: and the note told the engineer that everything dropped had belonged
+#: to another component. Decisions that bind this component are now
+#: rendered in full, always, whatever the number, because a truncated
+#: binding instruction is worse than a long prompt.
+#:
+#: The number: across the five recorded real runs the architect's 117
+#: findings averaged 471 characters of summary plus suggestion plus
+#: location each, at 20 to 32 findings per run, and a whole run rendered
+#: uncapped is 8,315 to 17,323 bytes against a 4,444-byte engineer
+#: prompt template. Other components' decisions are the part of that an
+#: engineer can lose without losing an instruction, so they are the part
+#: with a cap.
+MAX_OTHER_DECISION_TOKENS = 2000
+
+#: The harness-wide estimate feedforward and knowledge also use.
+_CHARS_PER_TOKEN = 4
+
+DECISIONS_CONTEXT_PROMPT_VERSION = "1.0.0"
+
+#: H3/H3a: harness-authored instruction text that reaches the engineer.
+#: Round 1 built this block from inline f-strings, so the reviewer
+#: changed "binding" to "advisory" and all 61 prompt-version and
+#: enrollment tests stayed green. It is enrolled now, and
+#: ``tests/test_decisions.py`` renders a known register and compares it
+#: to this template formatted in the test, so delivered English cannot
+#: live anywhere else.
+DECISIONS_CONTEXT_PROMPT = """\
+## Architect Decisions
+
+Questions the architect closed while decomposing the spec, and how it
+closed them. These are binding: implement what is written here. An
+`assumed` decision is pinned by an acceptance criterion in a PRD - if
+your code cannot honour one, say so in your Self-Critique rather than
+deciding differently.
+
+### Decisions binding this component ({component_id})
+
+{own}
+
+### Decisions binding the whole run
+
+{run_wide}
+
+### Decisions binding other components ({other_shown} of {other_total} shown; \
+any not shown did not fit the context budget, and none of them binds this component)
+
+{other}
+"""
 
 
 @dataclass(frozen=True)
 class SpecDecision:
-    """One question the architect closed, and how."""
+    """One question the architect closed, and how.
+
+    ``issue`` is the ``spec_issues`` id this decision closes. It is the
+    join key, so it is not optional and not defaulted: a decision that
+    closes nothing cannot be checked against anything.
+    """
 
     question: str
     disposition: str
     resolution: str
+    issue: str
     reason: str = ""
     alternative: str = ""
     component: str = ""
+
+
+@dataclass(frozen=True)
+class DecisionRegister:
+    """The persisted register plus the identity it was written under.
+
+    ``project`` and ``spec_file`` are carried back out rather than
+    discarded, because the factory reads one fixed path and has to prove
+    the file belongs to the manifest it is about to schedule. Round 1
+    dropped both, and a register belonging to project A bound project
+    B's engineer.
+    """
+
+    decisions: tuple[SpecDecision, ...] = ()
+    project: str = ""
+    spec_file: str = ""
+    halted: bool = False
+    status: str = REGISTER_MISSING
+    detail: str = ""
+
+
+class DecisionRegisterError(RuntimeError):
+    """The register on disk cannot be trusted to bind this run (#260 r2).
+
+    Raised rather than warned. The register carries instructions the
+    engineer prompt calls binding, so "carry on without them" is a
+    silent degradation of the exact mechanism this change exists to add,
+    and "carry on with somebody else's" is worse: a factory run on
+    project B, with project A's register beside it, handed the engineer
+    project A's binding instruction.
+    """
+
+
+def bind_register(
+    register: DecisionRegister,
+    project_name: str,
+    spec_file: str,
+) -> tuple[SpecDecision, ...]:
+    """The decisions that may bind this manifest, or raise.
+
+    Missing is legal and returns nothing: a manifest written before this
+    feature has no register, and that is a fact rather than a fault.
+    Everything else is a refusal - unreadable, halted, or belonging to
+    another project or another spec.
+    """
+    if register.status == REGISTER_MISSING:
+        return ()
+    if register.status != REGISTER_OK:
+        raise DecisionRegisterError(
+            f"architect decision register is unreadable: {register.detail}. "
+            f"Re-run the decompose, or delete "
+            f"{SPEC_DECISIONS_REL_PATH} to run without one."
+        )
+    if register.halted:
+        raise DecisionRegisterError(
+            "architect decision register was written by a HALTED decompose, "
+            "so no manifest was saved for it. Answer the escalated "
+            "question and re-run the decompose."
+        )
+    if register.project != project_name or register.spec_file != spec_file:
+        raise DecisionRegisterError(
+            f"architect decision register belongs to project "
+            f"{register.project!r} / spec {register.spec_file!r}, but this "
+            f"run is {project_name!r} / {spec_file!r}. Re-run the decompose "
+            f"for this spec."
+        )
+    return register.decisions
 
 
 def _clean(value: Any) -> str:
@@ -91,15 +218,75 @@ def _clean(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
+def _required_field_error(prefix: str, name: str, value: Any) -> str | None:
+    """One required string field, or the reason it is not one."""
+    if not isinstance(value, str):
+        return f"{prefix}.{name}: must be a string, got {type(value).__name__}"
+    if not value.strip():
+        return f"{prefix}.{name}: must not be empty"
+    return None
+
+
+def decision_entry_errors(index: int, entry: Any) -> list[str]:
+    """Everything wrong with ONE raw decisions entry, indexed.
+
+    Raw, before any parsing. This is the whole of F1's fix: round 1
+    parsed first and counted afterwards, so an entry the parser could
+    not read became an absence rather than a fault, and an absence
+    agrees with any count. The message is indexed like every other
+    validator message so the retry can fix the exact record instead of
+    re-deriving which one.
+    """
+    prefix = f"decisions[{index}]"
+    if not isinstance(entry, dict):
+        return [f"{prefix}: must be an object, got {type(entry).__name__}"]
+    errors: list[str] = []
+    for name in ("question", "resolution", "issue"):
+        error = _required_field_error(prefix, name, entry.get(name))
+        if error is not None:
+            errors.append(error)
+    disposition = entry.get("disposition")
+    if not isinstance(disposition, str):
+        errors.append(f"{prefix}.disposition: must be a string, got {type(disposition).__name__}")
+    elif disposition not in VALID_DISPOSITIONS:
+        errors.append(
+            f"{prefix}.disposition: {disposition!r} is not one of "
+            f"{sorted(VALID_DISPOSITIONS)} (match is case-exact)"
+        )
+    for name in ("reason", "alternative", "component"):
+        value = entry.get(name)
+        if value is not None and not isinstance(value, str):
+            errors.append(f"{prefix}.{name}: must be a string, got {type(value).__name__}")
+    return errors
+
+
+def decisions_payload_errors(data: Any) -> list[str]:
+    """Everything wrong with the whole raw ``decisions`` array.
+
+    The array is REQUIRED. Round 1 read it with ``data.get("decisions",
+    [])``, so a payload that omitted it entirely passed with zero
+    decisions and zero escalations.
+    """
+    if not isinstance(data, dict):
+        return ["output must be a JSON object"]
+    if "decisions" not in data:
+        return ["'decisions' is required (use [] when the spec raised no question)"]
+    raw = data["decisions"]
+    if not isinstance(raw, list):
+        return [f"'decisions' must be an array, got {type(raw).__name__}"]
+    errors: list[str] = []
+    for index, entry in enumerate(raw):
+        errors.extend(decision_entry_errors(index, entry))
+    return errors
+
+
 def parse_decisions(data: Any) -> list[SpecDecision]:
     """Extract typed decisions from raw architect output.
 
-    Malformed entries (unknown disposition, missing question or
-    resolution) are skipped rather than crashing decomposition, matching
-    ``decompose._parse_spec_issues``. Skipping is safe HERE because the
-    validator runs first and rejects a payload whose escalation count
-    disagrees with its blocker count, so a dropped escalation is a
-    retryable error rather than a silently-cleared halt.
+    Call ``decisions_payload_errors`` FIRST and reject on any error.
+    This function assumes that has happened: it skips an entry it cannot
+    read, and a skip is only safe once a skip can no longer be the
+    difference between halting and not.
     """
     if not isinstance(data, dict):
         return []
@@ -110,16 +297,14 @@ def parse_decisions(data: Any) -> list[SpecDecision]:
     for entry in raw:
         if not isinstance(entry, dict):
             continue
-        disposition = _clean(entry.get("disposition"))
-        question = _clean(entry.get("question"))
-        resolution = _clean(entry.get("resolution"))
-        if disposition not in VALID_DISPOSITIONS or not question or not resolution:
+        if decision_entry_errors(0, entry):
             continue
         decisions.append(
             SpecDecision(
-                question=question,
-                disposition=disposition,
-                resolution=resolution,
+                question=_clean(entry.get("question")),
+                disposition=_clean(entry.get("disposition")),
+                resolution=_clean(entry.get("resolution")),
+                issue=_clean(entry.get("issue")),
                 reason=_clean(entry.get("reason")),
                 alternative=_clean(entry.get("alternative")),
                 component=_clean(entry.get("component")),
@@ -134,8 +319,9 @@ def escalations(decisions: Sequence[SpecDecision]) -> list[SpecDecision]:
 
 
 def _decision_dict(decision: SpecDecision) -> dict[str, str]:
-    """One decision as the six JSON keys every artifact writes it under."""
+    """One decision as the seven JSON keys every artifact writes it under."""
     return {
+        "issue": decision.issue,
         "question": decision.question,
         "disposition": decision.disposition,
         "resolution": decision.resolution,
@@ -155,20 +341,25 @@ def write_decisions(
     root_dir: Path,
     project_name: str,
     spec_file: str,
+    *,
+    halted: bool,
 ) -> Path:
     """Persist the register to ``scripts/kstrl/decisions.json``.
 
     Written on every decompose that produced parseable output, including
     one that closed nothing: an empty ``decisions`` array is the record
     that the architect had no open question, which is a different fact
-    from "no record". Raises ``OSError`` on write failure so the caller
-    can surface it loudly.
+    from "no record". ``halted`` is stamped in because a halted run
+    saves no manifest, so its register would otherwise sit beside an
+    OLDER manifest and read as that run's decisions. Raises ``OSError``
+    on write failure so the caller can surface it loudly.
     """
     path = root_dir / SPEC_DECISIONS_REL_PATH
     payload: dict[str, Any] = {
         "project": project_name,
         "specFile": spec_file,
         "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "halted": halted,
         "counts": _decision_counts(decisions),
         "decisions": [_decision_dict(d) for d in decisions],
     }
@@ -177,25 +368,47 @@ def write_decisions(
     return path
 
 
-def read_decisions(root_dir: Path) -> list[SpecDecision]:
-    """Read the register back, or return [] when there is none.
+def read_decisions(root_dir: Path) -> DecisionRegister:
+    """Read the register back, reporting WHY when it cannot be used.
 
-    ``ValueError`` is caught alongside ``OSError`` deliberately: the file
-    is JSON read as utf-8, and both ``json.JSONDecodeError`` and
+    Three outcomes, never one silent empty list. A missing file is a
+    manifest older than this feature. An unreadable or malformed one is
+    the mechanism this module exists to add, gone; the caller is
+    expected to stop rather than schedule engineers with no decisions
+    and no warning.
+
+    ``ValueError`` is caught alongside ``OSError`` deliberately: the
+    file is JSON read as utf-8, and both ``json.JSONDecodeError`` and
     ``UnicodeDecodeError`` are ``ValueError`` subclasses that would
     otherwise escape a fail-closed ``except OSError``.
     """
     path = root_dir / SPEC_DECISIONS_REL_PATH
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
-    return parse_decisions(raw)
-
-
-def _estimate_tokens(text: str) -> int:
-    """Rough token count - 4 chars per token, the harness-wide convention."""
-    return max(1, len(text) // 4)
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return DecisionRegister(status=REGISTER_MISSING, detail=f"no register at {path}")
+    except (OSError, ValueError) as exc:
+        return DecisionRegister(status=REGISTER_UNREADABLE, detail=f"{path}: {exc}")
+    try:
+        raw = json.loads(text)
+    except ValueError as exc:
+        return DecisionRegister(status=REGISTER_UNREADABLE, detail=f"{path}: {exc}")
+    if not isinstance(raw, dict):
+        return DecisionRegister(
+            status=REGISTER_UNREADABLE, detail=f"{path}: top level is not an object"
+        )
+    entry_errors = decisions_payload_errors(raw)
+    if entry_errors:
+        return DecisionRegister(
+            status=REGISTER_UNREADABLE, detail=f"{path}: {'; '.join(entry_errors[:3])}"
+        )
+    return DecisionRegister(
+        decisions=tuple(parse_decisions(raw)),
+        project=_clean(raw.get("project")),
+        spec_file=_clean(raw.get("specFile")),
+        halted=bool(raw.get("halted", False)),
+        status=REGISTER_OK,
+    )
 
 
 def _render_full(decision: SpecDecision) -> str:
@@ -212,102 +425,86 @@ def _render_summary(decision: SpecDecision) -> str:
     return f"- **[{decision.disposition}]** {decision.question} -> {decision.resolution}"
 
 
-def _pack_section(
-    title: str,
-    items: Sequence[SpecDecision],
-    renderer: Callable[[SpecDecision], str],
-    budget: int,
-) -> tuple[list[str], int, int]:
-    """Render as much of one tier as ``budget`` allows.
+def _render_tier(items: Sequence[SpecDecision], full: bool) -> str:
+    """One tier rendered whole, or "" when it is empty.
 
-    Returns the section's lines, the budget left, and how many items did
-    not fit. An item too large for the remaining budget is skipped
-    rather than ending the tier, because a later, smaller one may still
-    fit - the same choice ``knowledge._pack_facts_full`` makes.
+    Deliberately NOT a "(none)" marker. That marker would be a second
+    piece of harness-authored English reaching the engineer, needing its
+    own enrolled constant, its own version and its own snapshot, and the
+    H3 render guard cannot hold a fragment nested inside another
+    enrolled template. An empty section under its heading says the same
+    thing and leaves exactly one enrolled body in this module.
     """
-    section: list[str] = []
-    dropped = 0
+    if not items:
+        return ""
+    render = _render_full if full else _render_summary
+    return "\n".join(render(item) for item in items)
+
+
+def _pack_other(items: Sequence[SpecDecision], max_tokens: int) -> list[SpecDecision]:
+    """As many other-component decisions as the budget allows.
+
+    An item too large for the remaining budget is skipped rather than
+    ending the tier, because a later, smaller one may still fit - the
+    same choice ``knowledge._pack_facts_full`` makes. This is the ONLY
+    place a decision is ever dropped.
+
+    Budgeted in CHARACTERS, at the harness-wide 4-per-token convention,
+    and including the newline that joins each item. Round 1 summed a
+    per-item ``max(1, len // 4)``, and flooring each item independently
+    let the tier finish over its own cap: measured, 2,001 tokens against
+    a 2,000 cap. Accumulating the real rendered length cannot round in
+    the permissive direction.
+    """
+    budget_chars = max_tokens * _CHARS_PER_TOKEN
+    used = 0
+    kept: list[SpecDecision] = []
     for item in items:
-        block = renderer(item)
-        cost = _estimate_tokens(block)
-        if cost > budget:
-            dropped += 1
+        cost = len(_render_summary(item)) + 1
+        if used + cost > budget_chars:
             continue
-        budget -= cost
-        section.append(block)
-    if not section:
-        return [], budget, dropped
-    return [f"### {title}", *section, ""], budget, dropped
+        used += cost
+        kept.append(item)
+    return kept
 
 
 def build_decisions_context(
     decisions: Sequence[SpecDecision],
     component_id: str,
-    max_tokens: int = MAX_DECISION_TOKENS,
+    max_other_tokens: int = MAX_OTHER_DECISION_TOKENS,
 ) -> str:
     """The engineer-facing block for one component, or "" when empty.
 
-    Three tiers, packed in this order so that what survives the budget
-    is what binds this engineer:
+    Three tiers, and only the third can lose anything:
 
-    1. Decisions naming ``component_id``, rendered in full.
-    2. Decisions naming no component, rendered in full: the prompt
+    1. Decisions naming ``component_id``, in full, ALL of them.
+    2. Decisions naming no component, in full, ALL of them: the prompt
        defines an empty ``component`` as "binds the whole run", so these
-       bind this engineer too and deserve their reason and their
-       rejected alternative.
-    3. Decisions naming another component, one line each.
+       bind this engineer too.
+    3. Decisions naming another component, one line each, up to
+       ``max_other_tokens``.
 
-    Only tier 3 can be dropped, which is what makes the truncation safe
-    to state plainly: nothing binding this component is ever cut. The
-    earlier two-tier split put run-wide decisions under "the rest of the
-    run", argued least and dropped first, which was backwards.
+    That makes the sentence in ``DECISIONS_CONTEXT_PROMPT`` true by
+    construction rather than by hope: nothing binding this component is
+    ever cut, so the block has no cap and does not pretend to have one.
     """
     if not decisions:
         return ""
     # Escalations first within each tier: if a register somehow reaches
-    # an engineer with one in it, it is the line that must survive.
-    # Sorted once - Python's sort is stable, so the partitions below
-    # inherit the order.
+    # an engineer with one in it, it is the line that must lead. Sorted
+    # once - Python's sort is stable, so the partitions below inherit
+    # the order.
     rank = {name: i for i, name in enumerate(DISPOSITION_ORDER)}
     ordered = sorted(decisions, key=lambda d: rank.get(d.disposition, len(rank)))
     own = [d for d in ordered if d.component == component_id]
     run_wide = [d for d in ordered if not d.component]
     other = [d for d in ordered if d.component and d.component != component_id]
-
-    header = [
-        _SECTION_TITLE,
-        "",
-        "Questions the architect closed while decomposing the spec, and how"
-        " it closed them. These are binding: implement what is written here."
-        " An `assumed` decision is pinned by an acceptance criterion in a"
-        " PRD - if your code cannot honour one, say so in your"
-        " Self-Critique rather than deciding differently.",
-        "",
-    ]
-    budget = max_tokens - _estimate_tokens("\n".join(header))
-    dropped = 0
-    body: list[str] = []
-    tiers: tuple[tuple[str, list[SpecDecision], Callable[[SpecDecision], str]], ...] = (
-        (f"{_OWN_SECTION_PREFIX}{component_id})", own, _render_full),
-        (_RUN_WIDE_SECTION_TITLE, run_wide, _render_full),
-        (_OTHER_SECTION_TITLE, other, _render_summary),
+    shown_other = _pack_other(other, max_other_tokens)
+    return DECISIONS_CONTEXT_PROMPT.format(
+        component_id=component_id,
+        own=_render_tier(own, full=True),
+        run_wide=_render_tier(run_wide, full=True),
+        other_shown=len(shown_other),
+        other_total=len(other),
+        other=_render_tier(shown_other, full=False),
     )
-    for title, items, renderer in tiers:
-        lines, budget, tier_dropped = _pack_section(title, items, renderer, budget)
-        body.extend(lines)
-        dropped += tier_dropped
-
-    if not body:
-        return ""
-    parts = header + body
-    if dropped:
-        # Deliberately does NOT point at decisions.json: the register is
-        # written to the project root and the engineer works in a
-        # worktree that never receives a copy, so naming the path would
-        # send it after a file it cannot open. What it can be told is
-        # that nothing it must implement was cut.
-        parts.append(
-            f"*Note: {dropped} decision(s) about other components did not"
-            f" fit the context budget. None of them bind this component.*"
-        )
-    return "\n".join(parts).rstrip() + "\n"

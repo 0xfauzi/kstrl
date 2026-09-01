@@ -94,7 +94,13 @@ from types import ModuleType
 
 import pytest
 
-from kstrl import decompose, git, knowledge, review, security, verify
+from kstrl import decisions, decompose, git, knowledge, review, security, verify
+from kstrl.decisions import (
+    DECISIONS_CONTEXT_PROMPT,
+    DECISIONS_CONTEXT_PROMPT_VERSION,
+    SpecDecision,
+    build_decisions_context,
+)
 from kstrl.decompose import DECOMPOSE_PROMPT, DECOMPOSE_PROMPT_VERSION
 from kstrl.git import (
     PASTED_CHANGE_SOURCE_PROMPT,
@@ -137,6 +143,7 @@ _PROMPTS: dict[str, str] = {
     "VERIFY_COMMANDS_PROMPT": VERIFY_COMMANDS_PROMPT,
     "REPO_CHANGE_SOURCE_PROMPT": REPO_CHANGE_SOURCE_PROMPT,
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT,
+    "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT,
 }
 
 _VERSIONS: dict[str, str] = {
@@ -148,24 +155,37 @@ _VERSIONS: dict[str, str] = {
     "VERIFY_COMMANDS_PROMPT": VERIFY_COMMANDS_PROMPT_VERSION,
     "REPO_CHANGE_SOURCE_PROMPT": REPO_CHANGE_SOURCE_PROMPT_VERSION,
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT_VERSION,
+    "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT_VERSION,
 }
 
 # Joint snapshot: (sha256_hash, semver_version). Both must move together
 # when a prompt is edited; the test fails if either is stale.
 _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
-    # 2.0.0 (#260): MAJOR, because the halt contract and the output
-    # schema both broke. The architect now has four ways to close a
-    # question - decided, assumed, spiked, escalated - recorded in a new
-    # top-level `decisions` array, and only an escalation halts. The
-    # sentence forcing `"components": []` on any blocker is gone, and
-    # "blocker" severity is redefined to mean "you escalated this", with
-    # the harness rejecting output whose blocker and escalation counts
-    # disagree. Five real runs against a real spec halted 5 of 5 on
-    # findings the architect had already answered in its own
-    # suggestions; 2 of 117 were judgements only the owner could make.
+    # 3.0.0 (#260): MAJOR, twice over and in one landing. 2.0.0 never
+    # left the branch, so a reader of main sees 1.4.2 go straight to
+    # 3.0.0; both bumps are in the PR that carries them, which is what
+    # the H3 audit trail asks for.
+    #
+    # 2.0.0 gave the architect four ways to close a question - decided,
+    # assumed, spiked, escalated - in a new top-level `decisions` array,
+    # and made only an escalation halt. The sentence forcing
+    # `"components": []` on any blocker went, and "blocker" severity was
+    # redefined to mean "you escalated this". Five real runs against a
+    # real spec halted 5 of 5 on findings the architect had already
+    # answered in its own suggestions; 2 of 117 were judgements only the
+    # owner could make.
+    #
+    # 3.0.0 adds the JOIN. Every `spec_issues` entry carries a unique
+    # `id` and every `decisions` entry carries the `issue` it closes,
+    # because 2.0.0 compared a COUNT of blockers against a COUNT of
+    # PARSED escalations and a disposition of "Escalated" parsed to
+    # nothing, so both counts fell to zero and agreed. Nine malformed
+    # shapes validated. The correspondence is now per record: one
+    # decision per issue, blocker iff escalated, and an id that names
+    # nothing is a rejection.
     "DECOMPOSE_PROMPT": (
-        "3b7b4008023cf5bf4d496927bf9a1ca01498993f8b085eeea83f56e875b425d3",
-        "2.0.0",
+        "3632c88ab7813319ec3ccc76139ecb253c300bbea509b838436b1947bb50f147",
+        "3.0.0",
     ),
     # 2.0.0 (#266): MAJOR, because the change-acquisition contract and
     # the output schema both broke. Neither prompt carries a diff any
@@ -230,6 +250,16 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     ),
     "PASTED_CHANGE_SOURCE_PROMPT": (
         "a1e6082933043d31c9efc513c0e16466629ccf770f6e6e828ace39565736d0d5",
+        "1.0.0",
+    ),
+    # 1.0.0 (#260 round 2): the engineer-facing block for the architect's
+    # disposition register. It shipped unenrolled in round 1, built from
+    # inline f-strings, and review changed "binding" to "advisory" with
+    # all 61 prompt-version and enrollment tests staying green. That is
+    # #303's blind spot: the walk keys on a `*_PROMPT` NAME, so text
+    # nobody named is text nobody has to justify.
+    "DECISIONS_CONTEXT_PROMPT": (
+        "1630b9ee2c33c3513965f03e28a4f2e4d76c4cbf434b031fdb789819f23fae23",
         "1.0.0",
     ),
 }
@@ -327,6 +357,30 @@ _MARKER_TAIL = "<<<H3-RENDER-GUARD-END>>>"
 _ORPHAN_MARKER = _MARKER_HEAD + "." * (git.DEFAULT_PROMPT_DIFF_CHAR_LIMIT + 1) + _MARKER_TAIL
 
 
+def _decisions_context_render(_tmp_path: Path) -> str:
+    """The real production renderer, with every tier non-empty."""
+    return build_decisions_context(
+        [
+            SpecDecision(issue="i1", question="q1", disposition="decided", resolution="r1"),
+            SpecDecision(
+                issue="i2",
+                question="q2",
+                disposition="decided",
+                resolution="r2",
+                component="comp-a",
+            ),
+            SpecDecision(
+                issue="i3",
+                question="q3",
+                disposition="decided",
+                resolution="r3",
+                component="comp-b",
+            ),
+        ],
+        "comp-a",
+    )
+
+
 def _reviewer_render(tmp_path: Path) -> str:
     prd_path = write_component_prd(tmp_path, "prd.json")
     return review.build_review_prompt(
@@ -368,6 +422,7 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     "VERIFY_COMMANDS_PROMPT": (verify, _verify_render),
     "REPO_CHANGE_SOURCE_PROMPT": (git, lambda _p: repo_change_source("BASE_SHA")),
     "PASTED_CHANGE_SOURCE_PROMPT": (git, lambda _p: pasted_change_source("DIFF")[0]),
+    "DECISIONS_CONTEXT_PROMPT": (decisions, _decisions_context_render),
 }
 
 #: Enrolled prompts with no renderer, and why. DEFAULT_PROMPT is written

@@ -26,6 +26,7 @@ from kstrl.decisions import (
     DISPOSITION_ESCALATED,
     DISPOSITION_ORDER,
     SpecDecision,
+    decisions_payload_errors,
     escalations,
     parse_decisions,
     write_decisions,
@@ -77,13 +78,21 @@ if TYPE_CHECKING:
 
 @dataclass
 class SpecIssue:
-    """A red-team finding raised by the architect during decomposition."""
+    """A red-team finding raised by the architect during decomposition.
+
+    ``issue_id`` is the join key the ``decisions`` register closes each
+    finding by (#260 round 2). Defaulted to "" so the twenty-odd
+    in-repo constructions that predate it still build; the VALIDATOR is
+    where a real architect payload is required to carry one, because
+    that is where a missing id can still be rejected and retried.
+    """
 
     severity: str  # "blocker" | "major" | "minor"
     kind: str
     summary: str
     location: str = ""
     suggestion: str = ""
+    issue_id: str = ""
 
 
 class SpecBlockerError(Exception):
@@ -136,7 +145,7 @@ class SpecBlockerError(Exception):
         return lines
 
 
-DECOMPOSE_PROMPT_VERSION = "2.0.0"
+DECOMPOSE_PROMPT_VERSION = "3.0.0"
 
 DECOMPOSE_PROMPT = """\
 You are a senior software architect AND a hostile spec auditor. You have
@@ -167,6 +176,7 @@ The output must be a JSON object with this exact structure:
 {{
   "spec_issues": [
     {{
+      "id": "kebab-case-id, unique across spec_issues, e.g. auth-mechanism-unspecified",
       "severity": "blocker|major|minor",
       "kind": "ambiguity|missing_detail|contradiction|unstated_assumption|undefined_failure_mode|out_of_scope_creep|other",
       "summary": "one-sentence statement of the issue",
@@ -176,6 +186,7 @@ The output must be a JSON object with this exact structure:
   ],
   "decisions": [
     {{
+      "issue": "the spec_issues id this decision closes",
       "question": "the open question, in one sentence",
       "disposition": "decided|assumed|spiked|escalated",
       "resolution": "the choice you made, the default you took, the command you ran and what it printed, or what the owner must decide",
@@ -295,16 +306,22 @@ Red-team rules:
   handling, no concurrency story), undefined data shapes, missing
   authentication/authorization story, unspecified perf budgets, missing
   rollback / backwards-compat plan, contradictions between sections.
-- Severity says what happens if the engineer is left to guess. It does
-  NOT say how you disposed of the issue; that is what `decisions` is
-  for.
-  - "blocker": you escalated this. Every "blocker" issue MUST have a
-    matching `decisions` entry with disposition "escalated", and every
-    escalated decision MUST have a matching "blocker" issue. The
-    harness REJECTS output where the two counts disagree.
+- EVERY issue you raise MUST be closed by exactly one `decisions` entry
+  whose `issue` field is that issue's `id`. One issue, one decision.
+  The harness REJECTS output where an issue is unclosed, where two
+  decisions close the same issue, or where a decision names an id that
+  is not in `spec_issues`.
+- Severity says what happens if the engineer is left to guess, and it is
+  tied to the disposition of the decision that closes it:
+  - "blocker": you escalated this. A "blocker" issue MUST be closed by
+    disposition "escalated", and an "escalated" decision MUST close a
+    "blocker" issue. The harness REJECTS either half on its own.
   - "major": would likely cause rework or a fail-class bug if guessed.
     You still closed it yourself: decided, assumed or spiked.
-  - "minor": worth raising, low consequence either way.
+  - "minor": worth raising, low consequence either way. Also closed by
+    decided, assumed or spiked.
+- Field values are matched EXACTLY. "Escalated", "ESCALATED" and
+  "escalate" are all rejected; write "escalated".
 - If you genuinely find no issues after reading carefully, return
   "spec_issues": []. Honesty over performance: do not invent issues to
   appear thorough.
@@ -638,40 +655,108 @@ def _validate_allowed_path_entry(entry: str) -> str | None:
     return None
 
 
-def _decision_register_errors(
-    data: dict[str, Any],
-    decisions: list[SpecDecision],
-) -> list[str]:
-    """The blocker/escalation correspondence the prompt promises (#260).
+def _spec_issue_id_errors(data: dict[str, Any]) -> tuple[list[str], dict[str, str]]:
+    """Every raw spec issue needs a unique id, the join key (#260 r2).
 
-    DECOMPOSE_PROMPT v2.0.0 defines "blocker" severity as "you escalated
-    this", so the two counts are two views of one fact and must agree.
-    This is enforced rather than trusted because the halt now keys on
-    the escalation: a blocker with no escalated decision would be a
-    finding the architect called un-guessable and then never closed, and
-    the run would proceed on it in silence.
-
-    Counted over the PARSED decisions rather than the raw dicts, so a
-    malformed escalation the parser would drop is a retryable error here
-    instead of a halt that quietly disappeared. Counting is all this can
-    do: nothing in the payload joins an issue to the decision that
-    closed it, so two blockers plus two unrelated escalations passes.
-    That is a real limit of the check, and closing it needs a join key
-    in the schema, which is a prompt change.
+    Returns the errors and, when there are none, ``{id: severity}`` for
+    the join below. Validated RAW: an entry ``_parse_spec_issues`` would
+    skip must be a rejection here, because a skipped blocker is a
+    blocker that never has to be closed.
     """
-    if not isinstance(data.get("decisions", []), list):
-        return ["'decisions' must be an array"]
-    blockers = sum(1 for i in _parse_spec_issues(data) if i.severity == "blocker")
-    escalated = len(escalations(decisions))
-    if blockers == escalated:
-        return []
-    return [
-        f"'decisions' must carry exactly one escalated entry per "
-        f"blocker-severity spec issue: found {blockers} blocker(s) and "
-        f"{escalated} well-formed escalated decision(s). Every blocker is "
-        f"an escalation and every escalation is a blocker; an escalated "
-        f"entry needs a disposition, a question and a resolution."
-    ]
+    raw = data.get("spec_issues")
+    if raw is None:
+        return [], {}
+    if not isinstance(raw, list):
+        return [f"'spec_issues' must be an array, got {type(raw).__name__}"], {}
+    errors: list[str] = []
+    severities: dict[str, str] = {}
+    for index, entry in enumerate(raw):
+        prefix = f"spec_issues[{index}]"
+        if not isinstance(entry, dict):
+            errors.append(f"{prefix}: must be an object, got {type(entry).__name__}")
+            continue
+        issue_id = entry.get("id")
+        if not isinstance(issue_id, str) or not issue_id.strip():
+            errors.append(f"{prefix}.id: must be a non-empty string, unique in this payload")
+            continue
+        issue_id = issue_id.strip()
+        if issue_id in severities:
+            errors.append(f"{prefix}.id: {issue_id!r} is already used by an earlier issue")
+            continue
+        severity = entry.get("severity")
+        severities[issue_id] = severity.strip() if isinstance(severity, str) else ""
+    return errors, severities
+
+
+def _decision_join_errors(
+    raw_decisions: list[Any],
+    issue_severity: dict[str, str],
+) -> list[str]:
+    """Every issue closed once, and blocker iff escalated (#260 r2).
+
+    This replaces a count comparison. Counting could not tell two
+    blockers plus two unrelated escalations from two matched pairs, and
+    worse, it read zero against zero as agreement, so any entry the
+    parser dropped disabled the halt gate. The join is per record and
+    indexed, so a retry can fix the exact entry.
+    """
+    errors: list[str] = []
+    closed_by: dict[str, int] = {}
+    for index, entry in enumerate(raw_decisions):
+        if not isinstance(entry, dict):
+            continue
+        issue_id = entry.get("issue")
+        disposition = entry.get("disposition")
+        if not isinstance(issue_id, str) or not isinstance(disposition, str):
+            continue
+        issue_id = issue_id.strip()
+        prefix = f"decisions[{index}]"
+        if issue_id not in issue_severity:
+            errors.append(
+                f"{prefix}.issue: {issue_id!r} is not the id of any entry in 'spec_issues'"
+            )
+            continue
+        if issue_id in closed_by:
+            errors.append(
+                f"{prefix}.issue: {issue_id!r} is already closed by decisions[{closed_by[issue_id]}]"
+            )
+            continue
+        closed_by[issue_id] = index
+        is_blocker = issue_severity[issue_id] == "blocker"
+        is_escalated = disposition == DISPOSITION_ESCALATED
+        if is_blocker != is_escalated:
+            errors.append(
+                f"{prefix}: issue {issue_id!r} is severity "
+                f"{issue_severity[issue_id]!r} and disposition {disposition!r}. "
+                f"'blocker' means 'you escalated this': a blocker needs an "
+                f"'escalated' decision and an 'escalated' decision needs a "
+                f"'blocker' issue."
+            )
+    errors.extend(
+        f"spec_issues: {issue_id!r} was raised and never closed; every issue "
+        f"needs one 'decisions' entry naming it"
+        for issue_id in issue_severity
+        if issue_id not in closed_by
+    )
+    return errors
+
+
+def _decision_register_errors(data: dict[str, Any]) -> list[str]:
+    """The register contract, validated on the RAW payload (#260 r2).
+
+    Order matters: the array and its entries first, then the identity
+    join. A malformed entry is a fault with an index, never an absence,
+    because round 1 turned every malformed entry into an absence and two
+    absences agree. Measured on the round-1 code: nine malformed shapes
+    were ACCEPTED, including a decision whose disposition was
+    ``"Escalated"``.
+    """
+    errors = decisions_payload_errors(data)
+    id_errors, issue_severity = _spec_issue_id_errors(data)
+    errors.extend(id_errors)
+    if errors:
+        return errors
+    return _decision_join_errors(data["decisions"], issue_severity)
 
 
 def _write_decompose_artifact(
@@ -726,6 +811,24 @@ def _decision_component_errors(
     ]
 
 
+def _empty_components_errors(data: dict[str, Any], errors: list[str]) -> list[str]:
+    """Whether an empty ``components`` array is a legal halt (#260).
+
+    Legal only when the register is clean AND carries an escalation.
+    ``errors`` is required to be empty first: round 1 accepted an empty
+    payload whose only escalation was malformed, because the malformed
+    entry parsed to nothing and nothing is not an escalation, so the
+    caller fell through to the register errors alone and the halt read
+    as a retryable shape rather than as the fail-open it was.
+    """
+    if not errors and escalations(parse_decisions(data)):
+        return errors
+    return [
+        *errors,
+        "'components' must not be empty (no well-formed escalated decision to justify a halt)",
+    ]
+
+
 def _validate_decompose_output(data: Any) -> list[str]:
     """Validate the decomposition output structure.
 
@@ -745,21 +848,18 @@ def _validate_decompose_output(data: Any) -> list[str]:
     if not isinstance(components, list):
         return ["'components' must be an array"]
 
-    # Parsed ONCE and passed down: the register decides both whether the
-    # payload is well-formed and whether an empty component list is a
-    # legal halt, and those two answers must come off the same reading.
-    decisions = parse_decisions(data)
-    # Checked on both the halting and the decomposing path: an
-    # unusable register is a retryable error either way.
-    errors: list[str] = _decision_register_errors(data, decisions)
+    # The register is checked RAW and first, on both the halting and the
+    # decomposing path: an unusable register is a retryable error either
+    # way, and after round 2 an entry that does not parse is a named
+    # fault rather than a silent zero.
+    errors: list[str] = _decision_register_errors(data)
 
     if not components:
-        if escalations(decisions):
-            # Architect explicitly halted - this is a valid outcome.
-            return errors
-        return errors + [
-            "'components' must not be empty (no well-formed escalated decision to justify a halt)"
-        ]
+        return _empty_components_errors(data, errors)
+
+    # Parsed only once the raw shape is known good, so a parse can no
+    # longer be the difference between halting and not.
+    decisions = parse_decisions(data)
 
     seen_ids: set[str] = set()
     seen_story_ids: set[str] = set()
@@ -948,6 +1048,7 @@ def _parse_spec_issues(data: Any) -> list[SpecIssue]:
                 summary=summary,
                 location=str(entry.get("location", "")).strip(),
                 suggestion=str(entry.get("suggestion", "")).strip(),
+                issue_id=str(entry.get("id", "")).strip(),
             )
         )
     return issues
@@ -1034,8 +1135,9 @@ SPEC_ISSUES_EVENT = "spec_issues"
 
 
 def _issue_dict(issue: SpecIssue) -> dict[str, str]:
-    """One issue as the five JSON keys every artifact writes it under."""
+    """One issue as the six JSON keys every artifact writes it under."""
     return {
+        "id": issue.issue_id,
         "severity": issue.severity,
         "kind": issue.kind,
         "summary": issue.summary,
@@ -2271,18 +2373,18 @@ def _decompose_spec_impl(
             halted=bool(escalated),
         ),
     )
-    # Written on the halt path too, so an escalated run leaves the
-    # question and the reason on disk rather than only in the exception.
-    decisions_path = write_artifact(
+    # #260 round 2: the register is written on the HALT path here, and
+    # on the success path only after the manifest commits (below).
+    # Round 1 wrote it here unconditionally, so a decompose that halted
+    # or failed later left a fresh register beside an OLDER manifest,
+    # and the factory read it as that manifest's decisions. The halt
+    # copy is stamped ``halted`` and the factory refuses to bind one.
+    write_register = functools.partial(
+        write_artifact,
         "decisions",
         "architect decisions",
-        lambda: write_decisions(
-            decisions,
-            root_dir=root_dir,
-            project_name=project_name,
-            spec_file=spec_path.name,
-        ),
     )
+    decisions_path = None
     # #260: what this audit says about the previous one, read BEFORE
     # this run is appended to the journal below - otherwise the
     # "previous run" the report compares against would be this one.
@@ -2320,6 +2422,15 @@ def _decompose_spec_impl(
         )
     )
     if escalated:
+        decisions_path = write_register(
+            lambda: write_decisions(
+                decisions,
+                root_dir=root_dir,
+                project_name=project_name,
+                spec_file=spec_path.name,
+                halted=True,
+            ),
+        )
         # The run dir must read as FINISHED, not dead: the halt is the
         # architect's judgment, delivered before the error propagates.
         emit(
@@ -2501,6 +2612,18 @@ def _decompose_spec_impl(
         manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
         manifest.save(manifest_path)
         ui.ok(f"Manifest saved: {manifest_path}")
+        # AFTER the manifest, never before: the register binds engineers
+        # to this manifest, so it must not exist unless this manifest
+        # does. Inside the cleanup scope for the same reason.
+        write_register(
+            lambda: write_decisions(
+                decisions,
+                root_dir=root_dir,
+                project_name=project_name,
+                spec_file=spec_path.name,
+                halted=False,
+            ),
+        )
     except BaseException:
         for prd_file in written_prds:
             try:

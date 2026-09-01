@@ -46,7 +46,7 @@ from kstrl.contract import (
     ContractResult,
     run_contract_testing,
 )
-from kstrl.decisions import build_decisions_context, read_decisions
+from kstrl.decisions import bind_register, build_decisions_context, read_decisions
 from kstrl.events import (
     AdversarialAgentSelected,
     AutonomyLevelApplied,
@@ -3436,10 +3436,22 @@ def _run_factory_locked(
         }
 
     # #260: the architect's disposition register, read once for the run
-    # because it is a run-wide artifact the decompose wrote. Absent (a
-    # manifest built before this landed, or by hand) it reads as [] and
-    # every engineer prompt is byte-identical to before.
-    run_decisions = read_decisions(root_dir)
+    # because it is a run-wide artifact the decompose wrote, and BOUND
+    # to this manifest before anything is scheduled.
+    #
+    # Round 2: the path is fixed, so without the bind a register left by
+    # another project sits exactly where this run looks. Reproduced: a
+    # factory run on project-b/b.md with project A's register beside it
+    # handed the engineer project A's binding instruction, because both
+    # happened to have a component called comp-a. ``bind_register``
+    # raises on that, on a halted register, and on an unreadable one;
+    # only a MISSING register is legal, and it means a manifest older
+    # than this feature. Missing is quiet on purpose: it is the normal
+    # state for every project that predates this, and a write that
+    # FAILED is already announced by ``_write_decompose_artifact`` at
+    # the point it failed.
+    run_register = read_decisions(root_dir)
+    run_decisions = bind_register(run_register, manifest.project_name, manifest.spec_file)
 
     def _submit_args(comp: Component, wt_path: Path) -> tuple[Any, ...]:
         ctx_json = component_contexts.get(comp.id)

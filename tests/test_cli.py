@@ -313,6 +313,7 @@ class TestDecomposeBlockerOutput:
             raise SpecBlockerError(
                 [
                     SpecDecision(
+                        issue="product-purpose",
                         question="what is this product for",
                         disposition="escalated",
                         resolution="the owner must say",
@@ -596,6 +597,7 @@ class TestBaseBranchFlagDefaults:
             raise SpecBlockerError(
                 [
                     SpecDecision(
+                        issue="halt-question",
                         question="halt",
                         disposition="escalated",
                         resolution="the owner must say",

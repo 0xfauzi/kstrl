@@ -2,19 +2,42 @@
 
 Four ways to close a question, one of which halts, plus the delivery
 path that puts the closed ones in front of the engineer.
+
+Round 2 of this change added the four properties review found missing,
+and every class below is named for the one it holds:
+
+- a malformed entry is a NAMED FAULT, never a silent zero (F1);
+- a decision that binds this component is never dropped (F2);
+- the register on disk must prove it belongs to this manifest (F3);
+- the engineer-facing English lives in an enrolled prompt (F4).
 """
 
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
+from typing import Any
+from unittest.mock import patch
 
+import pytest
+
+import kstrl.decisions as decisions_mod
 from kstrl.decisions import (
-    MAX_DECISION_TOKENS,
+    DECISIONS_CONTEXT_PROMPT,
+    MAX_OTHER_DECISION_TOKENS,
+    REGISTER_MISSING,
+    REGISTER_OK,
+    REGISTER_UNREADABLE,
     SPEC_DECISIONS_REL_PATH,
+    DecisionRegister,
+    DecisionRegisterError,
     SpecDecision,
     _decision_counts,
+    bind_register,
     build_decisions_context,
+    decision_entry_errors,
+    decisions_payload_errors,
     escalations,
     parse_decisions,
     read_decisions,
@@ -22,8 +45,9 @@ from kstrl.decisions import (
 )
 
 
-def _decision(**overrides: str) -> dict[str, str]:
-    entry = {
+def _decision(**overrides: object) -> dict[str, object]:
+    entry: dict[str, object] = {
+        "issue": "reader-encoding-unspecified",
         "question": "what encoding does the reader name",
         "disposition": "decided",
         "resolution": "utf-8, named explicitly at every read site",
@@ -35,11 +59,23 @@ def _decision(**overrides: str) -> dict[str, str]:
     return entry
 
 
+def _spec_decision(**overrides: object) -> SpecDecision:
+    fields: dict[str, Any] = {
+        "issue": "i0",
+        "question": "q",
+        "disposition": "decided",
+        "resolution": "r",
+    }
+    fields.update(overrides)
+    return SpecDecision(**fields)
+
+
 class TestParsing:
     def test_a_well_formed_entry_round_trips(self) -> None:
         parsed = parse_decisions({"decisions": [_decision()]})
         assert parsed == [
             SpecDecision(
+                issue="reader-encoding-unspecified",
                 question="what encoding does the reader name",
                 disposition="decided",
                 resolution="utf-8, named explicitly at every read site",
@@ -49,180 +85,337 @@ class TestParsing:
             )
         ]
 
-    def test_an_unknown_disposition_is_dropped(self) -> None:
-        assert parse_decisions({"decisions": [_decision(disposition="deferred")]}) == []
+    def test_whitespace_is_stripped(self) -> None:
+        parsed = parse_decisions({"decisions": [_decision(question="  padded  ")]})
+        assert parsed[0].question == "padded"
 
-    def test_a_missing_resolution_is_dropped(self) -> None:
-        """A decision with no answer in it is not a decision. Dropping it
-        is safe only because the validator counts escalations before this
-        runs, so a dropped escalation is a retryable error upstream."""
-        assert parse_decisions({"decisions": [_decision(resolution="  ")]}) == []
 
-    def test_a_missing_question_is_dropped(self) -> None:
-        assert parse_decisions({"decisions": [_decision(question="")]}) == []
+class TestAMalformedEntryIsAFaultNotAZero:
+    """F1. Round 1 parsed first and counted afterwards, so an entry the
+    parser could not read became an ABSENCE, and an absence agrees with
+    any count. Measured on that code: a disposition of "Escalated"
+    produced a payload that validated, wrote a PRD and wrote a manifest.
+    """
 
-    def test_a_non_object_entry_is_dropped(self) -> None:
-        assert parse_decisions({"decisions": ["escalated"]}) == []
+    @pytest.mark.parametrize(
+        ("label", "entry", "needle"),
+        [
+            ("capitalised", _decision(disposition="Escalated"), "case-exact"),
+            ("upper", _decision(disposition="ESCALATED"), "case-exact"),
+            ("misspelled", _decision(disposition="excalated"), "case-exact"),
+            ("truncated", _decision(disposition="escalate"), "case-exact"),
+            ("non-string disposition", _decision(disposition=7), "must be a string"),
+            ("missing disposition", {"issue": "i", "question": "q", "resolution": "r"}, "string"),
+            ("blank question", _decision(question="   "), "question: must not be empty"),
+            ("missing question", _decision(question=None), "question: must be a string"),
+            ("blank resolution", _decision(resolution=""), "resolution: must not be empty"),
+            ("missing join key", _decision(issue=None), "issue: must be a string"),
+            ("blank join key", _decision(issue="  "), "issue: must not be empty"),
+            ("non-string component", _decision(component=3), "component: must be a string"),
+        ],
+    )
+    def test_each_bad_entry_is_named_and_indexed(
+        self, label: str, entry: object, needle: str
+    ) -> None:
+        errors = decision_entry_errors(0, entry)
+        assert errors, f"{label} produced no error"
+        assert all(e.startswith("decisions[0].") or e.startswith("decisions[0]:") for e in errors)
+        assert any(needle in e for e in errors)
 
-    def test_a_non_list_decisions_field_is_empty(self) -> None:
-        assert parse_decisions({"decisions": {"a": 1}}) == []
+    def test_a_non_object_entry_is_rejected(self) -> None:
+        assert decision_entry_errors(2, "escalated") == ["decisions[2]: must be an object, got str"]
 
-    def test_a_payload_that_is_not_an_object_is_empty(self) -> None:
-        assert parse_decisions(["decisions"]) == []
+    def test_the_array_is_required(self) -> None:
+        assert decisions_payload_errors({"spec_issues": []}) == [
+            "'decisions' is required (use [] when the spec raised no question)"
+        ]
 
-    def test_optional_fields_default_to_empty(self) -> None:
-        parsed = parse_decisions(
-            {"decisions": [{"question": "q", "disposition": "spiked", "resolution": "r"}]}
-        )
-        assert parsed == [SpecDecision(question="q", disposition="spiked", resolution="r")]
+    def test_an_empty_array_is_legal(self) -> None:
+        assert decisions_payload_errors({"decisions": []}) == []
 
-    def test_escalations_are_the_halting_subset(self) -> None:
+    def test_a_non_list_array_is_rejected(self) -> None:
+        assert decisions_payload_errors({"decisions": {}}) == [
+            "'decisions' must be an array, got dict"
+        ]
+
+    def test_parse_skips_exactly_what_the_validator_rejects(self) -> None:
+        """The two must agree, or a skip is again the difference between
+        halting and not."""
+        bad = _decision(disposition="Escalated")
+        assert decision_entry_errors(0, bad)
+        assert parse_decisions({"decisions": [bad]}) == []
+
+
+class TestEscalation:
+    def test_escalations_are_selected_by_exact_disposition(self) -> None:
         parsed = parse_decisions(
             {
                 "decisions": [
-                    _decision(),
-                    _decision(disposition="escalated", question="what ships first"),
-                    _decision(disposition="assumed", question="what the default is"),
+                    _decision(issue="a", disposition="escalated"),
+                    _decision(issue="b", disposition="decided"),
                 ]
             }
         )
-        assert [d.question for d in escalations(parsed)] == ["what ships first"]
+        assert [d.issue for d in escalations(parsed)] == ["a"]
 
     def test_counts_cover_every_disposition(self) -> None:
-        parsed = parse_decisions({"decisions": [_decision(), _decision(disposition="spiked")]})
-        assert _decision_counts(parsed) == {
-            "escalated": 0,
-            "decided": 1,
-            "assumed": 0,
-            "spiked": 1,
-        }
+        counts = _decision_counts([_spec_decision(disposition="escalated")])
+        assert counts == {"escalated": 1, "decided": 0, "assumed": 0, "spiked": 0}
 
 
 class TestPersistence:
-    def test_the_register_round_trips_through_disk(self, tmp_path: Path) -> None:
-        decisions = parse_decisions({"decisions": [_decision(), _decision(disposition="spiked")]})
-        path = write_decisions(decisions, tmp_path, "proj", "spec.md")
+    def test_round_trip(self, tmp_path: Path) -> None:
+        path = write_decisions(
+            [_spec_decision(component="comp-a")],
+            root_dir=tmp_path,
+            project_name="proj",
+            spec_file="spec.md",
+            halted=False,
+        )
         assert path == tmp_path / SPEC_DECISIONS_REL_PATH
-        assert read_decisions(tmp_path) == decisions
+        register = read_decisions(tmp_path)
+        assert register.status == REGISTER_OK
+        assert register.project == "proj"
+        assert register.spec_file == "spec.md"
+        assert register.halted is False
+        assert register.decisions == (_spec_decision(component="comp-a"),)
 
-    def test_a_closed_nothing_run_still_writes_a_record(self, tmp_path: Path) -> None:
-        """An empty register is the record that the architect had no open
-        question. That is a different fact from "no record"."""
-        path = write_decisions([], tmp_path, "proj", "spec.md")
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        assert payload["decisions"] == []
-        assert payload["counts"]["escalated"] == 0
+    def test_the_halt_flag_survives_the_round_trip(self, tmp_path: Path) -> None:
+        write_decisions(
+            [_spec_decision(disposition="escalated")],
+            root_dir=tmp_path,
+            project_name="proj",
+            spec_file="spec.md",
+            halted=True,
+        )
+        assert read_decisions(tmp_path).halted is True
 
-    def test_the_file_names_its_project_and_spec(self, tmp_path: Path) -> None:
-        path = write_decisions([], tmp_path, "writers-room", "spec-slice-1.md")
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        assert payload["project"] == "writers-room"
-        assert payload["specFile"] == "spec-slice-1.md"
+    def test_the_write_goes_through_atomicio(self, tmp_path: Path) -> None:
+        """Mutation guard. Replacing ``atomic_write_json`` with a direct
+        ``write_text`` left all six round-1 persistence tests passing,
+        because every one of them only checked what came back out. A
+        torn register is exactly the input F3 has to treat as fatal, so
+        the atomicity is the property, not an implementation detail."""
+        with patch.object(decisions_mod, "atomic_write_json") as writer:
+            write_decisions(
+                [_spec_decision()],
+                root_dir=tmp_path,
+                project_name="proj",
+                spec_file="spec.md",
+                halted=False,
+            )
+        writer.assert_called_once()
+        payload = writer.call_args.args[1]
+        assert payload["project"] == "proj"
+        assert payload["decisions"][0]["issue"] == "i0"
 
-    def test_a_missing_file_reads_as_no_decisions(self, tmp_path: Path) -> None:
-        assert read_decisions(tmp_path) == []
+    def test_an_empty_register_is_still_written(self, tmp_path: Path) -> None:
+        write_decisions([], root_dir=tmp_path, project_name="p", spec_file="s.md", halted=False)
+        register = read_decisions(tmp_path)
+        assert register.status == REGISTER_OK
+        assert register.decisions == ()
 
-    def test_a_truncated_file_reads_as_no_decisions(self, tmp_path: Path) -> None:
-        path = tmp_path / SPEC_DECISIONS_REL_PATH
-        path.parent.mkdir(parents=True)
-        path.write_text('{"decisions": [', encoding="utf-8")
-        assert read_decisions(tmp_path) == []
+    def test_a_missing_file_reports_missing(self, tmp_path: Path) -> None:
+        register = read_decisions(tmp_path)
+        assert register.status == REGISTER_MISSING
+        assert register.decisions == ()
 
-    def test_a_non_utf8_file_reads_as_no_decisions(self, tmp_path: Path) -> None:
-        """UnicodeDecodeError is a ValueError, not an OSError, so a
-        fail-closed ``except OSError`` would let it escape and take the
-        whole factory run down."""
+    def test_a_non_utf8_file_reports_unreadable(self, tmp_path: Path) -> None:
+        """``UnicodeDecodeError`` is a ``ValueError``, so a fail-closed
+        ``except OSError`` would let it escape."""
         path = tmp_path / SPEC_DECISIONS_REL_PATH
         path.parent.mkdir(parents=True)
         path.write_bytes(b'{"decisions": [], "project": "\xff\xfe"}')
-        assert read_decisions(tmp_path) == []
+        register = read_decisions(tmp_path)
+        assert register.status == REGISTER_UNREADABLE
+        assert register.decisions == ()
+
+    def test_a_torn_file_reports_unreadable(self, tmp_path: Path) -> None:
+        path = tmp_path / SPEC_DECISIONS_REL_PATH
+        path.parent.mkdir(parents=True)
+        path.write_text('{"decisions": [{"issue": "i0",', encoding="utf-8")
+        assert read_decisions(tmp_path).status == REGISTER_UNREADABLE
+
+    def test_a_malformed_entry_on_disk_reports_unreadable(self, tmp_path: Path) -> None:
+        """Not "reads as empty". A hand-edited register with a
+        capitalised disposition is the same fail-open F1 closed, one
+        layer down."""
+        path = tmp_path / SPEC_DECISIONS_REL_PATH
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "project": "p",
+                    "specFile": "s.md",
+                    "decisions": [_decision(disposition="Escalated")],
+                }
+            ),
+            encoding="utf-8",
+        )
+        register = read_decisions(tmp_path)
+        assert register.status == REGISTER_UNREADABLE
+        assert "case-exact" in register.detail
 
 
-class TestEngineerContext:
+class TestTheRegisterMustBelongToThisManifest:
+    """F3. The factory reads one fixed path, so without this a register
+    left by another project sits exactly where this run looks.
+    Reproduced on round 1: a run on project-b/b.md with project A's
+    register beside it handed the engineer project A's instruction."""
+
+    def _ok(self, **kw: object) -> DecisionRegister:
+        fields: dict[str, Any] = {
+            "decisions": (_spec_decision(),),
+            "project": "proj",
+            "spec_file": "spec.md",
+            "status": REGISTER_OK,
+        }
+        fields.update(kw)
+        return DecisionRegister(**fields)
+
+    def test_a_matching_register_binds(self) -> None:
+        assert bind_register(self._ok(), "proj", "spec.md") == (_spec_decision(),)
+
+    def test_a_missing_register_binds_nothing_and_does_not_raise(self) -> None:
+        assert bind_register(DecisionRegister(status=REGISTER_MISSING), "p", "s.md") == ()
+
+    def test_a_foreign_project_is_refused(self) -> None:
+        with pytest.raises(DecisionRegisterError, match="belongs to project"):
+            bind_register(self._ok(), "other", "spec.md")
+
+    def test_a_foreign_spec_is_refused(self) -> None:
+        with pytest.raises(DecisionRegisterError, match="belongs to project"):
+            bind_register(self._ok(), "proj", "other.md")
+
+    def test_an_unreadable_register_is_refused(self) -> None:
+        register = DecisionRegister(status=REGISTER_UNREADABLE, detail="torn")
+        with pytest.raises(DecisionRegisterError, match="unreadable"):
+            bind_register(register, "proj", "spec.md")
+
+    def test_a_halted_register_is_refused(self) -> None:
+        """A halted decompose saves no manifest, so its register would
+        otherwise sit beside an OLDER manifest and read as that run's."""
+        with pytest.raises(DecisionRegisterError, match="HALTED"):
+            bind_register(self._ok(halted=True), "proj", "spec.md")
+
+
+class TestNothingBindingThisComponentIsEverDropped:
+    """F2. Round 1 ran one greedy budget over all three tiers, so the
+    ordering protected nothing: measured, 100 own decisions with
+    300-character questions rendered 22 and dropped 78, and one
+    oversized own decision rendered an empty block."""
+
+    def _own(self, count: int, chars: int) -> list[SpecDecision]:
+        return [
+            _spec_decision(issue=f"i{i}", question=f"q{i} " + "x" * chars, component="comp-a")
+            for i in range(count)
+        ]
+
+    @pytest.mark.parametrize(("count", "chars"), [(100, 300), (1000, 300), (1000, 5)])
+    def test_every_own_decision_is_rendered_whatever_the_size(self, count: int, chars: int) -> None:
+        block = build_decisions_context(self._own(count, chars), "comp-a")
+        own_section = block.split("### Decisions binding the whole run")[0]
+        assert own_section.count("- **[") == count
+
+    def test_one_oversized_own_decision_still_renders(self) -> None:
+        block = build_decisions_context(self._own(1, 40000), "comp-a")
+        assert block != ""
+        assert "x" * 40000 in block
+
+    def test_a_run_wide_decision_is_never_dropped_either(self) -> None:
+        run_wide = [
+            _spec_decision(issue=f"r{i}", question=f"rq{i} " + "y" * 300, component="")
+            for i in range(200)
+        ]
+        block = build_decisions_context(run_wide, "comp-a")
+        section = block.split("### Decisions binding the whole run")[1]
+        section = section.split("### Decisions binding other components")[0]
+        assert section.count("- **[") == 200
+
+    def test_the_other_tier_is_the_only_one_with_a_cap(self) -> None:
+        others = [
+            _spec_decision(issue=f"o{i}", question=f"oq{i} " + "z" * 300, component="comp-b")
+            for i in range(500)
+        ]
+        block = build_decisions_context(self._own(3, 10) + others, "comp-a")
+        own_section = block.split("### Decisions binding the whole run")[0]
+        other_section = block.split("### Decisions binding other components")[1]
+        assert own_section.count("- **[") == 3
+        shown = other_section.count("- **[")
+        assert 0 < shown < 500
+        body = other_section.split("\n\n", 1)[1]
+        assert len(body) // 4 <= MAX_OTHER_DECISION_TOKENS
+
+    def test_the_heading_reports_the_real_numbers(self) -> None:
+        others = [
+            _spec_decision(issue=f"o{i}", question=f"oq{i} " + "z" * 300, component="comp-b")
+            for i in range(500)
+        ]
+        block = build_decisions_context(others, "comp-a")
+        heading = block.split("### Decisions binding other components (")[1].split(")")[0]
+        shown = int(heading.split(" of ")[0])
+        assert f"{shown} of 500 shown" in heading
+        other_section = block.split("### Decisions binding other components")[1]
+        assert other_section.count("- **[") == shown
+
+    def test_a_smaller_later_item_still_fits(self) -> None:
+        items = [
+            _spec_decision(issue="big", question="b" * 20000, component="comp-b"),
+            _spec_decision(issue="small", question="small one", component="comp-b"),
+        ]
+        block = build_decisions_context(items, "comp-a")
+        assert "small one" in block
+        assert "b" * 20000 not in block
+
     def test_no_decisions_renders_nothing(self) -> None:
         assert build_decisions_context([], "comp-a") == ""
 
-    def test_own_decisions_render_in_full(self) -> None:
-        decisions = parse_decisions({"decisions": [_decision(component="comp-a")]})
-        rendered = build_decisions_context(decisions, "comp-a")
-        assert "Decisions binding this component (comp-a)" in rendered
-        assert "utf-8, named explicitly at every read site" in rendered
-        assert "the locale default is not a contract" in rendered
-        assert "leave it to the locale" in rendered
-
-    def test_a_run_wide_decision_also_renders_in_full(self) -> None:
-        """An empty component means "binds the whole run", so it binds
-        this engineer too and keeps its reason and its alternative."""
-        decisions = parse_decisions({"decisions": [_decision(component="")]})
-        rendered = build_decisions_context(decisions, "comp-a")
-        assert "Decisions binding the whole run" in rendered
-        assert "the locale default is not a contract" in rendered
-        assert "leave it to the locale" in rendered
-
-    def test_other_components_decisions_are_summarised_not_dropped(self) -> None:
-        decisions = parse_decisions({"decisions": [_decision(component="comp-b")]})
-        rendered = build_decisions_context(decisions, "comp-a")
-        assert "Decisions binding other components" in rendered
-        assert "utf-8, named explicitly at every read site" in rendered
-        # The summary tier carries the answer but not the argument.
-        assert "the locale default is not a contract" not in rendered
-
-    def test_the_binding_tiers_pack_before_the_stranger_tier(self) -> None:
-        """The budget must never cut something that binds this
-        component, so own and run-wide pack first and only the stranger
-        tier can be dropped."""
-        decisions = parse_decisions(
-            {
-                "decisions": [
-                    _decision(component="comp-b", question=f"stranger {n} " + "x" * 300)
-                    for n in range(40)
-                ]
-                + [
-                    _decision(component="comp-a", question="mine"),
-                    _decision(component="", question="everyone's"),
-                ]
-            }
-        )
-        rendered = build_decisions_context(decisions, "comp-a")
-        assert "mine" in rendered
-        assert "everyone's" in rendered
-        assert "did not fit the context budget" in rendered
-        assert "None of them bind this component" in rendered
-
-    def test_an_escalation_leads_its_tier(self) -> None:
-        decisions = parse_decisions(
-            {
-                "decisions": [
-                    _decision(component="comp-a", question="second"),
-                    _decision(
-                        component="comp-a",
-                        disposition="escalated",
-                        question="first",
-                    ),
-                ]
-            }
-        )
-        rendered = build_decisions_context(decisions, "comp-a")
+    def test_escalations_lead_their_tier(self) -> None:
+        items = [
+            _spec_decision(issue="b", question="second", component="comp-a"),
+            _spec_decision(
+                issue="a", question="first", disposition="escalated", component="comp-a"
+            ),
+        ]
+        rendered = build_decisions_context(items, "comp-a")
         assert rendered.index("first") < rendered.index("second")
 
-    def test_the_budget_bites_out_loud(self) -> None:
-        """A register of the size five real runs produced does not fit,
-        so the drop has to be stated rather than silent."""
-        decisions = parse_decisions(
-            {
-                "decisions": [
-                    _decision(component="comp-a", question=f"question {n} " + "x" * 400)
-                    for n in range(60)
-                ]
-            }
-        )
-        rendered = build_decisions_context(decisions, "comp-a")
-        assert "did not fit the context budget" in rendered
-        assert len(rendered) // 4 <= MAX_DECISION_TOKENS
 
-    def test_everything_dropped_renders_nothing(self) -> None:
-        decisions = parse_decisions({"decisions": [_decision(question="q " + "x" * 100)]})
-        assert build_decisions_context(decisions, "comp-a", max_tokens=1) == ""
+class TestTheEngineerFacingEnglishIsEnrolled:
+    """F4. Round 1 built this block from inline f-strings, so the
+    reviewer changed "binding" to "advisory" and all 61 prompt-version
+    and enrollment tests stayed green."""
+
+    def test_the_block_is_exactly_the_enrolled_template(self) -> None:
+        own = _spec_decision(issue="i1", question="own q", component="comp-a")
+        run_wide = _spec_decision(issue="i2", question="run q", component="")
+        other = _spec_decision(issue="i3", question="other q", component="comp-b")
+        block = build_decisions_context([own, run_wide, other], "comp-a")
+        assert block == DECISIONS_CONTEXT_PROMPT.format(
+            component_id="comp-a",
+            own="- **[decided]** own q\n  - Resolution: r",
+            run_wide="- **[decided]** run q\n  - Resolution: r",
+            other_shown=1,
+            other_total=1,
+            other="- **[decided]** other q -> r",
+        )
+
+    def test_an_empty_tier_renders_as_nothing_at_all(self) -> None:
+        """No "(none)" marker: a second piece of harness English would
+        need its own enrolled constant, and the H3 render guard cannot
+        hold a fragment nested inside another enrolled template."""
+        block = build_decisions_context([_spec_decision(component="comp-a")], "comp-a")
+        assert block == DECISIONS_CONTEXT_PROMPT.format(
+            component_id="comp-a",
+            own="- **[decided]** q\n  - Resolution: r",
+            run_wide="",
+            other_shown=0,
+            other_total=0,
+            other="",
+        )
+
+    def test_the_instruction_still_says_binding(self) -> None:
+        assert "These are binding: implement what is written here." in DECISIONS_CONTEXT_PROMPT
 
 
 class TestTheRegisterReachesTheEngineer:
@@ -232,7 +425,7 @@ class TestTheRegisterReachesTheEngineer:
     def test_the_prefix_lands_in_the_engineer_context(
         self,
         tmp_path: Path,
-        monkeypatch,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from types import SimpleNamespace
 
@@ -274,3 +467,178 @@ class TestTheRegisterReachesTheEngineer:
         assert isinstance(prefix, str)
         assert "## Architect Decisions" in prefix
         assert "utf-8 it is" in prefix
+
+
+def _factory_project(tmp_path: Path, component_id: str) -> Path:
+    """The minimal layout the factory needs, as test_knowledge builds it."""
+    kstrl_dir = tmp_path / "scripts" / "kstrl"
+    kstrl_dir.mkdir(parents=True)
+    (kstrl_dir / "prompt.md").write_text("test prompt", encoding="utf-8")
+    (kstrl_dir / "prd.json").write_text(
+        '{"branchName": "test", "userStories": []}', encoding="utf-8"
+    )
+    feature_dir = kstrl_dir / "feature" / component_id
+    feature_dir.mkdir(parents=True)
+    (feature_dir / "prd.json").write_text(
+        json.dumps(
+            {
+                "branchName": "test",
+                "userStories": [
+                    {
+                        "id": "US-001",
+                        "title": "Test",
+                        "acceptanceCriteria": ["AC1"],
+                        "priority": 1,
+                        "passes": True,
+                        "notes": "",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def _one_component_manifest(project: str, spec_file: str) -> Any:
+    from kstrl.manifest import Component, Manifest
+
+    return Manifest(
+        version="1",
+        spec_file=spec_file,
+        project_name=project,
+        base_branch="main",
+        single_pr=False,
+        components=[
+            Component(
+                id="comp-a",
+                title="Component comp-a",
+                description="d",
+                dependencies=[],
+                prd_path="scripts/kstrl/feature/comp-a/prd.json",
+                branch_name="kstrl/comp-a",
+            )
+        ],
+    )
+
+
+def _factory_inputs(root: Path) -> tuple[Any, Any, Any]:
+    from kstrl.config import KstrlConfig
+    from kstrl.factory import FactoryConfig
+    from kstrl.ui.plain import PlainUI
+    from kstrl.verify import VerifyConfig
+
+    config = FactoryConfig(
+        use_worktrees=False,
+        create_prs=False,
+        max_parallel=1,
+        max_retries=0,
+        retry_delay=0,
+        review_mode="skip",
+        verify_config=VerifyConfig(
+            test_command="true",
+            typecheck_command="true",
+            lint_command="true",
+            check_diff_scope=False,
+            check_bad_patterns=False,
+            subprocess_timeout=5.0,
+        ),
+    )
+    base = KstrlConfig(
+        prompt_file=root / "scripts/kstrl/prompt.md",
+        prd_file=root / "scripts/kstrl/prd.json",
+        sleep_seconds=0,
+        agent_cmd="echo test",
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
+        ui_mode="plain",
+        no_color=True,
+    )
+    return config, base, PlainUI(no_color=True)
+
+
+class TestTheSchedulerActuallyInjectsIt:
+    """Mutation guard (review round 2).
+
+    Deleting the injection from ``_submit_args`` entirely left all 25
+    round-1 decision tests passing. None of them ran the scheduler: the
+    one delivery test called ``_run_component`` with the prefix as a
+    KEYWORD, so it would also have passed with the 33-element positional
+    tuple misaligned. This one drives ``run_factory`` and binds the
+    captured positional tuple against the real signature.
+    """
+
+    def test_the_block_reaches_the_worker_at_the_right_position(self, tmp_path: Path) -> None:
+        import kstrl.factory as factory_mod
+        from kstrl.factory import ComponentResult, run_factory
+
+        root = _factory_project(tmp_path, "comp-a")
+        write_decisions(
+            [
+                _spec_decision(
+                    issue="encoding",
+                    question="what encoding does the reader name",
+                    resolution="utf-8, named at every read site",
+                    component="comp-a",
+                )
+            ],
+            root_dir=root,
+            project_name="proj",
+            spec_file="spec.md",
+            halted=False,
+        )
+        signature = inspect.signature(factory_mod._run_component)
+        seen: dict[str, Any] = {}
+
+        def capture(*args: Any, **kwargs: Any) -> ComponentResult:
+            seen["bound"] = signature.bind(*args, **kwargs)
+            return ComponentResult("comp-a", success=True, iterations=1)
+
+        manifest = _one_component_manifest("proj", "spec.md")
+        config, base, ui = _factory_inputs(root)
+        with (
+            patch("kstrl.factory._run_component", side_effect=capture),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
+            run_factory(manifest, config, base, ui, root)
+
+        prefix = seen["bound"].arguments["decisions_prefix"]
+        assert "## Architect Decisions" in prefix
+        assert "what encoding does the reader name" in prefix
+        assert "utf-8, named at every read site" in prefix
+
+    def test_a_foreign_register_stops_the_run_before_any_worker(self, tmp_path: Path) -> None:
+        """F3 end to end. Project A's register, project B's manifest,
+        both with a component called comp-a."""
+        from kstrl.factory import ComponentResult, run_factory
+
+        root = _factory_project(tmp_path, "comp-a")
+        write_decisions(
+            [
+                _spec_decision(
+                    issue="fmt",
+                    question="what does the formatter emit",
+                    resolution="A-v1",
+                    component="comp-a",
+                )
+            ],
+            root_dir=root,
+            project_name="project-a",
+            spec_file="a.md",
+            halted=False,
+        )
+        manifest = _one_component_manifest("project-b", "b.md")
+        config, base, ui = _factory_inputs(root)
+        started: list[Any] = []
+
+        def capture(*args: Any, **kwargs: Any) -> ComponentResult:
+            started.append(args)
+            return ComponentResult("comp-a", success=True, iterations=1)
+
+        with (
+            patch("kstrl.factory._run_component", side_effect=capture),
+            patch("kstrl.git.get_diff_content", return_value=""),
+            pytest.raises(DecisionRegisterError, match="belongs to project"),
+        ):
+            run_factory(manifest, config, base, ui, root)
+        assert started == []

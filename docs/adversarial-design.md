@@ -12,7 +12,7 @@ Calibration is the truth signal. The `tests/test_calibration.py` suite (Phase D 
 
 | Role | Module | Prompt | Phase | What it catches |
 |---|---|---|---|---|
-| **Architect / PRD red-team** | `kstrl/decompose.py` | `DECOMPOSE_PROMPT` | Spec | Ambiguities, missing failure modes, unstated assumptions, undefined auth, ambiguous quantifiers. Closes every finding it raises as `decided`, `assumed`, `spiked` or `escalated` in a `decisions` register, and halts the pipeline via `SpecBlockerError` only on an escalation (#260). |
+| **Architect / PRD red-team** | `kstrl/decompose.py` | `DECOMPOSE_PROMPT` | Spec | Ambiguities, missing failure modes, unstated assumptions, undefined auth, ambiguous quantifiers. Closes every finding it raises as `decided`, `assumed`, `spiked` or `escalated` in a `decisions` register joined to `spec_issues` by id, and halts the pipeline via `SpecBlockerError` only on an escalation (#260). |
 | **Engineer** | `kstrl/init_cmd.py` (`DEFAULT_PROMPT`) + per-project `scripts/kstrl/prompt.md` | (project-specific) | Iteration | Implements one story per iteration. Required to emit a `## Self-Critique` block with >=3 substantive failure-mode bullets before declaring done (mechanically enforced by `verify.check_self_critique` when `VerifyConfig.require_self_critique` is True). |
 | **Mechanical verifier** | `kstrl/verify.py` | (no LLM) | Phase 1 | PRD stories pass-marked, tests/typecheck/lint green, diff-scope and bad-pattern checks, optional dead-code / mutation / self-critique. |
 | **Code reviewer** | `kstrl/review.py` | `REVIEWER_PROMPT` | Phase 2 | PRD criterion verdicts plus a separate `concerns` array (scope_creep, security_concern, test_quality, unrelated_change, dead_code, error_handling, copy_paste). Self-Critique block is stripped from the diff before review so the reviewer is not biased by the engineer's own failure-mode list. |
@@ -63,7 +63,7 @@ Tags let downstream consumers filter by taxonomy without re-parsing the field-le
 ```
 spec.md
   -> [Architect] decompose + red-team + dispose
-        -> manifest.json + per-component PRDs + decisions.json
+        -> manifest.json + per-component PRDs, then decisions.json
         -> SpecBlockerError if it ESCALATED (halt; owner answers)
   -> for each component (DAG order, optionally parallel):
        -> [Phase 0] feedforward (computational structural scan)

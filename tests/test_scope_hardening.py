@@ -181,6 +181,8 @@ class TestParseNameStatusZ:
 
 def _decompose_payload(allowed_paths: list[str]) -> dict[str, Any]:
     return {
+        "spec_issues": [],
+        "decisions": [],
         "components": [
             {
                 "id": "comp-a",
@@ -199,7 +201,7 @@ def _decompose_payload(allowed_paths: list[str]) -> dict[str, Any]:
                     }
                 ],
             }
-        ]
+        ],
     }
 
 

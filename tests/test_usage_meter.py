@@ -5496,6 +5496,7 @@ class TestFactoryHandsTheArchitectSpendToTheRun:
                 raise SpecBlockerError(
                     [
                         SpecDecision(
+                            issue="unstated",
                             question="the spec does not say",
                             disposition="escalated",
                             resolution="the owner must say",
