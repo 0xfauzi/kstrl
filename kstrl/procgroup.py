@@ -90,9 +90,21 @@ timeout named exactly the case it did not cover.
 So the read is a ``Popen`` driven by two BOUNDED ``communicate`` calls:
 ``PS_TIMEOUT_SECONDS`` for the read itself, then a kill, then
 ``PS_KILL_GRACE_SECONDS`` to collect a child the kill reached.
-``communicate(timeout=...)`` ends in ``wait(timeout=remaining)``, so
-every leg has a deadline and the call returns within the sum of the two.
-Nothing here uses ``with Popen(...)``: that is the second unbounded wait.
+``communicate(timeout=...)`` ends in ``wait(timeout=remaining)``, so both
+legs have a deadline. Nothing here uses ``with Popen(...)``: that is the
+second unbounded wait.
+
+WHAT THAT BOUND DOES NOT COVER, stated because the first version of this
+section promised a flat ceiling it does not have. The two deadlines cover
+the READ and the DISPOSAL, and nothing else. Process STARTUP is outside
+them: ``Popen.__init__`` forks and then blocks in ``_execute_child`` on
+``os.read(errpipe_read, 50000)`` until the child either execs or reports
+why it could not, and that read takes no timeout. A fork that never gets
+that far stalls there. This is not new and is not something this module
+can fix from the outside - ``subprocess.run`` builds its ``Popen`` through
+the identical path, so the residual is exactly what it was before #309.
+What changed is the part that WAS in this module's hands: once the child
+is running, no wait on it is unbounded any more.
 
 WHAT THAT COSTS, since a bound bought with nothing would be suspicious. A
 child the kill did NOT reach is ABANDONED rather than waited on: we close
@@ -101,8 +113,12 @@ see". It is not a permanent zombie. ``Popen.__del__`` hands an unreaped
 child to CPython's ``subprocess._active``, which the next ``Popen``
 constructed anywhere in the process polls, so it is collected once the
 kernel lets it die. The caller's fallback for "cannot see" is the signal
-probe, whose only error is over-reporting alive, so a bounded degraded
-answer is strictly better here than an unbounded exact one.
+probe, whose only error is over-reporting alive. That claim was written
+here before it was true: #309 round 1 found the probe reporting GONE for
+any error it could not explain, which is the dangerous direction this
+docstring opens with. This change is what made it routine rather than
+exotic, so ``signal_probe_alive`` was fixed with it and now reports alive
+for everything but ESRCH.
 
 THE COST IS PER READ, NOT PER RUN, and ``serve`` reads more than once.
 ``_wait_out_grace`` waits out the direct child and then re-reads the
@@ -260,9 +276,21 @@ def _kill_or_abandon(process: subprocess.Popen[str]) -> None:
     except (OSError, ValueError, subprocess.TimeoutExpired):
         # One handler for both calls, because a kill that could not be
         # sent leads to the same place as one that did not work: the
-        # child is not ours to collect, so let go of the pipes instead.
-        # Closing a pipe READ end cannot block, which is what makes this
-        # safe on a path whose whole contract is not to block.
+        # child is not ours to collect. SWALLOWED rather than raised,
+        # because the caller is already carrying the original failure and
+        # is about to re-raise it; letting a grace timeout out of here
+        # would displace the exception that says what actually went
+        # wrong. The pipes are released either way, below.
+        pass
+    finally:
+        # In a FINALLY rather than in the handler above, because the
+        # exceptions this names are not the only ones that get here. A
+        # KeyboardInterrupt landing in the grace escapes both calls with
+        # the pipe pair still held, which is the leak this whole path
+        # exists to avoid (#309 round 1, F3). Closing a pipe READ end
+        # cannot block, which is what makes this safe on a path whose
+        # contract is not to block, and a second close is a no-op, so the
+        # branch where ``communicate`` already closed them costs nothing.
         for pipe in (process.stdout, process.stderr):
             if pipe is not None:
                 with suppress(OSError):
@@ -355,7 +383,7 @@ def _kernel_says_group_is_empty(pgid: int) -> bool:
 def signal_probe_alive(pgid: int) -> bool:
     """Whether a signal to ``pgid`` would find a target. Zombies COUNT.
 
-    The pre-#298 reading, kept because it is the only thing left when
+    The signal reading, kept because it is the only thing left when
     ``ps`` gives no answer at all, and because a test needs it as the
     control that proves a zombie window was real rather than a group that
     quietly went away. ``PermissionError`` means something is there
@@ -365,17 +393,33 @@ def signal_probe_alive(pgid: int) -> bool:
     A pgid this module must not signal reads as ALIVE, which is the
     conservative direction: the caller then declines to call a run reaped.
 
+    ONLY ESRCH MEANS GONE (#309 round 1, F1), and that is why this is one
+    line rather than its own branch table. It used to have one, and its
+    generic ``OSError`` branch returned False - an error nobody could
+    explain read as "nothing is there", which ``serve`` turns into
+    "reaped" (the #186 F1 hazard the module docstring opens with). That
+    was the pre-#298 mapping carried forward, survivable only while this
+    function was nearly unreachable. #309 made "ps cannot see" a routine
+    outcome and this the routine fallback, so the fail-open moved onto the
+    normal path and had to go.
+
+    What replaced it is not a matching branch table but the SAME one.
+    ``_kernel_says_group_is_empty`` has always read ESRCH as the one
+    conclusive answer and every other ``OSError`` as "the question was not
+    answered", so once this function agrees with it on every branch,
+    writing the branches out twice is how they drift apart again. Two
+    readings of one ``killpg`` disagreeing about an unexplained error was
+    the defect underneath the defect; delegating is the only version of
+    the fix that cannot come undone.
+
+    This does NOT recreate the "every timed-out run is poisoned" hazard
+    ``serve._group_liveness_for_reap`` warns about. That one is about a
+    machine with no ``ps``, where this probe still answers ESRCH or EPERM
+    correctly and runs stay reapable. Only signal 0 failing for a reason
+    POSIX does not define reaches the changed branch, and refusing to
+    conclude from it is the whole point.
+
     Prefer ``read_group_liveness``. This answers the question #298 was
     about getting wrong.
     """
-    if not _may_signal_group(pgid):
-        return True
-    try:
-        os.killpg(pgid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        return False
-    return True
+    return not _kernel_says_group_is_empty(pgid)

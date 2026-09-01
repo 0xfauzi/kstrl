@@ -24,6 +24,7 @@ import pytest
 
 from kstrl.procgroup import (
     PS_ARGV,
+    PS_KILL_GRACE_SECONDS,
     PS_TIMEOUT_SECONDS,
     GroupLiveness,
     _kernel_says_group_is_empty,
@@ -371,6 +372,41 @@ class TestThePsCallIsBounded:
         assert calls[0].kills == 1, "the child must be killed, not waited on"
         assert calls[0].closed == ["stdout", "stderr"]
 
+    def test_an_interrupted_disposal_still_releases_the_pipes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """#309 round 1, F3.
+
+        The pipe close used to sit in the handler for
+        ``(OSError, ValueError, TimeoutExpired)``. A ``KeyboardInterrupt``
+        is none of those, so an operator stopping the daemon while it was
+        disposing of a wedged ``ps`` escaped with both fds still held -
+        the exact leak the disposal path exists to prevent, reached
+        through the one door it did not watch. The release is in a
+        ``finally`` now.
+
+        The interrupt itself must still propagate: the caller asked to
+        stop, and swallowing that would be a worse bug than the leak.
+        What must not happen is the leak on the way out.
+
+        ``raises`` is the CLASS, so each raise is a fresh instance and the
+        interrupt arrives twice: once out of the read, and then again out
+        of the grace, which is the call that matters here. The two
+        deadlines in the log are the proof that it reached the disposal
+        rather than stopping at the read.
+        """
+        calls = procs.fake_ps(monkeypatch, raises=KeyboardInterrupt)
+
+        with pytest.raises(KeyboardInterrupt):
+            read_group_liveness(4242)
+
+        assert calls[0].timeouts == [PS_TIMEOUT_SECONDS, PS_KILL_GRACE_SECONDS], (
+            "the interrupt must land in the disposal, not only in the read"
+        )
+        assert calls[0].kills == 1, "the child is still killed before we let go"
+        assert calls[0].closed == ["stdout", "stderr"]
+
     def test_the_read_pins_its_encoding(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -443,22 +479,52 @@ class TestTheSignalProbeIsKeptAsTheDegradedReading:
         monkeypatch.setattr("kstrl.procgroup.os.killpg", refuse)
         assert signal_probe_alive(4242) is True
 
-    def test_any_other_oserror_reads_as_gone(
+    @pytest.mark.parametrize(
+        "errno_and_text",
+        [
+            (22, "Invalid argument"),
+            # The errno #309 round 1 reproduced it with.
+            (5, "Input/output error"),
+        ],
+    )
+    def test_an_unexplained_error_reads_as_alive_not_gone(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        errno_and_text: tuple[int, str],
+    ) -> None:
+        """#309 round 1, F1, and the assertion that was inverted before it.
+
+        This used to assert False, pinning the pre-#298 mapping as
+        "endorsed by nobody but carried over unchanged". "Gone" is the
+        unsafe direction, for the reason the `kstrl.procgroup` module
+        docstring opens with. It survived while this function was nearly
+        unreachable; #309 made it the routine fallback for every read
+        `ps` cannot answer, so it had to be decided rather than deferred.
+
+        Flipping this assertion is the point of the test: it fails on the
+        other choice, which is what the old one could not do for the
+        choice it pinned.
+        """
+        number, text = errno_and_text
+
+        def broken(pgid: int, sig: int) -> None:
+            raise OSError(number, text)
+
+        monkeypatch.setattr("kstrl.procgroup.os.killpg", broken)
+        assert signal_probe_alive(4242) is True
+
+    def test_esrch_is_still_the_one_thing_that_means_gone(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Pinned rather than endorsed. This is the pre-#298 mapping,
-        carried over unchanged: "gone" is the UNSAFE direction here,
-        because `terminate_process_group` turns it into "reaped" and the
-        item is released for another attempt. #298 shrank its reach from
-        every call to only the calls where `ps` also gave no answer, and
-        changing the mapping is a separate decision with its own
-        reasoning."""
+        """The control for the test above. Without it, that one would
+        pass just as well on a function that had been made to return True
+        unconditionally, which measures nothing."""
 
-        def broken(pgid: int, sig: int) -> None:
-            raise OSError(22, "Invalid argument")
+        def absent(pgid: int, sig: int) -> None:
+            raise ProcessLookupError(3, "No such process")
 
-        monkeypatch.setattr("kstrl.procgroup.os.killpg", broken)
+        monkeypatch.setattr("kstrl.procgroup.os.killpg", absent)
         assert signal_probe_alive(4242) is False
 
 

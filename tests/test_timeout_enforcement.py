@@ -1108,6 +1108,119 @@ class TestCliTimeoutFlags:
 
 
 # ---------------------------------------------------------------------------
+# The #309 gate: a module on POPEN_ALLOWLIST must not wait without a deadline.
+# ---------------------------------------------------------------------------
+
+#: Methods that block on a child process. ``timeout=`` is optional on both.
+_WAIT_METHODS = frozenset({"wait", "communicate"})
+
+
+def _wait_calls(tree: ast.AST) -> list[tuple[ast.Call, str]]:
+    """Every ``.wait(...)`` / ``.communicate(...)`` call, with its method name."""
+    return [
+        (node, node.func.attr)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in _WAIT_METHODS
+    ]
+
+
+def _popen_names(tree: ast.AST) -> set[str]:
+    """Every name in this module that means ``Popen``, aliases included.
+
+    ``from subprocess import Popen as Spawn`` is a Popen, and a bare name
+    match does not know it - measured: without this the ``Spawn`` form
+    produced no finding at all, which is the under-reporting direction and
+    the one that matters. Same resolution ``_subprocess_aliases`` does for
+    the spawn functions in the audit below.
+
+    KNOWN over-report, deliberately left: any ``x.Popen(...)`` counts, so
+    a hypothetical ``mock.Popen()`` would be flagged. That direction costs
+    a comment on a line that is not really a child process; the other
+    direction costs a hang.
+    """
+    names = {"Popen"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "subprocess":
+            names.update(a.asname or a.name for a in node.names if a.name == "Popen")
+    return names
+
+
+def _is_popen_call(node: ast.expr, names: set[str]) -> bool:
+    """Whether this expression constructs a ``Popen``."""
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    called = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+    return called in names
+
+
+def _popen_bound_names(tree: ast.AST, names: set[str]) -> set[str]:
+    """Names assigned a ``Popen(...)``, so ``with proc:`` is recognisable.
+
+    One level of resolution: the same depth ``tests/test_procgroup.py``
+    resolves argv constants at, and the same known miss - a Popen reached
+    through an attribute or out of a container is invisible here.
+    """
+    bound: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and _is_popen_call(node.value, names):
+            bound.update(t.id for t in node.targets if isinstance(t, ast.Name))
+    return bound
+
+
+def _bare_wait_findings(tree: ast.AST) -> list[tuple[int, str]]:
+    """Waits on a child that name no deadline, or name one that is None."""
+    found: list[tuple[int, str]] = []
+    for node, method in _wait_calls(tree):
+        deadline = next((kw.value for kw in node.keywords if kw.arg == "timeout"), None)
+        if deadline is None:
+            found.append((node.lineno, f".{method}() names no timeout="))
+        elif isinstance(deadline, ast.Constant) and deadline.value is None:
+            found.append((node.lineno, f".{method}(timeout=None) is not a deadline"))
+    return found
+
+
+def _with_popen_findings(tree: ast.AST) -> list[tuple[int, str]]:
+    """``with`` blocks on a Popen, whose ``__exit__`` waits with no deadline."""
+    names = _popen_names(tree)
+    bound = _popen_bound_names(tree, names)
+    found: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.With | ast.AsyncWith):
+            continue
+        for item in node.items:
+            context = item.context_expr
+            named = isinstance(context, ast.Name) and context.id in bound
+            if _is_popen_call(context, names) or named:
+                found.append((node.lineno, "`with` on a Popen: __exit__ waits with no deadline"))
+    return found
+
+
+def _unbounded_wait_findings(tree: ast.AST) -> list[str]:
+    """Every way this module can wait on a child process forever.
+
+    Three forms, because #309 round 1 found the first version of this
+    check catching only one of them:
+
+    * ``.wait()`` / ``.communicate()`` with no ``timeout=`` at all.
+    * the same with ``timeout=None``, which READS as a deadline and is
+      not one. The first version passed this.
+    * ``with Popen(...)``, where the wait is ``__exit__`` and there is no
+      Call node anywhere in the tree to inspect. The first version passed
+      this too.
+
+    KNOWN MISS, stated so the gate is not trusted past its reach: only a
+    LITERAL ``None`` is visible here. A ``timeout=`` whose value is a name
+    that happens to hold None at run time reads exactly like a real
+    deadline, and following it needs dataflow an AST walk does not do.
+    """
+    found = _bare_wait_findings(tree) + _with_popen_findings(tree)
+    return [f"{line} {text}" for line, text in sorted(found)]
+
+
+# ---------------------------------------------------------------------------
 # Static audit: no subprocess call without a timeout (A+ orchestration gate)
 # ---------------------------------------------------------------------------
 
@@ -1216,10 +1329,6 @@ class TestSubprocessTimeoutAudit:
             "docstring):\n  " + "\n  ".join(popen_violations)
         )
 
-    #: Methods that block on a child. ``timeout=`` is optional on both, and
-    #: omitting it waits forever.
-    WAIT_METHODS = frozenset({"wait", "communicate"})
-
     def test_no_allowlisted_module_waits_without_a_deadline(self) -> None:
         """#309's class: the allowlist admits a module, not a discipline.
 
@@ -1248,11 +1357,18 @@ class TestSubprocessTimeoutAudit:
         ``kstrl/interaction.py``, ``kstrl/shutdown.py``). Inside them it
         is a child process, and there it must always name a deadline.
 
-        This is a receiver-name check, so it catches ``x.wait()`` on
-        anything, not only on a Popen. That is the conservative direction
-        for four files that exist to manage child processes; if one of
-        them ever needs an unbounded Event wait, that is a decision worth
-        writing down here rather than a false positive to widen around.
+        The wait half is a receiver-name check, so it catches ``x.wait()``
+        on anything, not only on a Popen. That is the conservative
+        direction for four files that exist to manage child processes; if
+        one of them ever needs an unbounded Event wait, that is a decision
+        worth writing down here rather than a false positive to widen
+        around.
+
+        The three forms it rejects, and the two that #309 round 1 found
+        the first version of this check passing, are in
+        ``_unbounded_wait_findings``. They are pinned as planted cases
+        below rather than by hand, because a gate verified once in a shell
+        session is a gate nobody can re-verify.
         """
         package_root = Path(__file__).resolve().parent.parent / "kstrl"
         violations: list[str] = []
@@ -1260,15 +1376,8 @@ class TestSubprocessTimeoutAudit:
 
         for rel in sorted(self.POPEN_ALLOWLIST):
             tree = ast.parse((package_root.parent / rel).read_text(encoding="utf-8"))
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Call):
-                    continue
-                fn = node.func
-                if not isinstance(fn, ast.Attribute) or fn.attr not in self.WAIT_METHODS:
-                    continue
-                sites_seen += 1
-                if not any(k.arg == "timeout" for k in node.keywords):
-                    violations.append(f"{rel}:{node.lineno} .{fn.attr}()")
+            sites_seen += len(_wait_calls(tree))
+            violations += [f"{rel}:{found}" for found in _unbounded_wait_findings(tree)]
 
         assert sites_seen >= 10, (
             f"audit only found {sites_seen} wait sites in the allowlisted "
@@ -1278,3 +1387,84 @@ class TestSubprocessTimeoutAudit:
             "a deadline-managed module waits on a child without a "
             "deadline, which is #309:\n  " + "\n  ".join(violations)
         )
+
+    @pytest.mark.parametrize(
+        ("body", "expected"),
+        [
+            # The form the first version of this gate caught.
+            (
+                "proc.wait()\n",
+                ["1 .wait() names no timeout="],
+            ),
+            # #309 round 1, F4: a kwarg is present, so the first version
+            # reported clean. It waits forever all the same.
+            (
+                "proc.wait(timeout=None)\n",
+                ["1 .wait(timeout=None) is not a deadline"],
+            ),
+            (
+                "proc.communicate(timeout=None)\n",
+                ["1 .communicate(timeout=None) is not a deadline"],
+            ),
+            # F4 again: the wait is __exit__, so there is no Call node in
+            # the tree to inspect and the first version saw nothing.
+            (
+                "with subprocess.Popen(argv) as proc:\n    pass\n",
+                ["1 `with` on a Popen: __exit__ waits with no deadline"],
+            ),
+            (
+                "proc = subprocess.Popen(argv)\nwith proc:\n    pass\n",
+                ["2 `with` on a Popen: __exit__ waits with no deadline"],
+            ),
+            # Found in round 2: a bare name match reported this clean,
+            # which is the under-reporting direction.
+            (
+                "from subprocess import Popen as Spawn\nwith Spawn(argv) as p:\n    pass\n",
+                ["2 `with` on a Popen: __exit__ waits with no deadline"],
+            ),
+            (
+                "from subprocess import Popen as Spawn\np = Spawn(argv)\nwith p:\n    pass\n",
+                ["3 `with` on a Popen: __exit__ waits with no deadline"],
+            ),
+        ],
+    )
+    def test_the_gate_catches_each_planted_mutation(
+        self,
+        body: str,
+        expected: list[str],
+    ) -> None:
+        """The gate's own reach, measured rather than asserted.
+
+        #309 round 1 found the first version of this check passing two of
+        the three forms it exists to stop, and the manual verification
+        behind it had planted only the form it did catch. A guard that
+        reports clean on the bug it was written to prevent is the failure
+        this batch keeps repeating, so the planted forms live here as
+        cases rather than in a shell session nobody can re-run.
+        """
+        assert _unbounded_wait_findings(ast.parse(body)) == expected, body
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            # A real deadline, in each of the shapes the tree uses.
+            "proc.wait(timeout=5.0)\n",
+            "proc.communicate(timeout=self._remaining())\n",
+            "proc.wait(timeout=0)\n",
+            # Not a child process at all, and not a `with` on one.
+            "with open(path) as handle:\n    pass\n",
+            "with contextlib.suppress(OSError):\n    pass\n",
+            # A Popen that is never used as a context manager.
+            "proc = subprocess.Popen(argv)\nproc.wait(timeout=1)\n",
+        ],
+    )
+    def test_the_gate_stays_quiet_on_these(self, body: str) -> None:
+        assert _unbounded_wait_findings(ast.parse(body)) == [], body
+
+    def test_a_deadline_that_is_none_at_run_time_is_a_known_miss(self) -> None:
+        """The reach `_unbounded_wait_findings` claims, executed.
+
+        A docstring naming a limit is a claim; this is the measurement of
+        it, so the limit cannot quietly change into something else.
+        """
+        assert _unbounded_wait_findings(ast.parse("proc.wait(timeout=grace)\n")) == []

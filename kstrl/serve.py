@@ -1616,7 +1616,10 @@ def _group_liveness_for_reap(pgid: int) -> tuple[bool, str]:
     reasoning and the measurements are in ``kstrl.procgroup``).
 
     FAIL DIRECTION when ``ps`` cannot be trusted: fall back to the signal
-    probe, which is the pre-#298 behaviour. That is a deliberate choice
+    probe. That is nearly the pre-#298 behaviour: #309 round 1 fixed the
+    one branch of it that reported an unexplained error as GONE, so the
+    claim below about its error direction is now true rather than
+    aspirational. That is a deliberate choice
     between three options and not a default. Raising would take the
     daemon down over a diagnostic. Reporting "alive" unconditionally is
     the conservative direction for the one caller, but on a machine with

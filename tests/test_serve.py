@@ -2069,6 +2069,32 @@ class TestGroupLivenessDegradesRatherThanGuessing:
         procs.fake_ps(monkeypatch, returncode=127, stderr="boom")
         assert process_group_alive(pgid) is False
 
+    def test_a_blind_ps_and_an_unexplained_signal_error_is_not_reaped(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """#309 round 1, F1, at the level where it actually costs money.
+
+        Both readings fail at once: `ps` cannot be trusted, so the answer
+        falls back to the signal probe, and the probe's `killpg` fails
+        with an errno POSIX does not define for signal 0. Before F1 that
+        pair returned "nothing is running", which this function's own
+        docstring explains is the direction that releases the item. It
+        must report alive and carry a reason.
+
+        Written against a group that IS running - our own - so a False
+        here is the fail-open and never a true answer arrived at by luck.
+        """
+        procs.fake_ps(monkeypatch, returncode=127, stderr="ps: command not found")
+
+        def broken(pgid: int, sig: int) -> None:
+            raise OSError(5, "Input/output error")
+
+        monkeypatch.setattr("kstrl.procgroup.os.killpg", broken)
+        alive, degraded = _group_liveness_for_reap(os.getpgrp())
+        assert alive is True, "an unexplained error must never read as reaped"
+        assert degraded, "and the operator has to be told the answer was degraded"
+
     def test_the_degrade_reason_is_returned_not_warned(
         self,
         monkeypatch: pytest.MonkeyPatch,
