@@ -20,6 +20,7 @@ from kstrl.tui.widgets.component_table import ComponentTable
 from kstrl.tui.widgets.cost_meter import render_cost_meter
 from kstrl.tui.widgets.header import render_header
 from tests.helpers.fake_run import FakeRunSpec, stream_fake_run, write_fake_run
+from tests.helpers.settle import drained, mounted, settled
 
 
 def _app(root: Path, run_dir: Path) -> KstrlTuiApp:
@@ -40,8 +41,16 @@ class TestOverview:
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=3))
         app = _app(tmp_path, run_dir)
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause()
-            table = app.screen.query_one(ComponentTable)
+            table = await mounted(pilot, lambda: app.screen, ComponentTable)
+            # The overview is fed by a message, so the rows land a hop
+            # after the mount. "Any row at all" is weaker than the count
+            # below, so a table that renders the wrong number of rows
+            # still fails on the assertion and not on this wait.
+            await settled(
+                pilot,
+                lambda: table.row_count,
+                what="the component table to render the run's rows",
+            )
             assert table.row_count == 3
             row = table.get_row("comp-a")
             texts = [_cell_text(cell) for cell in row]
@@ -59,12 +68,27 @@ class TestOverview:
         run_dir = tmp_path / ".kstrl" / "runs" / run_id
         app = _app(tmp_path, run_dir)
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause()
-            table = app.screen.query_one(ComponentTable)
+            table = await mounted(pilot, lambda: app.screen, ComponentTable)
             initial_rows = table.row_count
             for _ in stepper:  # stream the rest while the app is live
                 pass
-            await pilot.pause(0.3)  # a few poll intervals
+            # The loop above is synchronous, so no poll can have folded
+            # half of it: the whole stream is on disk before this await.
+            # Waiting for the app's own record of comp-b is weaker than
+            # asserting the table painted it, which is the point.
+            await settled(
+                pilot,
+                lambda: "comp-b" in app.store.state.components,
+                what="a poll to fold the events streamed while the app was live",
+            )
+            # The overview screen receives state as a StateChanged
+            # message, so the fold above is one hop ahead of the table.
+            # `drained` observes that hop instead of guessing at it.
+            await drained(
+                pilot,
+                app.screen,
+                what="the folded state to reach the overview screen",
+            )
             assert table.row_count == 2
             assert table.row_count >= initial_rows
             row = table.get_row("comp-b")
@@ -77,8 +101,21 @@ class TestOverview:
         )
         app = _app(tmp_path, run_dir)
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause()
-            banner = app.screen.query_one(CheckpointBanner)
+            banner = await mounted(pilot, lambda: app.screen, CheckpointBanner)
+            # `display` is what the assertion is about, so the wait is
+            # on the state instead. The screen's own on_mount HIDES the
+            # banner; only the StateChanged the first poll posted shows
+            # it again, so both hops have to be observed.
+            await settled(
+                pilot,
+                lambda: app.store.state.components,
+                what="the first poll to fold the run's event stream",
+            )
+            await drained(
+                pilot,
+                app.screen,
+                what="the folded state to reach the overview screen",
+            )
             assert banner.display is True
             rendered = str(banner.render())
             assert "checkpoint pending" in rendered
@@ -88,8 +125,17 @@ class TestOverview:
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
         app = _app(tmp_path, run_dir)
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause()
+            await mounted(pilot, lambda: app.screen, ComponentTable)
             await pilot.press("q")
+            # Condition and assertion nearly coincide here, so the wait
+            # takes the weaker half - the app exited with SOME value -
+            # and the assertion below still owns which one. A key that
+            # is not bound at all reports itself as the `what` here.
+            await settled(
+                pilot,
+                lambda: app.return_value is not None,
+                what="q to detach the dashboard",
+            )
         assert app.return_value == 0
 
     async def test_ctrl_c_bound_and_detaches(self, tmp_path: Path) -> None:
@@ -97,8 +143,14 @@ class TestOverview:
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
         app = _app(tmp_path, run_dir)
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause()
+            await mounted(pilot, lambda: app.screen, ComponentTable)
             await pilot.press("ctrl+c")
+            # Same shape as the q test: the weaker half of the claim.
+            await settled(
+                pilot,
+                lambda: app.return_value is not None,
+                what="ctrl+c to detach the dashboard",
+            )
         assert app.return_value == 0
 
     async def test_stream_replacement_resets_before_rebuild(
@@ -108,13 +160,20 @@ class TestOverview:
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
         app = _app(tmp_path, run_dir)
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause()
+            await settled(
+                pilot,
+                lambda: app.store.state.components,
+                what="the first poll to fold the run's event stream",
+            )
             initial_tokens = app.store.state.total_tokens
             replacement = tmp_path / "events.jsonl"
             replacement.write_bytes((run_dir / "events.jsonl").read_bytes())
             os.replace(replacement, run_dir / "events.jsonl")
+            # `_poll` resets and re-folds into the store synchronously,
+            # and nothing between here and the assertion awaits, so no
+            # timer can interleave. The pause that used to stand after
+            # this call settled nothing the assertion reads.
             app._poll()
-            await pilot.pause()
 
             assert app.store.state.total_tokens == initial_tokens
 
@@ -125,7 +184,14 @@ class TestOverview:
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
         app = _app(tmp_path, run_dir)
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause()
+            # Folded state first, or the timers below would be called on
+            # an app with nothing to render and the teardown path would
+            # not be exercised at all.
+            await settled(
+                pilot,
+                lambda: app.store.state.components,
+                what="the first poll to fold the run's event stream",
+            )
             with patch.object(
                 KstrlTuiApp,
                 "screen_stack",

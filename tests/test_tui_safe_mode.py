@@ -23,7 +23,7 @@ from kstrl.tui.widgets.safe_mode_chip import (
 )
 from kstrl.workqueue import Queue, QueueConfig
 from tests.helpers.fake_run import FakeRunSpec, write_fake_run
-from tests.helpers.settle import mounted, settled
+from tests.helpers.settle import drained, mounted, settled
 
 
 def _app(root: Path, run_dir: Path) -> KstrlTuiApp:
@@ -109,12 +109,12 @@ class TestDashboardSurface:
         app = _app(tmp_path, run_dir)
 
         async with app.run_test(size=(140, 40)) as pilot:
-            await pilot.pause()
-            for _ in range(40):
-                if app._safe_mode_reasons:
-                    break
-                await pilot.pause(0.05)
-            banner_widget = app.screen.query_one(SafeModeBanner)
+            await settled(
+                pilot,
+                lambda: app._safe_mode_reasons,
+                what="the first safe-mode check to report a degradation",
+            )
+            banner_widget = await mounted(pilot, lambda: app.screen, SafeModeBanner)
             text = str(banner_widget.render())
             banner_shown = banner_widget.display
 
@@ -135,12 +135,13 @@ class TestDashboardSurface:
         app = _app(tmp_path, run_dir)
 
         async with app.run_test(size=(140, 40)) as pilot:
-            await pilot.pause()
-            for _ in range(40):
-                if app._safe_mode_reasons is not None:
-                    break
-                await pilot.pause(0.05)
-            shown = app.screen.query_one(SafeModeBanner).display
+            await settled(
+                pilot,
+                lambda: app._safe_mode_reasons is not None,
+                what="the first safe-mode check to report at all",
+            )
+            banner = await mounted(pilot, lambda: app.screen, SafeModeBanner)
+            shown = banner.display
 
         assert app._safe_mode_reasons == []
         assert not shown
@@ -170,9 +171,8 @@ class TestDashboardSurface:
         app = _app(tmp_path, run_dir)
 
         async with app.run_test(size=(120, 36)) as pilot:
-            await pilot.pause()
+            topbar = await mounted(pilot, lambda: app.screen, "#topbar")
             assert isinstance(app.screen, OverviewScreen)
-            topbar = app.screen.query_one("#topbar")
             children = [child.id for child in topbar.children]
 
         assert children == ["run-header", "cost-meter"]
@@ -191,15 +191,15 @@ class TestDashboardSurface:
         app = _app(tmp_path, run_dir)
 
         async with app.run_test(size=(140, 40)) as pilot:
-            await pilot.pause()
-            for _ in range(40):
-                if app._safe_mode_reasons:
-                    break
-                await pilot.pause(0.05)
+            await settled(
+                pilot,
+                lambda: app._safe_mode_reasons,
+                what="the first safe-mode check to report a degradation",
+            )
             await pilot.press("f2")
-            await pilot.pause()
+            body_widget = await mounted(pilot, lambda: app.screen, "#safemode-body")
             assert isinstance(app.screen, SafeModePanel)
-            body = str(app.screen.query_one("#safemode-body").render())
+            body = str(body_widget.render())
 
         assert "poison breaker tripped" in body
         assert RECOVERY["queue"] in body
@@ -209,13 +209,18 @@ class TestDashboardSurface:
         app = _app(tmp_path, run_dir)
 
         async with app.run_test(size=(140, 40)) as pilot:
-            await pilot.pause()
             await pilot.press("f2")
-            await pilot.pause()
-            assert isinstance(app.screen, SafeModePanel)
+            await settled(
+                pilot,
+                lambda: isinstance(app.screen, SafeModePanel),
+                what="f2 to open the safe-mode panel",
+            )
             await pilot.press("escape")
-            await pilot.pause()
-            assert not isinstance(app.screen, SafeModePanel)
+            await settled(
+                pilot,
+                lambda: not isinstance(app.screen, SafeModePanel),
+                what="escape to close the safe-mode panel",
+            )
 
 
 class TestTheCheckDoesNotRunOnThePollTimer:
@@ -244,11 +249,11 @@ class TestTheCheckDoesNotRunOnThePollTimer:
         app = _app(tmp_path, run_dir)
 
         async with app.run_test(size=(140, 40)) as pilot:
-            await pilot.pause()
-            for _ in range(40):
-                if app._safe_mode_reasons:
-                    break
-                await pilot.pause(0.05)
+            await settled(
+                pilot,
+                lambda: app._safe_mode_reasons,
+                what="the failed check to report itself instead of dying quietly",
+            )
 
         assert app._safe_mode_reasons
         assert "could not evaluate" in app._safe_mode_reasons[0].detail
@@ -275,12 +280,13 @@ class TestHomeShell:
         )
 
         async with app.run_test(size=(120, 36)) as pilot:
-            await pilot.pause()
-            for _ in range(40):
-                if app._safe_mode_reasons:
-                    break
-                await pilot.pause(0.05)
-            text = str(app.screen.query_one(SafeModeChip).render())
+            await settled(
+                pilot,
+                lambda: app._safe_mode_reasons,
+                what="the first safe-mode check to report a degradation",
+            )
+            chip = await mounted(pilot, lambda: app.screen, SafeModeChip)
+            text = str(chip.render())
 
         assert app._safe_mode_reasons is not None
         assert "1" in text
@@ -300,12 +306,13 @@ class TestHomeShell:
         )
 
         async with app.run_test(size=(120, 36)) as pilot:
-            await pilot.pause()
-            for _ in range(40):
-                if app._safe_mode_reasons is not None:
-                    break
-                await pilot.pause(0.05)
-            text = str(app.screen.query_one(SafeModeChip).render())
+            await settled(
+                pilot,
+                lambda: app._safe_mode_reasons is not None,
+                what="the first safe-mode check to report at all",
+            )
+            chip = await mounted(pilot, lambda: app.screen, SafeModeChip)
+            text = str(chip.render())
 
         assert app._safe_mode_reasons == []
         assert "ok" in text
@@ -377,13 +384,23 @@ class TestReviewFindings:
         app = _app(tmp_path, run_dir)
 
         async with app.run_test(size=(120, 36)) as pilot:
-            await pilot.pause()
             probe = Input(id="probe-input")
             await app.screen.mount(probe)
             probe.focus()
-            await pilot.pause()
+            await settled(
+                pilot,
+                lambda: app.screen.focused is probe,
+                what="the probe input to take focus",
+            )
             await pilot.press(keys[0])
-            await pilot.pause()
+            # Deliberately the OR: the wait has to be weaker than either
+            # assertion below, or a swallowed key would time out here
+            # instead of failing with the message that names it.
+            await settled(
+                pilot,
+                lambda: isinstance(app.screen, Panel) or probe.value,
+                what=f"{keys[0]!r} to either open the panel or land in the field",
+            )
             opened = isinstance(app.screen, Panel)
             typed = probe.value
 
@@ -403,16 +420,24 @@ class TestReviewFindings:
         app = _app(tmp_path, run_dir)
 
         async with app.run_test(size=(120, 36)) as pilot:
-            await pilot.pause()
-            for _ in range(40):
-                if app._safe_mode_reasons is not None:
-                    break
-                await pilot.pause(0.05)
+            await settled(
+                pilot,
+                lambda: app._safe_mode_reasons is not None,
+                what="the first safe-mode check to report at all",
+            )
             # A fresh degraded result, then a STALE nominal one.
             app.post_message(SafeModeChecked([_reason()], seq=99))
-            await pilot.pause()
+            await settled(
+                pilot,
+                lambda: app._safe_mode_reasons,
+                what="the fresh degraded result to land",
+            )
             app.post_message(SafeModeChecked([], seq=98))
-            await pilot.pause()
+            # No predicate can serve here: the CORRECT outcome of the
+            # stale result is that nothing changes. `drained` observes
+            # the message being handled instead of guessing how long
+            # that takes.
+            await drained(pilot, app, what="the superseded result to be handled")
             after = app._safe_mode_reasons
 
         assert after, "a superseded check cleared a newer degradation"
@@ -432,28 +457,33 @@ class TestReviewFindings:
         app = _app(tmp_path, run_dir)
 
         async with app.run_test(size=(120, 36)) as pilot:
-            await pilot.pause()
-            for _ in range(40):
-                if app._safe_mode_reasons:
-                    break
-                await pilot.pause(0.05)
+            await settled(
+                pilot,
+                lambda: app._safe_mode_reasons,
+                what="the first safe-mode check to report a degradation",
+            )
             # Constructed with None, as it is when opened before the
             # first check reports.
             app.push_screen(Panel(None))
-            await pilot.pause()
+            body_widget = await mounted(pilot, lambda: app.screen, "#safemode-body")
             assert isinstance(app.screen, Panel)
-            on_mount_body = str(
-                app.screen.query_one("#safemode-body").render(),
-            )
+            on_mount_body = str(body_widget.render())
             # And the broadcast path, for a check that lands while open.
             app.post_message(
                 SafeModeChecked([_reason("autonomy", "clamped later")], seq=99),
             )
-            await pilot.pause()
-            await pilot.pause()
-            broadcast_body = str(
-                app.screen.query_one("#safemode-body").render(),
+            # The app's own record, which `on_safe_mode_checked` sets
+            # before it hands the reasons to the screens. Weaker than
+            # the assertion below, so a panel that does NOT update in
+            # place - the defect this test names - still reaches it.
+            await settled(
+                pilot,
+                lambda: any(
+                    reason.detail == "clamped later" for reason in app._safe_mode_reasons or []
+                ),
+                what="the app to record the check that landed while the panel was open",
             )
+            broadcast_body = str(body_widget.render())
 
         assert "paused now" in on_mount_body  # replayed on mount
         assert "clamped later" in broadcast_body  # updated in place
@@ -472,18 +502,29 @@ class TestReviewFindings:
         app = _app(tmp_path, run_dir)
 
         async with app.run_test(size=(120, 36)) as pilot:
-            await pilot.pause()
-            for _ in range(40):
-                if app._safe_mode_reasons:
-                    break
-                await pilot.pause(0.05)
+            await settled(
+                pilot,
+                lambda: app._safe_mode_reasons,
+                what="the first safe-mode check to report a degradation",
+            )
             # A screen built AFTER the check already reported.
             app.push_screen(OverviewScreen(observe_only=True))
-            await pilot.pause()
-            await pilot.pause()
-            shown = app.screen.query_one(SafeModeBanner).display
+            banner = await mounted(pilot, lambda: app.screen, SafeModeBanner)
+            # The banner is queryable as soon as compose mounts it,
+            # which is BEFORE the screen's own on_mount replays the
+            # check. Draining the screen closes that gap without
+            # asserting the thing under test.
+            await drained(pilot, app.screen, what="the new screen's on_mount to run")
+            shown = banner.display
+            text = str(banner.render())
 
         assert shown, "a freshly mounted screen hid an active warning"
+        # `display` alone passed on the defect: SafeModeBanner declares no
+        # default, so a freshly composed one is already shown and an
+        # on_mount that replays nothing leaves it shown-and-empty. Found
+        # by planting the missing replay while sweeping the pauses; the
+        # weakness predates this change and is not about settling.
+        assert "queue" in text, f"the banner is shown but names nothing: {text!r}"
 
     async def test_the_panel_dialog_has_a_border_so_its_title_renders(
         self,
@@ -498,10 +539,13 @@ class TestReviewFindings:
         app = _app(tmp_path, run_dir)
 
         async with app.run_test(size=(120, 36)) as pilot:
-            await pilot.pause()
             app.push_screen(Panel([_reason()]))
-            await pilot.pause()
-            dialog = app.screen.query_one("#safemode-dialog")
+            dialog = await mounted(pilot, lambda: app.screen, "#safemode-dialog")
+            await settled(
+                pilot,
+                lambda: dialog.region.width,
+                what="the panel dialog to be laid out",
+            )
             has_border = dialog.styles.border.top[0] not in ("", None)
             width = dialog.region.width
 
@@ -527,11 +571,11 @@ class TestGatingReviewFindings:
         app = _app(tmp_path, run_dir)
 
         async with app.run_test(size=(120, 36)) as pilot:
-            await pilot.pause()
-            for _ in range(40):
-                if app._safe_mode_reasons is not None:
-                    break
-                await pilot.pause(0.05)
+            await settled(
+                pilot,
+                lambda: app._safe_mode_reasons is not None,
+                what="the first safe-mode check to report at all",
+            )
             # A check is in flight; a tick arrives and must not vanish.
             app._safe_mode_running = True
             app._check_safe_mode()
@@ -573,12 +617,14 @@ class TestGatingReviewFindings:
         reasons = [_reason("queue", f"reason number {index}") for index in range(4)]
 
         async with app.run_test(size=(80, 24)) as pilot:
-            await pilot.pause()
             app.push_screen(Panel(reasons))
-            await pilot.pause()
-            await pilot.pause()
-            body = app.screen.query_one("#safemode-body")
-            scroll = app.screen.query_one("#safemode-scroll")
+            body = await mounted(pilot, lambda: app.screen, "#safemode-body")
+            scroll = await mounted(pilot, lambda: app.screen, "#safemode-scroll")
+            await settled(
+                pilot,
+                lambda: body.region.height and scroll.region.height,
+                what="the panel body and its scroller to be laid out",
+            )
             hidden = body.region.height - scroll.region.height
             reachable = scroll.max_scroll_y
 
@@ -599,14 +645,14 @@ class TestGatingReviewFindings:
         app = _app(tmp_path, run_dir)
 
         async with app.run_test(size=(120, 36)) as pilot:
-            await pilot.pause()
-            for _ in range(40):
-                if app._safe_mode_reasons is not None:
-                    break
-                await pilot.pause(0.05)
+            await settled(
+                pilot,
+                lambda: app._safe_mode_reasons is not None,
+                what="the first safe-mode check to report at all",
+            )
             assert app._safe_mode_reasons == []  # the app is nominal
             app.push_screen(Panel([_reason("queue", "explicitly passed")]))
-            await pilot.pause()
-            body = str(app.screen.query_one("#safemode-body").render())
+            body_widget = await mounted(pilot, lambda: app.screen, "#safemode-body")
+            body = str(body_widget.render())
 
         assert "explicitly passed" in body

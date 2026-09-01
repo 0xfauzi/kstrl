@@ -19,6 +19,7 @@ from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.screens.component import ComponentScreen
 from kstrl.tui.screens.overview import OverviewScreen
 from tests.helpers.fake_run import write_fake_understand_run
+from tests.helpers.settle import mounted, settled
 
 
 class StubAgent:
@@ -241,10 +242,18 @@ class TestUnderstandDashboard:
             ],
         )
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause(0.2)
+            # The app folds the stream in its own on_mount and the
+            # component screen paints from that fold. Waiting for the
+            # component to exist at all is weaker than the status
+            # assertion below, which keeps its own failure message.
+            await settled(
+                pilot,
+                lambda: "understand" in app.store.state.components,
+                what="the understand component to fold out of the event stream",
+            )
+            transcript = await mounted(pilot, lambda: app.screen, "#transcript")
             assert isinstance(app.screen, ComponentScreen)
             comp = app.store.state.components["understand"]
             assert comp.status == "completed"
             assert comp.phase_history
-            transcript = app.screen.query_one("#transcript")
             assert transcript is not None

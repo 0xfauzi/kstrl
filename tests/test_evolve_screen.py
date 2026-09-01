@@ -9,12 +9,14 @@ from typing import cast
 
 from rich.text import Text
 from textual.coordinate import Coordinate
-from textual.widgets import TabbedContent
+from textual.pilot import Pilot
+from textual.widgets import DataTable, TabbedContent
 
 from kstrl.tui import theme
 from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.screens.evolve import EvolveScreen, retry_bar
 from kstrl.tui.screens.options import OptionsModal
+from tests.helpers.settle import drained, mounted, settled
 
 CONVENTION_PROP = """# PROP-001: Always pin versions
 **Type**: computational
@@ -74,10 +76,34 @@ def _seed(tmp_path: Path) -> None:
     )
 
 
-async def _open(app: KstrlTuiApp, pilot: object) -> EvolveScreen:
+async def _open(app: KstrlTuiApp, pilot: Pilot[None]) -> EvolveScreen:
+    """The evolve screen pushed on ``app``, with its three tabs loaded.
+
+    Three conditions, in the order the app satisfies them. The app
+    installs its home screen from its own on_mount, so a screen pushed
+    before that lands under the home screen and never becomes active.
+    The tab panes then mount a frame later, which is what every
+    ``query_one`` below used to race. Finally ``EvolveScreen.on_mount``
+    adds the columns and calls ``reload`` in ONE synchronous call, so a
+    table that has columns is a screen whose on_mount has returned:
+    a poll runs only between messages, and cannot catch it half-done.
+
+    That last condition is weaker than anything the callers assert. It
+    says the screen finished loading, not what it loaded, so a screen
+    that loads the wrong rows still fails at the caller's assertion.
+    """
+    await mounted(pilot, lambda: app.screen, "#home-commands")
     app.push_screen(EvolveScreen())
-    await pilot.pause(0.2)  # type: ignore[attr-defined]
-    return cast(EvolveScreen, app.screen)
+    # push_screen puts the screen on the stack before it mounts
+    # anything, so this is the screen the waits below are about.
+    screen = cast(EvolveScreen, app.screen)
+    trends = await mounted(pilot, lambda: screen, "#trends-table")
+    await settled(
+        pilot,
+        lambda: cast(DataTable, trends).columns,
+        what="the evolve screen's on_mount to load its three tabs",
+    )
+    return screen
 
 
 def _home_app(tmp_path: Path) -> KstrlTuiApp:
@@ -101,13 +127,12 @@ class TestEvolveScreen:
         _seed(tmp_path)
         app = _home_app(tmp_path)
         async with app.run_test(size=(140, 40)) as pilot:
-            await pilot.pause(0.2)
             screen = await _open(app, pilot)
-            proposals = screen.query_one("#proposals-table")
+            proposals = await mounted(pilot, lambda: screen, "#proposals-table")
             assert proposals.row_count == 2  # type: ignore[attr-defined]
-            patterns = screen.query_one("#patterns-table")
+            patterns = await mounted(pilot, lambda: screen, "#patterns-table")
             assert patterns.row_count == 1  # type: ignore[attr-defined]
-            trends = screen.query_one("#trends-table")
+            trends = await mounted(pilot, lambda: screen, "#trends-table")
             assert trends.row_count == 2  # type: ignore[attr-defined]
             row = trends.get_row_at(0)  # type: ignore[attr-defined]
             cells = " ".join(str(cell) for cell in row)
@@ -139,26 +164,30 @@ class TestEvolveScreen:
         )
         app = _home_app(tmp_path)
         async with app.run_test(size=(140, 40)) as pilot:
-            await pilot.pause(0.2)
             screen = await _open(app, pilot)
-            table = screen.query_one("#proposals-table")
+            table = await mounted(pilot, lambda: screen, "#proposals-table")
             title = table.get_cell_at(Coordinate(0, 1))  # type: ignore[attr-defined]
             assert isinstance(title, Text)
             assert title.plain == "[/bold]"
 
-            tabs = screen.query_one(TabbedContent)
+            tabs = await mounted(pilot, lambda: screen, TabbedContent)
             tabs.active = "tab-patterns"
+            # A direct, synchronous call: off the proposals tab it
+            # returns before it touches the screen stack, so there is
+            # nothing here to settle and nothing to wait for.
             screen.action_apply_selected()
-            await pilot.pause()
             assert isinstance(app.screen, EvolveScreen)
 
             tabs.active = "tab-proposals"
             screen.action_apply_selected()
-            await pilot.pause()
+            # push_screen stacks the modal synchronously; its Label
+            # mounts a frame later, and the Label is what is read here.
+            # Waiting for the Label rather than for the screen type
+            # leaves the assertion below its own failure message.
+            question = await mounted(pilot, lambda: app.screen, "#options-question")
             assert isinstance(app.screen, OptionsModal)
-            question = app.screen.query_one("#options-question")
-            assert isinstance(question.content, Text)
-            assert "[/bold]" in question.content.plain
+            assert isinstance(question.content, Text)  # type: ignore[attr-defined]
+            assert "[/bold]" in question.content.plain  # type: ignore[attr-defined]
             await pilot.press("escape")
 
     async def test_apply_via_modal_mutates_and_stamps(
@@ -168,21 +197,38 @@ class TestEvolveScreen:
         _seed(tmp_path)
         app = _home_app(tmp_path)
         async with app.run_test(size=(140, 40)) as pilot:
-            await pilot.pause(0.2)
             screen = await _open(app, pilot)
             await pilot.press("a")
-            await pilot.pause()
+            # "a screen opened over the evolve screen" is weaker than
+            # "that screen is the OptionsModal": a wrong screen ends
+            # the wait at once and fails on the assertion below.
+            await settled(
+                pilot,
+                lambda: app.screen is not screen,
+                what="the 'a' key to open a screen over the evolve screen",
+            )
             assert isinstance(app.screen, OptionsModal)
             assert "PROP-001" in app.screen.request.header
             await pilot.press("1")  # Apply
-            await pilot.pause(0.2)
+            # Screen.dismiss hands the result to the callback queue
+            # BEFORE it pops the modal, so the pop proves the callback
+            # is scheduled and the drain proves it has run. Measured:
+            # the requester is the app, not the screen, because the
+            # binding's action runs in the app's message-pump context.
+            await settled(
+                pilot,
+                lambda: app.screen is screen,
+                what="the Apply choice to close the modal",
+            )
+            await drained(pilot, app, what="the apply callback to run")
             content = (tmp_path / "CLAUDE.md").read_text()
             assert "Pin every dependency version" in content
             assert "applied from PROP-001" in content
             prop = (tmp_path / ".kstrl" / "proposals" / "prop-001.md").read_text()
             assert "**Applied**:" in prop
+            detail_widget = await mounted(pilot, lambda: screen, "#proposal-detail")
             detail = str(
-                screen.query_one("#proposal-detail").content,
+                detail_widget.content,  # type: ignore[attr-defined]
             )
             assert "✓ applied" in detail
 
@@ -190,13 +236,25 @@ class TestEvolveScreen:
         _seed(tmp_path)
         app = _home_app(tmp_path)
         async with app.run_test(size=(140, 40)) as pilot:
-            await pilot.pause(0.2)
-            await _open(app, pilot)
+            screen = await _open(app, pilot)
             await pilot.press("a")
-            await pilot.pause()
+            await settled(
+                pilot,
+                lambda: app.screen is not screen,
+                what="the 'a' key to open a screen over the evolve screen",
+            )
             assert isinstance(app.screen, OptionsModal)
             await pilot.press("2")  # Cancel
-            await pilot.pause()
+            # Same two hops as the apply case. The drain matters more
+            # here, not less: the assertion is that the callback wrote
+            # NOTHING, which is indistinguishable from a callback that
+            # has not run yet unless the drain has observed it run.
+            await settled(
+                pilot,
+                lambda: app.screen is screen,
+                what="the Cancel choice to close the modal",
+            )
+            await drained(pilot, app, what="the cancel callback to run")
             assert (tmp_path / "CLAUDE.md").read_text() == CLAUDE_MD
             prop = (tmp_path / ".kstrl" / "proposals" / "prop-001.md").read_text()
             assert "**Applied**:" not in prop
@@ -208,22 +266,43 @@ class TestEvolveScreen:
         _seed(tmp_path)
         app = _home_app(tmp_path)
         async with app.run_test(size=(140, 40)) as pilot:
-            await pilot.pause(0.2)
             screen = await _open(app, pilot)
-            table = screen.query_one("#proposals-table")
+            table = await mounted(pilot, lambda: screen, "#proposals-table")
             table.focus()
+            # Widget.focus routes through call_later, so focus is not
+            # in place when it returns, and a "down" pressed before it
+            # lands moves nothing.
+            await settled(
+                pilot,
+                lambda: table.has_focus,
+                what="the proposals table to take focus",
+            )
             await pilot.press("down")  # PROP-002, the inferential one
+            await settled(
+                pilot,
+                lambda: cast(DataTable, table).cursor_row == 1,
+                what="the down key to move the cursor to the inferential proposal",
+            )
             await pilot.press("a")
-            await pilot.pause()
+            # Deliberately the OR. The correct outcome of "a" here is
+            # that NO modal opens, so the only positive thing to wait
+            # for is the notice the manual branch raises; a modal
+            # opening satisfies the wait at once and leaves the
+            # assertion below to fail in its own words.
+            await settled(
+                pilot,
+                lambda: app.screen is not screen or len(app._notifications),
+                what="the 'a' key to either open a modal or refuse with a notice",
+            )
             assert isinstance(app.screen, EvolveScreen)  # no modal
             assert (tmp_path / "CLAUDE.md").read_text() == CLAUDE_MD
 
     async def test_empty_state(self, tmp_path: Path) -> None:
         app = _home_app(tmp_path)
         async with app.run_test(size=(140, 40)) as pilot:
-            await pilot.pause(0.2)
             screen = await _open(app, pilot)
+            detail_widget = await mounted(pilot, lambda: screen, "#proposal-detail")
             detail = str(
-                screen.query_one("#proposal-detail").content,
+                detail_widget.content,  # type: ignore[attr-defined]
             )
             assert "no proposals yet" in detail

@@ -63,6 +63,7 @@ from collections.abc import Callable
 from typing import Any, TypeVar, overload
 
 from textual.dom import DOMNode
+from textual.message_pump import MessagePump
 from textual.pilot import Pilot
 from textual.widget import Widget
 
@@ -167,3 +168,32 @@ async def mounted(
     )
     found = node().query_one(selector)
     return found
+
+
+async def drained(
+    pilot: Pilot[Any],
+    pump: MessagePump,
+    *,
+    what: str,
+    timeout: float = SETTLE_TIMEOUT,
+) -> None:
+    """Wait until everything already queued on ``pump`` has been handled.
+
+    The case a predicate cannot serve: a test posts a message whose
+    CORRECT outcome is that nothing changes. ``test_a_late_check_does_not
+    _overwrite_a_newer_one`` posts a superseded result and asserts the
+    warning is still there, so there is no new state to wait for and a
+    fixed pause looks like the only option. It is not.
+
+    ``MessagePump.call_later`` posts an ``events.Callback`` onto the same
+    queue that ``post_message`` writes to, so FIFO on that queue means
+    the callback cannot run until the message posted before it has been
+    handled. Waiting for the callback is therefore a real observation of
+    "my message was processed", not a guess at how long that takes.
+
+    It covers exactly one hop. A handler that posts further messages of
+    its own needs a predicate on the outcome, not this.
+    """
+    handled: list[bool] = []
+    pump.call_later(handled.append, True)
+    await settled(pilot, lambda: handled, what=what, timeout=timeout)

@@ -30,6 +30,7 @@ from kstrl.inbox import (
     summarize,
 )
 from tests.helpers.component_prd import write_component_prd
+from tests.helpers.settle import drained, mounted
 
 
 def _box(tmp_path: Path, **kwargs: object) -> Inbox:
@@ -761,12 +762,24 @@ class TestInboxScreen:
         app = _Harness()
         async with app.run_test() as pilot:
             await app.push_screen(InboxScreen(tmp_path))
-            await pilot.pause()
+            await mounted(pilot, lambda: app.screen, "#inbox-table")
             screen = app.screen
             assert isinstance(screen, InboxScreen)
+            # The table is queryable as soon as compose mounts it, which
+            # is BEFORE the screen's own on_mount reads the log.
+            # Draining the screen observes that on_mount ran without
+            # asserting what it found.
+            await drained(
+                pilot,
+                screen,
+                what="the inbox screen's on_mount to read the log",
+            )
             assert len(screen._items) == 1
+            # No wait after this one: action_approve is a direct call
+            # that appends the decision to the log before it returns, so
+            # the assertion below reads a file on disk rather than
+            # anything the app still has to settle.
             screen.action_approve()
-            await pilot.pause()
         assert Inbox(tmp_path, InboxConfig()).open_items() == []
 
 

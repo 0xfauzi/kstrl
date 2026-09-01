@@ -26,7 +26,7 @@ import stat
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from textual.app import App, ComposeResult
@@ -52,6 +52,7 @@ from kstrl.tui.screens.inbox import InboxScreen
 from kstrl.tui.screens.init_wizard import _detected_text
 from kstrl.tui.session import LaunchError, start_run_session
 from kstrl.tui.widgets.config_problem import ConfigProblemBanner
+from tests.helpers.settle import mounted, settled
 from tests.helpers.tui_screens import evolve_screen, home_app
 from tests.spine_utils import make_manifest
 
@@ -75,13 +76,24 @@ def _banner_text(screen: Screen[Any]) -> str:
 async def _inbox(tmp_path: Path) -> AsyncIterator[tuple[InboxScreen, Pilot[None]]]:
     """The inbox screen open on ``tmp_path``.
 
-    A bare pause, mirroring ``tests/test_inbox.py``: this screen mounts
-    its table directly, with no tab panes to wait for.
+    This screen mounts its table directly, with no tab panes to wait
+    for, so there is one condition rather than the evolve screen's
+    three: its own on_mount adds the four columns and THEN calls
+    ``action_refresh``, in one synchronous call. A poll runs only
+    between messages, so a table that has columns is a screen whose
+    on_mount has returned - the list and the config-problem banner are
+    both drawn. It is weaker than anything a caller asserts: it says
+    the screen finished loading, not what it loaded.
     """
     app = _Harness()
     async with app.run_test() as pilot:
         await app.push_screen(InboxScreen(tmp_path))
-        await pilot.pause()
+        table = await mounted(pilot, lambda: app.screen, "#inbox-table")
+        await settled(
+            pilot,
+            lambda: cast(DataTable, table).columns,
+            what="the inbox screen's on_mount to draw the list",
+        )
         screen = app.screen
         assert isinstance(screen, InboxScreen)
         yield screen, pilot
@@ -171,11 +183,13 @@ class TestEvolveScreen:
     ) -> None:
         toml = tmp_path / "kstrl.toml"
         toml.write_text(BAD_KNOB, encoding="utf-8")
-        async with evolve_screen(tmp_path) as (screen, pilot):
+        async with evolve_screen(tmp_path) as (screen, _pilot):
             assert screen.query_one(ConfigProblemBanner).display is True
             toml.write_text(GOOD_KNOB, encoding="utf-8")
+            # action_reload is a direct call and reload is synchronous
+            # all the way down to the banner's own `show`, so the
+            # display below is already final when it returns.
             screen.action_reload()
-            await pilot.pause(0.2)
             assert screen.query_one(ConfigProblemBanner).display is False
 
 
@@ -224,11 +238,13 @@ class TestInboxScreen:
             component="comp-a",
             dedupe_key="p1",
         )
-        async with _inbox(tmp_path) as (screen, pilot):
+        async with _inbox(tmp_path) as (screen, _pilot):
             assert len(screen._items) == 1
             (tmp_path / "kstrl.toml").write_text(BAD_DOCUMENT, encoding="utf-8")
+            # action_approve is a direct call and _decide is
+            # synchronous through to the redraw, so the list and the
+            # banner below are already final when it returns.
             screen.action_approve()
-            await pilot.pause()
             assert screen._items == []
             assert "Invalid TOML" in _banner_text(screen)
             # The decision did NOT land: refusing is the honest answer
@@ -628,14 +644,25 @@ async def test_the_config_screen_refresh_reports_the_seam_wording(tmp_path: Path
     app = home_app(tmp_path)
     notices: list[str] = []
     async with app.run_test(size=(140, 40)) as pilot:
-        await pilot.pause(0.2)
+        # The app installs its home screen from its own on_mount, so a
+        # screen pushed before that lands under it and never becomes
+        # active. Then ConfigScreen.on_mount adds the columns and
+        # renders the report in one synchronous call, so a table with
+        # columns is a screen that has finished loading.
+        await mounted(pilot, lambda: app.screen, "#home-commands")
         app.push_screen(ConfigScreen())
-        await pilot.pause(0.2)
+        table = await mounted(pilot, lambda: app.screen, "#config-table")
+        await settled(
+            pilot,
+            lambda: cast(DataTable, table).columns,
+            what="the config screen's on_mount to fill the table",
+        )
         screen = app.screen
         assert isinstance(screen, ConfigScreen)
         app.notify = lambda message, **kw: notices.append(str(message))  # type: ignore[method-assign,assignment]
+        # action_refresh notifies from inside the call, so `notices`
+        # is already final when it returns.
         screen.action_refresh()
-        await pilot.pause(0.2)
     assert notices, "refresh reported nothing"
     assert any("[run]" in n for n in notices), notices
 
