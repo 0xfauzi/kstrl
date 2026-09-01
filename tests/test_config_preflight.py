@@ -35,6 +35,25 @@ from tests.spine_utils import component, make_manifest
 
 MALFORMED_TOML = "[verify\ntest_command = 'pytest'\n"
 
+#: Syntactically perfect TOML that is not utf-8: one 0xe9, the byte an
+#: editor set to ISO-8859-1 writes for an e-acute. ``tomllib.load``
+#: decodes the stream itself, so this fails before the lexer ever runs,
+#: and it fails with ``UnicodeDecodeError`` - a ``ValueError``, not a
+#: ``TOMLDecodeError`` (#318). Real bytes rather than a patched decoder:
+#: the whole defect is which exception the standard library actually
+#: raises here.
+NON_UTF8_TOML = b'[agent]\nname = "\xe9"\n'
+
+#: Both shapes a kstrl.toml can be broken in, each with the fragment
+#: the operator is shown for it. One list so a surface that has to
+#: survive a broken file is asserted against every kind of broken file
+#: there is, rather than against whichever one was current when it was
+#: written.
+BAD_TOML: list[tuple[str | bytes, str]] = [
+    (MALFORMED_TOML, "Invalid TOML"),
+    (NON_UTF8_TOML, "not valid UTF-8"),
+]
+
 DECOMPOSE_ARGS = [
     "decompose",
     "--spec",
@@ -51,15 +70,21 @@ DECOMPOSE_ARGS = [
 FACTORY_ARGS = ["factory", "--manifest", "m.json", "--agent-cmd", "true", "--yes"]
 
 
-def _invoke(args: list[str], *, toml: str | None = None) -> Result:
-    """Run a command in an isolated checkout holding a spec and manifest."""
+def _invoke(args: list[str], *, toml: str | bytes | None = None) -> Result:
+    """Run a command in an isolated checkout holding a spec and manifest.
+
+    ``toml`` takes ``bytes`` as well as ``str`` so a case can put a
+    kstrl.toml on disk that no encoding of a ``str`` would produce; see
+    :data:`NON_UTF8_TOML`. One write for both, so the ``str`` cases are
+    utf-8 on a machine whose locale is not.
+    """
     runner = CliRunner()
     with runner.isolated_filesystem() as fs:
         root = Path(fs)
         (root / "s.md").write_text("# spec\n")
         make_manifest([component("comp-a")]).save(root / "m.json")
         if toml is not None:
-            (root / "kstrl.toml").write_text(toml)
+            (root / "kstrl.toml").write_bytes(toml.encode() if isinstance(toml, str) else toml)
         return runner.invoke(cli, args, catch_exceptions=True)
 
 
@@ -483,31 +508,139 @@ class TestTheRootIsTheOneTheCommandWillUse:
         assert result.exit_code == 0, result.output
 
 
+#: Every command measured crashing on :data:`NON_UTF8_TOML` before
+#: #318, with the exit code each one documents for a rejected
+#: configuration. That set is exactly the commands NOT exempt from the
+#: seam, which is the point: the blast radius of the escaping
+#: ``UnicodeDecodeError`` was the seam itself, not any command's own
+#: config handling. ``test_the_table_names_every_command_the_seam_guards``
+#: keeps the list honest rather than a count in a comment doing it.
+NON_UTF8_CRASHED: list[tuple[list[str], int]] = [
+    (["autonomy", "status"], 1),
+    (["dash"], 1),
+    (DECOMPOSE_ARGS, 1),
+    (["evolve"], 1),
+    (FACTORY_ARGS, 1),
+    (["feature", "--prd", "s.md", "--agent-cmd", "true"], 1),
+    (["inbox", "ls"], 1),
+    (["queue", "ls"], 1),
+    (["retry", "comp-a"], 1),
+    (["run", "--agent-cmd", "true"], 1),
+    (["serve", "--print-plist", "--no-color"], 2),
+    (["status"], 1),
+    (["understand", "--agent-cmd", "true"], 1),
+]
+
+
+class TestANonUtf8ConfigIsReportedNotCrashed:
+    """#318: ``tomllib.load`` decodes the stream as utf-8 itself, so one
+    latin-1 byte in kstrl.toml raises ``UnicodeDecodeError``. That is a
+    ``ValueError`` and not a ``TOMLDecodeError``, so it walked past the
+    only handler ``load_toml_document`` had and out of the seam that
+    every non-exempt command sits behind."""
+
+    @pytest.mark.parametrize(
+        ("args", "exit_code"),
+        NON_UTF8_CRASHED,
+        ids=[args[0] for args, _ in NON_UTF8_CRASHED],
+    )
+    def test_the_command_reports_the_file_instead_of_a_traceback(
+        self,
+        args: list[str],
+        exit_code: int,
+    ) -> None:
+        result = _invoke(args, toml=NON_UTF8_TOML)
+
+        # The regression itself, asserted as the escaped exception and
+        # not only as an exit code: before #318 every one of these ended
+        # with a UnicodeDecodeError out of `tomllib.load`, and an exit
+        # code of 1 is what click reports for that too.
+        assert not isinstance(result.exception, UnicodeDecodeError)
+        assert result.exit_code == exit_code, result.output
+        assert "error:" in result.output
+        assert "not valid UTF-8" in result.output
+
+    def test_no_agent_is_constructed_on_the_paid_path(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The seam's whole promise, restated for this fault: `decompose`
+        stops before the architect rather than after it."""
+        built = _no_agents(monkeypatch)
+
+        result = _invoke(DECOMPOSE_ARGS, toml=NON_UTF8_TOML)
+
+        assert built == []
+        assert result.exit_code == 1
+
+    def test_the_table_names_every_command_the_seam_guards(self) -> None:
+        """The drift guard, in the shape ``TestEverySectionIsEnrolled``
+        and ``TestTheSeamCannotBeBypassedByDeclaration`` already use: a
+        command added later is covered, or this fails. One shared seam
+        serves all of them, so the table is the record of what was
+        measured broken rather than of that many independent paths - but
+        it is checked against the live registry, not against a number
+        somebody wrote in a comment.
+
+        The three exempt commands are covered by
+        ``TestTheCommandsThatMustSurviveABrokenConfig``, which runs its
+        cases over :data:`BAD_TOML`.
+        """
+        covered = {args[0] for args, _ in NON_UTF8_CRASHED}
+
+        assert covered == set(cli.commands) - cli_mod._PREFLIGHT_EXEMPT
+
+
 class TestTheCommandsThatMustSurviveABrokenConfig:
     """Three exemptions, each of which would otherwise take away the tool
     the operator recovers with, or replace a machine contract with a
-    weaker one."""
+    weaker one.
 
-    def test_config_show_still_explains_the_file_it_cannot_load(self) -> None:
-        result = _invoke(["config", "show"], toml=MALFORMED_TOML)
+    The three parametrized cases run against BOTH shapes a kstrl.toml
+    can be broken in, because an exemption that survives one and not the
+    other is not an exemption. #318 was exactly that: `config show`
+    printed the codec message with no path in it while the syntax-error
+    case named the file.
+    """
 
-        assert "Invalid TOML" in result.output
+    @pytest.mark.parametrize(("toml", "fragment"), BAD_TOML, ids=[f for _, f in BAD_TOML])
+    def test_config_show_still_explains_the_file_it_cannot_load(
+        self,
+        toml: str | bytes,
+        fragment: str,
+    ) -> None:
+        result = _invoke(["config", "show"], toml=toml)
+
         assert result.exit_code == 1
+        assert fragment in result.output
+        # Which file, not just what is wrong with it: an operator with
+        # more than one checkout cannot act on the codec message alone.
+        assert "kstrl.toml" in result.output
 
-    def test_init_still_scaffolds_next_to_a_broken_file(self) -> None:
-        result = _invoke(["init", "--ui", "plain", "--no-color"], toml=MALFORMED_TOML)
+    @pytest.mark.parametrize(("toml", "fragment"), BAD_TOML, ids=[f for _, f in BAD_TOML])
+    def test_init_still_scaffolds_next_to_a_broken_file(
+        self,
+        toml: str | bytes,
+        fragment: str,
+    ) -> None:
+        result = _invoke(["init", "--ui", "plain", "--no-color"], toml=toml)
 
         # Whatever init decides about an existing project, it is not
         # allowed to be "cannot parse the file I am here to write".
         assert result.exit_code == 0, result.output
-        assert "Invalid TOML" not in result.output
+        assert fragment not in result.output
         assert "Created prompt.md" in result.output
 
-    def test_sense_keeps_its_exit_2_and_its_json_envelope(self) -> None:
-        result = _invoke(["sense", "--json"], toml=MALFORMED_TOML)
+    @pytest.mark.parametrize(("toml", "fragment"), BAD_TOML, ids=[f for _, f in BAD_TOML])
+    def test_sense_keeps_its_exit_2_and_its_json_envelope(
+        self,
+        toml: str | bytes,
+        fragment: str,
+    ) -> None:
+        result = _invoke(["sense", "--json"], toml=toml)
 
         assert result.exit_code == 2
-        assert "error" in json.loads(result.stdout)
+        assert fragment in json.loads(result.stdout)["error"]
 
     def test_sense_checks_sections_it_does_not_itself_read(self) -> None:
         """`sense` loads four sections of its own. An exemption that

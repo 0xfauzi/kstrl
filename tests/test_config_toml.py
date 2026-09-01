@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.config import KstrlConfig
+from kstrl.config import ConfigError, KstrlConfig, load_toml_document
 
 
 def _write_toml(path: Path, content: str) -> None:
@@ -124,6 +124,44 @@ def test_from_toml_malformed_raises_clear_error(tmp_path: Path) -> None:
     _write_toml(toml_path, "this is not = valid = toml = [\n")
     with pytest.raises(ValueError, match="Invalid TOML"):
         KstrlConfig.from_toml(toml_path, tmp_path)
+
+
+def test_load_toml_document_names_the_file_it_cannot_decode(tmp_path: Path) -> None:
+    """#318: ``tomllib.load`` decodes the stream as utf-8 itself, so one
+    non-utf-8 byte raises ``UnicodeDecodeError`` - a ``ValueError``, not
+    a ``TOMLDecodeError`` - and it escaped the loader as a raw traceback.
+
+    Real bytes rather than a patched decoder: the whole defect is which
+    exception the standard library actually raises here.
+    """
+    toml_path = tmp_path / "kstrl.toml"
+    toml_path.write_bytes(b'[agent]\nname = "\xe9"\n')
+
+    with pytest.raises(ConfigError) as caught:
+        load_toml_document(toml_path)
+
+    message = str(caught.value)
+    assert str(toml_path) in message
+    assert "not valid UTF-8" in message
+    # The cause survives, so the byte offset is still there to find.
+    assert isinstance(caught.value.__cause__, UnicodeDecodeError)
+
+
+def test_load_toml_document_still_calls_a_syntax_error_a_syntax_error(
+    tmp_path: Path,
+) -> None:
+    """The handler order is load-bearing: ``TOMLDecodeError`` subclasses
+    ``ValueError``, so matching the encoding case first would relabel
+    every syntax error and send the operator to re-save a file that is
+    already utf-8."""
+    toml_path = tmp_path / "kstrl.toml"
+    _write_toml(toml_path, "[verify\ntest_command = 'pytest'\n")
+
+    with pytest.raises(ConfigError) as caught:
+        load_toml_document(toml_path)
+
+    assert "Invalid TOML" in str(caught.value)
+    assert "not valid UTF-8" not in str(caught.value)
 
 
 def test_from_toml_resolves_absolute_paths(tmp_path: Path) -> None:

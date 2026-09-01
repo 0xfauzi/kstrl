@@ -507,10 +507,37 @@ def toml_parse_scope() -> Iterator[None]:
 
 
 def load_toml_document(path: Path) -> dict[str, Any]:
-    """Load and parse a TOML file. Raises ConfigError on malformed input.
+    """Load and parse a TOML file.
+
+    Raises :class:`ConfigError` for BOTH ways the parse can fail: a
+    syntax error, and a file that is not utf-8. ``OSError`` passes
+    through un-normalized.
 
     Inside a :func:`toml_parse_scope` the parsed document is reused
     rather than re-read.
+
+    The encoding half is the reason this has two handlers.
+    ``tomllib.load`` decodes the stream itself before it lexes anything,
+    so one non-utf-8 byte raises ``UnicodeDecodeError`` - which is a
+    ``ValueError`` and NOT a ``TOMLDecodeError``, and so walked past a
+    handler naming only the latter. That is the encoding rule CLAUDE.md
+    states from #291, and ``verify._default_typecheck_command`` is where
+    the same defect was fixed for pyproject.toml in #288. Here it landed
+    on the seam every non-exempt command sits behind, so one byte took
+    that whole set down as a raw traceback (#318).
+
+    Two handlers rather than one wide ``except ValueError``: the
+    remedies differ (a line and column against re-saving the file), and
+    a ``ValueError`` from ``tomllib`` that is NEITHER of these is a
+    defect in kstrl, which keeps its traceback rather than being
+    reported to the operator as a bad byte they do not have - the
+    distinction ``config_preflight.raise_if_defect`` draws for the same
+    reason. ``TOMLDecodeError`` is matched first because it SUBCLASSES
+    ``ValueError``; on the wide clause that order would not matter, but
+    on this one reversing it would relabel every syntax error.
+
+    ``OSError`` is deliberately NOT normalized here; see
+    ``config_preflight.SURFACE_REJECTIONS``.
     """
     scope = _PARSE_SCOPE.get()
     if scope is not None and path in scope:
@@ -520,6 +547,10 @@ def load_toml_document(path: Path) -> dict[str, Any]:
             data: dict[str, Any] = tomllib.load(f)
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"Invalid TOML in {path}: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise ConfigError(
+            f"{path} is not valid UTF-8, which TOML requires; re-save the file as UTF-8: {exc}"
+        ) from exc
     if scope is not None:
         scope[path] = data
     return data
@@ -531,8 +562,11 @@ def load_toml_section(toml_path: Path, section: str) -> dict[str, Any]:
     Shared by every config dataclass that has a corresponding
     ``[section]`` in the canonical kstrl.toml. Returns ``{}`` when the
     file or the section is absent; raises :class:`ConfigError` (a
-    ``ValueError``) with a clear message when the file is malformed so
-    every loader behaves consistently. Sub-section keys that are not
+    ``ValueError``) with a clear message when the file will not parse -
+    a syntax error OR a non-utf-8 byte, see :func:`load_toml_document` -
+    so every loader behaves consistently. ``OSError`` is NOT normalized
+    into that, so a caller reading this file without the entry check in
+    front of it catches both. Sub-section keys that are not
     dicts (e.g. someone
     wrote ``factory = "hi"`` instead of ``[factory]``) return ``{}``
     rather than crashing later in the per-key cast.
