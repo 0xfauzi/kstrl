@@ -234,7 +234,10 @@ class FailurePattern:
     # "scope_creep" for a review concern) - the part after the colon in
     # the full "<check>:<code>" signature
     error_signature: str
-    category: str  # "verification", "review", "security", "contract", "iteration"
+    # One of CATEGORIES, decided by category_for_check when the pattern
+    # is built and never written to the journal, so correcting the table
+    # also corrects what is reported about runs already recorded.
+    category: str
 
 
 @dataclass
@@ -303,8 +306,8 @@ def _normalize_error(error: str) -> str:
     return slug[:80] if slug else "unknown"
 
 
-def _classify_check(error: str) -> tuple[str, str]:
-    """Return (check_name, category) inferred from the error text.
+def _classify_check(error: str) -> str:
+    """Return the check name inferred from the error text.
 
     The legacy fallback, used wherever a component has no in-memory
     ``failure_signatures`` entry - which is EVERY ``ks evolve`` or
@@ -320,25 +323,32 @@ def _classify_check(error: str) -> tuple[str, str]:
     state no agent can influence, which is the thing the arm exists to
     prevent. Matched FIRST because the text also contains words the
     later rules claim.
+
+    #315: this returned ``(check_name, category)`` until every caller
+    was measured to discard the category, making it a SECOND place a
+    category was decided that no consumer could reach. A dead answer
+    that can silently disagree with the live one is how the live one
+    later gets "fixed" in the wrong file, so the category is gone from
+    here and ``category_for_check`` is the only decision.
     """
     lower = error.lower()
 
     if SCOPE_UNREADABLE_ERROR_PREFIX.lower() in lower:
-        return SCOPE_UNREADABLE_CHECK, "verification"
+        return SCOPE_UNREADABLE_CHECK
     if any(kw in lower for kw in ("ruff", "flake8", "pylint", "lint")):
-        return "linter", "verification"
+        return "linter"
     if any(kw in lower for kw in ("mypy", "pyright", "typecheck", "type error")):
-        return "typecheck", "verification"
+        return "typecheck"
     if any(kw in lower for kw in ("pytest", "test", "assert", "unittest")):
-        return "test_suite", "verification"
+        return "test_suite"
     if any(kw in lower for kw in ("review", "finding", "reviewer")):
-        return "review", "review"
+        return "review"
     if any(kw in lower for kw in ("contract", "integration")):
-        return "contract", "contract"
+        return "contract"
     if any(kw in lower for kw in ("mechanical verification failed",)):
-        return "verification", "verification"
+        return "verification"
 
-    return "unknown", "iteration"
+    return "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -357,6 +367,23 @@ def _classify_check(error: str) -> tuple[str, str]:
 # difference is the number.
 _DIGIT_RUN_RE = re.compile(r"\d+")
 
+#: The categories a FailurePattern can carry. ``"infrastructure"``
+#: (#315) is for a failure that is neither a gate's verdict on the
+#: change nor the engineer's loop: the run was shut down, hit the token
+#: ceiling, could not merge, could not fetch its own diff. Before it
+#: existed those fell through to ``"iteration"`` and ``ks evolve``
+#: reported them as engineer-loop problems, which is advice aimed at an
+#: agent that could not have prevented any of them.
+#:
+#: Not ``Finding.category``'s ``"infrastructure_error"``
+#: (:mod:`kstrl.findings`), which marks one ROLE RUN that failed to
+#: execute inside an otherwise healthy component. Different taxonomy,
+#: different consumer, deliberately different spelling so a grep for
+#: either does not silently return the other.
+CATEGORIES: frozenset[str] = frozenset(
+    {"verification", "review", "security", "contract", "infrastructure", "iteration"}
+)
+
 _CATEGORY_BY_CHECK = {
     "linter": "verification",
     "typecheck": "verification",
@@ -371,10 +398,36 @@ _CATEGORY_BY_CHECK = {
     "mutation_testing": "verification",
     "prd_stories": "verification",
     "verification": "verification",
+    # #315: mechanical gates that the table did not carry, so every
+    # approved-fixtures failure, policy-envelope breach and
+    # test-adequacy block was filed under the engineer loop.
+    "fixtures": "verification",
+    "policy_envelope": "verification",
+    "test_adequacy": "verification",
+    # #315: recorded outside a CheckResult, by pipeline.fail(signatures=
+    # ["<prefix>:<code>"]). None of these is a verdict on the change.
+    "aborted": "infrastructure",
+    "token_budget": "infrastructure",
+    "pr": "infrastructure",
+    "diff": "infrastructure",
+    # #315: the fallback already answers "iteration" for this one. The
+    # row is here so the table states every name kstrl emits rather than
+    # most of them, and so that a reader cannot tell an unenrolled name
+    # from a deliberate one by its absence.
+    "engineer": "iteration",
     "review": "review",
     "security": "security",
     "contract": "contract",
 }
+
+#: Checks whose failures are infrastructure, derived from the table so
+#: there is ONE answer rather than two lists to keep in step:
+#: :data:`kstrl.autonomy_replay.INFRA_FAILURE_PREFIXES` builds its
+#: prefixes from this, so enrolling a check as infrastructure reaches
+#: both consumers in one edit (#315).
+INFRASTRUCTURE_CHECKS: frozenset[str] = frozenset(
+    name for name, category in _CATEGORY_BY_CHECK.items() if category == "infrastructure"
+)
 
 # Cap on distinct per-check signatures so one catastrophic run (e.g. 40
 # distinct ruff rules) cannot flood the journal entry.
@@ -416,21 +469,23 @@ def split_signature(signature: str) -> tuple[str, str]:
 def category_for_check(check_name: str) -> str:
     """Map a check/gate name to a FailurePattern category.
 
-    An unlisted name falls through to "iteration", which files a Phase 1
-    gate under the engineer loop. Enrolling a new check in
-    ``_CATEGORY_BY_CHECK`` is a convention with no mechanism, and
-    measured on this tree the convention does not hold: AST-walking
-    ``kstrl/`` for ``CheckResult`` names finds ``fixtures``,
-    ``policy_envelope`` and ``test_adequacy`` absent from the table, so
-    three verification gates are already miscategorised here (#315).
-    That predates #294 and correcting it changes recorded
-    categorisation, so it is not that change's to make.
+    An unlisted name falls through to "iteration", which files a gate
+    under the engineer loop. Enrolling a new check in
+    ``_CATEGORY_BY_CHECK`` was a convention with no mechanism, and
+    measured during #294 the convention did not hold for eight of the
+    nineteen names ``kstrl/`` emits. All eight are enrolled as of #315,
+    four of them into the ``"infrastructure"`` category that had to be
+    invented to hold them, and nothing is grandfathered any more.
 
     ``tests/test_check_name_enrolment.py`` is the mechanism: it
-    AST-walks ``kstrl/`` for every constructed check name and fails on
-    one this table does not carry, with those three grandfathered by
-    name so the gate could land without the behaviour change. A new
-    check cannot join them quietly.
+    AST-walks ``kstrl/`` for every constructed check name and every
+    ``signatures=["<prefix>:<code>"]`` literal, and fails on one this
+    table does not carry. A new gate cannot reach the journal
+    uncategorised.
+
+    The answer is computed here, at read time, and never stored in the
+    journal, so a correction to the table also corrects what
+    ``ks evolve`` reports about runs that already happened.
     """
     return _CATEGORY_BY_CHECK.get(check_name, "iteration")
 
@@ -676,7 +731,7 @@ class EvolutionJournal:
                 comp_signatures = list(failure_signatures.get(comp.id) or [])
                 if not comp_signatures:
                     # Legacy fallback: classify the flattened string.
-                    legacy_check, _ = _classify_check(comp.error)
+                    legacy_check = _classify_check(comp.error)
                     legacy_sig = _normalize_error(comp.error)
                     if legacy_sig:
                         comp_signatures = [f"{legacy_check}:{legacy_sig}"]
@@ -759,12 +814,7 @@ class EvolutionJournal:
                 continue
             sigs = list(failure_signatures.get(comp.id) or [])
             if not sigs:
-                sigs = [
-                    signature_for_error(
-                        _classify_check(comp.error)[0],
-                        comp.error,
-                    )
-                ]
+                sigs = [signature_for_error(_classify_check(comp.error), comp.error)]
             for sig in sigs:
                 failure_sigs[sig] = failure_sigs.get(sig, 0) + 1
         common_failure = max(failure_sigs, key=failure_sigs.get, default="") if failure_sigs else ""  # type: ignore[arg-type]
@@ -847,7 +897,7 @@ class EvolutionJournal:
                 continue
             sigs = list(signatures_by_component.get(comp.id) or [])
             if not sigs:
-                legacy_check, _ = _classify_check(comp.error)
+                legacy_check = _classify_check(comp.error)
                 legacy_sig = _normalize_error(comp.error)
                 if not legacy_sig:
                     continue

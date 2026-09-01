@@ -38,15 +38,28 @@ from kstrl.autonomy import (
     AutonomyState,
     DemotionTrigger,
 )
+from kstrl.evolution import INFRASTRUCTURE_CHECKS
 from kstrl.verify import SCOPE_UNREADABLE_CHECK
 
 DEFAULT_EXPERIMENTS_PATH = Path(".kstrl/experiments.tsv")
 
 #: `common_failure` prefixes that mark an infrastructure casualty rather
-#: than a judgement. Derived from the recorded failure taxonomy: `pr:` is
-#: push/create/merge plumbing. Kept as a prefix tuple so a new plumbing
-#: failure family is one entry, not a new code path.
+#: than a judgement. Kept as a prefix tuple so a new plumbing failure
+#: family is one entry, not a new code path.
 #:
+#: #315: the first four come from `evolution.INFRASTRUCTURE_CHECKS`
+#: rather than being retyped here. The two consumers disagreed about
+#: `pr:merge-conflict` - plumbing to this module, an engineer-loop
+#: failure to the journal - and a taxonomy that answers a question twice
+#: will eventually answer it two ways. Deriving means enrolling a check
+#: as infrastructure in `_CATEGORY_BY_CHECK` reaches both in one edit,
+#: and the enrolment guard forces every emitted name through that table.
+#:
+#: _REPLAY_ONLY_PREFIXES is the deliberate remainder: this module asks a
+#: WIDER question than the journal's category does. The journal asks
+#: which part of the factory produced a failure; this asks whether the
+#: run yielded a verdict about the factory's JUDGEMENT at all, and a
+#: failure can be a gate's honest verdict and still answer that with no.
 #: `scope_unreadable:` (#294) is the harness failing to establish its own
 #: input: the component's scope could not be read from the pre-run tree,
 #: so nothing was ever measured about the change. The same reasoning that
@@ -56,13 +69,29 @@ DEFAULT_EXPERIMENTS_PATH = Path(".kstrl/experiments.tsv")
 #: evidence about the factory's judgement. #294 makes that more likely
 #: rather than less, because refusing the component before its engineer
 #: runs makes this the modal signature of the run instead of one of
-#: three retries.
-INFRA_FAILURE_PREFIXES: tuple[str, ...] = (
-    "pr:",
+#: three retries. The journal keeps it under `verification` all the same:
+#: it IS a Phase 1 gate result, and #294 gave it its own gate, its own
+#: table row and its own proposal arm on that basis. That divergence is
+#: the point of splitting this constant in two, and
+#: `tests/test_check_name_enrolment.py` pins both halves of it.
+#:
+#: `git:`, `infra:` and `timeout:` name families no version of kstrl has
+#: ever emitted: measured with `git log -S`, all three strings entered
+#: the tree in 606cbb1, the commit that created this tuple, and no call
+#: site produces them. Kept because an experiments.tsv row outlives the
+#: code that wrote it and the cost of a prefix that matches nothing is
+#: zero. They are NOT enrolled in `_CATEGORY_BY_CHECK`: that table
+#: describes names kstrl emits, and the enrolment guard would make any
+#: real `git:` gate enrol itself on the day it lands.
+_REPLAY_ONLY_PREFIXES: tuple[str, ...] = (
+    f"{SCOPE_UNREADABLE_CHECK}:",
     "git:",
     "infra:",
     "timeout:",
-    f"{SCOPE_UNREADABLE_CHECK}:",
+)
+
+INFRA_FAILURE_PREFIXES: tuple[str, ...] = tuple(
+    sorted({f"{check}:" for check in INFRASTRUCTURE_CHECKS} | set(_REPLAY_ONLY_PREFIXES))
 )
 
 

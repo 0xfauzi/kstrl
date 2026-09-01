@@ -34,21 +34,26 @@ Two things the walk learned the hard way, both from its own tests:
 
 What the walk CANNOT see, stated rather than left as a silent gap:
 ``evolution.signatures_from_findings`` composes ``"<phase>:<category>"``
-from a runtime ``phase`` argument, so the ``review``, ``security`` and
-``contract`` prefixes appear in no literal anywhere in ``kstrl/``. They
-are enrolled today, and
-:meth:`TestEveryCheckNameIsEnrolled.test_the_runtime_composed_phases_are_enrolled`
-asserts it directly, because the walk will not notice if that stops
-being true.
+from a runtime ``phase`` argument, so the ``security`` and ``contract``
+prefixes appear in no literal anywhere in ``kstrl/``, and neither does
+``verification``, which only ever comes back out of
+``evolution._classify_check``. They are enrolled today, and
+:data:`ENROLLED_BUT_INVISIBLE` plus
+:meth:`TestEveryCheckNameIsEnrolled.test_the_walk_covers_every_enrolled_name_but_these`
+say so by measurement rather than by claim.
 
-Names already unenrolled when this walk was written are listed in
-:data:`UNENROLLED_AT_INTRODUCTION` rather than fixed here, and tracked
-in #315. Correcting them changes what ``ks evolve`` reports for journal
-history already written, which is a behaviour change with nothing to do
-with #294 and wants its own justification. Grandfathering by name is
-what makes the gate landable today: the debt is enumerated, and nothing
-new can join it without a visible edit. The set is guarded in both
-directions, so it cannot rot into a lie.
+That second test is the one aimed at this repo's dominant defect (#324):
+a guard that goes BLIND rather than red. Every miss logged there is in
+the skip direction - a refactor moves a name out of the shape the
+matcher recognises, the matcher sees fewer sites and reports clean. This
+file has already been bitten once, by #306. So the walk is now pinned
+from both ends: an emitted name the table does not carry fails, AND an
+enrolled name the walk stops seeing fails.
+
+#315 emptied the grandfathered set this module shipped with. All eight
+names it carried are enrolled, four of them into the ``infrastructure``
+category invented to hold them, so the guard now admits no exceptions at
+all.
 """
 
 from __future__ import annotations
@@ -59,7 +64,13 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.evolution import _CATEGORY_BY_CHECK
+from kstrl.autonomy_replay import _REPLAY_ONLY_PREFIXES, INFRA_FAILURE_PREFIXES
+from kstrl.evolution import (
+    _CATEGORY_BY_CHECK,
+    CATEGORIES,
+    INFRASTRUCTURE_CHECKS,
+    category_for_check,
+)
 
 KSTRL_DIR = Path(__file__).resolve().parent.parent / "kstrl"
 
@@ -69,24 +80,34 @@ KSTRL_DIR = Path(__file__).resolve().parent.parent / "kstrl"
 #: through.
 CHECK_NAME_CALLS = frozenset({"CheckResult", "_failed_gate_result"})
 
-#: Names that ``kstrl/`` emits and ``_CATEGORY_BY_CHECK`` did not carry
-#: on the day this walk was added, so ``category_for_check`` files them
-#: under ``"iteration"``. The first three are Phase 1 gates; the rest are
-#: signature prefixes for failures recorded outside a ``CheckResult``.
-#: Tracked in #315. Do not add to this set to make a new name pass;
-#: enrol the name instead.
-UNENROLLED_AT_INTRODUCTION = frozenset(
-    {
-        "fixtures",
-        "policy_envelope",
-        "test_adequacy",
-        "aborted",
-        "token_budget",
-        "pr",
-        "engineer",
-        "diff",
-    }
-)
+#: Enrolled names the walk provably cannot see, with the reason each is
+#: invisible. Anything else in the table must be reachable by the walk,
+#: or the walk has gone blind and says nothing (#324).
+ENROLLED_BUT_INVISIBLE = {
+    # signatures_from_findings composes "<phase>:<category>" from a
+    # runtime argument. "review" is NOT here: pipeline also emits
+    # "review:divergence" and friends as literals, so the walk does see
+    # that one, and claiming otherwise would excuse a real blind spot.
+    "security": "composed from a runtime phase argument",
+    "contract": "composed from a runtime phase argument",
+    # _classify_check RETURNS this one for a legacy flattened error
+    # string. It is never an argument, so no call site carries it.
+    "verification": "returned by _classify_check, never passed to a call",
+}
+
+#: What #315 decided, pinned name by name. The table is data, so a
+#: careless edit to it is a one-character behaviour change to ``ks
+#: evolve``; this is the test that has to be edited alongside it.
+CATEGORY_DECIDED_IN_315 = {
+    "fixtures": "verification",
+    "policy_envelope": "verification",
+    "test_adequacy": "verification",
+    "aborted": "infrastructure",
+    "token_budget": "infrastructure",
+    "pr": "infrastructure",
+    "diff": "infrastructure",
+    "engineer": "iteration",
+}
 
 
 def _string_bindings(node: ast.stmt) -> dict[str, str]:
@@ -252,11 +273,12 @@ class TestEveryCheckNameIsEnrolled:
         # branch before the fix.
         assert "mutation_testing" in names, "check-name constant in the defining module"
 
-    def test_no_unenrolled_name_beyond_the_grandfathered_set(self) -> None:
+    def test_every_emitted_name_is_enrolled(self) -> None:
+        """#315 emptied the grandfathered set, so this has no exceptions
+        left: a name kstrl emits and the table does not carry is a
+        failure filed under whichever category the fallback picks."""
         missing = {
-            name: where
-            for name, where in _check_names().items()
-            if name not in _CATEGORY_BY_CHECK and name not in UNENROLLED_AT_INTRODUCTION
+            name: where for name, where in _check_names().items() if name not in _CATEGORY_BY_CHECK
         }
         assert not missing, (
             f"names emitted by kstrl/ but absent from "
@@ -265,17 +287,60 @@ class TestEveryCheckNameIsEnrolled:
             f"the engineer loop. Add a row to that table."
         )
 
+    def test_the_walk_covers_every_enrolled_name_but_these(self) -> None:
+        """The blind-guard test (#324). Every miss logged in that issue
+        was in the skip direction: the matcher stopped resolving a name,
+        saw fewer sites and reported clean. Pinning the enrolled names it
+        cannot see turns the next such refactor from a silent narrowing
+        into a red test, for the whole table rather than the four names
+        the anti-vacuity test happens to list."""
+        invisible = set(_CATEGORY_BY_CHECK) - set(_check_names())
+        assert invisible == set(ENROLLED_BUT_INVISIBLE), (
+            f"the walk sees a different set of enrolled names than "
+            f"expected. Newly invisible: {sorted(invisible - set(ENROLLED_BUT_INVISIBLE))} "
+            f"(a refactor probably moved a name out of the shape the walk "
+            f"matches - fix the walk, do not add the name here). Newly "
+            f"visible: {sorted(set(ENROLLED_BUT_INVISIBLE) - invisible)} "
+            f"(delete its row from ENROLLED_BUT_INVISIBLE)."
+        )
+
     def test_the_runtime_composed_phases_are_enrolled(self) -> None:
         """``signatures_from_findings`` builds these from a runtime
         argument, so no literal exists for the walk to find. Asserted by
         hand because the walk provably cannot cover them: removing
-        ``security`` from the table does not fail any other test here."""
+        ``security`` from the table does not fail any other test here.
+        ``review`` is asserted with them because it is composed the same
+        way, even though a literal for it does exist elsewhere."""
         for phase in ("review", "security", "contract"):
             assert phase in _CATEGORY_BY_CHECK, (
                 f"{phase!r} is composed into failure signatures by "
                 f"evolution.signatures_from_findings and must stay enrolled; "
                 f"the AST walk cannot see it."
             )
+
+    def test_every_row_carries_a_category_that_exists(self) -> None:
+        """A typo in a category value invents a category. Nothing else
+        would notice: ``category_for_check`` returns whatever the table
+        says, and the one consumer that displays it prints any string."""
+        unknown = {
+            name: category
+            for name, category in _CATEGORY_BY_CHECK.items()
+            if category not in CATEGORIES
+        }
+        assert not unknown, (
+            f"rows in _CATEGORY_BY_CHECK naming a category that is not in "
+            f"evolution.CATEGORIES: {unknown}."
+        )
+
+    @pytest.mark.parametrize(("name", "category"), sorted(CATEGORY_DECIDED_IN_315.items()))
+    def test_the_names_315_enrolled_keep_the_category_it_gave_them(
+        self, name: str, category: str
+    ) -> None:
+        """Each of these was filed under ``iteration`` by the fallback,
+        so ``ks evolve`` called a merge conflict or a policy-envelope
+        breach an engineer-loop problem."""
+        assert name in _check_names(), f"{name!r} is no longer emitted by kstrl/"
+        assert category_for_check(name) == category
 
     def test_a_colliding_constant_resolves_to_nothing(self) -> None:
         """The wrong answer is worse than no answer: a name two modules
@@ -285,14 +350,48 @@ class TestEveryCheckNameIsEnrolled:
         conflicting = {"a.py": {"SHARED": "x"}, "b.py": {"SHARED": "z"}}
         assert "SHARED" not in unambiguous_pool(conflicting)
 
-    @pytest.mark.parametrize("name", sorted(UNENROLLED_AT_INTRODUCTION))
-    def test_the_grandfathered_set_still_describes_real_debt(self, name: str) -> None:
-        """Two ways the list could lie: a name no longer emitted, and a
-        name since enrolled. Both make it stale."""
-        assert name in _check_names(), (
-            f"{name!r} is no longer emitted by kstrl/; remove it from UNENROLLED_AT_INTRODUCTION."
-        )
-        assert name not in _CATEGORY_BY_CHECK, (
-            f"{name!r} is now enrolled in _CATEGORY_BY_CHECK; remove it from "
-            f"UNENROLLED_AT_INTRODUCTION."
-        )
+
+class TestTheTwoInfrastructureConsumersAgree:
+    """#315: the journal and the autonomy replay both decide what counts
+    as infrastructure, and before this they disagreed about
+    ``pr:merge-conflict`` - plumbing to the replay, an engineer-loop
+    failure to the journal. The replay now derives its prefixes from the
+    journal's table, so the shared part cannot drift. What is left is one
+    deliberate difference, pinned here so that changing either side
+    without the other is a red test rather than a quiet divergence."""
+
+    def test_every_infrastructure_check_is_an_infra_abort_for_the_replay(self) -> None:
+        for check in INFRASTRUCTURE_CHECKS:
+            assert f"{check}:any-code".startswith(INFRA_FAILURE_PREFIXES), (
+                f"{check!r} is 'infrastructure' in the journal but a decisive "
+                f"judgement failure to autonomy_replay."
+            )
+
+    def test_the_replays_extra_prefixes_are_exactly_the_documented_ones(self) -> None:
+        """The replay asks a wider question than the journal's category:
+        not 'which part of the factory failed' but 'did this run yield a
+        verdict about the factory's judgement at all'. A gate's honest
+        verdict can still answer no. Anything beyond this list is an
+        undocumented divergence."""
+        derived = {f"{check}:" for check in INFRASTRUCTURE_CHECKS}
+        assert set(INFRA_FAILURE_PREFIXES) - derived == set(_REPLAY_ONLY_PREFIXES)
+
+    def test_the_scope_refusal_is_the_deliberate_divergence(self) -> None:
+        """``scope_unreadable`` is a Phase 1 gate result, so the journal
+        files it under verification (#294 gave it its own gate, table row
+        and proposal arm on that basis). It is still an infrastructure
+        casualty for the replay: nothing was measured about the change,
+        so the run says nothing about judgement. Both halves asserted,
+        because the divergence is only defensible while it is on
+        purpose."""
+        assert category_for_check("scope_unreadable") == "verification"
+        assert "scope_unreadable" not in INFRASTRUCTURE_CHECKS
+        assert "scope_unreadable:no-trustworthy-scope".startswith(INFRA_FAILURE_PREFIXES)
+
+    def test_the_prefixes_cannot_swallow_a_neighbouring_check(self) -> None:
+        """``diff:`` must not match ``diff_scope:``: a scope violation is
+        the reviewer's verdict on the change and decisive evidence about
+        it. The colon is what separates them, so it is load-bearing and
+        tested rather than assumed."""
+        assert not "diff_scope:files-outside-allowed-scope".startswith(INFRA_FAILURE_PREFIXES)
+        assert not "review:scope_creep".startswith(INFRA_FAILURE_PREFIXES)
