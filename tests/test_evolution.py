@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from kstrl.evolution import (
     JOURNAL_SCHEMA_VERSION,
+    SPEC_ISSUES_EVENT,
     EvolutionConfig,
     EvolutionJournal,
     FailurePattern,
@@ -1110,3 +1113,239 @@ class TestSpecIssueRuns:
 
         entries = journal._read_journal_entries()
         assert [e["component"] for e in entries] == ["a"]
+
+
+class TestSpecAudits:
+    """#314: the unwindowed reader the excluded-history accounting needs,
+    and the one window rule built on it."""
+
+    def _journal(self, tmp_path: Path, entries: list[dict[str, Any]]) -> EvolutionJournal:
+        journal = EvolutionJournal(EvolutionConfig.load(tmp_path))
+        journal.append_entries(entries)
+        return journal
+
+    def _audit(self, project: Any, spec_file: str = "spec.md") -> dict[str, Any]:
+        return {"event_type": SPEC_ISSUES_EVENT, "project": project, "spec_file": spec_file}
+
+    def test_every_project_is_returned_unwindowed(self, tmp_path: Path) -> None:
+        """The accounting under the trend counts the history the trend
+        LEAVES OUT, so a reader that filtered by project or applied the
+        window would hide exactly what the caller is asking for (#280).
+        """
+        journal = self._journal(
+            tmp_path,
+            [self._audit("mine"), self._audit("other"), self._audit(None)],
+        )
+
+        assert [e.get("project") for e in journal.get_spec_audits()] == ["mine", "other", None]
+
+    def test_other_event_types_are_excluded(self, tmp_path: Path) -> None:
+        """The journal carries component results and repair rows too."""
+        journal = self._journal(
+            tmp_path,
+            [
+                {"run_id": "r1", "event_type": "component_result", "component": "a"},
+                self._audit("mine"),
+            ],
+        )
+
+        assert [e["event_type"] for e in journal.get_spec_audits()] == [SPEC_ISSUES_EVENT]
+
+    def test_a_supplied_snapshot_is_windowed_without_a_second_read(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``audits=`` is what lets ONE read feed both the trend and the
+        accounting computed over the same entries, so the two cannot
+        disagree because the file moved between two reads."""
+        journal = self._journal(tmp_path, [self._audit("mine", "on-disk.md")])
+        elsewhere = [self._audit("mine", "b.md"), self._audit("other", "c.md")]
+
+        def refuse(self: EvolutionJournal) -> list[dict[str, Any]]:
+            raise AssertionError("read the file despite being handed a snapshot")
+
+        monkeypatch.setattr(EvolutionJournal, "get_spec_audits", refuse)
+
+        runs = journal.get_spec_issue_runs("mine", audits=elsewhere)
+
+        assert [r["spec_file"] for r in runs] == ["b.md"]
+
+    def test_a_supplied_snapshot_answers_the_same_as_raw_entries(self, tmp_path: Path) -> None:
+        """The event-type filter is applied either way, so a caller that
+        hands over unfiltered entries gets the reader's own answer
+        rather than a component_result that happens to name a
+        project."""
+        entries: list[dict[str, Any]] = [
+            {"event_type": "component_result", "project": "mine", "spec_file": "wrong.md"},
+            self._audit("mine", "right.md"),
+        ]
+        journal = self._journal(tmp_path, entries)
+
+        assert journal.get_spec_issue_runs("mine", audits=entries) == journal.get_spec_issue_runs(
+            "mine"
+        )
+
+    def test_an_unattributed_audit_belongs_to_no_project(self, tmp_path: Path) -> None:
+        """#314: the window matches a project through ``entry_str``, the
+        rule the report's accounting already used, so a null or
+        non-string ``project`` is an unattributed audit and not a
+        project whose name happens to be empty. Before the fold the
+        method compared the raw field, and the two answered differently
+        for a query on "": the report's rule counted these, the
+        journal's did not.
+        """
+        journal = self._journal(
+            tmp_path,
+            [self._audit(None, "null.md"), self._audit(7, "int.md"), self._audit("", "empty.md")],
+        )
+
+        assert [r["spec_file"] for r in journal.get_spec_issue_runs("")] == [
+            "null.md",
+            "int.md",
+            "empty.md",
+        ]
+
+
+# ---------------------------------------------------------------------------
+# SPEC_ISSUES_EVENT has one home (#314 item 3)
+# ---------------------------------------------------------------------------
+
+#: The package under test, located the way every other AST-walking test
+#: in this suite locates it (test_journal_one_writer, test_atomicio).
+KSTRL_PACKAGE = Path(__file__).resolve().parent.parent / "kstrl"
+
+
+def spec_issues_literals(source: str) -> list[str]:
+    """Every place this source names the spec-audit event as a literal.
+
+    Two shapes, because the row is written in one and selected in the
+    other:
+
+    - a dict entry ``{"event_type": "spec_issues"}``, which is a writer;
+    - a comparison of an ``event_type`` lookup against the literal,
+      which is a reader.
+
+    Deliberately NOT "the string appears in this file". ``spec_issues``
+    is also the architect's own JSON key, so ``DECOMPOSE_PROMPT``
+    spells it several times in prose and ``_parse_spec_issues`` reads
+    ``data.get("spec_issues")`` off the agent's output. Those are a
+    different vocabulary that happens to share a word, and flagging
+    them would make this guard something to be silenced rather than
+    obeyed. ``TestSpecIssuesEventHasOneHome`` feeds the detector both
+    kinds so neither half is taken on trust.
+    """
+    found: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Dict):
+            found.extend(_literal_event_writes(node))
+        if isinstance(node, ast.Compare):
+            found.extend(_literal_event_reads(node))
+    return found
+
+
+def _literal_event_writes(node: ast.Dict) -> list[str]:
+    """``{"event_type": "spec_issues"}`` entries of one dict literal."""
+    return [
+        f"line {value.lineno}: writes {ast.unparse(value)} as the event_type"
+        for key, value in zip(node.keys, node.values, strict=True)
+        if isinstance(key, ast.Constant)
+        and key.value == "event_type"
+        and isinstance(value, ast.Constant)
+        and value.value == SPEC_ISSUES_EVENT
+    ]
+
+
+def _literal_event_reads(node: ast.Compare) -> list[str]:
+    """``entry.get("event_type") == "spec_issues"`` and its ``!=``/``in``
+    spellings, in either operand order."""
+    operands = [node.left, *node.comparators]
+    if not any(_reads_event_type(operand) for operand in operands):
+        return []
+    return [
+        f"line {node.lineno}: compares event_type against {ast.unparse(operand)}"
+        for operand in operands
+        if SPEC_ISSUES_EVENT in _constant_strings(operand)
+    ]
+
+
+def _reads_event_type(node: ast.expr) -> bool:
+    """``x.get("event_type", ...)`` or ``x["event_type"]``."""
+    if isinstance(node, ast.Subscript):
+        return isinstance(node.slice, ast.Constant) and node.slice.value == "event_type"
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "get"
+        and bool(node.args)
+        and isinstance(node.args[0], ast.Constant)
+        and node.args[0].value == "event_type"
+    )
+
+
+def _constant_strings(node: ast.expr) -> set[str]:
+    """The string constants this operand contains, tuple/list included,
+    so ``in ("spec_issues", "component_result")`` is seen."""
+    return {
+        child.value
+        for child in ast.walk(node)
+        if isinstance(child, ast.Constant) and isinstance(child.value, str)
+    }
+
+
+class TestSpecIssuesEventHasOneHome:
+    """#314 item 3: the journal's discriminator is named once, here.
+
+    It used to be spelled twice - a constant in ``decompose``, which
+    writes the row, and a literal in this module, which selects on it.
+    The cost of that placement was not that the two disagreed (a
+    round-trip test made that loud) but that a reader added HERE
+    reaches for the nearest spelling, and the nearest spelling was the
+    literal.
+    """
+
+    def test_no_module_names_the_event_as_a_literal(self) -> None:
+        found: dict[str, list[str]] = {}
+        for source_file in sorted(KSTRL_PACKAGE.rglob("*.py")):
+            hits = spec_issues_literals(source_file.read_text(encoding="utf-8"))
+            if hits:
+                found[source_file.name] = hits
+
+        assert found == {}, (
+            "A spec-audit row is written or selected by a bare literal instead of "
+            f"evolution.SPEC_ISSUES_EVENT. Import the constant. Sites: {found}"
+        )
+
+    def test_the_detector_sees_a_literal_writer(self) -> None:
+        """A guard whose only assertion is that a list is empty cannot
+        notice its own detector being switched off."""
+        hits = spec_issues_literals('entry = {"event_type": "spec_issues", "project": p}')
+
+        assert hits == ["line 1: writes 'spec_issues' as the event_type"]
+
+    def test_the_detector_sees_a_literal_reader(self) -> None:
+        hits = spec_issues_literals(
+            'rows = [e for e in xs if e.get("event_type") == "spec_issues"]'
+        )
+
+        assert hits == ["line 1: compares event_type against 'spec_issues'"]
+
+    def test_the_detector_sees_the_reversed_and_membership_spellings(self) -> None:
+        """Neither operand order nor ``in`` is a way past it."""
+        reversed_hits = spec_issues_literals('flag = "spec_issues" == e["event_type"]')
+        membership = spec_issues_literals(
+            'flag = e.get("event_type") in ("spec_issues", "component_result")'
+        )
+
+        assert reversed_hits == ["line 1: compares event_type against 'spec_issues'"]
+        assert membership == [
+            "line 1: compares event_type against ('spec_issues', 'component_result')"
+        ]
+
+    def test_the_architects_own_json_key_is_not_flagged(self) -> None:
+        """``spec_issues`` is also the key the architect returns its
+        findings under, and DECOMPOSE_PROMPT spells it in prose. A guard
+        that fired on those would be silenced rather than obeyed."""
+        assert spec_issues_literals('issues = data.get("spec_issues") or []') == []
+        assert spec_issues_literals('PROMPT = "return a spec_issues array"') == []
+        assert spec_issues_literals('payload = {"spec_issues": [], "components": []}') == []
