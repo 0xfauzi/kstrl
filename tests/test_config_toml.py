@@ -256,13 +256,16 @@ def test_a_recursion_error_is_reported_not_raised(tmp_path: Path) -> None:
     """#318 round 3, stated as its own case rather than only as a table
     row, because the CLASS of the escaping exception is the whole point.
 
-    ``RecursionError`` derives from ``RuntimeError``. It is not a
-    ``ValueError``, so every handler this PR shipped in rounds 1 and 2
-    let it through - and round 2's docstring, AST guard and CLAUDE.md
-    line all asserted that ``ValueError`` was the whole class. The
-    assertion below is on the ``__cause__``'s type, so narrowing the
-    handler back to ``ValueError`` fails here loudly instead of
-    reintroducing the escape quietly.
+    ``RecursionError`` derives from ``RuntimeError``, NOT from
+    ``ValueError``, so every handler rounds 1 and 2 shipped let it
+    through - and round 2's docstring, AST guard and CLAUDE.md line all
+    asserted that ``ValueError`` was the whole class. The assertion is on
+    the ``__cause__``'s type, so narrowing the handler back to
+    ``ValueError`` fails here loudly instead of reintroducing the escape
+    quietly. It deliberately does NOT also assert
+    ``not isinstance(cause, ValueError)``: the line above has already
+    fixed the class, so that would assert CPython's lattice rather than
+    this code, and a test that cannot fail is not a test.
     """
     toml_path = tmp_path / "kstrl.toml"
     toml_path.write_bytes(DEEP_NEST_TOML)
@@ -271,15 +274,14 @@ def test_a_recursion_error_is_reported_not_raised(tmp_path: Path) -> None:
         load_toml_document(toml_path)
 
     assert isinstance(caught.value.__cause__, RecursionError)
-    assert not isinstance(caught.value.__cause__, ValueError)
     assert BROAD_FRAGMENT in str(caught.value)
 
 
-def test_open_failures_are_not_relabelled_as_parse_failures(tmp_path: Path) -> None:
-    """``open`` is outside the guard, so its faults keep their own type.
+def test_open_failures_are_not_relabelled_as_parse_failures() -> None:
+    """The I/O is outside the guard, so its faults keep their own type.
 
-    A path with an embedded null byte raises ``ValueError`` from ``open``
-    itself - before any file exists to parse - and the round-2 catch-all
+    A path with an embedded null byte raises ``ValueError`` from the read
+    itself - before any bytes exist to parse - and the round-2 catch-all
     reported it as "could not be parsed as TOML" for a file it had never
     opened. That is the same overclaiming the catch-all's wording is
     written to avoid, arriving through the try block's extent instead of
@@ -292,21 +294,32 @@ def test_open_failures_are_not_relabelled_as_parse_failures(tmp_path: Path) -> N
     assert BROAD_FRAGMENT not in str(caught.value)
 
 
-def test_an_unreadable_file_still_raises_oserror_not_configerror(
-    tmp_path: Path,
-) -> None:
+@pytest.mark.parametrize("kind", ["missing", "directory"])
+def test_an_unreadable_file_still_raises_oserror_not_configerror(tmp_path: Path, kind: str) -> None:
     """The contract ``config_preflight.SURFACE_REJECTIONS`` is built on.
 
     Before the catch-all widened past ``ValueError`` this held by
-    accident, because ``OSError`` is not one. With ``except Exception``
-    below it, it holds only because of the explicit ``except OSError:
-    raise``. This is the test that fails if someone deletes that clause
-    as redundant.
+    accident, because ``OSError`` is not one. It now holds because the
+    read happens BEFORE the guard, so no widening of the guard can reach
+    it. An intermediate draft instead re-raised from an ``except
+    OSError:`` clause inside the guard; this test was written claiming
+    to pin that clause, and did not, because the read already failed one
+    line above the ``try``. Hoisting the I/O out made the clause
+    unreachable and the honest fix was to delete it, not to keep a
+    special case no test could enter.
+
+    Two kinds, because one file-shaped fault is not the population:
+    a path that does not exist, and a path that exists and is not a
+    regular file.
     """
-    missing = tmp_path / "nope" / "kstrl.toml"
+    if kind == "missing":
+        target = tmp_path / "nope" / "kstrl.toml"
+    else:
+        target = tmp_path / "kstrl.toml"
+        target.mkdir()
 
     with pytest.raises(OSError) as caught:
-        load_toml_document(missing)
+        load_toml_document(target)
 
     assert not isinstance(caught.value, ConfigError)
 

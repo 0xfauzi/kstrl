@@ -800,30 +800,26 @@ def _default_typecheck_command(cwd: Path) -> str:
 
     pyproject = cwd / "pyproject.toml"
     if pyproject.is_file():
+        # The read is outside the guard for the same reason it is in
+        # ``config.load_toml_document``: an I/O fault is not a parse
+        # fault. Here it makes no difference to the caller, since both
+        # end at the same default, but a rule applied at one of two
+        # sites and not the other is a rule the next author has to guess
+        # at.
         try:
-            with pyproject.open("rb") as fh:
-                data = tomllib.load(fh)
+            raw = pyproject.read_bytes()
+        except OSError:
+            return DEFAULT_TYPECHECK_COMMAND
+        try:
+            data = tomllib.loads(raw.decode())
         except Exception:
             # ``Exception``, not an enumeration of what tomllib is
-            # believed to raise. #288 widened this from
-            # ``TOMLDecodeError`` to ``(ValueError, OSError)`` because a
-            # non-utf-8 pyproject.toml raises ``UnicodeDecodeError``,
-            # which IS a ``ValueError`` and escaped the fail-closed
-            # except entirely - reaching an ADVISORY verification report
-            # through ``resolve_verify_commands`` and taking `ks feature`
-            # down before the agent had run.
-            #
-            # ``ValueError`` was still not the whole class. #318 round 3
-            # measured ~496 nested arrays raising ``RecursionError``,
-            # which derives from ``RuntimeError``, so it walked past this
-            # handler exactly as ``UnicodeDecodeError`` walked past the
-            # one before it. A pyproject.toml is not even the operator's
-            # kstrl.toml, so this site fails to a documented default
-            # rather than to an error: catching wide here costs nothing
-            # and closes the class. See
-            # ``kstrl.config.load_toml_document`` for the full argument
-            # and ``tests/test_toml_readers.py`` for the guard that now
-            # requires it.
+            # believed to raise: see ``kstrl.config.load_toml_document``
+            # for the argument and ``tests/test_toml_readers.py`` for
+            # the guard. The one fact local to THIS site is that a
+            # pyproject.toml is not the operator's kstrl.toml, so it
+            # fails to a documented default rather than to an error,
+            # which is why catching the whole class costs nothing here.
             return DEFAULT_TYPECHECK_COMMAND
         mypy_section = data.get("tool", {}).get("mypy", {})
         if isinstance(mypy_section, dict):

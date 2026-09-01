@@ -522,10 +522,10 @@ def load_toml_document(path: Path) -> dict[str, Any]:
     """Load and parse a TOML file.
 
     Raises :class:`ConfigError` for anything the PARSE raises, naming the
-    file in all of them. Three things deliberately pass through instead:
-    ``OSError``, anything deriving from ``BaseException`` rather than
-    ``Exception``, and any failure of ``open`` itself, which happens
-    outside the guard.
+    file in all of them. Two things deliberately pass through instead:
+    anything deriving from ``BaseException`` rather than ``Exception``,
+    and every I/O failure, which cannot reach the guard because all of
+    the I/O happens before it.
 
     Inside a :func:`toml_parse_scope` the parsed document is reused
     rather than re-read.
@@ -562,8 +562,14 @@ def load_toml_document(path: Path) -> dict[str, Any]:
     operator's broken config. ``MemoryError`` on a hostile-sized file IS
     covered, since it derives from ``Exception``, with the honest caveat
     that no handler can promise the interpreter has the headroom left to
-    render the message. ``OSError`` is re-raised explicitly just below,
-    on purpose rather than by accident of the type lattice.
+    render the message.
+
+    ``OSError`` is not in the catch-all's reach at all, which is the
+    stronger form of the guarantee two callers depend on. An earlier
+    draft re-raised it from inside the guard; that clause was correct
+    and unpinnable, because with the I/O already hoisted out there was
+    no way to make a test reach it. A special case no test can enter is
+    a special case that has not been deleted yet.
 
     The rule, after being wrong three times: a parser's error taxonomy
     belongs to the parser, and a reader naming any class narrower than
@@ -595,48 +601,43 @@ def load_toml_document(path: Path) -> dict[str, Any]:
     passed with the two reversed. The broad clause is the real
     constraint: it is a supertype of every clause above it, so it must
     come last or it swallows them and relabels every syntax error and
-    every bad byte as an unspecified parse failure. The ``OSError``
-    re-raise is under the same rule for the same reason.
+    every bad byte as an unspecified parse failure.
     ``test_the_broad_handler_must_come_last`` fails if it moves; it was
     watched failing, with ``__pycache__`` purged, because a handler
     permutation leaves the file byte-identical and a same-second rewrite
     is otherwise served from a stale ``.pyc``.
 
-    ``OSError`` is NOT normalized into ``ConfigError``; see
-    ``config_preflight.SURFACE_REJECTIONS`` for the two callers that
+    See ``config_preflight.SURFACE_REJECTIONS`` for the two callers that
     depend on telling an unreadable file from an unparseable one.
     """
     scope = _PARSE_SCOPE.get()
     if scope is not None and path in scope:
         return scope[path]
-    # ``open`` sits OUTSIDE the try: opening is not parsing, and a fault
-    # here must not be described as one. ``Path("bad\\x00path.toml")``
-    # raises ``ValueError("embedded null byte")`` from ``open`` itself,
-    # which the catch-all below cheerfully relabelled "could not be
-    # parsed as TOML" for a file it had not opened (#318 round 3).
-    with open(path, "rb") as f:
-        try:
-            data: dict[str, Any] = tomllib.load(f)
-        except tomllib.TOMLDecodeError as exc:
-            raise ConfigError(f"Invalid TOML in {path}: {exc}") from exc
-        except UnicodeDecodeError as exc:
-            raise ConfigError(
-                f"{path} is not valid UTF-8, which TOML requires; re-save the file as UTF-8: {exc}"
-            ) from exc
-        except OSError:
-            # DELIBERATE, and it must stay above the catch-all: a read
-            # that fails mid-stream is an I/O fault, not a parse fault,
-            # and ``config_preflight.SURFACE_REJECTIONS`` is built on
-            # ``OSError`` arriving here un-normalized. Before the
-            # catch-all widened past ``ValueError`` that was true by
-            # accident, because ``OSError`` is not one. It is now true
-            # on purpose.
-            raise
-        except Exception as exc:
-            # LAST, and ``Exception`` rather than ``ValueError``: see the
-            # docstring. Says what the parser said and names the file;
-            # claims no cause beyond that.
-            raise ConfigError(f"{path} {UNPARSEABLE_TOML_MESSAGE}: {exc}") from exc
+    # ALL the I/O happens here, OUTSIDE the guard, so that nothing the
+    # guard catches can be an I/O fault. That is what lets the catch-all
+    # be as wide as it is without lying: it cannot reach an ``OSError``
+    # that ``config_preflight.SURFACE_REJECTIONS`` needs to stay raw,
+    # and it cannot reach ``open``'s own ``ValueError("embedded null
+    # byte")`` on ``Path("bad\\x00path.toml")``, which an earlier draft
+    # relabelled "could not be parsed as TOML" for a file it had never
+    # opened. ``tomllib.load`` is ``fp.read()``, ``b.decode()``,
+    # ``loads(s)``; splitting it here changes no exception type (all
+    # four faults measured identical both ways) and removes the need for
+    # an ``except OSError: raise`` clause that no test could pin.
+    raw = path.read_bytes()
+    try:
+        data: dict[str, Any] = tomllib.loads(raw.decode())
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"Invalid TOML in {path}: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise ConfigError(
+            f"{path} is not valid UTF-8, which TOML requires; re-save the file as UTF-8: {exc}"
+        ) from exc
+    except Exception as exc:
+        # LAST, and ``Exception`` rather than ``ValueError``: see the
+        # docstring. Says what the parser said and names the file;
+        # claims no cause beyond that.
+        raise ConfigError(f"{path} {UNPARSEABLE_TOML_MESSAGE}: {exc}") from exc
     if scope is not None:
         scope[path] = data
     return data

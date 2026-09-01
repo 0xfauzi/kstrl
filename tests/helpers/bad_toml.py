@@ -64,7 +64,7 @@ INT_LIMIT_ENABLED = sys.get_int_max_str_digits() != 0
 #: digit over the line if an interpreter or a caller moves it; when the
 #: limit is OFF, :data:`INT_LIMIT_ENABLED` skips the cases instead,
 #: because then no size works.
-_INT_DIGITS = (sys.get_int_max_str_digits() + 1) if INT_LIMIT_ENABLED else 1
+_INT_DIGITS = sys.get_int_max_str_digits() + 1
 INT_LIMIT_TOML = b"[run]\nmax_iterations = " + b"9" * _INT_DIGITS + b"\n"
 
 #: How deep to nest. ``tomllib`` parses arrays by recursive descent, so
@@ -74,12 +74,14 @@ INT_LIMIT_TOML = b"[run]\nmax_iterations = " + b"9" * _INT_DIGITS + b"\n"
 #: #318 round 3.
 #:
 #: Measured by binary search on this machine: 496 standalone, 495 through
-#: the CLI (the seam's own frames cost one level). 600 is comfortably
-#: past both without being so deep that the file is slow to write, and it
-#: is scaled off ``sys.getrecursionlimit()`` so a run with a raised limit
-#: still nests past it. Inline tables recurse identically; arrays are
-#: used because they are terser per level.
-_NEST_DEPTH = max(600, sys.getrecursionlimit() + 100)
+#: the CLI (the seam's own frames cost one level). Scaled off the live
+#: recursion limit rather than fixed at 600, so a run with a raised limit
+#: still nests past it: any depth above the limit exhausts the stack
+#: whatever the limit is, which is also why there is no ``max(600, ...)``
+#: floor - it could never bind. Inline tables recurse identically;
+#: arrays are used because they are terser per level. Measured cost of
+#: building it: 0.21 us, 2205 bytes.
+_NEST_DEPTH = sys.getrecursionlimit() + 100
 
 #: Valid utf-8, and every bracket balanced: this is not a syntax error.
 #: The parser gives up on its own stack, not on the grammar.
