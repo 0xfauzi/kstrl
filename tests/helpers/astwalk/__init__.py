@@ -17,7 +17,9 @@ THREE ARE SIGNATURES, which a caller cannot route around.
 :func:`assert_census` requires a control AND a non-empty corpus,
 :func:`assert_sites` requires an expectation for the undecided half, and
 :func:`calls_to` has no third bucket, so an unresolved callee is a row
-rather than an absence.
+rather than an absence. That last one is total over CANDIDACY and not
+over the corpus, which is a weaker claim than the first draft made and
+the one that survives measurement; :class:`Sites` says why.
 
 TWO ARE STATIC GUARDS in ``tests/test_astwalk.py``, because no signature
 reaches them. :func:`resolved_calls` returns the seen half as NODES, for
@@ -34,6 +36,18 @@ ONE IS A CONVENTION AND SAYS SO: :class:`Clause` carries ``decided``, and
 one of its three consumers reads it. The other two are safe for a
 different reason, that an unnameable handler yields empty ``names`` and an
 empty set intersects nothing.
+
+AND ONE IS AN ASYMMETRY, because a single rule was wrong for a third of
+the guards. :class:`Origin` carries ``guessed``, true for the one step
+that answers for a receiver it never saw. Resolving in order to FLAG and
+resolving in order to CLEAR are opposite directions, and thirteen of the
+sixteen migrated guards flag while three clear. Round 3 of review
+measured all three going quiet on four lines of ordinary-looking code, so
+a guessed origin IN the target set stays a hit and a guessed origin
+outside it is undecided. :meth:`Bindings.resolve` still returns the bare
+string, which is safe for a membership test and unsafe for a decision,
+and its docstring names the two call sites that must ask
+:meth:`Bindings.origin_of` instead.
 
 AND ONE WAS REMOVED. The first draft named ``Bindings.opaque``. Nothing
 read it, forcing it empty changed no test, and it contradicted
@@ -80,6 +94,7 @@ from tests.helpers.astwalk.net import (
 )
 from tests.helpers.astwalk.resolve import (
     Bindings,
+    Origin,
     assignment_parts,
     bindings,
     bound_names,
@@ -101,6 +116,7 @@ __all__ = [
     "REPO_ROOT",
     "TESTS_DIR",
     "Bindings",
+    "Origin",
     "Clause",
     "Sees",
     "Sites",

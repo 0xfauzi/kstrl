@@ -136,26 +136,44 @@ def _clause(handler: ast.ExceptHandler, table: Bindings) -> Clause:
         return Clause(frozenset({"BaseException"}), True, handler.lineno, frozenset())
     parts = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
     names = {_clause_name(part, table) for part in parts}
-    origins = {table.resolve(part) for part in parts}
+    placed = [table.origin_of(part) for part in parts]
+    origins = {found.dotted for found in placed if found is not None and not found.guessed}
     return Clause(
         frozenset(name for name in names if name is not None),
         None not in names,
         handler.lineno,
-        frozenset(origin for origin in origins if origin is not None),
+        frozenset(origins),
     )
 
 
 def _clause_name(part: ast.expr, table: Bindings) -> str | None:
     """What one clause part catches, or None when it cannot be named.
 
-    A bare ``Name`` is its own answer: nothing can rebind ``Exception``
-    for an ``except`` clause without an assignment the resolver would see.
+    ASK THE RESOLVER FIRST, EVEN FOR A BARE NAME. What stood here
+    returned ``part.id`` and said in its own docstring that nothing can
+    rebind ``Exception`` without an assignment the resolver would see. An
+    IMPORT is not an assignment: ``from json import JSONDecodeError as
+    Exception`` leaves this reading ``Exception``, the ``tomllib`` guard
+    green at 37 passed, and a real ``TOMLDecodeError`` escaping at run
+    time, which is #318's shipped defect. ``origins`` held
+    ``json.JSONDecodeError`` the whole time and the code did not look.
+    Round 3 of review found it, and it is this branch's own "a disclosure
+    whose wording does not reach the shape" finding turned back on it.
+
+    A GUESS IS NOT A NAME. An origin from the bare-name over-match
+    answers for any receiver in the module, so
+    ``class X: Exc = builtins.Exception`` would make ``except other.Exc:``
+    read as broad for a guard whose rule is "``Exception`` exactly".
+    Naming a clause is a decision, so a guessed origin leaves the clause
+    undecided instead.
+
     A dotted name is its leaf only when the resolver can place it, so
-    ``except json.JSONDecodeError`` is ``JSONDecodeError`` and
     ``except shim.Exception`` in a module that never bound ``shim`` is
     nothing at all.
     """
-    if isinstance(part, ast.Name):
-        return part.id
-    origin = table.resolve(part)
-    return None if origin is None else origin.rsplit(".", 1)[-1]
+    found = table.origin_of(part)
+    if found is None:
+        return part.id if isinstance(part, ast.Name) else None
+    if found.guessed:
+        return None
+    return found.dotted.rsplit(".", 1)[-1]

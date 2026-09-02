@@ -41,6 +41,34 @@ def leaf_name(node: ast.AST) -> str | None:
 
 
 @dataclass(frozen=True)
+class Origin:
+    """A resolved dotted origin, and whether the walk had to GUESS at it.
+
+    ``guessed`` is true for exactly one step, :meth:`Bindings.\
+_through_attribute`'s bare-name fallback, which is keyed on an attribute
+    name alone and so answers for any receiver in the module. The flag
+    exists because the same guess is safe in one direction and unsafe in
+    the other, and #324's own docstring got that wrong: a guard that
+    resolves in order to FLAG over-reports, which costs a reader a line,
+    and a guard that resolves in order to CLEAR under-reports, which is
+    the defect this issue is about. Three of the sixteen migrated guards
+    clear.
+
+    So the rule is asymmetric and it lives at the two call sites that
+    decide rather than in here: a guessed origin IN the target set is the
+    case the over-match exists to serve and stays a hit, and a guessed
+    origin outside it is undecided rather than a decision.
+    """
+
+    dotted: str
+    guessed: bool = False
+
+    def through(self, attr: str) -> Origin:
+        """One more attribute onto the chain, carrying the doubt along."""
+        return Origin(f"{self.dotted}.{attr}", self.guessed)
+
+
+@dataclass(frozen=True)
 class Bindings:
     """What the names in one module refer to, and which ones got away.
 
@@ -72,32 +100,68 @@ class Bindings:
     origins: Mapping[str, str] = field(default_factory=dict)
     attributes: Mapping[str, str] = field(default_factory=dict)
 
-    def resolve(self, node: ast.AST) -> str | None:
-        """The dotted origin this expression refers to, or None.
+    def origin_of(self, node: ast.AST) -> Origin | None:
+        """The dotted origin this expression refers to, and how it was got.
 
-        Longest known prefix wins, so ``_tl.load`` resolves through
-        ``_tl``, then the receiver, then ``getattr``."""
+        The full answer. Longest known prefix wins, then the RECEIVER of
+        an attribute, then ``getattr``, and only then the bare-name
+        over-match, which is the one step that guesses.
+        """
         path = dotted(node)
         if path is not None:
             through = self._through_prefix(path)
             if through is not None:
-                return through
+                return Origin(through)
         if isinstance(node, ast.Attribute):
             return self._through_attribute(node)
-        return self._through_getattr(node)
+        got = self._through_getattr(node)
+        return None if got is None else Origin(got)
 
-    def _through_attribute(self, node: ast.Attribute) -> str | None:
+    def resolve(self, node: ast.AST) -> str | None:
+        """Just the dotted string, for a caller doing a membership test.
+
+        Safe for ``origin in wanted``, because a guessed origin that
+        lands IN the target set is the case the over-match exists to
+        serve. NOT safe for "did it resolve", which is a decision: use
+        :meth:`origin_of` and read ``guessed``. :func:`_classify_call`
+        and ``scope._clause_name`` are the two that must.
+        """
+        found = self.origin_of(node)
+        return None if found is None else found.dotted
+
+    def _through_attribute(self, node: ast.Attribute) -> Origin | None:
         """An attribute chain the flat prefix walk could not spell.
 
-        The second step is the one #324's subprocess lane found missing:
-        after ``class G: mod = os``, ``G.mod.getpgid`` has no known
-        prefix, so an earlier draft gave up and reported the call
-        undecided. Resolving the RECEIVER first answers it outright.
+        THE RECEIVER FIRST, which is what #324's subprocess lane found
+        missing: after ``class G: mod = os``, ``G.mod.getpgid`` has no
+        known prefix, and resolving the receiver answers it outright.
+
+        The bare-name table is the FALLBACK, and it is a guess. It is
+        keyed on an attribute name alone, module-wide, so after
+        ``class G: lookup = os.getpgid`` every ``x.lookup(...)`` in the
+        file resolves, whatever ``x`` is. Two pinned rows in
+        ``tests/test_safe_pgid.py`` need exactly that and the AST cannot
+        type it, so the guess stays; what changed is that it is now
+        LABELLED, because an earlier draft of this class called the
+        over-match "the direction a guard may be wrong in" and that
+        sentence is true only where resolving means FLAG. Three of the
+        sixteen migrated guards resolve in order to CLEAR, and there the
+        same guess is the skip direction. Round 3 of review measured all
+        three: a screen method binding ``self._x = SURFACE_REJECTIONS``
+        cleared an unguarded config load onto the Textual event loop
+        (49 passed, 2 xfailed, main 1 failed), ``class _P342Meter: Popen
+        = os.getcwd`` cleared a ``with x.Popen(argv)`` in
+        ``kstrl/serve.py`` (68 passed, main 1 failed), and a class-body
+        binding of ``builtins.Exception`` made a foreign handler read as
+        broad. See :func:`_classify_call` for the rule that keeps the
+        pins and closes the three.
         """
+        base = self.origin_of(node.value)
+        if base is not None:
+            return base.through(node.attr)
         if node.attr in self.attributes:
-            return self.attributes[node.attr]
-        base = self.resolve(node.value)
-        return None if base is None else f"{base}.{node.attr}"
+            return Origin(self.attributes[node.attr], guessed=True)
+        return None
 
     def _through_prefix(self, path: str) -> str | None:
         parts = path.split(".")
@@ -413,12 +477,29 @@ def _classify_call(
     seen: list[str],
     undecided: list[str],
 ) -> None:
-    """One call, into exactly one of the two halves or neither."""
+    """One call, into exactly one of the two halves or neither.
+
+    THE ASYMMETRY IS HERE, and round 3 of review is why. A resolution
+    obtained through the bare-name over-match answers for any receiver in
+    the module, so treating it as a DECISION lets four innocuous lines
+    make a genuinely undecidable call disappear: ``class _Meter: load =
+    os.getloadavg`` in a module makes ``mod.load(handle)`` resolve to
+    ``os.getloadavg``, which is not ``tomllib.load``, so the old rule
+    returned here and the site left both halves. Measured on
+    ``tests/test_toml_readers.py``: 1 failed became 37 passed, and the
+    call vanished from ``seen``, from ``undecided`` and from that guard's
+    own ``guarded`` / ``unguarded`` / ``parses`` inventories.
+
+    A guess that lands IN ``wanted`` is the case the over-match exists to
+    serve, and two pinned rows in ``tests/test_safe_pgid.py`` are exactly
+    that, so it stays a hit. A guess that lands outside ``wanted`` decides
+    nothing, so it falls through to the leaf test and becomes undecided.
+    """
     site = f"{where}:{node.lineno}" if where else str(node.lineno)
-    origin = table.resolve(node.func)
-    if origin is not None:
-        if origin in wanted:
-            seen.append(f"{site} {origin}")
+    found = table.origin_of(node.func)
+    if found is not None and (found.dotted in wanted or not found.guessed):
+        if found.dotted in wanted:
+            seen.append(f"{site} {found.dotted}")
         return
     leaf = leaf_name(node.func)
     if leaf is None or leaf in leaves:

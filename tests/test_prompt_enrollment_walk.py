@@ -311,7 +311,14 @@ def test_every_module_that_spells_a_prompt_name_is_pinned() -> None:
         sources=astwalk.package_sources(),
         sees=_spells_a_prompt_name,
         expected=EXPECTED_PROMPT_NAME_SPELLINGS,
-        control='NEW_PROMPT = "you are a hostile reviewer"\n',
+        control=(
+            # One per branch of the sweep: a plain string field
+            # (`Name.id`), a LIST of strings (`Global.names`), and a
+            # value only `folded_str` can produce.
+            'NEW_PROMPT = "you are a hostile reviewer"\n',
+            "def f():\n    global OTHER_PROMPT\n",
+            'X = "SOME" + "_PROMPT"\n',
+        ),
         message=(
             "the set of places kstrl/ writes a *_PROMPT name changed. If this is a "
             "new prompt, enrol it in tests/test_prompt_versions.py; if it is not a "

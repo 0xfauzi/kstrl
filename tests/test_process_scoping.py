@@ -221,7 +221,19 @@ class TestNoTestSearchesTheWholeMachineForAProcess:
             sources=_scannable_sources(),
             sees=_searches_the_machine,
             expected=EXPECTED_MACHINE_WIDE_SPELLINGS,
-            control='cmd = ["pgrep", "-f", "sleep 60"]\nsubprocess.run(cmd)\n',
+            # SPELLED OUT, not derived from MACHINE_WIDE_PROCESS_TOOLS.
+            # A control built from the same constant co-varies with it, so
+            # shrinking the set shrinks the controls and the guard goes
+            # blind with everything green, which is exactly the mutation
+            # this is here to fail: round 3 shrank the set to `pgrep` and
+            # added real pkill, killall and pidof sweeps for 32 passed,
+            # undetected, against an unmutated head of 2 failed.
+            control=(
+                'cmd = ["pgrep", "-f", "sleep 60"]\nsubprocess.run(cmd)\n',
+                'cmd = ["pkill", "-f", "sleep 60"]\nsubprocess.run(cmd)\n',
+                'cmd = ["killall", "sleep"]\nsubprocess.run(cmd)\n',
+                'cmd = ["pidof", "sleep"]\nsubprocess.run(cmd)\n',
+            ),
             message=(
                 "The set of places naming a machine-wide process search changed. "
                 "`pgrep -f 'sleep 60'` matches an unrelated `sleep 600` in any "
@@ -373,6 +385,18 @@ class TestTheNetCatchesWhatItClaims:
         covers it: the tokens are still spelled, so the census still
         counts them, and ``test_the_net_sees_a_command_built_in_a_variable``
         is the measurement.
+
+        THIS ROW WAS A PASSING TEST ON ``origin/main`` and is an xfail
+        here, WITH THE SAME NODE ID. Round 3 of review found it, and the
+        finding is about the accounting rather than the coverage: every
+        table in this PR is keyed on node id, and a conversion in place
+        moves no id, so it is invisible to all of them. There is no
+        coverage loss, because the layer-1 sibling above covers the shape
+        and is new here. What changed is the CLAIM: the old test asserted
+        layer 2 sees this, which was true only because layer 2 was
+        matching on a name it could not resolve, and the migration made
+        it resolve. Of this branch's 34 xfails, 1 carried over from main's
+        6, 32 are new disclosures, and this one is the sole conversion.
         """
         body = 'cmd = ["pgrep", "-f", "x"]\nsubprocess.run(cmd)\n'
         astwalk.blind_spot(lambda source: self._hits(tmp_path, source), body)

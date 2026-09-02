@@ -510,3 +510,109 @@ class TestTheDisclosedMissesAreNotSilent:
         sees = astwalk.spells("getpgid")
         spelled = sum(1 for node in ast.walk(astwalk.parse(source)) if sees(node))
         assert spelled == 1, "the argument still spells the name, so the net counts it"
+
+
+# --- the over-match, and the direction it is safe in ----------------------
+
+
+def _resolved(source: str, expression: str) -> astwalk.Origin | None:
+    """What the resolver makes of one expression, provenance and all."""
+    tree = astwalk.parse(source)
+    table = astwalk.bindings(tree)
+    node = next(
+        n.value
+        for n in astwalk.all_nodes(tree)
+        if isinstance(n, ast.Expr) and ast.unparse(n.value) == expression
+    )
+    return table.origin_of(node)
+
+
+class TestTheBareNameOverMatchIsAGuess:
+    """Round 3's blocking finding, and the three plants that measured it.
+
+    ``Bindings.attributes`` is keyed on a bare attribute NAME, module
+    wide, so after any class body or dotted assignment binds that name,
+    every ``<anything>.<that name>`` in the file resolves. The class
+    docstring used to call that "the direction a guard may be wrong in".
+    It is, for a guard that resolves in order to FLAG: an over-report
+    costs a reader a line. Three of the sixteen migrated guards resolve
+    in order to CLEAR, and there the identical guess is the skip
+    direction this whole issue is about.
+    """
+
+    def test_a_receiver_that_resolves_is_not_a_guess(self) -> None:
+        """The receiver is tried FIRST now. ``G.mod`` is itself a guess,
+        because ``mod`` is only known as a bare attribute name, and the
+        step from it to ``getpgid`` adds no further doubt."""
+        source = "import os\n\n\nclass G:\n    mod = os\n\n\nG.mod.getpgid\n"
+        found = _resolved(source, "G.mod.getpgid")
+        assert found == astwalk.Origin("os.getpgid", guessed=True)
+
+        plain = "import os\nos.getpgid\n"
+        assert _resolved(plain, "os.getpgid") == astwalk.Origin("os.getpgid")
+
+    def test_an_unknown_receiver_falls_back_to_the_table_and_says_so(self) -> None:
+        """The two pinned ``tests/test_safe_pgid.py`` rows need exactly
+        this, and the AST cannot type ``x``."""
+        source = "import os\n\n\nclass G:\n    lookup = os.getpgid\n\n\nx.lookup\n"
+        assert _resolved(source, "x.lookup") == astwalk.Origin("os.getpgid", guessed=True)
+
+    def test_a_guess_that_lands_in_the_target_set_is_still_a_hit(self) -> None:
+        """What the asymmetry costs, measured: nothing. Both pinned rows
+        are in-``wanted`` cases and both survive."""
+        source = "import os\n\n\nclass G:\n    lookup = os.getpgid\n\n\npgid = x.lookup(1)\n"
+        assert calls(source) == astwalk.Sites(("8 os.getpgid",), ())
+
+    def test_a_guess_outside_the_target_set_is_undecided_not_silent(self) -> None:
+        """The measurement that changed the rule.
+
+        Four innocuous lines used to make a genuinely undecidable call
+        disappear from BOTH halves: the guess resolved to something real,
+        it was not the target, so the walk returned as though it had
+        decided. On ``tests/test_toml_readers.py`` that took 1 failed to
+        37 passed and the call left ``seen``, ``undecided`` and the
+        guard's own three inventories.
+        """
+        source = "import os\n\n\nclass _Meter:\n    load = os.getloadavg\n\n\nmod.load(handle)\n"
+        found = astwalk.calls_to(astwalk.parse(source), {"tomllib.load"})
+        assert found == astwalk.Sites((), ("8 mod.load",))
+
+    def test_a_guessed_clause_is_undecided_rather_than_named(self) -> None:
+        """Plant C. Naming a clause is a decision, so a guess cannot make
+        one: ``except other.Exc:`` would otherwise read as a bare
+        ``Exception`` for a guard whose rule is "``Exception`` exactly"."""
+        source = (
+            "import builtins\n\n\nclass X:\n    Exc = builtins.Exception\n\n\n"
+            "try:\n    pass\nexcept other.Exc:\n    pass\n"
+        )
+        tree = astwalk.parse(source)
+        block = next(n for n in astwalk.all_nodes(tree) if isinstance(n, ast.Try))
+        clause = astwalk.handler_clauses(block, astwalk.bindings(tree))[0]
+        assert clause.names == frozenset() and not clause.decided
+        assert clause.origins == frozenset()
+
+    def test_a_bare_clause_name_is_resolved_through_its_import(self) -> None:
+        """#318's shipped defect, and this branch's own finding turned on
+        it. The old code returned ``part.id`` for a bare ``Name`` and said
+        nothing could rebind ``Exception`` without an assignment. An
+        import is not an assignment, and ``origins`` held the answer.
+        """
+        source = (
+            "from json import JSONDecodeError as Exception\n"
+            "try:\n    pass\nexcept Exception:\n    pass\n"
+        )
+        tree = astwalk.parse(source)
+        block = next(n for n in astwalk.all_nodes(tree) if isinstance(n, ast.Try))
+        clause = astwalk.handler_clauses(block, astwalk.bindings(tree))[0]
+        assert clause.names == frozenset({"JSONDecodeError"})
+        assert clause.origins == frozenset({"json.JSONDecodeError"})
+
+    def test_an_unbound_builtin_clause_is_still_its_own_name(self) -> None:
+        """The negative control for the row above: with nothing bound,
+        ``Exception`` has to keep meaning the builtin or every ladder in
+        the package becomes undecidable."""
+        source = "try:\n    pass\nexcept Exception:\n    pass\n"
+        tree = astwalk.parse(source)
+        block = next(n for n in astwalk.all_nodes(tree) if isinstance(n, ast.Try))
+        clause = astwalk.handler_clauses(block, astwalk.bindings(tree))[0]
+        assert clause.names == frozenset({"Exception"}) and clause.decided

@@ -417,12 +417,25 @@ _LAYER_TWO_MISSES = {
 #: itself, and the `hasattr` gate above it.
 EXPECTED_GETPGID_SPELLINGS: dict[str, int] = {_OWNER: 2}
 
-#: What layer 2 cannot decide about ``kstrl/``, and it is the same four
-#: sites whatever the target is: a call through a subscript and a call on
-#: the result of a call have no last identifier for the walk to read.
-#: `astwalk.calls_to` documents these four as the hard undecidable, and
-#: pinning them here is the difference between a guard that says "I did
-#: not look at these" and one that does not mention them.
+#: What layer 2 cannot decide about ``kstrl/`` FOR THIS TARGET. Four
+#: rows, and all four are the hard undecidable: a call through a
+#: subscript and a call on the result of a call have no last identifier
+#: for the walk to read, so they are a candidate for every target set.
+#:
+#: NOT "the same four whatever the target is", which is what this comment
+#: said and what round 3 of review measured false. The no-identifier
+#: callees are a SUBSET of the undecided half, not the whole of it: the
+#: rest are calls whose leaf matches the target's and whose receiver the
+#: walk could not place, and there are as many of those as the target's
+#: leaf is common. Measured over the same corpus, keyed by module and
+#: expression: ``os.getpgid`` 4, ``subprocess.Popen`` 4,
+#: ``tomllib.load`` 9, ``subprocess.run`` 10. `astwalk.calls_to`'s
+#: docstring states this correctly; the generalisation was this comment's,
+#: and an author of a fifth guard who reused a four-row pin on the
+#: strength of it would silently drop their own target's rows.
+#:
+#: Pinning them is the difference between a guard that says "I did not
+#: look at these" and one that does not mention them.
 EXPECTED_UNDECIDED_SITES: tuple[str, ...] = (
     "gateparse.py: TOOL_PARSERS[chosen]",
     "gateparse.py: TOOL_PARSERS[name]",

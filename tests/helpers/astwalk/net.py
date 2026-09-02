@@ -2,8 +2,9 @@
 
 Neither enumerates a node type. :func:`spells` does not enumerate a
 FIELD name either, which is why it catches shapes nobody thought of.
-:class:`Sites` has no third bucket: a candidate lands in ``seen`` or
-in ``undecided``, so a walk that could not look cannot read clean."""
+:class:`Sites` has no third bucket: a candidate lands in ``seen`` or in
+``undecided``. What that buys is stated exactly in :class:`Sites`, because
+the shorter version of it was false."""
 
 from __future__ import annotations
 
@@ -124,6 +125,20 @@ def assert_census(
     contract the caller keeps; what it can do is make keeping it possible
     and make the failure name the half.
 
+    THERE IS NO MECHANISM FOR IT, and the obvious one is false rather
+    than merely weak, so it is not built. A static guard counting the
+    ``or`` operands of each ``sees=`` predicate would report 2 for all
+    four compound predicates in this suite, whose real branch counts are
+    2, 4, 3 and 2. Measured, and ``_searches_the_machine``'s single
+    ``or`` is ``folded_str(node) or ""``, a default rather than a
+    disjunction at all, while its four-way choice is a set membership
+    inside a helper. So the guard would have demanded two controls from
+    the site that needs four and passed it. A check that cannot fail for
+    the reason it names is the defect this branch exists to end, and
+    building one here would be committing it inside the fix.
+    ``tests/test_astwalk_nets.py::test_counting_or_operands_is_not_the_
+    mechanism`` pins that measurement so the disclosure cannot rot.
+
     THE CORPUS IS THE OTHER HALF AGAIN, and no control can speak for it:
     a control parses a string, so it fires whether ``sources`` holds 128
     modules or none. This assertion covers THIS CALL only. Four guards in
@@ -158,9 +173,32 @@ def assert_census(
 class Sites:
     """A walk's complete answer about one corpus.
 
-    Every candidate lands in exactly one half. There is no third "was not
-    looked at" bucket, which is the whole point: an unresolvable callee
-    becomes a row in ``undecided`` rather than an absence in ``seen``.
+    Every CANDIDATE lands in exactly one half. There is no third "was not
+    looked at" bucket: an unresolvable callee becomes a row in
+    ``undecided`` rather than an absence in ``seen``.
+
+    WHAT THIS DOES NOT SAY, and an earlier draft did. It does not say
+    that a walk which could not look cannot read clean. That claim is
+    about CANDIDACY, which this class does not own: a call the classifier
+    decides is somebody else's is in neither half, correctly, and the
+    partition cannot tell a correct decision from a wrong one.
+
+    Round 3 of review constructed the wrong one. Four lines of ordinary
+    code, ``class _Meter: load = os.getloadavg``, made the bare-name
+    over-match answer confidently for a receiver it had never seen, so a
+    genuinely undecidable ``mod.load(handle)`` was DECIDED to be somebody
+    else's and left both halves. It also left ``tests/test_toml_readers``'
+    own ``guarded``, ``unguarded`` and ``parses`` inventories, taking
+    that file from 1 failed to 37 passed. That specific hole is closed:
+    :class:`Origin` labels the guess and :func:`_classify_call` treats a
+    guess outside the target set as undecided rather than as a decision.
+
+    So the claim that is true, and it is the one worth making: the
+    partition is total over candidacy, and candidacy is decided by
+    :func:`calls_to`'s two questions, whose own residuals are pinned. A
+    third hole in resolution would produce a third clean report, and the
+    only defence against that is that resolution is now in ONE place with
+    its own tests rather than in eleven.
     """
 
     seen: tuple[str, ...] = ()
@@ -191,6 +229,13 @@ class Sites:
         number without reading the row. Both lanes wrote a local copy of
         this, and rebasing this branch onto a moved main failed four pins
         on line numbers alone, none of which was the guard's subject.
+
+        DEDUPLICATED THROUGH A SET, so a pin built on it CANNOT COUNT.
+        Two identical expressions in one module collapse to one row, and
+        deleting one of them moves nothing. That is the right trade for a
+        pin whose subject is "which modules do this, and how", and the
+        wrong one for a pin whose subject is "how many", which is what
+        ``assert_census`` is for. A guard that needs both pins both.
 
         Use it for a package-wide inventory. Keep the line numbers where
         the site is the answer, as ``tests/test_toml_readers.py`` does for

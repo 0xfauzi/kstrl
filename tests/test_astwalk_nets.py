@@ -360,6 +360,48 @@ class TestAssertCensusWillNotPinAnEmptyNet:
                 message="unused",
             )
 
+    def test_counting_or_operands_is_not_the_mechanism(self) -> None:
+        """Why the one-control-per-disjunct contract has no static guard.
+
+        The obvious one counts ``or`` operands in the ``sees=`` predicate
+        and compares. It is FALSE, not weak: all four compound predicates
+        in this suite report two operands, and their real branch counts
+        are 2, 4, 3 and 2. ``_searches_the_machine``'s only ``or`` is
+        ``folded_str(node) or ""``, a default rather than a disjunction,
+        and its four-way choice is a set membership inside a helper. Such
+        a guard would have demanded two controls from the site that needs
+        four and passed it, which is a check that cannot fail for the
+        reason it names.
+
+        Pinned here rather than argued in prose, so that the day somebody
+        finds a real mechanism this row is where they see that the
+        counting one was already ruled out by measurement.
+        """
+        subjects = {
+            "tests/test_journal_one_writer.py": "obtains_the_journal_path",
+            "tests/test_process_scoping.py": "_searches_the_machine",
+            "tests/test_prompt_enrollment_walk.py": "_spells_a_prompt_name",
+        }
+        counted = {}
+        for rel, name in subjects.items():
+            tree = astwalk.parsed(astwalk.REPO_ROOT / rel)
+            fn = next(
+                node
+                for node in astwalk.all_nodes(tree)
+                if isinstance(node, ast.FunctionDef) and node.name == name
+            )
+            counted[name] = sum(
+                len(node.values)
+                for node in astwalk.all_nodes(fn)
+                if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or)
+            )
+
+        assert counted == {
+            "obtains_the_journal_path": 2,
+            "_searches_the_machine": 2,
+            "_spells_a_prompt_name": 2,
+        }, counted
+
     def test_modules_with_no_hits_are_left_out(self) -> None:
         built = astwalk.census(astwalk.package_sources(), astwalk.spells("getpgid"))
         assert built == {"procgroup.py": 2}

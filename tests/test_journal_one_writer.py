@@ -343,7 +343,15 @@ class TestOneWriter:
             sees=obtains_the_journal_path,
             key=escape_row,
             expected=EXPECTED_JOURNAL_PATH_SITES,
-            control="target = config.journal_path\n",
+            control=(
+                # One per branch of the predicate's `or`. With only the
+                # first, deleting `dynamic_attribute_read` and planting a
+                # real `getattr(config, "journal_" + "path")` writer left
+                # this at 3 passed, undetected; the unmutated head is
+                # 2 failed.
+                "target = config.journal_path\n",
+                'target = getattr(config, "journal_" + "path")\n',
+            ),
             message=(
                 "The set of places that get hold of a journal path changed. If this "
                 "is a new writer of the evolution journal, route it through "
