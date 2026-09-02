@@ -47,6 +47,7 @@ from kstrl.loop import run_loop
 from kstrl.manifest import Component, Manifest
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
+from tests.helpers import astwalk
 from tests.helpers.procs import read_pid
 
 # Generous bound for "killed within the deadline": 1s deadline + 5s
@@ -1126,66 +1127,51 @@ def _wait_calls(tree: ast.AST) -> list[tuple[ast.Call, str]]:
     ]
 
 
-def _subprocess_aliases(tree: ast.AST) -> tuple[set[str], dict[str, str]]:
-    """Names bound to the subprocess module, and LOCAL name -> real name.
-
-    The mapping half is #309 round 2, C2. This used to return a SET of
-    local names and every caller then compared them against the ORIGINAL
-    names (``called == "Popen"``, ``called in SPAWN_FUNCS``), so an ``as``
-    rename walked straight through. Measured on a planted module:
-    ``from subprocess import run as _run`` followed by
-    ``_run(argv, capture_output=True)`` with no timeout at all passed
-    clean, as did the same trick for ``Popen``.
-
-    ONE resolver for both gates in this file. Round 2 also found the
-    ``with``-on-a-Popen gate carrying a second, weaker copy of this, with
-    a paragraph asserting the two agreed - which is the same shape as the
-    bug above: two readings held level by prose. They are one function
-    now, so the question cannot be asked again.
-
-    KNOWN MISSES, so the reach is not overstated. Only an ``import``
-    statement is resolved. ``_P = subprocess.Popen`` rebinds through an
-    assignment and ``getattr(subprocess, "Popen")`` through a string, and
-    following either needs dataflow this walk does not do.
-    """
-    imports = [n for n in ast.walk(tree) if isinstance(n, ast.Import)]
-    from_imports = [
-        n for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module == "subprocess"
-    ]
-    module_aliases = {
-        alias.asname or alias.name
-        for node in imports
-        for alias in node.names
-        if alias.name == "subprocess"
+#: The four spawns that take a ``timeout=``, and the one that does not,
+#: spelled the way ``astwalk`` resolves them rather than by local name.
+SPAWN_TARGETS = frozenset(
+    {
+        "subprocess.run",
+        "subprocess.call",
+        "subprocess.check_call",
+        "subprocess.check_output",
     }
-    direct_funcs = {
-        alias.asname or alias.name: alias.name for node in from_imports for alias in node.names
-    }
-    return module_aliases, direct_funcs
+)
+POPEN_TARGET = "subprocess.Popen"
 
 
-def _popen_names(tree: ast.AST) -> set[str]:
-    """Every local name that means ``Popen``, derived not re-derived.
+def _popen_calls(tree: ast.Module) -> set[int]:
+    """The ``id()`` of every call that IS a ``Popen``, or that could be.
 
-    KNOWN over-report, deliberately left: ``_is_popen_call`` also accepts
-    any ``x.Popen(...)``, so a hypothetical ``mock.Popen()`` is flagged.
-    That direction costs a comment on a line that is not really a child
-    process; the other direction costs a hang.
+    ``_subprocess_aliases`` used to live here: an import-only resolver
+    that #309 round 2 already had to repair once, for the ``as`` rename
+    it compared against the wrong name. #324 moved it to
+    ``tests/helpers/astwalk.py``, and with it came the three shapes this
+    file disclosed as misses and no longer has: ``_P = subprocess.Popen``,
+    ``_P: T = subprocess.Popen`` and ``getattr(subprocess, "Popen")``.
+
+    BOTH halves of the resolver's answer, which is the whole reason it
+    reports two. The gate's failure mode is a hang, so an undecidable
+    ``x.Popen(...)`` counts. The one thing that no longer counts is a
+    call the resolver DECIDED is somebody else's ``Popen``, and deciding
+    that is not the skip direction.
     """
-    _, direct = _subprocess_aliases(tree)
-    return {"Popen", *(local for local, real in direct.items() if real == "Popen")}
+    found = {id(node) for node, _origin in astwalk.resolved_calls(tree, {POPEN_TARGET})}
+    table = astwalk.bindings(tree)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or astwalk.leaf_name(node.func) != "Popen":
+            continue
+        if table.resolve(node.func) is None:
+            found.add(id(node))
+    return found
 
 
-def _is_popen_call(node: ast.expr, names: set[str]) -> bool:
-    """Whether this expression constructs a ``Popen``."""
-    if not isinstance(node, ast.Call):
-        return False
-    func = node.func
-    called = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
-    return called in names
+def _is_popen_call(node: ast.expr, spawned: set[int]) -> bool:
+    """Whether this expression constructs a ``Popen``, as far as we know."""
+    return id(node) in spawned
 
 
-def _popen_bound_names(tree: ast.AST, names: set[str]) -> set[str]:
+def _popen_bound_names(tree: ast.Module, spawned: set[int]) -> set[str]:
     """Names assigned a ``Popen(...)``, so ``with proc:`` is recognisable.
 
     NAME COLLECTION, NOT SCOPE ANALYSIS, and the difference has teeth.
@@ -1197,13 +1183,17 @@ def _popen_bound_names(tree: ast.AST, names: set[str]) -> set[str]:
     because ``_kill_or_abandon``'s parameter is called ``process`` and so
     is the binding in ``_read_ps``; renaming it to ``proc`` makes the
     plant pass clean. A ``with`` on a Popen returned from a helper is
-    missed outright. Both want dataflow this walk does not do, and are
-    left for a follow-up rather than papered over here.
+    missed outright. Both want dataflow this walk does not do.
+
+    Through ``astwalk.assignment_parts`` since #324, so an annotated
+    ``proc: subprocess.Popen[str] = subprocess.Popen(argv)`` counts. The
+    old body read ``ast.Assign`` alone and nothing said so.
     """
     bound: set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.Assign) and _is_popen_call(node.value, names):
-            bound.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        targets, value = astwalk.assignment_parts(node)
+        if value is not None and id(value) in spawned:
+            bound.update(name for name in targets if name is not None)
     return bound
 
 
@@ -1219,10 +1209,10 @@ def _bare_wait_findings(tree: ast.AST) -> list[tuple[int, str]]:
     return found
 
 
-def _with_popen_findings(tree: ast.AST) -> list[tuple[int, str]]:
+def _with_popen_findings(tree: ast.Module) -> list[tuple[int, str]]:
     """``with`` blocks on a Popen, whose ``__exit__`` waits with no deadline."""
-    names = _popen_names(tree)
-    bound = _popen_bound_names(tree, names)
+    spawned = _popen_calls(tree)
+    bound = _popen_bound_names(tree, spawned)
     found: list[tuple[int, str]] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.With | ast.AsyncWith):
@@ -1230,12 +1220,12 @@ def _with_popen_findings(tree: ast.AST) -> list[tuple[int, str]]:
         for item in node.items:
             context = item.context_expr
             named = isinstance(context, ast.Name) and context.id in bound
-            if _is_popen_call(context, names) or named:
+            if _is_popen_call(context, spawned) or named:
                 found.append((node.lineno, "`with` on a Popen: __exit__ waits with no deadline"))
     return found
 
 
-def _unbounded_wait_findings(tree: ast.AST) -> list[str]:
+def _unbounded_wait_findings(tree: ast.Module) -> list[str]:
     """Every way this module can wait on a child process forever.
 
     Three forms, because #309 round 1 found the first version of this
@@ -1311,26 +1301,17 @@ class TestSubprocessTimeoutAudit:
         hand in the first place.
 
         ``called`` is always the name SUBPROCESS knows it by, never the
-        local alias, which is the C2 fix.
+        local alias, which was the C2 fix and is now what the resolver
+        returns anyway. The seen half only: the calls this walk could not
+        decide are ``astwalk.calls_to(...).undecided``, pinned by
+        ``test_the_walk_reports_what_it_could_not_decide``, because the
+        seen half alone is exactly the defect #324 records.
         """
-        module_aliases, direct_funcs = _subprocess_aliases(tree)
-        sites: list[tuple[ast.Call, str]] = []
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            fn = node.func
-            called: str | None = None
-            if (
-                isinstance(fn, ast.Attribute)
-                and isinstance(fn.value, ast.Name)
-                and fn.value.id in module_aliases
-            ):
-                called = fn.attr
-            elif isinstance(fn, ast.Name) and fn.id in direct_funcs:
-                called = direct_funcs[fn.id]
-            if called == "Popen" or called in cls.SPAWN_FUNCS:
-                sites.append((node, called))
-        return sites
+        targets = SPAWN_TARGETS | {POPEN_TARGET}
+        return [
+            (node, origin.rsplit(".", 1)[-1])
+            for node, origin in astwalk.resolved_calls(tree, targets)
+        ]
 
     def test_every_subprocess_call_has_timeout(self) -> None:
         package_root = Path(__file__).resolve().parent.parent / "kstrl"
@@ -1400,26 +1381,99 @@ class TestSubprocessTimeoutAudit:
         assert [(node.lineno, called) for node, called in sites] == expected, body
 
     @pytest.mark.parametrize(
+        ("body", "line"),
+        [
+            # Rebound through an assignment, not an import. A disclosed
+            # miss until #324; the shared resolver follows it now.
+            ("import subprocess\n_P = subprocess.Popen\n_P(argv)\n", 3),
+            # Annotated, which the old resolver could not have seen even
+            # if it had followed the plain rebind.
+            ("import subprocess\n_P: object = subprocess.Popen\n_P(argv)\n", 3),
+            # Reached through a string. Also a disclosed miss until #324;
+            # constant folding decides it.
+            ('import subprocess\ngetattr(subprocess, "Popen")(argv)\n', 2),
+        ],
+    )
+    def test_the_shapes_the_audit_used_to_miss(self, body: str, line: int) -> None:
+        """Two rows moved here from the miss ledger, and one is new.
+
+        The ledger below used to hold the first and the third with the
+        reason "closing them needs dataflow an AST walk does not do".
+        That was true of THIS file's import-only resolver and not of the
+        problem: #324's shared one follows a rebind to a fixed point and
+        folds the ``getattr`` name. The measurement is that the rows are
+        here rather than there.
+        """
+        sites = self._spawn_sites(ast.parse(body))
+        assert [(node.lineno, called) for node, called in sites] == [(line, "Popen")], body
+
+    @pytest.mark.parametrize(
         "body",
         [
-            # Rebound through an assignment, not an import.
-            "import subprocess\n_P = subprocess.Popen\n_P(argv)\n",
-            # Reached through a string.
-            'import subprocess\ngetattr(subprocess, "Popen")(argv)\n',
-            # A different module's run.
+            # A different module's run. Not a hole, the scope.
             "import other\nother.run(argv)\n",
+            # A spawn handed in as a parameter and called through it. The
+            # leaf is the parameter's name, so it is not a candidate.
+            "def spawn(runner):\n    return runner(argv)\n",
         ],
     )
     def test_the_audit_misses_these_and_says_so(self, body: str) -> None:
         """The reach, executed rather than promised.
 
-        The first two are real holes, named in `_subprocess_aliases` and
-        left for a follow-up: closing them needs dataflow an AST walk does
-        not do. The third is not a hole, it is the scope. Pinned together
-        so the difference between "cannot see" and "does not care" stays
-        written down.
+        Neither of these is a hole this file could close. The first is
+        the scope: ``other.run`` is somebody else's function. The second
+        needs a call graph. Pinned so the difference between "cannot see"
+        and "does not care" stays written down, and so that the first one
+        going red is how somebody finds out the resolver started guessing
+        at receivers.
         """
         assert self._spawn_sites(ast.parse(body)) == [], body
+
+    def test_the_walk_reports_what_it_could_not_decide(self) -> None:
+        """The other half of the audit, and the reason #324 exists.
+
+        ``_spawn_sites`` answers "which calls ARE spawns". On its own
+        that is the shape every instance on #324 had: a matcher that
+        could not decide a call reported clean, and the absence read as
+        cleanliness. ``astwalk.calls_to`` partitions instead, and this
+        pins the half that is not an answer.
+
+        Twelve rows, none of them a subprocess. Four are dispatch tables
+        with no identifier for the walk to compare, four are a Textual
+        ``App.run`` on a local, and four are an agent adapter reached
+        through a parameter or an attribute. Adding a row is not
+        forbidden, it is the point: the diff that adds one is where
+        somebody says why a spawn-shaped call cannot be decided.
+        """
+        package_root = Path(__file__).resolve().parent.parent / "kstrl"
+        undecided: list[str] = []
+        for py_file in sorted(package_root.rglob("*.py")):
+            found = astwalk.calls_to(
+                astwalk.parsed(py_file),
+                SPAWN_TARGETS | {POPEN_TARGET},
+                where=astwalk.label(py_file),
+                module=astwalk.module_name(py_file),
+            )
+            undecided += found.undecided
+
+        assert sorted(undecided) == [
+            "agents/logging.py:34 self._agent.run",
+            "cli.py:3361 app.run",
+            "cli.py:3476 app.run",
+            "decompose.py:1886 agent.run",
+            "decompose.py:402 agent.run",
+            "gateparse.py:111 TOOL_PARSERS[chosen]",
+            "gateparse.py:113 TOOL_PARSERS[name]",
+            "loop.py:750 agent.run",
+            "tui/app.py:363 initial_screens_for_kind(kind, observe_only=True)",
+            "tui/app.py:435 initial_screens_for_kind(kind, observe_only=False)",
+            "tui/embed.py:157 app.run",
+            "tui/home.py:47 app.run",
+        ], (
+            "the set of spawn-shaped calls this walk cannot decide changed. A new "
+            "row is a call the audit above is silent about, so say why it cannot be "
+            f"resolved. Found: {sorted(undecided)}"
+        )
 
     def test_no_allowlisted_module_waits_without_a_deadline(self) -> None:
         """#309's class: the allowlist admits a module, not a discipline.

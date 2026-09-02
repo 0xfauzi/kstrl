@@ -142,6 +142,31 @@ class TestEveryRebindForm:
         source = "import os\n\n\nclass G:\n    lookup = os.getpgid\n\n\npgid = G().lookup(1)\n"
         assert calls(source).seen == ("8 os.getpgid",)
 
+    def test_a_module_held_in_a_class_attribute(self) -> None:
+        """``class G: mod = os`` then ``G.mod.getpgid(pid)``.
+
+        #324's subprocess lane measured this as a SILENT miss: no known
+        prefix, and the outermost attribute is ``getpgid``, which is not
+        an attribute anything bound, so it answered None and the leaf
+        filter dropped it. The no-third-case rule in ``_classify_call``
+        made it a reported undecided row, which was honest but still a
+        miss; resolving the RECEIVER answers it outright. Sole killer of
+        the recursive step in ``_through_attribute``.
+        """
+        source = "import os\n\n\nclass G:\n    mod = os\n\n\npgid = G.mod.getpgid(1)\n"
+        found = calls(source)
+        assert found.seen == ("8 os.getpgid",)
+        assert found.undecided == ()
+
+    def test_a_receiver_that_resolves_to_nothing_stays_undecided(self) -> None:
+        """The bound on the step above. Resolving a receiver must not
+        invent an origin for one nothing bound: ``other.lookup`` shares a
+        leaf with a target, so it is a candidate, and it stays in the
+        reported half rather than becoming a false ``seen``."""
+        found = calls("import os\nlookup = os.getpgid\npgid = other.lookup(1)\n")
+        assert found.seen == ()
+        assert found.undecided == ("3 other.lookup",)
+
     def test_a_getattr_with_a_foldable_name(self) -> None:
         """``getattr(os, "getpgid")`` was a PINNED accepted miss in
         ``tests/test_safe_pgid.py``. Folding decides it, so the row moved
