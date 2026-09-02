@@ -612,7 +612,7 @@ def control_lock(root_dir: Path, *, blocking: bool = True) -> Iterator[None]:
         return
 
     try:
-        handle: IO[str] = open(lock_path, "a+")
+        handle: IO[str] = open(lock_path, "a+", encoding="utf-8")
     except OSError as exc:
         raise ControlUnavailableError(f"cannot open control lock {lock_path}: {exc}") from exc
     try:

@@ -90,7 +90,7 @@ def factory_lock_held(root_dir: Path) -> bool:
     except ImportError:
         return False
     try:
-        with open(lock_path, "a+") as fp:
+        with open(lock_path, "a+", encoding="utf-8") as fp:
             try:
                 fcntl.flock(fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError as exc:

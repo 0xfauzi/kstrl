@@ -1113,7 +1113,7 @@ def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:
 
     # "a+" so a refused attempt can read the holder's pid without
     # truncating it.
-    fp = open(lock_path, "a+")
+    fp = open(lock_path, "a+", encoding="utf-8")
     try:
         fcntl.flock(fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
@@ -1121,7 +1121,18 @@ def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:
         try:
             fp.seek(0)
             holder = fp.read(64).strip()
-        except OSError:
+        except (OSError, UnicodeDecodeError):
+            # ONE clause: ``holder`` stays "" either way, the refusal
+            # message below just omits the pid, and nothing reports the
+            # cause - so #320's separate-remedy rule has no message to
+            # separate. What matters is that the decode is caught at
+            # all: the read is on a TEXT handle, so a lock file holding
+            # anything but utf-8 raised a UnicodeDecodeError - a
+            # ValueError - straight past this OSError clause and turned
+            # a "another run holds the lock" refusal into a traceback.
+            # A census of read CALLS cannot see this site; the handle
+            # walk in tests/helpers/encodingwalk.py found it, and it is
+            # the only one of its shape in the package.
             pass
         fp.close()
         holder_note = f" (pid {holder})" if holder else ""
@@ -1209,7 +1220,11 @@ def _setup_worktree(
         try:
             import fcntl
 
-            lock_fp = open(lock_path, "w")
+            # utf-8 named though nothing is ever written through this
+            # handle: it exists for flock on its fileno. Naming it costs
+            # nothing at run time and keeps the package free of any text
+            # open whose encoding the locale decides (#320).
+            lock_fp = open(lock_path, "w", encoding="utf-8")
             fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX)
         except (ImportError, OSError):
             # Windows / unusual filesystems where flock isn't available.

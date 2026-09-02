@@ -1323,7 +1323,11 @@ def _ensure_gitignore(root: Path, language: str, ui: UI) -> None:
     # One blank line between the user's last rule and ours, and no
     # leading blank when the file is empty.
     separator = "" if not existing else "\n" if existing.endswith("\n") else "\n\n"
-    with path.open("a") as handle:
+    # utf-8 pinned to match ``_read_text_or_none``, which is what reads
+    # this file back to decide whether the block is already there. The
+    # block is ASCII, so this changes no byte today; what it removes is a
+    # write and a read of the same file that could disagree (#320).
+    with path.open("a", encoding="utf-8") as handle:
         handle.write(separator + gitignore_block(language))
     ui.ok("  Appended the kstrl block to .gitignore")
 

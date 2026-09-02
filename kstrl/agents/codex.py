@@ -193,7 +193,12 @@ class CodexAgent:
 
             # Read final message
             if last_msg_file and last_msg_file.exists():
-                content = last_msg_file.read_text().strip()
+                # utf-8 pinned: codex writes this file as utf-8 whatever
+                # the locale is, so leaving the encoding to the locale
+                # made an agent message carrying one non-ASCII character
+                # raise under LC_ALL=C. Naming it strictly narrows the
+                # failure to bytes that are genuinely not utf-8.
+                content = last_msg_file.read_text(encoding="utf-8").strip()
                 if content:
                     self._final_message = content
             if self._final_message is None and last_non_empty_line:

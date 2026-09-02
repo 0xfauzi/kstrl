@@ -664,7 +664,15 @@ def run_security_review(
         # "what the implementer was asked to build". The strip and its
         # measurement are ``prd.PROMPT_EXCLUDED_KEYS`` (#260 F1).
         prd_text = prd_text_for_prompt(prd_path.read_text(encoding="utf-8"))
-    except OSError:
+    except (OSError, UnicodeDecodeError):
+        # One clause, because the outcome is one outcome and it is
+        # silent: the reviewer runs with an empty "what the implementer
+        # was asked to build" section either way, and nothing here
+        # reports which cause produced it. #320's rule that a decode gets
+        # its own remedy text applies where there IS remedy text.
+        # ``UnicodeDecodeError`` rather than ``ValueError`` so that a
+        # ValueError out of ``prd_text_for_prompt`` - a kstrl defect,
+        # not a bad byte - still surfaces.
         pass
 
     try:

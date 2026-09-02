@@ -427,6 +427,34 @@ class TestScopeAttribution:
         names = [node.id for node in astwalk.own_nodes(block) if isinstance(node, ast.Name)]
         assert "risky" in names
 
+    def test_try_body_nodes_stops_at_a_def_the_body_only_defines(self) -> None:
+        """The same boundary, applied to a LIST of statements. Two guards
+        wanted it and wrote it separately before it was hoisted."""
+        tree = astwalk.parse("try:\n    def f():\n        risky()\nexcept OSError:\n    pass\n")
+        block = next(node for node in ast.walk(tree) if isinstance(node, ast.Try))
+        names = [n.id for n in astwalk.try_body_nodes(block) if isinstance(n, ast.Name)]
+        assert "risky" not in names
+
+    def test_try_body_nodes_sees_a_call_in_the_body(self) -> None:
+        """Without this the test above passes on a helper that returns
+        nothing at all."""
+        tree = astwalk.parse("try:\n    risky()\nexcept OSError:\n    pass\n")
+        block = next(node for node in ast.walk(tree) if isinstance(node, ast.Try))
+        names = [n.id for n in astwalk.try_body_nodes(block) if isinstance(n, ast.Name)]
+        assert "risky" in names
+
+    def test_try_body_nodes_excludes_the_handler_body(self) -> None:
+        """The difference from ``own_nodes`` on the same ``try`` node,
+        which yields the handlers too. A guard attributing a call to the
+        handler that guards it must not find the call INSIDE that
+        handler and call it guarded."""
+        tree = astwalk.parse("try:\n    a()\nexcept OSError:\n    b()\n")
+        block = next(node for node in ast.walk(tree) if isinstance(node, ast.Try))
+        body = [n.id for n in astwalk.try_body_nodes(block) if isinstance(n, ast.Name)]
+        whole = [n.id for n in astwalk.own_nodes(block) if isinstance(n, ast.Name)]
+        assert body == ["a"]
+        assert "b" in whole
+
     def test_two_closures_of_the_same_name_get_different_qualified_names(self) -> None:
         """One exemption row must be able to name ONE closure. A bare
         function name cannot, which is what an earlier exemption key in

@@ -618,7 +618,12 @@ def add_source_context(failure: ParsedFailure, worktree_path: Path, context_line
         return
 
     try:
-        file_lines = source_path.read_text().splitlines()
+        # utf-8 pinned: PEP 3120 makes it the default source encoding,
+        # so it is the encoding this file is in, and reading it as the
+        # locale's would put mojibake into a snippet that reaches a
+        # retry prompt and a PR body. The handler was already the right
+        # shape; #320 fixed the other half of the rule here.
+        file_lines = source_path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeDecodeError):
         return
 

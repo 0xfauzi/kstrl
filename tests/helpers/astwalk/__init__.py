@@ -109,6 +109,7 @@ from tests.helpers.astwalk.scope import (
     handler_clauses,
     own_nodes,
     scopes,
+    try_body_nodes,
 )
 
 __all__ = [
@@ -146,4 +147,5 @@ __all__ = [
     "scopes",
     "spells",
     "test_sources",
+    "try_body_nodes",
 ]

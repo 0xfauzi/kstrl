@@ -423,6 +423,26 @@ def run_function_fixture(
     )
 
 
+def _fixture_file_text(fixture: Fixture, full_path: Path, rel_path: str) -> str | FixtureResult:
+    """The file's text, or the failing result explaining why there is none.
+
+    #320's one site failing both halves of the rule at once. utf-8 is
+    pinned because the caller's ``contains`` expectations are substring
+    tests, so decoding the same bytes two ways makes the SAME artifact
+    pass on one machine and fail on the next with no message saying why.
+    The decode gets its own message because this string IS the fixture's
+    verdict, where "failed to read" would send the reader to permissions
+    that are fine. Not ``errors="replace"``: that lets an assertion answer
+    against a character nobody wrote.
+    """
+    try:
+        return full_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return FixtureResult(fixture, False, message=f"Failed to read file '{rel_path}': {exc}")
+    except UnicodeDecodeError as exc:
+        return FixtureResult(fixture, False, message=f"File '{rel_path}' is not valid UTF-8: {exc}")
+
+
 def run_file_fixture(fixture: Fixture, cwd: Path) -> FixtureResult:
     """Run a file fixture by checking file existence and content.
 
@@ -486,15 +506,9 @@ def run_file_fixture(fixture: Fixture, cwd: Path) -> FixtureResult:
         )
 
     # File exists and was expected to exist - check content
-    try:
-        content = full_path.read_text()
-    except OSError as exc:
-        return FixtureResult(
-            fixture=fixture,
-            passed=False,
-            message=f"Failed to read file '{rel_path}': {exc}",
-        )
-
+    content = _fixture_file_text(fixture, full_path, rel_path)
+    if isinstance(content, FixtureResult):
+        return content
     failures: list[str] = []
 
     for substring in fixture.expected.get("contains", []):
