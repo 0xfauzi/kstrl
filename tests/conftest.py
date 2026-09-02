@@ -440,7 +440,7 @@ def with_observed_diffstat(raw_output: str, repo: ReviewRepo) -> str:
 
 @pytest.fixture(autouse=True)
 def isolate_abandoned_children() -> Generator[None, None, None]:
-    """A fresh ``procgroup._ABANDONED`` per test.
+    """A fresh ``procdispose._ABANDONED`` per test.
 
     #309 round 2 added a module-level register of children a kill did not
     reach, so that something can still reap them. Module-level means it
@@ -453,14 +453,14 @@ def isolate_abandoned_children() -> Generator[None, None, None]:
     Only ours is reset. CPython's ``subprocess._active`` is process-wide
     interpreter state that every ``Popen`` sweeps, and it drains itself.
     """
-    from kstrl import procgroup
+    from kstrl import procdispose
 
-    saved = procgroup._ABANDONED[:]
-    procgroup._ABANDONED.clear()
+    saved = procdispose._ABANDONED[:]
+    procdispose._ABANDONED.clear()
     try:
         yield
     finally:
-        procgroup._ABANDONED[:] = saved
+        procdispose._ABANDONED[:] = saved
 
 
 @pytest.fixture

@@ -137,6 +137,16 @@ class _FakeStreamer:
     def finish(self, timeout: float = 10.0) -> None:
         pass
 
+    def close(self) -> None:
+        """The disposal a consumer that walked away reaches (#326).
+
+        The adapter's ``run`` is a generator, so every exit from it now
+        unwinds through a ``finally`` that calls this. A fake without it
+        turns that ``finally`` into an AttributeError, which is the fake
+        drifting from the real class rather than a defect in either.
+        """
+        return None
+
 
 @pytest.fixture
 def fake_streamer(monkeypatch: pytest.MonkeyPatch) -> type[_FakeStreamer]:
