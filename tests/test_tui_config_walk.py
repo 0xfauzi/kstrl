@@ -95,11 +95,20 @@ from tests.helpers import astwalk
 # The rule
 # --------------------------------------------------------------------------
 
-#: Handler types that cannot let a config rejection reach the event loop.
-#: ``SURFACE_REJECTIONS`` is the rule; a bare ``except Exception`` also
-#: satisfies the PROPERTY being enforced, and ``app._safe_mode_worker``
-#: uses one deliberately with its reason written next to it.
-_NEUTRALISING = frozenset({"SURFACE_REJECTIONS", "Exception", "BaseException"})
+#: The two BUILTINS that cannot let a config rejection reach the event
+#: loop, named by spelling because a builtin has no import to resolve.
+#: ``app._safe_mode_worker`` uses a bare ``except Exception`` deliberately
+#: with its reason written next to it.
+_NEUTRALISING_BUILTINS = frozenset({"Exception", "BaseException"})
+
+#: The rule itself, named by ORIGIN and not by spelling. Round 2 of #324
+#: planted a module-level ``SURFACE_REJECTIONS = (ValueError,)`` in
+#: ``kstrl/tui/screens/evolve.py`` over an unguarded
+#: ``build_config_report``: the guard matched the name, cleared the load,
+#: and both TUI guard files stayed green at 49 passed and 2 xfailed. The
+#: same code with the constant renamed WAS reported, which is what pins
+#: the spelling as the mechanism at fault.
+_NEUTRALISING_ORIGINS = frozenset({"kstrl.config_preflight.SURFACE_REJECTIONS"})
 
 
 def guarding_handler(node: ast.Try, table: astwalk.Bindings) -> bool:
@@ -115,8 +124,20 @@ def guarding_handler(node: ast.Try, table: astwalk.Bindings) -> bool:
     module that never bound ``shim``, because the leaf of a dotted name
     was read as the name. The pre-#324 walk reported all three of those
     shapes and the migration had quietly stopped.
+
+    It is also what makes ``SURFACE_REJECTIONS`` mean the tuple in
+    ``kstrl/config_preflight.py`` rather than any tuple of that name. The
+    residual, disclosed rather than implied away and pinned in
+    ``tests/test_astwalk_nets.py``: a module that rebinds the BUILTIN
+    ``Exception`` to something narrower still clears, because a builtin
+    has no origin to compare and this table records a name bound to
+    something it cannot follow nowhere a caller can read. No module in
+    ``kstrl/`` binds either builtin name, measured.
     """
-    return any(clause.names & _NEUTRALISING for clause in astwalk.handler_clauses(node, table))
+    return any(
+        clause.names & _NEUTRALISING_BUILTINS or clause.origins & _NEUTRALISING_ORIGINS
+        for clause in astwalk.handler_clauses(node, table)
+    )
 
 
 def _load_owner(call: ast.Call, table: astwalk.Bindings) -> str | None:
@@ -592,6 +613,7 @@ def test_the_walk_would_have_caught_the_original_defect() -> None:
     assert unguarded_config_loads(indirect, helpers) == [(3, "prepare")]
 
     guarded = astwalk.parse(
+        "from kstrl.config_preflight import SURFACE_REJECTIONS\n"
         "def reload(self):\n"
         "    try:\n"
         "        return EvolutionConfig.load(root_dir)\n"
@@ -599,6 +621,18 @@ def test_the_walk_would_have_caught_the_original_defect() -> None:
         "        return None\n"
     )
     assert unguarded_config_loads(guarded, helpers) == []
+
+    # The same snippet WITHOUT the import: same spelling, different tuple,
+    # and round 2 of #324 measured the guard clearing on it.
+    rebound = astwalk.parse(
+        "SURFACE_REJECTIONS = (ValueError,)\n"
+        "def reload(self):\n"
+        "    try:\n"
+        "        return EvolutionConfig.load(root_dir)\n"
+        "    except SURFACE_REJECTIONS:\n"
+        "        return None\n"
+    )
+    assert unguarded_config_loads(rebound, helpers) == [(4, "reload")]
 
 
 def test_a_load_in_an_except_block_is_not_counted_as_guarded() -> None:

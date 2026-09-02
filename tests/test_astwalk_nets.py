@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 
 from tests.helpers import astwalk
+from tests.helpers.astwalk import corpus
 
 
 def folded(source: str) -> list[str]:
@@ -186,6 +187,13 @@ class TestFoldsToAndFoldsContaining:
         assert hits(source, astwalk.folds_containing("evolution.jsonl")) == 1
 
 
+#: The ``getpgid`` half of ``getpgid or rglob``, deleted. A module-level
+#: def rather than a lambda because that is what the linter asks for, and
+#: because two tests below need the SAME dead predicate.
+def _only_the_rglob_half(node: ast.AST) -> bool:
+    return astwalk.spells("rglob")(node)
+
+
 class TestAssertCensusWillNotPinAnEmptyNet:
     """The mechanism that makes the right thing easy and the wrong thing
     hard. ``built == expected`` is exactly what a switched-off predicate
@@ -194,7 +202,7 @@ class TestAssertCensusWillNotPinAnEmptyNet:
     enough."""
 
     def test_a_control_the_predicate_misses_fails_before_the_inventory(self) -> None:
-        with pytest.raises(AssertionError, match="matched nothing in its own control"):
+        with pytest.raises(AssertionError, match="matched nothing in this control"):
             astwalk.assert_census(
                 sources=astwalk.package_sources(),
                 sees=astwalk.spells("no_such_identifier_anywhere"),
@@ -293,6 +301,65 @@ class TestAssertCensusWillNotPinAnEmptyNet:
             message="unused",
         )
 
+    def test_one_control_cannot_isolate_a_dead_half_of_a_disjunction(self) -> None:
+        """The measurement that changed this signature.
+
+        A single control is a SCALAR over the whole predicate, so a live
+        disjunct keeps it green whichever half died. Here the ``getpgid``
+        half is deleted and the control still fires, on the ``rglob``
+        half, so the census sails past its own control and the only thing
+        that objects is the inventory.
+        """
+        both = 'import os\nos.getpgid(1)\nroot.rglob("*.py")\n'
+        half_dead = _only_the_rglob_half
+
+        astwalk.assert_census(
+            sources=astwalk.package_sources(),
+            sees=half_dead,
+            expected={"feedforward.py": 3},
+            control=both,
+            message="unused",
+        )
+
+    def test_a_control_per_disjunct_names_the_half_that_went_quiet(self) -> None:
+        """Same dead half, two controls. Now it fails HERE, and the
+        message carries the control whose disjunct is gone rather than an
+        inventory diff the reader has to interpret."""
+        half_dead = _only_the_rglob_half
+
+        with pytest.raises(AssertionError, match="getpgid"):
+            astwalk.assert_census(
+                sources=astwalk.package_sources(),
+                sees=half_dead,
+                expected={"feedforward.py": 3},
+                control=("import os\nos.getpgid(1)\n", 'import feedforward\nroot.rglob("*.py")\n'),
+                message="unused",
+            )
+
+    def test_a_live_disjunction_passes_every_one_of_its_controls(self) -> None:
+        """The negative control for the two above: nothing is deleted, so
+        both halves fire and the inventory is the union."""
+        astwalk.assert_census(
+            sources=astwalk.package_sources(),
+            sees=lambda node: astwalk.spells("getpgid")(node) or astwalk.spells("rglob")(node),
+            expected={"procgroup.py": 2, "feedforward.py": 3},
+            control=("import os\nos.getpgid(1)\n", 'import feedforward\nroot.rglob("*.py")\n'),
+            message="unused",
+        )
+
+    def test_a_single_control_is_still_a_sequence_of_one(self) -> None:
+        """``str`` IS a ``Sequence[str]``, so the normalisation is not
+        cosmetic: iterating a bare control string would prove the
+        predicate against each CHARACTER of it."""
+        with pytest.raises(AssertionError, match="matched nothing in this control"):
+            astwalk.assert_census(
+                sources=astwalk.package_sources(),
+                sees=astwalk.spells("getpgid"),
+                expected={},
+                control="x = 1\n",
+                message="unused",
+            )
+
     def test_modules_with_no_hits_are_left_out(self) -> None:
         built = astwalk.census(astwalk.package_sources(), astwalk.spells("getpgid"))
         assert built == {"procgroup.py": 2}
@@ -386,7 +453,52 @@ class TestTheExceptLadder:
 
     def test_a_dotted_type_the_resolver_can_place_is_named_by_its_leaf(self) -> None:
         source = "import tomllib\ntry:\n    pass\nexcept tomllib.TOMLDecodeError:\n    pass\n"
-        assert clauses(source)[0] == astwalk.Clause(frozenset({"TOMLDecodeError"}), True, 4)
+        assert clauses(source)[0] == astwalk.Clause(
+            frozenset({"TOMLDecodeError"}), True, 4, frozenset({"tomllib.TOMLDecodeError"})
+        )
+
+    def test_a_bare_name_the_module_imported_carries_its_origin(self) -> None:
+        """What a guard whose rule is a project constant has to read.
+
+        The name is a spelling; the origin is the identity. Round 2 of
+        #324 measured a module-level ``SURFACE_REJECTIONS = (ValueError,)``
+        clearing a config load in ``kstrl/tui/screens/`` on the spelling
+        alone, with both TUI guard files green at 49 passed.
+        """
+        source = (
+            "from kstrl.config_preflight import SURFACE_REJECTIONS\n"
+            "try:\n    pass\nexcept SURFACE_REJECTIONS:\n    pass\n"
+        )
+        clause = clauses(source)[0]
+        assert clause.names == frozenset({"SURFACE_REJECTIONS"})
+        assert clause.origins == frozenset({"kstrl.config_preflight.SURFACE_REJECTIONS"})
+
+    def test_a_bare_name_bound_to_a_tuple_has_a_name_and_no_origin(self) -> None:
+        """The mutation itself. Same spelling, no import, so a rule stated
+        in origins reports it and a rule stated in names clears on it."""
+        source = (
+            "SURFACE_REJECTIONS = (ValueError,)\n"
+            "try:\n    pass\nexcept SURFACE_REJECTIONS:\n    pass\n"
+        )
+        clause = clauses(source)[0]
+        assert clause.names == frozenset({"SURFACE_REJECTIONS"})
+        assert clause.origins == frozenset()
+
+    @pytest.mark.xfail(strict=True, raises=AssertionError)
+    def test_a_rebound_builtin_is_a_disclosed_miss(self) -> None:
+        """The residual the origins field does NOT close, stated here
+        rather than implied away.
+
+        A builtin has no import, so a guard naming ``Exception`` has to
+        name it by spelling, and ``Exception = ValueError`` above the
+        handler is a name this table records nowhere a caller can read:
+        ``_bind_one`` puts an unfollowable target in a PRIVATE memo. No
+        module in ``kstrl/`` binds either builtin name, measured, which is
+        why this is disclosed rather than fixed with a public field whose
+        only reader would be this row.
+        """
+        source = "Exception = ValueError\ntry:\n    pass\nexcept Exception:\n    pass\n"
+        astwalk.blind_spot(lambda _: clauses(source)[0].origins != frozenset(), source)
 
     def test_a_dotted_type_the_resolver_cannot_place_is_not_its_leaf(self) -> None:
         """The narrowing round 2 of #324 caught, pinned.
@@ -442,6 +554,29 @@ class TestTheCorpusIsTheOneEveryGuardMeant:
 
     def test_the_test_suite_is_too(self) -> None:
         assert len(astwalk.test_sources()) > 100
+
+    def test_an_empty_corpus_is_refused_at_the_chokepoint(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Where the emptiness check has to live, and why not only in
+        ``assert_census``.
+
+        Four assertions in this suite walk this list themselves and never
+        reach the census: ``test_journal_one_writer``'s single-writer
+        sweep, ``test_event_names_have_one_home``'s literal sweep and both
+        prompt walks in ``test_prompt_enrollment_walk``. #324 round 2
+        measured all four passing GREEN under a ``REPO_ROOT`` one
+        directory too high, with only a sibling census in the same FILE
+        going red, which is a property of the file rather than of the
+        assertion. With the check here all four fail.
+        """
+        monkeypatch.setattr(corpus, "KSTRL_PACKAGE", tmp_path / "nothing")
+        with pytest.raises(AssertionError, match="no modules found under kstrl/"):
+            astwalk.package_sources()
+
+        monkeypatch.setattr(corpus, "TESTS_DIR", tmp_path / "nothing")
+        with pytest.raises(AssertionError, match="no modules found under tests/"):
+            astwalk.test_sources()
 
     def test_a_guard_can_leave_its_own_file_out(self) -> None:
         """A guard that names the shapes it forbids in its own fixtures

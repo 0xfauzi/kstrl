@@ -58,17 +58,44 @@ def module_name(source_file: Path) -> str:
 
 
 def package_sources() -> list[Path]:
-    """Every module in ``kstrl/``, in a stable order."""
-    return sorted(KSTRL_PACKAGE.rglob("*.py"))
+    """Every module in ``kstrl/``, in a stable order. Never empty.
+
+    The emptiness check is HERE, at the chokepoint, and not only in
+    :func:`~.net.assert_census`, because #324 round 2 measured four
+    assertions that walk this list themselves and never reach the census:
+    ``test_journal_one_writer``'s single-writer sweep,
+    ``test_event_names_have_one_home``'s literal sweep and both prompt
+    walks in ``test_prompt_enrollment_walk``. Repointed one directory too
+    high, all four pass GREEN while looking at nothing, and their only
+    protection is that a sibling census in the same FILE goes red, which
+    is a property of the file rather than of the assertion.
+    """
+    found = sorted(KSTRL_PACKAGE.rglob("*.py"))
+    assert found, _EMPTY.format(what="kstrl/", root=KSTRL_PACKAGE)
+    return found
 
 
 def test_sources(exclude: Path | None = None) -> list[Path]:
     """Every module in ``tests/``, minus the caller's own file if given.
 
     A guard naming the shapes it forbids in its own fixtures would
-    otherwise scan itself."""
+    otherwise scan itself. Never empty, for the reason above: excluding
+    the caller cannot empty a directory that holds the caller.
+    """
     skip = exclude.resolve() if exclude is not None else None
-    return [path for path in sorted(TESTS_DIR.rglob("*.py")) if path.resolve() != skip]
+    found = [path for path in sorted(TESTS_DIR.rglob("*.py")) if path.resolve() != skip]
+    assert found, _EMPTY.format(what="tests/", root=TESTS_DIR)
+    return found
+
+
+#: What an empty corpus means, said once. It is never a real answer: both
+#: directories are in the repository this file is in, so an empty glob is
+#: a wrong root, and every net downstream would return ``{}`` and pass.
+_EMPTY = (
+    "no modules found under {what}, so every guard walking this corpus is "
+    "an assertion about nothing. This is a derivation bug, not an answer: "
+    "check REPO_ROOT's depth, which is {root}."
+)
 
 
 #: Source text -> its parsed tree, shared by every guard in the suite.

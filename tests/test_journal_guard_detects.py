@@ -186,6 +186,28 @@ class TestTheGuardDetects:
         source = 'target = root / "".join(("evolution", ".jsonl"))\nopen(target, "a")\n'
         assert self.offenders(tmp_path, source) == []
 
+    def test_an_attribute_name_the_interpreter_has_to_build_is_missed_too(
+        self, tmp_path: Path
+    ) -> None:
+        """The same residual one level up, and the row #324 round 2 found
+        missing.
+
+        The disclosure above named a path or a FILENAME the interpreter
+        builds. This builds the ATTRIBUTE NAME instead, so no filename
+        appears anywhere and layer 1 does not fire either: ``getattr``
+        folds ``"journal_" + "path"`` and does not fold ``"".join``.
+        Measured on ``origin/main`` as well as here, so it is pre-existing
+        and not something the migration introduced; what the migration
+        owes it is a row, because a disclosure whose wording does not
+        reach a shape is a clean report for that shape.
+        """
+        built = 'target = getattr(config, "".join(("journal_", "path")))\nopen(target, "a")\n'
+        assert self.offenders(tmp_path, built) == []
+
+        path = tmp_path / "other.py"
+        path.write_text(built, encoding="utf-8")
+        assert journal_path_escapes(path) == []
+
     def test_layer_one_sees_a_getattr_acquisition(self, tmp_path: Path) -> None:
         """The clause at the other layer, which had no control of its own.
 

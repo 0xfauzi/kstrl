@@ -8,7 +8,7 @@ in ``undecided``, so a walk that could not look cannot read clean."""
 from __future__ import annotations
 
 import ast
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -100,14 +100,12 @@ def assert_census(
     sources: Iterable[Path],
     sees: Sees,
     expected: Mapping[str, int],
-    control: str,
+    control: str | Sequence[str],
     message: str,
     key: Keyed | None = None,
 ) -> None:
     """Pin an inventory, having first proved the net still fires AND that
     it was pointed at something.
-
-    TWO controls, and #324 round 2 measured why one is not enough.
 
     ``control`` is source the predicate MUST hit. Required, not optional,
     because ``built == expected`` is also what a switched-off predicate
@@ -115,16 +113,26 @@ def assert_census(
     stopped looking. One line, and it is the difference between an
     assertion about the package and one about nothing.
 
-    THE CORPUS IS THE OTHER HALF, and the control cannot speak for it: it
-    parses a string, so it fires whether ``sources`` holds 128 modules or
-    none. Repointing ``REPO_ROOT`` one directory too high makes
-    :func:`~.corpus.package_sources` return ``[]``, and #324 round 2
-    measured four assertions in this suite going green while looking at
-    nothing, one of them, ``test_atomicio``'s
-    ``EXPECTED_MKSTEMP_SPELLINGS``, pinned empty ON PURPOSE and therefore
-    green by construction rather than by luck. So an empty corpus fails
-    here. ``sources`` is materialised once, which also stops a caller
-    passing a generator that a second reader would find spent.
+    ONE CONTROL PER DISJUNCT. A single control is a SCALAR proof over the
+    whole predicate, so ``anchor(node) or namer(node)`` stays green on it
+    with either half deleted, and #324 round 2 measured exactly that in
+    ``tests/test_state_dir_scope.py``: deleting a disjunct failed the
+    INVENTORY and left the control passing, which makes the control read
+    as a mechanism it is not. Pass a sequence and each string is proved
+    separately, so a dead half fails here naming the control that went
+    quiet. The helper cannot count a callable's disjuncts, so this is a
+    contract the caller keeps; what it can do is make keeping it possible
+    and make the failure name the half.
+
+    THE CORPUS IS THE OTHER HALF AGAIN, and no control can speak for it:
+    a control parses a string, so it fires whether ``sources`` holds 128
+    modules or none. This assertion covers THIS CALL only. Four guards in
+    this suite walk :func:`~.corpus.package_sources` directly and never
+    reach here, which is why the emptiness check also lives at that
+    chokepoint; see its docstring for the measurement.
+
+    ``sources`` is materialised once, which also stops a caller passing a
+    generator that a second reader would find spent.
     """
     corpus = list(sources)
     assert corpus, (
@@ -132,12 +140,13 @@ def assert_census(
         "an assertion about nothing. Check the paths the caller derived: a "
         "wrong root globs no files and every net in the suite returns {}."
     )
-    proof = sum(1 for node in all_nodes(parse(control)) if sees(node))
-    assert proof, (
-        "the census predicate matched nothing in its own control, so the "
-        "inventory below is indistinguishable from what a switched-off net "
-        f"returns. Control: {control!r}"
-    )
+    for one in (control,) if isinstance(control, str) else control:
+        proof = sum(1 for node in all_nodes(parse(one)) if sees(node))
+        assert proof, (
+            "the census predicate matched nothing in this control, so the "
+            "inventory below is indistinguishable from what a switched-off "
+            f"net returns. Control: {one!r}"
+        )
     built = census(corpus, sees, key)
     assert built == expected, f"{message} Found: {built}"
 

@@ -471,33 +471,32 @@ class TestTheEnumerationMatchesTheCode:
     def test_every_module_that_names_the_state_directory_is_pinned(self) -> None:
         """The net under the scan, and it enumerates no node types.
 
-        THE CONTROL NAMES BOTH HALVES. ``assert_census`` proves the
-        predicate fires, and a disjunction fires when EITHER half does, so
-        a control hitting only one half leaves the other switchable-off
-        with the control still green. Measured on the first version of
-        this line: ``P = state_dir(root) / "runs"`` scores one hit through
-        ``namer`` and zero through ``anchor``, so deleting ``anchor``
-        entirely passed the control. The inventory caught it, at 5 rows
-        instead of 15, but that is the pin doing the control's job.
+        ONE CONTROL PER HALF, and the first two attempts at this line are
+        why the signature takes a sequence. A disjunction fires when
+        EITHER half does, so a single control is a scalar over the pair:
+        ``P = state_dir(root) / "runs"`` scores one hit through ``namer``
+        and zero through ``anchor``, and deleting ``anchor`` entirely
+        passed it. The second attempt widened the STRING to hit both
+        halves and added a test proving the string did. That was worse,
+        because it reads as a mechanism: ``assert_census`` still summed
+        one scalar over the whole predicate, so deleting ``anchor``
+        still passed the control, measured at 1 failed and 38 passed with
+        the failure in the INVENTORY at 5 rows instead of 15. A control
+        that cannot fail for the reason its docstring gives is the exact
+        defect #324 exists to end, so the halves are proved separately
+        and a dead one now fails naming its own control.
         """
         anchor, namer = astwalk.spells(statedir.STATE_DIR_NAME), astwalk.spells("state_dir")
         astwalk.assert_census(
             sources=astwalk.package_sources(),
             sees=lambda node: anchor(node) or namer(node),
             expected=_EXPECTED_STATE_DIR_SPELLINGS,
-            control=f'P = state_dir(root) / "runs"\nQ = root / "{statedir.STATE_DIR_NAME}"\n',
+            control=(
+                'P = state_dir(root) / "runs"\n',
+                f'Q = root / "{statedir.STATE_DIR_NAME}"\n',
+            ),
             message="the set of modules that name kstrl's state directory changed.",
         )
-
-    def test_the_census_control_names_both_halves_of_the_predicate(self) -> None:
-        """The control's own control, because the paragraph above is a
-        claim about a string and a string cannot be trusted on sight."""
-        anchor, namer = astwalk.spells(statedir.STATE_DIR_NAME), astwalk.spells("state_dir")
-        control = f'P = state_dir(root) / "runs"\nQ = root / "{statedir.STATE_DIR_NAME}"\n'
-        nodes = list(ast.walk(astwalk.parse(control)))
-
-        assert sum(1 for node in nodes if anchor(node)) >= 1, "the anchor half is untested"
-        assert sum(1 for node in nodes if namer(node)) >= 1, "the namer half is untested"
 
     def test_every_declared_entry_is_reachable(self) -> None:
         """The inverse: nothing in the lists that the package never

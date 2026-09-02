@@ -82,11 +82,21 @@ class Clause:
     this walk cannot name yields an EMPTY ``names``, and an empty set
     reads exactly like "catches nothing", which is the worst possible
     misreading of "catches something I could not see".
+
+    ``names`` and ``origins`` answer two different questions and cannot
+    contradict each other, which is the test the deleted ``Bindings``
+    field failed: ``names`` is what the clause is CALLED, one leaf per
+    part, and ``origins`` is where the resolver could place it, one
+    dotted origin per part it could. A part the table cannot place has a
+    name and no origin. Ask ``names`` about a builtin, which has no
+    import to resolve; ask ``origins`` about anything a module had to
+    obtain, because the name alone is a spelling anybody can rebind.
     """
 
     names: frozenset[str]
     decided: bool
     lineno: int
+    origins: frozenset[str] = frozenset()
 
 
 def handler_clauses(node: ast.Try, table: Bindings | None = None) -> list[Clause]:
@@ -108,6 +118,14 @@ def handler_clauses(node: ast.Try, table: Bindings | None = None) -> list[Clause
     records, so a dotted name is only its leaf when the resolver can
     place it. On ``kstrl/`` itself the two answers agree: all 114 dotted
     clause parts there resolve, none of them to a neutralising name.
+
+    ``Clause.origins`` comes from the same table and is the other half of
+    that correction. Round 2 of #324 measured a module-level
+    ``SURFACE_REJECTIONS = (ValueError,)`` in ``kstrl/tui/screens/`` with
+    an unguarded config load under it: the TUI guard matched the clause
+    by SPELLING, cleared the load, and its whole file stayed green at 49
+    passed. A name is not an identity, so a guard whose neutralising set
+    is a project constant reads ``origins`` and gets the import back.
     """
     resolver = table if table is not None else Bindings()
     return [_clause(handler, resolver) for handler in node.handlers]
@@ -115,13 +133,15 @@ def handler_clauses(node: ast.Try, table: Bindings | None = None) -> list[Clause
 
 def _clause(handler: ast.ExceptHandler, table: Bindings) -> Clause:
     if handler.type is None:
-        return Clause(frozenset({"BaseException"}), True, handler.lineno)
+        return Clause(frozenset({"BaseException"}), True, handler.lineno, frozenset())
     parts = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
     names = {_clause_name(part, table) for part in parts}
+    origins = {table.resolve(part) for part in parts}
     return Clause(
         frozenset(name for name in names if name is not None),
         None not in names,
         handler.lineno,
+        frozenset(origin for origin in origins if origin is not None),
     )
 
 

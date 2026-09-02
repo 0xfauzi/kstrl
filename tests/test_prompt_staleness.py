@@ -513,9 +513,33 @@ class TestTheScaffoldWalkCatchesWhatItClaims:
         """Layer 2's own residual. ``_cim = _create_if_missing`` binds
         the function object to a name the resolver cannot follow, so the
         call reads as a call on something else. Layer 1 still counts the
-        filename it writes, which is why this is a message gap rather
-        than a hole."""
+        filename it writes, WHEN THE FILENAME FOLDS, which is why this
+        one alone is a message gap rather than a hole. The row below is
+        the case where it does not."""
         astwalk.blind_spot(
             self._found,
             '_cim = _create_if_missing\n_cim(kstrl_dir / "x_prompt.md", DEFAULT_X_PROMPT, ui)\n',
+        )
+
+    @pytest.mark.xfail(strict=True, raises=AssertionError)
+    def test_the_two_residuals_together_are_a_hole_and_not_a_message_gap(self) -> None:
+        """The row #324 round 2 found missing, and the general lesson.
+
+        Both rows above are disclosed and pinned SEPARATELY, and each
+        one's docstring is true on its own: a built filename leaves layer
+        2 counting the writer, and a rebound writer leaves layer 1
+        counting the filename. Their CONJUNCTION is neither, and it was
+        pinned by neither. Measured: a fourth un-enrolled scaffolded
+        template planted in ``kstrl/init_cmd.py`` with both residuals
+        present gives 26 passed and 2 xfailed, #286 reproduced with the
+        guard green.
+
+        Pinning each residual does not pin their intersection, which is
+        the reason this row exists and the reason a disclosure that
+        appeals to ANOTHER layer has to name the case where that layer is
+        also blind.
+        """
+        astwalk.blind_spot(
+            self._found,
+            '_cim = _create_if_missing\n_cim(kstrl_dir / "".join(parts), DEFAULT_X_PROMPT, ui)\n',
         )

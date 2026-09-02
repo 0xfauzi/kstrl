@@ -420,14 +420,20 @@ class TestOneWriter:
           file (layer 1 is what makes that true), so the write has to be
           added inside the exempt method itself, which is the one place
           a reviewer of this invariant is already reading.
-        - a path or a filename the INTERPRETER has to build. Round 2 of
-          review, F9, defeated every layer with two constant-foldable
-          shapes; those are folded now, positive controls and all, as
-          are the two subscript spellings of an attribute read. What
-          remains is the undecidable half, ``"".join(...)``,
-          ``%``-formatting, a name resolved at run time. Pinned by
-          ``test_a_filename_the_interpreter_has_to_build_is_missed``, so
-          the disclosure fails if it stops being true. The rule this
+        - ANY STRING the interpreter has to build: a path, a filename,
+          or the ATTRIBUTE NAME a ``getattr`` reads. Round 2 of review,
+          F9, defeated every layer with two constant-foldable shapes;
+          those are folded now, positive controls and all, as are the two
+          subscript spellings of an attribute read. What remains is the
+          undecidable half, ``"".join(...)``, ``%``-formatting, a name
+          resolved at run time. The attribute-name case is the one #324
+          round 2 found the wording did not reach: it takes layer 1 down
+          as well, because no filename appears anywhere, and it is
+          pre-existing rather than a migration regression, measured on
+          ``origin/main`` too. Pinned by
+          ``test_a_filename_the_interpreter_has_to_build_is_missed`` and
+          ``test_an_attribute_name_the_interpreter_has_to_build_is_missed_too``,
+          so the disclosure fails if it stops being true. The rule this
           leaves behind: a shape a reader can decide by looking at it is
           a shape this guard must decide, and anything else is disclosed
           here.
