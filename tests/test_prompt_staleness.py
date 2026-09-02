@@ -49,6 +49,7 @@ from kstrl.init_cmd import (
     classify_scaffolded_path,
     staleness_notice,
 )
+from tests.helpers import astwalk
 from tests.test_init_cmd import run_init_capturing
 
 OLD_BODY = "# old engineer instructions\n"
@@ -249,9 +250,64 @@ _RECORDED_HISTORY: dict[str, tuple[tuple[str, str], ...]] = {
 }
 
 
-def _scaffolded_by_init() -> set[tuple[str, str]]:
-    """``(filename, constant_name)`` for every prompt template
-    ``run_init`` actually writes, read out of its own source.
+# --- what `run_init` actually scaffolds, in two layers -------------------
+#
+# LAYER 1, :func:`_names_a_template`, counts every expression in
+# ``kstrl/`` that folds to a template filename, per module. It is the
+# net: a file cannot be written under a name the package never spells,
+# so a fourth template has to appear here first, whatever shape writes
+# it. It resolves nothing and enumerates no node types.
+#
+# LAYER 2, :func:`_scaffolded_in`, pairs each filename with the constant
+# whose body goes into it, which is the half the ledger is keyed on and
+# the half a count cannot say. #324 records eleven guards each
+# re-implementing the resolution that needs; this one asks
+# ``tests/helpers/astwalk.py`` for it instead.
+
+#: What every scaffolded prompt template's filename ends with. Suffix
+#: rather than equality so that ``scripts/kstrl/prompt.md`` folds too:
+#: four of the six modules below spell the path, not the bare name.
+_TEMPLATE_SUFFIX = "prompt.md"
+
+#: The one function `ks init` writes a scaffolded file through.
+_SCAFFOLD_WRITER = "_create_if_missing"
+
+#: Every module in ``kstrl/`` that spells a template filename, and how
+#: many times. Adding a row is not forbidden, it is the point: the diff
+#: that adds one is where somebody says which template it is and why the
+#: ledger does or does not need it.
+#:
+#: ``init_cmd.py``'s six are the three ledger rows and the three
+#: ``_create_if_missing`` calls. The rest are surfaces that point an
+#: operator at a file: the CLI's messages and options, the config's
+#: prompt-path default, its report row, the wizard's preview and
+#: ``launch``'s resolution of the engineer prompt.
+EXPECTED_TEMPLATE_FILENAMES: dict[str, int] = {
+    "cli.py": 8,
+    "config.py": 4,
+    "config_report.py": 1,
+    "init_cmd.py": 6,
+    "init_wizard.py": 3,
+    "launch.py": 1,
+}
+
+
+def _names_a_template(node: ast.AST) -> bool:
+    """Does this expression fold to a scaffolded template's filename?
+
+    Layer 1's whole predicate. It names no node type and no field, so a
+    filename assembled with ``+``, held in a table or built into an
+    f-string counts exactly like one written at the call site. What
+    folding cannot decide is a name the INTERPRETER has to build, and
+    ``test_a_filename_the_interpreter_builds_is_a_known_miss`` pins that
+    residual rather than implying it away.
+    """
+    folded = astwalk.folded_str(node)
+    return folded is not None and folded.endswith(_TEMPLATE_SUFFIX)
+
+
+def _scaffolded_in(tree: ast.Module) -> set[tuple[str, str]]:
+    """``(filename, constant_name)`` for every template this module writes.
 
     The same discipline H3 applies one level up with
     ``test_no_unenrolled_prompt_constants``: without it, the next
@@ -259,24 +315,54 @@ def _scaffolded_by_init() -> set[tuple[str, str]]:
     ui)`` would be un-ledgered, un-warned and un-upgradable, and nothing
     would fail. Reading the source rather than the ledger is the point,
     because the ledger is the thing under test.
+
+    Three shapes round 1 could not see, all closed by
+    ``tests/helpers/astwalk.py`` rather than by another private copy of
+    its resolution: the writer reached through an import alias or a
+    module (``astwalk.bindings``), a filename assembled from pieces
+    (``astwalk.folded_str``), and a body reached as an attribute
+    (``astwalk.leaf_name``).
+
+    ``module`` is ``init_cmd``'s own dotted name whatever tree is walked,
+    because it is read only to resolve a RELATIVE import, and the probes
+    below are snippets standing in for that one module's source.
     """
-    source = Path(init_cmd.__file__).read_text(encoding="utf-8")
-    found: set[tuple[str, str]] = set()
-    for node in ast.walk(ast.parse(source)):
-        if not isinstance(node, ast.Call):
-            continue
-        if not (isinstance(node.func, ast.Name) and node.func.id == "_create_if_missing"):
-            continue
-        if len(node.args) < 2:
-            continue
-        target, content = node.args[0], node.args[1]
-        # `kstrl_dir / "<name>"`, and a bare constant for the body.
-        if not (isinstance(target, ast.BinOp) and isinstance(target.right, ast.Constant)):
-            continue
-        if not isinstance(content, ast.Name) or not content.id.endswith("_PROMPT"):
-            continue
-        found.add((str(target.right.value), content.id))
-    return found
+    table = astwalk.bindings(tree, module=astwalk.module_name(Path(init_cmd.__file__)))
+    return {
+        pair
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and _writes_a_scaffold(node, table)
+        for pair in _scaffold_pair(node)
+    }
+
+
+def _writes_a_scaffold(node: ast.Call, table: astwalk.Bindings) -> bool:
+    """Is this call ``_create_if_missing``, however the callee is spelled?
+
+    The bare name, ``init_cmd._create_if_missing``, and the import alias
+    ``from kstrl.init_cmd import _create_if_missing as _cim``, which the
+    resolver decides and a name match cannot. A LOCAL rebind of the
+    function object stays a miss; layer 1 is what still counts the
+    filename such a call writes.
+    """
+    origin = table.resolve(node.func)
+    return astwalk.leaf_name(node.func) == _SCAFFOLD_WRITER or (
+        origin is not None and origin.endswith(f".{_SCAFFOLD_WRITER}")
+    )
+
+
+def _scaffold_pair(node: ast.Call) -> list[tuple[str, str]]:
+    """The ``(filename, constant)`` one write names, if it names both."""
+    if len(node.args) < 2:
+        return []
+    target, content = node.args[0], node.args[1]
+    filename = astwalk.folded_str(target) or (
+        astwalk.folded_str(target.right) if isinstance(target, ast.BinOp) else None
+    )
+    constant = astwalk.leaf_name(content)
+    if filename is None or constant is None or not constant.endswith("_PROMPT"):
+        return []
+    return [(filename, constant)]
 
 
 class TestLedgerIntegrity:
@@ -316,9 +402,37 @@ class TestLedgerIntegrity:
             labels = [row[1] for row in template.history]
             assert len(set(labels)) == len(labels)
 
+    def test_every_filename_a_template_is_written_under_is_pinned(self) -> None:
+        """Layer 1, the net: pin every spelling of a template's filename.
+
+        A file cannot be written under a name the package never spells,
+        so a fourth template has to change this dict whatever shape
+        writes it: a loop over a table, a name built with ``+``, a
+        writer that is not ``_create_if_missing`` at all. That is why
+        this layer resolves nothing and enumerates no node types.
+
+        It is also what closes the one shape layer 2 discloses, a writer
+        reached through a local rebind: the filename is still spelled at
+        the call, so the count still moves.
+        """
+        astwalk.assert_census(
+            sources=astwalk.package_sources(),
+            sees=_names_a_template,
+            expected=EXPECTED_TEMPLATE_FILENAMES,
+            control='_create_if_missing(kstrl_dir / ("x" + "_prompt.md"), BODY, ui)\n',
+            message=(
+                "The set of places that name a scaffolded prompt template changed. "
+                "If this is a new template, enrol it in SCAFFOLDED_TEMPLATES with "
+                "its shipped history; an un-enrolled template reproduces #286 for "
+                "itself. If it is another surface pointing an operator at a file, "
+                "add the row with a reason."
+            ),
+        )
+
     def test_every_template_init_scaffolds_is_enrolled(self) -> None:
+        """Layer 2, the message: name the filename and the constant."""
         enrolled = {(t.filename, t.constant_name) for t in SCAFFOLDED_TEMPLATES}
-        assert _scaffolded_by_init() == enrolled, (
+        assert _scaffolded_in(astwalk.parsed(Path(init_cmd.__file__))) == enrolled, (
             "run_init and SCAFFOLDED_TEMPLATES disagree about which "
             "prompt templates exist. Add the new one to the ledger with "
             "its shipped history, or fix the filename/constant pairing; "
@@ -329,3 +443,79 @@ class TestLedgerIntegrity:
         run_init_capturing(tmp_path)
         for template in SCAFFOLDED_TEMPLATES:
             assert (tmp_path / "scripts" / "kstrl" / template.filename).exists()
+
+
+class TestTheScaffoldWalkCatchesWhatItClaims:
+    """Layer 2's reach, measured rather than asserted in a docstring.
+
+    Round 1 had no positive control at all: stub ``_scaffolded_in`` to
+    return the enrolled set and the file stayed green, which is the
+    failure mode #324 is the record of. Every row here was a real miss.
+    """
+
+    @staticmethod
+    def _found(source: str) -> set[tuple[str, str]]:
+        return _scaffolded_in(astwalk.parse(source))
+
+    def test_a_new_template_is_found(self) -> None:
+        """The control the guard had none of."""
+        body = '_create_if_missing(kstrl_dir / "x_prompt.md", DEFAULT_X_PROMPT, ui)\n'
+        assert self._found(body) == {("x_prompt.md", "DEFAULT_X_PROMPT")}
+
+    def test_an_assembled_filename_is_found(self) -> None:
+        """``kstrl_dir / ("x" + "_prompt.md")`` walked past round 1,
+        which read ``target.right`` only when it was a ``Constant``."""
+        body = '_create_if_missing(kstrl_dir / ("x" + "_prompt.md"), DEFAULT_X_PROMPT, ui)\n'
+        assert self._found(body) == {("x_prompt.md", "DEFAULT_X_PROMPT")}
+
+    def test_a_writer_renamed_on_import_is_found(self) -> None:
+        """The alias the disclosure used to call theoretical."""
+        body = (
+            "from kstrl.init_cmd import _create_if_missing as _cim\n"
+            '_cim(kstrl_dir / "x_prompt.md", DEFAULT_X_PROMPT, ui)\n'
+        )
+        assert self._found(body) == {("x_prompt.md", "DEFAULT_X_PROMPT")}
+
+    def test_a_body_reached_through_a_module_is_found(self) -> None:
+        """``init_cmd.DEFAULT_X_PROMPT`` is an ``Attribute``, and round 1
+        accepted a ``Name`` and nothing else."""
+        body = '_create_if_missing(kstrl_dir / "x_prompt.md", init_cmd.DEFAULT_X_PROMPT, ui)\n'
+        assert self._found(body) == {("x_prompt.md", "DEFAULT_X_PROMPT")}
+
+    def test_a_write_that_is_not_a_prompt_body_is_not_a_hit(self) -> None:
+        """The line the walk draws: a scaffolded file whose body is not a
+        prompt constant is not a template, and ``ks init`` writes four."""
+        body = '_create_if_missing(kstrl_dir / "progress.txt", DEFAULT_PROGRESS, ui)\n'
+        assert self._found(body) == set()
+
+    def test_prose_naming_the_writer_is_not_a_hit(self) -> None:
+        """Why the walk reads calls rather than text: this very file has
+        to spell the call it forbids in order to explain it."""
+        body = '"""Adds _create_if_missing(kstrl_dir / \'x_prompt.md\', X, ui)."""\n'
+        assert self._found(body) == set()
+
+    @pytest.mark.xfail(strict=True, raises=AssertionError)
+    def test_a_filename_the_interpreter_builds_is_a_known_miss(self) -> None:
+        """The residual both layers share, stated rather than implied.
+
+        A filename only the interpreter can produce folds to ``None``,
+        so neither the pair walk nor the census sees it. The bound is
+        that ``ks init`` writes a fixed set of files, so building one of
+        their names at run time is a deliberate act.
+        """
+        astwalk.blind_spot(
+            self._found,
+            '_create_if_missing(kstrl_dir / "".join(parts), DEFAULT_X_PROMPT, ui)\n',
+        )
+
+    @pytest.mark.xfail(strict=True, raises=AssertionError)
+    def test_a_writer_rebound_to_a_local_is_a_known_miss(self) -> None:
+        """Layer 2's own residual. ``_cim = _create_if_missing`` binds
+        the function object to a name the resolver cannot follow, so the
+        call reads as a call on something else. Layer 1 still counts the
+        filename it writes, which is why this is a message gap rather
+        than a hole."""
+        astwalk.blind_spot(
+            self._found,
+            '_cim = _create_if_missing\n_cim(kstrl_dir / "x_prompt.md", DEFAULT_X_PROMPT, ui)\n',
+        )

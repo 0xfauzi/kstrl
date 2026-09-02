@@ -31,6 +31,7 @@ from kstrl.config import ConfigError, load_toml_document, toml_parse_scope
 from kstrl.config_preflight import config_sections, preflight_config
 from kstrl.factory import FactoryResult
 from tests.conftest import REPO_ROOT
+from tests.helpers import astwalk
 from tests.helpers.bad_toml import MALFORMED_TOML, TOML_PARSE_FAULTS
 from tests.spine_utils import component, make_manifest
 
@@ -86,22 +87,34 @@ def _no_agents(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return built
 
 
-def _class_defs(path: Path) -> list[ast.ClassDef]:
-    """Every class defined in one file.
-
-    A file that will not parse yields none: that is a defect for mypy
-    and ruff to report, not a reason for this test to fail obscurely.
-    ``tests/test_prompt_versions.py``'s walk tolerates it the same way.
-    """
-    try:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-    except (SyntaxError, UnicodeDecodeError):
-        return []
-    return [node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
+#: The ``*Config`` classes whose loader this walk cannot read, per
+#: module. One: ``config.py``'s ``ProgressReaderConfig`` is a Protocol
+#: with no loader at all. A class whose ``load`` a decorator or a base
+#: supplies lands here too, which is how the shape layer 2 cannot read
+#: still fails loudly instead of passing as "no loader".
+EXPECTED_LOADERLESS_CONFIGS: dict[str, int] = {"config.py": 1}
 
 
-def _defines_load(node: ast.ClassDef) -> bool:
-    return any(isinstance(child, ast.FunctionDef) and child.name == "load" for child in node.body)
+def _supplies_load(item: ast.stmt) -> bool:
+    """``def load``, ``async def load`` or ``load = _impl``. Round 1 read
+    ``FunctionDef`` alone; ``astwalk.assignment_parts`` sees the third."""
+    named = isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef) and item.name == "load"
+    return named or "load" in astwalk.assignment_parts(item)[0]
+
+
+def _config_class(node: ast.AST) -> bool:
+    """A ``*Config`` class statement, whatever its body holds."""
+    return isinstance(node, ast.ClassDef) and node.name.endswith("Config")
+
+
+def _no_readable_loader(node: ast.AST) -> bool:
+    """Layer 1's predicate: a config class this walk finds no loader in."""
+    return _config_class(node) and not any(map(_supplies_load, node.body))  # type: ignore[attr-defined]
+
+
+def _classes_with_a_loader(tree: ast.Module) -> set[str]:
+    """``*Config`` classes in one module whose own body supplies a loader."""
+    return {n.name for n in ast.walk(tree) if _config_class(n) and not _no_readable_loader(n)}
 
 
 def _stub_run_factory(monkeypatch: pytest.MonkeyPatch) -> list[str]:
@@ -950,27 +963,62 @@ class TestEverySectionIsEnrolled:
     """The registry is only a guarantee while it is complete.
 
     Mirrors ``tests/test_prompt_versions.py``, which AST-walks for
-    ``*_PROMPT`` constants and fails on one that is not enrolled: a
-    config dataclass added later must not be able to reintroduce the
-    lazily-parsed section this issue removed.
+    ``*_PROMPT`` constants and fails on one not enrolled. Two
+    inventories, and every ``*Config`` class in ``kstrl/`` is in exactly
+    one: it has a loader this walk can read and must be registered, or it
+    has not and must be pinned with the reason. Round 1 had one
+    inventory and no control: its walk swallowed ``SyntaxError`` and its
+    assertion was a difference against zero, so an unparseable module
+    made it PASS.
     """
 
-    @staticmethod
-    def _config_classes_with_a_loader() -> set[str]:
-        return {
-            node.name
-            for path in sorted((REPO_ROOT / "kstrl").rglob("*.py"))
-            for node in _class_defs(path)
-            if node.name.endswith("Config") and _defines_load(node)
-        }
+    def test_a_config_class_with_no_readable_loader_is_pinned(self) -> None:
+        """The answer to a loader supplied from outside the class body:
+        it fails HERE rather than reading below as "no loader"."""
+        astwalk.assert_census(
+            sources=astwalk.package_sources(),
+            sees=_no_readable_loader,
+            expected=EXPECTED_LOADERLESS_CONFIGS,
+            control="class ZzzConfig:\n    pass\n",
+            message=(
+                "A *Config class in kstrl/ has no loader this walk can read. If a "
+                "decorator or a base supplies one, register the section in "
+                "config_sections() (#272) and pin the row with that reason."
+            ),
+        )
 
     def test_no_config_dataclass_is_missing_from_the_registry(self) -> None:
+        """Equality, not a difference against zero: an empty left side is
+        what a walk that stopped matching returns."""
+        found = {
+            name
+            for source_file in astwalk.package_sources()
+            for name in _classes_with_a_loader(astwalk.parsed(source_file))
+        }
         registered = {
             getattr(section.loader, "__self__", type(None)).__name__
             for section in config_sections()
         }
 
-        assert self._config_classes_with_a_loader() - registered == set()
+        assert found == registered, f"config_sections() misses {found - registered} (#272)"
+
+    @pytest.mark.parametrize(
+        "body", ["def load(cls, p): ...", "async def load(cls, p): ...", "load = _impl"]
+    )
+    def test_a_loader_in_any_of_its_three_shapes_is_found(self, body: str) -> None:
+        """The control round 1 had none of: all 22 live loaders are a
+        plain ``def``, so the equality above cannot be it."""
+        assert _classes_with_a_loader(astwalk.parse(f"class ZzzConfig:\n    {body}\n")) == {
+            "ZzzConfig"
+        }
+
+    @pytest.mark.xfail(strict=True, raises=AssertionError)
+    def test_a_config_class_the_interpreter_builds_is_a_known_miss(self) -> None:
+        """The one residual both inventories share."""
+        astwalk.blind_spot(
+            lambda src: [n for n in ast.walk(astwalk.parse(src)) if _config_class(n)],
+            'ZzzConfig = type("ZzzConfig", (), {"load": _impl})\n',
+        )
 
     def test_the_registry_names_a_real_toml_section_for_each_loader(self) -> None:
         """A section name is what the error line points the operator at,
