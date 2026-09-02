@@ -1,21 +1,42 @@
 """The invariant #320's walk rests on, tested against the interpreter.
 
-THE INVARIANT, in one sentence: an ``open`` is CLEARED only when exactly
-one scope binds its handle to a plain local name, and every load of that
-name lexically inside that scope is both OWNED by that scope and
-classified into exactly one modelled bucket.
-
 WHY THIS FILE EXISTS RATHER THAN A TENTH CASE. #344's review found eight
-clearing shapes in round 2 and nine more in round 3, and the guard's
-answer each time was another fixture. Seventeen fixtures is a collection
-of cases, and a collection of cases is closed only over the shapes
-somebody already thought of - CLAUDE.md's guard-design rule 1 names that
-as a ledger of give-ups and says to prefer closed by construction. So
-this file does not assert about shapes. It asserts the SAFETY PROPERTY
-the whole guard means:
+clearing shapes in round 2, nine more in round 3 and nineteen in round 4,
+and the guard's answer the first two times was another fixture. A pile of
+fixtures is a collection of cases, and a collection of cases is closed
+only over the shapes somebody already thought of - CLAUDE.md's
+guard-design rule 1 names that as a ledger of give-ups and says to prefer
+closed by construction. So this file does not assert about shapes. It
+asserts the SAFETY PROPERTY the whole guard means:
 
-    a read whose UnicodeDecodeError escapes its handler at RUN TIME is
-    never one the walk CLEARS.
+    a read that SITS UNDER A HANDLER answering for the IO and not for
+    the decode is never one the walk CLEARS.
+
+THE PRECONDITION IS PART OF THE PROPERTY, and leaving it out made an
+earlier draft of this docstring say something false. That draft claimed
+"a read whose UnicodeDecodeError escapes at RUN TIME is never cleared",
+and this three-line module violates it::
+
+    def f(p):
+        h = open(p, encoding='utf-8')
+        return h.read()
+
+The decode escapes, because nothing catches it, and the walk clears the
+read - correctly, because there is no handler here to be wrong about and
+the CALLER is the site that answers. Twelve of the 84 rows the walk
+clears in ``kstrl/`` are exactly that shape. The overclaim was not
+harmless: the first author to add a handler-less row would have watched
+this file fail for a reason that is not a defect, and the natural repair
+is to WEAKEN the assertion. So the precondition is checked mechanically
+by :func:`_answers_for_io_only` and its population is pinned, and a row
+that does not meet it skips with its own message instead.
+
+AND THE WALK MAY DECLINE TO ANSWER. #344 round 4 stopped patching the
+clearing path and changed the rule: a construct the walk cannot PROVE
+harmless makes the read ``undecided`` rather than ``clear``. So a
+compliant shape has two acceptable answers, ``clear`` and ``undecided``,
+and which one each gets is pinned in :data:`UNPROVABLE` rather than left
+to whichever the walk happens to give.
 
 THE ORACLE IS CPYTHON, not a second implementation of the walk. Every row
 below is one source string used twice: scanned by the walk, and EXECUTED
@@ -33,11 +54,14 @@ excluded from the safety claim rather than silently strengthening it.
 
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 
 import pytest
 
+from tests.helpers.astwalk import handler_clauses, leaf_name
+from tests.helpers.encodingrules import answers_for_io, covers_the_decode
 from tests.helpers.encodingwalk import scan_source
 
 #: A byte no UTF-8 decoder accepts, inside a document that is otherwise
@@ -48,7 +72,7 @@ BAD_BYTES = b'{"na\xefve": 1}\n'
 
 #: ``(name, module source)``. Each defines ``f(p)`` and reads ``p``'s text
 #: under a handler that answers for the IO and NOT for the decode, which
-#: is #320's whole subject. The shapes are every one #344's two review
+#: is #320's whole subject. The shapes are every one #344's three review
 #: rounds found clearing, plus the ones that held, plus the compliant
 #: controls.
 #:
@@ -219,6 +243,30 @@ SHAPES: list[tuple[str, str]] = [
         "def f(p):\n    c = C()\n    c.o(p)\n    try:\n        return c.u()\n"
         "    except OSError:\n        return 'caught'\n",
     ),
+    # --- round 4: the swallower is not spelled `try` ---------------------
+    #     #320's defect written without the word: `suppress(OSError)` eats
+    #     the IO and lets the decode past, exactly as `except OSError`
+    #     does. `except*` is a different NODE TYPE with the same meaning.
+    #     A `with` whose __exit__ nobody has read is neither.
+    (
+        "suppress hides the IO only",
+        "from contextlib import suppress\ndef f(p):\n    with suppress(OSError):\n"
+        "        with open(p, encoding='utf-8') as h:\n            return h.read()\n"
+        "    return 'caught'\n",
+    ),
+    (
+        "except star",
+        "def f(p):\n    got = 'caught'\n    try:\n"
+        "        with open(p, encoding='utf-8') as h:\n            got = h.read()\n"
+        "    except* OSError:\n        pass\n    return got\n",
+    ),
+    (
+        "non-open context manager",
+        "import tempfile\ndef f(p):\n    try:\n"
+        "        with tempfile.TemporaryDirectory():\n"
+        "            with open(p, encoding='utf-8') as h:\n                return h.read()\n"
+        "    except OSError:\n        return 'caught'\n",
+    ),
     # --- the compliant controls: these MUST be allowed to clear, or the
     #     safety property below is satisfied by a guard that flags
     #     everything ----------------------------------------------------
@@ -247,7 +295,58 @@ SHAPES: list[tuple[str, str]] = [
         "def f(p):\n    with open(p, 'w', encoding='utf-8') as h:\n"
         "        h.write('x')\n    return 'caught'\n",
     ),
+    (
+        "suppress covers the decode",
+        "from contextlib import suppress\ndef f(p):\n"
+        "    with suppress(OSError, UnicodeDecodeError):\n"
+        "        with open(p, encoding='utf-8') as h:\n            return h.read()\n"
+        "    return 'caught'\n",
+    ),
+    (
+        "except star covers the decode",
+        "def f(p):\n    got = 'caught'\n    try:\n"
+        "        with open(p, encoding='utf-8') as h:\n            got = h.read()\n"
+        "    except* (OSError, UnicodeDecodeError):\n        pass\n    return got\n",
+    ),
+    # --- the compliant shapes the walk cannot PROVE compliant. They are
+    #     controls too, and of the more interesting kind: they pin what
+    #     option A actually COSTS, in rows, on a corpus where the answer
+    #     is known. See UNPROVABLE.
+    (
+        "suppress through a name the walk cannot read",
+        "from contextlib import suppress\nBOTH = (OSError, UnicodeDecodeError)\n"
+        "def f(p):\n    with suppress(*BOTH):\n"
+        "        with open(p, encoding='utf-8') as h:\n            return h.read()\n"
+        "    return 'caught'\n",
+    ),
+    (
+        "non-open context manager, decode covered",
+        "import tempfile\ndef f(p):\n    try:\n"
+        "        with tempfile.TemporaryDirectory():\n"
+        "            with open(p, encoding='utf-8') as h:\n                return h.read()\n"
+        "    except (OSError, UnicodeDecodeError):\n        return 'caught'\n",
+    ),
 ]
+
+
+#: The compliant shapes the walk answers ``undecided`` about, BY NAME.
+#:
+#: Option A's price list. Every other non-escaping row must be CLEARED,
+#: or the walk has become a rubber stamp in the opposite direction and
+#: its 84-row cleared inventory carries no information. These two may be
+#: undecided instead - and MUST be, because a row that starts clearing is
+#: the walk claiming to have read a ``__exit__`` it cannot see.
+#:
+#: The set is pinned rather than derived so that widening it is a diff
+#: somebody reads. It is two rows, and each is a construct the walk
+#: deliberately refuses to guess about: a ``suppress`` whose arguments
+#: arrive through a name, and a context manager that is not ``open``.
+UNPROVABLE: frozenset[str] = frozenset(
+    {
+        "suppress through a name the walk cannot read",
+        "non-open context manager, decode covered",
+    }
+)
 
 
 def _escapes(source: str, path: Path) -> bool:
@@ -273,6 +372,52 @@ def _cleared_without_complaint(source: str) -> bool:
     return bool(found.clear) and not found.reported and not found.undecided
 
 
+def _only_undecided(source: str) -> bool:
+    """Does the walk decline to answer about a read in this module?
+
+    ``undecided`` and no ``reported``: the walk found something it could
+    not read rather than a defect it can name.
+    """
+    found = scan_source(source, where="shape.py", module="shape")
+    return bool(found.undecided) and not found.reported
+
+
+def _answers_for_io_only(source: str) -> bool:
+    """Does this module contain a construct that swallows the IO and NOT
+    the decode?
+
+    THE PRECONDITION of the safety property, checked rather than trusted,
+    for the reason the module docstring gives: a module with no handler
+    at all lets the decode escape and is CORRECTLY cleared, so a row
+    without one would fail the property for a reason that is not a
+    defect.
+
+    Built on the walk's own two predicates, so a row cannot satisfy this
+    and be judged by a different vocabulary there. It reads ``suppress``
+    as well as ``except``, because #320's defect has both spellings.
+    """
+    return any(
+        answers_for_io(names) and not covers_the_decode(names) for names in _swallowed_names(source)
+    )
+
+
+def _swallowed_names(source: str) -> list[set[str]]:
+    """What every swallowing construct in this module catches, by name.
+
+    Both spellings, because #320's defect has both: an ``except`` ladder
+    and a ``contextlib.suppress``. A construct whose names cannot be read
+    contributes an empty set, which fails the IO-only test above and so
+    sends the row to the skip list rather than into the property.
+    """
+    found: list[set[str]] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Try | ast.TryStar):
+            found.append({name for clause in handler_clauses(node) for name in clause.names})
+        elif isinstance(node, ast.Call) and leaf_name(node.func) == "suppress":
+            found.append({got for arg in node.args if (got := leaf_name(arg)) is not None})
+    return found
+
+
 @pytest.fixture
 def bad_file(tmp_path: Path) -> Path:
     target = tmp_path / "doc.json"
@@ -291,6 +436,11 @@ class TestTheSafetyProperty:
         assert about a defect the interpreter does not commit."""
         if not _escapes(source, bad_file):
             pytest.skip(f"{name} does not let the decode escape; the control below covers it")
+        if not _answers_for_io_only(source):
+            pytest.skip(
+                f"{name} carries no construct swallowing the IO alone, so the walk is "
+                "right to clear it and the caller is the site that answers"
+            )
         assert not _cleared_without_complaint(source), (
             f"{name}: a UnicodeDecodeError escapes this module's handler at run time and "
             "the walk cleared every read in it. That is the guard saying 'this site is "
@@ -307,10 +457,37 @@ class TestTheSafetyProperty:
         that genuinely escape is pinned. #344 round 2's M37 is the local
         precedent: five tests skipped themselves green.
         """
-        escaping = [name for name, source in SHAPES if _escapes(source, bad_file)]
-        assert len(escaping) >= 24, (
+        escaping = [
+            name
+            for name, source in SHAPES
+            if _escapes(source, bad_file) and _answers_for_io_only(source)
+        ]
+        assert len(escaping) == 30, (
             "the corpus stopped committing the defect it is built to commit, so the "
             f"property above is an assertion about nothing. Escaping: {escaping}"
+        )
+
+    def test_every_row_carries_the_handler_the_property_talks_about(self) -> None:
+        """The precondition's own control.
+
+        The property above SKIPS a row with no IO-only handler, and a
+        skip is not a failure - #344 round 2's M37 is the local precedent
+        for five tests skipping themselves green. So the population that
+        skips is pinned at exactly the compliant controls, and a new row
+        that quietly lands there fails here with its name.
+        """
+        without = [name for name, source in SHAPES if not _answers_for_io_only(source)]
+        assert without == [
+            "with-as read, decode covered",
+            "lock file, never read",
+            "write only",
+            "suppress covers the decode",
+            "except star covers the decode",
+            "suppress through a name the walk cannot read",
+            "non-open context manager, decode covered",
+        ], (
+            "a shape carries no construct swallowing the IO alone, so the safety "
+            f"property skips it rather than testing it. Rows: {without}"
         )
 
     def test_the_compliant_shapes_are_still_cleared(self, bad_file: Path) -> None:
@@ -319,10 +496,21 @@ class TestTheSafetyProperty:
 
         A shape whose decode does NOT escape must be CLEARED, or the walk
         has become a rubber stamp in the opposite direction and its
-        cleared inventory means nothing.
+        cleared inventory means nothing. The two rows in
+        :data:`UNPROVABLE` are the exception AND are held to the other
+        half of the same rule: they must be ``undecided``, never
+        ``reported`` and never ``clear``.
         """
         for name, source in SHAPES:
             if _escapes(source, bad_file):
+                continue
+            if name in UNPROVABLE:
+                assert _only_undecided(source), (
+                    f"{name} is pinned as a construct the walk cannot read. It must "
+                    "answer 'undecided'. Clearing it is the walk claiming to have read "
+                    "an __exit__ it cannot see; reporting it names a defect that is "
+                    "not there."
+                )
                 continue
             assert _cleared_without_complaint(source), (
                 f"{name}: no UnicodeDecodeError escapes at run time and the walk still "

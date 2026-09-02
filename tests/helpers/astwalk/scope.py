@@ -31,8 +31,14 @@ def own_nodes(node: ast.AST) -> list[ast.AST]:
     return found
 
 
-def try_body_nodes(node: ast.Try) -> list[ast.AST]:
+def try_body_nodes(node: ast.Try | ast.TryStar) -> list[ast.AST]:
     """Every node in this ``try``'s BODY, stopping at a nested function.
+
+    ``ast.TryStar`` is accepted because ``try/except*`` is a different
+    NODE TYPE with the same body, and a guard that types this parameter
+    as ``ast.Try`` alone silently declines to look inside one. #344 round
+    4 found that shape in the encoding walk. There are none in ``kstrl/``
+    today, which is exactly why nothing would have failed.
 
     :func:`own_nodes` is the boundary; this is what applies it to a LIST
     of statements rather than to one node, and what stops a ``def``
@@ -122,8 +128,12 @@ class Clause:
     origins: frozenset[str] = frozenset()
 
 
-def handler_clauses(node: ast.Try, table: Bindings | None = None) -> list[Clause]:
+def handler_clauses(node: ast.Try | ast.TryStar, table: Bindings | None = None) -> list[Clause]:
     """The clauses of one ``try``, IN ORDER, resolved through ``table``.
+
+    ``ast.TryStar`` counts, for the reason :func:`try_body_nodes` gives:
+    ``except*`` is a spelling of the same property, and a signature that
+    excludes it is a hole nothing in a repo without one can detect.
 
     Order is load-bearing: a broad clause above a narrow one makes the
     narrow one unreachable, so a guard that sorts cannot tell a correct

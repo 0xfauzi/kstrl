@@ -38,15 +38,27 @@ guard that rots, and ``test_process_scoping`` refused one once already.
 is here, in the same change, with the count at zero and no exemptions -
 the six ``fcntl`` lock files it turned up were FIXED rather than listed.
 
-THE INVARIANT, in one sentence, because #344 needed three review rounds
-to find that a collection of cases is not one: an ``open`` is CLEARED
-only when exactly one scope binds its handle to a plain local name, and
-every load of that name lexically inside that scope is both OWNED by
-that scope and classified into exactly one modelled bucket.
-:func:`_handles_in` is that sentence as code, and it is the only place
-followability is decided. ``tests/test_encoding_invariant.py`` tests the
-sentence against CPython rather than against the shapes that motivated
-it.
+THE INVARIANT, in one sentence: a read is CLEARED only when the walk
+has PROVEN both halves of it - that the bytes are decoded as utf-8, and
+that every construct enclosing the decode either does not swallow or
+covers ``UnicodeDecodeError``. Everything else is a row.
+
+That sentence took four review rounds to reach, and rounds one to three
+are why it is phrased as a proof rather than as a list of cases. Each
+round the walk cleared a shape that escaped at run time - eight, then
+nine, then nineteen - and each time the shape was new but the mistake
+was not: some step answered "I did not find a problem" and the caller
+read it as "there is no problem". #344 round 4 replaced the ninth patch
+with the rule itself. :class:`Verdict` has three answers and no fourth,
+and ``unproven`` never collapses into ``clear``; :func:`_handles_in`
+decides followability in one place with one classifier;
+:func:`swallowers` enumerates what can swallow rather than matching the
+one spelling of it.
+
+``tests/test_encoding_invariant.py`` tests the sentence against CPython
+rather than against the shapes that motivated it: it plants each shape,
+runs it against real undecodable bytes, and fails if anything the walk
+cleared raised.
 
 CLEARING IS THE DANGEROUS DIRECTION, so every undecidable is a flag.
 CLAUDE.md guard-design rule 3: a guard that CLEARS must be narrow,
@@ -86,7 +98,6 @@ from tests.helpers.astwalk import (
     assignment_parts,
     bindings,
     bound_names,
-    handler_clauses,
     label,
     leaf_name,
     module_name,
@@ -95,10 +106,14 @@ from tests.helpers.astwalk import (
     parse,
     scopes,
     spells,
-    try_body_nodes,
+)
+from tests.helpers.encodingguards import (
+    Swallower,
+    guard_verdict,
+    swallowers,
+    verdict_parts,
 )
 from tests.helpers.encodingrules import (
-    clause_fault,
     decodes_text,
     encoding_fault,
     is_strict,
@@ -145,12 +160,19 @@ class Read:
     #: None when no enclosing handler answers for the IO, when none needs
     #: to, or when the one that does is enough; else why it is not.
     guard_fault: str | None
+    #: None when the walk PROVED what swallows around this read; else why
+    #: it could not. Option A's field: a site the walk cannot prove
+    #: compliant is undecided, never cleared. #344 round 4.
+    unproven: str | None = None
 
     def faults(self) -> list[str]:
         return [f for f in (self.encoding_fault, self.guard_fault) if f is not None]
 
     def row(self) -> str:
         return f"{self.where}:{self.lineno} {'; '.join(self.faults())}"
+
+    def row_unproven(self) -> str:
+        return f"{self.where}:{self.lineno} {self.expr} ({self.unproven})"
 
 
 @dataclass(frozen=True)
@@ -182,32 +204,6 @@ def spells_a_token(node: ast.AST) -> bool:
     return any(sees(node) for sees in _TOKEN_NETS)
 
 
-def _guard_fault(
-    node: ast.Call, tries: list[tuple[ast.Try, set[int]]], table: Bindings
-) -> str | None:
-    """The first enclosing ``try`` that answers for the IO, and why it is
-    not enough. None when nothing answers, or when something answers
-    fully.
-
-    OUTWARD FROM THE INNERMOST, not the innermost alone. An inner ``try``
-    that already covers the decode means the decode never reaches an
-    outer ``except OSError``, so the outer one is not an escape; and an
-    inner ``try`` catching only ``JSONDecodeError`` does not stop the
-    decode reaching an outer ``except OSError`` that has no clause for
-    it. Only the innermost handler that ANSWERS decides, either way.
-    """
-    holding = sorted(
-        (statement for statement, owned in tries if id(node) in owned),
-        key=lambda statement: statement.lineno,
-        reverse=True,
-    )
-    for statement in holding:
-        verdict = clause_fault(handler_clauses(statement, table))
-        if verdict != "keep-looking":
-            return verdict
-    return None
-
-
 #: How a text handle is read once ``open`` has handed it over. The walk
 #: below chases the HANDLE because the decode is not at the ``open``: the
 #: bytes become text at the read, and #320 found one live offender of
@@ -222,8 +218,9 @@ HANDLE_READS = frozenset({"read", "readline", "readlines"})
 #: clearing mechanism nobody derives is one nobody notices is short.
 #:
 #: A member that is on NEITHER set is not "probably fine": it is a use of
-#: the handle this walk has never heard of, and :func:`_handle_escapes`
-#: makes it ``undecided``. Measured on ``kstrl/``: the tracked handles are
+#: the handle this walk has never heard of, so :func:`_touch` buckets it
+#: ``unknown`` and :func:`_handle_escapes` makes it ``undecided``.
+#: Measured on ``kstrl/``: the tracked handles are
 #: touched through ``fileno``, ``close``, ``seek``, ``truncate``,
 #: ``write``, ``flush``, ``read``, ``readlines``, one ``for`` and seven
 #: hand-overs, and every one of those lands in a modelled bucket.
@@ -294,7 +291,13 @@ class _Handle:
     name: str
     call: ast.Call
     scope: ast.AST
-    loose: tuple[ast.Name, ...]
+    #: Occurrences the one classifier could not bucket. Non-empty means
+    #: the handle is not followable AND there are rows to report; the two
+    #: cannot disagree because they are the same tuple.
+    loose: tuple[ast.expr, ...]
+    #: The nodes that DECODE through this handle, with the open that set
+    #: the encoding. Same classifier, same pass.
+    decodes: tuple[ast.AST, ...]
 
 
 def _parents_of(scope: ast.AST) -> dict[int, ast.AST]:
@@ -339,11 +342,16 @@ def _handles_in(tree: ast.Module, table: Bindings) -> list[_Handle]:
     unrelated function's own local called ``f`` from being charged to
     this binding.
 
-    CLASSIFIED INTO EXACTLY ONE BUCKET closes the alias escapes;
-    :func:`_is_modelled` is that half.
+    CLASSIFIED INTO EXACTLY ONE BUCKET closes the alias escapes, and
+    :func:`_touch` is that half. ONE function, which is #344 round 4's
+    third fix: followability and the decode rows now come out of the
+    same pass over the same nodes, so a use cannot be "modelled" for one
+    purpose and invisible for the other. Three rounds of review found
+    that disagreement three separate times, and every instance of it
+    resolved in the clearing direction.
 
     A name whose loads are all accounted for is followable. A name with
-    even one loose load is not, and the loose loads are also the rows
+    even one loose load is not, and ``loose`` is literally the tuple
     :func:`_handle_escapes` reports, so the guard cannot clear a site it
     is simultaneously complaining about.
     """
@@ -354,17 +362,26 @@ def _handles_in(tree: ast.Module, table: Bindings) -> list[_Handle]:
             continue
         owned = {id(node) for node in own_nodes(scope)}
         parents = _parents_of(scope)
-        inside = all_nodes(scope)
-        for name, call in handles.items():
-            loose = tuple(
-                node
-                for node in inside
-                if isinstance(node, ast.Name)
-                and node.id == name
-                and not isinstance(node.ctx, ast.Store)
-                and not (id(node) in owned and _is_modelled(node, parents))
+        touches: dict[str, list[_Touch]] = {name: [] for name in handles}
+        for node in _occurrences(scope, handles):
+            got = _touch(node, parents)
+            # Not OWNED by this scope means a closure, a lambda or a
+            # nested def reached the handle. That is a use, and one this
+            # scope's ladder cannot answer for, so it is unknown.
+            touches[got.name].append(
+                got if id(node) in owned else _Touch("unknown", got.name, node)
             )
-            found.append(_Handle(name=name, call=call, scope=scope, loose=loose))
+        for name, call in handles.items():
+            seen = touches[name]
+            found.append(
+                _Handle(
+                    name=name,
+                    call=call,
+                    scope=scope,
+                    loose=tuple(one.at for one in seen if one.kind == "unknown"),  # type: ignore[misc]
+                    decodes=tuple(one.at for one in seen if one.kind == "decode"),
+                )
+            )
     return found
 
 
@@ -397,41 +414,95 @@ def _bound_opens(tree: ast.Module, table: Bindings) -> set[int]:
     return {id(handle.call) for handle in _handles_in(tree, table) if not handle.loose}
 
 
-def _handle_reads(scope: ast.AST, handles: dict[str, ast.Call]) -> list[tuple[ast.AST, ast.Call]]:
-    """Every decode through one of ``handles``, with the ``open`` that
-    set the encoding.
+@dataclass(frozen=True)
+class _Touch:
+    """What one occurrence of a tracked handle name does with it.
 
-    Three shapes, and each is a decode the ``open`` call itself is not:
-    ``fh.read()``, iterating the handle, and handing the handle to
-    somebody else (``json.load(fh)``, ``csv.reader(fh)``). The third is
-    wide on purpose - it cannot know what the callee does with it - and
-    wide is the reporting direction.
-
-    Iterating covers a comprehension as well as a ``for``, and handing
-    over covers a KEYWORD argument as well as a positional one. #344's
-    review measured both gaps: ``json.load(fp=h)`` and ``[x for x in h]``
-    each decoded under a bare ``except OSError`` while this walk cleared
-    them.
+    ``kind`` is ``decode``, ``safe`` or ``unknown``, and ``at`` is the
+    node a decode should be reported against.
     """
-    found: list[tuple[ast.AST, ast.Call]] = []
-    for node in own_nodes(scope):
-        touched = _handle_touched(node, handles)
-        if touched is not None:
-            found.append((node, handles[touched]))
+
+    kind: str
+    name: str
+    at: ast.AST
+
+
+def _occurrences(scope: ast.AST, handles: dict[str, ast.Call]) -> list[ast.expr]:
+    """Every expression lexically inside this scope that EVALUATES to a
+    tracked handle.
+
+    A plain load, and a walrus whose target is the handle: ``json.load(h
+    := open(...))`` occupies an expression slot and hands the handle
+    over in the same breath, so it belongs in the same list rather than
+    in a special case beside it.
+    """
+    found: list[ast.expr] = []
+    for node in all_nodes(scope):
+        if isinstance(node, ast.Name) and node.id in handles and isinstance(node.ctx, ast.Load):
+            found.append(node)
+        elif (
+            isinstance(node, ast.NamedExpr)
+            and isinstance(node.target, ast.Name)
+            and node.target.id in handles
+        ):
+            found.append(node)
     return found
 
 
-def _handle_touched(node: ast.AST, handles: dict[str, ast.Call]) -> str | None:
-    """The handle name this node decodes through, or None."""
-    if isinstance(node, ast.For | ast.comprehension):
-        return _named(node.iter, handles)
-    if not isinstance(node, ast.Call):
-        return None
-    receiver = node.func
-    if isinstance(receiver, ast.Attribute) and receiver.attr in HANDLE_READS:
-        return _named(receiver.value, handles)
-    handed = [*node.args, *(keyword.value for keyword in node.keywords)]
-    return next((got for arg in handed if (got := _named(arg, handles))), None)
+def _occurrence_name(node: ast.expr) -> str:
+    """The handle name one :func:`_occurrences` entry spells.
+
+    The walrus is unwrapped to its target, because ``json.load(h :=
+    open(p, encoding="utf-8"))`` hands the handle over in the same
+    expression that binds it. #344 round 3 finding 3: without this the
+    binding was tracked, the hand-over was not seen, no LOAD of ``h``
+    existed to be unaccounted for, and the site CLEARED.
+    """
+    target = node.target if isinstance(node, ast.NamedExpr) else node
+    assert isinstance(target, ast.Name), ast.dump(node)
+    return target.id
+
+
+def _touch(node: ast.expr, parents: dict[int, ast.AST]) -> _Touch:
+    """ONE classifier, returning the bucket AND the node to report it at.
+
+    #344 round 4's third fix, and the reason it is one function. There
+    used to be two - one deciding whether a use was "modelled", the
+    other finding the decode sites - walking different node sets and
+    asking different questions. Two classifiers that must agree is a
+    defect waiting to be found, and it was found three times: a node
+    could be modelled in one and invisible in the other, and the
+    disagreement always resolved in the clearing direction. Now a use
+    has exactly one answer, and the answer carries the row.
+
+    Three shapes decode, and each is a decode the ``open`` call itself is
+    not: ``fh.read()``, iterating the handle, and handing it to somebody
+    else. Handing over is wide on purpose - it cannot know what the
+    callee does with it - and wide is the reporting direction.
+    """
+    name = _occurrence_name(node)
+    up = parents.get(id(node))
+    if isinstance(up, ast.Attribute):
+        grand = parents.get(id(up))
+        if not (isinstance(grand, ast.Call) and grand.func is up):
+            # A bound method taken (``_read = h.read``) or the handle's
+            # ``buffer`` handed on: the attribute VALUE escapes.
+            return _Touch("unknown", name, node)
+        if up.attr in HANDLE_READS:
+            return _Touch("decode", name, grand)
+        if up.attr in HANDLE_SAFE:
+            return _Touch("safe", name, grand)
+        return _Touch("unknown", name, node)
+    if isinstance(up, ast.Call) and node in up.args:
+        return _Touch("decode", name, up)
+    if isinstance(up, ast.keyword):
+        grand = parents.get(id(up))
+        if isinstance(grand, ast.Call):
+            return _Touch("decode", name, grand)
+        return _Touch("unknown", name, node)
+    if isinstance(up, ast.For | ast.comprehension) and up.iter is node:
+        return _Touch("decode", name, up)
+    return _Touch("unknown", name, node)
 
 
 def _handle_escapes(handles: list[_Handle], where: str) -> list[str]:
@@ -445,68 +516,10 @@ def _handle_escapes(handles: list[_Handle], where: str) -> list[str]:
     heard of are all rows a reader has to answer for.
     """
     return [
-        f"{where}:{node.lineno} {node.id} (a use of an open() handle this walk "
-        "does not model, so the decode cannot be found)"
+        f"{where}:{getattr(node, 'lineno', 0)} {handle.name} (a use of an open() handle "
+        "this walk does not model, so the decode cannot be found)"
         for handle in handles
         for node in handle.loose
-    ]
-
-
-def _is_modelled(node: ast.Name, parents: dict[int, ast.AST]) -> bool:
-    """Is this load of a handle name one the walk has a bucket for?
-
-    The Attribute arm is what #344 round 3 finding 1 corrected, and the
-    correction is to make it agree with :func:`_handle_touched`. That
-    function models ``h.read()``: an ``ast.Call`` whose ``func`` IS the
-    attribute. This one used to pass ANY attribute whose name was in
-    either set, so ``_read = handle.read`` - the bound method taken and
-    called later - was cleared here and never looked at there. Detached,
-    the two halves miss in opposite directions. Attached, an attribute
-    that is not immediately called is the handle's method or its
-    ``buffer`` ESCAPING, which is a row.
-    """
-    up = parents.get(id(node))
-    if isinstance(up, ast.Attribute):
-        grand = parents.get(id(up))
-        if not (isinstance(grand, ast.Call) and grand.func is up):
-            return False
-        return up.attr in HANDLE_READS or up.attr in HANDLE_SAFE
-    if isinstance(up, ast.Call):
-        return node in up.args
-    if isinstance(up, ast.keyword):
-        return True
-    if isinstance(up, ast.For | ast.comprehension):
-        return up.iter is node
-    return False
-
-
-def _named(node: ast.expr, handles: dict[str, ast.Call]) -> str | None:
-    """The handle name this expression IS, or None.
-
-    A walrus is unwrapped to its target, because ``json.load(h :=
-    open(p, encoding="utf-8"))`` hands the handle over in the same
-    expression that binds it. #344 round 3 finding 3: without this the
-    binding was tracked, the hand-over was not seen, no LOAD of ``h``
-    existed to be unaccounted for, and the site CLEARED - so adding
-    ``h :=`` to the walk's own counterexample made it compliant again,
-    and the churn pin then invited the author to record it as such.
-    """
-    if isinstance(node, ast.NamedExpr):
-        node = node.target
-    return node.id if isinstance(node, ast.Name) and node.id in handles else None
-
-
-def _try_bodies(tree: ast.Module) -> list[tuple[ast.Try, set[int]]]:
-    """Every ``try`` and the ids of the nodes its BODY owns.
-
-    ``own_nodes`` stops at a nested function, so a read inside a ``def``
-    written in a ``try`` body and called elsewhere is not credited to a
-    handler that will never see its exception.
-    """
-    return [
-        (node, {id(child) for child in try_body_nodes(node)})
-        for node in all_nodes(tree)
-        if isinstance(node, ast.Try)
     ]
 
 
@@ -532,7 +545,7 @@ def _is_somebody_elses(node: ast.Call, table: Bindings) -> bool:
 
 def _classify(
     node: ast.Call,
-    tries: list[tuple[ast.Try, set[int]]],
+    swallowers: list[tuple[Swallower, set[int]]],
     table: Bindings,
     where: str,
     bound: set[int],
@@ -570,12 +583,16 @@ def _classify(
             "so the decode cannot be found)"
         )
     at_the_call = leaf == "read_text" and decodes_text(node) and is_strict(node)
+    guard, unproven = (
+        verdict_parts(guard_verdict(node, swallowers, table)) if at_the_call else (None, None)
+    )
     return Read(
         where=where,
         lineno=node.lineno,
         expr=ast.unparse(node)[:70],
         encoding_fault=encoding_fault(node),
-        guard_fault=_guard_fault(node, tries, table) if at_the_call else None,
+        guard_fault=guard,
+        unproven=unproven,
     )
 
 
@@ -625,7 +642,10 @@ def _read_lineno(node: ast.AST) -> int:
 
 
 def _through_handles(
-    tree: ast.Module, tries: list[tuple[ast.Try, set[int]]], table: Bindings, where: str
+    tree: ast.Module,
+    swallowers: list[tuple[Swallower, set[int]]],
+    table: Bindings,
+    where: str,
 ) -> tuple[list[Read], list[str]]:
     """A :class:`Read` for every decode through an ``open``ed handle.
 
@@ -638,20 +658,19 @@ def _through_handles(
     tracked = _handles_in(tree, table)
     found: list[Read] = []
     escaped = _handle_escapes(tracked, where)
-    for scope, _name in scopes(tree):
-        handles = _text_handles(scope, table)
-        if not handles:
+    for handle in tracked:
+        if not is_strict(handle.call):
             continue
-        for node, opened in _handle_reads(scope, handles):
-            if not is_strict(opened):
-                continue
+        for node in handle.decodes:
+            guard, unproven = verdict_parts(guard_verdict(node, swallowers, table))
             found.append(
                 Read(
                     where=where,
                     lineno=_read_lineno(node),
                     expr=f"{_read_expr(node)} on an open() handle",
                     encoding_fault=None,
-                    guard_fault=_guard_fault(node, tries, table),
+                    guard_fault=guard,
+                    unproven=unproven,
                 )
             )
     return found, escaped
@@ -684,26 +703,47 @@ def scan_source(text: str, *, where: str = "", module: str = "") -> Scan:
     if not any(spells_a_token(node) for node in all_nodes(tree)):
         return Scan()
     table = bindings(tree, module=module)
-    tries = _try_bodies(tree)
+    ladder = swallowers(tree)
     bound = _bound_opens(tree, table)
     reads: list[Read] = []
     undecided: list[str] = []
     for node in all_nodes(tree):
         if not isinstance(node, ast.Call):
             continue
-        got = _classify(node, tries, table, where, bound)
+        got = _classify(node, ladder, table, where, bound)
         if isinstance(got, Read):
             reads.append(got)
         elif got is not None:
             undecided.append(got)
-    through, escaped = _through_handles(tree, tries, table, where)
+    through, escaped = _through_handles(tree, ladder, table, where)
     reads.extend(through)
     undecided.extend(escaped)
+    return _partition(reads, undecided, tuple(_decided_out(tree, table, where)))
+
+
+def _partition(reads: list[Read], undecided: list[str], decided_out: tuple[str, ...]) -> Scan:
+    """The three buckets, and THE ORDER IS THE POLICY.
+
+    A read with a fault is reported, because a named defect is the most
+    actionable thing this walk can say. A read with no fault that it
+    could not PROVE anything about is undecided. Only a read that is both
+    fault-free and proven is cleared.
+
+    #344 round 4's option A is exactly the last sentence: for three
+    review rounds the walk answered "clear" where the honest answer was
+    "I did not look inside that construct", and each round's review found
+    more of it. The third answer never collapses into the first.
+    """
     return Scan(
-        tuple(f"{read.where}:{read.lineno} {read.expr}" for read in reads if not read.faults()),
+        tuple(
+            f"{read.where}:{read.lineno} {read.expr}"
+            for read in reads
+            if not read.faults() and not read.unproven
+        ),
         tuple(read.row() for read in reads if read.faults()),
-        tuple(undecided),
-        tuple(_decided_out(tree, table, where)),
+        tuple(undecided)
+        + tuple(read.row_unproven() for read in reads if not read.faults() and read.unproven),
+        decided_out,
     )
 
 

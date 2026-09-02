@@ -32,27 +32,14 @@ from tests.helpers.astwalk import (
     parsed,
     spells,
 )
+from tests.helpers.encodingprobe import cleared, reported, scan
 from tests.helpers.encodingwalk import (
     HANDLE_READS,
     HANDLE_SAFE,
     Scan,
-    scan_source,
     spells_a_token,
 )
 from tests.test_encoding_readers import EXPECTED_READ_SPELLINGS
-
-
-def _scan(source: str) -> Scan:
-    return scan_source(source, where="probe.py", module="probe")
-
-
-def _reported(source: str) -> tuple[str, ...]:
-    return _scan(source).reported
-
-
-def _cleared(source: str) -> tuple[str, ...]:
-    return _scan(source).clear
-
 
 # --------------------------------------------------------------------------
 # The shapes a read takes, both halves built from one row.
@@ -101,24 +88,24 @@ class TestTheWalkSeesEveryShapeOfRead:
     only one direction is checked."""
 
     @pytest.mark.parametrize(("name", "read", "consumer"), READ_FORMS)
-    def test_a_compliant_read_is_cleared(self, name: str, read: str, consumer: str) -> None:
-        found = _scan(_module(read, consumer, GOOD_KW, "(OSError, UnicodeDecodeError)"))
+    def test_a_compliant_read_iscleared(self, name: str, read: str, consumer: str) -> None:
+        found = scan(_module(read, consumer, GOOD_KW, "(OSError, UnicodeDecodeError)"))
         assert found.clear, f"{name}: a compliant read was not seen at all"
         assert not found.reported, f"{name}: a compliant read was reported: {found.reported}"
         assert not found.undecided, f"{name}: {found.undecided}"
 
     @pytest.mark.parametrize(("name", "read", "consumer"), READ_FORMS)
-    def test_a_read_that_names_no_encoding_is_reported(
+    def test_a_read_that_names_no_encoding_isreported(
         self, name: str, read: str, consumer: str
     ) -> None:
-        found = _reported(_module(read, consumer, BAD_KW, "(OSError, UnicodeDecodeError)"))
+        found = reported(_module(read, consumer, BAD_KW, "(OSError, UnicodeDecodeError)"))
         assert any("names no encoding" in row for row in found), f"{name}: not reported: {found}"
 
     @pytest.mark.parametrize(("name", "read", "consumer"), READ_FORMS)
-    def test_a_read_whose_handler_misses_the_decode_is_reported(
+    def test_a_read_whose_handler_misses_the_decode_isreported(
         self, name: str, read: str, consumer: str
     ) -> None:
-        found = _reported(_module(read, consumer, GOOD_KW, "OSError"))
+        found = reported(_module(read, consumer, GOOD_KW, "OSError"))
         assert any("UnicodeDecodeError" in row for row in found), f"{name}: not reported: {found}"
 
 
@@ -126,20 +113,20 @@ class TestTheEncodingRule:
     """Rule E: the read must name utf-8, and the walk must be able to
     prove it rather than assume it."""
 
-    def test_a_non_utf8_encoding_is_reported(self) -> None:
-        found = _reported("def f(p):\n    return p.read_text(encoding='latin-1')\n")
+    def test_a_non_utf8_encoding_isreported(self) -> None:
+        found = reported("def f(p):\n    return p.read_text(encoding='latin-1')\n")
         assert found and "latin-1" in found[0], found
 
-    def test_an_encoding_it_cannot_fold_is_reported_not_cleared(self) -> None:
+    def test_an_encoding_it_cannot_fold_is_reported_notcleared(self) -> None:
         """The clearing direction is the dangerous one. ``encoding=DEFAULT``
         may well be utf-8; this walk cannot see that, so it says so."""
-        found = _reported("def f(p, DEFAULT):\n    return p.read_text(encoding=DEFAULT)\n")
+        found = reported("def f(p, DEFAULT):\n    return p.read_text(encoding=DEFAULT)\n")
         assert found and "cannot fold" in found[0], found
 
-    def test_a_folded_encoding_expression_is_cleared(self) -> None:
+    def test_a_folded_encoding_expression_iscleared(self) -> None:
         """``folded_str`` reaches implicit concatenation and f-strings, so
         a spelling built out of pieces is still proven."""
-        assert _cleared("def f(p):\n    return p.read_text(encoding='utf' '-8')\n")
+        assert cleared("def f(p):\n    return p.read_text(encoding='utf' '-8')\n")
 
     @pytest.mark.parametrize(
         "spelling",
@@ -150,7 +137,7 @@ class TestTheEncodingRule:
         ["utf-8", "utf8", "UTF-8", "utf_8", "UTF_8", "cp65001", "utf"],
     )
     def test_every_accepted_spelling_of_utf8_clears(self, spelling: str) -> None:
-        assert _cleared(f"def f(p):\n    return p.read_text(encoding='{spelling}')\n")
+        assert cleared(f"def f(p):\n    return p.read_text(encoding='{spelling}')\n")
 
 
 class TestTheDecodeRule:
@@ -165,7 +152,7 @@ class TestTheDecodeRule:
             "def f(p):\n    try:\n        return p.read_text(encoding='utf-8')\n"
             f"    except {handler}:\n        return None\n"
         )
-        assert _cleared(source) and not _reported(source)
+        assert cleared(source) and not reported(source)
 
     @pytest.mark.parametrize(
         "handler",
@@ -183,21 +170,21 @@ class TestTheDecodeRule:
             "(OSError, KeyError)",
         ],
     )
-    def test_a_handler_that_answers_only_for_the_io_is_reported(self, handler: str) -> None:
+    def test_a_handler_that_answers_only_for_the_io_isreported(self, handler: str) -> None:
         source = (
             "def f(p):\n    try:\n        return p.read_text(encoding='utf-8')\n"
             f"    except {handler}:\n        return None\n"
         )
-        assert _reported(source), handler
+        assert reported(source), handler
 
-    def test_a_read_with_no_handler_at_all_is_cleared(self) -> None:
+    def test_a_read_with_no_handler_at_all_iscleared(self) -> None:
         """Not an offender, and saying so is a decision rather than an
         oversight: a read nothing guards claims nothing, so nothing
         escapes a promise it did not make. Twelve of ``kstrl/``'s 52 are
         this shape."""
-        assert _cleared("def f(p):\n    return p.read_text(encoding='utf-8')\n")
+        assert cleared("def f(p):\n    return p.read_text(encoding='utf-8')\n")
 
-    def test_a_handler_this_walk_cannot_name_is_reported(self) -> None:
+    def test_a_handler_this_walk_cannot_name_isreported(self) -> None:
         """``Clause.decided`` is False, and an empty name set reads
         exactly like "catches nothing", which is the worst possible
         misreading of "catches something I could not see"."""
@@ -205,7 +192,7 @@ class TestTheDecodeRule:
             "def f(p):\n    try:\n        return p.read_text(encoding='utf-8')\n"
             "    except shim.Whatever:\n        return None\n"
         )
-        found = _reported(source)
+        found = reported(source)
         assert found and "cannot name" in found[0], found
 
     def test_a_handler_named_through_an_import_alias_is_resolved(self) -> None:
@@ -217,7 +204,7 @@ class TestTheDecodeRule:
             "def f(p):\n    try:\n        return p.read_text(encoding='utf-8')\n"
             "    except (OSError, ValueError):\n        return None\n"
         )
-        assert _reported(source), "a rebound ValueError cleared the site"
+        assert reported(source), "a rebound ValueError cleared the site"
 
     def test_the_first_handler_that_answers_decides_and_not_the_innermost(self) -> None:
         """Outward from the innermost. An inner ``try`` that says nothing
@@ -234,7 +221,7 @@ class TestTheDecodeRule:
             "    except OSError:\n"
             "        return None\n"
         )
-        assert _reported(source)
+        assert reported(source)
 
     def test_an_inner_handler_that_covers_the_decode_clears_the_outer_one(self) -> None:
         """The other direction of the same rule: the decode never reaches
@@ -250,7 +237,7 @@ class TestTheDecodeRule:
             "    except OSError:\n"
             "        return None\n"
         )
-        assert _cleared(source) and not _reported(source)
+        assert cleared(source) and not reported(source)
 
     def test_a_read_in_a_def_written_inside_a_try_is_not_credited_to_it(self) -> None:
         """``own_nodes`` stops at a nested function, so a helper DEFINED
@@ -266,7 +253,7 @@ class TestTheDecodeRule:
             "    except OSError:\n"
             "        return None\n"
         )
-        assert not _reported(source)
+        assert not reported(source)
 
 
 class TestTheErrorsKeyword:
@@ -277,13 +264,13 @@ class TestTheErrorsKeyword:
     can never fire."""
 
     @pytest.mark.parametrize("errors", ["replace", "ignore", "surrogateescape"])
-    def test_a_lenient_read_under_an_os_only_handler_is_cleared(self, errors: str) -> None:
+    def test_a_lenient_read_under_an_os_only_handler_iscleared(self, errors: str) -> None:
         source = (
             "def f(p):\n    try:\n"
             f"        return p.read_text(encoding='utf-8', errors='{errors}')\n"
             "    except OSError:\n        return None\n"
         )
-        assert _cleared(source) and not _reported(source)
+        assert cleared(source) and not reported(source)
 
     @pytest.mark.parametrize("errors", ["strict", "xmlcharrefreplace", "namereplace"])
     def test_an_errors_that_does_not_spare_the_decode_is_still_strict(self, errors: str) -> None:
@@ -302,7 +289,7 @@ class TestTheErrorsKeyword:
             f"        return p.read_text(encoding='utf-8', errors='{errors}')\n"
             "    except OSError:\n        return None\n"
         )
-        assert _reported(source)
+        assert reported(source)
 
     def test_an_errors_it_cannot_fold_is_treated_as_strict(self) -> None:
         """The reporting direction. A site is cleared on a lenient value
@@ -312,7 +299,7 @@ class TestTheErrorsKeyword:
             "        return p.read_text(encoding='utf-8', errors=how)\n"
             "    except OSError:\n        return None\n"
         )
-        assert _reported(source)
+        assert reported(source)
 
 
 class TestWhatIsDecidedOutAndWhy:
@@ -323,7 +310,7 @@ class TestWhatIsDecidedOutAndWhy:
             "def f(p):\n    try:\n        h = open(p, 'rb')\n        return h.read()\n"
             "    except OSError:\n        return None\n"
         )
-        assert not _reported(source) and not _cleared(source)
+        assert not reported(source) and not cleared(source)
 
     def test_a_write_only_open_answers_for_the_encoding_but_not_the_decode(
         self,
@@ -339,9 +326,9 @@ class TestWhatIsDecidedOutAndWhy:
         succeeds.
         """
         good = "def f(p):\n    with open(p, 'w', encoding='utf-8') as h:\n        h.write('x')\n"
-        assert _cleared(good) and not _reported(good)
+        assert cleared(good) and not reported(good)
         bad = "def f(p):\n    with open(p, 'w') as h:\n        h.write('x')\n"
-        assert _reported(bad) and not _cleared(bad)
+        assert reported(bad) and not cleared(bad)
 
     def test_a_write_only_open_is_not_charged_the_decode_rule(self) -> None:
         """Under a fail-closed ``except OSError`` with nothing covering
@@ -352,23 +339,23 @@ class TestWhatIsDecidedOutAndWhy:
             "        with open(p, 'w', encoding='utf-8') as h:\n            h.write('x')\n"
             "    except OSError:\n        return None\n"
         )
-        assert _cleared(source) and not _reported(source)
+        assert cleared(source) and not reported(source)
 
     def test_a_mode_it_cannot_fold_is_undecided_rather_than_skipped(self) -> None:
         """The whole subject of #324 in one row: a walk that cannot read
         the mode must not conclude "binary, move on"."""
-        found = _scan("def f(p, mode):\n    return open(p, mode, encoding='utf-8')\n")
+        found = scan("def f(p, mode):\n    return open(p, mode, encoding='utf-8')\n")
         assert found.undecided and "does not fold" in found.undecided[0], found
 
     def test_a_callee_with_no_identifier_is_undecided(self) -> None:
-        found = _scan("def f(p, TABLE):\n    open(p)\n    return TABLE['read'](p)\n")
+        found = scan("def f(p, TABLE):\n    open(p)\n    return TABLE['read'](p)\n")
         assert any("TABLE['read']" in row for row in found.undecided), found
 
     def test_somebody_elses_open_is_decided_out_through_the_resolver(self) -> None:
         """``os.open`` returns an integer file descriptor and decodes
         nothing. Resolved, not matched on spelling."""
         source = "import os\ndef f(p):\n    return os.open(p, os.O_RDONLY)\n"
-        assert not _reported(source) and not _cleared(source)
+        assert not reported(source) and not cleared(source)
 
     def test_a_guessed_origin_does_not_decide_anything(self) -> None:
         """The one step that CLEARS on a resolution refuses a guess. The
@@ -381,7 +368,7 @@ class TestWhatIsDecidedOutAndWhy:
             "def f(mod, p):\n    try:\n        h = mod.open(p)\n        return h.read()\n"
             "    except OSError:\n        return None\n"
         )
-        found = _scan(source)
+        found = scan(source)
         assert not found.clear, "a class-body binding cleared an unrelated open()"
         # It lands UNDECIDED rather than reported, and for a second
         # reason worth naming: ``mod.open(p)`` puts ``p`` in the slot
@@ -405,8 +392,8 @@ class TestTheTwoLayersTogether:
     def test_layer_two_cannot_see_a_read_through_an_aliased_bound_method(self) -> None:
         """Measured, not assumed. ``p`` is a local the AST cannot type, so
         ``reader`` resolves to nothing and its leaf is ``reader``."""
-        assert not _reported(self.ALIASED_READ)
-        assert not _cleared(self.ALIASED_READ)
+        assert not reported(self.ALIASED_READ)
+        assert not cleared(self.ALIASED_READ)
 
     def test_layer_one_does_see_it(self) -> None:
         hits = sum(1 for node in all_nodes(ast.parse(self.ALIASED_READ)) if spells_a_token(node))
@@ -426,7 +413,7 @@ class TestTheTwoLayersTogether:
     def test_a_module_that_names_neither_token_is_not_walked(self) -> None:
         """The gate's cost, stated. A module that obtains no file text is
         not walked, and layer 1 is what answers for it."""
-        assert _scan("import json\ndef f(x):\n    return json.dumps(x)\n") == Scan()
+        assert scan("import json\ndef f(x):\n    return json.dumps(x)\n") == Scan()
 
 
 class TestTheReadBytesExclusion:
@@ -533,7 +520,7 @@ class TestAnOpenTheWalkCannotFollowIsNotCleared:
     )
     def test_an_unfollowable_handle_is_undecided(self, name: str, body: str) -> None:
         source = f"import json\ndef f(p):\n    try:\n{body}{self.HANDLER}"
-        found = _scan(source)
+        found = scan(source)
         assert not found.clear, f"{name} was CLEARED"
         assert found.undecided and "never bound to a name" in found.undecided[0], found
 
@@ -548,7 +535,7 @@ class TestAnOpenTheWalkCannotFollowIsNotCleared:
             "    def use(self):\n        try:\n            return self.h.read()\n"
             "        except OSError:\n            return None\n"
         )
-        found = _scan(source)
+        found = scan(source)
         assert not found.clear and found.undecided, found
 
     def test_a_handle_returned_out_of_its_function_is_undecided(self) -> None:
@@ -558,7 +545,7 @@ class TestAnOpenTheWalkCannotFollowIsNotCleared:
             "def use(p):\n    try:\n        return make(p).read()\n"
             "    except OSError:\n        return None\n"
         )
-        found = _scan(source)
+        found = scan(source)
         assert not found.clear and found.undecided, found
 
     @pytest.mark.parametrize(
@@ -578,7 +565,7 @@ class TestAnOpenTheWalkCannotFollowIsNotCleared:
             "import json\ndef f(p):\n    try:\n"
             f"        h = open(p, encoding='utf-8')\n{body}{self.HANDLER}"
         )
-        assert _reported(source), name
+        assert reported(source), name
 
     def test_a_lock_file_that_never_reads_still_clears(self) -> None:
         """The cost of the rule, stated. Six ``fcntl`` lock files bind a
@@ -592,7 +579,7 @@ class TestAnOpenTheWalkCannotFollowIsNotCleared:
             "        fp.seek(0)\n        fp.truncate()\n        fp.write('1')\n"
             "        fp.flush()\n"
         )
-        found = _scan(source)
+        found = scan(source)
         assert found.clear and not found.reported and not found.undecided, found
 
     def test_a_use_of_the_handle_the_walk_does_not_model_is_undecided(self) -> None:
@@ -610,7 +597,7 @@ class TestAnOpenTheWalkCannotFollowIsNotCleared:
         source = (
             "def f(p):\n    h = open(p, encoding='utf-8')\n    return h.readinto(bytearray())\n"
         )
-        found = _scan(source)
+        found = scan(source)
         assert not found.clear, found
         assert any("does not model" in row for row in found.undecided), found
         assert any("never bound to a name" in row for row in found.undecided), found
@@ -628,7 +615,7 @@ class TestAnOpenTheWalkCannotFollowIsNotCleared:
             "def f(p):\n    with open(p, encoding='utf-8') as h:\n"
             "        _read = h.read\n        return _read(64)\n"
         )
-        found = _scan(source)
+        found = scan(source)
         assert not found.clear and found.undecided, found
 
     def test_a_closure_over_the_handle_is_undecided(self) -> None:
@@ -640,7 +627,7 @@ class TestAnOpenTheWalkCannotFollowIsNotCleared:
             "def f(p):\n    h = open(p, encoding='utf-8')\n"
             "    def inner():\n        return h.read()\n    return inner\n"
         )
-        found = _scan(source)
+        found = scan(source)
         assert not found.clear and found.undecided, found
 
     def test_a_walrus_hand_over_is_charged_the_decode_rule(self) -> None:
@@ -653,7 +640,7 @@ class TestAnOpenTheWalkCannotFollowIsNotCleared:
             "        return json.load(h := open(p, encoding='utf-8'))\n"
             "    except OSError:\n        return None\n"
         )
-        assert _reported(source)
+        assert reported(source)
 
     def test_a_plain_name_bound_beside_a_dotted_one_is_undecided(self) -> None:
         """#344 round 3 finding 4. ``bound_names`` drops the dotted target
@@ -666,7 +653,7 @@ class TestAnOpenTheWalkCannotFollowIsNotCleared:
             "        h = self.g = open(p, encoding='utf-8')\n"
             "        return self.g.read()\n"
         )
-        found = _scan(source)
+        found = scan(source)
         assert not found.clear and found.undecided, found
 
     def test_the_safe_members_come_from_the_type_and_not_from_a_list(self) -> None:
@@ -709,7 +696,7 @@ class TestTheDisclosedLimits:
     @pytest.mark.xfail(strict=True, raises=AssertionError)
     def test_a_read_through_an_aliased_bound_method(self) -> None:
         blind_spot(
-            lambda source: bool(_reported(source)),
+            lambda source: bool(reported(source)),
             "def f(p):\n"
             "    reader = p.read_text\n"
             "    try:\n        return reader()\n"

@@ -211,7 +211,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "tui/session.py open(run_paths.root / 'orchestrator.log', 'a', buffering=1, encoding='",
     "verify.py (root / 'CLAUDE.md').read_text(encoding='utf-8')",
     "verify.py full.read_text(encoding='utf-8', errors='replace')",
-    "verify.py full_path.read_text(encoding='utf-8')",
     "verify.py progress_path.read_text(encoding='utf-8')",
     "workqueue.py meta_path.read_text(encoding='utf-8')",
     "workqueue.py open(lock_path, 'a+', encoding='utf-8')",
@@ -232,6 +231,36 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
 #: now answers to nothing, which is how a widened ``STDLIB_READERS`` or a
 #: newly resolvable receiver would remove a site from the guard in
 #: silence.
+#: Every read the walk can see and CANNOT PROVE anything about, keyed by
+#: module and expression. One row, and the number is the whole point.
+#:
+#: #344 took four review rounds, and rounds one to three each ended the
+#: same way: the walk cleared a shape that escaped at run time, a narrow
+#: fix landed, and the next round found more. Eight, then nine, then
+#: nineteen. Round 4 stopped patching and changed the rule instead - a
+#: site the walk cannot PROVE compliant is undecided, never cleared - and
+#: this constant is what that cost, measured rather than hoped: 85
+#: cleared with 19 known holes became 84 cleared and 1 row a reader can
+#: work through.
+#:
+#: The row is real and the reader's job is easy. ``verify.py``'s fixture
+#: read sits inside ``with tempfile.TemporaryDirectory(...)``, whose
+#: ``__exit__`` returns None and swallows nothing - but the walk does not
+#: know that, and #320's own defect can be written as
+#: ``contextlib.suppress(OSError)``, which is a ``with`` that swallows
+#: everything. The walk proves ``open`` and reads ``suppress``; a third
+#: context manager is a row here rather than a guess there.
+#:
+#: A row ARRIVING is not a failure of the code under test. It means new
+#: code put a read inside a construct nobody has read the ``__exit__``
+#: of, and somebody should.
+EXPECTED_UNDECIDED: tuple[str, ...] = (
+    "verify.py full_path.read_text(encoding='utf-8') (sits inside `with "
+    "tempfile.TemporaryDirectory(prefix='kstr`, whose __exit__ this walk "
+    "cannot prove does not swallow the decode)",
+)
+
+
 EXPECTED_DECIDED_OUT: tuple[str, ...] = (
     "atomicio.py os.open",
     "evolution.py open",
@@ -243,8 +272,8 @@ EXPECTED_DECIDED_OUT: tuple[str, ...] = (
 
 
 class TestEveryReadInThePackageIsAccountedFor:
-    """Layer 2 over ``kstrl/``: nothing reported, nothing undecided, and
-    a named inventory of everything cleared.
+    """Layer 2 over ``kstrl/``: nothing reported, a pinned undecided row,
+    and a named inventory of everything cleared.
 
     The inventory is here because ``reported == ()`` on its own is not a
     control - CLAUDE.md guard-design rule 2 - since it is also what a
@@ -252,13 +281,21 @@ class TestEveryReadInThePackageIsAccountedFor:
     Pinning the CLEARED half means a walk that stops seeing a read fails
     this test with the row it lost, which is the direction #324 records
     eleven guards failing in silently.
+
+    THREE PINS AND NO FOURTH BUCKET. Every read the walk sees is in
+    exactly one of ``EXPECTED_CLEARED_READS``, ``EXPECTED_UNDECIDED`` and
+    the reported set, and every call it decides is not a read is in
+    ``EXPECTED_DECIDED_OUT``. The undecided pin is the one #344 round 4
+    added, and it exists because the alternative was worse: for three
+    rounds the walk answered "clear" where the honest answer was "I did
+    not look inside that", and each round's review found more of it.
     """
 
-    def test_nothing_is_reported_and_nothing_is_undecided(self) -> None:
+    def test_nothing_is_reported_and_the_undecided_row_is_the_pinned_one(self) -> None:
         assert_sites(
-            reported_sites(package_scan()),
+            reported_sites(package_scan()).without_line_numbers(),
             seen=(),
-            undecided=(),
+            undecided=EXPECTED_UNDECIDED,
             message=(
                 "a text read in kstrl/ does not name utf-8, or sits under a "
                 "fail-closed OSError handler with nothing covering "
