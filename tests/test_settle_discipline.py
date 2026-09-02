@@ -13,9 +13,11 @@ The blessed wait is ``tests/helpers/settle.py``: a predicate and a
 wall-clock deadline. Wall clock rather than an iteration count, because
 on a loaded runner ``for _ in range(40)`` measures nothing.
 
-TWO LAYERS, and they are not equals. One is closed by construction. The
-other is a bespoke AST matcher of exactly the kind #324 exists to
-delete, kept only because it says which line.
+TWO LAYERS, covering different halves. One is closed by construction.
+The other is a bespoke AST matcher of exactly the kind #324 exists to
+delete. NEITHER SUBSUMES THE OTHER, and the temptation to rank them is
+answered below with a mutation rather than an opinion, because an
+earlier draft of this docstring ranked them and was measurably wrong.
 
 LAYER 1, :func:`await_sites`, is the census of the resource. A coroutine
 cannot settle without suspending, Python suspends in exactly four
@@ -32,11 +34,23 @@ already looks at.
 
 LAYER 2, :func:`settle_reads`, resolves. It says "line 341 reads
 ``banner.region.y`` after the fixed wait on line 339" where layer 1 can
-only say "this file's count moved". It is the fifth hand-rolled matcher
-in this repo, and #324 records ten logged instances of one being holed,
-two of them twice, so treat it as provisional: when
-``tests/helpers/astwalk.py`` lands under #324, rebuild it on that rather
-than extend it here.
+only say "this file's count moved". It is hand-rolled, and #324 records
+ten logged instances of such a matcher being holed, two of them twice,
+so treat it as provisional.
+
+``tests/helpers/astwalk/`` has since landed (#324, #342) and is where
+this layer belongs, but the port is NOT mechanical and the reason is the
+direction. astwalk's resolver deliberately over-reports:
+``Bindings.attributes`` says so itself, and ``Origin`` carries
+``guessed=True`` to record it, so after any ``class G: settled =
+settle.settled`` an unrelated ``x.settled(...)`` resolves to the helper.
+For a guard that FLAGS, that is free - it costs a false alarm. This
+layer CLEARS: :func:`is_enrolled` decides a read is safe BECAUSE a
+settle happened above it, so an over-match here silently blesses a read
+that nothing settled. Porting ``is_enrolled`` onto a resolver whose
+documented behaviour is to guess inverts the failure mode. Layer 3b next
+door FLAGS and so may use the wide form; that difference is deliberate
+and is why the two matchers twenty lines apart are not the same shape.
 
 THE TWO ARE NOT ORDERED, and an earlier draft of this docstring said
 they were - "layer 1 is the guard and layer 2 is a good error message".
@@ -71,8 +85,9 @@ WHAT LAYER 2 DOES NOT SEE, stated plainly rather than implied away:
 
 - app state reached through a name this module never binds from the app.
   A fixture parameter, a module-level global assigned elsewhere. Needs a
-  cross-module call graph, which is the resolution #324 exists to supply
-  once instead of five times.
+  cross-module call graph. ``tests/helpers/astwalk/`` has landed and does
+  NOT supply one: it resolves within a single module, so this miss
+  survives the rebuild described above and is work in its own right.
 - a read in a function that does no awaiting of its own. Usually that is
   correct attribution and the helper is where the fix belongs. Once in
   this tree it was a real miss, and it is worth naming:

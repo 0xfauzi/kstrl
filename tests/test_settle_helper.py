@@ -256,12 +256,35 @@ class _FakeClock:
     Patched over `settle.time`, not over `time.monotonic` itself, so
     nothing outside the helper sees a frozen clock: Textual reads the
     real one throughout.
+
+    THE FUSE IS NOT DECORATION. A fake clock only advances where the
+    test advances it, so any defect that stops the helper reaching that
+    place converts a five-second failure into an unbounded hang. The
+    first version put the runaway guard inside the stubbed `pause`,
+    which is precisely what such a defect stops calling: planting
+    `asyncio.sleep` in place of `pilot.pause` hung this file rather
+    than failing it, and a hang in CI is worse than a red. The fuse
+    lives here instead, in the one method the poll loop cannot skip,
+    and it reads REAL time so no plant can hold it still.
     """
+
+    #: Real seconds this clock may exist for while a wait is running.
+    #: Every honest test here finishes in milliseconds, so any value
+    #: that is not "a hang" will do; this one is far above the noise
+    #: and far below a CI timeout.
+    FUSE = 10.0
 
     def __init__(self) -> None:
         self.now = 0.0
+        self._real_start = time.monotonic()
 
     def monotonic(self) -> float:
+        if time.monotonic() - self._real_start > self.FUSE:
+            raise AssertionError(
+                f"the fake clock has been alive for more than {self.FUSE:g} real "
+                "seconds, so the wait is not advancing it: the helper has stopped "
+                "calling pilot.pause, and this test would otherwise hang"
+            )
         return self.now
 
 
