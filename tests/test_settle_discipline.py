@@ -189,7 +189,7 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/test_inbox.py": 4,
     "tests/test_init_wizard.py": 47,
     "tests/test_launch_session.py": 57,
-    "tests/test_settle_helper.py": 21,
+    "tests/test_settle_helper.py": 26,
     "tests/test_tui_app.py": 23,
     "tests/test_tui_config_guard.py": 17,
     "tests/test_tui_detail.py": 39,
