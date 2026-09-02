@@ -102,15 +102,21 @@ from tests.helpers import astwalk
 _NEUTRALISING = frozenset({"SURFACE_REJECTIONS", "Exception", "BaseException"})
 
 
-def guarding_handler(node: ast.Try) -> bool:
+def guarding_handler(node: ast.Try, table: astwalk.Bindings) -> bool:
     """Whether this try cannot let a config rejection escape.
 
     A clause ``astwalk`` could not name yields an empty name set and so
     does NOT neutralise, which reports the load rather than clearing it.
     That is the direction this guard is allowed to be wrong in: a
     spurious offender is a line somebody reads, a missing one is #289.
+
+    ``table`` is what makes that true of a DOTTED clause as well. Round 2
+    of #324 measured this guard clearing ``except shim.Exception`` in a
+    module that never bound ``shim``, because the leaf of a dotted name
+    was read as the name. The pre-#324 walk reported all three of those
+    shapes and the migration had quietly stopped.
     """
-    return any(clause.names & _NEUTRALISING for clause in astwalk.handler_clauses(node))
+    return any(clause.names & _NEUTRALISING for clause in astwalk.handler_clauses(node, table))
 
 
 def _load_owner(call: ast.Call, table: astwalk.Bindings) -> str | None:
@@ -181,7 +187,7 @@ def _guarded_call_ids(
     """
     guarded: set[int] = set()
     for node in astwalk.own_nodes(scope):
-        if not isinstance(node, ast.Try) or not guarding_handler(node):
+        if not isinstance(node, ast.Try) or not guarding_handler(node, table):
             continue
         for statement in node.body:
             guarded.update(

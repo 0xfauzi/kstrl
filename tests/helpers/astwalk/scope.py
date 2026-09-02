@@ -10,7 +10,7 @@ import ast
 from dataclasses import dataclass
 
 from tests.helpers.astwalk.corpus import all_nodes
-from tests.helpers.astwalk.resolve import leaf_name
+from tests.helpers.astwalk.resolve import Bindings
 
 # --- scope ----------------------------------------------------------------
 
@@ -89,24 +89,53 @@ class Clause:
     lineno: int
 
 
-def handler_clauses(node: ast.Try) -> list[Clause]:
-    """The clauses of one ``try``, IN ORDER.
+def handler_clauses(node: ast.Try, table: Bindings | None = None) -> list[Clause]:
+    """The clauses of one ``try``, IN ORDER, resolved through ``table``.
 
     Order is load-bearing: a broad clause above a narrow one makes the
     narrow one unreachable, so a guard that sorts cannot tell a correct
     ladder from a dead one. A bare ``except:`` reads as ``BaseException``,
     which is what it catches, and is not an undecidable handler.
+
+    ``table`` is what a DOTTED clause is resolved against, and leaving it
+    out means nothing dotted resolves, so every dotted clause is
+    undecided. That default is fail-closed on purpose. Round 2 of #324
+    measured the alternative: reading a dotted clause's LEAF name moved
+    ``except shim.Exception``, ``except shim.SURFACE_REJECTIONS`` and
+    ``except (ValueError, shim.Exception)`` from reported to CLEARED in
+    ``tests/test_tui_config_walk.py``, where the pre-#324 walk reported
+    all three. A migration that narrows a guard is the defect this issue
+    records, so a dotted name is only its leaf when the resolver can
+    place it. On ``kstrl/`` itself the two answers agree: all 114 dotted
+    clause parts there resolve, none of them to a neutralising name.
     """
-    return [_clause(handler) for handler in node.handlers]
+    resolver = table if table is not None else Bindings()
+    return [_clause(handler, resolver) for handler in node.handlers]
 
 
-def _clause(handler: ast.ExceptHandler) -> Clause:
+def _clause(handler: ast.ExceptHandler, table: Bindings) -> Clause:
     if handler.type is None:
         return Clause(frozenset({"BaseException"}), True, handler.lineno)
     parts = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
-    names = {leaf_name(part) for part in parts}
+    names = {_clause_name(part, table) for part in parts}
     return Clause(
         frozenset(name for name in names if name is not None),
         None not in names,
         handler.lineno,
     )
+
+
+def _clause_name(part: ast.expr, table: Bindings) -> str | None:
+    """What one clause part catches, or None when it cannot be named.
+
+    A bare ``Name`` is its own answer: nothing can rebind ``Exception``
+    for an ``except`` clause without an assignment the resolver would see.
+    A dotted name is its leaf only when the resolver can place it, so
+    ``except json.JSONDecodeError`` is ``JSONDecodeError`` and
+    ``except shim.Exception`` in a module that never bound ``shim`` is
+    nothing at all.
+    """
+    if isinstance(part, ast.Name):
+        return part.id
+    origin = table.resolve(part)
+    return None if origin is None else origin.rsplit(".", 1)[-1]

@@ -288,7 +288,7 @@ def _guarded_parses(
         if not found:
             continue
         covered |= found
-        entries.append((node.lineno, tuple(handler_clauses(node))))
+        entries.append((node.lineno, tuple(handler_clauses(node, table))))
     return entries, covered
 
 

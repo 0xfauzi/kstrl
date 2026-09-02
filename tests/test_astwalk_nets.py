@@ -358,10 +358,16 @@ class TestScopeAttribution:
 # --- the except ladder ----------------------------------------------------
 
 
-def clauses(source: str) -> list[astwalk.Clause]:
+def clauses(source: str, *, resolved: bool = True) -> list[astwalk.Clause]:
+    """The ladder of the first ``try`` in ``source``.
+
+    ``resolved=False`` is the fail-closed default a caller gets by leaving
+    the table out, and it is a different answer for a dotted clause.
+    """
     tree = astwalk.parse(source)
     block = next(node for node in ast.walk(tree) if isinstance(node, ast.Try))
-    return astwalk.handler_clauses(block)
+    table = astwalk.bindings(tree) if resolved else None
+    return astwalk.handler_clauses(block, table)
 
 
 class TestTheExceptLadder:
@@ -378,9 +384,31 @@ class TestTheExceptLadder:
         source = "try:\n    pass\nexcept (ValueError, OSError):\n    pass\n"
         assert sorted(clauses(source)[0].names) == ["OSError", "ValueError"]
 
-    def test_a_dotted_type_is_named_by_its_leaf(self) -> None:
-        source = "try:\n    pass\nexcept tomllib.TOMLDecodeError:\n    pass\n"
-        assert clauses(source)[0].names == frozenset({"TOMLDecodeError"})
+    def test_a_dotted_type_the_resolver_can_place_is_named_by_its_leaf(self) -> None:
+        source = "import tomllib\ntry:\n    pass\nexcept tomllib.TOMLDecodeError:\n    pass\n"
+        assert clauses(source)[0] == astwalk.Clause(frozenset({"TOMLDecodeError"}), True, 4)
+
+    def test_a_dotted_type_the_resolver_cannot_place_is_not_its_leaf(self) -> None:
+        """The narrowing round 2 of #324 caught, pinned.
+
+        Reading a dotted clause's leaf as its name moved three shapes in
+        ``tests/test_tui_config_walk.py`` from reported to CLEARED, and
+        the pre-#324 walk reported all three: nothing in the module binds
+        ``shim``, so ``shim.Exception`` is not the builtin and clearing a
+        config load on it is #289 coming back.
+        """
+        source = "try:\n    pass\nexcept shim.Exception:\n    pass\n"
+        assert clauses(source)[0] == astwalk.Clause(frozenset(), False, 3)
+
+    def test_a_tuple_mixing_a_bare_name_with_an_unplaceable_one_is_undecided(self) -> None:
+        source = "try:\n    pass\nexcept (ValueError, shim.Exception):\n    pass\n"
+        assert clauses(source)[0] == astwalk.Clause(frozenset({"ValueError"}), False, 3)
+
+    def test_leaving_the_table_out_resolves_nothing_dotted(self) -> None:
+        """The default is fail-closed, so a caller who forgot the table
+        reports a dotted clause rather than clearing on it."""
+        source = "import tomllib\ntry:\n    pass\nexcept tomllib.TOMLDecodeError:\n    pass\n"
+        assert clauses(source, resolved=False)[0] == astwalk.Clause(frozenset(), False, 4)
 
     def test_a_bare_except_is_baseexception_and_it_is_decided(self) -> None:
         """It is not the same thing as an undecidable handler, and a guard
