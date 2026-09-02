@@ -1438,10 +1438,13 @@ class TestSubprocessTimeoutAudit:
         cleanliness. ``astwalk.calls_to`` partitions instead, and this
         pins the half that is not an answer.
 
-        Twelve rows, none of them a subprocess. Four are dispatch tables
-        with no identifier for the walk to compare, four are a Textual
-        ``App.run`` on a local, and four are an agent adapter reached
-        through a parameter or an attribute. Adding a row is not
+        Ten rows once the line numbers come off, none of them a
+        subprocess. Four are dispatch tables with no identifier for the
+        walk to compare, three are a Textual ``App.run`` on a local, and
+        three are an agent adapter reached through a parameter or an
+        attribute. Keyed by module and expression, because a line number
+        here churns on any edit above the site and none of those diffs is
+        this test's subject. Adding a row is not
         forbidden, it is the point: the diff that adds one is where
         somebody says why a spawn-shaped call cannot be decided.
         """
@@ -1456,23 +1459,22 @@ class TestSubprocessTimeoutAudit:
             )
             undecided += found.undecided
 
-        assert sorted(undecided) == [
-            "agents/logging.py:34 self._agent.run",
-            "cli.py:3361 app.run",
-            "cli.py:3476 app.run",
-            "decompose.py:1886 agent.run",
-            "decompose.py:402 agent.run",
-            "gateparse.py:111 TOOL_PARSERS[chosen]",
-            "gateparse.py:113 TOOL_PARSERS[name]",
-            "loop.py:750 agent.run",
-            "tui/app.py:363 initial_screens_for_kind(kind, observe_only=True)",
-            "tui/app.py:435 initial_screens_for_kind(kind, observe_only=False)",
-            "tui/embed.py:157 app.run",
-            "tui/home.py:47 app.run",
+        rows = astwalk.Sites((), tuple(undecided)).without_line_numbers().undecided
+        assert list(rows) == [
+            "agents/logging.py self._agent.run",
+            "cli.py app.run",
+            "decompose.py agent.run",
+            "gateparse.py TOOL_PARSERS[chosen]",
+            "gateparse.py TOOL_PARSERS[name]",
+            "loop.py agent.run",
+            "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
+            "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
+            "tui/embed.py app.run",
+            "tui/home.py app.run",
         ], (
             "the set of spawn-shaped calls this walk cannot decide changed. A new "
             "row is a call the audit above is silent about, so say why it cannot be "
-            f"resolved. Found: {sorted(undecided)}"
+            f"resolved. Found: {list(rows)}"
         )
 
     def test_no_allowlisted_module_waits_without_a_deadline(self) -> None:

@@ -292,11 +292,14 @@ class TestAssertSitesWillNotTakeHalfAnAnswer:
 #:
 #: Adding a row is not forbidden, it is the point: the diff that adds one
 #: is where somebody says why a call is dispatched through a value.
+#: Keyed by module and expression, not by line: rebasing this branch onto
+#: a moved main failed this pin four times on line numbers alone, and none
+#: of those diffs was about a dispatch table.
 OPAQUE_CALLEES = (
-    "gateparse.py:111 TOOL_PARSERS[chosen]",
-    "gateparse.py:113 TOOL_PARSERS[name]",
-    "tui/app.py:363 initial_screens_for_kind(kind, observe_only=True)",
-    "tui/app.py:435 initial_screens_for_kind(kind, observe_only=False)",
+    "gateparse.py TOOL_PARSERS[chosen]",
+    "gateparse.py TOOL_PARSERS[name]",
+    "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
+    "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
 )
 
 
@@ -323,7 +326,8 @@ class TestTheWalkAgainstTheRealPackage:
         That number is what makes the undecided half something a guard can
         pin rather than a list it would be silenced for printing.
         """
-        assert package_calls(frozenset({TARGET})).undecided == OPAQUE_CALLEES
+        found = package_calls(frozenset({TARGET})).without_line_numbers()
+        assert found.undecided == OPAQUE_CALLEES
 
     def test_the_one_pgid_lookup_is_found_where_procgroup_declares_it(self) -> None:
         """Anti-vacuity against the real tree: without this the test above
@@ -333,9 +337,9 @@ class TestTheWalkAgainstTheRealPackage:
     def test_the_spawn_sweep_reproduces_the_timeout_audit_count(self) -> None:
         """68 spawn sites, the same number the private resolver in
         ``tests/test_timeout_enforcement.py`` found before it was
-        migrated, plus twelve calls this walk will not pretend to have
-        decided. Twelve rows is the price of the rule, and it is what a
-        guard pins instead of being silently narrower than it sounds."""
+        migrated, plus ten expressions this walk will not pretend to have
+        decided. Ten rows is the price of the rule, and it is what a guard
+        pins instead of being silently narrower than it sounds."""
         spawns = frozenset(
             {
                 "subprocess.run",
@@ -347,21 +351,22 @@ class TestTheWalkAgainstTheRealPackage:
         )
         found = package_calls(spawns)
         assert len(found.seen) == 68
-        assert sorted(found.undecided) == sorted(
-            [
-                *OPAQUE_CALLEES,
-                # A Textual App bound to a local, four times.
-                "cli.py:3361 app.run",
-                "cli.py:3476 app.run",
-                "tui/embed.py:157 app.run",
-                "tui/home.py:47 app.run",
-                # An agent adapter reached through a parameter or an
-                # attribute. Not a subprocess, and the walk cannot say so.
-                "agents/logging.py:34 self._agent.run",
-                "decompose.py:402 agent.run",
-                "decompose.py:1886 agent.run",
-                "loop.py:750 agent.run",
-            ]
+        assert found.without_line_numbers().undecided == tuple(
+            sorted(
+                [
+                    *OPAQUE_CALLEES,
+                    # A Textual App bound to a local.
+                    "cli.py app.run",
+                    "tui/embed.py app.run",
+                    "tui/home.py app.run",
+                    # An agent adapter reached through a parameter or an
+                    # attribute. Not a subprocess, and the walk cannot
+                    # say so.
+                    "agents/logging.py self._agent.run",
+                    "decompose.py agent.run",
+                    "loop.py agent.run",
+                ]
+            )
         )
 
 

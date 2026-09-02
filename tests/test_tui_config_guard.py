@@ -77,6 +77,7 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "autonomy.py": 1,
     "config_preflight.py": 2,  # the rule itself, and its docstring
     "contract.py": 1,
+    "decisions.py": 1,  # DecisionRegisterError, added by #332
     "decompose.py": 1,
     "factory.py": 3,  # one subclass, two bare raises
     "git.py": 1,

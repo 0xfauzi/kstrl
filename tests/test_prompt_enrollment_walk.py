@@ -277,6 +277,9 @@ def _spells_a_prompt_name(node: ast.AST) -> bool:
 #: exempt scaffolding templates and their scaffold-ledger rows.
 EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     "cli.py": 2,  # _ROOT_FROM_PROMPT, which is a set of command names
+    # #332 landed while this migration was in flight: the version
+    # constant and the body of DECISIONS_CONTEXT_PROMPT, both enrolled.
+    "decisions.py": 2,
     "decompose.py": 2,
     "git.py": 4,
     "init_cmd.py": 12,

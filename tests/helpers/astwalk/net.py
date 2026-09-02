@@ -151,6 +151,35 @@ class Sites:
         """
         return Sites(tuple(sorted(self.seen)), tuple(sorted(self.undecided)))
 
+    def without_line_numbers(self) -> Sites:
+        """The same answer keyed by module and expression, deduplicated.
+
+        The other half of what both lanes asked for, and the one that
+        matters more: a pin carrying a line number fails when an unrelated
+        edit lands above the site, which trains a reader to update the
+        number without reading the row. Both lanes wrote a local copy of
+        this, and rebasing this branch onto a moved main failed four pins
+        on line numbers alone, none of which was the guard's subject.
+
+        Use it for a package-wide inventory. Keep the line numbers where
+        the site is the answer, as ``tests/test_toml_readers.py`` does for
+        two parses on one line.
+        """
+        return Sites(_dropped(self.seen), _dropped(self.undecided))
+
+
+def _dropped(rows: Iterable[str]) -> tuple[str, ...]:
+    """Rows without their line number. ``a/b.py:12 x`` and ``12 x`` both
+    lose the number; a row that never carried one is returned as it is."""
+    out = set()
+    for row in rows:
+        head, _, rest = row.partition(" ")
+        if head.isdigit():
+            out.add(rest or head)
+        else:
+            out.add(f"{head.rsplit(':', 1)[0]} {rest}".rstrip())
+    return tuple(sorted(out))
+
 
 def assert_sites(
     found: Sites,
