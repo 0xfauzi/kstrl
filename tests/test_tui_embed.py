@@ -38,6 +38,7 @@ from kstrl.tui.screens.component import ComponentScreen
 from kstrl.tui.screens.options import OptionsModal
 from kstrl.tui.screens.overview import OverviewScreen
 from kstrl.tui.screens.quit import QuitModal
+from tests.helpers.settle import drained, settled
 
 
 def _write_minimal_run(root: Path, run_id: str) -> Path:
@@ -176,16 +177,28 @@ class TestEmbeddedApp:
             orchestrator=handle,
         )
         async with app.run_test(size=(120, 40)) as pilot:
-            deadline = time.monotonic() + 5
-            while not isinstance(app.screen, CheckpointModal):
-                await pilot.pause(0.05)
-                assert time.monotonic() < deadline, "modal never opened"
+            # The hand-rolled spins this replaces had no deadline of
+            # their own beyond an assert per lap; `settled` bounds the
+            # wait and names what never happened.
+            await settled(
+                pilot,
+                lambda: isinstance(app.screen, CheckpointModal),
+                what="the orchestrator's request to open the checkpoint modal",
+            )
             await pilot.press("a")
-            deadline = time.monotonic() + 5
-            while not handle.done():
-                await pilot.pause(0.05)
-                assert time.monotonic() < deadline, "orchestrator stuck"
-            await pilot.pause(0.6)  # _check_orchestrator interval
+            await settled(
+                pilot,
+                lambda: handle.done(),
+                what="the answered checkpoint to unblock the orchestrator",
+            )
+            # Was a 0.6s sleep for the _check_orchestrator interval. Any
+            # exit code settles this, so exiting with the WRONG one
+            # still fails on the assertion below.
+            await settled(
+                pilot,
+                lambda: app.return_value is not None,
+                what="the finished orchestrator to exit the app",
+            )
         assert decisions == [0]
         assert app.return_value == 0
 
@@ -206,16 +219,33 @@ class TestEmbeddedApp:
             orchestrator=handle,
         )
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause()
+            await settled(
+                pilot,
+                lambda: isinstance(app.screen, OverviewScreen),
+                what="the embedded board to come up",
+            )
+            board = app.screen
             await pilot.press("q")
-            await pilot.pause()
+            # Weaker than the assertion: any screen over the board
+            # settles it, so opening the wrong one fails on the
+            # isinstance with its own message.
+            await settled(
+                pilot,
+                lambda: app.screen is not board,
+                what="q to open a screen over the board",
+            )
             assert isinstance(app.screen, QuitModal)
             await pilot.press("y")
-            deadline = time.monotonic() + 5
-            while not handle.done():
-                await pilot.pause(0.05)
-                assert time.monotonic() < deadline
-            await pilot.pause(0.6)
+            await settled(
+                pilot,
+                lambda: handle.done(),
+                what="the confirmed quit to release the orchestrator",
+            )
+            await settled(
+                pilot,
+                lambda: app.return_value is not None,
+                what="the stopped orchestrator to exit the app",
+            )
         assert stop.is_set()
         assert "TUI" in stop.reason
         assert app.return_value == 130
@@ -235,11 +265,25 @@ class TestEmbeddedApp:
             orchestrator=handle,
         )
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause()
+            await settled(
+                pilot,
+                lambda: isinstance(app.screen, OverviewScreen),
+                what="the embedded board to come up",
+            )
             await pilot.press("q")
-            await pilot.pause()
+            # "n" has to reach the quit prompt, so the prompt being up
+            # is the precondition for the press, not a pause count.
+            await settled(
+                pilot,
+                lambda: isinstance(app.screen, QuitModal),
+                what="q to open the quit prompt",
+            )
             await pilot.press("n")
-            await pilot.pause()
+            # No predicate can serve here: the CORRECT outcome of
+            # declining is that nothing changes. `drained` observes the
+            # decline being handled instead of guessing how long it
+            # takes.
+            await drained(pilot, app, what="the declined quit to be handled")
             assert not stop.is_set()
             assert not handle.done()
             # Now actually stop so the thread does not leak.
@@ -264,21 +308,34 @@ class TestEmbeddedApp:
             orchestrator=handle,
         )
         async with app.run_test(size=(120, 40)) as pilot:
-            deadline = time.monotonic() + 5
-            while not isinstance(app.screen, CheckpointModal):
-                await pilot.pause(0.05)
-                assert time.monotonic() < deadline
+            await settled(
+                pilot,
+                lambda: isinstance(app.screen, CheckpointModal),
+                what="the orchestrator's request to open the checkpoint modal",
+            )
             await pilot.press("escape")  # leave pending
-            await pilot.pause()
+            await settled(
+                pilot,
+                lambda: not isinstance(app.screen, CheckpointModal),
+                what="escape to close the modal and leave it pending",
+            )
+            board = app.screen
             assert not handle.done()  # orchestrator still blocked
             await pilot.press("c")  # reopen
-            await pilot.pause()
+            # Weaker than the assertion: reopening ANYTHING settles it,
+            # so reopening the wrong screen fails on the isinstance.
+            await settled(
+                pilot,
+                lambda: app.screen is not board,
+                what="c to reopen a screen over the board",
+            )
             assert isinstance(app.screen, CheckpointModal)
             await pilot.press("t")  # retry
-            deadline = time.monotonic() + 5
-            while not handle.done():
-                await pilot.pause(0.05)
-                assert time.monotonic() < deadline
+            await settled(
+                pilot,
+                lambda: handle.done(),
+                what="the retry answer to unblock the orchestrator",
+            )
         assert decisions == [2]
 
     async def test_generic_prompt_uses_request_labels_and_valid_choices(
@@ -299,16 +356,35 @@ class TestEmbeddedApp:
         )
         results: list[int | None] = []
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause()
             app.push_screen(CheckpointModal(request), results.append)
-            await pilot.pause()
+            # `settled` rather than `mounted` because the assertion is
+            # about ALL the buttons and their order, and `mounted`
+            # returns the first breadth-first match. Not, as this said
+            # before a /simplify pass checked it, because `query_one`
+            # would raise `TooManyMatches`: in textual 8.2.8 that comes
+            # from `query_exactly_one`, and `query_one` raises only
+            # `NoMatches`, `WrongType` and `InvalidQueryFormat`. Waiting
+            # for the buttons to exist at all is weaker than the labels
+            # asserted below, which is the point.
+            await settled(
+                pilot,
+                lambda: app.screen.query("Button"),
+                what="the modal's option buttons to mount",
+            )
             labels = [button.label.plain for button in app.screen.query("Button")]
             assert labels == ["Continue (1)", "Quit (2)"]
             await pilot.press("t")
-            await pilot.pause()
+            # "t" is out of range for a 2-option request, so the CORRECT
+            # outcome is that nothing changes: there is no new state to
+            # wait for, only the keypress to be handled.
+            await drained(pilot, app.screen, what="the out-of-range key to be handled")
             assert isinstance(app.screen, CheckpointModal)
             await pilot.press("2")
-            await pilot.pause()
+            await settled(
+                pilot,
+                lambda: results,
+                what="the second option to dismiss the modal with a choice",
+            )
 
         assert results == [1]
 
@@ -459,11 +535,22 @@ class TestScreenFactory:
             ],
         )
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause()
+            # Weaker than the assertions, which are about WHICH screens
+            # and in what order: the wait is only that the factory's two
+            # screens are on the stack above Textual's default one.
+            await settled(
+                pilot,
+                lambda: len(app.screen_stack) >= 3,
+                what="the factory's screen stack to be pushed",
+            )
             assert isinstance(app.screen, ComponentScreen)
             assert app.screen.component_id == "comp-a"
             await pilot.press("escape")
-            await pilot.pause()
+            await settled(
+                pilot,
+                lambda: not isinstance(app.screen, ComponentScreen),
+                what="escape to pop the detail screen",
+            )
             assert isinstance(app.screen, OverviewScreen)
 
 
@@ -490,20 +577,29 @@ class TestOptionsModal:
             orchestrator=handle,
         )
         async with app.run_test(size=(120, 40)) as pilot:
-            deadline = time.monotonic() + 5
-            while not isinstance(app.screen, OptionsModal):
-                await pilot.pause(0.05)
-                assert time.monotonic() < deadline, "modal never opened"
+            await settled(
+                pilot,
+                lambda: isinstance(app.screen, OptionsModal),
+                what="the confirm request to open the options modal",
+            )
             await pilot.press("3")  # out of range: still open, unresolved
-            await pilot.pause()
+            # The CORRECT outcome of an out-of-range digit is that
+            # nothing happens, so there is no new state to wait for:
+            # `drained` waits for the keypress to have been handled.
+            await drained(pilot, app.screen, what="the out-of-range digit to be handled")
             assert isinstance(app.screen, OptionsModal)
             assert not decisions
             await pilot.press("2")
-            deadline = time.monotonic() + 5
-            while not handle.done():
-                await pilot.pause(0.05)
-                assert time.monotonic() < deadline, "core stuck"
-            await pilot.pause(0.6)
+            await settled(
+                pilot,
+                lambda: handle.done(),
+                what="the answered confirm to unblock the core",
+            )
+            await settled(
+                pilot,
+                lambda: app.return_value is not None,
+                what="the finished core to exit the app",
+            )
         assert decisions == [1]
         assert app.return_value == 0
 
@@ -525,21 +621,40 @@ class TestOptionsModal:
             orchestrator=handle,
         )
         async with app.run_test(size=(120, 40)) as pilot:
-            deadline = time.monotonic() + 5
-            while not isinstance(app.screen, OptionsModal):
-                await pilot.pause(0.05)
-                assert time.monotonic() < deadline, "modal never opened"
+            await settled(
+                pilot,
+                lambda: isinstance(app.screen, OptionsModal),
+                what="the confirm request to open the options modal",
+            )
             await pilot.press("escape")
-            await pilot.pause()
+            # This one coincides with the assertion below by nature -
+            # escape closing the modal IS the claim - so the `what`
+            # reads as that assertion's failure message.
+            await settled(
+                pilot,
+                lambda: not isinstance(app.screen, OptionsModal),
+                what="escape to close the modal and leave the request pending",
+            )
             assert not isinstance(app.screen, OptionsModal)
             assert not handle.done()  # the core is still waiting
+            board = app.screen
             await pilot.press("c")
-            await pilot.pause()
+            # Weaker than the assertion: reopening ANYTHING settles it.
+            await settled(
+                pilot,
+                lambda: app.screen is not board,
+                what="c to reopen a screen over the board",
+            )
             assert isinstance(app.screen, OptionsModal)
             await pilot.press("1")
-            deadline = time.monotonic() + 5
-            while not handle.done():
-                await pilot.pause(0.05)
-                assert time.monotonic() < deadline, "core stuck"
-            await pilot.pause(0.6)
+            await settled(
+                pilot,
+                lambda: handle.done(),
+                what="the answered confirm to unblock the core",
+            )
+            await settled(
+                pilot,
+                lambda: app.return_value is not None,
+                what="the finished core to exit the app",
+            )
         assert decisions == [0]

@@ -22,6 +22,7 @@ from tests.helpers.fake_run import (
     write_fake_run,
     write_fake_understand_run,
 )
+from tests.helpers.settle import mounted, settled
 
 CONVENTION_PROP = """# PROP-001: Pin versions
 **Type**: computational
@@ -144,6 +145,10 @@ class TestHomeSummariesPilot:
         self,
         tmp_path: Path,
     ) -> None:
+        """The cells are filled by a thread worker, so the wait is on
+        the screen's own record of what that worker posted. The handler
+        sets `_summaries` before it writes any of the cells read below,
+        which keeps the wait weaker than every assertion here."""
         write_fake_run(tmp_path, FakeRunSpec(components=2))
         proposals_dir = tmp_path / ".kstrl" / "proposals"
         proposals_dir.mkdir(parents=True)
@@ -151,18 +156,16 @@ class TestHomeSummariesPilot:
 
         app = KstrlTuiApp(root_dir=tmp_path, mode=Mode.HOME, poll_interval=0.05)
         async with app.run_test(size=(130, 40)) as pilot:
-            deadline = time.monotonic() + 5
-            while True:
-                await pilot.pause(0.1)
-                stats = str(
-                    app.screen.query_one("#home-stats").content,
-                )
-                if "last run" in stats:
-                    break
-                assert time.monotonic() < deadline, "summaries never landed"
+            stats_widget = await mounted(pilot, lambda: app.screen, "#home-stats")
+            table = await mounted(pilot, lambda: app.screen, "#home-runs")
+            await settled(
+                pilot,
+                lambda: app.screen._summaries,
+                what="the summaries worker to land (summaries never landed)",
+            )
+            stats = str(stats_widget.content)
             assert "✓ done 2/2" in stats
             assert "proposal(s) pending" in stats
-            table = app.screen.query_one("#home-runs")
             row = table.get_row_at(0)  # type: ignore[attr-defined]
             cells = " ".join(str(cell) for cell in row)
             assert "2/2" in cells
