@@ -16,6 +16,7 @@ import pytest
 from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.widgets import component_table
 from tests.helpers.fake_run import FakeRunSpec, write_fake_run
+from tests.helpers.settle import drained, mounted
 
 SIZE = (120, 36)
 
@@ -94,7 +95,17 @@ def test_component_detail_snapshot(
 
     async def open_detail(pilot: Any) -> None:
         pilot.app.open_component("comp-a")
-        await pilot.pause()
+        # snap_compare captures the SVG AFTER this callback returns, so
+        # a half-built screen here is a snapshot mismatch that reads as
+        # a design regression. compose makes the transcript queryable
+        # before the screen's own on_mount fills the header from the
+        # store, so the mount is not enough on its own.
+        await mounted(pilot, lambda: pilot.app.screen, "#transcript")
+        await drained(
+            pilot,
+            pilot.app.screen,
+            what="the detail screen's on_mount to fill it from the store",
+        )
 
     assert snap_compare(
         _app(root, run_dir),

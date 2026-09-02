@@ -22,6 +22,7 @@ from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.bridge import start_command_thread
 from kstrl.tui.screens.options import OptionsModal
 from kstrl.ui.plain import PlainUI
+from tests.helpers.settle import settled
 from tests.test_feature_cmd import ScriptedChannel, StubAgent, _params
 
 
@@ -356,17 +357,27 @@ class TestFeatureEmbeddedGate:
                 orchestrator=handle,
             )
             async with app.run_test(size=(120, 40)) as pilot:
-                deadline = time.monotonic() + 5
-                while not isinstance(app.screen, OptionsModal):
-                    await pilot.pause(0.05)
-                    assert time.monotonic() < deadline, "gate never opened"
+                await settled(
+                    pilot,
+                    lambda: isinstance(app.screen, OptionsModal),
+                    what="the gate to open the options modal",
+                )
                 assert "confirm implementation start" in (app.screen.request.header)
                 await pilot.press("1")
-                deadline = time.monotonic() + 5
-                while not handle.done():
-                    await pilot.pause(0.05)
-                    assert time.monotonic() < deadline, "flow stuck"
-                await pilot.pause(0.6)
+                await settled(
+                    pilot,
+                    lambda: handle.done(),
+                    what="the answered gate to let the feature flow finish",
+                )
+                # _check_orchestrator runs on a 0.5s interval and calls
+                # App.exit, which is what sets return_value; the old
+                # 0.6s pause was a guess at that interval. "Recorded at
+                # all" is weaker than the assertion that it is 0.
+                await settled(
+                    pilot,
+                    lambda: app.return_value is not None,
+                    what="the app to record the orchestrator's exit code",
+                )
             assert app.return_value == 0
             assert handle.exit_code == 0
         finally:

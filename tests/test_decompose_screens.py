@@ -26,6 +26,7 @@ from tests.helpers.fake_run import (
     write_fake_decompose_run,
     write_fake_run,
 )
+from tests.helpers.settle import mounted, settled
 
 
 class TestComputeTiers:
@@ -144,9 +145,19 @@ class TestDecomposeScreen:
         run_dir = write_fake_decompose_run(tmp_path, attempts=2)
         app = _decompose_app(tmp_path, run_dir)
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause(0.2)
+            table = await mounted(pilot, lambda: app.screen, DagTable)
+            # One `refresh_state` paints the DAG, both strips and the
+            # summary, so rows in the table are evidence the whole pass
+            # ran and every read below is settled. This one condition
+            # does coincide with the row assertion just under it: an
+            # empty table then reports itself as "the DAG table never
+            # rendered the plan's rows", which is the better message.
+            await settled(
+                pilot,
+                lambda: table.rows,
+                what="the DAG table to render the plan's rows",
+            )
             assert isinstance(app.screen, DecomposeScreen)
-            table = app.screen.query_one(DagTable)
             assert list(table.rows) != []
             row_keys = {key.value for key in table.rows}
             assert row_keys == {"database", "api"}  # architect excluded
@@ -183,8 +194,15 @@ class TestDecomposeScreen:
         run_dir = write_fake_decompose_run(tmp_path, components=("architect", "api"))
         app = _decompose_app(tmp_path, run_dir)
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause(0.2)
-            table = app.screen.query_one(DagTable)
+            table = await mounted(pilot, lambda: app.screen, DagTable)
+            # Weaker than the assertion on purpose: with the defect back
+            # the table still has the `api` row, so the wait ends and
+            # the missing `architect` row fails below rather than here.
+            await settled(
+                pilot,
+                lambda: table.rows,
+                what="the DAG table to render the plan's rows",
+            )
             assert {key.value for key in table.rows} == {"architect", "api"}
 
     async def test_a_pre_281_run_dir_still_renders_as_the_run_it_was(
@@ -211,7 +229,16 @@ class TestDecomposeScreen:
         )
         app = _decompose_app(tmp_path, run_dir)
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause(0.2)
+            table = await mounted(pilot, lambda: app.screen, DagTable)
+            # The DAG, both strips and the summary are painted by one
+            # `refresh_state` call, so rows in the table are evidence
+            # that the pass which fills the strips has run. Weaker than
+            # every assertion below, none of which is about a row count.
+            await settled(
+                pilot,
+                lambda: table.rows,
+                what="the DAG table to render the plan's rows",
+            )
             screen = app.screen
             assert isinstance(screen, DecomposeScreen)
 
@@ -228,7 +255,6 @@ class TestDecomposeScreen:
 
             # The pseudo-row is still filtered, under the key THIS dir
             # used rather than the one the constant now names.
-            table = screen.query_one(DagTable)
             assert {key.value for key in table.rows} == {"database", "api"}
 
             # The transcript tails the key the dir actually wrote.
@@ -250,9 +276,31 @@ class TestDecomposeScreen:
         )
         app = _decompose_app(tmp_path, run_dir)
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause(0.2)
+            # A halted run has no plan, so the DAG stays empty here and
+            # the readiness proof is the screen being composed at all,
+            # plus the app's own record of the issues the triage screen
+            # reads on mount. Pressing `i` before that fold lands would
+            # open a triage screen over an empty state.
+            await mounted(pilot, lambda: app.screen, DagTable)
+            await settled(
+                pilot,
+                lambda: app.store.state.spec_issues,
+                what="the run's spec issues to fold out of the event stream",
+            )
             await pilot.press("i")
-            await pilot.pause(0.1)
+            # By id, not by class: `DagTable` IS a `DataTable`, so a
+            # class selector matches the decompose screen's own table
+            # while the triage screen is still being pushed, and the
+            # wait would then be satisfied by the wrong widget.
+            issues = await mounted(pilot, lambda: app.screen, "#triage-table")
+            # `_refresh` decides the banner and then fills the table, so
+            # a row is evidence the decision has been made. Weaker than
+            # the decision itself, which the assertions below own.
+            await settled(
+                pilot,
+                lambda: issues.row_count,
+                what="the triage table to render the run's spec issues",
+            )
             triage = app.screen
             assert isinstance(triage, SpecTriageScreen)
             banner = triage.query_one("#triage-banner")
@@ -269,10 +317,23 @@ class TestDecomposeScreen:
         run_dir = write_fake_decompose_run(tmp_path, attempts=1)
         app = _decompose_app(tmp_path, run_dir)
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause(0.2)
+            table = await mounted(pilot, lambda: app.screen, DagTable)
+            # Rows prove the screen has already served one refresh, so
+            # `ready` was True with the header still present - which is
+            # the state this test then breaks.
+            await settled(
+                pilot,
+                lambda: table.rows,
+                what="the DAG table to render the plan's rows",
+            )
             screen = app.screen
             assert isinstance(screen, DecomposeScreen)
             await screen.query_one(RunHeader).remove()
+            await settled(
+                pilot,
+                lambda: not screen.query(RunHeader),
+                what="the run header to leave the screen",
+            )
 
             screen.refresh_state(app.store.state, None)
             screen.tick_ages(app.store.state)
@@ -284,9 +345,24 @@ class TestDecomposeScreen:
         run_dir = write_fake_decompose_run(tmp_path, blockers=1, minors=1)
         app = _decompose_app(tmp_path, run_dir)
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause(0.2)
+            # As in the pre-#281 halted test: the screen has to be up to
+            # take the key, and the issues have to have folded before
+            # the triage screen reads them on mount.
+            await mounted(pilot, lambda: app.screen, DagTable)
+            await settled(
+                pilot,
+                lambda: app.store.state.spec_issues,
+                what="the run's spec issues to fold out of the event stream",
+            )
             await pilot.press("i")
-            await pilot.pause()
+            # By id: `DagTable` is a `DataTable` too, so the class
+            # selector can match the screen this one is replacing.
+            issues = await mounted(pilot, lambda: app.screen, "#triage-table")
+            await settled(
+                pilot,
+                lambda: issues.row_count,
+                what="the triage table to render the run's spec issues",
+            )
             assert isinstance(app.screen, SpecTriageScreen)
             banner = app.screen.query_one("#triage-banner")
             assert banner.display
@@ -313,16 +389,31 @@ class TestDecomposeScreen:
             assert isinstance(location_cell, Text)
             assert location_cell.plain.startswith("[link=")
             await pilot.press("escape")
-            await pilot.pause()
+            # Waiting for the triage screen to go is weaker than the
+            # assertion that what is underneath is the decompose
+            # screen: popping two screens satisfies this and still
+            # fails below.
+            await settled(
+                pilot,
+                lambda: not isinstance(app.screen, SpecTriageScreen),
+                what="escape to pop the triage screen",
+            )
             assert isinstance(app.screen, DecomposeScreen)
 
     async def test_escape_pops_to_overview(self, tmp_path: Path) -> None:
         run_dir = write_fake_decompose_run(tmp_path)
         app = _decompose_app(tmp_path, run_dir)
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause(0.2)
+            await mounted(pilot, lambda: app.screen, DagTable)
             await pilot.press("escape")
-            await pilot.pause()
+            # Weaker than the assertion: any pop satisfies this, and
+            # landing somewhere other than the overview still fails on
+            # the line below.
+            await settled(
+                pilot,
+                lambda: not isinstance(app.screen, DecomposeScreen),
+                what="escape to pop the decompose screen",
+            )
             assert isinstance(app.screen, OverviewScreen)
 
 

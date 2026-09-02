@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 import tomllib
 from pathlib import Path
 from threading import Event
@@ -17,12 +16,14 @@ from kstrl.init_wizard import (
     plan_scaffold,
 )
 from kstrl.tui.app import KstrlTuiApp, Mode
+from kstrl.tui.screens.home import HomeScreen
 from kstrl.tui.screens.init_wizard import InitWizardScreen
 from kstrl.verify import (
     DEFAULT_LINT_COMMAND,
     DEFAULT_TEST_COMMAND,
     DEFAULT_TYPECHECK_COMMAND,
 )
+from tests.helpers.settle import drained, mounted, settled
 
 
 class TestPlanScaffold:
@@ -134,12 +135,50 @@ class TestWizardScreen:
         app = KstrlTuiApp(root_dir=tmp_path, mode=Mode.HOME, poll_interval=0.05)
         pilot_ctx = app.run_test(size=(120, 45))
         pilot = await pilot_ctx.__aenter__()
+        # Stashed BEFORE the first wait, not after: every test in this
+        # class closes the pilot in a `finally` that reads
+        # `self._pilot_ctx`, so a settle that fails above the assignment
+        # would be reported as an AttributeError in the teardown instead
+        # of as the thing that actually went wrong.
         self._pilot_ctx = pilot_ctx
         self._pilot = pilot
-        await pilot.pause(0.2)
+        # Both of these are already true at the first poll, and both are
+        # kept anyway. `App._process_messages` dispatches `events.Mount`
+        # at app.py:3438 and only invokes the ready callback at :3458,
+        # and `run_test` waits on that callback before yielding the
+        # pilot, so `KstrlTuiApp.on_mount` has pushed home already;
+        # `push_screen` then appends to the live stack inside its own
+        # body. So neither wait ever pauses - `settled` tests the
+        # predicate before it pauses - and an earlier comment here
+        # claimed the first one was a precondition of the push, which is
+        # false and a /simplify pass caught it.
+        #
+        # Kept rather than turned into bare asserts because a bare
+        # assert reads `app.screen` after the fixed wait that is
+        # `__aenter__`, which is precisely the shape
+        # `tests/test_settle_discipline.py` flags, and a guard with an
+        # exemption list for framework guarantees is a worse guard.
+        # Zero cost, states the condition, and the file stays clean.
+        await settled(
+            pilot,
+            lambda: isinstance(app.screen, HomeScreen),
+            what="the home screen the app's on_mount has already pushed",
+        )
         app.push_screen(InitWizardScreen())
-        await pilot.pause(0.2)
+        await settled(
+            pilot,
+            lambda: isinstance(app.screen, InitWizardScreen),
+            what="the init wizard push, which is synchronous",
+        )
         screen = cast(InitWizardScreen, app.screen)
+        await mounted(pilot, lambda: app.screen, "#wizard-agent-type")
+        # compose makes the form queryable BEFORE the screen's own
+        # on_mount fills the directory field and the detected line, so
+        # the mount above is not enough on its own. Textual dispatches
+        # Compose and Mount at the head of the screen's message loop,
+        # ahead of anything on its queue, so one hop on that queue is
+        # proof that on_mount has run.
+        await drained(pilot, screen, what="the wizard's on_mount to fill the form")
         if agent_type:
             from textual.widgets import Select
 
@@ -162,9 +201,23 @@ class TestWizardScreen:
         tmp_path: Path,
     ) -> None:
         """#261: the wizard shows what Phase 1 will actually run, and it
-        has to be visible, not merely constructed."""
+        has to be visible, not merely constructed.
+
+        The screenshot comes off the compositor, so the form has to have
+        been laid out before it is read. Waiting on the FORM's region is
+        deliberately weaker than either assertion below: a detected
+        block squashed back to height 1, which is the defect this test
+        names, still lays the form out and so still reaches the
+        assertions and fails there.
+        """
         app, screen = await self._run_wizard(tmp_path)
         try:
+            form = await mounted(self._pilot, lambda: app.screen, "#wizard-form")
+            await settled(
+                self._pilot,
+                lambda: form.region.height,
+                what="the wizard form to be laid out",
+            )
             rendered = self._rendered(app)
             assert "detected" in rendered
             for command in (
@@ -186,6 +239,13 @@ class TestWizardScreen:
         )
         app, _ = await self._run_wizard(tmp_path)
         try:
+            # The form's layout, not the text: the assertions own the text.
+            form = await mounted(self._pilot, lambda: app.screen, "#wizard-form")
+            await settled(
+                self._pilot,
+                lambda: form.region.height,
+                what="the wizard form to be laid out",
+            )
             rendered = self._rendered(app)
             assert "npx eslint ." in rendered
             assert DEFAULT_LINT_COMMAND not in rendered
@@ -202,6 +262,13 @@ class TestWizardScreen:
         (tmp_path / "kstrl.toml").write_text("[verify\ntest_command = broken")
         app, _ = await self._run_wizard(tmp_path)
         try:
+            # The form's layout, not the text: the assertions own the text.
+            form = await mounted(self._pilot, lambda: app.screen, "#wizard-form")
+            await settled(
+                self._pilot,
+                lambda: form.region.height,
+                what="the wizard form to be laid out",
+            )
             rendered = self._rendered(app)
             assert "unreadable" in rendered
             assert DEFAULT_TEST_COMMAND not in rendered
@@ -216,22 +283,44 @@ class TestWizardScreen:
         try:
             from textual.widgets import Button, Static
 
+            preview_stage = await mounted(
+                self._pilot,
+                lambda: app.screen,
+                "#wizard-preview",
+            )
+            outcome_widget = await mounted(
+                self._pilot,
+                lambda: app.screen,
+                "#wizard-outcome",
+            )
             screen.query_one("#wizard-preview-btn", Button).press()
-            await self._pilot.pause(0.2)
+            # The stage flip, not the plan text: on_button_pressed
+            # renders the plan and only then reveals the stage, so this
+            # is a real observation of the press being handled without
+            # asserting anything about what the plan says.
+            await settled(
+                self._pilot,
+                lambda: preview_stage.display,
+                what="the preview button to reveal the plan stage",
+            )
             plan = str(screen.query_one("#wizard-plan", Static).content)
             assert "will create" in plan
             assert "kstrl.toml" in plan
             assert "type=codex" in plan
             screen.query_one("#wizard-run-btn", Button).press()
-            deadline = time.monotonic() + 10
-            while True:
-                await self._pilot.pause(0.1)
-                outcome = str(
-                    screen.query_one("#wizard-outcome", Static).content,
-                )
-                if outcome:
-                    break
-                assert time.monotonic() < deadline, "wizard never finished"
+            # An outcome at all, which is weaker than the two assertions
+            # below: a wrong outcome still reaches them and fails with
+            # its own message. Only "no outcome ever" times out here,
+            # and that is what the loop this replaces reported as
+            # "wizard never finished". run_init writes real files on a
+            # worker thread, so the 10s budget is kept.
+            await settled(
+                self._pilot,
+                lambda: str(outcome_widget.content),
+                what="the scaffold worker to report an outcome",
+                timeout=10.0,
+            )
+            outcome = str(screen.query_one("#wizard-outcome", Static).content)
             assert "✓ init complete" in outcome
             assert "agent settings written" in outcome
             assert (tmp_path / "scripts" / "kstrl" / "prompt.md").exists()
@@ -280,8 +369,17 @@ class TestWizardScreen:
         try:
             from textual.widgets import Button, Static
 
+            preview_stage = await mounted(
+                self._pilot,
+                lambda: app.screen,
+                "#wizard-preview",
+            )
             screen.query_one("#wizard-preview-btn", Button).press()
-            await self._pilot.pause(0.2)
+            await settled(
+                self._pilot,
+                lambda: preview_stage.display,
+                what="the preview button to reveal the plan stage",
+            )
             plan = str(screen.query_one("#wizard-plan", Static).content)
             assert "older template" in plan
             assert "shipped at 9.0.0" in plan
@@ -301,21 +399,36 @@ class TestWizardScreen:
         try:
             from textual.widgets import Button, Static
 
+            preview_stage = await mounted(
+                self._pilot,
+                lambda: app.screen,
+                "#wizard-preview",
+            )
+            outcome_widget = await mounted(
+                self._pilot,
+                lambda: app.screen,
+                "#wizard-outcome",
+            )
             screen.query_one("#wizard-preview-btn", Button).press()
-            await self._pilot.pause(0.2)
+            await settled(
+                self._pilot,
+                lambda: preview_stage.display,
+                what="the preview button to reveal the plan stage",
+            )
             plan = str(screen.query_one("#wizard-plan", Static).content)
             assert "exists - kept" in plan
             assert "will NOT be written" in plan
             screen.query_one("#wizard-run-btn", Button).press()
-            deadline = time.monotonic() + 10
-            while True:
-                await self._pilot.pause(0.1)
-                outcome = str(
-                    screen.query_one("#wizard-outcome", Static).content,
-                )
-                if outcome:
-                    break
-                assert time.monotonic() < deadline, "wizard never finished"
+            # Any outcome at all, not the one asserted below, and the
+            # 10s budget the hand-rolled loop had. A wrong outcome
+            # fails at the assertion; only silence times out here.
+            await settled(
+                self._pilot,
+                lambda: str(outcome_widget.content),
+                what="the scaffold worker to report an outcome",
+                timeout=10.0,
+            )
+            outcome = str(screen.query_one("#wizard-outcome", Static).content)
             assert "NOT written" in outcome
             assert (tmp_path / "kstrl.toml").read_text() == "# user file\n"
         finally:
@@ -329,11 +442,22 @@ class TestWizardScreen:
         try:
             from textual.widgets import Button, Input
 
+            errors_widget = await mounted(
+                self._pilot,
+                lambda: app.screen,
+                "#wizard-errors",
+            )
             screen.query_one("#wizard-directory", Input).value = str(
                 tmp_path / "nope",
             )
             screen.query_one("#wizard-preview-btn", Button).press()
-            await self._pilot.pause(0.2)
+            # An error strip with anything in it. Which error it names,
+            # and whether the form stayed up, are the assertions.
+            await settled(
+                self._pilot,
+                lambda: str(errors_widget.content),
+                what="the preview button to report a validation error",
+            )
             errors = str(screen.query_one("#wizard-errors").content)
             assert "not found" in errors
             assert screen.query_one("#wizard-form").display
@@ -347,9 +471,20 @@ class TestWizardScreen:
         try:
             from textual.widgets import Button, Input
 
+            errors_widget = await mounted(
+                self._pilot,
+                lambda: app.screen,
+                "#wizard-errors",
+            )
             screen.query_one("#wizard-directory", Input).value = str(target)
             screen.query_one("#wizard-preview-btn", Button).press()
-            await self._pilot.pause(0.2)
+            # An error strip with anything in it. Which error it names,
+            # and whether the form stayed up, are the assertions.
+            await settled(
+                self._pilot,
+                lambda: str(errors_widget.content),
+                what="the preview button to report a validation error",
+            )
             errors = str(screen.query_one("#wizard-errors").content)
             assert "not a directory" in errors
             assert screen.query_one("#wizard-form").display
@@ -364,8 +499,17 @@ class TestWizardScreen:
         try:
             from textual.widgets import Button, Static
 
+            preview_stage = await mounted(
+                self._pilot,
+                lambda: app.screen,
+                "#wizard-preview",
+            )
             screen.query_one("#wizard-preview-btn", Button).press()
-            await self._pilot.pause(0.2)
+            await settled(
+                self._pilot,
+                lambda: preview_stage.display,
+                what="the preview button to reveal the plan stage",
+            )
             release = Event()
 
             def fail_init(*args: object) -> int:
@@ -378,17 +522,23 @@ class TestWizardScreen:
                 side_effect=fail_init,
             ):
                 screen.query_one("#wizard-run-btn", Button).press()
-                deadline = time.monotonic() + 5
-                while not screen.navigation_blocked:
-                    await self._pilot.pause(0.05)
-                    assert time.monotonic() < deadline
+                await settled(
+                    self._pilot,
+                    lambda: screen.navigation_blocked,
+                    what="the run button to start the scaffold worker",
+                )
                 screen.action_back()
                 assert isinstance(app.screen, InitWizardScreen)
                 release.set()
-                deadline = time.monotonic() + 5
-                while screen.navigation_blocked:
-                    await self._pilot.pause(0.1)
-                    assert time.monotonic() < deadline
+                # on_wizard_done clears the flag and then writes both
+                # panes in the same synchronous handler, so this is one
+                # observation for all three reads and it asserts none of
+                # what they say.
+                await settled(
+                    self._pilot,
+                    lambda: not screen.navigation_blocked,
+                    what="the failed worker to release navigation",
+                )
             outcome = str(
                 screen.query_one("#wizard-outcome", Static).content,
             )
