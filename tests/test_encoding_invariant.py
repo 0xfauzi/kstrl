@@ -23,8 +23,9 @@ and this three-line module violates it::
 
 The decode escapes, because nothing catches it, and the walk clears the
 read - correctly, because there is no handler here to be wrong about and
-the CALLER is the site that answers. Twelve of the 84 rows the walk
-clears in ``kstrl/`` are exactly that shape. The overclaim was not
+the CALLER is the site that answers. MEASURED on ``kstrl/``: of the 48
+decodes the handler rule is charged to, 8 sit under no swallowing
+construct at all, and all 8 are cleared. The overclaim was not
 harmless: the first author to add a handler-less row would have watched
 this file fail for a reason that is not a defect, and the natural repair
 is to WEAKEN the assertion. So the precondition is checked mechanically
