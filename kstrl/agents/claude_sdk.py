@@ -168,26 +168,31 @@ class ClaudeSdkAgent:
             timeout=timeout,
         )
 
-        for line in streamer.lines():
-            if line.startswith(USAGE_PREFIX):
-                usage_payload = _parse_contract_line(line, USAGE_PREFIX)
-                continue
-            if line.startswith(RESULT_PREFIX):
-                result_payload = _parse_contract_line(line, RESULT_PREFIX)
-                continue
-            yield line
+        try:
+            # The consumer can walk away mid-yield; the argument is on
+            # `DeadlineStreamer.close` (#326).
+            for line in streamer.lines():
+                if line.startswith(USAGE_PREFIX):
+                    usage_payload = _parse_contract_line(line, USAGE_PREFIX)
+                    continue
+                if line.startswith(RESULT_PREFIX):
+                    result_payload = _parse_contract_line(line, RESULT_PREFIX)
+                    continue
+                yield line
 
-        if streamer.timed_out:
-            self._usage_records.append(
-                UsageRecord(
-                    duration_seconds=time.monotonic() - started,
-                    source="timeout",
+            if streamer.timed_out:
+                self._usage_records.append(
+                    UsageRecord(
+                        duration_seconds=time.monotonic() - started,
+                        source="timeout",
+                    )
                 )
-            )
-            yield timeout_message(timeout)
-            return
+                yield timeout_message(timeout)
+                return
 
-        streamer.finish()
+            streamer.finish()
+        finally:
+            streamer.close()
 
         self._usage_records.append(
             _usage_record_from_payload(

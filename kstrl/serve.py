@@ -69,7 +69,14 @@ from pathlib import Path
 from typing import Any, Final, Protocol
 
 from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
-from kstrl.procgroup import read_group_liveness, safe_pgid, signal_probe_alive
+from kstrl.procdispose import drain_or_abandon
+from kstrl.procgroup import (
+    pid_is_alive,
+    read_group_liveness,
+    safe_pgid,
+    signal_group,
+    signal_probe_alive,
+)
 from kstrl.runid import run_kind
 from kstrl.statedir import (
     CONTROL_SPEND,
@@ -1122,21 +1129,16 @@ def _pid_alive(pid: int, host: str) -> bool:
     foreign pid, and two-machine operation is an explicit R8.6 non-goal,
     so the TTL remains the only signal there rather than us reaping work
     that may be in flight elsewhere.
+
+    The probe itself is :func:`kstrl.procgroup.pid_is_alive`. It was a
+    fourth hand-rolled copy of the same shape - a pid guard written
+    inline, next to a raw signal - which is the arrangement #308 removed
+    for groups and #329 found still standing for bare ids. What stays
+    here is the only part that is about leases: the host check.
     """
     if host and host != socket.gethostname():
         return True
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        # Exists but is not ours. Alive as far as this check goes.
-        return True
-    except OSError:
-        return True
-    return True
+    return pid_is_alive(pid)
 
 
 @dataclass(frozen=True)
@@ -1390,6 +1392,14 @@ def subprocess_factory_runner(
     )
 
 
+#: How long a killed factory child is given to hand back its output
+#: before it is abandoned to ``procdispose``. Was a bare ``10`` inline; it
+#: is named because it is the last bound on a timed-out run, and it sits
+#: ABOVE its two uses because a reader who meets the name first has to
+#: scroll to find out what it is worth.
+ABANDON_GRACE_SECONDS = 10.0
+
+
 def run_supervised(
     command: list[str],
     *,
@@ -1436,10 +1446,14 @@ def run_supervised(
         )
     except subprocess.TimeoutExpired:
         termination = terminate_process_group(process, pgid)
-        try:
-            output, _ = process.communicate(timeout=10)
-        except (subprocess.TimeoutExpired, ValueError, OSError):
-            output = ""
+        # #326: this used to drain the pipes itself and, when the drain
+        # expired, set `output = ""` and drop the child with no close and
+        # no register. The daemon holds its singleton lock for its whole
+        # life, so a child left to `Popen.__del__` here is the worst
+        # placed one in the tree: under `PYTHONWARNINGS=error` that
+        # `__del__` raises before it registers anything and the zombie
+        # outlives the daemon.
+        output, _ = drain_or_abandon(process, ABANDON_GRACE_SECONDS)
         return RunOutcome(
             returncode=(process.returncode if process.returncode is not None else -9),
             timed_out=True,
@@ -1448,6 +1462,14 @@ def run_supervised(
             group_reap_detail=termination.degraded,
             group_occupied_detail=termination.occupied,
         )
+    except BaseException:
+        # The same rule as `verify.run_scrubbed` and
+        # `procgroup._read_ps`: a timeout is not the only way out of a
+        # `communicate`. This one matters most of the three, because the
+        # daemon holds its singleton lock for its whole process
+        # lifetime, so a child dropped here outlives every run after it.
+        drain_or_abandon(process, ABANDON_GRACE_SECONDS)
+        raise
 
 
 #: How much of a child's output to keep. Enough for the exit-2 markers
@@ -1463,6 +1485,13 @@ def _tail(output: str | None) -> str:
 
 #: Grace period between SIGTERM and SIGKILL for a run's process group.
 GROUP_TERM_GRACE_SECONDS = 15.0
+
+#: How long the escalation waits after SIGKILL before reporting the group
+#: as still occupied. A DIFFERENT quantity from
+#: ``ABANDON_GRACE_SECONDS`` despite both reading 10.0 - that one bounds
+#: a drain of a child's output, this one bounds a wait for a group to
+#: empty - so they are two names rather than one shared constant.
+GROUP_KILL_GRACE_SECONDS = 10.0
 
 
 #: How often to re-check the group while waiting out a signal's grace
@@ -1538,20 +1567,20 @@ def terminate_process_group(
     outcome = GroupTermination(False, degraded="the group was never signalled")
     for sig, grace in (
         (signal.SIGTERM, GROUP_TERM_GRACE_SECONDS),
-        (signal.SIGKILL, 10.0),
+        (signal.SIGKILL, GROUP_KILL_GRACE_SECONDS),
     ):
-        try:
-            os.killpg(pgid, sig)
-        except ProcessLookupError:
+        attempt = signal_group(pgid, sig)
+        if attempt.vanished:
             return GroupTermination(True)
-        except OSError as exc:
+        if not attempt.sent:
             # EPERM is not "could not measure": the kernel FOUND processes
             # in this group and refused us. That is evidence of a live
-            # group, and the operator has to act on it.
-            return GroupTermination(
-                False,
-                occupied=f"the kernel refused signal {sig} to group {pgid}: {exc}",
-            )
+            # group, and the operator has to act on it. A pgid `procgroup`
+            # itself refuses is the OTHER column - evidence of nothing,
+            # only that this integer must not be signalled - which is
+            # #329: this used to take the caller's pgid straight to
+            # `os.killpg` with no check of any kind.
+            return GroupTermination(False, occupied=attempt.denied, degraded=attempt.refused)
         outcome = _wait_out_grace(process, pgid, grace)
         if outcome.reaped:
             return outcome
