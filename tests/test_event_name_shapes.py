@@ -183,10 +183,12 @@ class TestEveryReadingShape:
         assert hits(source) == [READ]
 
     def test_a_walrus_bound_on_an_earlier_line(self) -> None:
-        """The only customer of ``_bound_names``'s ``ast.NamedExpr``
-        branch. Measured: delete that branch and every other test in this
-        file still passes, so without this one the branch is an eleven
-        line wrapper no test can tell apart from ``assignment_parts``."""
+        """The only customer of ``assignment_parts``'s ``ast.NamedExpr``
+        branch, which #324 moved into ``tests/helpers/astwalk.py``.
+        Measured: delete that branch and every other test in this file
+        still passes, so without this one it is invisible from here.
+        ``tests/test_astwalk.py::test_a_walrus_rebind`` covers it from
+        the helper's side; this one covers what losing it costs HERE."""
         source = (
             '\nif (found := entry.get("event_type")):\n    pass\nflag = found == "spec_issues"\n'
         )

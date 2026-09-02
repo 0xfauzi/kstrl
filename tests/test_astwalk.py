@@ -221,8 +221,20 @@ class TestTheSkipDirectionIsReported:
         assert calls(source) == astwalk.Sites((), ())
 
     def test_a_decided_receiver_that_is_not_the_target(self) -> None:
-        source = "import shutil\nshutil.getpgid = None\npgid = shutil.getpgid(1)\n"
-        assert calls(source).seen == ()
+        source = "import shutil\npgid = shutil.getpgid(1)\n"
+        assert calls(source) == astwalk.Sites((), ())
+
+    def test_a_dotted_callee_whose_head_was_never_bound(self) -> None:
+        """Lane B of #324 measured this going neither seen nor undecided.
+
+        An earlier draft asked "is the head opaque?" and let an UNKNOWN
+        head fall through as decided, so a planted ``tempfile.mkstemp()``
+        in a module with no ``import tempfile`` was invisible: this
+        issue's own defect, inside its own fix. Unresolved is undecided,
+        with no third case.
+        """
+        found = calls("fd, path = tempfile.mkstemp()\n", frozenset({"tempfile.mkstemp"}))
+        assert found.seen == () and found.undecided == ("1 tempfile.mkstemp",)
 
 
 class TestAssertSitesWillNotTakeHalfAnAnswer:
@@ -296,8 +308,9 @@ class TestTheWalkAgainstTheRealPackage:
     def test_the_spawn_sweep_reproduces_the_timeout_audit_count(self) -> None:
         """68 spawn sites, the same number the private resolver in
         ``tests/test_timeout_enforcement.py`` found before it was
-        migrated, plus four callees it could not see at all and four
-        ``app.run`` calls on a Textual App bound to a local."""
+        migrated, plus twelve calls this walk will not pretend to have
+        decided. Twelve rows is the price of the rule, and it is what a
+        guard pins instead of being silently narrower than it sounds."""
         spawns = frozenset(
             {
                 "subprocess.run",
@@ -312,10 +325,17 @@ class TestTheWalkAgainstTheRealPackage:
         assert sorted(found.undecided) == sorted(
             [
                 *OPAQUE_CALLEES,
+                # A Textual App bound to a local, four times.
                 "cli.py:3361 app.run",
                 "cli.py:3476 app.run",
                 "tui/embed.py:157 app.run",
                 "tui/home.py:47 app.run",
+                # An agent adapter reached through a parameter or an
+                # attribute. Not a subprocess, and the walk cannot say so.
+                "agents/logging.py:34 self._agent.run",
+                "decompose.py:402 agent.run",
+                "decompose.py:1886 agent.run",
+                "loop.py:750 agent.run",
             ]
         )
 

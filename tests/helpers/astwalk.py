@@ -3,29 +3,17 @@
 #324 is the record of what having eleven of them cost. Ten instances are
 logged there, every one in the SKIP direction: a matcher could not resolve
 a name or fold a value, so it silently did not look, and reported clean.
-Two guards were holed a second time after being fixed once. One was
-written by an author explicitly briefed on the pattern, which is the
-evidence that briefing is not a control.
+Two were holed a second time after being fixed once, and one was written
+by an author explicitly briefed on the pattern, which is the evidence that
+briefing is not a control.
 
 So a shared resolver is not the whole job: on its own it would move eleven
 holes into one. What this has to do as well is make the skip direction
-LOUD, in five places the API will not let a caller leave out.
-
-1. :func:`assert_census` takes a ``control`` and refuses to pin an
-   inventory whose predicate matched nothing in it. An empty inventory is
-   also what a switched-off net returns; now the two are told apart.
-2. :class:`Sites` has two halves and :func:`assert_sites` requires an
-   expectation for BOTH. To report nothing undecided a guard must write
-   ``undecided=()``, which is a claim, and a false one fails.
-3. :class:`Clause` carries ``decided``, because a handler whose type the
-   walk cannot name yields an empty name set, and an empty set reads
-   exactly like "catches nothing".
-4. :class:`Bindings` keeps ``opaque``: every name bound to a value the
-   resolver could not follow. :func:`calls_to` turns a call through one
-   into an UNDECIDED site rather than a decided miss.
-5. :func:`blind_spot` is the body of a disclosed limit's anti-vacuity
-   test, run under ``xfail(strict=True)`` so closing the hole goes red and
-   the docstring has to be edited in the same diff.
+LOUD, in five places the API will not let a caller leave out:
+:func:`assert_census` requires a control, :func:`assert_sites` requires an
+expectation for the undecided half, :class:`Clause` carries ``decided``,
+:class:`Bindings` keeps ``opaque``, and :func:`blind_spot` is the body of
+a disclosed limit's anti-vacuity test. Each says why on itself.
 
 THE DISTINCTION THAT DRIVES THE SHAPE. ``EXPECTED_JOURNAL_PATH_SITES`` in
 ``tests/test_journal_one_writer.py`` inventories every place the resource
@@ -33,13 +21,11 @@ is OBTAINED, so it is closed by construction: you cannot add a writer
 without adding a row. A ledger of places the walk gave up is closed only
 over the shapes the walk already enumerates, and #324's instance 10 is the
 proof: a well-built ledger with reasons per row still missed a producer,
-because the producer's SHAPE was never enumerated.
-
-:func:`census` is that closed form generalised. It counts nodes satisfying
-a predicate and enumerates no node types; :func:`spells` goes further and
-enumerates no FIELDS either. That is why it catches shapes nobody thought
-of. Prefer it wherever the guard's subject permits, and where it does not,
-say so and pin the residual with :func:`blind_spot`.
+because the producer's SHAPE was never enumerated. :func:`census` is that
+closed form generalised. It enumerates no node types, and :func:`spells`
+enumerates no FIELDS either, which is why it catches shapes nobody thought
+of. Prefer it wherever the subject permits; where it does not, say so and
+pin the residual with :func:`blind_spot`.
 """
 
 from __future__ import annotations
@@ -64,9 +50,9 @@ def label(source_file: Path, root: Path | None = None) -> str:
 
     Not ``source_file.name``: ten basenames occur twice in ``kstrl/``,
     once at the top level and once under ``tui/screens/``, and a message
-    naming a file the reader cannot find is worse than no message. Falls
-    back to the repo-relative path, then to the basename, so a snippet
-    written to a ``tmp_path`` still labels itself.
+    naming a file the reader cannot find is worse than none. Falls back
+    to the repo-relative path, then to the basename, so a snippet written
+    to a ``tmp_path`` still labels itself.
     """
     for base in (root or KSTRL_PACKAGE, REPO_ROOT):
         try:
@@ -79,9 +65,9 @@ def label(source_file: Path, root: Path | None = None) -> str:
 def module_name(source_file: Path) -> str:
     """``kstrl/tui/session.py`` -> ``kstrl.tui.session``.
 
-    The dotted name a relative import resolves against. ``__init__.py`` is
-    stripped so ``from . import x`` inside a package's own ``__init__``
-    lands on the package rather than one level below it.
+    What a relative import resolves against. ``__init__.py`` is stripped
+    so ``from . import x`` inside a package's own ``__init__`` lands on
+    the package rather than one level below it.
     """
     try:
         relative = source_file.resolve().relative_to(REPO_ROOT)
@@ -97,17 +83,15 @@ def package_sources() -> list[Path]:
 
 
 def test_sources(exclude: Path | None = None) -> list[Path]:
-    """Every module in ``tests/``, optionally minus the caller's own file.
+    """Every module in ``tests/``, minus the caller's own file if given.
 
-    A guard that names the shapes it forbids in its own docstring or its
-    own fixtures would otherwise scan itself.
-    """
+    A guard naming the shapes it forbids in its own fixtures would
+    otherwise scan itself."""
     skip = exclude.resolve() if exclude is not None else None
     return [path for path in sorted(TESTS_DIR.rglob("*.py")) if path.resolve() != skip]
 
 
 #: Source text -> its parsed tree, shared by every guard in the suite.
-#:
 #: Keyed on the TEXT rather than the path, because the positive controls
 #: in several guards rewrite one ``other.py`` several times inside a
 #: single test, and a path-keyed cache would hand the second call the
@@ -143,18 +127,15 @@ def folded_str(node: ast.AST) -> str | None:
     Round 2 of review on #327 is why this exists: two writers defeated
     three layers of a guard by never spelling in one piece what they
     reached, ``getattr(config, "journal_" + "path")`` and
-    ``root / ".kstrl" / ("evolution" + ".jsonl")``. Neither is exotic;
-    both are what somebody writes to get past a string search.
-
-    CPython folds adjacent literals (``"a" "b"``) into one ``Constant`` at
-    parse time, so that case needs nothing here. An f-string does NOT
-    fold, measured on this interpreter, so ``JoinedStr`` and
-    ``FormattedValue`` are handled explicitly alongside the ``+``.
+    ``root / ".kstrl" / ("evolution" + ".jsonl")``. CPython folds adjacent
+    literals (``"a" "b"``) into one ``Constant`` at parse time, so that
+    needs nothing here; an f-string does NOT fold, measured, so
+    ``JoinedStr`` and ``FormattedValue`` are handled explicitly.
 
     Decidable cases only. Anything whose value needs the interpreter
-    (``"".join(parts)``, ``%``-formatting, ``str.replace``, a name, an env
-    var) returns None, and a guard that folds must disclose that residual
-    and pin it with :func:`blind_spot` rather than imply it away.
+    (``"".join(parts)``, ``%``-formatting, a name, an env var) returns
+    None, and a guard that folds must disclose that residual and pin it
+    with :func:`blind_spot` rather than imply it away.
     """
     if isinstance(node, ast.Constant):
         return node.value if isinstance(node.value, str) else None
@@ -179,8 +160,8 @@ def _folded_placeholder(node: ast.FormattedValue) -> str | None:
 
     ``!r`` and a format spec both change the result, so only the plain
     case folds. Measured: ``ast.parse`` gives ``conversion == -1`` for a
-    plain placeholder and for one carrying a format spec, and 114 for
-    ``!r``; ``None`` never appears on the parse path.
+    plain placeholder and 114 for ``!r``, and ``None`` never appears on
+    the parse path.
     """
     if node.conversion == -1 and node.format_spec is None:
         return folded_str(node.value)
@@ -200,26 +181,26 @@ def _folded_parts(nodes: list[ast.expr]) -> str | None:
 
 # --- the net: a census that enumerates no node types -----------------------
 
-#: A per-node predicate. The census applies it to every node in a module
-#: and counts, so a predicate that enumerates no node types gives a net
-#: with no shape list to be incomplete.
+#: A per-node predicate, applied to every node in a module and counted,
+#: so one that enumerates no node types is a net with no shape list to be
+#: incomplete.
 Sees = Callable[[ast.AST], bool]
 
 
 def spells(token: str) -> Sees:
     """Does this node write ``token`` anywhere the AST can hold a string?
 
-    The strongest net here, because it enumerates no node types AND no
-    field names: it asks ``ast.iter_fields`` for every string the node
-    holds. That reaches ``Name.id``, ``Attribute.attr``, ``alias.name``,
+    The strongest net here: it enumerates no node types AND no field
+    names, asking ``ast.iter_fields`` for every string the node holds.
+    That reaches ``Name.id``, ``Attribute.attr``, ``alias.name``,
     ``alias.asname``, ``arg.arg``, ``keyword.arg``, ``FunctionDef.name``,
     ``ExceptHandler.name``, ``Global.names``, a string literal, and every
-    identifier slot a future CPython adds, without naming one of them.
+    identifier slot a future CPython adds, without naming one.
 
     EQUALITY, not substring, so prose folding to a whole docstring is not
-    a spelling; that is what keeps the inventory readable rather than
-    something to be silenced. Use :func:`folds_containing` when the
-    subject really is a substring. At most one hit per node.
+    a spelling, which keeps the inventory readable rather than something
+    to be silenced. Use :func:`folds_containing` when the subject really
+    is a substring. At most one hit per node.
     """
 
     def sees(node: ast.AST) -> bool:
@@ -249,26 +230,31 @@ def folds_to(value: str) -> Sees:
 def folds_containing(part: str) -> Sees:
     """Does this expression fold to a string CONTAINING ``part``?
 
-    For a subject that legitimately sits inside a longer string: a
-    filename in a path, where ``root / ".kstrl/evolution.jsonl"`` folds to
-    the whole relative path and equality would miss it. The cost is that
-    prose folds too, so the inventory carries docstrings.
+    For a subject that sits inside a longer string: a filename in a path,
+    where ``root / ".kstrl/evolution.jsonl"`` folds to the whole relative
+    path and equality would miss it. The cost is that prose folds too.
     """
     return lambda node: part in (folded_str(node) or "")
 
 
-def census(sources: Iterable[Path], sees: Sees) -> dict[str, int]:
+#: How an inventory row is named. The module by default, so an unrelated
+#: edit does not fail a pinned dict; a guard whose message needs the
+#: expression passes its own.
+Keyed = Callable[[Path, ast.AST], str]
+
+
+def census(sources: Iterable[Path], sees: Sees, key: Keyed | None = None) -> dict[str, int]:
     """How many nodes in each module satisfy ``sees``, keyed by label.
 
-    Counted PER MODULE so an unrelated edit elsewhere does not fail the
-    guard, and modules with no hits are left out so the pinned dict stays
-    the size of the answer rather than the size of the package.
-    """
+    Modules with no hits are left out, so the pinned dict is the size of
+    the answer rather than of the package."""
+    name = key or (lambda source_file, _node: label(source_file))
     built: dict[str, int] = {}
     for source_file in sources:
-        hits = sum(1 for node in ast.walk(parsed(source_file)) if sees(node))
-        if hits:
-            built[label(source_file)] = hits
+        for node in ast.walk(parsed(source_file)):
+            if sees(node):
+                row = name(source_file, node)
+                built[row] = built.get(row, 0) + 1
     return built
 
 
@@ -279,14 +265,15 @@ def assert_census(
     expected: Mapping[str, int],
     control: str,
     message: str,
+    key: Keyed | None = None,
 ) -> None:
     """Pin an inventory, having first proved the net still fires.
 
-    ``control`` is source the predicate MUST hit. It is required, not
-    optional, because ``built == expected`` is also exactly what a
-    switched-off predicate returns, and #324's whole subject is guards
-    reporting clean because they stopped looking. One line, and it is the
-    difference between an assertion about the package and about nothing.
+    ``control`` is source the predicate MUST hit. Required, not optional,
+    because ``built == expected`` is also what a switched-off predicate
+    returns, and #324's subject is guards reporting clean because they
+    stopped looking. One line, and it is the difference between an
+    assertion about the package and one about nothing.
     """
     proof = sum(1 for node in ast.walk(parse(control)) if sees(node))
     assert proof, (
@@ -294,7 +281,7 @@ def assert_census(
         "inventory below is indistinguishable from what a switched-off net "
         f"returns. Control: {control!r}"
     )
-    built = census(sources, sees)
+    built = census(sources, sees, key)
     assert built == expected, f"{message} Found: {built}"
 
 
@@ -315,9 +302,6 @@ class Sites:
 
     def __add__(self, other: Sites) -> Sites:
         return Sites(self.seen + other.seen, self.undecided + other.undecided)
-
-    def sorted(self) -> Sites:
-        return Sites(tuple(sorted(self.seen)), tuple(sorted(self.undecided)))
 
 
 def assert_sites(
@@ -380,8 +364,8 @@ class Bindings:
     it to, and deliberately over-matches: after ``class G: lookup =
     os.getpgid`` every ``x.lookup(...)`` resolves, which two of
     ``tests/test_safe_pgid.py``'s pinned rows need and the AST cannot
-    type. Collected per MODULE rather than per scope. Both choices
-    over-report, the direction a guard may be wrong in.
+    type. Per MODULE, not per scope. Both over-report, the direction a
+    guard may be wrong in.
     """
 
     origins: Mapping[str, str] = field(default_factory=dict)
@@ -392,10 +376,8 @@ class Bindings:
         """The dotted origin this expression refers to, or None.
 
         Longest known prefix wins, so ``_tl.load`` resolves through
-        ``_tl`` and ``subprocess.Popen`` through ``subprocess``.
-        ``getattr(mod, "name")`` resolves when the name folds, which is
-        the shape ``tests/test_safe_pgid.py`` carried as an accepted miss.
-        """
+        ``_tl``. ``getattr(mod, "name")`` resolves when the name folds,
+        which ``tests/test_safe_pgid.py`` carried as an accepted miss."""
         path = dotted(node)
         if path is not None:
             through = self._through_prefix(path)
@@ -434,13 +416,21 @@ def bindings(tree: ast.Module, *, module: str = "") -> Bindings:
     ``C.run = ...``), ``getattr`` with a foldable name, and a rebind of a
     rebind at any chain length.
 
-    FIRST BINDING WINS, and that is what makes the fixed point terminate:
-    ``origins`` only ever gains keys, so the loop is bounded by the number
-    of distinct targets in the file. An earlier draft let a later binding
+    FIRST BINDING WINS, which is what makes the fixed point terminate:
+    ``origins`` only gains keys, so the loop is bounded by the number of
+    distinct targets in the file. An earlier draft let a later binding
     overwrite an earlier one and ``p = p.parent`` grew the origin string
     without bound. It also means a name bound to a target and later
-    rebound to something opaque stays resolved to the target, which is the
+    rebound to something opaque stays resolved to the target, the
     over-reporting direction.
+
+    A local ``def`` or ``class`` is deliberately NOT a binding, so
+    ``_cim = _create_if_missing`` goes opaque rather than resolving.
+    Measured both ways: binding ``ClassDef`` makes ``class G: lookup =
+    os.getpgid`` then ``G.lookup(pid)`` resolve to ``G.lookup`` and
+    vanish from the seen half, and binding ``FunctionDef`` lets a ``def
+    load()`` above a ``from tomllib import load`` mask the import under
+    first-binding-wins. Both are the skip direction; opaque is not.
 
     ``module`` is this file's dotted name, needed only by relative
     imports. Left empty they resolve to a leading-dot origin that cannot
@@ -474,9 +464,8 @@ _BINDINGS: dict[tuple[int, str], tuple[ast.Module, Bindings]] = {}
 class _Table:
     """The three growing halves of a binding sweep, plus the class names.
 
-    A dataclass rather than four parameters because the sweep and its
-    per-target step both need all of them, and eight positional arguments
-    is how a helper stops being read.
+    A dataclass rather than four parameters: the sweep and its per-target
+    step both need all of them.
     """
 
     origins: dict[str, str]
@@ -492,8 +481,8 @@ def _class_body_names(tree: ast.Module) -> frozenset[str]:
     """Names bound directly in a ``class`` body: really attributes of it.
 
     ``class G: lookup = os.getpgid`` binds a bare ``lookup`` as far as the
-    AST is concerned, but every use of it is spelled ``G.lookup`` or
-    ``G().lookup``. Without this they would be two different names.
+    AST is concerned, but every use is spelled ``G.lookup`` or
+    ``G().lookup``. Without this they are two different names.
     """
     found: set[str] = set()
     for node in ast.walk(tree):
@@ -522,10 +511,10 @@ def _import_base(node: ast.ImportFrom, module: str) -> str:
 
     ``ImportFrom.level`` is the field #324 records three guards dropping.
     Dropped, ``from .os import getpgid`` resolves to the stdlib ``os``, a
-    false positive, and ``from .config_report import f`` resolves to a
-    module that can never match a package-qualified key, a false NEGATIVE
-    and the direction that matters. ``from . import x`` has no module at
-    all and was discarded outright by one of them.
+    false positive, and ``from .config_report import f`` to a module that
+    can never match a package-qualified key, a false NEGATIVE and the
+    direction that matters. ``from . import x`` has no module at all and
+    one of them discarded it outright.
     """
     if not node.level:
         return node.module or ""
@@ -570,10 +559,10 @@ def assignment_parts(node: ast.AST) -> tuple[list[str | None], ast.expr | None]:
 
     ``Assign``, ``AnnAssign`` and the walrus. ``AnnAssign`` is here
     because #324's second logged instance is a TOML parse made invisible
-    by ``_p: object = tomllib``: the guard resolved ``Assign`` only, so
+    by ``_p: object = tomllib``: that guard resolved ``Assign`` only, so
     the site was reported neither guarded nor unguarded. A target the AST
-    cannot spell as a path (a tuple unpack, a subscript) yields ``None``,
-    which the sweep skips rather than guessing at.
+    cannot spell as a path yields ``None``, which the sweep skips rather
+    than guessing at.
     """
     if isinstance(node, ast.Assign):
         return [dotted(target) for target in node.targets], node.value
@@ -594,24 +583,29 @@ def calls_to(
     """Every call in one module that resolves to a target, and every call
     that could be one and could not be decided.
 
-    The undecided rule, measured against
-    ``subprocess.{run,Popen,call,check_output,check_call}`` over
-    ``kstrl/`` at 68 seen and 8 undecided, which is an inventory a guard
-    can pin rather than a list it would be silenced for printing.
+    The undecided rule is two questions and no third case, which is what
+    keeps the skip direction out of it:
 
-    - no last identifier at all (``TABLE[key](...)``): undecided, always,
-      whatever the targets are. Four in ``kstrl/``.
-    - a last identifier no target ends in: not a candidate. This is what
-      keeps ``path.mkdir`` and ``', '.join`` out.
-    - called through a name bound to something the resolver could not
-      follow: undecided. ``proc = subprocess.Popen(...)`` then
-      ``proc.wait()`` is this clause.
-    - a bare name spelled like a target and bound nowhere: undecided.
+    - has the callee a last identifier a target ends in? If not it is not
+      a candidate, which keeps ``path.mkdir`` and ``', '.join`` out. A
+      callee with NO identifier at all (``TABLE[key](...)``) is a
+      candidate for every target set: there is nothing to compare. Four
+      of those in ``kstrl/``.
+    - does it resolve? Resolved and wanted is ``seen``, resolved and
+      unwanted is nothing, and UNRESOLVED IS UNDECIDED, with no third
+      case. An earlier draft let a dotted callee whose head it never saw
+      bound fall through as decided, and lane B of #324 measured a
+      planted ``tempfile.mkstemp()`` in a module with no ``import
+      tempfile`` going neither seen nor undecided: this issue's own
+      defect inside its own fix.
 
-    What that leaves, stated rather than implied: a target passed IN as a
-    parameter reads as a call on some other object. The bound is that the
-    caller had to obtain the target to pass it, so a :func:`census` of
-    the acquisition still counts it. Pin it with :func:`blind_spot`.
+    Measured over ``kstrl/`` against the five subprocess spawns: 68 seen,
+    12 undecided, an inventory a guard can pin rather than a list it
+    would be silenced for printing. What it leaves, stated rather than
+    implied: a target passed IN as a parameter reads as a call on another
+    object, because its leaf is the parameter's name. The caller had to
+    obtain it to pass it, so a :func:`census` of the acquisition counts
+    the site. Pin it with :func:`blind_spot`.
     """
     wanted = frozenset(targets)
     leaves = {target.rsplit(".", 1)[-1] for target in wanted}
@@ -625,12 +619,34 @@ def calls_to(
     return Sites(tuple(seen), tuple(undecided))
 
 
+def resolved_calls(
+    tree: ast.Module,
+    targets: Iterable[str],
+    *,
+    module: str = "",
+) -> list[tuple[ast.Call, str]]:
+    """The SEEN half of :func:`calls_to`, as nodes rather than as strings.
+
+    For a guard that has to look at a call's arguments, such as "does
+    this spawn name a ``timeout=``". Deliberately not the whole answer: a
+    guard asserting on this alone has thrown away the undecided half,
+    which is the defect #324 records. Assert ``calls_to(...).undecided``
+    beside it.
+    """
+    wanted = frozenset(targets)
+    table = bindings(tree, module=module)
+    return [
+        (node, origin)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and (origin := table.resolve(node.func)) in wanted
+    ]
+
+
 def _bound_target_leaves(tree: ast.Module, table: Bindings, wanted: frozenset[str]) -> set[str]:
     """Attribute names this module binds to a target, e.g. ``self.spawn``.
 
     Without these, ``self.spawn = subprocess.Popen`` in ``__init__`` and
-    ``self.spawn(argv)`` in a method would read as a call on some other
-    object. With them the second is at worst undecided.
+    ``self.spawn(argv)`` in a method read as a call on another object.
     """
     found: set[str] = set()
     for node in ast.walk(tree):
@@ -657,16 +673,8 @@ def _classify_call(
             seen.append(f"{site} {origin}")
         return
     leaf = leaf_name(node.func)
-    if leaf is None:
+    if leaf is None or leaf in leaves:
         undecided.append(f"{site} {ast.unparse(node.func)}")
-        return
-    if leaf not in leaves:
-        return
-    path = dotted(node.func)
-    if path is None or path in table.opaque or path.split(".")[0] in table.opaque:
-        undecided.append(f"{site} {ast.unparse(node.func)}")
-    elif "." not in path:
-        undecided.append(f"{site} {path}")
 
 
 # --- scope ----------------------------------------------------------------
@@ -676,9 +684,9 @@ def own_nodes(node: ast.AST) -> list[ast.AST]:
     """Every node belonging to this scope, stopping at a nested function.
 
     So a helper DEFINED inside a ``try`` and called elsewhere is not
-    credited to that ``try``. ``ClassDef`` is deliberately not a stop: a
-    method body belongs to its class, and the function stop is what keeps
-    the attribution innermost.
+    credited to it. ``ClassDef`` is deliberately not a stop: a method body
+    belongs to its class, and the function stop keeps the attribution
+    innermost.
     """
     found: list[ast.AST] = []
     for child in ast.iter_child_nodes(node):
@@ -692,9 +700,8 @@ def scopes(tree: ast.Module) -> list[tuple[ast.AST, str]]:
     """Every scope in a module and its qualified name.
 
     ``<module>``, then ``build``, ``EvolutionJournal.append_entries``,
-    ``_prepare.build.target``. The qualified name is what lets an
-    exemption table name ONE closure rather than every function of that
-    name in the file.
+    ``_prepare.build.target``. The qualified name lets an exemption table
+    name ONE closure rather than every function of that name in the file.
     """
     found: list[tuple[ast.AST, str]] = [(tree, "<module>")]
     _walk_scopes(tree, "", found)
@@ -718,8 +725,7 @@ def declared_in(tree: ast.Module, class_name: str, method: str) -> set[int]:
 
     An exemption resolved by function NAME alone gives a free pass to an
     unrelated method that shares it, which is what round 1 of #327
-    shipped. Located by walking, so editing the file above it changes
-    nothing.
+    shipped. Located by walking, so editing the file above it is free.
     """
     for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef) or node.name != class_name:
@@ -737,10 +743,10 @@ def declared_in(tree: ast.Module, class_name: str, method: str) -> set[int]:
 class Clause:
     """One ``except`` clause: what it catches, and whether that is known.
 
-    ``decided`` is the field that stops the skip direction. A handler
-    whose type this walk cannot name yields an EMPTY ``names``, and an
-    empty set reads exactly like "catches nothing", which is the worst
-    possible misreading of "catches something I could not see".
+    ``decided`` is what stops the skip direction. A handler whose type
+    this walk cannot name yields an EMPTY ``names``, and an empty set
+    reads exactly like "catches nothing", which is the worst possible
+    misreading of "catches something I could not see".
     """
 
     names: frozenset[str]
@@ -752,10 +758,9 @@ def handler_clauses(node: ast.Try) -> list[Clause]:
     """The clauses of one ``try``, IN ORDER.
 
     Order is load-bearing: a broad clause above a narrow one makes the
-    narrow one unreachable, so a guard that sorts the clauses cannot tell
-    a correct ladder from a dead one. A bare ``except:`` reads as
-    ``BaseException``, which is what it catches, and is not the same thing
-    as an undecidable handler.
+    narrow one unreachable, so a guard that sorts cannot tell a correct
+    ladder from a dead one. A bare ``except:`` reads as ``BaseException``,
+    which is what it catches, and is not an undecidable handler.
     """
     return [_clause(handler) for handler in node.handlers]
 
@@ -783,11 +788,10 @@ def blind_spot(probe: Callable[[str], object], source: str) -> None:
     expected not to. The row passes only while the limit holds, and the
     day somebody widens the walk it XPASSes, which ``strict=True`` makes a
     failure and the disclosure has to be edited in the same diff.
-    ``raises=AssertionError`` is what makes a resolver that CRASHES fail
-    too: #328 measured an open hole, a closed hole and a resolver raising
-    on entry all passing green under a plain non-strict xfail.
-
-    A disclosure with no test behind it rots silently; this is the test.
+    ``raises=AssertionError`` makes a resolver that CRASHES fail too: #328
+    measured an open hole, a closed hole and a resolver raising on entry
+    all passing green under a plain non-strict xfail. A disclosure with no
+    test behind it rots silently; this is the test.
     """
     assert probe(source), (
         "the walk still cannot see this, which is what the guard's "

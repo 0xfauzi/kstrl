@@ -20,58 +20,16 @@ import ast
 import re
 from pathlib import Path
 
-#: The package under test, located the way every other AST-walking test
-#: in this suite locates it (test_atomicio, test_prompt_versions).
-KSTRL_PACKAGE = Path(__file__).resolve().parent.parent / "kstrl"
-
-
-def label(source_file: Path) -> str:
-    """How a file is named in a key and in a failure message.
-
-    Not ``source_file.name``: ten basenames occur twice in ``kstrl/``
-    (``config.py``, ``decompose.py``, ``inbox.py`` and seven more, once
-    at the top level and once under ``tui/screens/``). Nothing collides
-    in the pinned sets today, and the counts would still move if it did,
-    but the message would name a file the reader cannot then find.
-    Falls back to the basename outside the package, which is what the
-    snippets in ``TestTheGuardDetects`` are.
-    """
-    try:
-        return str(source_file.relative_to(KSTRL_PACKAGE))
-    except ValueError:
-        return source_file.name
-
-
-def package_sources() -> list[Path]:
-    """Every module in ``kstrl/``, in a stable order."""
-    return sorted(KSTRL_PACKAGE.rglob("*.py"))
-
-
-#: Source text -> its parsed tree. Three walkers in this file cross the
-#: whole package, and each used to parse it for itself.
-_PARSED: dict[str, ast.Module] = {}
-
-
-def parsed(source_file: Path) -> ast.Module:
-    """The module's AST, parsed once and shared by the three walkers.
-
-    ``tests/test_state_dir_scope.py`` already carries this pattern with
-    its own measurement (85 ms a pass, two walkers). Measured here: 127
-    modules, 65,366 lines, 236,779 nodes, 162 ms a pass, and this file
-    made three of them, which was 0.20 s of the file's 0.71 s.
-
-    Keyed on the TEXT rather than the path, because the positive
-    controls below rewrite one ``other.py`` several times within a
-    single test, and a path-keyed cache would hand the second call the
-    first snippet's tree.
-    """
-    text = source_file.read_text(encoding="utf-8")
-    tree = _PARSED.get(text)
-    if tree is None:
-        tree = ast.parse(text)
-        _PARSED[text] = tree
-    return tree
-
+from tests.helpers.astwalk import (
+    assert_census,
+    assignment_parts,
+    declared_in,
+    folded_str,
+    folds_containing,
+    label,
+    package_sources,
+    parsed,
+)
 
 # --- the one-writer guard, in pieces small enough to read -----------------
 #
@@ -111,75 +69,6 @@ JOURNAL_FILENAME = "evolution.jsonl"
 
 #: Path methods that write without going through ``open``.
 _PATH_WRITE_METHODS = frozenset({"write_text", "write_bytes"})
-
-
-def folded_str(node: ast.AST) -> str | None:
-    """The string this expression is KNOWN to evaluate to, or None.
-
-    Round 2 of review on #327, F9: two writers defeated all three
-    layers by never spelling in one piece what they reach.
-
-        target = getattr(config, "journal_" + "path")
-        target = root / ".kstrl" / ("evolution" + ".jsonl")
-
-    Neither is exotic; both are what somebody writes to get past a
-    string search, and either reintroduces #312 with CI green. Constant
-    folding is the answer to both. CPython folds adjacent literals
-    (``"a" "b"``) into one ``Constant`` at parse time, so that case
-    needs nothing here; an f-string does NOT fold, measured on this
-    interpreter, so ``JoinedStr`` and ``FormattedValue`` are handled
-    explicitly alongside the ``+``.
-
-    Decidable cases only. Anything whose value needs the interpreter
-    (``"".join(parts)``, ``%``-formatting, ``str.replace``, a name, an
-    env var) returns None, and the docstring on the test says so
-    rather than the guard pretending otherwise.
-
-    Split across four functions because the recursion costs 23 on the
-    cognitive gate in one, and that hook fails rather than advises.
-    """
-    if isinstance(node, ast.Constant):
-        return node.value if isinstance(node.value, str) else None
-    if isinstance(node, ast.BinOp):
-        return folded_concat(node)
-    if isinstance(node, ast.FormattedValue):
-        return folded_placeholder(node)
-    if isinstance(node, ast.JoinedStr):
-        return folded_parts(node.values)
-    return None
-
-
-def folded_concat(node: ast.BinOp) -> str | None:
-    """``"journal_" + "path"``, and nothing else that uses ``+``."""
-    if not isinstance(node.op, ast.Add):
-        return None
-    return folded_parts([node.left, node.right])
-
-
-def folded_placeholder(node: ast.FormattedValue) -> str | None:
-    """The ``{...}`` of an f-string, when it is decidable.
-
-    ``!r`` and a format spec both change the result, so only the plain
-    case folds. Measured on this interpreter: ``ast.parse`` gives
-    ``conversion == -1`` for a plain placeholder and for one with a
-    format spec, and 114 for ``!r``; ``None`` never appears on the parse
-    path, so it is not tested for. Both halves have a control below,
-    because each was measured to be removable with the file green.
-    """
-    if node.conversion == -1 and node.format_spec is None:
-        return folded_str(node.value)
-    return None
-
-
-def folded_parts(nodes: list[ast.expr]) -> str | None:
-    """Every piece folded and joined, or None if any piece is unknown."""
-    parts: list[str] = []
-    for node in nodes:
-        folded = folded_str(node)
-        if folded is None:
-            return None
-        parts.append(folded)
-    return "".join(parts)
 
 
 def dynamic_attribute_read(node: ast.AST) -> bool:
@@ -281,25 +170,23 @@ def write_target(node: ast.Call, open_names: set[str]) -> ast.expr | None:
     return func.value if is_write_mode(mode_argument(node, 0)) else None
 
 
-def assignment_parts(node: ast.AST) -> tuple[list[str], ast.expr | None]:
-    """The plain names an assignment binds, and what it binds them to.
+def bound_names(node: ast.AST) -> tuple[list[str], ast.expr | None]:
+    """The plain LOCAL names one binding binds, and what it binds them to.
 
-    Handles ``AnnAssign`` as well as ``Assign``: an annotated
-    ``journal_path: Path = config.journal_path`` was invisible to round
-    1's walk, which looked only at ``Assign``.
+    ``astwalk.assignment_parts`` answers with dotted targets too, because
+    a resolver needs ``self.lookup`` to mean something. This file's alias
+    tables are about local names, so an attribute target is not one of
+    them and a target the AST cannot spell as a path is ``None``.
     """
-    if isinstance(node, ast.Assign):
-        return [t.id for t in node.targets if isinstance(t, ast.Name)], node.value
-    if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-        return [node.target.id], node.value
-    return [], None
+    targets, value = assignment_parts(node)
+    return [name for name in targets if name is not None and "." not in name], value
 
 
 def open_aliases(nodes: list[ast.AST]) -> set[str]:
     """``{"open"}`` plus any name bound to it, e.g. ``open_file = open``."""
     names = {"open"}
     for node in nodes:
-        targets, value = assignment_parts(node)
+        targets, value = bound_names(node)
         if isinstance(value, ast.Name) and value.id in names:
             names.update(targets)
     return names
@@ -346,7 +233,7 @@ def alias_sweep(nodes: list[ast.AST], exempt: set[int], names: set[str]) -> set[
     """
     found: set[str] = set()
     for node in nodes:
-        targets, value = assignment_parts(node)
+        targets, value = bound_names(node)
         if value is None or getattr(node, "lineno", -1) in exempt:
             continue
         if mentions_journal(ast.unparse(value), names) or reaches_journal_dynamically(value):
@@ -354,31 +241,15 @@ def alias_sweep(nodes: list[ast.AST], exempt: set[int], names: set[str]) -> set[
     return found
 
 
-def append_entries_lines(nodes: list[ast.AST], source_file: Path) -> set[int]:
-    """The lines of ``EvolutionJournal.append_entries``: the one writer.
-
-    Resolved through the CLASS, in the one module that may define it,
-    rather than by function name: round 1 exempted anything anywhere
-    called ``append_entries``, so an unrelated method or a nested
-    function of that name was a free pass. Located by walking rather
-    than by pinning a line number, so editing the file above it does not
-    fail the guard.
-    """
-    if label(source_file) != "evolution.py":
-        return set()
-    for node in nodes:
-        if not isinstance(node, ast.ClassDef) or node.name != "EvolutionJournal":
-            continue
-        for item in node.body:
-            if isinstance(item, ast.FunctionDef) and item.name == "append_entries":
-                return set(range(item.lineno, (item.end_lineno or item.lineno) + 1))
-    return set()
-
-
 def journal_writes_outside_append_entries(source_file: Path) -> list[str]:
     """Every write to the evolution journal in one file, bar the sanctioned one."""
-    nodes = list(ast.walk(parsed(source_file)))
-    exempt = append_entries_lines(nodes, source_file)
+    tree = parsed(source_file)
+    nodes = list(ast.walk(tree))
+    exempt = (
+        declared_in(tree, "EvolutionJournal", "append_entries")
+        if label(source_file) == "evolution.py"
+        else set()
+    )
     names = journal_aliases(nodes, exempt)
     opens = open_aliases(nodes)
     found: list[str] = []
@@ -394,39 +265,39 @@ def journal_writes_outside_append_entries(source_file: Path) -> list[str]:
     return found
 
 
-def journal_path_escapes(source_file: Path) -> list[str]:
-    """Every read or write of an attribute named ``journal_path``.
+def obtains_the_journal_path(node: ast.AST) -> bool:
+    """Does this ONE node get hold of an attribute named ``journal_path``?
 
-    Layer 1. Deliberately NOT filtered down to the evolution journal:
-    telling ``self.config.journal_path`` from ``pipeline``'s
-    progress-log ``self.journal_path`` needs the type resolution #324 is
-    about, and pinning six extra sites costs one line each in the
+    Layer 1's predicate. It resolves nothing and enumerates one node type
+    plus the three dynamic spellings, which is the whole grammar for
+    reading a named attribute. Deliberately NOT filtered down to the
+    evolution journal: telling ``self.config.journal_path`` from
+    ``pipeline``'s progress-log ``self.journal_path`` needs type
+    resolution, and pinning six extra sites costs one line each in the
     expected set while guessing costs a hole.
     """
-    tree = parsed(source_file)
-    return [
-        f"{label(source_file)}: {ast.unparse(node)}"
-        for node in ast.walk(tree)
-        if (isinstance(node, ast.Attribute) and node.attr == JOURNAL_ATTRIBUTE)
-        or dynamic_attribute_read(node)
-    ]
+    return (
+        isinstance(node, ast.Attribute) and node.attr == JOURNAL_ATTRIBUTE
+    ) or dynamic_attribute_read(node)
 
 
-def folded_filename_sites(source_file: Path) -> int:
-    """How many expressions in one module reduce to the journal's name.
+def escape_row(source_file: Path, node: ast.AST) -> str:
+    """An inventory row that names the expression, not just the module.
 
-    Substring of the folded value, not equality, which is what lets
-    ONE inventory replace two: the ``EvolutionConfig`` default folds to
-    ``".kstrl/evolution.jsonl"`` and every prose mention folds to a
-    whole docstring, so an exact match saw one site where a text search
-    saw seven. Measured: substring-of-folded reproduces the text
-    search's seven modules exactly, and unlike the text search it also
-    sees ``("evolution" + ".jsonl")`` and cannot be fooled by a comment.
-    Counted per module so an unrelated edit does not fail it.
+    The census keys on the module by default. This guard's message is
+    "here is the expression that got hold of the path", so it pays for
+    the finer key with a longer pinned dict.
     """
-    return sum(
-        1 for node in ast.walk(parsed(source_file)) if JOURNAL_FILENAME in (folded_str(node) or "")
-    )
+    return f"{label(source_file)}: {ast.unparse(node)}"
+
+
+def journal_path_escapes(source_file: Path) -> list[str]:
+    """Every read or write of an attribute named ``journal_path``."""
+    return [
+        escape_row(source_file, node)
+        for node in ast.walk(parsed(source_file))
+        if obtains_the_journal_path(node)
+    ]
 
 
 #: Every place in ``kstrl/`` that reads or writes an attribute named
@@ -479,18 +350,20 @@ class TestOneWriter:
         - a path spelled out rather than asked for. The test below
           covers that half.
         """
-        found: dict[str, int] = {}
-        for source_file in package_sources():
-            for site in journal_path_escapes(source_file):
-                found[site] = found.get(site, 0) + 1
-
-        assert found == EXPECTED_JOURNAL_PATH_SITES, (
-            "The set of places that get hold of a journal path changed. If this is "
-            "a new writer of the evolution journal, route it through "
-            "EvolutionJournal.append_entries: an unguarded append concatenates onto "
-            "an unterminated tail and eats the entry after it (#312). If it is a "
-            "read, or another file's journal, add it to EXPECTED_JOURNAL_PATH_SITES "
-            f"with a reason. Found: {found}"
+        assert_census(
+            sources=package_sources(),
+            sees=obtains_the_journal_path,
+            key=escape_row,
+            expected=EXPECTED_JOURNAL_PATH_SITES,
+            control="target = config.journal_path\n",
+            message=(
+                "The set of places that get hold of a journal path changed. If this "
+                "is a new writer of the evolution journal, route it through "
+                "EvolutionJournal.append_entries: an unguarded append concatenates "
+                "onto an unterminated tail and eats the entry after it (#312). If it "
+                "is a read, or another file's journal, add it to "
+                "EXPECTED_JOURNAL_PATH_SITES with a reason."
+            ),
         )
 
     def test_nobody_spells_the_journal_filename_for_themselves(self) -> None:
@@ -515,23 +388,23 @@ class TestOneWriter:
         any name resolved at run time. The test below asserts that miss,
         so this disclosure fails if it stops being true.
         """
-        built: dict[str, int] = {}
-        for source_file in package_sources():
-            hits = folded_filename_sites(source_file)
-            if hits:
-                built[label(source_file)] = hits
-
-        assert built == {
-            "atomicio.py": 1,  # prose in the module docstring
-            "events.py": 1,  # prose in a docstring
-            "evolution.py": 1,  # the EvolutionConfig default
-            "init_cmd.py": 1,  # a commented example in the scaffolded kstrl.toml
-            "knowledge.py": 1,  # prose in the module docstring
-            "pipeline.py": 1,  # prose in a docstring
-            "statedir.py": 1,  # the state-dir inventory, by name
-        }, (
-            "Somebody spelled or assembled the journal's filename instead of "
-            f"asking EvolutionConfig for it. Sites: {built}"
+        assert_census(
+            sources=package_sources(),
+            sees=folds_containing(JOURNAL_FILENAME),
+            expected={
+                "atomicio.py": 1,  # prose in the module docstring
+                "events.py": 1,  # prose in a docstring
+                "evolution.py": 1,  # the EvolutionConfig default
+                "init_cmd.py": 1,  # a commented example in the scaffolded kstrl.toml
+                "knowledge.py": 1,  # prose in the module docstring
+                "pipeline.py": 1,  # prose in a docstring
+                "statedir.py": 1,  # the state-dir inventory, by name
+            },
+            control='target = root / ("evolution" + ".jsonl")\n',
+            message=(
+                "Somebody spelled or assembled the journal's filename instead of "
+                "asking EvolutionConfig for it."
+            ),
         )
 
     def test_append_entries_is_the_only_writer_of_the_journal(self) -> None:

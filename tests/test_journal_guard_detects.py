@@ -25,12 +25,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tests.helpers.astwalk import KSTRL_PACKAGE, label
 from tests.test_journal_one_writer import (
     JOURNAL_ATTRIBUTE,
-    KSTRL_PACKAGE,
     journal_path_escapes,
     journal_writes_outside_append_entries,
-    label,
 )
 
 
@@ -206,10 +205,10 @@ class TestTheGuardDetects:
     def test_a_duplicate_basename_is_named_by_its_package_path(self) -> None:
         """A key and a message that send the reader to the right file.
 
-        Measured on this tree: ten basenames occur twice under
-        ``kstrl/``, ``decompose.py`` among them. Both halves asserted,
-        because a ``label`` that returned the full absolute path would
-        satisfy the second line alone and break every pinned key.
+        ``label`` moved to ``tests/helpers/astwalk.py`` on #324 and is
+        covered there too. Kept here because THIS guard's pinned keys are
+        what break if it changes, and a shared helper's own test cannot
+        say which caller a change costs.
         """
         assert label(KSTRL_PACKAGE / "decompose.py") == "decompose.py"
         assert label(KSTRL_PACKAGE / "tui" / "screens" / "decompose.py") == str(
