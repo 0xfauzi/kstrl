@@ -29,8 +29,15 @@ returns having failed to observe the condition, because a helper that
 turned a real defect into a timeout-shaped pass would be the same defect
 one level up: the planted ``dock: top`` regression in
 ``kstrl/tui/styles.tcss`` must still take
-``test_the_banners_do_not_overlap_each_other_or_the_topbar`` red, and
-``tests/test_settle_discipline.py`` plants it to prove that.
+``test_the_banners_do_not_overlap_each_other_or_the_topbar`` red.
+
+Two separate things hold that up, and an earlier version of this
+docstring ran them together and named a test that did not exist.
+``tests/test_settle_helper.py`` pins the RULE: a condition that never
+holds raises, the failure names the condition, and the predicate's own
+exceptions are not caught. The PLANT is a per-PR mutation discipline
+rather than a test, because a test that edited ``kstrl/tui/styles.tcss``
+to prove a point would mutate production source during an ordinary run.
 
 The second half of that rule is that the predicate's own exceptions are
 NOT caught. A predicate that raises propagates at once, at the line that
