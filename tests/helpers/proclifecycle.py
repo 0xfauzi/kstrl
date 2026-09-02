@@ -73,6 +73,14 @@ PROCESS_VOCABULARY = frozenset(
         "multiprocessing",
         "pexpect",
         "pty",
+        # Real spawners that reach neither `subprocess` nor `os.kill`.
+        # `loop.subprocess_exec` and `loop.subprocess_shell` are the
+        # asyncio event-loop spawners, and `webbrowser.open` shells out
+        # (measured: `inspect.getsource(webbrowser)` names `subprocess`
+        # 16 times, against 0 for the DISCLOSED `shutil`). Measured cost
+        # of enrolling all three over the 129 modules of `kstrl/`: zero
+        # rows change.
+        "webbrowser",
         # The unambiguous primitives, whoever exports them.
         "DeadlineStreamer",
         "Popen",
@@ -197,17 +205,21 @@ def spelled_tokens(node: ast.AST) -> Iterator[str]:
     package.
 
     MEASURED, because a widening that costs rows is a widening that gets
-    silenced. Over the 127 modules of ``kstrl/`` the split changes the
-    inventory in exactly ONE place: ``procdispose.py`` gains
-    ``DeadlineStreamer`` from two docstrings that write
-    ``agents.proc.DeadlineStreamer``. That row is pinned in
-    ``EXPECTED_PROCESS_MODULES`` with the reason on it rather than
+    silenced. Over the 129 modules of ``kstrl/`` the split changes the
+    inventory in TWO places: ``procdispose.py`` and ``procgroup.py`` each
+    gain ``DeadlineStreamer`` from docstrings that write
+    ``agents.proc.DeadlineStreamer``. Both rows are pinned in
+    ``EXPECTED_PROCESS_MODULES`` with the reason on them rather than
     special-cased out, because an exception list is how a net starts
     having a hand-tuned hole.
-    (An earlier version of this docstring said "exactly zero places",
-    which was true when it was written and had stopped being true by the
-    time the module split landed. A measured claim in prose does not
-    re-measure itself, which is the argument for the pinned row.)
+
+    THIS NUMBER HAS NOW BEEN WRONG TWICE, which is the point worth
+    keeping. It said "exactly zero places", true when written and false
+    by the time the module split landed; it was corrected to "exactly
+    ONE" and was already two, because the second module was in the same
+    diff. A measured claim in prose does not re-measure itself. The
+    pinned rows do, and they are what this paragraph is for - the number
+    here is commentary on them, not the mechanism.
 
     Prose is mostly safe for a reason worth stating: a docstring is ONE
     string, so splitting a sentence on ``.`` yields sentence fragments
@@ -244,6 +256,8 @@ def process_primitive_spellings(tree: ast.Module) -> frozenset[str]:
 #: resolve the receiver.
 BARE_SYSCALLS = frozenset(
     {
+        "subprocess_exec",
+        "subprocess_shell",
         "create_subprocess_exec",
         "create_subprocess_shell",
         "execl",
@@ -326,6 +340,38 @@ def os_module_names(tree: ast.Module) -> frozenset[str]:
     return frozenset(names)
 
 
+def os_direct_names(tree: ast.Module) -> frozenset[str]:
+    """Local names bound DIRECTLY to an os syscall, however renamed.
+
+    ``from os import wait`` and ``from os import wait as _w`` leave no
+    receiver for :func:`_receiver_is_os` to resolve, so the call is a
+    bare ``wait()`` that layer 2 could not see. Layer 1 could not see it
+    either, because ``wait`` is deliberately absent from
+    :data:`PROCESS_VOCABULARY` - measured, enrolling the bare word costs
+    9 modules of false rows, which is a net that gets silenced.
+
+    Measured before this existed: a new module doing ``from os import
+    wait`` then ``return wait()`` gave 40 passed on the guard file and
+    4977 passed on the full suite, while a positive control spelling
+    ``subprocess`` gave 3 failures. ``os.wait()`` reaps ANY child of this
+    process, so a second one anywhere can collect a child ``procgroup``
+    is still waiting on and turn a bounded wait into a permanent one.
+
+    Resolving the import is the fix rather than widening the vocabulary,
+    because the import statement is where the ambiguity is actually
+    removed: ``wait`` the token is three different methods, and
+    ``from os import wait`` is the one spelling that says which.
+    """
+    wanted = BARE_SYSCALLS | AMBIGUOUS_OS_CALLS
+    return frozenset(
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "os"
+        for alias in node.names
+        if alias.name in wanted
+    )
+
+
 def _os_binding(node: ast.AST, known: set[str]) -> set[str]:
     """The names ONE statement binds to the ``os`` module."""
     if isinstance(node, ast.Import):
@@ -363,15 +409,25 @@ def os_syscall_calls(tree: ast.Module, os_names: frozenset[str]) -> list[str]:
 
     Separate from :func:`bare_syscall_calls` because these names are
     also ordinary methods. The receiver is what tells a syscall from a
-    method, and only here.
+    method, and only here - or, where there is no receiver at all,
+    :func:`os_direct_names` resolving the import that removed it.
     """
-    return [
+    direct = os_direct_names(tree)
+    hits = [
         _hit(node, f"os.{name}")
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
         if _receiver_is_os(node.func, os_names)
         for name in sorted(callee_names(node) & AMBIGUOUS_OS_CALLS)
     ]
+    hits += [
+        _hit(node, f"os.{node.func.id}")
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        if isinstance(node.func, ast.Name)
+        if node.func.id in direct
+    ]
+    return hits
 
 
 def _receiver_is_os(func: ast.expr, os_names: frozenset[str]) -> bool:
@@ -421,10 +477,18 @@ def _hit(node: ast.Call, name: str) -> str:
 #: vocabulary and the rule below is its layer-2 message.
 STREAMER_NAME = "DeadlineStreamer"
 
-#: What counts as letting go of a streamer. ``close`` is the one for a
-#: consumer that walked away and ``finish`` the one for a child on its
-#: way out; ``kill`` is what both end in.
-STREAMER_DISPOSALS = frozenset({"close", "finish", "kill"})
+#: What counts as letting go of a streamer in a ``finally``. ONE name,
+#: and the two that were here with it are the reason to say why.
+#:
+#: ``finish`` is the ORDERLY disposal and waits ten seconds for a child
+#: to leave on its own: measured, ``finish()`` on a live child takes
+#: 10.0028s, which on the abandonment path is exactly the billed spend
+#: on a discarded answer that ``DeadlineStreamer.close`` exists to stop.
+#: ``kill`` never calls ``_settle``, so it leaves ``_disposed`` False and
+#: the streamer in ``_ACTIVE`` for a later ``kill_active_process_groups``
+#: to signal a corpse. Both left the guard GREEN on a site doing the
+#: thing the guard is for.
+STREAMER_DISPOSALS = frozenset({"close"})
 
 #: The disposals a broad clause has to reach for a raw ``Popen``.
 POPEN_DISPOSALS = frozenset({"drain_or_abandon", "reap_or_abandon"})
@@ -454,19 +518,50 @@ def _function_scopes(tree: ast.Module) -> Iterator[ast.FunctionDef | ast.AsyncFu
             yield node
 
 
-def _disposes_in_finally(node: ast.AST, disposals: frozenset[str]) -> bool:
-    """Is this a ``try`` whose ``finally`` lets go of a child?"""
+def _finally_disposes(node: ast.AST, receiver: str) -> bool:
+    """Is this a ``try`` whose ``finally`` calls ``<receiver>.close()``?
+
+    THE RECEIVER IS CHECKED, which the first version did not do. It asked
+    only whether some ``try`` in the enclosing scope had some ``finally``
+    call whose callee NAME was a disposal, so any unrelated cleanup
+    satisfied it. Measured three ways: replacing ``streamer.close()``
+    with ``_tmp.close()`` left the guard green while the child was a
+    confirmed live leak, and ``agents/codex.py`` already carries a second
+    ``try``/``finally`` in the same scope for its temp file, so one edit
+    of that ``unlink()`` to a ``close()`` would have switched the rule off
+    for that adapter with nothing else changing.
+
+    The receiver is flattened, so ``self._streamer.close()`` matches a
+    construction bound to ``self._streamer``.
+    """
     if not isinstance(node, ast.Try | ast.TryStar) or not node.finalbody:
         return False
     return any(
-        isinstance(inner, ast.Call) and bool(callee_names(inner) & disposals)
+        isinstance(inner, ast.Call)
+        and isinstance(inner.func, ast.Attribute)
+        and inner.func.attr in STREAMER_DISPOSALS
+        and _dotted_head(inner.func.value) == receiver
         for statement in node.finalbody
         for inner in ast.walk(statement)
     )
 
 
+def _binding_for(scope: ast.AST, call: ast.Call) -> str:
+    """The name ``call``'s result was bound to, or ``""``.
+
+    A construction nobody keeps a name for cannot be disposed of, so the
+    empty string is a site the rule reports rather than a case to skip.
+    """
+    for node in own_nodes(scope):
+        if isinstance(node, ast.Assign) and node.value is call and len(node.targets) == 1:
+            return _dotted_head(node.targets[0])
+        if isinstance(node, ast.AnnAssign) and node.value is call:
+            return _dotted_head(node.target)
+    return ""
+
+
 def undisposed_streamer_sites(tree: ast.Module) -> list[str]:
-    """A ``DeadlineStreamer`` built in a scope with no ``finally`` disposal.
+    """A ``DeadlineStreamer`` built with no ``finally`` that closes IT.
 
     #326's second shape. Every adapter's ``run`` is a GENERATOR, and a
     generator can be abandoned mid-yield: ``decompose`` raises from
@@ -479,19 +574,37 @@ def undisposed_streamer_sites(tree: ast.Module) -> list[str]:
     ``GeneratorExit`` thrown at the suspended ``yield``, so a ``finally``
     is what this insists on. A disposal on the straight-line path only
     is exactly the state every one of these five sites was in.
+
+    Three things are required and the last two were added after the first
+    version was measured passing a live leak: the ``finally`` must call a
+    disposal, it must call it ON THE STREAMER, and its ``try`` must not
+    start before the construction, so a cleanup block that has already
+    run cannot be credited with covering one.
     """
     hits: list[str] = []
     for scope in _function_scopes(tree):
         owned = list(own_nodes(scope))
-        built = [
-            node
+        hits.extend(
+            _hit(node, f"{scope.name}: {STREAMER_NAME}")
             for node in owned
             if isinstance(node, ast.Call)
             if STREAMER_NAME in callee_names(node)
-        ]
-        if built and not any(_disposes_in_finally(node, STREAMER_DISPOSALS) for node in owned):
-            hits.extend(_hit(node, f"{scope.name}: {STREAMER_NAME}") for node in built)
+            if not _is_let_go_of(scope, owned, node)
+        )
     return hits
+
+
+def _is_let_go_of(scope: ast.AST, owned: list[ast.AST], call: ast.Call) -> bool:
+    """Does a ``try`` in this scope close the streamer THIS call built?"""
+    receiver = _binding_for(scope, call)
+    if not receiver:
+        return False
+    return any(
+        isinstance(node, ast.Try | ast.TryStar)
+        and node.lineno >= call.lineno
+        and _finally_disposes(node, receiver)
+        for node in owned
+    )
 
 
 def base_disposal_guards(tree: ast.Module) -> int:

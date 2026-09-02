@@ -30,7 +30,7 @@ import subprocess
 import time
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import IO, Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -39,7 +39,7 @@ from kstrl import procdispose, procgroup
 from kstrl.agents import proc as proc_module
 from kstrl.agents.custom import CustomAgent
 from kstrl.agents.proc import DeadlineStreamer
-from kstrl.procdispose import drain_or_abandon, reap_or_abandon
+from kstrl.procdispose import close_quietly, drain_or_abandon, reap_or_abandon
 from kstrl.procgroup import (
     GroupSignal,
     pid_is_alive,
@@ -349,6 +349,49 @@ class TestTheTwoDisposals:
 
 
 @posix_only
+class TestCloseQuietlySwallowsWhatever:
+    """The breadth half of the pipe-close rule, on its own.
+
+    Order carries the reader thread's half: the queue sentinel is posted
+    before the close, so nothing the close raises can lose it. Breadth
+    carries the WRITER's half, and nothing else does. ``_write_stdin``
+    closes our end of stdin in a ``finally`` because that thread is the
+    only one that may - measured, a close from a second thread waits on
+    the io lock the owning thread holds and had not returned after
+    3.005s - and a child reading stdin to EOF blocks forever if that end
+    stays open. There is no sentinel to reorder there; the close either
+    happens or the child hangs.
+
+    Asserted on the helper rather than through a real pipe, because
+    making a real ``BufferedWriter.close`` raise on demand is a fixture
+    with more machinery than the rule it checks.
+    """
+
+    def test_an_error_outside_the_old_enumeration_is_swallowed(self) -> None:
+        """``AttributeError`` is the measured one, at 600s on a real run."""
+
+        class _Hostile:
+            def close(self) -> None:
+                raise AttributeError("no close here")
+
+        close_quietly(cast(IO[str], _Hostile()))
+
+    def test_the_ordinary_errors_are_swallowed_too(self) -> None:
+        for exc in (BrokenPipeError, OSError, ValueError, RuntimeError):
+
+            class _Raises:
+                def __init__(self, error: type[BaseException]) -> None:
+                    self._error = error
+
+                def close(self) -> None:
+                    raise self._error
+
+            close_quietly(cast(IO[str], _Raises(exc)))
+
+    def test_none_is_not_an_error(self) -> None:
+        close_quietly(None)
+
+
 class TestAnAbandonedGeneratorLetsGoOfItsChild:
     """#326's second shape, end to end through a real adapter.
 
@@ -451,6 +494,45 @@ class TestAnAbandonedGeneratorLetsGoOfItsChild:
         finally:
             streamer.close()
 
+    @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+    def test_a_baseexception_in_the_close_still_posts_the_sentinel(self) -> None:
+        """The half ``suppress(Exception)`` does NOT cover.
+
+        The close is swallowed whole for every ordinary error, and that
+        is not the whole rule: ``suppress(Exception)`` lets a
+        ``KeyboardInterrupt``, a ``SystemExit``, a ``GeneratorExit`` and
+        a ``MemoryError`` straight through. With the sentinel written
+        after the close, each of those ended the reader thread with
+        nothing on the queue and left ``lines()`` on an unbounded
+        ``get()``. The sentinel is posted first for exactly this, so
+        breadth and order each carry a different half of the rule.
+
+        The ``KeyboardInterrupt`` DOES still end the reader thread, and
+        pytest reports that as an unhandled thread exception. It is
+        filtered here rather than caught, because the thread dying is the
+        premise of the test: what is asserted is that the queue is usable
+        afterwards, not that the thread survived.
+        """
+
+        class _Hostile:
+            def __iter__(self) -> Iterator[str]:
+                return iter(["only\n"])
+
+            def close(self) -> None:
+                raise KeyboardInterrupt
+
+        proc = MagicMock()
+        proc.stdin = MagicMock()
+        proc.stdout = _Hostile()
+        with patch("subprocess.Popen", return_value=proc):
+            streamer = DeadlineStreamer(["irrelevant"])
+        try:
+            streamer._reader.join(timeout=5.0)
+            assert streamer._queue.get(timeout=1.0) == "only"
+            assert streamer._queue.get(timeout=1.0) is None
+        finally:
+            streamer.close()
+
     def test_a_read_that_raises_still_posts_the_sentinel(self) -> None:
         """The other half of the same rule: the READ can fail too.
 
@@ -486,6 +568,64 @@ class TestAnAbandonedGeneratorLetsGoOfItsChild:
             assert streamer._queue.get(timeout=1.0) is None
         finally:
             streamer.close()
+
+    def test_an_interrupt_in_the_grace_still_kills_and_settles(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A BaseException in ``kill``'s SIGTERM grace, end to end.
+
+        REPRODUCED before it was fixed, with SIGINT delivered 1.0s into
+        a 5s grace on a child that traps SIGTERM: the group stayed
+        alive, ``_disposed`` stayed False, the streamer stayed in
+        ``_ACTIVE`` for a later ``kill_active_process_groups`` to signal
+        a corpse, and the ``KeyboardInterrupt`` displaced the caller's
+        own exception on the way out. The guard on this file demands
+        ``except BaseException`` plus a disposal plus a bare ``raise``
+        for the other three modules, and this was the one disposal it
+        was not applied to.
+
+        The interrupt is injected by making the grace itself raise,
+        rather than by signalling the test runner, so the test names one
+        process and cannot take the session down with it.
+        """
+        pidfile = tmp_path / "interrupted.pid"
+        streamer = DeadlineStreamer(
+            ["sh", "-c", procs.STUBBORN_SLEEPER.format(pidfile=pidfile)],
+            timeout=60.0,
+            term_grace=5.0,
+        )
+        procs.read_pid(pidfile)
+        pgid = os.getpgid(streamer._proc.pid)
+
+        real_wait = streamer._proc.wait
+        interrupts: list[int] = []
+
+        def interrupted(timeout: float | None = None) -> int:
+            """Raise ONCE, on the SIGTERM grace, then behave normally.
+
+            A patch that raises every time would also break the reap the
+            escalation performs, and the test would then be measuring
+            the patch rather than the handler.
+            """
+            if not interrupts:
+                interrupts.append(1)
+                raise KeyboardInterrupt
+            return real_wait(timeout=timeout)
+
+        monkeypatch.setattr(streamer._proc, "wait", interrupted)
+        with pytest.raises(KeyboardInterrupt):
+            streamer.close()
+
+        assert interrupts == [1], "the grace was never the thing interrupted"
+        # The group is empty of anything RUNNING, which is the #298
+        # reading: `pid_is_alive` would still say True for the reaped
+        # child's zombie window, and that is not what is being asked.
+        assert procs.wait_for_group_to_die(pgid), "the interrupt left the child alive"
+        assert procs.group_has_live_member(pgid) is False
+        # And the registry is clean, so a later shutdown sweep does not
+        # signal a corpse.
+        assert streamer._disposed is True
+        assert streamer not in set(proc_module._ACTIVE)
 
     def test_close_deregisters_from_the_active_set(self, tmp_path: Path) -> None:
         """A killed streamer left in ``_ACTIVE`` means the next

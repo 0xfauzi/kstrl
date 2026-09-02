@@ -20,66 +20,75 @@ unpack, a loop variable, a class attribute, a ``setattr`` and a function
 returning the bare name are all the same to it. Those last seven are the
 exact shapes #336 measured surviving a widened node-type matcher.
 
-Layer 2's resolvers are message quality: everything they resolve, layer
-1 has already counted. That is why they are allowed to be simple, and
-why a control for one of them asserts a LINE rather than mere presence.
+Layer 2's resolvers are message quality for every name but ``wait``:
+everything else they resolve, layer 1 has already counted. ``wait`` is
+the exception because the bare word costs 9 false rows in the
+vocabulary, so there layer 2 is the coverage; the guard docstring argues
+it and row 51 discloses what it still misses.
 
 THE EVASION TABLE. Each row is a way a process can be created, signalled
 or reaped so that a matcher built from a list of node types misses it.
 Every row has a verdict and a named test, and there are no rows without
-one: 44 shapes, 40 COVERED and 4 DISCLOSED. A disclosed row is not a
+one: 51 shapes, 46 COVERED and 5 DISCLOSED. A disclosed row is not a
 caveat in prose - it is asserted in ``TestWhatTheGuardCannotSee`` in the
 guard file, so the disclosure fails if it stops being true, which is the
 bar ``tests/test_journal_one_writer.py`` sets.
 
-===  ========================================  =========  ==========================================
-  #  Shape                                     Verdict    Test
-===  ========================================  =========  ==========================================
-  1  ``import subprocess``, attribute call     COVERED    a_plain_import_and_attribute_call
-  2  ``import subprocess as sp``               COVERED    an_aliased_module_import
-  3  ``from subprocess import Popen``          COVERED    a_from_import
-  4  ``from subprocess import Popen as P``     COVERED    a_from_import_renamed
-  5  ``from subprocess import run as _run``    COVERED    a_from_import_renamed_for_a_run
-  6  rebind ``Spawn = subprocess.Popen``       COVERED    a_module_level_rebind
-  7  ``functools.partial(subprocess.Popen)``   COVERED    a_functools_partial
-  8  a wrapper function in the same module     COVERED    a_wrapper_function_in_the_same_module
-  9  a wrapper reached through a PARAMETER     DISCLOSED  a_spawner_reached_through_a_parameter
- 10  a name pulled out of a dict literal       COVERED    a_name_pulled_out_of_a_dict
- 11  a name built by ``dict(zip(...))``        COVERED    a_name_built_by_dict_zip
- 12  a module-level CONSTANT tuple             COVERED    a_module_level_constant_tuple
- 13  ``getattr(subprocess, "Popen")``          COVERED    a_getattr_with_a_literal_name
- 14  ``getattr(os, "kill")``                   COVERED    a_getattr_kill
- 15  ``getattr(os, name)``, name computed      DISCLOSED  getattr_with_a_computed_attribute
- 16  ``os.system``                             COVERED    os_system
- 17  ``os.popen``                              COVERED    os_popen
- 18  ``os.spawnv`` and the ``spawn*`` family   COVERED    os_spawn_family
- 19  ``os.posix_spawn`` / ``posix_spawnp``     COVERED    os_posix_spawn
- 20  ``os.execv`` and the ``exec*`` family     COVERED    os_exec_family
- 21  ``os.fork`` / ``os.forkpty``              COVERED    os_fork
- 22  ``pty.spawn`` / ``pty.openpty``           COVERED    pty_spawn
- 23  ``multiprocessing.Process``               COVERED    multiprocessing
- 24  ``from multiprocessing.context import``   COVERED    a_dotted_module_path
- 25  ``asyncio.create_subprocess_exec``        COVERED    asyncio_create_subprocess
- 26  ``import asyncio.subprocess as asp``      COVERED    a_dotted_module_path
- 27  ``ProcessPoolExecutor``                   COVERED    a_process_pool_executor
- 28  ``pexpect.spawn``                         COVERED    pexpect
- 29  ``getoutput`` / ``getstatusoutput``       COVERED    getoutput_and_getstatusoutput
- 30  a ``shutil`` helper that shells out       DISCLOSED  a_shutil_helper_is_invisible
- 31  a runtime signal number                   COVERED    a_signal_number_that_arrives_at_run_time
- 32  ``proc.send_signal(sig)``                 COVERED    send_signal_on_a_popen
- 33  ``setsid`` / ``setpgid`` / ``getpgid``    COVERED    setsid_and_setpgid
- 34  ``os.waitpid`` / ``wait3`` / ``waitid``   COVERED    waitpid
- 35  bare ``os.wait()``, reaps ANY child       COVERED    os_wait_is_reported_and_a_popen_wait
- 36  ``pidfd_send_signal`` / ``pidfd_open``    COVERED    pidfd_signalling
- 37  ``importlib.import_module(...)``          COVERED    an_import_module_by_string
- 38  ``__import__("sub" + "process")``         COVERED    a_dunder_import_with_a_folded_string
- 39  ``__import__("".join(...))``, no fold     DISCLOSED  a_module_name_the_interpreter_builds
- 40  a ``subprocess.Popen`` SUBCLASS           COVERED    a_popen_subclass
- 41  a SECOND spawn or disposal, one module    COVERED    a_second_communicate_is_counted
- 42  a streamer disposed on one path ONLY      COVERED    a_streamer_with_no_finally_is_reported
- 43  ``except TimeoutExpired`` alone           COVERED    a_narrow_handler_is_not_a_broad_disposal
- 44  a disposal in a NESTED function           COVERED    a_nested_disposal_does_not_excuse_outer
-===  ========================================  =========  ==========================================
+===  ================================  =========  ==================================================
+  #  Shape                             Verdict    Test
+===  ================================  =========  ==================================================
+  1  ``import subprocess``, attr call  COVERED    a_plain_import_and_attribute_call
+  2  ``import subprocess as sp``       COVERED    an_aliased_module_import
+  3  ``from subprocess import Popen``  COVERED    a_from_import
+  4  a from-import renaming ``Popen``  COVERED    a_from_import_renamed
+  5  a from-import renaming ``run``    COVERED    a_from_import_renamed_for_a_run
+  6  rebind ``S = subprocess.Popen``   COVERED    a_module_level_rebind
+  7  ``functools.partial(Popen)``      COVERED    a_functools_partial
+  8  a wrapper fn in this module       COVERED    a_wrapper_function_in_the_same_module
+  9  a wrapper via a PARAMETER         DISCLOSED  a_spawner_reached_through_a_parameter_is_invisible
+ 10  a name from a dict literal        COVERED    a_name_pulled_out_of_a_dict
+ 11  a name from ``dict(zip(..))``     COVERED    a_name_built_by_dict_zip
+ 12  a module-level CONSTANT tuple     COVERED    a_module_level_constant_tuple
+ 13  ``getattr(subprocess,'Popen')``   COVERED    a_getattr_with_a_literal_name
+ 14  ``getattr(os, "kill")``           COVERED    a_getattr_kill
+ 15  ``getattr(os, name)``, computed   DISCLOSED  getattr_with_a_computed_attribute_is_invisible
+ 16  ``os.system``                     COVERED    os_system
+ 17  ``os.popen``                      COVERED    os_popen
+ 18  ``os.spawnv`` and ``spawn*``      COVERED    os_spawn_family
+ 19  ``os.posix_spawn(p)``             COVERED    os_posix_spawn
+ 20  ``os.execv`` and ``exec*``        COVERED    os_exec_family
+ 21  ``os.fork`` / ``os.forkpty``      COVERED    os_fork
+ 22  ``pty.spawn``/``openpty``         COVERED    pty_spawn
+ 23  ``multiprocessing.Process``       COVERED    multiprocessing
+ 24  ``from multiprocessing.context``  COVERED    a_dotted_module_path
+ 25  ``asyncio.create_subprocess_*``   COVERED    asyncio_create_subprocess
+ 26  ``import asyncio.subprocess``     COVERED    a_dotted_module_path
+ 27  ``ProcessPoolExecutor``           COVERED    a_process_pool_executor
+ 28  ``pexpect.spawn``                 COVERED    pexpect
+ 29  ``getoutput`` and its sibling     COVERED    getoutput_and_getstatusoutput
+ 30  a ``shutil`` helper shelling out  DISCLOSED  a_shutil_helper_is_invisible
+ 31  a run-time signal number          COVERED    a_signal_number_that_arrives_at_run_time
+ 32  ``proc.send_signal(sig)``         COVERED    send_signal_on_a_popen
+ 33  ``setsid``/``set-``/``getpgid``   COVERED    setsid_and_setpgid
+ 34  ``os.waitpid``, ``wait3``, ...    COVERED    waitpid
+ 35  bare ``os.wait()``, any child     COVERED    os_wait_is_reported_and_a_popen_wait_is_not
+ 36  ``pidfd_send_signal``/``open``    COVERED    pidfd_signalling
+ 37  ``importlib.import_module(..)``   COVERED    an_import_module_by_string
+ 38  ``__import__('sub'+'process')``   COVERED    a_dunder_import_with_a_folded_string
+ 39  ``__import__(''.join(..))``       DISCLOSED  a_module_name_the_interpreter_builds_is_invisible
+ 40  a ``subprocess.Popen`` SUBCLASS   COVERED    a_popen_subclass
+ 41  a SECOND spawn or disposal        COVERED    a_second_communicate_is_counted
+ 42  a streamer disposed on one path   COVERED    a_streamer_with_no_finally_is_reported
+ 43  ``except TimeoutExpired`` alone   COVERED    a_narrow_handler_is_not_a_broad_disposal
+ 44  a disposal in a NESTED function   COVERED    a_nested_disposal_does_not_excuse_outer
+ 45  ``from os import wait``           COVERED    a_from_import_of_a_syscall_is_resolved
+ 46  ``webbrowser``, ``subprocess_*``  COVERED    an_indirect_spawner_module_is_seen
+ 47  a ``finally`` on another object   COVERED    a_finally_on_another_object_is_not_a_disposal
+ 48  ``finish()``/``kill()`` disposal  COVERED    only_close_counts_as_a_streamer_disposal
+ 49  a disposal BEFORE the build       COVERED    a_disposal_before_the_construction_does_not_count
+ 50  a streamer bound to no name       COVERED    a_streamer_nobody_binds_a_name_to_is_reported
+ 51  ``o.wait()`` via a subscript      DISCLOSED  an_os_wait_through_a_computed_receiver
+===  ================================  =========  ==================================================
 
 Row 41 is the one layer 1 is blind to by construction, and
 ``EXPECTED_SPAWNERS`` in the guard file is what carries it.
@@ -108,6 +117,7 @@ from __future__ import annotations
 
 import ast
 
+from tests import test_process_lifecycle as guard
 from tests.helpers.proclifecycle import (
     BARE_SYSCALLS,
     bare_syscall_calls,
@@ -122,7 +132,6 @@ from tests.helpers.proclifecycle import (
     spelled_tokens,
     undisposed_streamer_sites,
 )
-from tests.test_process_lifecycle import TestWhatTheGuardCannotSee
 
 
 def tokens(source: str) -> frozenset[str]:
@@ -358,9 +367,51 @@ class TestLayerTwoNamesTheLine:
         assert hits == ["line 3: killpg(os.killpg ...)"]
 
     def test_every_bare_syscall_name_is_matched(self) -> None:
-        """No member of the list is there for decoration."""
+        """No member of the list is there for decoration.
+
+        The count is asserted as well as each member, because iterating
+        :data:`BARE_SYSCALLS` to check that :func:`bare_syscall_calls`
+        matches every member of :data:`BARE_SYSCALLS` cannot detect a
+        DROPPED member: delete ``killpg`` from the frozenset and this
+        loop simply runs one fewer time and passes. The floor is what
+        makes a deletion visible; it is a floor rather than an equality
+        so that adding a syscall stays a one-line change.
+        """
+        assert len(BARE_SYSCALLS) >= 27, (
+            f"BARE_SYSCALLS has shrunk to {len(BARE_SYSCALLS)}. A syscall removed "
+            "from the vocabulary is a syscall this guard stops seeing, so the diff "
+            "that removes one has to say why and move this floor with it."
+        )
         for name in sorted(BARE_SYSCALLS):
             assert syscalls(f"import os\nos.{name}(a)"), name
+        for name in ("killpg", "fork", "posix_spawn", "setsid", "subprocess_exec"):
+            assert name in BARE_SYSCALLS, name
+
+    def test_a_from_import_of_a_syscall_is_resolved(self) -> None:
+        """``from os import wait`` leaves no receiver to resolve.
+
+        MEASURED before the resolver existed: a module doing this gave
+        40 passed on the guard file and 4977 passed on the full suite,
+        while a positive control spelling ``subprocess`` gave 3
+        failures. ``wait`` cannot go in the vocabulary - the bare word
+        costs 9 modules of false rows - so the import statement, which
+        is the one place the ambiguity is actually removed, is resolved
+        instead.
+        """
+        assert os_calls("from os import wait\nwait()")
+        assert os_calls("from os import wait as _w\n_w()")
+        assert syscalls("from os import killpg\nkillpg(p, s)")
+        assert os_calls("from queue import Queue\nq.wait()") == []
+
+    def test_an_indirect_spawner_module_is_seen(self) -> None:
+        """Three words that reach neither ``subprocess`` nor ``os.kill``.
+
+        Measured cost of enrolling all three over the 129 modules of
+        ``kstrl/``: zero rows change.
+        """
+        assert tokens("import webbrowser\nwebbrowser.open(u)") == {"webbrowser"}
+        assert syscalls("await loop.subprocess_exec(a)")
+        assert syscalls("await loop.subprocess_shell(a)")
 
     def test_os_kill_is_reported_and_a_popen_kill_is_not(self) -> None:
         """The line that keeps this guard obeyable. ``proc.kill()`` is
@@ -466,6 +517,79 @@ class TestLayerTwoSeesAnUnattachedDisposal:
         )
         assert undisposed_streamer_sites(ast.parse(source)) == []
 
+    def test_a_finally_on_another_object_is_not_a_disposal(self) -> None:
+        """The receiver is checked, which the first version did not do.
+
+        MEASURED as a live leak: with the name unchecked, replacing
+        ``streamer.close()`` with ``_tmp.close()`` left the guard green
+        while the child kept running. ``agents/codex.py`` already carries
+        a second ``try``/``finally`` in the same scope for its temp file,
+        so one edit of that ``unlink()`` to a ``close()`` would have
+        switched the rule off for that adapter with nothing else changing.
+        """
+        source = (
+            "def run(cmd):\n"
+            "    streamer = DeadlineStreamer(cmd)\n"
+            "    try:\n"
+            "        yield from streamer.lines()\n"
+            "    finally:\n"
+            "        _tmp.close()\n"
+        )
+        assert undisposed_streamer_sites(ast.parse(source))
+
+    def test_only_close_counts_as_a_streamer_disposal(self) -> None:
+        """``finish`` and ``kill`` used to satisfy this rule and must not.
+
+        ``finish`` waits ten seconds for a child to leave on its own -
+        measured, ``finish()`` on a live child takes 10.0028s - which on
+        the abandonment path is exactly the billed spend on a discarded
+        answer the rule exists to stop. ``kill`` never calls ``_settle``,
+        so it leaves ``_disposed`` False and the streamer in ``_ACTIVE``
+        for a later ``kill_active_process_groups`` to signal a corpse.
+        """
+        template = (
+            "def run(cmd):\n"
+            "    streamer = DeadlineStreamer(cmd)\n"
+            "    try:\n"
+            "        yield from streamer.lines()\n"
+            "    finally:\n"
+            "        streamer.{}()\n"
+        )
+        assert undisposed_streamer_sites(ast.parse(template.format("finish")))
+        assert undisposed_streamer_sites(ast.parse(template.format("kill")))
+        assert undisposed_streamer_sites(ast.parse(template.format("close"))) == []
+
+    def test_a_disposal_before_the_construction_does_not_count(self) -> None:
+        """A cleanup block that has already finished cannot cover a
+        streamer built after it."""
+        source = (
+            "def run(cmd):\n"
+            "    try:\n"
+            "        pass\n"
+            "    finally:\n"
+            "        streamer.close()\n"
+            "    streamer = DeadlineStreamer(cmd)\n"
+            "    yield from streamer.lines()\n"
+        )
+        assert undisposed_streamer_sites(ast.parse(source))
+
+    def test_a_streamer_nobody_binds_a_name_to_is_reported(self) -> None:
+        """You cannot dispose of what you did not keep."""
+        source = "def run(cmd):\n    yield from DeadlineStreamer(cmd).lines()\n"
+        assert undisposed_streamer_sites(ast.parse(source))
+
+    def test_a_dotted_receiver_matches_a_dotted_binding(self) -> None:
+        """``self._streamer.close()`` disposes of ``self._streamer``."""
+        source = (
+            "def run(self, cmd):\n"
+            "    self._streamer = DeadlineStreamer(cmd)\n"
+            "    try:\n"
+            "        yield from self._streamer.lines()\n"
+            "    finally:\n"
+            "        self._streamer.close()\n"
+        )
+        assert undisposed_streamer_sites(ast.parse(source)) == []
+
     def test_a_nested_disposal_does_not_excuse_outer(self) -> None:
         """``own_nodes``'s whole job. A ``finally`` written inside a
         nested helper belongs to the helper, and crediting it to the
@@ -554,9 +678,18 @@ class TestTheEvasionTableIsAssertedRatherThanWritten:
 
     def test_the_table_still_has_all_of_its_rows(self) -> None:
         """Vacuity control: a parse that stops working must not read as
-        a table with nothing wrong in it."""
+        a table with nothing wrong in it.
+
+        The NUMBERS are checked, not just the count. A length assertion
+        alone passes on a table with two row 7s and no row 8, which is
+        exactly what a hand-edited ASCII table drifts into.
+        """
         rows = self._rows()
-        assert len(rows) == 44, f"parsed {len(rows)} rows out of the evasion table, expected 44"
+        numbers = [int(number) for number, _, _ in rows]
+        assert numbers == list(range(1, 52)), (
+            "The evasion table's row numbers are no longer 1..51 in order. A "
+            f"duplicate or a gap means a row was lost in an edit. Found: {numbers}"
+        )
         verdicts = {verdict for _, verdict, _ in rows}
         assert verdicts == {"COVERED", "DISCLOSED"}, verdicts
 
@@ -576,14 +709,17 @@ class TestTheEvasionTableIsAssertedRatherThanWritten:
         }
         there = {
             name.removeprefix("test_")
-            for name in vars(TestWhatTheGuardCannotSee)
+            for name in vars(guard.TestWhatTheGuardCannotSee)
             if name.startswith("test_")
         }
         known = here | there
+        # EXACT, not `startswith` in either direction. The prefix form
+        # made rows 3, 4 and 5 mutually satisfiable - `a_from_import`
+        # is a prefix of `a_from_import_renamed` - so a deleted control
+        # could be covered by a sibling whose name merely started the
+        # same way.
         missing = sorted(
-            f"row {number}: {test}"
-            for number, _verdict, test in self._rows()
-            if not any(name.startswith(test) or test.startswith(name) for name in known)
+            f"row {number}: {test}" for number, _verdict, test in self._rows() if test not in known
         )
         assert missing == [], (
             "The evasion table names tests that do not exist. A renamed or deleted "

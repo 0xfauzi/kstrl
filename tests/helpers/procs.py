@@ -71,6 +71,14 @@ def read_pid(pidfile: Path, timeout: float = 5.0) -> int:
 #: helper it feeds.
 SLEEPER = "echo $$ > {pidfile}; exec sleep 60"
 
+#: A child that IGNORES SIGTERM. The shell stays in the picture rather
+#: than ``exec``-ing, because a trap belongs to the shell, so the
+#: recorded pid is the trapping process and only a group SIGKILL ends it.
+#: Any test about an escalation past SIGTERM needs this one: with the
+#: ordinary ``SLEEPER`` the first signal already worked, so the test
+#: passes whether the escalation runs or not.
+STUBBORN_SLEEPER = "trap '' TERM; echo $$ > {pidfile}; while :; do sleep 0.2; done"
+
 
 def wait_for_pid_to_die(pid: int, timeout: float = 5.0) -> bool:
     """Whether ``pid`` leaves within ``timeout``. Names ONE process.

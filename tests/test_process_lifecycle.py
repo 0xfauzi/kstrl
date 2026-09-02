@@ -41,9 +41,19 @@ LAYER 2 names the offending line and says what to do about it. It is not
 redundant: layer 1 can only say "this module's vocabulary moved", which
 is the wrong message when the answer is "you killed a child and dropped
 it, call ``procgroup.drain_or_abandon``". Layer 1 in turn catches what
-layer 2 cannot, which after this PR is every spelling of every name it
-resolves - so layer 2's resolvers are message quality, not coverage, and
-are allowed to be simple.
+layer 2 cannot, which is every spelling of every name it resolves - so
+layer 2's resolvers are message quality rather than coverage for every
+name but ONE, and are allowed to be simple.
+
+THE ONE IS ``wait``, and the exception is stated here rather than left
+for a reader to discover, because a claim with a silent exception is
+worse than no claim. The bare word cannot go in the vocabulary:
+measured, enrolling it puts 9 modules in the inventory for
+``threading.Event.wait``, ``Queue.wait`` and ``Popen.wait``, and a net
+that reports 9 false rows is a net that gets silenced. So for ``wait``
+alone, layer 2's receiver resolution IS the coverage.
+:meth:`TestWhatTheGuardCannotSee.test_an_os_wait_through_a_computed_receiver`
+pins what that costs.
 
 Layer 2 also carries the two rules that are about a SECOND site inside
 an ALREADY-enrolled module, which is the one thing layer 1 is blind to
@@ -108,6 +118,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache, lru_cache
 
+from tests import test_timeout_enforcement as timeout_gate
 from tests.helpers.proclifecycle import (
     POPEN_DISPOSALS,
     bare_syscall_calls,
@@ -119,7 +130,6 @@ from tests.helpers.proclifecycle import (
     undisposed_streamer_sites,
 )
 from tests.test_journal_one_writer import label, package_sources, parsed
-from tests.test_timeout_enforcement import TestSubprocessTimeoutAudit
 
 #: The modules whose job this is. Every "outside here" rule below means
 #: outside BOTH: ``procgroup`` reads a group's liveness and decides
@@ -147,9 +157,9 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     # is prose in both: the docstrings name the one caller whose disposal
     # is `reap_or_abandon` rather than `drain_or_abandon`, and
     # `spelled_tokens` splits `agents.proc.DeadlineStreamer` on the dot.
-    # It is a real token here and this is the ONE place in `kstrl/` where
-    # the dotted split changes the inventory - the row is pinned rather
-    # than special-cased, because an exception list is how a net starts
+    # These two rows are the ONLY places in `kstrl/` where the dotted
+    # split changes the inventory, and they are pinned rather than
+    # special-cased, because an exception list is how a net starts
     # having a hand-tuned hole.
     "procdispose.py": ("DeadlineStreamer", "Popen", "communicate", "kill", "subprocess"),
     "procgroup.py": (
@@ -228,13 +238,19 @@ class SpawnerRules:
     #: ``serve.py`` each had two, and the second dropped the child with
     #: no register and no close.
     communicate_calls: int
-    #: ``except BaseException:`` disposal clauses. ``agents/proc.py`` is
-    #: the zero and the reason is structural rather than an exemption:
-    #: its ``Popen`` outlives the function that made it, is read by two
-    #: threads, and is let go of through ``finish``/``close``/``kill``
-    #: from wherever the caller decides, so there is no single ``try``
-    #: around its collection for a clause to sit on.
-    #: :func:`undisposed_streamer_sites` is the rule that covers it.
+    #: ``except BaseException:`` disposal clauses.
+    #:
+    #: ``agents/proc.py`` was a zero here, argued as structural rather
+    #: than an exemption: its ``Popen`` outlives the function that made
+    #: it, is read by two threads, and is let go of from wherever the
+    #: caller decides, so there is no single ``try`` around a collection
+    #: for a clause to sit on. The argument was right about the
+    #: collection and wrong about the DISPOSAL. Measured: a SIGINT
+    #: delivered 1.0s into ``kill``'s 5s SIGTERM grace on a child that
+    #: traps SIGTERM left the group alive, ``_disposed`` False and the
+    #: streamer still in ``_ACTIVE``. The clause now sits on that grace,
+    #: which is the one wait this module owns end to end, so the rule is
+    #: mechanised for all four rather than three plus a comment.
     base_disposal_guards: int
     #: Calls to a disposal. This is the rule that makes a disposal
     #: deletable only in a diff that says so. Without it the most obvious
@@ -256,7 +272,7 @@ class SpawnerRules:
 EXPECTED_SPAWNERS: dict[str, SpawnerRules] = {
     "procgroup.py": SpawnerRules(1, 1, 1, 1),
     "procdispose.py": SpawnerRules(0, 1, 0, 0),
-    "agents/proc.py": SpawnerRules(1, 0, 0, 1),
+    "agents/proc.py": SpawnerRules(1, 0, 1, 2),
     "serve.py": SpawnerRules(1, 1, 1, 2),
     "verify.py": SpawnerRules(1, 1, 1, 2),
 }
@@ -360,21 +376,42 @@ class TestProcessLifecycleHasOneHome:
             f"procgroup.signal_group, signal_process_tree or pid_is_alive. Sites: {found}"
         )
 
-    def test_the_spawner_table_names_the_same_modules_the_popen_allowlist_does(
+    def test_the_spawner_table_names_the_same_modules_the_gate_scopes_do(
         self,
     ) -> None:
         """The two lists that would otherwise have to move together.
 
-        ``tests/test_timeout_enforcement.py`` has held the four paths
-        allowed to construct a ``Popen`` since #309, and this file first
-        wrote them out a second time. Two copies of one list is the
-        defect this whole PR is about, one directory over. This asserts
-        they are the same list instead, so a fifth spawner argued for in
-        one place cannot be missing from the other.
+        ``tests/test_timeout_enforcement.py`` has held the modules allowed
+        to construct a ``Popen`` since #309, and this file first wrote
+        them out a second time. Two copies of one list is the defect this
+        whole PR is about, one directory over.
+
+        TWO assertions rather than one, and the second is the whole
+        lesson. The first version compared only the Popen-TRUTHY rows
+        against ``POPEN_ALLOWLIST``, so ``procdispose.py`` - which waits
+        on a child and never constructs one - satisfied it by being
+        absent from both sides. It was absent from the deadline gate's
+        scope too, and that is how the gate went blind rather than red:
+        the waits it could SEE went from 11 to 7 while the tree still had
+        9, its per-file anti-vacuity check still passed because every
+        remaining file showed a wait, and
+        ``reap_or_abandon``'s ``wait(timeout=grace)`` could have its
+        deadline deleted with the whole suite still green.
+
+        So the tie is "spawns OR waits", checked as two exact equalities:
+        every row here is in the wait scope, and the spawning rows are
+        exactly the Popen allowlist.
         """
-        allowlisted = {
-            path.removeprefix("kstrl/") for path in TestSubprocessTimeoutAudit.POPEN_ALLOWLIST
-        }
+        gate = timeout_gate.TestSubprocessTimeoutAudit
+        scoped = {path.removeprefix("kstrl/") for path in gate.CHILD_WAIT_SCOPE}
+        allowlisted = {path.removeprefix("kstrl/") for path in gate.POPEN_ALLOWLIST}
+        assert set(EXPECTED_SPAWNERS) == scoped, (
+            "A module that owns a child is missing from one of the two lists. "
+            "EXPECTED_SPAWNERS here and CHILD_WAIT_SCOPE in "
+            "tests/test_timeout_enforcement.py must name the same modules, or a "
+            "module can own a child that no deadline gate is looking at. "
+            f"Found {set(EXPECTED_SPAWNERS)} vs {scoped}"
+        )
         spawners = {name for name, rules in EXPECTED_SPAWNERS.items() if rules.popen_sites}
         assert spawners == allowlisted, (
             "The set of modules that may construct a Popen disagrees between "
@@ -499,6 +536,37 @@ class TestWhatTheGuardCannotSee:
         assert self._tokens(callee) == frozenset()
         caller = "import subprocess\ngo(subprocess.Popen)\n"
         assert self._tokens(caller) == frozenset({"subprocess", "Popen"})
+
+    def test_an_os_wait_through_a_computed_receiver(self) -> None:
+        """``wait`` is the one syscall that needs its RECEIVER resolved.
+
+        The word cannot go in the vocabulary: measured, enrolling the
+        bare ``wait`` puts 9 modules in the inventory for
+        ``threading.Event.wait``, ``Queue.wait`` and ``Popen.wait``, and
+        a net that reports 9 false rows is a net that gets silenced. So
+        for this one name layer 2 IS the coverage, and it resolves three
+        spellings - ``os.wait()``, ``_os.wait()`` after a rebind, and a
+        bare ``wait()`` after ``from os import wait``.
+
+        These three it does not, because each needs the value of an
+        expression rather than a name: a subscript, an index, and a
+        parameter. ``os.wait()`` reaps ANY child of this process, so a
+        second one anywhere can collect a child ``procgroup`` is still
+        waiting on. Disclosed rather than widened; closing it wants the
+        dataflow #324's ``astwalk.py`` is for.
+        """
+        for source in (
+            'import os\n_H = {"o": os}\n_H["o"].wait()\n',
+            "import os\nmods = [os]\nmods[0].wait()\n",
+            "def go(o):\n    return o.wait()\n",
+        ):
+            tree = ast.parse(source)
+            assert os_syscall_calls(tree, os_module_names(tree)) == [], source
+
+    def test_a_rebound_os_name_is_NOT_invisible(self) -> None:
+        """The anti-vacuity twin: the resolver does resolve a rebind."""
+        tree = ast.parse("import os\n_os = os\n_os.wait()\n")
+        assert os_syscall_calls(tree, os_module_names(tree))
 
     def test_a_shutil_helper_is_invisible(self) -> None:
         """``shutil`` is not in the vocabulary, and the reason is a

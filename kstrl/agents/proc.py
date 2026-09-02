@@ -169,7 +169,16 @@ class DeadlineStreamer:
             self._proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             self.kill()
-        self._settle()
+        except BaseException:
+            # The rule this module's own guard mechanises for `verify`,
+            # `serve` and `procgroup`, applied to the fifth disposal. A
+            # timeout is not the only way out of a wait: a
+            # KeyboardInterrupt in the orderly grace used to leave the
+            # child running with nobody left to read it.
+            self.kill()
+            raise
+        finally:
+            self._settle()
 
     def close(self) -> None:
         """Dispose of a child whose consumer WALKED AWAY. Idempotent.
@@ -215,8 +224,10 @@ class DeadlineStreamer:
         """
         if self._disposed:
             return
-        self.kill()
-        self._settle()
+        try:
+            self.kill()
+        finally:
+            self._settle()
 
     def kill(self) -> None:
         """SIGTERM the process group, wait a grace period, then SIGKILL.
@@ -242,6 +253,26 @@ class DeadlineStreamer:
         except subprocess.TimeoutExpired:
             self._signal_group(signal.SIGKILL)
             reap_or_abandon(self._proc, self._term_grace)
+        except BaseException:
+            # MEASURED, and this is the escape all three disposals
+            # shared. A SIGINT delivered 1.0s into a 5s grace on a child
+            # that traps SIGTERM left the group alive, `_disposed` False
+            # and the streamer still in `_ACTIVE`, and the
+            # KeyboardInterrupt displaced the caller's own exception on
+            # the way out. The escalation now runs whatever ended the
+            # grace, so the child is gone before the exception continues;
+            # the `raise` is bare, so nothing about it is changed.
+            #
+            # The two lines are written out rather than lifted into a
+            # helper, and that is deliberate: `base_disposal_guards`
+            # requires the disposal call to be lexically inside the
+            # handler, so a helper here would satisfy the rule's INTENT
+            # and be invisible to the rule. Two duplicated lines are the
+            # price of this module being mechanised like the other three
+            # rather than exempted by a comment.
+            self._signal_group(signal.SIGKILL)
+            reap_or_abandon(self._proc, self._term_grace)
+            raise
 
     def _breach(self) -> None:
         """Deadline hit: kill the group and leave the registry clean.
@@ -259,8 +290,10 @@ class DeadlineStreamer:
         self.timed_out = True
         if self._disposed:
             return
-        self.kill()
-        self._settle()
+        try:
+            self.kill()
+        finally:
+            self._settle()
 
     def _signal_group(self, sig: signal.Signals) -> None:
         """Signal the group, degrading to the direct child.
@@ -312,16 +345,24 @@ class DeadlineStreamer:
         except (OSError, ValueError):
             pass
         finally:
-            # ORDER AND BREADTH BOTH MATTER, and the first version of
-            # this close got both wrong. The sentinel is what ends
-            # `lines()`, and `lines()` waits on `self._queue.get()` with
-            # NO deadline when the caller passed no timeout. So a close
-            # that raises anything the suppression does not name skips
-            # the `put` and hangs the harness for good - measured: with
-            # `suppress(OSError, ValueError)` here, a stdout whose
-            # `close` raises AttributeError hung a real test for 600s.
-            # A disposal that can hang the thing it disposes for is the
-            # defect this whole PR is about, so the close is swallowed
-            # whole and the sentinel is the last statement.
-            close_quietly(stdout)
+            # THE SENTINEL GOES FIRST, and the reasoning here was wrong
+            # twice before it went that way. `lines()` waits on
+            # `self._queue.get()` with NO deadline when the caller passed
+            # no timeout, so a reader thread that ends without posting
+            # `None` hangs the harness for good - measured at 600s on a
+            # real run, when `close_quietly` was `suppress(OSError,
+            # ValueError)` and a MagicMock stdout raised AttributeError
+            # on close.
+            #
+            # Widening the suppression to `Exception` fixed that case and
+            # was then argued, in this comment, as making the ORDER safe.
+            # It does not: `suppress(Exception)` does not cover
+            # BaseException, so a KeyboardInterrupt, a SystemExit, a
+            # GeneratorExit or a MemoryError in the close still skips a
+            # `put` written after it. Posting first loses the sentinel
+            # for none of them, because a `put` on an unbounded Queue
+            # does not block and has nothing to raise. Breadth and order
+            # are not two arguments for one property: breadth stops the
+            # ordinary case, order stops the rest.
             self._queue.put(None)
+            close_quietly(stdout)
