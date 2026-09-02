@@ -106,44 +106,6 @@ the identical path, so the residual is exactly what it was before #309.
 What changed is the part that WAS in this module's hands: once the child
 is running, no wait on it is unbounded any more.
 
-WHAT THAT COSTS, since a bound bought with nothing would be suspicious. A
-child the kill did NOT reach is ABANDONED rather than waited on: we close
-our two pipe ends, which cannot block on a read end, and report "cannot
-see".
-
-It is not a permanent zombie, and #309 round 2 is why that sentence now
-rests on code in this module rather than on CPython's. The claim used to
-be that ``Popen.__del__`` hands an unreaped child to
-``subprocess._active`` for a later ``Popen`` to poll. Read the order it
-does it in: it calls ``_warn(..., ResourceWarning)`` FIRST and appends to
-``_active`` after. Under warnings-as-errors that warn RAISES, ``__del__``
-aborts, the interpreter prints "Exception ignored in" and swallows it,
-and the registration never happens - so the object is freed with nobody
-left holding the pid, and the child stays a zombie for the life of the
-process. Measured on this tree: default warnings gives ``_active`` length
-1 and the child reaped; ``PYTHONWARNINGS=error`` gives length 0 and the
-child in state Z. That setting is not hypothetical here, and this file's
-own caller says so - ``serve._group_liveness_for_reap`` records that an
-earlier ``warnings.warn`` in the reap check took the daemon down under
-it, calling it "a common CI setting". A daemon that holds its lock for
-its whole life, abandoning up to five children per terminated run, is the
-worst place in the tree to rest on a ``__del__`` that may not finish.
-
-So ``_kill_or_abandon`` registers the child itself, on our own
-``_ABANDONED`` and on CPython's ``_active`` both; ``_register_abandoned``
-says why one of them is not enough. Holding the reference also means
-``__del__`` never runs, so the ResourceWarning that started this is not
-raised at all.
-
-THIS FIXES ONE SITE, NOT THE CLASS. ``verify.run_scrubbed``,
-``serve._wait_out_grace`` and ``agents.proc.DeadlineStreamer.kill`` each
-kill a child and give up on it the same way, and none of them registers
-what it drops. ``run_scrubbed`` is the wider window of the three by a
-long way - it needs no D-state child at all, only something outside the
-group holding the pipe write end, and it runs once per verification
-command rather than once per timed-out run. Tracked separately; said
-here so this section is not read as the class being handled.
-
 The caller's fallback for "cannot see" is the signal
 probe, whose only error is over-reporting alive. That claim was written
 here before it was true: #309 round 1 found the probe reporting GONE for
@@ -174,9 +136,12 @@ stops a third landing.
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
-from contextlib import suppress
+from collections.abc import Callable
 from dataclasses import dataclass
+
+from kstrl.procdispose import drain_or_abandon, reap_abandoned
 
 #: The three columns the question needs and no more. ``pid`` is there for
 #: the completeness control, not for identifying anything. See the
@@ -199,15 +164,6 @@ PS_TIMEOUT_SECONDS = 5.0
 #: stop. The two together bound every WAIT on the child at 6.0s, which is
 #: not the same as bounding the call; see the docstring on ``_read_ps``.
 PS_KILL_GRACE_SECONDS = 1.0
-
-#: Children the kill did not reach, kept REFERENCED so they can still be
-#: reaped. The module docstring's #309 round 2 section is why this exists
-#: rather than ``Popen.__del__``. On a healthy machine it stays empty.
-#: Each entry can retain more than the object: measured at 18,833 bytes
-#: for a read that completed before the child was abandoned, almost all
-#: of it CPython's ``_fileobj2output`` holding the listing it had already
-#: buffered, against ~300 bytes for one abandoned before writing.
-_ABANDONED: list[subprocess.Popen[str]] = []
 
 #: Said once, because several branches report it and reflowed copies of
 #: one sentence are how the two answers drift apart.
@@ -248,6 +204,36 @@ def _may_signal_group(pgid: int) -> bool:
     return hasattr(os, "killpg") and pgid > 1
 
 
+def _refuse_group(pgid: int) -> str:
+    """Why this module will not send a REAL signal to ``pgid``, or "".
+
+    The two-part rule :func:`safe_pgid` and :func:`signal_group` each
+    used to spell out for themselves, in the module whose whole subject
+    is that a rule with two spellings has two behaviours eventually.
+    Returns the EVIDENCE rather than a bool because ``signal_group``
+    reports its refusal to a caller that writes it into a
+    ``GroupTermination`` record, and a bool there would have needed the
+    text reconstructed from the condition that produced it.
+
+    :func:`_may_signal_group` stays separate underneath, and the split is
+    load-bearing rather than tidy: the signal-0 probes in this module
+    legitimately ask about our OWN group, and only a real signal has to
+    be refused there.
+
+    Reached twice on the ``signal_process_tree`` path, once through
+    ``safe_pgid`` and once through ``signal_group``. That is deliberate.
+    ``signal_group`` takes a bare integer from anywhere, so its own check
+    is the only thing standing between a caller that never went through
+    ``safe_pgid`` and ``os.killpg`` - which is #329 exactly. The repeat
+    costs one ``os.getpgrp()``, measured at 111ns.
+    """
+    if not _may_signal_group(pgid):
+        return f"group {pgid} must never be signalled"
+    if pgid == os.getpgrp():
+        return f"group {pgid} is our own, so the signal would land on us"
+    return ""
+
+
 def safe_pgid(process: subprocess.Popen[str]) -> int | None:
     """A child's process-group id, or None when group-signalling is unsafe.
 
@@ -286,9 +272,132 @@ def safe_pgid(process: subprocess.Popen[str]) -> int | None:
         # ESRCH (already reaped) or EPERM. Either way there is no group id
         # here that we are entitled to signal.
         return None
-    if not _may_signal_group(pgid) or pgid == os.getpgrp():
+    if _refuse_group(pgid):
         return None
     return pgid
+
+
+@dataclass(frozen=True)
+class GroupSignal:
+    """What one attempt to signal a process group did.
+
+    FOUR outcomes a caller has to tell apart, and ``serve`` is why the
+    last two are separate fields rather than one string. ``sent`` drives
+    the escalation. ``vanished`` (ESRCH) is a CONFIRMED empty group and
+    lets a caller stop early.
+
+    ``denied`` and ``refused`` both mean "not signalled and not known
+    gone", and a caller must never read either as success - but they are
+    not the same news and ``GroupTermination`` next door records what
+    conflating them costs: EPERM is the KERNEL saying it found processes
+    in that group, which is positive evidence a factory is alive and the
+    operator has to act on, while a refusal from this module is evidence
+    of nothing at all except that the pgid was not one we may signal.
+    Reporting the second as the first would tell the operator the
+    opposite of the truth in the one case where they must act.
+    """
+
+    sent: bool
+    vanished: bool = False
+    #: The kernel would not deliver it. Evidence about the group.
+    denied: str = ""
+    #: This module would not send it. Evidence about the pgid.
+    refused: str = ""
+
+
+def signal_group(pgid: int, sig: int) -> GroupSignal:
+    """Send ``sig`` to process group ``pgid``, or refuse and say so.
+
+    THE ONE PLACE A REAL SIGNAL REACHES A GROUP (#329). ``safe_pgid``
+    answers the question about a ``Popen``; this answers it about the
+    bare integer that ends up in ``killpg``, and the two are not the same
+    question. ``serve.terminate_process_group`` took a caller-supplied
+    ``pgid`` straight to ``os.killpg`` with no check of any kind, which
+    #328 declined to fix because it is a behaviour change rather than a
+    cleanup. It was safe by PROVENANCE - every caller happened to source
+    the value from ``safe_pgid`` - and provenance is not a mechanism.
+
+    What the mechanism costs: nothing on any path a caller takes today.
+    The guard can only fire for a pgid that never came from
+    ``safe_pgid``, which no current caller produces, so this closes a
+    latent hazard rather than changing a live behaviour. What it prevents
+    is measured and not hypothetical: #328's mutation sweep found that
+    dropping the own-group check does not fail a test, it kills the test
+    RUNNER with signal 15, because a serve test sets ``fake.pid =
+    os.getpid()``. ``ks serve`` holds the daemon singleton lock for its
+    whole process lifetime, so the same mistake from a real caller is
+    the daemon.
+
+    The refusal is REPORTED rather than raised. Raising would reach three
+    callers that today cannot fail here, and a caller that ignores a
+    ``GroupSignal`` gets ``sent=False``, which every one of them already
+    has to handle for the ESRCH and EPERM branches.
+    """
+    refused = _refuse_group(pgid)
+    if refused:
+        return GroupSignal(False, refused=refused)
+    try:
+        os.killpg(pgid, sig)
+    except ProcessLookupError:
+        return GroupSignal(False, vanished=True)
+    except OSError as exc:
+        return GroupSignal(False, denied=f"the kernel refused signal {sig} to group {pgid}: {exc}")
+    return GroupSignal(True)
+
+
+def signal_process_tree(process: subprocess.Popen[str], sig: signal.Signals) -> None:
+    """Signal a child's whole group, falling back to the direct child.
+
+    The single copy of a routine ``verify._signal_process_group`` and
+    ``agents.proc.DeadlineStreamer._signal_group`` wrote out twice,
+    identically, after #308 had already lifted the guard half of it here.
+    Lifting the guard and leaving the routine behind is what let the
+    ``os.killpg`` call itself stay in three modules, which is the thing
+    #329 is about.
+
+    A group that cannot be signalled is not an error: a mocked ``Popen``,
+    a non-POSIX platform, an unsafe pgid, a child already reaped and a
+    group that went between the lookup and the signal all land on the
+    direct child instead. That degradation is the whole reason
+    :func:`safe_pgid` can afford to be strict.
+    """
+    pgid = safe_pgid(process)
+    if pgid is not None and signal_group(pgid, sig).sent:
+        return
+    try:
+        if sig == signal.SIGKILL:
+            process.kill()
+        else:
+            process.terminate()
+    except OSError:
+        pass
+
+
+def pid_is_alive(pid: int) -> bool:
+    """Whether ``pid`` names a process this machine still holds.
+
+    The bare-pid twin of :func:`signal_probe_alive`, and here for the
+    same reason ``signal_group`` is: ``serve._pid_alive`` sent signal 0
+    to a lease holder's pid with its own inline guard, a fourth copy of
+    a rule this module owns. A ZOMBIE reads as alive, which is correct
+    for the lease question - the pid is still allocated, so it has not
+    been handed to anything else - and is the opposite of what
+    :func:`read_group_liveness` answers about a GROUP.
+
+    ``pid <= 0`` is refused rather than probed, and that is the part
+    that has to live next to the syscall: ``os.kill(0, sig)`` is the
+    caller's whole process group and ``os.kill(-1, sig)`` is every
+    process this user owns. Signal 0 makes both harmless TODAY; the
+    guard is here so that stays true if the signal ever stops being 0.
+
+    Alive is the fail direction for everything that is not a definite
+    ESRCH, because the caller reaps a lease on False and a wrong reap
+    puts a second factory on a repo the first is still writing to
+    (#186 F1).
+    """
+    if pid <= 0 or not hasattr(os, "kill"):
+        return False
+    return not _probe_says_gone(lambda: os.kill(pid, 0))
 
 
 def read_group_liveness(pgid: int) -> GroupLiveness:
@@ -330,7 +439,7 @@ def _read_ps() -> subprocess.CompletedProcess[str]:
     the rejected "our own pgid is listed" control satisfied by
     construction rather than merely usually true.
     """
-    _reap_abandoned()
+    reap_abandoned()
     process = subprocess.Popen(
         PS_ARGV,
         stdout=subprocess.PIPE,
@@ -351,121 +460,9 @@ def _read_ps() -> subprocess.CompletedProcess[str]:
         # so every one of them goes through the same disposal.
         # ``BaseException`` because a KeyboardInterrupt out of the daemon
         # must not be the one path that leaks the child.
-        _kill_or_abandon(process)
+        drain_or_abandon(process, PS_KILL_GRACE_SECONDS)
         raise
     return subprocess.CompletedProcess(PS_ARGV, process.returncode, stdout, stderr)
-
-
-def _kill_or_abandon(process: subprocess.Popen[str]) -> None:
-    """Kill the child, give the kill a bounded grace, then LET GO.
-
-    The second ``communicate`` is the wait ``subprocess.run`` does
-    without a deadline.
-
-    WHAT REACHING ITS TIMEOUT ACTUALLY MEANS, corrected in #309 round 2
-    because the first version stated a stronger thing as a POSIX fact.
-    ``communicate`` waits for EOF on both pipes and then for the process,
-    so the grace can expire with the direct child already dead and
-    reaped: anything that inherited the write ends still holds them open.
-    Demonstrated with a ``ps`` that forks - ``poll()`` returned 0 at kill
-    time and the full grace expired anyway, because a grandchild held the
-    pipes. It does not arise for ``PS_ARGV``, which forks nothing, but it
-    is why this says "let go" rather than "the kill did not land": what
-    is abandoned may be a descendant we never had a handle on, and no
-    amount of further waiting here is owed to it.
-    """
-    try:
-        process.kill()
-        process.communicate(timeout=PS_KILL_GRACE_SECONDS)
-    except (OSError, ValueError, subprocess.TimeoutExpired):
-        # One handler for both calls, because a kill that could not be
-        # sent leads to the same place as one that did not work: the
-        # child is not ours to collect. SWALLOWED rather than raised,
-        # because the caller is already carrying the original failure and
-        # is about to re-raise it; letting a grace timeout out of here
-        # would displace the exception that says what actually went
-        # wrong. The pipes are released either way, below.
-        pass
-    finally:
-        # In a FINALLY rather than in the handler above, because the
-        # exceptions this names are not the only ones that get here. A
-        # KeyboardInterrupt landing in the grace escapes both calls with
-        # the pipe pair still held, which is the leak this whole path
-        # exists to avoid (#309 round 1, F3).
-        _release_pipes(process)
-        if process.returncode is None:
-            _register_abandoned(process)
-
-
-def _release_pipes(process: subprocess.Popen[str]) -> None:
-    """Close our ends of the pipes to a child we are done with.
-
-    Closing a pipe READ end cannot block, which is what makes this safe
-    on a path whose contract is not to block. A second close is a no-op,
-    so the branch where ``communicate`` already closed them costs
-    nothing.
-    """
-    for pipe in (process.stdout, process.stderr):
-        if pipe is not None:
-            with suppress(OSError):
-                pipe.close()
-
-
-def _register_abandoned(process: subprocess.Popen[str]) -> None:
-    """Keep an uncollected child reachable until something can reap it.
-
-    TWO registers, because they sweep at different rates and neither
-    rate alone is good enough (#309 round 2).
-
-    ``_ABANDONED`` is ours and is swept by the next read here. That is
-    the one this module can promise, and the one a test can see.
-
-    ``subprocess._active`` is CPython's, and every ``Popen`` constructed
-    anywhere in the process sweeps it in ``_cleanup``. This module's
-    reads are rare by design - the production caller asks once per
-    timed-out run - so ours alone would leave a corpse until the next
-    timeout, which may be days away. There are 70 spawn sites in
-    ``kstrl``, so ``_active`` collects it at the next git call or verify
-    command instead. That is what ``Popen.__del__`` would have done; we
-    do it up front precisely because ``__del__`` may not get there.
-    Guarded with ``getattr`` because it is CPython-private and is None on
-    Windows, which this module does not support anyway.
-
-    Registering also means ``__del__`` never runs, so the ResourceWarning
-    that made ``__del__`` unreliable is not raised at all.
-
-    ONLY SOMETHING ``_cleanup`` CAN POLL may go on ``_active``, which is
-    what the ``_internal_poll`` check is. ``_cleanup`` calls that method
-    on every entry, so anything else corrupts interpreter state for the
-    whole process: measured, a test double in there crashed the next real
-    spawn anywhere in the suite with ``AttributeError: '_FakePs' object
-    has no attribute '_internal_poll'``. That is a constraint of the
-    private list, not an accommodation for tests, and in production the
-    branch is always taken. Checked by attribute rather than by
-    ``isinstance``, because the name ``subprocess.Popen`` is itself
-    replaceable - the suite's own seam replaces it with a function, and
-    an ``isinstance`` against it then raises ``TypeError``.
-    """
-    _ABANDONED.append(process)
-    active = getattr(subprocess, "_active", None)
-    if active is not None and hasattr(process, "_internal_poll"):
-        active.append(process)
-
-
-def _reap_abandoned() -> None:
-    """Collect any abandoned child the kernel has since let die.
-
-    ``poll`` is ``waitpid(WNOHANG)``, so this cannot block - the only
-    reason it is safe to call on the path whose whole contract is not to
-    block. Swept before each fork because that is the moment the cost is
-    about to be paid again.
-
-    Rebuilt rather than removed from. ``list.remove`` is what CPython's
-    ``_cleanup`` does, and it has to guard the ``ValueError`` for an
-    entry another thread already dropped; a rebuild cannot raise that at
-    all, and walks the list once instead of once per corpse.
-    """
-    _ABANDONED[:] = [process for process in _ABANDONED if process.poll() is None]
 
 
 @dataclass(frozen=True)
@@ -531,6 +528,35 @@ def _read_listing(stdout: str, pgid: int) -> _Listing:
     return _Listing(complete=complete, rows=rows, running=running)
 
 
+def _probe_says_gone(send: Callable[[], None]) -> bool:
+    """The one branch table for a signal-0 probe. ESRCH, and nothing else.
+
+    ONLY ESRCH MEANS GONE. Success and ``EPERM`` both mean something is
+    there, and any other ``OSError`` means the question was not answered,
+    which is not the same as an answer of "nothing". Reading an
+    unexplained errno as emptiness is the pre-#298 mapping that #309
+    round 1 removed, and it fails towards calling a live run reaped.
+
+    A function rather than the two copies it replaces, for the reason
+    :func:`signal_probe_alive` states at length about its own delegation:
+    two readings of one ``killpg`` disagreeing about an unexplained error
+    was the defect underneath the defect, and this file had grown a THIRD
+    copy of the table in :func:`pid_is_alive` while saying so.
+
+    The caller supplies the syscall and keeps its own eligibility guard,
+    because they differ: a group must be one we may signal at all, and a
+    pid must be positive, ``os.kill(0, sig)`` being our own group and
+    ``os.kill(-1, sig)`` every process this user owns.
+    """
+    try:
+        send()
+    except ProcessLookupError:
+        return True
+    except OSError:
+        return False
+    return False
+
+
 def _kernel_says_group_is_empty(pgid: int) -> bool:
     """True ONLY when the kernel says no process at all is in the group.
 
@@ -542,13 +568,7 @@ def _kernel_says_group_is_empty(pgid: int) -> bool:
     """
     if not _may_signal_group(pgid):
         return False
-    try:
-        os.killpg(pgid, 0)
-    except ProcessLookupError:
-        return True
-    except OSError:
-        return False
-    return False
+    return _probe_says_gone(lambda: os.killpg(pgid, 0))
 
 
 def signal_probe_alive(pgid: int) -> bool:

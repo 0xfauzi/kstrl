@@ -142,41 +142,46 @@ class CodexAgent:
             )
 
             # Stream output
-            for line in streamer.lines():
-                stripped = line.strip()
-                if stripped:
-                    last_non_empty_line = line
-                # Track the "tokens used" trailer (last match wins - the
-                # real trailer is at end-of-stream; an agent echoing the
-                # same text earlier is overwritten). This is a hint for
-                # the cost meter, never a gate.
-                if expect_token_count:
-                    expect_token_count = False
-                    if _TOKENS_COUNT_LINE.match(stripped):
-                        trailer_total = _parse_token_count(stripped)
-                match = _TOKENS_USED_LINE.match(stripped)
-                if match:
-                    if match.group("total"):
-                        trailer_total = _parse_token_count(match.group("total"))
-                    else:
-                        expect_token_count = True
-                yield line
+            try:
+                # The consumer can walk away mid-yield; the argument is on
+                # `DeadlineStreamer.close` (#326).
+                for line in streamer.lines():
+                    stripped = line.strip()
+                    if stripped:
+                        last_non_empty_line = line
+                    # Track the "tokens used" trailer (last match wins - the
+                    # real trailer is at end-of-stream; an agent echoing the
+                    # same text earlier is overwritten). This is a hint for
+                    # the cost meter, never a gate.
+                    if expect_token_count:
+                        expect_token_count = False
+                        if _TOKENS_COUNT_LINE.match(stripped):
+                            trailer_total = _parse_token_count(stripped)
+                    match = _TOKENS_USED_LINE.match(stripped)
+                    if match:
+                        if match.group("total"):
+                            trailer_total = _parse_token_count(match.group("total"))
+                        else:
+                            expect_token_count = True
+                    yield line
 
-            if streamer.timed_out:
-                # Killed mid-run: the last-message file was likely never
-                # written; partial output is not a trustworthy final
-                # message, so leave it unset. The trailer never printed
-                # either, so only wall time is recorded.
-                self._usage_records.append(
-                    UsageRecord(
-                        duration_seconds=time.monotonic() - started,
-                        source="timeout",
+                if streamer.timed_out:
+                    # Killed mid-run: the last-message file was likely never
+                    # written; partial output is not a trustworthy final
+                    # message, so leave it unset. The trailer never printed
+                    # either, so only wall time is recorded.
+                    self._usage_records.append(
+                        UsageRecord(
+                            duration_seconds=time.monotonic() - started,
+                            source="timeout",
+                        )
                     )
-                )
-                yield timeout_message(timeout)
-                return
+                    yield timeout_message(timeout)
+                    return
 
-            streamer.finish()
+                streamer.finish()
+            finally:
+                streamer.close()
 
             self._usage_records.append(
                 UsageRecord(

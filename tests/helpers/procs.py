@@ -41,7 +41,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from kstrl import procgroup
-from kstrl.procgroup import read_group_liveness
+from kstrl.procgroup import pid_is_alive, read_group_liveness
 
 
 def read_pid(pidfile: Path, timeout: float = 5.0) -> int:
@@ -59,8 +59,43 @@ def read_pid(pidfile: Path, timeout: float = 5.0) -> int:
                 return int(text)
         except (FileNotFoundError, ValueError):
             pass
-        time.sleep(0.05)
+        time.sleep(0.005)
     raise AssertionError(f"pid file never appeared: {pidfile}")
+
+
+#: A child that records its own pid and then does nothing until killed.
+#: ``exec`` so the recorded pid IS the sleeper, not a shell that would
+#: leave a second process behind. HERE rather than in each suite because
+#: the same command string was written out inline in five places in one
+#: new file alone, and a copied fixture is one that stops matching the
+#: helper it feeds.
+SLEEPER = "echo $$ > {pidfile}; exec sleep 60"
+
+#: A child that IGNORES SIGTERM. The shell stays in the picture rather
+#: than ``exec``-ing, because a trap belongs to the shell, so the
+#: recorded pid is the trapping process and only a group SIGKILL ends it.
+#: Any test about an escalation past SIGTERM needs this one: with the
+#: ordinary ``SLEEPER`` the first signal already worked, so the test
+#: passes whether the escalation runs or not.
+STUBBORN_SLEEPER = "trap '' TERM; echo $$ > {pidfile}; while :; do sleep 0.2; done"
+
+
+def wait_for_pid_to_die(pid: int, timeout: float = 5.0) -> bool:
+    """Whether ``pid`` leaves within ``timeout``. Names ONE process.
+
+    The pid twin of :func:`wait_for_group_to_die`, next to it for the
+    reason this module exists: a poll-until-deadline loop copied into a
+    suite is one that drifts from the reading it is polling. Uses
+    ``procgroup.pid_is_alive``, so a ZOMBIE reads as alive - if the
+    caller has a ``Popen`` for this child, ``wait`` on it first, or the
+    unreaped corpse keeps the pid allocated and this returns False.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not pid_is_alive(pid):
+            return True
+        time.sleep(0.02)
+    return not pid_is_alive(pid)
 
 
 def group_has_live_member(pgid: int) -> bool:
@@ -216,6 +251,12 @@ class _FakePs:
         self.returncode: int | None = None
         self.stdout = _FakePipe(call, "stdout")
         self.stderr = _FakePipe(call, "stderr")
+        # The real `ps` Popen passes no `stdin=PIPE`, so CPython leaves
+        # this None. Named rather than omitted because `_release_pipes`
+        # closes all three ends (#326: stdin is a WRITE end and can flush
+        # on close), and a fake missing the attribute would fail there
+        # for a reason that says nothing about the code under test.
+        self.stdin: _FakePipe | None = None
 
     def communicate(
         self,

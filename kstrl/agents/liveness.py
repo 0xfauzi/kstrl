@@ -194,11 +194,20 @@ def _stream(cmd: list[str]) -> tuple[list[str], bool]:
             stdin_text="ping",
             timeout=PROBE_TIMEOUT_SECONDS,
         )
-        lines = list(streamer.lines())
-        timed_out = streamer.timed_out
-        # On both paths, so the streamer always deregisters from
-        # proc._ACTIVE and its reader and writer threads are joined.
-        streamer.finish()
+        try:
+            # Not a generator, so this is the narrower half of the same
+            # rule (#326): anything that escapes the drain - a
+            # KeyboardInterrupt out of `ks doctor`, a MemoryError on a
+            # runaway probe - used to leave the probe CLI running with
+            # nothing holding it. `close` is idempotent, so the ordinary
+            # path unwinding through here after `finish` costs nothing.
+            lines = list(streamer.lines())
+            timed_out = streamer.timed_out
+            # On both paths, so the streamer always deregisters from
+            # proc._ACTIVE and its reader and writer threads are joined.
+            streamer.finish()
+        finally:
+            streamer.close()
         return lines, timed_out
 
 
