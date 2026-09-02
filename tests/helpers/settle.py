@@ -165,10 +165,14 @@ async def mounted(
 ) -> Widget | W:
     """Wait for ``selector`` to match under ``node``, and return the match.
 
-    The dominant shape of this defect by a long way: of the 48 tests
-    whose fixed pauses were measured to be load-bearing, 35 fail with
-    ``NoMatches`` when those pauses go, which is to say they were racing
-    a mount.
+    The dominant shape of this defect by a long way. Measured on the
+    pre-conversion tree ``583acd0``, one file at a time under a 420s
+    bound: 52 tests are load-bearing, of which 50 fail and 2 hang once
+    the fixed pauses go, and 39 of the 50 fail with ``NoMatches``,
+    which is to say they were racing a mount. These numbers follow the
+    measurement, never the other way round: an earlier draft said 48
+    and 35, which undercounted by four because the file that hangs was
+    never attributed.
 
     ``node`` is a callable and not a node, because the node is usually
     ``app.screen`` and the screen is the thing being waited for. Passing
