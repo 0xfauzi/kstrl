@@ -29,6 +29,7 @@ import time
 
 import pytest
 from textual.app import App, ComposeResult
+from textual.pilot import Pilot
 from textual.screen import Screen
 from textual.widgets import Static
 
@@ -247,3 +248,242 @@ class TestThePositiveDirection:
             target.call_later(order.append, "queued first")
             await drained(pilot, target, what="the widget's own queue to be worked")
             assert order == ["queued first"], "drained returned before the pump had been worked"
+
+
+class _FakeClock:
+    """A monotonic clock the test advances by hand.
+
+    Patched over `settle.time`, not over `time.monotonic` itself, so
+    nothing outside the helper sees a frozen clock: Textual reads the
+    real one throughout.
+    """
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+
+class TestTheDeadlineIsTheOneItWasGiven:
+    """The tests above all pass `timeout=0.1`, which is why a whole
+    class of deadline defects survived them.
+
+    A 0.1s timeout cannot tell "gave up at 0.1s" from "gave up at 5s"
+    from "gave up after 50 polls whenever that was", because at 0.1s
+    they all look the same and none takes long enough to notice. Three
+    defects lived in that gap: the deadline branch returning instead of
+    raising once the poll count was high, the `timeout` argument being
+    ignored in favour of the module default, and the module default
+    itself being changed to 600 seconds.
+
+    A fake clock closes all three, and it is the only way to do it
+    without a test that really waits five seconds. Time advances inside
+    a stubbed `pause` rather than inside the predicate, which is both
+    where it really passes and what keeps these tests instant: at a 600
+    second deadline the real helper polls 30,000 times, and against a
+    real pause that is ten minutes of wall clock per test.
+    """
+
+    def _wire(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        pilot: Pilot[None],
+    ) -> tuple[_FakeClock, list[int]]:
+        from tests.helpers import settle as settle_mod
+
+        clock = _FakeClock()
+        monkeypatch.setattr(settle_mod, "time", clock)
+        calls: list[int] = []
+
+        async def instant_pause(delay: float | None = None) -> None:
+            # A zero delay must still advance the clock or a spin defect
+            # turns this into a hang rather than a failure.
+            step = delay if delay is not None and delay > 0 else 0.001
+            clock.now += step
+            if len(calls) > 200_000:
+                raise AssertionError("the wait never reached its deadline at all")
+
+        monkeypatch.setattr(pilot, "pause", instant_pause)
+        return clock, calls
+
+    async def test_the_default_wait_raises_rather_than_giving_up_quietly(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """At the DEFAULT timeout, not a short one. A deadline branch
+        that returns once the poll count is high enough never fires
+        under `timeout=0.1`, because 0.1s is only a handful of polls."""
+        async with _Tiny().run_test() as pilot:
+            clock, calls = self._wire(monkeypatch, pilot)
+
+            def never() -> bool:
+                calls.append(1)
+                return False
+
+            with pytest.raises(AssertionError) as excinfo:
+                await settled(pilot, never, what="something that never happens")
+
+        assert "never settled" in str(excinfo.value)
+        assert len(calls) > 50, (
+            f"only {len(calls)} polls before giving up, so a defect that returns "
+            "after 50 polls would not even be reached by this test"
+        )
+
+    async def test_the_default_deadline_is_seconds_rather_than_minutes(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A `SETTLE_TIMEOUT` of 600 breaks nothing and fails nothing:
+        every wait in the tree still settles, and the only visible
+        change is that a genuinely stuck test hangs for ten minutes
+        instead of failing in five seconds."""
+        async with _Tiny().run_test() as pilot:
+            clock, calls = self._wire(monkeypatch, pilot)
+
+            def never() -> bool:
+                calls.append(1)
+                return False
+
+            with pytest.raises(AssertionError):
+                await settled(pilot, never, what="something that never happens")
+
+        assert clock.now <= 30.0, (
+            f"the default wait ran {clock.now:g} virtual seconds before failing; "
+            "a stuck test has to fail in seconds, not minutes"
+        )
+
+    async def test_an_explicit_timeout_is_the_one_that_is_used(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`timeout=` silently ignored in favour of the module default
+        is invisible to every other test here, because they all fail
+        either way. The virtual clock says WHEN it gave up."""
+        from tests.helpers import settle as settle_mod
+
+        async with _Tiny().run_test() as pilot:
+            clock, calls = self._wire(monkeypatch, pilot)
+
+            def never() -> bool:
+                calls.append(1)
+                return False
+
+            with pytest.raises(AssertionError):
+                await settled(pilot, never, what="a short wait", timeout=1.0)
+
+        assert clock.now < settle_mod.SETTLE_TIMEOUT, (
+            f"asked for 1s and it ran {clock.now:g} virtual seconds, which is the "
+            "module default rather than the argument that was passed"
+        )
+
+    async def test_a_condition_true_at_an_expired_deadline_still_returns(self) -> None:
+        """The check-first order at the boundary. With `timeout=0` the
+        deadline has already passed on the first iteration, so a helper
+        that tests the clock before the predicate raises on a condition
+        that is TRUE. That is a false failure rather than a false pass,
+        and it is the one ordering defect the pause-counting test above
+        cannot see."""
+        async with _Tiny().run_test() as pilot:
+            await settled(pilot, lambda: True, what="a condition already true", timeout=0.0)
+
+
+class TestThePollDrivesTheApp:
+    """`pilot.pause` is the primitive, and the module docstring is an
+    extended argument for why: it drains the queued messages and drives
+    a refresh. `asyncio.sleep` does neither, so a poll that slept would
+    spin without ever letting the app settle, and every wait in the tree
+    would become a race that usually wins. Nothing noticed the swap.
+    """
+
+    async def test_the_poll_pauses_the_pilot_with_a_positive_delay(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        paused: list[float | None] = []
+
+        async with _Tiny().run_test() as pilot:
+            original = pilot.pause
+
+            async def counting_pause(delay: float | None = None) -> None:
+                paused.append(delay)
+                await original(delay)
+
+            monkeypatch.setattr(pilot, "pause", counting_pause)
+            pilot.app.set_timer(0.15, lambda: pilot.app.screen.mount(Static("x", id="x")))
+            await mounted(pilot, lambda: pilot.app.screen, "#x")
+
+        assert paused, "the poll never paused the pilot, so it never let the app settle"
+        assert all(d is not None and d > 0 for d in paused), (
+            f"the poll paused with {paused[0]!r}: a zero delay makes it a spin rather than a wait"
+        )
+
+
+class TestTheReadIsTheFirstMatch:
+    async def test_mounted_returns_the_same_widget_query_one_would(self) -> None:
+        """`mounted`'s contract is `query_one`'s: the first
+        breadth-first match. Re-querying with `query(...)` and taking a
+        different element of the result is invisible while every test
+        fixture has exactly one match, and wrong the moment one does
+        not."""
+        async with _Tiny().run_test() as pilot:
+            screen = pilot.app.screen
+            # Both in one call: two awaited mounts would put a read of
+            # app-derived state after a fixed wait, which this PR's own
+            # guard flags, correctly.
+            await screen.mount(Static("first", classes="twin"), Static("second", classes="twin"))
+            found = await mounted(pilot, lambda: pilot.app.screen, ".twin")
+            expected = screen.query_one(".twin")
+            assert found is expected, "mounted did not return query_one's match"
+
+
+class TestThePredicateIsTheCallersToRaise:
+    """A parser's error taxonomy belongs to the parser, and a
+    predicate's belongs to the predicate. These are the two spellings a
+    developer would plausibly reach for.
+    """
+
+    async def test_a_nomatches_from_the_predicate_is_not_treated_as_not_yet(self) -> None:
+        """The plausible one. This module's own docstring tells callers
+        to write `node.query(sel)` and never `node.query_one(sel)`,
+        precisely because the latter raises `NoMatches` before the
+        widget mounts. So a developer who hits `NoMatches` has an
+        obvious wrong place to fix it: catch it in the helper. That
+        turns a precise error at the predicate's line into a five-second
+        "never settled" pointing at the wait.
+        """
+        from textual.css.query import NoMatches
+
+        async with _Tiny().run_test() as pilot:
+            with pytest.raises(NoMatches):
+                await settled(
+                    pilot,
+                    lambda: pilot.app.screen.query_one("#absent"),
+                    what="a widget queried the wrong way",
+                    timeout=5.0,
+                )
+
+    async def test_an_assertionerror_from_the_predicate_is_not_treated_as_not_yet(
+        self,
+    ) -> None:
+        """Swallowing this one is the worst of the three, because the
+        helper's own timeout is also an AssertionError, so a caught one
+        is indistinguishable from a wait that expired."""
+
+        def asserting() -> bool:
+            raise AssertionError("the predicate's own complaint")
+
+        async with _Tiny().run_test() as pilot:
+            with pytest.raises(AssertionError, match="the predicate's own complaint"):
+                await settled(pilot, asserting, what="a predicate that asserts", timeout=5.0)
+
+
+class TestTheFailureMessageIsUsable:
+    async def test_an_empty_what_is_refused_rather_than_rendered(self) -> None:
+        """`what` is the whole message. Empty, it renders "waited 5s (0
+        polls) for , and it never settled", which names nothing."""
+        async with _Tiny().run_test() as pilot:
+            with pytest.raises(ValueError, match="non-empty"):
+                await settled(pilot, lambda: True, what="")
+            with pytest.raises(ValueError, match="non-empty"):
+                await settled(pilot, lambda: True, what="   ")

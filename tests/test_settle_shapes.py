@@ -31,7 +31,14 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from tests.test_settle_discipline import await_sites, parsed, settle_reads
+import pytest
+
+from tests.helpers import astwalk
+from tests.test_settle_discipline import (
+    await_sites,
+    parsed,
+    settle_reads,
+)
 
 
 def hits(tmp_path: Path, body: str, name: str = "snippet.py") -> list[str]:
@@ -501,15 +508,44 @@ class TestTheNetCountsEveryShape:
         assert found and "region.y" in found[0], found
 
 
-class TestTheDisclosedMisses:
-    """What layer 2 does not see, asserted so the disclosure stays true.
+#: The two disclosed misses, hoisted so the layer-2 half and the layer-1
+#: half assert against the same source rather than two copies of it.
+_PILOT_FROM_ANOTHER_MODULE = """
+async def test_it(live_screen, ticker):
+    await ticker.tick()
+    assert live_screen.region.y == 1
+"""
 
-    Both halves are asserted in each case: layer 2 silent AND layer 1
-    counting. Asserting only the second would pass on a matcher that had
-    never been narrowed; asserting only the first would pass on a net
-    that had been switched off.
+_READ_WITH_NO_AWAIT_OF_ITS_OWN = """
+async def test_it(open_screen, tmp_path):
+    async with open_screen(tmp_path) as (screen, pilot):
+        assert screen.query_one("#table").row_count == 0
+"""
+
+
+class TestTheDisclosedMisses:
+    """What layer 2 does not see, pinned so the disclosure cannot rot.
+
+    Each miss is TWO tests, and the split is the point.
+
+    The layer-2 half goes through ``astwalk.blind_spot`` under
+    ``xfail(strict=True, raises=AssertionError)``. It used to be
+    ``assert hits(...) == []``, which is not a control at all: an empty
+    list is what a correctly narrow walk returns AND what a walk that
+    has been switched off returns, so the assertion passed in both
+    worlds. Three lanes found that same shape independently in #324's
+    own ``assert_census``, and this repo has now shipped it three times.
+    Inverted, the body asserts the walk DOES see it and the marker says
+    it is expected not to, so the day somebody widens the walk it
+    XPASSes, ``strict=True`` makes that a failure, and the disclosure
+    has to be edited in the same diff.
+
+    The layer-1 half stays a plain assertion in its own test, because
+    under an xfail marker it would be masked: a broken net would fail
+    the same way a held disclosure does.
     """
 
+    @pytest.mark.xfail(strict=True, raises=AssertionError)
     def test_a_pilot_arriving_from_another_module_is_missed(
         self,
         tmp_path: Path,
@@ -525,14 +561,17 @@ class TestTheDisclosedMisses:
         ``tests/test_event_names_have_one_home.py`` records eleven
         guards getting wrong independently.
         """
-        body = """
-        async def test_it(live_screen, ticker):
-            await ticker.tick()
-            assert live_screen.region.y == 1
-        """
-        assert hits(tmp_path, body) == []
-        assert awaits(tmp_path, body) == 1
+        astwalk.blind_spot(lambda source: hits(tmp_path, source), _PILOT_FROM_ANOTHER_MODULE)
 
+    def test_a_pilot_from_another_module_is_still_counted_by_layer_1(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The bound on the miss above, in its own test so the xfail
+        marker cannot mask a net that stopped counting."""
+        assert awaits(tmp_path, _PILOT_FROM_ANOTHER_MODULE) == 1
+
+    @pytest.mark.xfail(strict=True, raises=AssertionError)
     def test_a_read_with_no_await_in_its_own_function_is_missed(
         self,
         tmp_path: Path,
@@ -557,13 +596,16 @@ class TestTheDisclosedMisses:
         by the guard, converted by hand, and named here so the next
         person knows this layer will not find the next one.
         """
-        body = """
-        async def test_it(open_screen, tmp_path):
-            async with open_screen(tmp_path) as (screen, pilot):
-                assert screen.query_one("#table").row_count == 0
-        """
-        assert hits(tmp_path, body) == []
-        assert awaits(tmp_path, body) == 1
+        astwalk.blind_spot(lambda source: hits(tmp_path, source), _READ_WITH_NO_AWAIT_OF_ITS_OWN)
+
+    def test_a_read_with_no_await_of_its_own_is_still_counted_by_layer_1(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """``async with`` is itself one of the four suspension
+        spellings, so the row moves here as well as in the manager's own
+        file. Its own test, for the same reason as above."""
+        assert awaits(tmp_path, _READ_WITH_NO_AWAIT_OF_ITS_OWN) == 1
 
     def test_a_second_call_hop_is_still_caught(self, tmp_path: Path) -> None:
         """Written as a third disclosure and measured to be none.

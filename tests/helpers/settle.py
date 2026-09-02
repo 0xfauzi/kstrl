@@ -116,6 +116,13 @@ async def settled(
             falsy. This is the only exit that is not the condition
             holding, and it is a failure, never a pass.
     """
+    if not what.strip():
+        # Not cosmetic. `what` IS the failure message, so an empty one
+        # renders "waited 5s (0 polls) for , and it never settled" and
+        # sends the reader nowhere. There is no caller for whom an
+        # anonymous wait is the right thing, so this is a contract
+        # rather than a default.
+        raise ValueError("settled() needs a non-empty `what`: it is the whole failure message")
     deadline = time.monotonic() + timeout
     polls = 0
     while True:

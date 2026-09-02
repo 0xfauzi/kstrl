@@ -179,6 +179,7 @@ def await_sites(tree: ast.Module) -> int:
 EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/helpers/settle.py": 3,
     "tests/helpers/tui_screens.py": 5,
+    "tests/test_config_guard_survey.py": 4,
     "tests/test_config_screen.py": 36,
     "tests/test_decompose_screens.py": 32,
     "tests/test_evolve_screen.py": 37,
@@ -189,9 +190,9 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/test_inbox.py": 4,
     "tests/test_init_wizard.py": 47,
     "tests/test_launch_session.py": 57,
-    "tests/test_settle_helper.py": 26,
+    "tests/test_settle_helper.py": 47,
     "tests/test_tui_app.py": 23,
-    "tests/test_tui_config_guard.py": 17,
+    "tests/test_tui_config_guard.py": 13,
     "tests/test_tui_detail.py": 39,
     "tests/test_tui_embed.py": 52,
     "tests/test_tui_safe_mode.py": 61,
@@ -642,7 +643,16 @@ def _reads_in(
 ) -> list[str]:
     """The offending reads in one function."""
     waits = [(node.lineno, is_enrolled(node, helper)) for node in own_awaits(fn, parents)]
-    candidates = [node for node in ast.walk(fn) if _is_settle_read(node, parents, names, helper)]
+    # Narrowed to ``ast.expr`` rather than left as ``ast.AST``: a read is
+    # always an expression, and the base class carries no ``lineno``, so
+    # without this the two ``node.lineno`` uses below are the only two
+    # ``mypy --strict`` errors in this file. No gate in this repo checks
+    # tests/, which is exactly why they survived.
+    candidates = [
+        node
+        for node in ast.walk(fn)
+        if isinstance(node, ast.expr) and _is_settle_read(node, parents, names, helper)
+    ]
     reads = {id(node) for node in candidates}
     hits = []
     for node in candidates:
