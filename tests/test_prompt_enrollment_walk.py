@@ -11,19 +11,40 @@ any nesting depth whose name ends in ``_PROMPT`` and whose right-hand
 side is a string, an f-string, or (since #299) a concatenation or
 ``str.join`` of them. It is blind to instruction text that is never bound
 to such a name at all, which is a residual H3 does not close; see the
-H3-NOTE in ``tests/test_prompt_versions.py``.
+H3-NOTE in ``tests/test_prompt_versions.py`` and
+``test_instruction_text_never_bound_to_a_prompt_name_is_invisible``
+below, which pins it under ``xfail(strict=True)``.
+
+TWO LAYERS, since #324.
+
+LAYER 1, :data:`EXPECTED_PROMPT_NAME_SPELLINGS`, counts every node in
+``kstrl/`` that writes a ``*_PROMPT`` identifier, per module. It
+enumerates no node types and no field names, so it sees the shapes the
+BINDING walk does not: a walrus, an import alias, the name as a string
+inside a ``setattr``, a ``global`` declaration, a parameter. #324's
+record is eleven guards each holed in the skip direction, and a matcher
+that enumerates shapes is how every one of them got there.
+
+LAYER 2 is the binding walk itself, which is what can say "add a version
+constant next to it". Its two deliberate inversions are unchanged:
+:func:`_is_prompt_value` is default-deny (is this value PROVABLY not a
+string?) and the walk is depth-agnostic on purpose.
 """
 
 from __future__ import annotations
 
 import ast
-import functools
 from pathlib import Path
 
 import pytest
 
 from kstrl import cli
+from tests.helpers import astwalk
 from tests.test_prompt_versions import _PROMPTS
+
+#: The suffix that puts a name under H3. One spelling, because both
+#: layers below filter on it and the staleness check reads it too.
+_PROMPT_SUFFIX = "_PROMPT"
 
 # Exemption set for the auto-discovery scan. These are user-facing
 # scaffolding templates emitted by ``ks init`` (progress log files,
@@ -136,21 +157,19 @@ def _is_prompt_value(value: ast.expr | None) -> bool:
 
 
 def _assigned_names(node: ast.AST) -> list[str]:
-    """The ``Name`` targets of a prompt-shaped assignment, else ``[]``.
+    """The plain-name targets of a prompt-shaped binding, else ``[]``.
 
-    Handles both binding forms in one place: ``NAME = "..."``
-    (``ast.Assign``, which may bind several targets at once) and
-    ``NAME: str = "..."`` (``ast.AnnAssign``, exactly one).
+    ``astwalk.assignment_parts`` owns the three binding forms now:
+    ``NAME = "..."`` (which may bind several targets at once),
+    ``NAME: str = "..."`` and the WALRUS, which this file's own version
+    did not read at all. An attribute target comes back dotted and is
+    dropped here, because ``self.x`` is not a module-level constant
+    anybody can enrol.
     """
-    if isinstance(node, ast.Assign):
-        targets: list[ast.expr] = list(node.targets)
-    elif isinstance(node, ast.AnnAssign):
-        targets = [node.target]
-    else:
+    targets, value = astwalk.assignment_parts(node)
+    if not _is_prompt_value(value):
         return []
-    if not _is_prompt_value(node.value):
-        return []
-    return [t.id for t in targets if isinstance(t, ast.Name)]
+    return [target for target in targets if target is not None and "." not in target]
 
 
 def _iter_prompt_names(tree: ast.AST) -> list[str]:
@@ -166,34 +185,28 @@ def _iter_prompt_names(tree: ast.AST) -> list[str]:
     return list(dict.fromkeys(names))
 
 
-@functools.cache
-def _iter_modules(package_root: Path | None = None) -> tuple[tuple[Path, ast.AST, Path], ...]:
-    """Parse every module under ``package_root`` (default: the real kstrl/).
+def _package_root(package_root: Path | None) -> Path:
+    """The tree to walk: the real ``kstrl/`` unless a fixture names one."""
+    return package_root or astwalk.KSTRL_PACKAGE
 
-    Returns ``(path, tree, root)`` triples, skipping anything that will
-    not parse.
 
-    Memoized, and the memo is the point. #299 round 1 claimed "one
+def _iter_modules(package_root: Path | None = None) -> list[tuple[Path, ast.Module]]:
+    """Every module under ``package_root`` (default: the real kstrl/).
+
+    The parse comes from ``astwalk.parsed``, which is one cache for the
+    whole session rather than this file's own. #299 round 1 claimed "one
     traversal shared by both consumers" while memoizing nothing, which
-    made this file SLOWER than the two walks it replaced. Measured with
-    the cache in place: 124 files, 127 ms on the first call, under a
-    microsecond on every later one, one miss and five hits per session.
-    A tuple rather than a list because a cached mutable return is a
-    booby trap for the next caller.
+    made this file SLOWER than the two walks it replaced; the private
+    ``functools.cache`` that fixed that is now nine other guards' cache
+    too. Measured: 127 modules, 123 ms a pass, once per session.
 
-    Safe to cache because the tree on disk does not change inside one
-    test session, and the synthetic-module tests each build a fresh
-    ``tmp_path`` so their keys never collide.
+    A file that will not parse now raises instead of being skipped.
+    That direction is deliberate: a skipped module is a module this
+    walk reports clean, which is the failure #324 is a record of.
     """
-    root = package_root or (Path(__file__).resolve().parent.parent / "kstrl")
-    parsed: list[tuple[Path, ast.AST, Path]] = []
-    for py_file in sorted(root.rglob("*.py")):
-        try:
-            tree = ast.parse(py_file.read_text(encoding="utf-8"))
-        except SyntaxError:
-            continue
-        parsed.append((py_file, tree, root))
-    return tuple(parsed)
+    root = _package_root(package_root)
+    sources = astwalk.package_sources() if package_root is None else sorted(root.rglob("*.py"))
+    return [(py_file, astwalk.parsed(py_file)) for py_file in sources]
 
 
 def _module_level_prompt_constants(
@@ -215,15 +228,103 @@ def _module_level_prompt_constants(
     walk inline, which would guard nothing.
     """
     found: dict[str, list[str]] = {}
-    for py_file, tree, root in _iter_modules(package_root):
+    label_root = _package_root(package_root).parent
+    for py_file, tree in _iter_modules(package_root):
         names = [
             name
             for name in _iter_prompt_names(tree)
-            if name.endswith("_PROMPT") and name not in _ENROLLMENT_EXEMPT_NAMES
+            if name.endswith(_PROMPT_SUFFIX) and name not in _ENROLLMENT_EXEMPT_NAMES
         ]
         if names:
-            found[str(py_file.relative_to(root.parent))] = names
+            found[astwalk.label(py_file, label_root)] = names
     return found
+
+
+def _spells_a_prompt_name(node: ast.AST) -> bool:
+    """Does this node write a ``*_PROMPT`` identifier anywhere it can?
+
+    ``astwalk.spells`` asks exactly this for ONE token, by sweeping
+    ``ast.iter_fields`` for strings. The subject here is a SUFFIX rather
+    than a token, so the same sweep is done against ``str.endswith``;
+    everything else, including the reason it is the strongest net in the
+    file, is that function's docstring. It enumerates no node types and
+    no field names, so it reaches ``Name.id``, ``Attribute.attr``,
+    ``alias.asname``, ``arg.arg``, ``Global.names``, a bare string
+    literal, and whatever identifier slot a future CPython adds.
+    """
+    for _field, value in ast.iter_fields(node):
+        if isinstance(value, str):
+            if value.endswith(_PROMPT_SUFFIX):
+                return True
+        elif isinstance(value, list) and any(
+            isinstance(item, str) and item.endswith(_PROMPT_SUFFIX) for item in value
+        ):
+            return True
+    return (astwalk.folded_str(node) or "").endswith(_PROMPT_SUFFIX)
+
+
+#: Every node in ``kstrl/`` that writes a ``*_PROMPT`` identifier, per
+#: module. Layer 1: a prompt cannot be declared, imported, passed or
+#: read under such a name without one of these, whatever binding shape
+#: it uses, so a name introduced by a shape ``_assigned_names`` does not
+#: read - a ``for`` target, a ``with ... as``, a ``global``, a
+#: ``setattr`` keyed by the string - still moves a row here.
+#:
+#: Adding a row is not forbidden, it is the point: the diff that adds
+#: one is where somebody says what the new name is and why it is or is
+#: not a prompt body. ``git.py`` at four is two declarations and two
+#: uses; ``init_cmd.py`` at twelve is ``DEFAULT_PROMPT`` plus the two
+#: exempt scaffolding templates and their scaffold-ledger rows.
+EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
+    "cli.py": 2,  # _ROOT_FROM_PROMPT, which is a set of command names
+    # #332 landed while this migration was in flight: the version
+    # constant and the body of DECISIONS_CONTEXT_PROMPT, both enrolled.
+    "decisions.py": 2,
+    "decompose.py": 2,
+    "git.py": 4,
+    "init_cmd.py": 12,
+    "knowledge.py": 2,
+    "loop.py": 2,
+    "review.py": 2,
+    "security.py": 2,
+    "verify.py": 2,
+}
+
+
+def test_every_module_that_spells_a_prompt_name_is_pinned() -> None:
+    """Layer 1, the net: pin every mention of a ``*_PROMPT`` identifier.
+
+    The binding walk below enumerates binding shapes, and #299 is the
+    record of what enumerating shapes costs: round 1's predicate listed
+    the shapes that ARE prompt bodies and seven ordinary ones walked
+    past it. That predicate was inverted; the SHAPE list on the
+    left-hand side never was. This layer has no shape list to be
+    incomplete, so a ``*_PROMPT`` name bound by a ``for`` target, a
+    ``with ... as`` or a ``global`` moves a count here even though
+    ``_assigned_names`` cannot see it.
+
+    ``assert_census`` refuses to pin an inventory whose predicate
+    matched nothing in its own control, which is what stops this passing
+    while switched off.
+    """
+    astwalk.assert_census(
+        sources=astwalk.package_sources(),
+        sees=_spells_a_prompt_name,
+        expected=EXPECTED_PROMPT_NAME_SPELLINGS,
+        control=(
+            # One per branch of the sweep: a plain string field
+            # (`Name.id`), a LIST of strings (`Global.names`), and a
+            # value only `folded_str` can produce.
+            'NEW_PROMPT = "you are a hostile reviewer"\n',
+            "def f():\n    global OTHER_PROMPT\n",
+            'X = "SOME" + "_PROMPT"\n',
+        ),
+        message=(
+            "the set of places kstrl/ writes a *_PROMPT name changed. If this is a "
+            "new prompt, enrol it in tests/test_prompt_versions.py; if it is not a "
+            "prompt body, add the row with the reason."
+        ),
+    )
 
 
 def test_no_unenrolled_prompt_constants() -> None:
@@ -257,11 +358,12 @@ def _synthetic_module(tmp_path: Path, source: str) -> Path:
     return the root, so the REAL walker can be pointed at it.
 
     ``source`` is compiled first, and that check is load-bearing rather
-    than tidiness. ``_iter_modules`` skips a file that will not parse, so
-    a fixture with an escaping slip yields no findings at all: a
-    "catches" test then fails for the wrong reason, and worse, an
-    "ignores" test PASSES while asserting nothing. Two of the fixtures
-    below had exactly that slip while this was being written.
+    than tidiness. It says which of the two things went wrong: a fixture
+    with an escaping slip fails HERE, naming the fixture, rather than
+    inside the walk. Two of the fixtures below had exactly that slip
+    while this was being written. (Until #324 ``_iter_modules`` SKIPPED a
+    file it could not parse, so the same slip made an "ignores" test
+    pass while asserting nothing; it raises now.)
 
     utf-8 on write to match the utf-8 read in ``_iter_modules``. The
     repo's encoding contract is two-sided (#291): a locale-default write
@@ -428,8 +530,8 @@ def test_enrollment_exempt_names_are_not_stale() -> None:
     the exempt set that the walker's suffix filter could never consult.
     """
     discovered: set[str] = set()
-    for _py_file, tree, _root in _iter_modules():
-        discovered.update(n for n in _iter_prompt_names(tree) if n.endswith("_PROMPT"))
+    for _py_file, tree in _iter_modules():
+        discovered.update(n for n in _iter_prompt_names(tree) if n.endswith(_PROMPT_SUFFIX))
     stale = sorted(name for name in _ENROLLMENT_EXEMPT_NAMES if name not in discovered)
     assert not stale, (
         "_ENROLLMENT_EXEMPT_NAMES has stale entries that no longer "
@@ -447,3 +549,36 @@ def test_ast_walker_ignores_typed_assignment_without_value(
     REAL walker reports nothing for it."""
     pkg = _synthetic_module(tmp_path, "EMPTY_PROMPT: str\n")
     assert _module_level_prompt_constants(pkg) == {}
+
+
+def test_the_walk_reads_a_walrus_binding(tmp_path: Path) -> None:
+    """The shape this file's own ``_assigned_names`` could not read.
+
+    ``astwalk.assignment_parts`` covers ``Assign``, ``AnnAssign`` AND
+    the walrus; the private version here read the first two. A walrus is
+    what somebody writes to bind a body and use it in the same
+    expression, and until #324 it was a ``*_PROMPT`` name with no
+    version, no hash and no calibration obligation.
+    """
+    pkg = _synthetic_module(tmp_path, "def build():\n    return len(WALRUS_PROMPT := BODY)\n")
+    assert _module_level_prompt_constants(pkg) == {"synth_pkg/mod.py": ["WALRUS_PROMPT"]}
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError)
+def test_instruction_text_never_bound_to_a_prompt_name_is_invisible() -> None:
+    """The H3 residual, pinned rather than left as prose.
+
+    Both layers key on the NAME. A body returned straight out of a
+    function, or bound to a local called something else, is spelled
+    nowhere either layer looks, and the fix is not a wider walk but the
+    rule CLAUDE.md already states: hoist such text to an enrolled
+    constant and interpolate the run-time values back in.
+
+    Under ``xfail(strict=True)`` so that the day somebody does widen the
+    walk, this XPASSes, that is a failure, and the H3-NOTE in
+    ``tests/test_prompt_versions.py`` has to be edited in the same diff.
+    """
+    astwalk.blind_spot(
+        lambda source: _iter_prompt_names(astwalk.parse(source)),
+        'def reviewer_instructions() -> str:\n    return "You are a hostile reviewer."\n',
+    )

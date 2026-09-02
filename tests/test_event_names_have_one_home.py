@@ -52,8 +52,10 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from kstrl.evolution import JOURNAL_REPAIR_EVENT, SPEC_ISSUES_EVENT
-from tests.test_journal_one_writer import (
-    assignment_parts,
+from tests.helpers.astwalk import (
+    Sees,
+    assert_census,
+    bound_names,
     folded_str,
     label,
     package_sources,
@@ -82,6 +84,18 @@ EVENT_TYPE_KEY = "event_type"
 # --- layer 1: the net -----------------------------------------------------
 
 
+def spells_an_enrolled_event() -> Sees:
+    """The net's predicate: does this ONE node fold to an enrolled name?
+
+    Hoisted out of the walk so ``assert_census`` can run it against a
+    control. Before #324 the net was a hand-rolled loop whose only
+    assertion was that its inventory matched, and an inventory that
+    matches is also what a predicate returning False always returns.
+    """
+    names = set(ENROLLED_EVENT_CONSTANTS.values())
+    return lambda node: folded_str(node) in names
+
+
 def event_name_spellings(source_file: Path) -> int:
     """How many expressions in one module fold to an enrolled event name.
 
@@ -98,8 +112,8 @@ def event_name_spellings(source_file: Path) -> int:
 
     Counted per module so an unrelated edit does not fail it.
     """
-    names = set(ENROLLED_EVENT_CONSTANTS.values())
-    return sum(1 for node in ast.walk(parsed(source_file)) if folded_str(node) in names)
+    sees = spells_an_enrolled_event()
+    return sum(1 for node in ast.walk(parsed(source_file)) if sees(node))
 
 
 #: Every place in ``kstrl/`` that spells an enrolled event name outright,
@@ -477,26 +491,10 @@ def _alias_sweep(nodes: list[ast.AST], names: frozenset[str]) -> frozenset[str]:
     """The names ONE pass binds to a read, given what is known so far."""
     found: set[str] = set()
     for node in nodes:
-        targets, value = _bound_names(node)
+        targets, value = bound_names(node)
         if value is not None and _reads_event_type(value, names):
             found.update(targets)
     return frozenset(found)
-
-
-def _bound_names(node: ast.AST) -> tuple[list[str], ast.expr | None]:
-    """The plain names one binding binds, and what it binds them to.
-
-    ``assignment_parts`` next door already answers this for ``Assign``
-    and ``AnnAssign``. The walrus is added here rather than there because
-    it is both a binding and an operand, and the one-writer guard has no
-    use for it. Pinned by
-    ``test_a_walrus_bound_on_an_earlier_line``, because the walrus INSIDE
-    a compare is caught by ``_reads_event_type``'s deep walk and so does
-    not reach this branch at all.
-    """
-    if isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name):
-        return [node.target.id], node.value
-    return assignment_parts(node)
 
 
 # --- how a hit reads ------------------------------------------------------
@@ -538,18 +536,18 @@ class TestJournalEventNamesHaveOneHome:
         ``folded_str`` and pinned in ``test_event_name_shapes.py``: a
         name the interpreter has to build.
         """
-        built: dict[str, int] = {}
-        for source_file in package_sources():
-            hits = event_name_spellings(source_file)
-            if hits:
-                built[label(source_file)] = hits
-
-        assert built == EXPECTED_EVENT_NAME_SPELLINGS, (
-            "The set of places that spell an enrolled journal event name changed. If "
-            "this is a journal row being written or selected, import the constant "
-            "evolution.py declares for it. If it is the architect's JSON key or the "
-            "TUI's artifact label, which share the word, add the row with a reason. "
-            f"Found: {built}"
+        assert_census(
+            sources=package_sources(),
+            sees=spells_an_enrolled_event(),
+            expected=EXPECTED_EVENT_NAME_SPELLINGS,
+            control='row = {"event_type": "spec_issues"}\n',
+            message=(
+                "The set of places that spell an enrolled journal event name "
+                "changed. If this is a journal row being written or selected, "
+                "import the constant evolution.py declares for it. If it is the "
+                "architect's JSON key or the TUI's artifact label, which share the "
+                "word, add the row with a reason."
+            ),
         )
 
     def test_no_module_names_an_enrolled_event_as_a_literal(self) -> None:
