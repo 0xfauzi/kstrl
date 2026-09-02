@@ -39,6 +39,9 @@ is here, in the same change, with the count at zero and no exemptions -
 the six ``fcntl`` lock files it turned up were FIXED rather than listed.
 
 CLEARING IS THE DANGEROUS DIRECTION, so every undecidable is a flag.
+CLAUDE.md guard-design rule 3: a guard that CLEARS must be narrow,
+because over-matching converts a resolution into a clearing and deletes
+the mechanism, and one that cannot PROVE a site compliant must flag.
 This guard's job is to say "this site is fine", and #324 records eleven
 guards that said so because they had stopped looking. Every step that
 cannot reach an answer here therefore reports rather than clears:
@@ -48,6 +51,10 @@ cannot reach an answer here therefore reports rather than clears:
     an ``errors=`` that does not fold   -> treated as strict
     a handler this walk cannot NAME     -> reported (``Clause.decided``)
     a callee with no identifier at all  -> ``undecided``, a pinned row
+    an ``open`` whose handle it cannot   -> ``undecided``, a pinned row
+      follow to a name
+    a use of a tracked handle it does    -> ``undecided``, a pinned row
+      not model
 
 What it cannot see is named beside the control that covers it, in
 ``tests/test_encoding_walk.py``, rather than listed here where a
@@ -282,9 +289,11 @@ def _bound_opens(tree: ast.Module) -> set[int]:
     Measured on the first: ``b'{"total": 5\xff}'`` raises straight past
     the handler while the guard said ``clear``.
 
-    The fix is the module's own rule rather than a wider chase: an
-    undecidable REPORTS, it does not clear. Chasing more spellings would
-    have left the same hole one spelling further out.
+    The fix is CLAUDE.md's guard-design rule 3 applied literally: a
+    clearing guard that cannot PROVE a site is compliant must flag.
+    Chasing more spellings would have left the same hole one spelling
+    further out, because the chase is what over-matches; refusing to
+    clear what it cannot follow is what does not.
     """
     return {
         id(call)

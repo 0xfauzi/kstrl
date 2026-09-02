@@ -388,6 +388,31 @@ class TestTheLocalePinnedReads:
         )
 
 
+class TestTheChildEnvIsTheOneThatReproduces:
+    """A skip is not a control, and every test that needs an ASCII default
+    skips itself when the platform will not give one.
+
+    So dropping ``PYTHONUTF8`` from :data:`NO_UTF8_DEFAULT` turned five
+    tests green-by-skipping rather than red. Measured as mutation M37 of
+    #344's battery, and this is what closes it: the constant is checked
+    against the MEASUREMENT that chose it, which no platform can skip.
+    """
+
+    def test_the_env_carries_the_variable_the_measurement_says_is_load_bearing(
+        self,
+    ) -> None:
+        """``LC_ALL``/``LANG`` set the locale; ``PYTHONUTF8=0`` is what
+        actually turns PEP 540 UTF-8 mode off, and the table on
+        NO_UTF8_DEFAULT records both C-locale rows still encoding utf-8
+        without it."""
+        assert NO_UTF8_DEFAULT.get("PYTHONUTF8") == "0", (
+            "the child env no longer disables PEP 540 UTF-8 mode, so every "
+            "test that asks for an ASCII default will SKIP rather than fail. "
+            f"Got {NO_UTF8_DEFAULT}."
+        )
+        assert NO_UTF8_DEFAULT.get("LC_ALL") == "C"
+
+
 class TestTheWriteSideIsPinnedToo:
     """#291's rule is two-sided, and the read-only half of #320 left the
     other one open: a write whose encoding the locale picks makes kstrl

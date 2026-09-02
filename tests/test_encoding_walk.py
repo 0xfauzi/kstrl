@@ -457,9 +457,11 @@ class TestTheReadBytesExclusion:
         )
 
     #: The shape the exclusion says never happens, as source. It is the
-    #: control for the walk below: neutering the matcher to ``set()``
-    #: left that walk green at 69 passed, which is the ``assert hits ==
-    #: []`` shape #344's review named.
+    #: control for the walk below, which without it is CLAUDE.md
+    #: guard-design rule 2 exactly - ``assert hits(...) == []`` passes
+    #: when the walk is correctly narrow AND when it has been switched
+    #: off. Measured: neutering the matcher to ``set()`` left the walk
+    #: green at 69 passed.
     VIOLATION = (
         "def f(p):\n    try:\n        raw = p.read_bytes()\n"
         "        return raw.decode('utf-8')\n"

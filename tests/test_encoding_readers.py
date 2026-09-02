@@ -247,7 +247,8 @@ class TestEveryReadInThePackageIsAccountedFor:
     a named inventory of everything cleared.
 
     The inventory is here because ``reported == ()`` on its own is not a
-    control: it is also what a walk that has been switched off returns.
+    control - CLAUDE.md guard-design rule 2 - since it is also what a
+    walk that has been switched off returns.
     Pinning the CLEARED half means a walk that stops seeing a read fails
     this test with the row it lost, which is the direction #324 records
     eleven guards failing in silently.
