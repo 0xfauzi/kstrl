@@ -349,6 +349,12 @@ def load_baseline(path: Path) -> Baseline:
         data: Any = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"cannot read baseline {path}: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        # Its own message, because this one is printed at the CLI and
+        # the remedy differs: "cannot read" is a path or a permission
+        # problem, and this file opened fine. kstrl writes baselines as
+        # ASCII JSON, so a byte that will not decode came from elsewhere.
+        raise ValueError(f"baseline {path} is not valid UTF-8; re-save it as UTF-8: {exc}") from exc
     if not isinstance(data, dict):
         raise ValueError(f"baseline {path} is not a JSON object")
 

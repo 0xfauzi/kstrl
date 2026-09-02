@@ -124,7 +124,12 @@ class ProgressLog:
             event["component"] = component_id
         if data:
             event["data"] = data
-        with open(self._path, "a") as f:
+        # utf-8 pinned to match the reader below. ``json.dumps`` leaves
+        # ensure_ascii at its default, so what lands here is pure ASCII
+        # today and the locale cannot corrupt it; naming the encoding is
+        # what keeps that true if a field ever carries a raw string
+        # (#291's two-sided contract, #320's sweep).
+        with open(self._path, "a", encoding="utf-8") as f:
             f.write(json.dumps(event) + "\n")
         # R7.4: sink fan-out AFTER the journal write - the JSONL line is
         # the source of truth and must land even if every sink dies. A

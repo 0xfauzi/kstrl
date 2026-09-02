@@ -396,6 +396,21 @@ def read_facts(knowledge_root: Path, component_id: str) -> list[Fact]:
                 content = path.read_text(encoding="utf-8")
             except OSError:
                 continue
+            except UnicodeDecodeError as exc:
+                # Rejected with a warning, like a fact file that will not
+                # PARSE, and unlike one that will not OPEN. This is a
+                # content fault in a file kstrl wrote as ASCII, so it is
+                # the same class of event as a malformed heading: worth
+                # telling somebody about. #320: without this clause the
+                # UnicodeDecodeError - a ValueError - walked past the
+                # OSError above and crashed retrieval, which is exactly
+                # what this function's docstring promises never happens.
+                warnings.warn(
+                    f"knowledge: rejected fact file {path}: not valid UTF-8 ({exc})",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                continue
             try:
                 fact = _parse_fact_md(content)
             except ValueError as exc:
@@ -788,7 +803,14 @@ def record_dependency_scope_gap(
 def read_dependency_scope_telemetry(knowledge_root: Path) -> list[dict[str, Any]]:
     """Read the JSONL log produced by
     :func:`record_dependency_scope_gap`. Returns ``[]`` when the file
-    does not exist or cannot be parsed."""
+    does not exist or cannot be parsed.
+
+    ONE clause for the open failure and the decode failure, because this
+    telemetry reader reports to nobody: both answers are ``[]`` and no
+    caller can tell them apart, so two handlers would be a distinction
+    with no observer. Sites that DO say something get their own message;
+    see :func:`read_facts` above.
+    """
     target = knowledge_root / _E8_TELEMETRY_RELATIVE_PATH
     if not target.is_file():
         return []
@@ -802,7 +824,7 @@ def read_dependency_scope_telemetry(knowledge_root: Path) -> list[dict[str, Any]
                 out.append(json.loads(line))
             except json.JSONDecodeError:
                 continue
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return []
     return out
 
@@ -976,6 +998,12 @@ def _read_prd_text(prd_path: Path) -> str:
         text = prd_path.read_text(encoding="utf-8")
     except OSError:
         return "(PRD not readable)"
+    except UnicodeDecodeError:
+        # A distinct placeholder, because this string is pasted into
+        # DISTILL_PROMPT and read by a human afterwards: "not readable"
+        # and "not UTF-8" send whoever reads the prompt to two different
+        # files. The distiller still runs; it just has no criteria.
+        return "(PRD is not valid UTF-8)"
     # DISTILL_PROMPT frames this as the acceptance criteria, and the
     # routed spec findings are not criteria. See
     # ``prd.PROMPT_EXCLUDED_KEYS`` (#260 F1).

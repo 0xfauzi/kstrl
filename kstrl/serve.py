@@ -527,6 +527,12 @@ class SpendLedger:
         safe. After a failed/partial migrate (legacy still present, or
         control dir inaccessible), missing XDG is NOT first-run - raise
         rather than zero the budget.
+
+        "Every read failure" includes the DECODE, which until #320 it did
+        not: ``UnicodeDecodeError`` is a ``ValueError``, so one non-utf-8
+        byte in the ledger walked straight past the ``OSError`` clause
+        below and out of a money path whose entire argument is that it
+        refuses to spend against a total it could not read.
         """
         ensure_control_state(self.root_dir)
         untrusted = control_untrusted_reason(self.root_dir)
@@ -546,6 +552,17 @@ class SpendLedger:
                 f"cannot read the daemon spend ledger {self.path}: {exc}. "
                 "Refusing to spend against an unknown daily total; fix the "
                 "file's permissions or move it aside to start a fresh day."
+            ) from exc
+        except UnicodeDecodeError as exc:
+            # Its own remedy, because it is its own problem: the file is
+            # readable and the bytes are wrong, so chmod and chown are
+            # the wrong advice. kstrl writes this ledger as ASCII JSON,
+            # so a byte that will not decode means something else edited
+            # it.
+            raise ServeStateError(
+                f"the daemon spend ledger {self.path} is not valid UTF-8 ({exc}). "
+                "Refusing to spend against an unknown daily total; re-save it "
+                "as UTF-8 or move it aside to start a fresh day."
             ) from exc
         try:
             data = json.loads(raw)
@@ -1931,7 +1948,7 @@ def factory_lock_held(root_dir: Path) -> bool:
     except ImportError:
         return False
     try:
-        handle = open(lock_path, "a+")
+        handle = open(lock_path, "a+", encoding="utf-8")
     except OSError:
         # Fail CLOSED: an unopenable lock file is not evidence that no
         # run owns this root (#186 F6).
@@ -1963,7 +1980,7 @@ def serve_lock(root_dir: Path) -> Iterator[None]:
     except ImportError:
         yield
         return
-    handle = open(lock_path, "a+")
+    handle = open(lock_path, "a+", encoding="utf-8")
     try:
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -2686,11 +2703,17 @@ def _derive_project_name(item: QueueItem) -> str:
 
 
 def _run_id_from_manifest(manifest_path: Path) -> str:
-    """The run id the factory recorded, or "" if it never got that far."""
+    """The run id the factory recorded, or "" if it never got that far.
+
+    ONE clause for all three causes: every one of them returns "", the
+    caller then falls back to selecting by mtime, and no message is
+    emitted about which happened. #320 adds ``UnicodeDecodeError`` here
+    rather than a second handler for that reason.
+    """
     try:
         raw = manifest_path.read_text(encoding="utf-8")
         data = json.loads(raw)
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return ""
     if not isinstance(data, dict):
         return ""

@@ -142,10 +142,10 @@ from tests.helpers.astwalk import (
     handler_clauses,
     label,
     module_name,
-    own_nodes,
     package_sources,
     parse,
     spells,
+    try_body_nodes,
 )
 
 #: The catch-all a tomllib reader must end on.
@@ -246,25 +246,6 @@ def _is_parse_call(node: ast.AST, table: Bindings) -> bool:
     return isinstance(node, ast.Call) and table.resolve(node.func) in TOML_PARSE_TARGETS
 
 
-def _body_nodes(node: ast.Try) -> list[ast.AST]:
-    """Every node in this ``try``'s BODY, stopping at a nested function.
-
-    So a parse is attributed to the innermost scope containing it. A
-    plain ``ast.walk`` credits a ``try`` with guarding a parse that lives
-    in a function DEFINED in its body and CALLED somewhere else, which
-    the round-3 docstring listed as a hole this walk could not close.
-    ``astwalk.own_nodes`` is that boundary; the loop here is what applies
-    it to a list of statements rather than to one node, and what stops a
-    ``def`` at the top of the body being descended into.
-    """
-    found: list[ast.AST] = []
-    for stmt in node.body:
-        found.append(stmt)
-        if not isinstance(stmt, ast.FunctionDef | ast.AsyncFunctionDef):
-            found.extend(own_nodes(stmt))
-    return found
-
-
 def _guarded_parses(
     tree: ast.Module, table: Bindings
 ) -> tuple[list[tuple[int, tuple[Clause, ...]]], set[int]]:
@@ -284,7 +265,7 @@ def _guarded_parses(
     for node in ast.walk(tree):
         if not isinstance(node, ast.Try):
             continue
-        found = {id(child) for child in _body_nodes(node) if _is_parse_call(child, table)}
+        found = {id(child) for child in try_body_nodes(node) if _is_parse_call(child, table)}
         if not found:
             continue
         covered |= found

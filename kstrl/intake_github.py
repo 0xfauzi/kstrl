@@ -469,7 +469,12 @@ class ProcessedLedger:
         ensure_control_state(self.root_dir)
         try:
             raw = self.path.read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, UnicodeDecodeError):
+            # One clause: the class docstring above already argues that
+            # an unreadable ledger is treated as EMPTY and why that is
+            # bounded, and a decode failure is the same unreadable
+            # ledger. Nothing here reports the cause, so #320's
+            # separate-remedy rule has no message to separate.
             self._entries = {}
             return self
         try:

@@ -31,6 +31,29 @@ def own_nodes(node: ast.AST) -> list[ast.AST]:
     return found
 
 
+def try_body_nodes(node: ast.Try) -> list[ast.AST]:
+    """Every node in this ``try``'s BODY, stopping at a nested function.
+
+    :func:`own_nodes` is the boundary; this is what applies it to a LIST
+    of statements rather than to one node, and what stops a ``def``
+    written at the top of the body being descended into. The distinction
+    matters because a plain ``ast.walk`` credits a ``try`` with guarding
+    a call that lives in a function defined in its body and called
+    somewhere else, under a handler that will never see its exception.
+
+    Two guards wanted exactly this - ``tests/test_toml_readers.py`` for
+    the parse it attributes to a handler ladder, and
+    ``tests/helpers/encodingwalk.py`` for the read it attributes to
+    one - and wrote it twice before it was hoisted here.
+    """
+    found: list[ast.AST] = []
+    for statement in node.body:
+        found.append(statement)
+        if not isinstance(statement, ast.FunctionDef | ast.AsyncFunctionDef):
+            found.extend(own_nodes(statement))
+    return found
+
+
 def scopes(tree: ast.Module) -> list[tuple[ast.AST, str]]:
     """Every scope in a module and its qualified name.
 

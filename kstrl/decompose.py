@@ -408,6 +408,12 @@ SPECKIT_ARTIFACTS: tuple[tuple[str, str], ...] = (
 def load_spec_input(spec_path: Path) -> str:
     """Read the architect's spec input (R7.5 SpecKit intake).
 
+    Both reads name utf-8 rather than leaving it to the locale (#320):
+    the spec is markdown an operator wrote, so a curly quote or an
+    accented name in it made ``ks factory`` raise on a machine running
+    under a non-UTF-8 locale and read cleanly on the next machine, which
+    is the worst possible pair of outcomes for the same file.
+
     A markdown FILE is read as-is (the historical behavior). A
     DIRECTORY is treated as a SpecKit artifact set: ``spec.md`` is
     required, ``plan.md`` and ``tasks.md`` are appended when present,
@@ -417,7 +423,7 @@ def load_spec_input(spec_path: Path) -> str:
     injection-separation delimiters like any other spec.
     """
     if spec_path.is_file():
-        return spec_path.read_text()
+        return spec_path.read_text(encoding="utf-8")
     if spec_path.is_dir():
         if not (spec_path / "spec.md").is_file():
             raise ValueError(
@@ -427,7 +433,7 @@ def load_spec_input(spec_path: Path) -> str:
             )
         parts = [
             f"===== SpecKit artifact: {name} ({role}) =====\n\n"
-            + (spec_path / name).read_text().rstrip("\n")
+            + (spec_path / name).read_text(encoding="utf-8").rstrip("\n")
             for name, role in SPECKIT_ARTIFACTS
             if (spec_path / name).is_file()
         ]

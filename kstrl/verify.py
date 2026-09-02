@@ -577,6 +577,37 @@ _SECTION_BULLET_RE = re.compile(r"^[\-*]\s+\*{2}[^*]+\*{2}")
 _ENTRY_SEPARATOR_RE = re.compile(r"^-{3,}$")
 
 
+def _self_critique_text(progress_path: Path, start: float) -> str | CheckResult:
+    """The progress file's text, or the failing check explaining why not.
+
+    Two handlers because the remedies differ: "could not read" sends the
+    operator to the file's permissions, and this file opened fine - the
+    agent wrote bytes that are not UTF-8, which is a fact about the
+    agent's output rather than about the disk. Before #320 the decode was
+    not caught at all and a Phase 1 gate died with a traceback instead of
+    reporting red.
+
+    Split out of :func:`check_self_critique` so the second handler does
+    not push that function past the complexity ratchets.
+    """
+    try:
+        return progress_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return CheckResult(
+            name="self_critique",
+            passed=False,
+            message=f"Could not read progress file: {exc}",
+            duration_seconds=time.monotonic() - start,
+        )
+    except UnicodeDecodeError as exc:
+        return CheckResult(
+            name="self_critique",
+            passed=False,
+            message=f"Progress file is not valid UTF-8: {exc}",
+            duration_seconds=time.monotonic() - start,
+        )
+
+
 def check_self_critique(
     progress_path: Path,
     min_bullets: int = 3,
@@ -618,15 +649,9 @@ def check_self_critique(
     path otherwise is the reviewer noticing, which is unreliable.
     """
     start = time.monotonic()
-    try:
-        text = progress_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        return CheckResult(
-            name="self_critique",
-            passed=False,
-            message=f"Could not read progress file: {exc}",
-            duration_seconds=time.monotonic() - start,
-        )
+    text = _self_critique_text(progress_path, start)
+    if isinstance(text, CheckResult):
+        return text
 
     lines = text.splitlines()
     # Locate the latest iteration entry: entries are appended, so the
@@ -1576,8 +1601,12 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
             if not full_path.exists():
                 continue
 
-            # Empty file check
-            content = full_path.read_text()
+            # Empty file check. utf-8 pinned, not left to the locale:
+            # PEP 3120 makes utf-8 the default source encoding, so this
+            # is the encoding the file is in, and reading it as cp1252
+            # under a non-UTF-8 locale would silently change which
+            # SECRET_PATTERNS matched below.
+            content = full_path.read_text(encoding="utf-8")
             if not content.strip():
                 issues.append(f"{rel_path}: empty file")
                 continue

@@ -367,6 +367,19 @@ class AutonomyState:
                     f"unreadable: {exc}",
                 ),
             )
+        except UnicodeDecodeError as exc:
+            # Its own reason string, because this one is surfaced: it
+            # reaches the warning AND ``ks status`` through
+            # ``degraded_reason``, and "unreadable" would send the
+            # operator to the file's permissions when the permissions
+            # are fine and the bytes are not. Failing to L1 is unchanged;
+            # only the explanation is.
+            return cls(
+                degraded_reason=_warn_rejected_state(
+                    path,
+                    f"not valid UTF-8: {exc}",
+                ),
+            )
         if not isinstance(data, dict):
             return cls(
                 degraded_reason=_warn_rejected_state(

@@ -3825,7 +3825,12 @@ class ComponentPipeline:
             )
             try:
                 progress_text = progress_path.read_text(encoding="utf-8")
-            except OSError:
+            except (OSError, UnicodeDecodeError):
+                # One clause: ``progress_text`` stays "" either way and
+                # the metric below degrades to "no evidence", which is
+                # the same answer for both causes and is reported as
+                # such. #320's separate-remedy rule needs a message to
+                # separate; this site emits none.
                 pass
             # The diff MUST go in as `diff=`, never as a positional
             # artifact. Artifacts are searched raw; only `diff=` is

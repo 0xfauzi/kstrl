@@ -617,7 +617,7 @@ def queue_lock(root_dir: Path, *, blocking: bool = False) -> Iterator[None]:
         yield
         return
 
-    handle: IO[str] = open(lock_path, "a+")
+    handle: IO[str] = open(lock_path, "a+", encoding="utf-8")
     try:
         flags = fcntl.LOCK_EX if blocking else fcntl.LOCK_EX | fcntl.LOCK_NB
         try:
@@ -730,6 +730,11 @@ class Queue:
             raw = meta_path.read_text(encoding="utf-8")
         except OSError as exc:
             _warn_rejected(item_path, f"unreadable {META_FILENAME}: {exc}")
+            return None
+        except UnicodeDecodeError as exc:
+            # Its own message: "unreadable" points the operator at
+            # permissions, and this file's permissions are fine.
+            _warn_rejected(item_path, f"{META_FILENAME} is not valid UTF-8: {exc}")
             return None
         try:
             data = json.loads(raw)
@@ -861,10 +866,19 @@ class Queue:
             )
 
     def journal_entries(self, item_id: str = "") -> list[dict[str, Any]]:
-        """Read the journal, optionally filtered to one item."""
+        """Read the journal, optionally filtered to one item.
+
+        ONE clause for both causes here, and that is not the collapse
+        #320 forbids: the two causes get separate handlers wherever a
+        site has something to SAY, and this one says nothing to anybody -
+        it returns ``[]`` and the caller renders an empty history. Two
+        handlers with the same empty body would be a distinction no
+        reader could ever observe. The malformed-line case below is
+        already skipped per line for the same reason.
+        """
         try:
             raw = self.journal_path.read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             return []
         entries: list[dict[str, Any]] = []
         for line in raw.splitlines():
@@ -1291,6 +1305,17 @@ class Queue:
             return PauseState(
                 paused=True,
                 reason=f"unreadable pause marker: {exc}",
+            )
+        except UnicodeDecodeError as exc:
+            # The same fail-closed direction as the clause above, for the
+            # failure that clause never caught. ``UnicodeDecodeError`` is
+            # a ``ValueError``, so until #320 one non-utf-8 byte in the
+            # marker escaped this handler entirely - not fail-open, which
+            # is what #185 F7 fixed, but no answer at all: the traceback
+            # left the caller with neither PAUSED nor RUNNING.
+            return PauseState(
+                paused=True,
+                reason=f"pause marker is not valid UTF-8: {exc}",
             )
         try:
             data = json.loads(raw)
