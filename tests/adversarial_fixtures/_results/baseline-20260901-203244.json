@@ -1,0 +1,144 @@
+{
+  "format_version": 2,
+  "model": "haiku",
+  "timestamp": "20260901-203244",
+  "runs_per_fixture": 3,
+  "summary": {
+    "architect": {
+      "fixtures_total": 3,
+      "fixtures_detected": 3,
+      "detection_rate": 0.8888888888888888,
+      "by_category": {
+        "spec_issues": {
+          "fixtures_total": 3,
+          "detection_rate": 0.8888888888888888
+        }
+      }
+    },
+    "architect_allowed_paths": {
+      "fixtures_total": 1,
+      "fixtures_detected": 1,
+      "detection_rate": 1.0,
+      "by_category": {
+        "allowed_paths": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    }
+  },
+  "fixtures": [
+    {
+      "role": "architect",
+      "fixture_id": "spec-01-no-error-handling",
+      "category": "spec_issues",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 10 issues (exact_kind_match=False): [('blocker', 'missing_detail'), ('minor', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'ambiguity')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 9 issues (exact_kind_match=False): [('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('major', 'ambiguity'), ('major', 'unstated_assumption'), ('major', 'ambiguity')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 8 issues (exact_kind_match=True): [('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'ambiguity'), ('minor', 'missing_detail')]"
+        }
+      ]
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-02-unspecified-auth",
+      "category": "spec_issues",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 2,
+      "consistency": 0.6666666666666666,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 12 issues (exact_kind_match=False): [('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'missing_detail')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 15 issues (exact_kind_match=False): [('blocker', 'missing_detail'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'missing_detail'), ('minor', 'undefined_failure_mode'), ('minor', 'missing_detail'), ('minor', 'ambiguity')]"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "json parse: No valid JSON found in output"
+        }
+      ]
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-03-ambiguous-perf",
+      "category": "spec_issues",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 12 issues (exact_kind_match=True): [('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'undefined_failure_mode'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 14 issues (exact_kind_match=True): [('blocker', 'missing_detail'), ('blocker', 'ambiguity'), ('blocker', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'unstated_assumption'), ('minor', 'unstated_assumption'), ('major', 'undefined_failure_mode'), ('major', 'unstated_assumption'), ('minor', 'unstated_assumption'), ('minor', 'missing_detail'), ('major', 'ambiguity'), ('major', 'ambiguity')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 11 issues (exact_kind_match=True): [('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'ambiguity')]"
+        }
+      ]
+    },
+    {
+      "role": "architect_allowed_paths",
+      "fixture_id": "spec-04-clear-layout",
+      "category": "allowed_paths",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "1 components, all gate-clean: slugify=['src/slugify/__init__.py', 'tests/test_slugify.py', 'scripts/kstrl/feature/slugify/']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "1 components, all gate-clean: url-slugifier=['src/slugify/__init__.py', 'tests/test_slugify.py', 'scripts/kstrl/feature/url-slugifier/']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "1 components, all gate-clean: slug-function=['src/slugify/__init__.py', 'tests/test_slugify.py', 'scripts/kstrl/feature/slug-function/']"
+        }
+      ]
+    }
+  ]
+}

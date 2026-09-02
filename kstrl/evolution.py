@@ -243,7 +243,8 @@ class FailurePattern:
     # "scope_creep" for a review concern) - the part after the colon in
     # the full "<check>:<code>" signature
     error_signature: str
-    category: str  # "verification", "review", "security", "contract", "iteration"
+    # A _CATEGORY_BY_CHECK value; see category_for_check.
+    category: str
 
 
 @dataclass
@@ -312,8 +313,8 @@ def _normalize_error(error: str) -> str:
     return slug[:80] if slug else "unknown"
 
 
-def _classify_check(error: str) -> tuple[str, str]:
-    """Return (check_name, category) inferred from the error text.
+def _classify_check(error: str) -> str:
+    """Return the check name inferred from the error text.
 
     The legacy fallback, used wherever a component has no in-memory
     ``failure_signatures`` entry - which is EVERY ``ks evolve`` or
@@ -329,25 +330,32 @@ def _classify_check(error: str) -> tuple[str, str]:
     state no agent can influence, which is the thing the arm exists to
     prevent. Matched FIRST because the text also contains words the
     later rules claim.
+
+    #315: this returned ``(check_name, category)`` until every caller
+    was measured to discard the category, making it a SECOND place a
+    category was decided that no consumer could reach. A dead answer
+    that can silently disagree with the live one is how the live one
+    later gets "fixed" in the wrong file, so the category is gone from
+    here and ``category_for_check`` is the only decision.
     """
     lower = error.lower()
 
     if SCOPE_UNREADABLE_ERROR_PREFIX.lower() in lower:
-        return SCOPE_UNREADABLE_CHECK, "verification"
+        return SCOPE_UNREADABLE_CHECK
     if any(kw in lower for kw in ("ruff", "flake8", "pylint", "lint")):
-        return "linter", "verification"
+        return "linter"
     if any(kw in lower for kw in ("mypy", "pyright", "typecheck", "type error")):
-        return "typecheck", "verification"
+        return "typecheck"
     if any(kw in lower for kw in ("pytest", "test", "assert", "unittest")):
-        return "test_suite", "verification"
+        return "test_suite"
     if any(kw in lower for kw in ("review", "finding", "reviewer")):
-        return "review", "review"
+        return "review"
     if any(kw in lower for kw in ("contract", "integration")):
-        return "contract", "contract"
+        return "contract"
     if any(kw in lower for kw in ("mechanical verification failed",)):
-        return "verification", "verification"
+        return "verification"
 
-    return "unknown", "iteration"
+    return "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +374,44 @@ def _classify_check(error: str) -> tuple[str, str]:
 # difference is the number.
 _DIGIT_RUN_RE = re.compile(r"\d+")
 
+# The categories are verification, review, security, contract,
+# iteration and, since #315, infrastructure. That last one is for a
+# failure that is neither a gate's verdict on the change nor the
+# engineer's loop: the run was shut down, hit the token ceiling, could
+# not merge, could not fetch its own diff, could not provision a
+# worktree. Before it existed those fell through to "iteration", so the
+# journal filed them as engineer-loop problems and the evolve screen's
+# category column said so: a verdict about an agent that could not have
+# prevented any of them.
+#
+# NOT Finding.category's "infrastructure_error" (kstrl/findings.py),
+# which marks one ROLE RUN that failed to execute inside an otherwise
+# healthy component. Different taxonomy, different consumer,
+# deliberately different spelling so a grep for either does not silently
+# return the other.
+#
+# They also disagree, on purpose and measurably. factory's live autonomy
+# accounting asks the FINDING question (`_infra_casualty`) while the
+# replay asks the SIGNATURE question, and #339 review counted the
+# divergence rather than leaving it at the one example this comment used
+# to give. Six signatures, in both directions:
+#
+#   - the whole `pr:` family, `provisioning:` and `aborted:shutdown` are
+#     infrastructure to the replay and attach no finding at all, so the
+#     live side calls them judgement;
+#   - `review:infrastructure` and `security:infrastructure` are the
+#     reverse: a finding is attached, but `review`/`security` are not
+#     infrastructure prefixes, so the replay counts them as evidence;
+#   - `scope_unreadable:` depends on which producer fired - the Phase 1
+#     gate attaches a finding, the pre-launch refusal in factory does
+#     not.
+#
+# Reconciling those is not this table's job (#332 holds factory.py), but
+# an undercount was, because it read as a single known exception.
+#
+# tests/test_check_name_enrolment.py pins the whole table row by row, so
+# a new row, a dropped row or a typo in a category is a red test with
+# the diff as its audit trail.
 _CATEGORY_BY_CHECK = {
     "linter": "verification",
     "typecheck": "verification",
@@ -380,10 +426,49 @@ _CATEGORY_BY_CHECK = {
     "mutation_testing": "verification",
     "prd_stories": "verification",
     "verification": "verification",
+    # #315: mechanical gates that the table did not carry, so every
+    # approved-fixtures failure, policy-envelope breach and
+    # test-adequacy block was filed under the engineer loop.
+    "fixtures": "verification",
+    "policy_envelope": "verification",
+    "test_adequacy": "verification",
+    # #315 round 2: a failure recorded with no signatures= is filed
+    # under its PHASE (pipeline._record_failure_signatures), so these
+    # two are check names as much as any gate is. "verify" is the phase
+    # spelling of the mechanical gates above; "provisioning" is a
+    # worktree that would not build, which no agent can write code
+    # against.
+    "verify": "verification",
+    "provisioning": "infrastructure",
+    # #315: recorded outside a CheckResult, by pipeline.fail(signatures=
+    # ["<prefix>:<code>"]). None of these is a verdict on the change.
+    "aborted": "infrastructure",
+    "token_budget": "infrastructure",
+    "pr": "infrastructure",
+    "diff": "infrastructure",
+    # #315: the fallback already answers "iteration" for these two. The
+    # rows are here so the table states every name kstrl emits rather
+    # than most of them, and so that a reader cannot tell an unenrolled
+    # name from a deliberate one by its absence. "unknown" is what
+    # _classify_check returns when it cannot recognise a legacy error
+    # string: not the engineer's fault so much as nobody's, and inventing
+    # a category for "we could not tell" would be a worse answer than
+    # the one this table has always given.
+    "engineer": "iteration",
+    "unknown": "iteration",
     "review": "review",
     "security": "security",
     "contract": "contract",
 }
+
+#: Checks whose failures are infrastructure, derived from the table so
+#: there is ONE answer rather than two lists to keep in step:
+#: :data:`kstrl.autonomy_replay.INFRA_FAILURE_PREFIXES` builds its
+#: prefixes from this, so enrolling a check as infrastructure reaches
+#: both consumers in one edit (#315).
+INFRASTRUCTURE_CHECKS: frozenset[str] = frozenset(
+    name for name, category in _CATEGORY_BY_CHECK.items() if category == "infrastructure"
+)
 
 # Cap on distinct per-check signatures so one catastrophic run (e.g. 40
 # distinct ruff rules) cannot flood the journal entry.
@@ -425,21 +510,46 @@ def split_signature(signature: str) -> tuple[str, str]:
 def category_for_check(check_name: str) -> str:
     """Map a check/gate name to a FailurePattern category.
 
-    An unlisted name falls through to "iteration", which files a Phase 1
-    gate under the engineer loop. Enrolling a new check in
-    ``_CATEGORY_BY_CHECK`` is a convention with no mechanism, and
-    measured on this tree the convention does not hold: AST-walking
-    ``kstrl/`` for ``CheckResult`` names finds ``fixtures``,
-    ``policy_envelope`` and ``test_adequacy`` absent from the table, so
-    three verification gates are already miscategorised here (#315).
-    That predates #294 and correcting it changes recorded
-    categorisation, so it is not that change's to make.
+    An unlisted name falls through to "iteration", which files a gate
+    under the engineer loop. Enrolling a new check in
+    ``_CATEGORY_BY_CHECK`` was a convention with no mechanism, and
+    measured during #294 the convention did not hold for eight of the
+    nineteen names ``kstrl/`` emits. All eight are enrolled as of #315,
+    four of them into the ``"infrastructure"`` category that had to be
+    invented to hold them, and nothing is grandfathered any more.
 
-    ``tests/test_check_name_enrolment.py`` is the mechanism: it
-    AST-walks ``kstrl/`` for every constructed check name and fails on
-    one this table does not carry, with those three grandfathered by
-    name so the gate could land without the behaviour change. A new
-    check cannot join them quietly.
+    ``tests/test_check_name_enrolment.py`` is the mechanism, and #339
+    review corrected what it establishes. It AST-walks ``kstrl/`` for
+    the four places a component's failure signatures are written - a
+    ``CheckResult`` name, a ``signatures=`` argument, the ``phase=`` of
+    a failure recorded with neither, and a direct
+    ``component_failure_signatures[...] = [...]`` assignment - and fails
+    on a name this table does not carry. What it does NOT establish is
+    that no gate can reach the journal uncategorised, which is what this
+    docstring claimed while the fourth producer was invisible to it and
+    eight of nine shape mutations survived.
+
+    What it establishes now, in three files and stated as three separate
+    claims because they hold three separate things:
+
+    - a producer site the walk RECOGNISES and cannot read is enumerated
+      in its ``BLIND_SITES`` ledger rather than dropped, which is what
+      the old walk did;
+    - ``tests/test_signature_spellings.py`` pins every signature-shaped
+      string in the package whatever container it sits in, so a producer
+      in a shape nobody has thought of still has to appear somewhere;
+    - ``tests/test_check_name_shapes.py`` pins what the walk SAYS about
+      each shape, including the shapes it says nothing about, because a
+      shape the walk does not recognise leaves no trace in either of the
+      two above. That is a limit, not a proof, and it is the limit
+      ``pipeline._fail_pr_flow`` lived in until #339 review.
+
+    The answer is computed here, at read time, and never stored in the
+    journal - measured: a ``record_run`` entry has no ``category`` key
+    and experiments.tsv records the signature only. So a correction to
+    the table also corrects what is reported about runs that already
+    happened. The one surface that displays it is the evolve screen's
+    patterns table; the ``ks evolve`` CLI prints the check name.
     """
     return _CATEGORY_BY_CHECK.get(check_name, "iteration")
 
@@ -708,7 +818,7 @@ class EvolutionJournal:
                 comp_signatures = list(failure_signatures.get(comp.id) or [])
                 if not comp_signatures:
                     # Legacy fallback: classify the flattened string.
-                    legacy_check, _ = _classify_check(comp.error)
+                    legacy_check = _classify_check(comp.error)
                     legacy_sig = _normalize_error(comp.error)
                     if legacy_sig:
                         comp_signatures = [f"{legacy_check}:{legacy_sig}"]
@@ -791,12 +901,7 @@ class EvolutionJournal:
                 continue
             sigs = list(failure_signatures.get(comp.id) or [])
             if not sigs:
-                sigs = [
-                    signature_for_error(
-                        _classify_check(comp.error)[0],
-                        comp.error,
-                    )
-                ]
+                sigs = [signature_for_error(_classify_check(comp.error), comp.error)]
             for sig in sigs:
                 failure_sigs[sig] = failure_sigs.get(sig, 0) + 1
         common_failure = max(failure_sigs, key=failure_sigs.get, default="") if failure_sigs else ""  # type: ignore[arg-type]
@@ -879,7 +984,7 @@ class EvolutionJournal:
                 continue
             sigs = list(signatures_by_component.get(comp.id) or [])
             if not sigs:
-                legacy_check, _ = _classify_check(comp.error)
+                legacy_check = _classify_check(comp.error)
                 legacy_sig = _normalize_error(comp.error)
                 if not legacy_sig:
                     continue

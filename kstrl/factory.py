@@ -46,6 +46,13 @@ from kstrl.contract import (
     ContractResult,
     run_contract_testing,
 )
+from kstrl.decisions import (
+    DecisionRegisterError,
+    SpecDecision,
+    bind_register,
+    build_decisions_context,
+    read_decisions,
+)
 from kstrl.events import (
     AdversarialAgentSelected,
     AutonomyLevelApplied,
@@ -1684,6 +1691,42 @@ def _warn_claude_md_divergence(
         ui.warn(f"  {divergence}")
 
 
+def _preflight_decision_register(
+    manifest: Manifest,
+    root_dir: Path,
+) -> tuple[list[str], tuple[SpecDecision, ...]]:
+    """The architect's decisions for this run, or the reason there are none (#260).
+
+    Read once per run because it is a run-wide artifact the decompose
+    wrote, and BOUND to this manifest before anything is scheduled.
+
+    Round 2: the path is fixed, so without the bind a register left by
+    another project sits exactly where this run looks. Reproduced: a
+    factory run on project-b/b.md with project A's register beside it
+    handed the engineer project A's binding instruction, because both
+    happened to have a component called comp-a. ``bind_register``
+    refuses that, a halted register, and an unreadable one. A MISSING
+    register is legal and quiet: it is the normal state for every
+    project that predates this, and a write that FAILED now fails the
+    decompose outright rather than leaving one behind. A manifest with
+    no ``spec_file`` is legal and quiet too: it did not come from a
+    decompose, so nothing binds it.
+
+    Round 3: this is a pre-spend refusal like the scope and branch
+    checks, so it reports and exits like one. Letting the error out of
+    ``run_factory`` gave the operator a traceback and exit 1, where
+    every sibling refusal gives a sentence and exit 2.
+    """
+    try:
+        return [], bind_register(
+            read_decisions(root_dir),
+            manifest.project_name,
+            manifest.spec_file,
+        )
+    except DecisionRegisterError as exc:
+        return [str(exc)], ()
+
+
 def _run_preflights(
     manifest: Manifest,
     run_scope: RunScope,
@@ -1693,10 +1736,20 @@ def _run_preflights(
     ui: UI,
     *,
     lock_held: bool,
-) -> bool:
-    """Every pre-spend refusal, cheapest first. True to proceed.
+) -> tuple[SpecDecision, ...] | None:
+    """Every pre-spend refusal, cheapest first, and what survives them.
 
-    Scope goes first (#264): it is a pure path comparison with no git
+    Returns the architect decisions this run may use, or ``None`` to
+    refuse. It returns a value rather than a bool because the register
+    check is one of the refusals and its result is the thing the
+    engineers need; the empty tuple is a normal, proceeding answer, so
+    the caller checks ``is None``.
+
+    The register goes first (#260 round 3): it is one small file read,
+    no git and no agent, so it is cheaper than the scope comparison and
+    far cheaper than the branch walk.
+
+    Scope goes next (#264): it is a pure path comparison with no git
     and no agent behind it, and a component that cannot pass diff_scope
     must not reach the engineer - the measured cost of finding out later
     was $14.49 across three identical attempts. It also runs without
@@ -1705,14 +1758,17 @@ def _run_preflights(
     branches nor worktree dirs.
     """
     _warn_claude_md_divergence(root_dir, factory_config, ui)
+    register_errors, run_decisions = _preflight_decision_register(manifest, root_dir)
+    if _report_preflight(ui, "the architect decision register cannot bind", register_errors):
+        return None
     if _report_preflight(
         ui,
         "components cannot pass the scope check",
         _preflight_component_scope(manifest, run_scope),
     ):
-        return False
+        return None
     if not factory_config.use_worktrees:
-        return True
+        return run_decisions
     if lock_held:
         _prune_stale_worktrees(
             root_dir,
@@ -1730,8 +1786,8 @@ def _run_preflights(
         "stale component branches found",
         _preflight_component_branches(manifest, root_dir, ui),
     ):
-        return False
-    return True
+        return None
+    return run_decisions
 
 
 def _write_partial_usage(path: Path, totals: UsageTotals) -> None:
@@ -1881,6 +1937,7 @@ def _run_component(
     scaffold_cmd: str | None = None,
     component_deps: list[str] | None = None,
     knowledge_prefix: str = "",
+    decisions_prefix: str = "",
     progress_file_str: str | None = None,
     codebase_map_file_str: str = "scripts/kstrl/codebase_map.md",
     agent_iteration_timeout: float = 1800.0,
@@ -2086,11 +2143,12 @@ def _run_component(
 
     # Build context prefix from previous retries
     context_prefix: str | None = None
-    parts: list[str] = []
-    if knowledge_prefix:
-        parts.append(knowledge_prefix)
-    if feedforward_prefix:
-        parts.append(feedforward_prefix)
+    # One list rather than one `if` per source: three context blocks
+    # reach the engineer the same way and differ only in where they were
+    # built, so adding the fourth should not mean adding a branch.
+    parts: list[str] = [
+        block for block in (knowledge_prefix, decisions_prefix, feedforward_prefix) if block
+    ]
     if previous_context_json:
         ctx = IterationContext.from_json(previous_context_json)
         formatted = ctx.format_for_prompt()
@@ -3321,7 +3379,7 @@ def _run_factory_locked(
         )
     _warn_unsandboxable_reviewers(ui, review_selection, security_selection)
 
-    if not _run_preflights(
+    run_decisions = _run_preflights(
         manifest,
         run_scope,
         root_dir,
@@ -3329,7 +3387,12 @@ def _run_factory_locked(
         run_id,
         ui,
         lock_held=lock_held,
-    ):
+    )
+    # ``is None`` and not falsiness: a clean run with no decisions binds
+    # the empty tuple, which is the normal state for every project that
+    # predates #260, and treating that as a refusal would stop the
+    # factory on every one of them.
+    if run_decisions is None:
         factory_result.exit_code = 2
         return factory_result
 
@@ -3472,6 +3535,11 @@ def _run_factory_locked(
             comp.scaffold or None,
             comp.dependencies or None,
             knowledge_prefix,
+            # #260: rides the same context-prefix path the distilled
+            # facts already ride, so the register reaches the engineer
+            # without a second delivery mechanism. Per component: its
+            # own decisions in full, the rest of the run summarised.
+            build_decisions_context(run_decisions, comp.id),
             # Per-component, not run-wide: KstrlConfig.component_progress_file
             # keeps the engineer's progress log inside allowedPaths.
             base_config.component_progress_file(comp.prd_path, root_dir),

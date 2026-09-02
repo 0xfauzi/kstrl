@@ -22,11 +22,20 @@ MINOR_ISSUE_OUTPUT = json.dumps(
         **json.loads(VALID_DECOMPOSE_OUTPUT),
         "spec_issues": [
             {
+                "id": "edge-case",
                 "severity": "minor",
                 "kind": "missing_detail",
                 "summary": "Edge case unspecified",
                 "location": "spec.md:9",
                 "suggestion": "Name the edge case",
+            }
+        ],
+        "decisions": [
+            {
+                "issue": "edge-case",
+                "question": "what does the empty-input path do",
+                "disposition": "assumed",
+                "resolution": "return an empty list; pinned by AC2",
             }
         ],
     }
@@ -36,11 +45,20 @@ BLOCKER_OUTPUT = json.dumps(
     {
         "spec_issues": [
             {
+                "id": "spec-empty",
                 "severity": "blocker",
                 "kind": "ambiguity",
                 "summary": "Spec is empty",
                 "location": "everywhere",
                 "suggestion": "Write actual requirements",
+            }
+        ],
+        "decisions": [
+            {
+                "issue": "spec-empty",
+                "question": "what is this product for",
+                "disposition": "escalated",
+                "resolution": "the owner must say",
             }
         ],
         "components": [],
@@ -145,6 +163,7 @@ class TestDecomposeRun:
         assert all(p["passed"] for p in architect.phase_history)
         assert [a["label"] for a in state.artifacts] == [
             "spec_issues",
+            "decisions",
             "prd",
             "prd",
             "manifest",
@@ -200,7 +219,7 @@ class TestDecomposeRun:
         audit = [p for p in architect.phase_history if p["phase"] == "audit"]
         assert audit and audit[0]["passed"] is False
         assert state.spec_issue_counts == {"blocker": 1}
-        assert [a["label"] for a in state.artifacts] == ["spec_issues"]
+        assert [a["label"] for a in state.artifacts] == ["spec_issues", "decisions"]
         # No plan beyond the architect: nothing was decomposed.
         assert state.plan_order == [ARCHITECT_COMPONENT]
 
@@ -243,7 +262,13 @@ class TestDecomposeRun:
         architect = state.components[ARCHITECT_COMPONENT]
         assert architect.status == "failed"
         assert architect.error == "OSError: manifest disk full"
+        # #260 round 2: the register is written AFTER the manifest
+        # commits, so a manifest that never saved leaves no register
+        # either. Round 1 wrote it first, and a run that died here left
+        # a fresh register beside the PREVIOUS manifest for the factory
+        # to read as that manifest's decisions.
         assert [a["label"] for a in state.artifacts] == ["spec_issues"]
+        assert not (tmp_path / "scripts" / "kstrl" / "decisions.json").exists()
         assert list((tmp_path / "scripts" / "kstrl").rglob("prd.json")) == []
 
     def test_without_bus_no_run_dir_and_same_result(

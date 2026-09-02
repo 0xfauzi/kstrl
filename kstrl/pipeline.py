@@ -1797,7 +1797,20 @@ class ComponentPipeline:
         comp.completed_at = _iso_now()
         comp.failed_phase = "pr"
         comp.failed_check = "pr_flow"
-        self._record_failure_signatures(comp, "pr", comp.error, None)
+        # Spelled out with keywords, and read that way. #339: this
+        # is the third caller of the funnel and the only one that is
+        # not `fail` / `retry_or_fail`, so no `signatures=` is ever
+        # handed to it and the phase becomes the check name. It was
+        # invisible to every layer of
+        # `tests/test_check_name_enrolment.py`: not a fail call, no
+        # keyword, no colon in "pr" for the spellings net to see.
+        # Mutating "pr" to "bogus_flow" left 4737 tests green.
+        self._record_failure_signatures(
+            comp,
+            phase="pr",
+            error=comp.error,
+            signatures=None,
+        )
         self._end_attempt(comp)
         skipped = self.manifest.cascade_skip(comp.id)
         self.factory_result.failed.append(comp.id)
@@ -2294,6 +2307,39 @@ class ComponentPipeline:
                         "Rejected at HITL checkpoint",
                         phase="pr",
                         check="hitl_reject",
+                        # THE RULE FOR ALL THREE CHECKPOINT BRANCHES,
+                        # stated here and pointed at from the other two.
+                        # Without an explicit `signatures=` the PHASE
+                        # becomes the check name, and `pr` is the row
+                        # that holds push, create and merge plumbing -
+                        # infrastructure since #315, which throws the
+                        # whole run out of the autonomy ladder's
+                        # evidence. So: a branch that carries a VERDICT
+                        # about the change must name it, and a branch
+                        # that carries no verdict must not. A person
+                        # looking at the change and refusing it is the
+                        # most decisive verdict about the factory's
+                        # judgement there is; it reached the journal as
+                        # `pr:rejected-at-hitl-checkpoint`.
+                        #
+                        # The phase stays "pr" because that is the
+                        # vocabulary these branches have always used and
+                        # `failed_phase` is written to the manifest.
+                        # Note it is not where this happens:
+                        # `_phase_started(comp, "pr")` fires below all
+                        # three branches, so by the module's own
+                        # accounting the checkpoint precedes the phase
+                        # it is filed under. Renaming it is a separate
+                        # decision, and #339 review declined to make it
+                        # here because the three branches need three
+                        # different categories, so no one phase name can
+                        # serve them. The mechanism that would remove
+                        # the literals entirely is keying the fallback
+                        # on `check` rather than `phase` - the branches
+                        # already carry hitl_reject / merge_gate /
+                        # hitl_retry - and that is blocked on
+                        # factory.py.
+                        signatures=["review:hitl-rejected"],
                     ),
                     verify=verify,
                     diff=diff,
@@ -2317,6 +2363,11 @@ class ComponentPipeline:
                         "approve with `ks inbox retry <id>`",
                         phase="pr",
                         check="merge_gate",
+                        # #339: deliberately NO signatures=. Nobody
+                        # answered the gate, so there is no verdict to
+                        # record and the `pr` fallback is correct: the
+                        # ladder treats the run as an outage, which is
+                        # what it was. See the rule at hitl_reject above.
                     ),
                     verify=verify,
                     diff=diff,
@@ -2340,6 +2391,11 @@ class ComponentPipeline:
                         ctx.to_json(),
                         phase="pr",
                         check="hitl_retry",
+                        # #339: a human asking for changes is a verdict
+                        # ON the change, so it names one. Same rule as
+                        # hitl_reject above, and it had the same defect
+                        # until this round.
+                        signatures=["review:hitl-changes-requested"],
                     ),
                     verify=verify,
                     diff=diff,
