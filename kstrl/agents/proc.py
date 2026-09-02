@@ -14,7 +14,6 @@ POSIX-first like the rest of the codebase: on platforms without
 
 from __future__ import annotations
 
-import os
 import queue
 import signal
 import subprocess
@@ -24,7 +23,8 @@ import weakref
 from collections.abc import Iterator
 from pathlib import Path
 
-from kstrl.procgroup import safe_pgid
+from kstrl.procdispose import close_quietly, reap_or_abandon
+from kstrl.procgroup import signal_process_tree
 
 # Every adapter yields this line when its subprocess is killed on deadline
 # breach. loop.py matches on the prefix to count timed-out iterations; it is
@@ -86,6 +86,7 @@ class DeadlineStreamer:
         term_grace: float = DEFAULT_TERM_GRACE_SECONDS,
     ) -> None:
         self.timed_out = False
+        self._disposed = False
         self._term_grace = term_grace
         self._deadline: float | None = (
             time.monotonic() + timeout if timeout and timeout > 0 else None
@@ -134,33 +135,144 @@ class DeadlineStreamer:
                 return
             yield item
 
-    def finish(self, timeout: float = DEFAULT_FINISH_WAIT_SECONDS) -> None:
-        """Bounded wait for exit; escalate to a group kill on expiry.
+    def _settle(self) -> None:
+        """Join the two pipe threads and leave the registry clean.
 
-        Replaces the unbounded ``proc.wait()`` the adapters used to call.
+        The tail of all three disposals, and the only place ``_disposed``
+        is set. The ``if self._disposed: return`` that makes a disposal
+        idempotent stays at each CALL SITE rather than moving in here,
+        because :meth:`_breach` has one statement that must run on every
+        call: a deadline that fires after ``finish`` still has to record
+        ``timed_out``, which is what every adapter reads to decide
+        whether the run produced a usable answer.
+
+        The joins are bounded because a thread blocked on an unreapable
+        grandchild's pipe never returns, and a shutdown that waits for it
+        is a hang rather than a shutdown.
         """
-        try:
-            self._proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            self.kill()
+        self._disposed = True
         self._reader.join(timeout=1.0)
         self._writer.join(timeout=1.0)
         _ACTIVE.discard(self)
 
+    def finish(self, timeout: float = DEFAULT_FINISH_WAIT_SECONDS) -> None:
+        """Bounded wait for exit; escalate to a group kill on expiry.
+
+        Replaces the unbounded ``proc.wait()`` the adapters used to call.
+        The ORDERLY disposal: the child is expected to be on its way out,
+        so it is given ``timeout`` to leave on its own.
+        :meth:`close` is the other one, for a consumer that walked away.
+        """
+        if self._disposed:
+            return
+        try:
+            self._proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            self.kill()
+        except BaseException:
+            # The rule this module's own guard mechanises for `verify`,
+            # `serve` and `procgroup`, applied to the fifth disposal. A
+            # timeout is not the only way out of a wait: a
+            # KeyboardInterrupt in the orderly grace used to leave the
+            # child running with nobody left to read it.
+            self.kill()
+            raise
+        finally:
+            self._settle()
+
+    def close(self) -> None:
+        """Dispose of a child whose consumer WALKED AWAY. Idempotent.
+
+        Every adapter's ``run`` is a generator, and a generator can be
+        abandoned mid-yield: ``decompose.collect_agent_output`` raises
+        ``AgentOutputTooLarge`` from inside ``for line in agent.run(...)``
+        and does exactly that today. Nothing then called ``finish``, so
+        the child was never killed, never reaped and never deregistered
+        from ``_ACTIVE`` - and it was not even collected, because the
+        reader thread's bound method holds a strong reference to the
+        streamer that the ``WeakSet`` deliberately does not. The agent
+        CLI ran to its own completion, spending tokens, after the caller
+        had decided to abort it.
+
+        A ``finally`` in the generator is what reaches this: CPython
+        throws ``GeneratorExit`` at the suspended ``yield`` when the
+        generator object is closed or collected, and a ``finally`` that
+        does not itself yield runs to completion there.
+
+        KILL RATHER THAN WAIT, which is the whole difference from
+        :meth:`finish`. Nobody is going to read this child's output
+        again, so giving it ten seconds to finish work whose result is
+        already discarded is ten seconds of spend for nothing. The
+        SIGTERM grace inside :meth:`kill` is still honoured.
+
+        Idempotent because the orderly path calls ``finish`` and then
+        unwinds through the same ``finally``: the second call must not
+        start a second kill.
+
+        WHAT THIS COSTS, because it is not free and the caller does not
+        write the moment it happens. Measured: after an orderly
+        ``finish`` this returns in 1.6 microseconds, the ``_disposed``
+        flag short-circuiting it. On the abandonment path with a child
+        that honours SIGTERM, 1.3ms. With one that traps it and a
+        ``term_grace`` of 5s, 5.01s, and up to about 12s worst case - the
+        SIGTERM grace, then ``reap_or_abandon``'s, then two bounded
+        joins. A generator's ``finally`` can be run by the collector at
+        an arbitrary allocation point, so that block can land somewhere
+        the caller did not write it. It is still the right trade: what it
+        replaces is an agent CLI running to completion and spending
+        tokens on an answer nobody will read.
+        """
+        if self._disposed:
+            return
+        try:
+            self.kill()
+        finally:
+            self._settle()
+
     def kill(self) -> None:
-        """SIGTERM the process group, wait a grace period, then SIGKILL."""
+        """SIGTERM the process group, wait a grace period, then SIGKILL.
+
+        The last leg is :func:`kstrl.procdispose.reap_or_abandon` rather
+        than a third bare ``wait`` (#326). An unreapable child - stuck in
+        uninterruptible IO, or with a grandchild outside the group
+        holding the pipes - used to be dropped here with nothing left
+        holding its pid but ``Popen.__del__``, which under
+        ``PYTHONWARNINGS=error`` raises before it registers anything and
+        leaves a zombie for the life of the process.
+
+        ``reap_or_abandon`` and not ``drain_or_abandon``, and that is the
+        measured half: this class reads stdout on ``self._reader`` and
+        writes stdin on ``self._writer``, and closing either end from
+        THIS thread waits on the io lock the blocked thread is holding -
+        3.005s and still waiting, in both directions. Those two ends are
+        closed by the threads that own them instead.
+        """
         self._signal_group(signal.SIGTERM)
         try:
             self._proc.wait(timeout=self._term_grace)
         except subprocess.TimeoutExpired:
             self._signal_group(signal.SIGKILL)
-            try:
-                self._proc.wait(timeout=self._term_grace)
-            except subprocess.TimeoutExpired:
-                # Unreapable child (e.g. stuck in uninterruptible IO).
-                # Do not hang the harness on it; the leak is reported by
-                # the caller via the timeout error path.
-                pass
+            reap_or_abandon(self._proc, self._term_grace)
+        except BaseException:
+            # MEASURED, and this is the escape all three disposals
+            # shared. A SIGINT delivered 1.0s into a 5s grace on a child
+            # that traps SIGTERM left the group alive, `_disposed` False
+            # and the streamer still in `_ACTIVE`, and the
+            # KeyboardInterrupt displaced the caller's own exception on
+            # the way out. The escalation now runs whatever ended the
+            # grace, so the child is gone before the exception continues;
+            # the `raise` is bare, so nothing about it is changed.
+            #
+            # The two lines are written out rather than lifted into a
+            # helper, and that is deliberate: `base_disposal_guards`
+            # requires the disposal call to be lexically inside the
+            # handler, so a helper here would satisfy the rule's INTENT
+            # and be invisible to the rule. Two duplicated lines are the
+            # price of this module being mechanised like the other three
+            # rather than exempted by a comment.
+            self._signal_group(signal.SIGKILL)
+            reap_or_abandon(self._proc, self._term_grace)
+            raise
 
     def _breach(self) -> None:
         """Deadline hit: kill the group and leave the registry clean.
@@ -176,48 +288,55 @@ class DeadlineStreamer:
         a caller that does reach ``finish`` stays correct.
         """
         self.timed_out = True
-        self.kill()
-        self._reader.join(timeout=1.0)
-        self._writer.join(timeout=1.0)
-        _ACTIVE.discard(self)
+        if self._disposed:
+            return
+        try:
+            self.kill()
+        finally:
+            self._settle()
 
     def _signal_group(self, sig: signal.Signals) -> None:
-        # Whether a group kill may proceed at all is `procgroup.safe_pgid`'s
-        # question, not this method's: #308 made it the one copy of a rule
-        # that used to be written out here, in `serve` and in `verify`. A
-        # None from it is not an error; it degrades to the direct child.
-        pgid = safe_pgid(self._proc)
-        if pgid is not None:
-            try:
-                os.killpg(pgid, sig)
-            except OSError:
-                # ESRCH (the group went between the lookup and the signal)
-                # or EPERM. Fall through to the direct child.
-                pass
-            else:
-                return
-        # Group already gone, non-POSIX platform, unsafe pgid, or a mocked
-        # proc in tests: fall back to signalling the direct child only.
-        try:
-            if sig == signal.SIGKILL:
-                self._proc.kill()
-            else:
-                self._proc.terminate()
-        except OSError:
-            pass
+        """Signal the group, degrading to the direct child.
+
+        A one-line forward to
+        :func:`kstrl.procgroup.signal_process_tree`, kept as a method
+        because ``tests/test_timeout_enforcement.py`` pins the guard
+        through it. #308 lifted the pid/pgid guard into ``procgroup`` and
+        left the routine here and in ``verify``, so ``os.killpg`` stayed
+        spelled in three modules; #329 is the cost of that, and the whole
+        routine now has one home.
+        """
+        signal_process_tree(self._proc, sig)
 
     def _write_stdin(self, stdin_text: str | None) -> None:
+        """Feed the child its stdin, then close OUR end of that pipe.
+
+        The close is in a ``finally`` because this thread is the only
+        one that may do it: measured, closing a pipe end from a second
+        thread waits on the io lock the owning thread holds through a
+        blocking write, and had not returned after 3.005s. So a write
+        that raises must still hand the descriptor back here rather than
+        leave it to whatever kills the child (#326).
+        """
         stdin = self._proc.stdin
         if stdin is None:
             return
         try:
             if stdin_text:
                 stdin.write(stdin_text)
-            stdin.close()
         except (BrokenPipeError, OSError, ValueError):
             pass
+        finally:
+            close_quietly(stdin)
 
     def _read_stdout(self) -> None:
+        """Drain the child's stdout onto the queue, then close our end.
+
+        Same ownership rule as :meth:`_write_stdin`, and the same
+        measurement behind it. ``procdispose.reap_or_abandon``, which is
+        what disposes of an unreapable child here, deliberately closes
+        no pipe for exactly this reason.
+        """
         stdout = self._proc.stdout
         try:
             if stdout is not None:
@@ -226,4 +345,24 @@ class DeadlineStreamer:
         except (OSError, ValueError):
             pass
         finally:
+            # THE SENTINEL GOES FIRST, and the reasoning here was wrong
+            # twice before it went that way. `lines()` waits on
+            # `self._queue.get()` with NO deadline when the caller passed
+            # no timeout, so a reader thread that ends without posting
+            # `None` hangs the harness for good - measured at 600s on a
+            # real run, when `close_quietly` was `suppress(OSError,
+            # ValueError)` and a MagicMock stdout raised AttributeError
+            # on close.
+            #
+            # Widening the suppression to `Exception` fixed that case and
+            # was then argued, in this comment, as making the ORDER safe.
+            # It does not: `suppress(Exception)` does not cover
+            # BaseException, so a KeyboardInterrupt, a SystemExit, a
+            # GeneratorExit or a MemoryError in the close still skips a
+            # `put` written after it. Posting first loses the sentinel
+            # for none of them, because a `put` on an unbounded Queue
+            # does not block and has nothing to raise. Breadth and order
+            # are not two arguments for one property: breadth stops the
+            # ordinary case, order stops the rest.
             self._queue.put(None)
+            close_quietly(stdout)

@@ -48,7 +48,8 @@ from kstrl.policy import (
     evaluate_policy,
 )
 from kstrl.prd import PRD
-from kstrl.procgroup import safe_pgid
+from kstrl.procdispose import drain_or_abandon
+from kstrl.procgroup import signal_process_tree
 from kstrl.statedir import STATE_DIR_NAME
 
 # R2.6 env scrub: verification subprocesses execute agent-authored code
@@ -106,31 +107,18 @@ _SCRUB_TERM_GRACE_SECONDS = 5.0
 def _signal_process_group(proc: subprocess.Popen[str], sig: signal.Signals) -> None:
     """Signal the child's whole process group, direct-child fallback.
 
-    The pid/pgid guards that decide whether a group kill may proceed at
-    all live in :func:`kstrl.procgroup.safe_pgid`, which #308 made the one
-    copy of a rule this function used to write out for itself. A None from
-    it - a mocked ``Popen``, a non-POSIX platform, an unsafe pgid, a child
-    already reaped - is not an error here: it degrades to signalling the
-    direct child, which is the whole reason the guard can afford to be
-    strict.
+    A one-line forward to :func:`kstrl.procgroup.signal_process_tree`,
+    kept as a name because ``tests/test_hitl_env_scrub.py`` pins this
+    module's timeout behaviour through it and because the name says what
+    the verification path is doing at the point it does it.
+
+    #308 lifted the pid/pgid GUARD out of here and left the routine
+    around it, so ``os.killpg`` itself stayed spelled in this module and
+    in ``agents.proc`` as well as in ``procgroup``. #329 is what that
+    costs: three spellings is how a fourth arrives unguarded. The whole
+    routine now has one home.
     """
-    pgid = safe_pgid(proc)
-    if pgid is not None:
-        try:
-            os.killpg(pgid, sig)
-        except OSError:
-            # ESRCH (the group went between the lookup and the signal) or
-            # EPERM. Fall through and try the direct child instead.
-            pass
-        else:
-            return
-    try:
-        if sig == signal.SIGKILL:
-            proc.kill()
-        else:
-            proc.terminate()
-    except OSError:
-        pass
+    signal_process_tree(proc, sig)
 
 
 def run_scrubbed(
@@ -152,6 +140,21 @@ def run_scrubbed(
 
     Raises :class:`subprocess.TimeoutExpired` after the group is dead so
     existing callers' timeout handling keeps working unchanged.
+
+    THE TIMEOUT PATH LETS GO THROUGH ``procdispose`` (#326). It used to
+    drain the pipes itself and, when that drain expired, set
+    ``stdout, stderr = "", ""`` and drop the child on the floor: no
+    close of the two pipe ends, and no register, so the only thing left
+    holding the pid was ``Popen.__del__``. That is not a fallback under
+    ``PYTHONWARNINGS=error``, which is a setting this codebase already
+    records crashing a daemon: ``__del__`` calls ``_warn`` BEFORE
+    ``_active.append`` (CPython 3.12.8 ``subprocess.py`` lines 1139 and
+    1145), the warn raises, ``__del__`` aborts, and the child stays a
+    zombie for the life of the process. This is the widest window of the
+    three sites that had it - it needs no D-state child, only something
+    outside the group holding a pipe write end, which a forked
+    grandchild does routinely, and it runs once per verification command
+    per iteration rather than once per timed-out run.
     """
     proc = subprocess.Popen(
         cmd,
@@ -175,16 +178,25 @@ def run_scrubbed(
         # grandchild that ignored it can hold the pipes open and would
         # otherwise block the drain below indefinitely.
         _signal_process_group(proc, signal.SIGKILL)
-        try:
-            stdout, stderr = proc.communicate(timeout=term_grace)
-        except subprocess.TimeoutExpired:
-            stdout, stderr = "", ""
+        stdout, stderr = drain_or_abandon(proc, term_grace)
         raise subprocess.TimeoutExpired(
             cmd,
             timeout,
             output=stdout,
             stderr=stderr,
         ) from None
+    except BaseException:
+        # The rule `procgroup._read_ps` already states and this module
+        # did not: every exit that is not a completed read leaves a
+        # child behind, so every one of them goes through the same
+        # disposal. Catching only `TimeoutExpired` made this the widest
+        # remaining hole of the #326 class rather than a fixed site - a
+        # KeyboardInterrupt out of `ks verify`, or a MemoryError on a
+        # capture big enough to matter, left the child unsignalled,
+        # unreaped, unregistered and holding both pipe ends, on the
+        # highest-frequency spawn in the factory.
+        drain_or_abandon(proc, term_grace)
+        raise
     return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
 
 

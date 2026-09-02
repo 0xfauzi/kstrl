@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import procgroup
+from kstrl import procdispose
 from kstrl.procgroup import (
     PS_ARGV,
     PS_KILL_GRACE_SECONDS,
@@ -372,7 +372,7 @@ class TestThePsCallIsBounded:
         read, which is a leak wearing the costume of a fix."""
         procs.fake_ps(monkeypatch, stdout="50 4242 Ss\n")
         read_group_liveness(4242)
-        assert procgroup._ABANDONED == []
+        assert procdispose._ABANDONED == []
 
     def test_the_register_drains_once_the_child_dies(
         self,
@@ -395,7 +395,7 @@ class TestThePsCallIsBounded:
         # Nothing may be killed, so the child is genuinely abandoned alive.
         monkeypatch.setattr("kstrl.procgroup.subprocess.Popen.kill", lambda self: None)
         read_group_liveness(4242)
-        registered = list(procgroup._ABANDONED)
+        registered = list(procdispose._ABANDONED)
         assert len(registered) == 1
 
         child = registered[0]
@@ -404,7 +404,7 @@ class TestThePsCallIsBounded:
         # The next read sweeps it, which is the whole contract.
         monkeypatch.setattr("kstrl.procgroup.PS_ARGV", ("true",))
         read_group_liveness(4242)
-        assert procgroup._ABANDONED == [], "a dead child must leave the register"
+        assert procdispose._ABANDONED == [], "a dead child must leave the register"
 
     def test_a_real_child_is_disposed_of_without_leaking_a_descriptor(
         self,
@@ -429,7 +429,7 @@ class TestThePsCallIsBounded:
 
         assert liveness.live is None, "an unread group must not report as gone"
         assert after == before, f"descriptors leaked: {before} -> {after}"
-        assert procgroup._ABANDONED == [], "a killable child must be reaped, not kept"
+        assert procdispose._ABANDONED == [], "a killable child must be reaped, not kept"
 
     def test_the_read_pins_its_encoding(
         self,

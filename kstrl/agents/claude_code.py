@@ -143,38 +143,43 @@ class ClaudeCodeAgent:
             yield "ERROR: claude CLI not found in PATH"
             return
 
-        for raw_line in streamer.lines():
-            if not raw_line.strip():
-                continue
+        try:
+            # The consumer can walk away mid-yield; the argument is on
+            # `DeadlineStreamer.close` (#326).
+            for raw_line in streamer.lines():
+                if not raw_line.strip():
+                    continue
 
-            # Check for result event (final output, process should exit soon)
-            result_text = _extract_result_text(raw_line)
-            if result_text is not None:
-                self._saw_result = True
-                self._final_message = result_text
-                # The same event carries the usage/cost self-report
-                # (measured against claude CLI 2.1.214; see base.py).
-                result_event_line = raw_line
-                break
+                # Check for result event (final output, process should exit soon)
+                result_text = _extract_result_text(raw_line)
+                if result_text is not None:
+                    self._saw_result = True
+                    self._final_message = result_text
+                    # The same event carries the usage/cost self-report
+                    # (measured against claude CLI 2.1.214; see base.py).
+                    result_event_line = raw_line
+                    break
 
-            # Parse stream-json events
-            for display_line in _parse_stream_event(raw_line):
-                if display_line.strip():
-                    accumulated_text.append(display_line)
-                yield display_line
+                # Parse stream-json events
+                for display_line in _parse_stream_event(raw_line):
+                    if display_line.strip():
+                        accumulated_text.append(display_line)
+                    yield display_line
 
-        if streamer.timed_out:
-            self._usage_records.append(
-                UsageRecord(
-                    duration_seconds=time.monotonic() - started,
-                    source="timeout",
+            if streamer.timed_out:
+                self._usage_records.append(
+                    UsageRecord(
+                        duration_seconds=time.monotonic() - started,
+                        source="timeout",
+                    )
                 )
-            )
-            yield timeout_message(timeout)
-            return
+                yield timeout_message(timeout)
+                return
 
-        # Wait for process to exit, but don't hang forever
-        streamer.finish(timeout=10)
+            # Wait for process to exit, but don't hang forever
+            streamer.finish(timeout=10)
+        finally:
+            streamer.close()
 
         self._usage_records.append(
             _usage_from_result_event(

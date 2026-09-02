@@ -60,23 +60,28 @@ class CustomAgent:
         )
 
         output_lines: list[str] = []
-        for line in streamer.lines():
-            output_lines.append(line)
-            yield line
+        try:
+            # The consumer can walk away mid-yield; the argument is on
+            # `DeadlineStreamer.close` (#326).
+            for line in streamer.lines():
+                output_lines.append(line)
+                yield line
 
-        if streamer.timed_out:
-            # Killed mid-run: partial output is not a trustworthy final
-            # message, so leave it unset.
-            self._usage_records.append(
-                UsageRecord(
-                    duration_seconds=time.monotonic() - started,
-                    source="timeout",
+            if streamer.timed_out:
+                # Killed mid-run: partial output is not a trustworthy final
+                # message, so leave it unset.
+                self._usage_records.append(
+                    UsageRecord(
+                        duration_seconds=time.monotonic() - started,
+                        source="timeout",
+                    )
                 )
-            )
-            yield timeout_message(timeout)
-            return
+                yield timeout_message(timeout)
+                return
 
-        streamer.finish()
+            streamer.finish()
+        finally:
+            streamer.close()
 
         # R3.1: an arbitrary shell command exposes no token accounting;
         # the fallback the roadmap mandates is call counts + wall time.

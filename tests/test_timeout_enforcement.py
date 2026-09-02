@@ -1127,16 +1127,8 @@ def _wait_calls(tree: ast.AST) -> list[tuple[ast.Call, str]]:
     ]
 
 
-#: The four spawns that take a ``timeout=``, and the one that does not,
-#: spelled the way ``astwalk`` resolves them rather than by local name.
-SPAWN_TARGETS = frozenset(
-    {
-        "subprocess.run",
-        "subprocess.call",
-        "subprocess.check_call",
-        "subprocess.check_output",
-    }
-)
+#: The one spawn that never takes a ``timeout=``, spelled the way
+#: ``astwalk`` resolves it rather than by local name.
 POPEN_TARGET = "subprocess.Popen"
 
 
@@ -1285,7 +1277,43 @@ class TestSubprocessTimeoutAudit:
       (tests/test_procgroup.py::TestThePsCallIsBounded).
     """
 
-    SPAWN_FUNCS = frozenset({"run", "call", "check_call", "check_output"})
+    #: Spawn-and-wait entry points that must carry a ``timeout=``.
+    #:
+    #: ``getoutput`` and ``getstatusoutput`` are here because they CANNOT
+    #: carry one: measured, ``inspect.signature(subprocess.getoutput)`` is
+    #: ``(cmd, *, encoding=None, errors=None)``. Both run ``sh -c cmd``
+    #: and wait forever, so for them the gate is a ban rather than a
+    #: deadline requirement, which ``_spawn_sites`` implements by
+    #: reporting them with no ``timeout`` keyword available to satisfy it.
+    #: Neither appears in ``kstrl/`` today, so this is prevention.
+    SPAWN_FUNCS = frozenset(
+        {
+            "run",
+            "call",
+            "check_call",
+            "check_output",
+            "getoutput",
+            "getstatusoutput",
+        }
+    )
+
+    #: The same six, spelled the way ``astwalk`` resolves them. DERIVED,
+    #: and the derivation is the point rather than a convenience.
+    #:
+    #: #340 and #324 landed on this file in parallel and the merge of the
+    #: two produced a textually clean tree with a rule missing. #340
+    #: widened ``SPAWN_FUNCS`` by two names and #324 replaced the local
+    #: name comparison that read it with a resolver keyed on a SECOND,
+    #: hand-written list of dotted targets. Merged, ``SPAWN_FUNCS`` had
+    #: zero readers and ``getoutput`` was ungated, with both branches
+    #: independently green and no conflict on either constant. Two lists
+    #: naming one concept, one of them read, is the shape that produces
+    #: that; there is one list now, so widening it reaches the gate by
+    #: construction. ``test_the_two_uncapped_spawns_are_gated`` plants a
+    #: call to prove it does.
+    SPAWN_TARGETS = frozenset(f"subprocess.{name}" for name in SPAWN_FUNCS)
+
+    #: Modules allowed to CONSTRUCT a ``subprocess.Popen``.
     POPEN_ALLOWLIST = frozenset(
         {
             "kstrl/agents/proc.py",
@@ -1294,6 +1322,24 @@ class TestSubprocessTimeoutAudit:
             "kstrl/verify.py",
         }
     )
+
+    #: Modules scanned for an unbounded wait on a child. A SUPERSET of
+    #: :data:`POPEN_ALLOWLIST`, and the two are separate because they
+    #: answer different questions: who may make a child, and who may wait
+    #: on one. Conflating them is what let this scope go blind.
+    #:
+    #: MEASURED, and this is the instructive part. ``kstrl/procdispose.py``
+    #: was split out of ``procgroup`` and landed on neither list, so the
+    #: number of waits this gate could SEE went from 11 to 7 while the
+    #: tree still had 9. The anti-vacuity check below is per file and
+    #: every remaining file still showed a wait, so nothing failed. A
+    #: guard that goes BLIND rather than RED when a refactor moves code
+    #: out from under it is #324's class, and this is instance eleven of
+    #: it: the surviving mutant was ``reap_or_abandon``'s
+    #: ``process.wait(timeout=grace)`` with the deadline deleted, which
+    #: passed the entire suite - 4977 passed, zero failures - on the line
+    #: whose own docstring says it is why the function exists.
+    CHILD_WAIT_SCOPE = POPEN_ALLOWLIST | {"kstrl/procdispose.py"}
 
     @classmethod
     def _spawn_sites(cls, tree: ast.Module, module: str = "") -> list[tuple[ast.Call, str]]:
@@ -1311,7 +1357,7 @@ class TestSubprocessTimeoutAudit:
         ``test_the_walk_reports_what_it_could_not_decide``, because the
         seen half alone is exactly the defect #324 records.
         """
-        targets = SPAWN_TARGETS | {POPEN_TARGET}
+        targets = cls.SPAWN_TARGETS | {POPEN_TARGET}
         return [
             (node, origin.rsplit(".", 1)[-1])
             for node, origin in astwalk.resolved_calls(tree, targets, module=module)
@@ -1455,7 +1501,7 @@ class TestSubprocessTimeoutAudit:
         for py_file in astwalk.package_sources():
             found = astwalk.calls_to(
                 astwalk.parsed(py_file),
-                SPAWN_TARGETS | {POPEN_TARGET},
+                self.SPAWN_TARGETS | {POPEN_TARGET},
                 where=astwalk.label(py_file),
                 module=astwalk.module_name(py_file),
             )
@@ -1482,7 +1528,7 @@ class TestSubprocessTimeoutAudit:
     def test_no_allowlisted_module_waits_without_a_deadline(self) -> None:
         """#309's class: the allowlist admits a module, not a discipline.
 
-        Being on POPEN_ALLOWLIST said only that the module promised to
+        Being on the allowlist said only that the module promised to
         manage its own deadline, and nothing checked the promise. #309 is
         what that costs: ``procgroup`` passed ``timeout=`` to
         ``subprocess.run``, satisfied the audit above, and hung anyway,
@@ -1496,12 +1542,12 @@ class TestSubprocessTimeoutAudit:
         catches a revert to ``subprocess.run`` is the clock in
         ``tests/test_procgroup.py::TestThePsCallIsBounded``, which
         measured 60.06s against the old body. What this catches is the
-        sibling the allowlist invites and nobody was checking: a
-        hand-rolled ``Popen`` in one of these four files that waits on
-        its child with no deadline. All 11 current sites already pass one,
+        sibling the scope invites and nobody was checking: a
+        hand-rolled ``Popen`` in one of these five files that waits on
+        its child with no deadline. All 9 current sites already pass one,
         so this lands green and stays a ratchet rather than a cleanup.
 
-        Scoped to the allowlisted files because ``.wait(...)`` outside
+        Scoped to CHILD_WAIT_SCOPE because ``.wait(...)`` outside
         them is overwhelmingly ``threading.Event.wait``, whose unbounded
         form is legitimate and common (``kstrl/commandrun.py``,
         ``kstrl/interaction.py``, ``kstrl/shutdown.py``). Inside them it
@@ -1509,7 +1555,7 @@ class TestSubprocessTimeoutAudit:
 
         The wait half is a receiver-name check, so it catches ``x.wait()``
         on anything, not only on a Popen. That is the conservative
-        direction for four files that exist to manage child processes; if
+        direction for five files that exist to manage child processes; if
         one of them ever needs an unbounded Event wait, that is a decision
         worth writing down here rather than a false positive to widen
         around.
@@ -1523,7 +1569,7 @@ class TestSubprocessTimeoutAudit:
         violations: list[str] = []
         blind: list[str] = []
 
-        for rel in sorted(self.POPEN_ALLOWLIST):
+        for rel in sorted(self.CHILD_WAIT_SCOPE):
             tree = astwalk.parsed(astwalk.REPO_ROOT / rel)
             if not _wait_calls(tree):
                 blind.append(rel)
