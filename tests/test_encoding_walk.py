@@ -501,14 +501,22 @@ class TestTheReadBytesExclusion:
 
 
 class TestAnOpenTheWalkCannotFollowIsNotCleared:
-    """#344 F1. The handler rule is charged at the DECODE, and for an
-    ``open`` the decode is at the read through the handle. So an ``open``
-    whose handle this walk cannot follow to a name is a site whose decode
-    it cannot find, and the module's own rule then applies: an
+    """#344 F1 and round 3. The handler rule is charged at the DECODE,
+    and for an ``open`` the decode is at the read through the handle. So
+    an ``open`` whose handle this walk cannot ACCOUNT FOR is a site whose
+    decode it cannot find, and the module's own rule then applies: an
     undecidable REPORTS, it does not clear.
 
-    Every row here was measured CLEARED before the fix, with both faults
+    Every row here was measured CLEARED before its fix, with both faults
     ``None``, which is the skip direction this guard exists to close.
+
+    These are the SHAPES. The invariant they are instances of is stated
+    and tested against the interpreter in
+    ``tests/test_encoding_invariant.py``, which is the file that has to
+    hold when somebody finds an eighteenth shape: seventeen fixtures is
+    a collection of cases, and CLAUDE.md guard-design rule 1 says to
+    prefer closed by construction over a ledger of the shapes somebody
+    already enumerated.
     """
 
     HANDLER = "    except OSError:\n        return None\n"
@@ -591,12 +599,75 @@ class TestAnOpenTheWalkCannotFollowIsNotCleared:
         """The third bucket, and there is no fourth. ``HANDLE_SAFE`` is
         derived from ``io.TextIOWrapper``, so a member that is on neither
         set is a use nobody has classified rather than one presumed
-        harmless."""
+        harmless.
+
+        BOTH rows appear, and that is the invariant rather than a
+        coincidence: the loose load is what makes the handle
+        unfollowable, so the same computation produces the complaint and
+        the refusal to clear. Before #344 round 3 they were two walks
+        and could disagree.
+        """
         source = (
             "def f(p):\n    h = open(p, encoding='utf-8')\n    return h.readinto(bytearray())\n"
         )
         found = _scan(source)
-        assert found.undecided and "does not model" in found.undecided[0], found
+        assert not found.clear, found
+        assert any("does not model" in row for row in found.undecided), found
+        assert any("never bound to a name" in row for row in found.undecided), found
+
+    def test_a_bound_method_taken_off_the_handle_is_undecided(self) -> None:
+        """#344 round 3 finding 1, and the reason the Attribute arm now
+        asks whether the attribute is CALLED.
+
+        ``_read = h.read`` used to pass ``_is_modelled`` on the strength
+        of the name alone, while ``_handle_touched`` - which requires a
+        ``Call`` whose ``func`` IS the attribute - never looked at it.
+        Detached, one half cleared and the other never saw it.
+        """
+        source = (
+            "def f(p):\n    with open(p, encoding='utf-8') as h:\n"
+            "        _read = h.read\n        return _read(64)\n"
+        )
+        found = _scan(source)
+        assert not found.clear and found.undecided, found
+
+    def test_a_closure_over_the_handle_is_undecided(self) -> None:
+        """#344 round 3 finding 2. A lexical closure IS a way the handle
+        leaves the function, and it was neither covered nor disclosed:
+        the disclosure that used to say so had been retired while this
+        was still live under it."""
+        source = (
+            "def f(p):\n    h = open(p, encoding='utf-8')\n"
+            "    def inner():\n        return h.read()\n    return inner\n"
+        )
+        found = _scan(source)
+        assert not found.clear and found.undecided, found
+
+    def test_a_walrus_hand_over_is_charged_the_decode_rule(self) -> None:
+        """#344 round 3 finding 3, and the worst of the three, because
+        the guard's failure message walked the author into pinning the
+        escape as compliant: the site landed in ``clear``, two churn pins
+        moved, and the message asked for a CLEARED row to be added."""
+        source = (
+            "import json\ndef f(p):\n    try:\n"
+            "        return json.load(h := open(p, encoding='utf-8'))\n"
+            "    except OSError:\n        return None\n"
+        )
+        assert _reported(source)
+
+    def test_a_plain_name_bound_beside_a_dotted_one_is_undecided(self) -> None:
+        """#344 round 3 finding 4. ``bound_names`` drops the dotted target
+        BEFORE the count, so ``h = self.g = open(...)`` left one plain
+        name standing and every read through ``self.g`` was invisible -
+        defeating the exact rule the dotted-target check exists to keep.
+        """
+        source = (
+            "class C:\n    def f(self, p):\n"
+            "        h = self.g = open(p, encoding='utf-8')\n"
+            "        return self.g.read()\n"
+        )
+        found = _scan(source)
+        assert not found.clear and found.undecided, found
 
     def test_the_safe_members_come_from_the_type_and_not_from_a_list(self) -> None:
         """The derivation, checked. A hand-written list is the clearing
@@ -617,10 +688,22 @@ class TestTheDisclosedLimits:
     for an open hole, a closed hole and a resolver crashing on entry
     alike, which is why ``raises=`` is here too.
 
-    Two limits that used to live here are gone, because #344 F1 turned
+    Two limits that used to live here are gone because #344 F1 turned
     them into rows: a handle returned out of its function and a handle
-    stored on ``self`` are now ``undecided``, tested in the class above.
-    What is left is the one layer 1 answers for.
+    stored on ``self`` are ``undecided``, tested in the class above.
+
+    RETIRING A DISCLOSURE IS ITSELF A HAZARD, and #344 round 3 caught
+    this file committing it. The retired limit was worded "the handle
+    leaves the function", and a LEXICAL CLOSURE is a way the handle
+    leaves the function that the fix did not cover. So live coverage sat
+    under a disclosure that had been deleted for being closed, which is
+    worse than the original hole because the disclosure was the thing
+    telling a reader to be careful. The closure is now closed for real
+    and tested above; the general lesson is that a disclosure is retired
+    only when the INVARIANT covers it, not when the example does, which
+    is what ``tests/test_encoding_invariant.py`` is for.
+
+    What is left is the one limit layer 1 answers for.
     """
 
     @pytest.mark.xfail(strict=True, raises=AssertionError)

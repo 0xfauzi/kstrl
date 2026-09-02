@@ -38,6 +38,16 @@ guard that rots, and ``test_process_scoping`` refused one once already.
 is here, in the same change, with the count at zero and no exemptions -
 the six ``fcntl`` lock files it turned up were FIXED rather than listed.
 
+THE INVARIANT, in one sentence, because #344 needed three review rounds
+to find that a collection of cases is not one: an ``open`` is CLEARED
+only when exactly one scope binds its handle to a plain local name, and
+every load of that name lexically inside that scope is both OWNED by
+that scope and classified into exactly one modelled bucket.
+:func:`_handles_in` is that sentence as code, and it is the only place
+followability is decided. ``tests/test_encoding_invariant.py`` tests the
+sentence against CPython rather than against the shapes that motivated
+it.
+
 CLEARING IS THE DANGEROUS DIRECTION, so every undecidable is a flag.
 CLAUDE.md guard-design rule 3: a guard that CLEARS must be narrow,
 because over-matching converts a resolution into a clearing and deletes
@@ -73,6 +83,7 @@ from tests.helpers.astwalk import (
     Bindings,
     Sites,
     all_nodes,
+    assignment_parts,
     bindings,
     bound_names,
     handler_clauses,
@@ -258,10 +269,16 @@ def _opened_here(node: ast.AST) -> tuple[str, ast.Call] | None:
     if isinstance(node, ast.withitem):
         call, target = node.context_expr, node.optional_vars
     else:
-        # ``bound_names`` and not ``assignment_parts``: it drops a dotted
-        # target, which is the whole point here. See _text_handles.
-        names, value = bound_names(node)
-        if value is None or len(names) != 1:
+        # BOTH counts, and #344 round 3 finding 4 is why. ``bound_names``
+        # is ``assignment_parts`` with the dotted targets already dropped,
+        # so testing only its length accepts ``h = self.g = open(...)``:
+        # one plain name survives the filter, the site is tracked as
+        # ``h``, and every read through ``self.g`` is invisible - which
+        # is the shape the dotted-target rule exists to refuse. The
+        # binding has to be a SINGLE target that is ALSO a plain local.
+        targets, value = assignment_parts(node)
+        names, _ = bound_names(node)
+        if value is None or len(targets) != 1 or len(names) != 1:
             return None
         call, target = value, ast.Name(id=names[0])
     if not isinstance(call, ast.Call) or leaf_name(call.func) != "open":
@@ -269,7 +286,89 @@ def _opened_here(node: ast.AST) -> tuple[str, ast.Call] | None:
     return (target.id, call) if isinstance(target, ast.Name) else None
 
 
-def _bound_opens(tree: ast.Module) -> set[int]:
+@dataclass(frozen=True)
+class _Handle:
+    """One ``open`` bound to one plain local name in one scope, and the
+    loads of that name the walk could not account for."""
+
+    name: str
+    call: ast.Call
+    scope: ast.AST
+    loose: tuple[ast.Name, ...]
+
+
+def _parents_of(scope: ast.AST) -> dict[int, ast.AST]:
+    """Child id -> parent, over EVERYTHING lexically inside this scope.
+
+    ``all_nodes`` and not ``own_nodes``, so a load inside a nested
+    function still has a parent to be judged by. It will not be
+    accounted for either way - it is not owned - but a row with no
+    parent would read as "no bucket" for the wrong reason.
+    """
+    found: dict[int, ast.AST] = {}
+    for node in (scope, *all_nodes(scope)):
+        for child in ast.iter_child_nodes(node):
+            found[id(child)] = node
+    return found
+
+
+def _handles_in(tree: ast.Module, table: Bindings) -> list[_Handle]:
+    """THE INVARIANT, computed once and used by everything downstream.
+
+    An ``open`` is cleared only when exactly one scope binds its handle
+    to a plain local name, and EVERY load of that name lexically inside
+    that scope is both OWNED by that scope and classified into exactly
+    one modelled bucket.
+
+    #344 round 3 found nine more clearing shapes, and they were one
+    asymmetry rather than nine bugs: followability was computed
+    module-wide over ``all_nodes`` while the uses were classified
+    scope-locally over ``own_nodes``, and every disagreement between the
+    two resolved in the clearing direction. The two are one function now,
+    so there is nothing left to disagree.
+
+    The two halves of the sentence do different work, and dropping
+    either reopens a measured escape.
+
+    OWNED BY THAT SCOPE closes the lexical escapes. ``own_nodes`` stops
+    at a nested ``def`` and at a ``lambda``; ``all_nodes`` does not. A
+    module-level handle read inside a function, a closure over a handle,
+    and a lambda reading one are each a load that is INSIDE the binding
+    scope and not OWNED by it, and all three used to clear. Sweeping
+    ``all_nodes(scope)`` rather than the whole module is what keeps an
+    unrelated function's own local called ``f`` from being charged to
+    this binding.
+
+    CLASSIFIED INTO EXACTLY ONE BUCKET closes the alias escapes;
+    :func:`_is_modelled` is that half.
+
+    A name whose loads are all accounted for is followable. A name with
+    even one loose load is not, and the loose loads are also the rows
+    :func:`_handle_escapes` reports, so the guard cannot clear a site it
+    is simultaneously complaining about.
+    """
+    found: list[_Handle] = []
+    for scope, _qualified in scopes(tree):
+        handles = _text_handles(scope, table)
+        if not handles:
+            continue
+        owned = {id(node) for node in own_nodes(scope)}
+        parents = _parents_of(scope)
+        inside = all_nodes(scope)
+        for name, call in handles.items():
+            loose = tuple(
+                node
+                for node in inside
+                if isinstance(node, ast.Name)
+                and node.id == name
+                and not isinstance(node.ctx, ast.Store)
+                and not (id(node) in owned and _is_modelled(node, parents))
+            )
+            found.append(_Handle(name=name, call=call, scope=scope, loose=loose))
+    return found
+
+
+def _bound_opens(tree: ast.Module, table: Bindings) -> set[int]:
     """The ids of every ``open`` call whose handle this walk can follow.
 
     #344's review found the hole this closes, and it was the guard's own
@@ -295,12 +394,7 @@ def _bound_opens(tree: ast.Module) -> set[int]:
     further out, because the chase is what over-matches; refusing to
     clear what it cannot follow is what does not.
     """
-    return {
-        id(call)
-        for node in all_nodes(tree)
-        if (opened := _opened_here(node)) is not None
-        for call in (opened[1],)
-    }
+    return {id(handle.call) for handle in _handles_in(tree, table) if not handle.loose}
 
 
 def _handle_reads(scope: ast.AST, handles: dict[str, ast.Call]) -> list[tuple[ast.AST, ast.Call]]:
@@ -340,42 +434,42 @@ def _handle_touched(node: ast.AST, handles: dict[str, ast.Call]) -> str | None:
     return next((got for arg in handed if (got := _named(arg, handles))), None)
 
 
-def _handle_escapes(scope: ast.AST, handles: dict[str, ast.Call], where: str) -> list[str]:
-    """Every reference to a tracked handle this walk cannot classify.
+def _handle_escapes(handles: list[_Handle], where: str) -> list[str]:
+    """The loose loads of :func:`_handles_in`, as rows.
 
-    The other half of #344's F1. Binding the handle to a name is not
-    enough: the name then has to be USED in a shape :func:`_handle_touched`
-    models, or the decode is once again invisible. So every load of a
-    tracked name is put in one of three buckets - a modelled decode, a
-    member of :data:`HANDLE_SAFE` that decodes nothing, or ``undecided``.
-
-    There is no fourth bucket and no benefit of the doubt: an alias
-    (``other = h``), a return of the handle, a subscript, an attribute
-    this walk has never heard of are all rows a reader has to answer for,
-    which is what the disclosed "handle leaves the function" limit was
-    silently doing instead.
+    The SAME computation that decides followability, so the guard cannot
+    clear a site it is simultaneously complaining about. There is no
+    fourth bucket and no benefit of the doubt: an alias (``other = h``),
+    a bound method taken (``_read = h.read``), a closure over the
+    handle, a return of it, a subscript, an attribute the walk has never
+    heard of are all rows a reader has to answer for.
     """
-    parents: dict[int, ast.AST] = {}
-    for node in (scope, *own_nodes(scope)):
-        for child in ast.iter_child_nodes(node):
-            parents[id(child)] = node
-    found: list[str] = []
-    for node in own_nodes(scope):
-        if not isinstance(node, ast.Name) or node.id not in handles:
-            continue
-        if isinstance(node.ctx, ast.Store):
-            continue
-        if not _is_modelled(node, parents.get(id(node))):
-            found.append(
-                f"{where}:{node.lineno} {node.id} (a use of an open() handle this walk "
-                "does not model, so the decode cannot be found)"
-            )
-    return found
+    return [
+        f"{where}:{node.lineno} {node.id} (a use of an open() handle this walk "
+        "does not model, so the decode cannot be found)"
+        for handle in handles
+        for node in handle.loose
+    ]
 
 
-def _is_modelled(node: ast.Name, up: ast.AST | None) -> bool:
-    """Is this load of a handle name one the walk has a bucket for?"""
+def _is_modelled(node: ast.Name, parents: dict[int, ast.AST]) -> bool:
+    """Is this load of a handle name one the walk has a bucket for?
+
+    The Attribute arm is what #344 round 3 finding 1 corrected, and the
+    correction is to make it agree with :func:`_handle_touched`. That
+    function models ``h.read()``: an ``ast.Call`` whose ``func`` IS the
+    attribute. This one used to pass ANY attribute whose name was in
+    either set, so ``_read = handle.read`` - the bound method taken and
+    called later - was cleared here and never looked at there. Detached,
+    the two halves miss in opposite directions. Attached, an attribute
+    that is not immediately called is the handle's method or its
+    ``buffer`` ESCAPING, which is a row.
+    """
+    up = parents.get(id(node))
     if isinstance(up, ast.Attribute):
+        grand = parents.get(id(up))
+        if not (isinstance(grand, ast.Call) and grand.func is up):
+            return False
         return up.attr in HANDLE_READS or up.attr in HANDLE_SAFE
     if isinstance(up, ast.Call):
         return node in up.args
@@ -387,6 +481,18 @@ def _is_modelled(node: ast.Name, up: ast.AST | None) -> bool:
 
 
 def _named(node: ast.expr, handles: dict[str, ast.Call]) -> str | None:
+    """The handle name this expression IS, or None.
+
+    A walrus is unwrapped to its target, because ``json.load(h :=
+    open(p, encoding="utf-8"))`` hands the handle over in the same
+    expression that binds it. #344 round 3 finding 3: without this the
+    binding was tracked, the hand-over was not seen, no LOAD of ``h``
+    existed to be unaccounted for, and the site CLEARED - so adding
+    ``h :=`` to the walk's own counterexample made it compliant again,
+    and the churn pin then invited the author to record it as such.
+    """
+    if isinstance(node, ast.NamedExpr):
+        node = node.target
     return node.id if isinstance(node, ast.Name) and node.id in handles else None
 
 
@@ -529,13 +635,13 @@ def _through_handles(
     ``"a+"`` run-lock handle whose ``fp.read(64)`` sits under ``except
     OSError`` with nothing for the decode.
     """
+    tracked = _handles_in(tree, table)
     found: list[Read] = []
-    escaped: list[str] = []
+    escaped = _handle_escapes(tracked, where)
     for scope, _name in scopes(tree):
         handles = _text_handles(scope, table)
         if not handles:
             continue
-        escaped.extend(_handle_escapes(scope, handles, where))
         for node, opened in _handle_reads(scope, handles):
             if not is_strict(opened):
                 continue
@@ -579,7 +685,7 @@ def scan_source(text: str, *, where: str = "", module: str = "") -> Scan:
         return Scan()
     table = bindings(tree, module=module)
     tries = _try_bodies(tree)
-    bound = _bound_opens(tree)
+    bound = _bound_opens(tree, table)
     reads: list[Read] = []
     undecided: list[str] = []
     for node in all_nodes(tree):
