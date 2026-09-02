@@ -35,7 +35,12 @@ from kstrl.security import SecurityConfig, SecurityMode, run_security_review
 from kstrl.ui.plain import PlainUI
 from tests.conftest import make_review_repo
 from tests.helpers.component_prd import write_component_prd
-from tests.test_decompose import MockDecomposeAgent, _run_decompose
+from tests.test_decompose import (
+    MockDecomposeAgent,
+    _closures_for,
+    _run_decompose,
+    _with_ids,
+)
 from tests.test_prd_allowed_paths import _make_prd_payload
 from tests.test_review_payload import RecordingAgent
 
@@ -161,12 +166,20 @@ TYPED_ERRORS_ISSUE = {
 
 
 def _payload(*issues: dict[str, str], components: list[dict[str, Any]] | None = None) -> str:
+    """A v3.0.0 payload: every issue carries an id and one decision.
+
+    The ids and closures are derived rather than written at the call
+    sites, so a test that adds a finding cannot forget the half that
+    makes the halt gate real.
+    """
+    with_ids = _with_ids(list(issues))
     return json.dumps(
         {
             "components": components
             if components is not None
             else [DOCUMENT_FORMAT, AGENT_ADAPTER],
-            "spec_issues": list(issues),
+            "spec_issues": with_ids,
+            "decisions": _closures_for(with_ids),
         }
     )
 
@@ -273,19 +286,33 @@ class TestFindingsReachThePrd:
 
 
 class TestHaltingIsUnchanged:
-    def test_a_blocker_still_halts_and_writes_no_prd(self, tmp_path: Path) -> None:
+    def test_an_escalation_still_halts_and_writes_no_prd(self, tmp_path: Path) -> None:
         blocker = {
+            "id": "format-unspecified",
             "severity": "blocker",
             "kind": "ambiguity",
             "summary": "The document format is not specified at all",
             "location": "the whole spec",
             "suggestion": "Write it down",
         }
-        # A component alongside the blocker, so the no-PRD assertion
+        # A component alongside the escalation, so the no-PRD assertion
         # below can actually fail. With "components": [] the only PRD
         # writer loops over an empty list and the assertion is
         # arithmetic rather than evidence.
-        payload = json.dumps({"components": [DOCUMENT_FORMAT], "spec_issues": [blocker]})
+        payload = json.dumps(
+            {
+                "components": [DOCUMENT_FORMAT],
+                "spec_issues": [blocker],
+                "decisions": [
+                    {
+                        "issue": "format-unspecified",
+                        "question": "which format does the product commit to",
+                        "disposition": "escalated",
+                        "resolution": "the owner must choose",
+                    }
+                ],
+            }
+        )
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Spec\nBuild it.")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True, exist_ok=True)

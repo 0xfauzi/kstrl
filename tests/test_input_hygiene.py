@@ -287,6 +287,8 @@ class TestFromPrdHygiene:
 def _decompose_output(comp_id: str) -> str:
     return json.dumps(
         {
+            "spec_issues": [],
+            "decisions": [],
             "components": [
                 {
                     "id": comp_id,
@@ -309,7 +311,7 @@ def _decompose_output(comp_id: str) -> str:
                         }
                     ],
                 }
-            ]
+            ],
         }
     )
 
