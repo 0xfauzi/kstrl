@@ -18,7 +18,6 @@ from __future__ import annotations
 import ast
 import os
 import subprocess
-from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -31,8 +30,20 @@ from kstrl.procgroup import (
     signal_probe_alive,
 )
 from tests.helpers import procs
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
+from tests.helpers.astwalk import (
+    KSTRL_PACKAGE,
+    Sites,
+    assert_census,
+    assert_sites,
+    blind_spot,
+    calls_to,
+    label,
+    module_name,
+    package_sources,
+    parse,
+    parsed,
+    spells,
+)
 
 
 class TestTheGroupIdIsGuardedBeforeAnySignal:
@@ -197,193 +208,65 @@ class TestSafePgidIsTheOneCopyOfThePopenGuard:
         assert procgroup.safe_pgid(fake) is None
 
 
-#: The module and callable the net looks for.
-_TARGET_MODULE = "os"
-_TARGET_FUNC = "getpgid"
+#: The callable the net looks for, as the DOTTED ORIGIN the resolver
+#: reports rather than as a bare name. A bare ``getpgid`` is this lookup
+#: only when the resolver says it came from ``os``.
+_TARGET = "os.getpgid"
+
+#: The one file allowed to derive a group id: the module that owns the
+#: guard every other caller has to route through.
+_OWNER = "procgroup.py"
 
 
-@dataclass(frozen=True)
-class _Scan:
-    """Everything the resolver needs, collected in ONE tree walk.
+def _sites(source: str) -> Sites:
+    """Every call in one snippet that resolves to ``os.getpgid``, and
+    every call that could be one and could not be decided.
 
-    One walk rather than the four the first version took: 235,611 node
-    visits over the 126 files swept, against 942,444, and 0.22s against
-    0.41s. Same answer on all 146 inputs checked.
+    The resolution is ``tests/helpers/astwalk``'s. This file used to
+    carry 155 lines of its own, and #324 is the record of what having
+    eleven such copies cost: two review rounds each defeated the version
+    before it by planting a complete working fourth guard, round 1 behind
+    ``import os as operating_system`` and round 2 behind ``_o = os``.
     """
-
-    imports: list[ast.Import]
-    from_imports: list[ast.ImportFrom]
-    #: (targets, value) for every assignment, including class bodies.
-    assigns: list[tuple[list[ast.expr], ast.expr]]
-    #: Names bound in a class body, so reachable as an attribute too.
-    class_bound: set[str]
-    calls: list[ast.Call]
+    return calls_to(parse(source), {_TARGET})
 
 
-def _assign_targets(node: ast.Assign | ast.AnnAssign) -> list[ast.expr]:
-    if isinstance(node, ast.Assign):
-        return list(node.targets)
-    return [node.target]
+def _expression(row: str) -> str:
+    """The expression half of an ``astwalk`` site row, without its line.
 
-
-def _class_body_names(node: ast.ClassDef) -> set[str]:
-    """Names a class body binds, so reachable as an attribute of the class."""
-    names: set[str] = set()
-    for stmt in node.body:
-        if isinstance(stmt, ast.Assign | ast.AnnAssign):
-            names.update(t.id for t in _assign_targets(stmt) if isinstance(t, ast.Name))
-    return names
-
-
-def _scan(tree: ast.Module) -> _Scan:
-    scan = _Scan([], [], [], set(), [])
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            scan.imports.append(node)
-        elif isinstance(node, ast.ImportFrom):
-            scan.from_imports.append(node)
-        elif isinstance(node, ast.Assign | ast.AnnAssign):
-            if node.value is not None:
-                scan.assigns.append((_assign_targets(node), node.value))
-        elif isinstance(node, ast.ClassDef):
-            scan.class_bound.update(_class_body_names(node))
-        elif isinstance(node, ast.Call):
-            scan.calls.append(node)
-    return scan
-
-
-def _reaches_target(
-    node: ast.expr,
-    aliases: set[str],
-    direct: set[str],
-    attrs: set[str],
-) -> bool:
-    """Whether this expression evaluates to ``os.getpgid``."""
-    if isinstance(node, ast.Attribute):
-        if (
-            node.attr == _TARGET_FUNC
-            and isinstance(node.value, ast.Name)
-            and node.value.id in aliases
-        ):
-            return True
-        if node.attr in attrs:
-            return True
-    return isinstance(node, ast.Name) and node.id in direct
-
-
-def _module_aliases(scan: _Scan) -> set[str]:
-    """Every name bound to the ``os`` module itself, aliases included."""
-    aliases = {_TARGET_MODULE}
-    for node in scan.imports:
-        for alias in node.names:
-            # `import os.path` binds `os`, which is already in the set.
-            if alias.asname is not None and alias.name == _TARGET_MODULE:
-                aliases.add(alias.asname)
-    return aliases
-
-
-def _imported_callables(scan: _Scan) -> set[str]:
-    """Every name `from os import getpgid` binds to the callable."""
-    direct: set[str] = set()
-    for node in scan.from_imports:
-        if node.module != _TARGET_MODULE or node.level != 0:
-            continue
-        for alias in node.names:
-            if alias.name == _TARGET_FUNC:
-                direct.add(alias.asname or alias.name)
-    return direct
-
-
-def _absorb(
-    targets: list[ast.expr],
-    class_bound: set[str],
-    direct: set[str],
-    attrs: set[str],
-) -> bool:
-    """Bind the targets of one resolving assignment. True if a set grew."""
-    grew = False
-    for target in targets:
-        if isinstance(target, ast.Name):
-            grew |= target.id not in direct
-            direct.add(target.id)
-            # A class body's `lookup = os.getpgid` is reachable as
-            # `Cls.lookup` as well, so it belongs in BOTH buckets.
-            if target.id in class_bound:
-                grew |= target.id not in attrs
-                attrs.add(target.id)
-        elif isinstance(target, ast.Attribute):
-            grew |= target.attr not in attrs
-            attrs.add(target.attr)
-    return grew
-
-
-def _absorb_module(targets: list[ast.expr], aliases: set[str]) -> bool:
-    """Bind the targets of an assignment whose value IS the os module.
-
-    Round-2 review defeated the first version of this resolver with
-    ``_o = os``: it resolved a rebound CALLABLE and not a rebound MODULE,
-    while three docstrings said it did both. Two characters, and a
-    complete working fourth guard went through again.
-
-    Only plain ``ast.Name`` targets. ``G.mod = os`` then
-    ``G.mod.getpgid(pid)`` needs an attribute-to-module map that nothing
-    else here would use; it is a recorded miss instead.
+    A pinned list carrying line numbers fails whenever an unrelated edit
+    to an unrelated file moves one, which is how a guard becomes
+    something to be silenced. The module and the expression are what a
+    reader needs and neither moves.
     """
-    grew = False
-    for target in targets:
-        if isinstance(target, ast.Name):
-            grew |= target.id not in aliases
-            aliases.add(target.id)
-    return grew
+    return row.split(" ", 1)[1]
 
 
-def _bindings(scan: _Scan) -> tuple[set[str], set[str], set[str]]:
-    """(names for the os module, names for the callable, attribute names).
-
-    THE TWO NAME BUCKETS ARE NOT ONE. ``direct`` is names that ARE the
-    callable, ``attrs`` is attribute names that resolve to it, and
-    ``_MUST_IGNORE`` pins the difference: one merged set cannot tell
-    ``other.lookup(1)`` from the callable after ``lookup = os.getpgid``.
-
-    WHERE ``attrs`` OVER-MATCHES, measured rather than assumed. It holds
-    bare attribute NAMES with no owner and no scope, so a file that binds
-    ``self.lookup = os.getpgid`` anywhere also flags an unrelated
-    ``something_else.lookup(1)``, and one unrelated class attribute named
-    ``lookup`` promotes a module-level rebind of the same name. Owner
-    tracking is the fix and it belongs in #324's shared resolver, not in
-    a twelfth private copy. The direction is the tolerable one: this net
-    fails loudly and a false positive costs a reader one look, where a
-    false negative is a fourth copy of the guard shipping unnoticed.
-    """
-    aliases = _module_aliases(scan)
-    direct = _imported_callables(scan)
-    attrs: set[str] = set()
-
-    # To a fixed point, so `a = os.getpgid; b = a; b(pid)` resolves
-    # whatever order `ast.walk` happens to hand the assignments over in.
-    # No iteration bound: the sets only grow, over the finite set of
-    # names in one file, so this terminates. An earlier version capped it
-    # at 16 and called the cap cycle protection, which was two errors - a
-    # cycle cannot spin a monotonically growing set, and the cap silently
-    # stopped resolving a rebind chain longer than itself.
-    while True:
-        grew = False
-        for targets, value in scan.assigns:
-            if isinstance(value, ast.Name) and value.id in aliases:
-                grew |= _absorb_module(targets, aliases)
-            elif _reaches_target(value, aliases, direct, attrs):
-                grew |= _absorb(targets, scan.class_bound, direct, attrs)
-        if not grew:
-            return aliases, direct, attrs
-
-
-def _getpgid_calls(source: str) -> list[int]:
-    """Line numbers of every call in ``source`` that reaches ``os.getpgid``."""
-    scan = _scan(ast.parse(source))
-    aliases, direct, attrs = _bindings(scan)
-    return sorted(
-        node.lineno for node in scan.calls if _reaches_target(node.func, aliases, direct, attrs)
+def _module_sites(source_file: Path) -> Sites:
+    """One package module's answer, keyed by module and expression."""
+    found = calls_to(parsed(source_file), {_TARGET}, module=module_name(source_file))
+    where = label(source_file)
+    return Sites(
+        tuple(f"{where}: {_expression(row)}" for row in found.seen),
+        tuple(f"{where}: {_expression(row)}" for row in found.undecided),
     )
+
+
+def _surfaced(source: str) -> int:
+    """How many sites layer 2 reports about one snippet, in EITHER half.
+
+    Both halves, because the ratchet on a recorded miss has to fail the
+    day the walk starts merely NOTICING the shape, not only the day it
+    resolves it.
+    """
+    found = _sites(source)
+    return len(found.seen) + len(found.undecided)
+
+
+def _spellings(source: str) -> int:
+    """How many nodes in one snippet spell ``getpgid``. Layer 1, on text."""
+    sees = spells(_TARGET.split(".")[-1])
+    return sum(1 for node in ast.walk(parse(source)) if sees(node))
 
 
 #: Every spelling the net must flag.
@@ -400,9 +283,12 @@ def _getpgid_calls(source: str) -> list[int]:
 #: which is why they read as contrived. `global installed later` is the
 #: only input where the fixed point changes the answer (every one of the
 #: 127 real files converges in a single pass), and `attribute assigned
-#: on self` is the only input that reaches `_absorb`'s attribute-target
-#: branch. Both were watched failing against a mutant that removes what
-#: they pin.
+#: on self` is the only input that reaches the attribute-target branch.
+#:
+#: `getattr` was a row in `test_the_remaining_misses` until #324. The
+#: shared resolver folds the name and resolves the receiver, so it is
+#: caught now and belongs here: a recorded miss that quietly stops being
+#: one is the exact failure the strict xfail below exists to prevent.
 _MUST_CATCH = {
     "direct": "import os\npgid = os.getpgid(pid)\n",
     "keyword argument": "import os\npgid = os.getpgid(pid=pid)\n",
@@ -443,6 +329,8 @@ _MUST_CATCH = {
         "        self.lookup = os.getpgid\n\n"
         "    def derive(self, pid):\n        return self.lookup(pid)\n"
     ),
+    # Promoted from `test_the_remaining_misses` by #324's shared resolver.
+    "getattr with a foldable name": 'import os\npgid = getattr(os, "getpgid")(pid)\n',
 }
 
 #: Spellings that must NOT be flagged, or the net fails closed so hard
@@ -456,115 +344,251 @@ _MUST_IGNORE = {
     ),
     "the attribute without the call": "import os\nlookup = os.getpgid\n",
     "a different os call": "import os\npid = os.getpid()\n",
-    # Pins the precision the two name buckets buy: `lookup` is the
-    # callable, `other.lookup` is somebody else's attribute of that name.
-    # This holds only while no attribute of that name is bound anywhere in
-    # the same file; `attrs` carries no owner. `_bindings` says where that
-    # over-matches and why the fix is #324's, not a twelfth private copy's.
+    # Pins the precision resolving to a dotted ORIGIN buys: `lookup` is
+    # the callable, `other.lookup` is somebody else's attribute of that
+    # name. This holds only while no attribute of that name is bound
+    # anywhere in the same file; `astwalk.Bindings.attributes` carries no
+    # owner and says so.
     "the same name as an attribute of something else": (
         "import os\nlookup = os.getpgid\npgid = other.lookup(1)\n"
     ),
 }
 
+#: What the walk could not DECIDE about the rows above, per row.
+#:
+#: Two of the five are not dismissed, they are undecided: a call on the
+#: result of a call has no name to read, and a bare name spelled like the
+#: target and bound nowhere could be either. Neither is an offender and
+#: neither is silence, which is the whole point of the partition. Written
+#: as a claim, so a walk that stopped noticing them fails here.
+_UNDECIDED_IGNORES: dict[str, tuple[str, ...]] = {
+    "unrelated method of the same name": ("6 C().getpgid",),
+    "unrelated free function of the same name": ("5 getpgid",),
+}
+
+#: Spellings the walk SURFACES but cannot decide, with the exact row it
+#: reports. Both were rows in `test_the_remaining_misses` until #324,
+#: where they read as silent misses; the shared resolver reports them as
+#: undecided instead, which is a different fact and belongs in a
+#: different table. A guard that reports "I cannot tell" about a call is
+#: not a guard that passed.
+_MUST_BE_UNDECIDED = {
+    "a module fetched by name": (
+        'import importlib\npgid = importlib.import_module("os").getpgid(pid)\n',
+        ("2 importlib.import_module('os').getpgid",),
+    ),
+    "a callable fetched from a table": (
+        'import os\nTABLE = {"f": os.getpgid}\npgid = TABLE["f"](pid)\n',
+        ("3 TABLE['f']",),
+    ),
+}
+
+#: What layer 2 still cannot see AT ALL, in either half. Two rows, both
+#: measured on this tree rather than reasoned about.
+#:
+#: `attribute to module` needs a map from an attribute name to a MODULE,
+#: which `astwalk.Bindings` deliberately does not keep: `attributes` maps
+#: an attribute to a callable origin, and `G.mod.getpgid` asks it to
+#: resolve the RECEIVER of an attribute rather than the attribute itself.
+#: `tuple destructuring` needs a target the AST cannot spell as a path,
+#: which `astwalk.assignment_parts` answers `None` for rather than
+#: guessing at.
+#:
+#: Layer 1 catches both, which is why layer 1 exists;
+#: `test_layer_one_catches_what_layer_two_cannot` is that measurement.
+_LAYER_TWO_MISSES = {
+    "attribute to module": "import os\n\n\nclass G:\n    mod = os\n\n\npgid = G.mod.getpgid(pid)\n",
+    "tuple destructuring": (
+        "import os\n\nhop, other = _resolve, None\n_resolve = os.getpgid\npgid = hop(1)\n"
+    ),
+}
+
+#: Every node in ``kstrl/`` that spells ``getpgid``. Layer 1, and it
+#: resolves nothing: a module cannot ask the kernel for a process group
+#: without naming the call, so a fourth copy of the guard has to change
+#: this dict whatever shape it takes. Two rows in one file: the call
+#: itself, and the `hasattr` gate above it.
+EXPECTED_GETPGID_SPELLINGS: dict[str, int] = {_OWNER: 2}
+
+#: What layer 2 cannot decide about ``kstrl/``, and it is the same four
+#: sites whatever the target is: a call through a subscript and a call on
+#: the result of a call have no last identifier for the walk to read.
+#: `astwalk.calls_to` documents these four as the hard undecidable, and
+#: pinning them here is the difference between a guard that says "I did
+#: not look at these" and one that does not mention them.
+EXPECTED_UNDECIDED_SITES: tuple[str, ...] = (
+    "gateparse.py: TOOL_PARSERS[chosen]",
+    "gateparse.py: TOOL_PARSERS[name]",
+    "tui/app.py: initial_screens_for_kind(kind, observe_only=False)",
+    "tui/app.py: initial_screens_for_kind(kind, observe_only=True)",
+)
+
 
 class TestNoCallerCarriesItsOwnCopy:
     """The point of #308: a fourth site would be invisible to the above.
 
-    WHAT THIS NET SEES is a call that RESOLVES to `os.getpgid` - through
-    module aliases, module rebinds, from-imports, callable rebinds and
-    class attributes - and not just the literal shape `os.getpgid(...)`
-    that #308 first shipped. Two review rounds each defeated the version
-    before it by planting a complete working guard: round 1 behind
-    `import os as operating_system`, round 2 behind `_o = os`.
+    TWO LAYERS, since #324.
 
-    WHAT IT DOES NOT SEE, so the assert message does not overclaim it: a
-    fourth site that gets a pgid from somewhere OTHER than this lookup -
-    a run record, a pidfile, an int off the wire - and signals it. That
-    is the bare-pgid hazard, it is real, and it is #329, not this.
+    LAYER 1 is a census of every expression in ``kstrl/`` that SPELLS
+    ``getpgid``, per module. It enumerates no node types and no fields: a
+    module cannot ask the kernel for a process group without naming the
+    call, so a fourth copy in any shape has to change that dict first,
+    whatever it does with the answer afterwards. It reaches both shapes
+    layer 2 records as misses.
 
-    THIS IS A LOCAL FIX TO A REPO-WIDE DEFECT, and saying so is the
-    point. About eleven AST guards in this tree each re-implement this
-    resolution, and they have been holed one at a time: the timeout audit
-    missed `wait(timeout=None)` and `with Popen(...)`, then still missed
-    `from subprocess import Popen as Spawn` after being repaired once;
-    the toml guard fell to `import tomllib as _tl`; the journal guard to
-    `open(path, mode="a")`; and this one to a module alias, then to a
-    module rebind after being repaired once. #324 tracks factoring the
-    resolution onto a shared helper. Two of the existing copies already
-    hold pieces of it: `tests/test_toml_readers.py` resolves module
-    rebinds through a fixed point, which THIS net had to be taught twice,
-    and `tests/test_tui_config_walk.py` exposes a target-agnostic
-    `collect_bindings` that resolves 7 of the 14 rows below with no
-    changes. Neither was reused here (see the PR body for the measured
-    reasons), and that is itself the shape of the problem: the fix
-    already existed in the tree and the guard was holed anyway. This
-    class does not solve #324, and a reader should not take it as though
-    the problem were local.
+    LAYER 2 is the walk, which RESOLVES a call to `os.getpgid` - through
+    module aliases, module rebinds, from-imports, callable rebinds, class
+    attributes and `getattr` - and names the offending line. It is not
+    redundant: layer 1 can only say "procgroup.py's count moved", which
+    is the wrong message when the answer is "this file derives a pgid of
+    its own, call procgroup.safe_pgid". Two review rounds each defeated
+    the version before it by planting a complete working guard: round 1
+    behind `import os as operating_system`, round 2 behind `_o = os`.
 
-    WHAT IT STILL MISSES is recorded by `test_the_remaining_misses`,
-    which is a strict xfail, so a recorded miss cannot quietly stop being
-    one.
+    WHAT NEITHER LAYER SEES, so the assert message does not overclaim it:
+    a fourth site that gets a pgid from somewhere OTHER than this lookup
+    - a run record, a pidfile, an int off the wire - and signals it. That
+    is the bare-pgid hazard, it is real, and it is #329, not this. It is
+    pinned by `test_a_pgid_that_was_never_looked_up_is_invisible` rather
+    than left as a sentence.
+
+    THIS WAS A LOCAL FIX TO A REPO-WIDE DEFECT until #324. The resolution
+    lives in `tests/helpers/astwalk` now, along with the ten other copies
+    #324 logged, and this file's share of it - 168 lines - is deleted
+    rather than maintained.
     """
 
     @pytest.mark.parametrize("spelling", sorted(_MUST_CATCH))
     def test_every_spelling_of_the_call_is_caught(self, spelling: str) -> None:
-        assert _getpgid_calls(_MUST_CATCH[spelling]) != [], (
-            f"a fourth copy written as {spelling!r} would go through the net"
-        )
+        found = _sites(_MUST_CATCH[spelling])
+
+        assert found.seen != (), f"a fourth copy written as {spelling!r} would go through the net"
+        assert found.undecided == (), f"{spelling!r} resolved AND left a loose end"
 
     @pytest.mark.parametrize("spelling", sorted(_MUST_IGNORE))
     def test_a_name_is_not_a_binding(self, spelling: str) -> None:
-        assert _getpgid_calls(_MUST_IGNORE[spelling]) == []
+        """Both halves, so "not an offender" cannot quietly mean "not
+        looked at". Two of these five are undecided rather than
+        dismissed, and `_UNDECIDED_IGNORES` says which."""
+        assert_sites(
+            _sites(_MUST_IGNORE[spelling]),
+            seen=(),
+            undecided=_UNDECIDED_IGNORES.get(spelling, ()),
+            message=f"{spelling!r} is a name, not a binding, and must not be flagged.",
+        )
+
+    @pytest.mark.parametrize("spelling", sorted(_MUST_BE_UNDECIDED))
+    def test_a_call_the_walk_cannot_follow_is_undecided_not_absent(self, spelling: str) -> None:
+        """The #324 change, on the two rows it moved.
+
+        A call through a string or a container is not resolvable, and it
+        is not clean either. Reported as neither, it is a fourth copy of
+        the guard shipping unnoticed; reported as undecided, it is a row
+        somebody has to account for."""
+        source, expected = _MUST_BE_UNDECIDED[spelling]
+
+        assert_sites(
+            _sites(source),
+            seen=(),
+            undecided=expected,
+            message=f"{spelling!r} must be reported as undecided.",
+        )
 
     def test_no_module_outside_procgroup_derives_a_pgid(self) -> None:
-        owner = REPO_ROOT / "kstrl" / "procgroup.py"
-        offenders: list[str] = []
-        for path in sorted((REPO_ROOT / "kstrl").rglob("*.py")):
-            if path == owner:
-                continue
-            for lineno in _getpgid_calls(path.read_text(encoding="utf-8")):
-                offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno}")
-        assert offenders == [], (
-            "deriving a process-group id outside procgroup is how a fourth "
-            "copy of the safe-pgid guard starts; call procgroup.safe_pgid"
+        """Layer 2, over the package, with both halves pinned.
+
+        ``undecided`` is not an inconvenience here, it is the assertion:
+        writing it out is what stops "no offenders" also meaning "four
+        calls I never looked at"."""
+        found = Sites()
+        for path in package_sources():
+            if label(path) != _OWNER:
+                found += _module_sites(path)
+
+        assert_sites(
+            found.sorted(),
+            seen=(),
+            undecided=EXPECTED_UNDECIDED_SITES,
+            message=(
+                "deriving a process-group id outside procgroup is how a fourth "
+                "copy of the safe-pgid guard starts; call procgroup.safe_pgid."
+            ),
         )
 
     def test_the_owner_is_the_only_file_excluded(self) -> None:
         """The control on the sweep. Without it the test above passes on
         an empty walk, a broken parse or a matcher that matches nothing."""
-        owner = REPO_ROOT / "kstrl" / "procgroup.py"
-        assert _getpgid_calls(owner.read_text(encoding="utf-8")) != []
+        assert _module_sites(KSTRL_PACKAGE / _OWNER).seen == (f"{_OWNER}: {_TARGET}",)
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=(
-            "known misses, recorded rather than fixed. Written the way a "
-            "PASS should read, so strengthening the resolver under #324 "
-            "fails this test and forces the row into `_MUST_CATCH` rather "
-            "than leaving a stale note behind."
-        ),
-    )
-    @pytest.mark.parametrize(
-        "spelling",
-        [
-            'import os\npgid = getattr(os, "getpgid")(pid)\n',
-            'import importlib\npgid = importlib.import_module("os").getpgid(pid)\n',
-            'import os\nTABLE = {"f": os.getpgid}\npgid = TABLE["f"](pid)\n',
-            "import os\n\n\nclass G:\n    mod = os\n\n\npgid = G.mod.getpgid(pid)\n",
-            "import os\n\nhop, other = _resolve, None\n_resolve = os.getpgid\npgid = hop(1)\n",
-        ],
-    )
+    def test_no_module_gets_hold_of_getpgid_without_appearing_here(self) -> None:
+        """Layer 1, the net: pin every spelling of the call itself.
+
+        A module cannot ask the kernel for a process group without naming
+        the call, so NEW code that reaches for it has to change this
+        dict, whatever shape the derivation takes afterwards. That is why
+        this layer resolves nothing and enumerates no node types: an
+        exact count of spellings has no shape list to be incomplete.
+        """
+        assert_census(
+            sources=package_sources(),
+            sees=spells(_TARGET.split(".")[-1]),
+            expected=EXPECTED_GETPGID_SPELLINGS,
+            control="import os\npgid = os.getpgid(1)\n",
+            message=(
+                "The set of places that name getpgid changed. Deriving a "
+                "process-group id outside procgroup is how a fourth copy of the "
+                "safe-pgid guard starts: killpg(1, sig) is kill(-1, sig), every "
+                "process this user owns. Call procgroup.safe_pgid."
+            ),
+        )
+
+    @pytest.mark.parametrize("spelling", sorted(_LAYER_TWO_MISSES))
+    def test_layer_one_catches_what_layer_two_cannot(self, spelling: str) -> None:
+        """The reason there are two layers, measured on the two rows the
+        strict xfail below records as layer 2's misses. Neither is
+        invisible to the guard as a whole; both are invisible to the
+        walk, and the disclosure has to say which."""
+        assert _spellings(_LAYER_TWO_MISSES[spelling]) > 0, (
+            f"{spelling!r} is disclosed as a layer 2 miss, so layer 1 is the only "
+            f"thing covering it, and it does not"
+        )
+
+
+class TestTheDisclosedLimits:
+    """Every "this cannot see X" above, with a test behind it.
+
+    Under ``xfail(strict=True, raises=AssertionError)``, which is what
+    makes these a ratchet rather than a note. Round-2 review of #308
+    measured the first version: with ``strict=False`` and no ``raises``,
+    XFAIL, XPASS and a resolver that raises on entry were all green, so
+    the record could go stale in silence. Now closing a hole fails here,
+    and gutting the resolver fails here.
+    """
+
+    @pytest.mark.parametrize("spelling", sorted(_LAYER_TWO_MISSES))
+    @pytest.mark.xfail(strict=True, raises=AssertionError, reason="recorded layer 2 misses")
     def test_the_remaining_misses(self, spelling: str) -> None:
-        """Each needs something this resolver does not do: value tracking
-        through a string or a container, an attribute-to-module map, or
-        destructuring a tuple assignment. That is where a per-file AST net
-        stops being the right tool.
+        """Each needs something the shared resolver does not do: a map
+        from an attribute name to a module, or destructuring a tuple
+        assignment. Written the way a PASS should read, so strengthening
+        `astwalk` fails this test and forces the row into `_MUST_CATCH`
+        rather than leaving a stale note behind."""
+        blind_spot(_surfaced, _LAYER_TWO_MISSES[spelling])
 
-        `strict=True` and `raises=AssertionError` together are what make
-        this a ratchet rather than a note. Round-2 review measured the
-        first version: with `strict=False` and no `raises`, XFAIL, XPASS
-        and a resolver that raises on entry were all green, so the record
-        could go stale in silence. Now closing a hole fails here, and
-        gutting the resolver fails here."""
-        assert _getpgid_calls(spelling) != []
+    @pytest.mark.xfail(strict=True, raises=AssertionError, reason="layer 1 folds, it does not run")
+    def test_a_name_the_interpreter_has_to_build_is_missed(self) -> None:
+        """Layer 1 folds ``"get" + "pgid"`` and every f-string it can
+        decide. What it cannot decide is a value that needs the
+        interpreter: ``"".join(...)``, ``%``-formatting, a name looked up
+        at run time."""
+        blind_spot(_spellings, 'import os\npgid = getattr(os, "".join(("get", "pgid")))(pid)\n')
+
+    @pytest.mark.xfail(strict=True, raises=AssertionError, reason="#329, not this guard")
+    def test_a_pgid_that_was_never_looked_up_is_invisible(self) -> None:
+        """The scope claim in the class docstring, pinned rather than
+        asserted in prose. A pgid read off a pidfile and signalled
+        reaches neither layer, because neither layer is about signalling
+        - they are about the lookup. That hazard is #329."""
+        source = "pgid = int(open('run.pid').read())\nos.killpg(pgid, 9)\n"
+
+        blind_spot(lambda text: _surfaced(text) + _spellings(text), source)
