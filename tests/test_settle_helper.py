@@ -257,15 +257,29 @@ class _FakeClock:
     nothing outside the helper sees a frozen clock: Textual reads the
     real one throughout.
 
-    THE FUSE IS NOT DECORATION. A fake clock only advances where the
-    test advances it, so any defect that stops the helper reaching that
-    place converts a five-second failure into an unbounded hang. The
-    first version put the runaway guard inside the stubbed `pause`,
-    which is precisely what such a defect stops calling: planting
-    `asyncio.sleep` in place of `pilot.pause` hung this file rather
-    than failing it, and a hang in CI is worse than a red. The fuse
-    lives here instead, in the one method the poll loop cannot skip,
-    and it reads REAL time so no plant can hold it still.
+    THE FUSE IS NOT DECORATION, AND WHERE IT LIVES IS THE WHOLE POINT.
+
+    A GUARD MUST NOT DEPEND ON THE CODE PATH WHOSE ABSENCE IT IS
+    DETECTING. That is the rule, and this class is where it was learnt.
+
+    A fake clock only advances where the test advances it, so any defect
+    that stops the helper reaching that place converts a five-second
+    failure into an unbounded hang. The first version put the runaway
+    guard inside the stubbed `pause` - which is precisely what a "stop
+    calling pilot.pause" defect stops calling. So the detector was
+    disabled by the very condition it existed to detect: planting
+    `asyncio.sleep` in place of `pilot.pause` hung this file for 180
+    seconds rather than failing it, and hung the full TUI tier for 26
+    minutes at 0.3% CPU.
+
+    A hang is worse than going blind. A blind guard at least returns and
+    lets the rest of the suite report; a hung one takes the whole run
+    with it and tells CI nothing at all.
+
+    So the fuse lives in `monotonic`, the one method the poll loop cannot
+    skip whatever the helper sleeps on, and it reads REAL time, which no
+    plant inside the helper can hold still. Both properties are the rule
+    applied: the fuse shares no code path with the thing it watches.
     """
 
     #: Real seconds this clock may exist for while a wait is running.

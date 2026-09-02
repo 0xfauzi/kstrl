@@ -106,10 +106,10 @@ async def settled(
             the reader can act on - "the config table to mount", not
             "the thing".
         timeout: wall-clock seconds before the wait is a failure. The
-            poll interval is not a parameter: no caller overrode it in
-            291 waits, and neither wrapper below exposed it, so it was
-            an unexercised branch in the one function every TUI test
-            depends on.
+            poll interval is not a parameter: no caller overrides it in
+            the 308 waits this tree now has, and neither wrapper below
+            exposed it, so it was an unexercised branch in the one
+            function every TUI test depends on.
 
     Raises:
         AssertionError: if the deadline passes with the predicate still
@@ -229,7 +229,11 @@ async def drained(
     no deadline, so a frame that never comes is a hung test rather than
     a failing one, and it returns ``False`` as a silent null-op when
     called from the node's own task. A wait that can quietly not wait is
-    the defect this module exists to remove.
+    the defect this module exists to remove, and a wait that hangs
+    instead of failing is the one next to it: planting ``asyncio.sleep``
+    in place of ``pilot.pause`` hung ``tests/test_settle_helper.py``
+    for want of a fuse that reads real time, which is why
+    ``_FakeClock.monotonic`` now carries one.
     """
     handled: list[bool] = []
     pump.call_later(handled.append, True)
