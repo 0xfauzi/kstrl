@@ -530,7 +530,9 @@ def _import_base(node: ast.ImportFrom, module: str) -> str:
     if not node.level:
         return node.module or ""
     package = ".".join(module.split(".")[: -node.level]) if module else "." * node.level
-    return f"{package}.{node.module}" if node.module else package
+    if not node.module:
+        return package
+    return f"{package}{node.module}" if package.endswith(".") else f"{package}.{node.module}"
 
 
 def _rebind_sweep(nodes: list[ast.AST], table: _Table) -> bool:

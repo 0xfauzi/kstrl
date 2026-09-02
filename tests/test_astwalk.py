@@ -1,0 +1,402 @@
+"""The shared resolver's own controls: every feature, and its sole killer.
+
+#324's seventh instance is why this file exists rather than a docstring
+claiming the resolver is correct. A guard was written, holed by a
+reviewer, repaired, and holed again on the next rung inside the same PR.
+The same pass then found two pieces of that repaired resolver that NO test
+could tell apart from their absence: the fixed-point loop (all 127 files
+converge in one pass, so collapsing it left everything green) and an
+attribute-target branch reached 0 times across 147 inputs. A shared
+resolver with those two properties would rot in one place instead of
+eleven, which is worse, not better.
+
+So the standing rule for ``tests/helpers/astwalk.py`` is that every
+resolution feature has a test here that is its SOLE killer. Measured by
+stubbing each feature in turn and counting the tests that go red; the
+count recorded in each docstring is that measurement, not an intention.
+
+The seam with ``tests/test_astwalk_nets.py`` next door: this file is about
+what the walk can DECIDE (names, calls, the undecided half). That one is
+about what it can SEE without deciding anything (folding, the census,
+scope, handlers). Different subject, different failure message.
+"""
+
+from __future__ import annotations
+
+import ast
+
+import pytest
+
+from tests.helpers import astwalk
+
+TARGET = "os.getpgid"
+
+
+def origin_of(source: str, expression: str = "pgid", module: str = "") -> str | None:
+    """What the resolver says one module-level name refers to."""
+    return astwalk.bindings(astwalk.parse(source), module=module).origins.get(expression)
+
+
+def calls(source: str, targets: frozenset[str] = frozenset({TARGET})) -> astwalk.Sites:
+    return astwalk.calls_to(astwalk.parse(source), targets)
+
+
+# --- imports --------------------------------------------------------------
+
+
+class TestEveryImportForm:
+    """The forms #324 records five separate guards resolving in five
+    different subsets, each subset holed where the others were strong."""
+
+    def test_a_plain_import(self) -> None:
+        assert origin_of("import os\n", "os") == "os"
+
+    def test_a_renamed_import(self) -> None:
+        """``import os as _o`` is #324's seventh instance in two
+        characters: the guard that shipped had resolved a rebound CALLABLE
+        and not a rebound MODULE."""
+        assert origin_of("import os as _o\n", "_o") == "os"
+
+    def test_a_dotted_import_binds_its_head(self) -> None:
+        """``import os.path`` binds ``os``, not ``os.path``, which is what
+        the interpreter does and what ``os.path.join`` then needs."""
+        assert origin_of("import os.path\n", "os") == "os"
+
+    def test_a_dotted_import_with_an_alias_binds_the_whole_path(self) -> None:
+        assert origin_of("import os.path as _p\n", "_p") == "os.path"
+
+    def test_a_from_import(self) -> None:
+        assert origin_of("from os import getpgid\n", "getpgid") == "os.getpgid"
+
+    def test_a_renamed_from_import(self) -> None:
+        """``from subprocess import Popen as Spawn`` defeated the timeout
+        audit twice, once after it had been repaired."""
+        assert origin_of("from os import getpgid as _g\n", "_g") == "os.getpgid"
+
+    def test_a_relative_import_resolves_against_the_module(self) -> None:
+        """``ImportFrom.level``, dropped by three guards independently.
+
+        The sole killer of ``_import_base``'s level branch: measured, with
+        that branch removed every other test in this file still passes.
+        """
+        source = "from .config_report import build_config_report\n"
+        got = origin_of(source, "build_config_report", module="kstrl.tui.home")
+        assert got == "kstrl.tui.config_report.build_config_report"
+
+    def test_a_bare_relative_import(self) -> None:
+        """``from . import x`` has no ``module`` at all, and one guard's
+        ``and node.module`` guard discarded the whole statement."""
+        got = origin_of("from . import evolution\n", "evolution", module="kstrl.tui.home")
+        assert got == "kstrl.tui.evolution"
+
+    def test_a_relative_import_with_no_module_name_given(self) -> None:
+        """Left without a module the origin is useless rather than wrong.
+
+        A leading dot cannot collide with an absolute origin, so a guard
+        matching ``os.getpgid`` cannot be fooled by ``from .os import``.
+        """
+        assert origin_of("from .os import getpgid\n", "getpgid") == ".os.getpgid"
+
+    def test_a_relative_import_is_not_the_stdlib(self) -> None:
+        """The false positive the dropped level produced, asserted."""
+        assert calls("from .os import getpgid\npgid = getpgid(1)\n").seen == ()
+
+
+# --- rebinds --------------------------------------------------------------
+
+
+class TestEveryRebindForm:
+    def test_a_module_rebind(self) -> None:
+        assert origin_of("import os\n_o = os\n", "_o") == "os"
+
+    def test_a_callable_rebind(self) -> None:
+        assert origin_of("import os\n_g = os.getpgid\n", "_g") == TARGET
+
+    def test_an_annotated_rebind(self) -> None:
+        """#324's second logged instance: ``_p: object = tomllib`` made a
+        TOML parse invisible to a guard that walked ``ast.Assign`` only,
+        reported neither guarded nor unguarded. Sole killer of
+        ``assignment_parts``'s ``AnnAssign`` branch.
+        """
+        assert origin_of("import os\n_o: object = os\n", "_o") == "os"
+
+    def test_a_walrus_rebind(self) -> None:
+        assert origin_of("import os\nif (_g := os.getpgid):\n    pass\n", "_g") == TARGET
+
+    def test_an_attribute_target(self) -> None:
+        """``self.lookup = os.getpgid``. Sole killer of the dotted-target
+        half of ``assignment_parts``."""
+        source = "import os\nclass C:\n    def __init__(self):\n        self.lookup = os.getpgid\n"
+        assert origin_of(source, "self.lookup") == TARGET
+
+    def test_a_class_body_binding(self) -> None:
+        """``class G: lookup = os.getpgid`` binds a bare name as far as
+        the AST is concerned, and every use of it spells ``G.lookup``.
+        Sole killer of ``_class_body_names``."""
+        source = "import os\n\n\nclass G:\n    lookup = os.getpgid\n\n\npgid = G.lookup(1)\n"
+        assert calls(source).seen == ("8 os.getpgid",)
+
+    def test_a_class_attribute_through_an_instance(self) -> None:
+        """``G().lookup(pid)``: the receiver is not a name at all, so only
+        ``Bindings.attributes`` can answer. Sole killer of that branch."""
+        source = "import os\n\n\nclass G:\n    lookup = os.getpgid\n\n\npgid = G().lookup(1)\n"
+        assert calls(source).seen == ("8 os.getpgid",)
+
+    def test_a_getattr_with_a_foldable_name(self) -> None:
+        """``getattr(os, "getpgid")`` was a PINNED accepted miss in
+        ``tests/test_safe_pgid.py``. Folding decides it, so the row moved
+        into the caught set on #324."""
+        assert calls('import os\npgid = getattr(os, "getpgid")(1)\n').seen == ("2 os.getpgid",)
+
+    def test_a_getattr_whose_name_is_assembled(self) -> None:
+        """And the assembly is not a way past it either."""
+        source = 'import os\npgid = getattr(os, "get" + "pgid")(1)\n'
+        assert calls(source).seen == ("2 os.getpgid",)
+
+
+class TestTheFixedPoint:
+    """The loop #328 measured as indistinguishable from its own absence.
+
+    Every module in ``kstrl/`` converges in one pass, so on the real tree
+    collapsing the loop changes nothing. These three are its sole killers.
+    """
+
+    def test_a_chain_of_length_two(self) -> None:
+        assert origin_of("import os\n_a = os\n_b = _a\n", "_b") == "os"
+
+    def test_a_chain_bound_in_reverse_order(self) -> None:
+        """``_b = _a`` written ABOVE ``_a = os``. One pass in source order
+        cannot close this; the loop is the only thing that can."""
+        assert origin_of("import os\n\n\ndef f():\n    _b = _a\n\n\n_a = os\n", "_b") == "os"
+
+    def test_a_self_referential_rebind_terminates(self) -> None:
+        """``p = p.parent`` is why FIRST BINDING WINS.
+
+        An earlier draft let a later binding overwrite an earlier one and
+        this grew the origin string without bound: the probe ran for two
+        minutes against ``kstrl/`` before it was killed. Sole killer of
+        the ``if target in table.origins: return False`` line.
+        """
+        assert origin_of("import os\np = os\np = p.parent\n", "p") == "os"
+
+
+# --- the undecided half ---------------------------------------------------
+
+
+class TestTheSkipDirectionIsReported:
+    """Every #324 instance was a matcher that could not decide and then
+    reported clean. These are the shapes that now land in ``undecided``
+    instead of vanishing."""
+
+    def test_a_callee_with_no_name_at_all(self) -> None:
+        """``TABLE[key](...)``. Undecided whatever the targets are,
+        because there is no identifier to compare."""
+        found = calls('T = {"g": None}\npgid = T["g"](1)\n')
+        assert found.seen == ()
+        assert found.undecided == ("2 T['g']",)
+
+    def test_a_call_through_a_name_the_resolver_could_not_follow(self) -> None:
+        """``importlib.import_module("os").getpgid`` was a pinned silent
+        miss. It is a reported one now."""
+        source = 'import importlib\npgid = importlib.import_module("os").getpgid(1)\n'
+        found = calls(source)
+        assert found.seen == ()
+        assert found.undecided == ("2 importlib.import_module('os').getpgid",)
+
+    def test_a_call_on_an_object_bound_to_something_opaque(self) -> None:
+        """``proc = subprocess.Popen(...)`` then ``proc.wait()``: the
+        clause that matters for a guard about the object rather than the
+        module. ``proc`` is opaque, so the wait is undecided."""
+        source = "import subprocess\nproc = subprocess.Popen(argv)\nproc.wait()\n"
+        found = calls(source, frozenset({"subprocess.Popen.wait"}))
+        assert found.undecided == ("3 proc.wait",)
+
+    def test_a_bare_name_spelled_like_a_target_and_bound_nowhere(self) -> None:
+        assert calls("pgid = getpgid(1)\n").undecided == ("1 getpgid",)
+
+    def test_an_ordinary_call_is_not_a_candidate(self) -> None:
+        """The false-positive side. Without this the partition could pass
+        every test above by calling everything undecided."""
+        source = "from pathlib import Path\np = Path('x')\np.parent.mkdir()\n', '.join(bits)\n"
+        assert calls(source) == astwalk.Sites((), ())
+
+    def test_a_decided_receiver_that_is_not_the_target(self) -> None:
+        source = "import shutil\nshutil.getpgid = None\npgid = shutil.getpgid(1)\n"
+        assert calls(source).seen == ()
+
+
+class TestAssertSitesWillNotTakeHalfAnAnswer:
+    """The mechanism, not the docstring: a guard cannot assert the clean
+    half alone. To report nothing undecided it must write ``undecided=()``
+    and that claim is checked."""
+
+    def test_an_undecided_site_fails_even_when_seen_is_right(self) -> None:
+        found = astwalk.Sites((), ("gateparse.py:111 TOOL_PARSERS[chosen]",))
+        with pytest.raises(AssertionError, match="could not decide"):
+            astwalk.assert_sites(found, seen=(), undecided=(), message="x")
+
+    def test_both_halves_matching_passes(self) -> None:
+        found = astwalk.Sites(("a",), ("b",))
+        astwalk.assert_sites(found, seen=("a",), undecided=("b",), message="x")
+
+    def test_the_seen_half_is_still_checked(self) -> None:
+        with pytest.raises(AssertionError, match="the message"):
+            astwalk.assert_sites(
+                astwalk.Sites(("a",), ()), seen=(), undecided=(), message="the message"
+            )
+
+
+# --- the package, pinned --------------------------------------------------
+
+#: Every call in ``kstrl/`` whose callee holds no identifier for the walk
+#: to compare. This is the ONE inventory every guard built on
+#: :func:`astwalk.calls_to` inherits, whatever it is looking for, because
+#: a call through a table cannot be decided against any target set.
+#:
+#: Adding a row is not forbidden, it is the point: the diff that adds one
+#: is where somebody says why a call is dispatched through a value.
+OPAQUE_CALLEES = (
+    "gateparse.py:111 TOOL_PARSERS[chosen]",
+    "gateparse.py:113 TOOL_PARSERS[name]",
+    "tui/app.py:363 initial_screens_for_kind(kind, observe_only=True)",
+    "tui/app.py:435 initial_screens_for_kind(kind, observe_only=False)",
+)
+
+
+def package_calls(targets: frozenset[str]) -> astwalk.Sites:
+    """One sweep of ``kstrl/``, the way a migrated guard makes one."""
+    found = astwalk.Sites()
+    for source_file in astwalk.package_sources():
+        found = found + astwalk.calls_to(
+            astwalk.parsed(source_file),
+            targets,
+            where=astwalk.label(source_file),
+            module=astwalk.module_name(source_file),
+        )
+    return found
+
+
+class TestTheWalkAgainstTheRealPackage:
+    """A resolver whose only tests are snippets is a resolver nobody has
+    run. These three are against ``kstrl/`` itself."""
+
+    def test_the_only_undecidable_callees_are_the_four_dispatch_tables(self) -> None:
+        """Measured over 13,145 calls in ``kstrl/``: four.
+
+        That number is what makes the undecided half something a guard can
+        pin rather than a list it would be silenced for printing.
+        """
+        assert package_calls(frozenset({TARGET})).undecided == OPAQUE_CALLEES
+
+    def test_the_one_pgid_lookup_is_found_where_procgroup_declares_it(self) -> None:
+        """Anti-vacuity against the real tree: without this the test above
+        would pass on a sweep that resolved nothing at all."""
+        assert package_calls(frozenset({TARGET})).seen == ("procgroup.py:284 os.getpgid",)
+
+    def test_the_spawn_sweep_reproduces_the_timeout_audit_count(self) -> None:
+        """68 spawn sites, the same number the private resolver in
+        ``tests/test_timeout_enforcement.py`` found before it was
+        migrated, plus four callees it could not see at all and four
+        ``app.run`` calls on a Textual App bound to a local."""
+        spawns = frozenset(
+            {
+                "subprocess.run",
+                "subprocess.Popen",
+                "subprocess.call",
+                "subprocess.check_output",
+                "subprocess.check_call",
+            }
+        )
+        found = package_calls(spawns)
+        assert len(found.seen) == 68
+        assert sorted(found.undecided) == sorted(
+            [
+                *OPAQUE_CALLEES,
+                "cli.py:3361 app.run",
+                "cli.py:3476 app.run",
+                "tui/embed.py:157 app.run",
+                "tui/home.py:47 app.run",
+            ]
+        )
+
+
+# --- what it still cannot do ----------------------------------------------
+
+
+#: Shapes the resolver provably does not resolve, each with the source
+#: that proves it. Run under a STRICT xfail below, so the day one of them
+#: closes the row fails and the docstrings claiming the limit have to be
+#: edited in the same diff.
+DISCLOSED_MISSES = [
+    pytest.param(
+        "import os\n(_a, _b) = (os.getpgid, 1)\npgid = _a(1)\n",
+        id="tuple destructuring",
+    ),
+    pytest.param(
+        "import os\n_t = [os.getpgid]\npgid = _t[0](1)\n",
+        id="a callable out of a list",
+    ),
+    pytest.param(
+        'import os\n_n = "getpgid"\npgid = getattr(os, _n)(1)\n',
+        id="a getattr name the interpreter has to build",
+    ),
+    pytest.param(
+        "import os\n\n\ndef call(fn):\n    return fn(1)\n\n\npgid = call(os.getpgid)\n",
+        id="a target passed in as a parameter",
+    ),
+]
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError)
+@pytest.mark.parametrize("source", DISCLOSED_MISSES)
+def test_the_shapes_the_resolver_does_not_reach(source: str) -> None:
+    """The disclosed residual, pinned so the disclosure cannot rot.
+
+    Three of the four are dataflow through a container, which needs an
+    interpreter rather than a walk. The fourth is a call graph. All four
+    are bounded by the same argument the guards rest on: the module still
+    had to OBTAIN the target, so a census of the acquisition counts it
+    even when this half cannot name the call.
+
+    ``strict=True`` makes an XPASS a failure, so closing a hole forces the
+    row out of this list; ``raises=AssertionError`` makes a resolver that
+    CRASHES on the input fail too. #328 measured an open hole, a closed
+    hole and a resolver raising on entry all passing green without both.
+    """
+    astwalk.blind_spot(lambda text: calls(text).seen, source)
+
+
+class TestTheDisclosedMissesAreNotSilent:
+    """Half of them are REPORTED misses, which is the whole point.
+
+    A shape the walk cannot decide should land in ``undecided``, not
+    vanish. Two of the four above do. The other two read as calls on some
+    other object, and this class is where that is stated rather than
+    implied.
+    """
+
+    def test_a_callable_out_of_a_list_is_reported(self) -> None:
+        found = calls("import os\n_t = [os.getpgid]\npgid = _t[0](1)\n")
+        assert found.seen == () and found.undecided == ("3 _t[0]",)
+
+    def test_an_unfoldable_getattr_is_reported(self) -> None:
+        found = calls('import os\n_n = "getpgid"\npgid = getattr(os, _n)(1)\n')
+        assert found.seen == () and found.undecided == ("3 getattr(os, _n)",)
+
+    def test_a_tuple_unpack_is_silent_and_that_is_the_residual(self) -> None:
+        """``assignment_parts`` answers ``None`` for a tuple target rather
+        than guessing which element went where, so the name is not even
+        opaque. This is the honest bottom of the walk."""
+        assert calls("import os\n(_a, _b) = (os.getpgid, 1)\npgid = _a(1)\n") == astwalk.Sites()
+
+    def test_a_parameter_is_silent_and_the_census_is_the_bound(self) -> None:
+        """A target handed to a helper reads as a call on some other
+        object. The caller still had to spell ``os.getpgid`` to pass it,
+        so the spelling census in the guard above it counts the site.
+        """
+        source = "import os\n\n\ndef call(fn):\n    return fn(1)\n\n\npgid = call(os.getpgid)\n"
+        assert calls(source).seen == ()
+        spelled = sum(
+            1 for node in ast.walk(astwalk.parse(source)) if astwalk.spells("getpgid")(node)
+        )
+        assert spelled == 1, "the argument still spells the name, so the net counts it"
