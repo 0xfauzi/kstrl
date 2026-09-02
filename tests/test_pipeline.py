@@ -23,6 +23,7 @@ from kstrl import git
 from kstrl.agents.base import UsageRecord, UsageTotals
 from kstrl.config import KstrlConfig
 from kstrl.events import CallbackSink, Event, EventBus, PhaseCompleted, V1CompatSink
+from kstrl.evolution import category_for_check
 from kstrl.factory import (
     AdversarialAgentSelection,
     ComponentResult,
@@ -1036,6 +1037,16 @@ class TestCheckpointAndPrTransitions:
         assert comp.retries == 0
         assert comp.status == ComponentStatus.FAILED.value
         assert comp.failed_check == "hitl_reject"
+        # #339 P2-1: the journal signature, not the phase. Without an
+        # explicit `signatures=` the phase becomes the check name and a
+        # human refusing the change is recorded as
+        # `pr:rejected-at-hitl-checkpoint`, which _CATEGORY_BY_CHECK
+        # files as infrastructure and the autonomy replay then discards
+        # as an outage. Asserted on the recorded signature rather than
+        # on the argument, because the argument is not what the journal
+        # reads.
+        assert pipeline.component_failure_signatures["comp-a"] == ["review:hitl-rejected"]
+        assert category_for_check("review") == "review"
         assert dep.status == ComponentStatus.SKIPPED.value
         assert result.failed == ["comp-a"]
 
@@ -1055,6 +1066,14 @@ class TestCheckpointAndPrTransitions:
         assert comp.retries == 1
         assert comp.status == ComponentStatus.PENDING.value
         assert comp.failed_check == "hitl_retry"
+        # #339 A4: the sibling of the rejection branch, and it had the
+        # same defect 46 lines below the fix. A human asking for changes
+        # is a verdict on the change, so the signature says `review:`
+        # rather than letting the phase file it under `pr`, which
+        # _CATEGORY_BY_CHECK carries as infrastructure.
+        recorded = pipeline.component_failure_signatures["comp-a"]
+        assert recorded == ["review:hitl-changes-requested"]
+        assert category_for_check("review") == "review"
         assert "Human reviewer requested changes" in (pipeline.component_contexts["comp-a"])
 
     def test_merge_pending_parks_component(
