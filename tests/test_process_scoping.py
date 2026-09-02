@@ -61,9 +61,20 @@ here rather than rotting. Layer 1 sees the first of them.
 Scoping layer 2 to subprocess arguments is what lets it stay quiet about
 prose: this module and ``tests/helpers/procs.py`` both have to name the
 forbidden commands to explain them, and a bare text or literal search
-would need a suppression list that rots. Layer 1 stays quiet for a
-different reason: it folds VALUES, and a docstring explaining ``pgrep``
-folds to the whole docstring rather than to a command line.
+would need a suppression list that rots.
+
+LAYER 1 IS NOT QUIET ABOUT PROSE, and an earlier draft of this paragraph
+said it was. It folds a value and then reads each whitespace-separated
+token's BASENAME, so a docstring reading "Do not use pgrep -f here." IS
+a hit.
+Measured, not reasoned: this file leaves itself out of its own corpus, and
+``tests/helpers/procs.py`` escapes only because every mention there sits
+inside RST double backticks, whose token basename is ```` ``pgrep`` ````
+and not ``pgrep``. Strip the backticks and that file gains a row. That is
+an over-report, the direction a guard may be wrong in, and the pinned
+census is where a new one appears rather than a suppression list.
+``test_layer_one_reads_prose_and_the_census_is_the_bound`` is that
+measurement rather than this sentence.
 """
 
 from __future__ import annotations
@@ -296,6 +307,21 @@ class TestTheNetCatchesWhatItClaims:
     def test_every_forbidden_tool_is_caught(self, tmp_path: Path) -> None:
         for tool in sorted(MACHINE_WIDE_PROCESS_TOOLS):
             assert self._hits(tmp_path, f'subprocess.run(["{tool}", "x"])\n'), tool
+
+    def test_layer_one_reads_prose_and_the_census_is_the_bound(self) -> None:
+        """What layer 1 actually does with a docstring, measured.
+
+        The module docstring used to claim a folded docstring never looks
+        like a command line. It does: ``_names_a_tool`` splits on
+        whitespace and takes each token's basename. Backticks are what
+        keeps ``tests/helpers/procs.py`` out, and that is an accident of
+        its RST rather than a mechanism, so it is written down here.
+        """
+        assert _names_a_tool("Do not use pgrep -f here.")
+        assert not _names_a_tool("Do not use ``pgrep`` here.")
+        assert _searches_the_machine(
+            astwalk.parse('"""Do not use pgrep -f here."""\n').body[0].value  # type: ignore[attr-defined]
+        )
 
     def test_prose_naming_the_command_is_not_a_hit(self, tmp_path: Path) -> None:
         """The reason the net reads subprocess arguments and not every

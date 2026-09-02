@@ -469,15 +469,35 @@ class TestTheEnumerationMatchesTheCode:
         astwalk.blind_spot(_named_entries, source)
 
     def test_every_module_that_names_the_state_directory_is_pinned(self) -> None:
-        """The net under the scan, and it enumerates no node types."""
+        """The net under the scan, and it enumerates no node types.
+
+        THE CONTROL NAMES BOTH HALVES. ``assert_census`` proves the
+        predicate fires, and a disjunction fires when EITHER half does, so
+        a control hitting only one half leaves the other switchable-off
+        with the control still green. Measured on the first version of
+        this line: ``P = state_dir(root) / "runs"`` scores one hit through
+        ``namer`` and zero through ``anchor``, so deleting ``anchor``
+        entirely passed the control. The inventory caught it, at 5 rows
+        instead of 15, but that is the pin doing the control's job.
+        """
         anchor, namer = astwalk.spells(statedir.STATE_DIR_NAME), astwalk.spells("state_dir")
         astwalk.assert_census(
             sources=astwalk.package_sources(),
             sees=lambda node: anchor(node) or namer(node),
             expected=_EXPECTED_STATE_DIR_SPELLINGS,
-            control='P = state_dir(root) / "runs"\n',
+            control=f'P = state_dir(root) / "runs"\nQ = root / "{statedir.STATE_DIR_NAME}"\n',
             message="the set of modules that name kstrl's state directory changed.",
         )
+
+    def test_the_census_control_names_both_halves_of_the_predicate(self) -> None:
+        """The control's own control, because the paragraph above is a
+        claim about a string and a string cannot be trusted on sight."""
+        anchor, namer = astwalk.spells(statedir.STATE_DIR_NAME), astwalk.spells("state_dir")
+        control = f'P = state_dir(root) / "runs"\nQ = root / "{statedir.STATE_DIR_NAME}"\n'
+        nodes = list(ast.walk(astwalk.parse(control)))
+
+        assert sum(1 for node in nodes if anchor(node)) >= 1, "the anchor half is untested"
+        assert sum(1 for node in nodes if namer(node)) >= 1, "the namer half is untested"
 
     def test_every_declared_entry_is_reachable(self) -> None:
         """The inverse: nothing in the lists that the package never

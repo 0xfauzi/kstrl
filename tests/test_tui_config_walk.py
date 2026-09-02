@@ -208,24 +208,49 @@ def unguarded_config_loads(
     return found
 
 
-def undecided_calls(tree: ast.Module, where: str) -> tuple[str, ...]:
-    """Calls whose callee the AST holds no name for, so nothing can decide.
+def undecided_calls(
+    tree: ast.Module,
+    where: str,
+    helpers: frozenset[str],
+    module: str,
+) -> tuple[str, ...]:
+    """Every call this walk could not decide, which is not the same as none.
 
-    ``initial_screens_for_kind(kind, ...)()`` is the live shape: the
-    thing being called is whatever another call returned. These are
-    neither cleared nor flagged, which is why they are pinned as the
-    second half of the inventory rather than left out of it.
+    ROUND 2 OF #324 REPLACED THIS BODY, and the replacement is the whole
+    issue in one function. It used to ask a single question: does the
+    callee hold no identifier at all. That reports
+    ``initial_screens_for_kind(kind, ...)()`` and nothing else. A call
+    whose callee HAS a name but whose RECEIVER the resolver cannot follow
+    was neither cleared nor flagged: it was simply not there.
+
+    Measured, on a plant in the real tree:
+    ``reporter.build_config_report(root_dir)`` inside ``EvolveScreen`` is
+    an unguarded config load on the Textual event loop with no handler at
+    all, which is #289 exactly, and every guard in this file stayed green.
+    Four receiver shapes, all four silent: a parameter, ``self._x``, a
+    call result, a subscript. The migrated guard had thrown away an answer
+    the shared resolver was already giving it.
+
+    ``astwalk.calls_to`` asks both questions at once: a callee with no
+    identifier is undecidable against any target set, and a callee whose
+    leaf matches a helper's leaf but which does not resolve is undecidable
+    against this one. It is the API's whole point and this function now
+    uses it.
+
+    THE DIVISION OF LABOUR, so this is not read as covering more than it
+    does. This is the HELPER half. The ``<X>Config.load`` half's
+    undecidable form still spells ``load``, so it moves a row in
+    ``EXPECTED_LOADER_SPELLINGS``, which is the layer-1 census below.
+    ``build_config_report`` spells no ``load`` at its call site, which is
+    why that half needed this.
 
     No line number, deliberately, unlike the offender rows: an
     unresolvable callee is pinned for as long as it stays unresolvable,
     and a pinned line makes every edit ABOVE one of them a failure of
     this guard. The unparsed callee is what locates it.
     """
-    return tuple(
-        f"{where} {ast.unparse(node.func)}"
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and astwalk.leaf_name(node.func) is None
-    )
+    found = astwalk.calls_to(tree, helpers, where=where, module=module)
+    return found.without_line_numbers().undecided
 
 
 # --------------------------------------------------------------------------
@@ -385,14 +410,29 @@ def test_no_tui_surface_loads_config_behind_a_hand_written_guard() -> None:
             for lineno, name in unguarded_config_loads(tree, helpers, astwalk.module_name(path))
             if (rel, name) not in _GUARDED_OFF_THE_EVENT_LOOP
         )
-        found += astwalk.Sites(offenders, undecided_calls(tree, rel))
+        found += astwalk.Sites(
+            offenders, undecided_calls(tree, rel, helpers, astwalk.module_name(path))
+        )
 
     astwalk.assert_sites(
         found.sorted(),
         seen=(),
         undecided=(
+            # A callee that is whatever another call returned. No
+            # identifier at all, so undecidable against any target set.
             "kstrl/tui/app.py initial_screens_for_kind(kind, observe_only=False)",
             "kstrl/tui/app.py initial_screens_for_kind(kind, observe_only=True)",
+            # `kstrl.cli.run` is in the derived helper set, so `run` is a
+            # candidate leaf. These two are a Textual `App.run` on a local
+            # the walk cannot type. They arrived when `undecided_calls`
+            # started asking the resolver rather than only looking for a
+            # nameless callee, and they are the cost of that: a helper
+            # named after a common verb makes every `x.run(...)` a
+            # question. Reported is the right answer, because the walk
+            # genuinely cannot say, and the day a screen calls the real
+            # `cli.run` this list is where somebody has to look.
+            "kstrl/tui/embed.py app.run",
+            "kstrl/tui/home.py app.run",
         ),
         message="config resolved in kstrl/tui/ without a guard or the banner.",
     )

@@ -22,7 +22,7 @@ from pathlib import Path
 
 from tests.helpers.astwalk import (
     assert_census,
-    assignment_parts,
+    bound_names,
     declared_in,
     folded_str,
     folds_containing,
@@ -168,18 +168,6 @@ def write_target(node: ast.Call, open_names: set[str]) -> ast.expr | None:
     if ast.unparse(func.value).split(".")[-1] in _OPEN_MODULES:
         return node.args[0] if node.args and is_write_mode(mode_argument(node, 1)) else None
     return func.value if is_write_mode(mode_argument(node, 0)) else None
-
-
-def bound_names(node: ast.AST) -> tuple[list[str], ast.expr | None]:
-    """The plain LOCAL names one binding binds, and what it binds them to.
-
-    ``astwalk.assignment_parts`` answers with dotted targets too, because
-    a resolver needs ``self.lookup`` to mean something. This file's alias
-    tables are about local names, so an attribute target is not one of
-    them and a target the AST cannot spell as a path is ``None``.
-    """
-    targets, value = assignment_parts(node)
-    return [name for name in targets if name is not None and "." not in name], value
 
 
 def open_aliases(nodes: list[ast.AST]) -> set[str]:

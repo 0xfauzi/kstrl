@@ -1158,6 +1158,10 @@ def _popen_calls(tree: ast.Module) -> set[int]:
     """
     found = {id(node) for node, _origin in astwalk.resolved_calls(tree, {POPEN_TARGET})}
     table = astwalk.bindings(tree)
+    # `module=` is left out on purpose here and only here: this helper is
+    # handed planted snippets as often as real modules, and a relative
+    # import can never resolve to `subprocess`, so the answer cannot move.
+    # Every whole-package sweep in this file names it.
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or astwalk.leaf_name(node.func) != "Popen":
             continue
@@ -1292,7 +1296,7 @@ class TestSubprocessTimeoutAudit:
     )
 
     @classmethod
-    def _spawn_sites(cls, tree: ast.Module) -> list[tuple[ast.Call, str]]:
+    def _spawn_sites(cls, tree: ast.Module, module: str = "") -> list[tuple[ast.Call, str]]:
         """``(call node, subprocess name)`` for every spawn call in the tree.
 
         Split out of the test in #309 round 2 so it can be run over a
@@ -1310,19 +1314,18 @@ class TestSubprocessTimeoutAudit:
         targets = SPAWN_TARGETS | {POPEN_TARGET}
         return [
             (node, origin.rsplit(".", 1)[-1])
-            for node, origin in astwalk.resolved_calls(tree, targets)
+            for node, origin in astwalk.resolved_calls(tree, targets, module=module)
         ]
 
     def test_every_subprocess_call_has_timeout(self) -> None:
-        package_root = Path(__file__).resolve().parent.parent / "kstrl"
         violations: list[str] = []
         popen_violations: list[str] = []
         sites_seen = 0
 
-        for py_file in sorted(package_root.rglob("*.py")):
-            rel = py_file.relative_to(package_root.parent).as_posix()
-            tree = ast.parse(py_file.read_text(encoding="utf-8"))
-            for node, called in self._spawn_sites(tree):
+        for py_file in astwalk.package_sources():
+            rel = astwalk.label(py_file, astwalk.REPO_ROOT)
+            tree = astwalk.parsed(py_file)
+            for node, called in self._spawn_sites(tree, astwalk.module_name(py_file)):
                 sites_seen += 1
                 if called == "Popen":
                     if rel not in self.POPEN_ALLOWLIST:
@@ -1448,9 +1451,8 @@ class TestSubprocessTimeoutAudit:
         forbidden, it is the point: the diff that adds one is where
         somebody says why a spawn-shaped call cannot be decided.
         """
-        package_root = Path(__file__).resolve().parent.parent / "kstrl"
         undecided: list[str] = []
-        for py_file in sorted(package_root.rglob("*.py")):
+        for py_file in astwalk.package_sources():
             found = astwalk.calls_to(
                 astwalk.parsed(py_file),
                 SPAWN_TARGETS | {POPEN_TARGET},
@@ -1518,12 +1520,11 @@ class TestSubprocessTimeoutAudit:
         below rather than by hand, because a gate verified once in a shell
         session is a gate nobody can re-verify.
         """
-        package_root = Path(__file__).resolve().parent.parent / "kstrl"
         violations: list[str] = []
         blind: list[str] = []
 
         for rel in sorted(self.POPEN_ALLOWLIST):
-            tree = ast.parse((package_root.parent / rel).read_text(encoding="utf-8"))
+            tree = astwalk.parsed(astwalk.REPO_ROOT / rel)
             if not _wait_calls(tree):
                 blind.append(rel)
             violations += [f"{rel}:{found}" for found in _unbounded_wait_findings(tree)]

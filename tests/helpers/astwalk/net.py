@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from tests.helpers.astwalk.corpus import folded_str, label, parse, parsed
+from tests.helpers.astwalk.corpus import all_nodes, folded_str, label, parse, parsed
 
 # --- the net: a census that enumerates no node types -----------------------
 
@@ -74,7 +74,9 @@ def folds_containing(part: str) -> Sees:
 
 #: How an inventory row is named. The module by default, so an unrelated
 #: edit does not fail a pinned dict; a guard whose message needs the
-#: expression passes its own.
+#: expression passes its own. Not exported: one guard passes ``key=`` and
+#: it passes a plain function, so the alias was a name in ``__all__`` with
+#: no user.
 Keyed = Callable[[Path, ast.AST], str]
 
 
@@ -86,7 +88,7 @@ def census(sources: Iterable[Path], sees: Sees, key: Keyed | None = None) -> dic
     name = key or (lambda source_file, _node: label(source_file))
     built: dict[str, int] = {}
     for source_file in sources:
-        for node in ast.walk(parsed(source_file)):
+        for node in all_nodes(parsed(source_file)):
             if sees(node):
                 row = name(source_file, node)
                 built[row] = built.get(row, 0) + 1
@@ -102,21 +104,41 @@ def assert_census(
     message: str,
     key: Keyed | None = None,
 ) -> None:
-    """Pin an inventory, having first proved the net still fires.
+    """Pin an inventory, having first proved the net still fires AND that
+    it was pointed at something.
+
+    TWO controls, and #324 round 2 measured why one is not enough.
 
     ``control`` is source the predicate MUST hit. Required, not optional,
     because ``built == expected`` is also what a switched-off predicate
     returns, and #324's subject is guards reporting clean because they
     stopped looking. One line, and it is the difference between an
     assertion about the package and one about nothing.
+
+    THE CORPUS IS THE OTHER HALF, and the control cannot speak for it: it
+    parses a string, so it fires whether ``sources`` holds 128 modules or
+    none. Repointing ``REPO_ROOT`` one directory too high makes
+    :func:`~.corpus.package_sources` return ``[]``, and #324 round 2
+    measured four assertions in this suite going green while looking at
+    nothing, one of them, ``test_atomicio``'s
+    ``EXPECTED_MKSTEMP_SPELLINGS``, pinned empty ON PURPOSE and therefore
+    green by construction rather than by luck. So an empty corpus fails
+    here. ``sources`` is materialised once, which also stops a caller
+    passing a generator that a second reader would find spent.
     """
-    proof = sum(1 for node in ast.walk(parse(control)) if sees(node))
+    corpus = list(sources)
+    assert corpus, (
+        "the census was handed an empty corpus, so the inventory below is "
+        "an assertion about nothing. Check the paths the caller derived: a "
+        "wrong root globs no files and every net in the suite returns {}."
+    )
+    proof = sum(1 for node in all_nodes(parse(control)) if sees(node))
     assert proof, (
         "the census predicate matched nothing in its own control, so the "
         "inventory below is indistinguishable from what a switched-off net "
         f"returns. Control: {control!r}"
     )
-    built = census(sources, sees, key)
+    built = census(corpus, sees, key)
     assert built == expected, f"{message} Found: {built}"
 
 

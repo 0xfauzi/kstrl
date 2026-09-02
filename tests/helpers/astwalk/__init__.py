@@ -9,20 +9,35 @@ briefing is not a control.
 
 So a shared resolver is not the whole job: on its own it would move eleven
 holes into one. What this has to do as well is make the skip direction
-LOUD, in five places the API will not let a caller leave out:
-:func:`assert_census` requires a control, :func:`assert_sites` requires an
-expectation for the undecided half, :class:`Clause` carries ``decided``,
-:class:`Bindings` keeps ``opaque``, and :func:`blind_spot` is the body of
-a disclosed limit's anti-vacuity test. Each says why on itself.
+LOUD. Round 2 of #324 audited that claim one item at a time, and this
+paragraph is the audit rather than the intention, because two of the five
+places the first draft named turned out to hold nothing.
 
-THE ONE EXCEPTION, stated here rather than left for a reader to find.
-:func:`resolved_calls` returns the seen half as NODES, for a guard that
-has to read a call's arguments, and a node-returning signature cannot
-also force the undecided half. So that one is held by a static guard
-instead: ``tests/test_astwalk.py``'s ``TestResolvedCallsIsNotUsableOnItsOwn``
-fails any module in ``tests/`` that calls it and never names the other
-half. Round 2 of #324 measured the hole first and then closed it, which
-is the order that makes the claim above checkable rather than hopeful.
+THREE ARE SIGNATURES, which a caller cannot route around.
+:func:`assert_census` requires a control AND a non-empty corpus,
+:func:`assert_sites` requires an expectation for the undecided half, and
+:func:`calls_to` has no third bucket, so an unresolved callee is a row
+rather than an absence.
+
+TWO ARE STATIC GUARDS in ``tests/test_astwalk.py``, because no signature
+reaches them. :func:`resolved_calls` returns the seen half as NODES, for
+a guard that has to read a call's arguments, and a node-returning
+signature cannot also force the undecided half;
+``TestResolvedCallsIsNotUsableOnItsOwn`` fails any module in ``tests/``
+that calls it and never names the other half. :func:`blind_spot` needs
+``@pytest.mark.xfail(strict=True, raises=AssertionError)`` on its caller,
+which the helper cannot apply for it; ``TestEveryDisclosedLimitCanFail``
+fails any call site missing either keyword, which is #328's measurement
+turned into a check.
+
+ONE IS A CONVENTION AND SAYS SO: :class:`Clause` carries ``decided``, and
+one of its three consumers reads it. The other two are safe for a
+different reason, that an unnameable handler yields empty ``names`` and an
+empty set intersects nothing.
+
+AND ONE WAS REMOVED. The first draft named ``Bindings.opaque``. Nothing
+read it, forcing it empty changed no test, and it contradicted
+``origins``. See :class:`Bindings` for the measurement.
 
 THE DISTINCTION THAT DRIVES THE SHAPE. ``EXPECTED_JOURNAL_PATH_SITES`` in
 ``tests/test_journal_one_writer.py`` inventories every place the resource
@@ -43,6 +58,7 @@ from tests.helpers.astwalk.corpus import (
     KSTRL_PACKAGE,
     REPO_ROOT,
     TESTS_DIR,
+    all_nodes,
     folded_str,
     label,
     module_name,
@@ -53,7 +69,6 @@ from tests.helpers.astwalk.corpus import (
 )
 from tests.helpers.astwalk.disclose import blind_spot
 from tests.helpers.astwalk.net import (
-    Keyed,
     Sees,
     Sites,
     assert_census,
@@ -67,6 +82,7 @@ from tests.helpers.astwalk.resolve import (
     Bindings,
     assignment_parts,
     bindings,
+    bound_names,
     calls_to,
     dotted,
     leaf_name,
@@ -86,13 +102,14 @@ __all__ = [
     "TESTS_DIR",
     "Bindings",
     "Clause",
-    "Keyed",
     "Sees",
     "Sites",
     "assert_census",
+    "all_nodes",
     "assert_sites",
     "assignment_parts",
     "bindings",
+    "bound_names",
     "blind_spot",
     "calls_to",
     "census",

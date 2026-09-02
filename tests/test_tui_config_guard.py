@@ -677,7 +677,7 @@ def test_the_safe_mode_worker_takes_the_lock_the_scrub_holds() -> None:
     empty, so the worker waits a few milliseconds instead of the config
     screen refusing to work for the duration of the flag.
     """
-    src = Path(__file__).resolve().parent.parent / "kstrl"
+    src = astwalk.KSTRL_PACKAGE
     safemode = (src / "safemode.py").read_text(encoding="utf-8")
     assert "AutonomyConfig.load" in safemode
     assert "PolicyConfig.load" in safemode
@@ -725,7 +725,7 @@ def test_the_config_screen_and_ks_config_show_share_one_problem_reporter() -> No
     had already drifted on the empty case. One function now, and the
     only thing either caller supplies is where warnings go.
     """
-    src = Path(__file__).resolve().parent.parent / "kstrl"
+    src = astwalk.KSTRL_PACKAGE
     screen = (src / "tui" / "screens" / "config.py").read_text(encoding="utf-8")
     cli = (src / "cli.py").read_text(encoding="utf-8")
     assert "def _problem_lines" not in screen

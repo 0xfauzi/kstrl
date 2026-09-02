@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 
+from tests.helpers.astwalk.corpus import all_nodes
 from tests.helpers.astwalk.resolve import leaf_name
 
 # --- scope ----------------------------------------------------------------
@@ -61,7 +62,7 @@ def declared_in(tree: ast.Module, class_name: str, method: str) -> set[int]:
     unrelated method that shares it, which is what round 1 of #327
     shipped. Located by walking, so editing the file above it is free.
     """
-    for node in ast.walk(tree):
+    for node in all_nodes(tree):
         if not isinstance(node, ast.ClassDef) or node.name != class_name:
             continue
         for item in node.body:

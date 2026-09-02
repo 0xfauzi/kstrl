@@ -55,12 +55,12 @@ from kstrl.evolution import JOURNAL_REPAIR_EVENT, SPEC_ISSUES_EVENT
 from tests.helpers.astwalk import (
     Sees,
     assert_census,
+    bound_names,
     folded_str,
     label,
     package_sources,
     parsed,
 )
-from tests.test_journal_one_writer import bound_names
 
 #: The journal event names that have been hoisted to a constant, and so
 #: must never be spelled as a literal in ``kstrl/`` again. Five more are

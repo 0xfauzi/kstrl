@@ -18,17 +18,28 @@ check as plainly as a literal does - and package-level constants have to
 resolve, because ``verify`` builds its gate names out of
 ``gateparse.GATE_TEST``. Hence :data:`HOLE` and :class:`Folded`.
 
-That is a difference in the ANSWER, not in the rules, and #339 review
-measured how small it is: over the 22,738 ``kstrl/`` expressions
-containing no ``ast.Name``, ``folded_str`` and a strict reading of
-``fold`` (``None`` whenever the result carries a :data:`HOLE`) agree on
-every one, and over all 119,605 expressions the only 471 disagreements
-are the deliberate name-resolution branch. So the strict answer is a
-two-line wrapper over this one and the two SHOULD converge. They are not
-merged here because ``test_journal_one_writer.py`` guards #312 and
-changing what it folds is that guard's own measurement to make, not a
-side effect of a categorisation fix. Read this paragraph as a pointer to
-that work, not as a reason the copies must stay.
+That is a difference in the ANSWER, not in the rules, and it is small:
+over the ``kstrl/`` expressions containing no ``ast.Name``, ``folded_str``
+and a strict reading of ``fold`` (``None`` whenever the result carries a
+:data:`HOLE`) agree on every one. Over all 121,139 expressions there are
+490 disagreements, every one of them the deliberate name-resolution
+branch: 431 a bare ``Name``, 41 a ``FormattedValue``, 16 a ``JoinedStr``,
+2 a ``BinOp``.
+
+AN EARLIER DRAFT OF THIS PARAGRAPH SAID THE STRICT ANSWER IS "a two-line
+wrapper over this one", AND THAT IS FALSE. #324 round 2 measured it:
+:func:`_fold_name` reads ``own.get(id) or pool().get(id)``, and
+:func:`pool` is package-global and ignores ``own``, so calling
+``fold(node, {})`` still resolves those 431 bare names. Turning name
+resolution off needs :func:`pool` gated, not an empty dict, and doing it
+by accident would move ``astwalk.folded_str`` on 431 sites underneath
+sixteen guards. It also costs 145 ms against 123 ms per package pass, on
+the path every census runs.
+
+The copies SHOULD still converge, and this is a pointer to that work
+rather than a reason they must stay. It is not this file's call to make:
+``test_journal_one_writer.py`` guards #312 and what it folds is that
+guard's own measurement.
 """
 
 from __future__ import annotations
@@ -38,9 +49,14 @@ import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
 
-KSTRL_DIR = Path(__file__).resolve().parent.parent.parent / "kstrl"
+from tests.helpers import astwalk
+
+#: The one corpus root. ``astwalk.KSTRL_PACKAGE`` since #324 round 2:
+#: this module landed from #339 while that branch was in flight and
+#: re-derived it, which is the eleventh copy of a constant #324 exists to
+#: have one of.
+KSTRL_DIR = astwalk.KSTRL_PACKAGE
 
 #: Stands in for a piece of a string the walk cannot decide.
 #:
@@ -111,12 +127,14 @@ def called_name(func: ast.expr) -> str:
     construction to this walk. No call site uses the qualified form
     today, which is exactly why an ``ast.Name``-only reader would not
     fail when one is added.
+
+    ``astwalk.leaf_name`` since #324 round 2. Measured over all 13,315
+    calls in ``kstrl/``: zero disagreements once its ``None`` is read as
+    the ``""`` this signature promises. Kept as a wrapper rather than
+    deleted because ``""`` and ``None`` are different answers to four
+    callers, and changing that is their measurement to make.
     """
-    if isinstance(func, ast.Name):
-        return func.id
-    if isinstance(func, ast.Attribute):
-        return func.attr
-    return ""
+    return astwalk.leaf_name(func) or ""
 
 
 @lru_cache(maxsize=1)
@@ -127,10 +145,17 @@ def parsed_modules() -> tuple[tuple[str, ast.Module], ...]:
     of its five calls and parsed the package a second time inside the
     constant collector, costing 1.52 s, about 70 percent of the
     scope-related test files' total runtime.
+
+    Through ``astwalk.parsed`` since #324 round 2, so there is ONE parse
+    of the package rather than two. Measured cold before the change: 0 of
+    128 trees were shared between the two caches, and a session touching
+    both a #339 guard and a #324 guard paid 1.18 s and 133 MB for the same
+    128 files. The ``rel`` strings are identical, measured, so no consumer
+    of this function moves.
     """
     return tuple(
-        (str(path.relative_to(KSTRL_DIR.parent)), ast.parse(path.read_text(encoding="utf-8")))
-        for path in sorted(KSTRL_DIR.rglob("*.py"))
+        (astwalk.label(path, astwalk.REPO_ROOT), astwalk.parsed(path))
+        for path in astwalk.package_sources()
     )
 
 

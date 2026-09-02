@@ -189,7 +189,9 @@ class TestFoldsToAndFoldsContaining:
 class TestAssertCensusWillNotPinAnEmptyNet:
     """The mechanism that makes the right thing easy and the wrong thing
     hard. ``built == expected`` is exactly what a switched-off predicate
-    returns, so the control is not optional."""
+    returns, so the control is not optional, and it is exactly what an
+    EMPTY CORPUS returns too, which is why the control alone is not
+    enough."""
 
     def test_a_control_the_predicate_misses_fails_before_the_inventory(self) -> None:
         with pytest.raises(AssertionError, match="matched nothing in its own control"):
@@ -219,6 +221,77 @@ class TestAssertCensusWillNotPinAnEmptyNet:
                 control="import os\nos.getpgid(1)\n",
                 message="the message",
             )
+
+    def test_an_empty_corpus_fails_even_though_the_control_fires(self) -> None:
+        """The second control, and the reason there are two.
+
+        The first one parses a string, so it says nothing about where the
+        census was pointed. #324 round 2 repointed ``REPO_ROOT`` one
+        directory too high, which makes ``package_sources()`` return
+        ``[]``, and measured four assertions in this suite going green
+        while looking at nothing.
+        """
+        with pytest.raises(AssertionError, match="empty corpus"):
+            astwalk.assert_census(
+                sources=[],
+                sees=astwalk.spells("getpgid"),
+                expected={},
+                control="import os\nos.getpgid(1)\n",
+                message="unused",
+            )
+
+    def test_the_empty_corpus_check_runs_before_the_predicate_control(self) -> None:
+        """Order matters for the message: a caller who broke the corpus is
+        told that, not that their predicate is dead."""
+        with pytest.raises(AssertionError, match="empty corpus"):
+            astwalk.assert_census(
+                sources=[],
+                sees=astwalk.spells("no_such_identifier_anywhere"),
+                expected={},
+                control="x = 1\n",
+                message="unused",
+            )
+
+    def test_a_pin_that_is_empty_on_purpose_is_the_case_that_needed_this(
+        self, tmp_path: Path
+    ) -> None:
+        """``tests/test_atomicio.py`` pins ``{}`` deliberately: a row there
+        would be a hand-rolled temp file. That pin is green by
+        construction against a broken corpus, and no ``expected`` value a
+        caller could write would have caught it. Measured on a corpus of
+        one real file, so the assertion is about the corpus and not about
+        the emptiness of the pin.
+        """
+        source_file = tmp_path / "clean.py"
+        source_file.write_text("x = 1\n", encoding="utf-8")
+
+        astwalk.assert_census(
+            sources=[source_file],
+            sees=astwalk.spells("mkstemp"),
+            expected={},
+            control="import tempfile\ntempfile.mkstemp()\n",
+            message="unused",
+        )
+        with pytest.raises(AssertionError, match="empty corpus"):
+            astwalk.assert_census(
+                sources=[],
+                sees=astwalk.spells("mkstemp"),
+                expected={},
+                control="import tempfile\ntempfile.mkstemp()\n",
+                message="unused",
+            )
+
+    def test_a_generator_corpus_is_read_once_and_still_counted(self) -> None:
+        """``sources`` is typed ``Iterable``, so a caller may pass a
+        generator. Materialised once, or the control would consume it and
+        the census would count nothing."""
+        astwalk.assert_census(
+            sources=(path for path in astwalk.package_sources()),
+            sees=astwalk.spells("getpgid"),
+            expected={"procgroup.py": 2},
+            control="import os\nos.getpgid(1)\n",
+            message="unused",
+        )
 
     def test_modules_with_no_hits_are_left_out(self) -> None:
         built = astwalk.census(astwalk.package_sources(), astwalk.spells("getpgid"))

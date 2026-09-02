@@ -373,21 +373,20 @@ class TestTheHelperDoesNotOfferTheWrongBehaviour:
 # --- nobody hand-rolls the pattern again, in two layers -------------------
 #
 # LAYER 1, the census, counts every node in ``kstrl/`` that writes
-# ``mkstemp`` anywhere the AST can hold a string. It is the net: the
-# function cannot be called by a module that never names it, so a
-# hand-rolled copy in any shape has to appear here first. It resolves
-# nothing and enumerates neither node types nor fields. Round 1 was a
-# matcher with NO positive control: measured, changing its match string
-# to ``"mkstemp_xyz"`` left the file green, so it could not tell a clean
-# package from a switched-off net.
+# ``mkstemp`` anywhere the AST can hold a string. A module cannot call a
+# function it never names, so a copy in any shape appears here first, and
+# it enumerates neither node types nor fields. Round 1 had NO positive
+# control: measured, changing its match string to ``mkstemp_xyz`` left
+# the file green.
 #
 # LAYER 2, :func:`_mkstemp_calls`, resolves the callee and names the
-# offending line, which "atomicio.py names mkstemp once more than it
-# did" cannot. It also decides ``from tempfile import mkstemp as _mk``,
-# which round 1 matched on the last segment and so missed entirely.
+# offending site, which "atomicio.py names mkstemp once more than it did"
+# cannot. It decides ``from tempfile import mkstemp as _mk``, which round
+# 1 matched on the last segment and so missed entirely.
 
-#: The call #291 removed ten copies of.
+#: The call #291 removed ten copies of, and the predicate that nets it.
 MKSTEMP = "tempfile.mkstemp"
+SPELLS_MKSTEMP = astwalk.spells("mkstemp")
 
 #: Every module in ``kstrl/`` that spells ``mkstemp``, and how many
 #: times. Empty, and meant to stay that way: a row here is a hand-rolled
@@ -400,11 +399,13 @@ EXPECTED_MKSTEMP_SPELLINGS: dict[str, int] = {}
 #: function. Pinned rather than dropped, because "could not decide" and
 #: "decided it is fine" are the two answers #324 exists to keep apart.
 #: Layer 1 is what covers them: a table of writers still spells the name.
+#: Keyed by module and expression, not by line: none of the four is in a
+#: file this guard is about, so a line here fails on a stranger's edit.
 EXPECTED_UNDECIDED_CALLS: tuple[str, ...] = (
-    "gateparse.py:111 TOOL_PARSERS[chosen]",
-    "gateparse.py:113 TOOL_PARSERS[name]",
-    "tui/app.py:363 initial_screens_for_kind(kind, observe_only=True)",
-    "tui/app.py:435 initial_screens_for_kind(kind, observe_only=False)",
+    "gateparse.py TOOL_PARSERS[chosen]",
+    "gateparse.py TOOL_PARSERS[name]",
+    "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
+    "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
 )
 
 
@@ -413,9 +414,8 @@ def _mkstemp_calls(sources: list[Path]) -> astwalk.Sites:
 
     ``astwalk.calls_to`` resolves the callee: ``tempfile.mkstemp``,
     ``import tempfile as _t``, ``from tempfile import mkstemp``, the same
-    renamed, and a rebind of any of those at any chain length. Round 1
-    compared the last segment to ``"mkstemp"``, so every alias walked
-    past it.
+    renamed, and a rebind at any chain length. Round 1 compared the last
+    segment to ``"mkstemp"``, so every alias walked past it.
 
     :func:`_named_mkstemp` is unioned in rather than dropped, and that is
     not belt-and-braces: measured, ``calls_to`` reports a DOTTED callee
@@ -424,10 +424,11 @@ def _mkstemp_calls(sources: list[Path]) -> astwalk.Sites:
     tempfile`` left this layer green. Round 1 caught that shape, and a
     migration that narrows a guard is the defect #324 records.
 
-    Sites are keyed on ``label:lineno`` so one call both passes report is
-    one row. ``astwalk.label``, not ``Path.name``: ten basenames occur
-    twice in ``kstrl/``, and a message naming a file the reader cannot
-    find is worse than no message.
+    Sites are keyed on ``label:lineno`` INTERNALLY, so one call both
+    passes report is one row; the caller drops the line before pinning.
+    ``astwalk.label``, not ``Path.name``: ten basenames occur twice in
+    ``kstrl/`` and a message naming a file the reader cannot find is
+    worse than none.
     """
     seen: dict[str, str] = {}
     undecided: list[str] = []
@@ -440,15 +441,14 @@ def _mkstemp_calls(sources: list[Path]) -> astwalk.Sites:
         undecided.extend(found.undecided)
         for site in (*found.seen, *_named_mkstemp(tree, where)):
             seen.setdefault(site.split(" ", 1)[0], site)
-    return astwalk.Sites(tuple(sorted(seen.values())), tuple(undecided))
+    return astwalk.Sites(tuple(sorted(seen.values())), tuple(sorted(undecided)))
 
 
 def _named_mkstemp(tree: ast.Module, where: str) -> list[str]:
     """Calls whose last identifier is ``mkstemp``, whatever precedes it.
 
-    Round 1's whole net, kept as one half of layer 2 so the migration
-    cannot lose a site. ``astwalk.leaf_name`` is the shared answer to
-    "what is this callee called".
+    Round 1's whole net, kept as half of layer 2 so the migration cannot
+    lose a site. ``astwalk.leaf_name`` answers what a callee is called.
     """
     return [
         f"{where}:{node.lineno} {ast.unparse(node.func)}"
@@ -480,7 +480,7 @@ class TestEveryCopyOfThePatternWasMigrated:
         """
         astwalk.assert_census(
             sources=astwalk.package_sources(),
-            sees=astwalk.spells("mkstemp"),
+            sees=SPELLS_MKSTEMP,
             expected=EXPECTED_MKSTEMP_SPELLINGS,
             control="import tempfile\nfd, path = tempfile.mkstemp(dir=str(target.parent))\n",
             message=(
@@ -494,7 +494,7 @@ class TestEveryCopyOfThePatternWasMigrated:
     def test_no_module_still_calls_mkstemp(self) -> None:
         """Layer 2, the message: name the offending line and the fix."""
         astwalk.assert_sites(
-            _mkstemp_calls(astwalk.package_sources()).sorted(),
+            _mkstemp_calls(astwalk.package_sources()).without_line_numbers(),
             seen=(),
             undecided=EXPECTED_UNDECIDED_CALLS,
             message=(
@@ -515,7 +515,7 @@ class TestTheMigrationNetCatchesWhatItClaims:
 
     @staticmethod
     def _spelled(source: str) -> int:
-        return sum(1 for node in ast.walk(astwalk.parse(source)) if astwalk.spells("mkstemp")(node))
+        return sum(1 for node in ast.walk(astwalk.parse(source)) if SPELLS_MKSTEMP(node))
 
     @staticmethod
     def _called(source: str) -> tuple[str, ...]:

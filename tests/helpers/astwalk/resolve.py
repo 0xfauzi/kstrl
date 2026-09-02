@@ -7,10 +7,11 @@ undecided rather than an absence."""
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field
+from weakref import WeakKeyDictionary
 
-from tests.helpers.astwalk.corpus import folded_str
+from tests.helpers.astwalk.corpus import all_nodes, folded_str
 from tests.helpers.astwalk.net import Sites
 
 # --- name resolution ------------------------------------------------------
@@ -45,19 +46,30 @@ class Bindings:
 
     ``origins`` maps a local spelling to a dotted origin: ``_tl`` ->
     ``tomllib``, ``Spawn`` -> ``subprocess.Popen``, ``self.lookup`` ->
-    ``os.getpgid``. ``opaque`` holds every name bound to a value this
-    resolver could not follow, which is the half that matters: a call
-    through an opaque name is UNDECIDED, never a decided miss.
-    ``attributes`` maps a bare attribute name to what SOME receiver bound
-    it to, and deliberately over-matches: after ``class G: lookup =
-    os.getpgid`` every ``x.lookup(...)`` resolves, which two of
-    ``tests/test_safe_pgid.py``'s pinned rows need and the AST cannot
-    type. Per MODULE, not per scope. Both over-report, the direction a
-    guard may be wrong in.
+    ``os.getpgid``. ``attributes`` maps a bare attribute name to what
+    SOME receiver bound it to, and deliberately over-matches: after
+    ``class G: lookup = os.getpgid`` every ``x.lookup(...)`` resolves,
+    which two of ``tests/test_safe_pgid.py``'s pinned rows need and the
+    AST cannot type. Per MODULE, not per scope. Both over-report, the
+    direction a guard may be wrong in.
+
+    THERE IS NO ``opaque`` FIELD, and #324 round 2 removed one. It held
+    every name bound to something this resolver could not follow, and
+    ``astwalk/__init__.py`` named it as one of the five places the API
+    will not let a caller leave out. Measured: nothing in the repo read
+    it, forcing it empty everywhere left 455 tests and 23 xfails
+    unchanged, and it CONTRADICTED ``origins``, because ``_bind_one``
+    adds a name on the sweep that cannot resolve it and never removes it
+    when a later sweep can. On ``import os; b = a; a = os`` it said ``b``
+    was opaque while ``origins`` said ``b`` was ``os``; two real modules,
+    ``kstrl/loop.py`` and ``kstrl/pipeline.py``, were in both at once. A
+    public field named as a mechanism, with no reader and a wrong answer,
+    is documentation. What actually makes an unfollowable name loud is
+    :func:`calls_to`'s rule that unresolved is undecided, and
+    ``tests/test_astwalk.py`` pins that.
     """
 
     origins: Mapping[str, str] = field(default_factory=dict)
-    opaque: frozenset[str] = frozenset()
     attributes: Mapping[str, str] = field(default_factory=dict)
 
     def resolve(self, node: ast.AST) -> str | None:
@@ -136,27 +148,33 @@ def bindings(tree: ast.Module, *, module: str = "") -> Bindings:
     collide with an absolute one, so the answer is useless rather than
     silently wrong.
     """
-    key = (id(tree), module)
-    hit = _BINDINGS.get(key)
+    per_module = _BINDINGS.setdefault(tree, {})
+    hit = per_module.get(module)
     if hit is not None:
-        return hit[1]
-    nodes = list(ast.walk(tree))
+        return hit
+    walked = all_nodes(tree)
     origins: dict[str, str] = {}
-    for node in nodes:
+    for node in walked:
         _absorb_import(node, origins, module)
     table = _Table(origins, {}, set(), _class_body_names(tree))
-    while _rebind_sweep(nodes, table):
+    while _rebind_sweep(walked, table):
         continue
-    built = Bindings(origins, frozenset(table.opaque), table.attributes)
-    _BINDINGS[key] = (tree, built)
+    built = Bindings(origins, table.attributes)
+    per_module[module] = built
     return built
 
 
-#: ``(id(tree), module)`` -> ``(tree, its bindings)``. Measured: resolving
-#: 127 modules costs 132 ms, and every guard that asks about a different
-#: target set would otherwise pay it again. The tree is kept in the value
-#: so its ``id`` cannot be reused by a later object while the row lives.
-_BINDINGS: dict[tuple[int, str], tuple[ast.Module, Bindings]] = {}
+#: tree -> module name -> its bindings. Measured: resolving 127 modules
+#: costs 132 ms, and every guard that asks about a different target set
+#: would otherwise pay it again.
+#:
+#: A WEAK KEY, and the first draft was keyed on ``id(tree)`` with the tree
+#: held in the value so the id could not be reused. That worked and it
+#: leaked: measured at session end, 158 trees reaching 259,718 nodes were
+#: reachable only through this dict, 71 MB of a 420 MB peak. A weak key
+#: gives the same identity safety, because a dead tree takes its row with
+#: it rather than leaving an id to be reused.
+_BINDINGS: MutableMapping[ast.Module, dict[str, Bindings]] = WeakKeyDictionary()
 
 
 @dataclass(frozen=True)
@@ -169,11 +187,15 @@ class _Table:
 
     origins: dict[str, str]
     attributes: dict[str, str]
-    opaque: set[str]
+    #: Targets a sweep could not resolve. The memo that terminates the
+    #: fixed point: without it a target nothing can resolve is "new"
+    #: every pass. Private, and it stays private, because it is stale by
+    #: construction the moment a later sweep resolves the name.
+    unresolved: set[str]
     class_names: frozenset[str]
 
     def resolver(self) -> Bindings:
-        return Bindings(self.origins, frozenset(self.opaque), self.attributes)
+        return Bindings(self.origins, self.attributes)
 
 
 def _class_body_names(tree: ast.Module) -> frozenset[str]:
@@ -184,7 +206,7 @@ def _class_body_names(tree: ast.Module) -> frozenset[str]:
     ``G().lookup``. Without this they are two different names.
     """
     found: set[str] = set()
-    for node in ast.walk(tree):
+    for node in all_nodes(tree):
         if not isinstance(node, ast.ClassDef):
             continue
         for item in node.body:
@@ -223,7 +245,7 @@ def _import_base(node: ast.ImportFrom, module: str) -> str:
     return f"{package}{node.module}" if package.endswith(".") else f"{package}.{node.module}"
 
 
-def _rebind_sweep(nodes: list[ast.AST], table: _Table) -> bool:
+def _rebind_sweep(nodes: Sequence[ast.AST], table: _Table) -> bool:
     """One pass of rebinds. True if anything new was learned."""
     resolver = table.resolver()
     grew = False
@@ -243,9 +265,9 @@ def _bind_one(target: str, value: ast.expr, table: _Table, resolver: Bindings) -
         return False
     origin = resolver.resolve(value)
     if origin is None:
-        if target in table.opaque:
+        if target in table.unresolved:
             return False
-        table.opaque.add(target)
+        table.unresolved.add(target)
         return True
     table.origins[target] = origin
     if "." in target or target in table.class_names:
@@ -270,6 +292,25 @@ def assignment_parts(node: ast.AST) -> tuple[list[str | None], ast.expr | None]:
     if isinstance(node, ast.NamedExpr):
         return [dotted(node.target)], node.value
     return [], None
+
+
+def bound_names(node: ast.AST) -> tuple[list[str], ast.expr | None]:
+    """The plain LOCAL names one binding binds, and what it binds them to.
+
+    :func:`assignment_parts` answers with dotted targets too, because a
+    resolver needs ``self.lookup`` to mean something. A guard building an
+    alias table over local names does not, so an attribute target is not
+    one of them and a target the AST cannot spell as a path is ``None``.
+
+    Here rather than in a guard since #324 round 2: it lived in
+    ``tests/test_journal_one_writer.py`` and
+    ``tests/test_event_names_have_one_home.py`` imported it FROM there, so
+    one guard's refactor was another guard's breakage and neither file
+    said so. It is a projection of :func:`assignment_parts`, so it belongs
+    beside what it projects.
+    """
+    targets, value = assignment_parts(node)
+    return [name for name in targets if name is not None and "." not in name], value
 
 
 def calls_to(
@@ -311,7 +352,7 @@ def calls_to(
     leaves |= _bound_target_leaves(tree, table, wanted)
     seen: list[str] = []
     undecided: list[str] = []
-    for node in ast.walk(tree):
+    for node in all_nodes(tree):
         if isinstance(node, ast.Call):
             _classify_call(node, table, wanted, leaves, where, seen, undecided)
     return Sites(tuple(seen), tuple(undecided))
@@ -344,7 +385,7 @@ def resolved_calls(
     table = bindings(tree, module=module)
     return [
         (node, origin)
-        for node in ast.walk(tree)
+        for node in all_nodes(tree)
         if isinstance(node, ast.Call) and (origin := table.resolve(node.func)) in wanted
     ]
 
@@ -356,7 +397,7 @@ def _bound_target_leaves(tree: ast.Module, table: Bindings, wanted: frozenset[st
     ``self.spawn(argv)`` in a method read as a call on another object.
     """
     found: set[str] = set()
-    for node in ast.walk(tree):
+    for node in all_nodes(tree):
         targets, value = assignment_parts(node)
         if value is not None and table.resolve(value) in wanted:
             found.update(t.rsplit(".", 1)[-1] for t in targets if t is not None)
