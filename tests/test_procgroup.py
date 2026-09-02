@@ -34,9 +34,7 @@ from kstrl.procgroup import (
     read_group_liveness,
     signal_probe_alive,
 )
-from tests.helpers import procs
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
+from tests.helpers import astwalk, procs
 
 
 class TestTheListingReadsStatesNotJustGroups:
@@ -561,117 +559,117 @@ class TestTheSignalProbeIsKeptAsTheDegradedReading:
         assert signal_probe_alive(4242) is False
 
 
-# ---------------------------------------------------------------------------
-# The centralisation has a mechanism, not just a docstring.
-# ---------------------------------------------------------------------------
+# The centralisation has a mechanism, not just a docstring. Two layers
+# since #324, and the class below says what each one is for.
 
-#: Callables whose string arguments are a command line. ``popen`` and
-#: ``getstatusoutput`` were missing from the first version, so
-#: ``os.popen("ps -A")`` in ``kstrl/`` passed the net silently.
+#: Callables whose string arguments are a command line, by LAST
+#: IDENTIFIER, which deliberately over-matches. ``popen`` and
+#: ``getstatusoutput`` were missing at first, so ``os.popen("ps -A")``
+#: passed the net silently.
 _SUBPROCESS_CALLS = frozenset(
-    {
-        "run",
-        "Popen",
-        "popen",
-        "call",
-        "check_call",
-        "check_output",
-        "getoutput",
-        "getstatusoutput",
-        "system",
-    }
+    "run Popen popen call check_call check_output getoutput getstatusoutput system".split()
 )
 
-#: The roots this net walks, and therefore the exact reach of the claim
-#: ``kstrl/procgroup.py`` makes. ``spike/`` is deliberately outside: it
-#: holds throwaway measurement scripts (``spike/tui0/measure.py`` calls
-#: ``ps`` today) that are not part of the package or its suite, and
-#: widening the net to cover them would mean either failing on evidence
-#: or carrying an allowlist that rots. The docstring in ``procgroup``
-#: names these two roots rather than "the tree" for the same reason: a
-#: mechanism cited for a claim it does not cover is worse than none.
+#: The same callables as DOTTED ORIGINS. Nothing can resolve to the two
+#: products that do not exist, so the cross product costs nothing.
+_SPAWN_TARGETS = frozenset(
+    {f"subprocess.{name}" for name in _SUBPROCESS_CALLS} | {"os.popen", "os.system"}
+)
+
+#: The roots this net walks, and so the reach of the claim
+#: ``kstrl/procgroup.py`` makes. ``spike/`` is deliberately outside: its
+#: throwaway scripts call ``ps`` today, and covering them would mean
+#: failing on evidence. ``astwalk``'s two corpora ARE these two roots.
 _SCANNED_ROOTS = ("kstrl", "tests")
 
-#: The one file allowed to shell out to ``ps``: the module whose whole
-#: reason for existing is that there is exactly one parse of its output.
+#: The one file allowed to shell out to ``ps``.
 _PS_OWNER = "kstrl/procgroup.py"
 
 
-def _first_string(arg: ast.expr) -> str | None:
-    """The first string constant of a literal argv, or the string itself."""
-    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-        return arg.value
-    if isinstance(arg, ast.List | ast.Tuple) and arg.elts:
-        head = arg.elts[0]
-        if isinstance(head, ast.Constant) and isinstance(head.value, str):
-            return head.value
-    return None
+def _leading_command(folded: str | None) -> str | None:
+    """The basename of a folded argv's first token, so that ``/bin/ps``
+    and a ``shell=True`` string both count and ``psql`` does not."""
+    tokens = folded.split() if folded else []
+    return Path(tokens[0]).name if tokens else None
 
 
-def _module_argv_constants(tree: ast.Module) -> dict[str, str]:
-    """Module-level names bound to a literal argv, mapped to its first token.
+def _spells_the_ps_command(node: ast.AST) -> bool:
+    """Layer 1's predicate: does this expression NAME the ps command?"""
+    return _leading_command(astwalk.folded_str(node)) == "ps"
 
-    One level of resolution, and it is the level that matters: a copier
-    writes ``PS_ARGV = ("ps", ...)`` and then ``run(PS_ARGV)``, exactly as
-    this module's own owner does. Without this the net would have been
-    passing over the one call it is supposed to protect - which is what
-    ``test_the_owner_still_calls_ps`` caught on the first run.
+
+def _command_name(arg: ast.expr) -> str | None:
+    """The command one ARGUMENT names. ``assignment_parts`` unwraps
+    ``run((argv := [...]))``; the sequence branch is the argv list."""
+    _targets, bound = astwalk.assignment_parts(arg)
+    node = bound if bound is not None else arg
+    command = _leading_command(astwalk.folded_str(node))
+    if command is None and isinstance(node, ast.List | ast.Tuple) and node.elts:
+        command = _leading_command(astwalk.folded_str(node.elts[0]))
+    return command
+
+
+def _argv_constants(tree: ast.Module) -> dict[str, str]:
+    """Names bound to a literal argv, mapped to the command it names.
+
+    A copier writes ``PS_ARGV = ("ps", ...)`` then ``run(PS_ARGV)``, as
+    this module's owner does; without it the net passed over the one call
+    it exists to protect. Per MODULE, not per scope: over-reporting.
     """
     found: dict[str, str] = {}
-    for node in tree.body:
-        if not isinstance(node, ast.Assign):
+    for node in ast.walk(tree):
+        targets, value = astwalk.assignment_parts(node)
+        command = _command_name(value) if value is not None else None
+        if command is None:
             continue
-        first = _first_string(node.value)
-        if first is None:
-            continue
-        for target in node.targets:
-            if isinstance(target, ast.Name):
-                found[target.id] = first
+        for target in targets:
+            if target is not None:
+                found.setdefault(target, command)
     return found
 
 
-def _callee_name(node: ast.Call) -> str:
-    func = node.func
-    return func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
-
-
-def _call_arguments(node: ast.Call) -> list[ast.expr]:
-    return [*node.args, *(kw.value for kw in node.keywords)]
-
-
 def _names_ps(arg: ast.expr, constants: dict[str, str]) -> bool:
-    """Whether this argument is an argv whose command is ``ps``.
-
-    Matches on the BASENAME of the first whitespace-separated token, so
-    ``/bin/ps`` and a ``shell=True`` string both count, and ``psql`` does
-    not.
-    """
-    head = _first_string(arg)
-    if head is None and isinstance(arg, ast.Name):
-        head = constants.get(arg.id)
-    tokens = head.split() if head else []
-    return bool(tokens) and Path(tokens[0]).name == "ps"
+    """Whether this argument is an argv whose command is ``ps``."""
+    command = _command_name(arg)
+    if command is None:
+        command = constants.get(astwalk.dotted(arg) or "")
+    return command == "ps"
 
 
-def _ps_call_lines(source: str) -> list[int]:
-    """Line numbers of subprocess calls in ``source`` that invoke ``ps``.
+def _is_spawn(node: ast.Call, table: astwalk.Bindings) -> bool:
+    """Whether this call spawns a process, by NAME or by RESOLVED ORIGIN.
+    The name reaches ``sp.check_output(...)`` in a snippet that never
+    imported ``sp``; the origin reaches ``run as spawn``."""
+    return (
+        astwalk.leaf_name(node.func) in _SUBPROCESS_CALLS
+        or table.resolve(node.func) in _SPAWN_TARGETS
+    )
 
-    Resolves a bare name against module-level argv constants; a name
-    bound inside a function body is a known miss, pinned below.
-    """
-    tree = ast.parse(source)
-    constants = _module_argv_constants(tree)
+
+def _ps_call_lines(source: str, module: str = "") -> list[int]:
+    """Line numbers of subprocess calls in ``source`` that invoke ``ps``."""
+    tree = astwalk.parse(source)
+    table = astwalk.bindings(tree, module=module)
+    constants = _argv_constants(tree)
     return [
         node.lineno
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
-        and _callee_name(node) in _SUBPROCESS_CALLS
-        and any(_names_ps(arg, constants) for arg in _call_arguments(node))
+        and _is_spawn(node, table)
+        and any(
+            _names_ps(arg, constants) for arg in [*node.args, *(kw.value for kw in node.keywords)]
+        )
     ]
 
 
-def _scannable_sources() -> list[Path]:
-    return [p for root in _SCANNED_ROOTS for p in sorted((REPO_ROOT / root).rglob("*.py"))]
+#: Layer 1's inventory, per module. This file is excluded because its
+#: own fixtures spell the command on purpose; layer 2 still walks it.
+EXPECTED_PS_COMMAND_SPELLINGS: dict[str, int] = {
+    "procgroup.py": 5,  # PS_ARGV, plus four "ps failed" messages
+    "tests/test_process_scoping.py": 2,  # two assertions on those messages
+    "tests/test_serve.py": 6,  # the fake's argv, plus five assertions
+    "tests/test_shutdown.py": 1,  # the degraded-reading message
+}
 
 
 class TestOnlyOneModuleShellsOutToPs:
@@ -682,16 +680,30 @@ class TestOnlyOneModuleShellsOutToPs:
     repo already answers this class with an AST net (``test_atomicio`` on
     ``mkstemp``, ``test_process_scoping`` on ``pgrep``), and the rule is
     that if there is no mechanism there is no plan.
+
+    LAYER 1 is a census of every expression whose folded value NAMES the
+    command; it enumerates no node types and no fields, so no call shape
+    can get past it, and the price is that prose opening with the word
+    folds in too. LAYER 2 is the walk, which names the line and the
+    callee, because "this module's count moved" is the wrong message for
+    "you shelled out to ps, call read_group_liveness".
+
+    #324 changed layer 2 twice, both measured. The callee resolves by
+    ORIGIN as well as by last identifier, since ``run as spawn`` walked
+    past the name match undisclosed; and the argv resolves through
+    ``astwalk.assignment_parts``, so an annotated assignment, a walrus, a
+    dotted target and a name bound in a function body all resolve now.
     """
 
     def test_no_second_ps_call_exists(self) -> None:
         offenders: list[str] = []
-        for source in _scannable_sources():
-            rel = source.relative_to(REPO_ROOT).as_posix()
+        for source in astwalk.package_sources() + astwalk.test_sources():
+            rel = source.relative_to(astwalk.REPO_ROOT).as_posix()
             if rel == _PS_OWNER:
                 continue
             text = source.read_text(encoding="utf-8")
-            offenders += [f"{rel}:{line}" for line in _ps_call_lines(text)]
+            module = astwalk.module_name(source)
+            offenders += [f"{rel}:{n}" for n in _ps_call_lines(text, module)]
         assert offenders == [], (
             f"{offenders} shell out to ps. There must be exactly one parse "
             f"of ps output in this tree, in {_PS_OWNER}, because two copies "
@@ -699,61 +711,86 @@ class TestOnlyOneModuleShellsOutToPs:
             f"suite's stop agreeing. Call kstrl.procgroup.read_group_liveness."
         )
 
+    def test_nobody_names_the_ps_command_without_appearing_here(self) -> None:
+        """Layer 1, the net. NEW code naming the command has to change
+        this dict whatever shape it uses: a count of folded values has no
+        shape list to be incomplete."""
+        astwalk.assert_census(
+            sources=astwalk.package_sources() + astwalk.test_sources(exclude=Path(__file__)),
+            sees=_spells_the_ps_command,
+            expected=EXPECTED_PS_COMMAND_SPELLINGS,
+            control='subprocess.run(["ps", "-A"])\n',
+            message=(
+                "The set of places naming the ps command changed. There must be one "
+                f"parse of ps output in this tree, in {_PS_OWNER}: two copies drift on "
+                "failure handling. If this is a diagnostic message, add the row."
+            ),
+        )
+
     def test_the_owner_still_calls_ps(self) -> None:
         """Without this the net could be passing because nothing calls ps
         at all, which would mean the module had been gutted."""
-        text = (REPO_ROOT / _PS_OWNER).read_text(encoding="utf-8")
+        text = (astwalk.REPO_ROOT / _PS_OWNER).read_text(encoding="utf-8")
         assert _ps_call_lines(text), f"{_PS_OWNER} no longer calls ps, so this net measures nothing"
 
     def test_the_net_walks_a_real_tree(self) -> None:
-        assert len(_scannable_sources()) > 100
+        assert len(astwalk.package_sources() + astwalk.test_sources()) > 100
 
     def test_the_claim_names_the_roots_the_net_actually_walks(self) -> None:
         """A mechanism cited for a claim it does not cover is worse than
         none. `spike/` calls ps and is outside the net, so the module's
         docstring must say "kstrl/ or tests/", not "the tree"."""
-        text = (REPO_ROOT / _PS_OWNER).read_text(encoding="utf-8")
+        text = (astwalk.REPO_ROOT / _PS_OWNER).read_text(encoding="utf-8")
         claim = "only place in ``kstrl/`` or ``tests/``"
         assert claim in text, f"{_PS_OWNER} must scope its uniqueness claim to {_SCANNED_ROOTS}"
 
     @pytest.mark.parametrize(
-        "body",
+        ("body", "line"),
         [
-            'subprocess.run(["ps", "-A"])',
-            'subprocess.run(["/bin/ps", "-eo", "pid="])',
-            'subprocess.Popen("ps -A", shell=True)',
-            'sp.check_output(("ps", "-A"))',
-            'os.popen("ps -A")',
-            'subprocess.getstatusoutput("ps -A")',
+            ('subprocess.run(["ps", "-A"])', 1),
+            ('subprocess.run(["/bin/ps", "-eo", "pid="])', 1),
+            ('subprocess.Popen("ps -A", shell=True)', 1),
+            ('sp.check_output(("ps", "-A"))', 1),
+            ('os.popen("ps -A")', 1),
+            ('subprocess.getstatusoutput("ps -A")', 1),
+            # #324: no last identifier can see this one, and nothing
+            # disclosed that. The resolved origin can.
+            ('from subprocess import run as spawn\nspawn(["ps", "-A"])\n', 2),
+            # Folded, and a walrus, so neither is a way past.
+            ('subprocess.run(["p" + "s", "-A"])', 1),
+            ('subprocess.run((argv := ["ps", "-A"]))', 1),
+            # The shape the owner uses, and the shape a copier writes.
+            ('ARGV = ("ps", "-A")\nsubprocess.run(ARGV, timeout=5)\n', 2),
+            ('ARGV: tuple = ("ps", "-A")\nsubprocess.run(ARGV)\n', 2),
+            # A disclosed miss until #324: a name bound in a function body.
+            ('def f():\n    cmd = ["ps", "-A"]\n    subprocess.run(cmd)\n', 3),
         ],
     )
-    def test_the_net_catches_a_planted_call(self, body: str) -> None:
+    def test_the_net_catches_a_planted_call(self, body: str, line: int) -> None:
         """Its reach, measured rather than asserted in a docstring."""
-        assert _ps_call_lines(body) == [1], body
-
-    def test_it_resolves_a_module_level_argv_constant(self) -> None:
-        """The shape the owner itself uses, and the shape a copier would
-        write. The net missed it until this case was added."""
-        body = 'ARGV = ("ps", "-A")\nsubprocess.run(ARGV, timeout=5)\n'
-        assert _ps_call_lines(body) == [2]
+        assert _ps_call_lines(body) == [line], body
 
     @pytest.mark.parametrize(
         "body",
         [
-            # Not a subprocess call at all.
-            'x = ["ps", "-A"]',
-            # A different tool whose name merely starts with the letters.
-            'subprocess.run(["psql", "-c", "select 1"])',
-            # Prose. The net reads the AST, so a docstring cannot trip it.
-            '"""Do not call ps here."""',
+            'x = ["ps", "-A"]',  # not a subprocess call at all
+            'subprocess.run(["psql", "-c", "select 1"])',  # a different tool
+            '"""Do not call ps here."""',  # prose: the net reads the AST
         ],
     )
     def test_the_net_stays_quiet_on_these(self, body: str) -> None:
         assert _ps_call_lines(body) == [], body
 
-    def test_a_command_built_inside_a_function_is_a_known_miss(self) -> None:
-        """Stated so the net is not trusted past its reach. Module-level
-        constants resolve; a name bound in a function body does not, and
-        following that needs dataflow the AST does not give."""
-        body = 'def f():\n    cmd = ["ps", "-A"]\n    subprocess.run(cmd)\n'
-        assert _ps_call_lines(body) == []
+    @pytest.mark.xfail(strict=True, raises=AssertionError, reason="folding, not interpreting")
+    def test_a_command_the_interpreter_has_to_build_is_missed(self) -> None:
+        """The one disclosed limit, with a test behind it rather than a
+        sentence. Both layers fold and neither runs the program, so
+        ``"".join(...)`` is missed while ``"p" + "s"`` is caught, and
+        ``strict=True`` fails the day that stops being true."""
+
+        def either_layer(source: str) -> int:
+            walk = ast.walk(astwalk.parse(source))
+            hits = sum(1 for node in walk if _spells_the_ps_command(node))
+            return hits + len(_ps_call_lines(source))
+
+        astwalk.blind_spot(either_layer, 'subprocess.run(["".join(("p", "s")), "-A"])')

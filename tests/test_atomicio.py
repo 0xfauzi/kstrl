@@ -36,16 +36,12 @@ import kstrl.atomicio
 from kstrl.atomicio import atomic_write_json, atomic_write_text
 from kstrl.init_cmd import _atomic_replace
 from kstrl.workqueue import atomic_write
+from tests.helpers import astwalk
 
 #: A string whose utf-8 and latin-1 encodings differ, so a test that
 #: round-trips it through an unpinned encoding fails rather than passing
 #: by accident on an ASCII payload.
 NON_ASCII = "naive cafe: éèü £€ 你好 \U0001f600"
-
-#: The package under test, located the way every other AST-walking test
-#: in this suite locates it (test_prompt_versions, test_state_dir_scope,
-#: test_config_preflight).
-KSTRL_PACKAGE = Path(__file__).resolve().parent.parent / "kstrl"
 
 
 def run_under_c_locale(tmp_path: Path, body: str, *args: str) -> subprocess.CompletedProcess[str]:
@@ -374,24 +370,91 @@ class TestTheHelperDoesNotOfferTheWrongBehaviour:
             )
 
 
-def _called_names(source: Path) -> list[tuple[str, int]]:
-    """(callee name, line) for every call in ``source``.
+# --- nobody hand-rolls the pattern again, in two layers -------------------
+#
+# LAYER 1, the census, counts every node in ``kstrl/`` that writes
+# ``mkstemp`` anywhere the AST can hold a string. A module cannot call a
+# function it never names, so a copy in any shape appears here first, and
+# it enumerates neither node types nor fields. Round 1 had NO positive
+# control: measured, changing its match string to ``mkstemp_xyz`` left
+# the file green.
+#
+# LAYER 2, :func:`_mkstemp_calls`, resolves the callee and names the
+# offending site, which "atomicio.py names mkstemp once more than it did"
+# cannot. It decides ``from tempfile import mkstemp as _mk``, which round
+# 1 matched on the last segment and so missed entirely.
 
-    AST-walked rather than grepped, which is the difference between a
-    claim about the code and a claim about the prose describing it: the
-    net below runs over files whose docstrings name the very thing being
-    forbidden, and a text search would need an exclusion list that rots.
+#: The call #291 removed ten copies of, and the predicate that nets it.
+MKSTEMP = "tempfile.mkstemp"
+SPELLS_MKSTEMP = astwalk.spells("mkstemp")
+
+#: Every module in ``kstrl/`` that spells ``mkstemp``, and how many
+#: times. Empty, and meant to stay that way: a row here is a hand-rolled
+#: temp file, and the diff that adds one is where somebody says why
+#: ``kstrl.atomicio`` will not do.
+EXPECTED_MKSTEMP_SPELLINGS: dict[str, int] = {}
+
+#: Calls this walk cannot name at all, because the AST holds no
+#: identifier to read: a callee looked up in a table, or returned by a
+#: function. Pinned rather than dropped, because "could not decide" and
+#: "decided it is fine" are the two answers #324 exists to keep apart.
+#: Layer 1 is what covers them: a table of writers still spells the name.
+#: Keyed by module and expression, not by line: none of the four is in a
+#: file this guard is about, so a line here fails on a stranger's edit.
+EXPECTED_UNDECIDED_CALLS: tuple[str, ...] = (
+    "gateparse.py TOOL_PARSERS[chosen]",
+    "gateparse.py TOOL_PARSERS[name]",
+    "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
+    "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
+)
+
+
+def _mkstemp_calls(sources: list[Path]) -> astwalk.Sites:
+    """Every call to ``tempfile.mkstemp``, and every call not decidable.
+
+    ``astwalk.calls_to`` resolves the callee: ``tempfile.mkstemp``,
+    ``import tempfile as _t``, ``from tempfile import mkstemp``, the same
+    renamed, and a rebind at any chain length. Round 1 compared the last
+    segment to ``"mkstemp"``, so every alias walked past it.
+
+    :func:`_named_mkstemp` is unioned in rather than dropped, and that is
+    not belt-and-braces: measured, ``calls_to`` reports a DOTTED callee
+    whose head it never saw bound as neither seen nor undecided, so
+    planting ``tempfile.mkstemp(...)`` in a module with no ``import
+    tempfile`` left this layer green. Round 1 caught that shape, and a
+    migration that narrows a guard is the defect #324 records.
+
+    Sites are keyed on ``label:lineno`` INTERNALLY, so one call both
+    passes report is one row; the caller drops the line before pinning.
+    ``astwalk.label``, not ``Path.name``: ten basenames occur twice in
+    ``kstrl/`` and a message naming a file the reader cannot find is
+    worse than none.
     """
-    tree = ast.parse(source.read_text(encoding="utf-8"))
-    found: list[tuple[str, int]] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        func = node.func
-        name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
-        if name:
-            found.append((name, node.lineno))
-    return found
+    seen: dict[str, str] = {}
+    undecided: list[str] = []
+    for source_file in sources:
+        tree = astwalk.parsed(source_file)
+        where = astwalk.label(source_file)
+        found = astwalk.calls_to(
+            tree, {MKSTEMP}, where=where, module=astwalk.module_name(source_file)
+        )
+        undecided.extend(found.undecided)
+        for site in (*found.seen, *_named_mkstemp(tree, where)):
+            seen.setdefault(site.split(" ", 1)[0], site)
+    return astwalk.Sites(tuple(sorted(seen.values())), tuple(sorted(undecided)))
+
+
+def _named_mkstemp(tree: ast.Module, where: str) -> list[str]:
+    """Calls whose last identifier is ``mkstemp``, whatever precedes it.
+
+    Round 1's whole net, kept as half of layer 2 so the migration cannot
+    lose a site. ``astwalk.leaf_name`` answers what a callee is called.
+    """
+    return [
+        f"{where}:{node.lineno} {ast.unparse(node.func)}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and astwalk.leaf_name(node.func) == "mkstemp"
+    ]
 
 
 class TestEveryCopyOfThePatternWasMigrated:
@@ -403,17 +466,108 @@ class TestEveryCopyOfThePatternWasMigrated:
     which is the evidence that a careful call site is not a durable fix.
     """
 
+    def test_no_module_in_the_package_even_names_mkstemp(self) -> None:
+        """Layer 1, the net: pin every spelling of the name itself.
+
+        A module cannot call a function it never names, so a hand-rolled
+        copy has to change this dict whatever shape the call takes: an
+        attribute, a bare name, an import alias, a dispatch table keyed
+        by the string, a ``getattr`` whose name folds. An exact count of
+        spellings has no aliasing to be wrong about and no shape list to
+        be incomplete. ``control`` is the piece round 1 had no equivalent
+        of: without it an empty inventory and a net that stopped looking
+        are the same green.
+        """
+        astwalk.assert_census(
+            sources=astwalk.package_sources(),
+            sees=SPELLS_MKSTEMP,
+            expected=EXPECTED_MKSTEMP_SPELLINGS,
+            control="import tempfile\nfd, path = tempfile.mkstemp(dir=str(target.parent))\n",
+            message=(
+                "A module in kstrl/ names mkstemp. Route the write through "
+                "kstrl.atomicio instead: that is where the mode and encoding rules "
+                "live, and a hand-rolled copy is how #291 came to have ten of them, "
+                "nine downgrading the mode."
+            ),
+        )
+
     def test_no_module_still_calls_mkstemp(self) -> None:
-        offenders: list[str] = []
-        for source in sorted(KSTRL_PACKAGE.rglob("*.py")):
-            for name, lineno in _called_names(source):
-                if name == "mkstemp":
-                    offenders.append(f"{source.name}:{lineno}")
-        assert offenders == [], (
-            f"{offenders} still call mkstemp directly. Route the write "
-            f"through kstrl.atomicio instead: that is where the mode and "
-            f"encoding rules live, and a hand-rolled copy is how #291 "
-            f"came to have ten of them, nine downgrading the mode."
+        """Layer 2, the message: name the offending line and the fix."""
+        astwalk.assert_sites(
+            _mkstemp_calls(astwalk.package_sources()).without_line_numbers(),
+            seen=(),
+            undecided=EXPECTED_UNDECIDED_CALLS,
+            message=(
+                "These still call mkstemp directly. Route the write through "
+                "kstrl.atomicio instead: that is where the mode and encoding rules "
+                "live, and a hand-rolled copy is how #291 came to have ten of them, "
+                "nine downgrading the mode."
+            ),
+        )
+
+
+class TestTheMigrationNetCatchesWhatItClaims:
+    """The net's own reach, measured rather than asserted in a docstring.
+
+    Round 1 had no positive control at all: its matcher was never fed
+    source it was supposed to flag, so switching it off was invisible.
+    """
+
+    @staticmethod
+    def _spelled(source: str) -> int:
+        return sum(1 for node in ast.walk(astwalk.parse(source)) if SPELLS_MKSTEMP(node))
+
+    @staticmethod
+    def _called(source: str) -> tuple[str, ...]:
+        return astwalk.calls_to(astwalk.parse(source), {MKSTEMP}).seen
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "import tempfile\ntempfile.mkstemp(dir=d)\n",
+            "import tempfile as _t\n_t.mkstemp(dir=d)\n",
+            "from tempfile import mkstemp\nmkstemp(dir=d)\n",
+            "from tempfile import mkstemp as _mk\n_mk(dir=d)\n",
+            "import tempfile\n_mk = tempfile.mkstemp\n_mk(dir=d)\n",
+        ],
+        ids=["attribute", "module-alias", "from-import", "import-alias", "rebind"],
+    )
+    def test_every_way_of_reaching_mkstemp_is_caught(self, body: str) -> None:
+        """Both layers, on the five spellings of one call. The import
+        alias is the one round 1 provably missed: it compared the
+        callee's last segment, and ``_mk`` is not ``mkstemp``."""
+        assert self._spelled(body), "layer 1 missed it"
+        assert self._called(body), "layer 2 missed it"
+
+    def test_an_attribute_call_is_caught_by_the_net(self) -> None:
+        """``self.mkstemp()`` resolves to nothing this walk can name.
+        ``Attribute.attr`` is a string field, so layer 1 counts it."""
+        assert self._spelled("self.mkstemp(dir=d)\n")
+
+    def test_an_assembled_name_is_caught_by_the_net(self) -> None:
+        """What somebody writes to get past a string search.
+        ``astwalk.folded_str`` decides it, so the census counts it."""
+        assert self._spelled('import tempfile\ngetattr(tempfile, "mk" + "stemp")(dir=d)\n')
+
+    def test_prose_naming_mkstemp_is_not_a_hit(self) -> None:
+        """Why the census tests EQUALITY: ``kstrl/atomicio.py``'s own
+        docstring argues about mkstemp, and a substring search would need
+        a suppression list that rots."""
+        assert not self._spelled('"""Never hand-roll mkstemp plus os.replace."""\n')
+
+    @pytest.mark.xfail(strict=True, raises=AssertionError)
+    def test_a_name_the_interpreter_builds_is_a_known_miss(self) -> None:
+        """Layer 1's residual, stated rather than implied.
+
+        A name only the interpreter can produce folds to ``None``, so the
+        census cannot count it. Layer 2 does not miss it silently:
+        measured, the callee is a ``Call`` with no identifier to read, so
+        it lands in ``undecided`` and the pinned tuple moves. Foldable
+        assembly is not here either: the test above measures that half.
+        """
+        astwalk.blind_spot(
+            self._spelled,
+            'import tempfile\ngetattr(tempfile, "".join(["mk", "stemp"]))(dir=d)\n',
         )
 
 
