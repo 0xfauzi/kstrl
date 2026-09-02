@@ -357,9 +357,15 @@ class TestEmbeddedApp:
         results: list[int | None] = []
         async with app.run_test(size=(120, 40)) as pilot:
             app.push_screen(CheckpointModal(request), results.append)
-            # `mounted` cannot serve: query_one on "Button" would raise
-            # TooManyMatches. Waiting for the buttons to exist at all is
-            # weaker than the labels asserted below.
+            # `settled` rather than `mounted` because the assertion is
+            # about ALL the buttons and their order, and `mounted`
+            # returns the first breadth-first match. Not, as this said
+            # before a /simplify pass checked it, because `query_one`
+            # would raise `TooManyMatches`: in textual 8.2.8 that comes
+            # from `query_exactly_one`, and `query_one` raises only
+            # `NoMatches`, `WrongType` and `InvalidQueryFormat`. Waiting
+            # for the buttons to exist at all is weaker than the labels
+            # asserted below, which is the point.
             await settled(
                 pilot,
                 lambda: app.screen.query("Button"),

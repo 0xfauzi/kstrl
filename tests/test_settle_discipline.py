@@ -32,14 +32,27 @@ already looks at.
 
 LAYER 2, :func:`settle_reads`, resolves. It says "line 341 reads
 ``banner.region.y`` after the fixed wait on line 339" where layer 1 can
-only say "this file's count moved", and that difference is worth having
-while the tree has 291 condition waits in it. But it is the fifth
-hand-rolled matcher in this repo, and #324 records ten logged instances
-of one being holed, two of them twice. Treat it as provisional. When
-``tests/helpers/astwalk.py`` lands under #324, this layer should be
-rebuilt on it rather than extended here, and the honest reading of the
-list below is that layer 1 is the guard and layer 2 is a good error
-message.
+only say "this file's count moved". It is the fifth hand-rolled matcher
+in this repo, and #324 records ten logged instances of one being holed,
+two of them twice, so treat it as provisional: when
+``tests/helpers/astwalk.py`` lands under #324, rebuild it on that rather
+than extend it here.
+
+THE TWO ARE NOT ORDERED, and an earlier draft of this docstring said
+they were - "layer 1 is the guard and layer 2 is a good error message".
+That is measurably false, and it was false in the direction that gets
+1200 lines deleted by the next reader acting on it. The mutation: add
+``assert app.screen.region.y == 0`` immediately after an existing
+``await pilot.press("f2")``. No new await, so layer 1's count for the
+file does not move and layer 1 PASSES. Layer 2 names line 213. Run it
+before believing this paragraph;
+``test_a_read_added_under_an_existing_fixed_wait`` in
+``tests/test_settle_shapes.py`` pins it.
+
+So they cover different halves and neither subsumes the other. A new
+WAIT of any shape has to move a row in :data:`EXPECTED_AWAIT_SITES`,
+which layer 2 can be evaded on. A new READ under a wait that already
+exists changes no count, which layer 1 cannot see at all.
 
 WHAT LAYER 2 SEES. A read is any expression that reaches app-derived
 state and whose value is consumed. No attribute vocabulary and no method
@@ -97,28 +110,26 @@ def label(source_file: Path) -> str:
     return str(source_file.relative_to(TEST_TREE.parent))
 
 
-def test_sources() -> list[Path]:
+def tree_sources() -> list[Path]:
     """Every module in ``tests/``, in a stable order."""
     return sorted(TEST_TREE.rglob("*.py"))
 
 
-_PARSED: dict[str, ast.Module] = {}
-
-
 def parsed(source_file: Path) -> ast.Module:
-    """The module's AST, parsed once and shared by both layers.
+    """The module's AST. Parsed on every call, deliberately.
 
-    Keyed on the TEXT rather than the path, because the positive
-    controls next door rewrite one ``other.py`` several times inside a
-    single test and a path-keyed cache would hand the second call the
-    first snippet's tree.
+    It was a module-level dict keyed on the file's text, which is the
+    only key that works here - the positive controls next door rewrite
+    one ``other.py`` several times inside a single test, so a path key
+    would hand the second call the first snippet's tree. Measured, that
+    cache held 137 MB of AST for the rest of the pytest session, because
+    nothing clears it and the module stays imported: peak RSS 158.8 MB
+    against 22.2 MB without it. It bought 0.37s of parsing across 170
+    files, once. Memory retained for a whole session is the worse half
+    of that trade, and shared mutable state between two tests is the
+    worse half again.
     """
-    text = source_file.read_text(encoding="utf-8")
-    tree = _PARSED.get(text)
-    if tree is None:
-        tree = ast.parse(text)
-        _PARSED[text] = tree
-    return tree
+    return ast.parse(source_file.read_text(encoding="utf-8"))
 
 
 # --- layer 1: the net -----------------------------------------------------
@@ -145,10 +156,17 @@ def await_sites(tree: ast.Module) -> int:
     of them suspends, so every one of them is a chance for the app to
     settle.
     """
-    nodes = sum(1 for node in ast.walk(tree) if isinstance(node, SUSPENSION_NODES))
-    return nodes + sum(
-        1 for node in ast.walk(tree) if isinstance(node, ast.comprehension) and node.is_async
-    )
+    # One walk, not two. The two node sets are disjoint, so an
+    # ``elif`` counts exactly what two passes counted: measured over
+    # the 170 files in this tree, 794,580 node visits become 397,290
+    # and the layer costs 0.183s of CPU rather than 0.312s.
+    total = 0
+    for node in ast.walk(tree):
+        if isinstance(node, SUSPENSION_NODES):
+            total += 1
+        elif isinstance(node, ast.comprehension) and node.is_async:
+            total += 1
+    return total
 
 
 #: Every file in ``tests/`` that yields to the event loop, and how often.
@@ -160,10 +178,10 @@ def await_sites(tree: ast.Module) -> int:
 #: itself - is awaiting and is not the defect.
 EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/helpers/settle.py": 3,
-    "tests/helpers/tui_screens.py": 4,
+    "tests/helpers/tui_screens.py": 5,
     "tests/test_config_screen.py": 36,
     "tests/test_decompose_screens.py": 32,
-    "tests/test_evolve_screen.py": 40,
+    "tests/test_evolve_screen.py": 37,
     "tests/test_evolve_screen_encoding.py": 1,
     "tests/test_feature_run.py": 5,
     "tests/test_home_data.py": 4,
@@ -175,13 +193,28 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/test_tui_config_guard.py": 17,
     "tests/test_tui_detail.py": 39,
     "tests/test_tui_embed.py": 52,
-    "tests/test_tui_safe_mode.py": 59,
+    "tests/test_tui_safe_mode.py": 61,
     "tests/test_tui_snapshots.py": 2,
     "tests/test_understand_run.py": 3,
 }
 
 
 # --- layer 2: the message -------------------------------------------------
+
+
+def self_attr(node: ast.AST) -> str | None:
+    """``self.x`` read as the module-scoped name ``x``, in one place.
+
+    Three functions below need this rule and all three had their own
+    copy of it, which is three chances for it to drift apart. The rule
+    itself is in :func:`anchor_name`'s docstring: a pilot stashed on the
+    test instance is how ``tests/test_init_wizard.py`` carries one
+    between its helper and its tests.
+    """
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+        if node.value.id == "self":
+            return node.attr
+    return None
 
 
 def anchor_name(node: ast.expr) -> str | None:
@@ -198,8 +231,9 @@ def anchor_name(node: ast.expr) -> str | None:
         if isinstance(node, ast.Name):
             return node.id
         if isinstance(node, ast.Attribute):
-            if isinstance(node.value, ast.Name) and node.value.id == "self":
-                return node.attr
+            attribute = self_attr(node)
+            if attribute is not None:
+                return attribute
             node = node.value
         elif isinstance(node, ast.Call):
             node = node.func
@@ -231,21 +265,34 @@ def touches_app(node: ast.AST, names: frozenset[str]) -> bool:
     for child in ast.walk(node):
         if isinstance(child, ast.Name) and child.id in names:
             return True
-        if isinstance(child, ast.Attribute) and isinstance(child.value, ast.Name):
-            if child.value.id == "self" and child.attr in names:
-                return True
+        if self_attr(child) in names:
+            return True
     return False
 
 
 def bound_names(target: ast.expr) -> list[str]:
-    """The plain names one binding target binds, ``self`` attributes and all."""
+    """The plain names one binding target binds, ``self`` attributes and all.
+
+    ``self`` itself is not one of them. Walking ``self._pilot`` reaches
+    the ``Name`` node too, so returning it would taint ``self`` and with
+    it EVERY attribute the test class hangs off ``self`` - the tmp_path
+    it stashed, the fixture it cached - and the module would then report
+    reads that have nothing to do with the app.
+    ``test_a_self_attribute_that_is_not_the_app`` in
+    ``tests/test_settle_shapes.py`` is that case, and it was written
+    after stubbing :func:`self_attr` to a constant changed no control at
+    all: the rule was there, and the over-approximation next to it was
+    quietly doing the same work less precisely.
+    """
     found = []
     for sub in ast.walk(target):
         if isinstance(sub, ast.Name):
-            found.append(sub.id)
-        elif isinstance(sub, ast.Attribute) and isinstance(sub.value, ast.Name):
-            if sub.value.id == "self":
-                found.append(sub.attr)
+            if sub.id != "self":
+                found.append(sub.id)
+        else:
+            attribute = self_attr(sub)
+            if attribute is not None:
+                found.append(attribute)
     return found
 
 
@@ -317,7 +364,7 @@ def _await_seeds(node: ast.Await) -> list[str]:
     return [name] if name else []
 
 
-def app_derived_names(tree: ast.Module) -> frozenset[str]:
+def app_derived_names(tree: ast.Module, helper: frozenset[str]) -> frozenset[str]:
     """Every name in the module that stands for app-derived state.
 
     Iterated to a fixed point, and collected per MODULE rather than per
@@ -353,8 +400,14 @@ def app_derived_names(tree: ast.Module) -> frozenset[str]:
     ``test_a_pilot_arriving_from_another_module_is_missed`` asserts this
     miss, so the disclosure fails if it stops being true.
     """
-    helper = enrolled_waits(tree)
     names = frozenset(taint_seeds(tree, helper))
+    if not names:
+        # 152 of this tree's 170 modules never bind anything from an
+        # app, and both sweeps of the empty set are empty by
+        # construction, so the fixed point below can only return it
+        # unchanged. Leaving before ``bindings`` measured layer 2 at
+        # 0.566s of CPU against 1.183s, with the finding set identical.
+        return names
     binds = bindings(tree)
     while True:
         grown = names | _binding_sweep(binds, names) | _argument_sweep(tree, names)
@@ -568,7 +621,7 @@ def settle_reads(source_file: Path) -> list[str]:
     """
     tree = parsed(source_file)
     helper = enrolled_waits(tree)
-    names = app_derived_names(tree)
+    names = app_derived_names(tree, helper)
     if not names:
         return []
     parents = parent_map(tree)
@@ -659,7 +712,7 @@ class TestSettleDiscipline:
         """
         found = {
             label(source_file): sites
-            for source_file in test_sources()
+            for source_file in tree_sources()
             if (sites := await_sites(parsed(source_file)))
         }
 
@@ -682,7 +735,7 @@ class TestSettleDiscipline:
         """
         found = {
             label(source_file): hits
-            for source_file in test_sources()
+            for source_file in tree_sources()
             if (hits := settle_reads(source_file))
         }
 

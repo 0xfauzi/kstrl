@@ -142,19 +142,33 @@ class TestWizardScreen:
         # of as the thing that actually went wrong.
         self._pilot_ctx = pilot_ctx
         self._pilot = pilot
-        # The app's own on_mount pushes the home screen, so the wizard
-        # has to go on top of that rather than on top of the screen the
-        # home screen is replacing.
+        # Both of these are already true at the first poll, and both are
+        # kept anyway. `App._process_messages` dispatches `events.Mount`
+        # at app.py:3438 and only invokes the ready callback at :3458,
+        # and `run_test` waits on that callback before yielding the
+        # pilot, so `KstrlTuiApp.on_mount` has pushed home already;
+        # `push_screen` then appends to the live stack inside its own
+        # body. So neither wait ever pauses - `settled` tests the
+        # predicate before it pauses - and an earlier comment here
+        # claimed the first one was a precondition of the push, which is
+        # false and a /simplify pass caught it.
+        #
+        # Kept rather than turned into bare asserts because a bare
+        # assert reads `app.screen` after the fixed wait that is
+        # `__aenter__`, which is precisely the shape
+        # `tests/test_settle_discipline.py` flags, and a guard with an
+        # exemption list for framework guarantees is a worse guard.
+        # Zero cost, states the condition, and the file stays clean.
         await settled(
             pilot,
             lambda: isinstance(app.screen, HomeScreen),
-            what="the home screen to be pushed by the app's on_mount",
+            what="the home screen the app's on_mount has already pushed",
         )
         app.push_screen(InitWizardScreen())
         await settled(
             pilot,
             lambda: isinstance(app.screen, InitWizardScreen),
-            what="the init wizard to become the active screen",
+            what="the init wizard push, which is synchronous",
         )
         screen = cast(InitWizardScreen, app.screen)
         await mounted(pilot, lambda: app.screen, "#wizard-agent-type")

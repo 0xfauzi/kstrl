@@ -373,6 +373,29 @@ class TestTheSettledReadsAreLeftAlone:
         )
         assert found == []
 
+    def test_a_self_attribute_that_is_not_the_app(self, tmp_path: Path) -> None:
+        """``self._pilot`` taints ``_pilot``, and not ``self``.
+
+        Without that distinction, stashing a pilot on the test instance
+        makes EVERY attribute of ``self`` read as app-derived, and the
+        unrelated ``self._root`` below is reported. The distinction is
+        one function, :func:`self_attr`, and this is the only control
+        that notices when it is stubbed to a constant - which is why it
+        is here: an unexercised branch in a guard is where the next hole
+        goes, and the way to keep one is to exercise it, not to trust it.
+        """
+        body = """
+        class TestIt:
+            async def open(self, app):
+                async with app.run_test() as pilot:
+                    self._pilot = pilot
+
+            async def test_it(self):
+                await self._pilot.pause()
+                assert self._root.name
+        """
+        assert hits(tmp_path, body) == []
+
     def test_a_read_of_something_that_is_not_the_app(self, tmp_path: Path) -> None:
         """The matcher is not simply reporting every expression after a
         pause. Without this, "flag everything" passes every test above."""
@@ -446,6 +469,36 @@ class TestTheNetCountsEveryShape:
         returned the node count would pass every test above."""
         assert awaits(tmp_path, "def f(p):\n    p.pause()\n") == 0
         assert awaits(tmp_path, "x = 1\ny = [i for i in range(3)]\n") == 0
+
+    def test_a_read_added_under_an_existing_fixed_wait(self, tmp_path: Path) -> None:
+        """The half layer 1 cannot cover, pinned so nobody rank-orders
+        the layers again.
+
+        The guard's docstring once said layer 1 was the guard and layer
+        2 was a good error message. This is the mutation that says
+        otherwise: a read added under a wait that ALREADY exists adds no
+        await, so the file's count does not move and layer 1 passes,
+        while layer 2 names the line. A new wait moves the count and a
+        new read does not, so neither layer subsumes the other.
+        """
+        body = """
+        async def test_it(app):
+            async with app.run_test() as pilot:
+                await pilot.press("f2")
+                assert app.screen.region.y == 0
+        """
+        assert awaits(tmp_path, body) == 2
+        after = awaits(
+            tmp_path,
+            """
+            async def test_it(app):
+                async with app.run_test() as pilot:
+                    await pilot.press("f2")
+            """,
+        )
+        assert after == 2, "the read added no await, so the net cannot see it"
+        found = hits(tmp_path, body)
+        assert found and "region.y" in found[0], found
 
 
 class TestTheDisclosedMisses:

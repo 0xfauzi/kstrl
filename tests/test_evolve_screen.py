@@ -9,14 +9,13 @@ from typing import cast
 
 from rich.text import Text
 from textual.coordinate import Coordinate
-from textual.pilot import Pilot
 from textual.widgets import DataTable, TabbedContent
 
 from kstrl.tui import theme
-from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.screens.evolve import EvolveScreen, retry_bar
 from kstrl.tui.screens.options import OptionsModal
 from tests.helpers.settle import drained, mounted, settled
+from tests.helpers.tui_screens import evolve_on, home_app
 
 CONVENTION_PROP = """# PROP-001: Always pin versions
 **Type**: computational
@@ -76,40 +75,6 @@ def _seed(tmp_path: Path) -> None:
     )
 
 
-async def _open(app: KstrlTuiApp, pilot: Pilot[None]) -> EvolveScreen:
-    """The evolve screen pushed on ``app``, with its three tabs loaded.
-
-    Three conditions, in the order the app satisfies them. The app
-    installs its home screen from its own on_mount, so a screen pushed
-    before that lands under the home screen and never becomes active.
-    The tab panes then mount a frame later, which is what every
-    ``query_one`` below used to race. Finally ``EvolveScreen.on_mount``
-    adds the columns and calls ``reload`` in ONE synchronous call, so a
-    table that has columns is a screen whose on_mount has returned:
-    a poll runs only between messages, and cannot catch it half-done.
-
-    That last condition is weaker than anything the callers assert. It
-    says the screen finished loading, not what it loaded, so a screen
-    that loads the wrong rows still fails at the caller's assertion.
-    """
-    await mounted(pilot, lambda: app.screen, "#home-commands")
-    app.push_screen(EvolveScreen())
-    # push_screen puts the screen on the stack before it mounts
-    # anything, so this is the screen the waits below are about.
-    screen = cast(EvolveScreen, app.screen)
-    trends = await mounted(pilot, lambda: screen, "#trends-table")
-    await settled(
-        pilot,
-        lambda: cast(DataTable, trends).columns,
-        what="the evolve screen's on_mount to load its three tabs",
-    )
-    return screen
-
-
-def _home_app(tmp_path: Path) -> KstrlTuiApp:
-    return KstrlTuiApp(root_dir=tmp_path, mode=Mode.HOME, poll_interval=0.05)
-
-
 class TestRetryBar:
     def test_scaling(self) -> None:
         assert retry_bar(0) == theme.EMPTY_CELL
@@ -125,9 +90,9 @@ class TestEvolveScreen:
         tmp_path: Path,
     ) -> None:
         _seed(tmp_path)
-        app = _home_app(tmp_path)
+        app = home_app(tmp_path)
         async with app.run_test(size=(140, 40)) as pilot:
-            screen = await _open(app, pilot)
+            screen = await evolve_on(app, pilot)
             proposals = await mounted(pilot, lambda: screen, "#proposals-table")
             assert proposals.row_count == 2  # type: ignore[attr-defined]
             patterns = await mounted(pilot, lambda: screen, "#patterns-table")
@@ -162,9 +127,9 @@ class TestEvolveScreen:
             .replace("Always pin versions", "[/bold]")
             .replace("Pin every dependency", "[/bold] every dependency"),
         )
-        app = _home_app(tmp_path)
+        app = home_app(tmp_path)
         async with app.run_test(size=(140, 40)) as pilot:
-            screen = await _open(app, pilot)
+            screen = await evolve_on(app, pilot)
             table = await mounted(pilot, lambda: screen, "#proposals-table")
             title = table.get_cell_at(Coordinate(0, 1))  # type: ignore[attr-defined]
             assert isinstance(title, Text)
@@ -195,9 +160,9 @@ class TestEvolveScreen:
         tmp_path: Path,
     ) -> None:
         _seed(tmp_path)
-        app = _home_app(tmp_path)
+        app = home_app(tmp_path)
         async with app.run_test(size=(140, 40)) as pilot:
-            screen = await _open(app, pilot)
+            screen = await evolve_on(app, pilot)
             await pilot.press("a")
             # "a screen opened over the evolve screen" is weaker than
             # "that screen is the OptionsModal": a wrong screen ends
@@ -234,9 +199,9 @@ class TestEvolveScreen:
 
     async def test_cancel_writes_nothing(self, tmp_path: Path) -> None:
         _seed(tmp_path)
-        app = _home_app(tmp_path)
+        app = home_app(tmp_path)
         async with app.run_test(size=(140, 40)) as pilot:
-            screen = await _open(app, pilot)
+            screen = await evolve_on(app, pilot)
             await pilot.press("a")
             await settled(
                 pilot,
@@ -264,9 +229,9 @@ class TestEvolveScreen:
         tmp_path: Path,
     ) -> None:
         _seed(tmp_path)
-        app = _home_app(tmp_path)
+        app = home_app(tmp_path)
         async with app.run_test(size=(140, 40)) as pilot:
-            screen = await _open(app, pilot)
+            screen = await evolve_on(app, pilot)
             table = await mounted(pilot, lambda: screen, "#proposals-table")
             table.focus()
             # Widget.focus routes through call_later, so focus is not
@@ -298,9 +263,9 @@ class TestEvolveScreen:
             assert (tmp_path / "CLAUDE.md").read_text() == CLAUDE_MD
 
     async def test_empty_state(self, tmp_path: Path) -> None:
-        app = _home_app(tmp_path)
+        app = home_app(tmp_path)
         async with app.run_test(size=(140, 40)) as pilot:
-            screen = await _open(app, pilot)
+            screen = await evolve_on(app, pilot)
             detail_widget = await mounted(pilot, lambda: screen, "#proposal-detail")
             detail = str(
                 detail_widget.content,  # type: ignore[attr-defined]

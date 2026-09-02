@@ -332,14 +332,35 @@ class TestReviewFindings:
         before the fix. This also repairs a pre-existing bug: the
         checkpoint banner has always covered the topbar.
 
-        The two pauses this used to count are what made it flaky: on a
-        loaded CI runner the banner had not been laid out when
-        `region.y` was read, so the zero region answered and the rows
-        came back `[0, 0, 1]`. The wait is now on the layout itself. It
-        is deliberately weaker than the assertion - "all three have been
-        laid out", not "their rows differ" - so that the defect this
-        test names still reaches the assertion below and fails there,
-        with its own message, rather than timing out here.
+        WHAT MADE IT FLAKY, measured rather than assumed. The first
+        reading was "two pauses, and the banner had not been laid out
+        yet". That is the wrong diagnosis, and the right one matters
+        because it is a second race in the same test. `_check_safe_mode`
+        runs on a thread from the app's own on_mount and broadcasts its
+        result to every live screen; on a nominal fixture that result is
+        `[]`, and `SafeModeBanner.update_reasons([])` sets
+        `display = False`. So a broadcast landing after this test shows
+        the banner HIDES it again, and a hidden widget answers with the
+        zero region.
+
+        The measurement, deterministic and in the history of this file:
+        show both banners, let the layout settle, read `[0, 1, 2]`, then
+        post the nominal `SafeModeChecked` by hand and read again. It
+        gives `[0, 0, 1]`, which is the CI failure character for
+        character. A layout that had merely not happened would answer
+        `[0, 0, 0]`.
+
+        Hence the FIRST wait below. Outlast the app's own check, and its
+        broadcast is behind us: the next one is SAFE_MODE_INTERVAL_
+        SECONDS away, which is 5s of quiet for a test that needs
+        milliseconds. Under 16 busy workers on a 10-core box, without
+        it, this test failed 14 times in 20 runs.
+
+        The layout wait after it is still needed and is deliberately
+        weaker than the assertion - "all three have been laid out", not
+        "their rows differ" - so that the `dock: top` defect this test
+        names still reaches the assertion below and fails there, with
+        its own message, rather than timing out here.
         """
         from kstrl.tui.screens.overview import CheckpointBanner
 
@@ -347,6 +368,14 @@ class TestReviewFindings:
         app = _app(tmp_path, run_dir)
 
         async with app.run_test(size=(120, 36)) as pilot:
+            await settled(
+                pilot,
+                lambda: app._safe_mode_reasons is not None,
+                what=(
+                    "the app's first safe-mode check to report, so its "
+                    "broadcast cannot re-hide the banner under us"
+                ),
+            )
             banner = await mounted(pilot, lambda: app.screen, SafeModeBanner)
             checkpoint = await mounted(pilot, lambda: app.screen, CheckpointBanner)
             topbar = await mounted(pilot, lambda: app.screen, "#topbar")
@@ -358,7 +387,12 @@ class TestReviewFindings:
                 what="the topbar and both banners to be laid out once shown",
             )
             rows = [topbar.region.y, banner.region.y, checkpoint.region.y]
+            # No await between the wait and these reads, so nothing can
+            # interleave. Named separately from the row assertion so a
+            # broadcast that does get through says so in its own words.
+            still_shown = banner.display and checkpoint.display
 
+        assert still_shown, "a safe-mode broadcast re-hid a banner before the rows were read"
         assert len(set(rows)) == 3, f"widgets share a row: {rows}"
         assert rows == sorted(rows)
 
@@ -617,6 +651,23 @@ class TestGatingReviewFindings:
         reasons = [_reason("queue", f"reason number {index}") for index in range(4)]
 
         async with app.run_test(size=(80, 24)) as pilot:
+            # Before the panel opens, not after. The app broadcasts every
+            # completed check to every live screen, and
+            # `SafeModePanel.update_safe_mode` takes the broadcast even
+            # when the panel was built with reasons of its own - which is
+            # deliberate, and `test_a_late_check_does_not_overwrite_a
+            # _newer_one` is the test that says so. So the app's own
+            # first check is a settling process this fixture has to
+            # outlast: measured, a broadcast landing between the push and
+            # the read replaced these four reasons with the nominal body
+            # and turned the overflow from 6 rows into -6, in 10 of 20
+            # runs under artificial CPU load. The next check is
+            # SAFE_MODE_INTERVAL_SECONDS away, which is 5s of quiet.
+            await settled(
+                pilot,
+                lambda: app._safe_mode_reasons is not None,
+                what="the app's first safe-mode check to report, before the panel opens",
+            )
             app.push_screen(Panel(reasons))
             body = await mounted(pilot, lambda: app.screen, "#safemode-body")
             scroll = await mounted(pilot, lambda: app.screen, "#safemode-scroll")
@@ -627,7 +678,15 @@ class TestGatingReviewFindings:
             )
             hidden = body.region.height - scroll.region.height
             reachable = scroll.max_scroll_y
+            # No await between the wait above and these three reads, so
+            # nothing can interleave. This one is the anti-vacuity check:
+            # if a broadcast ever does land here, it must say so in its
+            # own words rather than as "widen the fixture".
+            showing_the_fixture = "reason number 3" in str(body.render())
 
+        assert showing_the_fixture, (
+            "a safe-mode broadcast replaced the fixture's reasons before the measurement"
+        )
         assert hidden > 0, "the fixture no longer overflows; widen it"
         assert reachable >= hidden, f"{hidden} rows overflow but only {reachable} are scrollable"
 

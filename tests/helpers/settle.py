@@ -86,7 +86,6 @@ async def settled(
     *,
     what: str,
     timeout: float = SETTLE_TIMEOUT,
-    interval: float = SETTLE_INTERVAL,
 ) -> None:
     """Pause until ``predicate`` is truthy, or fail saying what never was.
 
@@ -99,8 +98,11 @@ async def settled(
         what: named in the failure. Write the condition as a noun phrase
             the reader can act on - "the config table to mount", not
             "the thing".
-        timeout: wall-clock seconds before the wait is a failure.
-        interval: seconds per poll, passed to ``pilot.pause``.
+        timeout: wall-clock seconds before the wait is a failure. The
+            poll interval is not a parameter: no caller overrode it in
+            291 waits, and neither wrapper below exposed it, so it was
+            an unexercised branch in the one function every TUI test
+            depends on.
 
     Raises:
         AssertionError: if the deadline passes with the predicate still
@@ -117,7 +119,7 @@ async def settled(
             raise AssertionError(
                 f"waited {timeout:g}s ({polls} polls) for {what}, and it never settled"
             )
-        await pilot.pause(interval)
+        await pilot.pause(SETTLE_INTERVAL)
 
 
 @overload
@@ -162,10 +164,16 @@ async def mounted(
     """
     await settled(
         pilot,
-        lambda: node().query(selector),
+        lambda: node().query_one_optional(selector),
         what=f"{selector if isinstance(selector, str) else selector.__name__} to mount",
         timeout=timeout,
     )
+    # No await since the predicate last saw a match, so nothing can have
+    # unmounted it, and this call is the memoised one: measured on a
+    # 40-widget screen with the cache forced to miss, ``query("#id")``
+    # costs 205.3 us against 1.5 us for the id fast path, because
+    # ``query`` walks the whole subtree with no early exit while
+    # ``query_one`` stops at the first breadth-first match.
     found = node().query_one(selector)
     return found
 
@@ -193,6 +201,21 @@ async def drained(
 
     It covers exactly one hop. A handler that posts further messages of
     its own needs a predicate on the outcome, not this.
+
+    TWO STRONGER PRIMITIVES TEXTUAL SHIPS, and why neither is used here.
+    ``MessagePump.call_after_refresh`` posts the same ``InvokeLater``
+    but the screen holds it back: ``Screen._on_idle`` returns early
+    while a layout, scroll, repaint or recompose is pending, so the
+    callback lands after the frame rather than merely after the queue.
+    That is strictly stronger than ``call_later`` and worth measuring as
+    a follow-up; it is not taken here because swapping the primitive
+    under 20 call sites needs the planted-defect battery re-run, and
+    this PR already has one race it did not expect. ``wait_for_refresh``
+    wraps it and is NOT a candidate: it awaits an ``asyncio.Event`` with
+    no deadline, so a frame that never comes is a hung test rather than
+    a failing one, and it returns ``False`` as a silent null-op when
+    called from the node's own task. A wait that can quietly not wait is
+    the defect this module exists to remove.
     """
     handled: list[bool] = []
     pump.call_later(handled.append, True)
