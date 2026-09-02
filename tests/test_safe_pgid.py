@@ -331,6 +331,12 @@ _MUST_CATCH = {
     ),
     # Promoted from `test_the_remaining_misses` by #324's shared resolver.
     "getattr with a foldable name": 'import os\npgid = getattr(os, "getpgid")(pid)\n',
+    # Promoted out of `_LAYER_TWO_MISSES` when #324's helper learned to
+    # resolve an attribute's RECEIVER. This lane measured it as a silent
+    # miss and reported it; that report is what got it fixed.
+    "module held in a class attribute": (
+        "import os\n\n\nclass G:\n    mod = os\n\n\npgid = G.mod.getpgid(pid)\n"
+    ),
 }
 
 #: Spellings that must NOT be flagged, or the net fails closed so hard
@@ -346,9 +352,10 @@ _MUST_IGNORE = {
     "a different os call": "import os\npid = os.getpid()\n",
     # Pins the precision resolving to a dotted ORIGIN buys: `lookup` is
     # the callable, `other.lookup` is somebody else's attribute of that
-    # name. This holds only while no attribute of that name is bound
-    # anywhere in the same file; `astwalk.Bindings.attributes` carries no
-    # owner and says so.
+    # name. It is REPORTED rather than dismissed, because nothing in the
+    # file bound `other`, so the walk cannot say whose `lookup` it is.
+    # That is the bound on receiver resolution: an unbound receiver must
+    # not become a false `seen`.
     "the same name as an attribute of something else": (
         "import os\nlookup = os.getpgid\npgid = other.lookup(1)\n"
     ),
@@ -364,6 +371,7 @@ _MUST_IGNORE = {
 _UNDECIDED_IGNORES: dict[str, tuple[str, ...]] = {
     "unrelated method of the same name": ("6 C().getpgid",),
     "unrelated free function of the same name": ("5 getpgid",),
+    "the same name as an attribute of something else": ("3 other.lookup",),
 }
 
 #: Spellings the walk SURFACES but cannot decide, with the exact row it
@@ -383,21 +391,20 @@ _MUST_BE_UNDECIDED = {
     ),
 }
 
-#: What layer 2 still cannot see AT ALL, in either half. Two rows, both
-#: measured on this tree rather than reasoned about.
+#: What layer 2 still cannot see AT ALL, in either half. Measured on
+#: this tree rather than reasoned about.
 #:
-#: `attribute to module` needs a map from an attribute name to a MODULE,
-#: which `astwalk.Bindings` deliberately does not keep: `attributes` maps
-#: an attribute to a callable origin, and `G.mod.getpgid` asks it to
-#: resolve the RECEIVER of an attribute rather than the attribute itself.
+#: This table had two rows when the lane started and has one now. The
+#: other, `G.mod.getpgid`, was measured here as a SILENT miss and reported
+#: to #324, which added receiver resolution; it is in `_MUST_CATCH` above.
+#: That is the argument for the shared helper stated as a diff: a hole one
+#: guard finds is closed for every guard.
+#:
 #: `tuple destructuring` needs a target the AST cannot spell as a path,
 #: which `astwalk.assignment_parts` answers `None` for rather than
-#: guessing at.
-#:
-#: Layer 1 catches both, which is why layer 1 exists;
+#: guessing at. Layer 1 catches it, which is why layer 1 exists;
 #: `test_layer_one_catches_what_layer_two_cannot` is that measurement.
 _LAYER_TWO_MISSES = {
-    "attribute to module": "import os\n\n\nclass G:\n    mod = os\n\n\npgid = G.mod.getpgid(pid)\n",
     "tuple destructuring": (
         "import os\n\nhop, other = _resolve, None\n_resolve = os.getpgid\npgid = hop(1)\n"
     ),
@@ -544,10 +551,10 @@ class TestNoCallerCarriesItsOwnCopy:
 
     @pytest.mark.parametrize("spelling", sorted(_LAYER_TWO_MISSES))
     def test_layer_one_catches_what_layer_two_cannot(self, spelling: str) -> None:
-        """The reason there are two layers, measured on the two rows the
-        strict xfail below records as layer 2's misses. Neither is
-        invisible to the guard as a whole; both are invisible to the
-        walk, and the disclosure has to say which."""
+        """The reason there are two layers, measured on every row the
+        strict xfail below records as a layer 2 miss. None is invisible
+        to the guard as a whole; each is invisible to the WALK, and the
+        disclosure has to say which."""
         assert _spellings(_LAYER_TWO_MISSES[spelling]) > 0, (
             f"{spelling!r} is disclosed as a layer 2 miss, so layer 1 is the only "
             f"thing covering it, and it does not"

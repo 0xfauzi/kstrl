@@ -138,6 +138,19 @@ class Sites:
     def __add__(self, other: Sites) -> Sites:
         return Sites(self.seen + other.seen, self.undecided + other.undecided)
 
+    def sorted(self) -> Sites:
+        """The same answer in a stable order.
+
+        Both migration lanes of #324 asked for this independently: rows
+        accumulated with ``+`` across a corpus come out in file-iteration
+        order, so a pin churns for a reason that is not the guard's
+        subject. Sorting is the cheap half of that; the expensive half is
+        that a row carries a line number at all, which a caller strips
+        for itself when it wants a pin an edit above the site cannot
+        break.
+        """
+        return Sites(tuple(sorted(self.seen)), tuple(sorted(self.undecided)))
+
 
 def assert_sites(
     found: Sites,
