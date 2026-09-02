@@ -32,13 +32,9 @@ from tests.helpers.astwalk import (
     parsed,
     spells,
 )
-from tests.helpers.encodingprobe import cleared, reported, scan
-from tests.helpers.encodingwalk import (
-    HANDLE_READS,
-    HANDLE_SAFE,
-    Scan,
-    spells_a_token,
-)
+from tests.helpers.encodinghandles import HANDLE_READS, HANDLE_SAFE
+from tests.helpers.encodingprobe import cleared, cleared_reads, flagged, reported, scan
+from tests.helpers.encodingwalk import Scan, spells_a_token
 from tests.test_encoding_readers import EXPECTED_READ_SPELLINGS
 
 # --------------------------------------------------------------------------
@@ -81,49 +77,70 @@ def _module(read: str, consumer: str, kw: str, handler: str) -> str:
     )
 
 
+#: The forms whose compliant half the walk CANNOT prove compliant, by
+#: name. Round 5's F4: ``json.load(h)`` hands the handle to a callee
+#: whose read timing this walk cannot establish, so the decode cannot be
+#: attributed to the handler above it however correct that handler is.
+#:
+#: Pinned by name rather than derived, so that widening it is a diff
+#: somebody reads. One row today. A form ARRIVING here means the walk
+#: stopped being able to prove something it used to prove, which is the
+#: direction that costs a reader information.
+UNPLACEABLE_FORMS: frozenset[str] = frozenset({"open_handed_over"})
+
+
 class TestTheWalkSeesEveryShapeOfRead:
     """Nine shapes, each planted twice. The compliant half must be
-    CLEARED and the defective half must be REPORTED, because a walk that
+    CLEARED and the defective half must be FLAGGED, because a walk that
     reports nothing and a walk that sees nothing are the same answer when
     only one direction is checked."""
 
     @pytest.mark.parametrize(("name", "read", "consumer"), READ_FORMS)
-    def test_a_compliant_read_iscleared(self, name: str, read: str, consumer: str) -> None:
-        found = scan(_module(read, consumer, GOOD_KW, "(OSError, UnicodeDecodeError)"))
+    def test_a_compliant_read_is_cleared(self, name: str, read: str, consumer: str) -> None:
+        source = _module(read, consumer, GOOD_KW, "(OSError, UnicodeDecodeError)")
+        found = scan(source)
         assert found.clear, f"{name}: a compliant read was not seen at all"
         assert not found.reported, f"{name}: a compliant read was reported: {found.reported}"
+        if name in UNPLACEABLE_FORMS:
+            assert found.undecided, (
+                f"{name} is pinned as a hand-over the walk cannot place. It must say so. "
+                "Clearing it is the walk claiming to know when a callee reads."
+            )
+            return
         assert not found.undecided, f"{name}: {found.undecided}"
 
     @pytest.mark.parametrize(("name", "read", "consumer"), READ_FORMS)
-    def test_a_read_that_names_no_encoding_isreported(
+    def test_a_read_that_names_no_encoding_is_reported(
         self, name: str, read: str, consumer: str
     ) -> None:
         found = reported(_module(read, consumer, BAD_KW, "(OSError, UnicodeDecodeError)"))
         assert any("names no encoding" in row for row in found), f"{name}: not reported: {found}"
 
     @pytest.mark.parametrize(("name", "read", "consumer"), READ_FORMS)
-    def test_a_read_whose_handler_misses_the_decode_isreported(
+    def test_a_read_whose_handler_misses_the_decode_is_reported(
         self, name: str, read: str, consumer: str
     ) -> None:
-        found = reported(_module(read, consumer, GOOD_KW, "OSError"))
-        assert any("UnicodeDecodeError" in row for row in found), f"{name}: not reported: {found}"
+        found = flagged(_module(read, consumer, GOOD_KW, "OSError"))
+        assert any("UnicodeDecodeError" in row or "cannot locate" in row for row in found), (
+            f"{name}: neither reported nor undecided: {found}"
+        )
 
 
 class TestTheEncodingRule:
     """Rule E: the read must name utf-8, and the walk must be able to
     prove it rather than assume it."""
 
-    def test_a_non_utf8_encoding_isreported(self) -> None:
+    def test_a_non_utf8_encoding_is_reported(self) -> None:
         found = reported("def f(p):\n    return p.read_text(encoding='latin-1')\n")
         assert found and "latin-1" in found[0], found
 
-    def test_an_encoding_it_cannot_fold_is_reported_notcleared(self) -> None:
+    def test_an_encoding_it_cannot_fold_is_reported_not_cleared(self) -> None:
         """The clearing direction is the dangerous one. ``encoding=DEFAULT``
         may well be utf-8; this walk cannot see that, so it says so."""
         found = reported("def f(p, DEFAULT):\n    return p.read_text(encoding=DEFAULT)\n")
         assert found and "cannot fold" in found[0], found
 
-    def test_a_folded_encoding_expression_iscleared(self) -> None:
+    def test_a_folded_encoding_expression_is_cleared(self) -> None:
         """``folded_str`` reaches implicit concatenation and f-strings, so
         a spelling built out of pieces is still proven."""
         assert cleared("def f(p):\n    return p.read_text(encoding='utf' '-8')\n")
@@ -170,21 +187,21 @@ class TestTheDecodeRule:
             "(OSError, KeyError)",
         ],
     )
-    def test_a_handler_that_answers_only_for_the_io_isreported(self, handler: str) -> None:
+    def test_a_handler_that_answers_only_for_the_io_is_reported(self, handler: str) -> None:
         source = (
             "def f(p):\n    try:\n        return p.read_text(encoding='utf-8')\n"
             f"    except {handler}:\n        return None\n"
         )
         assert reported(source), handler
 
-    def test_a_read_with_no_handler_at_all_iscleared(self) -> None:
+    def test_a_read_with_no_handler_at_all_is_cleared(self) -> None:
         """Not an offender, and saying so is a decision rather than an
         oversight: a read nothing guards claims nothing, so nothing
         escapes a promise it did not make. Twelve of ``kstrl/``'s 52 are
         this shape."""
         assert cleared("def f(p):\n    return p.read_text(encoding='utf-8')\n")
 
-    def test_a_handler_this_walk_cannot_name_isreported(self) -> None:
+    def test_a_handler_this_walk_cannot_name_is_reported(self) -> None:
         """``Clause.decided`` is False, and an empty name set reads
         exactly like "catches nothing", which is the worst possible
         misreading of "catches something I could not see"."""
@@ -264,7 +281,7 @@ class TestTheErrorsKeyword:
     can never fire."""
 
     @pytest.mark.parametrize("errors", ["replace", "ignore", "surrogateescape"])
-    def test_a_lenient_read_under_an_os_only_handler_iscleared(self, errors: str) -> None:
+    def test_a_lenient_read_under_an_os_only_handler_is_cleared(self, errors: str) -> None:
         source = (
             "def f(p):\n    try:\n"
             f"        return p.read_text(encoding='utf-8', errors='{errors}')\n"
@@ -536,7 +553,7 @@ class TestAnOpenTheWalkCannotFollowIsNotCleared:
             "        except OSError:\n            return None\n"
         )
         found = scan(source)
-        assert not found.clear and found.undecided, found
+        assert not cleared_reads(source) and found.undecided, found
 
     def test_a_handle_returned_out_of_its_function_is_undecided(self) -> None:
         """The limit that used to be a disclosure. It is now a row."""
@@ -546,7 +563,7 @@ class TestAnOpenTheWalkCannotFollowIsNotCleared:
             "    except OSError:\n        return None\n"
         )
         found = scan(source)
-        assert not found.clear and found.undecided, found
+        assert not cleared_reads(source) and found.undecided, found
 
     @pytest.mark.parametrize(
         ("name", "body"),
@@ -565,7 +582,42 @@ class TestAnOpenTheWalkCannotFollowIsNotCleared:
             "import json\ndef f(p):\n    try:\n"
             f"        h = open(p, encoding='utf-8')\n{body}{self.HANDLER}"
         )
-        assert reported(source), name
+        assert flagged(source), name
+
+    def test_an_eager_comprehension_over_the_handle_is_a_decode_here(self) -> None:
+        """The arm that lets a compliant comprehension CLEAR at all.
+
+        ``[x for x in h]`` runs its iteration at that expression, so the
+        handler around it is the one that answers and the walk can prove
+        it. A generator expression cannot (see the sibling below), and
+        #344 round 5's M29 showed nothing pinned the difference: turning
+        this arm off moved the site to ``undecided``, which is the safe
+        direction and so passed every test.
+        """
+        source = (
+            "def f(p):\n    try:\n        h = open(p, encoding='utf-8')\n"
+            "        return [x for x in h]\n"
+            "    except (OSError, UnicodeDecodeError):\n        return None\n"
+        )
+        assert cleared(source), scan(source)
+        assert not flagged(source), scan(source)
+
+    def test_a_hand_over_drained_by_a_generator_expression_is_undecided(self) -> None:
+        """The other half, and #344 round 5's M61.
+
+        ``(r for r in csv.reader(h))`` builds nothing and reads nothing.
+        The decode happens wherever the generator is drained, which is
+        outside the handler here, so the walk must decline rather than
+        credit the ``for`` it can see.
+        """
+        source = (
+            "import csv\ndef f(p):\n    h = open(p, encoding='utf-8')\n"
+            "    rows = (r for r in csv.reader(h))\n"
+            "    try:\n        return list(rows)\n"
+            "    except OSError:\n        return None\n"
+        )
+        assert not cleared_reads(source), scan(source)
+        assert any("deferred" in row for row in flagged(source)), scan(source)
 
     def test_a_lock_file_that_never_reads_still_clears(self) -> None:
         """The cost of the rule, stated. Six ``fcntl`` lock files bind a
@@ -598,9 +650,8 @@ class TestAnOpenTheWalkCannotFollowIsNotCleared:
             "def f(p):\n    h = open(p, encoding='utf-8')\n    return h.readinto(bytearray())\n"
         )
         found = scan(source)
-        assert not found.clear, found
-        assert any("does not model" in row for row in found.undecided), found
-        assert any("never bound to a name" in row for row in found.undecided), found
+        assert not cleared_reads(source), found
+        assert any("readinto" in row for row in found.undecided), found
 
     def test_a_bound_method_taken_off_the_handle_is_undecided(self) -> None:
         """#344 round 3 finding 1, and the reason the Attribute arm now
@@ -616,7 +667,7 @@ class TestAnOpenTheWalkCannotFollowIsNotCleared:
             "        _read = h.read\n        return _read(64)\n"
         )
         found = scan(source)
-        assert not found.clear and found.undecided, found
+        assert not cleared_reads(source) and found.undecided, found
 
     def test_a_closure_over_the_handle_is_undecided(self) -> None:
         """#344 round 3 finding 2. A lexical closure IS a way the handle
@@ -628,7 +679,7 @@ class TestAnOpenTheWalkCannotFollowIsNotCleared:
             "    def inner():\n        return h.read()\n    return inner\n"
         )
         found = scan(source)
-        assert not found.clear and found.undecided, found
+        assert not cleared_reads(source) and found.undecided, found
 
     def test_a_walrus_hand_over_is_charged_the_decode_rule(self) -> None:
         """#344 round 3 finding 3, and the worst of the three, because
@@ -640,7 +691,7 @@ class TestAnOpenTheWalkCannotFollowIsNotCleared:
             "        return json.load(h := open(p, encoding='utf-8'))\n"
             "    except OSError:\n        return None\n"
         )
-        assert reported(source)
+        assert flagged(source)
 
     def test_a_plain_name_bound_beside_a_dotted_one_is_undecided(self) -> None:
         """#344 round 3 finding 4. ``bound_names`` drops the dotted target
@@ -654,7 +705,7 @@ class TestAnOpenTheWalkCannotFollowIsNotCleared:
             "        return self.g.read()\n"
         )
         found = scan(source)
-        assert not found.clear and found.undecided, found
+        assert not cleared_reads(source) and found.undecided, found
 
     def test_the_safe_members_come_from_the_type_and_not_from_a_list(self) -> None:
         """The derivation, checked. A hand-written list is the clearing

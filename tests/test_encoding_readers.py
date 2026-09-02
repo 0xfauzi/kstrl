@@ -147,7 +147,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "autonomy_replay.py csv.DictReader(handle, delimiter='\\t') on an open() handle",
     "autonomy_replay.py path.open(encoding='utf-8', newline='')",
     "calibration.py path.read_text(encoding='utf-8')",
-    "cli.py json.load(f) on an open() handle",
     "cli.py open(prd_file, encoding='utf-8')",
     "commandrun.py open(path, 'a', buffering=1, encoding='utf-8')",
     "decisions.py path.read_text(encoding='utf-8')",
@@ -157,7 +156,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "events.py open(self.path, 'a', encoding='utf-8')",
     "evolution.py open(self.config.experiments_path, 'a', encoding='utf-8')",
     "evolution.py self.config.experiments_path.read_text(encoding='utf-8')",
-    "factory.py _RunLock(fp=fp, held=True) on an open() handle",
     "factory.py fp.read(64) on an open() handle",
     "factory.py open(lock_path, 'a+', encoding='utf-8')",
     "factory.py open(lock_path, 'w', encoding='utf-8')",
@@ -171,11 +169,9 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "feedforward.py path.read_text(encoding='utf-8', errors='replace')",
     "feedforward.py py_file.read_text(encoding='utf-8', errors='replace')",
     "fixtures.py full_path.read_text(encoding='utf-8')",
-    "fixtures.py json.load(f) on an open() handle",
     "fixtures.py open(prd_path, encoding='utf-8')",
     "fixtures.py snapshot_path.read_text(encoding='utf-8')",
     "inbox.py open(path, 'a', encoding='utf-8')",
-    "init_cmd.py json.load(f) on an open() handle",
     "init_cmd.py open(prd_file, encoding='utf-8')",
     "init_cmd.py path.open('a', encoding='utf-8')",
     "init_cmd.py path.read_text(encoding='utf-8')",
@@ -188,7 +184,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "licensing.py Path(match).read_text(encoding='utf-8', errors='replace')",
     "loop.py claude_md_path.read_text(encoding='utf-8')",
     "loop.py config.prompt_file.read_text(encoding='utf-8')",
-    "manifest.py json.load(f) on an open() handle",
     "manifest.py open(path, encoding='utf-8')",
     "observability.py for line in f on an open() handle",
     "observability.py open(path, encoding='utf-8')",
@@ -196,7 +191,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "parsers.py source_path.read_text(encoding='utf-8')",
     "pipeline.py open(path, 'a', buffering=1, encoding='utf-8')",
     "pipeline.py progress_path.read_text(encoding='utf-8')",
-    "prd.py json.load(f) on an open() handle",
     "prd.py open(path, encoding='utf-8')",
     "proposals.py claude_md.read_text(encoding='utf-8')",
     "proposals.py open(path, 'a', encoding='utf-8')",
@@ -232,29 +226,57 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
 #: newly resolvable receiver would remove a site from the guard in
 #: silence.
 #: Every read the walk can see and CANNOT PROVE anything about, keyed by
-#: module and expression. One row, and the number is the whole point.
+#: module and expression. Seven rows, and the number is the whole point.
 #:
-#: #344 took four review rounds, and rounds one to three each ended the
-#: same way: the walk cleared a shape that escaped at run time, a narrow
-#: fix landed, and the next round found more. Eight, then nine, then
-#: nineteen. Round 4 stopped patching and changed the rule instead - a
-#: site the walk cannot PROVE compliant is undecided, never cleared - and
-#: this constant is what that cost, measured rather than hoped: 85
-#: cleared with 19 known holes became 84 cleared and 1 row a reader can
-#: work through.
+#: #344 took five review rounds, and rounds one to four each ended the
+#: same way: the walk cleared shapes that escaped at run time, a fix
+#: landed, and the next round found more. Eight, nine, nineteen, then
+#: nine again. Round 4 changed the rule - a site the walk cannot PROVE
+#: compliant is undecided, never cleared - and round 5 applied that rule
+#: to the three layers the round-4 change never reached: handle scope,
+#: consumer timing, and members that change what decoding happens.
 #:
-#: The row is real and the reader's job is easy. ``verify.py``'s fixture
-#: read sits inside ``with tempfile.TemporaryDirectory(...)``, whose
-#: ``__exit__`` returns None and swallows nothing - but the walk does not
-#: know that, and #320's own defect can be written as
-#: ``contextlib.suppress(OSError)``, which is a ``with`` that swallows
-#: everything. The walk proves ``open`` and reads ``suppress``; a third
-#: context manager is a row here rather than a guess there.
+#: THE COST, measured rather than hoped: 85 cleared with 19 known holes
+#: became 78 cleared with 7 rows a reader can work through.
+#:
+#: SIX OF THE SEVEN ARE THE SAME FACT. A handle handed to a callee is a
+#: read this walk cannot PLACE: ``json.load(f)`` reads eagerly and
+#: ``csv.reader(f)`` reads nothing at all, and no amount of AST tells
+#: them apart. All six were checked by hand and all six are compliant -
+#: three cover the decode, two have no handler so the caller answers, and
+#: ``factory.py`` stores the handle in a dataclass whose own read is
+#: tracked separately. The rows say "I cannot establish when this callee
+#: reads", which is true, rather than "fine", which was not.
+#:
+#: THE SEVENTH is ``verify.py``'s fixture read inside ``with
+#: tempfile.TemporaryDirectory(...)``, whose ``__exit__`` returns None
+#: and swallows nothing - but the walk does not know that, and #320's own
+#: defect can be written ``contextlib.suppress(OSError)``, which is a
+#: ``with`` that swallows everything. The walk proves ``open`` and reads
+#: ``suppress``; a third context manager is a row here, not a guess there.
 #:
 #: A row ARRIVING is not a failure of the code under test. It means new
-#: code put a read inside a construct nobody has read the ``__exit__``
-#: of, and somebody should.
+#: code put a read somewhere nobody can say when it happens, or inside a
+#: construct nobody has read the ``__exit__`` of, and somebody should.
 EXPECTED_UNDECIDED: tuple[str, ...] = (
+    "cli.py f (the read is deferred to wherever this value is drained, "
+    "which this walk cannot locate, so no handler can be credited with "
+    "covering it)",
+    "factory.py fp (the read is deferred to wherever this value is drained, "
+    "which this walk cannot locate, so no handler can be credited with "
+    "covering it)",
+    "fixtures.py f (the read is deferred to wherever this value is drained, "
+    "which this walk cannot locate, so no handler can be credited with "
+    "covering it)",
+    "init_cmd.py f (the read is deferred to wherever this value is drained, "
+    "which this walk cannot locate, so no handler can be credited with "
+    "covering it)",
+    "manifest.py f (the read is deferred to wherever this value is drained, "
+    "which this walk cannot locate, so no handler can be credited with "
+    "covering it)",
+    "prd.py f (the read is deferred to wherever this value is drained, "
+    "which this walk cannot locate, so no handler can be credited with "
+    "covering it)",
     "verify.py full_path.read_text(encoding='utf-8') (sits inside `with "
     "tempfile.TemporaryDirectory(prefix='kstr`, whose __exit__ this walk "
     "cannot prove does not swallow the decode)",

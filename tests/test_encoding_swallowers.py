@@ -14,6 +14,9 @@ spelling nobody has written yet.
 
 from __future__ import annotations
 
+import ast
+
+from tests.helpers.astwalk import handler_clauses, try_body_nodes
 from tests.helpers.encodingprobe import cleared, cleared_reads, reported, scan, undecided
 
 
@@ -33,7 +36,7 @@ class TestTheSwallowerIsNotAlwaysSpelledTry:
     are the mechanism; the package count is not.
     """
 
-    def test_a_suppress_that_hides_the_io_alone_isreported(self) -> None:
+    def test_a_suppress_that_hides_the_io_alone_is_reported(self) -> None:
         """The headline. This module has no ``try`` in it at all, and it
         commits #320's defect exactly."""
         source = (
@@ -88,7 +91,7 @@ class TestTheSwallowerIsNotAlwaysSpelledTry:
         )
         assert any("except OSError" in row for row in reported(source)), scan(source)
 
-    def test_an_except_star_that_misses_the_decode_isreported(self) -> None:
+    def test_an_except_star_that_misses_the_decode_is_reported(self) -> None:
         """``ast.TryStar`` is a different node type with the same
         meaning, and an ``isinstance(node, ast.Try)`` does not match it."""
         source = (
@@ -170,3 +173,44 @@ class TestTheSwallowerIsNotAlwaysSpelledTry:
             "        return None\n"
         )
         assert cleared(source) and not reported(source) and not undecided(source)
+
+
+class TestTheSharedResolverHandlesExceptStar:
+    """``handler_clauses`` and ``try_body_nodes`` accept ``ast.TryStar``
+    at RUN TIME, not only in their annotations.
+
+    #344 round 4 widened both signatures and mutated them, and the
+    mutation came back GREEN: narrowing the parameter type back to
+    ``ast.Try`` changes nothing pytest can see, because ``ast.TryStar``
+    carries ``.handlers`` and ``.body`` exactly as ``ast.Try`` does. The
+    annotation is enforced by mypy, and ``pyproject.toml`` scopes mypy to
+    ``kstrl/``, so nothing in CI reads it.
+
+    These two assertions are the part of that claim CI can check. The
+    annotation row in the mutation battery is run by hand against mypy
+    and says so; this is the mechanism that does not depend on that.
+    """
+
+    SOURCE = (
+        "def f(p):\n"
+        "    try:\n"
+        "        p.read_text(encoding='utf-8')\n"
+        "    except* (OSError, ValueError):\n"
+        "        pass\n"
+    )
+
+    def _try_star(self) -> ast.TryStar:
+        found = [n for n in ast.walk(ast.parse(self.SOURCE)) if isinstance(n, ast.TryStar)]
+        assert len(found) == 1, found
+        return found[0]
+
+    def test_handler_clauses_reads_an_except_star_ladder(self) -> None:
+        clauses = handler_clauses(self._try_star())
+        assert [sorted(c.names) for c in clauses] == [["OSError", "ValueError"]]
+        assert all(c.decided for c in clauses)
+
+    def test_try_body_nodes_reads_an_except_star_body(self) -> None:
+        body = try_body_nodes(self._try_star())
+        assert any(
+            isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "read_text" for n in body
+        ), [ast.dump(n) for n in body]

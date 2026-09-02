@@ -63,6 +63,50 @@ CLEAR = Verdict("clear")
 KEEP_LOOKING = Verdict("keep-looking")
 
 
+def _reraises(node: ast.Try | ast.TryStar) -> bool:
+    """Does any handler of this ``try`` hand the exception back on?
+
+    #344 round 5 F7. ``covers_the_decode`` asks what a clause NAMES, and
+    a clause that names ``UnicodeDecodeError`` and then re-raises it
+    covers nothing: the exception carries on outward exactly as if the
+    clause were not there. Measured CLEAR and escaping::
+
+        try:
+            try:
+                with open(p, encoding='utf-8') as h:
+                    return h.read()
+            except (OSError, UnicodeDecodeError):
+                raise
+        except OSError:
+            return 'caught'
+
+    The inner clause named the decode, the walk stopped there, and the
+    handler that actually ran was the IO-only one outside it.
+
+    KEEP_LOOKING and not a fault, which is the whole point: a re-raising
+    handler is transparent, so the right answer is to ask the construct
+    OUTSIDE it. If nothing outside catches, the read is cleared - and
+    correctly, because then the decode reaches the caller and the caller
+    is the site that answers, which is F9's lesson.
+
+    ANY ``raise`` in the handler body counts, not only an unconditional
+    one at the end. A ``raise`` under an ``if`` means the clause swallows
+    on some paths and not others, and a walk that cannot say which cannot
+    prove the clause covers. Nested functions are excluded through
+    :func:`own_nodes`: a ``def`` written inside a handler raises when it
+    is CALLED, which is not here.
+    """
+    for handler in node.handlers:
+        for statement in handler.body:
+            if isinstance(statement, ast.Raise):
+                return True
+            if isinstance(statement, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            if any(isinstance(child, ast.Raise) for child in own_nodes(statement)):
+                return True
+    return False
+
+
 def starts_at(node: Swallower) -> int:
     """The line a swallower starts on, which is how INNERMOST is decided.
 
@@ -199,18 +243,26 @@ def guard_verdict(
         reverse=True,
     )
     for statement in holding:
-        if isinstance(statement, ast.withitem):
-            verdict = with_verdict(statement, table)
-        else:
-            found = clause_fault(handler_clauses(statement, table))
-            verdict = (
-                KEEP_LOOKING
-                if found == "keep-looking"
-                else (CLEAR if found is None else Verdict("fault", found))
-            )
+        verdict = (
+            with_verdict(statement, table)
+            if isinstance(statement, ast.withitem)
+            else _try_verdict(statement, table)
+        )
         if verdict.kind != "keep-looking":
             return verdict
     return CLEAR
+
+
+def _try_verdict(node: ast.Try | ast.TryStar, table: Bindings) -> Verdict:
+    """What one ``try`` ladder says about a decode inside its body."""
+    found = clause_fault(handler_clauses(node, table))
+    if found is None and _reraises(node):
+        # It NAMED the decode and then handed it straight back on, so it
+        # answers for nothing. Ask the construct outside it instead.
+        return KEEP_LOOKING
+    if found == "keep-looking":
+        return KEEP_LOOKING
+    return CLEAR if found is None else Verdict("fault", found)
 
 
 def verdict_parts(verdict: Verdict) -> tuple[str | None, str | None]:

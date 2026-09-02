@@ -60,6 +60,7 @@ import json
 from pathlib import Path
 
 import pytest
+from _pytest.mark.structures import ParameterSet
 
 from tests.helpers.astwalk import handler_clauses, leaf_name
 from tests.helpers.encodingrules import answers_for_io, covers_the_decode
@@ -327,14 +328,118 @@ SHAPES: list[tuple[str, str]] = [
         "            with open(p, encoding='utf-8') as h:\n                return h.read()\n"
         "    except (OSError, UnicodeDecodeError):\n        return 'caught'\n",
     ),
+    # --- round 5: the nine the round-4 corpus could not see --------------
+    #     Every one of these was CLEAR AND ESCAPING when round 4 shipped,
+    #     and NONE of them was in this list. That is the whole finding:
+    #     the corpus that measures the fix did not contain the cases the
+    #     fix missed, so a 54-mutation battery and a safety property could
+    #     both be green while nine live escapes sat outside their reach.
+    #     Rows first, fixes second, from here on.
+    #
+    #     F2: the handle name crosses a scope by DECLARATION. The readers
+    #     are lexically outside the binding scope, so no care taken inside
+    #     it can ever see them.
+    (
+        "global declaration",
+        "H = None\n"
+        "def _open(p):\n    global H\n    H = open(p, encoding='utf-8')\n"
+        "def f(p):\n    try:\n        _open(p)\n        return H.read()\n"
+        "    except OSError:\n        return 'caught'\n",
+    ),
+    (
+        "nonlocal declaration",
+        "def f(p):\n    h = None\n"
+        "    def _open():\n        nonlocal h\n        h = open(p, encoding='utf-8')\n"
+        "    try:\n        _open()\n        return h.read()\n"
+        "    except OSError:\n        return 'caught'\n",
+    ),
+    #     F4: the consumer is LAZY, so the read happens somewhere the walk
+    #     cannot locate and the handler it credited is not the one that
+    #     runs. The third form does not even raise UnicodeDecodeError.
+    (
+        "generator drained under another handler",
+        "def f(p):\n    h = open(p, encoding='utf-8')\n    rows = (line for line in h)\n"
+        "    try:\n        return list(rows)\n    except OSError:\n        return 'caught'\n",
+    ),
+    (
+        "csv reader drained under another handler",
+        "import csv\ndef f(p):\n    h = open(p, encoding='utf-8')\n    rows = csv.reader(h)\n"
+        "    try:\n        return list(rows)\n    except OSError:\n        return 'caught'\n",
+    ),
+    (
+        "with closes before the drain",
+        "import csv\ndef f(p):\n"
+        "    with open(p, encoding='utf-8') as h:\n        rows = csv.reader(h)\n"
+        "    try:\n        return list(rows)\n    except OSError:\n        return 'caught'\n",
+    ),
+    #     F6: a TextIOWrapper member that CHANGES what decoding happens.
+    (
+        "detach and rewrap",
+        "import io\ndef f(p):\n    try:\n"
+        "        with open(p, encoding='utf-8') as h:\n"
+        "            return io.TextIOWrapper(h.detach(), encoding='utf-8').read()\n"
+        "    except OSError:\n        return 'caught'\n",
+    ),
+    (
+        "reconfigure back to strict",
+        "def f(p):\n    try:\n"
+        "        with open(p, encoding='utf-8', errors='replace') as h:\n"
+        "            h.reconfigure(errors='strict')\n            return h.read()\n"
+        "    except OSError:\n        return 'caught'\n",
+    ),
+    #     F7: the handler NAMES the decode and then hands it straight back
+    #     on, so the clause that actually answers is the one outside it.
+    (
+        "re-raising handler over an IO-only one",
+        "def f(p):\n    try:\n        try:\n"
+        "            with open(p, encoding='utf-8') as h:\n                return h.read()\n"
+        "        except (OSError, UnicodeDecodeError):\n            raise\n"
+        "    except OSError:\n        return 'caught'\n",
+    ),
+    #     ...and the same handler ALONE, which is the control on that
+    #     fix. A lone re-raising clause is semantically no handler at
+    #     all, so the decode reaches the caller and the caller is the
+    #     site that answers. It must stay CLEARED, or the F7 fix has
+    #     started over-reporting the shape it was aimed at.
+    (
+        "re-raising handler, nothing outside it",
+        "def f(p):\n    try:\n        with open(p, encoding='utf-8') as h:\n"
+        "            return h.read()\n    except (OSError, UnicodeDecodeError):\n"
+        "        raise\n",
+    ),
+    #     F8: the read is in a STRING. See INHERENT_LIMITS - this row is
+    #     expected to fail the property, and says so out loud.
+    (
+        "eval",
+        "def f(p):\n    try:\n        h = open(p, encoding='utf-8')\n"
+        "        return eval('h.read()')\n    except OSError:\n        return 'caught'\n",
+    ),
 ]
+
+
+#: The shapes no static walk can decide, BY NAME, each with a strict
+#: xfail on the safety property below.
+#:
+#: ``eval`` and ``exec`` with implicit locals put the read in a STRING.
+#: There is no AST for it, the name resolution happens at run time
+#: against the calling frame, and a walk that claimed to see it would be
+#: claiming to have executed the program. This is not a hole to be closed
+#: in a later round; it is the boundary of the technique.
+#:
+#: WHY IT IS A ROW AND AN XFAIL RATHER THAN AN OMISSION. CLAUDE.md's
+#: guard-design rule 2: ``assert hits(...) == []`` is not a control, and
+#: neither is leaving a known miss out of the corpus - both pass when the
+#: walk is correctly narrow AND when it has stopped looking. A strict
+#: xfail fails LOUDLY the day somebody widens the walk to cover it, which
+#: is the only way a disclosure stays true without anybody re-reading it.
+INHERENT_LIMITS: frozenset[str] = frozenset({"eval"})
 
 
 #: The compliant shapes the walk answers ``undecided`` about, BY NAME.
 #:
 #: Option A's price list. Every other non-escaping row must be CLEARED,
 #: or the walk has become a rubber stamp in the opposite direction and
-#: its 84-row cleared inventory carries no information. These two may be
+#: its 78-row cleared inventory carries no information. These two may be
 #: undecided instead - and MUST be, because a row that starts clearing is
 #: the walk claiming to have read a ``__exit__`` it cannot see.
 #:
@@ -351,18 +456,54 @@ UNPROVABLE: frozenset[str] = frozenset(
 
 
 def _escapes(source: str, path: Path) -> bool:
-    """Does a ``UnicodeDecodeError`` reach the caller of ``f``?
+    """Does a ``ValueError`` reach the caller of ``f``?
 
     The oracle. No AST, no re-implementation of the walk: the module is
     compiled and run against real bytes, and CPython decides.
+
+    ``ValueError`` AND NOT ``UnicodeDecodeError``, and round 5 is why.
+    Two of the nine shapes it missed commit exactly this defect and raise
+    something else on the way out::
+
+        with closes before the drain  -> ValueError: I/O operation on closed file
+        detach and rewrap            -> ValueError: underlying buffer has been detached
+
+    In both, the walk pointed the handler rule at a site that is not
+    where the read happens, so the handler credited with covering the
+    decode is not the handler that runs. That is the same defect with a
+    different symptom, and an oracle keyed on the symptom would have
+    scored both as "does not escape" and quietly excluded them.
+
+    ``ValueError`` is not a widening chosen for convenience: it is the
+    exact ceiling CLAUDE.md names for this defect class, "a reader must
+    catch ``ValueError`` alongside ``OSError``, because
+    ``UnicodeDecodeError`` is a ``ValueError``".
+    :meth:`TestTheOracleIsReal.test_the_canonical_escape_is_a_decode_error`
+    keeps the widening honest by pinning that the plainest shape still
+    escapes as a ``UnicodeDecodeError`` specifically.
     """
+    # THE ORACLE OWNS ITS FIXTURE, and this is not tidiness. Two corpus
+    # rows OPEN THE FILE FOR WRITING - "write only" and "lock file, never
+    # read" - and truncate it to something that decodes perfectly. The
+    # per-case fixture below is function-scoped so the property test was
+    # unaffected, but the two corpus CONTROLS loop over every shape with
+    # ONE file, so every row after those two was measured against a file
+    # with no undecodable byte left in it. Round 5 added nine rows at the
+    # end and seven of them silently scored "does not escape" while the
+    # interpreter raises UnicodeDecodeError on all seven.
+    #
+    # That is this PR's own defect class occurring in the instrument: the
+    # corpus that measures the fix could not see the cases the fix was
+    # for. Writing the bytes HERE makes it impossible for a caller to
+    # forget, which is worth more than a rule saying they must not.
+    path.write_bytes(BAD_BYTES)
     namespace: dict[str, object] = {}
     exec(compile(source, "<shape>", "exec"), namespace)  # noqa: S102
     run = namespace["f"]
     assert callable(run)
     try:
         run(path)
-    except UnicodeDecodeError:
+    except ValueError:
         return True
     return False
 
@@ -426,10 +567,41 @@ def bad_file(tmp_path: Path) -> Path:
     return target
 
 
+def _parametrized() -> list[ParameterSet]:
+    """:data:`SHAPES` as parameters, with the inherent limits xfailed.
+
+    STRICT, so the day somebody teaches the walk to read inside an
+    ``eval`` this XPASSes and fails. CLAUDE.md guard-design rule 2: a
+    disclosure that cannot fail is not a disclosure, it is a comment.
+    """
+    return [
+        pytest.param(
+            name,
+            source,
+            id=name,
+            marks=(
+                [
+                    pytest.mark.xfail(
+                        strict=True,
+                        reason=(
+                            f"{name}: the read is inside a string, resolved at run time "
+                            "against the calling frame. No static walk can see it, and "
+                            "this row exists so that widening one XPASSes here."
+                        ),
+                    )
+                ]
+                if name in INHERENT_LIMITS
+                else []
+            ),
+        )
+        for name, source in SHAPES
+    ]
+
+
 class TestTheSafetyProperty:
     """The invariant, over every shape, against the interpreter."""
 
-    @pytest.mark.parametrize(("name", "source"), SHAPES, ids=[row[0] for row in SHAPES])
+    @pytest.mark.parametrize(("name", "source"), _parametrized())
     def test_a_shape_whose_decode_escapes_is_never_cleared(
         self, name: str, source: str, bad_file: Path
     ) -> None:
@@ -463,7 +635,7 @@ class TestTheSafetyProperty:
             for name, source in SHAPES
             if _escapes(source, bad_file) and _answers_for_io_only(source)
         ]
-        assert len(escaping) == 30, (
+        assert len(escaping) == 39, (
             "the corpus stopped committing the defect it is built to commit, so the "
             f"property above is an assertion about nothing. Escaping: {escaping}"
         )
@@ -486,6 +658,7 @@ class TestTheSafetyProperty:
             "except star covers the decode",
             "suppress through a name the walk cannot read",
             "non-open context manager, decode covered",
+            "re-raising handler, nothing outside it",
         ], (
             "a shape carries no construct swallowing the IO alone, so the safety "
             f"property skips it rather than testing it. Rows: {without}"
@@ -523,6 +696,45 @@ class TestTheSafetyProperty:
 class TestTheOracleIsReal:
     """The oracle's own controls. An oracle nobody checked is a second
     guard with no guard on it."""
+
+    def test_a_row_that_writes_the_file_cannot_neuter_the_next_row(self, bad_file: Path) -> None:
+        """#344 round 5's instrument defect, as a control.
+
+        Two corpus rows open the fixture FOR WRITING and truncate it to
+        something that decodes perfectly. The two corpus controls loop
+        over every shape with one file, so before :func:`_escapes` began
+        writing its own bytes, every row after those two was scored
+        against a file with no undecodable byte left in it - seven of
+        round 5's nine new rows among them, all seven of which the
+        interpreter does raise ``UnicodeDecodeError`` on.
+
+        Ordering dependence is invisible by construction: the corpus
+        still passed, with the wrong answer. So the order is planted here
+        deliberately and the second row must still escape.
+        """
+        writer = dict(SHAPES)["write only"]
+        assert not _escapes(writer, bad_file), "the writing row is supposed to succeed"
+        assert bad_file.read_bytes() != BAD_BYTES, "this row no longer truncates the fixture"
+        reader = dict(SHAPES)["chained builtin"]
+        assert _escapes(reader, bad_file), (
+            "a row that WRITES the fixture silently disarmed the row after it. The "
+            "oracle must restore the bytes itself, because a rule saying callers "
+            "should is a rule that was already broken once."
+        )
+
+    def test_the_canonical_escape_is_a_decode_error(self, bad_file: Path) -> None:
+        """The oracle catches ``ValueError``, and this pins WHY that is a
+        widening rather than a loosening.
+
+        Two round-5 shapes escape as a non-decode ``ValueError`` and are
+        the same defect, so the property has to see them. But if the
+        PLAINEST shape ever stopped raising ``UnicodeDecodeError``
+        specifically, ``ValueError`` would be catching something else
+        entirely and the corpus would be measuring the wrong thing.
+        """
+        bad_file.write_bytes(BAD_BYTES)
+        with pytest.raises(UnicodeDecodeError):
+            bad_file.read_text(encoding="utf-8")
 
     def test_the_bytes_are_genuinely_undecodable(self) -> None:
         """An earlier draft of a sibling test built its bytes with
