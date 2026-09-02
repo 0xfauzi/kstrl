@@ -326,10 +326,19 @@ def resolved_calls(
     """The SEEN half of :func:`calls_to`, as nodes rather than as strings.
 
     For a guard that has to look at a call's arguments, such as "does
-    this spawn name a ``timeout=``". Deliberately not the whole answer: a
-    guard asserting on this alone has thrown away the undecided half,
-    which is the defect #324 records. Assert ``calls_to(...).undecided``
-    beside it.
+    this spawn name a ``timeout=``". It is the ONE function here that
+    hands back half an answer, because a guard reading a call's arguments
+    needs the node and no signature can give it one without also giving
+    it a seen half it could use alone. Measured, not feared:
+    ``resolved_calls(parse("x.Popen(argv)"), {"subprocess.Popen"})``
+    returns ``[]``, which is what a module with no spawn in it returns.
+
+    So the mechanism for this one is a STATIC GUARD rather than a
+    signature: ``tests/test_astwalk.py``'s
+    ``TestResolvedCallsIsNotUsableOnItsOwn`` fails any module in
+    ``tests/`` that calls this and never names the undecided half. Weaker
+    than :func:`~..net.assert_sites`, which is why that class also pins by
+    how much.
     """
     wanted = frozenset(targets)
     table = bindings(tree, module=module)

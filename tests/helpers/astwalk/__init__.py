@@ -15,6 +15,15 @@ expectation for the undecided half, :class:`Clause` carries ``decided``,
 :class:`Bindings` keeps ``opaque``, and :func:`blind_spot` is the body of
 a disclosed limit's anti-vacuity test. Each says why on itself.
 
+THE ONE EXCEPTION, stated here rather than left for a reader to find.
+:func:`resolved_calls` returns the seen half as NODES, for a guard that
+has to read a call's arguments, and a node-returning signature cannot
+also force the undecided half. So that one is held by a static guard
+instead: ``tests/test_astwalk.py``'s ``TestResolvedCallsIsNotUsableOnItsOwn``
+fails any module in ``tests/`` that calls it and never names the other
+half. Round 2 of #324 measured the hole first and then closed it, which
+is the order that makes the claim above checkable rather than hopeful.
+
 THE DISTINCTION THAT DRIVES THE SHAPE. ``EXPECTED_JOURNAL_PATH_SITES`` in
 ``tests/test_journal_one_writer.py`` inventories every place the resource
 is OBTAINED, so it is closed by construction: you cannot add a writer

@@ -24,6 +24,7 @@ scope, handlers). Different subject, different failure message.
 from __future__ import annotations
 
 import ast
+from pathlib import Path
 
 import pytest
 
@@ -281,6 +282,217 @@ class TestAssertSitesWillNotTakeHalfAnAnswer:
             astwalk.assert_sites(
                 astwalk.Sites(("a",), ()), seen=(), undecided=(), message="the message"
             )
+
+
+# --- the one function that hands back half an answer ----------------------
+
+
+#: How ``tests/`` spells the function that returns the SEEN half alone.
+#: Resolved rather than matched by name, so a module that imports it as
+#: ``from tests.helpers.astwalk import resolved_calls as rc`` is still
+#: covered.
+RESOLVED_CALLS = "tests.helpers.astwalk.resolved_calls"
+
+
+def _asserts_the_undecided_half(node: ast.AST) -> bool:
+    """A STRUCTURAL mention of the undecided half, not a textual one.
+
+    ``found.undecided`` or an ``undecided=`` keyword. Deliberately not
+    :func:`astwalk.spells`, which would also fire on the word in a
+    docstring, and prose is not a check: a net that a comment can satisfy
+    fails in the silent direction, which is this issue's whole subject.
+    """
+    if isinstance(node, ast.Attribute):
+        return node.attr == "undecided"
+    return isinstance(node, ast.keyword) and node.arg == "undecided"
+
+
+def _half_answer_sites(sources: list[Path]) -> tuple[astwalk.Sites, list[str]]:
+    """Where ``resolved_calls`` is called, and which modules take it alone."""
+    found = astwalk.Sites()
+    offenders: list[str] = []
+    for source_file in sources:
+        tree = astwalk.parsed(source_file)
+        here = astwalk.calls_to(
+            tree,
+            {RESOLVED_CALLS},
+            where=astwalk.label(source_file, astwalk.REPO_ROOT),
+            module=astwalk.module_name(source_file),
+        )
+        found = found + here
+        if here.seen and not any(_asserts_the_undecided_half(n) for n in ast.walk(tree)):
+            offenders.append(astwalk.label(source_file, astwalk.REPO_ROOT))
+    return found, offenders
+
+
+def _no_identifier_rows(sources: list[Path]) -> tuple[str, ...]:
+    """Every call in the corpus whose callee holds no identifier at all.
+
+    ``TABLE[key](...)`` and ``helper()(...)``. Undecidable against ANY
+    target set, because there is nothing to compare, so every guard built
+    on :func:`astwalk.calls_to` inherits the whole list whatever it is
+    looking for. Built in the same walk order as ``calls_to``, so the two
+    answers are comparable row for row.
+    """
+    rows: list[str] = []
+    for source_file in sources:
+        where = astwalk.label(source_file, astwalk.REPO_ROOT)
+        for node in ast.walk(astwalk.parsed(source_file)):
+            if isinstance(node, ast.Call) and astwalk.leaf_name(node.func) is None:
+                rows.append(f"{where}:{node.lineno} {ast.unparse(node.func)}")
+    return tuple(rows)
+
+
+class TestResolvedCallsIsNotUsableOnItsOwn:
+    """The exception to the rule the package claims, and its mechanism.
+
+    ``astwalk/__init__.py`` says the skip direction is made loud in places
+    the API will not let a caller leave out. :func:`astwalk.resolved_calls`
+    is not one of them: it answers "which calls ARE the target" as NODES,
+    because a guard reading a call's arguments needs the node, and there
+    is no signature that hands back a node without also handing back a
+    seen half a caller can use alone. Round 2 of #324 measured that
+    exactly: ``resolved_calls(parse("x.Popen(argv)"), {"subprocess.Popen"})``
+    returns ``[]``, which is indistinguishable from a module with no
+    spawn in it, while ``calls_to`` reports ``1 x.Popen`` undecided.
+
+    So the mechanism is a static guard rather than a signature, in the
+    house style of the other AST guards in this suite: a module that calls
+    it must name the other half somewhere. That is weaker than
+    :func:`astwalk.assert_sites`, and the two tests at the bottom say by
+    how much rather than leaving the reader to guess.
+    """
+
+    def test_the_seen_half_alone_reads_clean_where_the_partition_does_not(self) -> None:
+        """The hole, executed. This is why the guard below exists."""
+        source = "x.Popen(argv)\n"
+        spawn = frozenset({"subprocess.Popen"})
+
+        assert astwalk.resolved_calls(astwalk.parse(source), spawn) == []
+        assert calls(source, spawn).undecided == ("1 x.Popen",)
+
+    def test_it_returns_the_node_and_the_origin_it_resolved_to(self) -> None:
+        """The seen half itself, which nothing else here covers: until
+        #324 round 2 this function's only exercise was indirect, through
+        ``tests/test_timeout_enforcement.py``."""
+        got = astwalk.resolved_calls(astwalk.parse("import os\npgid = os.getpgid(1)\n"), {TARGET})
+
+        assert [(node.lineno, origin) for node, origin in got] == [(2, TARGET)]
+
+    def test_it_resolves_through_a_rebind_the_way_calls_to_does(self) -> None:
+        """The two must not diverge: a caller picking the node form must
+        not silently get a narrower resolver."""
+        source = "import os\nlookup = os.getpgid\npgid = lookup(1)\n"
+        got = astwalk.resolved_calls(astwalk.parse(source), {TARGET})
+
+        assert [origin for _node, origin in got] == [TARGET]
+        assert calls(source).seen == ("3 os.getpgid",)
+
+    def test_every_caller_in_the_suite_names_the_other_half(self) -> None:
+        """The guard. A module that takes the node form must say what the
+        walk could not decide, somewhere in the same file.
+
+        ``tests/test_timeout_enforcement.py`` is the only caller today: it
+        unions the undecided ``Popen`` candidates into its spawn set by
+        hand, and pins the package-wide undecided rows in
+        ``test_the_walk_reports_what_it_could_not_decide``. A second
+        caller that does neither fails here.
+        """
+        _found, offenders = _half_answer_sites(astwalk.test_sources())
+
+        assert offenders == [], (
+            f"{offenders} call astwalk.resolved_calls, which answers the SEEN half "
+            "only, and never name the other half. An unresolvable callee is absent "
+            "from that answer and absence reads as cleanliness, which is the defect "
+            "#324 exists to end. Assert astwalk.calls_to(...).undecided over the same "
+            "corpus, or use astwalk.assert_sites."
+        )
+
+    def test_the_guard_is_blind_to_nothing_a_target_set_could_reach(self) -> None:
+        """Dogfooding: this guard is itself a walk, so it owes its own
+        undecided half.
+
+        Compared against the corpus's hard undecidable rather than pinned
+        as a list. Over ``tests/`` there are 18 calls whose callee holds no
+        identifier at all, most of them a call on the result of a call, and
+        every ``calls_to`` guard over this corpus inherits all 18 whatever
+        it is looking for. What must not appear is a NINETEENTH row: a
+        callee spelled ``...resolved_calls`` that the walk could not
+        resolve, which would be a module the guard above cannot see. The
+        comparison does not churn, because a new call on a call lands on
+        both sides of it, which a pinned list would not.
+        """
+        sources = astwalk.test_sources()
+        found, _offenders = _half_answer_sites(sources)
+
+        assert found.undecided == _no_identifier_rows(sources), (
+            "the guard's undecided half is no longer exactly the calls that hold no "
+            "identifier at all. The extra rows are callees spelled like this "
+            "function that the walk could not resolve, so those modules go "
+            "unchecked."
+        )
+        assert found.seen != (), "the guard resolved no call at all, so it measures nothing"
+
+    def test_a_planted_caller_that_ignores_the_other_half_is_caught(self, tmp_path: Path) -> None:
+        """The positive control. Without it the assertion above is also
+        what a guard that resolved nothing returns."""
+        planted = tmp_path / "greedy.py"
+        planted.write_text(
+            "from tests.helpers import astwalk\n\n\n"
+            "def sites(tree):\n"
+            '    return astwalk.resolved_calls(tree, {"subprocess.Popen"})\n',
+            encoding="utf-8",
+        )
+
+        _found, offenders = _half_answer_sites([planted])
+
+        assert offenders == ["greedy.py"]
+
+    def test_a_planted_caller_that_names_the_other_half_passes(self, tmp_path: Path) -> None:
+        """The negative control, so the guard is not simply flagging every
+        caller."""
+        planted = tmp_path / "careful.py"
+        planted.write_text(
+            "from tests.helpers import astwalk\n\n\n"
+            "def sites(tree):\n"
+            '    found = astwalk.calls_to(tree, {"subprocess.Popen"})\n'
+            "    assert found.undecided == ()\n"
+            '    return astwalk.resolved_calls(tree, {"subprocess.Popen"})\n',
+            encoding="utf-8",
+        )
+
+        _found, offenders = _half_answer_sites([planted])
+
+        assert offenders == []
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason="per module, not per call")
+def test_the_guard_is_per_module_not_per_target_set(tmp_path: Path) -> None:
+    """The reach of the guard above, disclosed and pinned rather than
+    implied.
+
+    It asks whether the MODULE names the undecided half at all. A module
+    that pins the undecided rows of one target set and then takes the
+    seen half of a different one satisfies it. Closing that needs the walk
+    to tie an assertion to a target set, which is dataflow this does not
+    do. ``strict=True`` means the day somebody closes it, this row XPASSes
+    and the paragraph above has to be edited in the same diff.
+    """
+
+    def flags(text: str) -> object:
+        path = tmp_path / "mixed.py"
+        path.write_text(text, encoding="utf-8")
+        _found, offenders = _half_answer_sites([path])
+        return offenders
+
+    astwalk.blind_spot(
+        flags,
+        "from tests.helpers import astwalk\n\n\n"
+        "def sites(tree):\n"
+        '    other = astwalk.calls_to(tree, {"os.getpgid"})\n'
+        "    assert other.undecided == ()\n"
+        '    return astwalk.resolved_calls(tree, {"subprocess.Popen"})\n',
+    )
 
 
 # --- the package, pinned --------------------------------------------------
