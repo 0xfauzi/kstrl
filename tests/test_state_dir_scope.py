@@ -41,6 +41,7 @@ import ast
 import re
 import shutil
 import subprocess
+from collections import Counter
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -59,6 +60,7 @@ from kstrl.statedir import (
 )
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import _diff_scope_details, check_dead_code, check_diff_scope
+from tests.helpers import astwalk
 from tests.test_loop import MockAgent
 
 PROJECT = Path("/project")
@@ -293,31 +295,42 @@ _EXPECTED_UNCOVERED = frozenset(
 
 
 def _module_constants(tree: ast.Module) -> dict[str, str]:
-    """Module-level ``NAME = "literal"`` assignments."""
-    out: dict[str, str] = {}
+    """Module-level ``NAME = <a string this walk can fold>``. Strictly
+    wider than the single-target ``ast.Assign`` to a ``str`` Constant
+    that stood here: an annotated constant, a multi-target assignment
+    and a name assembled by ``+`` all resolve now."""
+    found: dict[str, str] = {}
     for node in tree.body:
-        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
-            continue
-        target = node.targets[0]
-        if isinstance(target, ast.Name) and isinstance(node.value, ast.Constant):
-            if isinstance(node.value.value, str):
-                out[target.id] = node.value.value
-    return out
+        targets, value = astwalk.assignment_parts(node)
+        folded = astwalk.folded_str(value) if value is not None else None
+        if folded is not None:
+            found.update({t: folded for t in targets if t is not None and "." not in t})
+    return found
 
 
 def _is_state_anchor(node: ast.expr) -> bool:
     """Whether ``node`` evaluates to the state directory itself."""
-    if isinstance(node, ast.Constant) and node.value == statedir.STATE_DIR_NAME:
+    if astwalk.folded_str(node) == statedir.STATE_DIR_NAME:
         return True
-    if isinstance(node, ast.Name) and node.id == "STATE_DIR_NAME":
-        return True
-    if isinstance(node, ast.Call):
-        func = node.func
-        if isinstance(func, ast.Name):
-            return func.id == "state_dir"
-        if isinstance(func, ast.Attribute):
-            return func.attr == "state_dir"
-    return False
+    if isinstance(node, ast.Name):
+        return node.id == "STATE_DIR_NAME"
+    return isinstance(node, ast.Call) and astwalk.leaf_name(node.func) == "state_dir"
+
+
+def _joined_entry(node: ast.BinOp, constants: dict[str, str]) -> set[str]:
+    """The entry a ``<the state dir> / <name>`` join names, if any.
+    ``ast.walk`` reaches every ``BinOp`` in an ``a / b / c`` chain, so
+    each only has to look one step left for its anchor."""
+    left = node.left
+    anchor = left.right if isinstance(left, ast.BinOp) and isinstance(left.op, ast.Div) else left
+    if not _is_state_anchor(anchor):
+        return set()
+    folded = astwalk.folded_str(node.right)
+    if folded is not None:
+        return {folded}
+    if isinstance(node.right, ast.Name) and node.right.id in constants:
+        return {constants[node.right.id]}
+    return set()
 
 
 def _named_entries(source: str) -> set[str]:
@@ -326,64 +339,76 @@ def _named_entries(source: str) -> set[str]:
     Two forms, because those are the two the package uses: a ``/`` join
     off the state directory (``root / ".kstrl" / "runs"``,
     ``state_dir(root) / QUEUE_DIR_NAME``), and a literal ``.kstrl/...``
-    inside a string (config defaults such as
-    ``Path(".kstrl/snapshots")``, and ``policy.py``'s glob patterns).
-
-    Deliberately no more than that. A local alias, an f-string or an
-    ``os.path.join`` would slip past, so this is a net under the current
-    idiom rather than a proof about every possible one - which is what
-    ``STATE_SUBDIRS``'s own comment says, so the claim and the mechanism
-    agree.
+    inside a string (``Path(".kstrl/snapshots")``, ``policy.py``'s
+    globs). Deliberately no more: a net under the current idiom, not a
+    proof about every possible one, which is what ``STATE_SUBDIRS``'s
+    comment says. The four that slip past are
+    ``test_the_scan_does_not_claim_to_see_every_spelling``'s rows.
     """
-    tree = ast.parse(source)
+    tree = astwalk.parse(source)
     constants = _module_constants(tree)
-    # Strings used as a bare statement are docstrings, and a comment
-    # about a directory kstrl archived in 2026 is not a directory kstrl
-    # writes: without this the scan reported `.kstrl/archive/` from a
-    # two-line comment in evolution.py. Collected in the SAME walk as
-    # the joins below rather than in a pass of its own - measured at
-    # 85ms per package walk, and there are two walkers here.
-    prose: set[int] = set()
+    # A string used as a bare statement is a docstring, and a comment
+    # about a directory kstrl archived in 2026 is not one kstrl writes:
+    # without this the scan reported `.kstrl/archive/` from evolution.py.
+    prose = {
+        id(node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+    }
     names: set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
-            prose.add(id(node.value))
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
-            # ast.walk reaches every BinOp in a `a / b / c` chain, so
-            # each one only has to look one step left for its anchor.
-            left = node.left
-            anchor = (
-                left.right if isinstance(left, ast.BinOp) and isinstance(left.op, ast.Div) else left
-            )
-            if _is_state_anchor(anchor):
-                following = node.right
-                if isinstance(following, ast.Constant) and isinstance(following.value, str):
-                    names.add(following.value)
-                elif isinstance(following, ast.Name) and following.id in constants:
-                    names.add(constants[following.id])
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            if id(node) not in prose:
-                names.update(match.group(1) for match in _EMBEDDED.finditer(node.value))
+            names |= _joined_entry(node, constants)
+        elif id(node) not in prose:
+            names.update(m.group(1) for m in _EMBEDDED.finditer(astwalk.folded_str(node) or ""))
     return names
 
 
-def _package_entries() -> dict[str, set[str]]:
-    """Every state-dir entry ``kstrl/`` names, mapped to its modules.
-
-    Module-scoped so the two tests below parse the package once
-    between them rather than once each.
-    """
+def _package_entries() -> set[str]:
+    """Every state-dir entry ``kstrl/`` names, computed once. Memoised
+    so the two tests below share one pass; the parse under it is
+    ``astwalk``'s. The per-module attribution this used to collect was
+    read by nothing, and the census below pins that view asserted."""
     global _PACKAGE_ENTRIES
     if _PACKAGE_ENTRIES is None:
-        found: dict[str, set[str]] = {}
-        for module in sorted(Path(statedir.__file__).parent.rglob("*.py")):
-            for name in _named_entries(module.read_text(encoding="utf-8")):
-                found.setdefault(name, set()).add(module.name)
-        _PACKAGE_ENTRIES = found
+        _PACKAGE_ENTRIES = {
+            name
+            for module in astwalk.package_sources()
+            for name in _named_entries(module.read_text(encoding="utf-8"))
+        }
     return _PACKAGE_ENTRIES
 
 
-_PACKAGE_ENTRIES: dict[str, set[str]] | None = None
+_PACKAGE_ENTRIES: set[str] | None = None
+
+#: Every node in ``kstrl/`` writing the state directory's own name or
+#: the function that builds it, per module: the net under the scan
+#: above, enumerating no node types, since a module cannot name an entry
+#: under a directory it never spells. Adding a row is the point.
+#:
+#: Measured against the four idioms the scan itself is blind to: this
+#: counts THREE of them (the local alias and the attribute both spell
+#: ``state_dir``, ``os.path.join`` spells ``.kstrl``), and misses only
+#: the f-string, whose leading piece is ``.kstrl/`` rather than
+#: ``.kstrl``. So a hiding place added under one of them moves a count
+#: here even though ``_named_entries`` reports nothing.
+_EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
+    "cli.py": 6,
+    "contract.py": 1,
+    "decompose.py": 1,
+    "events.py": 1,
+    "factory.py": 8,
+    "feedforward.py": 1,
+    "knowledge.py": 2,
+    "pipeline.py": 1,
+    "reducer.py": 3,
+    "serve.py": 5,
+    "statedir.py": 7,
+    "tui/home_data.py": 1,
+    "tui/runs.py": 2,
+    "tui/screens/evolve.py": 1,
+    "workqueue.py": 2,
+}
 
 
 class TestTheEnumerationMatchesTheCode:
@@ -425,19 +450,34 @@ class TestTheEnumerationMatchesTheCode:
         source = '"""Wave 1 archived the old journals to .kstrl/archive/."""\n'
         assert _named_entries(source) == set()
 
-    def test_the_scan_does_not_claim_to_see_every_spelling(self) -> None:
-        """The limit of the net, pinned so the claim cannot drift.
+    @pytest.mark.xfail(strict=True, raises=AssertionError)
+    @pytest.mark.parametrize(
+        "source",
+        [
+            'S = state_dir(r)\nP = S / "cache"\n',
+            'P = base / f".kstrl/{name}"\n',
+            'P = os.path.join(root, ".kstrl", "cache")\n',
+            'P = self.state_dir / "cache"\n',
+        ],
+    )
+    def test_the_scan_does_not_claim_to_see_every_spelling(self, source: str) -> None:
+        """The four idioms that slip past THIS scan. None appears in
+        ``kstrl/`` today, the census below counts three of the four
+        anyway, and a row XPASSes the day the scan widens, which
+        ``strict=True`` makes a failure: ``STATE_SUBDIRS``'s comment
+        then has to be edited in the same diff."""
+        astwalk.blind_spot(_named_entries, source)
 
-        These four idioms would slip past. None appears in ``kstrl/``
-        today, and ``STATE_SUBDIRS``'s comment says exactly this - the
-        test exists so an edit that broadens the comment has to broaden
-        the scan too, and an edit that broadens the scan makes a test
-        here fail rather than passing silently.
-        """
-        assert _named_entries('S = state_dir(r)\nP = S / "cache"\n') == set()
-        assert _named_entries('P = base / f".kstrl/{name}"\n') == set()
-        assert _named_entries('P = os.path.join(root, ".kstrl", "cache")\n') == set()
-        assert _named_entries('P = self.state_dir / "cache"\n') == set()
+    def test_every_module_that_names_the_state_directory_is_pinned(self) -> None:
+        """The net under the scan, and it enumerates no node types."""
+        anchor, namer = astwalk.spells(statedir.STATE_DIR_NAME), astwalk.spells("state_dir")
+        astwalk.assert_census(
+            sources=astwalk.package_sources(),
+            sees=lambda node: anchor(node) or namer(node),
+            expected=_EXPECTED_STATE_DIR_SPELLINGS,
+            control='P = state_dir(root) / "runs"\n',
+            message="the set of modules that name kstrl's state directory changed.",
+        )
 
     def test_every_declared_entry_is_reachable(self) -> None:
         """The inverse: nothing in the lists that the package never
@@ -445,19 +485,48 @@ class TestTheEnumerationMatchesTheCode:
         granted for nothing, which is the same defect the entries are
         meant to remove."""
         declared = set(STATE_SUBDIRS) | set(STATE_FILES)
-        assert declared - set(_package_entries()) == set()
+        assert declared - _package_entries() == set()
+
+
+def _imported_names(source_file: Path) -> set[str]:
+    """Every ``kstrl.*`` dotted name one module imports.
+
+    The ``from ... import`` arm resolves through ``astwalk.bindings``,
+    which reads ``ImportFrom.level``. What stood here filtered on
+    ``(node.module or "").startswith("kstrl")``, so every relative
+    import was dropped in silence, and for THIS guard a dropped edge
+    makes "not reachable" pass VACUOUSLY. One import at a time, because
+    ``bindings`` keeps the FIRST binding of a name and a module
+    importing one name twice would lose the second edge. ``ast.Import``
+    is read off the node: an absolute import is written out in full.
+    """
+    package = astwalk.KSTRL_PACKAGE.name
+    module = astwalk.module_name(source_file)
+    found: set[str] = set()
+    for node in ast.walk(astwalk.parsed(source_file)):
+        if isinstance(node, ast.Import):
+            found.update(a.name for a in node.names if a.name.startswith(package))
+        elif isinstance(node, ast.ImportFrom):
+            table = astwalk.bindings(astwalk.parse(ast.unparse(node)), module=module)
+            found.update(
+                part
+                for origin in table.origins.values()
+                if origin.startswith(package)
+                for part in (origin, origin.rsplit(".", 1)[0])
+            )
+    return found
 
 
 def _import_closure(module: str) -> set[str]:
     """Every ``kstrl.*`` module reachable from ``module`` by import.
 
     Static, and deliberately includes function-level imports, which this
-    codebase uses to break cycles (``loop.py`` defers ``init_cmd``,
-    ``breaker.py`` defers ``verify``). A static closure over-approximates
-    what actually runs, which is the safe direction here: the claim being
-    checked is that a writer is NOT reachable.
+    codebase uses to break cycles (``loop.py`` defers ``init_cmd``). A
+    static closure over-approximates what actually runs, the safe
+    direction here: the claim checked is that a writer is NOT reachable.
+    A name with no file behind it, the package itself or a function
+    reached through a ``from ... import``, is a dead end not an error.
     """
-    package = Path(statedir.__file__).parent
     seen: set[str] = set()
     pending = [module]
     while pending:
@@ -466,21 +535,9 @@ def _import_closure(module: str) -> set[str]:
             continue
         seen.add(name)
         parts = name.split(".")[1:]
-        if not parts:
-            # Bare `from kstrl import git`: the package itself, whose
-            # __init__ imports nothing. The submodules it names are
-            # queued separately by the ImportFrom arm below.
-            continue
-        source = package.joinpath(*parts).with_suffix(".py")
-        if not source.is_file():
-            continue
-        for node in ast.walk(ast.parse(source.read_text(encoding="utf-8"))):
-            if isinstance(node, ast.Import):
-                pending.extend(a.name for a in node.names if a.name.startswith("kstrl"))
-            elif isinstance(node, ast.ImportFrom) and (node.module or "").startswith("kstrl"):
-                base = node.module or ""
-                pending.append(base)
-                pending.extend(f"{base}.{a.name}" for a in node.names)
+        source = astwalk.KSTRL_PACKAGE.joinpath(*parts).with_suffix(".py") if parts else None
+        if source is not None and source.is_file():
+            pending.extend(_imported_names(source))
     return seen
 
 
@@ -504,13 +561,7 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
     #: itself, the two command entry points that drive it, the proposal
     #: writer, and the GitHub intake that admits work.
     WRITERS = frozenset(
-        {
-            "kstrl.workqueue",
-            "kstrl.serve",
-            "kstrl.cli",
-            "kstrl.evolution",
-            "kstrl.intake_github",
-        }
+        {"kstrl.workqueue", "kstrl.serve", "kstrl.cli", "kstrl.evolution", "kstrl.intake_github"}
     )
 
     def test_the_loop_cannot_reach_a_writer_of_an_uncarved_entry(self) -> None:
@@ -805,6 +856,24 @@ class TestTheLoopAppliesIt:
 # ---------------------------------------------------------------------------
 
 
+#: The one function every state-root declaration hangs off.
+_RUN_LOOP = "kstrl.loop.run_loop"
+
+
+def _run_loop_calls(tree: ast.Module, module: str) -> list[ast.Call]:
+    """Every call in one module that RESOLVES to ``run_loop``.
+
+    Split out because the loop below costs 16 on the cognitive gate
+    with it inline, and that hook fails rather than advises.
+    """
+    table = astwalk.bindings(tree, module=module)
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and table.resolve(node.func) == _RUN_LOOP
+    ]
+
+
 class TestEveryCallerDeclaresTheStateRoot:
     """The cost of the safe default, paid once here.
 
@@ -822,25 +891,45 @@ class TestEveryCallerDeclaresTheStateRoot:
     """
 
     def test_every_run_loop_call_site_passes_it(self) -> None:
-        package = Path(statedir.__file__).parent
+        """Resolved, not matched by bare name, and both halves claimed.
+        Undecided rows are counted per FILE rather than pinned as
+        ``file:line``, so an unrelated edit above one is not a failure
+        here; nor is a call to somebody else's ``run_loop``."""
         callers: dict[str, int] = {}
         declared: dict[str, int] = {}
-        for module in sorted(package.rglob("*.py")):
-            if module.name == "loop.py":
+        undecided: tuple[str, ...] = ()
+        for source_file in astwalk.package_sources():
+            module = astwalk.module_name(source_file)
+            if module == _RUN_LOOP.rsplit(".", 1)[0]:
                 continue
-            tree = ast.parse(module.read_text(encoding="utf-8"))
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Call):
-                    continue
-                func = node.func
-                name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
-                if name != "run_loop":
-                    continue
-                callers[module.name] = callers.get(module.name, 0) + 1
+            tree = astwalk.parsed(source_file)
+            where = astwalk.label(source_file)
+            undecided += astwalk.calls_to(tree, [_RUN_LOOP], where=where, module=module).undecided
+            for node in _run_loop_calls(tree, module):
+                callers[source_file.name] = callers.get(source_file.name, 0) + 1
                 if any(kw.arg == "guard_state_root" for kw in node.keywords):
-                    declared[module.name] = declared.get(module.name, 0) + 1
+                    declared[source_file.name] = declared.get(source_file.name, 0) + 1
+        assert Counter(site.split(":", 1)[0] for site in undecided) == {
+            "gateparse.py": 2,
+            "tui/app.py": 2,
+        }, f"the walk could not decide these calls: {list(undecided)}"
         assert callers == {"cli.py": 1, "factory.py": 1, "feature_cmd.py": 3}
         assert declared == callers
+
+    def test_the_run_loop_walk_resolves_a_name_rather_than_matching_it(self) -> None:
+        """The control this check had none of: it matched the bare
+        identifier, so an alias was a miss and a stranger of that name a
+        hit, and an empty result reads exactly like a matcher that has
+        stopped matching."""
+        alias = astwalk.parse("from kstrl.loop import run_loop as _s\ndef go(c):\n    _s(c)\n")
+        found = astwalk.calls_to(alias, [_RUN_LOOP], where="a.py", module="kstrl.x")
+        assert found == astwalk.Sites((f"a.py:3 {_RUN_LOOP}",))
+        other = astwalk.parse("from other import run_loop\ndef go():\n    run_loop()\n")
+        assert astwalk.calls_to(other, [_RUN_LOOP], module="kstrl.x") == astwalk.Sites()
+        opaque = astwalk.parse("def go(t):\n    t['run_loop']()\n")
+        assert astwalk.calls_to(opaque, [_RUN_LOOP], where="t.py").undecided == (
+            "t.py:2 t['run_loop']",
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -20,25 +20,40 @@ which matched only ``build_config_report(...)`` and
 site left the walk passing. Hence the derivation below, which names no
 function at all.
 
-WHAT THE SECOND VERSION COULD NOT SEE, AND WHAT THIS ONE CAN
-------------------------------------------------------------
-Review measured five more blind spots and one false-positive engine,
-and the fix for all six is the same: resolve names instead of matching
-strings.
+WHERE THE RESOLUTION LIVES NOW
+------------------------------
+In ``tests/helpers/astwalk.py``, along with the ten other guards' worth
+that #324 records. The three-map ``Bindings`` this file used to carry
+was the eleventh, and it was holed in the way #324 is a record of: it
+never read ``ImportFrom.level`` and its ``ImportFrom`` arm required a
+``node.module``, so ``from . import x`` was discarded outright.
+Measured on this tree, with the old resolver and a helper set holding
+``("kstrl.config_report", "build_config_report")``:
 
-Now seen: ``evolution.EvolutionConfig.load(root)`` and any other dotted
-owner; ``IC.load(root)`` where ``IC`` is an alias for a ``*Config``
-class, resolved through the importing file's own bindings;
+    from .config_report import build_config_report   ->  no offender
+    from . import config_report                      ->  no offender
+
+Both are genuine unguarded loads, and both were reported clean. It is
+latent rather than live because ``kstrl/`` has no relative import today,
+which is exactly how a hole of this class survives.
+``test_a_relative_import_resolves_to_the_package_it_names`` is the
+control that keeps it closed.
+
+WHAT THE WALK SEES
+------------------
+``evolution.EvolutionConfig.load(root)`` and any other dotted owner;
+``IC.load(root)`` where ``IC`` is an alias for a ``*Config`` class,
+resolved through the importing file's own bindings;
 ``config_report.build_config_report(root)`` and any other helper reached
-through a module attribute; and a load at MODULE level, which the
-previous version could not report at all because it only ever walked
-into function bodies.
+through a module attribute; a relative import of either; and a load at
+MODULE level, which the first version could not report at all because it
+only ever walked into function bodies.
 
-Now not guessed at: the helper set was matched by bare name and
+Not guessed at: the helper set was once matched by bare name and
 contained thirty of them, including ``run``, ``serve``, ``evolve``,
 ``factory`` and ``__init__``, so any call to a function that happened to
 share a name with one was a config load as far as this walk was
-concerned. Helpers are now keyed by ``(module, name)`` and a call site
+concerned. Helpers are keyed by their DOTTED origin now and a call site
 resolves through its own imports, so ``run(...)`` counts only when
 ``run`` is the one kstrl defines and loads config in.
 
@@ -48,7 +63,16 @@ STILL NOT SEEN, DELIBERATELY
 type inference, not name resolution, and nothing in kstrl writes that
 shape today. Matching every ``.load(`` instead would sweep in
 ``Manifest.load`` and ``json.load``, which is a rule nobody keeps. The
-limit is recorded here rather than left to be discovered.
+limit is pinned by
+``test_a_loader_held_in_an_attribute_is_a_disclosed_limit``, which runs
+under ``xfail(strict=True)``: the day somebody teaches the walk to
+resolve it, that row XPASSes and this paragraph has to be edited in the
+same diff.
+
+What the walk cannot decide it says so about rather than dropping.
+``initial_screens_for_kind(kind, ...)()`` calls whatever that returns,
+and the AST holds no name to read, so it is an UNDECIDED row in the
+inventory rather than an absence from it.
 
 This is the house pattern: ``test_atomicio`` walks for ``mkstemp``,
 ``test_process_scoping`` for ``pgrep``, ``test_config_preflight`` for
@@ -59,207 +83,92 @@ unenrolled config dataclasses, ``test_prompt_versions`` for unenrolled
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Iterator
-from dataclasses import dataclass, field
+import functools
+from collections.abc import Iterable
 from pathlib import Path
 
-Scope = ast.Module | ast.FunctionDef | ast.AsyncFunctionDef
+import pytest
 
-# --------------------------------------------------------------------------
-# Name resolution: what a call site in one file is actually calling
-# --------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class Bindings:
-    """What the names in one file refer to, from its own imports.
-
-    Three maps rather than one because a call site can name a helper
-    (``assemble_factory_configs(...)``), a module holding one
-    (``config_report.build_config_report(...)``) or a config class
-    under any alias (``IC.load(...)``), and each needs a different
-    lookup. Populated from every ``import`` in the file at ANY depth:
-    kstrl's TUI modules import inside functions to keep startup cheap,
-    so a module-level-only scan sees almost none of them.
-    """
-
-    functions: dict[str, tuple[str, str]] = field(default_factory=dict)
-    modules: dict[str, str] = field(default_factory=dict)
-    config_classes: set[str] = field(default_factory=set)
-
-
-def _is_config_class(name: str) -> bool:
-    return name.endswith("Config")
-
-
-def _bind_from_import(module: str, names: list[ast.alias], bindings: Bindings) -> None:
-    """Record one ``from <module> import ...`` under its local names."""
-    for alias in names:
-        local = alias.asname or alias.name
-        # An imported name may be a function or a submodule and the AST
-        # cannot tell which, so record both readings. A wrong one cannot
-        # produce a false hit: it only ever fails to match the derived
-        # helper set.
-        bindings.functions[local] = (module, alias.name)
-        bindings.modules[local] = f"{module}.{alias.name}"
-        if _is_config_class(alias.name):
-            # Keyed by the LOCAL name, which is the point: `import
-            # InboxConfig as IC` makes `IC.load` a config load and no
-            # name-shape rule can see it.
-            bindings.config_classes.add(local)
-
-
-def collect_bindings(tree: ast.AST) -> Bindings:
-    """Resolve the file's imported names to their defining module."""
-    bindings = Bindings()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                bindings.modules[alias.asname or alias.name] = alias.name
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            _bind_from_import(node.module, node.names, bindings)
-    return bindings
-
-
-def dotted_name(node: ast.AST) -> str | None:
-    """``a.b.c`` for an attribute chain rooted at a plain name, else None."""
-    parts: list[str] = []
-    while isinstance(node, ast.Attribute):
-        parts.append(node.attr)
-        node = node.value
-    if not isinstance(node, ast.Name):
-        return None
-    parts.append(node.id)
-    return ".".join(reversed(parts))
-
-
-def is_config_class_load(call: ast.Call, bindings: Bindings) -> bool:
-    """``<anything naming a config class>.load(...)``.
-
-    The owner is flattened first, so a dotted module prefix is stripped
-    rather than being the reason the call is missed.
-    """
-    func = call.func
-    if not isinstance(func, ast.Attribute) or func.attr != "load":
-        return False
-    owner = dotted_name(func.value)
-    if owner is None:
-        return False
-    last = owner.rsplit(".", 1)[-1]
-    return _is_config_class(last) or last in bindings.config_classes
-
-
-def call_target(call: ast.Call, bindings: Bindings, module: str) -> tuple[str, str] | None:
-    """The ``(module, name)`` a call refers to, as best a file can say."""
-    func = call.func
-    if isinstance(func, ast.Name):
-        return bindings.functions.get(func.id, (module, func.id))
-    dotted = dotted_name(func)
-    if dotted is None or "." not in dotted:
-        return None
-    prefix, name = dotted.rsplit(".", 1)
-    return (bindings.modules.get(prefix, prefix), name)
-
-
-# --------------------------------------------------------------------------
-# Scopes: the unit a load is attributed to
-# --------------------------------------------------------------------------
-
-
-def module_name(path: Path, root: Path) -> str:
-    """``kstrl/tui/session.py`` -> ``kstrl.tui.session``."""
-    dotted = path.relative_to(root).with_suffix("").as_posix().replace("/", ".")
-    return dotted.removesuffix(".__init__")
-
-
-def scopes(tree: ast.Module) -> list[tuple[Scope, str]]:
-    """Every executable scope in a module, with its qualified name.
-
-    The module itself is one of them: a load at import time is a load,
-    and the previous version of this walk started at ``FunctionDef`` and
-    so could not report one. Qualified because a bare function name is
-    not a key - ``kstrl/tui/session.py`` has two ``def target()``
-    closures, and an exemption written against "target" silently
-    covered both.
-    """
-    found: list[tuple[Scope, str]] = [(tree, "<module>")]
-
-    def descend(node: ast.AST, prefix: str) -> None:
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
-                qualified = f"{prefix}.{child.name}" if prefix else child.name
-                if not isinstance(child, ast.ClassDef):
-                    found.append((child, qualified))
-                descend(child, qualified)
-            else:
-                descend(child, prefix)
-
-    descend(tree, "")
-    return found
-
-
-def own_nodes(scope: Scope) -> Iterator[ast.AST]:
-    """Every node in ``scope`` except those inside a nested function.
-
-    So a call is attributed to the innermost scope that contains it.
-    Plain ``ast.walk`` reported one call three times, once per ancestor,
-    which makes the offender list wrong and an exemption unkeyable.
-    """
-    stack: list[ast.AST] = list(scope.body)
-    while stack:
-        node = stack.pop()
-        yield node
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda):
-            continue
-        stack.extend(ast.iter_child_nodes(node))
-
+from tests.helpers import astwalk
 
 # --------------------------------------------------------------------------
 # The rule
 # --------------------------------------------------------------------------
 
+#: Handler types that cannot let a config rejection reach the event loop.
+#: ``SURFACE_REJECTIONS`` is the rule; a bare ``except Exception`` also
+#: satisfies the PROPERTY being enforced, and ``app._safe_mode_worker``
+#: uses one deliberately with its reason written next to it.
+_NEUTRALISING = frozenset({"SURFACE_REJECTIONS", "Exception", "BaseException"})
+
 
 def guarding_handler(node: ast.Try) -> bool:
     """Whether this try cannot let a config rejection escape.
 
-    ``SURFACE_REJECTIONS`` is the rule. A bare ``except Exception`` also
-    satisfies the PROPERTY being enforced - nothing escapes as an
-    unhandled exception - and `app._safe_mode_worker` uses one
-    deliberately, with its reason written next to it.
+    A clause ``astwalk`` could not name yields an empty name set and so
+    does NOT neutralise, which reports the load rather than clearing it.
+    That is the direction this guard is allowed to be wrong in: a
+    spurious offender is a line somebody reads, a missing one is #289.
     """
-    for handler in node.handlers:
-        if handler.type is None:
-            return True
-        for name in ast.walk(handler.type):
-            if isinstance(name, ast.Name) and name.id in {
-                "SURFACE_REJECTIONS",
-                "Exception",
-                "BaseException",
-            }:
-                return True
-    return False
+    return any(clause.names & _NEUTRALISING for clause in astwalk.handler_clauses(node))
+
+
+def _load_owner(call: ast.Call, table: astwalk.Bindings) -> str | None:
+    """What this call's ``load`` is a method of, resolved through imports.
+
+    Falls back to the owner AS WRITTEN when the resolver cannot follow
+    it, so ``evolution.EvolutionConfig.load(root)`` in a file that never
+    imported ``evolution`` is still recognised by its last segment.
+    """
+    func = call.func
+    if not isinstance(func, ast.Attribute) or func.attr != "load":
+        return None
+    return table.resolve(func.value) or astwalk.dotted(func.value)
+
+
+def is_config_class_load(call: ast.Call, table: astwalk.Bindings) -> bool:
+    """``<anything naming a config class>.load(...)``.
+
+    Resolved first, so ``import InboxConfig as IC`` makes ``IC.load`` a
+    config load even though no name-shape rule can see it.
+    """
+    owner = _load_owner(call, table)
+    return owner is not None and owner.rsplit(".", 1)[-1].endswith("Config")
+
+
+def call_origin(call: ast.Call, table: astwalk.Bindings, module: str) -> str | None:
+    """The dotted function a call refers to, as best a file can say.
+
+    A bare name the file never imported is read as this module's own,
+    which is what lets a helper call its neighbour without an import.
+    """
+    origin = table.resolve(call.func)
+    if origin is not None:
+        return origin
+    if isinstance(call.func, ast.Name):
+        return f"{module}.{call.func.id}"
+    return None
 
 
 def config_loads(
     nodes: Iterable[ast.AST],
-    helpers: frozenset[tuple[str, str]],
-    bindings: Bindings,
+    helpers: frozenset[str],
+    table: astwalk.Bindings,
     module: str,
 ) -> list[ast.Call]:
     """Calls that resolve a kstrl.toml section, directly or via a helper."""
-    found: list[ast.Call] = []
-    for node in nodes:
-        if not isinstance(node, ast.Call):
-            continue
-        if is_config_class_load(node, bindings) or call_target(node, bindings, module) in helpers:
-            found.append(node)
-    return found
+    return [
+        node
+        for node in nodes
+        if isinstance(node, ast.Call)
+        and (is_config_class_load(node, table) or call_origin(node, table, module) in helpers)
+    ]
 
 
 def _guarded_call_ids(
-    scope: Scope,
-    helpers: frozenset[tuple[str, str]],
-    bindings: Bindings,
+    scope: ast.AST,
+    helpers: frozenset[str],
+    table: astwalk.Bindings,
     module: str,
 ) -> set[int]:
     """Ids of the config loads a handler in this scope actually covers.
@@ -271,32 +180,52 @@ def _guarded_call_ids(
     is precisely the retry shape this rule should police.
     """
     guarded: set[int] = set()
-    for node in own_nodes(scope):
+    for node in astwalk.own_nodes(scope):
         if not isinstance(node, ast.Try) or not guarding_handler(node):
             continue
         for statement in node.body:
             guarded.update(
-                id(call) for call in config_loads(ast.walk(statement), helpers, bindings, module)
+                id(call) for call in config_loads(ast.walk(statement), helpers, table, module)
             )
     return guarded
 
 
 def unguarded_config_loads(
     tree: ast.Module,
-    helpers: frozenset[tuple[str, str]],
+    helpers: frozenset[str],
     module: str = "<test>",
 ) -> list[tuple[int, str]]:
     """(line, qualified scope) for every unguarded config load."""
-    bindings = collect_bindings(tree)
+    table = astwalk.bindings(tree, module=module)
     found: list[tuple[int, str]] = []
-    for scope, qualified in scopes(tree):
-        guarded = _guarded_call_ids(scope, helpers, bindings, module)
+    for scope, qualified in astwalk.scopes(tree):
+        guarded = _guarded_call_ids(scope, helpers, table, module)
         found += [
             (call.lineno, qualified)
-            for call in config_loads(own_nodes(scope), helpers, bindings, module)
+            for call in config_loads(astwalk.own_nodes(scope), helpers, table, module)
             if id(call) not in guarded
         ]
     return found
+
+
+def undecided_calls(tree: ast.Module, where: str) -> tuple[str, ...]:
+    """Calls whose callee the AST holds no name for, so nothing can decide.
+
+    ``initial_screens_for_kind(kind, ...)()`` is the live shape: the
+    thing being called is whatever another call returned. These are
+    neither cleared nor flagged, which is why they are pinned as the
+    second half of the inventory rather than left out of it.
+
+    No line number, deliberately, unlike the offender rows: an
+    unresolvable callee is pinned for as long as it stays unresolvable,
+    and a pinned line makes every edit ABOVE one of them a failure of
+    this guard. The unparsed callee is what locates it.
+    """
+    return tuple(
+        f"{where} {ast.unparse(node.func)}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and astwalk.leaf_name(node.func) is None
+    )
 
 
 # --------------------------------------------------------------------------
@@ -313,8 +242,9 @@ def unguarded_config_loads(
 # kstrl/tui/ counts as a config load.
 
 
-def config_loading_helpers(package: Path, root: Path) -> frozenset[tuple[str, str]]:
-    """Functions in ``package`` that can PROPAGATE a config rejection.
+@functools.cache
+def config_loading_helpers() -> frozenset[str]:
+    """Functions in ``kstrl/`` that can PROPAGATE a config rejection.
 
     Derived, not listed. A function qualifies when it resolves a
     section and does not guard it, so the rejection reaches its caller.
@@ -329,30 +259,49 @@ def config_loading_helpers(package: Path, root: Path) -> frozenset[tuple[str, st
     belongs at the innermost function that can raise, not at every
     caller above it.
 
-    Keyed by ``(module, name)`` and restricted to module-level
-    functions, which are the only ones another module can call by name.
-    The bare-name version of this set held thirty entries including
-    `run`, `serve`, `evolve` and `__init__`, so a call to any unrelated
+    Keyed by DOTTED ORIGIN and restricted to module-level functions,
+    which are the only ones another module can call by name. The
+    bare-name version of this set held thirty entries including `run`,
+    `serve`, `evolve` and `__init__`, so a call to any unrelated
     function with a colliding name was read as a config load.
+
+    Cached, and the cache is the measurement. Four tests in this file
+    ask for this set, and each call used to re-read and re-parse all 127
+    modules of the package: 1079 ms a call, four calls a session. The
+    parse now comes from ``astwalk.parsed`` and the derived set is
+    computed once.
     """
-    found: set[tuple[str, str]] = set()
-    for path in sorted(package.rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        module = module_name(path, root)
-        bindings = collect_bindings(tree)
-        for node in tree.body:
-            if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-                continue
-            # Direct loads only, no recursion needed - a helper that
-            # only calls another helper cannot raise anything the inner
-            # one did not already let out.
-            guarded = _guarded_call_ids(node, frozenset(), bindings, module)
-            if any(
-                id(call) not in guarded
-                for call in config_loads(own_nodes(node), frozenset(), bindings, module)
-            ):
-                found.add((module, node.name))
+    found: set[str] = set()
+    for path in astwalk.package_sources():
+        tree = astwalk.parsed(path)
+        module = astwalk.module_name(path)
+        table = astwalk.bindings(tree, module=module)
+        found.update(_loading_functions(tree, table, module))
     return frozenset(found)
+
+
+def _loading_functions(tree: ast.Module, table: astwalk.Bindings, module: str) -> set[str]:
+    """The module-level functions of ONE module that let a rejection out.
+
+    Direct loads only, no recursion needed: a helper that only calls
+    another helper cannot raise anything the inner one did not let out.
+    """
+    found: set[str] = set()
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        guarded = _guarded_call_ids(node, frozenset(), table, module)
+        if any(
+            id(call) not in guarded
+            for call in config_loads(astwalk.own_nodes(node), frozenset(), table, module)
+        ):
+            found.add(f"{module}.{node.name}")
+    return found
+
+
+def _tui_sources() -> list[Path]:
+    """Every module of the surface this rule polices."""
+    return sorted((astwalk.KSTRL_PACKAGE / "tui").rglob("*.py"))
 
 
 #: The sites that resolve config in kstrl/tui/ and are guarded by a
@@ -381,6 +330,34 @@ _GUARDED_OFF_THE_EVENT_LOOP = {
 #: above. The exemption's own test passed throughout, because it asked
 #: only whether SOME scope called `target` was flagged.
 
+#: Every node in ``kstrl/tui/`` that writes the identifier ``load``.
+#:
+#: The net under the walk above, and it enumerates no node types: a
+#: ``<Config>.load`` cannot happen in a module that never spells
+#: ``load``, whatever shape the call takes. That is what makes it see
+#: two things the resolver provably cannot, both measured:
+#: ``getattr(EvolutionConfig, "load")(root)``, where the method name is
+#: a string rather than an ``Attribute``, and ``LOADERS[key](root)`` off
+#: a table built with ``EvolutionConfig.load``.
+#:
+#: Adding a row is not forbidden, it is the point: the diff that adds
+#: one is where somebody says which surface now loads a section.
+#:
+#: It covers the class half only. A helper such as
+#: ``assemble_factory_configs`` spells no ``load`` at its call site, and
+#: that half is covered by the derived helper set and by
+#: ``test_the_walk_derives_the_helper_set_rather_than_listing_it``.
+EXPECTED_LOADER_SPELLINGS: dict[str, int] = {
+    "tui/screens/evolve.py": 2,  # the banner's load, and EvolutionConfig's
+    "tui/screens/home.py": 1,  # Manifest.load
+    "tui/screens/inbox.py": 2,  # the banner's load, and InboxConfig's
+    "tui/screens/init_wizard.py": 1,  # the banner's load
+    "tui/screens/retry.py": 1,  # Manifest.load
+    "tui/session.py": 2,  # Manifest.load, and the banner's
+    "tui/state.py": 1,  # Manifest.load
+    "tui/widgets/config_problem.py": 1,  # the banner's own def load
+}
+
 
 def test_no_tui_surface_loads_config_behind_a_hand_written_guard() -> None:
     """The house pattern is a walk, not a memory (CLAUDE.md).
@@ -393,22 +370,51 @@ def test_no_tui_surface_loads_config_behind_a_hand_written_guard() -> None:
     config section must either go through the banner's ``load`` (which
     routes to ``config_preflight.load_or_report``) or sit in the body
     of a ``try`` that cannot let the rejection escape.
+
+    Both halves are asserted. ``undecided`` is a claim about what the
+    walk could not decide, and an empty ``seen`` next to an unclaimed
+    ``undecided`` is what a switched-off walk also returns.
     """
-    root = Path(__file__).resolve().parent.parent
-    helpers = config_loading_helpers(root / "kstrl", root)
-    offenders = [
-        f"{rel}:{lineno} in {name}"
-        for path in sorted((root / "kstrl" / "tui").rglob("*.py"))
-        for rel in [path.relative_to(root).as_posix()]
-        for lineno, name in unguarded_config_loads(
-            ast.parse(path.read_text(encoding="utf-8")),
-            helpers,
-            module_name(path, root),
+    helpers = config_loading_helpers()
+    found = astwalk.Sites()
+    for path in _tui_sources():
+        rel = astwalk.label(path, astwalk.REPO_ROOT)
+        tree = astwalk.parsed(path)
+        offenders = tuple(
+            f"{rel}:{lineno} in {name}"
+            for lineno, name in unguarded_config_loads(tree, helpers, astwalk.module_name(path))
+            if (rel, name) not in _GUARDED_OFF_THE_EVENT_LOOP
         )
-        if (rel, name) not in _GUARDED_OFF_THE_EVENT_LOOP
-    ]
-    assert offenders == [], (
-        "config resolved in kstrl/tui/ without a guard or the banner: " + ", ".join(offenders)
+        found += astwalk.Sites(offenders, undecided_calls(tree, rel))
+
+    astwalk.assert_sites(
+        found.sorted(),
+        seen=(),
+        undecided=(
+            "kstrl/tui/app.py initial_screens_for_kind(kind, observe_only=False)",
+            "kstrl/tui/app.py initial_screens_for_kind(kind, observe_only=True)",
+        ),
+        message="config resolved in kstrl/tui/ without a guard or the banner.",
+    )
+
+
+def test_every_tui_module_that_spells_a_loader_is_pinned() -> None:
+    """The net: a config class cannot be loaded without the word ``load``.
+
+    Shape-independent, so it does not depend on the resolver being
+    right about a call it can see. ``assert_census`` will not pin an
+    inventory whose predicate matched nothing in its own control, which
+    is what stops this passing while switched off.
+    """
+    astwalk.assert_census(
+        sources=_tui_sources(),
+        sees=astwalk.spells("load"),
+        expected=EXPECTED_LOADER_SPELLINGS,
+        control="cfg = EvolutionConfig.load(root)\n",
+        message=(
+            "the set of places kstrl/tui/ spells a loader changed. If this is a new "
+            "config load, guard it or route it through the banner, then add the row."
+        ),
     )
 
 
@@ -417,14 +423,13 @@ def test_the_walk_derives_the_helper_set_rather_than_listing_it() -> None:
     the first version could not see, and nothing names it here."""
     import inspect
 
-    root = Path(__file__).resolve().parent.parent
-    helpers = config_loading_helpers(root / "kstrl", root)
-    assert ("kstrl.launch", "assemble_factory_configs") in helpers
-    assert ("kstrl.config_report", "build_config_report") in helpers
+    helpers = config_loading_helpers()
+    assert "kstrl.launch.assemble_factory_configs" in helpers
+    assert "kstrl.config_report.build_config_report" in helpers
     # A helper that converts the rejection itself is NOT in the set,
     # which is what stops the walk flagging everyone who calls it.
-    assert ("kstrl.tui.screens.init_wizard", "_detected_text") not in helpers
-    assert ("kstrl.tui.session", "_prepare_factory") not in helpers
+    assert "kstrl.tui.screens.init_wizard._detected_text" not in helpers
+    assert "kstrl.tui.session._prepare_factory" not in helpers
     # Derived means derived: the deriving code names no function.
     source = inspect.getsource(config_loading_helpers)
     body = source.split('"""')[2]
@@ -437,18 +442,54 @@ def test_the_helper_set_is_qualified_rather_than_a_bag_of_bare_names() -> None:
     among them `run`, `serve`, `evolve`, `factory` and `__init__`, so a
     call to any unrelated function sharing one of those names read as a
     config load. Keys carry their module now, and an unresolvable name
-    from an unrelated module resolves to a pair nothing matches."""
-    root = Path(__file__).resolve().parent.parent
-    helpers = config_loading_helpers(root / "kstrl", root)
+    from an unrelated module resolves to an origin nothing matches."""
+    helpers = config_loading_helpers()
     collisions = {"run", "serve", "evolve", "factory", "feature", "sense", "__init__"}
-    assert collisions & {name for _module, name in helpers}, (
+    assert collisions & {helper.rsplit(".", 1)[-1] for helper in helpers}, (
         "the generic names review measured are gone from kstrl entirely; "
         "this test no longer measures anything"
     )
     # ... and none of them can be hit from a file that did not import
     # the kstrl function of that name.
-    innocent = ast.parse("def show():\n    run(thing)\n    factory()\n")
+    innocent = astwalk.parse("def show():\n    run(thing)\n    factory()\n")
     assert unguarded_config_loads(innocent, helpers, "kstrl.tui.screens.made_up") == []
+
+
+def test_a_relative_import_resolves_to_the_package_it_names() -> None:
+    """The hole #324 records this file carrying, with its control.
+
+    The old resolver read ``ImportFrom.module`` and nothing else. A
+    ``from .config_report import ...`` therefore resolved to the module
+    ``config_report``, which can never match a package-qualified helper
+    key, and ``from . import config_report`` was dropped before it was
+    looked at. Both are unguarded loads reported clean, which is the
+    skip direction. Measured on this tree: with the old resolver both
+    snippets below returned no offender at all.
+    """
+    helpers = frozenset({"kstrl.config_report.build_config_report"})
+    from_module = astwalk.parse(
+        "from .config_report import build_config_report\n"
+        "def show(root):\n"
+        "    return build_config_report(root)\n"
+    )
+    assert unguarded_config_loads(from_module, helpers, "kstrl.made_up") == [(3, "show")]
+
+    bare_package = astwalk.parse(
+        "from . import config_report\n"
+        "def show(root):\n"
+        "    return config_report.build_config_report(root)\n"
+    )
+    assert unguarded_config_loads(bare_package, helpers, "kstrl.made_up") == [(3, "show")]
+
+    # The level is read, not ignored: two dots from kstrl.tui lands on
+    # kstrl, one dot lands on kstrl.tui and matches nothing here.
+    two_up = astwalk.parse(
+        "from ..config_report import build_config_report\n"
+        "def show(root):\n"
+        "    return build_config_report(root)\n"
+    )
+    assert unguarded_config_loads(two_up, helpers, "kstrl.tui.made_up") == [(3, "show")]
+    assert unguarded_config_loads(two_up, helpers, "kstrl.made_up") == []
 
 
 def test_the_off_loop_exemption_still_names_a_real_site_and_a_true_reason() -> None:
@@ -458,20 +499,19 @@ def test_the_off_loop_exemption_still_names_a_real_site_and_a_true_reason() -> N
     walk would otherwise flag, and the reason it is exempt must still
     hold in the code that provides it.
     """
-    root = Path(__file__).resolve().parent.parent
-    helpers = config_loading_helpers(root / "kstrl", root)
+    helpers = config_loading_helpers()
     for rel, scope in _GUARDED_OFF_THE_EVENT_LOOP:
-        path = root / rel
+        path = astwalk.REPO_ROOT / rel
         flagged = unguarded_config_loads(
-            ast.parse(path.read_text(encoding="utf-8")),
+            astwalk.parsed(path),
             helpers,
-            module_name(path, root),
+            astwalk.module_name(path),
         )
         assert any(name == scope for _line, name in flagged), (
             f"{rel}:{scope} no longer loads config unguarded; drop the exemption"
         )
     # The mechanism the exemption rests on.
-    bridge = (root / "kstrl" / "tui" / "bridge.py").read_text(encoding="utf-8")
+    bridge = (astwalk.KSTRL_PACKAGE / "tui" / "bridge.py").read_text(encoding="utf-8")
     assert "except BaseException as exc:" in bridge
     assert "error_box.append(exc)" in bridge
 
@@ -479,14 +519,11 @@ def test_the_off_loop_exemption_still_names_a_real_site_and_a_true_reason() -> N
 def test_the_exemption_key_distinguishes_two_closures_of_the_same_name() -> None:
     """Review's measurement: session.py defines `target` twice, so the
     old (file, bare name) key exempted both while claiming one."""
-    root = Path(__file__).resolve().parent.parent
-    session = root / "kstrl" / "tui" / "session.py"
+    session = astwalk.KSTRL_PACKAGE / "tui" / "session.py"
     targets = {
-        name
-        for name in (
-            qualified for _scope, qualified in scopes(ast.parse(session.read_text("utf-8")))
-        )
-        if name.endswith(".target")
+        qualified
+        for _scope, qualified in astwalk.scopes(astwalk.parsed(session))
+        if qualified.endswith(".target")
     }
     assert len(targets) > 1, "session.py no longer has colliding closures to distinguish"
     assert all(key in targets for _rel, key in _GUARDED_OFF_THE_EVENT_LOOP)
@@ -494,21 +531,21 @@ def test_the_exemption_key_distinguishes_two_closures_of_the_same_name() -> None
 
 def test_the_walk_would_have_caught_the_original_defect() -> None:
     """The walk is only worth having if it fails on the bugs."""
-    helpers = frozenset({("kstrl.launch", "assemble_factory_configs")})
+    helpers = frozenset({"kstrl.launch.assemble_factory_configs"})
     prelude = "from kstrl.launch import assemble_factory_configs\n"
 
-    unguarded = ast.parse(
+    unguarded = astwalk.parse(
         "def reload(self):\n    journal = EvolutionJournal(EvolutionConfig.load(root_dir))\n"
     )
     assert unguarded_config_loads(unguarded, helpers) == [(2, "reload")]
 
     # The site the first version of the walk could not see.
-    indirect = ast.parse(
+    indirect = astwalk.parse(
         prelude + "def prepare(spec, root):\n    return assemble_factory_configs(root)\n"
     )
     assert unguarded_config_loads(indirect, helpers) == [(3, "prepare")]
 
-    guarded = ast.parse(
+    guarded = astwalk.parse(
         "def reload(self):\n"
         "    try:\n"
         "        return EvolutionConfig.load(root_dir)\n"
@@ -521,7 +558,7 @@ def test_the_walk_would_have_caught_the_original_defect() -> None:
 def test_a_load_in_an_except_block_is_not_counted_as_guarded() -> None:
     """`ast.walk` over a Try yields its handlers too, so the first
     version called this guarded. Nothing catches it."""
-    fallback = ast.parse(
+    fallback = astwalk.parse(
         "def load(self):\n"
         "    try:\n"
         "        return primary()\n"
@@ -531,6 +568,22 @@ def test_a_load_in_an_except_block_is_not_counted_as_guarded() -> None:
     assert unguarded_config_loads(fallback, frozenset()) == [(5, "load")]
 
 
+def test_a_handler_one_exception_narrower_than_the_entry_check_is_not_a_guard() -> None:
+    """#289's whole defect class, as one snippet.
+
+    The hand-written tuple is the shape every site the survey found had
+    drifted into, and it is the mutation this file is checked against.
+    """
+    narrowed = astwalk.parse(
+        "def reload(self):\n"
+        "    try:\n"
+        "        return EvolutionConfig.load(root_dir)\n"
+        "    except (ValueError, OSError):\n"
+        "        return None\n"
+    )
+    assert unguarded_config_loads(narrowed, frozenset()) == [(3, "reload")]
+
+
 def test_the_shapes_the_second_version_could_not_see() -> None:
     """Four blind spots review measured, each one line of source.
 
@@ -538,36 +591,54 @@ def test_the_shapes_the_second_version_could_not_see() -> None:
     clean, which is the only failure mode that matters for a test whose
     whole job is noticing.
     """
-    helpers = frozenset({("kstrl.config_report", "build_config_report")})
+    helpers = frozenset({"kstrl.config_report.build_config_report"})
 
-    dotted_owner = ast.parse("def show():\n    return evolution.EvolutionConfig.load(root)\n")
+    dotted_owner = astwalk.parse("def show():\n    return evolution.EvolutionConfig.load(root)\n")
     assert unguarded_config_loads(dotted_owner, helpers) == [(2, "show")]
 
-    aliased_class = ast.parse(
+    aliased_class = astwalk.parse(
         "from kstrl.inbox import InboxConfig as IC\ndef show():\n    return IC.load(root)\n"
     )
     assert unguarded_config_loads(aliased_class, helpers) == [(3, "show")]
 
-    module_attribute = ast.parse(
+    module_attribute = astwalk.parse(
         "from kstrl import config_report\n"
         "def show():\n"
         "    return config_report.build_config_report(root)\n"
     )
     assert unguarded_config_loads(module_attribute, helpers) == [(3, "show")]
 
-    at_import_time = ast.parse("REPORT = build_config_report(root)\n")
+    at_import_time = astwalk.parse("REPORT = build_config_report(root)\n")
     assert unguarded_config_loads(at_import_time, helpers, "kstrl.config_report") == [
         (1, "<module>")
     ]
 
 
-def test_an_unresolvable_loader_attribute_is_a_stated_limit_not_a_silent_one() -> None:
+@pytest.mark.xfail(strict=True, raises=AssertionError)
+def test_a_loader_held_in_an_attribute_is_a_disclosed_limit() -> None:
     """`self._cfg_cls.load(root)` needs type inference, so it is missed.
 
-    Pinned rather than left to be discovered: if someone teaches the
-    walk to resolve it, this test is the one that says so, and the
-    module docstring is what has to change with it.
+    Under ``xfail(strict=True)`` rather than a plain assertion that the
+    walk sees nothing: the day somebody teaches it to resolve the
+    attribute, this row XPASSes, that is a failure, and the module
+    docstring has to be edited in the same diff. A plain
+    ``assert ... == []`` would simply start passing for a new reason.
     """
-    held_in_an_attribute = ast.parse("def show(self):\n    return self._cfg_cls.load(root)\n")
-    assert unguarded_config_loads(held_in_an_attribute, frozenset()) == []
-    assert "self._cfg_cls.load(root)" in __doc__ if __doc__ else False
+    astwalk.blind_spot(
+        lambda source: unguarded_config_loads(astwalk.parse(source), frozenset()),
+        "def show(self):\n    return self._cfg_cls.load(root)\n",
+    )
+
+
+def test_the_disclosed_limit_is_written_down_where_a_reader_finds_it() -> None:
+    """The other half of the row above, and it was broken.
+
+    This assertion used to read ``assert "..." in __doc__ if __doc__
+    else False``, which Python parses as a conditional EXPRESSION: the
+    ``assert`` applies to the whole ternary, so the else branch asserts
+    the constant ``False``. It passed only because the docstring is
+    truthy, and it would have failed rather than skipped had it not
+    been.
+    """
+    assert __doc__ is not None
+    assert "self._cfg_cls.load(root)" in __doc__

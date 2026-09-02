@@ -21,6 +21,8 @@ evolve screen is the screen that section is about.
 
 from __future__ import annotations
 
+import ast
+import importlib
 import os
 import stat
 from collections.abc import AsyncIterator
@@ -52,12 +54,66 @@ from kstrl.tui.screens.inbox import InboxScreen
 from kstrl.tui.screens.init_wizard import _detected_text
 from kstrl.tui.session import LaunchError, start_run_session
 from kstrl.tui.widgets.config_problem import ConfigProblemBanner
+from tests.helpers import astwalk
 from tests.helpers.tui_screens import evolve_screen, home_app
 from tests.spine_utils import make_manifest
 
 BAD_KNOB = '[evolution]\nlookback_runs = "many"\n'
 BAD_DOCUMENT = "[evolution\nlookback_runs = 5\n"
 GOOD_KNOB = "[evolution]\nlookback_runs = 5\n"
+
+
+# --- the domain rule, derived from kstrl/ rather than listed --------------
+
+#: The base ``raise_if_defect`` draws its line at.
+_DOMAIN_BASE = "RuntimeError"
+
+#: Every node in ``kstrl/`` that writes the identifier ``RuntimeError``:
+#: the net under the walk below, enumerating no node types, since a
+#: class cannot subclass what its module never spells. Rows that are not
+#: a class base are bare raises and one ``isinstance``, pinned anyway
+#: because separating them by shape is the guessing #324 costs.
+EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
+    "autonomy.py": 1,
+    "config_preflight.py": 2,  # the rule itself, and its docstring
+    "contract.py": 1,
+    "decompose.py": 1,
+    "factory.py": 3,  # one subclass, two bare raises
+    "git.py": 1,
+    "inbox.py": 1,
+    "intake_github.py": 1,
+    "pr.py": 4,  # no subclass: four bare raises
+    "serve.py": 1,
+    "statedir.py": 2,  # two subclasses
+    "workqueue.py": 1,
+}
+
+
+def _domain_subclass_names(tree: ast.Module, module: str) -> list[str]:
+    """The classes in one module that derive DIRECTLY from RuntimeError.
+
+    The base is resolved through the module's own imports before its
+    last segment is read, so ``class X(builtins.RuntimeError)`` and an
+    aliased import both count; matching ``ast.Name`` alone, which is
+    what this walk did until #324, missed both.
+    """
+    table = astwalk.bindings(tree, module=module)
+    return [
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef)
+        for base in node.bases
+        if (table.resolve(base) or astwalk.dotted(base) or "").rsplit(".", 1)[-1] == _DOMAIN_BASE
+    ]
+
+
+def _kstrl_domain_errors() -> list[type[BaseException]]:
+    """Every ``RuntimeError`` subclass ``kstrl/`` declares, imported."""
+    return [
+        getattr(importlib.import_module(astwalk.module_name(path)), name)
+        for path in astwalk.package_sources()
+        for name in _domain_subclass_names(astwalk.parsed(path), astwalk.module_name(path))
+    ]
 
 
 class _Harness(App[None]):
@@ -396,22 +452,7 @@ class TestSharedGuard:
         - and this test walks the package to check the answer holds for
         every one of them.
         """
-        import ast
-        import importlib
-
-        src = Path(__file__).resolve().parent.parent / "kstrl"
-        subclasses: list[type[BaseException]] = []
-        for path in sorted(src.rglob("*.py")):
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            module = path.relative_to(src.parent).with_suffix("").as_posix().replace("/", ".")
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.ClassDef):
-                    continue
-                if not any(
-                    isinstance(base, ast.Name) and base.id == "RuntimeError" for base in node.bases
-                ):
-                    continue
-                subclasses.append(getattr(importlib.import_module(module), node.name))
+        subclasses = _kstrl_domain_errors()
         assert len(subclasses) >= 10, subclasses
         for cls in subclasses:
             raise_if_defect(cls("operator input"))  # must not raise
@@ -421,6 +462,41 @@ class TestSharedGuard:
         # And nothing outside RuntimeError is this rule's business.
         raise_if_defect(ValueError("a knob"))
         raise_if_defect(OSError("a file"))
+
+    def test_the_walk_sees_a_base_it_has_to_resolve_to_recognise(self) -> None:
+        """The control: an empty subclass list and a switched-off
+        matcher read the same, and until #324 this walk matched a bare
+        ``ast.Name``, so both spellings below were invisible."""
+        dotted = astwalk.parse("class X(builtins.RuntimeError): pass\n")
+        aliased = astwalk.parse("from builtins import RuntimeError as RE\nclass Y(RE): pass\n")
+        assert _domain_subclass_names(dotted, "kstrl.made_up") == ["X"]
+        assert _domain_subclass_names(aliased, "kstrl.made_up") == ["Y"]
+        # ... and an unrelated base is still not this rule's business.
+        assert _domain_subclass_names(astwalk.parse("class Z(ValueError): pass\n"), "m") == []
+
+    def test_every_module_that_spells_the_domain_base_is_pinned(self) -> None:
+        """The net: no class subclasses what its module never spells."""
+        astwalk.assert_census(
+            sources=astwalk.package_sources(),
+            sees=astwalk.spells(_DOMAIN_BASE),
+            expected=EXPECTED_RUNTIMEERROR_SPELLINGS,
+            control="class X(RuntimeError):\n    pass\n",
+            message="the set of places kstrl/ spells RuntimeError changed. Add the row.",
+        )
+
+    @pytest.mark.xfail(strict=True, raises=AssertionError)
+    def test_a_subclass_of_a_subclass_is_a_disclosed_limit(self) -> None:
+        """``class Deeper(ServeError)`` is not seen, and need not be.
+
+        Direct bases only. The bound: the rule asks
+        ``type(exc).__module__``, so a transitive subclass declared in
+        ``kstrl/`` is operator input at run time either way. Coverage is
+        what is lost, not correctness. Measured: zero exist today.
+        """
+        astwalk.blind_spot(
+            lambda source: _domain_subclass_names(astwalk.parse(source), "kstrl.made_up"),
+            "from kstrl.serve import ServeError\nclass Deeper(ServeError):\n    pass\n",
+        )
 
     def test_a_domain_runtimeerror_is_still_reported(self, tmp_path: Path) -> None:
         """The other side of the same line: ServeError and friends are
