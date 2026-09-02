@@ -7,10 +7,13 @@ import json
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
 from kstrl.decompose import (
+    _MAX_RETRY_MESSAGES,
+    DECOMPOSE_PROMPT,
     AuditSnapshot,
     ExcludedHistory,
     SpecBlockerError,
@@ -25,8 +28,10 @@ from kstrl.decompose import (
     _issue_dicts,
     _journal_snapshot,
     _parse_spec_issues,
+    _retry_feedback,
     _stored_issues,
     _validate_decompose_output,
+    _write_decompose_artifact,
     decompose_spec,
 )
 from kstrl.evolution import SPEC_ISSUES_EVENT, EvolutionConfig, EvolutionJournal
@@ -101,7 +106,12 @@ VALID_DECOMPOSE_OUTPUT = json.dumps(
                     }
                 ],
             },
-        ]
+        ],
+        # v3.0.0 requires the array, even empty: a payload that omitted
+        # it used to pass with zero decisions and zero escalations, and
+        # zero agrees with any count.
+        "spec_issues": [],
+        "decisions": [],
     }
 )
 
@@ -278,7 +288,9 @@ class TestValidateDecomposeOutput:
     def test_allowed_paths_valid(self) -> None:
         # userStories must be non-empty since R1.8's vacuous-PRD gate,
         # so this fixture carries one real story.
-        data = {
+        data: dict[str, object] = {
+            "spec_issues": [],
+            "decisions": [],
             "components": [
                 {
                     "id": "comp-a",
@@ -301,7 +313,7 @@ class TestValidateDecomposeOutput:
                         }
                     ],
                 }
-            ]
+            ],
         }
         errors = _validate_decompose_output(data)
         assert errors == []
@@ -368,26 +380,123 @@ class TestSpecIssues:
         }
         assert _parse_spec_issues(data) == []
 
-    def test_empty_components_allowed_when_blocker_exists(self) -> None:
+    def test_empty_components_allowed_when_escalated(self) -> None:
         data = {
             "components": [],
             "spec_issues": [
                 {
+                    "id": "too-vague",
                     "severity": "blocker",
                     "kind": "ambiguity",
                     "summary": "spec is too vague",
                 }
             ],
+            "decisions": [
+                {
+                    "issue": "too-vague",
+                    "question": "which product ships first",
+                    "disposition": "escalated",
+                    "resolution": "the owner must name the smallest slice",
+                }
+            ],
         }
         assert _validate_decompose_output(data) == []
 
-    def test_empty_components_rejected_without_blockers(self) -> None:
-        data = {"components": []}
+    def test_empty_components_rejected_without_escalation(self) -> None:
+        data: dict[str, object] = {"components": [], "spec_issues": [], "decisions": []}
         errors = _validate_decompose_output(data)
         assert errors
         assert "components" in errors[0]
 
-    def test_decompose_raises_on_blocker(self, tmp_path: Path) -> None:
+    def test_a_blocker_without_an_escalation_is_rejected(self) -> None:
+        """#260: the halt keys on the escalation, so a blocker with no
+        escalated decision would proceed on a question the architect
+        called un-guessable and never closed. Retryable, not silent."""
+        data = json.loads(
+            _single_component_output([_story()], spec_issues=[BLOCKER_ISSUE], decisions=[])
+        )
+        errors = _validate_decompose_output(data)
+        assert any("was raised and never closed" in e for e in errors)
+
+    def test_an_escalation_without_a_blocker_is_rejected(self) -> None:
+        data = json.loads(
+            _single_component_output(
+                [_story()],
+                spec_issues=[MINOR_ISSUE],
+                decisions=[
+                    {
+                        "issue": "edge-case-unspecified",
+                        "question": "which product ships first",
+                        "disposition": "escalated",
+                        "resolution": "the owner must name the smallest slice",
+                    }
+                ],
+            )
+        )
+        errors = _validate_decompose_output(data)
+        assert any("'escalated' decision needs a" in e for e in errors)
+
+    def test_a_decision_naming_an_unknown_component_is_rejected(self) -> None:
+        """#260: the renderer matches the id exactly, so a typo would
+        silently demote a binding decision to the summary tier for every
+        engineer. Same join the validator already does for deps."""
+        data = json.loads(
+            _single_component_output(
+                [_story()],
+                spec_issues=[MINOR_ISSUE],
+                decisions=[
+                    {
+                        "issue": "edge-case-unspecified",
+                        "question": "what does the serializer emit",
+                        "disposition": "decided",
+                        "resolution": "an empty list",
+                        "component": "comp-typo",
+                    }
+                ],
+            )
+        )
+        errors = _validate_decompose_output(data)
+        assert any("unknown component 'comp-typo'" in e for e in errors)
+
+    def test_a_decision_binding_the_whole_run_names_no_component(self) -> None:
+        data = json.loads(
+            _single_component_output(
+                [_story()],
+                spec_issues=[MINOR_ISSUE],
+                decisions=[
+                    {
+                        "issue": "edge-case-unspecified",
+                        "question": "what does the serializer emit",
+                        "disposition": "decided",
+                        "resolution": "an empty list",
+                        "component": "",
+                    }
+                ],
+            )
+        )
+        assert _validate_decompose_output(data) == []
+
+    def test_a_disposed_issue_needs_no_escalation(self) -> None:
+        """The whole point of #260: an issue the architect closed itself
+        rides along with the components instead of stopping the run."""
+        data = json.loads(
+            _single_component_output(
+                [_story()],
+                spec_issues=[MINOR_ISSUE],
+                decisions=[
+                    {
+                        "issue": "edge-case-unspecified",
+                        "question": "what does the empty-input path do",
+                        "disposition": "assumed",
+                        "resolution": "return an empty list; pinned by AC2",
+                        "component": "comp-a",
+                    }
+                ],
+            )
+        )
+        assert _validate_decompose_output(data) == []
+
+    def test_decompose_raises_on_escalation(self, tmp_path: Path) -> None:
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("# Vague spec\nDo something good.")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
@@ -396,11 +505,20 @@ class TestSpecIssues:
             {
                 "spec_issues": [
                     {
+                        "id": "spec-empty",
                         "severity": "blocker",
                         "kind": "ambiguity",
                         "summary": "Spec is empty",
                         "location": "everywhere",
                         "suggestion": "Write actual requirements",
+                    }
+                ],
+                "decisions": [
+                    {
+                        "issue": "spec-empty",
+                        "question": "what is this product for",
+                        "disposition": "escalated",
+                        "resolution": "the owner must say",
                     }
                 ],
                 "components": [],
@@ -418,8 +536,14 @@ class TestSpecIssues:
                 ui=ui,
                 root_dir=tmp_path,
             )
-        assert len(exc_info.value.issues) == 1
-        assert exc_info.value.issues[0].severity == "blocker"
+        assert len(exc_info.value.escalations) == 1
+        assert exc_info.value.escalations[0].question == "what is this product for"
+        # R1.7: the halt points at BOTH durable records. The audit holds
+        # the finding; only the register holds the question the owner
+        # has to answer and the reason it was not answered.
+        lines = exc_info.value.artifact_lines()
+        assert any("spec-issues.json" in line for line in lines)
+        assert any("decisions.json" in line for line in lines)
 
     def test_decompose_continues_on_non_blockers(self, tmp_path: Path) -> None:
         spec_file = tmp_path / "spec.md"
@@ -430,9 +554,18 @@ class TestSpecIssues:
             {
                 "spec_issues": [
                     {
+                        "id": "edge-case",
                         "severity": "minor",
                         "kind": "missing_detail",
                         "summary": "Edge case unspecified",
+                    }
+                ],
+                "decisions": [
+                    {
+                        "issue": "edge-case",
+                        "question": "what does the empty-input path do",
+                        "disposition": "assumed",
+                        "resolution": "return an empty list; pinned by AC2",
                     }
                 ],
                 "components": [
@@ -665,9 +798,38 @@ def _story(**overrides: object) -> dict[str, object]:
     return story
 
 
+def _with_ids(spec_issues: list[dict[str, object]]) -> list[dict[str, object]]:
+    """The v3.0.0 schema requires a unique id on every issue."""
+    return [
+        entry if entry.get("id") else {**entry, "id": f"issue-{index}"}
+        for index, entry in enumerate(spec_issues)
+    ]
+
+
+def _closures_for(spec_issues: list[dict[str, object]]) -> list[dict[str, object]]:
+    """One decision per issue, as the v3.0.0 prompt requires.
+
+    #260 made "blocker" severity and an escalated decision two views of
+    one fact, and round 2 made the correspondence a per-record JOIN on
+    the issue id rather than a count. Derived here rather than written
+    out at every call site so a test that adds an issue cannot forget
+    the half that makes the halt real.
+    """
+    return [
+        {
+            "issue": issue["id"],
+            "question": f"who decides: {issue['summary']}",
+            "disposition": ("escalated" if issue.get("severity") == "blocker" else "decided"),
+            "resolution": "the owner must choose",
+        }
+        for issue in spec_issues
+    ]
+
+
 def _single_component_output(
     stories: list[dict[str, object]],
     spec_issues: list[dict[str, object]] | None = None,
+    decisions: list[dict[str, object]] | None = None,
 ) -> str:
     payload: dict[str, object] = {
         "components": [
@@ -685,9 +847,458 @@ def _single_component_output(
             }
         ],
     }
-    if spec_issues is not None:
-        payload["spec_issues"] = spec_issues
+    issues = _with_ids(spec_issues or [])
+    payload["spec_issues"] = issues
+    if decisions is not None:
+        payload["decisions"] = decisions
+    else:
+        payload["decisions"] = _closures_for(issues)
     return json.dumps(payload)
+
+
+class TestTheJoinKeyIsValidatedRaw:
+    """#260 round 2 (F1). The join is only as good as the ids it joins
+    on, and a mutation that auto-numbered a missing id survived the
+    first pass of this suite: the gate still closed, but one level away,
+    with an error naming `decisions[i].issue` for a fault that was in
+    `spec_issues[i].id`. A retry can only fix the record the message
+    names.
+    """
+
+    def _payload(self, spec_issues: list[dict[str, object]]) -> dict[str, object]:
+        data = json.loads(_single_component_output([_story()], spec_issues=spec_issues))
+        return dict(data)
+
+    def test_an_issue_without_an_id_is_named_and_indexed(self) -> None:
+        data = self._payload([])
+        data["spec_issues"] = [{"severity": "minor", "kind": "missing_detail", "summary": "s"}]
+        data["decisions"] = []
+        errors = _validate_decompose_output(data)
+        assert any(e.startswith("spec_issues[0].id:") for e in errors)
+
+    def test_a_blank_id_is_rejected(self) -> None:
+        data = self._payload([])
+        data["spec_issues"] = [
+            {"id": "   ", "severity": "minor", "kind": "missing_detail", "summary": "s"}
+        ]
+        data["decisions"] = []
+        errors = _validate_decompose_output(data)
+        assert any(e.startswith("spec_issues[0].id:") for e in errors)
+
+    def test_a_non_string_id_is_rejected(self) -> None:
+        data = self._payload([])
+        data["spec_issues"] = [
+            {"id": 7, "severity": "minor", "kind": "missing_detail", "summary": "s"}
+        ]
+        data["decisions"] = []
+        errors = _validate_decompose_output(data)
+        assert any(e.startswith("spec_issues[0].id:") for e in errors)
+
+    def test_a_duplicate_id_is_rejected(self) -> None:
+        entry = {"id": "same", "severity": "minor", "kind": "missing_detail", "summary": "s"}
+        data = self._payload([])
+        data["spec_issues"] = [entry, dict(entry, summary="other")]
+        data["decisions"] = [
+            {"issue": "same", "question": "q", "disposition": "decided", "resolution": "r"}
+        ]
+        errors = _validate_decompose_output(data)
+        assert any("already used by an earlier issue" in e for e in errors)
+
+    def test_an_id_that_names_no_issue_is_rejected(self) -> None:
+        """One of the three rejections DECOMPOSE_PROMPT 3.0.0 promises,
+        and the round-2 /simplify pass measured that nothing tested it:
+        a mutation letting an unknown id through left the whole suite
+        green, 4713 passed."""
+        data = self._payload([])
+        data["spec_issues"] = [
+            {"id": "a", "severity": "minor", "kind": "missing_detail", "summary": "s"}
+        ]
+        data["decisions"] = [
+            {"issue": "a", "question": "q", "disposition": "decided", "resolution": "r"},
+            {"issue": "ghost", "question": "q", "disposition": "decided", "resolution": "r"},
+        ]
+        errors = _validate_decompose_output(data)
+        assert any("'ghost' is not the id of any entry in 'spec_issues'" in e for e in errors)
+
+    def test_a_second_decision_closing_the_same_issue_is_rejected(self) -> None:
+        """The other untested promise. Without it a payload can close one
+        issue twice and leave another unclosed while the counts agree,
+        which is the shape of the round-1 defect."""
+        data = self._payload([])
+        data["spec_issues"] = [
+            {"id": "a", "severity": "minor", "kind": "missing_detail", "summary": "s"}
+        ]
+        data["decisions"] = [
+            {"issue": "a", "question": "q1", "disposition": "decided", "resolution": "r"},
+            {"issue": "a", "question": "q2", "disposition": "assumed", "resolution": "r"},
+        ]
+        errors = _validate_decompose_output(data)
+        assert any("'a' is already closed by decisions[0]" in e for e in errors)
+
+    def test_the_prompt_states_every_rule_the_validator_enforces(self) -> None:
+        """The two statements of the contract must fail together.
+
+        The prompt tells the model; the validator refuses to trust it.
+        That split is deliberate, but the coupling was one-directional:
+        editing the prompt breaks the H3 hash, and editing the validator
+        broke nothing, so the English could quietly become false. It
+        already had: 3.0.0 says field values are matched exactly and
+        ``severity`` was not checked at all.
+        """
+        # Fragments, not sentences: the body is hard-wrapped, so a
+        # sentence-length needle would fail on the line break rather
+        # than on the meaning.
+        for fragment in (
+            "an issue is unclosed",
+            "decisions close the same issue",
+            "names an id that",
+            "is not in `spec_issues`",
+            "Field values are matched EXACTLY",
+            'A "blocker" issue MUST be closed by',
+        ):
+            assert fragment in DECOMPOSE_PROMPT, fragment
+
+    def test_a_non_object_issue_entry_is_rejected(self) -> None:
+        data = self._payload([])
+        data["spec_issues"] = ["not an object"]
+        data["decisions"] = []
+        errors = _validate_decompose_output(data)
+        assert any(e.startswith("spec_issues[0]: must be an object") for e in errors)
+
+    def test_a_non_list_spec_issues_is_rejected(self) -> None:
+        data = self._payload([])
+        data["spec_issues"] = {}
+        data["decisions"] = []
+        errors = _validate_decompose_output(data)
+        assert any("'spec_issues' must be an array" in e for e in errors)
+
+
+class TestAnIssueTheParserWouldDropIsARejection:
+    """#260 round 3. The round-2 /simplify pass found F1's capital
+    letter one field over.
+
+    ``_spec_issue_errors`` took ``severity`` verbatim and compared it
+    only to the literal ``"blocker"``, while ``_parse_spec_issues``
+    checks it against ``_VALID_SEVERITIES``. So the two disagreed about
+    which entries existed. Measured on the round-2 code: a severity of
+    ``"Blocker"`` VALIDATED, was closed by a ``decided`` decision, and
+    then parsed to 0 of 1 issues, so the blocker reached neither the
+    halt gate, nor ``spec-issues.json``, nor ``route_spec_issues``, nor
+    the UI. Five such shapes were accepted.
+
+    The property: anything the validator accepts, the parser reproduces
+    faithfully. There are two ways to break that and the suite covers
+    both. The parser DROPS an entry whose severity or kind is not in the
+    vocabulary, or whose summary is blank. It MANGLES a non-string
+    summary, because it reads it as ``str(entry.get("summary", ""))``
+    and a ``[]`` becomes the two-character summary ``"[]"``, which is
+    not blank and so survives. A fabricated summary is worse than a
+    dropped one, and the validator now refuses both.
+    """
+
+    def _payload(self, issue: dict[str, object], disposition: str) -> dict[str, object]:
+        data = dict(json.loads(_single_component_output([_story()])))
+        data["spec_issues"] = [issue]
+        data["decisions"] = [
+            {"issue": "a", "question": "q", "disposition": disposition, "resolution": "r"}
+        ]
+        return data
+
+    @pytest.mark.parametrize(
+        ("name", "issue", "disposition", "field", "parser"),
+        [
+            (
+                "capitalised severity",
+                {"id": "a", "severity": "Blocker", "kind": "ambiguity", "summary": "s"},
+                "decided",
+                "spec_issues[0].severity:",
+                "drops",
+            ),
+            (
+                "unknown severity word",
+                {"id": "a", "severity": "critical", "kind": "ambiguity", "summary": "s"},
+                "decided",
+                "spec_issues[0].severity:",
+                "drops",
+            ),
+            (
+                "severity absent",
+                {"id": "a", "kind": "ambiguity", "summary": "s"},
+                "decided",
+                "spec_issues[0].severity:",
+                "drops",
+            ),
+            (
+                "non-string severity",
+                {"id": "a", "severity": 3, "kind": "ambiguity", "summary": "s"},
+                "decided",
+                "spec_issues[0].severity:",
+                "drops",
+            ),
+            (
+                "capitalised kind",
+                {"id": "a", "severity": "blocker", "kind": "Ambiguity", "summary": "s"},
+                "escalated",
+                "spec_issues[0].kind:",
+                "drops",
+            ),
+            (
+                "unknown kind",
+                {"id": "a", "severity": "blocker", "kind": "typo", "summary": "s"},
+                "escalated",
+                "spec_issues[0].kind:",
+                "drops",
+            ),
+            (
+                "blank summary",
+                {"id": "a", "severity": "blocker", "kind": "ambiguity", "summary": "   "},
+                "escalated",
+                "spec_issues[0].summary:",
+                "drops",
+            ),
+            (
+                "non-string summary",
+                {"id": "a", "severity": "blocker", "kind": "ambiguity", "summary": []},
+                "escalated",
+                "spec_issues[0].summary:",
+                "mangles",
+            ),
+        ],
+    )
+    def test_the_parser_and_the_validator_cannot_disagree(
+        self,
+        name: str,
+        issue: dict[str, object],
+        disposition: str,
+        field: str,
+        parser: str,
+    ) -> None:
+        data = self._payload(issue, disposition)
+        errors = _validate_decompose_output(data)
+        assert errors, f"{name}: accepted a payload the parser would not reproduce"
+        assert any(e.startswith(field) for e in errors), f"{name}: {errors}"
+        # The premise, stated per case so it cannot rot silently.
+        parsed = _parse_spec_issues(data)
+        if parser == "drops":
+            assert parsed == [], f"{name}: expected the parser to drop this"
+        else:
+            assert parsed and parsed[0].summary != issue["summary"], (
+                f"{name}: expected the parser to mangle this"
+            )
+
+    def test_the_control_still_validates_and_still_parses(self) -> None:
+        data = self._payload(
+            {"id": "a", "severity": "blocker", "kind": "ambiguity", "summary": "s"},
+            "escalated",
+        )
+        assert _validate_decompose_output(data) == []
+        assert len(_parse_spec_issues(data)) == 1
+
+    def test_the_message_names_the_whole_vocabulary(self) -> None:
+        """A retry can only fix what the message spells out."""
+        data = self._payload(
+            {"id": "a", "severity": "Blocker", "kind": "ambiguity", "summary": "s"},
+            "decided",
+        )
+        message = next(
+            e for e in _validate_decompose_output(data) if e.startswith("spec_issues[0].severity:")
+        )
+        assert "'blocker', 'major', 'minor'" in message
+        assert "case-exact" in message
+
+
+class TestARegisterThatDidNotLandFailsTheDecompose:
+    """#260 round 3. A swallowed write error silently disabled the whole
+    register.
+
+    The round-2 /simplify pass measured it: ``_write_decompose_artifact``
+    caught ``OSError``, printed one line and returned ``None``, and the
+    success path ignored the return, so a decompose whose register write
+    failed still reported success. Every later ``ks factory`` run against
+    that manifest then read status ``missing``, bound ``()`` and said
+    nothing, because a missing register is the legal pre-#260 state.
+    One full disk, one read-only mount, and the feature is off for good
+    with no message anywhere.
+
+    The rule: the register beside a saved manifest IS part of the result,
+    so its write failure is the decompose's failure. The halting copy is
+    not, because the halt reaches the operator through
+    ``SpecBlockerError`` whether or not the file landed.
+    """
+
+    def _capture(self) -> tuple[PlainUI, io.StringIO]:
+        buffer = io.StringIO()
+        return PlainUI(no_color=True, file=buffer), buffer
+
+    def _boom(self) -> Path:
+        raise OSError("no space left on device")
+
+    def test_an_optional_artifact_is_announced_and_survived(self) -> None:
+        ui, buffer = self._capture()
+        result = _write_decompose_artifact(
+            "spec_issues",
+            "spec issues",
+            self._boom,
+            ui=ui,
+            emit=lambda event: None,
+            rel_display=str,
+        )
+        assert result is None
+        assert "no space left on device" in buffer.getvalue()
+
+    def test_a_required_artifact_raises(self) -> None:
+        ui, _ = self._capture()
+        with pytest.raises(OSError, match="no space left on device"):
+            _write_decompose_artifact(
+                "decisions",
+                "architect decisions",
+                self._boom,
+                ui=ui,
+                emit=lambda event: None,
+                rel_display=str,
+                required=True,
+            )
+
+    def test_the_success_path_actually_asks_for_required(self, tmp_path: Path) -> None:
+        """Mutation guard, and the reason this class exists.
+
+        Deleting ``required=True`` from the one call site left all 288
+        tests passing: the unit tests above prove the helper honours the
+        flag, and nothing proved the caller passes it. So this drives a
+        real decompose with a register write that cannot land and
+        asserts the run fails rather than reporting success.
+        """
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# My Feature\nBuild a user management system.")
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
+        with (
+            patch(
+                "kstrl.decompose.write_decisions",
+                side_effect=OSError("no space left on device"),
+            ),
+            pytest.raises(OSError, match="no space left on device"),
+        ):
+            decompose_spec(
+                spec_path=spec_file,
+                project_name="test-project",
+                base_branch="main",
+                single_pr=False,
+                agent=MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT),
+                ui=PlainUI(no_color=True),
+                root_dir=tmp_path,
+            )
+
+    def test_the_halt_path_still_halts_when_its_register_cannot_land(self, tmp_path: Path) -> None:
+        """The other half of the policy, and the reason it is a flag
+        rather than a rule. A halt reaches the operator through
+        ``SpecBlockerError`` whether or not the file landed, so the
+        halting copy must not turn an escalation into an OSError."""
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# Feature\nTODO")
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
+        output = json.dumps(
+            {
+                "spec_issues": [
+                    {
+                        "id": "spec-empty",
+                        "severity": "blocker",
+                        "kind": "missing_detail",
+                        "summary": "The spec has no requirements",
+                        "location": "everywhere",
+                        "suggestion": "Write actual requirements",
+                    }
+                ],
+                "decisions": [
+                    {
+                        "issue": "spec-empty",
+                        "question": "what is this product for",
+                        "disposition": "escalated",
+                        "resolution": "the owner must say",
+                    }
+                ],
+                "components": [],
+            }
+        )
+        with (
+            patch(
+                "kstrl.decompose.write_decisions",
+                side_effect=OSError("no space left on device"),
+            ),
+            pytest.raises(SpecBlockerError) as exc_info,
+        ):
+            decompose_spec(
+                spec_path=spec_file,
+                project_name="test",
+                base_branch="main",
+                single_pr=False,
+                agent=MockDecomposeAgent(output),
+                ui=PlainUI(no_color=True),
+                root_dir=tmp_path,
+            )
+        assert len(exc_info.value.escalations) == 1
+        # The halt still names what it can: the audit landed, the
+        # register did not, and the message must not point at a file
+        # that is not there.
+        lines = exc_info.value.artifact_lines()
+        assert not any("decisions.json" in line for line in lines)
+
+    def test_a_required_artifact_that_lands_is_announced_like_any_other(
+        self, tmp_path: Path
+    ) -> None:
+        ui, buffer = self._capture()
+        target = tmp_path / "decisions.json"
+        target.write_text("{}", encoding="utf-8")
+        emitted: list[object] = []
+        result = _write_decompose_artifact(
+            "decisions",
+            "architect decisions",
+            lambda: target,
+            ui=ui,
+            emit=emitted.append,
+            rel_display=str,
+            required=True,
+        )
+        assert result == target
+        assert "Architect decisions written" in buffer.getvalue()
+        assert len(emitted) == 1
+
+
+class TestTheRetryFeedbackIsBounded:
+    """#260 round 3. Per-record messages are better feedback and a
+    worse bill.
+
+    Round 1 answered a whole class of malformed decisions with one
+    aggregate line. Round 2 answers with one message per bad record,
+    which is what lets a retry fix the exact entry, but the round-2
+    /simplify pass measured the other side of that: 32 decisions with
+    every field the wrong type produce 224 messages and 11,480
+    characters, pasted verbatim into a prompt that already carries the
+    whole spec, up to max_retries times. Round 1's figure for the same
+    fault was 278 characters.
+    """
+
+    def test_a_short_list_is_passed_through_whole(self) -> None:
+        errors = [f"decisions[{i}].issue: must be a string" for i in range(3)]
+        assert _retry_feedback(errors) == "; ".join(errors)
+
+    def test_a_long_list_is_cut_and_says_how_much_it_cut(self) -> None:
+        errors = [f"decisions[{i}].issue: must be a string" for i in range(224)]
+        feedback = _retry_feedback(errors)
+        assert feedback.count("; ") == _MAX_RETRY_MESSAGES
+        assert feedback.endswith(f"... and {224 - _MAX_RETRY_MESSAGES} more of the same kind")
+        assert len(feedback) < len("; ".join(errors)) // 4
+
+    def test_the_kept_messages_are_the_first_ones_and_keep_their_indices(self) -> None:
+        """Ordered by record, so the prefix is a usable sample and the
+        index in each message still names the record it belongs to."""
+        errors = [f"decisions[{i}].issue: must be a string" for i in range(50)]
+        feedback = _retry_feedback(errors)
+        assert feedback.startswith("decisions[0].issue:")
+        assert f"decisions[{_MAX_RETRY_MESSAGES - 1}].issue:" in feedback
+        assert f"decisions[{_MAX_RETRY_MESSAGES}].issue:" not in feedback
+
+    def test_an_empty_list_is_empty(self) -> None:
+        assert _retry_feedback([]) == ""
 
 
 class TestVacuousPrdRejection:
@@ -738,6 +1349,7 @@ class TestVacuousPrdRejection:
 
 
 BLOCKER_ISSUE: dict[str, object] = {
+    "id": "fast-undefined",
     "severity": "blocker",
     "kind": "ambiguity",
     "summary": "What 'fast' means is not defined",
@@ -746,6 +1358,7 @@ BLOCKER_ISSUE: dict[str, object] = {
 }
 
 MINOR_ISSUE: dict[str, object] = {
+    "id": "edge-case-unspecified",
     "severity": "minor",
     "kind": "missing_detail",
     "summary": "Edge case unspecified",
@@ -756,8 +1369,16 @@ MINOR_ISSUE: dict[str, object] = {
 
 def _blockers(count: int) -> list[dict[str, object]]:
     """``count`` blockers the de-duplicator keeps apart, so an audit's
-    recorded blocker count is the number asked for."""
-    return [{**BLOCKER_ISSUE, "summary": f"blocker {n}"} for n in range(count)]
+    recorded blocker count is the number asked for.
+
+    The id varies with the summary because the v3.0.0 schema requires a
+    unique id per issue and ``_with_ids`` only fills one in when it is
+    absent: ``BLOCKER_ISSUE`` carries its own, so without this every
+    entry would repeat it and validation would reject the payload.
+    """
+    return [
+        {**BLOCKER_ISSUE, "id": f"blocker-{n}", "summary": f"blocker {n}"} for n in range(count)
+    ]
 
 
 def _run_decompose(
@@ -817,7 +1438,13 @@ class TestSpecIssuesPersistence:
         spec_file.write_text("# Vague spec")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
-        output = json.dumps({"components": [], "spec_issues": [BLOCKER_ISSUE]})
+        output = json.dumps(
+            {
+                "components": [],
+                "spec_issues": [BLOCKER_ISSUE],
+                "decisions": _closures_for([BLOCKER_ISSUE]),
+            }
+        )
         with pytest.raises(SpecBlockerError) as exc_info:
             decompose_spec(
                 spec_path=spec_file,
@@ -840,6 +1467,7 @@ class TestSpecIssuesPersistence:
         assert content["counts"] == {"blocker": 1, "major": 0, "minor": 0}
         assert content["issues"] == [
             {
+                "id": "fast-undefined",
                 "severity": "blocker",
                 "kind": "ambiguity",
                 "summary": "What 'fast' means is not defined",
@@ -877,7 +1505,13 @@ class TestSpecIssuesPersistence:
         spec_file.write_text("# Vague spec")
         (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
 
-        output = json.dumps({"components": [], "spec_issues": [BLOCKER_ISSUE]})
+        output = json.dumps(
+            {
+                "components": [],
+                "spec_issues": [BLOCKER_ISSUE],
+                "decisions": _closures_for([BLOCKER_ISSUE]),
+            }
+        )
         with pytest.raises(SpecBlockerError):
             decompose_spec(
                 spec_path=spec_file,
@@ -2130,6 +2764,10 @@ class TestSpecConvergenceThroughDecompose:
         "2 reappear verbatim, -1 do not"."""
         self._run(tmp_path, [BLOCKER_ISSUE])
         restated = dict(BLOCKER_ISSUE)
+        # A DIFFERENT id: v3.0.0 requires them unique, and the point of
+        # the test is two issues that NORMALIZE to one, not two records
+        # that are the same record.
+        restated["id"] = "fast-undefined-restated"
         restated["severity"] = "major"
         restated["summary"] = "  What   'FAST'  MEANS is not   defined  "
         output = self._run(tmp_path, [BLOCKER_ISSUE, restated])

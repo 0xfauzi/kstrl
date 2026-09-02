@@ -28,8 +28,9 @@ from kstrl.autonomy import (
     flag_bundle_for,
     manual_override_notes,
 )
-from kstrl.autonomy_replay import RunRecord, load_runs, replay, replay_file
+from kstrl.autonomy_replay import load_runs, replay, replay_file
 from tests.helpers.component_prd import write_component_prd
+from tests.helpers.replay import clean_run, failing_run, run_record
 
 
 def _eligible_state(level: AutonomyLevel = AutonomyLevel.L1_SUPERVISED) -> AutonomyState:
@@ -357,20 +358,10 @@ class TestConfig:
 # --------------------------------------------------------------------------
 # Threshold replay
 # --------------------------------------------------------------------------
-def _run(**kwargs: object) -> RunRecord:
-    base = dict(
-        run_id="r1",
-        timestamp="2026-07-20T00:00:00Z",
-        project="demo",
-        components_total=1,
-        completed=1,
-        failed=0,
-        skipped=0,
-        retry_rate=0.0,
-        common_failure="",
-    )
-    base.update(kwargs)
-    return RunRecord(**base)  # type: ignore[arg-type]
+#: #339: the defaults moved to ``tests/helpers/replay.py`` when a second
+#: file needed the same records and hand-rolled them, one of them
+#: byte-for-byte identical to ``_clean`` below.
+_run = run_record
 
 
 class TestReplay:
@@ -948,19 +939,7 @@ class TestPromotionAuthority:
 class TestReplayAdvancesLevels:
     """The replay must traverse levels, not re-report the same eligibility."""
 
-    @staticmethod
-    def _clean(index: int) -> RunRecord:
-        return RunRecord(
-            run_id=f"r{index}",
-            timestamp=f"2026-07-{(index % 28) + 1:02d}T00:00:00Z",
-            project="p",
-            components_total=1,
-            completed=1,
-            failed=0,
-            skipped=0,
-            retry_rate=0.0,
-            common_failure="",
-        )
+    _clean = staticmethod(clean_run)
 
     def test_level_advances_past_l1(self) -> None:
         report = replay([self._clean(i) for i in range(12)])
@@ -978,19 +957,7 @@ class TestReplayAdvancesLevels:
 
     def test_demotes_after_reaching_a_higher_level(self) -> None:
         runs = [self._clean(i) for i in range(60)]
-        runs.append(
-            RunRecord(
-                run_id="bad",
-                timestamp="2026-07-28T00:00:00Z",
-                project="p",
-                components_total=1,
-                completed=0,
-                failed=1,
-                skipped=0,
-                retry_rate=1.0,
-                common_failure="review:prd_criterion",
-            )
-        )
+        runs.append(failing_run("review:prd_criterion"))
         report = replay(runs)
         assert report.would_demote
         assert report.final_level == int(AutonomyLevel.L3_ENVELOPED_AUTO)

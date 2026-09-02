@@ -12,7 +12,7 @@ Calibration is the truth signal. The `tests/test_calibration.py` suite (Phase D 
 
 | Role | Module | Prompt | Phase | What it catches |
 |---|---|---|---|---|
-| **Architect / PRD red-team** | `kstrl/decompose.py` | `DECOMPOSE_PROMPT` | Spec | Ambiguities, missing failure modes, unstated assumptions, undefined auth, ambiguous quantifiers. Halts the pipeline via `SpecBlockerError` when any blocker-severity issue is found. |
+| **Architect / PRD red-team** | `kstrl/decompose.py` | `DECOMPOSE_PROMPT` | Spec | Ambiguities, missing failure modes, unstated assumptions, undefined auth, ambiguous quantifiers. Closes every finding it raises as `decided`, `assumed`, `spiked` or `escalated` in a `decisions` register joined to `spec_issues` by id, and halts the pipeline via `SpecBlockerError` only on an escalation (#260). |
 | **Engineer** | `kstrl/init_cmd.py` (`DEFAULT_PROMPT`) + per-project `scripts/kstrl/prompt.md` | (project-specific) | Iteration | Implements one story per iteration. Required to emit a `## Self-Critique` block with >=3 substantive failure-mode bullets before declaring done (mechanically enforced by `verify.check_self_critique` when `VerifyConfig.require_self_critique` is True). |
 | **Mechanical verifier** | `kstrl/verify.py` | (no LLM) | Phase 1 | PRD stories pass-marked, tests/typecheck/lint green, diff-scope and bad-pattern checks, optional dead-code / mutation / self-critique. |
 | **Code reviewer** | `kstrl/review.py` | `REVIEWER_PROMPT` | Phase 2 | PRD criterion verdicts plus a separate `concerns` array (scope_creep, security_concern, test_quality, unrelated_change, dead_code, error_handling, copy_paste). Self-Critique block is stripped from the diff before review so the reviewer is not biased by the engineer's own failure-mode list. |
@@ -62,9 +62,9 @@ Tags let downstream consumers filter by taxonomy without re-parsing the field-le
 
 ```
 spec.md
-  -> [Architect] decompose + red-team
-        -> manifest.json + per-component PRDs
-        -> SpecBlockerError if any blocker (halt; human resolves spec)
+  -> [Architect] decompose + red-team + dispose
+        -> manifest.json + per-component PRDs, then decisions.json
+        -> SpecBlockerError if it ESCALATED (halt; owner answers)
   -> for each component (DAG order, optionally parallel):
        -> [Phase 0] feedforward (computational structural scan)
        -> [Engineer] iterate until COMPLETE
@@ -221,7 +221,7 @@ H1 of the hardening roadmap: the assistant does not run `/code-review` on its ow
 
 H2: when an adversarial prompt changes, calibration is re-run. A prompt edit without a calibration delta is treated as untested.
 
-H3: every adversarial prompt has a `*_PROMPT_VERSION` semver constant next to its body and a `(hash, version)` snapshot in `tests/test_prompt_versions.py::_EXPECTED_SNAPSHOTS`. The enrolled set is `_PROMPTS` in that file, eight as of #299 (`DECOMPOSE_PROMPT`, `REVIEWER_PROMPT`, `SECURITY_PROMPT`, `DISTILL_PROMPT`, `VERIFY_COMMANDS_PROMPT`, `REPO_CHANGE_SOURCE_PROMPT`, `PASTED_CHANGE_SOURCE_PROMPT`, and `DEFAULT_PROMPT` for the engineer role). It is not only the LLM-driven role prompts: the engineer template (`init_cmd.DEFAULT_PROMPT`, scaffolded into per-project `scripts/kstrl/prompt.md`), the verification-commands block, and the two reviewer change-acquisition bodies are all enrolled on the same terms.
+H3: every adversarial prompt has a `*_PROMPT_VERSION` semver constant next to its body and a `(hash, version)` snapshot in `tests/test_prompt_versions.py::_EXPECTED_SNAPSHOTS`. The enrolled set is `_PROMPTS` in that file, nine as of #260 (`DECOMPOSE_PROMPT`, `REVIEWER_PROMPT`, `SECURITY_PROMPT`, `DISTILL_PROMPT`, `VERIFY_COMMANDS_PROMPT`, `REPO_CHANGE_SOURCE_PROMPT`, `PASTED_CHANGE_SOURCE_PROMPT`, `DEFAULT_PROMPT` for the engineer role, and `DECISIONS_CONTEXT_PROMPT`). It is not only the LLM-driven role prompts: the engineer template (`init_cmd.DEFAULT_PROMPT`, scaffolded into per-project `scripts/kstrl/prompt.md`), the verification-commands block, and the two reviewer change-acquisition bodies are all enrolled on the same terms.
 
 The joint snapshot plus its companion tests catch six drift modes:
 
@@ -229,7 +229,7 @@ The joint snapshot plus its companion tests catch six drift modes:
 2. **Version constant change without snapshot bump**: live version differs from snapshot version, test fails.
 3. **New `*_PROMPT` added without enrollment**: `test_no_unenrolled_prompt_constants` AST-walks `kstrl/` and fails on any unprotected prompt. The walk keys on the target NAME, at any nesting depth, plus a value it cannot prove is a non-string. Since #299 the value test is default-deny: a `*_PROMPT`-suffixed name is flagged unless its value is a non-string literal, a collection display, or a call to a builtin that cannot return a string. So `dedent(...)`, `.strip()`, `%`, `SEP.join(...)`, `A + B`, a ternary and a bare alias are all caught, and `frozenset({...})` is not. It remains blind to instruction text never bound to a `*_PROMPT` name at all; that residual is recorded in the H3-NOTE of `tests/test_prompt_versions.py`.
 4. **Enrolled but never hash-checked**: the per-prompt check is parametrized over `_PROMPTS`, so enrollment alone puts a prompt under snapshot. `VERIFY_COMMANDS_PROMPT` sat enrolled and unchecked from #261 to #299 because that check used to be hand-written per prompt.
-5. **Enrolled but not the text that ships**: `test_renderer_renders_the_enrolled_body` patches each constant and asserts its production renderer returns that and nothing else, so a constant cannot rot into an orphan, get wrapped in unhashed words, or be truncated. It covers the seven prompts that have a renderer; `DEFAULT_PROMPT` is in `_RENDER_EXEMPT` because `ks init` writes it to disk verbatim and nothing interpolates it, so it has no render step to orphan, and its reach is covered by H3b's scaffold ledger instead. `test_every_prompt_has_a_renderer` stops the table falling behind the enrolled set. `test_the_real_enrolled_body_renders` additionally renders each real body unpatched, so a template whose placeholders the renderer does not supply fails here rather than at run time.
+5. **Enrolled but not the text that ships**: `test_renderer_renders_the_enrolled_body` patches each constant and asserts its production renderer returns that and nothing else, so a constant cannot rot into an orphan, get wrapped in unhashed words, or be truncated. It covers the eight prompts that have a renderer; `DEFAULT_PROMPT` is in `_RENDER_EXEMPT` because `ks init` writes it to disk verbatim and nothing interpolates it, so it has no render step to orphan, and its reach is covered by H3b's scaffold ledger instead. `test_every_prompt_has_a_renderer` stops the table falling behind the enrolled set. `test_the_real_enrolled_body_renders` additionally renders each real body unpatched, so a template whose placeholders the renderer does not supply fails here rather than at run time.
 6. **Enrolled body dropped by its caller**: `test_change_source_reaches_the_role` drives `run_review` and `run_security_review` and asserts the change-acquisition body still reaches the prompt each role is sent, which a leaf render guard cannot see. This covers `REPO_CHANGE_SOURCE_PROMPT` only. `PASTED_CHANGE_SOURCE_PROMPT` gets the leaf guard alone, and deliberately: its only callers are the calibration fixtures and this suite, so there is no production caller to drop it.
 
 What H3 does NOT catch: instruction text that is never bound to a `*_PROMPT` name at all, returned straight out of a function or bound to a local called something else. #299 hoisted the two known instances by hand; `docs/adversarial-roadmap.md` H3 states the hoisting rule, and keeping to it is reviewer discipline rather than a check. `tests/test_prompt_versions.py` H3-NOTE records this residual, and issue #303 tracks the sites the H3a sweep found.

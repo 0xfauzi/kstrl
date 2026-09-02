@@ -302,8 +302,8 @@ def _prepare_decompose(
                     return 0
                 except SpecBlockerError as exc:
                     ui.err(str(exc))
-                    if exc.artifact_path is not None:
-                        ui.info(f"Spec issues written to: {exc.artifact_path}")
+                    for line in exc.artifact_lines():
+                        ui.info(line)
                     return 2
                 except ValueError as exc:
                     ui.err(str(exc))
