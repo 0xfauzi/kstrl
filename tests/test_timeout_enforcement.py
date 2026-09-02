@@ -1394,6 +1394,32 @@ class TestSubprocessTimeoutAudit:
             "docstring):\n  " + "\n  ".join(popen_violations)
         )
 
+    @pytest.mark.parametrize("name", ["getoutput", "getstatusoutput"])
+    def test_the_two_uncapped_spawns_are_gated(self, name: str) -> None:
+        """The mechanism behind :data:`SPAWN_TARGETS` being derived.
+
+        Neither name can carry a ``timeout=``, so for these two the gate
+        is a ban: the walk reports the site and no keyword can satisfy it.
+        Planted rather than argued, because the merge of #340 and #324
+        produced a textually clean tree in which this rule was gone.
+        #340 widened ``SPAWN_FUNCS`` by these two names and #324 replaced
+        the local-name comparison that read it with a resolver keyed on a
+        second, hand-written list of dotted targets. Nothing conflicted
+        and both branches were green.
+
+        Measured on the merged tree with
+        ``subprocess.getstatusoutput("ps -A")`` planted in
+        ``kstrl/licensing.py``: 66 passed with the hand-written list,
+        1 failed and 65 passed with the derived one.
+        """
+        body = f"import subprocess\nsubprocess.{name}('ps -A')\n"
+        sites = self._spawn_sites(ast.parse(body))
+        assert [(node.lineno, called) for node, called in sites] == [(2, name)], body
+        assert not any(k.arg == "timeout" for k in sites[0][0].keywords), (
+            "if this call now carries a timeout= the ban has become a "
+            "deadline requirement and SPAWN_FUNCS's docstring is stale"
+        )
+
     @pytest.mark.parametrize(
         ("body", "expected"),
         [
