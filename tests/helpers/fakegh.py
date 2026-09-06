@@ -19,7 +19,7 @@ from subprocess import CompletedProcess
 import pytest
 
 from kstrl.pr import PR_FOOTER_MARKER
-from tests.test_serve_seam import _write_executable
+from tests.helpers.executables import write_executable
 
 #: Emits whatever JSON the test put in FAKE_GH_JSON. The real
 #: `count_open_kstrl_prs` runs against it, subprocess and json.loads
@@ -61,7 +61,7 @@ def put_gh_on_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str) -
     """Make ``body`` the `gh` that a PATH lookup finds; return its path."""
     bindir = tmp_path / "fakebin"
     bindir.mkdir(exist_ok=True)
-    path = _write_executable(bindir / "gh", body)
+    path = write_executable(bindir / "gh", body)
     monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
     return path
 

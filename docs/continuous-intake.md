@@ -141,7 +141,10 @@ The count comes from `gh pr list` in the repo root and looks at the
 newest 100 open pull requests. Anything that is not a usable number
 refuses admission rather than reading as zero, and that includes a full
 page: with 100 or more open pull requests the count is a lower bound, so
-it is conclusive only when it already reaches the bound.
+it is conclusive only when it already reaches the bound. The plain
+consequence, since the scan window is not configurable: on a repository
+holding 100 or more open pull requests the daemon refuses on every poll
+and admits nothing at all, and `max_open_prs = 0` is the way out.
 
 The refusal is a wait, not a pause: nothing needs to be resumed, and the
 next cycle admits work as soon as the pull request is merged or closed.
@@ -150,6 +153,16 @@ count that never works - an expired `gh` token, or `gh` missing from
 launchd's PATH - so after three consecutive polls with an unusable count
 the daemon files one inbox item and keeps waiting. One item per streak,
 not one per poll; a successful count resets it.
+
+The streak is counted **in both LaunchAgent modes**. It is kept in the
+control state directory as `pr_count_streak.json`, beside the autonomy
+level and the spend ledger, so `interval` mode - which runs one
+`ks serve --once` process per firing - accumulates it across firings
+exactly as `keepalive` mode accumulates it across polls. Five firings and
+five polls file the same one item. If that file is unreadable the daemon
+says so and treats the count as already at its threshold, so the next
+unusable count files at once; it does not overwrite the file, because the
+damaged bytes are the only thing there is to inspect.
 
 **Manual `ks factory` and `ks run` bypass the bound entirely**, because a
 human typing the command is the authorisation. Only the daemon's own
@@ -377,7 +390,7 @@ gone - a crash, an OOM kill, a reboot - not for an ordinary lid close.
 | Component failed, cause unclear | an unevidenced failure now prints the component's own error; check it before suspecting the spec |
 | Every poll fails silently under launchd | `PATH` - `gh` is not findable (§4) |
 | Daemon says `N kstrl PR(s) open` | flow control is holding the queue; merge or close the PR, or set `[serve] max_open_prs = 0` |
-| Daemon says `cannot count open kstrl PRs` | the open-PR bound has no usable number; check `gh auth status` and that `gh` is on the daemon's PATH. After three polls it files an inbox item |
+| Daemon says `cannot count open kstrl PRs` | the open-PR bound has no usable number; check `gh auth status` and that `gh` is on the daemon's PATH. After three consecutive polls, in either LaunchAgent mode, it files an inbox item |
 
 ---
 

@@ -174,12 +174,18 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   that merely quotes the footer in prose is not. Anything that is not a
   usable count refuses admission, because an unknown number of open PRs
   is not zero; that includes a `gh pr list` page filled to its limit,
-  where the count is only a lower bound. After three consecutive polls
-  with an unusable count the daemon files one inbox item, since an
-  expired `gh` token and a `gh` missing from launchd's PATH never clear
-  themselves. Manual `ks factory` and `ks run` are unaffected: a human
-  typing the command is the authorisation. `ks serve --dry-run` lists
-  the new gate last (R10.7, #228).
+  where the count is only a lower bound, so a repository holding 100 or
+  more open pull requests admits nothing until the bound is switched
+  off. After three consecutive polls with an unusable count the daemon
+  files one inbox item, since an expired `gh` token and a `gh` missing
+  from launchd's PATH never clear themselves. That count is kept in the
+  control state directory as `pr_count_streak.json`, so it accumulates
+  in BOTH LaunchAgent modes: `keepalive` runs one polling process, and
+  `interval` runs one `ks serve --once` process per firing, where a
+  count held in memory could never reach the threshold. Manual
+  `ks factory` and `ks run` are unaffected: a human typing the command
+  is the authorisation. `ks serve --dry-run` lists the new gate last
+  (R10.7, #228).
 - The architect's non-blocker spec findings now reach the engineer. They
   were written to `scripts/kstrl/spec-issues.json` on every decompose and
   nothing in `kstrl/` ever opened that file: across five recorded runs
