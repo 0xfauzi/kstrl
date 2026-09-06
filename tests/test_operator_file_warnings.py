@@ -175,6 +175,23 @@ class TestTheNoticeReachesTheOperatorExactlyOnce:
         assert str(typo) in warnings[0]
         assert "golden_patterns" in warnings[0]
 
+    def test_a_programmatically_built_config_is_not_accused_of_a_typo(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """``KstrlConfig()`` leaves its path defaults RELATIVE, and the
+        SDK, embedders and most of this suite build one that way. The
+        misconfigured-path check therefore has to resolve both sides
+        against the root before comparing them; comparing the raw values
+        made every such run warn about its own untouched default."""
+        root = _project(tmp_path, ("comp-a",))
+        unanchored = KstrlConfig()
+        assert not unanchored.golden_patterns_file.is_absolute()
+
+        warnings = _golden_warnings(_run(root, ("comp-a",), golden=unanchored.golden_patterns_file))
+
+        assert warnings == []
+
     @pytest.mark.parametrize(
         "body",
         [None, "", "- a real pattern\n", DEFAULT_GOLDEN_PATTERNS],

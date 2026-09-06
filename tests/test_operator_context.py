@@ -461,6 +461,31 @@ class TestMisconfiguredPath:
 
         assert config.validate(tmp_path) == []
 
+    def test_an_unanchored_default_is_still_the_default(self, tmp_path: Path) -> None:
+        """The comparison happens in ONE path domain, and this is the case
+        that proves it.
+
+        ``KstrlConfig`` field defaults are RELATIVE until ``anchored``
+        runs, and a config built programmatically (the SDK, an embedder,
+        most of this suite) never anchors. Comparing the raw values made
+        every such run report its own untouched default as a typo:
+        measured, in a real ``run_factory`` whose config was constructed
+        by hand, and mutation N12 plants the raw comparison back.
+        """
+        unanchored = KstrlConfig()
+        assert not unanchored.golden_patterns_file.is_absolute()
+
+        assert (
+            missing_configured_path(
+                unanchored.golden_patterns_file,
+                KstrlConfig.anchored(tmp_path).golden_patterns_file,
+                tmp_path,
+                "golden_patterns",
+            )
+            is None
+        )
+        assert configured_path_errors(unanchored, KstrlConfig.anchored(tmp_path), tmp_path) == []
+
     def test_configured_path_errors_covers_the_paths_rows(self, tmp_path: Path) -> None:
         config = KstrlConfig.anchored(tmp_path)
         anchored = KstrlConfig.anchored(tmp_path)
