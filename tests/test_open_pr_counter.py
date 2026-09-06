@@ -41,12 +41,17 @@ class TestCountOpenKstrlPrs:
         with patch(_GH_RUN, return_value=_completed(0, stdout=json.dumps(rows))) as run:
             assert count_open_kstrl_prs(tmp_path) == OpenPrCount(count=2, saturated=False)
 
+        # `--state=open` is ONE token deliberately. Split in two, the
+        # bare literal "open" in kstrl/serve.py is counted by the
+        # encoding census in tests/test_encoding_readers.py, whose net is
+        # over the tokens `read_text` and `open`; the row would then mean
+        # "reads, plus one argv word" and a later commit could add a read
+        # and drop the flag with the count unmoved.
         assert run.call_args.args[0] == [
             "gh",
             "pr",
             "list",
-            "--state",
-            "open",
+            "--state=open",
             "--limit",
             "100",
             "--json",
@@ -87,8 +92,21 @@ class TestCountOpenKstrlPrs:
             [[_marked(1)]],
             [None],
             [_marked(1), {"number": 2}],
+            [{"number": 1, "body": 42}],
+            [{"number": 1, "body": ["x"]}],
+            [{"number": 1, "body": {"text": "x"}}],
         ],
-        ids=["strings", "ints", "no body key", "nested list", "null row", "one good one bad"],
+        ids=[
+            "strings",
+            "ints",
+            "no body key",
+            "nested list",
+            "null row",
+            "one good one bad",
+            "int body",
+            "list body",
+            "dict body",
+        ],
     )
     def test_a_row_that_is_not_a_pr_record_refuses(
         self,
@@ -97,11 +115,19 @@ class TestCountOpenKstrlPrs:
     ) -> None:
         """Validate the RAW payload entry by entry, with the row's index.
 
-        Each of these six shapes counted as ZERO before, and the gate
-        then ADMITTED on "0 of 1 kstrl PRs open" with the true number
-        unknown. The `isinstance(row, dict)` clause that produced it read
-        as defensive and was the fail-open: without it a bad row raises,
+        The first six shapes counted as ZERO before, and the gate then
+        ADMITTED on "0 of 1 kstrl PRs open" with the true number unknown.
+        The `isinstance(row, dict)` clause that produced it read as
+        defensive and was the fail-open: without it a bad row raises,
         with it the row is silently discarded.
+
+        The last three are the same fail-open one field over, which is
+        the shape #260 round 2 recorded: presence was checked and the
+        TYPE was not, so `str(row["body"] or "")` coerced 42 to "42" and
+        ["x"] to "['x']" and both were counted as unmarked pull requests
+        rather than refused. `gh pr list --json body` returns a string or
+        null today; a validator that admits what the parser then coerces
+        is the defect whether or not the payload has changed yet.
         """
         with (
             patch(_GH_RUN, return_value=_completed(0, stdout=json.dumps(payload))),

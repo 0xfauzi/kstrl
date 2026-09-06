@@ -107,6 +107,48 @@ class TestCheckOpenPrBound:
         assert "not applicable" in admission.reason
         assert "create_prs = false" in admission.reason
 
+    @pytest.mark.parametrize("toml", ["", "[factory]\ncreate_prs = false\n"])
+    def test_an_early_allow_clears_the_streak(self, tmp_path: Path, toml: str) -> None:
+        """A gate that is off is not evidence that `gh` is broken.
+
+        Both early-allow paths return before the counter runs. Leaving a
+        half-built streak standing across them means an operator who sets
+        `max_open_prs = 0` at two consecutive failures, runs for a week
+        and switches it back on gets the inbox item on the FIRST failure
+        afterwards, which contradicts the "three consecutive polls"
+        contract stated in the docstring, the docs and the CHANGELOG.
+        """
+        if toml:
+            (tmp_path / "kstrl.toml").write_text(toml, encoding="utf-8")
+        config = ServeConfig(max_open_prs=0 if not toml else 1)
+        streak = OpenPrCountStreak()
+        streak.record_inconclusive("cannot count open kstrl PRs: gh: not found")
+        streak.record_inconclusive("cannot count open kstrl PRs: gh: not found")
+
+        admission = check_open_pr_bound(config, tmp_path, counter=_boom, streak=streak)
+
+        assert admission.allowed
+        assert streak.consecutive == 0
+        assert streak.reason == ""
+
+    def test_the_gate_records_nowhere_when_no_streak_is_passed(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The default is a throwaway, not a crash and not a global.
+
+        The four `if streak is not None` guards this replaced were four
+        branches that each had to remember to record; a caller that
+        passes nothing still gets every other answer unchanged.
+        """
+        admission = check_open_pr_bound(
+            ServeConfig(max_open_prs=1),
+            tmp_path,
+            counter=_raises(RuntimeError("gh: not found")),
+        )
+        assert admission.allowed is False
+        assert "gh: not found" in admission.reason
+
     def test_under_bound_allows(self, tmp_path: Path) -> None:
         admission = check_open_pr_bound(
             ServeConfig(max_open_prs=1),
@@ -572,15 +614,34 @@ class TestPersistentCountFailure:
         assert [streak.should_file() for _ in range(3)] == [False, False, False]
 
         for _ in range(3):
-            streak.record_inconclusive()
+            streak.record_inconclusive("gh pr failed (99): ")
         assert streak.should_file() is True
+        # `should_file` is a QUESTION now, so asking twice answers twice;
+        # `filed` is what makes a streak file once, and only
+        # `_record_count_failure` sets it, after the write.
+        streak.filed = True
         assert streak.should_file() is False, "a streak files once, not once per poll"
 
         streak.record_conclusive()
         assert streak.consecutive == 0
+        assert streak.reason == ""
         for _ in range(3):
-            streak.record_inconclusive()
+            streak.record_inconclusive("gh pr failed (99): ")
         assert streak.should_file() is True, "a new streak after a recovery files again"
+
+    def test_a_streak_at_its_threshold_does_not_file_on_another_gate(self) -> None:
+        """The reason is what makes this an alarm about COUNTING.
+
+        Every wait gate's refusal reaches ``_record_count_failure``, and
+        a streak restored at its threshold from a damaged file has
+        recorded no count of its own. Without the reason check it would
+        file an "cannot count open pull requests" item the first time the
+        inbox cap or the factory lock refused.
+        """
+        streak = OpenPrCountStreak(consecutive=OpenPrCountStreak().threshold)
+        assert streak.should_file() is False
+        streak.record_inconclusive("cannot count open kstrl PRs: gh: not found")
+        assert streak.should_file() is True
 
 
 # ---------------------------------------------------------------------------

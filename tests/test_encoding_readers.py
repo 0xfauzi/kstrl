@@ -105,11 +105,13 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "prd.py": 1,
     "proposals.py": 4,
     "security.py": 1,
-    # Four reads, plus the string literal "open" in the ``gh pr list
-    # --state open`` argv of ``count_open_kstrl_prs`` (#228). The net is
-    # over the TOKEN, not over reads, and a net that decided which
-    # spellings to leave out is a net that can be wrong about what it
-    # left out - so the row moves and says which one is not a read.
+    # Five reads, and five reads only. Round 1 of #228 spelled the gh
+    # flag as two argv tokens, so the bare literal "open" landed here and
+    # the row meant "four reads plus one argv word". That is the
+    # skip-direction failure: a later commit adding one genuine read and
+    # dropping the flag would have left the count at 5 and the census
+    # green. The flag is now ``--state=open``, one token, and the fifth
+    # read is the open-PR count streak (#228 round 2).
     "serve.py": 5,
     "statedir.py": 1,
     "tui/embed.py": 1,
@@ -203,6 +205,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "security.py prd_path.read_text(encoding='utf-8')",
     "serve.py manifest_path.read_text(encoding='utf-8')",
     "serve.py open(lock_path, 'a+', encoding='utf-8')",
+    "serve.py path.read_text(encoding='utf-8')",
     "serve.py self.path.read_text(encoding='utf-8')",
     "statedir.py open(lock_path, 'a+', encoding='utf-8')",
     "tui/embed.py open(run_paths.root / 'orchestrator.log', 'a', buffering=1, encoding='",
