@@ -52,6 +52,153 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- `dead_code` no longer reports a pass when nothing was measured. One row
+  covered two phases - a ruff F401/F811/F841 auto-fix that ran and a vulture
+  scan that did not - so nine states in which one of them measured nothing
+  still produced `dead_code  pass`, and `kstrl/review.py` copied that row into
+  the LLM code reviewer's verification summary as `dead_code: PASS`. The row is
+  now two: `dead_code_ruff` for the ruff phase and `dead_code` for the vulture
+  or `[verify] dead_code_command` scan. A phase that could not run appends no
+  row and is recorded under `not_measured` with its reason (`tool_missing`,
+  `no_target`, `timed_out`, `command_failed`), the rule #306 set for
+  `mutation_testing`, so a real ruff measurement is no longer discarded along
+  with an absent vulture one and an adversarial reviewer is no longer told a
+  scan passed that never happened. `[verify] dead_code_cleanup` still owns both
+  phases. `ks sense --json` schema 2 -> 3: an absent `dead_code` row now also
+  means "asked for, measured nothing", and `dead_code_ruff` is a new name in
+  `checks`. Three more states of the same defect go with it: ruff output with
+  no summary line in it (a project setting `[tool.ruff] output-format` to a
+  non-text format) was read as zero fixes and reported as a clean phase over a
+  worktree ruff had just edited and nothing had committed, a diff git could not
+  read at all was reported as `no_target` ("nothing to scan, not a fault")
+  rather than `command_failed`, and a `git commit` that did not land was
+  reported as `ruff auto-fixed N`. `ks feature` now also names `dead_code_ruff`
+  among the checks it is not running.
+
+- `ks sense` reports the number of findings ruff would actually remove, not
+  every finding it reported: the two differ by ruff's unsafe fixes, so a tree
+  where `ks sense` said "3 auto-removable" had 2 removed by the factory. The
+  factory row now also carries what was left behind (`ruff auto-fixed 2, 1
+  remaining`), which `ruff auto-fixed 0` could not tell from a clean tree.
+
+- The `dead_code_ruff` phase requires **ruff 0.2.0 or newer** (January 2024).
+  It pins `--output-format=concise` so a measured project's own `[tool.ruff]
+  output-format` cannot remove the summary line the phase parses, and that
+  flag value does not exist before 0.2.0: 0.0.272 rejects `--output-format`
+  outright and 0.1.0 and 0.1.15 reject the value `concise`. All three exit 2,
+  so an older ruff produces a `command_failed` gap carrying ruff's own
+  `error:` line rather than a number. A project's own pinned ruff is far past
+  0.2.0; the reachable case is `ks sense` against a live checkout with a
+  system-wide old ruff first on PATH. The set of output shapes the phase reads
+  is now measured against real ruff 0.2.0, 0.3.0 and 0.16.1 over five trees
+  rather than reasoned about: a fixing run with nothing safely fixable prints
+  `Found N errors.` alone, and ruff 0.2.0 through 0.3.2 print nothing at all
+  on a clean tree, and both were being reported as a tool failure over a run
+  that had measured something.
+
+- The mutation gate passes its changed files to mutmut as one comma-separated
+  argument. `mutmut run` takes one positional slot, so the space-separated
+  form was a usage error (`Error: Got unexpected extra argument`) for three or
+  more changed non-test Python files and silently consumed the second as that
+  positional for exactly two. The gate is opt-in (`[verify] mutation_testing`,
+  default off).
+
+- The dead-code detector's file list goes behind a `--` separator, so a
+  changed file whose name starts with `-` reaches vulture as a path rather
+  than as an option. Without it vulture exits 2 with `unrecognized
+  arguments`, which the check read as findings and reported as a dead-code
+  failure naming the wrong cause. Related: a detector that exits non-zero and
+  reports no finding the check can read is now a `command_failed` gap rather
+  than `no remaining dead code`, which is decided on the exit code instead of
+  on the output being empty.
+
+- Six more record files survive an interrupted write. A crash leaves a
+  tail with no newline, the next append concatenates onto it, and the
+  tolerant reader then drops BOTH lines: the fragment, which was never
+  readable, and the record written after it, which was. Each was
+  reproduced with a real tear, a real append and the production reader.
+  `progress.jsonl` lost the entry after the tear, and the reducer left a
+  component `running` when the lost row was its `component_completed`;
+  `events.jsonl` and `engineer.jsonl` lost the next event, and the fold
+  reported no components at all; the queue journal lost the transition
+  after it; the inbox lost the item after it; the dependency-scope
+  telemetry lost the row after it. A tail that lost only its terminator
+  is worse than a fragment, because the append destroys a whole record
+  as well as the new one: measured, two records for one interrupted
+  write. Every appender now writes through `kstrl/appendio.py`, which
+  probes the tail through the same file description it appends with and
+  repairs it in one write.
+
+- `experiments.tsv` no longer renders a corrupted run. It is the same
+  interrupted write as above, and it cost more than the JSONL files
+  because its reader displays the damage instead of dropping it: the
+  run after the tear was lost AND the run before it was rendered by
+  `ks evolve --status` and the TUI trends tab with its columns shifted,
+  a timestamp under `completed` and extra fields on the end. The file
+  now pads its own tail, with no marker row, because TSV has none a
+  reader would not render as a run, and both of its readers drop any row
+  whose width is not one this writer emits. Two widths are legal, not
+  one: a file written before R3.1 has a shorter header, and a filter
+  that took the current header's width as the only legal one would
+  answer a rendering defect by deleting every row of a legacy file. The
+  second reader is `ks autonomy replay`, which fed the shifted columns
+  to the ladder through `_as_int`, turning each one into a 0 without
+  raising, so a run that never happened counted towards a promotion.
+
+- `experiments.tsv` is read on the dialect its writer writes. The reader
+  used `csv`'s default quoting against a writer that joins its fields on
+  a tab and never quotes or escapes, so a `"` at the start of any field
+  opened a quoted region that swallowed every byte to the next one: a
+  project named `"proj` hid every run recorded after it from
+  `ks evolve --status`, the TUI trends tab and `ks autonomy replay`, and
+  past 128 KiB of swallowed text it raised `_csv.Error` out of all three,
+  which is neither an `OSError` nor a `ValueError` and so escaped every
+  handler. Reading with `QUOTE_NONE` returns those runs. A field longer
+  than `csv`'s own limit is now a refusal the callers already handle:
+  `ks autonomy replay` names it and exits 2, and the trends tab logs it
+  and shows no runs rather than crashing the TUI.
+
+- An out-of-space error on the FIRST event of a run no longer leaves the
+  event log writing onto a torn tail. The sink probes and repairs the
+  tail once per run and then holds the handle open, and it bound that
+  handle before flushing: an event line is smaller than the 8 KiB buffer,
+  so a full disk surfaces at the flush and the sink was already bound and
+  in the no-probe branch when it did. The bind now happens only after the
+  first write and its flush both land.
+
+- `ks autonomy replay` names an unreadable `experiments.tsv` instead of
+  reporting that the project has too little history. The reader returned
+  no runs on a permission or a decode error, and no runs is the same
+  state as a project that has never been run, so the operator got
+  "VERDICT: INSUFFICIENT DATA" for a file problem. The exit code is
+  still 2, because nothing was replayed either way; the line above it
+  now names the file and the error.
+
+- A repaired `experiments.tsv` write is logged. It is the one record
+  file that cannot carry a repair row, because every marker a TSV can
+  hold is a field and a row of fields is a run to its reader, so a crash
+  that tore this file and lost a run left nothing anywhere: the pad
+  leaves a short fragment, the reader drops it on width, and there is no
+  counter on that path.
+
+- The evolution journal's probe and append happen under one exclusive
+  lock (POSIX). They shared a file description, which removes the
+  path-level races but is not a lock, so a concurrent writer could
+  crash mid-line between this process's probe and its write, and two
+  processes repairing one tear each wrote a repair row. Measured, two
+  processes and 74 planted tears, eight runs of each arm: unlocked, 244
+  to 269 of 300 records readable and 76 to 86 rows; locked, 300 of 300
+  and exactly 74. The lock is `fcntl.LOCK_EX` on the journal's own
+  descriptor rather than a sibling lock file, because the journal is one
+  file with one writer function. Without `fcntl` there is no exclusion,
+  the same degradation the control, queue and factory locks already take
+  there, and `get_repair_count` and `docs/evolution-metrics.md` both say
+  which case they are describing. A `flock` that RAISES takes the same
+  path as a missing `fcntl`: some FUSE, 9p and DrvFs mounts answer
+  `ENOLCK` or `EINVAL`, and an unguarded acquisition made every journal
+  append raise on such a mount where it used to write the entry, so the
+  lock added to protect the record was the thing losing it.
+
 - `.kstrl/autonomy.json` is no longer overwritten when the file it was
   read from could not be parsed. `AutonomyState.load` fails closed to a
   fresh L1 and records why; saving that fresh state back replaced the
@@ -160,6 +307,16 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   panel constructed with real findings rendered the app's nominal state
   instead.
 
+### Security
+
+- File names taken from `git diff --name-only` no longer reach `/bin/sh`
+  unquoted in the dead-code and mutation gates. The diff is agent-authored,
+  which is the least trusted input in the factory, and a changed file named
+  ``$(id).py`` was command substitution the shell executed; a name with a space
+  in it split into two paths the tool could not find and failed the component
+  for a reason that named the wrong cause. vulture is now invoked with an
+  argument list and no shell, and the mutation gate quotes each path.
+
 ### Added
 
 - **Breaking:** for daemon users, `ks serve` now stops admitting work
@@ -186,6 +343,14 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   `ks factory` and `ks run` are unaffected: a human typing the command
   is the authorisation. `ks serve --dry-run` lists the new gate last
   (R10.7, #228).
+- The evolve screen reports repaired journal writes. `ks evolve
+  --status` has reported them since the repair was added and the TUI did
+  not, which was the gap: the argument for writing a durable
+  `journal_repair` row at all is that under the TUI the logger warning
+  goes to `orchestrator.log` where nobody is looking. A line above the
+  three tabs now carries the count, the path and which of the two
+  outcomes the line above each row is, in the CLI's own words. Silent at
+  zero, and it goes back to silent on reload when the count does.
 - The architect's non-blocker spec findings now reach the engineer. They
   were written to `scripts/kstrl/spec-issues.json` on every decompose and
   nothing in `kstrl/` ever opened that file: across five recorded runs
