@@ -315,9 +315,13 @@ def _ruff_can_do_concise() -> bool:
     ``--help`` rather than a real scan, so this costs one process and
     touches no tree: the flag and its value are parsed before ruff looks
     at anything (measured: 0.0.272 and 0.1.15 both exit 2 here).
+
+    No `shutil.which` guard in front of it: a missing binary raises
+    `FileNotFoundError`, which is an `OSError`, so the absent case and
+    the too-old case leave here by the same door. The guard was there
+    and is gone because nothing could go red without it, which makes it
+    a branch no test can reach rather than a second opinion.
     """
-    if shutil.which("ruff") is None:
-        return False
     try:
         probe = subprocess.run(
             ["ruff", "check", "--output-format=concise", "--help"],
