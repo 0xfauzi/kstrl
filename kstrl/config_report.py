@@ -24,7 +24,7 @@ from dataclasses import fields as dataclass_fields
 from pathlib import Path
 from typing import Any
 
-from kstrl.config import STRING_KEYS, KstrlConfig, load_toml_section, resolve_config_file
+from kstrl.config import KstrlConfig, load_toml_section, resolve_config_file
 
 
 @dataclass(frozen=True)
@@ -55,9 +55,16 @@ def _string_key_rows(section: str) -> list[tuple[str, str]]:
     second hand-maintained copy here is a row that can go missing, and
     nothing tied the two: a tenth ``STRING_KEYS`` row used to drop
     silently out of ``ks config`` and out of the generated README with
-    every gate green. Read at call time, so the derivation is what a
-    test can exercise.
+    every gate green.
+
+    The import is inside the function so the table is read at CALL time.
+    A module-level ``from kstrl.config import STRING_KEYS`` snapshots the
+    tuple this module was imported with, which is derived enough to be
+    correct and not derived enough to be testable: the mutation in
+    tests/test_string_keys_reach_every_surface.py cannot reach it.
     """
+    from kstrl.config import STRING_KEYS
+
     return [(key, field_name) for sec, key, _env, field_name, _p in STRING_KEYS if sec == section]
 
 

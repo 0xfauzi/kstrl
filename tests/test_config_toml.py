@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import re
 from pathlib import Path
 
 import pytest
@@ -96,6 +97,20 @@ def test_every_string_key_names_a_real_field() -> None:
     assert declared >= {name for _s, _k, _e, name, _p in STRING_KEYS}
 
 
+#: A field whose ANNOTATION mentions Path, wherever in it the word sits.
+#: ``startswith("Path")`` was the round-1 predicate and it CLEARS on
+#: anything else, which is the wrong direction for a census: review round
+#: 1 measured it (mutation R21) by deleting the ``codebase_map`` row and
+#: quoting the annotation as ``"Path"``, and this guard PASSED in
+#: isolation while a behaviour test caught the plant. ``Path | None``
+#: and a quoted forward reference both match now.
+_MENTIONS_PATH = re.compile(r"\bPath\b")
+
+
+def _path_fields(cls: type) -> set[str]:
+    return {f.name for f in dataclasses.fields(cls) if _MENTIONS_PATH.search(str(f.type))}
+
+
 def test_every_path_field_has_a_string_keys_row() -> None:
     """The census in the other direction, which is the likelier defect: a
     new ``Path`` field on KstrlConfig with no row gets no kstrl.toml key,
@@ -104,11 +119,28 @@ def test_every_path_field_has_a_string_keys_row() -> None:
     out of the overlay has to be named here instead of quietly dropping
     out. ``f.type`` is the annotation string, since the module declares
     ``from __future__ import annotations``."""
-    path_fields = {
-        f.name for f in dataclasses.fields(KstrlConfig) if str(f.type).startswith("Path")
-    }
+    path_fields = _path_fields(KstrlConfig)
     assert path_fields, "the walk found no Path fields at all, so it proves nothing"
     assert path_fields == {name for _s, _k, _e, name, is_path in STRING_KEYS if is_path}
+
+
+def test_the_path_field_walk_sees_the_spellings_it_claims_to() -> None:
+    """The control the round-1 predicate had none of.
+
+    A census that CLEARS has to be shown matching every shape it says it
+    covers, because a narrowing turns a resolution into a clearing and
+    deletes the mechanism. Four shapes, one of which (the quoted
+    annotation) is what made R21 pass.
+    """
+
+    @dataclasses.dataclass
+    class Probe:
+        plain: Path = Path("a")
+        optional: Path | None = None
+        quoted: "Path" = Path("b")  # noqa: UP037
+        not_a_path: str = ""
+
+    assert _path_fields(Probe) == {"plain", "optional", "quoted"}
 
 
 def test_from_toml_maps_git_section(tmp_path: Path) -> None:
@@ -445,6 +477,45 @@ def test_every_string_key_follows_the_same_precedence(
     monkeypatch.setenv(env_var, "from-env")
     from_env = tmp_path / "from-env" if is_path else "from-env"
     assert getattr(KstrlConfig.load(tmp_path), field_name) == from_env
+
+
+@pytest.mark.parametrize(
+    ("env_var", "field_name"),
+    [(e, f) for _s, _k, e, f, is_path in STRING_KEYS if not is_path],
+    ids=[f"{s}.{k}" for s, k, _e, _f, is_path in STRING_KEYS if not is_path],
+)
+def test_an_empty_env_var_is_an_explicit_empty_value(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    env_var: str,
+    field_name: str,
+) -> None:
+    """``AGENT_CMD=""`` means "no command", not "unset" (review round 1,
+    nit 11).
+
+    The env overlay tests membership (``os.environ.get(...) is not
+    None``), and the TOML overlay tests truthiness, and the asymmetry is
+    deliberate: an exported empty string is something somebody typed,
+    while ``command = ""`` in the shipped kstrl.toml example is a
+    placeholder nobody filled in. Measured: switching the env overlay to
+    truthiness left the whole of this file green, so the rule the PR body
+    claims to preserve had no test at all. Path rows are excluded because
+    ``_resolve_path("", root)`` is the root directory, which is a
+    different question from this one.
+    """
+    monkeypatch.setenv(env_var, "")
+    assert getattr(KstrlConfig.load(tmp_path), field_name) == ""
+    assert getattr(KstrlConfig.from_env(tmp_path), field_name) == ""
+
+
+def test_an_empty_toml_value_stays_unset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The other half of nit 11's asymmetry, so neither side can drift
+    into the other without a named failure."""
+    for _section, _key, env_var, _field, _is_path in STRING_KEYS:
+        monkeypatch.delenv(env_var, raising=False)
+    toml_path = tmp_path / "kstrl.toml"
+    _write_toml(toml_path, '\n[agent]\ncommand = ""\n')
+    assert KstrlConfig.load(tmp_path).agent_cmd is None
 
 
 def test_load_toml_wins_over_defaults_when_env_unset(
