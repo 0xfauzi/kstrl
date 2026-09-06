@@ -329,10 +329,75 @@ def _ruff_can_do_concise() -> bool:
     return probe.returncode == 0
 
 
+#: One home for the reason string, because the census below reads it
+#: back off the mark to tell a capability gate from a presence gate.
+_CONCISE_REASON = "needs ruff >= 0.2.0 on PATH (--output-format=concise)"
+
 _NEEDS_CONCISE_RUFF = pytest.mark.skipif(
     not _ruff_can_do_concise(),
-    reason="needs ruff >= 0.2.0 on PATH (--output-format=concise)",
+    reason=_CONCISE_REASON,
 )
+
+
+def test_the_capability_probe_answers_from_the_binary_on_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`_ruff_can_do_concise` runs a real process and reads its status.
+
+    Three shims on a PATH holding nothing else, so this exercises the
+    two branches and the absent binary rather than a stub of any of
+    them. Exit 2 is what ruff 0.0.272, 0.1.0 and 0.1.15 were measured to
+    return for this exact argv, and exit 0 is what 0.2.0 and later
+    return.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    monkeypatch.setenv("PATH", str(bin_dir))
+    shim = bin_dir / "ruff"
+
+    assert _ruff_can_do_concise() is False, "no ruff at all"
+
+    shim.write_text(
+        "#!/bin/sh\necho \"error: invalid value 'concise'\" >&2\nexit 2\n",
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    assert _ruff_can_do_concise() is False, "a ruff that rejects the flag value"
+
+    shim.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    shim.chmod(0o755)
+    assert _ruff_can_do_concise() is True, "a ruff that accepts it"
+
+
+def test_every_ruff_gated_test_here_is_gated_on_the_capability() -> None:
+    """A census over this module's own skip marks, not a spot check.
+
+    The two tests below run real ruff and need >= 0.2.0 for
+    `--output-format=concise`. Gated on `shutil.which("ruff") is None`
+    they turn an old ruff on PATH into `expected one 'dead_code_ruff'
+    check, got []`, a red suite whose message names nothing about a
+    version. Reverting either decorator to a presence check is invisible
+    to the suite on a machine whose ruff is current, which is every
+    machine that runs it here, so the mark itself is what gets asserted:
+    the walk enumerates every skipif this module carries and fails on
+    one that mentions ruff and is not the capability gate, and on a new
+    ruff-gated test that is not in the list.
+    """
+    gated: dict[str, str] = {}
+    for name, obj in sorted(globals().items()):
+        if not name.startswith("test_"):
+            continue
+        for mark in getattr(obj, "pytestmark", []):
+            reason = str(mark.kwargs.get("reason", ""))
+            if mark.name == "skipif" and "ruff" in reason.lower():
+                gated[name] = reason
+
+    assert sorted(gated) == [
+        "test_sense_reports_the_dead_code_phases_separately",
+        "test_sense_table_names_the_dead_code_scan_it_did_not_run",
+    ]
+    assert set(gated.values()) == {_CONCISE_REASON}
 
 
 def test_sense_never_edits_stages_or_commits(tmp_path: Path) -> None:
