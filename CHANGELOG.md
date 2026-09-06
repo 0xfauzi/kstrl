@@ -101,20 +101,27 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Added
 
-- Golden patterns: an operator-authored file, injected into every
-  engineer prompt. `ks init` scaffolds `scripts/kstrl/golden-patterns.md`
-  and you write what a good change looks like in this repository, with a
-  file to copy from for each pattern. The distiller records what happened
-  and feedforward computes structure; neither says what is wanted, and
-  nothing in kstrl did. The path is `[paths] golden_patterns` in
-  `kstrl.toml` or `KSTRL_GOLDEN_PATTERNS_FILE`. The block sits between
-  the distilled knowledge and the architect's decisions, is read from the
-  component's worktree when the file is committed there and from the repo
-  root otherwise, and is read verbatim rather than filtered, the way
-  `CLAUDE.md` already is: the operator authored it. Absent, empty or
-  unreadable costs nothing and never fails a run; past 6000 characters
-  (about 1500 tokens) the text is cut at a line boundary and the prompt
-  says so and names the file.
+- Golden patterns: an operator-authored file, injected into every factory
+  engineer prompt and every `ks run` prompt (`ks feature` and
+  `ks understand` do not read it). `ks init` scaffolds
+  `scripts/kstrl/golden-patterns.md` and you write what a good change
+  looks like in this repository, with a file to copy from for each
+  pattern. The distiller records what happened and feedforward computes
+  structure; neither says what is wanted, and nothing in kstrl did. The
+  path is `[paths] golden_patterns` in `kstrl.toml` or
+  `KSTRL_GOLDEN_PATTERNS_FILE`. The block sits between the distilled
+  knowledge and the architect's decisions, is read from the repo root
+  (never from a component worktree, which the engineer can write to), and
+  is read verbatim rather than filtered, the way `CLAUDE.md` already is:
+  the operator authored it. Its delimiter lines carry a fresh random
+  token per build, so no line of the file can close the block early.
+  Nothing is injected while the file is absent, empty, unreadable, or
+  still byte-identical to what `ks init` wrote: kstrl recognises its own
+  scaffold by digest, so an unedited skeleton costs no tokens. Past 6000
+  characters (about 1500 tokens) the text is cut at a line boundary, the
+  prompt says so and names the file, and the run warns once on your
+  terminal. A `[paths] golden_patterns` you set that names no file is
+  named on the terminal too, rather than silently omitting the block.
 - The architect's non-blocker spec findings now reach the engineer. They
   were written to `scripts/kstrl/spec-issues.json` on every decompose and
   nothing in `kstrl/` ever opened that file: across five recorded runs

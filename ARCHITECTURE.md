@@ -105,9 +105,12 @@ LLM from prior components' verified work and re-validated on read.
 
 The engineer's prompt carries the context blocks in one order: distilled
 knowledge, the operator's golden patterns
-(`scripts/kstrl/golden-patterns.md`, written by hand and read verbatim),
-the architect's decisions, the feedforward context, then the previous
-attempt's retry context.
+(`scripts/kstrl/golden-patterns.md`, written by hand and read verbatim
+from the repo root, never from the component's worktree), the architect's
+decisions, the feedforward context, then the previous attempt's retry
+context. Golden patterns reach every factory engineer prompt and every
+`ks run` prompt; `ks feature` and `ks understand` call `run_loop` without
+a context prefix and get none of these blocks.
 
 ### Phases 1-3: Verification
 

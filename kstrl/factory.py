@@ -103,9 +103,11 @@ from kstrl.observability import (
 from kstrl.operator_context import (
     GOLDEN_PATTERNS_HEADER,
     GOLDEN_PATTERNS_MAX_CHARS,
+    GOLDEN_PATTERNS_SCAFFOLD,
     OperatorFile,
+    configured_path_errors,
     load_operator_file,
-    resolve_operator_path,
+    operator_file_notice,
 )
 from kstrl.pipeline import ComponentPipeline, PipelineHooks, _iso_now
 from kstrl.policy import PolicyConfig
@@ -1943,6 +1945,38 @@ def _worker_scope(scope: ComponentScope | None) -> tuple[list[str], list[str]]:
     return list(scope.allowed_paths or ()), list(scope.harness_paths)
 
 
+def operator_file_notices(base_config: KstrlConfig, root_dir: Path) -> list[str]:
+    """What the operator has to hear about their own context files.
+
+    Derived in the PARENT, once per run (review round 1, S6 and S7). The
+    loader's ``logger.warning`` runs inside a pool worker whose stderr is
+    dup2'd into ``engineer.log``, so a truncated, unreadable or
+    misconfigured golden-patterns file left no mark on the terminal, the
+    TUI, the event stream or the PR body.
+
+    Once per run and not once per component, which the parent can only
+    do because the loader reads the repo ROOT: while the worker resolved
+    its own worktree first there was no path here that every worker was
+    guaranteed to agree with.
+    """
+    notices = configured_path_errors(base_config, KstrlConfig.anchored(root_dir), root_dir)
+    read_notice = operator_file_notice(
+        OperatorFile(
+            path=base_config.golden_patterns_file,
+            header=GOLDEN_PATTERNS_HEADER,
+            max_chars=GOLDEN_PATTERNS_MAX_CHARS,
+            scaffold=GOLDEN_PATTERNS_SCAFFOLD,
+        )
+    )
+    return notices if read_notice is None else [*notices, read_notice]
+
+
+def _report_operator_files(base_config: KstrlConfig, root_dir: Path, ui: UI) -> None:
+    """Say each of :func:`operator_file_notices` once, on the operator's UI."""
+    for notice in operator_file_notices(base_config, root_dir):
+        ui.warn(f"  Golden patterns: {notice}")
+
+
 def _run_component(
     component_id: str,
     prd_path_str: str,
@@ -2165,13 +2199,20 @@ def _run_component(
             pass  # feedforward failure is non-fatal
 
     # R10.8: the operator's own statement of what a good change looks
-    # like. Read from the worktree when the file is committed there,
-    # from the root otherwise; "" when absent, so it costs nothing.
+    # like. Read from the REPO ROOT and never from `worktree_path`: the
+    # worktree is the tree this agent has been writing to, so reading it
+    # there would let one component choose what the next component is
+    # told, unfiltered and under a header saying the operator wrote it
+    # (review round 1, S3). `golden_patterns_file_str` may be absolute,
+    # from `relative_to_root`'s fallback; joining an absolute path onto
+    # the root yields that path, so both shapes reach the configured
+    # file. "" when absent, empty, or an untouched `ks init` scaffold.
     golden_patterns = load_operator_file(
         OperatorFile(
-            path=resolve_operator_path(golden_patterns_file_str, worktree_path, root_dir),
+            path=root_dir / golden_patterns_file_str,
             header=GOLDEN_PATTERNS_HEADER,
             max_chars=GOLDEN_PATTERNS_MAX_CHARS,
+            scaffold=GOLDEN_PATTERNS_SCAFFOLD,
         )
     )
 
@@ -3498,6 +3539,8 @@ def _run_factory_locked(
     codebase_map_file_rel = _path_relative_to_root(base_config.codebase_map_file)
     golden_patterns_file_rel = _path_relative_to_root(base_config.golden_patterns_file)
 
+    _report_operator_files(base_config, root_dir, ui)
+
     def _launch_component(comp: Component) -> Path | None:
         """Set up worktree for a component. Returns worktree path or None."""
         try:
@@ -3590,9 +3633,10 @@ def _run_factory_locked(
             # keeps the engineer's progress log inside allowedPaths.
             base_config.component_progress_file(comp.prd_path, root_dir),
             codebase_map_file_rel,
-            # R10.8: the worker resolves this against its own worktree
-            # first and root_dir second, so a component branch that
-            # committed the file reads its own revision of it.
+            # R10.8: the worker joins this onto root_dir and nothing
+            # else. Sent as a root-relative string for the same reason
+            # the other path slots are: the worker is a separate process
+            # and gets paths, not a config object.
             golden_patterns_file_rel,
             timeout_cfg.agent_iteration,
             timeout_cfg.component_total,

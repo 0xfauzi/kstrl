@@ -217,19 +217,27 @@ Edit this list to match your repo. During the understanding loop, mark items as 
 (New notes append below; keep older notes for history.)
 """
 
-# R10.8. Deliberately NOT named *_PROMPT and NOT enrolled in
-# SCAFFOLDED_TEMPLATES. The ledger's own guards scope it to *_PROMPT
-# constants written to *prompt.md files (tests/test_prompt_staleness.py),
-# and the precedent for a scaffolded body the operator replaces and the
-# engineer reads verbatim is CLAUDE.md and codebase_map.md: neither is
-# enrolled or ledgered. H3b exists so a bump of a HARNESS-owned body
-# reaches projects; this is a skeleton, and an unedited skeleton means
-# the operator wrote no patterns, not that the harness drifted.
+# R10.8. Enrolled in SCAFFOLDED_TEMPLATES, and the digest history there
+# is load-bearing rather than advisory: operator_context.load_operator_file
+# asks shipped_label whether the file on disk is a body kstrl itself
+# wrote, and injects nothing when it is. Review round 1 measured the
+# alternative end to end: without that check an untouched `ks init`
+# scaffold put 479 characters of angle-bracket placeholders at the head
+# of every engineer prompt of every component of every iteration, under
+# a header asserting the operator had authored them. So a body change
+# here APPENDS a row below; editing or dropping one stops kstrl
+# recognising the copy already on an operator's disk and re-opens that.
 DEFAULT_GOLDEN_PATTERNS = """# Golden patterns
 
-Operator-authored. What a good change looks like in this repository. Loaded
-into every engineer prompt. Keep it short: the budget is about 1500 tokens
-and the loader truncates past that.
+Operator-authored. What a good change looks like in this repository.
+Read into the engineer's prompt on every factory component iteration
+and on every `ks run` iteration (`ks feature` and `ks understand` do
+not read it). Keep it short: the budget is about 1500 tokens and the
+loader truncates past that.
+
+While this file is byte-identical to what `ks init` wrote, nothing is
+injected: kstrl recognises its own scaffold by digest and treats it as
+an empty file. Replace the placeholders and the block starts appearing.
 
 ## Follow these (with a file to copy from)
 
@@ -714,7 +722,48 @@ SCAFFOLDED_TEMPLATES: tuple[ScaffoldedTemplate, ...] = (
             ("eb3637acf1918da23e27ad3f4d30bab32b1edd797b4bd1b5587b82b656affb09", "2026-07-21"),
         ),
     ),
+    # R10.8. The first ledger row whose reader is the RUN and not just
+    # the operator: load_operator_file suppresses a body listed here, so
+    # a missing row costs an injected placeholder block rather than an
+    # unshown staleness notice.
+    ScaffoldedTemplate(
+        filename="golden-patterns.md",
+        constant_name="DEFAULT_GOLDEN_PATTERNS",
+        body=DEFAULT_GOLDEN_PATTERNS,
+        history=(
+            # Never merged: the #229 body as it stood while the PR was in
+            # review. Recorded because a checkout of that branch could
+            # have scaffolded from it, and a copy on disk that kstrl does
+            # not recognise is a copy it injects.
+            ("b8e9cd9725308cfce280d05c26033d25cb16f51ec42af2ac4a2bb05c601e48cf", "2026-09-06a"),
+            ("5f00b030f0a6e6cad4a56b678fa657ebce1a2d734e465ef82a8ca6df0638ca8a", "2026-09-06"),
+        ),
+    ),
 )
+
+
+def shipped_label(filename: str, text: str) -> str | None:
+    """The label of the shipped body ``text`` is, or None for anything else.
+
+    The ONE definition of "kstrl wrote this file". :func:`_classify`
+    turns it into a status for the operator, and
+    ``operator_context.load_operator_file`` turns it into a decision not
+    to inject a scaffold nobody has filled in. Two copies of the lookup
+    would be two definitions of what counts as a shipped body, and the
+    weaker one is the one whichever caller reaches it consults.
+
+    Keyed on the file's own SHA-256, so it classifies files written long
+    before this mechanism existed and writes nothing into a file the
+    operator owns. Labels are unique per template
+    (``test_history_rows_are_unique_and_non_empty``), so comparing the
+    returned label against ``current_label`` is exactly comparing
+    digests.
+    """
+    template = next((t for t in SCAFFOLDED_TEMPLATES if t.filename == filename), None)
+    if template is None:
+        return None
+    return dict(template.history).get(hashlib.sha256(text.encode("utf-8")).hexdigest())
+
 
 # absent        - no file there; run_loop falls back to the constant and
 #                 says so itself.
@@ -749,15 +798,14 @@ def _classify(template: ScaffoldedTemplate, path: Path) -> TemplateState:
     text = _read_text_or_none(path)
     if text is None:
         return TemplateState(template=template, path=path, status="unrecognised")
-    labels = dict(template.history)
-    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-    if digest not in labels:
+    label = shipped_label(template.filename, text)
+    if label is None:
         return TemplateState(template=template, path=path, status="unrecognised")
     return TemplateState(
         template=template,
         path=path,
-        status="current" if digest == template.history[-1][0] else "stale",
-        shipped_label=labels[digest],
+        status="current" if label == template.current_label else "stale",
+        shipped_label=label,
     )
 
 

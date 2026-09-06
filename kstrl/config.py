@@ -237,13 +237,14 @@ def component_harness_paths(
 #: non-empty string: (section, key, env var, field, is_path). A path row's
 #: value is resolved against the root and its field default is anchored
 #: there by ``KstrlConfig.anchored``; every other row takes the string
-#: verbatim. One row, not a hand-copied branch per key in each of the TOML
-#: overlay and the env overlay, plus a copy of the anchoring block in each
-#: entry point: a key added to some of those differed silently by the door
-#: it came in through. tests/test_config_toml.py checks the field names
-#: against the real dataclass fields, because ``setattr`` on a typo invents
-#: an attribute instead of raising. The unprefixed env names are
-#: pre-rename compatibility; a new row takes ``KSTRL_``.
+#: verbatim. One row, not a hand-copied branch per key in the TOML overlay,
+#: the env overlay, the anchoring block, ``config_report.show_sections``
+#: and ``scripts/gen_docs.py``: a key added to some of those differed
+#: silently by the door it came in through. tests/test_config_toml.py
+#: checks the field names against the real dataclass fields, because
+#: ``setattr`` on a typo invents an attribute instead of raising. The
+#: unprefixed env names are pre-rename compatibility; a new row takes
+#: ``KSTRL_``.
 STRING_KEYS: tuple[tuple[str, str, str, str, bool], ...] = (
     ("paths", "prompt", "PROMPT_FILE", "prompt_file", True),
     ("paths", "prd", "PRD_FILE", "prd_file", True),
@@ -262,9 +263,8 @@ class KstrlConfig:
     """Configuration for the kstrl agentic loop."""
 
     max_iterations: int = 10
-    # Path is immutable and hashable, so dataclasses takes it as a plain
-    # default and no default_factory lambda is needed to keep instances
-    # from sharing one. anchored() rebinds rather than mutating in place.
+    # Path is immutable, so a plain default is safe and no
+    # default_factory lambda is needed; anchored() rebinds, never mutates.
     prompt_file: Path = Path("scripts/kstrl/prompt.md")
     prd_file: Path = Path("scripts/kstrl/prd.json")
     # None = UNSET, and unset is the safe default: every factory
@@ -289,7 +289,7 @@ class KstrlConfig:
     # $progress_path) call resolved_progress_file(root_dir).
     progress_file: Path | None = None
     codebase_map_file: Path = Path("scripts/kstrl/codebase_map.md")
-    # R10.8: operator-authored, read into every engineer prompt
+    # R10.8: operator-authored; operator_context.py says who reads it.
     golden_patterns_file: Path = Path("scripts/kstrl/golden-patterns.md")
     sleep_seconds: float = 2.0
     interactive: bool = False
@@ -322,10 +322,9 @@ class KstrlConfig:
     @classmethod
     def anchored(cls, root_dir: Path) -> KstrlConfig:
         """Defaults with every default file path resolved against ``root_dir``.
-        from_env, from_toml, load and config_report.kstrl_config_defaults held
-        a copy of these assignments each, so a path added to three of the four
-        differed silently by entry point. Anchors the FIELD default, not a
-        second copy of the string; progress_file needs no case, being None."""
+        from_env, from_toml, load and config_report.kstrl_config_defaults held a
+        copy each, so a path added to three of the four differed by entry point.
+        Anchors the FIELD default; progress_file needs no case, being None."""
         config = cls()
         for _section, _key, _env, field_name, is_path in STRING_KEYS:
             if is_path and (default := getattr(config, field_name)) is not None:
@@ -456,17 +455,21 @@ class KstrlConfig:
             return self.progress_file
         return root_dir / self.progress_file
 
-    def validate(self) -> list[str]:
-        """Validate configuration, returning list of errors."""
-        errors: list[str] = []
+    def validate(self, root_dir: Path | None = None) -> list[str]:
+        """Validate configuration, returning list of errors. ``root_dir``
+        separates an explicitly set optional path from the anchored default,
+        so that check is skipped without one. Measured: nothing calls this
+        method, so the REACHABLE copy of that rule is run_factory's warning."""
+        from kstrl.operator_context import configured_path_errors
 
+        errors: list[str] = []
         if self.max_iterations < 0:
             errors.append(f"MAX_ITERATIONS must be non-negative (got: {self.max_iterations})")
-
         if not self.prompt_file.exists():
             errors.append(f"Prompt file not found: {self.prompt_file}")
-
-        return errors
+        if root_dir is None:
+            return errors
+        return errors + configured_path_errors(self, KstrlConfig.anchored(root_dir), root_dir)
 
 
 CONFIG_FILE_NAME = "kstrl.toml"
