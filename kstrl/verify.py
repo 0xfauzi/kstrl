@@ -2098,18 +2098,23 @@ def check_mutation_score(
             "the diff changed no non-test Python file, so there was nothing to mutate",
         )
 
-    # Run mutmut on changed files only. Each path is shell-quoted
-    # because this command is a STRING, which `run_scrubbed` hands to
-    # /bin/sh, and the names come out of an agent-authored diff: without
-    # the quoting a file called `$(id).py` executes (#335 round 2).
-    # Quoted rather than converted to an argv list because the shell's
-    # word splitting is load-bearing here: `--paths-to-mutate=a.py b.py`
-    # reaches mutmut as one option plus one positional argument, and an
-    # argv list would send it a single option holding both paths. That
-    # is a different invocation, and mutmut is not on this machine to
-    # measure the difference, so the quoting closes the hole without
-    # changing what mutmut receives for any ordinary name.
-    paths_arg = " ".join(shlex.quote(f) for f in py_files)
+    # One COMMA-separated argument, shell-quoted as a whole. This
+    # command is a STRING, which `run_scrubbed` hands to /bin/sh, and
+    # the names come out of an agent-authored diff: without the quoting
+    # a file called `$(id).py` executes (#335 round 2).
+    #
+    # Comma rather than space, which is what `--paths-to-mutate` is
+    # documented to take and what mutmut's own `split_paths` splits on.
+    # Measured on mutmut 2.5.1: `mutmut run --help` prints
+    # `Usage: mutmut run [OPTIONS] [ARGUMENT]`, one positional slot, so
+    # `--paths-to-mutate=a.py b.py c.py` exits non-zero with
+    # `Error: Got unexpected extra argument (c.py)` and mutates nothing,
+    # and the two-file form is accepted only because `b.py` fills that
+    # positional slot instead of being a path to mutate. Round 2 of #335
+    # shipped the space-separated form on the guess that the shell's
+    # word splitting was load-bearing; it is an outage for three or more
+    # changed files (#335 round 3).
+    paths_arg = shlex.quote(",".join(py_files))
     try:
         result = run_scrubbed(
             f"mutmut run --paths-to-mutate={paths_arg} --no-progress",
@@ -2166,8 +2171,17 @@ def _last_output_line(result: subprocess.CompletedProcess[str]) -> str:
     """The last line a failed tool printed, capped, for a gap's detail.
 
     stderr first because that is where a tool that could not start says
-    so, and the last line because a traceback or a usage message puts
-    the sentence a reader needs at the bottom.
+    so, and the last line because that is where a Python traceback and
+    a git failure put the sentence a reader needs.
+
+    NOT because "a usage message puts it at the bottom", which is what
+    this said and is measurably false for the tool this module runs
+    most. ruff is a clap CLI, and clap prints the diagnosis FIRST and
+    `For more information, try '--help'.` last: measured on ruff 0.1.15,
+    stderr line 1 is ``error: invalid value 'concise' for
+    '--output-format <OUTPUT_FORMAT>'`` and the last line carries no
+    cause at all (#335 round 3). :func:`_tool_failure_line` is the
+    caller for that case.
 
     Capped for the reason git.py caps its stderr at 500: this reaches
     ``ks sense --json`` and the terminal, and one unbroken line of tool
@@ -2181,6 +2195,31 @@ def _last_output_line(result: subprocess.CompletedProcess[str]) -> str:
     """
     tail = (result.stderr.strip() or result.stdout.strip()).splitlines()
     return tail[-1][:500] if tail else "no output"
+
+
+#: clap's own prefix for the diagnosis, at the start of a line. ruff, uv
+#: and cargo all print it; a Python traceback never does.
+_CLAP_ERROR = re.compile(r"^error:.*", re.MULTILINE)
+
+
+def _tool_failure_line(result: subprocess.CompletedProcess[str]) -> str:
+    """Why a tool refused to run at all, capped, for a gap's detail.
+
+    The FIRST stderr line beginning ``error:`` when there is one, and
+    :func:`_last_output_line` otherwise. A tool that exits before doing
+    any work states the cause at the top and the remedy at the bottom,
+    so the last line is the wrong end of it.
+
+    Measured on the ruff versions below this phase's floor, which is the
+    reachable case for it: 0.0.272 prints ``error: unexpected argument
+    '--output-format' found`` then a 40-line usage block, and 0.1.0 and
+    0.1.15 print ``error: invalid value 'concise' for '--output-format
+    <OUTPUT_FORMAT>'`` then the possible values. Both end
+    ``For more information, try '--help'.``, which is what the gap
+    carried before and says nothing about the cause (#335 round 3).
+    """
+    found = _CLAP_ERROR.search(result.stderr)
+    return found.group(0).strip()[:500] if found else _last_output_line(result)
 
 
 def _no_counts(result: subprocess.CompletedProcess[str]) -> NotMeasured:
@@ -2236,15 +2275,47 @@ _RUFF_FIXED = re.compile(r"Found \d+ errors? \((\d+) fixed, (\d+) remaining\)")
 #: ``[*] 2 fixable with the `--fix` option.`` - what a --no-fix run WOULD
 #: remove. Older ruff says "potentially fixable".
 _RUFF_FIXABLE = re.compile(r"\[\*\] (\d+) (?:potentially )?fixable")
-#: ``Found 3 errors.`` with no ``[*]`` line beneath it: findings exist and
-#: none of them is auto-removable.
-_RUFF_FOUND = re.compile(r"Found \d+ errors?")
-#: What ruff prints when it has nothing to report, including on a tree
-#: with no Python files in it at all.
+#: ``Found 3 errors.`` with no ``(M fixed, K remaining)`` beside it and no
+#: ``[*]`` line beneath it: findings exist and ruff removed none of them,
+#: because every fix it has for them is unsafe. Printed in BOTH modes.
+_RUFF_FOUND = re.compile(r"Found (\d+) errors?")
+#: What ruff 0.3.3 and later print when they have nothing to report.
+#: 0.2.0 through 0.3.2 print nothing at all instead; see
+#: :func:`_ruff_said_nothing`.
 _RUFF_CLEAN = "All checks passed!"
+#: ruff's advice lines, which are not findings: ``warning: No Python
+#: files found under the given path(s)`` is the whole output of a run
+#: over a tree with no Python file in it, on every version measured.
+_RUFF_WARNING = "warning:"
 
 
-def _ruff_count(output: str, *, read_only: bool) -> int | None:
+def _ruff_said_nothing(output: str) -> bool:
+    """Ruff printed no diagnostic, no summary and no error, only advice.
+
+    A shape, not a fallback. Measured with this phase's exact flags:
+    ruff 0.2.0, 0.3.0 and 0.3.2 print NOTHING on a clean tree, in either
+    mode, exiting 0; 0.3.3 onwards print ``All checks passed!`` there.
+    On a tree with no Python file in it, 0.2.0 and 0.3.0 print the
+    ``warning:`` line alone and 0.4.0 and 0.16.1 print it beside ``All
+    checks passed!``. So the empty output is real ruff on a real tree
+    across the whole supported range's lower half, and reading it as
+    unrecognisable turned a healthy clean run into a ``command_failed``
+    gap (#335 round 3).
+
+    The caller pairs this with ``returncode == 0``, which is what makes
+    it a measurement rather than a guess: exit 0 is ruff saying it
+    finished with nothing left to report, and every measured run that
+    fixed something printed ``Found N errors (M fixed, K remaining).``
+    even while exiting 0.
+    """
+    return not [
+        line
+        for line in output.splitlines()
+        if line.strip() and not line.strip().startswith(_RUFF_WARNING)
+    ]
+
+
+def _ruff_count(output: str, *, read_only: bool, returncode: int) -> int | None:
     """How many findings ruff removed, or would remove, or ``None``.
 
     Two different numbers off two different lines, because the two modes
@@ -2274,7 +2345,19 @@ def _ruff_count(output: str, *, read_only: bool) -> int | None:
     same tree removed 2. Reading ``Found`` there made ``ks sense`` and
     the factory report different numbers for the same tree while the
     message called them "auto-removable" (#335 round 2).
+
+    The set of shapes is MEASURED, not remembered, and
+    ``tests/test_verify.py::RUFF_SHAPES`` is that measurement: every
+    entry is a captured stdout-plus-stderr from a real ruff run with
+    this phase's exact flags, tagged with the version that printed it,
+    across ruff 0.2.0, 0.3.0 and 0.16.1 and five trees. Round 2 of #335
+    recognised the fixing mode's ``Found N errors.`` nowhere, so a tree
+    whose only findings have unsafe fixes - one ``x = do_thing()`` an
+    agent left behind is enough - reported a healthy ruff run as a tool
+    failure, and a clean tree on ruff 0.2.0 did the same (#335 round 3).
     """
+    if returncode == 0 and _ruff_said_nothing(output):
+        return 0
     if read_only:
         fixable = _RUFF_FIXABLE.search(output)
         if fixable:
@@ -2285,20 +2368,28 @@ def _ruff_count(output: str, *, read_only: bool) -> int | None:
     fixed = _RUFF_FIXED.findall(output)
     if fixed:
         return int(fixed[-1][0])
+    if _RUFF_FOUND.search(output):
+        return 0
     return 0 if _RUFF_CLEAN in output else None
 
 
 def _ruff_remaining(output: str) -> int:
     """Findings a fixing run located and did not remove.
 
-    Decoration, never a gate: it is on the same line the fix count comes
-    off, and 0 when that line is absent, because by then
-    :func:`_ruff_count` has already refused an output it could not read.
-    It is in the message because ``ruff auto-fixed 0`` cannot otherwise
-    tell a clean tree from a tree with three unsafe-fix ``F841``s.
+    Decoration, never a gate: it reads the same two lines
+    :func:`_ruff_count` reads, and 0 when neither is present, because by
+    then :func:`_ruff_count` has already refused an output it could not
+    read. It is in the message because ``ruff auto-fixed 0`` cannot
+    otherwise tell a clean tree from a tree with three unsafe-fix
+    ``F841``s - which is exactly the tree that reaches the ``Found N
+    errors.`` branch here, so without it the whole shape B1 of round 3
+    restored would report the same string as a clean run.
     """
     remaining = _RUFF_FIXED.findall(output)
-    return int(remaining[-1][1]) if remaining else 0
+    if remaining:
+        return int(remaining[-1][1])
+    found = _RUFF_FOUND.search(output)
+    return int(found.group(1)) if found else 0
 
 
 def _commit_ruff_fixes(cwd: Path) -> str | None:
@@ -2404,6 +2495,18 @@ def check_dead_code_ruff(
       ruff run that produced no measurement, and because a new reason
       token would be new status vocabulary.
 
+    ``--output-format=concise`` puts a FLOOR under this phase at ruff
+    **0.2.0** (January 2024). Measured: 0.0.272 rejects
+    ``--output-format`` outright, 0.1.0 and 0.1.15 take the flag and
+    reject the value, and all three exit 2, so an older ruff on PATH
+    reaches the ``command_failed`` gap above rather than a wrong number.
+    The gap carries ruff's own diagnosis because
+    :func:`_tool_failure_line` reads the first ``error:`` line and not
+    the last one, which is ``For more information, try '--help'.``
+    A project's own pinned ruff is far past 0.2.0; the reachable case is
+    ``ks sense`` against a live checkout with a system-wide old ruff
+    first on PATH (#335 round 3).
+
     ``read_only=True`` (``ks sense``, R10.1) runs the SAME rule set with
     ``--no-fix`` and reports what the factory WOULD have removed instead
     of removing it. Nothing is edited, staged or committed. The factory
@@ -2441,11 +2544,11 @@ def check_dead_code_ruff(
         return NotMeasured(
             DEAD_CODE_RUFF_CHECK,
             NOT_MEASURED_COMMAND_FAILED,
-            f"ruff check exited {result.returncode}: {_last_output_line(result)}",
+            f"ruff check exited {result.returncode}: {_tool_failure_line(result)}",
         )
 
     output = result.stdout + result.stderr
-    count = _ruff_count(output, read_only=read_only)
+    count = _ruff_count(output, read_only=read_only, returncode=result.returncode)
     if count is None:
         return NotMeasured(
             DEAD_CODE_RUFF_CHECK,
@@ -2488,6 +2591,16 @@ def _dead_code_command(
     changed file called ``my file.py`` split into two arguments vulture
     could not find and FAILED the component for the wrong reason, and
     one called ``$(id).py`` executed (#335 round 2).
+
+    The paths go LAST and behind ``--``, which is the other half of that
+    same threat model: an argv list stops ``/bin/sh`` reading the names,
+    and ``--`` stops vulture's own parser reading them. Measured on
+    vulture 2.16 over a directory holding ``a.py`` and ``-v.py``:
+    ``vulture -v.py a.py --min-confidence 80`` exits 2 with
+    ``vulture: error: unrecognized arguments: -.py``, which
+    :func:`check_dead_code` used to report as a dead-code FAIL naming
+    the wrong cause, and ``vulture --min-confidence 80 -- -v.py a.py``
+    exits 0 (#335 round 3).
     """
     if command:
         return command
@@ -2507,7 +2620,7 @@ def _dead_code_command(
             NOT_MEASURED_NO_TARGET,
             "the diff changed no non-test Python file, so there was nothing to scan",
         )
-    return ["vulture", *py_files, "--min-confidence", "80"]
+    return ["vulture", "--min-confidence", "80", "--", *py_files]
 
 
 def check_dead_code(
@@ -2535,11 +2648,15 @@ def check_dead_code(
     - ``command_failed``: git could not read the diff at all, which is a
       fault and is why :func:`_changed_non_test_python` reads strictly.
     - ``timed_out``: the scan exceeded ``timeout``.
-    - ``command_failed``: the detector exited non-zero and printed
-      nothing. Measured on vulture 2.16: exit 3 is findings, 1 is
-      invalid input and 2 is a bad command line, so a silent non-zero
-      exit is the tool failing rather than a clean tree. Before the
-      split it fell through to ``no remaining dead code``.
+    - ``command_failed``: the detector exited non-zero and this check
+      could read no finding out of what it printed. Measured on vulture
+      2.16: exit 3 is findings, 1 is invalid input and 2 is a bad
+      command line, so a non-zero exit with nothing to report is the
+      tool failing rather than a clean tree. The decision is on the EXIT
+      CODE, not on the output being empty: round 2 of #335 keyed the gap
+      on empty output alone, so a detector that exited non-zero and
+      printed only lines the ``__all__`` filter drops fell through to
+      ``no remaining dead code`` (#335 round 3).
 
     Every one of them used to be ``CheckResult(passed=True)``. A missing binary
     is not something the engineer's next diff can fix, so none of them
@@ -2566,12 +2683,6 @@ def check_dead_code(
 
     output = (result.stdout + result.stderr).strip()
     if result.returncode != 0:
-        if not output:
-            return NotMeasured(
-                DEAD_CODE_CHECK,
-                NOT_MEASURED_COMMAND_FAILED,
-                f"the dead code scan exited {result.returncode} and printed nothing",
-            )
         # Filter out common false positives (e.g., __all__, __init__).
         real_issues = [
             line
@@ -2586,6 +2697,12 @@ def check_dead_code(
                 details=real_issues[:20],
                 duration_seconds=time.monotonic() - start,
             )
+        return NotMeasured(
+            DEAD_CODE_CHECK,
+            NOT_MEASURED_COMMAND_FAILED,
+            f"the dead code scan exited {result.returncode} and reported no finding "
+            f"this check could read: {_last_output_line(result)}",
+        )
 
     return CheckResult(
         name=DEAD_CODE_CHECK,
