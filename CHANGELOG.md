@@ -52,6 +52,66 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- `dead_code` no longer reports a pass when nothing was measured. One row
+  covered two phases - a ruff F401/F811/F841 auto-fix that ran and a vulture
+  scan that did not - so nine states in which one of them measured nothing
+  still produced `dead_code  pass`, and `kstrl/review.py` copied that row into
+  the LLM code reviewer's verification summary as `dead_code: PASS`. The row is
+  now two: `dead_code_ruff` for the ruff phase and `dead_code` for the vulture
+  or `[verify] dead_code_command` scan. A phase that could not run appends no
+  row and is recorded under `not_measured` with its reason (`tool_missing`,
+  `no_target`, `timed_out`, `command_failed`), the rule #306 set for
+  `mutation_testing`, so a real ruff measurement is no longer discarded along
+  with an absent vulture one and an adversarial reviewer is no longer told a
+  scan passed that never happened. `[verify] dead_code_cleanup` still owns both
+  phases. `ks sense --json` schema 2 -> 3: an absent `dead_code` row now also
+  means "asked for, measured nothing", and `dead_code_ruff` is a new name in
+  `checks`. Three more states of the same defect go with it: ruff output with
+  no summary line in it (a project setting `[tool.ruff] output-format` to a
+  non-text format) was read as zero fixes and reported as a clean phase over a
+  worktree ruff had just edited and nothing had committed, a diff git could not
+  read at all was reported as `no_target` ("nothing to scan, not a fault")
+  rather than `command_failed`, and a `git commit` that did not land was
+  reported as `ruff auto-fixed N`. `ks feature` now also names `dead_code_ruff`
+  among the checks it is not running.
+
+- `ks sense` reports the number of findings ruff would actually remove, not
+  every finding it reported: the two differ by ruff's unsafe fixes, so a tree
+  where `ks sense` said "3 auto-removable" had 2 removed by the factory. The
+  factory row now also carries what was left behind (`ruff auto-fixed 2, 1
+  remaining`), which `ruff auto-fixed 0` could not tell from a clean tree.
+
+- The `dead_code_ruff` phase requires **ruff 0.2.0 or newer** (January 2024).
+  It pins `--output-format=concise` so a measured project's own `[tool.ruff]
+  output-format` cannot remove the summary line the phase parses, and that
+  flag value does not exist before 0.2.0: 0.0.272 rejects `--output-format`
+  outright and 0.1.0 and 0.1.15 reject the value `concise`. All three exit 2,
+  so an older ruff produces a `command_failed` gap carrying ruff's own
+  `error:` line rather than a number. A project's own pinned ruff is far past
+  0.2.0; the reachable case is `ks sense` against a live checkout with a
+  system-wide old ruff first on PATH. The set of output shapes the phase reads
+  is now measured against real ruff 0.2.0, 0.3.0 and 0.16.1 over five trees
+  rather than reasoned about: a fixing run with nothing safely fixable prints
+  `Found N errors.` alone, and ruff 0.2.0 through 0.3.2 print nothing at all
+  on a clean tree, and both were being reported as a tool failure over a run
+  that had measured something.
+
+- The mutation gate passes its changed files to mutmut as one comma-separated
+  argument. `mutmut run` takes one positional slot, so the space-separated
+  form was a usage error (`Error: Got unexpected extra argument`) for three or
+  more changed non-test Python files and silently consumed the second as that
+  positional for exactly two. The gate is opt-in (`[verify] mutation_testing`,
+  default off).
+
+- The dead-code detector's file list goes behind a `--` separator, so a
+  changed file whose name starts with `-` reaches vulture as a path rather
+  than as an option. Without it vulture exits 2 with `unrecognized
+  arguments`, which the check read as findings and reported as a dead-code
+  failure naming the wrong cause. Related: a detector that exits non-zero and
+  reports no finding the check can read is now a `command_failed` gap rather
+  than `no remaining dead code`, which is decided on the exit code instead of
+  on the output being empty.
+
 - Six more record files survive an interrupted write. A crash leaves a
   tail with no newline, the next append concatenates onto it, and the
   tolerant reader then drops BOTH lines: the fragment, which was never
@@ -246,6 +306,16 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   no key could reach them. And replay-on-mount was unconditional, so a
   panel constructed with real findings rendered the app's nominal state
   instead.
+
+### Security
+
+- File names taken from `git diff --name-only` no longer reach `/bin/sh`
+  unquoted in the dead-code and mutation gates. The diff is agent-authored,
+  which is the least trusted input in the factory, and a changed file named
+  ``$(id).py`` was command substitution the shell executed; a name with a space
+  in it split into two paths the tool could not find and failed the component
+  for a reason that named the wrong cause. vulture is now invoked with an
+  argument list and no shell, and the mutation gate quotes each path.
 
 ### Added
 
