@@ -4,16 +4,21 @@ from __future__ import annotations
 
 import inspect
 import json
+import shlex
 import sys
-from dataclasses import replace
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from pathlib import Path
 from subprocess import CompletedProcess, TimeoutExpired
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 
 from kstrl.events import VerificationResultEvent
 from kstrl.fixtures import FixturesConfig
+from kstrl.git import GitDiffError
+from kstrl.review import build_review_prompt
 from kstrl.verify import (
     MUTATION_TESTING_CHECK,
     NOT_MEASURED_COMMAND_FAILED,
@@ -28,8 +33,10 @@ from kstrl.verify import (
     VerificationResult,
     VerifyConfig,
     _count_before,
+    _ruff_count,
     check_bad_patterns,
     check_dead_code,
+    check_dead_code_ruff,
     check_diff_scope,
     check_linter,
     check_mutation_score,
@@ -39,6 +46,7 @@ from kstrl.verify import (
     check_typecheck,
     run_mechanical_verification,
 )
+from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 from tests.helpers.tool_output import tool_output
 from tests.helpers.verify_phase import CHEAP_GATES, phase_verify_surfaces
 
@@ -805,9 +813,27 @@ class TestCheckSelfCritique:
         assert result.passed is True
 
 
+def _completed(
+    args: object = "cmd",
+    returncode: int = 0,
+    stdout: str = "",
+    stderr: str = "",
+) -> CompletedProcess[str]:
+    return CompletedProcess(args=args, returncode=returncode, stdout=stdout, stderr=stderr)
+
+
+def _which_only(*present: str) -> Callable[[str], str | None]:
+    """A ``shutil.which`` that finds exactly ``present`` and nothing else."""
+
+    def which(name: str) -> str | None:
+        return f"/usr/bin/{name}" if name in present else None
+
+    return which
+
+
 def _mutmut_completed(stdout: str) -> CompletedProcess[str]:
     """A finished ``mutmut`` invocation with ``stdout`` to parse."""
-    return CompletedProcess(args="mutmut", returncode=0, stdout=stdout, stderr="")
+    return _completed("mutmut", 0, stdout)
 
 
 #: ``CHEAP_GATES`` plus the opt-in mutation check, so the only row worth
@@ -1324,173 +1350,1494 @@ def test_the_protocol_says_exactly_what_the_function_says() -> None:
 
 
 class TestCheckDeadCode:
-    def test_no_tools_available_skips(self, tmp_path: Path) -> None:
-        """When neither ruff nor vulture are installed, skip gracefully.
+    """The vulture-or-custom-command phase, on its own (#335).
 
-        This pins the OLD convention on purpose, and it is the same
-        defect #306 fixed one check over: ``dead_code`` still returns
-        ``passed=True`` having measured nothing, on this path and on its
-        timeout. It is not fixed here because ``dead_code`` fuses two
-        measurements into one row - a ruff auto-fix phase that DID run
-        and a vulture phase that did not - so the honest fix is to split
-        the row, which moves ``DIFF_DEPENDENT_CHECKS``,
-        ``evolution``'s name-to-category table and ``feature_verify``'s
-        name-keyed baselines. Its own issue, not a rider on this one.
-        """
-        with patch("shutil.which", return_value=None):
-            result = check_dead_code(tmp_path, "main")
-        assert result.passed is True
-        assert "neither vulture nor custom command" in result.message.lower()
+    ``check_dead_code`` used to fuse this phase with the ruff auto-fix
+    that runs before it, so four states in which nothing was scanned
+    still produced ``CheckResult(passed=True)`` - and
+    ``review.build_review_prompt`` copied that row into an adversarial
+    reviewer's prompt as ``dead_code: PASS``. Each of them is a
+    :class:`NotMeasured` now, and each test below names its own
+    ``reason`` token AND asserts the collaborator that would have
+    measured never ran, so a deleted guard cannot pass by falling
+    through to a later exit.
 
-    def test_ruff_fixes_committed(self, tmp_path: Path) -> None:
-        """When ruff finds fixable issues, they are auto-committed."""
-        import subprocess as sp
+    The flag went the other way from ``check_mutation_score``'s: this
+    function no longer takes ``read_only``. vulture and an operator's
+    own ``dead_code_command`` are read-only by nature, and the two
+    things the flag suppressed - ``ruff --fix`` and the commit after it -
+    both live in :func:`check_dead_code_ruff` now.
+    """
 
+    def test_no_detector_available_measures_nothing(self, tmp_path: Path) -> None:
+        with (
+            patch("shutil.which", side_effect=_which_only()),
+            patch("kstrl.verify.run_scrubbed") as run,
+        ):
+            outcome = check_dead_code(tmp_path, "main")
+
+        assert isinstance(outcome, NotMeasured)
+        assert (outcome.check, outcome.reason) == ("dead_code", NOT_MEASURED_TOOL_MISSING)
+        assert "vulture" in outcome.detail
+        assert run.call_count == 0
+
+    @pytest.mark.parametrize(
+        "diff",
+        [["README.md"], ["tests/test_x.py"], []],
+        ids=["docs-only", "test-only", "empty-diff"],
+    )
+    def test_no_scannable_file_in_the_diff_measures_nothing(
+        self,
+        tmp_path: Path,
+        diff: list[str],
+    ) -> None:
+        """Not a fault, and not a pass either: nothing was looked at."""
+        with (
+            patch("shutil.which", side_effect=_which_only("vulture")),
+            patch("kstrl.verify.git.get_diff_names", return_value=diff),
+            patch("kstrl.verify.run_scrubbed") as run,
+        ):
+            outcome = check_dead_code(tmp_path, "main")
+
+        assert isinstance(outcome, NotMeasured)
+        assert (outcome.check, outcome.reason) == ("dead_code", NOT_MEASURED_NO_TARGET)
+        assert run.call_count == 0
+
+    def test_a_timed_out_scan_measures_nothing(self, tmp_path: Path) -> None:
         calls: list[str] = []
 
-        def mock_run(cmd: str, **kwargs: object) -> sp.CompletedProcess[str]:
-            calls.append(cmd)
-            if "ruff check --fix" in cmd:
-                return sp.CompletedProcess(cmd, 0, "Found 3 errors (2 fixed, 1 remaining).", "")
-            if "git add" in cmd:
-                return sp.CompletedProcess(cmd, 0, "", "")
-            if "git commit" in cmd:
-                return sp.CompletedProcess(cmd, 0, "", "")
-            # vulture
-            return sp.CompletedProcess(cmd, 0, "", "")
-
-        def mock_which(name: str) -> str | None:
-            if name in ("ruff", "vulture"):
-                return f"/usr/bin/{name}"
-            return None
+        def run(cmd: object, **_: object) -> CompletedProcess[str]:
+            calls.append(str(cmd))
+            raise TimeoutExpired(str(cmd), 300)
 
         with (
-            patch("shutil.which", side_effect=mock_which),
-            patch("kstrl.verify.run_scrubbed", side_effect=mock_run),
+            patch("shutil.which", side_effect=_which_only("vulture")),
             patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py"]),
+            patch("kstrl.verify.run_scrubbed", side_effect=run),
         ):
-            result = check_dead_code(tmp_path, "main")
+            outcome = check_dead_code(tmp_path, "main", timeout=300.0)
 
-        assert result.passed is True
-        assert "auto-fixed 2" in result.message
-        assert any("git commit" in c for c in calls)
+        assert isinstance(outcome, NotMeasured)
+        assert (outcome.check, outcome.reason) == ("dead_code", NOT_MEASURED_TIMED_OUT)
+        assert "300.0" in outcome.detail
+        assert len(calls) == 1
+
+    def test_a_crashed_scan_with_no_output_measures_nothing(self, tmp_path: Path) -> None:
+        """Measured on vulture 2.16: exit 3 is findings, 1 is invalid
+        input and 2 is a bad command line. A non-zero exit that printed
+        nothing is the tool failing, and it used to fall through to
+        ``no remaining dead code``."""
+        with (
+            patch("shutil.which", side_effect=_which_only("vulture")),
+            patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py"]),
+            patch("kstrl.verify.run_scrubbed", return_value=_completed("vulture", 2)),
+        ):
+            outcome = check_dead_code(tmp_path, "main")
+
+        assert isinstance(outcome, NotMeasured)
+        assert (outcome.check, outcome.reason) == ("dead_code", NOT_MEASURED_COMMAND_FAILED)
+        assert "2" in outcome.detail
 
     def test_vulture_findings_fail(self, tmp_path: Path) -> None:
-        """When vulture finds dead code, the check fails with details."""
-        import subprocess as sp
-
-        def mock_run(cmd: str, **kwargs: object) -> sp.CompletedProcess[str]:
-            if "ruff check --fix" in cmd:
-                return sp.CompletedProcess(cmd, 0, "", "")
-            # vulture output
-            return sp.CompletedProcess(
-                cmd,
-                1,
-                "src/main.py:10: unused function 'old_handler' (60% confidence)\n"
-                "src/utils.py:25: unused variable 'temp' (90% confidence)\n",
-                "",
-            )
-
-        def mock_which(name: str) -> str | None:
-            if name in ("ruff", "vulture"):
-                return f"/usr/bin/{name}"
-            return None
-
+        """The CONTROL. Without it the class is satisfiable by a
+        function that returns a gap unconditionally."""
         with (
-            patch("shutil.which", side_effect=mock_which),
-            patch("kstrl.verify.run_scrubbed", side_effect=mock_run),
+            patch("shutil.which", side_effect=_which_only("vulture")),
             patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py", "src/utils.py"]),
+            patch(
+                "kstrl.verify.run_scrubbed",
+                return_value=_completed(
+                    "vulture",
+                    3,
+                    "src/main.py:10: unused function 'old_handler' (60% confidence)\n"
+                    "src/utils.py:25: unused variable 'temp' (90% confidence)\n",
+                ),
+            ),
         ):
-            result = check_dead_code(tmp_path, "main")
+            outcome = check_dead_code(tmp_path, "main")
 
-        assert result.passed is False
-        assert "2 dead code issues" in result.message
-        assert len(result.details) == 2
+        assert isinstance(outcome, CheckResult)
+        assert outcome.passed is False
+        assert outcome.message == "2 dead code issues remaining"
+        assert len(outcome.details) == 2
+
+    def test_a_clean_scan_is_a_passing_row(self, tmp_path: Path) -> None:
+        with (
+            patch("shutil.which", side_effect=_which_only("vulture")),
+            patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py"]),
+            patch("kstrl.verify.run_scrubbed", return_value=_completed("vulture", 0)),
+        ):
+            outcome = check_dead_code(tmp_path, "main")
+
+        assert isinstance(outcome, CheckResult)
+        assert outcome.passed is True
+        assert outcome.message == "no remaining dead code"
 
     def test_custom_command_used(self, tmp_path: Path) -> None:
-        """When a custom command is provided, it runs instead of vulture."""
-        import subprocess as sp
+        """The operator's own detector replaces vulture, and replaces
+        the diff read that only exists to build vulture's argument
+        list."""
+        calls: list[str] = []
 
-        def mock_run(cmd: str, **kwargs: object) -> sp.CompletedProcess[str]:
-            if "ruff check --fix" in cmd:
-                return sp.CompletedProcess(cmd, 0, "", "")
-            if "my-custom-checker" in cmd:
-                return sp.CompletedProcess(cmd, 0, "", "")
-            return sp.CompletedProcess(cmd, 0, "", "")
+        def run(cmd: object, **_: object) -> CompletedProcess[str]:
+            calls.append(str(cmd))
+            return _completed(cmd)
 
         with (
-            patch("shutil.which", return_value="/usr/bin/ruff"),
-            patch("kstrl.verify.run_scrubbed", side_effect=mock_run),
+            patch("shutil.which", side_effect=_which_only()),
+            patch("kstrl.verify.git.get_diff_names") as diff,
+            patch("kstrl.verify.run_scrubbed", side_effect=run),
         ):
-            result = check_dead_code(tmp_path, "main", command="my-custom-checker src/")
+            outcome = check_dead_code(tmp_path, "main", command="my-custom-checker src/")
 
-        assert result.passed is True
+        assert isinstance(outcome, CheckResult)
+        assert outcome.passed is True
+        assert calls == ["my-custom-checker src/"]
+        assert diff.call_count == 0
 
-    def test_no_python_files_changed_passes(self, tmp_path: Path) -> None:
-        """When no Python files changed, skip vulture scan."""
-        import subprocess as sp
+    def test_file_names_from_the_diff_never_reach_a_shell(self, tmp_path: Path) -> None:
+        """The names come out of `git diff --name-only` over a diff an
+        agent wrote, and `run_scrubbed` runs a STRING through /bin/sh.
 
-        def mock_run(cmd: str, **kwargs: object) -> sp.CompletedProcess[str]:
-            return sp.CompletedProcess(cmd, 0, "", "")
+        Interpolated into that string, `my file.py` split into two paths
+        vulture could not find - exit 1 with output, which this check
+        reads as findings and FAILS the component for the wrong reason -
+        and `$(id).py` was command substitution the shell executed.
+        Both names are asserted to arrive as one argument each, verbatim.
+        """
+        hostile = ["src/my file.py", "src/$(id).py"]
+        calls: list[str | list[str]] = []
 
-        def mock_which(name: str) -> str | None:
-            if name in ("ruff", "vulture"):
-                return f"/usr/bin/{name}"
-            return None
+        def run(cmd: str | list[str], **_: object) -> CompletedProcess[str]:
+            calls.append(cmd)
+            return _completed(cmd)
 
         with (
-            patch("shutil.which", side_effect=mock_which),
-            patch("kstrl.verify.run_scrubbed", side_effect=mock_run),
-            patch("kstrl.verify.git.get_diff_names", return_value=["README.md", "docs/spec.md"]),
+            patch("shutil.which", side_effect=_which_only("vulture")),
+            patch("kstrl.verify.git.get_diff_names", return_value=hostile),
+            patch("kstrl.verify.run_scrubbed", side_effect=run),
         ):
-            result = check_dead_code(tmp_path, "main")
+            check_dead_code(tmp_path, "main")
 
-        assert result.passed is True
+        assert calls == [["vulture", "--min-confidence", "80", "--", *hostile]]
 
-    def test_included_in_verification_when_enabled(self, tmp_path: Path) -> None:
-        """When dead_code_cleanup is True, check_dead_code runs in verification."""
-        config = VerifyConfig(dead_code_cleanup=True)
+    def test_a_diff_authored_path_starting_with_a_hyphen_is_a_path(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The argv list closes the shell; `--` closes vulture's parser.
 
-        # Mock everything to pass
+        A changed file called `-v.py` is a legal git path and reaches
+        vulture in the option position without the separator. Measured
+        on vulture 2.16 over a directory holding `a.py` and `-v.py`:
+        `vulture -v.py a.py --min-confidence 80` exits 2 with
+        `vulture: error: unrecognized arguments: -.py`, which
+        `check_dead_code` reads as a finding and reports as a dead-code
+        FAIL naming the wrong cause, and
+        `vulture --min-confidence 80 -- -v.py a.py` exits 0.
+
+        Pinned as the exact argv rather than as "contains --", because
+        the separator only does anything where it is: before the paths
+        and after every option.
+        """
+        hostile = ["-v.py", "--min-confidence.py", "src/ok.py"]
+        calls: list[str | list[str]] = []
+
+        def run(cmd: str | list[str], **_: object) -> CompletedProcess[str]:
+            calls.append(cmd)
+            return _completed(cmd)
+
         with (
-            patch("kstrl.verify.check_prd_stories", return_value=CheckResult("prd_stories", True)),
-            patch("kstrl.verify.check_test_suite", return_value=CheckResult("test_suite", True)),
-            patch("kstrl.verify.check_typecheck", return_value=CheckResult("typecheck", True)),
-            patch("kstrl.verify.check_linter", return_value=CheckResult("linter", True)),
-            patch("kstrl.verify.check_diff_scope", return_value=CheckResult("diff_scope", True)),
+            patch("shutil.which", side_effect=_which_only("vulture")),
+            patch("kstrl.verify.git.get_diff_names", return_value=hostile),
+            patch("kstrl.verify.run_scrubbed", side_effect=run),
+        ):
+            check_dead_code(tmp_path, "main")
+
+        assert calls == [["vulture", "--min-confidence", "80", "--", *hostile]]
+
+    def test_the_mutation_gate_quotes_the_same_names(self, tmp_path: Path) -> None:
+        """`check_mutation_score` builds its command off the same helper
+        and off the same untrusted names.
+
+        A string, because `run_scrubbed` shells out for a string, so the
+        whole comma-joined value is quoted once and the metacharacters
+        are data: `shlex.split` of the built line gives one argument
+        back, which is what /bin/sh would pass.
+        """
+        hostile = ["src/my file.py", "src/$(id).py"]
+        calls: list[str] = []
+
+        def run(cmd: object, **_: object) -> CompletedProcess[str]:
+            calls.append(str(cmd))
+            return _completed(cmd, 0, "1 killed, 1 survived")
+
+        with (
+            patch("shutil.which", side_effect=_which_only("mutmut")),
+            patch("kstrl.verify.git.get_diff_names", return_value=hostile),
+            patch("kstrl.verify.run_scrubbed", side_effect=run),
+        ):
+            check_mutation_score(tmp_path, "main")
+
+        mutmut_run = next(c for c in calls if c.startswith("mutmut run"))
+        assert shlex.split(mutmut_run) == [
+            "mutmut",
+            "run",
+            "--paths-to-mutate=src/my file.py,src/$(id).py",
+            "--no-progress",
+        ]
+
+    def test_three_changed_files_are_one_comma_joined_argument(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """mutmut has ONE positional slot, so a space-separated list is
+        an outage rather than a different invocation.
+
+        Measured on mutmut 2.5.1: `mutmut run --help` prints
+        `Usage: mutmut run [OPTIONS] [ARGUMENT]`, and
+        `mutmut run --paths-to-mutate=a.py b.py c.py --no-progress`
+        exits non-zero with `Error: Got unexpected extra argument
+        (c.py)` having mutated nothing. Two files are accepted only
+        because the second fills that positional slot instead of being a
+        path to mutate. Three is the smallest number that shows it, and
+        three changed non-test Python files is an ordinary diff.
+        """
+        changed = ["a.py", "b.py", "c.py"]
+        calls: list[str] = []
+
+        def run(cmd: object, **_: object) -> CompletedProcess[str]:
+            calls.append(str(cmd))
+            return _completed(cmd, 0, "1 killed, 1 survived")
+
+        with (
+            patch("shutil.which", side_effect=_which_only("mutmut")),
+            patch("kstrl.verify.git.get_diff_names", return_value=changed),
+            patch("kstrl.verify.run_scrubbed", side_effect=run),
+        ):
+            check_mutation_score(tmp_path, "main")
+
+        mutmut_run = next(c for c in calls if c.startswith("mutmut run"))
+        assert mutmut_run == "mutmut run --paths-to-mutate=a.py,b.py,c.py --no-progress"
+        assert shlex.split(mutmut_run)[2:] == [
+            "--paths-to-mutate=a.py,b.py,c.py",
+            "--no-progress",
+        ]
+
+    def test_a_diff_git_could_not_read_is_a_fault_and_not_an_empty_diff(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """`no_target` is the one reason token that means "not a fault",
+        and the lenient git read handed it a bad base ref, a missing
+        `origin/<base>`, a non-repository and a timeout, all as `[]`.
+        Both callers of the helper are asserted, because the fix is in
+        the helper and one call site could be left behind."""
+        with (
+            patch("shutil.which", side_effect=_which_only("vulture", "mutmut")),
             patch(
-                "kstrl.verify.check_bad_patterns", return_value=CheckResult("bad_patterns", True)
+                "kstrl.verify.git.get_diff_names",
+                side_effect=GitDiffError("fatal: bad revision 'origin/main'"),
             ),
-            patch(
-                "kstrl.verify.check_dead_code", return_value=CheckResult("dead_code", True)
-            ) as mock_dc,
+            patch("kstrl.verify.run_scrubbed") as run,
         ):
-            result = run_mechanical_verification(
-                tmp_path, tmp_path / "prd.json", "main", None, config
+            dead_code = check_dead_code(tmp_path, "main")
+            mutation = check_mutation_score(tmp_path, "main")
+
+        for outcome, name in ((dead_code, "dead_code"), (mutation, "mutation_testing")):
+            assert isinstance(outcome, NotMeasured), name
+            assert (outcome.check, outcome.reason) == (name, NOT_MEASURED_COMMAND_FAILED)
+            assert "bad revision" in outcome.detail
+        # Nothing ran on a file list that does not exist.
+        assert run.call_count == 0
+
+    def test_a_failed_scan_with_nothing_readable_in_it_is_a_gap(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The decision is on the EXIT CODE, not on the output being
+        empty.
+
+        Round 2 of #335 gated the gap on empty output alone, so a
+        detector that exited non-zero and printed only lines the
+        `__all__` and comment filter drops fell straight through to
+        `no remaining dead code`: a failed scan reported as a clean
+        tree, which is the whole defect class this issue is about. The
+        output below is non-empty and filters to nothing.
+        """
+
+        def run(cmd: object, **_: object) -> CompletedProcess[str]:
+            return _completed(
+                cmd,
+                1,
+                "# vulture: could not open the whitelist\n"
+                "src/__all__.py:1: unused import 'os' (90% confidence)\n",
             )
 
-        mock_dc.assert_called_once()
-        assert any(c.name == "dead_code" for c in result.checks)
+        with (
+            patch("shutil.which", side_effect=_which_only("vulture")),
+            patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py"]),
+            patch("kstrl.verify.run_scrubbed", side_effect=run),
+        ):
+            outcome = check_dead_code(tmp_path, "main")
 
-    def test_excluded_from_verification_when_disabled(self, tmp_path: Path) -> None:
-        """When dead_code_cleanup is False (default), check is skipped."""
-        config = VerifyConfig(dead_code_cleanup=False)
+        assert isinstance(outcome, NotMeasured)
+        assert (outcome.check, outcome.reason) == ("dead_code", NOT_MEASURED_COMMAND_FAILED)
+        assert "exited 1 and reported no finding this check could read" in outcome.detail
+        # And the tool's own last line, so the operator is not left
+        # guessing which of the two it was.
+        assert outcome.detail.endswith("unused import 'os' (90% confidence)")
+
+    def test_the_diff_read_asks_git_strictly(self, tmp_path: Path) -> None:
+        """The test above stubs a git that raises whatever it is asked,
+        so it pins the `except` clause and not the `strict=True` that
+        reaches it.
+
+        Measured against real git on a repo with a bad base ref:
+        `get_diff_names(..., strict=False)` returns `[]`, which both
+        callers turn into `no_target` ("nothing to scan, not a fault"),
+        and `strict=True` raises `GitDiffError`. So the stub here
+        HONOURS the flag: with `strict=True` intact both callers record
+        `command_failed`, and flipping that one keyword to `False` makes
+        the same stub return `[]` and both callers report `no_target`,
+        which is the fail-open this change exists to close. A guard you
+        did not mutate is a guard you did not test, per layer.
+        """
+        seen: list[bool] = []
+
+        def diff(base: str, cwd: Path, *, strict: bool = False) -> list[str]:
+            seen.append(strict)
+            if strict:
+                raise GitDiffError("fatal: bad revision 'origin/main'")
+            return []
 
         with (
-            patch("kstrl.verify.check_prd_stories", return_value=CheckResult("prd_stories", True)),
-            patch("kstrl.verify.check_test_suite", return_value=CheckResult("test_suite", True)),
-            patch("kstrl.verify.check_typecheck", return_value=CheckResult("typecheck", True)),
-            patch("kstrl.verify.check_linter", return_value=CheckResult("linter", True)),
-            patch("kstrl.verify.check_diff_scope", return_value=CheckResult("diff_scope", True)),
-            patch(
-                "kstrl.verify.check_bad_patterns", return_value=CheckResult("bad_patterns", True)
-            ),
+            patch("shutil.which", side_effect=_which_only("vulture", "mutmut")),
+            patch("kstrl.verify.git.get_diff_names", side_effect=diff),
+            patch("kstrl.verify.run_scrubbed"),
         ):
-            result = run_mechanical_verification(
-                tmp_path, tmp_path / "prd.json", "main", None, config
-            )
+            dead_code = check_dead_code(tmp_path, "main")
+            mutation = check_mutation_score(tmp_path, "main")
 
-        assert not any(c.name == "dead_code" for c in result.checks)
+        assert seen == [True, True]
+        for outcome, name in ((dead_code, "dead_code"), (mutation, "mutation_testing")):
+            assert isinstance(outcome, NotMeasured), name
+            assert (outcome.check, outcome.reason) == (name, NOT_MEASURED_COMMAND_FAILED), name
+
+
+def test_a_gap_detail_prefers_a_real_message_over_a_blank_stderr() -> None:
+    """`result.stderr or result.stdout` chose stderr whenever it was
+    truthy, and a bare newline is truthy.
+
+    The line then stripped and split to nothing and the function
+    answered "no output" while the sentence a reader of the gap needs
+    sat in stdout. This is the one line that can throw away the whole
+    content of a `command_failed` detail, and it reaches both the ruff
+    phase and the mutation gate.
+    """
+    from kstrl.verify import _last_output_line
+
+    blank_stderr = _completed("x", 2, "real error in stdout\n", "\n")
+    assert _last_output_line(blank_stderr) == "real error in stdout"
+    # stderr still wins when it says something, which is why it is first.
+    both = _completed("x", 2, "chatter\n", "the real error\n")
+    assert _last_output_line(both) == "the real error"
+    assert _last_output_line(_completed("x", 2, "", "")) == "no output"
+
+
+@dataclass(frozen=True)
+class RuffShape:
+    """One captured ruff run: what it printed and what it means.
+
+    `output` is `stdout + stderr` in that order, which is what
+    `check_dead_code_ruff` hands the parse, byte for byte as the binary
+    printed it. `versions` are the ruff versions measured to print it,
+    and `count` is what `_ruff_count` must return, `None` meaning "no
+    shape this parse knows".
+    """
+
+    id: str
+    versions: tuple[str, ...]
+    tree: str
+    read_only: bool
+    exit_code: int
+    output: str
+    count: int | None
+
+
+#: Every shape ruff prints for this phase's two commands, MEASURED
+#: rather than remembered. `lanes/335/r2/ruff_shapes.py` ran ruff 0.2.0,
+#: 0.3.0 and the pinned 0.16.1, in both modes, over five trees: clean,
+#: only-safely-fixable findings, only-unsafely-fixable findings, a mix
+#: of the two, and a tree with no Python file in it. The strings below
+#: are its captured output. Rows the tool cannot produce come last and
+#: expect `None`.
+#:
+#: This table is the control. Round 2 of #335 reasoned about which
+#: shapes ruff prints and got two of them wrong: fixing mode with
+#: nothing safely fixable prints `Found N errors.` alone, and ruff
+#: 0.2.0 through 0.3.2 print NOTHING at all on a clean tree. Both were
+#: read as unrecognisable and reported as a tool failure over a run that
+#: had measured something (#335 round 3).
+RUFF_SHAPES: tuple[RuffShape, ...] = (
+    RuffShape(
+        id="clean-all-checks-passed",
+        versions=("0.3.3+", "0.16.1"),
+        tree="clean",
+        read_only=True,
+        exit_code=0,
+        output="All checks passed!\n",
+        count=0,
+    ),
+    RuffShape(
+        id="clean-all-checks-passed-fixing",
+        versions=("0.3.3+", "0.16.1"),
+        tree="clean",
+        read_only=False,
+        exit_code=0,
+        output="All checks passed!\n",
+        count=0,
+    ),
+    RuffShape(
+        id="clean-silent",
+        versions=("0.2.0", "0.3.0"),
+        tree="clean",
+        read_only=True,
+        exit_code=0,
+        output="",
+        count=0,
+    ),
+    RuffShape(
+        id="clean-silent-fixing",
+        versions=("0.2.0", "0.3.0"),
+        tree="clean",
+        read_only=False,
+        exit_code=0,
+        output="",
+        count=0,
+    ),
+    RuffShape(
+        id="no-python-files-warning-only",
+        versions=("0.2.0", "0.3.0"),
+        tree="no-python-files",
+        read_only=True,
+        exit_code=0,
+        output="warning: No Python files found under the given path(s)\n",
+        count=0,
+    ),
+    RuffShape(
+        id="no-python-files-warning-and-clean",
+        versions=("0.16.1",),
+        tree="no-python-files",
+        read_only=False,
+        exit_code=0,
+        output="All checks passed!\nwarning: No Python files found under the given path(s)\n",
+        count=0,
+    ),
+    RuffShape(
+        id="safely-fixable-read-only",
+        versions=("0.2.0", "0.3.0", "0.16.1"),
+        tree="two-unused-imports",
+        read_only=True,
+        exit_code=1,
+        output=(
+            "mod.py:1:8: F401 [*] `os` imported but unused\n"
+            "mod.py:2:8: F401 [*] `sys` imported but unused\n"
+            "Found 2 errors.\n"
+            "[*] 2 fixable with the `--fix` option.\n"
+        ),
+        count=2,
+    ),
+    RuffShape(
+        id="safely-fixable-fixing",
+        versions=("0.2.0", "0.3.0", "0.16.1"),
+        tree="two-unused-imports",
+        read_only=False,
+        exit_code=0,
+        output="Found 2 errors (2 fixed, 0 remaining).\n",
+        count=2,
+    ),
+    RuffShape(
+        id="unsafe-only-read-only",
+        versions=("0.2.0", "0.3.0", "0.16.1"),
+        tree="three-unsafe-f841",
+        read_only=True,
+        exit_code=1,
+        output=(
+            "mod.py:6:5: F841 Local variable `x` is assigned to but never used\n"
+            "mod.py:7:5: F841 Local variable `y` is assigned to but never used\n"
+            "mod.py:8:5: F841 Local variable `z` is assigned to but never used\n"
+            "Found 3 errors.\n"
+            "No fixes available (3 hidden fixes can be enabled with the "
+            "`--unsafe-fixes` option).\n"
+        ),
+        count=0,
+    ),
+    RuffShape(
+        id="unsafe-only-fixing",
+        versions=("0.2.0", "0.3.0", "0.16.1"),
+        tree="three-unsafe-f841",
+        read_only=False,
+        exit_code=1,
+        output=(
+            "mod.py:6:5: F841 Local variable `x` is assigned to but never used\n"
+            "mod.py:7:5: F841 Local variable `y` is assigned to but never used\n"
+            "mod.py:8:5: F841 Local variable `z` is assigned to but never used\n"
+            "Found 3 errors.\n"
+            "No fixes available (3 hidden fixes can be enabled with the "
+            "`--unsafe-fixes` option).\n"
+        ),
+        count=0,
+    ),
+    RuffShape(
+        id="mixed-read-only",
+        versions=("0.2.0", "0.3.0", "0.16.1"),
+        tree="two-imports-one-unsafe-f841",
+        read_only=True,
+        exit_code=1,
+        output=(
+            "mod.py:1:8: F401 [*] `os` imported but unused\n"
+            "mod.py:2:8: F401 [*] `sys` imported but unused\n"
+            "mod.py:10:5: F841 Local variable `x` is assigned to but never used\n"
+            "Found 3 errors.\n"
+            "[*] 2 fixable with the `--fix` option (1 hidden fix can be enabled with "
+            "the `--unsafe-fixes` option).\n"
+        ),
+        count=2,
+    ),
+    RuffShape(
+        id="mixed-fixing",
+        versions=("0.2.0", "0.3.0", "0.16.1"),
+        tree="two-imports-one-unsafe-f841",
+        read_only=False,
+        exit_code=1,
+        output=(
+            "mod.py:8:5: F841 Local variable `x` is assigned to but never used\n"
+            "Found 3 errors (2 fixed, 1 remaining).\n"
+            "No fixes available (1 hidden fix can be enabled with the "
+            "`--unsafe-fixes` option).\n"
+        ),
+        count=2,
+    ),
+    # Not ruff with these flags. Kept because the parse must REFUSE them
+    # rather than read them as zero, which is the whole of #335's B1.
+    RuffShape(
+        id="json-body-no-summary",
+        versions=("not printed under --output-format=concise",),
+        tree="two-unused-imports",
+        read_only=False,
+        exit_code=1,
+        output='[\n  {\n    "code": "F401",\n    "filename": "mod.py"\n  }\n]\n',
+        count=None,
+    ),
+    RuffShape(
+        id="json-body-no-summary-read-only",
+        versions=("not printed under --output-format=concise",),
+        tree="two-unused-imports",
+        read_only=True,
+        exit_code=1,
+        output='[\n  {\n    "code": "F401",\n    "filename": "mod.py"\n  }\n]\n',
+        count=None,
+    ),
+    RuffShape(
+        id="a-future-ruff-renames-its-summary",
+        versions=("hypothetical",),
+        tree="two-unused-imports",
+        read_only=False,
+        exit_code=1,
+        output="Located 2 problems (2 repaired, 0 outstanding).\n",
+        count=None,
+    ),
+)
+
+RUFF_SHAPES_BY_ID: dict[str, RuffShape] = {shape.id: shape for shape in RUFF_SHAPES}
+
+#: The four shapes the rest of this file stubs by name. One home, so a
+#: fixture cannot drift away from the run it was captured from.
+RUFF_CLEAN = RUFF_SHAPES_BY_ID["clean-all-checks-passed"].output
+RUFF_FIXED_2 = RUFF_SHAPES_BY_ID["mixed-fixing"].output
+RUFF_READ_ONLY_3 = RUFF_SHAPES_BY_ID["mixed-read-only"].output
+RUFF_JSON_BODY = RUFF_SHAPES_BY_ID["json-body-no-summary"].output
+#: Fixing mode over a tree whose every finding has only an unsafe fix.
+#: `Found N errors.` alone, and the shape round 2 of #335 refused.
+RUFF_FOUND_3_NONE_FIXED = RUFF_SHAPES_BY_ID["unsafe-only-fixing"].output
+
+
+class TestRuffShapes:
+    """`_ruff_count` against every shape real ruff was measured to print.
+
+    The table IS the control. There is no code mutation that finds a
+    missing recogniser, because the defect is reached by an INPUT and
+    not by a node: round 1 of #335 and round 2 both shipped one, in the
+    same function, and neither round's mutation set could see it. What
+    closes it is a captured corpus wide enough that a shape the parse
+    does not know is a shape the tool does not print.
+    """
+
+    @pytest.mark.parametrize("shape", RUFF_SHAPES, ids=lambda s: s.id)
+    def test_the_parse_reads_every_shape_ruff_prints(self, shape: RuffShape) -> None:
+        assert (
+            _ruff_count(shape.output, read_only=shape.read_only, returncode=shape.exit_code)
+            == shape.count
+        )
+
+    def test_the_corpus_covers_both_modes_and_both_answers(self) -> None:
+        """A census over the table, so a row deleted to make a red test
+        green shows up as a missing combination rather than as silence.
+
+        Every (mode, recognised-or-not) pair is present, and the shapes
+        ruff was measured to print are recognised, all of them.
+        """
+        measured = [s for s in RUFF_SHAPES if s.count is not None]
+        refused = [s for s in RUFF_SHAPES if s.count is None]
+        assert {s.read_only for s in measured} == {True, False}
+        assert {s.read_only for s in refused} == {True, False}
+        assert len(measured) == 12
+        assert len(refused) == 3
+        assert {s.tree for s in measured} == {
+            "clean",
+            "no-python-files",
+            "two-unused-imports",
+            "three-unsafe-f841",
+            "two-imports-one-unsafe-f841",
+        }
+
+    @pytest.mark.parametrize(
+        "shape",
+        [s for s in RUFF_SHAPES if s.count is None],
+        ids=lambda s: s.id,
+    )
+    def test_a_shape_the_parse_refuses_becomes_a_gap_quoting_the_raw_output(
+        self,
+        shape: RuffShape,
+        tmp_path: Path,
+    ) -> None:
+        """`None` is not a number, and the caller must not spend it as one.
+
+        The gap names the exit code and quotes ruff's own last line, so
+        an operator reading `not_measured` can tell a renamed summary
+        from a crashed tool without re-running anything.
+        """
+
+        def run(cmd: object, **_: object) -> CompletedProcess[str]:
+            return _completed(cmd, shape.exit_code, shape.output)
+
+        with (
+            patch("shutil.which", side_effect=_which_only("ruff")),
+            patch("kstrl.verify.run_scrubbed", side_effect=run),
+        ):
+            outcome = check_dead_code_ruff(tmp_path, read_only=shape.read_only)
+
+        assert isinstance(outcome, NotMeasured)
+        assert (outcome.check, outcome.reason) == ("dead_code_ruff", NOT_MEASURED_COMMAND_FAILED)
+        assert f"exited {shape.exit_code} and printed no count line" in outcome.detail
+        assert outcome.detail.endswith(shape.output.strip().splitlines()[-1])
+
+
+class TestCheckDeadCodeRuff:
+    """The ruff F401/F811/F841 phase, on its own (#335).
+
+    It always produces a row when ruff ran, because it always measured
+    something - zero fixes is a measurement. The three states in which
+    it did not run were invisible before the split: they were swallowed
+    inside the fused row, which reported the vulture verdict and said
+    nothing about ruff at all.
+    """
+
+    def test_ruff_not_installed_measures_nothing(self, tmp_path: Path) -> None:
+        with (
+            patch("shutil.which", side_effect=_which_only()),
+            patch("kstrl.verify.run_scrubbed") as run,
+        ):
+            outcome = check_dead_code_ruff(tmp_path)
+
+        assert isinstance(outcome, NotMeasured)
+        assert (outcome.check, outcome.reason) == ("dead_code_ruff", NOT_MEASURED_TOOL_MISSING)
+        assert run.call_count == 0
+
+    def test_a_timed_out_run_measures_nothing_and_commits_nothing(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        calls: list[str] = []
+
+        def run(cmd: object, **_: object) -> CompletedProcess[str]:
+            calls.append(str(cmd))
+            raise TimeoutExpired(str(cmd), 300)
+
+        with (
+            patch("shutil.which", side_effect=_which_only("ruff")),
+            patch("kstrl.verify.run_scrubbed", side_effect=run),
+        ):
+            outcome = check_dead_code_ruff(tmp_path, 300.0)
+
+        assert isinstance(outcome, NotMeasured)
+        assert (outcome.check, outcome.reason) == ("dead_code_ruff", NOT_MEASURED_TIMED_OUT)
+        assert not any("git" in c for c in calls)
+
+    def test_a_failed_run_measures_nothing_and_commits_nothing(self, tmp_path: Path) -> None:
+        """Measured on ruff 0.16.1: exit 0 clean or fixed, 1 findings, 2
+        a configuration error. Before the split, exit 2 parsed to zero
+        fixes and read as a clean auto-fix phase."""
+        calls: list[str] = []
+
+        def run(cmd: object, **_: object) -> CompletedProcess[str]:
+            calls.append(str(cmd))
+            return _completed(cmd, 2, "", "error: Failed to parse ruff.toml: TOML parse error")
+
+        with (
+            patch("shutil.which", side_effect=_which_only("ruff")),
+            patch("kstrl.verify.run_scrubbed", side_effect=run),
+        ):
+            outcome = check_dead_code_ruff(tmp_path)
+
+        assert isinstance(outcome, NotMeasured)
+        assert (outcome.check, outcome.reason) == ("dead_code_ruff", NOT_MEASURED_COMMAND_FAILED)
+        # The exact detail, because the exit-code guard and the
+        # unreadable-output guard below it both produce a
+        # `command_failed` gap and they mean different things: ruff
+        # refused to run, against ruff ran and said something this
+        # cannot read. Asserting only the reason let the exit-code guard
+        # be deleted with the whole suite still green (measured).
+        assert outcome.detail == (
+            "ruff check exited 2: error: Failed to parse ruff.toml: TOML parse error"
+        )
+        assert not any("git" in c for c in calls)
+
+    def test_fixes_are_counted_staged_and_committed(self, tmp_path: Path) -> None:
+        """The factory path is untouched by the split: it still fixes,
+        stages everything except the state directory (#274) and commits.
+
+        ``run_scrubbed`` takes a shell string OR an argv list, and the
+        staging call is a list so the ``:(exclude)`` pathspec reaches git
+        unmangled. Rendered to one string per call so the assertions read
+        the same for both forms.
+        """
+        calls: list[str] = []
+
+        def run(cmd: str | list[str], **_: object) -> CompletedProcess[str]:
+            rendered = cmd if isinstance(cmd, str) else " ".join(cmd)
+            calls.append(rendered)
+            if "ruff check" in rendered:
+                return _completed(cmd, 1, RUFF_FIXED_2)
+            return _completed(cmd)
+
+        with (
+            patch("shutil.which", side_effect=_which_only("ruff")),
+            patch("kstrl.verify.run_scrubbed", side_effect=run),
+        ):
+            outcome = check_dead_code_ruff(tmp_path)
+
+        assert isinstance(outcome, CheckResult)
+        assert outcome.name == "dead_code_ruff"
+        assert outcome.passed is True
+        # The count ruff could not remove is on the same line as the
+        # count it did remove, and without it `ruff auto-fixed 0` reads
+        # the same on a clean tree and on a tree of unsafe-fix F841s.
+        assert outcome.message == "ruff auto-fixed 2, 1 remaining"
+        assert any("ruff check --fix" in c for c in calls)
+        staged = next(c for c in calls if c.startswith("git add"))
+        assert staged == "git add -A -- . :(exclude).kstrl"
+        assert any("git commit" in c for c in calls)
+
+    def test_a_commit_that_did_not_land_is_named_in_the_row(self, tmp_path: Path) -> None:
+        """`run_scrubbed` never raises on a non-zero exit, so neither
+        git status used to be read: a commit refused by a repo hook, or
+        aborted for want of a user.email, left ruff's deletions
+        uncommitted while the row said `ruff auto-fixed 2`. The checks
+        that would supposedly notice all run BEFORE this one."""
+
+        def run(cmd: str | list[str], **_: object) -> CompletedProcess[str]:
+            rendered = cmd if isinstance(cmd, str) else " ".join(cmd)
+            if "ruff check" in rendered:
+                return _completed(cmd, 1, RUFF_FIXED_2)
+            if rendered.startswith("git commit"):
+                return _completed(cmd, 1, "", "error: hook declined to update refs/heads/work")
+            return _completed(cmd)
+
+        with (
+            patch("shutil.which", side_effect=_which_only("ruff")),
+            patch("kstrl.verify.run_scrubbed", side_effect=run),
+        ):
+            outcome = check_dead_code_ruff(tmp_path)
+
+        assert isinstance(outcome, CheckResult)
+        assert outcome.message == (
+            "ruff auto-fixed 2, 1 remaining, not committed: git commit exited 1: "
+            "error: hook declined to update refs/heads/work"
+        )
+
+    def test_output_it_cannot_read_is_a_gap_and_never_a_zero(self, tmp_path: Path) -> None:
+        """The tenth non-measurement, and the one round 1 left open.
+
+        A project setting `[tool.ruff] output-format` to anything but a
+        text format makes ruff print findings with no summary line. The
+        parse returned 0 for that, 0 is also what "removed nothing"
+        says, and the row read `dead_code_ruff pass ruff auto-fixed 0`
+        over a worktree ruff had just edited. Measured end to end before
+        the fix: exit 1, `M mod.py` left uncommitted, row passing.
+
+        The flag pinned on the command line makes this unreachable with
+        ruff 0.16.1 - measured, `--output-format=concise` beats both the
+        config key and RUFF_OUTPUT_FORMAT - so this test drives the
+        parser directly. Both layers are needed: the flag closes today's
+        route in, and the refusal is what holds when a later ruff renames
+        its summary.
+        """
+        calls: list[str] = []
+
+        def run(cmd: object, **_: object) -> CompletedProcess[str]:
+            calls.append(str(cmd))
+            return _completed(cmd, 1, RUFF_JSON_BODY)
+
+        for read_only in (False, True):
+            calls.clear()
+            with (
+                patch("shutil.which", side_effect=_which_only("ruff")),
+                patch("kstrl.verify.run_scrubbed", side_effect=run),
+            ):
+                outcome = check_dead_code_ruff(tmp_path, read_only=read_only)
+
+            assert isinstance(outcome, NotMeasured), read_only
+            assert (outcome.check, outcome.reason) == (
+                "dead_code_ruff",
+                NOT_MEASURED_COMMAND_FAILED,
+            )
+            assert "printed no count line" in outcome.detail
+            # And nothing is committed over a measurement that does not
+            # exist, which is the half that left the tree dirty.
+            assert not any("git" in c for c in calls)
+
+    def test_the_output_format_is_pinned_on_the_command_line(self, tmp_path: Path) -> None:
+        """Pinned for the same reason as --no-fix: the measured project
+        owns the config file, and `output-format = "json"` there removes
+        the line this phase parses."""
+        calls: list[str] = []
+
+        def run(cmd: object, **_: object) -> CompletedProcess[str]:
+            calls.append(str(cmd))
+            return _completed(cmd, 0, RUFF_CLEAN)
+
+        for read_only in (False, True):
+            calls.clear()
+            with (
+                patch("shutil.which", side_effect=_which_only("ruff")),
+                patch("kstrl.verify.run_scrubbed", side_effect=run),
+            ):
+                check_dead_code_ruff(tmp_path, read_only=read_only)
+
+            ruff_call = next(c for c in calls if "ruff check" in c)
+            assert "--output-format=concise" in ruff_call, read_only
+
+    def test_nothing_to_fix_is_still_a_row_and_still_commits_nothing(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Zero fixes is a measurement, so it is a row and not a gap."""
+        calls: list[str] = []
+
+        def run(cmd: object, **_: object) -> CompletedProcess[str]:
+            calls.append(str(cmd))
+            return _completed(cmd, 0, RUFF_CLEAN)
+
+        with (
+            patch("shutil.which", side_effect=_which_only("ruff")),
+            patch("kstrl.verify.run_scrubbed", side_effect=run),
+        ):
+            outcome = check_dead_code_ruff(tmp_path)
+
+        assert isinstance(outcome, CheckResult)
+        assert outcome.passed is True
+        assert outcome.message == "ruff auto-fixed 0"
+        assert not any("git" in c for c in calls)
+
+    def test_read_only_reports_instead_of_removing(self, tmp_path: Path) -> None:
+        """R10.1: ``ks sense`` runs against the operator's live checkout,
+        where ``ruff --fix`` rewrites their files, ``git add -A`` sweeps
+        in every unrelated untracked file and the commit moves their
+        HEAD. Read-only runs the SAME rule set and reports what the
+        factory would have removed."""
+        calls: list[str] = []
+
+        def run(cmd: object, **_: object) -> CompletedProcess[str]:
+            calls.append(str(cmd))
+            return _completed(cmd, 1, RUFF_READ_ONLY_3)
+
+        with (
+            patch("shutil.which", side_effect=_which_only("ruff")),
+            patch("kstrl.verify.run_scrubbed", side_effect=run),
+        ):
+            outcome = check_dead_code_ruff(tmp_path, read_only=True)
+
+        ruff_calls = [c for c in calls if "ruff check" in c]
+        assert len(ruff_calls) == 1
+        # --no-fix is explicit, not merely implied by omitting --fix: a
+        # project can set `fix = true` under [tool.ruff].
+        assert "--no-fix" in ruff_calls[0]
+        assert "--fix " not in ruff_calls[0]
+        # --no-cache: not even .ruff_cache appears in the measured tree.
+        assert "--no-cache" in ruff_calls[0]
+        assert not any("git add" in c for c in calls)
+        assert not any("git commit" in c for c in calls)
+        assert isinstance(outcome, CheckResult)
+        assert outcome.passed is True
+        # 2, not the 3 on the `Found` line: the fixing run on this exact
+        # output removes 2, and the word in the message is "removable".
+        # Reading `Found` made `ks sense` and the factory report
+        # different numbers for the same tree.
+        assert outcome.message == "ruff reports 2 auto-removable, not removed"
+
+    def test_findings_none_of_them_fixable_report_zero_removable(self, tmp_path: Path) -> None:
+        """The `[*]` line is absent when nothing is auto-removable, and
+        that is a measured zero rather than an unreadable output."""
+
+        def run(cmd: object, **_: object) -> CompletedProcess[str]:
+            return _completed(cmd, 1, "mod.py:6:5: F841 unused\nFound 1 error.\n")
+
+        with (
+            patch("shutil.which", side_effect=_which_only("ruff")),
+            patch("kstrl.verify.run_scrubbed", side_effect=run),
+        ):
+            outcome = check_dead_code_ruff(tmp_path, read_only=True)
+
+        assert isinstance(outcome, CheckResult)
+        assert outcome.message == "ruff reports 0 auto-removable, not removed"
+
+    def test_findings_none_of_them_fixable_are_a_row_in_fixing_mode_too(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The fixing-mode twin of the test above, and the shape round 2
+        of #335 refused.
+
+        ruff omits `(M fixed, K remaining)` entirely when `--fix` had
+        nothing SAFE to fix and prints `Found N errors.` instead.
+        Measured on 0.2.0, 0.3.0 and 0.16.1 over a tree whose only
+        findings are three F841 locals assigned from a call, which ruff
+        marks unsafe: exit 1, that line, and `No fixes available (3
+        hidden fixes ...)` under it. Round 2 read it as unrecognisable
+        and reported a healthy run as `command_failed`, on a condition
+        an engineer iteration reaches by leaving one `x = do_thing()`
+        behind.
+
+        The `, 3 remaining` half is what keeps this distinguishable from
+        a clean tree, which is also `ruff auto-fixed 0`.
+        """
+        calls: list[str] = []
+
+        def run(cmd: object, **_: object) -> CompletedProcess[str]:
+            calls.append(str(cmd))
+            return _completed(cmd, 1, RUFF_FOUND_3_NONE_FIXED)
+
+        with (
+            patch("shutil.which", side_effect=_which_only("ruff")),
+            patch("kstrl.verify.run_scrubbed", side_effect=run),
+        ):
+            outcome = check_dead_code_ruff(tmp_path)
+
+        assert isinstance(outcome, CheckResult)
+        assert outcome.passed is True
+        assert outcome.message == "ruff auto-fixed 0, 3 remaining"
+        # Nothing was removed, so nothing is staged or committed.
+        assert not any("git" in c for c in calls)
+
+    def test_a_clean_tree_on_ruff_0_2_0_is_a_measured_zero(self, tmp_path: Path) -> None:
+        """ruff 0.2.0 through 0.3.2 print NOTHING on a clean tree.
+
+        Measured with this phase's exact flags: 0.2.0, 0.3.0 and 0.3.2
+        exit 0 with empty output; 0.3.3 onwards print `All checks
+        passed!`. 0.2.0 is this phase's own floor, because
+        `--output-format=concise` does not exist before it, so the
+        version at the bottom of the supported range had every clean run
+        reported as a tool failure. A tree with no Python file in it is
+        the same shape under a `warning:` line.
+        """
+        for output in ("", "warning: No Python files found under the given path(s)\n"):
+
+            def run(cmd: object, _out: str = output, **_: object) -> CompletedProcess[str]:
+                return _completed(cmd, 0, _out)
+
+            for read_only in (False, True):
+                with (
+                    patch("shutil.which", side_effect=_which_only("ruff")),
+                    patch("kstrl.verify.run_scrubbed", side_effect=run),
+                ):
+                    outcome = check_dead_code_ruff(tmp_path, read_only=read_only)
+
+                assert isinstance(outcome, CheckResult), (output, read_only)
+                assert outcome.passed is True
+                assert outcome.message == (
+                    "ruff reports 0 auto-removable, not removed"
+                    if read_only
+                    else "ruff auto-fixed 0"
+                )
+
+    def test_an_empty_output_at_a_nonzero_exit_is_still_a_gap(self, tmp_path: Path) -> None:
+        """The clean-tree recogniser is paired with `returncode == 0`,
+        and that pairing is what makes it a measurement.
+
+        Exit 1 means ruff has findings to report, so exit 1 with nothing
+        printed is a ruff that did not say what it did. Without the
+        exit-code half, the recogniser would read every silent failure
+        inside 0 and 1 as a clean tree, which is the defect it was added
+        to close from the other side.
+        """
+
+        def run(cmd: object, **_: object) -> CompletedProcess[str]:
+            return _completed(cmd, 1, "")
+
+        with (
+            patch("shutil.which", side_effect=_which_only("ruff")),
+            patch("kstrl.verify.run_scrubbed", side_effect=run),
+        ):
+            outcome = check_dead_code_ruff(tmp_path)
+
+        assert isinstance(outcome, NotMeasured)
+        assert (outcome.check, outcome.reason) == ("dead_code_ruff", NOT_MEASURED_COMMAND_FAILED)
+        assert "exited 1 and printed no count line" in outcome.detail
+
+    def test_a_ruff_too_old_for_the_flag_names_its_own_cause(self, tmp_path: Path) -> None:
+        """`--output-format=concise` puts a floor under this phase at
+        ruff 0.2.0, and the gap has to say which wall it hit.
+
+        ruff is a clap CLI, so it prints the diagnosis FIRST and
+        `For more information, try '--help'.` last. Measured: 0.0.272
+        prints `error: unexpected argument '--output-format' found`, and
+        0.1.0 and 0.1.15 print `error: invalid value 'concise' for
+        '--output-format <OUTPUT_FORMAT>'`, both exiting 2. Round 2 took
+        the LAST line, so the gap read `ruff check exited 2: For more
+        information, try '--help'.` and named no cause at all.
+
+        The stderr below is ruff 0.1.15's, verbatim.
+        """
+        clap_error = (
+            "error: invalid value 'concise' for '--output-format <OUTPUT_FORMAT>'\n"
+            "  [possible values: text, json, json-lines, junit, grouped, github, "
+            "gitlab, pylint, azure, sarif]\n"
+            "\n"
+            "For more information, try '--help'.\n"
+        )
+
+        def run(cmd: object, **_: object) -> CompletedProcess[str]:
+            return _completed(cmd, 2, "", clap_error)
+
+        with (
+            patch("shutil.which", side_effect=_which_only("ruff")),
+            patch("kstrl.verify.run_scrubbed", side_effect=run),
+        ):
+            outcome = check_dead_code_ruff(tmp_path)
+
+        assert isinstance(outcome, NotMeasured)
+        assert (outcome.check, outcome.reason) == ("dead_code_ruff", NOT_MEASURED_COMMAND_FAILED)
+        assert outcome.detail == (
+            "ruff check exited 2: error: invalid value 'concise' for "
+            "'--output-format <OUTPUT_FORMAT>'"
+        )
+
+    def test_a_failure_with_no_error_line_still_carries_its_last_line(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """`_tool_failure_line` prefers the first `error:` line and
+        falls back to `_last_output_line`, so a tool that does not use
+        clap's prefix is no worse off than before."""
+
+        def run(cmd: object, **_: object) -> CompletedProcess[str]:
+            return _completed(cmd, 2, "", "Traceback (most recent call last):\nBoom: no\n")
+
+        with (
+            patch("shutil.which", side_effect=_which_only("ruff")),
+            patch("kstrl.verify.run_scrubbed", side_effect=run),
+        ):
+            outcome = check_dead_code_ruff(tmp_path)
+
+        assert isinstance(outcome, NotMeasured)
+        assert outcome.detail == "ruff check exited 2: Boom: no"
+
+
+#: ``CHEAP_GATES`` plus the opt-in dead-code phases, with the diff
+#: comparison off so the only rows are the three cheap gates and
+#: whichever of ``dead_code_ruff`` / ``dead_code`` actually measured
+#: something. Same reuse as ``MUTATION_GATES`` above.
+DEAD_CODE_GATES = replace(CHEAP_GATES, dead_code_cleanup=True, check_diff_scope=False)
+
+
+def _dead_code_verification(
+    root: Path,
+    *,
+    tools: tuple[str, ...] = ("ruff", "vulture"),
+    ruff: CompletedProcess[str] | BaseException | None = None,
+    detect: CompletedProcess[str] | BaseException | None = None,
+    diff: list[str] | BaseException | None = None,
+    seen: list[str] | None = None,
+    config: VerifyConfig | None = None,
+    read_only: bool = False,
+) -> VerificationResult:
+    """Phase 1 over ``root`` with both dead-code phases driven by stubs.
+
+    Through the real ``run_mechanical_verification`` rather than the
+    check functions, because the rows and the sidecar are what every
+    consumer reads and the split is exactly about which of the two a
+    phase lands in.
+
+    ``ruff`` and ``detect`` are each a finished process to return or an
+    exception to raise; ``tools`` is what is on PATH. Dispatch is by
+    command PREFIX and never by "everything else", so the three cheap
+    gates and the ``git add`` / ``git commit`` pair cannot be mistaken
+    for the detector.
+
+    An unstubbed ruff call answers with :data:`RUFF_CLEAN`, not with
+    empty output, because empty output is not a thing ruff produces and
+    the parse now refuses a shape it cannot recognise rather than
+    reading it as zero (#335 round 2). A stub answering with something
+    the real tool never prints tests the parser against fiction.
+
+    ``read_only`` is forwarded to ``run_mechanical_verification`` rather
+    than to a check, because that is how ``ks sense`` reaches it.
+    """
+    recorded = [] if seen is None else seen
+
+    def run(cmd: str | list[str], **_: object) -> CompletedProcess[str]:
+        text = cmd if isinstance(cmd, str) else " ".join(cmd)
+        recorded.append(text)
+        default = _completed(cmd)
+        if text.startswith("ruff check"):
+            outcome = ruff
+            default = _completed(cmd, 0, RUFF_CLEAN)
+        elif text.startswith("vulture"):
+            outcome = detect
+        else:
+            outcome = None
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome if outcome is not None else default
+
+    # `diff` is what git ANSWERS, and one of the answers is a refusal:
+    # `_changed_non_test_python` reads strictly, so a GitDiffError has to
+    # be reachable from here or the census cannot hold that state.
+    if isinstance(diff, BaseException):
+        diff_patch = patch("kstrl.verify.git.get_diff_names", side_effect=diff)
+    else:
+        diff_patch = patch(
+            "kstrl.verify.git.get_diff_names",
+            return_value=["src/main.py"] if diff is None else diff,
+        )
+    with (
+        patch("shutil.which", side_effect=_which_only(*tools)),
+        patch("kstrl.verify.run_scrubbed", side_effect=run),
+        diff_patch,
+    ):
+        return run_mechanical_verification(
+            root,
+            None,
+            "main",
+            None,
+            config or DEAD_CODE_GATES,
+            read_only=read_only,
+        )
+
+
+def _dead_code_rows(result: VerificationResult) -> list[str]:
+    return [c.name for c in result.checks if c.name.startswith("dead_code")]
+
+
+class TestDeadCodeRowsOnlyExistWhenMeasured:
+    """#335 at the level every consumer reads: ``checks``, and the
+    sidecar beside it.
+
+    ``check_dead_code`` fused two phases into one row - a ruff auto-fix
+    that ran and a vulture scan that did not - so omitting the row would
+    have discarded a real measurement and keeping it reported a pass for
+    a scan that never happened. Split, each phase answers for itself.
+    """
+
+    @pytest.mark.parametrize(
+        "stubs, gap, survivor, survivor_message",
+        [
+            pytest.param(
+                {"tools": ("ruff",)},
+                ("dead_code", NOT_MEASURED_TOOL_MISSING),
+                "dead_code_ruff",
+                "ruff auto-fixed 0",
+                id="vulture-missing",
+            ),
+            pytest.param(
+                {
+                    "tools": ("ruff",),
+                    "ruff": _completed("ruff", 0, "Found 2 errors (2 fixed, 0 remaining)."),
+                },
+                ("dead_code", NOT_MEASURED_TOOL_MISSING),
+                "dead_code_ruff",
+                "ruff auto-fixed 2",
+                id="vulture-missing-after-ruff-fixed-2",
+            ),
+            pytest.param(
+                {"diff": GitDiffError("fatal: bad revision 'origin/main'")},
+                ("dead_code", NOT_MEASURED_COMMAND_FAILED),
+                "dead_code_ruff",
+                "ruff auto-fixed 0",
+                id="git-could-not-read-the-diff",
+            ),
+            pytest.param(
+                {"detect": TimeoutExpired("vulture", 30)},
+                ("dead_code", NOT_MEASURED_TIMED_OUT),
+                "dead_code_ruff",
+                "ruff auto-fixed 0",
+                id="vulture-timed-out",
+            ),
+            pytest.param(
+                {"detect": _completed("vulture", 2)},
+                ("dead_code", NOT_MEASURED_COMMAND_FAILED),
+                "dead_code_ruff",
+                "ruff auto-fixed 0",
+                id="vulture-exit-2-no-output",
+            ),
+            pytest.param(
+                {"diff": ["README.md", "tests/test_x.py"]},
+                ("dead_code", NOT_MEASURED_NO_TARGET),
+                "dead_code_ruff",
+                "ruff auto-fixed 0",
+                id="nothing-scannable-in-the-diff",
+            ),
+            pytest.param(
+                {
+                    "tools": ("ruff",),
+                    "read_only": True,
+                    "ruff": _completed("ruff", 1, RUFF_READ_ONLY_3),
+                },
+                ("dead_code", NOT_MEASURED_TOOL_MISSING),
+                "dead_code_ruff",
+                "ruff reports 2 auto-removable, not removed",
+                id="vulture-missing-read-only",
+            ),
+            pytest.param(
+                {"tools": ("vulture",)},
+                ("dead_code_ruff", NOT_MEASURED_TOOL_MISSING),
+                "dead_code",
+                "no remaining dead code",
+                id="ruff-missing",
+            ),
+            pytest.param(
+                {"ruff": TimeoutExpired("ruff check", 30)},
+                ("dead_code_ruff", NOT_MEASURED_TIMED_OUT),
+                "dead_code",
+                "no remaining dead code",
+                id="ruff-timed-out",
+            ),
+            pytest.param(
+                {"ruff": _completed("ruff", 2, "", "error: Failed to parse ruff.toml")},
+                ("dead_code_ruff", NOT_MEASURED_COMMAND_FAILED),
+                "dead_code",
+                "no remaining dead code",
+                id="ruff-exit-2",
+            ),
+            pytest.param(
+                {"ruff": _completed("ruff", 1, RUFF_JSON_BODY)},
+                ("dead_code_ruff", NOT_MEASURED_COMMAND_FAILED),
+                "dead_code",
+                "no remaining dead code",
+                id="ruff-printed-no-count-line",
+            ),
+            pytest.param(
+                {"read_only": True, "ruff": _completed("ruff", 1, RUFF_JSON_BODY)},
+                ("dead_code_ruff", NOT_MEASURED_COMMAND_FAILED),
+                "dead_code",
+                "no remaining dead code",
+                id="ruff-printed-no-count-line-read-only",
+            ),
+            # The two shapes round 2 refused and round 3 restored. Both
+            # are ROWS: ruff ran, ruff said what it did, and the phase
+            # that measured nothing here is the absent vulture.
+            pytest.param(
+                {
+                    "tools": ("ruff",),
+                    "ruff": _completed("ruff", 1, RUFF_FOUND_3_NONE_FIXED),
+                },
+                ("dead_code", NOT_MEASURED_TOOL_MISSING),
+                "dead_code_ruff",
+                "ruff auto-fixed 0, 3 remaining",
+                id="ruff-found-three-and-fixed-none",
+            ),
+            pytest.param(
+                {"tools": ("ruff",), "ruff": _completed("ruff", 0, "")},
+                ("dead_code", NOT_MEASURED_TOOL_MISSING),
+                "dead_code_ruff",
+                "ruff auto-fixed 0",
+                id="ruff-0-2-0-clean-tree-prints-nothing",
+            ),
+        ],
+    )
+    def test_a_phase_that_did_not_run_leaves_a_gap_and_the_other_row(
+        self,
+        tmp_path: Path,
+        stubs: dict[str, Any],
+        gap: tuple[str, str],
+        survivor: str,
+        survivor_message: str,
+    ) -> None:
+        """The fourteen states measured on the fused function, as one ledger.
+
+        The issue said four; measuring the fused function found nine,
+        and every one of them printed ``dead_code  pass``. Nine are the
+        detector not running while ruff did (``vulture-missing`` is the
+        path the issue was filed from, and ``vulture-missing-read-only``
+        is the same path under ``ks sense``); five are ruff not running
+        while the detector did, which the fused row hid completely
+        because it only ever reported the vulture verdict.
+
+        A LEDGER, and deliberately not closed by construction, which is
+        the weaker of the two shapes CLAUDE.md's guard rules describe. A
+        census closed by construction inventories every place a resource
+        is obtained and reports an unexplained delta; the resource here
+        is what two external tools print, which is not enumerable from
+        inside this repo. What replaces closure is the default: an
+        output matching no shape the parse knows is a ``command_failed``
+        gap rather than a zero. Round 1 had exactly nine rows and no
+        such default, and the state it was missing -
+        ``ruff-printed-no-count-line``, reachable with the real tool and
+        one config key - passed the ledger green. Three of the fourteen
+        (that pair and ``git-could-not-read-the-diff``) are round 2's.
+
+        The default is safe in ONE direction only, and round 2 claimed
+        the safe half here as though it were the whole property. A
+        fifteenth state arrives as a gap an operator can see, which is
+        right when ruff renamed its summary and wrong when the parse is
+        simply short a recogniser for something ruff already prints:
+        round 2 was short two of those, and the ledger stayed green
+        while a healthy ruff run was reported as a tool failure. That is
+        what ``TestRuffShapes`` is for, and it is a corpus rather than a
+        ledger for exactly this reason (#335 round 3).
+
+        Three assertions per row, and the third is the one that makes
+        this a split rather than an omission: the phase that DID measure
+        keeps its row AND its real message. Omitting the fused row would
+        have satisfied the first two and thrown a real measurement away.
+        """
+        result = _dead_code_verification(tmp_path, **stubs)
+
+        assert _dead_code_rows(result) == [survivor]
+        assert [(g.check, g.reason) for g in result.not_measured] == [gap]
+        row = next(c for c in result.checks if c.name == survivor)
+        assert row.passed is True
+        assert row.message == survivor_message
+        # A check that measured nothing neither passes nor fails.
+        assert result.passed is True
+
+    def test_both_phases_measured_gives_two_rows_and_no_gap(self, tmp_path: Path) -> None:
+        """The other half: without it, dropping every row would pass."""
+        result = _dead_code_verification(
+            tmp_path,
+            ruff=_completed("ruff", 0, "Found 1 error (1 fixed, 0 remaining)."),
+            detect=_completed("vulture", 0),
+        )
+
+        assert _dead_code_rows(result) == ["dead_code_ruff", "dead_code"]
+        assert result.not_measured == []
+        assert result.passed is True
+
+    def test_a_vulture_finding_still_fails_the_run(self, tmp_path: Path) -> None:
+        """Omission must not become a way to lose a real FAIL."""
+        result = _dead_code_verification(
+            tmp_path,
+            detect=_completed(
+                "vulture",
+                3,
+                "src/main.py:10: unused function 'old' (90% confidence)\n"
+                "src/main.py:20: unused variable 'tmp' (90% confidence)\n",
+            ),
+        )
+
+        row = next(c for c in result.checks if c.name == "dead_code")
+        assert row.passed is False
+        assert "2 dead code issues remaining" in row.message
+        assert len(row.details) == 2
+        assert result.passed is False
+
+    def test_the_toggle_off_records_no_row_and_no_gap(self, tmp_path: Path) -> None:
+        """A phase the operator turned OFF records nothing at all, which
+        is what separates it from one they turned on that measured
+        nothing. Both stubs would produce rows if the toggle were read
+        as True, so this cannot pass vacuously."""
+        result = _dead_code_verification(
+            tmp_path,
+            ruff=_completed("ruff", 0, "Found 1 error (1 fixed, 0 remaining)."),
+            detect=_completed("vulture", 0),
+            config=replace(DEAD_CODE_GATES, dead_code_cleanup=False),
+        )
+
+        assert _dead_code_rows(result) == []
+        assert result.not_measured == []
+
+    def test_ruff_runs_before_the_detector(self, tmp_path: Path) -> None:
+        """The factory deletes the ruff-fixable subset BEFORE vulture
+        looks, so vulture sees the cleaner tree. Splitting the function
+        made the order a property of the caller rather than of one
+        function body, which is exactly the kind of thing a later edit
+        reverses silently."""
+        seen: list[str] = []
+        _dead_code_verification(
+            tmp_path,
+            ruff=_completed("ruff", 0, "Found 1 error (1 fixed, 0 remaining)."),
+            detect=_completed("vulture", 0),
+            seen=seen,
+        )
+
+        ruff_at = next(i for i, c in enumerate(seen) if c.startswith("ruff check"))
+        detect_at = next(i for i, c in enumerate(seen) if c.startswith("vulture"))
+        assert ruff_at < detect_at
+
+    def test_the_reviewer_summary_never_says_pass_for_a_scan_that_did_not_run(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Why #335 is not a display bug.
+
+        ``build_review_prompt`` renders every row as PASS or FAIL and
+        hands the result to an adversarial LLM role. Before the split
+        that summary carried ``- dead_code: PASS - ruff auto-fixed 2;
+        vulture not installed``: a gate the reviewer is told passed and
+        which never ran.
+        """
+        result = _dead_code_verification(
+            tmp_path,
+            tools=("ruff",),
+            ruff=_completed("ruff", 0, "Found 2 errors (2 fixed, 0 remaining)."),
+        )
+
+        with patch("kstrl.review.git.repo_change_source", return_value="<change source>"):
+            prd = write_component_prd(
+                tmp_path,
+                "prd.json",
+                branch="feature",
+                stories=[{**PASSING_STORY, "passes": False}],
+            )
+            prompt = build_review_prompt(prd, "main", result)
+
+        assert "- dead_code_ruff: PASS - ruff auto-fixed 2" in prompt
+        assert "- dead_code:" not in prompt
+
+    def test_phase_1_narrates_and_emits_a_dead_code_gap(self, tmp_path: Path) -> None:
+        """The pipeline plumbing, which is shared with #306: a gap the
+        pipeline drops is the same silence as no gap at all."""
+        gap = NotMeasured(
+            "dead_code",
+            NOT_MEASURED_TOOL_MISSING,
+            "vulture is not on PATH and no [verify] dead_code_command is set",
+        )
+        surfaces = phase_verify_surfaces(
+            tmp_path,
+            VerificationResult(
+                passed=True,
+                checks=[CheckResult("dead_code_ruff", True, "ruff auto-fixed 0")],
+                not_measured=[gap],
+            ),
+        )
+        emitted = [e for e in surfaces.events if isinstance(e, VerificationResultEvent)]
+
+        assert "dead_code not measured (tool_missing)" in surfaces.narration
+        assert len(emitted) == 1
+        assert emitted[0].not_measured == ("dead_code:tool_missing",)
+        assert emitted[0].checks == ("dead_code_ruff",)
 
 
 class TestRunMechanicalVerificationWithoutPrd:
@@ -1593,85 +2940,6 @@ class TestReadOnlyVerification:
     HEAD.
     """
 
-    @staticmethod
-    def _which(name: str) -> str | None:
-        return f"/usr/bin/{name}" if name in ("ruff", "vulture") else None
-
-    def test_dead_code_read_only_never_fixes_stages_or_commits(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        import subprocess as sp
-
-        calls: list[str] = []
-
-        def mock_run(cmd: str, **kwargs: object) -> sp.CompletedProcess[str]:
-            calls.append(cmd)
-            if "ruff check" in cmd:
-                return sp.CompletedProcess(cmd, 1, "Found 3 errors.\n", "")
-            return sp.CompletedProcess(cmd, 0, "", "")  # vulture: clean
-
-        with (
-            patch("shutil.which", side_effect=self._which),
-            patch("kstrl.verify.run_scrubbed", side_effect=mock_run),
-            patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py"]),
-        ):
-            result = check_dead_code(tmp_path, "main", read_only=True)
-
-        ruff_calls = [c for c in calls if "ruff check" in c]
-        assert len(ruff_calls) == 1
-        # --no-fix is explicit, not merely implied by omitting --fix: a
-        # project can set `fix = true` under [tool.ruff].
-        assert "--no-fix" in ruff_calls[0]
-        assert "--fix " not in ruff_calls[0]
-        # --no-cache: not even .ruff_cache appears in the measured tree.
-        assert "--no-cache" in ruff_calls[0]
-        assert not any("git add" in c for c in calls)
-        assert not any("git commit" in c for c in calls)
-        assert result.passed is True
-        assert "3 auto-removable, not removed" in result.message
-
-    def test_dead_code_default_still_fixes_and_commits(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """The factory path is untouched: no existing caller passes the flag."""
-        import subprocess as sp
-
-        # `run_scrubbed` takes a shell string OR an argv list, and the
-        # staging call is a list (#274: the `:(exclude)` pathspec must
-        # reach git unmangled). Rendered to one string per call so the
-        # assertions below read the same for both forms.
-        calls: list[str] = []
-
-        def mock_run(
-            cmd: str | list[str],
-            **kwargs: object,
-        ) -> sp.CompletedProcess[str]:
-            rendered = cmd if isinstance(cmd, str) else " ".join(cmd)
-            calls.append(rendered)
-            if "ruff check --fix" in rendered:
-                return sp.CompletedProcess(
-                    cmd,
-                    0,
-                    "Found 3 errors (2 fixed, 1 remaining).",
-                    "",
-                )
-            return sp.CompletedProcess(cmd, 0, "", "")
-
-        with (
-            patch("shutil.which", side_effect=self._which),
-            patch("kstrl.verify.run_scrubbed", side_effect=mock_run),
-            patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py"]),
-        ):
-            result = check_dead_code(tmp_path, "main")
-
-        assert any("ruff check --fix" in c for c in calls)
-        staged = next(c for c in calls if c.startswith("git add"))
-        assert staged == "git add -A -- . :(exclude).kstrl"
-        assert any("git commit" in c for c in calls)
-        assert "auto-fixed 2" in result.message
-
     @pytest.mark.parametrize(
         "read_only, expect_row",
         [(True, False), (False, True)],
@@ -1760,20 +3028,28 @@ class TestReadOnlyVerification:
         """``(read_only as forwarded to dead_code, mutmut was consulted)``.
 
         The two halves stopped being symmetric with #306, and that
-        asymmetry is the fix. ``check_dead_code`` still TAKES the flag:
-        read-only runs the same ruff rule set with ``--no-fix`` and
-        reports what the factory would have removed, so there is a
+        asymmetry is the fix. ``check_dead_code_ruff`` still TAKES the
+        flag: read-only runs the same ruff rule set with ``--no-fix``
+        and reports what the factory would have removed, so there is a
         narrower thing for it to do. ``check_mutation_score`` no longer
         takes the flag at all, because there is no narrower thing mutmut
         can do - so read-only does not call it, and a flag that could
         only ever return a row is gone.
+
+        The ruff phase is the one asked, because #335 moved the flag
+        there: ``check_dead_code`` is the vulture scan now and reads the
+        tree without changing it, so it has no use for the flag at all.
         """
         config = replace(MUTATION_GATES, dead_code_cleanup=True)
         with (
             patch(
+                "kstrl.verify.check_dead_code_ruff",
+                return_value=CheckResult("dead_code_ruff", True),
+            ) as dc,
+            patch(
                 "kstrl.verify.check_dead_code",
                 return_value=CheckResult("dead_code", True),
-            ) as dc,
+            ),
             patch(
                 "kstrl.verify.check_mutation_score",
                 return_value=CheckResult("mutation_testing", True),
