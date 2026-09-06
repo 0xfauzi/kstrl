@@ -81,6 +81,37 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   factory row now also carries what was left behind (`ruff auto-fixed 2, 1
   remaining`), which `ruff auto-fixed 0` could not tell from a clean tree.
 
+- The `dead_code_ruff` phase requires **ruff 0.2.0 or newer** (January 2024).
+  It pins `--output-format=concise` so a measured project's own `[tool.ruff]
+  output-format` cannot remove the summary line the phase parses, and that
+  flag value does not exist before 0.2.0: 0.0.272 rejects `--output-format`
+  outright and 0.1.0 and 0.1.15 reject the value `concise`. All three exit 2,
+  so an older ruff produces a `command_failed` gap carrying ruff's own
+  `error:` line rather than a number. A project's own pinned ruff is far past
+  0.2.0; the reachable case is `ks sense` against a live checkout with a
+  system-wide old ruff first on PATH. The set of output shapes the phase reads
+  is now measured against real ruff 0.2.0, 0.3.0 and 0.16.1 over five trees
+  rather than reasoned about: a fixing run with nothing safely fixable prints
+  `Found N errors.` alone, and ruff 0.2.0 through 0.3.2 print nothing at all
+  on a clean tree, and both were being reported as a tool failure over a run
+  that had measured something.
+
+- The mutation gate passes its changed files to mutmut as one comma-separated
+  argument. `mutmut run` takes one positional slot, so the space-separated
+  form was a usage error (`Error: Got unexpected extra argument`) for three or
+  more changed non-test Python files and silently consumed the second as that
+  positional for exactly two. The gate is opt-in (`[verify] mutation_testing`,
+  default off).
+
+- The dead-code detector's file list goes behind a `--` separator, so a
+  changed file whose name starts with `-` reaches vulture as a path rather
+  than as an option. Without it vulture exits 2 with `unrecognized
+  arguments`, which the check read as findings and reported as a dead-code
+  failure naming the wrong cause. Related: a detector that exits non-zero and
+  reports no finding the check can read is now a `command_failed` gap rather
+  than `no remaining dead code`, which is decided on the exit code instead of
+  on the output being empty.
+
 - `.kstrl/autonomy.json` is no longer overwritten when the file it was
   read from could not be parsed. `AutonomyState.load` fails closed to a
   fresh L1 and records why; saving that fresh state back replaced the
