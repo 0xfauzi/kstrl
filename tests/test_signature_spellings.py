@@ -70,9 +70,12 @@ from tests.helpers.astfold import (
 #: trail ``tests/test_prompt_versions.py`` asks for, not an oversight.
 EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
     {
-        # --- journal signatures: these eight ARE check names, and every
+        # --- journal signatures: these nine ARE check names, and every
         # one is enrolled in evolution._CATEGORY_BY_CHECK.
         ("kstrl/factory.py", "contract"),
+        # #226: written as f"{ADVERSARIAL_BUDGET_CHECK}:{phase}", so the
+        # head folds through the imported constant rather than a literal.
+        ("kstrl/pipeline.py", "adversarial_budget"),
         ("kstrl/factory.py", "scope_unreadable"),
         ("kstrl/pipeline.py", "aborted"),
         ("kstrl/pipeline.py", "diff"),
@@ -87,8 +90,19 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         # Divergence's own reasons for a trip.
         ("kstrl/divergence.py", "concern"),
         ("kstrl/divergence.py", "criterion"),
-        # An autonomy demotion record, not a component failure.
-        ("kstrl/factory.py", "demotion"),
+        # An autonomy demotion record, not a component failure. It moved
+        # out of factory.py in #232, when the demotion-apply block became
+        # autonomy.apply_demotion; this row moving is the guard doing the
+        # job the comment above claims for it.
+        ("kstrl/autonomy.py", "demotion"),
+        # #232's two new demotion triggers, both inbox dedupe keys in the
+        # same family as pipeline's below. "calibration:<comparison id>"
+        # is also the run id the compare command demotes under, since a
+        # comparison is not a factory run and has none of its own. The
+        # comparison id is both baselines' timestamps, or a digest of the
+        # failure lines when either file carries no timestamp.
+        ("kstrl/calibration_ladder.py", "calibration"),
+        ("kstrl/factory.py", "health"),
         # Finding metadata: CWE and OWASP ids, and the keys a finding
         # serialises its own fields under.
         ("kstrl/findings.py", "adequacy"),

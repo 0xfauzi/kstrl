@@ -329,7 +329,7 @@ create_prs = true                  # push + merge PRs via gh
 review_mode = "hard"               # hard | advisory | skip (Phase 2)
 setpoint_agreement = "advisory"    # advisory | block: what to do when the reviewer does not confirm a story the engineer marked passes=true (R10.3)
 merge_timeout = 300.0              # seconds to wait for PR merge confirmation
-max_adversarial_calls = 0          # cap on review+security+distill LLM calls; 0 = unbounded
+max_adversarial_calls = 0          # cap on review+security+distill LLM calls; 0 = unbounded. At the cap a hard-mode review or security phase HALTS the component rather than merging it unreviewed; an advisory one skips. Budget 3 calls per component for hard review + hard security + knowledge (R10.5, docs/runbook.md)
 max_total_tokens = 0               # run-level token budget; 0 = unbounded. Counts cache reads at par, so it is a poor proxy for cost - prefer max_cost_usd. Halts before the next engineer iteration or phase, never mid-call (docs/env-vars.md)
 max_cost_usd = 0.0                 # run-level USD budget; 0 = unbounded. Same halt granularity as max_total_tokens (between iterations, not mid-call), so NOT a hard cap. Not [agent] budget_usd (docs/env-vars.md)
 pause_before_pr_merge = false      # human checkpoint before each PR (E6)
@@ -391,8 +391,10 @@ deploy = false                                                                  
 
 # Autonomy ladder (R8.2; opt-in)
 [autonomy]
-enabled = false  # derive run permissions from the ladder level (opt-in)
-max_level = 4    # hard ceiling: never run above this level (1-4)
+enabled = false                           # derive run permissions from the ladder level (opt-in)
+max_level = 4                             # hard ceiling: never run above this level (1-4)
+demote_on_calibration_regression = false  # demote one level when `calibration compare` finds a regression (an inbox item is opened either way)
+demote_on_health_breach = false           # demote one level on an R8.4 health control-limit breach (an inbox item is opened either way)
 
 # Exception inbox (R8.3)
 [inbox]
