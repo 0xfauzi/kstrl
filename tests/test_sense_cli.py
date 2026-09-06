@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -299,6 +300,41 @@ def _without_vulture() -> Callable[..., str | None]:
     return which
 
 
+def _ruff_can_do_concise() -> bool:
+    """Whether the ruff on PATH can run what this phase asks of it.
+
+    A CAPABILITY, not a binary. ``--output-format=concise`` needs ruff
+    >= 0.2.0, and `shutil.which("ruff") is not None` was the skip guard
+    while the tests below needed the version: measured by putting ruff
+    0.1.15 in a scratch checkout's venv, the separated-phases test FAILS
+    with ``expected one 'dead_code_ruff' check, got []``, a message that
+    names nothing about ruff's version. That turns an environment
+    difference into a red suite with a misleading cause, which is the
+    class of misreport #335 exists to remove.
+
+    ``--help`` rather than a real scan, so this costs one process and
+    touches no tree: the flag and its value are parsed before ruff looks
+    at anything (measured: 0.0.272 and 0.1.15 both exit 2 here).
+    """
+    if shutil.which("ruff") is None:
+        return False
+    try:
+        probe = subprocess.run(
+            ["ruff", "check", "--output-format=concise", "--help"],
+            capture_output=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return probe.returncode == 0
+
+
+_NEEDS_CONCISE_RUFF = pytest.mark.skipif(
+    not _ruff_can_do_concise(),
+    reason="needs ruff >= 0.2.0 on PATH (--output-format=concise)",
+)
+
+
 def test_sense_never_edits_stages_or_commits(tmp_path: Path) -> None:
     root = _dead_code_repo(tmp_path)
     head_before = git("rev-parse", "HEAD", cwd=root)
@@ -327,10 +363,18 @@ def test_sense_never_edits_stages_or_commits(tmp_path: Path) -> None:
     dead_code_rows = [c for c in document["checks"] if c["name"].startswith("dead_code")]
     gaps = [g for g in document["not_measured"] if g["check"].startswith("dead_code")]
     assert dead_code_rows or gaps
-    assert not any("auto-fixed" in row["message"] for row in dead_code_rows)
+    # Over every row, not only the dead-code ones. Scoped to
+    # `dead_code_rows` the negative was vacuous exactly where it was
+    # needed: on a machine without ruff that list is empty and `not
+    # any(...)` over it is trivially true, so the half of this test that
+    # discriminates evaporated on the environment the comment above
+    # names. `document["checks"]` is never empty - the three cheap gates
+    # are always in it - so the assertion has something to be false
+    # about in both environments.
+    assert not any("auto-fixed" in row["message"] for row in document["checks"])
 
 
-@pytest.mark.skipif(shutil.which("ruff") is None, reason="needs ruff on PATH")
+@_NEEDS_CONCISE_RUFF
 def test_sense_reports_the_dead_code_phases_separately(tmp_path: Path) -> None:
     """#335 end to end, on a command where one phase can measure and the
     other cannot.
@@ -370,7 +414,7 @@ def test_sense_reports_the_dead_code_phases_separately(tmp_path: Path) -> None:
     assert document["passed"] is True
 
 
-@pytest.mark.skipif(shutil.which("ruff") is None, reason="needs ruff on PATH")
+@_NEEDS_CONCISE_RUFF
 def test_sense_table_names_the_dead_code_scan_it_did_not_run(tmp_path: Path) -> None:
     """The terminal half. Most operators read the table, not the JSON."""
     root = _dead_code_repo(tmp_path)

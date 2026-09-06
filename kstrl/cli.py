@@ -3699,13 +3699,21 @@ def _sense_needs_diff(
 ) -> bool:
     """Whether a check `ks sense` is about to run reads ``git diff``.
 
-    Every check that consumes the diff reads it through the LENIENT git
-    helpers, which map a bad ref, a missing base or a non-repository onto
-    an EMPTY file list, indistinguishable from "nothing changed".
-    diff_scope then reports "0 files, all within scope", bad_patterns
-    "scanned 0 Python files", and ``ks sense`` exits 0 having measured
-    nothing. So the answer here gates one strict read up front, and
-    cannot-measure becomes exit 2.
+    ``diff_scope`` and ``bad_patterns`` consume the diff through the
+    LENIENT git helpers, which map a bad ref, a missing base or a
+    non-repository onto an EMPTY file list, indistinguishable from
+    "nothing changed". diff_scope then reports "0 files, all within
+    scope", bad_patterns "scanned 0 Python files", and ``ks sense`` exits
+    0 having measured nothing. So the answer here gates one strict read
+    up front, and cannot-measure becomes exit 2.
+
+    The dead-code phase is here for a DIFFERENT reason since #335:
+    ``verify._changed_non_test_python`` reads strictly and records its
+    own ``command_failed`` gap, so nothing is silently reported as clean
+    if this predicate misses it. It stays in because an exit 2 naming
+    the base the operator should have passed is a better answer than a
+    gap they have to read the JSON to find, not because it is the only
+    thing standing between them and a false pass.
 
     ``mutation_testing`` is deliberately absent: sense skips that check
     outright (read-only), so its diff read never happens and demanding a
