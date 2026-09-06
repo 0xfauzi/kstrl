@@ -13,15 +13,22 @@ The vocabulary is deliberately the evolution journal's. A signature here is
 the journal cannot disagree about what a failure is called, and the spelling
 lives in exactly one module.
 
-FOUR BUCKETS, AND WHY ``fixed`` IS THE NARROW ONE
+FIVE BUCKETS, AND WHY ``fixed`` IS THE NARROW ONE
 -------------------------------------------------
-``new`` and ``increased`` FLAG: they may over-match, and the cost of a false one
-is a comment somebody reads. ``fixed`` CLEARS: it says a failure went away, and
-an over-matching clear deletes the mechanism silently. So ``fixed`` has to be
-PROVED, not inferred from absence. A baseline signature that is absent now lands
-in ``fixed`` only when the check that produced it MEASURED SOMETHING in the
-current run; when it did not, the signature lands in ``unmeasured`` and the
-report says so.
+``new``, ``increased`` and ``stopped_measuring`` FLAG: they may over-match, and
+the cost of a false one is a comment somebody reads. ``fixed`` CLEARS: it says a
+failure went away, and an over-matching clear deletes the mechanism silently. So
+``fixed`` has to be PROVED, not inferred from absence. A baseline signature that
+is absent now lands in ``fixed`` only when the check that produced it MEASURED
+SOMETHING in the current run; when it did not, the signature lands in
+``unmeasured`` and the report says so.
+
+``stopped_measuring`` is the flagging half of the same fact, keyed on the CHECK
+rather than on a signature, and it is not redundant with ``unmeasured``: that
+bucket holds baseline signatures, and a baseline can be green. This repository's
+own committed baseline records ``"signatures": {}``, so on a branch whose test
+suite stops finishing there is no signature anywhere to bucket, and without this
+the report read ``no regression`` and exited 0 under ``--fail-on-regression``.
 
 That is why :attr:`Baseline.unmeasured_checks` exists on both sides. A sensor
 that timed out, whose tool is missing, or that recorded a
@@ -36,6 +43,7 @@ on a faster machine reports that signature as fixed.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -44,7 +52,7 @@ from typing import Any, NoReturn
 
 from kstrl.atomicio import atomic_write_json
 from kstrl.evolution import signature_counts_from_verification, split_signature
-from kstrl.verify import CheckResult, VerificationResult
+from kstrl.verify import CheckResult, ResolvedVerifyCommands, VerificationResult
 
 #: Version of the BASELINE document, which is not the version of the
 #: ``ks sense --json`` document. They move independently: the baseline records
@@ -68,6 +76,14 @@ FORMAT_MARKDOWN = "markdown"
 #: with it, so a reworded explanation cannot land in one report and not the
 #: other.
 UNMEASURED_NOTE = "a check that did not run cannot prove a fix"
+
+#: The fifth bucket's title, for the same reason.
+STOPPED_MEASURING_NOTE = "these sensors measured on the baseline and not here"
+
+#: What :attr:`Comparison.stopped_measuring` records when the current run has
+#: no reason for a check at all: the check produced neither a row nor a gap,
+#: so it was not asked for. That is still a sensor that stopped.
+NO_REASON_RECORDED = "the check produced no row at all in this run"
 
 #: ``--write-baseline`` and ``--compare-baseline`` take an OPTIONAL path. Click
 #: spells that with ``is_flag=False, flag_value=<sentinel>``, so the bare flag
@@ -138,6 +154,27 @@ def _str_tuple_field(document: Mapping[str, Any], key: str) -> tuple[str, ...]:
     return tuple(value)
 
 
+def _str_field(document: Mapping[str, Any], key: str) -> str:
+    value = _object_field(document, key)
+    if not isinstance(value, str):
+        _fail(f"baseline {key!r} must be a string, got {type(value).__name__}")
+    return value
+
+
+def _str_map_field(document: Mapping[str, Any], key: str) -> dict[str, str]:
+    value = _object_field(document, key)
+    if not isinstance(value, dict):
+        _fail(f"baseline {key!r} must be an object, got {type(value).__name__}")
+    reasons: dict[str, str] = {}
+    for name, reason in value.items():
+        if not isinstance(name, str) or not name:
+            _fail(f"baseline {key!r} has a key that is not a non-empty string: {name!r}")
+        if not isinstance(reason, str) or not reason:
+            _fail(f"baseline {key!r}[{name!r}] must be a non-empty string, got {reason!r}")
+        reasons[name] = reason
+    return reasons
+
+
 def _signatures_field(document: Mapping[str, Any], key: str) -> dict[str, int]:
     value = _object_field(document, key)
     if not isinstance(value, dict):
@@ -146,10 +183,44 @@ def _signatures_field(document: Mapping[str, Any], key: str) -> dict[str, int]:
     for name, count in value.items():
         if not isinstance(name, str) or not name:
             _fail(f"baseline {key!r} has a key that is not a non-empty string: {name!r}")
-        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
-            _fail(f"baseline {key!r}[{name!r}] must be a non-negative integer, got {count!r}")
+        # `< 1`, not `< 0`: `to_document` writes a Counter of occurrences, so a
+        # count of zero is a shape it cannot produce. Accepting one put "was 0"
+        # in the `fixed` table of a report - a number that means nothing
+        # happened, presented as something that did.
+        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+            _fail(f"baseline {key!r}[{name!r}] must be a positive integer, got {count!r}")
         counts[name] = count
     return counts
+
+
+def verify_digest(commands: ResolvedVerifyCommands, timeout: float) -> str:
+    """A digest of HOW a tree was measured: the three gate commands and the timeout.
+
+    ``docs/dampener.md`` states that a baseline and a comparison measured at
+    different timeouts are not a comparison, and before this the only mechanism
+    behind that sentence was a literal ``1800`` typed into the workflow YAML.
+    An operator who ran the comparison at the default 300s got a report in
+    which this repository's own test suite had "stopped" failing.
+
+    Recorded in the baseline and checked by :func:`refuse_foreign_baseline`,
+    which is the same rule ``decisions.bind_register`` applies to the decision
+    register: an artifact one phase writes and another READS carries the
+    identity of the thing it belongs to, and the reader checks it.
+
+    Sixteen hex characters of SHA-256. The digest is an equality check on a
+    short JSON payload, not a security boundary; the full 64 would make the
+    baseline diff noisier for nothing.
+    """
+    payload = json.dumps(
+        {
+            "test": commands.test,
+            "typecheck": commands.typecheck,
+            "lint": commands.lint,
+            "timeout": timeout,
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 @dataclass(frozen=True)
@@ -163,14 +234,26 @@ class Baseline:
 
     generated_at: str
     base_ref: str | None
+    #: The measured directory's own name. Provenance the report NOTES rather
+    #: than refuses: a baseline copied between two checkouts of the same
+    #: project is legitimate, a baseline copied between two different projects
+    #: is the ``bind_register`` mistake, and only a person can tell those apart.
+    root_name: str
     passed: bool
     sense_schema_version: int
+    #: :func:`verify_digest` of the commands and timeout this was measured
+    #: with. A mismatch IS a refusal: see :func:`refuse_foreign_baseline`.
+    verify_digest: str
     #: Checks that produced a row AND measured something. The only checks whose
     #: absent signature may be reported as fixed.
     measured_checks: tuple[str, ...]
     #: Checks that were asked for and measured nothing: a gap, a missing tool, a
     #: timeout. They contribute no signatures at all.
     unmeasured_checks: tuple[str, ...]
+    #: Why each name in ``unmeasured_checks`` measured nothing, as the check
+    #: itself said it. Same key set as ``unmeasured_checks``, checked on read:
+    #: a hole in a baseline is only useful if the reader can see what made it.
+    unmeasured_reasons: Mapping[str, str]
     signatures: Mapping[str, int]
 
     @property
@@ -191,10 +274,13 @@ class Baseline:
             "schema_version": BASELINE_SCHEMA_VERSION,
             "generated_at": self.generated_at,
             "base_ref": self.base_ref,
+            "root_name": self.root_name,
             "passed": self.passed,
             "sense_schema_version": self.sense_schema_version,
+            "verify_digest": self.verify_digest,
             "measured_checks": sorted(self.measured_checks),
             "unmeasured_checks": sorted(self.unmeasured_checks),
+            "unmeasured_reasons": dict(sorted(self.unmeasured_reasons.items())),
             "signatures": dict(sorted(self.signatures.items())),
         }
 
@@ -215,24 +301,36 @@ class Baseline:
                 f"baseline schema_version is {version}, expected {BASELINE_SCHEMA_VERSION}; "
                 "run ks sense --write-baseline --force to regenerate it"
             )
+        unmeasured = _str_tuple_field(raw, "unmeasured_checks")
+        reasons = _str_map_field(raw, "unmeasured_reasons")
+        if set(reasons) != set(unmeasured):
+            raise BaselineError(
+                "baseline 'unmeasured_reasons' names "
+                f"{sorted(reasons)} but 'unmeasured_checks' names {sorted(unmeasured)}; "
+                "every hole in a baseline carries the reason it is there. "
+                "Regenerate it with ks sense --write-baseline --force"
+            )
         return cls(
             # Provenance, like ``base_ref``: nothing gates on it, so null is
             # accepted, but a wrong TYPE is still a refusal. Read through the
             # same helper as every other field rather than a lenient
-            # ``raw.get``, so the paragraph above stays true of all seven.
+            # ``raw.get``, so the paragraph above stays true of all of them.
             generated_at=_optional_str_field(raw, "generated_at") or "",
             base_ref=_optional_str_field(raw, "base_ref"),
+            root_name=_str_field(raw, "root_name"),
             passed=_bool_field(raw, "passed"),
             sense_schema_version=_int_field(raw, "sense_schema_version"),
+            verify_digest=_str_field(raw, "verify_digest"),
             measured_checks=_str_tuple_field(raw, "measured_checks"),
-            unmeasured_checks=_str_tuple_field(raw, "unmeasured_checks"),
+            unmeasured_checks=unmeasured,
+            unmeasured_reasons=reasons,
             signatures=_signatures_field(raw, "signatures"),
         )
 
 
 def _measured_and_unmeasured(
     result: VerificationResult,
-) -> tuple[list[CheckResult], tuple[str, ...]]:
+) -> tuple[list[CheckResult], dict[str, str]]:
     """Split a verification into the rows that measured and the names that did not.
 
     A check named in ``not_measured`` produced no row at all; a check whose row
@@ -240,40 +338,58 @@ def _measured_and_unmeasured(
     timeout, a missing detector). Both are equally unable to prove that a
     signature was fixed, so both land on the same side. A name in both is
     unmeasured: the clearing side has to be the narrow one.
+
+    The unmeasured half comes back as name -> REASON rather than as bare names,
+    because a hole in a baseline that does not say what made it sends the
+    operator back to the run to find out. A row's message wins over a gap's
+    reason for the same name: the row is the more specific statement, and the
+    name is unmeasured either way.
     """
-    unmeasured = {gap.check for gap in result.not_measured}
-    unmeasured.update(check.name for check in result.checks if not check.measured)
-    measured = [check for check in result.checks if check.measured and check.name not in unmeasured]
-    return measured, tuple(sorted(unmeasured))
+    reasons = {gap.check: f"{gap.reason}: {gap.detail}" for gap in result.not_measured}
+    reasons.update(
+        {
+            check.name: check.message or NO_REASON_RECORDED
+            for check in result.checks
+            if not check.measured
+        }
+    )
+    measured = [check for check in result.checks if check.measured and check.name not in reasons]
+    return measured, reasons
 
 
 def baseline_from_result(
     result: VerificationResult,
     *,
     base_ref: str | None,
+    root_name: str,
     generated_at: str,
     sense_schema_version: int,
+    digest: str,
 ) -> Baseline:
     """Reduce a sense run to a :class:`Baseline`.
 
-    ``generated_at`` and ``base_ref`` are injected rather than read here so the
-    document is a pure function of the run for tests. ``sense_schema_version``
-    is passed in from :data:`kstrl.cli.SENSE_SCHEMA_VERSION` rather than
-    imported, because the CLI imports this module.
+    ``generated_at``, ``base_ref``, ``root_name`` and ``digest`` are injected
+    rather than read here so the document is a pure function of the run for
+    tests. ``sense_schema_version`` is passed in from
+    :data:`kstrl.cli.SENSE_SCHEMA_VERSION` rather than imported, because the
+    CLI imports this module.
 
     ``limit=None``: the journal caps a check at five distinct signatures so one
     catastrophic run cannot flood a journal entry, but a baseline that dropped
     the sixth would report it as new on the very next run.
     """
-    measured, unmeasured = _measured_and_unmeasured(result)
+    measured, reasons = _measured_and_unmeasured(result)
     counts = signature_counts_from_verification(measured, limit=None)
     return Baseline(
         generated_at=generated_at,
         base_ref=base_ref,
+        root_name=root_name,
         passed=result.passed,
         sense_schema_version=sense_schema_version,
+        verify_digest=digest,
         measured_checks=tuple(sorted({check.name for check in measured})),
-        unmeasured_checks=unmeasured,
+        unmeasured_checks=tuple(sorted(reasons)),
+        unmeasured_reasons=dict(sorted(reasons.items())),
         signatures=dict(sorted(counts.items())),
     )
 
@@ -281,21 +397,67 @@ def baseline_from_result(
 def read_baseline(path: Path) -> Baseline:
     """The committed baseline, or :class:`BaselineError` saying why not.
 
-    ``ValueError`` is caught beside ``OSError`` because ``UnicodeDecodeError``
-    is a ``ValueError`` and escapes a fail-closed ``except OSError``; the
-    encoding is named rather than left to the locale for the same reason.
+    THE PARSER'S ERROR TAXONOMY BELONGS TO THE PARSER, which is the #318 rule
+    stated for ``tomllib`` and true for the same reason here: the reasoning is
+    about the DOCUMENT, not about which module reads it. Round 1 of review on
+    #357 measured this function catching ``ValueError`` around ``json.loads``
+    and a baseline of 200000 nested arrays escaping as a bare
+    ``RecursionError`` - a ``RuntimeError``, not a ``ValueError`` - so a
+    document this promises to refuse with exit 2 killed the command with a
+    traceback and exit 1 instead. Four rules, all checkable:
+
+    1. ``Exception`` exactly. Narrower is the defect itself: everything about
+       the document derives from ``Exception``, while ``KeyboardInterrupt``
+       and ``SystemExit`` are about the process.
+    2. The broad clause LAST, or the specific message above it is unreachable.
+    3. ALL the I/O outside the guarded block. ``read_bytes`` here, ``decode``
+       and ``loads`` there, so no widening of the parse guard can reach an
+       ``OSError`` and report a disk failure as malformed JSON.
+    4. Report individually only the causes that can be named. Two are:
+       a file that is not there, and bytes that are not UTF-8.
+
+    ``Baseline.from_document`` is called OUTSIDE the guard too. It raises
+    ``BaselineError``, which is a ``ValueError``, and a broad clause around it
+    would rewrite its own precise message into "is not JSON".
     """
     try:
-        text = path.read_text(encoding="utf-8")
+        raw_bytes = path.read_bytes()
     except FileNotFoundError:
         raise BaselineError(f"no baseline at {path}; run ks sense --write-baseline first") from None
-    except (OSError, ValueError) as exc:
+    except OSError as exc:
         raise BaselineError(f"cannot read the baseline at {path}: {exc}") from exc
     try:
-        raw = json.loads(text)
-    except ValueError as exc:
-        raise BaselineError(f"{path} is not JSON: {exc}") from exc
-    return Baseline.from_document(raw)
+        document = json.loads(raw_bytes.decode("utf-8"))
+    except UnicodeDecodeError as exc:
+        raise BaselineError(f"cannot read the baseline at {path}: {exc}") from exc
+    except Exception as exc:
+        raise BaselineError(f"{path} is not JSON: {type(exc).__name__}: {exc}") from exc
+    return Baseline.from_document(document)
+
+
+def refuse_foreign_baseline(baseline: Baseline, digest: str) -> None:
+    """Raise unless this baseline was measured the way this run will be.
+
+    ``decisions.bind_register`` refuses a register whose project and spec do
+    not match the manifest about to be scheduled, and the reason is the same
+    one: an artifact one phase writes and another READS has to carry the
+    identity of the thing it belongs to, and the reader has to check it.
+    ``docs/dampener.md`` already said a baseline and a comparison measured at
+    different timeouts are not a comparison; this is the mechanism behind that
+    sentence, in place of a literal timeout typed into a workflow file.
+
+    Both digests are named because neither one alone tells the operator
+    anything they can act on.
+    """
+    if baseline.verify_digest != digest:
+        raise BaselineError(
+            f"this baseline was measured with a different verify configuration: "
+            f"baseline digest {baseline.verify_digest}, this run {digest}. "
+            "The digest covers the test, typecheck and lint commands and the "
+            "subprocess timeout; a comparison across two of those is not a "
+            "comparison. Restore the configuration it was written under, or "
+            "regenerate it with ks sense --write-baseline --force"
+        )
 
 
 def refuse_existing_baseline(path: Path, *, force: bool) -> None:
@@ -348,14 +510,32 @@ class Comparison:
     fixed: dict[str, int]
     #: In the baseline, absent now, and its check measured nothing now.
     unmeasured: dict[str, int]
+    #: Check name -> why it measured nothing now, for every check the BASELINE
+    #: measured and this run did not. Flags: a sensor going dark is the thing
+    #: this whole mechanism exists to notice, and the ``unmeasured`` bucket
+    #: cannot cover it, because that bucket holds baseline SIGNATURES and a
+    #: green baseline has none.
+    stopped_measuring: dict[str, str]
     #: ``(baseline, current)`` when the sensor's own schema version moved under
     #: the baseline, else None. A note, not a refusal: see :func:`compare`.
     sense_schema_changed: tuple[int, int] | None
+    #: ``(baseline, current)`` when the measured directory's name is not the
+    #: one the baseline records, else None. A note, for the reason on
+    #: :attr:`Baseline.root_name`.
+    root_name_changed: tuple[str, str] | None
 
     @property
     def regressed(self) -> bool:
-        """The single verdict. ``fixed`` and ``unmeasured`` never affect it."""
-        return bool(self.new) or bool(self.increased)
+        """The single verdict. ``fixed`` and ``unmeasured`` never affect it.
+
+        ``stopped_measuring`` DOES, and that is the one asymmetry worth
+        stating. A branch on which the test suite stops finishing produces no
+        new signature and no increased one - it produces no signatures at all -
+        so without this the single most important thing a pull-request check
+        could catch was reported as "no regression" and exit 0. Measured on the
+        head of #357 against this repository's own committed baseline.
+        """
+        return bool(self.new) or bool(self.increased) or bool(self.stopped_measuring)
 
 
 def compare(baseline: Baseline, current: Baseline) -> Comparison:
@@ -365,6 +545,12 @@ def compare(baseline: Baseline, current: Baseline) -> Comparison:
     when it appears now. That over-flags when a toolchain gains a binary rather
     than the tree getting worse, which is the safe direction for a flagging
     guard and costs an advisory comment.
+
+    The reverse - a check the baseline measured and this run did not - is
+    ``stopped_measuring``, and it is a REGRESSION rather than a note. A sensor
+    that went dark produces no signature to put in any of the other four
+    buckets, so before it existed the report for a branch whose test suite
+    stopped finishing was "no regression".
 
     A differing ``sense_schema_version`` is a NOTE rather than exit 2, and this
     is the one place the house fail-closed rule is deliberately not applied. The
@@ -394,15 +580,29 @@ def compare(baseline: Baseline, current: Baseline) -> Comparison:
         else:
             unmeasured[signature] = count
 
+    # The FIFTH bucket, and the only one keyed on a check rather than on a
+    # signature. Set difference over the two `measured_checks` lists, so it
+    # covers both ways a sensor goes dark: a row that measured nothing now, and
+    # a check that produced no row at all because somebody turned it off.
+    stopped: dict[str, str] = {
+        check: current.unmeasured_reasons.get(check, NO_REASON_RECORDED)
+        for check in sorted(set(baseline.measured_checks) - measured_now)
+    }
+
     changed: tuple[int, int] | None = None
     if baseline.sense_schema_version != current.sense_schema_version:
         changed = (baseline.sense_schema_version, current.sense_schema_version)
+    renamed: tuple[str, str] | None = None
+    if baseline.root_name != current.root_name:
+        renamed = (baseline.root_name, current.root_name)
     return Comparison(
         new=new,
         increased=increased,
         fixed=fixed,
         unmeasured=unmeasured,
+        stopped_measuring=stopped,
         sense_schema_changed=changed,
+        root_name_changed=renamed,
     )
 
 
@@ -450,10 +650,18 @@ Mode = WriteMode | CompareMode
 
 
 def _baseline_path(value: str, root_dir: Path) -> Path:
-    """The bare flag means the default under ``--root``; a value is taken as given."""
+    """Where the baseline lives, bare flag or explicit value: BOTH under ``--root``.
+
+    ``Path.__truediv__`` returns the right-hand side unchanged when it is
+    absolute, so one expression covers the three cases. The relative one is the
+    fix: before it, passing the exact path ``--help`` advertises as the default
+    together with ``--root`` read a different file and reported "no baseline
+    at ..." for a file that exists. Two rules for one flag is the surprise; one
+    rule, stated in ``--help``, is not.
+    """
     if value == OPTIONAL_VALUE_SENTINEL:
         return root_dir / DEFAULT_BASELINE_PATH
-    return Path(value).expanduser()
+    return root_dir / Path(value).expanduser()
 
 
 def _refuse_dead_flags(
@@ -547,6 +755,12 @@ def _notes(comparison: Comparison, baseline: Baseline) -> list[str]:
             f"note: the sense schema moved from {was} to {now} since this baseline "
             "was written; refresh it with ks sense --write-baseline --force"
         )
+    if comparison.root_name_changed is not None:
+        was_name, now_name = comparison.root_name_changed
+        notes.append(
+            f"note: this baseline was written in a directory called {was_name!r} and "
+            f"this run measured one called {now_name!r}; check it is the same project"
+        )
     if baseline.base_ref is None:
         notes.append("note: the baseline records no commit; it was written outside a repository")
     return notes
@@ -555,7 +769,11 @@ def _notes(comparison: Comparison, baseline: Baseline) -> list[str]:
 def _verdict(comparison: Comparison) -> str:
     if not comparison.regressed:
         return "no regression"
-    return f"regression: {len(comparison.new)} new, {len(comparison.increased)} increased"
+    return (
+        f"regression: {len(comparison.new)} new, "
+        f"{len(comparison.increased)} increased, "
+        f"{len(comparison.stopped_measuring)} stopped measuring"
+    )
 
 
 def _human_bucket(title: str, rows: Iterable[str]) -> list[str]:
@@ -574,6 +792,12 @@ def render_human(comparison: Comparison, baseline: Baseline, path: Path) -> list
         _human_bucket(
             "increased",
             (f"{s}  {was} -> {now}" for s, (was, now) in comparison.increased.items()),
+        )
+    )
+    lines.extend(
+        _human_bucket(
+            f"stopped measuring ({STOPPED_MEASURING_NOTE})",
+            (f"{c}  {why}" for c, why in comparison.stopped_measuring.items()),
         )
     )
     lines.extend(_human_bucket("fixed", (f"{s}  {n}" for s, n in comparison.fixed.items())))
@@ -635,6 +859,13 @@ def render_markdown(comparison: Comparison, baseline: Baseline, path: Path) -> s
     )
     lines.extend(
         _markdown_table(
+            f"Stopped measuring ({STOPPED_MEASURING_NOTE})",
+            "| check | why |",
+            [f"| `{c}` | {why} |" for c, why in comparison.stopped_measuring.items()],
+        )
+    )
+    lines.extend(
+        _markdown_table(
             "Fixed",
             "| signature | was |",
             [f"| `{s}` | {n} |" for s, n in comparison.fixed.items()],
@@ -669,12 +900,17 @@ def comparison_document(
     if comparison.sense_schema_changed is not None:
         was, now = comparison.sense_schema_changed
         schema_changed = {"baseline": was, "current": now}
+    root_changed: dict[str, str] | None = None
+    if comparison.root_name_changed is not None:
+        was_name, now_name = comparison.root_name_changed
+        root_changed = {"baseline": was_name, "current": now_name}
     return {
         "baseline_path": str(path),
         "baseline": baseline.to_document(),
         "current": {
             "measured_checks": sorted(current.measured_checks),
             "unmeasured_checks": sorted(current.unmeasured_checks),
+            "unmeasured_reasons": dict(sorted(current.unmeasured_reasons.items())),
             "signatures": dict(sorted(current.signatures.items())),
         },
         "new": dict(comparison.new),
@@ -684,6 +920,8 @@ def comparison_document(
         },
         "fixed": dict(comparison.fixed),
         "unmeasured": dict(comparison.unmeasured),
+        "stopped_measuring": dict(comparison.stopped_measuring),
         "regressed": comparison.regressed,
         "sense_schema_changed": schema_changed,
+        "root_name_changed": root_changed,
     }

@@ -17,6 +17,16 @@ from kstrl import dampener
 from kstrl.parsers import ParsedFailure, ParsedOutput
 from kstrl.verify import CheckResult, NotMeasured, VerificationResult
 
+#: The digest both sides of a comparison carry unless a test is about the
+#: refusal itself. A literal, because `verify_digest` is what produces a real
+#: one and pinning its output here would make this helper a second
+#: implementation of it.
+DIGEST = "0" * 16
+
+#: The measured directory's name. Both sides share it unless a test is about
+#: the mismatch note.
+ROOT_NAME = "kstrl"
+
 
 def _baseline(
     signatures: dict[str, int] | None = None,
@@ -25,17 +35,26 @@ def _baseline(
     # `to_document` sorts every collection so the file diffs cleanly.
     measured: tuple[str, ...] = ("linter", "test_suite", "typecheck"),
     unmeasured: tuple[str, ...] = (),
+    reasons: dict[str, str] | None = None,
     sense_schema_version: int = 2,
     base_ref: str | None = "0123456789abcdef",
     passed: bool = False,
+    root_name: str = ROOT_NAME,
+    digest: str = DIGEST,
 ) -> dampener.Baseline:
     return dampener.Baseline(
         generated_at="2026-09-06T00:00:00Z",
         base_ref=base_ref,
+        root_name=root_name,
         passed=passed,
         sense_schema_version=sense_schema_version,
+        verify_digest=digest,
         measured_checks=measured,
         unmeasured_checks=unmeasured,
+        # Defaulted from `unmeasured` so a test that names a hole does not have
+        # to spell the reason twice; `from_document` requires the two key sets
+        # to match, and this helper keeps that true by construction.
+        unmeasured_reasons=reasons or {name: "did not run" for name in unmeasured},
         signatures=dict(signatures or {}),
     )
 
@@ -94,14 +113,28 @@ def test_a_signature_whose_check_did_not_run_is_not_fixed() -> None:
     The whole reason ``unmeasured`` exists. ``fixed`` CLEARS, so it has to be
     narrow: an over-matching clear turns "the sensor stopped running" into
     "the problem went away", which is the mechanism deleting itself quietly.
-    """
-    current = _baseline({}, measured=("linter",), unmeasured=("dead_code",))
 
-    comparison = dampener.compare(_baseline({"dead_code:unused-import": 2}), current)
+    And the sensor going dark is a REGRESSION, not a silent note. The two
+    buckets are the same fact from two directions: ``unmeasured`` says which
+    baseline signatures cannot be spoken for, ``stopped_measuring`` says which
+    sensor stopped, and the verdict follows the second.
+    """
+    base = _baseline({"dead_code:unused-import": 2}, measured=("dead_code", "linter"))
+    current = _baseline(
+        {},
+        measured=("linter",),
+        unmeasured=("dead_code",),
+        reasons={"dead_code": "Dead code scan timed out after 30.0s, skipping"},
+    )
+
+    comparison = dampener.compare(base, current)
 
     assert comparison.unmeasured == {"dead_code:unused-import": 2}
     assert comparison.fixed == {}
-    assert comparison.regressed is False
+    assert comparison.stopped_measuring == {
+        "dead_code": "Dead code scan timed out after 30.0s, skipping"
+    }
+    assert comparison.regressed is True
 
 
 def test_a_new_signature_from_a_check_the_baseline_never_measured_is_flagged() -> None:
@@ -187,8 +220,10 @@ def _from(result: VerificationResult) -> dampener.Baseline:
     return dampener.baseline_from_result(
         result,
         base_ref="abc1234def",
+        root_name=ROOT_NAME,
         generated_at="2026-09-06T00:00:00Z",
         sense_schema_version=2,
+        digest=DIGEST,
     )
 
 
@@ -315,10 +350,13 @@ def test_baseline_keys_are_sorted_in_the_file_bytes(tmp_path: Path) -> None:
         "schema_version",
         "generated_at",
         "base_ref",
+        "root_name",
         "passed",
         "sense_schema_version",
+        "verify_digest",
         "measured_checks",
         "unmeasured_checks",
+        "unmeasured_reasons",
         "signatures",
     ]
 
@@ -350,10 +388,13 @@ def _valid_document() -> dict[str, Any]:
         "schema_version": 1,
         "generated_at": "2026-09-06T00:00:00Z",
         "base_ref": "abc",
+        "root_name": ROOT_NAME,
         "passed": False,
         "sense_schema_version": 2,
+        "verify_digest": DIGEST,
         "measured_checks": ["linter"],
         "unmeasured_checks": [],
+        "unmeasured_reasons": {},
         "signatures": {"linter:E501": 1},
     }
 
@@ -427,7 +468,9 @@ def _comparison(**kwargs: Any) -> dampener.Comparison:
         "increased": {},
         "fixed": {},
         "unmeasured": {},
+        "stopped_measuring": {},
         "sense_schema_changed": None,
+        "root_name_changed": None,
     }
     return dampener.Comparison(**{**defaults, **kwargs})
 
@@ -444,7 +487,7 @@ def test_human_report_names_the_counts_when_it_regressed() -> None:
 
     lines = dampener.render_human(comparison, _baseline({}), Path("b.json"))
 
-    assert lines[-1] == "regression: 1 new, 1 increased"
+    assert lines[-1] == "regression: 1 new, 1 increased, 0 stopped measuring"
     assert "  linter:E501  2" in lines
     assert "  linter:F401  1 -> 4" in lines
 

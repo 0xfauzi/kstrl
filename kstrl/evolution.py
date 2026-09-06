@@ -616,9 +616,15 @@ def signature_counts_from_verification(
     the journal's own constant, so a defaulted call is byte-identical to what
     the journal recorded before this parameter existed.
 
-    This is the one place the ``"<check>:<code>"`` spelling is written, and
-    :func:`signatures_from_verification` reads its keys, so a format spelled
-    twice cannot get changed in one place only.
+    The ``"<check>:<code>"`` spelling lives in this ONE MODULE, in three
+    functions that have to agree: this one composes it through
+    :func:`_check_signatures`, :func:`signature_for_error` writes the
+    ``"<check>:<slug>"`` fallback for a check with no parsed codes - which is
+    most real signatures, including every one the dampener falls back to - and
+    :func:`split_signature` takes it apart again, which is how
+    :func:`kstrl.dampener.compare` recovers a check name before deciding
+    ``fixed``. "One place" was the earlier claim and it was wrong; one module
+    is what the guard against a format changed in one place only actually is.
     """
     counts: Counter[str] = Counter()
     for check in checks:

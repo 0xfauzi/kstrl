@@ -9,6 +9,7 @@ about exit codes, flag refusals, order of operations and output surfaces.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,26 @@ from tests.spine_utils import git
 from tests.test_sense_cli import _LINT_FAIL_COMMAND, _kstrl_toml, _make_repo
 
 DEFAULT_RELATIVE = "scripts/kstrl/sense-baseline.json"
+
+#: A lint command whose findings come from a FILE in the repository, so a test
+#: can turn one on and off without touching the command itself.
+#:
+#: #227 records a digest of the three verify commands and the timeout in the
+#: baseline and refuses a comparison measured with a different one, so swapping
+#: `lint_command` between writing a baseline and comparing against it is
+#: correctly exit 2 now, and cannot be how a test arranges a changed finding.
+_LINT_FROM_FILE_COMMAND = (
+    f"{sys.executable} -c 'import pathlib,sys;"
+    'p=pathlib.Path("lint-findings.txt");'
+    't=p.read_text(encoding="utf-8") if p.exists() else "";'
+    "sys.stdout.write(t);sys.exit(1 if t else 0)'"
+)
+
+_E501_FINDING = "x.py:1:1: E501 line too long\n"
+
+
+def _set_lint_findings(root: Path, text: str) -> None:
+    (root / "lint-findings.txt").write_text(text, encoding="utf-8")
 
 
 def _invoke(root: Path, *args: str) -> Result:
@@ -71,7 +92,14 @@ def test_the_write_line_reports_counts_and_the_unmeasured_sensors(tmp_path: Path
     # tree, and this tree is red.
     assert result.exit_code == 1, result.output
     assert result.output.startswith(f"baseline written: {root / DEFAULT_RELATIVE}")
-    assert "(1 signatures, 1 total findings); unmeasured: none" in result.output
+    # bad_patterns and diff_scope are named because on this tree they measured
+    # NOTHING (#227): the diff against the base is empty, so bad_patterns
+    # scanned zero Python files, and no --allowed-path was given, so diff_scope
+    # applied no rule. A hole in a baseline has to be visible at the moment the
+    # operator commits it.
+    assert (
+        "(1 signatures, 1 total findings); unmeasured: bad_patterns, diff_scope"
+    ) in result.output
 
 
 def test_write_baseline_refuses_overwrite_without_force(tmp_path: Path) -> None:
@@ -184,25 +212,25 @@ def test_compare_detects_a_new_signature_and_stays_advisory(tmp_path: Path) -> N
     Note what exit 0 proves: the comparison's exit code does NOT follow
     ``result.passed``. The linter is failing here.
     """
-    root = _make_repo(tmp_path)
+    root = _make_repo(tmp_path, lint_command=_LINT_FROM_FILE_COMMAND)
     assert _write(root).exit_code == 0
-    _make_lint_fail(root)
+    _set_lint_findings(root, _E501_FINDING)
 
     advisory = _invoke(root, "--compare-baseline")
     blocking = _invoke(root, "--compare-baseline", "--fail-on-regression")
 
     assert advisory.exit_code == 0, advisory.output
     assert "linter:E501" in advisory.output
-    assert "regression: 1 new, 0 increased" in advisory.output
+    assert "regression: 1 new, 0 increased, 0 stopped measuring" in advisory.output
     assert blocking.exit_code == 1
     assert "linter:E501" in blocking.output
 
 
 def test_compare_reports_a_fixed_signature_and_exits_0(tmp_path: Path) -> None:
-    root = _make_repo(tmp_path)
-    _make_lint_fail(root)
+    root = _make_repo(tmp_path, lint_command=_LINT_FROM_FILE_COMMAND)
+    _set_lint_findings(root, _E501_FINDING)
     assert _write(root).exit_code == 1
-    (root / "kstrl.toml").write_text(_kstrl_toml(), encoding="utf-8")
+    _set_lint_findings(root, "")
 
     result = _invoke(root, "--compare-baseline", "--fail-on-regression")
 
@@ -265,8 +293,10 @@ def test_the_json_document_carries_the_dampener_block(tmp_path: Path) -> None:
         "increased",
         "fixed",
         "unmeasured",
+        "stopped_measuring",
         "regressed",
         "sense_schema_changed",
+        "root_name_changed",
     }
     assert document["dampener"]["regressed"] is False
 

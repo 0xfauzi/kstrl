@@ -52,6 +52,17 @@ class FixtureResult:
     passed: bool
     actual: str = ""
     message: str = ""
+    # #227, the same field and the same rule as `verify.CheckResult.measured`,
+    # one level down. False when this fixture produced a row having measured
+    # NOTHING about the software: the command timed out, or the process could
+    # not be launched at all. `check_fixtures` folds these into the one
+    # `fixtures` CheckResult with `all()`, so one unmeasured fixture makes the
+    # whole row unmeasured - the clearing side has to be the narrow one.
+    #
+    # A malformed fixture DEFINITION is deliberately still measured=True: it
+    # is a stable, reproducible property of the PRD, and its disappearance is
+    # a real fix. This field marks the environment failing, not the artifact.
+    measured: bool = True
 
 
 @dataclass
@@ -166,12 +177,14 @@ def run_cli_fixture(
             fixture=fixture,
             passed=False,
             message=f"Command timed out after {timeout}s",
+            measured=False,
         )
     except OSError as exc:
         return FixtureResult(
             fixture=fixture,
             passed=False,
             message=f"Failed to run command: {exc}",
+            measured=False,
         )
 
     stdout = result.stdout
@@ -395,12 +408,14 @@ def run_function_fixture(
             fixture=fixture,
             passed=False,
             message=f"Function fixture timed out after {timeout}s",
+            measured=False,
         )
     except OSError as exc:
         return FixtureResult(
             fixture=fixture,
             passed=False,
             message=f"Failed to launch fixture subprocess: {exc}",
+            measured=False,
         )
 
     payload = _parse_runner_result(result.stdout)
@@ -583,6 +598,10 @@ def check_fixtures(
             passed=True,
             message="No fixtures defined",
             duration_seconds=time.monotonic() - start,
+            # #227: a vacuous pass, the same shape as diff_scope with no
+            # allowed paths. It ran no oracle, so it cannot prove one stopped
+            # failing.
+            measured=False,
         )
 
     results: list[FixtureResult] = []
@@ -630,6 +649,12 @@ def check_fixtures(
         message=message,
         details=details,
         duration_seconds=time.monotonic() - start,
+        # #227: one fixture that measured nothing makes the whole row
+        # unmeasured. `all` and not `any`, because this field gates the
+        # CLEARING side of the dampener and that side has to be the narrow
+        # one: a run in which one fixture timed out cannot prove that another
+        # baseline signature went away.
+        measured=all(r.measured for r in results),
     )
 
 
@@ -658,6 +683,10 @@ def check_fixtures_from_prd(
             message=("PRD could not be read for the fixtures check (failing closed)"),
             details=[f"Error: {exc}"],
             duration_seconds=time.monotonic() - start,
+            # #227: the check could not learn which fixtures to run, so it ran
+            # none. Failing closed decides the verdict; measured=False is what
+            # stops the absent signatures reading as fixed.
+            measured=False,
         )
     errors = PRD.validate_schema(data)
     if errors:
@@ -670,6 +699,7 @@ def check_fixtures_from_prd(
             ),
             details=errors[:10],
             duration_seconds=time.monotonic() - start,
+            measured=False,
         )
     fixtures = load_fixtures_from_prd_data(data)
     return check_fixtures(fixtures, cwd, config, component_id=component_id)

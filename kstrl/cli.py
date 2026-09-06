@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     # Not a deferral - line 104 already imports kstrl.verify at module
     # scope, so it is on `ks --help`'s import path either way (measured
     # here at 5.2ms of cli.py's 84.7ms cumulative).
-    from kstrl.verify import VerificationResult
+    from kstrl.verify import VerificationResult, VerifyConfig
 
 from dataclasses import replace
 
@@ -3685,6 +3685,39 @@ def _sense_document(
     return document
 
 
+def _sense_verify_digest(
+    verify_cfg: VerifyConfig,
+    path: Path,
+    *,
+    mode: dampener.Mode | None,
+    as_json: bool,
+) -> str:
+    """The digest of HOW this run measures, and the refusal of a foreign baseline.
+
+    Its own function for two reasons. It is the one place a comparison is
+    refused for having been measured differently, so a reader looking for that
+    rule finds it whole. And ``sense`` is held at its cognitive number by a
+    gate that fails rather than advises: inlined, this cost three points.
+
+    Placed after the config load, because the digest is a function of the
+    RESOLVED commands and the timeout, and still before the sensors: a
+    comparison that cannot be trusted is refused in a tenth of a second rather
+    than after five minutes of measurement.
+    """
+    from kstrl.verify import resolve_verify_commands
+
+    digest = dampener.verify_digest(
+        resolve_verify_commands(verify_cfg, path),
+        verify_cfg.subprocess_timeout,
+    )
+    if isinstance(mode, dampener.CompareMode):
+        try:
+            dampener.refuse_foreign_baseline(mode.baseline, digest)
+        except dampener.BaselineError as exc:
+            _sense_error(str(exc), as_json)
+    return digest
+
+
 def _sense_dampener_report(
     path: Path,
     base: str,
@@ -3692,6 +3725,7 @@ def _sense_dampener_report(
     *,
     mode: dampener.Mode,
     as_json: bool,
+    digest: str,
 ) -> NoReturn:
     """The #227 dampener's own output, printed instead of the check table.
 
@@ -3708,8 +3742,10 @@ def _sense_dampener_report(
     current = dampener.baseline_from_result(
         result,
         base_ref=get_head_sha(path),
+        root_name=path.name,
         generated_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         sense_schema_version=SENSE_SCHEMA_VERSION,
+        digest=digest,
     )
     if isinstance(mode, dampener.WriteMode):
         try:
@@ -3740,6 +3776,7 @@ def _sense_report(
     as_json: bool,
     ui: str,
     no_color: bool,
+    digest: str,
 ) -> NoReturn:
     """Print the measurement and exit: 0 when every check passed, 1 otherwise.
 
@@ -3751,7 +3788,7 @@ def _sense_report(
     and the branch added.
     """
     if mode is not None:
-        _sense_dampener_report(path, base, result, mode=mode, as_json=as_json)
+        _sense_dampener_report(path, base, result, mode=mode, as_json=as_json, digest=digest)
 
     if as_json:
         click.echo(json.dumps(_sense_document(path, base, result), indent=2))
@@ -3840,7 +3877,8 @@ def _sense_error(message: str, as_json: bool) -> NoReturn:
     type=str,
     metavar="[PATH]",
     help="Record the current signature counts as a baseline "
-    "(default: scripts/kstrl/sense-baseline.json under --root)",
+    "(default: scripts/kstrl/sense-baseline.json; a relative PATH is "
+    "resolved under --root)",
 )
 @click.option(
     "--compare-baseline",
@@ -3851,7 +3889,8 @@ def _sense_error(message: str, as_json: bool) -> NoReturn:
     type=str,
     metavar="[PATH]",
     help="Report what this tree added to a recorded baseline "
-    "(default: scripts/kstrl/sense-baseline.json under --root)",
+    "(default: scripts/kstrl/sense-baseline.json; a relative PATH is "
+    "resolved under --root)",
 )
 @click.option(
     "--force",
@@ -3987,6 +4026,8 @@ def sense(
         # errors (PolicyConfigError is one).
         _sense_error(f"could not load kstrl.toml from {root_dir}: {exc}", as_json)
 
+    digest = _sense_verify_digest(verify_cfg, path, mode=mode, as_json=as_json)
+
     base = resolve_base_branch(base_branch, path)
 
     # Every check below that consumes the diff reads it through the
@@ -4043,6 +4084,7 @@ def sense(
         as_json=as_json,
         ui=ui,
         no_color=no_color,
+        digest=digest,
     )
 
 
