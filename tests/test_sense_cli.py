@@ -7,6 +7,7 @@ command through ``CliRunner`` and reads the ``--json`` document back.
 
 from __future__ import annotations
 
+import ast
 import json
 import shutil
 import subprocess
@@ -402,6 +403,34 @@ def test_every_ruff_gated_test_here_is_gated_on_the_capability() -> None:
         "test_sense_table_names_the_dead_code_scan_it_did_not_run",
     ]
     assert set(gated.values()) == {_CONCISE_REASON}
+
+
+def test_the_capability_gate_reads_the_probe_and_not_the_binary() -> None:
+    """The reason census above cannot see a condition-only swap.
+
+    `pytest.mark.skipif` stores the EVALUATED bool, and
+    `not _ruff_can_do_concise()` and `shutil.which("ruff") is None` are
+    the same bool on every machine whose ruff is current, which is every
+    machine that runs this suite. So the mark's source is what
+    distinguishes them: this parses the module and asserts the one
+    `_NEEDS_CONCISE_RUFF` assignment calls the probe. Measured: without
+    it, swapping the condition and leaving the reason alone is STILL
+    GREEN.
+    """
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    assigns = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and any(isinstance(t, ast.Name) and t.id == "_NEEDS_CONCISE_RUFF" for t in node.targets)
+    ]
+    assert len(assigns) == 1, "one home for the mark"
+    called = {
+        node.func.id
+        for node in ast.walk(assigns[0])
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert "_ruff_can_do_concise" in called
 
 
 def test_sense_never_edits_stages_or_commits(tmp_path: Path) -> None:
