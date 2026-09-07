@@ -73,7 +73,12 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   `>= 1`). `[sandbox]`, `[fixtures]`, `[inbox]` and `[divergence]` are
   resolved with them, which also removes the second `[sandbox]`
   resolution a run used to make. Editing `kstrl.toml` mid-run now has no
-  effect on the running factory and takes effect at the next run (#192).
+  effect on the running factory and takes effect at the next run. A run
+  with the ladder off, which is the default, reads no
+  `.kstrl/autonomy.json` at all: the stored ladder state is resolved
+  once per run when `[autonomy] enabled` and not otherwise, so a project
+  that never opted in pays neither the read, nor the control-directory
+  migration, nor a warning about a ladder it does not use (#192).
 
 - A configuration section a run cannot resolve is now refused before the
   run starts, with exit code 2 and the section and the offending key
@@ -83,7 +88,14 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   to 210 seconds against a frontier model - so an edit made inside that
   window arrives at the run's own resolution. Because the refusal
   happens before the run directory exists, no run is recorded as having
-  cost nothing (#192, #257).
+  cost nothing. What it does to the accounting, stated rather than left
+  implied: a refusal inside that window lands on
+  `RunSpend.unmetered_phases`' blocker-halt path, so the launch is
+  charged $0 and the day's total is labelled a floor with `architect`
+  unmetered, which is the treatment a spec blocker already gets.
+  Measured, a launch whose architect spent $4.20 is charged $4.20 on the
+  old code, where a malformed `[policy]` happened to crash below the
+  meter, and $0.00 with the refusal (#192, #257).
 
 - The reason `ks serve` supervises a factory run as a process GROUP was
   recorded wrongly, and nothing tested it. `caffeinate -i` does not exec
