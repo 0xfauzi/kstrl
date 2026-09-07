@@ -65,15 +65,34 @@ from kstrl.serve import (
 from kstrl.workqueue import ItemState, Queue, QueueConfig
 from tests.helpers import procs
 
-#: Both readings of the run group need a real ``caffeinate`` to compare
-#: against, so the same two conditions gate both. Said once, as a class
-#: marker: the earlier shape was a platform decorator plus an in-body
+#: Gates the ``caffeinate=True`` cases and NOTHING else. Said once,
+#: because the earlier shape was a platform decorator plus an in-body
 #: ``shutil.which`` skip on each test, and the fourth copy of that pair
 #: next door in ``tests/test_serve_seam.py`` has already drifted in
 #: wording.
+#:
+#: It is a per-parameter mark rather than a class marker, which was
+#: round 1 of #209's S4. CI is ubuntu, and under a class marker the
+#: whole census contributed nothing there - including the two cases
+#: that need no ``caffeinate`` and no macOS. Measured: the mutation that
+#: drops ``start_new_session=True`` from ``run_supervised`` is caught by
+#: this census and by nothing else in this file, and
+#: ``start_new_session`` has nothing to do with macOS.
 _NEEDS_CAFFEINATE = pytest.mark.skipif(
     sys.platform != "darwin" or shutil.which("caffeinate") is None,
     reason="caffeinate is macOS-only and must be installed",
+)
+
+#: Gates every case that takes a census, on either platform. Where ``ps``
+#: does not list pid 1 - a ``hidepid`` mount, a container - the read
+#: under ``procs.group_member_pids`` refuses, correctly, and raises
+#: through ``on_spawn``; the red test then reads as a defect in
+#: ``kstrl/procgroup.py`` rather than as an environment that cannot be
+#: measured. ``tests/test_shutdown.py`` skips on the same helper for the
+#: same reason. Evaluated once at import, which costs one ``ps``.
+_NEEDS_A_READABLE_PS = pytest.mark.skipif(
+    not procs.ps_is_readable(),
+    reason="ps here is absent or filtered to one uid, so a group census would be an undercount",
 )
 
 # --------------------------------------------------------------------------
@@ -85,35 +104,53 @@ _NEEDS_CAFFEINATE = pytest.mark.skipif(
 #: timeout path is the only thing that ends it.
 _SLEEPER_ARGV = ("-c", "import time; time.sleep(30)")
 
+#: The same sleeper, after spawning one child of its own into the run's
+#: group. A real factory run's group is this shape and not the one
+#: above: it holds agent subprocesses, git, and the verify commands. The
+#: child is spawned WITHOUT ``start_new_session``, which is what makes it
+#: a member, and the count moves by one because of it.
+_SPAWNER_ARGV = (
+    "-c",
+    "import subprocess, sys, time; "
+    "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+    "time.sleep(30)",
+)
+
 #: The deadline ``run_supervised`` is given. Short because the test wants
 #: the timeout path (it is what proves the group kill takes the
 #: caffeinate helper with it), not because the census needs it.
 _RUN_TIMEOUT_SECONDS = 1.0
 
 #: How long the census waits for the group to reach its expected size.
-#: Measured over 12 spawns while writing this: the caffeinate helper is
-#: visible 12 times out of 12, at a median of 2.1 ms and a maximum of
-#: 2.4 ms after ``Popen`` returns. Five seconds is that maximum times
-#: two thousand, which is headroom for a loaded machine and still a
-#: bound, so a helper that never appears fails rather than hangs.
+#: Measured over 12 spawns: the caffeinate helper is in the FIRST sample
+#: 12 times out of 12, and that sample lands at a median of 21.6 ms and
+#: a maximum of 22.4 ms after ``Popen`` returns. Those are the cost of
+#: the instrument, not of the fork: one ``read_group_members`` measured
+#: a median of 21.7 ms on the same machine, so the fork is faster than
+#: anything this census can time and no latency figure is claimed here.
+#: Five seconds is 223x the first sample. It is a bound, so a helper
+#: that never appears fails rather than hangs.
 _SETTLE_DEADLINE_SECONDS = 5.0
 
 #: How long the census keeps WATCHING after the group reached its
-#: expected size, taking the largest count it sees. Load-bearing, and
-#: the reason is the direction this guard has to be wrong in. Stopping
-#: at the first sample that matches would pass a group that grows a
-#: member a millisecond later, which is precisely the ``caffeinate =
-#: false`` case: that group has its one member immediately, so an
-#: early-exit census would assert "one member" before a helper could
-#: possibly have appeared and would clear a runner that wrapped the run
-#: unconditionally.
+#: expected size, keeping the last of the maximal samples. It is
+#: insurance, not a control, and round 1 of #209's review is what
+#: settled that: deleting the hold loop leaves the file green, and so
+#: does deleting it TOGETHER with the mutation its argument names
+#: (``caffeinate_prefix`` ignoring its ``enabled`` flag). On this
+#: machine one ``read_group_members`` costs about 22 ms, and the helper
+#: is in the first sample every time, so there is no window for the hold
+#: to catch. It is kept because that ordering is a property of this
+#: machine: where ``ps`` is faster than the fork, an early-exit census
+#: would assert "one member" before the helper could appear and would
+#: clear a runner that wrapped the run unconditionally.
 _HOLD_SECONDS = 0.25
 
-#: Interval between ``ps`` forks. One ``read_group_members`` was measured
-#: at a median of 18.9 ms over 40 samples on a 931-process machine, so a
-#: hold iteration costs about 39 ms rather than the interval alone, and
-#: a whole census is 7 forks: 1 to settle and 6 across the hold, counted
-#: rather than derived.
+#: Interval between ``ps`` forks. One ``read_group_members`` was
+#: measured at a median of 21.7 ms over 40 samples, so a hold iteration
+#: costs about 42 ms rather than the interval alone, and a whole census
+#: is 7 forks: 1 to settle and 6 across the hold, counted rather than
+#: derived.
 _POLL_SECONDS = 0.02
 
 
@@ -141,13 +178,22 @@ _PROBE_TIMEOUT_SECONDS = 60.0
 
 
 def _census(pgid: int, expected: int) -> list[int]:
-    """Poll ``pgid`` to its expected size, then hold and take the largest.
+    """Poll ``pgid`` to its expected size, then hold and keep the largest.
 
     Returns the pids at the largest sample; its LENGTH is the census, so
     there is one number rather than two that a later edit could
-    desynchronise. Both halves of the loop matter: waiting only for the
-    count to REACH ``expected`` catches a group that is too small, and
-    holding afterwards catches one that is too large.
+    desynchronise. The two halves answer different questions: waiting for
+    the count to REACH ``expected`` catches a group that is too small,
+    and holding afterwards catches one that is too large.
+
+    ``>=`` rather than ``>``, so the LAST maximal sample wins rather than
+    the first. Which one is reported changes nothing about the count, and
+    the later sample is the one whose pids are still live.
+
+    It polls rather than delegating because ``tests/helpers/procs.py``
+    has no bounded poll that returns the members: ``wait_for_group_to_die``
+    and ``wait_for_pid_to_die`` both wait for a group to EMPTY and answer
+    a bool. This one waits for a group to fill and answers the pids.
     """
     deadline = time.monotonic() + _SETTLE_DEADLINE_SECONDS
     pids = procs.group_member_pids(pgid)
@@ -164,7 +210,6 @@ def _census(pgid: int, expected: int) -> list[int]:
     return pids
 
 
-@_NEEDS_CAFFEINATE
 class TestTheRunGroupMembership:
     """What `subprocess_factory_runner` actually puts in a run's group.
 
@@ -187,6 +232,7 @@ class TestTheRunGroupMembership:
         tmp_path: Path,
         *,
         caffeinate: bool,
+        argv: tuple[str, ...],
         expected: int,
     ) -> tuple[RunOutcome, int, list[int]]:
         """Spawn through the shipping supervisor and count the group.
@@ -204,18 +250,18 @@ class TestTheRunGroupMembership:
         """
         spawned: int | None = None
         members: list[int] | None = None
-        failure: BaseException | None = None
+        failure: Exception | None = None
 
         def on_spawn(pid: int) -> None:
             nonlocal spawned, members, failure
             try:
                 spawned = pid
                 members = _census(os.getpgid(pid), expected)
-            except BaseException as exc:  # noqa: BLE001 - re-raised below
+            except Exception as exc:  # noqa: BLE001 - re-raised below
                 failure = exc
 
         outcome = run_supervised(
-            [*caffeinate_prefix(caffeinate), sys.executable, *_SLEEPER_ARGV],
+            [*caffeinate_prefix(caffeinate), sys.executable, *argv],
             cwd=tmp_path,
             timeout_seconds=_RUN_TIMEOUT_SECONDS,
             on_spawn=on_spawn,
@@ -226,33 +272,49 @@ class TestTheRunGroupMembership:
         assert members is not None, "the census produced nothing"
         return outcome, spawned, members
 
+    @_NEEDS_A_READABLE_PS
     @pytest.mark.parametrize(
-        ("caffeinate", "expected_members"),
-        [(True, 2), (False, 1)],
+        ("caffeinate", "argv", "expected_members"),
+        [
+            pytest.param(True, _SLEEPER_ARGV, 2, marks=_NEEDS_CAFFEINATE, id="caffeinate"),
+            pytest.param(False, _SLEEPER_ARGV, 1, id="bare"),
+            pytest.param(
+                True, _SPAWNER_ARGV, 3, marks=_NEEDS_CAFFEINATE, id="caffeinate-with-child"
+            ),
+            pytest.param(False, _SPAWNER_ARGV, 2, id="bare-with-child"),
+        ],
     )
-    def test_the_group_holds_the_factory_and_one_caffeinate(
+    def test_the_group_holds_the_factory_its_children_and_one_caffeinate(
         self,
         tmp_path: Path,
         caffeinate: bool,
+        argv: tuple[str, ...],
         expected_members: int,
     ) -> None:
         """The census, closed by construction rather than by a search.
 
-        Four different regressions all move this number, which is why it
-        is a count. An exec-in-place caffeinate gives 1. A caffeinate
-        that forked a second helper gives 3. A helper that escaped into
-        another process group gives 1, and that one is the dangerous
-        case: the timeout path's group kill would not reach it, so every
-        timed-out run would leave the machine unable to idle-sleep.
-        Dropping ``start_new_session=True`` gives whatever pytest's own
-        group holds, which is the simplification #209 was filed to
-        prevent.
+        The number pinned is the DIFFERENCE the prefix makes, not a
+        constant about a factory run: `caffeinate` adds exactly one
+        member to whatever the utility's own tree holds. That is why the
+        childless sleeper and the sleeper that spawns one child are both
+        parametrized. Round 1 of #209's review found "exactly two members
+        with caffeinate, one without" written as a claim about a run's
+        group, and a real run's group also holds agent subprocesses, git
+        and the verify commands - which is the defect class this PR
+        exists to fix, one file over.
 
-        Dropping ``caffeinate_prefix`` from the runner's command gives 1
-        as well, which is the mutation ``tests/test_serve_seam.py``
-        records as having passed the entire suite when it was measured.
+        Four different regressions all move the number. An exec-in-place
+        caffeinate loses one. A caffeinate that forked a second helper
+        gains one. A helper that escaped into another process group loses
+        one, and that is the dangerous case: the timeout path's group
+        kill would not reach it, so every timed-out run would leave the
+        machine unable to idle-sleep. Dropping ``start_new_session=True``
+        gives whatever pytest's own group holds. Dropping
+        ``caffeinate_prefix`` from the runner's command loses one as
+        well, which is the mutation ``tests/test_serve_seam.py`` records
+        as having passed the entire suite when it was measured.
 
-        THE REAP IS ASSERTED HERE rather than by a fourth spawn. The
+        THE REAP IS ASSERTED HERE rather than by a fifth spawn. The
         consequence the census exists for is that the power assertion is
         released because the process holding it is in the group the
         timeout kills, and this run already times out and already kills
@@ -261,24 +323,24 @@ class TestTheRunGroupMembership:
         rather than by parsing ``pmset -g assertions``: the release
         follows from membership, which the count above pins, plus the
         measured fact that the helper's assertion row disappears with
-        the helper. Parsing ``pmset`` would add a dependency on an
-        output format for a fact already covered. Both parametrizations
-        assert it, so the reap is now measured with caffeinate off too.
+        the helper. Every parametrization asserts it, so the reap is
+        measured with caffeinate off and with a descendant to reach too.
         """
         outcome, pid, pids = self._run_and_census(
             tmp_path,
             caffeinate=caffeinate,
+            argv=argv,
             expected=expected_members,
         )
 
         assert len(pids) == expected_members, (
             f"the run's process group held {len(pids)} process(es), not "
-            f"{expected_members} (caffeinate={caffeinate}): {pids}. With "
-            f"caffeinate on, the group is the factory plus the forked "
-            f"caffeinate that holds PreventUserIdleSystemSleep; with it "
-            f"off, the factory alone. If caffeinate has stopped putting "
-            f"its helper in the run's group, the timeout path's group "
-            f"kill no longer releases the power assertion (#209)."
+            f"{expected_members} (caffeinate={caffeinate}): {pids}. The "
+            f"group holds the utility, whatever the utility spawned, and "
+            f"with caffeinate on one more: the forked caffeinate that "
+            f"holds PreventUserIdleSystemSleep. If caffeinate has stopped "
+            f"putting its helper in the run's group, the timeout path's "
+            f"group kill no longer releases the power assertion (#209)."
         )
         assert pids.count(pid) == 1, (
             f"the pid on_spawn was handed ({pid}) is not a member of the "
@@ -295,7 +357,10 @@ class TestTheRunGroupMembership:
 
     @pytest.mark.parametrize(
         ("caffeinate", "expected"),
-        [(True, "INHERITED_A_CHILD"), (False, "NO_CHILDREN")],
+        [
+            pytest.param(True, "INHERITED_A_CHILD", marks=_NEEDS_CAFFEINATE),
+            pytest.param(False, "NO_CHILDREN"),
+        ],
     )
     def test_the_factory_inherits_a_child_it_never_created(
         self,
@@ -341,8 +406,16 @@ class TestTheRunGroupMembership:
 #: wait that makes it lapse. Ten times the TTL, and REAL time rather than
 #: a mocked clock, because ``lease_expired`` compares against the wall
 #: clock and that is the whole reason a suspended run is at risk.
-#: Measured: 0.001s with no sleep does NOT expire in time and the control
-#: below fails, so the pair is load-bearing rather than decorative.
+#:
+#: Measured separately, because round 1 of #209's review found the pair
+#: claimed as load-bearing when only half of it is. Raising the TTL to
+#: 3600s so the lease never lapses IS caught: the control below goes
+#: red. Deleting the ``time.sleep`` entirely is NOT - the file stays
+#: green, because 0.01s has already elapsed by the time ``serve()``
+#: reaches the reaper on this machine. The sleep is insurance for a
+#: machine where it has not, and the earlier comment's evidence (0.001s
+#: with no sleep failing the control) is about a TTL that is not the one
+#: in this file.
 _LAPSED_LEASE_TTL_SECONDS = 0.01
 _LAPSE_WAIT_SECONDS = 0.1
 
@@ -417,6 +490,16 @@ class TestTheReaperRunsOnlyUnderTheDaemonLock:
     ``reap_leases`` while the first run is suspended with a lapsed lease.
     That would requeue an item that is still executing, which is the
     double-run ``factory.lock`` exists to prevent.
+
+    WHAT THIS PINS IS THE PATH, NOT THE PROPERTY, and the class is named
+    for the property. Measured in round 1 of #209's review: a ``serve()``
+    changed to take ``serve_lock``, RELEASE it, and then run the cycle -
+    so the reaper runs outside the lock - leaves all four tests below
+    green, because the contended case still raises at acquisition. What
+    would close the gap is a call-site census like
+    ``TestOnlyOneModuleShellsOutToPs`` next door, over the one call site
+    each of ``reap_leases`` and ``serve_cycle`` has today. That is not in
+    this change; the number is here so it does not have to be re-derived.
     """
 
     def test_control_the_item_is_reapable_when_no_one_holds_the_lock(

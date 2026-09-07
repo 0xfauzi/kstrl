@@ -1491,19 +1491,34 @@ def caffeinate_prefix(enabled: bool) -> list[str]:
     utility in place: it FORKS. The process the daemon spawned keeps the
     pid ``Popen`` returned and becomes the utility, and a second
     ``caffeinate`` process appears as a CHILD of it, in the same process
-    group and session. That child is the assertion holder - ``pmset -g
-    assertions`` names it ``PreventUserIdleSystemSleep ...
-    "caffeinate command-line tool"`` against the child's pid, not the
-    utility's - so the assertion is not inherited across an exec by the
-    factory. Measured lifetime: the helper is gone at the first sample
-    after the utility exits, and gone after a ``killpg`` on the
-    spawn-time group, with the ``pmset`` row gone in both cases. It
-    leaks neither a process nor a power assertion.
+    group and session. That child is the assertion holder, so the
+    assertion is not inherited across an exec by the factory. ``pmset -g
+    assertions`` prints two lines for it: a row header keyed on the
+    HELPER's pid whose ``named:`` field is ``"caffeinate command-line
+    tool"``, and a ``Details:`` line under it reading ``caffeinate
+    asserting on behalf of '<utility>' (pid <utility pid>)``, which
+    names the pid the daemon holds. Measured lifetime: the helper is
+    gone at the first sample after the utility exits, and gone after a
+    ``killpg`` on the spawn-time group, with the ``pmset`` row gone in
+    both cases. It leaks neither a process nor a power assertion.
+
+    THE HELPER ALSO HOLDS THE RUN'S PIPE. It inherits fds 1 and 2, so
+    ``lsof`` shows the same pipe against the utility and the helper.
+    ``run_supervised``'s ``communicate()`` therefore cannot see EOF
+    until the HELPER exits, not the factory, and
+    ``ServeConfig.factory_timeout_seconds`` defaults to ``0.0``, which
+    that call turns into ``timeout=None``. Latent rather than active:
+    measured over 8 spawns, the group is empty at the first sample after
+    the utility exits, so the wait is bounded by a helper that leaves
+    within one ``ps`` read.
 
     Because the helper is INSIDE the spawned group, the group kill on
     the timeout path releases the power assertion as well as reaping the
-    factory. ``tests/test_serve_process_tree.py`` pins that membership:
-    exactly two members with caffeinate, one without.
+    factory. ``tests/test_serve_process_tree.py`` pins that membership as
+    the DIFFERENCE the prefix makes rather than as a constant: the group
+    holds the factory, whatever the factory spawns, and with caffeinate
+    one more. Its census parametrizes a childless utility (2 members with
+    caffeinate, 1 without) and one that spawns a child (3 and 2).
     """
     if not enabled or sys.platform != "darwin":
         return []

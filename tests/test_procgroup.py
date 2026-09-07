@@ -669,6 +669,7 @@ EXPECTED_PS_COMMAND_SPELLINGS: dict[str, int] = {
     "tests/test_procgroup_members.py": 1,
     "tests/test_process_scoping.py": 2,  # two assertions on those messages
     "tests/test_serve.py": 6,  # the fake's argv, plus five assertions
+    "tests/test_serve_process_tree.py": 1,  # the census class's skip reason
     "tests/test_shutdown.py": 1,  # the degraded-reading message
 }
 

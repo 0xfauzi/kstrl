@@ -108,8 +108,7 @@ def group_member_pids(pgid: int) -> list[int]:
     membership, and a helper that escaped would outlive the timeout
     path's group kill still holding a power assertion.
 
-    It DELEGATES rather than reading ``ps`` itself, and the first draft
-    of #209 did not, which is how this docstring came to be written:
+    It DELEGATES rather than reading ``ps`` itself.
     ``tests/test_procgroup.py`` fails on any second ``ps`` in ``kstrl/``
     or ``tests/``, because two copies of one parse drift on failure
     handling until the daemon's answer and the suite's stop agreeing.
