@@ -62,6 +62,11 @@ class TestTheParseReturnsPidsNotCounts:
             ("1 1 Ss\n  7\n50 7 Ss\n", "a row with fewer than three columns"),
             ("1 1 Ss\nbad 7 Ss\n50 7 Ss\n", "a pid column that is not a number"),
             ("1 1 Ss\n60 bad Ss\n50 7 Ss\n", "a pgid column that is not a number"),
+            # The case that makes `_reads_as_int` ask `int()` rather than
+            # `str.isdigit`: this cell IS isdigit and `int()` rejects it,
+            # so an isdigit test would fall through to a conversion that
+            # raises out of a read with no handler for it.
+            ("1 1 Ss\n60 \N{SUPERSCRIPT TWO} Ss\n50 7 Ss\n", "a pgid of unicode digits"),
         ],
     )
     def test_a_row_the_parse_cannot_read_makes_the_listing_unreadable(
@@ -182,6 +187,10 @@ class TestTheMembershipReadRefusesWhatTheLivenessReadCanInterpret:
         members = read_group_members(4242)
         assert members.pids is None
         assert "did not list pid 1" in members.reason
+        assert "running member" in members.reason, (
+            "the message names the member whose absence moves either "
+            "answer; #209's dedup dropped the word and nothing pinned it"
+        )
         assert "undercount" in members.reason
 
     def test_a_ps_that_did_not_run_is_refused(
