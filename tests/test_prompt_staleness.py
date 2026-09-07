@@ -256,6 +256,10 @@ _RECORDED_HISTORY: dict[str, tuple[tuple[str, str], ...]] = {
         ("b8e9cd9725308cfce280d05c26033d25cb16f51ec42af2ac4a2bb05c601e48cf", "2026-09-06a"),
         ("5f00b030f0a6e6cad4a56b678fa657ebce1a2d734e465ef82a8ca6df0638ca8a", "2026-09-06"),
     ),
+    # R10.9 (#230). Same reader as the row above.
+    "memory.md": (
+        ("8146096422efcb9b4196b76711fc44c80e2c7b5b920771f8a1eddcb4ba5a81c8", "2026-09-07"),
+    ),
 }
 
 
@@ -309,14 +313,23 @@ _SCAFFOLD_WRITER = "_create_if_missing"
 #: ``_create_if_missing`` call), ``init_wizard.py`` 3 to 4 (the scaffold
 #: preview), plus ``factory.py`` (the worker kwarg's default) and
 #: ``operator_context.py`` (the scaffold name the loader suppresses on).
+#:
+#: R10.9 (#230) enrolled ``memory.md`` and every one of those five moved
+#: again by the same amount and for the same reason: ``config.py`` 2 to
+#: 3, ``factory.py`` 1 to 2, ``init_cmd.py`` 8 to 10, ``init_wizard.py``
+#: 4 to 5, ``operator_context.py`` 1 to 2. ``cli.py`` and ``launch.py``
+#: did not move: neither points an operator at this file. The new
+#: ``kstrl/config_keys.py`` contributes nothing, which is why it was the
+#: part of ``config.py`` chosen to move out under the length ratchet.
+#: Re-derived by RUNNING the walk, never by editing this literal.
 EXPECTED_TEMPLATE_FILENAMES: dict[str, int] = {
     "cli.py": 8,
-    "config.py": 2,
-    "factory.py": 1,
-    "init_cmd.py": 8,
-    "init_wizard.py": 4,
+    "config.py": 3,
+    "factory.py": 2,
+    "init_cmd.py": 10,
+    "init_wizard.py": 5,
     "launch.py": 1,
-    "operator_context.py": 1,
+    "operator_context.py": 2,
 }
 
 

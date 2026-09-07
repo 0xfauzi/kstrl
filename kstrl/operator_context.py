@@ -1,9 +1,13 @@
 """Operator-authored context files read into the engineer's prompt (R10.8).
 
 One loader for the files an operator writes by hand and the factory
-reads verbatim. The first is ``scripts/kstrl/golden-patterns.md``: what a
-good change looks like in this repository, stated before the run rather
-than distilled after it.
+reads verbatim. There are two, declared as :data:`OPERATOR_FILES`:
+``scripts/kstrl/golden-patterns.md``, what a good change looks like in
+this repository, stated before the run rather than distilled after it;
+and ``scripts/kstrl/memory.md`` (R10.9), the operator's standing
+corrections, read AFTER the retry context so an entry in it changes how
+this attempt's failures are acted on rather than being framed by them.
+The two differ only by their :class:`OperatorFileKind` row.
 
 TRUST. These files are trusted the way ``CLAUDE.md`` is trusted, which
 ``run_loop`` prepends verbatim (``kstrl/loop.py``). They are NOT passed
@@ -15,7 +19,7 @@ Filtering it would mean the harness silently dropping instructions its
 own operator wrote.
 
 That trust is only as good as the file the loader actually opens, which
-is why :func:`golden_patterns_spec` is the ONE place the path is
+is why :func:`operator_file_spec` is the ONE place a path is
 resolved, against the REPO ROOT and never against a component worktree.
 Review round 1 (S3) is the reason: the worktree is the tree the engineer
 has just been writing to, so reading the operator's file from there let
@@ -31,11 +35,19 @@ the ones worth naming, because they are the MULTI-COMPONENT case:
 ``run_factory`` hands ``root_dir`` to every component as its worktree,
 so component A's agent can write ``scripts/kstrl/golden-patterns.md`` in
 the root and components B and C read it, unfiltered, under a header
-saying the operator authored it. Nothing in the loader can prevent that,
-and the bound is the same one in every case and no stronger: the edit is
-an ordinary working-tree change the operator sees in ``git diff`` and in
-the run's own diff-scope check, rather than a change made inside a
-throwaway worktree that is deleted before anyone looks at it.
+saying the operator authored it. That applies to EVERY row, memory.md
+included. Nothing in the loader can prevent it, and the bound is the
+same one in every case and no stronger: the edit is an ordinary
+working-tree change the operator sees in ``git diff`` and in the run's
+own diff-scope check, rather than a change made inside a throwaway
+worktree that is deleted before anyone looks at it.
+
+memory.md raises the stake once #231 lands, because the daemon becomes a
+SECOND writer of it: a ``/memory`` comment on a pull request appends a
+line the next run reads. The bound above is what that rests on, so the
+file stays a version-controlled file in the operator's own tree, written
+where they can see the diff, rather than a store kstrl keeps out of
+sight.
 
 FORGERY. The block's delimiter lines carry a per-build random token from
 ``kstrl.delimiters`` (S4). A fixed marker is forgeable by the very
@@ -76,38 +88,86 @@ from kstrl.init_cmd import shipped_label
 
 logger = logging.getLogger(__name__)
 
-#: The label the golden-patterns block carries in the engineer's prompt.
-GOLDEN_PATTERNS_HEADER = "GOLDEN PATTERNS (operator-authored)"
-
-#: What the operator's terminal calls this file.
-GOLDEN_PATTERNS_SUBJECT = "Golden patterns"
-
-#: Its ``[paths]`` key, the one ``STRING_KEYS`` declares.
-GOLDEN_PATTERNS_KEY = "golden_patterns"
-
-#: Character budget for the golden-patterns file. The feedforward
-#: convention is tokens times four (``FeedforwardConfig.max_context_tokens``
-#: is spent as ``* 4`` in ``build_feedforward_context``), so 6000
-#: characters is about 1500 tokens.
-GOLDEN_PATTERNS_MAX_CHARS = 6000
-
-#: The scaffolded filename whose digest history says "kstrl wrote this,
-#: the operator has not filled it in yet". Matches a ``SCAFFOLDED_TEMPLATES``
-#: row in ``kstrl/init_cmd.py``.
-GOLDEN_PATTERNS_SCAFFOLD = "golden-patterns.md"
-
 #: The fraction of the budget a truncating cut must still deliver. See
 #: :func:`read_operator_file` for what it is defending against.
 CUT_FLOOR = 0.9
 
 
 @dataclass(frozen=True)
+class OperatorFileKind:
+    """One operator-authored file, declared once and read everywhere.
+
+    Everything that differs between two such files sits on this row, so
+    nothing below it spells any of them: the parent's once-per-run
+    notice, ``KstrlConfig.validate`` and every worker's prompt block all
+    follow the same declaration rather than a parallel one. R10.9 is the
+    case that claim was made about (review round 2, should-fix 5, and
+    ``_rows``' own docstring): the memory file is a second row, and no
+    function in this module or in ``kstrl/factory.py`` learned its name.
+    """
+
+    #: Its ``[paths]`` key, matching a ``config_keys.STRING_KEYS`` row.
+    key: str
+    #: The ``KstrlConfig`` field holding its path, read with ``getattr``.
+    #: ``tests/test_operator_context.py`` ties every row's field to a real
+    #: path field of the dataclass, because ``getattr`` on a typo raises
+    #: at run time in the parent rather than at import.
+    field: str
+    #: The label the block carries in the engineer's prompt.
+    header: str
+    #: What the operator's terminal calls the file.
+    subject: str
+    #: Character budget. The feedforward convention is tokens times four
+    #: (``FeedforwardConfig.max_context_tokens`` is spent as ``* 4`` in
+    #: ``build_feedforward_context``).
+    max_chars: int
+    #: The scaffolded filename whose digest history says "kstrl wrote
+    #: this, the operator has not filled it in yet". Matches a
+    #: ``SCAFFOLDED_TEMPLATES`` row in ``kstrl/init_cmd.py``.
+    scaffold: str
+
+
+#: R10.8. 6000 characters is about 1500 tokens.
+GOLDEN_PATTERNS = OperatorFileKind(
+    key="golden_patterns",
+    field="golden_patterns_file",
+    header="GOLDEN PATTERNS (operator-authored)",
+    subject="Golden patterns",
+    max_chars=6000,
+    scaffold="golden-patterns.md",
+)
+
+#: R10.9, about 1000 tokens. A budget of its OWN and not a share of one:
+#: the two files have different jobs and different growth rates. Golden
+#: patterns is written once and pruned by hand, while #231 makes the
+#: daemon a writer of this one, and under a shared budget a file that
+#: grows by machine would starve a file that does not, silently.
+MEMORY = OperatorFileKind(
+    key="memory",
+    field="memory_file",
+    header="MEMORY (standing feedback)",
+    subject="Memory",
+    max_chars=4000,
+    scaffold="memory.md",
+)
+
+#: Declaration order, which is what :func:`_rows` walks. NOT the prompt
+#: order: ``factory._run_component`` owns that and pins it as one literal
+#: tuple, because where memory sits relative to the retry context is the
+#: mechanism R10.9 is (the operator's standing correction is read after
+#: the controller's output for this attempt, not before it).
+OPERATOR_FILES: tuple[OperatorFileKind, ...] = (GOLDEN_PATTERNS, MEMORY)
+
+
+@dataclass(frozen=True)
 class OperatorFile:
     """One operator-authored file and how it enters the prompt.
 
-    Built by :func:`golden_patterns_spec` and by nothing else, so the
+    Built by :func:`operator_file_spec` and by nothing else, so the
     path, the label the prompt sees and the name the terminal uses are
-    decided once for every reader of the file.
+    decided once for every reader of the file. Every field but ``path``
+    and ``display`` is copied off an :class:`OperatorFileKind`, which is
+    where a second file is declared.
     """
 
     #: Absolute, resolved against the repo root.
@@ -156,8 +216,8 @@ class OperatorText:
     absent: bool
 
 
-def golden_patterns_spec(root: Path, configured: Path | str) -> OperatorFile:
-    """The ONE resolution of the golden-patterns path.
+def operator_file_spec(kind: OperatorFileKind, root: Path, configured: Path | str) -> OperatorFile:
+    """The ONE resolution of an operator file's path, for every kind.
 
     Both the parent's once-per-run notice and every worker's prompt block
     come through here, so there is one answer to "which file is this".
@@ -170,6 +230,11 @@ def golden_patterns_spec(root: Path, configured: Path | str) -> OperatorFile:
     same relative path against the process CWD, found nothing and said
     nothing.
 
+    One function for every kind rather than one per file, so a second
+    file inherits that resolution instead of restating it. Building an
+    :class:`OperatorFile` literal anywhere else is how the parent and the
+    worker came to read different files in the first place.
+
     An absolute ``configured`` is taken as it stands, which is what
     ``relative_to_root``'s fallback and an absolute ``[paths]`` value
     both produce.
@@ -179,11 +244,11 @@ def golden_patterns_spec(root: Path, configured: Path | str) -> OperatorFile:
     return OperatorFile(
         path=resolved,
         display=relative_to_root(resolved, root),
-        header=GOLDEN_PATTERNS_HEADER,
-        subject=GOLDEN_PATTERNS_SUBJECT,
-        key=GOLDEN_PATTERNS_KEY,
-        max_chars=GOLDEN_PATTERNS_MAX_CHARS,
-        scaffold=GOLDEN_PATTERNS_SCAFFOLD,
+        header=kind.header,
+        subject=kind.subject,
+        key=kind.key,
+        max_chars=kind.max_chars,
+        scaffold=kind.scaffold,
     )
 
 
@@ -273,6 +338,18 @@ def read_operator_file(spec: OperatorFile) -> OperatorText:
     )
 
 
+def _configured(config: KstrlConfig, kind: OperatorFileKind) -> Path:
+    """The path ``config`` holds for one kind, read off the row's field.
+
+    ``getattr`` on ``kind.field`` and not a per-kind branch. Pairing one
+    row with another row's field is the one-field-over defect #260 round
+    2 and #229's P5 plant both paid for, and a loop over the table cannot
+    commit it: there is one expression, and it names no field.
+    """
+    value: Path = getattr(config, kind.field)
+    return value
+
+
 def _rows(
     config: KstrlConfig,
     anchored: KstrlConfig,
@@ -280,15 +357,15 @@ def _rows(
 ) -> tuple[tuple[OperatorFile, Path], ...]:
     """Every operator-authored file, paired with its anchored default.
 
-    The one place a row is declared. R10.9 adds its memory file here and
-    neither function below changes, because both take the subject and the
+    One loop over :data:`OPERATOR_FILES`, so a row added there reaches
+    the parent's notice, ``KstrlConfig.validate`` and the worker's block
+    with no edit below this line. R10.9 added the memory row and neither
+    function below changed, because both take the subject and the
     ``[paths]`` key off the row rather than spelling either one.
     """
-    return (
-        (
-            golden_patterns_spec(root, config.golden_patterns_file),
-            anchored.golden_patterns_file,
-        ),
+    return tuple(
+        (operator_file_spec(kind, root, _configured(config, kind)), _configured(anchored, kind))
+        for kind in OPERATOR_FILES
     )
 
 
@@ -306,7 +383,7 @@ def _missing_message(spec: OperatorFile, anchored_default: Path, absent: bool) -
     ``exists()``: the stat that used to be here is half of the blocker
     that function's docstring records. Comparing ``spec.path`` against
     the ANCHORED default is a comparison in one path domain, which is the
-    whole of the correctness here: ``golden_patterns_spec`` resolves the
+    whole of the correctness here: ``operator_file_spec`` resolves the
     configured value against the root, and a config built
     programmatically never anchors, so comparing raw values made every
     such run report its own untouched default as a typo.
@@ -330,7 +407,7 @@ def operator_file_notices(
     mark on the terminal, the TUI, the event stream or the PR body.
 
     Once per run and not once per component, which the parent can only
-    do because :func:`golden_patterns_spec` is also what every worker
+    do because :func:`operator_file_spec` is also what every worker
     reads through.
 
     ONE READ PER ROW, AND AT MOST ONE MESSAGE FROM IT. The read answers

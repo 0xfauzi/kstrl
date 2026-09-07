@@ -253,6 +253,30 @@ an empty file. Replace the placeholders and the block starts appearing.
 - <which existing module to imitate>
 """
 
+# R10.9. Enrolled in SCAFFOLDED_TEMPLATES for the same load-bearing
+# reason DEFAULT_GOLDEN_PATTERNS is: without a row, an untouched skeleton
+# is injected into every engineer prompt forever. So a body change here
+# APPENDS a row below and never edits or drops one.
+#
+# The preamble is short on purpose. It is not operator-only text: the
+# moment anyone edits this file, the whole file reaches the engineer on
+# every iteration, preamble included. What belongs in the file is in
+# docs/runbook.md and in the README, where it costs no tokens.
+#
+# `## Guidance` is LAST and must stay last. R10.10 (#231) appends a
+# `/memory` comment to the END of the file and expects it to land in
+# that section; a section added after it would take the appends.
+DEFAULT_MEMORY = """# Memory
+
+Standing feedback for kstrl runs in this repository: durable rules that
+should change future runs, not one-off instructions. Read into the
+engineer's prompt after the retry context. Nothing is injected while
+this file is unchanged since `ks init` wrote it. Keep `## Guidance`
+last; new entries are appended to the end of the file.
+
+## Guidance
+"""
+
 DEFAULT_FEATURE_UNDERSTAND = """# Feature Understand Notes
 
 This file captures feature-specific understanding tied to one PRD.
@@ -468,6 +492,7 @@ DEFAULT_KSTRL_TOML = """\
 # progress = "scripts/kstrl/progress.txt"
 # codebase_map = "scripts/kstrl/codebase_map.md"
 # golden_patterns = "scripts/kstrl/golden-patterns.md"
+# memory = "scripts/kstrl/memory.md"
 # allowed = []                     # e.g. ["scripts/kstrl/", "src/"]
 
 [git]
@@ -748,6 +773,18 @@ SCAFFOLDED_TEMPLATES: tuple[ScaffoldedTemplate, ...] = (
             # decodes before the digest, and a copy with one newline
             # appended is NOT. The body now says "unchanged".
             ("2dab640523bd4082e323a7cf6d13a9fae6e2a6a2886473f584cabf3b883a0300", "2026-09-07"),
+        ),
+    ),
+    # R10.9. Same reader as the row above: a body listed here is
+    # suppressed by load_operator_file, so a missing row costs an
+    # injected placeholder block on every engineer prompt rather than an
+    # unshown staleness notice.
+    ScaffoldedTemplate(
+        filename="memory.md",
+        constant_name="DEFAULT_MEMORY",
+        body=DEFAULT_MEMORY,
+        history=(
+            ("8146096422efcb9b4196b76711fc44c80e2c7b5b920771f8a1eddcb4ba5a81c8", "2026-09-07"),
         ),
     ),
 )
@@ -1121,6 +1158,7 @@ def run_init(directory: Path, ui: UI, *, upgrade_prompts: bool = False) -> int:
     _create_if_missing(kstrl_dir / "progress.txt", DEFAULT_PROGRESS, ui)
     _create_if_missing(kstrl_dir / "codebase_map.md", DEFAULT_CODEBASE_MAP, ui)
     _create_if_missing(kstrl_dir / "golden-patterns.md", DEFAULT_GOLDEN_PATTERNS, ui)
+    _create_if_missing(kstrl_dir / "memory.md", DEFAULT_MEMORY, ui)
     _create_if_missing(kstrl_dir / "understand_prompt.md", DEFAULT_UNDERSTAND_PROMPT, ui)
     _create_if_missing(
         kstrl_dir / "feature_understand_prompt.md",

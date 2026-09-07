@@ -24,8 +24,10 @@ from pathlib import Path
 
 import pytest
 
+from kstrl.context import IterationContext, IterationRecord
 from kstrl.factory import _run_component, _setup_worktree
-from kstrl.init_cmd import DEFAULT_GOLDEN_PATTERNS
+from kstrl.init_cmd import DEFAULT_GOLDEN_PATTERNS, DEFAULT_MEMORY
+from kstrl.operator_context import MEMORY
 from tests.spine_utils import COMPLETE_LINE, git, init_kstrl_repo
 
 
@@ -168,6 +170,12 @@ FEEDFORWARD_MARKER = "=== CODEBASE CONTEXT (auto-generated) ==="
 #: matches its fixed prefix and the unit tests check the token's shape.
 GOLDEN_MARKER = "=== GOLDEN PATTERNS (operator-authored) KSTRL-DATA-"
 GOLDEN_REL = "scripts/kstrl/golden-patterns.md"
+RETRY_END_MARKER = "=== END PREVIOUS CONTEXT ==="
+CLAUDE_MD_MARKER = "# Project Context (from CLAUDE.md)"
+#: Off the ROW, so a header changed in one place moves this with it.
+MEMORY_MARKER = f"=== {MEMORY.header} KSTRL-DATA-"
+MEMORY_END_MARKER = f"=== END {MEMORY.header} KSTRL-DATA-"
+MEMORY_REL = "scripts/kstrl/memory.md"
 
 FEEDFORWARD_CONFIG: dict[str, object] = {
     "enabled": True,
@@ -211,7 +219,13 @@ class TestGoldenPatternsReachTheEngineer:
         agent_bin.chmod(0o755)
         return root, worktree, cap, agent_bin
 
-    def _run(self, root: Path, worktree: Path, agent_bin: Path) -> None:
+    def _run(
+        self,
+        root: Path,
+        worktree: Path,
+        agent_bin: Path,
+        previous_context_json: str | None = None,
+    ) -> None:
         _run_component(
             COMP,
             PRD_REL,
@@ -223,15 +237,21 @@ class TestGoldenPatternsReachTheEngineer:
             None,  # reasoning
             None,  # agent_type
             0.0,  # sleep_seconds
+            previous_context_json=previous_context_json,
             feedforward_config_dict=FEEDFORWARD_CONFIG,
             knowledge_prefix=KNOWLEDGE_MARKER,
             decisions_prefix=f"{DECISIONS_MARKER}\n\n- encoding: utf-8, named at every read",
         )
 
-    def _prompt_after_run(self, tmp_path: Path, write: Callable[[Path, Path], None]) -> str:
+    def _prompt_after_run(
+        self,
+        tmp_path: Path,
+        write: Callable[[Path, Path], None],
+        previous_context_json: str | None = None,
+    ) -> str:
         root, worktree, cap, agent = self._repo_with_source(tmp_path)
         write(root, worktree)
-        self._run(root, worktree, agent)
+        self._run(root, worktree, agent, previous_context_json)
         return (cap / "prompt.txt").read_text(encoding="utf-8")
 
     def test_golden_block_absent_leaves_the_prefix_byte_identical(self, tmp_path: Path) -> None:
@@ -340,3 +360,172 @@ class TestGoldenPatternsReachTheEngineer:
 
         assert "- from the repo root" in prompt
         assert "planted by the previous agent" not in prompt
+
+
+class TestMemoryIsReadAfterTheRetryContext:
+    """R10.9 at the seam that decides it: the worker's prefix assembly.
+
+    The ordering IS the feature. `CLAUDE.md` is prepended by `run_loop`
+    after the context prefix, so standing feedback placed there sits
+    between the retry context and the instructions rather than framing
+    how the retry context is acted on. This class captures a real
+    engineer prompt off a real agent subprocess's stdin and pins where
+    the memory block lands in it.
+    """
+
+    def _repo_with_source(self, tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+        """The R10.8 fixture, reused verbatim.
+
+        Borrowed rather than copied so the two classes cannot come to
+        disagree about what a spine repo is.
+        """
+        return TestGoldenPatternsReachTheEngineer()._repo_with_source(tmp_path)
+
+    def _prompt_after_run(
+        self,
+        tmp_path: Path,
+        write: Callable[[Path, Path], None],
+        previous_context_json: str | None = None,
+    ) -> str:
+        return TestGoldenPatternsReachTheEngineer()._prompt_after_run(
+            tmp_path, write, previous_context_json
+        )
+
+    @staticmethod
+    def _failed_attempt() -> str:
+        """A retry context with something in it, as attempt 2 would have."""
+        ctx = IterationContext()
+        ctx.add_iteration(IterationRecord(iteration=1, success=False, error="tests failed"))
+        ctx.add_review_finding("the reviewer asked for a narrower guard", attempt=1, phase="review")
+        return ctx.to_json()
+
+    def test_memory_is_last_and_precedes_the_claude_md_prepend(self, tmp_path: Path) -> None:
+        """Every block present at once, in one assertion.
+
+        Acceptance criterion 1 of the issue, plus the whole chain: a test
+        that only checked "memory after retry" would pass with memory
+        wedged between knowledge and golden patterns on a later edit.
+        """
+
+        def both(root: Path, wt: Path) -> None:
+            _write(root / "CLAUDE.md", "# Project rules\n\n- one rule\n")
+            git("add", "CLAUDE.md", cwd=root)
+            git("commit", "-q", "-m", "claude", cwd=root)
+            _write(root / GOLDEN_REL, "# Golden patterns\n\n- atomic writes: see atomicio\n")
+            _write(root / MEMORY_REL, "# Memory\n\n## Guidance\n\n- never touch migrations\n")
+
+        prompt = self._prompt_after_run(tmp_path, both, self._failed_attempt())
+
+        assert MEMORY_MARKER in prompt
+        assert "- never touch migrations" in prompt
+        assert (
+            prompt.index(KNOWLEDGE_MARKER)
+            < prompt.index(GOLDEN_MARKER)
+            < prompt.index(DECISIONS_MARKER)
+            < prompt.index(FEEDFORWARD_MARKER)
+            < prompt.index(RETRY_END_MARKER)
+            < prompt.index(MEMORY_MARKER)
+            < prompt.index(MEMORY_END_MARKER)
+            < prompt.index(CLAUDE_MD_MARKER)
+        )
+        # rindex, not index: the retry block names its own end delimiter
+        # nowhere else, but the assertion the issue asks for is about the
+        # LAST one, so it is spelled that way here too.
+        assert prompt.rindex(RETRY_END_MARKER) < prompt.index(MEMORY_MARKER)
+
+    def test_memory_absent_leaves_the_prefix_byte_identical(self, tmp_path: Path) -> None:
+        """Acceptance criterion 2, compared as BYTES rather than as an
+        ordering (nit 14 of #229's round 1: a test named for byte
+        identity that asserts delimiter-absence is a weaker claim than
+        its own name). The two runs differ only in whether a memory file
+        exists at the root, and the fixture is deterministic apart from
+        the per-run temp path.
+        """
+        without = self._prompt_after_run(tmp_path / "a", lambda root, wt: None)
+        with_scaffold = self._prompt_after_run(
+            tmp_path / "b", lambda root, wt: _write(root / MEMORY_REL, DEFAULT_MEMORY)
+        )
+
+        assert MEMORY.header not in without
+        assert without.replace(str(tmp_path / "a"), "") == with_scaffold.replace(
+            str(tmp_path / "b"), ""
+        )
+
+    def test_an_unedited_ks_init_scaffold_injects_nothing(self, tmp_path: Path) -> None:
+        prompt = self._prompt_after_run(
+            tmp_path, lambda root, wt: _write(root / MEMORY_REL, DEFAULT_MEMORY)
+        )
+
+        assert MEMORY.header not in prompt
+        assert "Standing feedback for kstrl runs" not in prompt
+
+    def test_one_edited_line_turns_the_block_on(self, tmp_path: Path) -> None:
+        prompt = self._prompt_after_run(
+            tmp_path,
+            lambda root, wt: _write(root / MEMORY_REL, DEFAULT_MEMORY + "- one durable rule\n"),
+        )
+
+        assert MEMORY_MARKER in prompt
+        assert "- one durable rule" in prompt
+
+    def test_the_memory_root_copy_is_read(self, tmp_path: Path) -> None:
+        prompt = self._prompt_after_run(
+            tmp_path, lambda root, wt: _write(root / MEMORY_REL, "- from the repo root\n")
+        )
+
+        assert "- from the repo root" in prompt
+
+    def test_a_worktree_memory_copy_is_not_read(self, tmp_path: Path) -> None:
+        """S3 of #229's round 1 applies to this file too, and #231 raises
+        the stake: the root copy becomes a file the daemon writes on an
+        authorised reviewer's say-so, so a component agent that could
+        substitute its own copy would be choosing what the next
+        component is told under a header naming the operator."""
+        prompt = self._prompt_after_run(
+            tmp_path,
+            lambda root, wt: _write(wt / MEMORY_REL, "- planted by the previous agent\n"),
+        )
+
+        assert "planted by the previous agent" not in prompt
+        assert MEMORY.header not in prompt
+
+    def test_the_worktree_memory_copy_loses_to_the_root_copy(self, tmp_path: Path) -> None:
+        def both(root: Path, wt: Path) -> None:
+            _write(root / MEMORY_REL, "- from the repo root\n")
+            _write(wt / MEMORY_REL, "- planted by the previous agent\n")
+
+        prompt = self._prompt_after_run(tmp_path, both)
+
+        assert "- from the repo root" in prompt
+        assert "planted by the previous agent" not in prompt
+
+    @pytest.mark.parametrize("absent", [None, ""], ids=["none", "empty-string"])
+    def test_a_falsy_retry_context_still_produces_no_block(
+        self,
+        tmp_path: Path,
+        absent: str | None,
+    ) -> None:
+        """The hoist of ``_retry_block`` out of ``_run_component`` is a
+        refactor and this is the equivalence it has to keep.
+
+        Its second "" case, a context that formats to WHITESPACE, is
+        preserved verbatim and is not reachable from here: measured,
+        ``IterationContext().format_for_prompt()`` always emits the
+        ``=== PREVIOUS ATTEMPT CONTEXT (Attempt 1) ===`` header, so an
+        empty context renders a block. That guard was already unreachable
+        through ``IterationContext`` before this PR; it is kept rather
+        than deleted because deleting it would be a behaviour change
+        smuggled into a refactor.
+        """
+        prompt = self._prompt_after_run(tmp_path, lambda root, wt: None, absent)
+
+        assert "PREVIOUS ATTEMPT CONTEXT" not in prompt
+
+    def test_an_empty_iteration_context_still_renders_its_header(self, tmp_path: Path) -> None:
+        """The other half of the measurement above, so the claim in that
+        docstring is checked rather than asserted."""
+        prompt = self._prompt_after_run(
+            tmp_path, lambda root, wt: None, IterationContext().to_json()
+        )
+
+        assert "=== PREVIOUS ATTEMPT CONTEXT (Attempt 1) ===" in prompt

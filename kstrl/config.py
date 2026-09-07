@@ -272,6 +272,9 @@ class KstrlConfig:
     codebase_map_file: Path = Path("scripts/kstrl/codebase_map.md")
     # R10.8: operator-authored; operator_context.py says who reads it.
     golden_patterns_file: Path = Path("scripts/kstrl/golden-patterns.md")
+    # R10.9: the operator's standing feedback, read AFTER the retry
+    # context; operator_context.py says who reads it.
+    memory_file: Path = Path("scripts/kstrl/memory.md")
     sleep_seconds: float = 2.0
     interactive: bool = False
     allowed_paths: list[str] = field(default_factory=list)

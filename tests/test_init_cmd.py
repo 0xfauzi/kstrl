@@ -21,6 +21,7 @@ from kstrl.cli import cli
 from kstrl.init_cmd import (
     _LANGUAGE_IGNORES,
     _LANGUAGE_LOCKFILES,
+    DEFAULT_MEMORY,
     GITIGNORE_BLOCK_MARKER,
     NEXT_STEPS,
     _detect_project_context,
@@ -375,6 +376,30 @@ class TestScaffoldContract:
 
         assert code == 0
         assert golden.read_text(encoding="utf-8") == edited
+
+    def test_ks_init_scaffolds_memory(self, tmp_path: Path) -> None:
+        """R10.9, the same contract as golden patterns: scaffolded once,
+        then the operator's. A second init must not revert what they
+        wrote, because `/memory` comments (R10.10) accumulate there."""
+        memory = tmp_path / "scripts" / "kstrl" / "memory.md"
+
+        code, _ = run_init_capturing(tmp_path)
+
+        assert code == 0
+        assert memory.exists()
+        body = memory.read_text(encoding="utf-8")
+        assert body == DEFAULT_MEMORY
+        # `## Guidance` is the LAST section, which is what makes R10.10's
+        # append land in the right place. Pinned here rather than left to
+        # the constant, because a section added after it is invisible.
+        assert body.rstrip("\n").endswith("## Guidance")
+
+        edited = DEFAULT_MEMORY + "- never touch migrations\n"
+        memory.write_text(edited, encoding="utf-8")
+        code, _ = run_init_capturing(tmp_path)
+
+        assert code == 0
+        assert memory.read_text(encoding="utf-8") == edited
 
     def test_plan_stops_calling_gitignore_an_append_once_init_ran(self, tmp_path: Path) -> None:
         (tmp_path / ".gitignore").write_text("secrets.env\n")

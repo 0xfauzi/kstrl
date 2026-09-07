@@ -4,8 +4,7 @@ Its own module because it is the part of ``kstrl/config.py`` that GROWS:
 every new ``[paths]`` file is a row here, and ``config.py`` was one line
 under the 800-line pre-commit ratchet when R10.9 came to add its row.
 Measured: the field plus the row took it from 799 to 801 and
-``scripts/precommit/file_length_ratchet.py`` returned ``CROSSED``. This
-commit is the move alone; the row lands in the next one.
+``scripts/precommit/file_length_ratchet.py`` returned ``CROSSED``.
 
 It imports nothing, so no cycle is possible. ``kstrl.config`` re-exports
 the name and the loaders read it from there; ``kstrl/config_report.py``
@@ -38,6 +37,7 @@ STRING_KEYS: tuple[tuple[str, str, str, str, bool], ...] = (
     ("paths", "progress", "PROGRESS_FILE", "progress_file", True),
     ("paths", "codebase_map", "CODEBASE_MAP_FILE", "codebase_map_file", True),
     ("paths", "golden_patterns", "KSTRL_GOLDEN_PATTERNS_FILE", "golden_patterns_file", True),
+    ("paths", "memory", "KSTRL_MEMORY_FILE", "memory_file", True),
     ("agent", "type", "KSTRL_AGENT_TYPE", "agent_type", False),
     ("agent", "command", "AGENT_CMD", "agent_cmd", False),
     ("agent", "model", "MODEL", "model", False),

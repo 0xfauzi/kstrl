@@ -1,17 +1,20 @@
-"""R10.8: the loader for operator-authored context files.
+"""R10.8: the loader for operator-authored context files, on one file.
 
 The unit under test is ``kstrl/operator_context.py``. What matters here
 is what the ENGINEER ends up reading, so every assertion is against the
 returned block, not against a call record.
+
+Every case here is about the golden-patterns row. The claim that a
+SECOND row behaves identically is a different job and lives in
+``tests/test_operator_file_kinds.py``, which is parametrized over
+``OPERATOR_FILES`` and spells no header, subject or budget of its own.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-import re
 import sys
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -20,58 +23,34 @@ from kstrl.config import KstrlConfig
 from kstrl.init_cmd import DEFAULT_GOLDEN_PATTERNS, SCAFFOLDED_TEMPLATES, shipped_label
 from kstrl.operator_context import (
     CUT_FLOOR,
-    GOLDEN_PATTERNS_HEADER,
-    GOLDEN_PATTERNS_MAX_CHARS,
-    GOLDEN_PATTERNS_SCAFFOLD,
-    GOLDEN_PATTERNS_SUBJECT,
-    OperatorFile,
+    GOLDEN_PATTERNS,
     configured_path_errors,
-    golden_patterns_spec,
     load_operator_file,
     operator_file_notices,
+    operator_file_spec,
     read_operator_file,
 )
+from tests.helpers.operatorfiles import TOKEN, body_of, golden, split_block
 
 #: The delimiter lines carry a per-build random token (S4), so a test
 #: matches the fixed part and asserts the token is there rather than
 #: spelling a whole line it could not predict.
-START_PREFIX = f"=== {GOLDEN_PATTERNS_HEADER} "
-END_PREFIX = f"=== END {GOLDEN_PATTERNS_HEADER} "
-TOKEN = re.compile(r"^KSTRL-DATA-[0-9a-f]{32} ===$")
+START_PREFIX = f"=== {GOLDEN_PATTERNS.header} "
+END_PREFIX = f"=== END {GOLDEN_PATTERNS.header} "
 
 #: The exact line this block's delimiters used to be, before the token
 #: was added. Kept spelled out because it is what a file's own content
 #: could once forge.
-FORGEABLE_END = f"=== END {GOLDEN_PATTERNS_HEADER} ==="
+FORGEABLE_END = f"=== END {GOLDEN_PATTERNS.header} ==="
 
 #: Every body kstrl has ever scaffolded into golden-patterns.md.
 GOLDEN_HISTORY = next(
-    t for t in SCAFFOLDED_TEMPLATES if t.filename == GOLDEN_PATTERNS_SCAFFOLD
+    t for t in SCAFFOLDED_TEMPLATES if t.filename == GOLDEN_PATTERNS.scaffold
 ).history
 
 #: Ordinary markdown is written one long line per paragraph. This is the
 #: body review round 2 measured delivering 17 of 6000 budgeted characters.
 UNWRAPPED = "# Golden patterns\n" + "word " * 3000
-
-
-def golden(
-    path: Path,
-    max_chars: int = GOLDEN_PATTERNS_MAX_CHARS,
-    scaffold: str | None = None,
-) -> OperatorFile:
-    """A spec built the way production builds one, with the two knobs varied.
-
-    Through ``golden_patterns_spec`` and not through a literal, so a
-    field added to :class:`OperatorFile` reaches these cases the same
-    way it reaches the factory.
-    """
-    return replace(golden_patterns_spec(path.parent, path), max_chars=max_chars, scaffold=scaffold)
-
-
-def split_block(block: str) -> tuple[str, list[str], str]:
-    """``(open line, inner lines, close line)`` of a rendered block."""
-    lines = block.split("\n")
-    return lines[0], lines[1:-1], lines[-1]
 
 
 def assert_delimited(block: str) -> str:
@@ -83,11 +62,6 @@ def assert_delimited(block: str) -> str:
     assert TOKEN.match(token), token
     assert closed[len(END_PREFIX) :] == token
     return token.split(" ")[0]
-
-
-def body_of(block: str) -> str:
-    """The operator's own text out of a rendered block."""
-    return block.split("\n", 1)[1].split("\n[truncated:", 1)[0]
 
 
 class TestLoadOperatorFile:
@@ -216,7 +190,7 @@ class TestLoadOperatorFile:
             block = load_operator_file(golden(path))
 
         body = body_of(block)
-        assert len(body) <= GOLDEN_PATTERNS_MAX_CHARS
+        assert len(body) <= GOLDEN_PATTERNS.max_chars
         # The cut fell on a newline boundary of the original text.
         assert text.startswith(body)
         assert text[len(body)] == "\n"
@@ -390,7 +364,7 @@ class TestNothingOnThisPathStatsOutsideTheGuard:
             locked.chmod(0o755)
 
         assert len(notices) == 1
-        assert notices[0][0] == GOLDEN_PATTERNS_SUBJECT
+        assert notices[0][0] == GOLDEN_PATTERNS.subject
         assert "could not read" in notices[0][1]
         # `validate` reports configuration errors, and a file that is
         # there but unreadable is not one: it is the run's warning.
@@ -414,8 +388,8 @@ class TestTheCutStillDeliversTheBudget:
 
         result = read_operator_file(golden(path))
 
-        assert len(result.body) >= int(GOLDEN_PATTERNS_MAX_CHARS * CUT_FLOOR)
-        assert len(result.body) <= GOLDEN_PATTERNS_MAX_CHARS
+        assert len(result.body) >= int(GOLDEN_PATTERNS.max_chars * CUT_FLOOR)
+        assert len(result.body) <= GOLDEN_PATTERNS.max_chars
 
     def test_a_newline_at_the_floor_is_still_used(self, tmp_path: Path) -> None:
         """The floor buys the budget back without giving up whole lines:
@@ -495,10 +469,12 @@ class TestOneResolverForOnePath:
 
     def test_an_absolute_configured_path_is_taken_as_it_stands(self, tmp_path: Path) -> None:
         elsewhere = tmp_path / "elsewhere" / "patterns.md"
-        assert golden_patterns_spec(tmp_path, elsewhere).path == elsewhere
+        assert operator_file_spec(GOLDEN_PATTERNS, tmp_path, elsewhere).path == elsewhere
 
     def test_a_relative_configured_path_is_joined_onto_the_root(self, tmp_path: Path) -> None:
-        spec = golden_patterns_spec(tmp_path, Path("scripts/kstrl/golden-patterns.md"))
+        spec = operator_file_spec(
+            GOLDEN_PATTERNS, tmp_path, Path("scripts/kstrl/golden-patterns.md")
+        )
         assert spec.path == tmp_path / "scripts" / "kstrl" / "golden-patterns.md"
         assert spec.display == "scripts/kstrl/golden-patterns.md"
 
@@ -515,11 +491,11 @@ class TestOneResolverForOnePath:
         # What `_run_component` reads: the relative string the scheduler
         # sends, joined onto the root by the same resolver.
         worker = read_operator_file(
-            golden_patterns_spec(tmp_path, "scripts/kstrl/golden-patterns.md")
+            operator_file_spec(GOLDEN_PATTERNS, tmp_path, "scripts/kstrl/golden-patterns.md")
         )
 
         assert worker.message is not None
-        assert [(GOLDEN_PATTERNS_SUBJECT, worker.message)] == notices
+        assert [(GOLDEN_PATTERNS.subject, worker.message)] == notices
 
 
 class TestAnUneditedScaffoldInjectsNothing:
@@ -537,7 +513,7 @@ class TestAnUneditedScaffoldInjectsNothing:
         path = tmp_path / "golden-patterns.md"
         path.write_text(DEFAULT_GOLDEN_PATTERNS, encoding="utf-8")
 
-        assert load_operator_file(golden(path, scaffold=GOLDEN_PATTERNS_SCAFFOLD)) == ""
+        assert load_operator_file(golden(path, scaffold=GOLDEN_PATTERNS.scaffold)) == ""
 
     @pytest.mark.parametrize("digest, label", GOLDEN_HISTORY)
     def test_every_ledgered_row_is_in_the_lookup_the_loader_consults(
@@ -565,7 +541,7 @@ class TestAnUneditedScaffoldInjectsNothing:
     def test_the_current_body_resolves_through_shipped_label(self) -> None:
         """The positive control for the parametrized case above: the
         lookup answers for the one body this revision can produce."""
-        assert shipped_label(GOLDEN_PATTERNS_SCAFFOLD, DEFAULT_GOLDEN_PATTERNS) is not None
+        assert shipped_label(GOLDEN_PATTERNS.scaffold, DEFAULT_GOLDEN_PATTERNS) is not None
 
     def test_a_crlf_copy_of_the_scaffold_is_still_recognised(self, tmp_path: Path) -> None:
         """Nit 15: "byte-identical" is the wrong word in both directions
@@ -576,7 +552,7 @@ class TestAnUneditedScaffoldInjectsNothing:
         path = tmp_path / "golden-patterns.md"
         path.write_bytes(DEFAULT_GOLDEN_PATTERNS.replace("\n", "\r\n").encode("utf-8"))
 
-        assert load_operator_file(golden(path, scaffold=GOLDEN_PATTERNS_SCAFFOLD)) == ""
+        assert load_operator_file(golden(path, scaffold=GOLDEN_PATTERNS.scaffold)) == ""
 
     def test_one_appended_newline_is_an_edit(self, tmp_path: Path) -> None:
         """The other direction of nit 15, measured: the digest is over the
@@ -589,7 +565,7 @@ class TestAnUneditedScaffoldInjectsNothing:
         path = tmp_path / "golden-patterns.md"
         path.write_text(DEFAULT_GOLDEN_PATTERNS + "\n", encoding="utf-8")
 
-        assert load_operator_file(golden(path, scaffold=GOLDEN_PATTERNS_SCAFFOLD)) != ""
+        assert load_operator_file(golden(path, scaffold=GOLDEN_PATTERNS.scaffold)) != ""
 
     def test_an_edited_scaffold_is_injected(self, tmp_path: Path) -> None:
         """One added line is the operator saying something, and it is the
@@ -600,7 +576,7 @@ class TestAnUneditedScaffoldInjectsNothing:
             encoding="utf-8",
         )
 
-        block = load_operator_file(golden(path, scaffold=GOLDEN_PATTERNS_SCAFFOLD))
+        block = load_operator_file(golden(path, scaffold=GOLDEN_PATTERNS.scaffold))
 
         assert_delimited(block)
         assert "- atomic writes: see `kstrl/atomicio.py`" in block
@@ -637,7 +613,7 @@ class TestTheNoticeTheParentReports:
     def test_an_unedited_scaffold_says_nothing(self, tmp_path: Path) -> None:
         path = tmp_path / "golden-patterns.md"
         path.write_text(DEFAULT_GOLDEN_PATTERNS, encoding="utf-8")
-        spec = golden(path, scaffold=GOLDEN_PATTERNS_SCAFFOLD)
+        spec = golden(path, scaffold=GOLDEN_PATTERNS.scaffold)
         assert read_operator_file(spec).message is None
 
     def test_a_truncated_file_names_itself_and_both_counts(self, tmp_path: Path) -> None:
@@ -735,7 +711,7 @@ class TestMisconfiguredPath:
 
         assert notices == [
             (
-                GOLDEN_PATTERNS_SUBJECT,
+                GOLDEN_PATTERNS.subject,
                 f"[paths] golden_patterns is set to {tmp_path / 'nope.md'}, which does not exist",
             )
         ]

@@ -388,6 +388,28 @@ accounting files and no events), or its `events.jsonl` could not be
 opened. When that happens the last finished run's verdict is still
 reported beside it.
 
+## Standing feedback
+
+When you find yourself correcting the same thing on a second pull request,
+the correction belongs in `scripts/kstrl/memory.md`, not in another PR
+comment. A comment steers one change; a line in that file is read into every
+subsequent engineer prompt, after the retry context, so it steers every run
+until you remove it.
+
+What belongs in it: permanent scope exclusions ("never touch the migrations
+directory"), areas whose findings are known false positives, and review
+feedback that should change how future work is done. What does not: one-off
+instructions for the change in front of you, and anything that reads as a run
+log. The file is version controlled and it is yours; kstrl never rewrites it.
+
+Two operational notes. `ks init` scaffolds it, and while it is unchanged
+nothing is injected, so a fresh project pays nothing for the feature. Keep
+`## Guidance` as the last heading: appends land at the end of the file. The
+budget is about 1000 tokens; past that the block is truncated, the prompt says
+how much arrived and the run warns once on your terminal naming the path. Two
+commands read it, `ks factory` and `ks run`; `ks feature` and `ks understand`
+do not.
+
 ## Where to find things
 
 - Tracker for the hardening roadmap: `docs/adversarial-roadmap.md`

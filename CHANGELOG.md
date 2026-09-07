@@ -13,6 +13,28 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Added
 
+- A memory file: `scripts/kstrl/memory.md`, operator-authored standing
+  feedback read into every factory engineer prompt and every `ks run`
+  prompt (`ks feature` and `ks understand` do not read it). `ks init`
+  scaffolds it; the path is `[paths] memory` in `kstrl.toml` or
+  `KSTRL_MEMORY_FILE`. It is loaded AFTER the retry context and before
+  the `CLAUDE.md` prepend, and that position is the feature: the retry
+  context is what the loop measured about this attempt, and memory is
+  your standing correction to how that gets acted on, so it is read
+  after it rather than being framed by it. Golden patterns say what good
+  code looks like and change rarely; memory carries corrections and
+  grows as you review. Budget 4000 characters, about 1000 tokens, and
+  its own rather than shared with golden patterns, so one file cannot
+  starve the other. Everything R10.8 established holds for it because it
+  is the same loader driven by a second row: read from the repo root and
+  never from a component worktree, delimiters carrying a fresh random
+  token so no line of the file can close its own block, nothing injected
+  while the file is absent, empty, unreadable or still the unedited
+  `ks init` scaffold, truncation announced in the prompt and warned once
+  on your terminal with the path, and a `[paths] memory` naming no file
+  reported rather than silently dropped. Keep `## Guidance` as the last
+  heading in it: the polled-steering work appends there.
+
 - Two of the autonomy ladder's five declared demotion triggers now fire.
   `DemotionTrigger` has listed `CALIBRATION_REGRESSION` and
   `HEALTH_BREACH` since R8.2 and neither had an emitter, so a factory

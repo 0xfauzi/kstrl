@@ -103,14 +103,21 @@ Feedforward is distinct from the knowledge prefix: feedforward is
 *computed* from the current tree; knowledge facts are *distilled* by an
 LLM from prior components' verified work and re-validated on read.
 
-The engineer's prompt carries the context blocks in one order: distilled
-knowledge, the operator's golden patterns
+The engineer's prompt carries the context blocks in one order, and the
+order is one literal tuple in `factory._run_component` rather than a
+sequence of appends: distilled knowledge, the operator's golden patterns
 (`scripts/kstrl/golden-patterns.md`, written by hand and read verbatim
 from the repo root, never from the component's worktree), the architect's
-decisions, the feedforward context, then the previous attempt's retry
-context. Golden patterns reach every factory engineer prompt and every
-`ks run` prompt; `ks feature` and `ks understand` call `run_loop` without
-a context prefix and get none of these blocks.
+decisions, the feedforward context, the previous attempt's retry context,
+then the operator's memory file (`scripts/kstrl/memory.md`, read the same
+way). Memory is last on purpose: the retry context is the controller's
+output for this attempt, and memory is the operator's standing correction
+to how that output should be acted on, so it is read after it. `run_loop`
+then prepends the whole prefix to `CLAUDE.md` plus the templated prompt,
+which puts memory between the retry context and `CLAUDE.md`. Both
+operator files reach every factory engineer prompt and every `ks run`
+prompt; `ks feature` and `ks understand` call `run_loop` without a
+context prefix and get none of these blocks.
 
 ### Phases 1-3: Verification
 

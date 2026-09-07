@@ -39,6 +39,7 @@ to run and tell you which section, key and value to fix.
 | `PROGRESS_FILE` | path | `scripts/kstrl/progress.txt` | Setting it forces that path on every factory component; unset, each component's engineer writes `progress.txt` beside its own PRD, inside the component's `allowedPaths` |
 | `CODEBASE_MAP_FILE` | path | `scripts/kstrl/codebase_map.md` | |
 | `KSTRL_GOLDEN_PATTERNS_FILE` | path | `scripts/kstrl/golden-patterns.md` | Operator-authored patterns injected into every factory engineer prompt and every `ks run` prompt (not `ks feature` or `ks understand`); absent, empty, unreadable or still the unedited `ks init` scaffold costs nothing, and past 6000 characters the block is truncated with an announcement |
+| `KSTRL_MEMORY_FILE` | path | `scripts/kstrl/memory.md` | Operator-authored standing feedback injected into every factory engineer prompt and every `ks run` prompt (not `ks feature` or `ks understand`), AFTER the retry context and before the `CLAUDE.md` prepend; absent, empty, unreadable or still the unedited `ks init` scaffold costs nothing, and past 4000 characters the block is truncated with an announcement |
 | `SLEEP_SECONDS` | float | 2.0 | Inter-iteration sleep |
 | `INTERACTIVE` | bool | false | Pause between iterations for human input |
 | `ALLOWED_PATHS` | comma-list | empty | Restrict agent writes to these prefixes |
