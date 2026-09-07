@@ -9,15 +9,20 @@ the code evaluates, each with what a refusal means:
     poison breaker ..................... pause the queue
     cost coverage ...................... pause the queue
     daily budget ....................... pause the queue, resume at midnight
-    open-PR bound (after R10.7) ........ wait; re-check next cycle
     inbox open-item cap ................ wait
     factory lock held .................. wait
+    open-PR bound (after R10.7) ........ wait; re-check next cycle
     claim .............................. one item, or "nothing ready"
 
-Issue #228 places the open-PR bound "as the last gate, after check_budget"
-in the ``gates`` tuple at serve.py:1974-1978. That tuple is evaluated before
-the inbox cap and the factory lock, so the bound sits before those two, not
-after them. This script follows the issue's concrete instruction.
+Issue #228 asked for the open-PR bound "as the last gate, after
+check_budget" in the ``gates`` tuple. R10.7 shipped it LAST instead, after
+the inbox cap and the factory lock, and this script follows the shipped
+code. The reason is the one the issue's own sentence implies and the tuple
+cannot deliver: the ``gates`` tuple is built eagerly, so every member is
+evaluated before the loop reads the first refusal, and a member of it would
+spend a ``gh`` call on every poll behind an already-refusing budget. The
+bound is therefore a standalone check next to the other two waits, and
+``TestGateOrderIsCost`` in tests/test_flow_control.py holds it there.
 
 Defaults from the code: max_consecutive_poison = 3, daily_budget_usd = 0
 (off), allow_uncovered_cost = False, inbox open_item_cap = 50, and R10.7's
@@ -79,6 +84,18 @@ def admit(
             "kind": "pause",
             "reason": "daily budget reached; resumes at local midnight",
         }
+    if inbox_at_cap:
+        return {
+            "gate": "inbox cap",
+            "kind": "wait",
+            "reason": "the inbox is at its open-item cap; triage before queueing more",
+        }
+    if lock_held:
+        return {
+            "gate": "factory lock",
+            "kind": "wait",
+            "reason": "a factory run already holds this root",
+        }
     if after_r10_7 and max_open_prs > 0 and create_prs:
         if not gh_ok:
             return {
@@ -92,18 +109,6 @@ def admit(
                 "kind": "wait",
                 "reason": f"{open_prs} kstrl PR(s) open (bound {max_open_prs}); waiting for review",
             }
-    if inbox_at_cap:
-        return {
-            "gate": "inbox cap",
-            "kind": "wait",
-            "reason": "the inbox is at its open-item cap; triage before queueing more",
-        }
-    if lock_held:
-        return {
-            "gate": "factory lock",
-            "kind": "wait",
-            "reason": "a factory run already holds this root",
-        }
     if not ready_item:
         return {"gate": "claim", "kind": "skip", "reason": "nothing ready"}
     return {"gate": "claim", "kind": "claim", "reason": "one item leased and run"}
@@ -132,9 +137,9 @@ ORDER = [
     "poison breaker",
     "cost coverage",
     "daily budget",
-    "open-PR bound",
     "inbox cap",
     "factory lock",
+    "open-PR bound",
     "claim",
 ]
 
@@ -146,6 +151,29 @@ def sweep() -> list[dict[str, object]]:
         args = dict(zip(keys, values, strict=True))
         rows.append({**args, **admit(**args)})  # type: ignore[arg-type]
     return rows
+
+
+def _gh_failed_and_reached(r: dict[str, object]) -> bool:
+    """Rows where gh failed AND every gate above the bound admitted.
+
+    The bound is evaluated LAST, so "above" now includes the inbox cap
+    and the factory lock. A helper rather than a clause chain inside
+    ``main`` because the pre-commit cognitive-complexity ratchet reads
+    the enclosing function, and this list only grows as the chain does.
+    """
+    return (
+        bool(r["after_r10_7"])
+        and not r["gh_ok"]
+        and int(str(r["max_open_prs"])) > 0
+        and bool(r["create_prs"])
+        and not r["paused"]
+        and bool(r["ledger_readable"])
+        and int(str(r["poison_streak"])) < 3
+        and not (r["budget_on"] and not r["allow_uncovered"] and not r["coverage_seen"])
+        and not (r["budget_on"] and r["budget_reached"])
+        and not r["inbox_at_cap"]
+        and not r["lock_held"]
+    )
 
 
 def main() -> None:
@@ -179,19 +207,7 @@ def main() -> None:
     print(
         "claim 4: a failed gh count refuses; it is never read as zero ->",
         "holds"
-        if all(
-            r["gate"] == "open-PR bound"
-            for r in rows
-            if r["after_r10_7"]
-            and not r["gh_ok"]
-            and r["max_open_prs"] > 0
-            and r["create_prs"]
-            and not r["paused"]
-            and r["ledger_readable"]
-            and r["poison_streak"] < 3
-            and not (r["budget_on"] and not r["allow_uncovered"] and not r["coverage_seen"])
-            and not (r["budget_on"] and r["budget_reached"])
-        )
+        if all(r["gate"] == "open-PR bound" for r in rows if _gh_failed_and_reached(r))
         else "fails",
     )
     print(
@@ -240,10 +256,11 @@ def main() -> None:
     )
     print()
     print(
-        "observation: the open-PR bound is evaluated before the inbox cap and the "
-        "factory lock, because issue #228 puts it in the gates tuple; the issue's "
-        "sentence 'a GitHub call happens only when everything else admits' is true "
-        "of the three ledger gates and not of those two."
+        "observation: the open-PR bound is evaluated LAST, after the inbox cap "
+        "and the factory lock, so the issue's sentence 'a GitHub call happens "
+        "only when everything else admits' is true of every gate above it. The "
+        "gates tuple could not deliver that: it is built eagerly, so a member "
+        "of it runs even when an earlier member refuses."
     )
 
 

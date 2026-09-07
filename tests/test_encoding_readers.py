@@ -105,6 +105,7 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "loop.py": 2,
     "manifest.py": 1,
     "observability.py": 1,
+    "operator_context.py": 1,
     "parsers.py": 1,
     "pipeline.py": 3,
     "prd.py": 1,
@@ -113,7 +114,14 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # read, and the CLAUDE.md write.
     "proposals.py": 3,
     "security.py": 1,
-    "serve.py": 4,
+    # Five reads, and five reads only. Round 1 of #228 spelled the gh
+    # flag as two argv tokens, so the bare literal "open" landed here and
+    # the row meant "four reads plus one argv word". That is the
+    # skip-direction failure: a later commit adding one genuine read and
+    # dropping the flag would have left the count at 5 and the census
+    # green. The flag is now ``--state=open``, one token, and the fifth
+    # read is the open-PR count streak (#228 round 2).
+    "serve.py": 5,
     "statedir.py": 1,
     "tui/embed.py": 1,
     "tui/runs.py": 2,
@@ -202,6 +210,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "manifest.py open(path, encoding='utf-8')",
     "observability.py for line in f on an open() handle",
     "observability.py open(path, encoding='utf-8')",
+    "operator_context.py spec.path.read_text(encoding='utf-8')",
     "parsers.py source_path.read_text(encoding='utf-8')",
     "pipeline.py open(path, 'a', buffering=1, encoding='utf-8')",
     "pipeline.py progress_path.read_text(encoding='utf-8')",
@@ -214,6 +223,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "security.py prd_path.read_text(encoding='utf-8')",
     "serve.py manifest_path.read_text(encoding='utf-8')",
     "serve.py open(lock_path, 'a+', encoding='utf-8')",
+    "serve.py path.read_text(encoding='utf-8')",
     "serve.py self.path.read_text(encoding='utf-8')",
     "statedir.py open(lock_path, 'a+', encoding='utf-8')",
     "tui/embed.py open(run_paths.root / 'orchestrator.log', 'a', buffering=1, encoding='",

@@ -102,6 +102,11 @@ from kstrl.observability import (
     NullProgressLog,
     ProgressLog,
 )
+from kstrl.operator_context import (
+    golden_patterns_spec,
+    load_operator_file,
+    operator_file_notices,
+)
 from kstrl.pipeline import ComponentPipeline, PipelineHooks, _iso_now
 from kstrl.policy import PolicyConfig
 from kstrl.pr import create_prs_in_order, create_single_pr
@@ -1939,6 +1944,21 @@ def _worker_scope(scope: ComponentScope | None) -> tuple[list[str], list[str]]:
     return list(scope.allowed_paths or ()), list(scope.harness_paths)
 
 
+def _report_operator_files(base_config: KstrlConfig, root_dir: Path, ui: UI) -> None:
+    """Print each ``(subject, message)`` the operator's files produce, once.
+
+    The subject comes off the ROW, not off this function. It used to be
+    the literal ``Golden patterns:`` in front of every message, which
+    would have printed R10.9's memory file under the golden-patterns
+    name the day its row landed - one line below a docstring claiming
+    neither caller would have to change (review round 2, should-fix 5).
+    """
+    for subject, message in operator_file_notices(
+        base_config, KstrlConfig.anchored(root_dir), root_dir
+    ):
+        ui.warn(f"  {subject}: {message}")
+
+
 def _run_component(
     component_id: str,
     prd_path_str: str,
@@ -1958,6 +1978,7 @@ def _run_component(
     decisions_prefix: str = "",
     progress_file_str: str | None = None,
     codebase_map_file_str: str = "scripts/kstrl/codebase_map.md",
+    golden_patterns_file_str: str = "scripts/kstrl/golden-patterns.md",
     agent_iteration_timeout: float = 1800.0,
     component_timeout: float = 7200.0,
     max_iterations: int = 10,
@@ -2159,13 +2180,35 @@ def _run_component(
         except Exception:
             pass  # feedforward failure is non-fatal
 
+    # R10.8: the operator's own statement of what a good change looks
+    # like. Resolved by `golden_patterns_spec` against the REPO ROOT and
+    # never against `worktree_path`: the worktree is the tree this agent
+    # has been writing to, so reading it there would let one component
+    # choose what the next component is told, unfiltered and under a
+    # header saying the operator wrote it (review round 1, S3). The same
+    # function resolves the parent's once-per-run notice, so the two
+    # cannot read different files (review round 2, should-fix 2). ""
+    # when absent, empty, or an unedited `ks init` scaffold.
+    golden_patterns = load_operator_file(golden_patterns_spec(root_dir, golden_patterns_file_str))
+
     # Build context prefix from previous retries
     context_prefix: str | None = None
-    # One list rather than one `if` per source: three context blocks
-    # reach the engineer the same way and differ only in where they were
-    # built, so adding the fourth should not mean adding a branch.
+    # One list rather than one `if` per source: four context blocks reach
+    # the engineer the same way and differ only in where they were built,
+    # so adding the fifth should not mean adding a branch. The order is
+    # repo-standing (knowledge, then the operator's patterns), then
+    # run-level (the architect's decisions), then tree-computed
+    # (feedforward), then attempt-level (the retry context appended
+    # below).
     parts: list[str] = [
-        block for block in (knowledge_prefix, decisions_prefix, feedforward_prefix) if block
+        block
+        for block in (
+            knowledge_prefix,
+            golden_patterns,
+            decisions_prefix,
+            feedforward_prefix,
+        )
+        if block
     ]
     if previous_context_json:
         ctx = IterationContext.from_json(previous_context_json)
@@ -3664,6 +3707,9 @@ def _run_factory_locked(
     # own next to its PRD so the engineer writes inside its allowedPaths
     # (base_config.component_progress_file, called from _submit_args).
     codebase_map_file_rel = _path_relative_to_root(base_config.codebase_map_file)
+    golden_patterns_file_rel = _path_relative_to_root(base_config.golden_patterns_file)
+
+    _report_operator_files(base_config, root_dir, ui)
 
     def _launch_component(comp: Component) -> Path | None:
         """Set up worktree for a component. Returns worktree path or None."""
@@ -3757,6 +3803,11 @@ def _run_factory_locked(
             # keeps the engineer's progress log inside allowedPaths.
             base_config.component_progress_file(comp.prd_path, root_dir),
             codebase_map_file_rel,
+            # R10.8: the worker joins this onto root_dir and nothing
+            # else. Sent as a root-relative string for the same reason
+            # the other path slots are: the worker is a separate process
+            # and gets paths, not a config object.
+            golden_patterns_file_rel,
             timeout_cfg.agent_iteration,
             timeout_cfg.component_total,
             # R2.3 (CRIT-8): forward the invoking config's loop settings;

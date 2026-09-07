@@ -25,6 +25,7 @@ from pathlib import Path
 
 import pytest
 
+from kstrl.config import STRING_KEYS
 from kstrl.git import DiffStat, get_diff_stat
 
 # Repository root that contains this test suite, independent of CWD.
@@ -55,29 +56,26 @@ KSTRL_ENV_PREFIXES: tuple[str, ...] = (
 )
 
 # Legacy single-loop env vars (exact names, no shared prefix).
+#
+# The nine that overlay one KstrlConfig field are DERIVED from
+# ``config.STRING_KEYS`` rather than retyped: none of them shares a
+# prefix the sweep above can see (``PROMPT_FILE``, ``MODEL``,
+# ``KSTRL_GOLDEN_PATTERNS_FILE``), so a hand-kept copy is a name that
+# goes missing. #229 measured that: ``KSTRL_GOLDEN_PATTERNS_FILE``,
+# ``CODEBASE_MAP_FILE`` and ``PROGRESS_FILE`` were all uncovered, and an
+# ambient export of any of them would have leaked into the config tests.
 _LEGACY_ENV_VARS: tuple[str, ...] = (
+    *(env_var for _s, _k, env_var, _f, _p in STRING_KEYS),
     "MAX_ITERATIONS",
-    "AGENT_CMD",
-    "MODEL",
-    "MODEL_REASONING_EFFORT",
     "SLEEP_SECONDS",
     "INTERACTIVE",
-    "PROMPT_FILE",
     "ALLOWED_PATHS",
     "KSTRL_BRANCH",
-    "KSTRL_BRANCH",
-    "PRD_FILE",
-    "KSTRL_UI",
     "KSTRL_UI",
     "GUM_FORCE",
     "NO_COLOR",
     "KSTRL_ASCII",
-    "KSTRL_ASCII",
-    "KSTRL_AGENT_TYPE",
-    "KSTRL_AGENT_TYPE",
     "KSTRL_AUTO_CHECKOUT",
-    "KSTRL_AUTO_CHECKOUT",
-    "KSTRL_AGENT_BUDGET_USD",
     "KSTRL_AGENT_BUDGET_USD",
 )
 
@@ -270,6 +268,29 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     state the dependency explicitly.
     """
     _clear_kstrl_env(monkeypatch)
+
+
+@pytest.fixture
+def no_open_prs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hold the R10.7 open-PR bound open for a whole module.
+
+    For the serve and intake suites, none of which is about flow
+    control. ``max_open_prs`` defaults to 1 and a ``tmp_path`` is not a
+    git checkout, so the real counter fails there and the gate refuses -
+    correctly, since an unknown number of open PRs is not zero. Stubbing
+    the COUNTER rather than the gate keeps the gate itself in the code
+    path those tests execute.
+
+    Opt-in via ``pytestmark = pytest.mark.usefixtures("no_open_prs")``,
+    NOT autouse: ``tests/test_flow_control.py`` asserts the bound's real
+    behaviour, including the counter, and must not be stubbed out.
+    """
+    from kstrl.serve import OpenPrCount
+
+    monkeypatch.setattr(
+        "kstrl.serve.count_open_kstrl_prs",
+        lambda root: OpenPrCount(count=0, saturated=False),
+    )
 
 
 # ---------------------------------------------------------------------------

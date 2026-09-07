@@ -319,6 +319,58 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Added
 
+- Golden patterns: an operator-authored file, injected into every factory
+  engineer prompt and every `ks run` prompt (`ks feature` and
+  `ks understand` do not read it). `ks init` scaffolds
+  `scripts/kstrl/golden-patterns.md` and you write what a good change
+  looks like in this repository, with a file to copy from for each
+  pattern. The distiller records what happened and feedforward computes
+  structure; neither says what is wanted, and nothing in kstrl did. The
+  path is `[paths] golden_patterns` in `kstrl.toml` or
+  `KSTRL_GOLDEN_PATTERNS_FILE`. The block sits between the distilled
+  knowledge and the architect's decisions, is read from the repo root
+  (never from a component worktree, which the engineer can write to), and
+  is read verbatim rather than filtered, the way `CLAUDE.md` already is:
+  the operator authored it. Its delimiter lines carry a fresh random
+  token per build, so no line of the file can close the block early.
+  Nothing is injected while the file is absent, empty, unreadable, or
+  still unchanged since `ks init` wrote it: kstrl recognises its own
+  scaffold by digest over the decoded text, so a CRLF copy counts as
+  unchanged and an unedited skeleton costs no tokens. Past 6000
+  characters (about 1500 tokens) the text is cut at a line boundary
+  where that still delivers 90 percent of the budget and at the budget
+  boundary otherwise, so unwrapped markdown is not thrown away; the
+  prompt says how much arrived and the run warns once on your terminal
+  with the path and the remedy. A `[paths] golden_patterns` you set that
+  names no file is named on the terminal too, rather than silently
+  omitting the block. A file kstrl cannot even stat, because its parent
+  directory is mode 000 or its name is longer than the filesystem
+  allows, warns the same way instead of ending the run.
+
+- **Breaking:** for daemon users, `ks serve` now stops admitting work
+  while a kstrl-authored pull request is open. A repository with one
+  open kstrl PR will admit nothing until it is merged or closed. The new
+  `[serve] max_open_prs` defaults to 1; set it to 0 to restore the old
+  unbounded behaviour, or raise it. The refusal is a wait rather than a
+  pause: nothing needs resuming, and the next cycle proceeds on its own
+  once the PR is gone. A PR counts as kstrl-authored when its body ENDS
+  with the footer line kstrl writes, so pull requests opened since the
+  footer took its current wording are counted too, and a pull request
+  that merely quotes the footer in prose is not. Anything that is not a
+  usable count refuses admission, because an unknown number of open PRs
+  is not zero; that includes a `gh pr list` page filled to its limit,
+  where the count is only a lower bound, so a repository holding 100 or
+  more open pull requests admits nothing until the bound is switched
+  off. After three consecutive polls with an unusable count the daemon
+  files one inbox item, since an expired `gh` token and a `gh` missing
+  from launchd's PATH never clear themselves. That count is kept in the
+  control state directory as `pr_count_streak.json`, so it accumulates
+  in BOTH LaunchAgent modes: `keepalive` runs one polling process, and
+  `interval` runs one `ks serve --once` process per firing, where a
+  count held in memory could never reach the threshold. Manual
+  `ks factory` and `ks run` are unaffected: a human typing the command
+  is the authorisation. `ks serve --dry-run` lists the new gate last
+  (R10.7, #228).
 - The evolve screen reports repaired journal writes. `ks evolve
   --status` has reported them since the repair was added and the TUI did
   not, which was the gap: the argument for writing a durable
@@ -327,7 +379,6 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   three tabs now carries the count, the path and which of the two
   outcomes the line above each row is, in the CLI's own words. Silent at
   zero, and it goes back to silent on reload when the count does.
-
 - The architect's non-blocker spec findings now reach the engineer. They
   were written to `scripts/kstrl/spec-issues.json` on every decompose and
   nothing in `kstrl/` ever opened that file: across five recorded runs
