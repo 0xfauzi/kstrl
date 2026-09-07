@@ -29,8 +29,10 @@ boundary where the agent is a grandchild.
 from __future__ import annotations
 
 import os
+import shutil
 import signal
 import subprocess
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -41,7 +43,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from kstrl import procgroup
-from kstrl.procgroup import pid_is_alive, read_group_liveness
+from kstrl.procgroup import pid_is_alive, read_group_liveness, read_group_members
 
 
 def read_pid(pidfile: Path, timeout: float = 5.0) -> int:
@@ -98,6 +100,34 @@ def wait_for_pid_to_die(pid: int, timeout: float = 5.0) -> bool:
     return not pid_is_alive(pid)
 
 
+def group_member_pids(pgid: int) -> list[int]:
+    """The non-zombie pids in a group the test itself created.
+
+    The CENSUS twin of :func:`group_has_live_member`, which answers a
+    yes/no and so cannot say how many processes a spawn produced. #209
+    needs the count: whether ``caffeinate -i`` puts its forked assertion
+    holder inside the run's process group is a question about
+    membership, and a helper that escaped would outlive the timeout
+    path's group kill still holding a power assertion.
+
+    It DELEGATES rather than reading ``ps`` itself.
+    ``tests/test_procgroup.py`` fails on any second ``ps`` in ``kstrl/``
+    or ``tests/``, because two copies of one parse drift on failure
+    handling until the daemon's answer and the suite's stop agreeing.
+    The reading lives in :func:`kstrl.procgroup.read_group_members`.
+
+    POLICY, and it is the opposite of the daemon's, exactly as
+    :func:`group_has_live_member`'s is: an unreadable listing RAISES here
+    rather than degrading to a number. Why a count is the reading with
+    the most to lose from a partial view is argued once, in
+    :func:`kstrl.procgroup.read_group_members`, and not repeated here.
+    """
+    members = read_group_members(pgid)
+    if members.pids is None:
+        raise AssertionError(members.reason)
+    return list(members.pids)
+
+
 def group_has_live_member(pgid: int) -> bool:
     """Whether any non-zombie process is still in process group ``pgid``.
 
@@ -120,7 +150,7 @@ def group_has_live_member(pgid: int) -> bool:
     so one parse bug could blind both at once. Two arguments answer it,
     and neither is "it will not happen". First, a second hand-written
     parse would not have been independent of the failure it is supposed
-    to catch: both copies read the same ``ps -A -o pgid=,stat=`` and both
+    to catch: both copies read the same ``ps -A`` listing and both
     would break together on a column shift, which is the named risk.
     Second, ``read_group_liveness`` no longer rests on the parse alone
     for the dangerous direction. A "gone" now requires either a zombie
@@ -348,14 +378,75 @@ def _patch_ps_popen(
 def ps_is_readable() -> bool:
     """Whether `kstrl.procgroup` can actually measure on this machine.
 
-    A test that asserts on `process_group_alive` needs this: where `ps`
-    is absent or filtered the production call degrades to the signal
-    probe, which counts a zombie as alive by design, so a #298 assertion
-    would fail with a message pointing at kstrl rather than at the
-    missing binary. Uses the caller's own group, which is alive by
-    construction, so a False here is about `ps` and never about timing.
+    A test that asserts on `process_group_alive`, or that takes a group
+    census, needs this: where `ps` is absent or filtered the production
+    call degrades to the signal probe, which counts a zombie as alive by
+    design, so a #298 assertion would fail with a message pointing at
+    kstrl rather than at the environment. Uses the caller's own group,
+    which is alive by construction, so a False here is about `ps` and
+    never about timing.
+
+    IT ASKS THE COUNT READ, NOT THE LIVENESS READ, and that is the whole
+    content of this function. It was ``read_group_liveness(...).live is
+    True`` and could not fire: ``_interpret`` returns ``True`` off a
+    visible runner BEFORE it consults the refusal table, correctly, since
+    a partial listing can only show FEWER processes - and under a
+    uid-filtered ``ps`` our own processes are exactly the ones still
+    visible. So the old spelling was True by construction on every
+    machine, filtered or not, while ``read_group_members`` REFUSED the
+    same listing. Measured for #209's round-2 review with ``_read_ps``
+    wrapped to strip the pid-1 row out of a real listing, which is the
+    only thing a ``hidepid`` mount changes about the answer:
+
+    ==================  ===========  ==========
+    ``ps``              old spelling  this one
+    ==================  ===========  ==========
+    honest              True          True
+    uid-filtered        True          False
+    ==================  ===========  ==========
+
+    ``tests/test_procgroup_members.py`` plants that wrapper and pins both
+    rows, because a guard nobody mutated is a guard nobody tested.
     """
-    return read_group_liveness(os.getpgrp()).live is True
+    return read_group_members(os.getpgrp()).pids is not None
+
+
+def caffeinate_is_available() -> bool:
+    """Whether ``caffeinate`` can be run here. macOS, and installed.
+
+    Both halves: the binary ships with macOS and nothing else, and a
+    stripped mac can still be missing it.
+    """
+    return sys.platform == "darwin" and shutil.which("caffeinate") is not None
+
+
+#: Skip a test that cannot be measured where ``ps`` is filtered.
+#:
+#: Evaluated once, at the import of this module, which costs one ``ps``
+#: read (median 21.9 ms measured over 40 samples for #209).
+#:
+#: A constant rather than four in-body copies. Before #209's round-3 fix
+#: the predicate had three spellings across the suite - an in-body
+#: ``pytest.skip`` in ``tests/test_shutdown.py``, a module-level mark in
+#: ``tests/test_serve_process_tree.py``, and this function - and the one
+#: defect they shared (the liveness spelling above) had to be found and
+#: fixed in each. One home is what makes the next fix reach every site.
+NEEDS_A_READABLE_PS = pytest.mark.skipif(
+    not ps_is_readable(),
+    reason="ps here is absent or filtered to one uid, so a group census would be an undercount",
+)
+
+#: Skip a test that actually runs ``caffeinate``.
+#:
+#: Gates the cases that need the binary and NOTHING else. Attach it per
+#: test or per parameter, never to a class holding cases that do not need
+#: it: CI is ubuntu, and #209's round-1 S4 was a class-level darwin skip
+#: that cost CI a census which catches a mutation having nothing to do
+#: with macOS.
+NEEDS_CAFFEINATE = pytest.mark.skipif(
+    not caffeinate_is_available(),
+    reason="caffeinate is macOS-only and must be installed",
+)
 
 
 def dead_group(timeout: float = 10.0) -> int:
