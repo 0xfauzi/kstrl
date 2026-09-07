@@ -61,18 +61,27 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   DIRECT child, not a grandchild, and what makes the group necessary is
   the factory's own descendants - agent subprocesses, git, the verify
   commands - which were measured surviving a signal to the direct child
-  with caffeinate on and off alike. Nothing behavioural changed; the
-  `kstrl/serve.py` docstrings, `docs/continuous-intake.md` and the PR
-  #186 review record now state the measured reason, and a new macOS test
-  pins the run group's membership so a change in caffeinate fails a test
-  instead of silently leaving the machine unable to idle-sleep after a
-  timed-out run. The membership reading that test needs is
-  `kstrl.procgroup.read_group_members`, sharing the one `ps` call and the
-  one parse this tree allows; it refuses a uid-filtered listing outright,
-  because a count taken from one is an undercount and its caller is
-  usually asserting there is no second member.
-  `docs/continuous-intake.md` also corrects the assertion name it quoted
-  and records the suspend experiment #203 still needs. (#209)
+  with caffeinate on and off alike. The `kstrl/serve.py` docstrings,
+  `docs/continuous-intake.md` and the PR #186 review record now state
+  the measured reason, and a new test pins the run group's membership as
+  the difference `caffeinate` makes - the factory, whatever the factory
+  spawned, and with caffeinate one more - so a change in caffeinate
+  fails a test instead of silently leaving the machine unable to
+  idle-sleep after a timed-out run. The membership reading that test
+  needs is `kstrl.procgroup.read_group_members`, sharing the one `ps`
+  call, the one parse and now one refusal table with the liveness read.
+  Both reads refuse the same five listings and differ only in the
+  consequence each reports: a count taken from a listing that may have
+  hidden a member is an undercount, and its caller is usually asserting
+  there is no second member. One behaviour change, latent rather than
+  active: a `ps` row this parse cannot read now makes the whole listing
+  a refusal for both reads instead of being dropped, because dropping it
+  turned a live group into a gone one, and `serve` reads gone as reaped.
+  Measured unreachable on real output - 16320 rows over 20 reads, every
+  one three columns with a numeric pid and pgid.
+  `docs/continuous-intake.md` also quotes both lines `pmset -g
+  assertions` prints for the helper, with the pid each names, and
+  records the suspend experiment #203 still needs. (#209)
 - `ks serve` now has a regression test pinning that the daemon lock is
   taken BEFORE the lease reaper runs. `reap_leases` requeues a RUNNING
   item whose wall-clock lease has lapsed, and wall clock advances across
