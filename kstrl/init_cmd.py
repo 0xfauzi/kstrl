@@ -224,21 +224,26 @@ Edit this list to match your repo. During the understanding loop, mark items as 
 # wrote, and injects nothing when it is. Review round 1 measured the
 # alternative end to end: without that check an untouched `ks init`
 # scaffold put 479 characters of angle-bracket placeholders at the head
-# of every engineer prompt of every component of every iteration, under
+# of every engineer prompt of every component of every attempt, under
 # a header asserting the operator had authored them. So a body change
 # here APPENDS a row below; editing or dropping one stops kstrl
 # recognising the copy already on an operator's disk and re-opens that.
+#
+# EVERY SENTENCE HERE HAS TWO READERS AND MUST BE TRUE FOR BOTH. The
+# scaffold is suppressed only while it is unchanged, so the whole body
+# reaches the engineer's prompt from the operator's first edit onward,
+# under a header saying the operator wrote it. R10.9 round 1 measured
+# what the old body then said there: "While this file is unchanged since
+# `ks init` wrote it, nothing is injected" was read by the engineer at
+# the moment it was injected, which makes it false exactly where it is
+# read, and "Keep it short" and "Replace the placeholders" are
+# imperatives addressed to somebody who is not reading. Lifecycle text
+# belongs in docs/runbook.md and in the README, where it costs no
+# tokens; what stays here is a title and one declarative sentence.
 DEFAULT_GOLDEN_PATTERNS = """# Golden patterns
 
-Operator-authored. What a good change looks like in this repository.
-Read into the engineer's prompt on every factory component iteration
-and on every `ks run` iteration (`ks feature` and `ks understand` do
-not read it). Keep it short: the budget is about 1500 tokens and the
-loader truncates past that.
-
-While this file is unchanged since `ks init` wrote it, nothing is
-injected: kstrl recognises its own scaffold by digest and treats it as
-an empty file. Replace the placeholders and the block starts appearing.
+Operator-authored: what a good change looks like in this repository,
+with a file to copy from for each pattern.
 
 ## Follow these (with a file to copy from)
 
@@ -258,21 +263,26 @@ an empty file. Replace the placeholders and the block starts appearing.
 # is injected into every engineer prompt forever. So a body change here
 # APPENDS a row below and never edits or drops one.
 #
-# The preamble is short on purpose. It is not operator-only text: the
-# moment anyone edits this file, the whole file reaches the engineer on
-# every iteration, preamble included. What belongs in the file is in
-# docs/runbook.md and in the README, where it costs no tokens.
+# The preamble is a title and one declarative sentence, for the reason
+# stated above DEFAULT_GOLDEN_PATTERNS: it is not operator-only text.
+# The moment anyone edits this file the whole body reaches the engineer
+# on every attempt, preamble included, so a sentence about the
+# scaffold's own lifecycle is either false there ("Nothing is injected
+# while this file is unchanged", read while it is being injected) or
+# addressed to somebody who is not reading it ("Keep `## Guidance`
+# last"). Both are gone. What belongs in the file is in docs/runbook.md
+# and in the README, where it costs no tokens.
 #
 # `## Guidance` is LAST and must stay last. R10.10 (#231) appends a
 # `/memory` comment to the END of the file and expects it to land in
-# that section; a section added after it would take the appends.
+# that section; a section added after it would take the appends. That
+# invariant is now a code comment and a test rather than a line of the
+# shipped body, because the engineer cannot act on it and the operator
+# reads it in the runbook.
 DEFAULT_MEMORY = """# Memory
 
 Standing feedback for kstrl runs in this repository: durable rules that
-should change future runs, not one-off instructions. Read into the
-engineer's prompt after the retry context. Nothing is injected while
-this file is unchanged since `ks init` wrote it. Keep `## Guidance`
-last; new entries are appended to the end of the file.
+should change future runs, not one-off instructions.
 
 ## Guidance
 """
@@ -773,6 +783,15 @@ SCAFFOLDED_TEMPLATES: tuple[ScaffoldedTemplate, ...] = (
             # decodes before the digest, and a copy with one newline
             # appended is NOT. The body now says "unchanged".
             ("2dab640523bd4082e323a7cf6d13a9fae6e2a6a2886473f584cabf3b883a0300", "2026-09-07"),
+            # R10.9 review round 1, should-fix 1. The preamble's two
+            # lifecycle paragraphs were prompt text from the operator's
+            # first edit onward: one of them ("nothing is injected") is
+            # false at the point the engineer reads it, and the other two
+            # sentences are imperatives addressed to the operator. 715
+            # characters down to 313. Appended, never edited: an operator
+            # whose disk holds the 715-character body must still be
+            # recognised, or it starts being injected.
+            ("103b4b2cf78aaf55163a9f10fd1c90193ba2fc05b16489687ac427b5c5d23c87", "2026-09-07b"),
         ),
     ),
     # R10.9. Same reader as the row above: a body listed here is
@@ -784,7 +803,14 @@ SCAFFOLDED_TEMPLATES: tuple[ScaffoldedTemplate, ...] = (
         constant_name="DEFAULT_MEMORY",
         body=DEFAULT_MEMORY,
         history=(
+            # Never merged outside this PR: the nine-line preamble as it
+            # stood when review round 1 read it.
             ("8146096422efcb9b4196b76711fc44c80e2c7b5b920771f8a1eddcb4ba5a81c8", "2026-09-07"),
+            # Round 1, should-fix 1: same defect as the row above. 354
+            # characters down to 148, and "Nothing is injected while this
+            # file is unchanged" is gone because the engineer only ever
+            # reads it while it is being injected.
+            ("07c55e3e12be359ea12cbe55f1c3296098a24c3468d6e62b66f42b0d2e1ffb83", "2026-09-07b"),
         ),
     ),
 )
@@ -806,17 +832,39 @@ def shipped_label(filename: str, text: str) -> str | None:
     (``test_history_rows_are_unique_and_non_empty``), so comparing the
     returned label against ``current_label`` is exactly comparing
     digests.
+
+    TRAILING NEWLINES ARE NOT A CHANGE. Two digests are tried, the raw
+    text and then the text with its trailing newlines collapsed to one,
+    so a copy that only gained or lost a final newline is still the body
+    kstrl wrote. R10.9 review round 1 (nit 3) measured why it matters
+    here rather than in the operator's staleness notice: the loader
+    renders ``text.rstrip("\\n")`` and digested the raw text, so
+    ``DEFAULT_MEMORY + "\\n"`` injected a placeholder block whose body was
+    byte-identical to the one the unedited file suppresses, and #231
+    makes a daemon the writer of that file. Both callers get the widened
+    rule, which is the point: two definitions of "kstrl wrote this" mean
+    the weaker one decides.
+
+    Raw first and normalised second, so this can only ADD matches. A
+    historical body that ended in two newlines is still found by its own
+    digest, which a normalise-then-look-up form would have lost, and the
+    bodies for those rows no longer exist to re-derive.
     """
     template = next((t for t in SCAFFOLDED_TEMPLATES if t.filename == filename), None)
     if template is None:
         return None
-    return dict(template.history).get(hashlib.sha256(text.encode("utf-8")).hexdigest())
+    digests = dict(template.history)
+    for candidate in (text, text.rstrip("\n") + "\n"):
+        label = digests.get(hashlib.sha256(candidate.encode("utf-8")).hexdigest())
+        if label is not None:
+            return label
+    return None
 
 
 # absent        - no file there; run_loop falls back to the constant and
 #                 says so itself.
-# current       - byte-identical to the body this kstrl ships.
-# stale         - byte-identical to an OLDER body this kstrl once shipped.
+# current       - the body this kstrl ships, bar trailing newlines.
+# stale         - an OLDER body this kstrl once shipped, same bar.
 # unrecognised  - matches nothing kstrl has ever shipped. Says nothing
 #                 about who wrote it, which is the point: an edited file
 #                 and a file from a build outside this history are

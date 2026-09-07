@@ -18,6 +18,7 @@ Proven by the artifacts, not by call records:
 
 from __future__ import annotations
 
+import io
 import textwrap
 from collections.abc import Callable
 from pathlib import Path
@@ -26,8 +27,9 @@ import pytest
 
 from kstrl.context import IterationContext, IterationRecord
 from kstrl.factory import _run_component, _setup_worktree
-from kstrl.init_cmd import DEFAULT_GOLDEN_PATTERNS, DEFAULT_MEMORY
+from kstrl.init_cmd import DEFAULT_GOLDEN_PATTERNS, DEFAULT_MEMORY, run_init
 from kstrl.operator_context import MEMORY
+from kstrl.ui.plain import PlainUI
 from tests.spine_utils import COMPLETE_LINE, git, init_kstrl_repo
 
 
@@ -223,6 +225,7 @@ def _run(
     worktree: Path,
     agent_bin: Path,
     previous_context_json: str | None = None,
+    max_iterations: int = 10,
 ) -> None:
     _run_component(
         COMP,
@@ -236,6 +239,7 @@ def _run(
         None,  # agent_type
         0.0,  # sleep_seconds
         previous_context_json=previous_context_json,
+        max_iterations=max_iterations,
         feedforward_config_dict=FEEDFORWARD_CONFIG,
         knowledge_prefix=KNOWLEDGE_MARKER,
         decisions_prefix=f"{DECISIONS_MARKER}\n\n- encoding: utf-8, named at every read",
@@ -289,7 +293,7 @@ class TestGoldenPatternsReachTheEngineer:
         whitespace-only, so before the digest check it reached the
         engineer: 479 characters of angle-bracket placeholders and one
         operator-facing instruction, under a header saying the operator
-        authored them, on every iteration of every component forever.
+        authored them, on every attempt of every component forever.
         """
         prompt = _prompt_after_run(
             tmp_path, lambda root, wt: _write(root / GOLDEN_REL, DEFAULT_GOLDEN_PATTERNS)
@@ -516,3 +520,142 @@ class TestMemoryIsReadAfterTheRetryContext:
         prompt = _prompt_after_run(tmp_path, lambda root, wt: None, IterationContext().to_json())
 
         assert "=== PREVIOUS ATTEMPT CONTEXT (Attempt 1) ===" in prompt
+
+
+class TestThePromptIsBuiltOncePerAttempt:
+    """R10.9 round 1, nit 11. The unit of latency is the ATTEMPT.
+
+    ``loop.run_loop`` substitutes the template, prepends the project
+    context and prepends ``context_prefix`` at ``kstrl/loop.py:617-629``,
+    and the iteration loop starts at ``:711``. So one prompt object is
+    handed to every iteration of an attempt, and an edit to memory.md
+    made while a component is running reaches no iteration of the attempt
+    that is running.
+
+    Read as a doc correction this is nothing: a prompt IS a per-attempt
+    object, so "every subsequent engineer prompt" stays true. Read as a
+    NUMBER it is what #231 inherits: the latency of a ``/memory`` write
+    is one attempt, and on a ``ks run 10`` that is the whole run. Round 1
+    found no test pinning it. This is that test, and it is captured off
+    the real agent subprocess's stdin rather than argued from the source
+    lines above.
+    """
+
+    @staticmethod
+    def _numbering_agent(cap: Path, root: Path) -> str:
+        """A fake agent that numbers its captures and edits memory.md once.
+
+        Reads stdin FIRST so the parent is never blocked writing into a
+        full pipe, then numbers the capture off a counter file. Iteration
+        1 appends to the ROOT memory file and does not complete;
+        iteration 2 completes.
+        """
+        return (
+            "#!/bin/bash\n"
+            f"cat > '{cap}/stdin.txt'\n"
+            f"n=$(cat '{cap}/count' 2>/dev/null || echo 0)\n"
+            "n=$((n+1))\n"
+            f"echo $n > '{cap}/count'\n"
+            f"cp '{cap}/stdin.txt' \"{cap}/prompt-$n.txt\"\n"
+            'if [ "$n" = "1" ]; then\n'
+            f"  printf -- '- rule beta\\n' >> '{root / MEMORY_REL}'\n"
+            "  echo one > iteration-1.txt\n"
+            "  git add -A && git commit -q -m 'iteration 1'\n"
+            "else\n"
+            "  echo two > iteration-2.txt\n"
+            "  git add -A && git commit -q -m 'iteration 2'\n"
+            f"  {COMPLETE_LINE}\n"
+            "fi\n"
+        )
+
+    def test_an_edit_mid_attempt_reaches_no_iteration_of_that_attempt(self, tmp_path: Path) -> None:
+        root, worktree, cap, agent_bin = _repo_with_source(tmp_path)
+        _write(root / MEMORY_REL, DEFAULT_MEMORY + "- rule alpha\n")
+        agent_bin.write_text(self._numbering_agent(cap, root))
+        agent_bin.chmod(0o755)
+
+        _run(root, worktree, agent_bin, max_iterations=2)
+
+        first = (cap / "prompt-1.txt").read_text(encoding="utf-8")
+        second = (cap / "prompt-2.txt").read_text(encoding="utf-8")
+        assert (cap / "count").read_text().strip() == "2", "the loop ran fewer than 2 iterations"
+        assert "- rule beta" in (root / MEMORY_REL).read_text(encoding="utf-8"), (
+            "the agent's own append did not land, so the case proves nothing"
+        )
+        assert "- rule alpha" in first and "- rule alpha" in second
+        assert "- rule beta" not in second
+        assert first == second, (
+            "the prompt is built once per attempt, so iteration 2 must receive the "
+            "same bytes iteration 1 received"
+        )
+
+
+#: The sentences round 1 (should-fix 1) measured inside a real engineer
+#: prompt, verbatim from the bodies `ks init` shipped at `cbc0f04`. Each
+#: is either FALSE where it is read (the file is being injected at the
+#: moment it says nothing is injected) or an imperative addressed to
+#: somebody who is not reading, which `operator_context`'s docstring
+#: records as the line between label glue and a prompt body (H3a).
+#:
+#: Pinned as data rather than as five assertions so a sixth is one row,
+#: and taken from the OLD bodies rather than from the new ones: a list
+#: derived from what ships today would pass whatever ships today.
+LIFECYCLE_SENTENCES: tuple[str, ...] = (
+    "Nothing is injected while",
+    "nothing is\ninjected",
+    "Keep `## Guidance`\nlast",
+    "Keep it short",
+    "Replace the placeholders",
+    "Read into the engineer's prompt",
+)
+
+
+class TestTheScaffoldPreambleTheEngineerReads:
+    """R10.9 round 1, should-fix 1, at the seam where the cost is paid.
+
+    While a scaffold is unchanged its whole body is suppressed, so the
+    preamble costs nothing and every gate is green. From the operator's
+    FIRST edit onward the whole body reaches the engineer, preamble
+    included, under a header saying the operator wrote it. Round 1
+    captured that and found two shapes in it: a sentence false where it
+    is read, and imperatives about maintaining the file.
+
+    Both scaffolds are edited by ONE appended line, which is the smallest
+    thing an operator does and the exact state #231's first `/memory`
+    comment produces. The capture is a real `ks init` writing the real
+    bodies and a real `_run_component` handing the prompt to a real agent
+    subprocess on stdin, so nothing here is asserted against the
+    constants.
+    """
+
+    @staticmethod
+    def _prompt_after_one_appended_line(tmp_path: Path) -> str:
+        root, worktree, cap, agent_bin = _repo_with_source(tmp_path)
+        assert run_init(root, PlainUI(no_color=True, file=io.StringIO())) == 0
+        for rel in (GOLDEN_REL, MEMORY_REL):
+            path = root / rel
+            assert path.exists(), f"ks init did not scaffold {rel}"
+            path.write_text(
+                path.read_text(encoding="utf-8") + "- one appended line\n", encoding="utf-8"
+            )
+        _run(root, worktree, agent_bin)
+        return (cap / "prompt.txt").read_text(encoding="utf-8")
+
+    def test_no_lifecycle_sentence_reaches_the_engineer(self, tmp_path: Path) -> None:
+        prompt = self._prompt_after_one_appended_line(tmp_path)
+
+        assert "=== MEMORY (standing feedback)" in prompt, "the edit did not turn the block on"
+        assert "=== GOLDEN PATTERNS (operator-authored)" in prompt
+        assert "- one appended line" in prompt
+        for sentence in LIFECYCLE_SENTENCES:
+            assert sentence not in prompt, sentence
+
+    def test_what_is_left_is_a_title_and_one_declarative_sentence(self, tmp_path: Path) -> None:
+        """The other half: cutting the preamble did not cut the file's
+        subject line, which is what tells the engineer whose words these
+        are and what they are for. Asserted against the prompt, not
+        against the constant."""
+        prompt = self._prompt_after_one_appended_line(tmp_path)
+
+        assert "Standing feedback for kstrl runs in this repository" in prompt
+        assert "what a good change looks like in this repository" in prompt

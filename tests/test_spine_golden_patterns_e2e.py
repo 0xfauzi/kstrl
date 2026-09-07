@@ -6,7 +6,7 @@ halves: `ks init` wrote a skeleton that was not absent, not empty and not
 whitespace-only, and the loader suppressed only those three. Both halves
 had tests; nothing ran them together, and the measured result was 479
 characters of angle-bracket placeholders at the head of every engineer
-prompt of every component of every iteration of every newly initialised
+prompt of every component of every attempt of every newly initialised
 project, under a header asserting the operator had authored them.
 
 So this file runs the real ``run_init``, the real ``ks run`` command
