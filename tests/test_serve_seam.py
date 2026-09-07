@@ -64,7 +64,6 @@ from __future__ import annotations
 
 import json
 import os
-import stat
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -82,6 +81,7 @@ from kstrl.serve import (
     subprocess_factory_runner,
 )
 from kstrl.workqueue import Queue, QueueConfig
+from tests.helpers.executables import write_executable
 from tests.test_intake_github import REPO, _GhStub, _issue, _issue_payload
 
 # --------------------------------------------------------------------------
@@ -130,10 +130,9 @@ exec "$@"
 """
 
 
-def _write_executable(path: Path, body: str) -> Path:
-    path.write_text(body, encoding="utf-8")
-    path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    return path
+#: Nothing here is about flow control; the fixture's docstring in
+#: tests/conftest.py says why the R10.7 bound has to be held open.
+pytestmark = pytest.mark.usefixtures("no_open_prs")
 
 
 def _install_stub_interpreter(
@@ -144,7 +143,7 @@ def _install_stub_interpreter(
     stdout: str = "",
 ) -> Path:
     """Replace ``sys.executable`` with the recorder; return the record path."""
-    interpreter = _write_executable(
+    interpreter = write_executable(
         tmp_path / "stub_interpreter",
         _STUB_INTERPRETER,
     )
@@ -172,7 +171,7 @@ def _install_fake_caffeinate(
     """
     bindir = tmp_path / "fakebin"
     bindir.mkdir(exist_ok=True)
-    _write_executable(bindir / "caffeinate", _FAKE_CAFFEINATE)
+    write_executable(bindir / "caffeinate", _FAKE_CAFFEINATE)
     marker = tmp_path / "caffeinate_ran"
     monkeypatch.setenv("SEAM_CAFFEINATE_MARKER", str(marker))
     monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
