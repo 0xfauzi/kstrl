@@ -232,6 +232,22 @@ EXPECTED_OTHER_LOADS = {
 #: row here with no site fails too, because a give-up nobody needs is a
 #: give-up nobody re-examines.
 UNGUARDED_LEDGER = {
+    "_file_inbox_item": (
+        "narrower on purpose, and pinned that way by another guard. "
+        "`tests/test_inbox_write_guards.py` requires this handler to name "
+        "`ControlStateError` by ORIGIN and `TypeError` by name, because "
+        "`Inbox._append` takes the control lock and `int()` on a TOML date "
+        "is not a ValueError; `except Exception` was tried here and makes "
+        "both names disappear, so that guard fires. It catches strictly "
+        "more, and the enumeration is complete over what was MEASURED to "
+        "escape `InboxConfig.load`: a ConfigError, a plain ValueError and a "
+        "TypeError. A deeply nested array does not escape as a "
+        "RecursionError, because `config.load_toml_document` normalises "
+        "every parser fault to ConfigError first. Reconciling the two "
+        "guards' rules - one wants the whole surface, the other wants the "
+        "names - is a decision for the owner, not a side effect of this "
+        "change."
+    ),
     "serve": (
         "daemon entry. `serve` is not in `_PREFLIGHT_EXEMPT`, so a malformed "
         "document is refused at command entry with exit 2 before this runs, "

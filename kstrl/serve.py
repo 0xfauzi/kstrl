@@ -1451,14 +1451,15 @@ def _unreadable_config_gate(
     The caught set is the whole surface and not an enumeration, for the
     reason ``check_open_pr_bound`` gives: every outcome that is not a
     config means one thing here, and a list of the types believed
-    reachable is the defect rather than the precaution. Measured escapes
-    at the four sites this serves: ``ConfigError`` from a quoted boolean,
-    and a plain ``ValueError`` from an ``int()`` cast. The TOML parser
-    underneath adds two more, because it decodes the stream before it
-    lexes and parses by recursive descent: a decode error and a recursion
-    error, and only the first of those is a ``ValueError``. The token for
-    that parser is deliberately not written here: it switches on another
-    guard's text-gated walk, which is nit N2 of round 2 of this PR.
+    reachable is the defect rather than the precaution. What that would
+    have to enumerate, measured through the real loaders rather than
+    reasoned about: ``ConfigError`` from a quoted boolean, from a
+    document that will not parse and from one that is not UTF-8; a plain
+    ``ValueError`` from an ``int()`` cast on a string; and a ``TypeError``
+    from the same cast on a TOML date, which is NOT a ``ValueError`` and
+    is the type an author writing that list by inspection leaves out.
+    ``OSError`` is reachable too, because ``load_toml_section`` does not
+    normalise it.
     """
     return MergeGate(
         pause_before_pr_merge=True,
@@ -2839,12 +2840,16 @@ def _file_inbox_item(
     ``_append``, which takes the control lock, and ``InboxConfig.load``
     casts per key.
 
-    ``except Exception`` is that sentence written as code. It stood as an
-    enumeration of five types while the paragraph above claimed the whole
-    surface, which is #318's shape exactly, and the enumeration was
-    wrong: ``InboxConfig.load`` reaches the TOML parser, which raises a
-    ``RecursionError`` on a deeply nested array - a ``RuntimeError``, so
-    not in the list, and a daemon with no per-cycle handler above it.
+    The enumeration stands, and it was checked rather than assumed. It
+    was widened to ``except Exception`` on the theory that a deeply
+    nested array reaches this as a ``RecursionError``, and measured:
+    ``config.load_toml_document`` normalises every parser fault to
+    ``ConfigError`` first, so what escapes ``InboxConfig.load`` is a
+    ``ConfigError``, a plain ``ValueError`` from an ``int()`` cast, or a
+    ``TypeError`` from ``int()`` on a TOML date, all three in the list.
+    ``tests/test_inbox_write_guards.py`` pins two of them by name and by
+    ORIGIN, so the wider spelling makes that guard fire; see
+    ``tests/test_serve_config_reads.py::UNGUARDED_LEDGER``.
     """
     try:
         from kstrl.inbox import Inbox, InboxConfig, ItemKind
@@ -2862,7 +2867,7 @@ def _file_inbox_item(
             run_id=run_id,
         )
         return item.id
-    except Exception:  # noqa: BLE001 - best effort by contract, see the docstring
+    except (OSError, TypeError, ValueError, KeyError, ControlStateError):
         return ""
 
 

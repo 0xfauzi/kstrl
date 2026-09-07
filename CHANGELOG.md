@@ -119,7 +119,9 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   and here identically: it is read before the queue exists, so there is
   nowhere to record a refusal, and it is recorded in
   `tests/test_serve_config_reads.py::UNGUARDED_LEDGER` with that
-  measurement rather than changed. That module is also the guard: it
+  measurement rather than changed, as is `_file_inbox_item`'s narrower
+  handler, which another guard pins by name and by origin. That module
+  is also the guard: it
   inventories every config read in `kstrl/serve.py` by enclosing
   function, decides each GUARDED or UNGUARDED, and fails on an unguarded
   one that is not in the ledger (#195, #318).
