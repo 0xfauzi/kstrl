@@ -25,6 +25,7 @@ from unittest.mock import patch
 
 import pytest
 
+from kstrl import operator_context
 from kstrl.config import KstrlConfig
 from kstrl.factory import ComponentResult, FactoryConfig, run_factory
 from kstrl.init_cmd import DEFAULT_GOLDEN_PATTERNS
@@ -242,19 +243,28 @@ class TestTheNoticeReachesTheOperatorExactlyOnce:
     def test_the_subject_comes_off_the_row_and_not_off_the_printer(
         self,
         tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Should-fix 5: ``_report_operator_files`` used to print the
         literal ``Golden patterns:`` in front of every message, so
         R10.9's memory file would have announced itself under the
-        golden-patterns name the day its row landed."""
+        golden-patterns name the day its row landed.
+
+        The subject is MOVED for this case rather than merely read back.
+        Asserting the shipped subject appears would pass against a
+        hardcoded printer, which is the defect: it is the same shape as
+        the guard that clears on everything (CLAUDE.md, rule 2).
+        """
         root = _project(tmp_path, ("comp-a",))
         (root / GOLDEN_REL).write_text(("x" * 19 + "\n") * 500, encoding="utf-8")
+        monkeypatch.setattr(operator_context, "GOLDEN_PATTERNS_SUBJECT", "Second row")
 
         ui = _run(root, ("comp-a",))
 
-        assert [w for w in ui.warnings if w.startswith(f"  {GOLDEN_PATTERNS_SUBJECT}: ")] == (
-            _golden_warnings(ui)
-        )
+        assert [w for w in ui.warnings if "truncated:" in w] == [
+            w for w in ui.warnings if w.startswith("  Second row: ")
+        ]
+        assert GOLDEN_PATTERNS_SUBJECT not in " ".join(ui.warnings)
 
     @pytest.mark.parametrize(
         "body",
