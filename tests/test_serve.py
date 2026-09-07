@@ -1919,10 +1919,20 @@ class TestProcessGroupSupervision:
     def test_killing_only_the_direct_child_leaks_a_descendant(self) -> None:
         """Establishes WHY the runner does not use subprocess.run(timeout=).
 
-        That helper signals only its DIRECT child. On macOS the direct
-        child is the caffeinate wrapper, so the factory is a grandchild
-        and survives - after which the daemon would requeue the item
-        while a factory was still writing to the repo.
+        That helper signals only its DIRECT child. A factory spawns
+        descendants of its own - agent subprocesses, git, the verify
+        commands - and those survive the signal, after which the daemon
+        would requeue the item while a factory was still writing to the
+        repo.
+
+        This docstring used to blame caffeinate: "on macOS the direct
+        child is the caffeinate wrapper, so the factory is a
+        grandchild". #209 measured that and it is false. The daemon's
+        direct child is the factory, and a descendant was measured
+        surviving a direct-child SIGKILL with caffeinate on and off
+        alike (macOS 26.6.2), which is the shape this test builds with a
+        shell instead. The test body is unchanged; only the reason it
+        gives for itself is.
         """
         import subprocess
 

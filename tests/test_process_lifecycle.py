@@ -165,7 +165,6 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     "procgroup.py": (
         "DeadlineStreamer",
         "Popen",
-        "communicate",
         "getpgid",
         "getpgrp",
         "kill",
@@ -173,6 +172,14 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
         "subprocess",
         "terminate",
     ),
+    # #209 round 3 split the `ps` spawn and its parse out of
+    # `procgroup.py` for the 800-line ratchet, so the `communicate` moved
+    # with it and this row is the collection that used to be counted on
+    # the row above. `Popen` and `subprocess` are the call itself;
+    # `procgroup.py` keeps its own because both words still appear there
+    # in prose and in a type annotation. Re-derived by running this
+    # census at every step, never by editing the literal.
+    "procgroup_listing.py": ("Popen", "communicate", "subprocess"),
     # The four modules that construct a Popen. `killpg` and `kill` are
     # gone from all three non-home ones as of this PR; a token coming
     # back is a hand-rolled copy of a `procgroup` routine.
@@ -270,7 +277,13 @@ class SpawnerRules:
 #: ``serve`` and ``verify`` have two disposal calls each because both the
 #: timeout path and the broad clause let go.
 EXPECTED_SPAWNERS: dict[str, SpawnerRules] = {
-    "procgroup.py": SpawnerRules(1, 1, 1, 1),
+    # `procgroup.py` is NOT here, and its absence is the pin: #209 round
+    # 3 moved the one `Popen` and the one `communicate` it owned into
+    # `procgroup_listing.py`, so it is now pinned to zero on all four
+    # columns by being absent, which is what this table's own docstring
+    # says an absent module means. All four numbers below were read off
+    # this census run against the split tree.
+    "procgroup_listing.py": SpawnerRules(1, 1, 1, 1),
     "procdispose.py": SpawnerRules(0, 1, 0, 0),
     "agents/proc.py": SpawnerRules(1, 0, 1, 2),
     "serve.py": SpawnerRules(1, 1, 1, 2),

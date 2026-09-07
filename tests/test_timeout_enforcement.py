@@ -1265,11 +1265,16 @@ class TestSubprocessTimeoutAudit:
     - kstrl/serve.py: subprocess_factory_runner communicate(timeout) +
       group kill (R8.6). Popen is REQUIRED here rather than incidental:
       review #186 F1 showed subprocess.run's timeout signals only the
-      direct child, which on macOS is the caffeinate wrapper, so the
-      factory itself outlived the timeout and the daemon requeued an
-      item that was still executing.
-    - kstrl/procgroup.py: two bounded communicate(timeout) calls around a
-      kill, then the child is abandoned (#309). Popen is REQUIRED here
+      direct child, and a factory's own descendants (agent subprocesses,
+      git, the verify commands) outlive that signal, so the run kept
+      going and the daemon requeued an item that was still executing.
+      This entry used to say the direct child is the caffeinate wrapper
+      and the factory a grandchild; #209 measured the tree and it is
+      not. The direct child is the factory, and the descendants survive
+      a direct-child kill with caffeinate on and off alike.
+    - kstrl/procgroup_listing.py: two bounded communicate(timeout) calls
+      around a kill, then the child is abandoned (#309). Split out of
+      kstrl/procgroup.py by #209 round 3; the argument is next door. Popen is REQUIRED here
       too, and for a different reason: subprocess.run's timeout handler
       waits on the killed child with NO deadline and Popen.__exit__ waits
       again, so `timeout=` cannot bound a ps that will not die. Measured
@@ -1314,10 +1319,19 @@ class TestSubprocessTimeoutAudit:
     SPAWN_TARGETS = frozenset(f"subprocess.{name}" for name in SPAWN_FUNCS)
 
     #: Modules allowed to CONSTRUCT a ``subprocess.Popen``.
+    #: ``kstrl/procgroup_listing.py`` REPLACED ``kstrl/procgroup.py``
+    #: here when #209 round 3 split the ``ps`` spawn out for the 800-line
+    #: ratchet, taking ``_read_ps`` and its two deadlines with it. That is
+    #: the SAME move that produced the instance-eleven miss recorded on
+    #: :data:`CHILD_WAIT_SCOPE` below - ``kstrl/procdispose.py`` split out
+    #: of the same module and landing on neither list. What caught it this
+    #: time is the per-file anti-vacuity check: leaving the old name here
+    #: as well fails with "these deadline-managed modules show no wait
+    #: sites at all", so a stale entry cannot be carried quietly.
     POPEN_ALLOWLIST = frozenset(
         {
             "kstrl/agents/proc.py",
-            "kstrl/procgroup.py",
+            "kstrl/procgroup_listing.py",
             "kstrl/serve.py",
             "kstrl/verify.py",
         }
