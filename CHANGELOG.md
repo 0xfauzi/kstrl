@@ -110,9 +110,16 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   the report for a pull-request comment. A baseline signature whose check
   produced no measurement in the current run is reported as unmeasured
   rather than fixed, because a check that did not run cannot prove
-  anything; a sensor that timed out or whose tool is missing contributes
-  no signatures to a baseline at all. A workflow on this repository posts
-  the report on every pull request and never fails on a regression.
+  anything; a sensor that timed out, whose tool is not installed, or that
+  passed vacuously contributes no signatures to a baseline at all. A
+  check the baseline measured and the branch did not is a REGRESSION in
+  its own right, reported by name with the reason: a branch whose test
+  suite stops finishing produces no signature for any of the other
+  buckets to hold, so without it the report read "no regression". The
+  baseline also records a digest of the three verify commands and the
+  subprocess timeout, and a comparison measured with a different one is
+  refused with exit 2 rather than reported. A workflow on this repository
+  posts the report on every pull request and never fails on a regression.
   `docs/dampener.md` covers adopting it in another repository and
   graduating it to blocking (#227).
 

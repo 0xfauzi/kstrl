@@ -1,16 +1,23 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-09-06T18:29:59Z",
-  "base_ref": "06cd16d0020636993a77995d77d9176dd471b633",
+  "generated_at": "2026-09-07T00:16:57Z",
+  "base_ref": "908b9405f8cae94aeb448675ce5fc2f2cd20feae",
+  "project": "0xfauzi/kstrl",
   "passed": true,
   "sense_schema_version": 2,
+  "verify_digest": "c446b9151d1cd264",
   "measured_checks": [
-    "bad_patterns",
-    "diff_scope",
     "linter",
     "test_suite",
     "typecheck"
   ],
-  "unmeasured_checks": [],
+  "unmeasured_checks": [
+    "bad_patterns",
+    "diff_scope"
+  ],
+  "unmeasured_reasons": {
+    "bad_patterns": "Scanned 0 Python files, no issues",
+    "diff_scope": "No scope constraints (allowed_paths not set)"
+  },
   "signatures": {}
 }

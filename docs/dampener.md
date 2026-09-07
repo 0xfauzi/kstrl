@@ -52,15 +52,26 @@ Two things to get right when you write one:
   not the working tree. A baseline written from a dirty tree names a commit
   that is not what was measured.
 - **Read the `unmeasured:` list.** It names every sensor that was asked for and
-  measured nothing: it timed out, its tool is not installed, or it recorded a
-  gap. Those sensors contribute NO signatures to the baseline, so a baseline
-  with names on that line has holes in it, and the holes are wherever those
-  names are. Fix the cause and regenerate, or accept the holes deliberately.
+  measured nothing: it timed out, its tool is not installed, or it applied no
+  rule because none was configured. Those sensors contribute NO signatures to
+  the baseline, so a baseline with names on that line has holes in it, and the
+  holes are wherever those names are. The file records the reason for each one
+  in `unmeasured_reasons`. Fix the cause and regenerate, or accept the holes
+  deliberately.
 
-The timeout is the usual cause. kstrl's own test suite takes about 327 seconds
-and the default verify timeout is 300, so its own baseline is generated with
-`KSTRL_TIMEOUT_VERIFY=1800` and the workflow sets the same value. A baseline
-and a comparison measured at different timeouts are not a comparison.
+kstrl's own baseline names two: `diff_scope`, because `ks sense` with no
+`--allowed-path` applies no scope rule at all, and `bad_patterns`, because the
+diff against the base on `main` is empty so it opened no files. Both are
+vacuous passes. A sensor that stops measuring between the baseline and a branch
+is a REGRESSION (see below), so the holes are visible rather than quiet.
+
+The timeout is the other usual cause. kstrl's own test suite takes about 327
+seconds and the default verify timeout is 300, so its own baseline is generated
+with `KSTRL_TIMEOUT_VERIFY=1800` and the workflow sets the same value. A
+baseline and a comparison measured at different timeouts are not a comparison,
+and that is enforced rather than asked for: the baseline records a digest of
+the three verify commands and the timeout, and `--compare-baseline` refuses a
+mismatch with exit 2, naming both digests.
 
 ## Comparing a branch
 
@@ -68,17 +79,27 @@ and a comparison measured at different timeouts are not a comparison.
 uv run ks sense --compare-baseline
 ```
 
-Four buckets:
+Five buckets:
 
-| bucket | means |
-|---|---|
-| `new` | present now, absent from the baseline |
-| `increased` | present in both, and the count went up |
-| `fixed` | in the baseline, absent now, and its check MEASURED something now |
-| `unmeasured` | in the baseline, absent now, and its check measured nothing now |
+| bucket | keyed on | means |
+|---|---|---|
+| `new` | signature | present now, absent from the baseline |
+| `increased` | signature | present in both, and the count went up |
+| `stopped measuring` | check | the baseline measured this check and this run did not |
+| `fixed` | signature | in the baseline, absent now, and its check MEASURED something now |
+| `unmeasured` | signature | in the baseline, absent now, and its check measured nothing now |
 
-Only `new` and `increased` decide the verdict. `fixed` and `unmeasured` are
-reported so improvement is visible, and they never make a run red.
+`new`, `increased` and `stopped measuring` decide the verdict. `fixed` and
+`unmeasured` are reported so improvement is visible, and they never make a run
+red.
+
+`stopped measuring` is the one keyed on a check rather than a signature, and it
+is not a duplicate of `unmeasured`. That bucket holds baseline SIGNATURES, and
+a baseline can be green: kstrl's own records `"signatures": {}`. So on a branch
+where the test suite stops finishing there is no signature anywhere for the
+other four buckets to hold, and without this the report read `no regression`
+and exited 0 even under `--fail-on-regression`. A sensor going dark is the most
+important thing a pull-request check can catch.
 
 The split between `fixed` and `unmeasured` is the part worth understanding. A
 signature going away can mean two things: somebody fixed it, or the sensor
@@ -87,6 +108,18 @@ the problem is gone, so it is only made when the check that produced the
 signature measured something in this run; otherwise the signature lands in
 `unmeasured` and the report says the check did not run. Without that rule,
 uninstalling a linter reads as fixing every one of its findings.
+
+Measured, against a `check_linter` run whose command is not on PATH: the row
+comes back `passed=False measured=False "Linter failed (exit code 127)"`, and a
+baseline holding `linter:E501` 12 and `linter:F401` 3 compares to
+`fixed={}`, `unmeasured={'linter:E501': 12, 'linter:F401': 3}` and
+`stopped_measuring={'linter': ...}`. On the first version of this feature the
+same input produced `fixed={'linter:E501': 12, 'linter:F401': 3}`: the sentence
+above was the design and not the code.
+
+A vacuous pass counts as measuring nothing for the same reason. `diff_scope`
+with no `--allowed-path` applies no rule, and `bad_patterns` over an empty diff
+opens no files; neither can prove a finding went away.
 
 The reverse case is deliberately noisy: a signature from a check the BASELINE
 never measured is reported as `new`. That over-reports when a toolchain gains a
@@ -101,12 +134,19 @@ somebody reads; under-reporting costs the mechanism.
   earlier comment
 - `--json`: the whole `ks sense` document with a `dampener` block added
 
+`--compare-baseline` and `--write-baseline` both take an optional path, and a
+RELATIVE one resolves under `--root`, exactly as the bare flag's default does.
+One rule for one flag: passing the path `--help` advertises as the default,
+together with `--root`, used to read a different file.
+
 | condition | exit |
 |---|---|
 | no regression | 0 |
 | regression, no `--fail-on-regression` | 0 |
 | regression, with `--fail-on-regression` | 1 |
+| a sensor that measured on the baseline and not here | 0, or 1 with `--fail-on-regression` |
 | baseline missing, unreadable, malformed, or the wrong schema version | 2 |
+| baseline measured with different verify commands or a different timeout | 2 |
 | bad `kstrl.toml`, a path that is not a directory, git cannot diff | 2 |
 
 The comparison's exit code never follows whether the tree is green. A red tree
@@ -145,7 +185,10 @@ every consumer's pull-request check the moment the sensor version bumped.
      unconditionally, which a fork author can read. Do NOT reach for
      `pull_request_target` to fix this: it runs the pull request's own test
      suite with a write token.
-   - the job fails only on exit 2. A regression is a comment, not a failure.
+   - the last step, which fails on ANY nonzero exit from `ks sense`. As
+     shipped that is only the sensor failing, because without
+     `--fail-on-regression` a regression exits 0. It is also the half of
+     graduating to blocking that is easy to lose: see below.
 
 3. Set `KSTRL_TIMEOUT_VERIFY` in the workflow's env to whatever you generated
    the baseline with.
@@ -157,7 +200,16 @@ In this order, and do not skip the middle step:
 1. **Advisory.** Leave it as shipped. Read the comments it posts.
 2. **Blocking.** Once the comments have been right on several real pull
    requests, add `--fail-on-regression` to the `ks sense` invocation in the
-   workflow. That is the whole change.
+   workflow. That is the whole change, and it is only the whole change because
+   the last step keys on `steps.sense.outputs.rc != '0'`.
+
+   That detail is load-bearing, so do not simplify it away. The sense step runs
+   under `set +e` and restores `set -e` afterwards, so its OWN exit status is
+   always 0 and the exit code reaches the job only through `GITHUB_OUTPUT`. The
+   first version of this workflow failed on `rc == '2'` alone: adding the flag
+   produced `ks sense` exiting 1, `rc=1` recorded, and a green job. The
+   documented graduation did not block. `bash -e -c 'set +e; false; echo
+   "rc=$?"; set -e'` prints `rc=1` and exits 0, which is the whole mechanism.
 3. **Refresh deliberately.** After an intentional change to the measured
    property, regenerate with `ks sense --write-baseline --force` in its own
    commit, with nothing else in it, so the diff shows exactly which signatures
