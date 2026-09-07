@@ -59,6 +59,7 @@ import socket
 import subprocess
 import sys
 import time
+import warnings
 from collections import deque
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -69,7 +70,9 @@ from pathlib import Path
 from typing import Any, Final, Protocol
 
 from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
+from kstrl.atomicio import atomic_write_json
 from kstrl.manifest import ADVERSARIAL_BUDGET_CHECK, Component, Manifest
+from kstrl.pr import GH_TIMEOUT, PR_FOOTER_MARKER
 from kstrl.procdispose import drain_or_abandon
 from kstrl.procgroup import (
     pid_is_alive,
@@ -80,6 +83,7 @@ from kstrl.procgroup import (
 )
 from kstrl.runid import run_kind
 from kstrl.statedir import (
+    CONTROL_PR_COUNT_STREAK,
     CONTROL_SPEND,
     ControlStateError,
     control_file,
@@ -275,6 +279,10 @@ class ServeConfig:
     #: Run unattended even when a configured budget cannot be enforced
     #: because no adapter reports cost. Explicit opt-out of the guard.
     allow_uncovered_cost: bool = False
+    #: Scheduled admission stops while this many kstrl-authored PRs are
+    #: open. 0 disables the bound. Manual `ks factory` / `ks run` are
+    #: unaffected: a human typing the command is the authorisation.
+    max_open_prs: int = 1
 
     def __post_init__(self) -> None:
         if self.poll_interval_seconds <= 0:
@@ -291,6 +299,8 @@ class ServeConfig:
             raise ServeError(
                 f"serve.factory_timeout_seconds must be >= 0, got {self.factory_timeout_seconds}"
             )
+        if self.max_open_prs < 0:
+            raise ServeError(f"serve.max_open_prs must be >= 0, got {self.max_open_prs}")
 
     @classmethod
     def from_env(cls) -> ServeConfig:
@@ -301,6 +311,7 @@ class ServeConfig:
         caffeinate = os.environ.get("KSTRL_SERVE_CAFFEINATE")
         timeout = os.environ.get("KSTRL_SERVE_FACTORY_TIMEOUT")
         uncovered = os.environ.get("KSTRL_SERVE_ALLOW_UNCOVERED_COST")
+        open_prs = os.environ.get("KSTRL_SERVE_MAX_OPEN_PRS")
         return cls(
             poll_interval_seconds=(defaults.poll_interval_seconds if poll is None else float(poll)),
             daily_budget_usd=(defaults.daily_budget_usd if budget is None else float(budget)),
@@ -314,6 +325,7 @@ class ServeConfig:
             allow_uncovered_cost=(
                 defaults.allow_uncovered_cost if uncovered is None else uncovered == "1"
             ),
+            max_open_prs=(defaults.max_open_prs if open_prs is None else int(open_prs)),
         )
 
     @classmethod
@@ -344,6 +356,7 @@ class ServeConfig:
             defaults.factory_timeout_seconds,
         )
         uncovered = _bool("allow_uncovered_cost", defaults.allow_uncovered_cost)
+        open_prs = _int("max_open_prs", defaults.max_open_prs)
 
         if "KSTRL_SERVE_POLL_INTERVAL" in os.environ:
             poll = float(os.environ["KSTRL_SERVE_POLL_INTERVAL"])
@@ -357,6 +370,10 @@ class ServeConfig:
             timeout = float(os.environ["KSTRL_SERVE_FACTORY_TIMEOUT"])
         if "KSTRL_SERVE_ALLOW_UNCOVERED_COST" in os.environ:
             uncovered = os.environ["KSTRL_SERVE_ALLOW_UNCOVERED_COST"] == "1"
+        # Not the `in os.environ` branch its six siblings use: a seventh
+        # would push this method past the cyclomatic ratchet. Same
+        # semantics: int() of an int is that int, of a string parses it.
+        open_prs = int(os.environ.get("KSTRL_SERVE_MAX_OPEN_PRS", open_prs))
 
         return cls(
             poll_interval_seconds=poll,
@@ -365,6 +382,7 @@ class ServeConfig:
             caffeinate=caffeinate,
             factory_timeout_seconds=timeout,
             allow_uncovered_cost=uncovered,
+            max_open_prs=open_prs,
         )
 
 
@@ -2100,6 +2118,398 @@ def check_inbox_cap(root_dir: Path) -> Admission:
     )
 
 
+@dataclass(frozen=True)
+class OpenPrCount:
+    """How many open kstrl PRs were seen, and whether the page was full.
+
+    ``saturated`` travels with the count because a full page makes the
+    count a LOWER BOUND rather than a count: ``gh pr list`` returns at
+    most ``--limit`` rows, newest first, so an older unmerged kstrl PR
+    can sit outside the window. A gate that saw only the number could
+    not tell "zero open" from "zero within the newest hundred", and the
+    second one is exactly the condition the bound exists for. Hence a
+    pair, not an ``int``.
+    """
+
+    count: int
+    saturated: bool
+
+
+def count_open_kstrl_prs(cwd: Path, *, limit: int = 100) -> OpenPrCount:
+    """Open PRs whose body ENDS with :data:`PR_FOOTER_MARKER` (R10.7).
+
+    Runs ``gh pr list --state=open --limit <limit> --json number,body``
+    under ``GH_TIMEOUT``. Every failure this function CONVERTS is raised
+    as ``RuntimeError`` - gh failure, timeout, missing binary,
+    unparseable output, unrecognised row - because the caller decides
+    what a failed count means and an unknown number of open PRs is not
+    zero. That is not a promise that nothing else escapes, and a caller
+    must still catch ``Exception``: ``run_gh``'s decode raises
+    ``UnicodeDecodeError`` and ``json.loads`` raises ``RecursionError``
+    on deeply nested input, neither of which is converted here and
+    neither of which is a ``RuntimeError`` (#318). ``check_open_pr_bound``
+    catches ``Exception`` for exactly that reason.
+
+    ``--state=open`` is deliberately one argv token. Spelled as two, the
+    literal ``"open"`` lands in ``kstrl/serve.py`` and is counted by the
+    encoding census in ``tests/test_encoding_readers.py``, which nets
+    every expression folding to ``read_text`` or ``open``. That would let
+    a later commit add a genuine read and drop this flag with the census
+    count unmoved.
+
+    Anchored at the END of the body rather than matched anywhere in it.
+    Both writers in ``kstrl/pr.py`` append the marker as the final line
+    (``tests/test_flow_control.py`` pins that through the real writer),
+    so the anchor costs no true positive and rejects every PR that
+    merely quotes the footer in prose - a body discussing the constant,
+    a human pasting it. A substring match counted PR #354 of this
+    repository, which no kstrl opened, as a kstrl PR.
+
+    Two directions, both stated. FALSE NEGATIVE: a PR opened before the
+    footer took its current wording is not counted (the literal was a
+    different one until commit ``bd19f2b``), and neither is one whose
+    body a human edited. FALSE POSITIVE: a PR whose body was written by
+    hand to end with exactly this line.
+
+    Rows are validated one by one before anything is counted. A payload
+    whose rows are not PR records is a refusal with the row's index, not
+    a count of zero: the ``isinstance`` filter this replaced read as
+    defensive and was in fact the fail-open.
+
+    The spawn and its four transport failures belong to
+    :func:`~kstrl.intake_github.run_gh`, which is the package's one gh
+    invocation. Only the shapes of a bad PAYLOAD are decided here.
+    """
+    from kstrl.intake_github import run_gh
+
+    args = ["pr", "list", "--state=open", "--limit", str(limit), "--json", "number,body"]
+    result = run_gh(args, timeout=GH_TIMEOUT, cwd=cwd)
+    if not result.ok:
+        raise RuntimeError(result.error)
+    try:
+        rows = json.loads(result.stdout)
+    except ValueError as exc:
+        raise RuntimeError(f"gh pr list returned unparseable JSON: {exc}") from exc
+    if not isinstance(rows, list):
+        raise RuntimeError(f"gh pr list returned {type(rows).__name__}, expected a list")
+    count = 0
+    for index, row in enumerate(rows):
+        # The TYPE of ``body`` is checked, not just its presence. A
+        # validator that admits a field the parser then coerces is the
+        # fail-open one field over: ``str(row["body"] or "")`` turns
+        # ``42`` into ``"42"`` and ``["x"]`` into ``"['x']"``, and both
+        # would have been counted as unmarked PRs rather than refused.
+        # ``gh pr list --json body`` returns a string or null today; the
+        # only scenario this validation is for is the one where that
+        # changes.
+        if (
+            not isinstance(row, dict)
+            or "body" not in row
+            or not isinstance(row["body"], str | None)
+        ):
+            raise RuntimeError(f"gh pr list row {index} is not a PR record: {row!r:.120}")
+        if (row["body"] or "").rstrip().endswith(PR_FOOTER_MARKER):
+            count += 1
+    return OpenPrCount(count=count, saturated=len(rows) >= limit)
+
+
+#: Consecutive inconclusive counts before the daemon files an item.
+STREAK_THRESHOLD: Final = 3
+
+#: Shape of ``pr_count_streak.json``. Bumped when a field changes
+#: meaning; a file carrying any other value is treated as damaged rather
+#: than partially read.
+STREAK_SCHEMA_VERSION: Final = 1
+
+
+def _warn_streak_state(path: Path, reason: str) -> str:
+    """Warn that the persisted streak was rejected; return the sentence.
+
+    Warned here and returned, so ``serve`` can put the identical text on
+    the observer an operator is actually watching. Same shape as
+    ``autonomy._warn_rejected_state``.
+    """
+    message = (
+        f"serve: rejected the open-PR count streak {path} ({reason}); "
+        "treating the count as already at its alarm threshold so the next "
+        "unusable count files an inbox item, and leaving the file alone"
+    )
+    warnings.warn(message, RuntimeWarning, stacklevel=3)
+    return message
+
+
+@dataclass
+class OpenPrCountStreak:
+    """Consecutive inconclusive open-PR counts, persisted across processes.
+
+    It exists to file ONE inbox item once the count has been unusable
+    ``threshold`` polls running. A rate limit or a brief outage clears
+    itself and never reaches the threshold; an expired ``gh`` token and a
+    ``gh`` missing from launchd's PATH do not clear themselves, and
+    before this the daemon waited on them forever with every operator
+    surface reporting healthy.
+
+    ON DISK because ``ks serve`` ships in two deployment shapes and only
+    one of them is a long-lived process. ``--plist-mode keepalive`` runs
+    one process that polls; ``--plist-mode interval`` runs
+    ``ks serve --once`` on a ``StartCalendarInterval``, one process per
+    firing. A streak that lived in the loop's frame started at 0 on every
+    interval firing, so ``consecutive`` never exceeded 1, the threshold
+    was unreachable, and the alarm did not exist in the mode most exposed
+    to the failure it names - a ``gh`` missing from launchd's PATH.
+
+    ``filed`` is set by :func:`_record_count_failure` AFTER the item is
+    on disk, never by the poll that merely decided to file: the inbox
+    write is deliberately failure-swallowing, so marking the streak first
+    would throw the alarm away at the moment it is needed.
+    :meth:`record_conclusive` clears both, because the next failure after
+    a recovery is new information.
+
+    ``reason`` and ``damaged`` are transient, not persisted. ``reason``
+    is what the LAST inconclusive count said, and it is what the filed
+    item quotes: the caller's own refusal string may have come from a
+    different wait gate entirely, and an item that names the wrong cause
+    is worse than none. It is also what makes filing conditional on this
+    poll having actually failed to count.
+    """
+
+    threshold: int = STREAK_THRESHOLD
+    consecutive: int = 0
+    filed: bool = False
+    reason: str = ""
+    damaged: str | None = None
+
+    def record_inconclusive(self, reason: str) -> None:
+        self.consecutive += 1
+        self.reason = reason
+
+    def record_conclusive(self) -> None:
+        self.consecutive = 0
+        self.filed = False
+        self.reason = ""
+
+    def should_file(self) -> bool:
+        """Whether THIS poll is the one that files. Asks; marks nothing.
+
+        A predicate, not a transition. The version that set ``filed``
+        here read as one atomic step and was not: the write it authorised
+        happens afterwards and can fail, and the streak had already
+        disarmed itself by then.
+
+        ``reason`` non-empty is what makes this a question about the
+        COUNT. Any wait gate's refusal reaches ``_record_count_failure``,
+        and a streak restored at its threshold from a damaged file would
+        otherwise file an open-PR-count item on the strength of a full
+        inbox.
+        """
+        return bool(self.reason) and not self.filed and self.consecutive >= self.threshold
+
+    @staticmethod
+    def path_for(root_dir: Path) -> Path:
+        return control_file(root_dir, CONTROL_PR_COUNT_STREAK)
+
+    @classmethod
+    def load(cls, root_dir: Path) -> OpenPrCountStreak:
+        """Read the streak, failing toward the ALARM rather than silence.
+
+        A missing file is first run and is streak 0: nothing has failed
+        yet, and treating that as an alarm would file an item on every
+        fresh install.
+
+        Anything else unreadable - bad permissions, bytes that are not
+        utf-8, JSON that will not parse, a shape or a schema version this
+        code does not recognise - comes back AT the threshold with
+        ``damaged`` set. The safe direction here is the opposite of
+        autonomy's: this file's whole job is to make a silent failure
+        loud, so a version of it we cannot read must not quietly restart
+        the count from zero and re-earn three polls of silence. The next
+        unusable count files immediately.
+
+        The file is NOT rewritten while damaged; see :meth:`save`.
+        """
+        ensure_control_state(root_dir)
+        path = cls.path_for(root_dir)
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return cls()
+        except (OSError, ValueError) as exc:
+            # ``ValueError`` beside ``OSError`` because
+            # ``UnicodeDecodeError`` is one and would otherwise escape a
+            # handler written to fail closed (#291).
+            return cls._damaged(path, f"unreadable: {exc}")
+        try:
+            data = json.loads(raw)
+        except ValueError as exc:
+            return cls._damaged(path, f"malformed JSON: {exc}")
+        return cls._from_payload(path, data)
+
+    @classmethod
+    def _from_payload(cls, path: Path, data: Any) -> OpenPrCountStreak:
+        """Validate every field, or return the damaged streak saying which."""
+        if not isinstance(data, dict):
+            return cls._damaged(path, "top-level value is not an object")
+        version = data.get("schema_version")
+        if version != STREAK_SCHEMA_VERSION:
+            return cls._damaged(
+                path,
+                f"schema_version is {version!r}, expected {STREAK_SCHEMA_VERSION}",
+            )
+        consecutive = data.get("consecutive")
+        # ``bool`` is an ``int`` subclass, so ``True`` would otherwise
+        # validate as a count of 1.
+        if not isinstance(consecutive, int) or isinstance(consecutive, bool) or consecutive < 0:
+            return cls._damaged(path, f"consecutive is not a count: {consecutive!r:.60}")
+        filed = data.get("filed")
+        if not isinstance(filed, bool):
+            return cls._damaged(path, f"filed is not a boolean: {filed!r:.60}")
+        return cls(consecutive=consecutive, filed=filed)
+
+    @classmethod
+    def _damaged(cls, path: Path, reason: str) -> OpenPrCountStreak:
+        return cls(
+            consecutive=STREAK_THRESHOLD,
+            filed=False,
+            damaged=_warn_streak_state(path, reason),
+        )
+
+    def save(self, root_dir: Path) -> str | None:
+        """Persist the streak. Returns None on success, else the reason.
+
+        REFUSES while ``damaged``. Writing a fresh count over bytes an
+        operator could have inspected destroys the only evidence of the
+        damage, and the next load would then find a clean file and report
+        nothing. The refusal is re-reported on every save attempt, keyed
+        by the file and the cause, so it does not need a record of its
+        own.
+
+        A failed write is reported and not raised. The daemon has no
+        per-cycle handler, and dying over a bookkeeping file would be a
+        worse outcome than the degraded alarm it causes: without the
+        write, the streak is per-process again, which is the behaviour
+        this file replaced. It is not the only mechanism that would
+        notice - an unwritable control directory also fails
+        ``SpendLedger`` on the money path, which raises.
+        """
+        if self.damaged is not None:
+            return self.damaged
+        path = self.path_for(root_dir)
+        payload = {
+            "schema_version": STREAK_SCHEMA_VERSION,
+            "consecutive": self.consecutive,
+            "filed": self.filed,
+        }
+        try:
+            ensure_control_state(root_dir)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with control_lock(root_dir):
+                atomic_write_json(path, payload)
+        except (OSError, ControlStateError) as exc:
+            return (
+                f"serve: could not persist the open-PR count streak {path}: {exc}. "
+                "The count restarts at zero in the next process, so launchd "
+                "`interval` mode will not reach its alarm threshold."
+            )
+        return None
+
+
+def check_open_pr_bound(
+    config: ServeConfig,
+    root_dir: Path,
+    *,
+    counter: Callable[[Path], OpenPrCount] | None = None,
+    streak: OpenPrCountStreak | None = None,
+) -> Admission:
+    """Flow control: refuse admission while max_open_prs kstrl PRs are open.
+
+    Skipped (allowed) when ``max_open_prs`` is 0, or when the factory
+    will not open PRs at all (``[factory] create_prs = false``), because
+    then there is nothing to bound. Anything that is not a usable count
+    refuses admission with the error in the reason: an unknown number of
+    open PRs is not zero.
+
+    ``except Exception`` on purpose, and the config read is INSIDE it.
+    Every outcome of this block that is not a number means one thing to
+    this gate, and an enumeration of the exception types believed
+    reachable is the defect rather than the precaution (#318). Two were
+    measured escaping the previous ``except RuntimeError``, both fatal to
+    a daemon that has no per-cycle handler: a ``ValueError`` from
+    ``FactoryConfig.load`` on ``[factory] max_parallel = "two"``, which
+    this gate re-reads every poll while only startup validates it, and a
+    ``UnicodeDecodeError`` from ``run_gh``'s locale decode.
+
+    A saturated page refuses in both directions and says which. ``count
+    >= max_open_prs`` is conclusive even on a full page, so it keeps the
+    ordinary reason; ``count < max_open_prs`` on a full page is not a
+    fact about the repository and must not admit.
+
+    All refusals are WAITS, not pauses. ``pause_reason`` stays empty so
+    the daemon re-checks next cycle: an open PR lifts the refusal by
+    being merged or closed, which needs no operator action on the queue.
+    A count that stays unusable is the case a wait alone handles badly,
+    which is what ``streak`` is for; see :class:`OpenPrCountStreak`.
+
+    ``counter`` exists so tests inject a fake without putting a ``gh``
+    on PATH; it is resolved inside the body rather than as a default
+    argument so patching the module-level name reaches it.
+
+    ``streak`` defaults to a throwaway rather than to ``None``. The four
+    ``if streak is not None`` guards this replaced were four branches
+    whose only job was to decide whether to record, and every one of
+    them was a place a later edit could forget. A caller that does not
+    pass one gets a streak nobody reads, which is what ``None`` meant.
+
+    BOTH early-allow paths record a CONCLUSIVE result. A gate that is
+    switched off, or that does not apply because the factory opens no
+    pull requests, is not evidence that ``gh`` is broken; leaving a
+    half-built streak standing across a week of ``max_open_prs = 0``
+    would file on the first failure afterwards and contradict the
+    "three consecutive polls" contract in the docs.
+    """
+    tally = streak if streak is not None else OpenPrCountStreak()
+    if config.max_open_prs == 0:
+        tally.record_conclusive()
+        return Admission(allowed=True, reason="open-PR bound disabled")
+    count_fn = counter if counter is not None else count_open_kstrl_prs
+    try:
+        from kstrl.factory import FactoryConfig
+
+        if not FactoryConfig.load(root_dir).create_prs:
+            tally.record_conclusive()
+            return Admission(
+                allowed=True,
+                reason="open-PR bound not applicable (create_prs = false)",
+            )
+        counted = count_fn(root_dir)
+    except Exception as exc:  # noqa: BLE001 - anything but a count is the same answer
+        reason = f"cannot count open kstrl PRs: {exc}"
+        tally.record_inconclusive(reason)
+        return Admission(allowed=False, reason=reason)
+    if counted.count >= config.max_open_prs:
+        # Conclusive even on a full page: the rows already seen carry
+        # the bound, and rows outside the window can only add to them.
+        tally.record_conclusive()
+        return Admission(
+            allowed=False,
+            reason=(
+                f"{counted.count} kstrl PR(s) open (bound {config.max_open_prs}); "
+                "waiting for review"
+            ),
+        )
+    if counted.saturated:
+        reason = (
+            f"cannot count open kstrl PRs: gh returned a full page, so "
+            f"{counted.count} is a lower bound and not a count"
+        )
+        tally.record_inconclusive(reason)
+        return Admission(allowed=False, reason=reason)
+    tally.record_conclusive()
+    return Admission(
+        allowed=True,
+        reason=f"{counted.count} of {config.max_open_prs} kstrl PRs open",
+    )
+
+
 def factory_lock_held(root_dir: Path) -> bool:
     """Whether a factory run already owns this root.
 
@@ -2264,6 +2674,93 @@ def _file_inbox_item(
         return ""
 
 
+def _record_count_failure(
+    root_dir: Path,
+    streak: OpenPrCountStreak | None,
+    result: CycleResult,
+) -> None:
+    """File one inbox item once the open-PR count has been unusable N polls.
+
+    A no-op for every other wait, and for the second and later polls of
+    one streak. This is the only wait that files anything, because it is
+    the only one that does not clear itself: `gh` off launchd's PATH and
+    an expired `gh` token both hold forever, and until this the daemon
+    waited on them with the queue unpaused, the inbox empty,
+    ``needs_human`` False, the exit code 0 and one WARN line per poll in
+    ``serve.err.log`` as the only evidence anywhere (#354 S5).
+
+    It writes ``result`` rather than returning, so the caller adds no
+    branch: ``serve_cycle`` is grandfathered over both complexity
+    ratchets and any new branch in it is a regression the hook refuses.
+
+    The reason comes off the STREAK, not off the caller's refusal
+    string. Any wait gate's reason reaches this function, and only the
+    open-PR bound's belongs in an item about counting pull requests.
+
+    ``filed`` is set only when the inbox returns a real id, and only that
+    id is appended to ``result.inbox_items``. ``_file_inbox_item``
+    swallows every failure and returns ``""``, and returns ``""``
+    without trying when ``[inbox] enabled = false``, so marking the
+    streak before the write disarmed the alarm at the exact moment it
+    was needed and put an id that names nothing into the result.
+    ``needs_human`` is set either way: a human is needed whether or not
+    the record of it reached the disk.
+
+    An existing kind (``halted_run``) and a fixed dedupe key on purpose:
+    no new outcome vocabulary (doctrine 6), and a repeat of a still-open
+    item bumps its occurrence count rather than adding a row, so two
+    daemons - or one restarted into the same fault - do not stack items.
+    """
+    if streak is None or not streak.should_file():
+        return
+    result.needs_human = True
+    item_id = _file_inbox_item(
+        root_dir,
+        kind_name="halted_run",
+        title="Continuous intake cannot count open pull requests",
+        detail=(
+            f"{streak.consecutive} polls in a row: {streak.reason}. The daemon "
+            "is waiting and will admit nothing until the count works. If `gh` "
+            "cannot run, check that it is on the daemon's PATH and "
+            "authenticated; if the reason above is a full page, the repository "
+            "has more open pull requests than the scan window. Either way, "
+            "[serve] max_open_prs = 0 switches the bound off."
+        ),
+        dedupe_key="serve-open-pr-count-failure",
+        evidence={"reason": streak.reason, "consecutive": streak.consecutive},
+    )
+    if not item_id:
+        return
+    streak.filed = True
+    result.inbox_items += (item_id,)
+
+
+def _load_pr_count_streak(root_dir: Path, observer: ServeObserver) -> OpenPrCountStreak:
+    """Restore the streak, reporting a damaged file where an operator looks.
+
+    :meth:`OpenPrCountStreak.load` already emits a ``RuntimeWarning``,
+    which reaches stderr and therefore ``serve.err.log``. Repeating it on
+    the observer is what puts it in front of somebody running
+    ``ks serve`` in a terminal, which is the surface the whole S5 finding
+    was about.
+    """
+    streak = OpenPrCountStreak.load(root_dir)
+    if streak.damaged is not None:
+        observer.warn(streak.damaged)
+    return streak
+
+
+def _save_pr_count_streak(
+    streak: OpenPrCountStreak,
+    root_dir: Path,
+    observer: ServeObserver,
+) -> None:
+    """Persist the streak after a cycle, reporting a refusal or a failure."""
+    refusal = streak.save(root_dir)
+    if refusal is not None:
+        observer.warn(refusal)
+
+
 def _run_intake(
     root_dir: Path,
     queue: Queue,
@@ -2366,6 +2863,61 @@ def _pause_queue(
     return admission.pause_reason or admission.reason
 
 
+def _wait_gate_refusal(
+    root_dir: Path,
+    config: ServeConfig,
+    obs: ServeObserver,
+    streak: OpenPrCountStreak | None = None,
+) -> str | None:
+    """The gates that make the cycle WAIT, in evaluation order, or None.
+
+    These three sit outside the ``gates`` tuple and share a shape: none
+    pauses the queue, none charges the item an attempt. Each is a
+    condition that clears itself, so the cycle skips and re-checks on
+    the next poll.
+
+    ``None`` rather than ``""`` for "nothing refused". A gate returning
+    an empty reason is a refusal, and the caller of this function
+    branches on its result to decide whether to SPEND; overloading the
+    empty string would turn one such refusal into an admission with
+    nothing anywhere to read.
+
+    These are ordered by cost. The inbox cap reads one local file, the
+    factory lock takes one flock, and the open-PR bound reaches GitHub,
+    so the bound is evaluated last and only once the other two admit.
+    That is also why these are not members of the ``gates`` tuple: it is
+    built eagerly, so every element is evaluated before the loop reads
+    the first refusal, and a ``gh`` call per poll behind an
+    already-refusing budget is a cost with no purchaser (R10.7).
+
+    ``streak`` is recorded here and read by the caller, which owns the
+    ``CycleResult`` an inbox item has to be reported in. A count that
+    has been unusable ``streak.threshold`` polls running is the one
+    shape a wait handles badly, because it never clears and every other
+    operator surface reads healthy.
+    """
+    inbox_gate = check_inbox_cap(root_dir)
+    if not inbox_gate.allowed:
+        obs.warn(inbox_gate.reason)
+        return inbox_gate.reason
+
+    if factory_lock_held(root_dir):
+        # Not a failure and not the item's fault: something else owns the
+        # repo. Wait rather than charging an attempt. This is a courtesy
+        # check only - it cannot make exit 2 unambiguous, which is why
+        # classify_run reads the child's output instead (#186 F6).
+        reason = "a factory run already holds this root"
+        obs.info(reason)
+        return reason
+
+    pr_gate = check_open_pr_bound(config, root_dir, streak=streak)
+    if not pr_gate.allowed:
+        obs.warn(pr_gate.reason)
+        return pr_gate.reason
+
+    return None
+
+
 def serve_cycle(
     root_dir: Path,
     *,
@@ -2374,6 +2926,7 @@ def serve_cycle(
     runner: FactoryRunner | None = None,
     observer: ServeObserver | None = None,
     now: datetime | None = None,
+    pr_count_streak: OpenPrCountStreak | None = None,
 ) -> CycleResult:
     """One poll cycle: recover, gate, maybe run exactly one item.
 
@@ -2385,6 +2938,10 @@ def serve_cycle(
     work is reclaimed before anything new is admitted; every gate is
     checked before the CLAIM, not after, because a gate evaluated after
     the spend is a post-mortem.
+
+    ``pr_count_streak`` is the loop's memory across cycles, and is None
+    for a single cycle because one poll cannot have a streak.
+    :func:`serve_loop` owns the instance.
     """
     cfg = config or ServeConfig.load(root_dir)
     qcfg = queue_config or QueueConfig.load(root_dir)
@@ -2508,19 +3065,10 @@ def serve_cycle(
         result.skipped = admission.reason
         return result
 
-    inbox_gate = check_inbox_cap(root_dir)
-    if not inbox_gate.allowed:
-        obs.warn(inbox_gate.reason)
-        result.skipped = inbox_gate.reason
-        return result
-
-    if factory_lock_held(root_dir):
-        # Not a failure and not the item's fault: something else owns the
-        # repo. Wait rather than charging an attempt. This is a courtesy
-        # check only - it cannot make exit 2 unambiguous, which is why
-        # classify_run reads the child's output instead (#186 F6).
-        result.skipped = "a factory run already holds this root"
-        obs.info(result.skipped)
+    waiting = _wait_gate_refusal(root_dir, cfg, obs, streak=pr_count_streak)
+    if waiting is not None:
+        _record_count_failure(root_dir, pr_count_streak, result)
+        result.skipped = waiting
         return result
 
     # 5. Claim exactly one item.
@@ -2927,15 +3475,22 @@ def serve(
     cfg = config or ServeConfig.load(root_dir)
     obs: ServeObserver = observer or _NullObserver()
     sleep = sleeper or time.sleep
+    # Read from the control directory, not built fresh, so `once` counts
+    # too. `--plist-mode interval` runs one `ks serve --once` process per
+    # firing, and a per-call streak made the alarm unreachable there.
+    pr_count_streak = _load_pr_count_streak(root_dir, obs)
 
     def _cycle() -> CycleResult:
-        return serve_cycle(
+        result = serve_cycle(
             root_dir,
             config=cfg,
             queue_config=queue_config,
             runner=runner,
             observer=obs,
+            pr_count_streak=pr_count_streak,
         )
+        _save_pr_count_streak(pr_count_streak, root_dir, obs)
+        return result
 
     with serve_lock(root_dir):
         if once:

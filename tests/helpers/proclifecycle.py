@@ -43,7 +43,7 @@ from __future__ import annotations
 import ast
 from collections.abc import Iterator
 
-from tests.test_journal_one_writer import folded_str
+from tests.helpers.astwalk import folded_str
 
 #: Words that cannot be spelled without meaning a process. Deliberately
 #: NOT ``run``, ``wait``, ``poll`` or ``call``: measured, ``run`` alone
