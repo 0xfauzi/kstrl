@@ -215,6 +215,33 @@ def test_the_baseline_is_settled_before_the_sensors_run(
     assert spy.calls == 0
 
 
+def test_a_baseline_measured_differently_is_refused_before_the_sensors_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The digest refusal is the third thing settled before the measurement.
+
+    Measured: moving the digest check from above ``run_mechanical_verification``
+    to below it left the whole suite green, so the placement was a sentence in
+    a docstring and nothing else. It is the case where the wait is most
+    obviously wasted, because the answer cannot be used: a comparison measured
+    with different commands is refused whatever the sensors then find.
+    """
+    root = _make_repo(tmp_path)
+    assert _write(root).exit_code == 0
+    document = _baseline_document(root)
+    document["verify_digest"] = "0" * 16
+    (root / DEFAULT_RELATIVE).write_text(json.dumps(document), encoding="utf-8")
+    spy = _SensorSpy()
+    monkeypatch.setattr("kstrl.verify.run_mechanical_verification", spy)
+
+    result = _invoke(root, "--compare-baseline")
+
+    assert result.exit_code == 2, result.output
+    assert "0000000000000000" in result.output
+    assert spy.calls == 0
+
+
 # --- comparing ----------------------------------------------------------
 
 
