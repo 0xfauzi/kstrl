@@ -181,10 +181,10 @@ class OperatorFileKind:
 
     ROUND 2 IS WHY THE ``parts`` ENTRY IS NAMED HERE. The first closure
     counted ``load_operator_file(operator_file_spec(<KIND>, ...))`` sites
-    and called that proof of delivery, and this paragraph listed the
-    other five edits without it. A row that pays those five is loaded and
-    put in no prompt, which the reviewer planted and measured green on
-    every gate once one ordinary use kept ruff's F841 quiet. So the guard
+    and called that proof of delivery, and this paragraph listed every
+    other edit and not this one. A row that pays all of those is loaded
+    and put in no prompt, which the reviewer planted and measured green
+    on every gate once one ordinary use kept ruff's F841 quiet. So the guard
     reads the ``parts`` tuple as well: a declared row that is not an
     element of it fails ``test_every_declared_row_reaches_the_prompt_
     order``, naming the entry that is missing.
@@ -549,7 +549,7 @@ def _rows(
     names the test that refuses a row which has not paid them. An earlier
     wording of this sentence claimed the worker too, which is a guard
     closed over one surface reading as closed over all of them, and the
-    wording after that listed five of the six edits, leaving out the only
+    wording after that listed every edit but this one, which is the only
     one that puts the block in front of the engineer.
 
     Both paths come out of ``getattr(..., kind.field)`` and no branch
