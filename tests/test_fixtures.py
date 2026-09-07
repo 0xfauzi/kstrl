@@ -16,13 +16,12 @@ from kstrl.fixtures import (
     FixturesConfig,
     check_fixtures,
     check_fixtures_from_prd,
-    check_snapshot_regression,
     load_fixtures_from_prd_data,
     run_cli_fixture,
     run_file_fixture,
     run_function_fixture,
-    save_snapshot,
 )
+from kstrl.fixtures_snapshot import check_snapshot_regression, save_snapshot
 from kstrl.prd import PRD
 from kstrl.verify import VerifyConfig, run_mechanical_verification
 
