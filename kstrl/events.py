@@ -663,8 +663,17 @@ class AutonomyLevelApplied(Event):
     """R8.2: the flag bundle a run started under.
 
     Recorded at run start so a run's permissions are auditable after the
-    fact even if the stored level later changes. ``overrides`` names any
-    config flag that contradicted the bundle (the bundle still won).
+    fact even if the stored level later changes.
+
+    ``flags`` describes the bundle the run USES, not the one the level
+    awarded. The two differ in one case (#195): an explicit
+    ``pause_before_pr_merge = true`` keeps the merge gate at L3 and L4,
+    and a ``flags`` taken from the level alone would record "merge gate:
+    off" for a run that pauses at every component.
+
+    ``overrides`` names any config flag that contradicted the bundle, and
+    says which won: "bundle wins" for the ones it overruled, "gate
+    retained by explicit request" for the one it may not.
     """
 
     type: ClassVar[str] = "autonomy_level_applied"

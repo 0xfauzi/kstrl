@@ -30,6 +30,12 @@ Three invariants carry the trust:
    level at run start, so editing a flag by hand cannot silently grant
    autonomy the ladder never awarded - and a config that contradicts the
    level is recorded as a manual override rather than honored in silence.
+   The rule is one-directional (#195). The bundle may WITHHOLD autonomy,
+   and it may raise a gate over a value the operator never wrote; it may
+   not remove a human merge gate the operator set explicitly.
+   :func:`pause_gate_for` is the one place that asymmetry is written, and
+   ``FactoryConfig.explicit_fields`` is how the run knows which of the
+   two an incoming ``pause_before_pr_merge`` is.
 
 Opt-in (``[autonomy] enabled = false``): L1 is stricter than today's
 defaults (it forces the merge gate on), so enabling the ladder must be a
@@ -231,6 +237,12 @@ class FlagBundle:
     ``deploy_permitted`` are ceilings the R8.1 envelope and R8.7 release
     config must also agree to - the ladder can only ever withhold
     permission, never grant something those gates deny.
+
+    ``pause_before_pr_merge`` is the one flag with a ceiling on the OTHER
+    side as well (#195): the bundle's False is a permission to auto-merge
+    that an explicit operator request may refuse. Read it through
+    :func:`pause_gate_for` rather than assigning it straight onto a
+    config.
     """
 
     level: AutonomyLevel
@@ -659,22 +671,33 @@ class AutonomyState:
         self.policy_violations_at_level += count
 
 
-def _strict_bool(section: Mapping[str, Any], key: str, default: bool) -> bool:
-    """Read one ``[autonomy]`` boolean, refusing anything that is not one.
+def strict_bool(section: Mapping[str, Any], key: str, default: bool) -> bool:
+    """Read one governance boolean, refusing anything that is not one.
 
     ``bool("false")`` is True, so the ``bool(section[key])`` reading this
     package uses everywhere else arms a switch the operator wrote
-    ``"false"`` against. All three keys that use this one arm or revoke
+    ``"false"`` against. Every key that uses this one arms or revokes
     autonomy, and a typo that ARMS a safety switch is worse than one that
     disarms it, so a non-boolean is named and refused rather than
     coerced.
 
-    Deliberately local to ``[autonomy]``'s three booleans: the two
+    Four keys, not the whole repo. Three are ``[autonomy]``'s: the two
     revocation switches and ``enabled``, which is the switch that arms
-    them and can therefore only fail in the arming direction. The
-    coercion is repo-wide (29 ``bool(section[...])`` sites in ``kstrl/``,
-    counted by grep) and tightening the rest changes how existing configs
-    load, which is its own change with its own guard.
+    them and can therefore only fail in the arming direction. The fourth
+    is ``[factory] pause_before_pr_merge``, added by #195 for a reason
+    the other three do not have: since #195 that key OUTRANKS the ladder
+    when the operator set it, so a coerced ``"false"`` would manufacture
+    an explicit request nobody wrote and then keep the gate up at every
+    level. The remaining coercion is repo-wide (29 ``bool(section[...])``
+    sites in ``kstrl/``, counted by grep) and tightening the rest changes
+    how existing configs load, which is its own change with its own
+    guard.
+
+    The message carries no section prefix. ``config_preflight`` puts the
+    section label in front of whatever the loader raises, and both keys
+    are unique to their own section, so each identifies itself on the one
+    surface that prints the exception bare (``python -m kstrl.calibration
+    compare``).
     """
     if key not in section:
         return default
@@ -682,12 +705,6 @@ def _strict_bool(section: Mapping[str, Any], key: str, default: bool) -> bool:
 
     value = section[key]
     if not isinstance(value, bool):
-        # No ``[autonomy]`` prefix: ``config_preflight`` puts the section
-        # label in front of whatever the loader raises, and a message
-        # that carries its own reads "[autonomy] [autonomy] ..." there.
-        # The key is unique to this section, so it identifies itself on
-        # the one surface that prints the exception bare, which is
-        # ``python -m kstrl.calibration compare``.
         raise ConfigError(
             f"{key} must be a boolean (true or false), got {value!r}. "
             "A quoted value is a string, and every non-empty string reads as true."
@@ -753,14 +770,14 @@ class AutonomyConfig:
             root_dir = Path.cwd()
         section = load_toml_section(resolve_config_file(root_dir), "autonomy")
         defaults = cls()
-        enabled = _strict_bool(section, "enabled", defaults.enabled)
+        enabled = strict_bool(section, "enabled", defaults.enabled)
         max_level = int(section["max_level"]) if "max_level" in section else defaults.max_level
-        demote_calibration = _strict_bool(
+        demote_calibration = strict_bool(
             section,
             "demote_on_calibration_regression",
             defaults.demote_on_calibration_regression,
         )
-        demote_health = _strict_bool(
+        demote_health = strict_bool(
             section, "demote_on_health_breach", defaults.demote_on_health_breach
         )
         if "KSTRL_AUTONOMY_ENABLED" in os.environ:
@@ -1075,32 +1092,88 @@ def apply_demotion(
     return record
 
 
+def pause_gate_for(bundle: FlagBundle, *, configured: bool, explicit: bool) -> bool:
+    """The merge gate this run actually uses. One asymmetry, written once.
+
+    ``bundle.pause_before_pr_merge or (explicit and configured)``: the
+    ladder may RAISE the gate, and it may not lower one the operator set.
+
+    Both halves are needed and they are not the same rule.
+
+    - The bundle's True stands whatever the config says. That is the
+      ladder withholding auto-merge, which it may always do, and it is
+      the direction PR #174 correction 1 closed: a hand-edited flag must
+      not grant autonomy the ladder never awarded. So an explicit
+      ``false`` at L1 or L2 still pauses.
+    - The bundle's False is a PERMISSION to auto-merge, not an
+      instruction to. At L3 and L4 it used to be assigned straight onto
+      the config, which removed a human gate the operator had asked for
+      in writing and logged it as an override ignored (#195). An
+      operator's explicit request now survives every level.
+
+    ``explicit`` is provenance, never a value comparison: it is true when
+    the key was present in ``kstrl.toml``, the env var was set, or the
+    CLI flag was passed. A value that merely EQUALS the default is not a
+    request (an env var set to ``0`` compares equal to the default, which
+    is how ``config_report`` mislabels it), and a defaulted True is not
+    one either, which is why a configured-but-not-explicit gate is still
+    dropped at L3.
+    """
+    return bundle.pause_before_pr_merge or (explicit and configured)
+
+
 def manual_override_notes(
     bundle: FlagBundle,
     *,
     configured_pause_before_pr_merge: bool | None = None,
     configured_review_mode: str | None = None,
+    pause_before_pr_merge_explicit: bool = False,
 ) -> list[str]:
-    """Config values that contradict the level's bundle.
+    """Config values that contradict the level's bundle, and what won.
 
     Named rather than silently honored: the roadmap's stale-ladder failure
     mode is a hand-edited flag granting autonomy the ladder never awarded.
-    The bundle still wins; these notes exist so the divergence is visible
-    in the run log and the transition record.
+    These notes exist so the divergence is visible in the run log and the
+    transition record.
+
+    The bundle wins in every case but one, and the exception is #195: an
+    explicit ``pause_before_pr_merge = true`` at L3 or L4 is honoured.
+    Which case a run is in is not restated here; the note is chosen from
+    what :func:`pause_gate_for` actually returned, so the record cannot
+    disagree with the decision.
+
+    Each note carries its own verdict, because two of them now have
+    different verdicts and a caller cannot prefix them with one label.
     """
     notes: list[str] = []
     if (
         configured_pause_before_pr_merge is not None
         and configured_pause_before_pr_merge != bundle.pause_before_pr_merge
     ):
-        notes.append(
-            f"[factory] pause_before_pr_merge={configured_pause_before_pr_merge} "
-            f"contradicts {bundle.level.label} "
-            f"(bundle: {bundle.pause_before_pr_merge}); bundle wins"
+        resolved = pause_gate_for(
+            bundle,
+            configured=configured_pause_before_pr_merge,
+            explicit=pause_before_pr_merge_explicit,
         )
+        if resolved == configured_pause_before_pr_merge:
+            notes.append(
+                f"[factory] pause_before_pr_merge="
+                f"{configured_pause_before_pr_merge} was set explicitly and "
+                f"{bundle.level.label} (bundle: {bundle.pause_before_pr_merge}) "
+                f"may withhold autonomy but not remove a gate the operator "
+                f"asked for; gate retained by explicit request"
+            )
+        else:
+            notes.append(
+                f"Manual override ignored: [factory] pause_before_pr_merge="
+                f"{configured_pause_before_pr_merge} contradicts "
+                f"{bundle.level.label} "
+                f"(bundle: {bundle.pause_before_pr_merge}); bundle wins"
+            )
     if configured_review_mode is not None and configured_review_mode != bundle.review_mode:
         notes.append(
-            f"[factory] review_mode={configured_review_mode!r} contradicts "
+            f"Manual override ignored: [factory] review_mode="
+            f"{configured_review_mode!r} contradicts "
             f"{bundle.level.label} (bundle: {bundle.review_mode!r}); bundle wins"
         )
     return notes

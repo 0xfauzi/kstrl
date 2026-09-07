@@ -1379,10 +1379,12 @@ def reap_leases(
 class MergeGate:
     """The merge-gate decision for one item.
 
-    ``refusal`` non-empty means the item must NOT run: the autonomy
-    ladder would auto-merge something that explicitly asked for a human,
-    and silently proceeding is precisely the governance erosion R8.6
-    lists as a failure mode.
+    ``refusal`` non-empty means the item must NOT run: the item asked
+    for a human merge gate and this repo cannot honour one, so silently
+    proceeding would be precisely the governance erosion R8.6 lists as a
+    failure mode. Until #195 the producer was the autonomy ladder
+    dropping the gate at L3; the ladder no longer does that, and the
+    producer is now a repo whose config makes the checkpoint unreachable.
     """
 
     pause_before_pr_merge: bool
@@ -1398,21 +1400,53 @@ def resolve_merge_gate(item: QueueItem, root_dir: Path) -> MergeGate:
     - The item asks for AUTO_MERGE and the ladder withholds it: downgrade
       to a human gate. This is the ladder doing its job - it may always
       withhold a permission.
-    - The item asks for STOP_AT_PR and the ladder's bundle forces
-      ``pause_before_pr_merge=False`` (L3+): the ladder would GRANT
-      auto-merge over an explicit request for a human. Refuse the item.
+    - The item asks for STOP_AT_PR and the ladder's bundle would
+      auto-merge (L3+): the item wins. ``STOP_AT_PR`` reaches the child
+      as ``--pause-before-pr-merge``, which is an EXPLICIT request, and
+      since #195 ``run_factory`` keeps an explicit gate at every level.
+      Nothing to refuse; this used to be the refusal below.
 
-    The second case cannot be fixed here: ``run_factory`` assigns
-    ``factory_config.pause_before_pr_merge = bundle.pause_before_pr_merge``
-    unconditionally, so passing the flag would be overridden and logged
-    as a "manual override ignored". Making the ladder honour a
-    MORE-restrictive request is an R8.2 change, not an R8.6 one, so this
-    refuses loudly instead of quietly letting a merge through.
+    The refusal that remains is a different hole, and it is the one this
+    function can still see: a gate that will be honoured by nobody
+    because the checkpoint it runs at is unreachable. ``ks factory``
+    reaches ``_phase_checkpoint`` only when it creates per-component PRs,
+    so a repo whose ``[factory] create_prs = false`` turns a
+    ``stop_at_pr`` item into a silent auto-merge (#207's failure-open
+    shape, arriving through intake). Refused rather than run, because the
+    item asked for a human in writing.
+
+    Checked whether or not the ladder is enabled: the checkpoint is
+    unreachable for a config reason, not a level reason.
     """
     from kstrl.autonomy import AutonomyConfig, AutonomyState, flag_bundle_for, resolve_runtime_level
+    from kstrl.factory import FactoryConfig, merge_gate_unreachable_warning
     from kstrl.policy import PolicyConfig
 
     wants_gate = item.merge_disposition is MergeDisposition.STOP_AT_PR
+    if wants_gate:
+        # pause_before_pr_merge=True because that is what this item asks
+        # for; single_pr=False because `ks factory` takes single_pr from
+        # the MANIFEST and serve never passes --single-pr, so a toml
+        # value for it is not effective on this path and would refuse an
+        # item that is fine.
+        unreachable = merge_gate_unreachable_warning(
+            replace(
+                FactoryConfig.load(root_dir),
+                pause_before_pr_merge=True,
+                single_pr=False,
+            )
+        )
+        if unreachable is not None:
+            return MergeGate(
+                pause_before_pr_merge=True,
+                refusal=(
+                    f"item requires a human merge gate, but {unreachable} "
+                    "Set the item to --auto-merge deliberately, or make the "
+                    "repo create per-component PRs, rather than having the "
+                    "gate skipped silently."
+                ),
+            )
+
     config = AutonomyConfig.load(root_dir)
     if not config.enabled:
         # No ladder: the item's own disposition is authoritative.
@@ -1436,17 +1470,15 @@ def resolve_merge_gate(item: QueueItem, root_dir: Path) -> MergeGate:
         return MergeGate(pause_before_pr_merge=True, notes=tuple(notes))
 
     if wants_gate and not bundle.pause_before_pr_merge:
-        return MergeGate(
-            pause_before_pr_merge=True,
-            notes=tuple(notes),
-            refusal=(
-                f"item requires a human merge gate but {bundle.level.label} "
-                "auto-merges when green, and run_factory lets the ladder's "
-                "bundle override the flag. Set the item to --auto-merge "
-                "deliberately, or lower [autonomy] max_level, rather than "
-                "having the gate removed silently."
-            ),
+        # #195: the item's explicit request outranks the bundle's
+        # permission to auto-merge. Recorded, not refused, and the child
+        # is told in the same words run_factory will use.
+        notes.append(
+            f"item requires a human merge gate; {bundle.level.label} would "
+            "auto-merge, but an explicit request outranks the ladder, so "
+            "the gate is retained"
         )
+        return MergeGate(pause_before_pr_merge=True, notes=tuple(notes))
 
     return MergeGate(
         pause_before_pr_merge=bundle.pause_before_pr_merge,
