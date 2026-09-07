@@ -46,8 +46,9 @@ from dataclasses import dataclass
 from kstrl.procdispose import drain_or_abandon, reap_abandoned
 
 #: The three columns the question needs and no more. ``pid`` is there for
-#: the completeness control, not for identifying anything. See the
-#: docstring above for why each is load-bearing and what it costs.
+#: the completeness control, not for identifying anything. Why each is
+#: load-bearing and what it costs is argued in ``kstrl.procgroup``'s
+#: module docstring, which is where this file's own docstring sends you.
 PS_ARGV = ("ps", "-A", "-o", "pid=,pgid=,stat=")
 
 #: How long the ``ps`` read itself may take. 440x the 11.29ms measured
@@ -64,7 +65,7 @@ PS_TIMEOUT_SECONDS = 5.0
 #: cannot rescue a D-state child, which is the only case that reaches
 #: the end of it; it would only lengthen the hang this bound exists to
 #: stop. The two together bound every WAIT on the child at 6.0s, which is
-#: not the same as bounding the call; see the docstring on ``_read_ps``.
+#: not the same as bounding the call; see :func:`_read_ps` below.
 PS_KILL_GRACE_SECONDS = 1.0
 
 
@@ -75,12 +76,13 @@ def _read_ps() -> subprocess.CompletedProcess[str]:
     the disposal. NOT a flat ceiling on the call: process startup is
     outside both, because ``Popen.__init__`` blocks on an ``os.read`` of
     the exec error pipe that takes no timeout. Measured with a 3.0s stall
-    injected there and both constants at 0.05: 3.011s. The module
-    docstring's "WHAT THAT BOUND DOES NOT COVER" section has the rest,
-    including why that residual is not new.
+    injected there and both constants at 0.05: 3.011s.
+    ``kstrl.procgroup``'s module docstring has the rest, in its "WHAT
+    THAT BOUND DOES NOT COVER" section, including why that residual is
+    not new.
 
     Why this is not ``subprocess.run``, and why no ``with`` block, is the
-    #309 section of the module docstring: both of those wait on the child
+    #309 section of that same docstring: both of those wait on the child
     without a deadline, which is the hang.
 
     No ``start_new_session``, matching what ``subprocess.run`` did: the
