@@ -193,6 +193,33 @@ def test_a_gate_that_ran_and_reported_findings_did_measure(
     assert_measured(row)
 
 
+#: A lint gate whose output only the SECONDARY parser understands: eslint's
+#: footer, which it prints only when there are problems, and which ruff's
+#: patterns do not match. No diagnostic line, so no parser finds a failure.
+ESLINT_FOOTER_COMMAND = (
+    f"""{sys.executable} -c 'import sys; print("\u2716 3 problems (2 errors, 1 warning)");"""
+    """ sys.exit(1)'"""
+)
+
+
+def test_a_gate_whose_secondary_parser_understood_the_output_measured(
+    tmp_path: Path,
+) -> None:
+    """Recognition is the gate's answer, not the primary parser's.
+
+    On the auto path a gate runs every parser registered for it and returns the
+    PRIMARY's result when none of them found a failure, because that result
+    carries the raw tail. Recognition cannot travel that way: a footer the
+    secondary understood would be dropped with the rest of its result, and a
+    polyglot repository whose lint command runs eslint would have every clean
+    linter row read as a sensor that stopped measuring.
+    """
+    row = check_linter(tmp_path, command=ESLINT_FOOTER_COMMAND, timeout=30)
+
+    assert row.passed is False
+    assert_measured(row)
+
+
 def test_a_gate_that_passed_did_measure(tmp_path: Path) -> None:
     """Exit 0 is the other half of the rule, and it is decided differently.
 
