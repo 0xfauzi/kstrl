@@ -865,6 +865,19 @@ spend path, and two broke guarantees the PR body had claimed:
    group cannot be confirmed dead poisons instead of retrying. The
    factory child also adopts the queue lease, so a successor's reaper
    cannot requeue a live run.
+
+   *Corrected by #209, measured 2026-09-07 on macOS 26.6.2 (Darwin
+   25.6.0) by enumerating the whole process group rather than only the
+   direct child's pid. The sentence "which on macOS is the `caffeinate`
+   wrapper - so the factory was a grandchild" is wrong. `caffeinate -i`
+   forks: the utility keeps the pid `Popen` returned, so the daemon's
+   direct child IS the factory, and a second `caffeinate` process runs
+   as a child of it inside the same group holding the power assertion.
+   The fix recorded above is right and the reason given for it is not:
+   what outlives a signal to the direct child is the factory's OWN
+   descendants (agent subprocesses, git, the verify commands), measured
+   surviving a direct-child SIGKILL with `caffeinate` on and off alike.
+   The rest of this entry stands as written.*
 2. **Accounting and classification read the wrong run.** `serve` read
    `run_id` from the manifest but `Manifest.to_dict` writes `runId`, so
    it got `""` for every real manifest - and an empty id made
