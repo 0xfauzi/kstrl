@@ -74,11 +74,30 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   consequence each reports: a count taken from a listing that may have
   hidden a member is an undercount, and its caller is usually asserting
   there is no second member. One behaviour change, latent rather than
-  active: a `ps` row this parse cannot read now makes the whole listing
-  a refusal for both reads instead of being dropped, because dropping it
-  turned a live group into a gone one, and `serve` reads gone as reaped.
-  Measured unreachable on real output - 16320 rows over 20 reads, every
-  one three columns with a numeric pid and pgid.
+  active, and BOTH its directions: a `ps` row this parse cannot read now
+  makes the whole listing a refusal for both reads instead of being
+  dropped. Dropping it turned a live group into a gone one, and `serve`
+  reads gone as reaped, which releases an item while a factory may still
+  be writing. Refusing costs the other direction: a group holding only an
+  unreaped zombie used to read as gone and reapable, and under a refusal
+  the daemon falls back to the signal probe, which counts a zombie as
+  alive by design, so that run is not called reaped and the item is
+  poisoned and set `needs_human`. That was measured on three real groups.
+  The refusal is kept, because a mangled row is evidence about the
+  stream rather than about the row, because over-reporting alive is the
+  fallback's only declared error, and because a poisoned item is visible
+  where a released one is silent; a genuinely empty group still reaps,
+  since the kernel answers ESRCH without consulting the listing.
+  Measured unreachable on real output - 16320 rows over 20 reads on one
+  load and 16331 on another, 0 non-conforming rows both times, every one
+  three columns with a numeric pid and pgid. Two narrower readings went
+  with it: the pgid column is compared as an integer rather than against
+  `str(pgid)`, so a spelling `int()` accepts and `str` does not produce
+  (`007`, `+7`, `0_7`, an Arabic-Indic seven) no longer drops a member
+  from a confident count; and the pid column's readability is checked
+  BEFORE the group filter, so a row with an unreadable pid marks the
+  listing unreadable whatever its neighbouring pgid column says, at a
+  measured +0.082 ms per parse of an 813-row listing.
   `docs/continuous-intake.md` also quotes both lines `pmset -g
   assertions` prints for the helper, with the pid each names, and
   records the suspend experiment #203 still needs. (#209)

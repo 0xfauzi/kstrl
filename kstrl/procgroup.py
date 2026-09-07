@@ -128,11 +128,14 @@ of 37s against the 25s an operator reads off ``GROUP_TERM_GRACE_SECONDS``
 plus the SIGKILL leg. Both numbers are finite, which is the change; the
 overshoot is worth knowing before anyone tunes either constant.
 
-This module is the only place in ``kstrl/`` or ``tests/`` that shells out
-to ``ps``, and ``tests/test_procgroup.py`` fails on a second one in
-either root. A rule with no mechanism is not a plan: the argument for
-centralising the parse is that two copies drift, and nothing but a net
-stops a third landing.
+The ``ps`` CALL and its parse live in ``kstrl.procgroup_listing``, cut
+out of this file by #209 round 3 for the 800-line ratchet and imported
+back above, so every name this module exported still resolves here. That
+is where the uniqueness claim is written and where the net that enforces
+it points: there is one such call in ``kstrl/`` or ``tests/``, and
+``tests/test_procgroup.py`` fails on a second in either root. A rule with
+no mechanism is not a plan: the argument for centralising the parse is
+that two copies drift, and nothing but a net stops a third landing.
 """
 
 from __future__ import annotations
@@ -143,29 +146,41 @@ import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from kstrl.procdispose import drain_or_abandon, reap_abandoned
+# Re-exported, not merely used: ``kstrl.procgroup_listing`` was cut out
+# of this file by #209 round 3 for the 800-line ratchet, and every name
+# it holds was public-by-position here first. Importing them back keeps
+# ``from kstrl.procgroup import PS_ARGV`` working, which nine call sites
+# and two static censuses depend on.
+from kstrl.procgroup_listing import (
+    PS_ARGV,
+    PS_KILL_GRACE_SECONDS,
+    PS_TIMEOUT_SECONDS,
+    _Listing,
+    _read_listing,
+    _read_ps,
+)
 
-#: The three columns the question needs and no more. ``pid`` is there for
-#: the completeness control, not for identifying anything. See the
-#: docstring above for why each is load-bearing and what it costs.
-PS_ARGV = ("ps", "-A", "-o", "pid=,pgid=,stat=")
+#: Declared because the three ``PS_*`` constants above are re-exports
+#: with no reader left in this file, and an undeclared re-export reads
+#: as a stale import. Public names only; the private ones the split
+#: moved are imported for use, not for re-export, and a test reaching
+#: for one of those should name ``kstrl.procgroup_listing``.
+__all__ = [
+    "PS_ARGV",
+    "PS_KILL_GRACE_SECONDS",
+    "PS_TIMEOUT_SECONDS",
+    "GroupLiveness",
+    "GroupMembers",
+    "GroupSignal",
+    "pid_is_alive",
+    "read_group_liveness",
+    "read_group_members",
+    "safe_pgid",
+    "signal_group",
+    "signal_probe_alive",
+    "signal_process_tree",
+]
 
-#: How long the ``ps`` read itself may take. 440x the 11.29ms measured
-#: for the call, so it cannot fire on a slow machine. Re-measured for
-#: #309 on a 914-process machine: median 11.47ms, max 13.35ms over 60
-#: samples.
-PS_TIMEOUT_SECONDS = 5.0
-
-#: How long a KILLED ``ps`` is given to be collected before it is
-#: abandoned. This buys the kill a scheduler round trip, not work, and
-#: measuring it says so: over 60 samples on the same machine, kill to
-#: reaped was max 0.236ms for ``ps`` and max 1.122ms for a ``sleep``
-#: child killed mid-run. 1.0s is ~890x the worse of the two. Raising it
-#: cannot rescue a D-state child, which is the only case that reaches
-#: the end of it; it would only lengthen the hang this bound exists to
-#: stop. The two together bound every WAIT on the child at 6.0s, which is
-#: not the same as bounding the call; see the docstring on ``_read_ps``.
-PS_KILL_GRACE_SECONDS = 1.0
 
 # A refusal message is a HEAD plus a CONSEQUENCE. Five heads: two in
 # ``_listing_for`` for a ``ps`` that did not answer, three below for a
@@ -227,10 +242,10 @@ class GroupMembers:
     a bool cannot see that.
 
     It lives here, sharing one ``ps`` call, one parse and one refusal
-    table with the liveness read, because this module's whole claim is
-    that it is the only place in ``kstrl/`` or ``tests/`` that shells out
-    to ``ps`` - two copies drift on failure handling, and
-    ``tests/test_procgroup.py`` fails on a second one.
+    table with the liveness read, because the reading has exactly one
+    call site in this tree and it is in ``kstrl.procgroup_listing``: two
+    copies drift on failure handling, and ``tests/test_procgroup.py``
+    fails on a second one.
 
     ``pids`` is None when nothing was measured, exactly as ``live`` is.
     Both reads refuse the same five listings and differ only in the
@@ -517,81 +532,16 @@ def _listing_for(pgid: int) -> tuple[_Listing | None, str]:
     return _read_listing(out.stdout, pgid), ""
 
 
-def _read_ps() -> subprocess.CompletedProcess[str]:
-    """One ``ps`` read, with every wait on the child bounded.
-
-    ``PS_TIMEOUT_SECONDS`` for the read and ``PS_KILL_GRACE_SECONDS`` for
-    the disposal. NOT a flat ceiling on the call: process startup is
-    outside both, because ``Popen.__init__`` blocks on an ``os.read`` of
-    the exec error pipe that takes no timeout. Measured with a 3.0s stall
-    injected there and both constants at 0.05: 3.011s. The module
-    docstring's "WHAT THAT BOUND DOES NOT COVER" section has the rest,
-    including why that residual is not new.
-
-    Why this is not ``subprocess.run``, and why no ``with`` block, is the
-    #309 section of the module docstring: both of those wait on the child
-    without a deadline, which is the hang.
-
-    No ``start_new_session``, matching what ``subprocess.run`` did: the
-    ``ps`` child stays in the caller's process group, which is what makes
-    the rejected "our own pgid is listed" control satisfied by
-    construction rather than merely usually true.
-    """
-    reap_abandoned()
-    process = subprocess.Popen(
-        PS_ARGV,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        # Pinned rather than left to the locale, and non-decodable bytes
-        # are replaced rather than raised. A decode error here is a
-        # ValueError, which would escape a fail-closed ``except OSError``
-        # and take the daemon down over a diagnostic (the repo's #291
-        # lesson). Caught by the caller as well, so a future edit cannot
-        # reintroduce it.
-        encoding="utf-8",
-        errors="replace",
-    )
-    try:
-        stdout, stderr = process.communicate(timeout=PS_TIMEOUT_SECONDS)
-    except BaseException:
-        # Every exit that is not a completed read leaves a child behind,
-        # so every one of them goes through the same disposal.
-        # ``BaseException`` because a KeyboardInterrupt out of the daemon
-        # must not be the one path that leaks the child.
-        drain_or_abandon(process, PS_KILL_GRACE_SECONDS)
-        raise
-    return subprocess.CompletedProcess(PS_ARGV, process.returncode, stdout, stderr)
-
-
-@dataclass(frozen=True)
-class _Listing:
-    """What one ``ps`` read saw, before any of it is believed."""
-
-    #: pid 1 was present, so the view is not filtered to our own uid.
-    complete: bool
-    #: Every non-blank row parsed. False means at least one row could
-    #: not be attributed to a group, so this is not a full view of any
-    #: group. No default: a default is how a later constructor comes to
-    #: claim readability it never established.
-    readable: bool
-    #: Pids carrying this pgid, zombies included.
-    listed: tuple[int, ...]
-    #: Of those, the ones that are not zombies. Kept as pids rather
-    #: than a count because :func:`read_group_members` needs them; the
-    #: counts below are derived from them.
-    running_pids: tuple[int, ...]
-
-    @property
-    def rows(self) -> int:
-        return len(self.listed)
-
-    @property
-    def running(self) -> int:
-        return len(self.running_pids)
-
-
 def _listing_refusal(listing: _Listing, pgid: int) -> str:
     """Why this listing cannot be believed about ``pgid``, or "".
+
+    NOT A PURE PREDICATE OVER A LISTING: the third branch issues
+    ``killpg(pgid, 0)``, so calling this makes a syscall on a path that
+    did not exist before #209 and ``_interpret`` no longer names
+    ``_kernel_says_group_is_empty`` at the point of decision. The name
+    does not say so, which is why this sentence does. The syscall costs
+    0.00054 ms by this module's own measurement, so the cost is
+    legibility rather than time.
 
     THE ONE TABLE BOTH PUBLIC READS CONSULT. It was two, and the two
     disagreed: ``_interpret`` asked the kernel whether a group an empty
@@ -635,81 +585,6 @@ def _interpret(listing: _Listing, pgid: int) -> GroupLiveness:
         return GroupLiveness(None, f"{refusal} {_UNMEASURABLE}")
     # Only zombies (#298's case), or a group the kernel agrees is empty.
     return GroupLiveness(False)
-
-
-def _read_listing(stdout: str, pgid: int) -> _Listing:
-    """Parse ``pid pgid stat`` rows into the four facts that decide it.
-
-    Fields are named on ``_Listing`` rather than returned positionally
-    because all four would type-check in any order.
-
-    A ROW THIS CANNOT READ MAKES THE WHOLE LISTING UNREADABLE, and both
-    public reads then refuse it. Dropping the row instead is an
-    UNDERCOUNT, which this module refuses everywhere else (#209 round
-    1). Measured on all three trees: ``"1 1 Ss\\nbad 7 Ss\\n50 7 Z\\n"``
-    for group 7 gave ``live=True`` before #209 and ``live=False`` after
-    it, which ``serve`` reads as "the group is gone" for a group whose
-    only running member is the row that could not be read.
-
-    THE COST OF REFUSING IS ZERO ON REAL OUTPUT, measured because a
-    refusal a real ``ps`` could earn would stop the daemon reaping
-    anything: 20 reads of ``PS_ARGV`` on this machine gave 16320 rows,
-    every one exactly three columns with a numeric pid and pgid, because
-    the columns come from the kernel and the format asks for no free
-    text. Reachable on a truncated or mangled stream, which is what the
-    refusal is for.
-
-    Three shapes are unreadable: a non-blank row with fewer than three
-    columns, a pid column that is not a number, and a PGID column that
-    is not a number, because a group we cannot read cannot be ruled out.
-    A blank line is not, because it claims nothing.
-    """
-    want = str(pgid)
-    complete = False
-    readable = True
-    listed: list[int] = []
-    running: list[int] = []
-    for line in stdout.splitlines():
-        parts = line.split()
-        if not parts:
-            continue
-        if len(parts) < 3:
-            readable = False
-            continue
-        pid, group, state = parts[0], parts[1], parts[2]
-        complete = complete or pid == "1"
-        if not _reads_as_int(group):
-            readable = False
-            continue
-        if group != want:
-            continue
-        if not _reads_as_int(pid):
-            readable = False
-            continue
-        member = int(pid)
-        listed.append(member)
-        # "Z" is the zombie state on both macOS and Linux, and flags may
-        # follow it ("Z+", "Zl"), so match the prefix rather than the cell.
-        if not state.startswith("Z"):
-            running.append(member)
-    return _Listing(
-        complete=complete, readable=readable, listed=tuple(listed), running_pids=tuple(running)
-    )
-
-
-def _reads_as_int(cell: str) -> bool:
-    """Whether a ``ps`` column is a number this parse can use.
-
-    ``int()`` rather than ``str.isdigit``: measured, ``"-5"`` is not
-    ``isdigit`` and converts while ``"\N{SUPERSCRIPT TWO}"`` is
-    ``isdigit`` and raises. Asking the conversion that will be done is
-    the only test that cannot drift from it.
-    """
-    try:
-        int(cell)
-    except ValueError:
-        return False
-    return True
 
 
 def _probe_says_gone(send: Callable[[], None]) -> bool:
