@@ -331,9 +331,8 @@ class FactoryConfig:
     # run_factory resolves it from the toml [policy] section + env, via
     # RunEnvelope.load's ``policy_override`` seam (#192). Opt-in
     # ([policy].enabled = false): existing runs unchanged. run_factory
-    # writes the CLAMPED envelope back here after the autonomy ladder
-    # resolves, so this field is an input override on the way in and the
-    # run's resolved policy on the way out.
+    # writes the ladder-clamped envelope back here, so the field is an
+    # input override on the way in and the run's resolved policy out.
     policy_config: PolicyConfig | None = None
 
     def resolved_verify_config(self) -> VerifyConfig:
@@ -3285,20 +3284,20 @@ def _run_factory_locked(
         )
     )
 
-    # Loaded here rather than at the ladder resolution below because the
-    # #262 probe gate needs it first; it is a pure config read, and the
-    # ladder still resolves in its original place for the reason its own
-    # comment gives (the policy hash must record the clamped envelope).
-    autonomy_config = AutonomyConfig.load(root_dir)
-
     # #192: the run's config envelope, resolved ONCE here and injected
-    # into the pipeline, which never resolves one of its own. Phase 1
-    # used to re-read [policy], [adequacy] and [autonomy] per component
-    # while the hash below was taken once, so a mid-run edit to
-    # kstrl.toml changed what later components were held to without
-    # changing the record of it. The autonomy ladder clamps this
-    # envelope below, before the hash is taken.
+    # into the pipeline, which never resolves one of its own.
+    # kstrl/runenvelope.py records the divergence that costs. Resolved
+    # here rather than at the ladder resolution below because the #262
+    # probe gate needs [autonomy] first; the ladder still resolves in
+    # its original place for the reason its own comment gives (the
+    # policy hash must record the CLAMPED envelope), and it clamps this
+    # object before the hash is taken.
     run_envelope = RunEnvelope.load(root_dir, policy_override=factory_config.policy_config)
+    # Off the envelope rather than a second AutonomyConfig.load: the
+    # two reads were nine lines apart and cost two parses of the same
+    # file (measured 0.988ms, and a nested toml_parse_scope does not
+    # collapse them because the inner scope shadows the outer cache).
+    autonomy_config = run_envelope.autonomy
 
     # R7.1: resolve which model family reviews this run's diffs ONCE so
     # the choice is stable across components and the homogeneity warning
@@ -3397,9 +3396,12 @@ def _run_factory_locked(
     # load-bearing rather than incidental: the pipeline owns the meter,
     # so the meter's lifetime has to start with the run directory's
     # rather than with the first phase's. The record just below says
-    # what breaks otherwise (#257 review). Construction is pure
-    # attribute assignment, so doing it ahead of a check that can reject
-    # the run costs nothing.
+    # what breaks otherwise (#257 review). Since #192 construction is no
+    # longer pure attribute assignment - it resolves four run-level
+    # config sections - so on a manifest the DAG check below rejects,
+    # that work is done and discarded. Measured at 0.617ms for the one
+    # document parse, against 0.538ms for the single SandboxConfig load
+    # it replaced, which is why the ordering still stands.
     pipeline = ComponentPipeline(
         manifest=manifest,
         manifest_path=manifest_path,
@@ -3485,12 +3487,6 @@ def _run_factory_locked(
     # manifest alone (and later, from Linear).
     manifest.run_id = run_id
     manifest.completed_at = ""
-    # R8.1: record the resolved policy envelope's hash so the manifest is
-    # a self-contained audit record of what merge guardrails were in
-    # force for this run. #192: computed from ``run_envelope``, resolved
-    # once above, which is also the object Phase 1 enforces. It used to
-    # be a second read of the same file, and the two could disagree.
-    #
     # R8.2: derive this run's permissions from the autonomy level. The
     # bundle is computed at run start and WINS over contradicting config,
     # so a hand-edited flag cannot grant autonomy the ladder never
@@ -3511,12 +3507,10 @@ def _run_factory_locked(
             root_dir=root_dir,
         )
         # #192: the level the run OPERATES at. Phase 1 and the set-point
-        # gate used to re-read the raw stored level, which is the level
-        # before max_level, the envelope ceiling and control-state
-        # location clamp it: measured, a run clamped to L1 had Phase 1
-        # judging at the stored L4. No verdict changed at either level
-        # today (both consumers test only >= 1), and it goes live the
-        # moment either threshold becomes level-graded.
+        # gate re-read the RAW stored level: measured, a run clamped to
+        # L1 had Phase 1 judging at the stored L4. No verdict changes at
+        # either level today (both consumers test only >= 1); it goes
+        # live the moment either threshold becomes level-graded.
         run_envelope = replace(run_envelope, autonomy_level=int(autonomy_level))
         bundle = flag_bundle_for(autonomy_level)
         overrides = manual_override_notes(
@@ -3553,27 +3547,15 @@ def _run_factory_locked(
             ui.warn(f"  Manual override ignored: {note}")
 
     # The pipeline must see the clamped envelope, not the raw config.
-    # Only the ladder replaces `run_envelope`, so on the default path
-    # this re-assigns the object the constructor already received.
-    # UNCONDITIONAL anyway, and the honest reason is that it is
-    # DEFENCE and not the fix: a mutation restricting both lines to
-    # `if autonomy_active:` was measured STILL GREEN, because the
-    # envelope reaches the pipeline through the required constructor
-    # parameter, which is what the fix actually is. Deleting the second
-    # line is the non-equivalent mutation and it is caught. What the
-    # unconditional form buys is that a future clamp added outside the
-    # ladder block still reaches the pipeline (#192).
-    #
-    # Before #192, `factory_config.policy_config` was the ONLY channel
-    # and this assignment sat inside `if autonomy_active:`, so with
-    # [autonomy] disabled (the default) it stayed None and Phase 1's
-    # `or PolicyConfig.load(root_dir)` fell through to disk once per
-    # component. Measured on a two-component run: component B was held
-    # to max_files_changed=500, deps_allow_new=true against a manifest
-    # recording the hash of 5 and false. It has no production reader
-    # left besides RunEnvelope.load's override seam at the top of this
-    # function; it stays because the ladder's own test reads the clamped
-    # envelope off it.
+    # Unconditional, though a mutation restricting both lines to `if
+    # autonomy_active:` was measured STILL GREEN: the envelope reaches
+    # the pipeline through the required constructor parameter, which is
+    # the fix, and this is only defence for a future clamp added outside
+    # the ladder block. Deleting the second line is the non-equivalent
+    # mutation of the same pair, and it is caught. `policy_config` has
+    # no production reader left besides RunEnvelope.load's override seam
+    # above; it stays because the ladder's own test reads the clamped
+    # envelope off it (#192).
     factory_config.policy_config = run_envelope.policy
     pipeline.run_envelope = run_envelope
 
@@ -3591,10 +3573,11 @@ def _run_factory_locked(
     if setpoint_warning is not None:
         ui.warn(setpoint_warning)
 
-    # #192: read back off the PIPELINE, not off a local. The hash is
-    # then literally taken from the object the pipeline will enforce, so
-    # a future edit that forgets the assignment above fails a test
-    # rather than diverging silently.
+    # R8.1: the manifest is a self-contained audit record of what merge
+    # guardrails were in force for this run. #192: read back off the
+    # PIPELINE, not off a local, so the hash is taken from the object
+    # the pipeline will enforce and an edit that forgets the assignment
+    # above fails a test rather than diverging silently.
     manifest.policy_hash = pipeline.run_envelope.policy_hash()
     manifest.save(manifest_path)
 

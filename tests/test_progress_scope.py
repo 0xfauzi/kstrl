@@ -221,9 +221,6 @@ def _pipeline(
             cleanup_worktree=lambda *a, **k: None,
         ),
         run_scope=RunScope.resolve(_manifest([comp]), root, _base_config(root)),
-        # #192: the run's config envelope. Required rather than
-        # defaulted, so a test cannot silently get a second
-        # resolution the factory never made.
         run_envelope=RunEnvelope.load(root),
         worktree_paths={comp.id: wt_path},
         component_contexts={},

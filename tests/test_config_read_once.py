@@ -46,7 +46,7 @@ from kstrl.pipeline import ComponentPipeline
 from kstrl.policy import PolicyConfig
 from kstrl.runenvelope import RunEnvelope
 from kstrl.ui.plain import PlainUI
-from tests.helpers import configwalk
+from tests.helpers import astwalk, configwalk
 from tests.helpers.astwalk import KSTRL_PACKAGE, package_sources
 from tests.helpers.verify_phase import component, phase_verify_envelopes
 
@@ -234,6 +234,34 @@ class TestPipelineReadsConfigOnlyAtConstruction:
             "ComponentPipeline.__init__",
             "ComponentPipeline._phase_verify",
         }
+
+    @pytest.mark.xfail(strict=True, raises=AssertionError)
+    def test_a_module_qualified_load_is_invisible(self, tmp_path: Path) -> None:
+        """The disclosed limit in ``configwalk``'s docstring, with a
+        test behind it rather than a paragraph on its own.
+
+        ``_target`` resolves a callee syntactically in two shapes, a
+        bare ``Name`` and ``Name.attr``. ``mod.PolicyConfig.load`` is
+        neither, so layer B does not see it - and a flagging guard that
+        does not see a read goes quiet instead of red. Measured in
+        ``kstrl/`` today: 54 bare-name primitive calls, 0 in the
+        attribute form, so this is latent. Under ``strict=True`` so that
+        teaching the walk ``astwalk.bindings`` XPASSes here and forces
+        the disclosure to be edited in the same diff.
+        """
+        found = configwalk.surface(package_sources())
+
+        def probe(source: str) -> object:
+            planted = tmp_path / "aliased.py"
+            planted.write_text(source, encoding="utf-8")
+            return configwalk.read_sites(planted, found)
+
+        astwalk.blind_spot(
+            probe,
+            "import kstrl.policy as mod\n\n\nclass ComponentPipeline:\n"
+            "    def _phase_verify(self, comp):\n"
+            "        return mod.PolicyConfig.load(self.root_dir)\n",
+        )
 
     def test_the_daemon_is_outside_this_scope_and_still_reads(self) -> None:
         """The exclusion is deliberate, not the walk going blind there.
@@ -540,7 +568,7 @@ class TestRunEnvelope:
         envelope = RunEnvelope.load(tmp_path)
         assert envelope.policy.max_files_changed == 5
         assert envelope.adequacy.enabled is True
-        assert envelope.autonomy_enabled is False
+        assert envelope.autonomy.enabled is False
         assert envelope.autonomy_level == 0
         assert envelope.policy_hash() == envelope.policy.envelope_hash()
 

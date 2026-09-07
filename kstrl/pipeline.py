@@ -439,10 +439,8 @@ class ComponentPipeline:
         knowledge_config: KnowledgeConfig,
         factory_result: FactoryResult,
         run_scope: RunScope,
-        # #192: required, and deliberately without a default or an
-        # ``or ...load()`` fallback. The fallback IS the defect the
-        # envelope removes: a second source that can disagree with the
-        # one ``manifest.policy_hash`` was computed from.
+        # #192: required, with no default and no ``or ...load()``
+        # fallback - that fallback is the defect the envelope removes.
         run_envelope: RunEnvelope,
         hooks: PipelineHooks,
         worktree_paths: dict[str, Path],
@@ -456,26 +454,26 @@ class ComponentPipeline:
         self.base_config = base_config
         self.ui = ui
         self.root_dir = root_dir
-        # #266 review finding 3: the reviewer roles were built with
-        # read_only=True and NO sandbox, so `[sandbox] enabled = true`
-        # reached the engineer and never the reviewers - the one pair of
-        # roles that now runs shell commands inside the tree under
-        # review. read_only is a permission-layer posture on the claude
-        # adapters; the operator's OS-level enforcement is a separate
-        # payload and both are wanted.
+        # #192: four run-level configs loaded once here rather than per
+        # phase, because the phases run per component attempt and
+        # re-reading mid-run made a component's enforcement diverge from
+        # what the run recorded. One ``toml_parse_scope`` around the
+        # group, so the four sections cost one document parse.
         #
-        # #192 widened this: FOUR run-level configs are loaded once here
-        # rather than per phase, because the phases run per component
-        # attempt and re-reading them mid-run made a component's
-        # enforcement diverge from what the run recorded. One
-        # ``toml_parse_scope`` around the group, so the four sections
-        # cost one document parse rather than four.
-        #
-        # The hash-bearing three ([policy], [adequacy], [autonomy]) are
-        # NOT here: they are resolved before the pipeline exists and
-        # injected as ``run_envelope``, because the factory clamps them
-        # with the autonomy ladder and records the clamped hash.
+        # What is NOT here is what the autonomy ladder can clamp:
+        # [policy], [adequacy] and the level are resolved before the
+        # pipeline exists and injected as ``run_envelope``, so the
+        # clamped values are the ones enforced and recorded. (Only
+        # PolicyConfig is hashed - ``policy.envelope_hash`` covers no
+        # adequacy field.)
         with toml_parse_scope():
+            # #266 review finding 3: the reviewer roles were built with
+            # read_only=True and NO sandbox, so `[sandbox] enabled =
+            # true` reached the engineer and never the reviewers - the
+            # one pair of roles that now runs shell commands inside the
+            # tree under review. read_only is a permission-layer posture
+            # on the claude adapters; the operator's OS-level
+            # enforcement is a separate payload and both are wanted.
             self.sandbox_config = SandboxConfig.load(root_dir)
             # R7.2: fixtures resolve from toml/env when the caller did
             # not inject one; enabled=false (the default) makes
@@ -1658,13 +1656,10 @@ class ComponentPipeline:
             # reasons: Inbox.resolve reaches _append through _decide, so
             # it takes the control lock and can raise ControlStateError,
             # and InboxConfig.load casts per key, so a TOML date raises
-            # TypeError. #192 moved that cast to ``__init__``, where the
-            # entry preflight has already rejected the file that would
-            # raise it; the tuple keeps TypeError because this
-            # function's contract is that closing a stale item cannot
-            # fail the run that answered it, and narrowing a tuple on
-            # the strength of one caller moving is not a change this
-            # lane measured.
+            # TypeError. #192 moved that cast to ``__init__``, behind
+            # the entry preflight; the tuple keeps TypeError anyway,
+            # because this function's contract is that closing a stale
+            # item cannot fail the run that answered it.
             self.ui.warn(f"  Inbox resolve failed (non-fatal): {exc}")
 
     def _inbox_suppress_generic(self, comp_id: str) -> None:
@@ -1727,8 +1722,7 @@ class ComponentPipeline:
             # ValueError) pair all seven inbox sites were written with
             # does not catch what that lock raises. TypeError was
             # InboxConfig.load's per-key cast, which #192 moved to
-            # ``__init__``; it stays here for the reason _inbox_resolve
-            # gives.
+            # ``__init__``; it stays for the reason _inbox_resolve gives.
             self.ui.warn(f"  Inbox write failed (non-fatal): {exc}")
 
     def _park_merge_pending(
@@ -2610,18 +2604,13 @@ class ComponentPipeline:
         # and Phase 1's was the one the agent could edit. Both now read
         # RunScope, resolved once before the first engineer call.
         scope = self.run_scope.for_component(comp.id)
-        # #192: the same rule as ``run_scope`` one line up. All four
-        # came off disk per component until the run's envelope was
-        # resolved once and injected, so an edit to kstrl.toml mid-run
-        # changed what a later component was held to without changing
-        # the hash the manifest records. ``[policy]`` opts in
-        # (enabled=false, the default, makes run_mechanical_verification
-        # skip the check) and the level is the CLAMPED one the factory
-        # resolved, not the raw stored level this used to read.
-        fixtures_cfg = self.fixtures_config
-        policy_cfg = self.run_envelope.policy
-        adequacy_cfg = self.run_envelope.adequacy
-        level = self.run_envelope.autonomy_level
+        # #192: the same rule as ``run_scope`` one line up, for the four
+        # config values below. They came off disk per component until
+        # the run's envelope was resolved once and injected, so a
+        # mid-run edit to kstrl.toml changed what a later component was
+        # held to without changing the hash the manifest records. The
+        # level is the CLAMPED one the factory resolved, not the raw
+        # stored level this used to read.
         verification = self.hooks.run_mechanical_verification(
             wt_path,
             wt_path / comp.prd_path,
@@ -2635,10 +2624,10 @@ class ComponentPipeline:
             # fixtures Phase 1 still has to read from the live file
             # (#269). Outside every worktree, so not agent-writable.
             pre_run_prd_path=self.root_dir / comp.prd_path,
-            fixtures_config=fixtures_cfg,
-            policy_config=policy_cfg,
-            adequacy_config=adequacy_cfg,
-            autonomy_level=level,
+            fixtures_config=self.fixtures_config,
+            policy_config=self.run_envelope.policy,
+            adequacy_config=self.run_envelope.adequacy,
+            autonomy_level=self.run_envelope.autonomy_level,
             component_id=comp.id,
         )
         verify_duration = time.monotonic() - verify_start

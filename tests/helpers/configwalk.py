@@ -19,6 +19,19 @@ Both layers FLAG. Per CLAUDE.md's split, a guard that flags may
 over-match and costs a false positive somebody reads; a guard that
 clears must be narrow, and over-matching there deletes the mechanism.
 Neither layer is asked to prove a site is fine.
+
+DISCLOSED LIMIT. Both layers resolve a callee syntactically and only in
+two shapes: a bare ``Name`` for a primitive, and ``Name.attr`` for a
+surface class. A read reached through anything deeper - ``mod.Cls.load``
+after ``import kstrl.policy as mod``, or ``c.load_toml_section`` after
+``import kstrl.config as c`` - is invisible, and invisible to a FLAGGING
+guard means it goes quiet rather than red. Measured in ``kstrl/`` today:
+54 bare-name primitive calls and 0 in the attribute form, so the limit
+is latent rather than live.
+``TestPipelineReadsConfigOnlyAtConstruction::test_a_module_qualified_load_is_invisible``
+is the strict xfail behind this paragraph; the day the walk is taught
+``astwalk.bindings`` it XPASSes and this text has to be edited in the
+same diff.
 """
 
 from __future__ import annotations

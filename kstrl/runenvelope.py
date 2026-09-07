@@ -52,7 +52,12 @@ class RunEnvelope:
 
     policy: PolicyConfig
     adequacy: AdequacyConfig
-    autonomy_enabled: bool
+    #: The ``[autonomy]`` section itself rather than a derived
+    #: ``enabled`` bool: ``run_factory`` needs the object for
+    #: ``resolve_runtime_level`` and the #262 probe gate, and reading it
+    #: off the envelope is what stops it parsing ``kstrl.toml`` a second
+    #: time nine lines later.
+    autonomy: AutonomyConfig
     #: The level the run OPERATES at, after ``resolve_runtime_level``
     #: clamps the stored level by ``[autonomy] max_level``, by the
     #: policy envelope ceiling and by control-state location. 0 when the
@@ -76,24 +81,27 @@ class RunEnvelope:
         with the clamped one at the ladder resolution; a caller that
         never runs the ladder (a test, an embedded pipeline) gets the
         stored level, which is what it got before this module existed.
+
+        ``AutonomyState.load`` stays OUTSIDE the scope deliberately: it
+        reads JSON, which ``toml_parse_scope`` does not cache, and it
+        costs 18.3ms (14.6 of them ``ensure_control_state``) against the
+        sub-millisecond window that scope's docstring says makes a
+        stale document safe.
         """
         with toml_parse_scope():
             policy = policy_override or PolicyConfig.load(root_dir)
             adequacy = AdequacyConfig.load(root_dir)
-            autonomy_enabled = AutonomyConfig.load(root_dir).enabled
-        level = AutonomyState.load(root_dir).level if autonomy_enabled else 0
+            autonomy = AutonomyConfig.load(root_dir)
+        level = AutonomyState.load(root_dir).level if autonomy.enabled else 0
         return cls(
             policy=policy,
             adequacy=adequacy,
-            autonomy_enabled=autonomy_enabled,
+            autonomy=autonomy,
             autonomy_level=level,
         )
 
     def policy_hash(self) -> str:
-        """The hash ``manifest.policy_hash`` records.
-
-        The only place it is computed after #192, which is what makes
-        "the hash covers what was enforced" true by construction rather
-        than by review.
-        """
+        """The hash ``manifest.policy_hash`` records, and the only site
+        that computes it after #192, which is what makes "the hash
+        covers what was enforced" true by construction."""
         return self.policy.envelope_hash()

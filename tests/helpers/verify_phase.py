@@ -163,9 +163,6 @@ def _pipeline(
         notify=NotifyHooks(NotifyConfig(), run_id="run-test", project="t"),
         hooks=hooks,
         run_scope=RunScope({}),
-        # #192: the run's config envelope. Required rather than
-        # defaulted, so a test cannot silently get a second
-        # resolution the factory never made.
         run_envelope=run_envelope if run_envelope is not None else RunEnvelope.load(root),
         worktree_paths={c.id: root for c in comps},
         component_contexts={},
