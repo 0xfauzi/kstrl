@@ -145,24 +145,23 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
 #: Every ``InboxConfig.load`` call in ``kstrl/``. ``guarded`` here means
 #: an enclosing ``try`` names ``TypeError``, which is what a per-key cast
 #: raises on a TOML date or array.
+#: NOT IN THIS TABLE, and stated rather than left as an absence: the
+#: factory's run envelope resolves ``[inbox]`` by handing
+#: ``InboxConfig.load`` to ``config_preflight.resolve_or_report`` as a
+#: VALUE, so there is no call for this walk to find and no enclosing
+#: ``try`` for it to read. The disposition is made one frame away and it
+#: is not guarded here: ``resolve_or_report`` catches the ``TypeError``
+#: and returns the line naming ``[inbox]`` and the key, and the factory
+#: refuses the run with exit code 2 before the run directory exists
+#: (#192 round 2). That the envelope still names ``[inbox]`` at all is
+#: pinned by ``tests/test_config_read_once.py``'s
+#: ``EXPECTED_ENVELOPE_SECTIONS``, which walks references rather than
+#: calls, so dropping the section fails there instead of quietly
+#: shrinking this table.
 EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
     "autonomy.py::apply_demotion": _GUARDED,
     "calibration_ladder.py::_open_drift_item": _GUARDED,
     "factory.py::_open_health_breach_items": _GUARDED,
-    "pipeline.py::ComponentPipeline.__init__": Disposition(
-        guarded=False,
-        reason=(
-            "#192 moved this off the two lazy inbox builders, which ran "
-            "per component mid-run, and onto pipeline construction, which "
-            "runs once per run. It propagates for the same reason "
-            "serve.py::check_inbox_cap does: [inbox] is a preflight "
-            "section, so a malformed value is a configuration problem "
-            "named before the pipeline is built, and a run must not start "
-            "on an inbox posture it could not read. The two builders keep "
-            "TypeError in their tuples because everything else they do "
-            "still must not fail a run"
-        ),
-    ),
     "serve.py::_file_inbox_item": _GUARDED,
     "serve.py::check_inbox_cap": Disposition(
         guarded=False,

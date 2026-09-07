@@ -48,11 +48,9 @@ from kstrl.agents.base import (
     collect_usage,
     usage_coverage,
 )
-from kstrl.config import toml_parse_scope
 from kstrl.context import IterationContext, IterationRecord
 from kstrl.divergence import (
     AttemptReading,
-    DivergenceConfig,
     detect_divergence,
     review_finding_keys,
 )
@@ -64,8 +62,7 @@ from kstrl.findings import (
     finding_model,
     tag_finding_with_attempt,
 )
-from kstrl.fixtures import FixturesConfig
-from kstrl.inbox import Inbox, InboxConfig, InboxError, ItemKind, notifiable
+from kstrl.inbox import Inbox, InboxError, ItemKind, notifiable
 from kstrl.interaction import (
     CheckpointContext,
     InteractionChannel,
@@ -92,7 +89,6 @@ from kstrl.review import (
     setpoint_retry_context,
 )
 from kstrl.runenvelope import RunEnvelope
-from kstrl.sandbox import SandboxConfig
 from kstrl.scope import RunScope
 from kstrl.security import SecurityConfig, SecurityMode, SecurityResult
 from kstrl.statedir import ControlStateError
@@ -518,33 +514,39 @@ class ComponentPipeline:
         self.base_config = base_config
         self.ui = ui
         self.root_dir = root_dir
-        # #192: four run-level configs loaded once here rather than per
-        # phase, because the phases run per component attempt and
-        # re-reading mid-run made a component's enforcement diverge from
-        # what the run recorded. One ``toml_parse_scope`` around the
-        # group, so the four sections cost one document parse.
+        # #192: every run-level config section this pipeline enforces
+        # arrives already resolved, and this constructor resolves none of
+        # its own. The phases run per component attempt, so a read here
+        # made a component's enforcement diverge from what the run
+        # recorded.
         #
-        # What is NOT here is what the autonomy ladder can clamp:
-        # [policy], [adequacy] and the level are resolved before the
-        # pipeline exists and injected as ``run_envelope``, so the
-        # clamped values are the ones enforced and recorded. (Only
-        # PolicyConfig is hashed - ``policy.envelope_hash`` covers no
-        # adequacy field.)
-        with toml_parse_scope():
-            # #266 review finding 3: the reviewer roles were built with
-            # read_only=True and NO sandbox, so `[sandbox] enabled =
-            # true` reached the engineer and never the reviewers - the
-            # one pair of roles that now runs shell commands inside the
-            # tree under review. read_only is a permission-layer posture
-            # on the claude adapters; the operator's OS-level
-            # enforcement is a separate payload and both are wanted.
-            self.sandbox_config = SandboxConfig.load(root_dir)
-            # R7.2: fixtures resolve from toml/env when the caller did
-            # not inject one; enabled=false (the default) makes
-            # run_mechanical_verification skip the check entirely.
-            self.fixtures_config = factory_config.fixtures_config or FixturesConfig.load(root_dir)
-            self.inbox_config = InboxConfig.load(root_dir)
-            self.divergence_config = DivergenceConfig.load(root_dir)
+        # Round 1 of #192 loaded these four in this constructor instead.
+        # The review measured the cost: a malformed [inbox] raised out of
+        # __init__ with no handler above it and above the line that
+        # records the architect's spend, so `serve` charged $0 for a
+        # launch that had spent real money (#257). The envelope is
+        # resolved before the run directory exists now, where a bad
+        # section is a refusal naming the section and the key.
+        #
+        # Named locally rather than read through ``self.run_envelope``
+        # at every use: these four are what the pipeline enforces and
+        # the four attribute names already had readers. The envelope
+        # also carries what the autonomy ladder can clamp - [policy],
+        # [adequacy] and the level - so the clamped values are the ones
+        # enforced and recorded. (Only PolicyConfig is hashed:
+        # ``policy.envelope_hash`` covers no adequacy field.)
+        #
+        # #266 review finding 3 for [sandbox]: the reviewer roles were
+        # built with read_only=True and NO sandbox, so `[sandbox]
+        # enabled = true` reached the engineer and never the reviewers -
+        # the one pair of roles that now runs shell commands inside the
+        # tree under review.
+        self.sandbox_config = run_envelope.sandbox
+        # R7.2: enabled=false (the default) makes
+        # run_mechanical_verification skip the fixtures check entirely.
+        self.fixtures_config = run_envelope.fixtures
+        self.inbox_config = run_envelope.inbox
+        self.divergence_config = run_envelope.divergence
         self.run_envelope = run_envelope
         self.run_id = run_id
         self.bus = bus
