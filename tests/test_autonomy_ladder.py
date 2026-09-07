@@ -345,6 +345,26 @@ class TestConfig:
         assert all("bundle wins" in n for n in notes)
         assert all(n.startswith("Manual override ignored: ") for n in notes)
 
+    def test_the_provenance_argument_has_no_default(self) -> None:
+        """#195 round 2: the pairing is enforced, not documented.
+
+        ``manual_override_notes`` claims its note cannot disagree with
+        the decision, and that holds only while
+        ``pause_before_pr_merge_explicit`` travels with
+        ``configured_pause_before_pr_merge``. A default is what lets the
+        two separate: a caller passing the value and forgetting the
+        provenance would be told "bundle wins" for a gate the run in fact
+        kept. Nothing else in the suite fails when the default comes
+        back, because every existing caller passes both.
+        """
+        import inspect
+
+        parameter = inspect.signature(manual_override_notes).parameters[
+            "pause_before_pr_merge_explicit"
+        ]
+        assert parameter.default is inspect.Parameter.empty
+        assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
+
     def test_agreeing_config_produces_no_notes(self) -> None:
         bundle = flag_bundle_for(AutonomyLevel.L1_SUPERVISED)
         assert (

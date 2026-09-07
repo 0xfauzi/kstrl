@@ -125,6 +125,15 @@ class TestConfigProbing:
         """
         from kstrl.factory import FactoryConfig
 
+        @dataclasses.dataclass
+        class Probe:
+            """A SCALAR provenance field, which is what the type list admits."""
+
+            ordinary: int = 0
+            recorded: int = dataclasses.field(default=0, metadata={"provenance": True})
+
+        assert gen_docs._scalar_fields(Probe()) == {"ordinary"}
+
         defaults = FactoryConfig()
         provenance = {f.name for f in dataclasses.fields(defaults) if f.metadata.get("provenance")}
         assert provenance, "no provenance field left to test; delete this test with the field"

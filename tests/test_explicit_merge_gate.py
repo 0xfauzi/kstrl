@@ -444,13 +444,25 @@ class TestStrictBoolean:
     nobody wrote and then keeps the gate up at every level.
     """
 
-    @pytest.mark.parametrize("value", ['"false"', '"true"', "0", "1", '""'])
-    def test_a_non_boolean_is_refused(self, tmp_path: Path, value: str) -> None:
+    @pytest.mark.parametrize(
+        ("value", "read_as"),
+        [('"false"', "str"), ('"true"', "str"), ("0", "int"), ("1", "int"), ('""', "str")],
+    )
+    def test_a_non_boolean_is_refused(self, tmp_path: Path, value: str, read_as: str) -> None:
+        """And the message names the type it READ.
+
+        The first draft explained that a quoted value is a string and
+        every non-empty string reads as true, which is not the cause an
+        operator who wrote ``= 0`` hit. Report individually only the
+        causes you can name, which here means the one the parser
+        produced.
+        """
         (tmp_path / "kstrl.toml").write_text(
             f"[factory]\npause_before_pr_merge = {value}\n", encoding="utf-8"
         )
-        with pytest.raises(ConfigError, match="must be a boolean"):
+        with pytest.raises(ConfigError, match="must be a boolean") as caught:
             FactoryConfig.load(tmp_path)
+        assert f"which TOML reads as {read_as}" in str(caught.value)
 
     @pytest.mark.parametrize(
         ("args", "exit_code"),
