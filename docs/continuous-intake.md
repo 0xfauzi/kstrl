@@ -361,21 +361,32 @@ reading `pmset -g assertions` against the pids in it:
   place. The utility keeps the pid the daemon's `Popen` returned, and a
   second `caffeinate` process runs as a **child of the utility**, inside
   the same process group and session. So the daemon's direct child is
-  the factory itself, and the group has two members rather than one.
-- The assertion is held by that second process, not by the factory:
-  `pid <helper>(caffeinate): ... PreventUserIdleSystemSleep named:
-  "caffeinate command-line tool"`. An earlier version of this section
-  quoted the name as `caffeinate asserting on behalf of <child>`, which
-  is not what this machine prints.
+  the factory itself, and the group holds the factory plus one
+  caffeinate helper, plus whatever the factory itself spawns.
+- The assertion is held by that second process, not by the factory.
+  `pmset -g assertions` prints two lines for it, and both matter:
+
+  ```
+     pid 43437(caffeinate): [0x...] 00:00:00 PreventUserIdleSystemSleep named: "caffeinate command-line tool"
+  	Details: caffeinate asserting on behalf of '/bin/sleep' (pid 43436)
+  ```
+
+  The row header is keyed on the **helper's** pid and its `named:` field
+  is the generic `"caffeinate command-line tool"`. The `Details:` line
+  underneath names the **utility's** pid, which is the one the daemon
+  holds. So a search for the run's own pid finds the `Details:` line, not
+  the row header.
 - After the utility exits, both the helper and the assertion row are
   **gone** at the first sample. So are they after a SIGKILL of the
   direct child alone, and after a `killpg` on the spawn-time group.
   Nothing lingers, and no power assertion outlives a run.
 - Because the helper is inside the run's process group, the timeout
   path's group kill releases the power assertion as well as reaping the
-  factory. `tests/test_serve_process_tree.py` pins that membership:
-  exactly two processes in the group with caffeinate, one without, so a
-  future caffeinate that forks the helper OUT of the group fails a test
+  factory. `tests/test_serve_process_tree.py` pins that membership by
+  spawning through the shipping supervisor and counting the group: a
+  childless utility gives two members with caffeinate and one without, a
+  utility that spawns one child of its own gives three and two. A future
+  caffeinate that forks the helper OUT of the group fails those counts
   instead of quietly pinning the machine awake after a timeout.
 
 **Which flag asserts what**, measured the same way: `-i` gives
