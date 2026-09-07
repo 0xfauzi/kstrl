@@ -106,6 +106,7 @@ from tests.helpers.astwalk import (
     package_sources,
     parse,
     parsed,
+    scope_of,
     scopes,
 )
 from tests.test_journal_one_writer import mode_argument, open_aliases
@@ -474,20 +475,6 @@ EXPECTED_ROUTED_APPENDS: dict[str, int] = {
     "proposals.py: append_records(lock=default (False))": 1,
     "workqueue.py: append_records(lock=default (False))": 1,
 }
-
-
-def scope_of(tree: ast.Module) -> dict[int, str]:
-    """Every node in a module mapped to the qualified name of its scope.
-
-    ``own_nodes`` stops at a nested function, so a helper defined inside
-    another one is credited to itself rather than to its enclosing
-    scope.
-    """
-    owner: dict[int, str] = {}
-    for node, qualified in scopes(tree):
-        for child in own_nodes(node):
-            owner[id(child)] = qualified
-    return owner
 
 
 def scope_spells(nodes: Iterable[ast.AST], token: str) -> bool:
