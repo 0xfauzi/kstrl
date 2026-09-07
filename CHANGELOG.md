@@ -42,6 +42,39 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Changed
 
+- An explicit `pause_before_pr_merge = true` now survives every autonomy
+  level. The R8.2 flag bundle may withhold autonomy the operator did not
+  earn; it may not remove a human merge gate the operator asked for. At
+  L3 and L4 the gate was previously dropped and the run logged a manual
+  override ignored; it is now retained, and both the run log and the
+  `autonomy_level_applied` event say `gate retained by explicit
+  request`. That event's `flags` describe the bundle the run USED rather
+  than the one the level awarded, so it can no longer record "merge
+  gate: off" for a run that pauses at every component. Explicit means
+  the operator wrote it - a `[factory]` key present in kstrl.toml,
+  `KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE` set, or
+  `--pause-before-pr-merge` / `--no-pause-before-pr-merge` passed - and
+  never a value that merely equals the default, so
+  `KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE=0` is an explicit false. A value
+  nobody wrote is unchanged: with no key, no env var and no flag, L3 and
+  L4 still derive the gate from the level. The reverse asymmetry is
+  unchanged too: an explicit `false` does not lower the gate L1 and L2
+  raise, and that run still logs `bundle wins` (#195).
+- **Behaviour change:** `[factory] pause_before_pr_merge` is read
+  strictly, the way `[autonomy] enabled` has been since #350. `= "false"`
+  is a string, every non-empty string reads as true, and since the key
+  now outranks the ladder a coerced string would manufacture an explicit
+  request nobody wrote and keep the gate up at every level. A repo that
+  spells the value with quotes goes from silently gated to a
+  configuration problem reported at command entry. The env var is
+  unchanged and stays lenient, because an env var is a string by
+  construction (#195).
+- `ks serve` no longer refuses a `stop_at_pr` item because the autonomy
+  level would auto-merge: that item is now honoured. The refusal is
+  re-aimed at the case that is still real and that no level fixes, a repo
+  whose `[factory] create_prs = false` means the merge checkpoint never
+  runs, so an item that asked for a human in writing would otherwise be
+  merged with nobody having looked (#195).
 - A repeat of an open inbox item now refreshes its `evidence` alongside
   its `detail`. Only the prose half was refreshed before, so a deduped
   item whose numbers move - a health breach, whose whole point is that
