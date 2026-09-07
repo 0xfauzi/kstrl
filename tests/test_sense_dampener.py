@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from kstrl import dampener
+from kstrl import dampener, dampener_report
 from kstrl.parsers import ParsedFailure, ParsedOutput
 from kstrl.verify import CheckResult, NotMeasured, VerificationResult
 
@@ -23,9 +23,8 @@ from kstrl.verify import CheckResult, NotMeasured, VerificationResult
 #: implementation of it.
 DIGEST = "0" * 16
 
-#: The measured directory's name. Both sides share it unless a test is about
-#: the mismatch note.
-ROOT_NAME = "kstrl"
+#: The project both sides carry unless a test is about the mismatch note.
+PROJECT = "0xfauzi/kstrl"
 
 
 def _baseline(
@@ -39,13 +38,13 @@ def _baseline(
     sense_schema_version: int = 2,
     base_ref: str | None = "0123456789abcdef",
     passed: bool = False,
-    root_name: str = ROOT_NAME,
+    project: str = PROJECT,
     digest: str = DIGEST,
 ) -> dampener.Baseline:
     return dampener.Baseline(
         generated_at="2026-09-06T00:00:00Z",
         base_ref=base_ref,
-        root_name=root_name,
+        project=project,
         passed=passed,
         sense_schema_version=sense_schema_version,
         verify_digest=digest,
@@ -220,7 +219,7 @@ def _from(result: VerificationResult) -> dampener.Baseline:
     return dampener.baseline_from_result(
         result,
         base_ref="abc1234def",
-        root_name=ROOT_NAME,
+        project=PROJECT,
         generated_at="2026-09-06T00:00:00Z",
         sense_schema_version=2,
         digest=DIGEST,
@@ -350,7 +349,7 @@ def test_baseline_keys_are_sorted_in_the_file_bytes(tmp_path: Path) -> None:
         "schema_version",
         "generated_at",
         "base_ref",
-        "root_name",
+        "project",
         "passed",
         "sense_schema_version",
         "verify_digest",
@@ -388,7 +387,7 @@ def _valid_document() -> dict[str, Any]:
         "schema_version": 1,
         "generated_at": "2026-09-06T00:00:00Z",
         "base_ref": "abc",
-        "root_name": ROOT_NAME,
+        "project": PROJECT,
         "passed": False,
         "sense_schema_version": 2,
         "verify_digest": DIGEST,
@@ -470,13 +469,13 @@ def _comparison(**kwargs: Any) -> dampener.Comparison:
         "unmeasured": {},
         "stopped_measuring": {},
         "sense_schema_changed": None,
-        "root_name_changed": None,
+        "project_changed": None,
     }
     return dampener.Comparison(**{**defaults, **kwargs})
 
 
 def test_human_report_heading_and_verdict() -> None:
-    lines = dampener.render_human(_comparison(), _baseline({}), Path("scripts/b.json"))
+    lines = dampener_report.render_human(_comparison(), _baseline({}), Path("scripts/b.json"))
 
     assert lines[0] == "sense regression report vs scripts/b.json (0123456)"
     assert lines[-1] == "no regression"
@@ -485,7 +484,7 @@ def test_human_report_heading_and_verdict() -> None:
 def test_human_report_names_the_counts_when_it_regressed() -> None:
     comparison = _comparison(new={"linter:E501": 2}, increased={"linter:F401": (1, 4)})
 
-    lines = dampener.render_human(comparison, _baseline({}), Path("b.json"))
+    lines = dampener_report.render_human(comparison, _baseline({}), Path("b.json"))
 
     assert lines[-1] == "regression: 1 new, 1 increased, 0 stopped measuring"
     assert "  linter:E501  2" in lines
@@ -493,7 +492,9 @@ def test_human_report_names_the_counts_when_it_regressed() -> None:
 
 
 def test_human_report_says_unknown_when_the_baseline_has_no_commit() -> None:
-    lines = dampener.render_human(_comparison(), _baseline({}, base_ref=None), Path("b.json"))
+    lines = dampener_report.render_human(
+        _comparison(), _baseline({}, base_ref=None), Path("b.json")
+    )
 
     assert lines[0].endswith("(unknown)")
     assert any("outside a repository" in line for line in lines)
@@ -502,9 +503,10 @@ def test_human_report_says_unknown_when_the_baseline_has_no_commit() -> None:
 def test_markdown_first_line_is_the_marker_exactly() -> None:
     """A workflow finds its own earlier comment by this line, so nothing may
     precede it: not a blank line, not a heading."""
-    text = dampener.render_markdown(_comparison(), _baseline({}), Path("b.json"))
+    text = dampener_report.render_markdown(_comparison(), _baseline({}), Path("b.json"))
 
-    assert text.splitlines()[0] == dampener.MARKDOWN_MARKER == "<!-- kstrl-sense-dampener -->"
+    marker = dampener_report.MARKDOWN_MARKER
+    assert text.splitlines()[0] == marker == "<!-- kstrl-sense-dampener -->"
 
 
 def test_markdown_carries_a_table_per_non_empty_bucket() -> None:
@@ -515,7 +517,7 @@ def test_markdown_carries_a_table_per_non_empty_bucket() -> None:
         unmeasured={"dead_code:x": 3},
     )
 
-    text = dampener.render_markdown(comparison, _baseline({}), Path("b.json"))
+    text = dampener_report.render_markdown(comparison, _baseline({}), Path("b.json"))
 
     assert "| `linter:E501` | 2 |" in text
     assert "| `linter:F401` | 1 | 4 |" in text
@@ -525,7 +527,7 @@ def test_markdown_carries_a_table_per_non_empty_bucket() -> None:
 
 
 def test_markdown_omits_the_table_of_an_empty_bucket() -> None:
-    text = dampener.render_markdown(_comparison(), _baseline({}), Path("b.json"))
+    text = dampener_report.render_markdown(_comparison(), _baseline({}), Path("b.json"))
 
     assert "New signatures" not in text
     assert "no regression" in text
@@ -535,8 +537,8 @@ def test_both_renderers_carry_the_schema_note() -> None:
     comparison = _comparison(sense_schema_changed=(2, 3))
     base = _baseline({})
 
-    human = "\n".join(dampener.render_human(comparison, base, Path("b.json")))
-    markdown = dampener.render_markdown(comparison, base, Path("b.json"))
+    human = "\n".join(dampener_report.render_human(comparison, base, Path("b.json")))
+    markdown = dampener_report.render_markdown(comparison, base, Path("b.json"))
 
     for text in (human, markdown):
         assert "from 2 to 3" in text
@@ -560,7 +562,7 @@ def test_the_write_summary_line_names_the_unmeasured_sensors() -> None:
 def test_the_json_block_carries_every_bucket_and_the_verdict() -> None:
     comparison = _comparison(new={"a:b": 1}, increased={"c:d": (1, 2)}, sense_schema_changed=(2, 3))
 
-    document = dampener.comparison_document(
+    document = dampener_report.comparison_document(
         comparison,
         _baseline({"c:d": 1}),
         _baseline({"a:b": 1, "c:d": 2}),
@@ -590,133 +592,264 @@ def test_a_missing_collection_is_refused_not_read_as_empty(key: str) -> None:
     assert key in str(excinfo.value)
 
 
-# --- the dogfood workflow -----------------------------------------------
-#
-# Parsed, not grepped. A substring assertion passes on a file whose YAML is
-# broken, which is the guard-goes-blind shape this repository has eleven logged
-# instances of. Every assertion below reads the PARSED document.
-
-WORKFLOW_PATH = Path(__file__).resolve().parents[1] / ".github/workflows/sense-dampener.yml"
+# --- a sensor that stopped measuring ------------------------------------
 
 
-def _workflow() -> dict[str, Any]:
-    import yaml
-
-    document = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
-    assert isinstance(document, dict)
-    return document
-
-
-def _steps() -> list[dict[str, Any]]:
-    jobs = _workflow()["jobs"]
-    return [step for job in jobs.values() for step in job["steps"]]
+#: This repository's own committed baseline shape, reduced to what makes the
+#: defect reproducible: a GREEN tree, so ``signatures`` is empty and there is
+#: no signature anywhere for any of the other four buckets to hold.
+def _green_committed_baseline() -> dampener.Baseline:
+    return _baseline(
+        {},
+        measured=("bad_patterns", "diff_scope", "linter", "test_suite", "typecheck"),
+        passed=True,
+    )
 
 
-def _runs() -> list[str]:
-    return [str(step["run"]) for step in _steps() if "run" in step]
+def test_a_branch_whose_test_suite_stops_finishing_is_a_regression() -> None:
+    """The defect this bucket exists for, in the shape it was reproduced in.
 
-
-def test_the_workflow_triggers_on_pull_requests_only() -> None:
-    document = _workflow()
-    # YAML 1.1 reads a bare `on` as the boolean true, so the key is True and
-    # not "on". Read both rather than pretend one of them.
-    triggers = document.get("on", document.get(True))
-
-    assert list(triggers) == ["pull_request"]
-    assert triggers["pull_request"]["types"] == ["opened", "synchronize", "reopened"]
-    # pull_request_target would run the pull request's own test suite with a
-    # write token. It is refused outright, not merely absent by accident.
-    assert "pull_request_target" not in triggers
-
-
-def test_the_workflow_asks_for_least_privilege() -> None:
-    assert _workflow()["permissions"] == {"contents": "read", "pull-requests": "write"}
-
-
-def test_the_workflow_runs_once_per_pull_request() -> None:
-    """The job runs the whole test suite a second time on every push. One run
-    per pull request, superseded ones cancelled, is what keeps that bounded."""
-    concurrency = _workflow()["concurrency"]
-
-    assert concurrency["cancel-in-progress"] is True
-    assert "pull_request.number" in concurrency["group"]
-
-
-def test_every_job_is_bounded() -> None:
-    for job in _workflow()["jobs"].values():
-        assert isinstance(job["timeout-minutes"], int)
-
-
-def test_the_checkout_is_deep_enough_to_reach_the_base() -> None:
-    """`ks sense` asks git for the diff STRICTLY and exits 2 when it cannot get
-    one, so a shallow clone makes this job fail on every pull request."""
-    checkouts = [s for s in _steps() if str(s.get("uses", "")).startswith("actions/checkout@")]
-
-    assert len(checkouts) == 1
-    assert checkouts[0]["with"]["fetch-depth"] == 0
-    assert checkouts[0]["with"]["persist-credentials"] is False
-
-
-def test_the_workflow_finds_its_comment_by_the_marker_constant() -> None:
-    """Compared against the CONSTANT, so moving the marker in one place and
-    not the other is a red test rather than a second comment on every PR."""
-    assert any(dampener.MARKDOWN_MARKER in run for run in _runs())
-
-
-def test_the_comment_lookup_picks_one_id_across_every_page() -> None:
-    """``gh api --paginate`` applies ``--jq`` once PER PAGE, so a ``first``
-    inside the filter is the first match on that page rather than the first
-    overall.
-
-    Measured against gh 2.73.0 on a 3-comment pull request forced to
-    ``per_page=1``: ``[.[] | select(...)] | first | .id`` printed three ids on
-    three lines. Past the 30-comment default page size that hands ``gh api
-    --method PATCH .../issues/comments/$id`` a multi-line id, so the update
-    fails and the dampener starts posting a second comment on every push.
+    Round 1 of review on #357 drove exactly this against the committed
+    baseline: ``regressed=False``, ``exit_code_for(fail_on_regression=True)``
+    of 0, and ``no regression`` in the markdown, for a branch on which the
+    test suite no longer finishes. The four signature buckets cannot cover it,
+    because a green baseline carries no signature to bucket.
     """
-    lookup = [run for run in _runs() if "--paginate" in run]
+    timed_out = CheckResult(
+        name="test_suite",
+        passed=False,
+        message="Test suite timed out after 1800.0s",
+        measured=False,
+    )
+    current = _from(_result([timed_out]))
 
-    assert len(lookup) == 1
-    assert "| first |" not in lookup[0]
-    # The filter emits every match; exactly one shell stage picks one of them.
-    assert "head -n 1" in lookup[0]
+    comparison = dampener.compare(_green_committed_baseline(), current)
+
+    assert comparison.new == {}
+    assert comparison.increased == {}
+    assert comparison.unmeasured == {}
+    assert comparison.stopped_measuring["test_suite"] == "Test suite timed out after 1800.0s"
+    assert comparison.regressed is True
+    assert dampener.exit_code_for(comparison, fail_on_regression=True) == 1
 
 
-def test_the_workflow_is_advisory() -> None:
-    """The contract in one line: no step asks the dampener to fail the job.
+def test_a_check_switched_off_entirely_is_also_a_sensor_that_stopped() -> None:
+    """Set difference over ``measured_checks``, so it covers both ways a sensor
+    goes dark: a row that measured nothing, and no row at all."""
+    current = _baseline({}, measured=("linter",))
 
-    Graduating to blocking is adding this flag, deliberately, in its own
-    change. It must not arrive by accident.
+    comparison = dampener.compare(_baseline({}, measured=("linter", "typecheck")), current)
+
+    assert comparison.stopped_measuring == {"typecheck": dampener.NO_REASON_RECORDED}
+    assert comparison.regressed is True
+
+
+def test_a_sensor_the_baseline_never_measured_does_not_flag_when_it_is_still_off() -> None:
+    """The other direction, which must stay quiet. A repository whose baseline
+    has holes must not report those same holes as new every run."""
+    base = _baseline({}, measured=("linter",), unmeasured=("dead_code",))
+    current = _baseline({}, measured=("linter",), unmeasured=("dead_code",))
+
+    comparison = dampener.compare(base, current)
+
+    assert comparison.stopped_measuring == {}
+    assert comparison.regressed is False
+
+
+def test_both_renderers_name_the_check_and_the_reason() -> None:
+    comparison = _comparison(stopped_measuring={"test_suite": "Test suite timed out after 1800.0s"})
+
+    human = dampener_report.render_human(comparison, _baseline({}), Path("b.json"))
+    markdown = dampener_report.render_markdown(comparison, _baseline({}), Path("b.json"))
+
+    assert any("test_suite  Test suite timed out after 1800.0s" in line for line in human)
+    assert "| `test_suite` | Test suite timed out after 1800.0s |" in markdown
+    assert "0 new, 0 increased, 1 stopped measuring" in markdown
+
+
+def test_the_json_block_carries_the_stopped_sensors() -> None:
+    comparison = _comparison(stopped_measuring={"linter": "Linter failed (exit code 127)"})
+
+    document = dampener_report.comparison_document(
+        comparison, _baseline({}), _baseline({}), Path("b.json")
+    )
+
+    assert document["stopped_measuring"] == {"linter": "Linter failed (exit code 127)"}
+    assert document["regressed"] is True
+
+
+# --- the baseline's identity --------------------------------------------
+
+
+def _commands(lint: str = "ruff check .") -> Any:
+    from kstrl.verify import ResolvedVerifyCommands
+
+    return ResolvedVerifyCommands(test="pytest", typecheck="mypy .", lint=lint)
+
+
+def test_the_digest_moves_with_the_commands_and_with_the_timeout() -> None:
+    same = dampener.verify_digest(_commands(), 1800.0)
+
+    assert dampener.verify_digest(_commands(), 1800.0) == same
+    assert dampener.verify_digest(_commands("ruff check --fix ."), 1800.0) != same
+    assert dampener.verify_digest(_commands(), 300.0) != same
+
+
+def test_a_baseline_measured_differently_is_refused_naming_both_digests() -> None:
+    """``bind_register``'s rule, applied to the baseline.
+
+    ``docs/dampener.md`` already said a baseline and a comparison measured at
+    different timeouts are not a comparison; before this the only mechanism
+    behind that sentence was a literal 1800 typed into a workflow file.
     """
-    assert not any("--fail-on-regression" in run for run in _runs())
+    baseline = _baseline({}, digest="aaaaaaaaaaaaaaaa")
+
+    with pytest.raises(dampener.BaselineError) as excinfo:
+        dampener.refuse_foreign_baseline(baseline, "bbbbbbbbbbbbbbbb")
+
+    message = str(excinfo.value)
+    assert "aaaaaaaaaaaaaaaa" in message
+    assert "bbbbbbbbbbbbbbbb" in message
+    assert "--write-baseline --force" in message
 
 
-def test_the_workflow_measures_at_the_timeout_the_baseline_was_written_at() -> None:
-    """A baseline and a comparison measured at different verify timeouts are
-    not a comparison: this repository's suite times out at the default 300s,
-    and a timed-out check contributes no signatures at all."""
-    sense_steps = [s for s in _steps() if "uv run ks sense" in str(s.get("run", ""))]
-
-    assert len(sense_steps) == 1
-    assert sense_steps[0]["env"]["KSTRL_TIMEOUT_VERIFY"] == "1800"
-    assert "--compare-baseline" in sense_steps[0]["run"]
-    assert "--format markdown" in sense_steps[0]["run"]
+def test_a_baseline_measured_the_same_way_is_accepted() -> None:
+    """The control. Without it the refusal above passes with the comparison
+    inverted, which would refuse every legitimate run."""
+    dampener.refuse_foreign_baseline(_baseline({}, digest=DIGEST), DIGEST)
 
 
-def test_the_comment_step_is_guarded_for_forks() -> None:
-    """A fork pull request gets a read-only token whatever `permissions:`
-    says. The guard is what keeps that a skipped step rather than a red job,
-    and the step summary is what its author reads instead."""
-    comment_steps = [s for s in _steps() if "issues/comments" in str(s.get("run", ""))]
-    summary_steps = [s for s in _steps() if "GITHUB_STEP_SUMMARY" in str(s.get("run", ""))]
+def test_a_different_project_is_a_note_and_not_a_refusal() -> None:
+    """A baseline copied between two checkouts of the same project is
+    legitimate; between two different projects it is #260's mistake. Only a
+    person can tell those apart, so this reports rather than refuses."""
+    comparison = dampener.compare(
+        _baseline({}, project="writers-room"),
+        _baseline({}, project="kstrl"),
+    )
 
-    assert len(comment_steps) == 1
-    assert "head.repo.full_name == github.repository" in comment_steps[0]["if"]
-    assert summary_steps and all("if" not in step for step in summary_steps)
+    assert comparison.project_changed == ("writers-room", "kstrl")
+    assert comparison.regressed is False
+    human = dampener_report.render_human(comparison, _baseline({}), Path("b.json"))
+    assert any("'writers-room'" in line and "'kstrl'" in line for line in human)
 
 
-def test_the_job_fails_only_when_the_sensor_could_not_run() -> None:
-    failing = [s for s in _steps() if "exit 1" in str(s.get("run", ""))]
+def test_a_hole_in_a_baseline_carries_the_reason_it_is_there() -> None:
+    document = _valid_document()
+    document["unmeasured_checks"] = ["dead_code"]
 
-    assert len(failing) == 1
-    assert failing[0]["if"] == "steps.sense.outputs.rc == '2'"
+    with pytest.raises(dampener.BaselineError) as excinfo:
+        dampener.Baseline.from_document(document)
+
+    assert "unmeasured_reasons" in str(excinfo.value)
+    assert "dead_code" in str(excinfo.value)
+
+
+def test_a_signature_count_of_zero_is_refused() -> None:
+    """``to_document`` writes a Counter of occurrences, so zero is a shape it
+    cannot produce. Accepting one put "was 0" in a report's fixed table."""
+    with pytest.raises(dampener.BaselineError) as excinfo:
+        dampener.Baseline.from_document({**_valid_document(), "signatures": {"linter:E501": 0}})
+
+    assert "positive integer" in str(excinfo.value)
+
+
+# --- reading a baseline the parser cannot parse -------------------------
+
+
+def test_a_deeply_nested_baseline_is_refused_and_not_a_traceback(tmp_path: Path) -> None:
+    """``RecursionError`` is a ``RuntimeError``, not a ``ValueError``.
+
+    Round 1 of review on #357 measured 200000 nested arrays escaping
+    ``except ValueError`` around ``json.loads``, so a document this function
+    promises to refuse with exit 2 killed the command with a traceback and
+    exit 1. The parser's error taxonomy belongs to the parser (#318).
+    """
+    path = tmp_path / "deep.json"
+    path.write_text("[" * 200_000 + "]" * 200_000, encoding="utf-8")
+
+    with pytest.raises(dampener.BaselineError) as excinfo:
+        dampener.read_baseline(path)
+
+    assert "RecursionError" in str(excinfo.value)
+    assert str(path) in str(excinfo.value)
+
+
+def test_a_directory_where_a_baseline_should_be_is_an_os_error(tmp_path: Path) -> None:
+    """The other half of rule 3: the I/O is outside the guard, so widening the
+    parse guard to ``Exception`` cannot swallow a disk failure and report it
+    as malformed JSON."""
+    directory = tmp_path / "b.json"
+    directory.mkdir()
+
+    with pytest.raises(dampener.BaselineError) as excinfo:
+        dampener.read_baseline(directory)
+
+    assert "cannot read the baseline" in str(excinfo.value)
+    assert "is not JSON" not in str(excinfo.value)
+
+
+# --- where a baseline path resolves --------------------------------------
+
+
+def test_a_relative_explicit_path_resolves_under_root() -> None:
+    """One rule for one flag. Passing the exact path ``--help`` advertises as
+    the default, together with ``--root``, used to read a different file and
+    report "no baseline at ..." for a file that exists."""
+    root = Path("/elsewhere")
+
+    assert dampener._baseline_path("scripts/kstrl/sense-baseline.json", root) == (
+        root / "scripts/kstrl/sense-baseline.json"
+    )
+    assert dampener._baseline_path(dampener.OPTIONAL_VALUE_SENTINEL, root) == (
+        root / dampener.DEFAULT_BASELINE_PATH
+    )
+    assert dampener._baseline_path("/tmp/b.json", root) == Path("/tmp/b.json")
+
+
+# --- which project a baseline is OF -------------------------------------
+
+
+def test_the_project_identity_survives_a_worktree(tmp_path: Path) -> None:
+    """``owner/repo`` from ``origin``, in both URL shapes and through a
+    worktree, because the directory name is exactly what a worktree changes.
+
+    Measured rather than argued: every kstrl lane runs inside a git worktree
+    named after an issue number, so a baseline written in one records ``227``
+    as its directory name and every later comparison in an ordinary checkout
+    reports a mismatch that means nothing.
+    """
+    from kstrl.git import get_origin_slug
+    from tests.spine_utils import git as run_git
+
+    repo = tmp_path / "some-issue-number"
+    repo.mkdir()
+    run_git("init", "-q", "-b", "main", cwd=repo)
+    run_git("remote", "add", "origin", "https://github.com/0xfauzi/kstrl.git", cwd=repo)
+
+    assert get_origin_slug(repo) == "0xfauzi/kstrl"
+
+    run_git("remote", "set-url", "origin", "git@github.com:0xfauzi/kstrl.git", cwd=repo)
+    assert get_origin_slug(repo) == "0xfauzi/kstrl"
+
+
+def test_a_repository_with_no_remote_has_no_slug(tmp_path: Path) -> None:
+    """The fallback's precondition. Without this the CLI's
+    ``get_origin_slug(path) or path.name`` looks like belt over braces."""
+    from kstrl.git import get_origin_slug
+    from tests.spine_utils import git as run_git
+
+    repo = tmp_path / "local-only"
+    repo.mkdir()
+    run_git("init", "-q", "-b", "main", cwd=repo)
+
+    # A directory that is not a repository at all: git exits nonzero and this
+    # returns None too. A path that does not EXIST is deliberately not covered:
+    # `subprocess` raises FileNotFoundError for a missing cwd, which every
+    # helper in kstrl/git.py lets out, and `ks sense` refuses a path that is
+    # not a directory before any of them is reached.
+    plain = tmp_path / "plain-directory"
+    plain.mkdir()
+
+    assert get_origin_slug(repo) is None
+    assert get_origin_slug(plain) is None

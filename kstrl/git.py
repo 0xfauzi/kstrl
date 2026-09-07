@@ -483,6 +483,47 @@ def get_head_sha(
     return result.stdout.strip() or None
 
 
+def get_origin_slug(
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> str | None:
+    """``owner/repo`` from ``origin``'s URL, or None.
+
+    Identity for an artifact one run writes and another reads (#227's sense
+    baseline). The DIRECTORY name is the obvious answer and it is the wrong
+    one here: every kstrl lane works in a git worktree named after an issue
+    number, so a baseline written in one records ``227`` and every later
+    comparison in a normal checkout reports a mismatch that means nothing.
+    ``origin`` is the same string in a worktree, in a fresh clone and under
+    ``actions/checkout``, which is the property the identity needs.
+
+    Both URL shapes, because both are ordinary: ``https://host/owner/repo.git``
+    and ``git@host:owner/repo.git``. A remote that is a local path yields its
+    last two segments, which is a weaker answer but still a stable one; a repo
+    with no remote at all yields None and the caller falls back.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "config", "--get", "remote.origin.url"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    if result.returncode != 0:
+        return None
+    url = result.stdout.strip()
+    if not url:
+        return None
+    # `git@host:owner/repo.git` has no scheme; splitting on ":" first makes
+    # both shapes the same problem.
+    tail = url.rsplit(":", 1)[-1] if "://" not in url else url.split("://", 1)[1]
+    parts = [part for part in tail.removesuffix(".git").split("/") if part]
+    return "/".join(parts[-2:]) if len(parts) >= 2 else (parts[-1] if parts else None)
+
+
 def capture_workspace_baseline(
     cwd: Path | None = None,
     timeout: float = DEFAULT_TIMEOUT,

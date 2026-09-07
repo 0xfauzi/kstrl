@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 from click.testing import CliRunner, Result
 
-from kstrl import dampener
+from kstrl import dampener_report
 from kstrl.cli import SENSE_SCHEMA_VERSION, cli
 from tests.spine_utils import git
 from tests.test_sense_cli import _LINT_FAIL_COMMAND, _kstrl_toml, _make_repo
@@ -247,7 +247,7 @@ def test_markdown_format_starts_with_the_marker(tmp_path: Path) -> None:
     result = _invoke(root, "--compare-baseline", "--format", "markdown")
 
     assert result.exit_code == 0, result.output
-    assert result.output.splitlines()[0] == dampener.MARKDOWN_MARKER
+    assert result.output.splitlines()[0] == dampener_report.MARKDOWN_MARKER
 
 
 def test_a_sense_schema_change_is_reported_not_refused(tmp_path: Path) -> None:
@@ -296,7 +296,7 @@ def test_the_json_document_carries_the_dampener_block(tmp_path: Path) -> None:
         "stopped_measuring",
         "regressed",
         "sense_schema_changed",
-        "root_name_changed",
+        "project_changed",
     }
     assert document["dampener"]["regressed"] is False
 

@@ -29,7 +29,7 @@ from dataclasses import replace
 import click
 from click.core import ParameterSource
 
-from kstrl import __version__, dampener
+from kstrl import __version__, dampener, dampener_report
 from kstrl.agents import (
     AGENT_TYPE_ALIASES,
     ClaudeCodeAgent,
@@ -78,7 +78,12 @@ from kstrl.factory import (
     validate_token_ceiling,
 )
 from kstrl.feature_cmd import FeatureParams, run_feature
-from kstrl.git import detect_base_branch, get_head_sha, resolve_base_branch
+from kstrl.git import (
+    detect_base_branch,
+    get_head_sha,
+    get_origin_slug,
+    resolve_base_branch,
+)
 from kstrl.init_cmd import DEFAULT_FEATURE_UNDERSTAND, run_init, staleness_notice
 from kstrl.interaction import (
     PromptKind,
@@ -3742,7 +3747,11 @@ def _sense_dampener_report(
     current = dampener.baseline_from_result(
         result,
         base_ref=get_head_sha(path),
-        root_name=path.name,
+        # `owner/repo` from origin, never the directory name: every kstrl lane
+        # measures inside a git worktree named after an issue number, so a
+        # baseline written in one would record "227" and make every later
+        # comparison in a normal checkout report a mismatch that means nothing.
+        project=get_origin_slug(path) or path.name,
         generated_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         sense_schema_version=SENSE_SCHEMA_VERSION,
         digest=digest,
@@ -3757,12 +3766,12 @@ def _sense_dampener_report(
 
     comparison = dampener.compare(mode.baseline, current)
     if as_json:
-        block = dampener.comparison_document(comparison, mode.baseline, current, mode.path)
+        block = dampener_report.comparison_document(comparison, mode.baseline, current, mode.path)
         click.echo(json.dumps(_sense_document(path, base, result, block), indent=2))
     elif mode.output_format == dampener.FORMAT_MARKDOWN:
-        click.echo(dampener.render_markdown(comparison, mode.baseline, mode.path))
+        click.echo(dampener_report.render_markdown(comparison, mode.baseline, mode.path))
     else:
-        for line in dampener.render_human(comparison, mode.baseline, mode.path):
+        for line in dampener_report.render_human(comparison, mode.baseline, mode.path):
             click.echo(line)
     sys.exit(dampener.exit_code_for(comparison, fail_on_regression=mode.fail_on_regression))
 

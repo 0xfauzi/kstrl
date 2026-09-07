@@ -347,11 +347,17 @@ class TestTheWalkAgainstTheRealPackage:
         assert found.seen == ("procgroup.py os.getpgid",)
 
     def test_the_spawn_sweep_reproduces_the_timeout_audit_count(self) -> None:
-        """68 spawn sites, the same number the private resolver in
-        ``tests/test_timeout_enforcement.py`` found before it was
-        migrated, plus ten expressions this walk will not pretend to have
-        decided. Ten rows is the price of the rule, and it is what a guard
-        pins instead of being silently narrower than it sounds."""
+        """69 spawn sites, plus ten expressions this walk will not pretend
+        to have decided. Ten rows is the price of the rule, and it is what
+        a guard pins instead of being silently narrower than it sounds.
+
+        68 was the number the private resolver in
+        ``tests/test_timeout_enforcement.py`` found before it was migrated.
+        The 69th is ``git.get_origin_slug`` (#227), which reads
+        ``remote.origin.url`` so a sense baseline can record which project
+        it is OF; it takes the module's ``DEFAULT_TIMEOUT`` like every
+        other git helper, which is what the sibling guard checks.
+        """
         spawns = frozenset(
             {
                 "subprocess.run",
@@ -362,7 +368,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 68
+        assert len(found.seen) == 69
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [
