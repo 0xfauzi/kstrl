@@ -74,6 +74,36 @@ class TestInitReportsAndUpgrades:
         assert "9.0.0 -> 9.1.0" in output
         assert "no local edits" in output
 
+    def test_upgrade_leaves_an_older_scaffold_that_gained_newlines_alone(
+        self, tmp_path: Path, synthetic_ledger: ScaffoldedTemplate
+    ) -> None:
+        """R10.9 review round 2, should-fix 2. THE DESTRUCTIVE PATH ASKS
+        FOR BYTE IDENTITY.
+
+        R10.9 widened ``shipped_label`` so the operator-file loader stops
+        injecting a scaffold that only gained a trailing newline. The
+        second reader of that function is ``_classify``, which feeds the
+        one path in `ks init` that REPLACES an operator's bytes, and its
+        stated argument for the overwrite is that there is nothing of
+        theirs in the file. Measured while the widened rule reached it:
+        this file classified ``stale``, was overwritten, and the operator
+        was told it held no local edits.
+
+        The bytes at risk are only newlines, which is why this is a
+        should-fix and not a blocker; the sentence that authorises the
+        overwrite is the thing being fixed, and it is fixed by making it
+        true. ``keyword`` at the call site is where the two rules are
+        told apart: see ``shipped_label``.
+        """
+        path = _prompt_at(tmp_path, OLD_BODY + "\n\n")
+        before = path.read_bytes()
+
+        _, output = run_init_capturing(tmp_path, upgrade_prompts=True)
+
+        assert path.read_bytes() == before
+        assert "matches no template kstrl has shipped" in output
+        assert "no local edits" not in output
+
     def test_upgrade_never_touches_an_edited_prompt(self, tmp_path: Path) -> None:
         edited = DEFAULT_PROMPT + "\nalways run the fuzzer\n"
         path = _prompt_at(tmp_path, edited)

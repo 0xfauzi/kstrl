@@ -679,6 +679,14 @@ ScaffoldAction = Literal["create", "keep", "append"]
 # a pristine older scaffold from an edited one exactly, and writes
 # nothing into a file the operator owns.
 #
+# "Exactly" is the RAW digest, which is what `_classify` and therefore
+# `ks init --upgrade-prompts` ask for: a copy with a newline appended is
+# not a pristine scaffold to the path that overwrites bytes.
+# `shipped_label` also offers a widened rule, and R10.9's operator-file
+# loader is the caller that takes it, because its decision is whether to
+# inject rather than whether to replace. The keyword at the call site is
+# which rule a reader is asking for.
+#
 # MAINTENANCE. Each tuple is (sha256, label) oldest first, CURRENT LAST.
 # When a template body changes, APPEND its new row; never edit or drop
 # an old one, because an old row is the only record that can recognise a
@@ -816,15 +824,19 @@ SCAFFOLDED_TEMPLATES: tuple[ScaffoldedTemplate, ...] = (
 )
 
 
-def shipped_label(filename: str, text: str) -> str | None:
+def shipped_label(
+    filename: str,
+    text: str,
+    *,
+    ignore_trailing_newlines: bool = False,
+) -> str | None:
     """The label of the shipped body ``text`` is, or None for anything else.
 
-    The ONE definition of "kstrl wrote this file". :func:`_classify`
-    turns it into a status for the operator, and
-    ``operator_context.load_operator_file`` turns it into a decision not
-    to inject a scaffold nobody has filled in. Two copies of the lookup
-    would be two definitions of what counts as a shipped body, and the
-    weaker one is the one whichever caller reaches it consults.
+    ONE table, read by two callers that need two different answers, and
+    the keyword is where the difference is written rather than in a
+    second copy of the lookup. A second copy would be a second definition
+    of "kstrl wrote this file", and the weaker one is the one whichever
+    caller reaches it consults.
 
     Keyed on the file's own SHA-256, so it classifies files written long
     before this mechanism existed and writes nothing into a file the
@@ -833,19 +845,29 @@ def shipped_label(filename: str, text: str) -> str | None:
     returned label against ``current_label`` is exactly comparing
     digests.
 
-    TRAILING NEWLINES ARE NOT A CHANGE. Two digests are tried, the raw
-    text and then the text with its trailing newlines collapsed to one,
-    so a copy that only gained or lost a final newline is still the body
-    kstrl wrote. R10.9 review round 1 (nit 3) measured why it matters
-    here rather than in the operator's staleness notice: the loader
-    renders ``text.rstrip("\\n")`` and digested the raw text, so
-    ``DEFAULT_MEMORY + "\\n"`` injected a placeholder block whose body was
-    byte-identical to the one the unedited file suppresses, and #231
-    makes a daemon the writer of that file. Both callers get the widened
-    rule, which is the point: two definitions of "kstrl wrote this" mean
-    the weaker one decides.
+    THE DEFAULT IS THE RAW DIGEST, which is byte identity against a body
+    kstrl shipped. :func:`_classify` takes it, and through
+    ``_upgrade_scaffolded_templates`` that is the one path in `ks init`
+    that REPLACES an operator's bytes: it may act only where nothing of
+    theirs can be in the file, so a file that is a shipped body plus a
+    trailing newline is EDITED for that path and is left alone. Review
+    round 2 (should-fix 2) measured the alternative: such a file
+    classified ``stale``, was overwritten 4446 bytes to 4468, and the
+    operator was told "it held no local edits" about a file holding two
+    newlines they may have typed.
 
-    Raw first and normalised second, so this can only ADD matches. A
+    ``ignore_trailing_newlines=True`` widens it to a second digest, the
+    text with its trailing newlines collapsed to one.
+    ``operator_context.read_operator_file`` asks for that, because its
+    decision is whether to INJECT a scaffold nobody has filled in: it
+    renders ``text.rstrip("\\n")``, so under the raw rule
+    ``DEFAULT_MEMORY + "\\n"`` injected a placeholder block whose body was
+    byte-identical to the one the unedited file suppresses (round 1, nit
+    3), and #231 makes a daemon the writer of that file. The asymmetry is
+    the consequence of being wrong: injecting nothing is undone by
+    editing the file, overwriting it is not.
+
+    Raw first and widened second, so the keyword can only ADD matches. A
     historical body that ended in two newlines is still found by its own
     digest, which a normalise-then-look-up form would have lost, and the
     bodies for those rows no longer exist to re-derive.
@@ -854,7 +876,8 @@ def shipped_label(filename: str, text: str) -> str | None:
     if template is None:
         return None
     digests = dict(template.history)
-    for candidate in (text, text.rstrip("\n") + "\n"):
+    candidates = (text, text.rstrip("\n") + "\n") if ignore_trailing_newlines else (text,)
+    for candidate in candidates:
         label = digests.get(hashlib.sha256(candidate.encode("utf-8")).hexdigest())
         if label is not None:
             return label
@@ -863,12 +886,14 @@ def shipped_label(filename: str, text: str) -> str | None:
 
 # absent        - no file there; run_loop falls back to the constant and
 #                 says so itself.
-# current       - the body this kstrl ships, bar trailing newlines.
-# stale         - an OLDER body this kstrl once shipped, same bar.
-# unrecognised  - matches nothing kstrl has ever shipped. Says nothing
-#                 about who wrote it, which is the point: an edited file
-#                 and a file from a build outside this history are
-#                 indistinguishable, so neither is claimed to be stale.
+# current       - byte-for-byte the body this kstrl ships.
+# stale         - byte-for-byte an OLDER body this kstrl once shipped.
+# unrecognised  - matches nothing kstrl has ever shipped, a copy with a
+#                 trailing newline added included. Says nothing about who
+#                 wrote it, which is the point: an edited file and a file
+#                 from a build outside this history are indistinguishable,
+#                 so neither is claimed to be stale, and neither is
+#                 overwritten by `ks init --upgrade-prompts`.
 TemplateStatus = Literal["absent", "current", "stale", "unrecognised"]
 
 
@@ -883,11 +908,26 @@ class TemplateState:
 
 
 def _classify(template: ScaffoldedTemplate, path: Path) -> TemplateState:
-    """Classify ``path`` as a copy of ``template``.
+    """Classify ``path`` as a copy of ``template``, on the RAW digest.
 
-    An unreadable file is ``unrecognised``: we cannot prove it is a body
-    we shipped, so we make no claim about it (the same reason
-    ``_gitignore_state`` leaves an unreadable .gitignore alone).
+    Raw because of who reads the answer: ``_upgrade_scaffolded_templates``
+    turns ``stale`` into an overwrite of the operator's file, and the
+    argument that authorises it is that the bytes on disk are bytes kstrl
+    itself wrote. A file that is a shipped body plus a trailing newline
+    is therefore ``unrecognised`` here - reported, and left alone - even
+    though ``operator_context`` treats the same file as an unedited
+    scaffold and injects nothing from it. Two readers, two rules; see
+    :func:`shipped_label`, which holds both.
+
+    An unreadable file is ``unrecognised`` for the same reason: we cannot
+    prove it is a body we shipped, so we make no claim about it (the same
+    reason ``_gitignore_state`` leaves an unreadable .gitignore alone).
+
+    The staleness notice and the wizard's preview read this too, and both
+    inherit the raw rule. That is the conservative direction for them as
+    well: neither says anything about a file it cannot prove kstrl wrote,
+    where the widened rule would have had the notice call a file
+    "unedited" that is not byte-identical to anything shipped.
     """
     if not path.exists():
         return TemplateState(template=template, path=path, status="absent")
@@ -1365,10 +1405,15 @@ def _atomic_replace(target: Path, content: str) -> None:
 def _upgrade_scaffolded_templates(root: Path, ui: UI) -> None:
     """Rewrite pristine older scaffolds with the body kstrl ships now.
 
-    Safe to overwrite precisely because the digest proved the file is
+    Safe to overwrite precisely because the RAW digest proved the file is
     byte-identical to a template kstrl itself wrote: there is nothing of
-    the operator's in it to lose. Anything the history does not
-    recognise is left alone and reported, never merged or guessed at.
+    the operator's in it to lose, not even a trailing newline. That is
+    ``_classify``'s rule and not the loader's, which is widened; review
+    round 2 (should-fix 2) is why the two are written apart, because for
+    one release the widened rule reached this path and the sentence above
+    was false about the file it authorised replacing. Anything the
+    history does not recognise is left alone and reported, never merged
+    or guessed at.
 
     "Nothing of the operator's to lose" is about the BYTES. The
     directory entry is a second thing they own, so a prompt they share

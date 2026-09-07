@@ -404,18 +404,27 @@ def read_operator_file(spec: OperatorFile) -> OperatorText:
     iteration of that attempt (round 1, nit 11), which is also the
     latency #231 inherits, one attempt rather than one iteration.
     ``init_cmd.shipped_label`` owns the digest history, so this decision
-    and the staleness notice ``ks init`` prints agree by construction.
-    The digest is taken on the RENDERED text, the same ``rstrip("\\n")``
-    the injected body goes through, so a CRLF copy of the scaffold is
-    still recognised and so is a copy with trailing newlines appended.
-    R10.9 round 1 (nit 3) is why the second one moved: comparing the raw
-    decoded text while rendering the stripped one meant
-    ``DEFAULT_MEMORY + "\\n"`` injected a placeholder block whose body was
-    byte-identical to the one the unedited file suppresses, and #231
-    makes a daemon the writer of this file, where an editor normalising
-    a trailing newline is an ordinary thing to happen. A leading newline
-    or any interior edit is still a change, because the strip is at the
-    end only.
+    and the staleness notice ``ks init`` prints read one table. The
+    digest is taken on the raw decoded text and AGAIN on that text with
+    its trailing newlines collapsed to one, and this reader asks for the
+    second try (``ignore_trailing_newlines=True``). The CRLF case is not
+    either of those: ``Path.read_text`` applies universal newlines before
+    anything is digested, which is what
+    ``test_a_crlf_copy_of_the_scaffold_is_still_recognised`` measures.
+    R10.9 round 1 (nit 3) is why the second try exists: digesting the raw
+    text while rendering ``rstrip("\\n")`` meant ``DEFAULT_MEMORY + "\\n"``
+    injected a placeholder block whose body was byte-identical to the one
+    the unedited file suppresses, and #231 makes a daemon the writer of
+    this file, where an editor normalising a trailing newline is an
+    ordinary thing to happen. A leading newline or any interior edit is
+    still a change, because the strip is at the end only.
+
+    ``ks init --upgrade-prompts`` asks the SAME function for the RAW
+    digest and gets a different answer, on purpose: that path replaces
+    the operator's bytes, so it may only act where nothing of theirs can
+    be in the file (round 2, should-fix 2). Two readers, two rules, one
+    table, each rule stated where it applies. Injecting nothing is
+    recoverable by editing the file; overwriting it is not.
 
     An unreadable file (a directory in its place, mode 000 on the file or
     on its parent, a name the filesystem will not take, bytes that are
@@ -451,7 +460,9 @@ def read_operator_file(spec: OperatorFile) -> OperatorText:
         return OperatorText("", None, f"could not read {spec.path}: {exc}", absent=False)
     if not text.strip():
         return OperatorText("", None, None, absent=False)
-    if spec.scaffold is not None and shipped_label(spec.scaffold, text) is not None:
+    if spec.scaffold is not None and (
+        shipped_label(spec.scaffold, text, ignore_trailing_newlines=True) is not None
+    ):
         return OperatorText("", None, None, absent=False)
 
     rendered = text.rstrip("\n")

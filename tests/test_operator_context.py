@@ -548,9 +548,11 @@ class TestAnUneditedScaffoldInjectsNothing:
         newline appended was injected with a body byte-identical to the
         one the unappended file suppresses. The old docstring argued that
         normalising would give ``shipped_label`` a second definition of
-        "kstrl wrote this"; the fix is that it has ONE definition and the
-        definition moved, so both callers, the loader and ``ks init``'s
-        staleness notice, widen together.
+        "kstrl wrote this". It has ONE table and TWO rules, and the rule
+        a caller gets is written at the call site: this reader asks for
+        the widened one because being wrong here means injecting a
+        placeholder, which an operator undoes by editing the file. The
+        case below is the other reader.
 
         Three newlines as well as one, because ``rstrip`` is not a
         one-character rule and an editor that adds a blank line at the
@@ -560,6 +562,35 @@ class TestAnUneditedScaffoldInjectsNothing:
         path.write_text(DEFAULT_GOLDEN_PATTERNS + suffix, encoding="utf-8")
 
         assert load_operator_file(golden(path, scaffold=GOLDEN_PATTERNS.scaffold)) == ""
+
+    def test_the_same_file_is_not_a_scaffold_to_the_path_that_overwrites(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Round 2, should-fix 2: ONE file, TWO answers, on purpose.
+
+        The loader injects nothing from it, because it is the scaffold
+        nobody has filled in. ``classify_scaffolded_path`` calls it
+        ``unrecognised``, because the path that reads THAT answer
+        replaces the operator's bytes and may only act where none of
+        those bytes are theirs. The asymmetry is the consequence of being
+        wrong in each direction, and the two answers are pinned together
+        here so neither can be widened alone.
+
+        ``tests/test_prompt_upgrade.py::
+        test_upgrade_leaves_an_older_scaffold_that_gained_newlines_alone``
+        is the end-to-end half, through a real `ks init --upgrade-prompts`.
+        """
+        kstrl_dir = tmp_path / "scripts" / "kstrl"
+        kstrl_dir.mkdir(parents=True)
+        path = kstrl_dir / GOLDEN_PATTERNS.scaffold
+        path.write_text(DEFAULT_GOLDEN_PATTERNS + "\n", encoding="utf-8")
+
+        state = init_cmd.classify_scaffolded_path(path)
+
+        assert load_operator_file(golden(path, scaffold=GOLDEN_PATTERNS.scaffold)) == ""
+        assert state is not None
+        assert state.status == "unrecognised"
 
     def test_a_historical_body_that_ended_in_two_newlines_is_still_found(
         self,
