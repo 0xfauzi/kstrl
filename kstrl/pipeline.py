@@ -209,6 +209,19 @@ def _produced_a_reading(ran: bool, result: ReviewResult | SecurityResult | None)
     keeps the record a truthful census of the attempt rather than a
     special case.
 
+    A BLIND reviewer does not count either, and it is the same class as
+    the crashed one. ``apply_coverage_check`` (``review.py``,
+    ``security.py``) sets ``diffstat_disagreement`` in EVERY mode when
+    the numstat the reviewer reported disagrees with git's, but only
+    HARD mode turns that into ``infrastructure_error``; ADVISORY returns
+    early and ``run_review`` then forces ``passed = True``, which also
+    makes ``coverage_refused`` False so #266's wall does not fire. The
+    result therefore arrives here as ran, present and not an
+    infrastructure error, while #266's own words for the state are "the
+    verdict was reached without the whole change in hand". Retiring an
+    earlier finding on it would drop a live finding on the strength of a
+    reading that did not cover the change.
+
     ``result is not None`` cannot be False on a ``ran=True`` path today.
     It is here so the answer stays the safe one if a future return site
     makes it possible.
@@ -221,7 +234,12 @@ def _produced_a_reading(ran: bool, result: ReviewResult | SecurityResult | None)
     rejects; both concrete results declare ``infrastructure_error``, so
     a function over the union is.
     """
-    return ran and result is not None and not result.infrastructure_error
+    return (
+        ran
+        and result is not None
+        and not result.infrastructure_error
+        and not result.diffstat_disagreement
+    )
 
 
 @dataclass(frozen=True)
@@ -1287,6 +1305,11 @@ class ComponentPipeline:
         # #247: the readings describe the attempt in flight, so the
         # attempt boundary is where they are cleared. Anything the
         # previous attempt observed is already in the context's JSON.
+        # What this pop does is BOUND the dict, not decide anything: the
+        # attempt number is captured at record time, so a pair carried
+        # over from an earlier attempt never matches the latest one and
+        # `_buckets` ignores it. Deleting the pop is measured green
+        # (round 1 review, mutation R3) and no test is owed for it.
         self._phase_readings.pop(comp.id, None)
         self._attempt_started_monotonic[comp.id] = time.monotonic()
 

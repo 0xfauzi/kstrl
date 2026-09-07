@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import dataclasses
 import io
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -2243,6 +2244,29 @@ class TestJournalConfigNeverGatesAnAttempt:
         assert not (tmp_path / ".kstrl" / "evolution.jsonl").exists()
 
 
+class _PhaseRanUnexpectedly(BaseException):
+    """A queue stub was called with nothing left to serve.
+
+    A ``BaseException`` subclass, and that is the whole point.
+    ``_phase_review`` and ``_phase_security`` wrap the agent call in
+    ``except Exception`` and turn whatever they catch into a CRASHED
+    result: ``passed = mode != HARD`` with ``infrastructure_error=True``.
+    A crashed sensor records no reading and retires nothing, which is
+    the same OUTCOME as the skip the tests below pin, so an exhausted
+    ``next(queue)`` raising ``StopIteration`` would leave those
+    assertions passing while the mechanism they exist for was gone.
+    Round 1 of review measured exactly that: with the budget skip
+    disabled the class stayed 6 passed. This is not an ``Exception``, so
+    the handler cannot swallow it and the test fails naming the phase.
+    """
+
+    def __init__(self, hook: str) -> None:
+        super().__init__(
+            f"{hook} was called and the test queued no result for it: "
+            "a phase this test says did not run, ran."
+        )
+
+
 class TestPhaseReadingsRetireSkippableFindings:
     """#247: a review or security finding from an earlier attempt is
     dropped from the next attempt's prompt only when its phase actually
@@ -2270,25 +2294,26 @@ class TestPhaseReadingsRetireSkippableFindings:
         self,
         pipeline: ComponentPipeline,
         manifest: Manifest,
+        comp_id: str = "comp-a",
     ) -> Any:
         """One attempt, wired the way the factory wires it."""
-        comp = manifest.get_component("comp-a")
+        comp = manifest.get_component(comp_id)
         assert comp is not None
         pipeline.begin_attempt(comp)
         return pipeline.process_result(
-            "comp-a",
+            comp_id,
             ComponentResult(
-                "comp-a",
+                comp_id,
                 success=True,
                 iterations=1,
                 duration_seconds=1.0,
-                context_json=pipeline.component_contexts.get("comp-a"),
+                context_json=pipeline.component_contexts.get(comp_id),
             ),
         )
 
-    def _prompt_block(self, pipeline: ComponentPipeline) -> str:
+    def _prompt_block(self, pipeline: ComponentPipeline, comp_id: str = "comp-a") -> str:
         """What the worker would build for the next attempt."""
-        raw = pipeline.component_contexts.get("comp-a", "{}")
+        raw = pipeline.component_contexts.get(comp_id, "{}")
         return IterationContext.from_json(raw).format_for_prompt()
 
     def _pipeline(
@@ -2301,31 +2326,45 @@ class TestPhaseReadingsRetireSkippableFindings:
         review_raises: Exception | None = None,
         ui: PlainUI | None = None,
     ) -> tuple[ComponentPipeline, Manifest]:
+        """One component, with a queue of verdicts per adversarial phase.
+
+        ON THE ADVISORY VERDICTS THESE QUEUES CARRY. A stub can return a
+        state ``run_review`` cannot: ``review.py`` downgrades every FAIL
+        verdict and forces ``passed = True`` for an advisory review, so
+        ``ReviewResult(passed=False, mode="advisory")`` is unreachable in
+        production. Where a test below queues one it stands in for the
+        two ways an advisory run really does accumulate a review-rank
+        entry - an earlier hard-mode attempt, or ``_setpoint_failure``
+        under ``setpoint_agreement = "block"`` - and what is under test
+        is the attempt AFTER it.
+        """
         review_queue = iter(reviews or [])
         security_queue = iter(securities or [])
 
         def _review(*args: Any, **kwargs: Any) -> ReviewResult:
             """Serve the queued results, then raise: the crash is what
-            the attempt after the last queued verdict does."""
+            the attempt after the last queued verdict does when the test
+            asked for one, and an unexpected call otherwise."""
             queued = next(review_queue, None)
-            if queued is None:
-                assert review_raises is not None
+            if queued is not None:
+                return queued
+            if review_raises is not None:
                 raise review_raises
+            raise _PhaseRanUnexpectedly("run_review")
+
+        def _security(*args: Any, **kwargs: Any) -> SecurityResult:
+            queued = next(security_queue, None)
+            if queued is None:
+                raise _PhaseRanUnexpectedly("run_security_review")
             return queued
 
-        overrides: dict[str, Any] = {
-            "run_review": lambda *a, **k: next(review_queue),
-            "run_security_review": lambda *a, **k: next(security_queue),
-        }
-        if review_raises is not None:
-            overrides["run_review"] = _review
         pipeline, manifest, _, _ = _make_pipeline(
             tmp_path,
             components=[_component("comp-a")],
             config=config,
             ui=ui,
             security_selection=_selection("security"),
-            hooks_overrides=overrides,
+            hooks_overrides={"run_review": _review, "run_security_review": _security},
         )
         return pipeline, manifest
 
@@ -2396,7 +2435,16 @@ class TestPhaseReadingsRetireSkippableFindings:
         tmp_path: Path,
     ) -> None:
         """Acceptance criterion 2, budget cause. Attempt 2's reviewer
-        never ran, so attempt 1's finding is still shown."""
+        never ran, so attempt 1's finding is still shown.
+
+        The CAUSE is asserted, not only the consequence. Round 1 of
+        review made ``adversarial_budget_ok`` return True unconditionally
+        and this class stayed 6 passed, because a reviewer that runs and
+        crashes also records no reading and also retires nothing. So the
+        skip itself is pinned here - ``ran is False`` and the reason the
+        budget wrote - and the stub raises a ``BaseException`` the phase
+        handler cannot turn into a crash.
+        """
         pipeline, manifest = self._pipeline(
             tmp_path,
             config=_factory_config(
@@ -2412,8 +2460,12 @@ class TestPhaseReadingsRetireSkippableFindings:
             ],
             ui=_ChoiceUI(choice=2),
         )
-        for _ in range(2):
-            assert self._attempt(pipeline, manifest).transition == Transition.RETRYING
+        assert self._attempt(pipeline, manifest).transition == Transition.RETRYING
+        second = self._attempt(pipeline, manifest)
+        assert second.transition == Transition.RETRYING
+        assert second.review is not None
+        assert second.review.ran is False
+        assert second.review.skip_reason == "adversarial LLM budget (1) exhausted"
 
         block = self._prompt_block(pipeline)
         assert "Human reviewer requested changes" in block
@@ -2425,7 +2477,13 @@ class TestPhaseReadingsRetireSkippableFindings:
         tmp_path: Path,
     ) -> None:
         """Acceptance criterion 2, the other live skip cause. The
-        operator sets ``review_mode = "skip"`` between attempts."""
+        operator sets ``review_mode = "skip"`` between attempts.
+
+        The CAUSE is asserted here too: with the
+        ``review_mode == SKIP -> _review_did_not_run`` dispatch disabled,
+        round 1 of review measured this class 6 passed. ``ran is False``
+        plus the operator's own reason is what that mutation now fails.
+        """
         pipeline, manifest = self._pipeline(
             tmp_path,
             config=_factory_config(
@@ -2442,7 +2500,11 @@ class TestPhaseReadingsRetireSkippableFindings:
         )
         assert self._attempt(pipeline, manifest).transition == Transition.RETRYING
         pipeline.factory_config.review_mode = "skip"
-        assert self._attempt(pipeline, manifest).transition == Transition.RETRYING
+        second = self._attempt(pipeline, manifest)
+        assert second.transition == Transition.RETRYING
+        assert second.review is not None
+        assert second.review.ran is False
+        assert second.review.skip_reason == "review disabled (mode=skip)"
 
         block = self._prompt_block(pipeline)
         assert "SQL-IN-USERS" in section(block, CURRENT)
@@ -2520,3 +2582,163 @@ class TestPhaseReadingsRetireSkippableFindings:
         assert "tier 0 broke" in section(block, CURRENT)
         assert "CRITERION-X-UNMET" not in block
         assert "from review passed or were re-measured in attempt 2" in block
+
+    def _blind_review_scenario(self, tmp_path: Path, *, disagreement: str) -> str:
+        """Attempt 1 fails review in hard mode, attempt 2 reviews in
+        advisory mode and security then fails.
+
+        The mode changes between the attempts because that is how an
+        advisory attempt comes to have a review-rank entry to retire,
+        and because the disagreement only survives UNCONVERTED in
+        advisory mode: ``apply_coverage_check`` records it in every mode
+        and turns it into an infrastructure error in HARD mode only,
+        which the predicate already refused.
+        """
+        pipeline, manifest = self._pipeline(
+            tmp_path,
+            config=_factory_config(
+                max_retries=5,
+                review_mode="hard",
+                security_config=SecurityConfig(mode="hard"),
+            ),
+            reviews=[
+                ReviewResult(passed=False, mode="hard", overall_notes="CRITERION-X-UNMET"),
+                ReviewResult(
+                    passed=True,
+                    mode="advisory",
+                    diffstat_disagreement=disagreement,
+                ),
+            ],
+            securities=[
+                SecurityResult(passed=False, mode="hard", overall_notes="SQL-IN-USERS"),
+            ],
+        )
+        assert self._attempt(pipeline, manifest).transition == Transition.RETRYING
+        pipeline.factory_config.review_mode = "advisory"
+        second = self._attempt(pipeline, manifest)
+        assert second.transition == Transition.RETRYING
+        # The state under test, asserted rather than assumed: the
+        # reviewer RAN, returned a result, and that result is not an
+        # infrastructure error. Everything the predicate refused before
+        # this fix is already excluded here.
+        assert second.review is not None
+        assert second.review.ran is True
+        assert second.review.result is not None
+        assert second.review.result.infrastructure_error is False
+        assert second.review.result.passed is True
+        return self._prompt_block(pipeline)
+
+    def test_a_review_git_says_did_not_see_the_whole_change_retires_nothing(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#266's coverage check, on the retirement path.
+
+        An advisory reviewer whose reported diffstat git disagrees with
+        is forced to pass, is not an infrastructure error, and is not
+        refused by the #266 wall either, because ``coverage_refused``
+        needs ``not passed``. #266's words for the state are "the
+        verdict was reached without the whole change in hand", which is
+        the same class as a crashed sensor: it must not retire attempt
+        1's finding.
+        """
+        block = self._blind_review_scenario(
+            tmp_path,
+            disagreement="reviewer reported 3 files, git says 9",
+        )
+
+        assert "CRITERION-X-UNMET" in section(block, NOT_REMEASURED)
+        assert section(block, RESOLVED) == ""
+
+    def test_a_review_git_agrees_with_still_retires_its_own_finding(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The control for the test above, and it is not optional: a
+        predicate that answered False for every advisory reviewer would
+        pass that one and drop the whole mechanism in advisory mode.
+        The only difference between the two is the disagreement."""
+        block = self._blind_review_scenario(tmp_path, disagreement="")
+
+        assert "CRITERION-X-UNMET" not in block
+        assert "from review passed or were re-measured in attempt 2" in block
+
+    def test_one_components_reading_does_not_retire_anothers_finding(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """``_phase_readings`` is keyed by component, and this is what
+        that key is for.
+
+        Components share one ``ComponentPipeline`` and run
+        concurrently, so two ids really are live at the same time. If
+        the merge read the union of every component's readings instead
+        of the one it was asked for, comp-a's passing reviewer would
+        retire comp-b's real review finding while comp-b's reviewer was
+        switched off. That is the silent live-finding drop the whole
+        rule exists to prevent. The other tests here cover the ATTEMPT
+        axis; this is the COMPONENT axis, which round 1 of review
+        measured green across 126 tests under the union mutation.
+
+        comp-a is the control inside the test: its own reading still
+        retires its own finding, so a merge that recorded nothing at all
+        cannot pass this either.
+        """
+        reviews: dict[str, Iterator[ReviewResult]] = {
+            "comp-a": iter(
+                [
+                    ReviewResult(passed=False, mode="hard", overall_notes="A-CRITERION-UNMET"),
+                    ReviewResult(passed=True, mode="hard"),
+                ]
+            ),
+            "comp-b": iter(
+                [
+                    ReviewResult(passed=False, mode="hard", overall_notes="B-CRITERION-UNMET"),
+                ]
+            ),
+        }
+        securities: dict[str, Iterator[SecurityResult]] = {
+            "comp-a": iter([SecurityResult(passed=False, mode="hard", overall_notes="A-SQL")]),
+            "comp-b": iter([SecurityResult(passed=False, mode="hard", overall_notes="B-SQL")]),
+        }
+
+        def _served_per_component(queues: dict[str, Any], hook: str) -> Any:
+            def _serve(*args: Any, **kwargs: Any) -> Any:
+                # The second positional is ``wt_path / comp.prd_path``,
+                # which is the only argument naming the component.
+                comp_id = "comp-a" if "comp-a" in str(args[1]) else "comp-b"
+                queued = next(queues[comp_id], None)
+                if queued is None:
+                    raise _PhaseRanUnexpectedly(f"{hook} for {comp_id}")
+                return queued
+
+            return _serve
+
+        pipeline, manifest, _, _ = _make_pipeline(
+            tmp_path,
+            components=[_component("comp-a"), _component("comp-b")],
+            config=_factory_config(
+                max_retries=5,
+                review_mode="hard",
+                security_config=SecurityConfig(mode="hard"),
+            ),
+            security_selection=_selection("security"),
+            hooks_overrides={
+                "run_review": _served_per_component(reviews, "run_review"),
+                "run_security_review": _served_per_component(securities, "run_security_review"),
+            },
+        )
+
+        assert self._attempt(pipeline, manifest, "comp-b").transition == Transition.RETRYING
+        assert self._attempt(pipeline, manifest, "comp-a").transition == Transition.RETRYING
+        assert self._attempt(pipeline, manifest, "comp-a").transition == Transition.RETRYING
+        pipeline.factory_config.review_mode = "skip"
+        assert self._attempt(pipeline, manifest, "comp-b").transition == Transition.RETRYING
+
+        block_b = self._prompt_block(pipeline, "comp-b")
+        assert "B-CRITERION-UNMET" in section(block_b, NOT_REMEASURED)
+        assert section(block_b, RESOLVED) == ""
+
+        block_a = self._prompt_block(pipeline, "comp-a")
+        assert "A-CRITERION-UNMET" not in block_a
+        assert "from review passed or were re-measured in attempt 2" in block_a
