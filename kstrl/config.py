@@ -233,18 +233,20 @@ def component_harness_paths(
     )
 
 
-#: Every kstrl.toml key that overlays one KstrlConfig field from a
-#: non-empty string: (section, key, env var, field, is_path). A path row's
-#: value is resolved against the root and its field default is anchored
-#: there by ``KstrlConfig.anchored``; every other row takes the string
-#: verbatim. One row, not a hand-copied branch per key in the TOML overlay,
-#: the env overlay, the anchoring block, ``config_report.show_sections``
-#: and ``scripts/gen_docs.py``: a key added to some of those differed
-#: silently by the door it came in through. tests/test_config_toml.py
-#: checks the field names against the real dataclass fields, because
-#: ``setattr`` on a typo invents an attribute instead of raising. The
-#: unprefixed env names are pre-rename compatibility; a new row takes
-#: ``KSTRL_``.
+#: Every kstrl.toml key that overlays one KstrlConfig field from a string:
+#: (section, key, env var, field, is_path). A path row's value is resolved
+#: against the root and its field default anchored there by
+#: ``KstrlConfig.anchored``; every other row takes the string verbatim.
+#: THE TWO DOORS DISAGREE ABOUT "" and both rules belong here, or a reader
+#: of one will "fix" the other: the TOML door needs a NON-EMPTY string
+#: (``branch = ""`` means "no override") while the env door applies any var
+#: that is SET (test_an_empty_env_var_is_an_explicit_empty_value). One row,
+#: not a hand-copied branch per key in the two overlays, the anchoring
+#: block, ``config_report.show_sections`` and ``scripts/gen_docs.py``: a key
+#: added to some of those differed silently by the door it came in through.
+#: tests/test_config_toml.py checks the field names against the real
+#: dataclass fields, because ``setattr`` on a typo invents an attribute instead of
+#: raising. Unprefixed env names are compatibility; a new row takes KSTRL_.
 STRING_KEYS: tuple[tuple[str, str, str, str, bool], ...] = (
     ("paths", "prompt", "PROMPT_FILE", "prompt_file", True),
     ("paths", "prd", "PRD_FILE", "prd_file", True),
@@ -458,8 +460,8 @@ class KstrlConfig:
     def validate(self, root_dir: Path | None = None) -> list[str]:
         """Validate configuration, returning list of errors. ``root_dir``
         separates an explicitly set optional path from the anchored default,
-        so that check is skipped without one. Measured: nothing calls this
-        method, so the REACHABLE copy of that rule is run_factory's warning."""
+        so that check is skipped without one. Measured: nothing in ``kstrl/``
+        calls it, so the REACHABLE copy of that rule is run_factory's warning."""
         from kstrl.operator_context import configured_path_errors
 
         errors: list[str] = []
@@ -746,11 +748,10 @@ def _apply_toml_overrides(
     if isinstance(git_section := data.get("git"), dict):
         if "branch" in git_section:
             branch = git_section["branch"]
-            # Only treat the TOML branch as an explicit override when it
-            # is non-empty. `branch = ""` in the shipped example means
-            # "no override, fall back to PRD branchName", whereas the env
-            # var `KSTRL_BRANCH=""` (handled below) keeps its historical
-            # meaning of "explicit skip".
+            # Non-empty only: `branch = ""` in the shipped example means
+            # "no override, fall back to PRD branchName", while
+            # `KSTRL_BRANCH=""` below keeps its historical "explicit
+            # skip". STRING_KEYS states both doors for the string rows.
             if isinstance(branch, str) and branch:
                 config.kstrl_branch = branch
                 config.kstrl_branch_explicit = True

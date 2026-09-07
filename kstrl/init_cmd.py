@@ -236,7 +236,7 @@ and on every `ks run` iteration (`ks feature` and `ks understand` do
 not read it). Keep it short: the budget is about 1500 tokens and the
 loader truncates past that.
 
-While this file is byte-identical to what `ks init` wrote, nothing is
+While this file is unchanged since `ks init` wrote it, nothing is
 injected: kstrl recognises its own scaffold by digest and treats it as
 an empty file. Replace the placeholders and the block starts appearing.
 
@@ -742,6 +742,12 @@ SCAFFOLDED_TEMPLATES: tuple[ScaffoldedTemplate, ...] = (
             # not recognise is a copy it injects.
             ("b8e9cd9725308cfce280d05c26033d25cb16f51ec42af2ac4a2bb05c601e48cf", "2026-09-06a"),
             ("5f00b030f0a6e6cad4a56b678fa657ebce1a2d734e465ef82a8ca6df0638ca8a", "2026-09-06"),
+            # Also never merged. Review round 2 (nit 15) measured the
+            # word "byte-identical" being wrong in both directions: a
+            # CRLF copy of this body IS recognised, because `read_text`
+            # decodes before the digest, and a copy with one newline
+            # appended is NOT. The body now says "unchanged".
+            ("2dab640523bd4082e323a7cf6d13a9fae6e2a6a2886473f584cabf3b883a0300", "2026-09-07"),
         ),
     ),
 )

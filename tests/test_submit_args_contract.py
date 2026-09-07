@@ -18,18 +18,30 @@ It is closed over the tuple in both directions: a slot inserted in the
 wrong place fails on the values, and a slot added at the end fails on the
 key set, because the expectation is compared for equality and not for
 containment.
+
+It is also closed over BOTH submit branches (review round 2, nit 7).
+``max_parallel == 1`` selects ``_InlineExecutor`` and passes five
+keywords; anything higher selects the process pool, which passes two and
+lets the other three take ``_run_component``'s defaults. The positional
+tuple is shared, so the rotation above is caught either way, but "closed
+over the signature" was true of one call site until the pool branch was
+driven here too.
 """
 
 from __future__ import annotations
 
 import inspect
 import json
+from concurrent.futures import Future
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
 from kstrl import factory as factory_mod
 from kstrl.config import KstrlConfig
+from kstrl.events import RunPaths
 from kstrl.factory import ComponentResult, FactoryConfig, run_factory
 from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
@@ -41,6 +53,38 @@ PRD_REL = f"scripts/kstrl/feature/{COMP}/prd.json"
 #: The five parameters the scheduler passes BY NAME rather than through
 #: the tuple. Named here so a sixth is a decision somebody writes down.
 BY_KEYWORD = {"base_branch", "live_line", "redirect_output", "stop_check", "verify_config"}
+
+#: What the POOL branch passes by name, which is two of the five. A pool
+#: worker has no parent terminal to mirror transcript lines to and no
+#: in-process stop event to share, so those three take
+#: ``_run_component``'s own defaults there. Review round 2, nit 7: this
+#: file exercised the inline branch only, so "closed over the SIGNATURE"
+#: held for one of two call sites.
+POOL_KEYWORDS = {"base_branch", "verify_config"}
+
+
+class _CapturingPool:
+    """Stands in for ProcessPoolExecutor so the POOL branch can be read.
+
+    A real pool pickles what it is given, and a patched ``_run_component``
+    is not picklable, which is why the pool branch had no coverage. This
+    records the ``functools.partial`` the branch builds and resolves the
+    future itself, so the scheduling loop runs unchanged.
+    """
+
+    seen: dict[str, Any] = {}
+
+    def __init__(self, max_workers: int) -> None:
+        self.max_workers = max_workers
+
+    def submit(self, fn: Any, /, *args: Any) -> Future[ComponentResult]:
+        _CapturingPool.seen = {"args": fn.args, "kwargs": fn.keywords}
+        future: Future[ComponentResult] = Future()
+        future.set_result(ComponentResult(COMP, success=True, iterations=1))
+        return future
+
+    def shutdown(self, wait: bool = True, cancel_futures: bool = False) -> None:
+        """Nothing to shut down: every submit already resolved."""
 
 
 def _project(tmp_path: Path) -> Path:
@@ -91,12 +135,25 @@ def _manifest() -> Manifest:
     )
 
 
-def _submitted(root: Path) -> tuple[tuple[Any, ...], dict[str, Any]]:
-    """The exact ``(args, kwargs)`` one real ``run_factory`` submits."""
+def _submitted(
+    root: Path,
+    max_parallel: int = 1,
+    progress_log_enabled: bool = True,
+) -> tuple[tuple[Any, ...], dict[str, Any]]:
+    """The exact ``(args, kwargs)`` one real ``run_factory`` submits.
+
+    ``max_parallel`` selects the branch: 1 is ``_InlineExecutor``, 2 is
+    the pool branch through :class:`_CapturingPool`.
+    """
+    # Worktrees ON for the pool branch and nothing else: `run_factory`
+    # forces max_parallel=1 when they are off, so the pool branch is
+    # unreachable without them. `_setup_worktree` is patched below to
+    # hand back the root, which keeps this a unit test with no git in it.
     factory_config = FactoryConfig(
-        use_worktrees=False,
+        use_worktrees=max_parallel > 1,
         create_prs=False,
-        max_parallel=1,
+        progress_log_enabled=progress_log_enabled,
+        max_parallel=max_parallel,
         max_retries=0,
         retry_delay=0,
         review_mode="skip",
@@ -125,32 +182,45 @@ def _submitted(root: Path) -> tuple[tuple[Any, ...], dict[str, Any]]:
         seen["args"], seen["kwargs"] = args, kwargs
         return ComponentResult(COMP, success=True, iterations=1)
 
+    _CapturingPool.seen = {}
     with (
         patch("kstrl.factory._run_component", side_effect=capture),
+        patch("kstrl.factory.ProcessPoolExecutor", _CapturingPool),
+        patch("kstrl.factory._setup_worktree", return_value=root),
         patch("kstrl.git.get_diff_content", return_value=""),
     ):
         run_factory(_manifest(), factory_config, base, PlainUI(no_color=True), root)
-    assert "args" in seen, "the scheduler never submitted a component"
-    return seen["args"], seen["kwargs"]
+    submitted = seen or _CapturingPool.seen
+    assert "args" in submitted, "the scheduler never submitted a component"
+    return submitted["args"], submitted["kwargs"]
 
 
-def _positional(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+def _positional(
+    root: Path,
+    max_parallel: int = 1,
+    progress_log_enabled: bool = True,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """``(name -> value)`` for the tuple, plus the keyword arguments.
 
     ``bind_partial`` over the POSITIONALS ONLY: binding args and kwargs
     together would merge the two and hide which half a name came from,
     and it is the positional half that has no names in it to get wrong.
     """
-    args, kwargs = _submitted(root)
+    args, kwargs = _submitted(root, max_parallel, progress_log_enabled)
     signature = inspect.signature(factory_mod._run_component)
     return dict(signature.bind_partial(*args).arguments), kwargs
 
 
 class TestTheWholeSubmitTupleIsBound:
-    def test_every_slot_lands_on_the_parameter_it_is_meant_for(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("max_parallel", [1, 2], ids=["inline", "pool"])
+    def test_every_slot_lands_on_the_parameter_it_is_meant_for(
+        self,
+        tmp_path: Path,
+        max_parallel: int,
+    ) -> None:
         root = _project(tmp_path)
 
-        bound, _kwargs = _positional(root)
+        bound, _kwargs = _positional(root, max_parallel)
 
         # The four run-scoped values are compared by the property that a
         # rotation would break rather than by a literal nobody can
@@ -215,23 +285,60 @@ class TestTheWholeSubmitTupleIsBound:
 
         assert len(set(trio)) == 3, trio
 
+    @pytest.mark.parametrize(
+        "max_parallel, expected",
+        [(1, BY_KEYWORD), (2, POOL_KEYWORDS)],
+        ids=["inline", "pool"],
+    )
     def test_the_tuple_plus_the_keywords_covers_the_whole_signature(
         self,
         tmp_path: Path,
+        max_parallel: int,
+        expected: set[str],
     ) -> None:
-        """Closed over the SIGNATURE, not over the tuple.
+        """Closed over the SIGNATURE, not over the tuple, on BOTH branches.
 
         A parameter the scheduler starts or stops passing moves one of
-        these sets, and neither is a subset check.
+        these sets, and neither is a subset check. The two branches share
+        the positional tuple and differ on the keyword half, so the three
+        keywords the pool branch does not pass have to have defaults, or
+        a pool run would raise where an inline run does not.
         """
         root = _project(tmp_path)
 
-        bound, kwargs = _positional(root)
-        parameters = set(inspect.signature(factory_mod._run_component).parameters)
+        bound, kwargs = _positional(root, max_parallel)
+        signature = inspect.signature(factory_mod._run_component)
 
-        assert set(kwargs) == BY_KEYWORD
-        assert set(bound) | BY_KEYWORD == parameters
+        assert set(kwargs) == expected
+        assert set(bound) | BY_KEYWORD == set(signature.parameters)
         assert set(bound) & BY_KEYWORD == set()
+        defaulted = {
+            name
+            for name, parameter in signature.parameters.items()
+            if parameter.default is not inspect.Parameter.empty
+        }
+        assert BY_KEYWORD - expected <= defaulted
+
+    def test_the_two_run_scoped_directory_slots_are_distinguishable(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Nit 8 of review round 2, measured: with the event log ON the
+        two slots hold the SAME string, so swapping them in
+        ``_submit_args`` left this file green (4 passed) while the full
+        suite caught it. Progress logging off is the state that separates
+        them, and it is the reason they are two arguments at all: the
+        event channel goes None and the accounting channel does not."""
+        root = _project(tmp_path)
+
+        on, _ = _positional(root)
+        off, _ = _positional(root, progress_log_enabled=False)
+
+        run_dir = str(RunPaths.for_run(root, on["run_id"]).root)
+        assert on["events_dir_str"] == run_dir
+        assert on["usage_dir_str"] == run_dir
+        assert off["events_dir_str"] is None
+        assert off["usage_dir_str"] == str(RunPaths.for_run(root, off["run_id"]).root)
 
     def test_the_keyword_half_carries_the_values_it_is_meant_to(
         self,
