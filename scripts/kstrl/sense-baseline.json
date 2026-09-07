@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-09-07T06:57:19Z",
-  "base_ref": "9715ec553e50573688b4a86a08093da73257fa8e",
+  "generated_at": "2026-09-07T15:28:15Z",
+  "base_ref": "04e80524d159134d41cb19c3656a71e0a6739e66",
   "project": "0xfauzi/kstrl",
   "passed": true,
   "sense_schema_version": 3,
@@ -16,7 +16,7 @@
     "diff_scope"
   ],
   "unmeasured_reasons": {
-    "bad_patterns": "Scanned 0 Python files, no issues",
+    "bad_patterns": "no files in the diff",
     "diff_scope": "No scope constraints (allowed_paths not set)"
   },
   "signatures": {}
