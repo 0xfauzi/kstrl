@@ -506,6 +506,56 @@ def _empty_run(tmp_path: Path, config: FactoryConfig) -> tuple[Manifest, Compone
     return manifest, built[0]
 
 
+class TestTheFactorySideParseCountIsPinned:
+    """The half ``TestTheParseCountDoesNotGrowWithComponents`` cannot see.
+
+    That class drives the pipeline harness, so it counts nothing
+    ``_run_factory_locked`` does before the pipeline exists. The
+    duplicate that lived there was ``[autonomy]``, read once bare at run
+    start and once inside ``RunEnvelope.load`` nine lines later: two
+    parses of one file, and a nested ``toml_parse_scope`` does NOT
+    collapse them, because the inner scope replaces the outer cache
+    rather than inheriting it (measured: 3 loads across nested scopes
+    still cost 2 parses). The envelope carries the ``AutonomyConfig``
+    instead, so the section is resolved once and read off it.
+    """
+
+    def test_a_run_resolves_each_section_once(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from kstrl import config as config_module
+
+        original_loads = config_module.tomllib.loads
+        counts = {"calls": 0, "parses": 0}
+        original_doc = config_module.load_toml_document
+
+        def counting_doc(path: Path) -> dict[str, Any]:
+            counts["calls"] += 1
+            return original_doc(path)
+
+        def counting_loads(text: str, **kwargs: Any) -> dict[str, Any]:
+            counts["parses"] += 1
+            return original_loads(text, **kwargs)
+
+        monkeypatch.setattr(config_module, "load_toml_document", counting_doc)
+        monkeypatch.setattr(config_module.tomllib, "loads", counting_loads)
+        (tmp_path / "kstrl.toml").write_text(_BEFORE.format(autonomy="false"))
+
+        _empty_run(
+            tmp_path,
+            FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
+        )
+
+        assert (counts["calls"], counts["parses"]) == (14, 9), (
+            "the cost of a run's config resolution moved. This is a "
+            "census pin, not a performance budget: a number that grew "
+            "means a section is being resolved twice, and the fix is to "
+            "read it off something already resolved rather than to "
+            "raise the pin. It fell from (15, 10) when the second "
+            "[autonomy] read was removed (#192)."
+        )
+
+
 class TestTheFactoryHandsThePipelineWhatItRecords:
     def test_the_recorded_hash_is_the_pipeline_envelope(self, tmp_path: Path) -> None:
         """With ``[autonomy] enabled = false``, the default. At 414d662
@@ -558,6 +608,46 @@ class TestTheFactoryHandsThePipelineWhatItRecords:
         )
         assert AutonomyState.load(tmp_path).level == 4
         assert pipeline.run_envelope.autonomy_level == 1
+
+    def test_the_setpoint_gate_gets_the_same_clamped_level(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The other half of the expression, measured separately.
+
+        ``_phase_verify`` and ``_setpoint_blocking`` held two copies of
+        the level expression, and mutating both at once is caught by
+        the parse count through the ``_phase_verify`` copy alone. Split
+        into two mutations, the set-point copy was measured STILL GREEN
+        against ``test_setpoint_agreement.py`` and ``test_review.py``:
+        nothing drove it with a stored level that differed from the
+        run's. The verdict cannot tell them apart either, because
+        ``setpoint_blocks`` tests only ``>= 1``, so this records the
+        level the gate is HANDED rather than what it decided.
+        """
+        (tmp_path / "kstrl.toml").write_text(
+            "[policy]\nenabled = true\n[autonomy]\nenabled = true\nmax_level = 1\n"
+        )
+        AutonomyState(level=4).save(tmp_path)
+        _, pipeline = _empty_run(
+            tmp_path,
+            FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
+        )
+        import kstrl.pipeline as pipeline_module
+
+        seen: list[int] = []
+
+        def recording(config: FactoryConfig, level: int) -> bool:
+            seen.append(level)
+            return False
+
+        monkeypatch.setattr(pipeline_module, "setpoint_blocks", recording)
+        pipeline._setpoint_blocking()
+
+        assert seen == [1], (
+            "the set-point gate was handed the raw stored level rather "
+            f"than the clamped one the run operates at. Got {seen}, "
+            "expected [1] with kstrl.toml clamping L4 to L1."
+        )
 
 
 class TestRunEnvelope:
