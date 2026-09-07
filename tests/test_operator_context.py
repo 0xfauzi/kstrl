@@ -12,6 +12,7 @@ SECOND row behaves identically is a different job and lives in
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import sys
@@ -19,6 +20,7 @@ from pathlib import Path
 
 import pytest
 
+from kstrl import init_cmd
 from kstrl.config import KstrlConfig
 from kstrl.init_cmd import DEFAULT_GOLDEN_PATTERNS, SCAFFOLDED_TEMPLATES, shipped_label
 from kstrl.operator_context import (
@@ -558,6 +560,44 @@ class TestAnUneditedScaffoldInjectsNothing:
         path.write_text(DEFAULT_GOLDEN_PATTERNS + suffix, encoding="utf-8")
 
         assert load_operator_file(golden(path, scaffold=GOLDEN_PATTERNS.scaffold)) == ""
+
+    def test_a_historical_body_that_ended_in_two_newlines_is_still_found(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The bound on the ORDER, which is the half no shipped body can
+        exercise.
+
+        ``shipped_label`` tries the raw digest FIRST and the collapsed one
+        second, so the widening can only ADD matches. Written the other
+        way round, normalising before the single lookup, a historical row
+        whose body ended in two newlines would stop being recognised and
+        would start being injected, and kstrl keeps the digests rather
+        than the bodies, so nobody could re-derive it.
+
+        Every body in ``SCAFFOLDED_TEMPLATES`` today ends in exactly one
+        newline, which makes normalise-only an EQUIVALENT mutant against
+        the real table: measured as plant N3b of the round-1 fix, still
+        green over the whole operator-file and staleness selection. So
+        the case supplies the row the table cannot: a synthetic template
+        whose history holds the digest of a two-newline body.
+        """
+        body = "# Synthetic\n\nOne line.\n\n"
+        digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        monkeypatch.setattr(
+            init_cmd,
+            "SCAFFOLDED_TEMPLATES",
+            (
+                init_cmd.ScaffoldedTemplate(
+                    filename="synthetic.md",
+                    constant_name="SYNTHETIC",
+                    body="# Synthetic\n\nOne line.\n",
+                    history=((digest, "2026-01-01"),),
+                ),
+            ),
+        )
+
+        assert shipped_label("synthetic.md", body) == "2026-01-01"
 
     def test_a_leading_newline_is_still_an_edit(self, tmp_path: Path) -> None:
         """The bound on the widening: the strip is at the END only, so a
