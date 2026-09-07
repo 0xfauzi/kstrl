@@ -14,6 +14,7 @@ these need no dampener arithmetic.
 from __future__ import annotations
 
 import ast
+import math
 import os
 import shutil
 import subprocess
@@ -114,6 +115,16 @@ def test_every_job_is_bounded_above_the_worst_case_it_can_spend() -> None:
     the same defect one multiplication out: the comment above it said three
     gates may each spend the budget, that is 90 minutes, and 40 was green.
     So the multiplier is COUNTED here, and it is five rather than three.
+
+    The cap is DERIVED rather than bounded, and that is round 2's finding
+    measured. A ``>=`` cannot catch an arithmetic that shrank: putting
+    ``spenders *`` back out of it demands 40 minutes, the workflow's 160
+    satisfies that too, and the plant was still green. An equality makes the
+    arithmetic the only thing that sets the number, so either half moving
+    fails. Every job, because every job in this workflow runs the sense step;
+    there is one today, and a second job that spends no verify budget has to
+    move this assertion deliberately rather than inherit a bound that would
+    say nothing about it.
     """
     assert _timeout_spenders(_SPENDER_CONTROL) == 1, (
         "the spender counter matched nothing in its own control, so the "
@@ -123,14 +134,13 @@ def test_every_job_is_bounded_above_the_worst_case_it_can_spend() -> None:
     assert spenders >= 3, spenders
 
     verify_timeout = float(_sense_step()["env"]["KSTRL_TIMEOUT_VERIFY"])
-    for job in _workflow()["jobs"].values():
+    required = math.ceil((spenders * verify_timeout + INSTALL_HEADROOM_SECONDS) / 60)
+    for name, job in _workflow()["jobs"].items():
         assert isinstance(job["timeout-minutes"], int)
-        assert (
-            job["timeout-minutes"] * 60 >= spenders * verify_timeout + INSTALL_HEADROOM_SECONDS
-        ), (
-            f"{spenders} subprocesses can each spend {verify_timeout}s, so the job "
-            f"needs {(spenders * verify_timeout + INSTALL_HEADROOM_SECONDS) / 60} "
-            f"minutes and has {job['timeout-minutes']}"
+        assert job["timeout-minutes"] == required, (
+            f"job {name} is capped at {job['timeout-minutes']} minutes. {spenders} "
+            f"subprocesses can each spend {verify_timeout}s and the install needs "
+            f"{INSTALL_HEADROOM_SECONDS}s, so the cap is {required}"
         )
 
 

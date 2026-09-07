@@ -163,6 +163,66 @@ def test_a_gate_whose_output_no_parser_understood_measured_nothing(
     assert_unmeasured(row)
 
 
+#: A test gate that exited NONZERO having printed nothing but a PASSING
+#: footer. This is the shape ``uv run pytest && npm test`` takes when pytest
+#: passed and the half after it failed, and it is the case that separates
+#: recognition from "a footer matched": both footers below DO match their
+#: parser's summary pattern and fill ``raw_summary``, and neither is evidence
+#: about whatever failed the gate. One per test parser, because the claim is
+#: written into both ``parse_pytest_output`` and ``parse_vitest_output`` and a
+#: rule that held only for pytest would pass a single-parser case.
+_PRINT_PYTEST_PASS = 'print("=========== 5 passed in 0.10s ===========")'
+_PRINT_VITEST_PASS = 'print(" Test Files  1 passed (1)"); print("      Tests  3 passed (3)")'
+PASSING_FOOTER_COMMANDS: dict[str, tuple[str, str]] = {
+    "pytest": (
+        f"""{sys.executable} -c 'import sys; {_PRINT_PYTEST_PASS}; sys.exit(1)'""",
+        "5 passed",
+    ),
+    "vitest": (
+        f"""{sys.executable} -c 'import sys; {_PRINT_VITEST_PASS}; sys.exit(1)'""",
+        "3 passed",
+    ),
+}
+
+
+@pytest.mark.parametrize("parser", sorted(PASSING_FOOTER_COMMANDS))
+def test_a_failing_gate_that_printed_only_a_passing_footer_measured_nothing(
+    parser: str,
+    tmp_path: Path,
+) -> None:
+    """A passing footer is not evidence, and it is the widening that survives.
+
+    ``ParsedOutput.recognised`` says in its own comment that a PASSING footer
+    deliberately does not set it. Round 2 measured what defended that claim:
+    widening the pytest rule from a nonzero failure COUNT to
+    ``bool(raw_summary)`` left the whole target set green, because every other
+    case here either has a diagnostic to parse or prints nothing a summary
+    pattern matches. So this is the only shape that separates the two rules,
+    and without it the rule can be weakened back with nothing turning red.
+
+    What that weakening costs, once: on ``uv run pytest && npm test`` with
+    pytest green and npm red, the gate would call itself measured on the
+    strength of the half that worked, and the dampener would then read every
+    signature the failed half used to report as FIXED.
+
+    The second assertion is the control that stops this passing for the wrong
+    reason. The footer has to have been MATCHED - to be in ``raw_summary`` -
+    or the case is measuring output no parser matched, and it would hold with
+    the recognition rule deleted entirely.
+    """
+    command, footer = PASSING_FOOTER_COMMANDS[parser]
+
+    row = check_test_suite(tmp_path, command=command, timeout=30)
+
+    assert row.passed is False
+    assert row.parsed is not None
+    assert footer in row.parsed.raw_summary, (
+        f"the {parser} footer never reached raw_summary, so this case is not "
+        "the one it claims to be: it is testing output no parser matched"
+    )
+    assert_unmeasured(row)
+
+
 @pytest.mark.parametrize(
     "check",
     [check_test_suite, check_typecheck, check_linter],
