@@ -143,7 +143,7 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.adequacy import AdequacyConfig
     from kstrl.autonomy import AutonomyConfig
     from kstrl.breaker import BreakerConfig
-    from kstrl.config import KstrlConfig
+    from kstrl.config import STRING_KEYS, KstrlConfig
     from kstrl.contract import ContractConfig
     from kstrl.divergence import DivergenceConfig
     from kstrl.evolution import EvolutionConfig
@@ -168,6 +168,19 @@ def _section_specs() -> list[SectionSpec]:
 
     kstrl_defaults = KstrlConfig()
 
+    def string_keys(section: str) -> dict[str, str]:
+        """The ``{toml key: field}`` rows ``KstrlConfig.STRING_KEYS`` owns
+        for one section.
+
+        Derived, not transcribed (review round 1, S8). The same table
+        drives the TOML overlay, the env overlay, the anchoring and
+        ``config_report.show_sections``; a hand-copied fifth copy here is
+        a row that can go missing, and ``probe_undocumented_fields=False``
+        on these sections means a live key absent from the dict is not
+        caught by the behavioural probe either.
+        """
+        return {k: f for sec, k, _e, f, _p in STRING_KEYS if sec == section}
+
     def identity_keys(cfg_cls: Any, names: list[str]) -> dict[str, str]:
         field_names = {f.name for f in dataclasses.fields(cfg_cls)}
         missing = set(names) - field_names
@@ -183,13 +196,7 @@ def _section_specs() -> list[SectionSpec]:
         SectionSpec(
             "agent",
             "Agent selection",
-            {
-                "type": "agent_type",
-                "command": "agent_cmd",
-                "model": "model",
-                "reasoning_effort": "model_reasoning_effort",
-                "budget_usd": "agent_budget_usd",
-            },
+            {**string_keys("agent"), "budget_usd": "agent_budget_usd"},
             kstrl_loader,
             kstrl_defaults,
             probe_undocumented_fields=False,
@@ -209,13 +216,7 @@ def _section_specs() -> list[SectionSpec]:
         SectionSpec(
             "paths",
             "File locations",
-            {
-                "prompt": "prompt_file",
-                "prd": "prd_file",
-                "progress": "progress_file",
-                "codebase_map": "codebase_map_file",
-                "allowed": "allowed_paths",
-            },
+            {**string_keys("paths"), "allowed": "allowed_paths"},
             kstrl_loader,
             kstrl_defaults,
             probe_undocumented_fields=False,
@@ -467,6 +468,8 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     "component writes beside its own PRD (inside its allowedPaths), "
     "set = that one path is forced on every component",
     ("paths", "codebase_map"): "brownfield codebase notes",
+    ("paths", "golden_patterns"): "operator-authored golden patterns, injected "
+    "into every factory engineer prompt and every `ks run` prompt (R10.8)",
     ("paths", "allowed"): 'diff-scope allowlist, e.g. ["src/", "tests/"]; empty = unrestricted',
     ("git", "branch"): "branch override; empty = use PRD branchName",
     ("git", "auto_checkout"): "check the branch out automatically",
