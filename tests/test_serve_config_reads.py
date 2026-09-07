@@ -462,6 +462,13 @@ MALFORMED_SECTIONS = [
     ),
 ]
 
+#: The subset `resolve_merge_gate` itself reads. Derived, not written out
+#: again: a new row in MALFORMED_SECTIONS joins this list automatically,
+#: and `[inbox]` is the one exception because an unreadable `[inbox]` is
+#: refused by `check_inbox_cap`, which returns an `Admission` and never
+#: reaches a `MergeGate`.
+MERGE_GATE_SECTIONS = [case for case in MALFORMED_SECTIONS if case.values[1] != "[inbox]"]
+
 
 def _stub_run(**kwargs: object) -> RunOutcome:
     root = kwargs["root_dir"]
@@ -533,3 +540,45 @@ class TestAMalformedSectionDoesNotStopTheDaemon:
         result, queue = self._run(tmp_path, CLEAN_TOML)
         assert result.ran_item != ""
         assert result.skipped == ""
+
+
+class TestTheRefusingGateIsFailClosed:
+    """The gate itself, not only what the cycle does with it.
+
+    Written because a mutation stayed GREEN without it. Setting
+    ``pause_before_pr_merge=False`` on the refusing gate changed no
+    behavioural outcome, because ``serve_cycle`` branches on
+    ``unreadable_section`` and the item never runs either way. That makes
+    it an equivalent mutant TODAY and a hole tomorrow: the flag is what
+    reaches the child as ``--pause-before-pr-merge``, so a gate that says
+    False while refusing is one consumer away from dropping a human merge
+    gate. A control that CLEARS must be narrow, so the fail-closed shape
+    is asserted where it is decided rather than inferred from the fact
+    that nothing currently reads it.
+    """
+
+    @staticmethod
+    def _gate(tmp_path: Path, document: str) -> Any:
+        from kstrl.serve import resolve_merge_gate
+
+        (tmp_path / "kstrl.toml").write_text(document, encoding="utf-8")
+        queue = Queue(tmp_path, QueueConfig())
+        item = queue.add("# Spec\n\nDo the thing.\n", merge_disposition=MergeDisposition.STOP_AT_PR)
+        return resolve_merge_gate(item, tmp_path)
+
+    @pytest.mark.parametrize("document,section", MERGE_GATE_SECTIONS)
+    def test_an_unreadable_section_resolves_to_a_gate_that_is_on(
+        self, tmp_path: Path, document: str, section: str
+    ) -> None:
+        gate = self._gate(tmp_path, document)
+        assert gate.pause_before_pr_merge is True, (
+            "a config read that could not complete must fail CLOSED. This "
+            "flag is what reaches the child as --pause-before-pr-merge."
+        )
+        assert gate.unreadable_section == section.strip("[]")
+        assert section in gate.refusal
+
+    def test_a_clean_document_resolves_to_no_unreadable_section(self, tmp_path: Path) -> None:
+        gate = self._gate(tmp_path, CLEAN_TOML)
+        assert gate.unreadable_section == ""
+        assert gate.refusal == ""
