@@ -201,12 +201,23 @@ class TestRunEnvelope:
 
     def test_the_stored_level_is_read_only_when_the_ladder_is_on(self, tmp_path: Path) -> None:
         """0 when the ladder is off is not a default, it is the same
-        expression ``_phase_verify`` used to evaluate per component."""
+        expression ``_phase_verify`` used to evaluate per component.
+
+        The name says READ, so the state field is asserted beside the
+        level. Round 2 of #192 made the name false while the assertion
+        stayed true: the level was zeroed and the file was read anyway,
+        and a reader takes the name for the mechanism.
+        ``tests/test_run_envelope.py`` counts the loads on a whole run.
+        """
         AutonomyState(level=3).save(tmp_path)
         (tmp_path / "kstrl.toml").write_text("[autonomy]\nenabled = false\n")
-        assert RunEnvelope.load(tmp_path).autonomy_level == 0
+        off = RunEnvelope.load(tmp_path)
+        assert off.autonomy_level == 0
+        assert off.autonomy_state is None
         (tmp_path / "kstrl.toml").write_text("[autonomy]\nenabled = true\nmax_level = 4\n")
-        assert RunEnvelope.load(tmp_path).autonomy_level == 3
+        on = RunEnvelope.load(tmp_path)
+        assert on.autonomy_level == 3
+        assert on.autonomy_state is not None
 
     def test_the_policy_override_wins_over_the_file(self, tmp_path: Path) -> None:
         """``FactoryConfig.policy_config`` is the injection seam callers

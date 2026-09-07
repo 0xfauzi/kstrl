@@ -529,8 +529,16 @@ class ComponentPipeline:
         # section is a refusal naming the section and the key.
         #
         # Named locally rather than read through ``self.run_envelope``
-        # at every use: these four are what the pipeline enforces and
-        # the four attribute names already had readers. The envelope
+        # at every use: these four are what the pipeline enforces, and
+        # ONE of the four names predates #192. Counted at the branch
+        # base 414d662: self.sandbox_config 3 readers, and
+        # self.fixtures_config, self.inbox_config and
+        # self.divergence_config 0 each, because those three sections
+        # were resolved into locals inside the phases. Round 1 of #192
+        # created the other three names, so keeping them is a choice
+        # this change made rather than a shape it inherited: one
+        # spelling per section at the point of use, against reading
+        # ``self.run_envelope.<section>`` at nine sites. The envelope
         # also carries what the autonomy ladder can clamp - [policy],
         # [adequacy] and the level - so the clamped values are the ones
         # enforced and recorded. (Only PolicyConfig is hashed:

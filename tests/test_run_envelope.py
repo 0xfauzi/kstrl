@@ -97,6 +97,35 @@ class TestAMalformedMidRunEditDoesNotAbortTheRun:
         assert outcome.pipelines[0].run_envelope.policy.max_files_changed == 5
 
 
+#: The headline ``_report_preflight`` prints above the per-section
+#: lines. Matched here so a test can ask what was printed UNDER it
+#: rather than whether the whole narration is non-empty, which every
+#: run's masthead would satisfy.
+_REFUSAL_HEADLINE = "Refusing to run: the run configuration cannot be resolved"
+
+
+def _refusal_reasons(narration: str) -> list[str]:
+    """The indented lines ``_report_preflight`` printed under its headline.
+
+    ``PlainUI.err`` prefixes every line with ``ERROR:``, so the indent
+    that distinguishes a reason from the next thing the run says is
+    after that prefix. Stops at the first line that is not indented, so
+    a later unindented message cannot be counted as a reason.
+    """
+    lines = narration.splitlines()
+    for index, line in enumerate(lines):
+        if _REFUSAL_HEADLINE not in line:
+            continue
+        reasons: list[str] = []
+        for found in lines[index + 1 :]:
+            body = found.removeprefix("ERROR:")
+            if not body.startswith("  ") or not body.strip():
+                break
+            reasons.append(body.strip())
+        return reasons
+    return []
+
+
 class TestAMalformedSectionIsARefusalAndNotATraceback:
     """Blocker 1 of the round-1 review, as a test.
 
@@ -132,8 +161,51 @@ class TestAMalformedSectionIsARefusalAndNotATraceback:
             "other pre-spend check refuses, not leave run_factory as a "
             "traceback."
         )
+        reasons = _refusal_reasons(outcome.narration)
+        assert reasons, (
+            "exit code 2 with nothing printed under the headline. An "
+            "operator cannot act on that, and `_report_preflight` "
+            f"returns False on an empty list. Narration: {outcome.narration!r}"
+        )
         assert section in outcome.narration
         assert key in outcome.narration
+
+    def test_a_loader_returning_none_without_raising_still_prints_a_reason(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The silence `_report_preflight` cannot report.
+
+        `resolve_or_report` is documented to return a value or a line and
+        never neither, and nothing enforced it. A loader that returned
+        None without raising gave `RunEnvelope.resolve` a None section
+        with an empty `problems`, `_report_preflight` printed nothing and
+        returned False, and `run_factory` set exit code 2 anyway. No
+        loader in kstrl/ does this, which is why it needs a test rather
+        than an argument.
+        """
+        from kstrl.inbox import InboxConfig
+
+        (tmp_path / "kstrl.toml").write_text(BEFORE.format(autonomy="false"))
+
+        def load(cls: Any, root_dir: Path) -> None:
+            return None
+
+        monkeypatch.setattr(InboxConfig, "load", classmethod(load))
+
+        outcome = drive_run(
+            tmp_path,
+            FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
+        )
+
+        assert outcome.result.exit_code == 2
+        reasons = _refusal_reasons(outcome.narration)
+        assert reasons, (
+            "the run refused with exit code 2 and printed no reason. "
+            f"Narration: {outcome.narration!r}"
+        )
+        assert any("load" in reason and "defect in kstrl" in reason for reason in reasons), (
+            f"the line does not say which loader returned nothing. Got {reasons}"
+        )
 
     def test_it_refuses_before_the_pipeline_is_built(self, tmp_path: Path) -> None:
         """Which is what keeps #257's invariant intact.
@@ -200,10 +272,15 @@ class TestTheFactorySideParseCountIsPinned:
             "census pin, not a performance budget: a number that grew "
             "means a section is being resolved twice, and the fix is to "
             "read it off something already resolved rather than to "
-            "raise the pin. It fell from (15, 10) to (14, 9) when the "
-            "second [autonomy] read went, and to (13, 7) when the four "
-            "the pipeline used to resolve joined the envelope's single "
-            "scope and the second [sandbox] read went with them (#192)."
+            "raise the pin. Measured at the branch base 414d662 and at "
+            "origin/main 037f0e1, both (10, 10), under either [autonomy] "
+            "value and with the run completing; (14, 9) after the second "
+            "[autonomy] read went; (13, 7) once the four the pipeline "
+            "used to resolve joined the envelope's single scope and the "
+            "second [sandbox] read went with them. The CALLS rise, 10 to "
+            "13, because seven sections are resolved at run start "
+            "whatever the component count; only the PARSES fall, 10 to "
+            "7, because those seven share one document (#192)."
         )
 
 
@@ -254,6 +331,48 @@ class TestTheLadderStateIsReadOnce:
         # one: `_record_autonomy_outcome` re-reads AFTER the run, because
         # apply_demotion may have written the file while components ran.
         assert calls == 2
+
+    def test_a_ladder_off_run_does_not_read_the_state_at_all(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The DEFAULT path, which round 2 of #192 made pay for the fix.
+
+        Carrying the state on the envelope removed the second read on a
+        ladder-ON run and added a first one on the ladder-OFF run, which
+        is every run of a project that never opted into the ladder.
+        Three things came with it: a ``.kstrl/autonomy.json`` read, a
+        control-directory migration, and a ``RuntimeWarning`` about a
+        ladder the run does not use when that file is corrupt. Measured
+        on ``origin/main``: 0 loads and 0 ``ensure_control_state``. The
+        field is ``AutonomyState | None`` now and ``_resolve_ladder``
+        returns before it would need one.
+        """
+        from kstrl import autonomy as autonomy_module
+
+        original = autonomy_module.AutonomyState.load
+        calls = 0
+
+        def counting(root_dir: Path) -> Any:
+            nonlocal calls
+            calls += 1
+            return original(root_dir)
+
+        monkeypatch.setattr(autonomy_module.AutonomyState, "load", counting)
+        (tmp_path / "kstrl.toml").write_text(BEFORE.format(autonomy="false"))
+        AutonomyState(level=4).save(tmp_path)
+
+        _, pipeline = empty_run(
+            tmp_path,
+            FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
+        )
+
+        assert calls == 0, (
+            "a run with [autonomy] enabled = false read the stored ladder "
+            "state. Nothing consumes it on that path - `_resolve_ladder` "
+            f"returns before it - and it costs a measured 17.2 ms. Got {calls}"
+        )
+        assert pipeline.run_envelope.autonomy_state is None
+        assert pipeline.run_envelope.autonomy_level == 0
 
 
 class TestTheEnvelopeDoesNotOutliveItsRun:
@@ -437,3 +556,30 @@ class TestTheFactoryHandsThePipelineWhatItRecords:
             f"than the clamped one the run operates at. Got {seen}, "
             "expected [1] with kstrl.toml clamping L4 to L1."
         )
+
+
+class TestTheLadderOutcomeIsReallyFrozen:
+    """``frozen=True`` over a ``list`` field is a claim the class does
+    not keep.
+
+    Measured on the round-2 head: ``hash(outcome)`` raised ``TypeError:
+    unhashable type: 'list'`` and ``outcome.clamps.append(...)``
+    succeeded straight through the frozen dataclass. Nothing hashed or
+    mutated one, so it was latent; ``tuple[str, ...]`` on both fields
+    makes the declaration true instead of nearly true.
+    """
+
+    def test_it_hashes_and_refuses_to_grow(self) -> None:
+        from kstrl.autonomy import AutonomyLevel, flag_bundle_for
+        from kstrl.factory import _LadderOutcome
+
+        outcome = _LadderOutcome(
+            level=AutonomyLevel.L1_SUPERVISED,
+            bundle=flag_bundle_for(AutonomyLevel.L1_SUPERVISED),
+            clamps=("clamped to L1",),
+            overrides=(),
+        )
+
+        assert hash(outcome) == hash(outcome)
+        with pytest.raises(AttributeError):
+            outcome.clamps.append("a second clamp")  # type: ignore[attr-defined]

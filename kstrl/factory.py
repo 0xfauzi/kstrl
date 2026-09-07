@@ -335,10 +335,18 @@ class FactoryConfig:
     fixtures_config: FixturesConfig | None = None
     # R8.1: declarative merge-policy envelope for Phase 1. None means
     # run_factory resolves it from the toml [policy] section + env, via
-    # RunEnvelope.load's ``policy_override`` seam (#192). Opt-in
-    # ([policy].enabled = false): existing runs unchanged. run_factory
-    # writes the ladder-clamped envelope back here, so the field is an
-    # input override on the way in and the run's resolved policy out.
+    # RunEnvelope.resolve's ``policy_override`` seam (#192). Opt-in
+    # ([policy].enabled = false): existing runs unchanged.
+    #
+    # INPUT ONLY. It is read once, by RunEnvelope.resolve, and never
+    # written back. Round 2 of #192 deleted the write-back that used to
+    # be here, because it was unconditional: a caller reusing one
+    # FactoryConfig for a second run had run 1's clamped envelope
+    # already sitting in this field, so run 2 resolved nothing from
+    # kstrl.toml and recorded run 1's hash as its own. The run's
+    # resolved policy lives on the pipeline's RunEnvelope; read it
+    # there. TestTheEnvelopeDoesNotOutliveItsRun fails if the write
+    # comes back.
     policy_config: PolicyConfig | None = None
 
     def resolved_verify_config(self) -> VerifyConfig:
@@ -3215,11 +3223,14 @@ class _LadderOutcome:
 
     level: AutonomyLevel
     bundle: FlagBundle
-    #: Why ``resolve_runtime_level`` lowered the stored level.
-    clamps: list[str]
+    #: Why ``resolve_runtime_level`` lowered the stored level. A tuple,
+    #: because ``frozen=True`` over a ``list`` is a claim the class does
+    #: not keep: ``hash()`` raised ``TypeError`` and ``.append()``
+    #: succeeded straight through the frozen dataclass.
+    clamps: tuple[str, ...]
     #: Configured flags the bundle overruled, plus the withheld
     #: ``deps_allow_new``.
-    overrides: list[str]
+    overrides: tuple[str, ...]
 
 
 def _resolve_ladder(
@@ -3238,10 +3249,16 @@ def _resolve_ladder(
     second time, and left a window in which a concurrent `ks autonomy
     promote` made the two reads disagree.
     """
-    if not run_envelope.autonomy.enabled:
+    state = run_envelope.autonomy_state
+    # Two spellings of one condition, and that is deliberate: the
+    # envelope loads the stored state only when the ladder is on, so
+    # ``state is None`` and ``not enabled`` are the same fact. The
+    # second is the half a type checker can see, and writing it as an
+    # assert instead would put a raise on the default path.
+    if not run_envelope.autonomy.enabled or state is None:
         return run_envelope, None
     level, clamps = resolve_runtime_level(
-        run_envelope.autonomy_state,
+        state,
         run_envelope.autonomy,
         policy_enabled=run_envelope.policy.enabled,
         root_dir=root_dir,
@@ -3267,7 +3284,9 @@ def _resolve_ladder(
             f"[policy] deps_allow_new=true withheld at "
             f"{bundle.level.label} (ladder clamps to false)"
         )
-    return clamped, _LadderOutcome(level=level, bundle=bundle, clamps=clamps, overrides=overrides)
+    return clamped, _LadderOutcome(
+        level=level, bundle=bundle, clamps=tuple(clamps), overrides=tuple(overrides)
+    )
 
 
 def _run_factory_locked(
@@ -3319,7 +3338,18 @@ def _run_factory_locked(
     # sentence and exit code 2 every other pre-spend refusal gives, and
     # it happens before the run directory exists, so #257's invariant
     # (nothing between the sinks and record_architect_usage returns
-    # early) is untouched: there is no run yet to report $0 for.
+    # early) is untouched.
+    #
+    # What it does to the money, stated rather than left as "there is no
+    # run yet": a refusal inside the `ks factory --spec` architect window
+    # lands on RunSpend.unmetered_phases' blocker-halt path, so `serve`
+    # charges the launch $0 and labels the day's total a floor with
+    # `architect` unmetered. That is the same treatment a spec blocker
+    # already gets. Measured: a launch whose architect spent $4.20 is
+    # charged $4.20 on origin/main, where the malformed [policy] happened
+    # to crash BELOW record_architect_usage, and $0.00 here. Charging it
+    # exactly needs a sink that exists before the run directory does,
+    # which is separate work; see the PR #359 handoff.
     resolved = RunEnvelope.resolve(
         root_dir,
         policy_override=factory_config.policy_config,

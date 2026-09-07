@@ -48,7 +48,10 @@ was ``AutonomyState.load(root).level``, unclamped, while the factory had
 already resolved a CLAMPED level three lines above the hash. The STATE
 itself is carried, not just the level, because the factory's ladder
 needs it and loading it twice costs a measured 17.2 ms and ensures the
-control state twice.
+control state twice. It is carried only when ``[autonomy] enabled``:
+with the ladder off, which is the default, nothing reads the state and
+the field is ``None``, so a project that never opted in reads no
+``.kstrl/autonomy.json`` and runs no control-directory migration.
 """
 
 from __future__ import annotations
@@ -88,11 +91,17 @@ class RunEnvelope:
     #: off the envelope is what stops it parsing ``kstrl.toml`` a second
     #: time nine lines later.
     autonomy: AutonomyConfig
-    #: The stored ladder state, read once per run. The factory's ladder
-    #: resolution reads it off here; before this field it loaded it a
-    #: second time nine lines later, discarding the first result and
-    #: paying 17.2 ms and a second ``ensure_control_state`` for it.
-    autonomy_state: AutonomyState
+    #: The stored ladder state, read once per run, and only when the
+    #: ladder is on. The factory's ladder resolution reads it off here;
+    #: before this field it loaded it a second time nine lines later,
+    #: discarding the first result and paying 17.2 ms and a second
+    #: ``ensure_control_state`` for it. ``None`` when ``[autonomy]
+    #: enabled`` is false, which is the DEFAULT: nothing on that path
+    #: consumes the state, and round 2 of #192 loaded it anyway, which
+    #: bought the rare path 17.2 ms by charging the common one the same
+    #: amount plus a control-directory migration and a warning about a
+    #: ladder the run does not use.
+    autonomy_state: AutonomyState | None
     #: The level the run OPERATES at, after ``resolve_runtime_level``
     #: clamps the stored level by ``[autonomy] max_level``, by the
     #: policy envelope ceiling and by control-state location. 0 when the
@@ -156,26 +165,35 @@ class RunEnvelope:
             or inbox is None
             or divergence is None
         ):
-            # ``resolve_or_report`` returns a value or a line, never
-            # neither, so this branch is reached only with ``problems``
-            # already carrying the line that explains it.
+            # ``problems`` is never empty here: ``_resolved`` writes a
+            # line for every section that came back None, including the
+            # one that did so without raising. A refusal with nothing to
+            # print is an exit code 2 an operator cannot act on.
             return EnvelopeResolution(None, tuple(problems))
         # OUTSIDE the scope deliberately: this reads JSON, which
         # ``toml_parse_scope`` does not cache, and it costs a measured
         # 17.2 ms (most of it ``ensure_control_state``) against the
         # sub-millisecond window that scope's docstring says makes a
-        # stale document safe. Unconditional now that the state itself
-        # is a field: the factory's ladder needs the object, and the
-        # level below is the same expression ``_phase_verify`` used to
-        # evaluate per component.
-        state = AutonomyState.load(root_dir)
+        # stale document safe.
+        #
+        # CONDITIONAL, because 17.2 ms on the default path buys nothing:
+        # ``_resolve_ladder`` returns immediately when ``[autonomy]``
+        # is disabled, so no consumer of this field exists there, and
+        # ``autonomy_level`` is 0 either way. Round 2 of #192 read it
+        # unconditionally so the ladder could take the object off the
+        # envelope, and the measurement against ``origin/main`` was 0
+        # ``AutonomyState.load`` and 0 ``ensure_control_state`` on a
+        # default run before, 1 and 1 after, plus a ``RuntimeWarning``
+        # about a ladder that run does not use when the stored state is
+        # corrupt.
+        state = AutonomyState.load(root_dir) if autonomy.enabled else None
         return EnvelopeResolution(
             cls(
                 policy=policy,
                 adequacy=adequacy,
                 autonomy=autonomy,
                 autonomy_state=state,
-                autonomy_level=state.level if autonomy.enabled else 0,
+                autonomy_level=state.level if state is not None else 0,
                 sandbox=sandbox,
                 fixtures=fixtures,
                 inbox=inbox,
@@ -198,10 +216,11 @@ class RunEnvelope:
         pipeline. ``run_factory`` uses :meth:`resolve`, because a raise
         there is the defect this module's docstring records.
 
-        The level here is the RAW stored level. The factory replaces it
-        with the clamped one at the ladder resolution; a caller that
-        never runs the ladder gets the stored level, which is what it
-        got before this module existed.
+        The level here is the RAW stored level when the ladder is on,
+        and 0 when it is off. The factory replaces it with the clamped
+        one at the ladder resolution; a caller that never runs the
+        ladder gets the stored level, which is what it got before this
+        module existed.
         """
         resolved = cls.resolve(
             root_dir,
@@ -239,8 +258,24 @@ class EnvelopeResolution:
 
 
 def _resolved(loader: Callable[[Path], T], root_dir: Path, problems: list[str]) -> T | None:
-    """One section, appending its rejection line rather than raising."""
+    """One section, appending its rejection line rather than raising.
+
+    The line is GUARANTEED, and that is the point of doing it here
+    rather than at each call. ``resolve_or_report`` is documented to
+    return a value or a line and never neither, but nothing enforced it,
+    and a loader that returned ``None`` without raising would have given
+    :meth:`RunEnvelope.resolve` a ``None`` section with an empty
+    ``problems``, which ``run_factory`` turns into exit code 2 with
+    nothing printed. No loader in ``kstrl/`` does that today; this is
+    what keeps the silence impossible rather than unlikely.
+    """
     value, problem = resolve_or_report(loader, root_dir, blame_env=False)
     if problem is not None:
         problems.append(problem)
+    elif value is None:
+        name = getattr(loader, "__qualname__", repr(loader))
+        problems.append(
+            f"{name} resolved to no configuration and reported no problem. "
+            "That is a defect in kstrl rather than in kstrl.toml."
+        )
     return value
