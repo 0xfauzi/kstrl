@@ -1,0 +1,236 @@
+name: sense dampener
+
+# R10.6 (#227). The dampener: run the same mechanical sensors `ks sense` runs,
+# compare the structured failure signatures against the baseline this
+# repository tracks in scripts/kstrl/sense-baseline.json, and post what the
+# branch ADDED as one pull-request comment.
+#
+# It is ADVISORY as shipped: `--fail-on-regression` is deliberately absent, so
+# `ks sense` exits 0 on a regression and the job stays green.
+#
+# The job fails on ANY nonzero exit from the sense step, which is three
+# different things and all three are worth failing on. Exit 2 means the sensor
+# could not run at all. Exit 1 means either the command itself died, or - once
+# somebody adds `--fail-on-regression` - that the branch regressed and this
+# repository has chosen to block on that. Anything else is the runner killing
+# the step. A report nobody can trust is worse than no report.
+#
+# Round 1 of review on #227 measured the earlier arrangement, which failed only
+# on `rc == '2'`: adding `--fail-on-regression` exactly as docs/dampener.md
+# instructs produced `ks sense` exiting 1, `rc=1` recorded, and a GREEN job. The
+# documented graduation to blocking did not block.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# Least privilege. The comment step is the only thing here that writes, and it
+# writes to a pull request, never to the repository contents.
+permissions:
+  contents: read
+  pull-requests: write
+
+# One run per pull request. A push that supersedes an earlier commit cancels
+# its report rather than paying for a second full sensor run: the measurement
+# is dominated by the project's own test suite, so a duplicate is expensive.
+concurrency:
+  group: sense-dampener-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  dampener:
+    runs-on: ubuntu-latest
+    # This has to sit ABOVE the sensor's own budget, or the sensor's timeout can
+    # never fire: GitHub cancels the job first, and a cancelled job produces no
+    # sense.md, no sense.err, no comment and no step summary - so the
+    # measured=False mechanism this whole feature rests on would be unreachable
+    # in the only place the workflow exercises it.
+    #
+    # The worst case is not one timeout. FIVE subprocesses in one sense run are
+    # each handed KSTRL_TIMEOUT_VERIFY in full: the three gates, and the two
+    # halves of the dead-code phase when it is on. At 1800 seconds that is 9000
+    # seconds, so 150 minutes, and the ten on top is for checkout, uv install
+    # and `uv sync` - measured at 9 seconds on run 34130546828 with a warm uv
+    # cache, so ten minutes is room rather than an estimate.
+    #
+    # Round 1 of review set this to 40 with a comment that said three gates may
+    # each spend the budget, which is 90 minutes: the premise and the number
+    # disagreed, and the test underneath pinned ONE gate's budget so it stayed
+    # green. It now counts the spenders out of kstrl/verify.py, so a sixth one
+    # fails here rather than on a runner.
+    timeout-minutes: 160
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # `ks sense` asks git for the diff against the base STRICTLY, and
+          # exits 2 when it cannot get one. A shallow clone cannot reach the
+          # base, so without this the job fails on every pull request.
+          fetch-depth: 0
+          # Nothing here pushes. The comment step authenticates with
+          # GITHUB_TOKEN in its own env, so the checkout token has no job to
+          # do and does not belong in .git/config.
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: latest
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install project
+        run: uv sync --frozen --all-extras --dev
+
+      - name: Measure against the baseline on the base ref
+        id: sense
+        env:
+          # The committed baseline was generated at this timeout, and the
+          # comparison has to be measured the same way or it is not a
+          # comparison. At the default 300s this repository's own test suite
+          # times out, which is a FAILING row rather than a gap, and its
+          # fallback signature has the digits stripped - so a baseline
+          # carrying it reads as FIXED the moment the suite fits.
+          #
+          # The baseline records a digest of the three verify commands and this
+          # timeout, and `ks sense --compare-baseline` refuses a mismatch with
+          # exit 2, so changing this number without regenerating the baseline
+          # is a red job rather than a wrong report.
+          KSTRL_TIMEOUT_VERIFY: "1800"
+          # Through env, not interpolated into the script: a ref name is
+          # attacker-controlled on a fork pull request.
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          # The yardstick comes from the BASE ref, never from this checkout.
+          # `--compare-baseline` with no value resolves to the working tree's
+          # own scripts/kstrl/sense-baseline.json, and on a pull_request event
+          # that tree is refs/pull/N/merge - which carries the pull request's
+          # copy of the file. A branch that runs `ks sense --write-baseline
+          # --force` and commits the result was therefore compared against its
+          # own signatures: no regression, and green even under the documented
+          # graduation to blocking. Step 3 of docs/dampener.md said to
+          # regenerate the baseline in its own commit, and that was a
+          # convention with no mechanism behind it.
+          #
+          # origin/<base> only. actions/checkout at fetch-depth 0 fetches every
+          # head into refs/remotes/origin/*, and a bare "$BASE_REF" would
+          # resolve a LOCAL branch of that name, which on this event is either
+          # absent or whatever the merge ref left behind.
+          if ! base_sha="$(git rev-parse --verify --quiet "origin/$BASE_REF^{commit}")"; then
+            echo "cannot resolve origin/$BASE_REF; the checkout is not deep enough" >&2
+            exit 1
+          fi
+          # The report prints the path it was given, so naming the file after
+          # the commit is how the comment says which ref supplied the baseline.
+          baseline="baseline-from-$base_sha.json"
+          if git show "$base_sha:scripts/kstrl/sense-baseline.json" > "$baseline"; then
+            set +e
+            uv run ks sense --compare-baseline "$baseline" --format markdown \
+              --base "$BASE_REF" > sense.md 2> sense.err
+            echo "rc=$?" >> "$GITHUB_OUTPUT"
+            set -e
+          else
+            # No baseline on the base ref is not a failure and not a
+            # regression: there is nothing to compare against, and saying so is
+            # the honest report. Falling back to this branch's own copy is the
+            # defect this step exists to close.
+            rm -f "$baseline"
+            {
+              echo '<!-- kstrl-sense-dampener -->'
+              echo '## sense dampener'
+              echo ''
+              echo "No baseline on \`$BASE_REF\` at \`$base_sha\`, so there is"
+              echo 'nothing to compare this branch against. Write one on the'
+              echo "base branch with \`ks sense --write-baseline\`."
+            } > sense.md
+            : > sense.err
+            echo "rc=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish the report to the job summary
+        # Unconditional, and this is the honest answer to the fork question:
+        # a pull request from a fork gets a read-only token whatever the
+        # permissions block above says, so its author can never be sent a
+        # comment. The step summary is a surface they can read. The
+        # alternative, pull_request_target, would run the pull request's own
+        # test suite with a write token, and is refused outright.
+        run: |
+          if [ -s sense.md ]; then
+            cat sense.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            # One block redirect rather than four appends: shellcheck SC2129,
+            # and actionlint reports it. origin/main lints clean under
+            # actionlint 1.7.7 with shellcheck 0.10.0, so this is the only
+            # finding this workflow would have added.
+            {
+              echo '## sense dampener: the sensor could not run'
+              echo '```'
+              cat sense.err
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Post or update the pull-request comment
+        if: >-
+          github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -o pipefail
+          # The file, not the exit code, is the gate. `gh api -F body=@sense.md`
+          # on an empty file sends {"body": ""}, which GitHub rejects with 422,
+          # so the job would go red on the COMMENT step while the real
+          # diagnostic sat unread in sense.err. Anything that produced no
+          # report is the next step's business.
+          if [ ! -s sense.md ]; then
+            echo "no report to post; the failure step below explains why" >&2
+            exit 0
+          fi
+          marker='<!-- kstrl-sense-dampener -->'
+          # `--jq` runs once PER PAGE, so a `first` inside it is the first
+          # match on THAT page, not the first overall. Measured against gh
+          # 2.73.0 on a 3-comment pull request forced to per_page=1: the
+          # `first` form printed three ids on three lines, which would hand
+          # the PATCH below a multi-line id once a pull request passes the
+          # 30-comment default page size. `--slurp` is refused alongside
+          # `--jq`, so the filter emits every match and `head` picks one.
+          #
+          # Captured to a FILE and checked on its own status, rather than piped
+          # into `head`: the Actions default shell is `bash -e` with no
+          # pipefail, so `id="$(gh api ... | head -n 1)"` takes head's status
+          # and an API failure yielded an empty id, which falls into the POST
+          # branch and posts a SECOND comment. That is the duplicate-comment
+          # outcome the --paginate fix on this very line was made to prevent,
+          # reached by another route. An unreadable lookup is a refusal.
+          if ! gh api --paginate "repos/$REPO/issues/$NUMBER/comments" \
+            --jq "map(select(.body | startswith(\"$marker\"))) | .[].id" > comment-ids.txt; then
+            echo "the comment lookup failed; refusing to post rather than risk a duplicate" >&2
+            exit 1
+          fi
+          id="$(head -n 1 comment-ids.txt)"
+          if [ -n "$id" ]; then
+            gh api --method PATCH "repos/$REPO/issues/comments/$id" -F body=@sense.md
+          else
+            gh api --method POST "repos/$REPO/issues/$NUMBER/comments" -F body=@sense.md
+          fi
+
+      - name: Fail unless the measurement produced a trustworthy report
+        # Every nonzero exit, not just 2. See the header for the three cases.
+        # This is also the half of "graduating to blocking" that is easy to
+        # lose: adding --fail-on-regression above makes ks sense exit 1, and
+        # without a step that keys on it the job stays green.
+        if: steps.sense.outputs.rc != '0'
+        env:
+          RC: ${{ steps.sense.outputs.rc }}
+        run: |
+          cat sense.err >&2
+          echo "ks sense exited $RC." >&2
+          echo "2: the measurement could not run (missing or malformed baseline," >&2
+          echo "   a baseline measured with a different verify configuration, bad" >&2
+          echo "   kstrl.toml, or git could not produce the diff)." >&2
+          echo "1: the command itself failed, or the branch regressed and this" >&2
+          echo "   workflow has been graduated to blocking (see docs/dampener.md)." >&2
+          exit 1

@@ -217,6 +217,20 @@ class CheckResult:
     # decision lands in the audit trail (PR body, journal) and not only in
     # the retry context. Empty for checks that emit prose only.
     findings: list[Finding] = field(default_factory=list)
+    # #227: whether this row is a MEASUREMENT. False when the check ran and
+    # measured nothing anyway - it timed out, or its detector is not
+    # installed. Those still produce a row, so :class:`NotMeasured` cannot
+    # carry them: the sidecar is for checks that produce NO row, and turning
+    # one of these into a gap would make `result.passed` true on a timeout.
+    #
+    # Read by :mod:`kstrl.dampener` and nothing else today. It changes no
+    # existing behaviour and no published surface: `passed` still decides the
+    # verdict, the report table and the `ks sense --json` check objects are
+    # untouched. What it buys is that a signature's disappearance can be told
+    # apart from the sensor's, which a fallback signature cannot say for
+    # itself: `signature_slug` strips digits, so "timed out after 300.0s" and
+    # "timed out after 1800.0s" are the same string.
+    measured: bool = True
 
 
 #: Why a check that was ASKED FOR produced no measurement. Stable
@@ -600,6 +614,7 @@ def _self_critique_text(progress_path: Path, start: float) -> str | CheckResult:
             passed=False,
             message=f"Could not read progress file: {exc}",
             duration_seconds=time.monotonic() - start,
+            measured=False,
         )
     except UnicodeDecodeError as exc:
         return CheckResult(
@@ -607,6 +622,7 @@ def _self_critique_text(progress_path: Path, start: float) -> str | CheckResult:
             passed=False,
             message=f"Progress file is not valid UTF-8: {exc}",
             duration_seconds=time.monotonic() - start,
+            measured=False,
         )
 
 
@@ -808,6 +824,7 @@ def check_prd_stories(prd_path: Path, pre_run_prd_path: Path | None = None) -> C
             passed=False,
             message=f"Failed to load PRD: {exc}",
             duration_seconds=time.monotonic() - start,
+            measured=False,
         )
 
     tampered = _tamper_changes(prd, pre_run_prd_path)
@@ -1151,6 +1168,26 @@ def _failed_gate_result(
     every one of them and forgetting a step is SILENT: without
     ``parsed.command`` the prompt label falls back to the parser name,
     which is exactly the #258 mislabel returning unannounced.
+
+    #227: the row's ``measured`` is the parser's own answer, and this is
+    the only place it is decided. ``ParsedOutput.recognised`` is True
+    when a parser for this gate saw its tool reporting a failure - a
+    diagnostic in the tool's format, or the tool's own failure footer -
+    and False for everything else, uv's exit 2 for a command it could
+    not spawn and the shell's 127 included.
+
+    Decided here rather than passed in. Round 1 of #357 decided it at
+    the three call sites from the EXIT CODE, ``returncode not in {126,
+    127}``, and round 2 of review measured what that is worth on the
+    commands this repository actually ships: the gate defaults are
+    ``uv run pytest`` / ``uv run mypy .`` / ``uv run ruff check .``, and
+    uv spawns the child itself and reports its OWN status, which is 2.
+    So ``uv run <missing> check .`` returned ``measured=True`` and the
+    comparison reported ``fixed={'linter:E501': 12, 'linter:F401': 3}``
+    - uninstalling a linter read as fixing every one of its findings,
+    which is exactly what the exit-code rule existed to prevent. A
+    status is the LAUNCHER's, and only the tool's own report is
+    evidence that the tool ran.
     """
     parsed.command = cmd
     for failure in parsed.failures:
@@ -1175,6 +1212,7 @@ def _failed_gate_result(
         details=parsed.format_for_prompt(),
         duration_seconds=time.monotonic() - start,
         parsed=parsed,
+        measured=parsed.recognised,
     )
 
 
@@ -1200,6 +1238,7 @@ def check_test_suite(
             passed=False,
             message=f"Test suite timed out after {timeout}s",
             duration_seconds=time.monotonic() - start,
+            measured=False,
         )
 
     if result.returncode != 0:
@@ -1239,6 +1278,7 @@ def check_typecheck(
             passed=False,
             message=f"Typecheck timed out after {timeout}s",
             duration_seconds=time.monotonic() - start,
+            measured=False,
         )
 
     if result.returncode != 0:
@@ -1278,6 +1318,7 @@ def check_linter(
             passed=False,
             message=f"Linter timed out after {timeout}s",
             duration_seconds=time.monotonic() - start,
+            measured=False,
         )
 
     if result.returncode != 0:
@@ -1297,6 +1338,16 @@ def check_linter(
         message="Linter passed",
         duration_seconds=time.monotonic() - start,
     )
+
+
+#: What the two diff-driven checks report when the diff handed them nothing.
+#:
+#: One constant because the dampener turns a row's message into the REASON a
+#: check is unmeasured, and round 2 of review on #357 found the two checks
+#: disagreeing about the same empty diff - one measured, one did not. They sit
+#: on the same `git diff`, so they answer this question together or the
+#: mechanism is a coin toss over which check the operator configured.
+NO_FILES_IN_THE_DIFF = "no files in the diff"
 
 
 def _diff_scope_details(
@@ -1479,7 +1530,14 @@ def check_scope_unreadable(allowed_paths_error: str) -> CheckResult:
     cause = allowed_paths_error or NO_CAUSE_RECORDED
     return CheckResult(
         name=SCOPE_UNREADABLE_CHECK,
+        # #227: this row is a refusal about an INPUT nobody could read, so
+        # it measured nothing about the diff. `passed` is untouched and the
+        # gate still fails closed; what `measured=False` buys is that the
+        # signature never enters a baseline, so repairing the harness is not
+        # reported as a fix and the check leaving `measured_checks` is not
+        # reported as a sensor that stopped.
         passed=False,
+        measured=False,
         message="Scope could not be read at plan time; failing closed",
         details=[
             f"Error: {cause}",
@@ -1553,14 +1611,37 @@ def check_diff_scope(
     start = time.monotonic()
 
     if not allowed_paths:
+        # #227: a VACUOUS pass. It reads no diff and applies no rule, so it
+        # proves nothing about scope. `ks sense` with no --allowed-path takes
+        # this branch every time, and with measured=True it cleared: measured
+        # on the head of #357, a baseline carrying
+        # `diff_scope:files-outside-allowed-scope-diff-vs-base-branch` was
+        # reported FIXED by a run that never looked.
         return CheckResult(
             name="diff_scope",
             passed=True,
             message="No scope constraints (allowed_paths not set)",
             duration_seconds=time.monotonic() - start,
+            measured=False,
         )
 
     changed = git.get_diff_names(base_branch, cwd)
+    if not changed:
+        # The other vacuous pass, and the one round 1 of #357 missed: the rule
+        # exists but there is nothing to apply it to. Round 2 of review
+        # measured the two diff-driven checks side by side on one empty diff
+        # and found them disagreeing - `diff_scope` measured, `bad_patterns`
+        # did not - so an adopter who sets --allowed-path had every
+        # `diff_scope` baseline signature CLEARED by a pull request whose diff
+        # touched none of the allowed globs.
+        return CheckResult(
+            name="diff_scope",
+            passed=True,
+            message=NO_FILES_IN_THE_DIFF,
+            duration_seconds=time.monotonic() - start,
+            measured=False,
+        )
+
     # #264: the authored scope plus kstrl's own per-component files. The
     # two lists stay separate all the way into the failure details: an
     # operator reading "outside allowed scope" must be able to tell what
@@ -1614,6 +1695,12 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
     """
     start = time.monotonic()
     issues: list[str] = []
+    # Files this check actually OPENED, which is the number that says what it
+    # measured. `len(py_files)` is the number the diff NAMED: round 2 of review
+    # on #357 ran it on a deletion-only commit and got "Scanned 3 Python files,
+    # no issues" with measured=True, having opened none of them. A deleted file
+    # cannot be shown to be free of secrets.
+    scanned = 0
 
     changed = git.get_diff_names(base_branch, cwd)
     py_files = [f for f in changed if f.endswith(".py")]
@@ -1633,6 +1720,7 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
             # under a non-UTF-8 locale would silently change which
             # SECRET_PATTERNS matched below.
             content = full_path.read_text(encoding="utf-8")
+            scanned += 1
             if not content.strip():
                 issues.append(f"{rel_path}: empty file")
                 continue
@@ -1662,8 +1750,18 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
     return CheckResult(
         name="bad_patterns",
         passed=True,
-        message=f"Scanned {len(py_files)} Python files, no issues",
+        # The same sentence as check_diff_scope when the cause is the same, so
+        # an operator reading two unmeasured rows in one report does not have
+        # to work out whether two spellings mean one fact.
+        message=(
+            NO_FILES_IN_THE_DIFF
+            if not changed
+            else f"Scanned {scanned} of {len(py_files)} changed Python files, no issues"
+        ),
         duration_seconds=time.monotonic() - start,
+        # #227: a scan that opened nothing is a vacuous pass. It cannot prove a
+        # secret or a syntax error went away.
+        measured=bool(scanned),
     )
 
 
@@ -1711,6 +1809,7 @@ def check_policy_envelope(
                 )
             ],
             duration_seconds=time.monotonic() - start,
+            measured=False,
         )
 
     try:
@@ -1728,6 +1827,7 @@ def check_policy_envelope(
                 )
             ],
             duration_seconds=time.monotonic() - start,
+            measured=False,
         )
 
     # License gate (R8.1): resolve each newly-added uv.lock dependency's
@@ -1900,6 +2000,7 @@ def check_test_adequacy(
                 )
             ],
             duration_seconds=time.monotonic() - start,
+            measured=False,
         )
 
     sources: dict[str, str] = {}

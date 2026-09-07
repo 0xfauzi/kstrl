@@ -480,6 +480,36 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   three tabs now carries the count, the path and which of the two
   outcomes the line above each row is, in the CLI's own words. Silent at
   zero, and it goes back to silent on reload when the count does.
+
+- `ks sense --write-baseline` records the current structured failure
+  signatures to `scripts/kstrl/sense-baseline.json` and
+  `ks sense --compare-baseline` reports what a branch added against it:
+  new signatures, signatures whose count rose, and signatures the branch
+  fixed. It is advisory - exit 0 whether or not it found a regression -
+  until `--fail-on-regression` is passed, and `--format markdown` renders
+  the report for a pull-request comment. A baseline signature whose check
+  produced no measurement in the current run is reported as unmeasured
+  rather than fixed, because a check that did not run cannot prove
+  anything; a sensor that timed out, whose tool is not installed, or that
+  passed vacuously contributes no signatures to a baseline at all. A
+  check the baseline measured and the branch did not is a REGRESSION in
+  its own right, reported by name with the reason: a branch whose test
+  suite stops finishing produces no signature for any of the other
+  buckets to hold, so without it the report read "no regression". The
+  baseline also records a digest of the three verify commands and the
+  subprocess timeout, and a comparison measured with a different one is
+  refused with exit 2 rather than reported. A workflow on this repository
+  posts the report on every pull request and never fails on a regression;
+  it reads the baseline out of the BASE ref rather than out of the pull
+  request's own checkout, so a branch cannot supply the yardstick it is
+  judged by, and a base branch that carries no baseline is reported as
+  nothing to compare against rather than compared against the branch.
+  What a gate reports as measured is decided by its PARSER: a failing
+  gate measured something only when a parser recognised its own tool
+  reporting the failure, so a missing tool is unmeasured whether the
+  command is `uv run <tool>` (exit 2) or a bare binary (exit 127).
+  `docs/dampener.md` covers adopting it in another repository and
+  graduating it to blocking (#227).
 - The architect's non-blocker spec findings now reach the engineer. They
   were written to `scripts/kstrl/spec-issues.json` on every decompose and
   nothing in `kstrl/` ever opened that file: across five recorded runs

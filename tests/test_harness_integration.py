@@ -402,12 +402,8 @@ class TestFixturesIntegration:
         assert "2/2" in result.message or "2 passed" in result.message
 
     def test_snapshot_roundtrip(self, tmp_path: Path) -> None:
-        from kstrl.fixtures import (
-            Fixture,
-            FixtureResult,
-            check_snapshot_regression,
-            save_snapshot,
-        )
+        from kstrl.fixtures import Fixture, FixtureResult
+        from kstrl.fixtures_snapshot import check_snapshot_regression, save_snapshot
 
         fixture = Fixture(
             description="test",

@@ -69,6 +69,22 @@ class ParsedOutput:
     # The command the gate actually ran, when the caller knows it. Only
     # used to label a passthrough; the parser identity stays `tool`.
     command: str = ""
+    # Did this parser see its OWN tool reporting a failure: a diagnostic
+    # in the tool's format, or the tool's own failure footer? (#227)
+    #
+    # POSITIVE evidence, which is the whole point. Every other field can
+    # be filled by the raw-tail fallback, so none of them separates "the
+    # tool ran and reported findings" from "the launcher printed an
+    # error and the tool never started". A gate reads this to decide
+    # whether its failing row MEASURED anything, and `measured` decides
+    # what a dampener comparison may call fixed - the clearing side, the
+    # one that has to be proved rather than assumed.
+    #
+    # Deliberately not set by a PASSING footer. "5 passed in 0.1s" is
+    # evidence about a chained command's other half, not about the half
+    # that failed, and reading it as recognition would clear a baseline
+    # on the strength of the part that worked.
+    recognised: bool = False
 
     @property
     def prompt_label(self) -> str:
@@ -354,6 +370,13 @@ def parse_pytest_output(raw: str) -> ParsedOutput:
     lines = raw.splitlines()
     result.failures, result.raw_summary = _pytest_scan(lines)
 
+    # Before the tail fallback below overwrites raw_summary, and so the
+    # only two things that can set it are a FAILED/ERROR line pytest
+    # spells and a footer reporting a nonzero failure or error count.
+    # The footer alone will not do: _PYTEST_SUMMARY_RE matches any
+    # "=== ... ===" banner, "test session starts" included.
+    result.recognised = bool(result.failures) or _pytest_failure_count(result.raw_summary) > 0
+
     if result.failures:
         blocks = _pytest_blocks(lines)
         for failure in result.failures:
@@ -451,6 +474,11 @@ def parse_mypy_output(raw: str) -> ParsedOutput:
     # Fallback total from parsed failures
     if result.total_errors == 0:
         result.total_errors = len(result.failures)
+
+    # An error line in mypy's format, or mypy's own "Found N errors in M
+    # files (checked K source files)" footer. Computed here because the
+    # fallback below puts the raw tail in the same field.
+    result.recognised = bool(result.failures) or bool(result.raw_summary)
 
     # Fallback summary
     if not result.failures and not result.raw_summary:
@@ -590,6 +618,11 @@ def parse_ruff_output(raw: str) -> ParsedOutput:
     # Fallback total from parsed failures
     if result.total_errors == 0:
         result.total_errors = len(result.failures)
+
+    # A diagnostic in either of ruff's two formats, or ruff's own
+    # "Found N errors" footer. "All checks passed!" is deliberately not
+    # recognition: only a nonzero exit reaches this parser from a gate.
+    result.recognised = bool(result.failures) or bool(result.raw_summary)
 
     # Fallback summary
     if not result.failures and not result.raw_summary:
