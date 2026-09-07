@@ -22,6 +22,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import Literal, cast
 
 import pytest
 
@@ -29,6 +30,7 @@ from kstrl.config import KstrlConfig
 from kstrl.config_keys import STRING_KEYS
 from kstrl.init_cmd import DEFAULT_GOLDEN_PATTERNS, DEFAULT_MEMORY, SCAFFOLDED_TEMPLATES
 from kstrl.operator_context import (
+    _KEPT,
     CUT_FLOOR,
     GOLDEN_PATTERNS,
     MEMORY,
@@ -376,9 +378,16 @@ class TestTheTableTiesToTheOtherTables:
     def test_every_row_declares_a_direction_the_cut_implements(self) -> None:
         """``keep`` is exempt from the case above, so it gets its own: a
         typo in it is a silent behaviour change, and ``Literal`` is a type
-        annotation rather than a run-time check."""
+        annotation rather than a run-time check.
+
+        Against ``_KEPT`` rather than against a pair written here.
+        ``_KEPT`` is the dict the operator's notice is looked up in and
+        the dict the constructor validates against, so this asks the
+        question in the vocabulary the code uses instead of a third copy
+        of it (round 2, nit 6).
+        """
         for kind in OPERATOR_FILES:
-            assert kind.keep in ("head", "tail"), (kind.key, kind.keep)
+            assert kind.keep in _KEPT, (kind.key, kind.keep, sorted(_KEPT))
 
     def test_the_memory_row_is_the_one_the_issue_asked_for(self) -> None:
         """The numbers R10.9 specifies, pinned where a reader can see
@@ -390,6 +399,130 @@ class TestTheTableTiesToTheOtherTables:
         assert MEMORY.keep == "tail"
         assert GOLDEN_PATTERNS.keep == "head"
         assert KstrlConfig().memory_file == Path("scripts/kstrl/memory.md")
+
+
+class TestARowTheCutCannotHonourIsRefused:
+    """Round 2, nits 6 and 7: two values ``Literal`` and ``int`` allow
+    and the cut cannot honour, refused where the row is BUILT.
+
+    Both were reachable. ``tests/helpers/operatorfiles.py`` builds
+    production specs through ``dataclasses.replace``, which is how the
+    reviewer reached them, and ``Literal`` is a type annotation rather
+    than a run-time check. Measured before this: ``keep="middle"`` made
+    ``_cut`` truncate as head and then ``_KEPT[spec.keep]`` raise
+    ``KeyError`` out of ``read_operator_file``, two sites disagreeing
+    about the same value; ``max_chars=0`` made ``rendered[-0:]`` the
+    WHOLE file, so the value that reads as "inject nothing" injected 587
+    of 600 characters on the tail row and 0 on the head row.
+
+    Refused at construction rather than defended inside the cut, so the
+    cut has one vocabulary and the notice has the same one.
+    """
+
+    #: A value the annotation forbids, which is the point: this is what an
+    #: untyped caller or a ``replace`` on a typo actually produces.
+    THIRD_DIRECTION = cast(Literal["head", "tail"], "middle")
+
+    def test_a_third_direction_is_refused_by_the_row(self) -> None:
+        with pytest.raises(ValueError, match="keep="):
+            dataclasses.replace(MEMORY, keep=self.THIRD_DIRECTION)
+
+    def test_a_third_direction_is_refused_by_the_spec(self, tmp_path: Path) -> None:
+        """The shape the reviewer reached it through: a spec derived from
+        a valid row by ``replace``, which is what the test helpers do."""
+        spec = spec_for(MEMORY, tmp_path / MEMORY.scaffold)
+
+        with pytest.raises(ValueError, match="keep="):
+            dataclasses.replace(spec, keep=self.THIRD_DIRECTION)
+
+    @pytest.mark.parametrize("budget", [0, -1], ids=["zero", "negative"])
+    def test_a_budget_that_is_not_a_budget_is_refused(self, budget: int) -> None:
+        with pytest.raises(ValueError, match="max_chars"):
+            dataclasses.replace(MEMORY, max_chars=budget)
+
+    def test_the_spec_refuses_the_same_budget(self, tmp_path: Path) -> None:
+        spec = spec_for(MEMORY, tmp_path / MEMORY.scaffold)
+
+        with pytest.raises(ValueError, match="max_chars"):
+            dataclasses.replace(spec, max_chars=0)
+
+    def test_the_smallest_budget_it_does_accept_still_cuts(self, tmp_path: Path) -> None:
+        """The bound on the refusal: 1 is a budget, so it is taken, and
+        it truncates rather than being treated as "no limit"."""
+        path = tmp_path / MEMORY.scaffold
+        path.write_text("abcdef\n", encoding="utf-8")
+
+        result = read_operator_file(spec_for(MEMORY, path, max_chars=1))
+
+        assert len(result.body) == 1
+        assert result.fact is not None
+
+
+class TestTheCutGivesUpOnlyWhatTheBudgetCosts:
+    """Round 2, should-fix 1 and nit 5: two ways the cut delivered less
+    than the budget allows, at the end the row declares.
+
+    ``tests/test_operator_context.py::TestTheCutStillDeliversTheBudget``
+    holds the head side of the floor with three cases and was the whole
+    of it: every tail fixture in this file uses 10- to 30-character
+    lines, so the tail window always contains an early newline and the
+    tail arm's floor was never entered. The reviewer removed that
+    fallback and the FULL suite stayed green, 6213 passed, on a mutant
+    that delivered 13 of 4000 characters.
+    """
+
+    @KINDS
+    def test_an_unwrapped_paragraph_still_delivers_the_floor(
+        self,
+        kind: OperatorFileKind,
+        tmp_path: Path,
+    ) -> None:
+        """One paragraph with no hard wrapping, which is the ordinary
+        shape of hand-written markdown, sized so the line-boundary move
+        would land below the floor at whichever end the row keeps.
+
+        Parametrized rather than written for memory alone: the head arm
+        has had this case since #229 round 2 and the tail arm had none,
+        which is the asymmetry that let the fallback be deleted with
+        nothing failing.
+        """
+        marker = "- the rule that has to survive"
+        filler = "x" * (kind.max_chars + 100)
+        text = f"{marker}\n{filler}\n" if kind.keep == "head" else f"{filler}\n{marker}\n"
+        path = tmp_path / kind.scaffold
+        path.write_text(text, encoding="utf-8")
+
+        result = read_operator_file(spec_for(kind, path))
+
+        assert int(kind.max_chars * CUT_FLOOR) <= len(result.body) <= kind.max_chars
+        assert marker in result.body, (kind.key, kind.keep, len(result.body))
+
+    def test_a_tail_window_that_opens_on_a_line_keeps_that_line(self, tmp_path: Path) -> None:
+        """Nit 5. The last ``max_chars`` characters here already start at
+        a line boundary, so the move to one throws away a complete line
+        that fitted. Measured on the memory row at its own budget before
+        the fix: 3969 of 4000 characters, with the window's first
+        complete line absent from the body."""
+        path = tmp_path / MEMORY.scaffold
+        path.write_text("x" * 20 + "\n" + "a" * 5 + "\n" + "b" * 94 + "\n", encoding="utf-8")
+
+        result = read_operator_file(spec_for(MEMORY, path, max_chars=100))
+
+        assert result.body == "a" * 5 + "\n" + "b" * 94
+        assert len(result.body) == 100
+
+    def test_a_head_window_that_closes_on_a_line_keeps_that_line(self, tmp_path: Path) -> None:
+        """The same defect mirrored, found while fixing the one above and
+        fixed in the same change. The first ``max_chars`` characters end
+        exactly where a line ends, and ``rfind`` moved back past that
+        line: 94 of 100 characters, with the last complete line gone."""
+        path = tmp_path / GOLDEN_PATTERNS.scaffold
+        path.write_text("b" * 94 + "\n" + "a" * 5 + "\n" + "x" * 20 + "\n", encoding="utf-8")
+
+        result = read_operator_file(spec_for(GOLDEN_PATTERNS, path, max_chars=100))
+
+        assert result.body == "b" * 94 + "\n" + "a" * 5
+        assert len(result.body) == 100
 
 
 class TestTheNewestStandingCorrectionSurvives:

@@ -93,6 +93,63 @@ logger = logging.getLogger(__name__)
 #: :func:`read_operator_file` for what it is defending against.
 CUT_FLOOR = 0.9
 
+#: What the cut kept, said the same way to both audiences, AND the whole
+#: vocabulary of ``keep``. ONE string per direction and ONE lookup of it,
+#: beside the one ``shown`` string both notices carry the numbers in, so
+#: the prompt's ``fact`` and the operator's ``message`` can disagree
+#: about neither the amount nor the end. The operator needs the
+#: direction to prune correctly: told only "shorten it", somebody
+#: trimming a memory file from the bottom deletes exactly the entries the
+#: cut was already keeping.
+#:
+#: The direction sits LAST in both, after the filename in ``fact``.
+#: Written between the count and the filename it produced "dropping the
+#: start from memory.md", where the closing phrase reads as part of the
+#: direction rather than as the file the count is about.
+#:
+#: It is defined above the rows because :func:`_validate_cut_policy`
+#: reads it while the rows are being CONSTRUCTED. That is round 2's nit
+#: 6: ``_cut`` branched on ``keep == "tail"`` and fell through to head
+#: for anything else while this lookup raised ``KeyError``, so
+#: ``replace(spec, keep="middle")`` truncated one way and then died
+#: naming the other. One vocabulary, checked where the row is built, is
+#: what stops the two disagreeing.
+_KEPT: dict[str, str] = {
+    "head": "keeping the start of the file and dropping the end",
+    "tail": "keeping the end of the file and dropping the start",
+}
+
+
+def _validate_cut_policy(keep: str, max_chars: int, where: str) -> None:
+    """Refuse a row whose cut policy the cut cannot honour.
+
+    Both dataclasses below call this from ``__post_init__``, so a value
+    ``Literal`` describes but does not enforce - ``dataclasses.replace``,
+    an untyped caller, a value read out of a config file some day - fails
+    where it is written rather than deeper in, and fails the same way for
+    both of them.
+
+    ``max_chars`` must be at least 1. Round 2's nit 7: ``rendered[-0:]``
+    is the WHOLE string, so a tail row with a zero budget injected 587 of
+    600 characters where the head row injected none, and the value that
+    reads as "inject nothing" produced the maximum of what the budget
+    exists to bound. Refusing it at construction is narrower than
+    ``max(1, ...)`` inside the cut, which would have made a zero mean
+    "one character" silently.
+    """
+    if keep not in _KEPT:
+        raise ValueError(
+            f"{where}: keep={keep!r} is not one of {sorted(_KEPT)}. The cut and the "
+            "notice both read this value, and a third value truncates one way while "
+            "the notice for it does not exist."
+        )
+    if max_chars < 1:
+        raise ValueError(
+            f"{where}: max_chars={max_chars} is not a budget. A non-positive budget "
+            "reads as 'inject nothing' and delivers the whole file, because "
+            "rendered[-0:] is rendered."
+        )
+
 
 @dataclass(frozen=True)
 class OperatorFileKind:
@@ -164,6 +221,15 @@ class OperatorFileKind:
     #: ``SCAFFOLDED_TEMPLATES`` row in ``kstrl/init_cmd.py``.
     scaffold: str
 
+    def __post_init__(self) -> None:
+        """A row this module's own cut cannot honour is refused here.
+
+        At import, since the two rows below are module constants: a bad
+        one fails the process that declares it rather than the run that
+        reads it. See :func:`_validate_cut_policy`.
+        """
+        _validate_cut_policy(self.keep, self.max_chars, f"OperatorFileKind {self.key!r}")
+
 
 #: R10.8. 6000 characters is about 1500 tokens.
 GOLDEN_PATTERNS = OperatorFileKind(
@@ -229,6 +295,18 @@ class OperatorFile:
     #: template's history is an untouched skeleton and is treated as an
     #: empty file: see :func:`read_operator_file`.
     scaffold: str | None = None
+
+    def __post_init__(self) -> None:
+        """The same refusal the row makes, made again on the spec.
+
+        Not redundant: ``dataclasses.replace`` builds one of these from a
+        valid row with a field overridden, which is how
+        ``tests/helpers/operatorfiles.py`` varies the budget, and it is
+        the shape review round 2 measured both of nit 6 and nit 7
+        through. Re-running the check here is what makes a derived spec
+        obey the same rule as the row it came from.
+        """
+        _validate_cut_policy(self.keep, self.max_chars, f"OperatorFile {self.display!r}")
 
 
 @dataclass(frozen=True)
@@ -391,24 +469,6 @@ def read_operator_file(spec: OperatorFile) -> OperatorText:
     )
 
 
-#: What the cut kept, said the same way to both audiences. ONE string per
-#: direction and ONE lookup of it, beside the one ``shown`` string both
-#: notices carry the numbers in, so the prompt's ``fact`` and the
-#: operator's ``message`` can disagree about neither the amount nor the
-#: end. The operator needs the direction to prune correctly: told only
-#: "shorten it", somebody trimming a memory file from the bottom deletes
-#: exactly the entries the cut was already keeping.
-#:
-#: The direction sits LAST in both, after the filename in ``fact``.
-#: Written between the count and the filename it produced "dropping the
-#: start from memory.md", where the closing phrase reads as part of the
-#: direction rather than as the file the count is about.
-_KEPT: dict[str, str] = {
-    "head": "keeping the start of the file and dropping the end",
-    "tail": "keeping the end of the file and dropping the start",
-}
-
-
 def _cut(rendered: str, spec: OperatorFile) -> str:
     """The part of an over-budget file this kind keeps.
 
@@ -425,13 +485,34 @@ def _cut(rendered: str, spec: OperatorFile) -> str:
     The ``strip`` at each end is the mirror of the other: it takes back
     the blank-line run the cut lands in, which is at most a few
     characters and never content.
+
+    A WINDOW THAT IS ALREADY WHOLE LINES IS KEPT WHOLE, at either end.
+    Round 2's nit 5 found this on the tail arm: the move ran
+    unconditionally, so a window whose first character follows a newline
+    gave up its own first complete line for nothing, measured at 3969 of
+    4000 characters with that line absent from the body. The head arm has
+    the same defect mirrored, and it is fixed here in the same change: a
+    window whose last character is followed by a newline ends on a
+    complete line, and ``rfind`` moved back past it. Neither is caught by
+    the floor, because both give up ONE line rather than most of the
+    budget. What the two probes read is the character OUTSIDE the window,
+    which is the only one that says whether the boundary is already
+    there.
+
+    ``spec.max_chars`` is at least 1 (``_validate_cut_policy``) and
+    ``rendered`` is longer than it (the only caller checks), so both
+    probes are in range.
     """
     if spec.keep == "tail":
         window = rendered[-spec.max_chars :]
+        if rendered[-spec.max_chars - 1] == "\n":
+            return window.lstrip("\n")
         newline = window.find("\n")
         moved = window[newline + 1 :] if newline >= 0 else window
         return (moved if len(moved) >= int(spec.max_chars * CUT_FLOOR) else window).lstrip("\n")
     window = rendered[: spec.max_chars]
+    if rendered[spec.max_chars] == "\n":
+        return window.rstrip("\n")
     newline = window.rfind("\n")
     return (window[:newline] if newline >= int(spec.max_chars * CUT_FLOOR) else window).rstrip("\n")
 
