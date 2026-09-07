@@ -207,7 +207,7 @@ Three fixture types: `cli` (run a command, check output), `function` (import and
 
 kstrl is built for one person running it unattended, and it is designed around the difference between being in the loop and being on it. In the loop, you are a required step and nothing proceeds without you. On the loop, the factory runs itself and comes to you only at boundaries it cannot judge, while you adjust how it behaves between runs.
 
-Today the boundaries that reach you are: a spec the architect halts on (there is no override flag; the spec gets fixed), the optional checkpoint before a merge, a budget or breaker that stopped a run, and an inbox of decisions the daemon could not take alone. How much the factory may do without asking is one ordered level, earned by evidence plus your recorded acknowledgement and revoked automatically. The levers you turn between runs are the project prompt, `CLAUDE.md`, `kstrl.toml`, and the acceptance criteria themselves; the R10 work adds a way for your pull-request comments to reach the next run. One more lever is `scripts/kstrl/golden-patterns.md`, which `ks init` scaffolds and you fill in: what a good change looks like in this repository, with a file to copy from for each pattern, carried into every factory engineer prompt and every `ks run` prompt (`ks feature` and `ks understand` do not read it). It is yours to write and is read verbatim like `CLAUDE.md`, never generated for you. Until you edit it nothing is injected, because kstrl recognises its own scaffold and treats it as empty; past about 1500 tokens it is cut at a line boundary where that still delivers most of the budget and at the budget boundary otherwise, with how much arrived announced in the prompt and once on your terminal.
+Today the boundaries that reach you are: a spec the architect halts on (there is no override flag; the spec gets fixed), the optional checkpoint before a merge, a budget or breaker that stopped a run, and an inbox of decisions the daemon could not take alone. How much the factory may do without asking is one ordered level, earned by evidence plus your recorded acknowledgement and revoked automatically. The levers you turn between runs are the project prompt, `CLAUDE.md`, `kstrl.toml`, and the acceptance criteria themselves; the R10 work adds a way for your pull-request comments to reach the next run. One more lever is `scripts/kstrl/golden-patterns.md`, which `ks init` scaffolds and you fill in: what a good change looks like in this repository, with a file to copy from for each pattern, carried into every factory engineer prompt and every `ks run` prompt (`ks feature` and `ks understand` do not read it). It is yours to write and is read verbatim like `CLAUDE.md`, never generated for you. Until you edit it nothing is injected, because kstrl recognises its own scaffold and treats it as empty; past about 1500 tokens it keeps the START of the file and drops the end, cut at a line boundary where that still delivers most of the budget and at the budget boundary otherwise, with how much arrived and which end went announced in the prompt and once on your terminal.
 
 ### Steering the loop
 
@@ -226,10 +226,13 @@ attempt's failures get acted on rather than the other way round. It reaches
 every factory engineer prompt and every `ks run` prompt (`ks feature` and
 `ks understand` do not read it), from the repo root and never from a
 component's worktree. Until you edit it nothing is injected, because kstrl
-recognises its own scaffold; past about 1000 tokens it is cut the same way
-golden patterns are, with how much arrived announced in the prompt and once on
-your terminal. Keep `## Guidance` as the last section: R10.10 will append your
-`/memory` pull-request comments to the end of the file.
+recognises its own scaffold; past about 1000 tokens it keeps the END of the
+file and drops the start, which is the opposite of golden patterns and is
+because this is the file that grows at the end. Your newest corrections
+survive, pruning from the top is what preserves them, and how much arrived and
+which end went are announced in the prompt and once on your terminal. Keep
+`## Guidance` as the last section: R10.10 will append your `/memory`
+pull-request comments to the end of the file.
 
 ## Why not just use Claude Code directly?
 

@@ -404,11 +404,17 @@ log. The file is version controlled and it is yours; kstrl never rewrites it.
 
 Two operational notes. `ks init` scaffolds it, and while it is unchanged
 nothing is injected, so a fresh project pays nothing for the feature. Keep
-`## Guidance` as the last heading: appends land at the end of the file. The
-budget is about 1000 tokens; past that the block is truncated, the prompt says
-how much arrived and the run warns once on your terminal naming the path. Two
-commands read it, `ks factory` and `ks run`; `ks feature` and `ks understand`
-do not.
+`## Guidance` as the last heading: appends land at the end of the file, and
+nothing in kstrl checks that, so a section you add after it will take them.
+The budget is about 1000 tokens; past that the block keeps the END of the
+file and drops the start, so your newest standing corrections are the ones
+that survive and pruning from the top is what preserves them. Both the prompt
+and the terminal warning say which end went. `ks factory`, `ks retry` and
+`ks run` read it; `ks feature` and `ks understand` do not.
+
+Golden patterns truncate the other way, keeping the start and dropping the
+end, because that file is written once and pruned by hand and its sections do
+not carry an order.
 
 ## Where to find things
 

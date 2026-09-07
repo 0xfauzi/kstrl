@@ -40,12 +40,22 @@ def spec_for(
     max_chars: int | None = None,
     scaffold: str | None = None,
 ) -> OperatorFile:
-    """A spec built the way production builds one, with the two knobs varied.
+    """A spec built through ``operator_file_spec``, with two knobs varied.
 
-    Through ``operator_file_spec`` and not through a literal, so a field
+    Through the production builder and not through a literal, so a field
     added to :class:`~kstrl.operator_context.OperatorFile` reaches these
     cases the same way it reaches the factory, and so a case parametrized
     over ``OPERATOR_FILES`` exercises the row rather than a copy of it.
+
+    ``scaffold`` IS OPT-IN AND DEFAULTS TO OFF, which production does not
+    do: ``operator_file_spec`` copies ``kind.scaffold`` and this
+    overwrites it. Round 1 (nit 8) is why the docstring says so rather
+    than the default changing: eight of the eleven call sites want
+    suppression off, because they write a body that is not a shipped one
+    and would rather not depend on that; the three cases where
+    suppression is the subject pass ``scaffold=kind.scaffold``
+    explicitly, and they are the only ones for which the difference is
+    observable. A test that means "production's spec" must pass it.
     """
     built = operator_file_spec(kind, path.parent, path)
     return replace(

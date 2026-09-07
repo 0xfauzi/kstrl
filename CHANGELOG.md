@@ -32,8 +32,13 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   while the file is absent, empty, unreadable or still the unedited
   `ks init` scaffold, truncation announced in the prompt and warned once
   on your terminal with the path, and a `[paths] memory` naming no file
-  reported rather than silently dropped. Keep `## Guidance` as the last
-  heading in it: the polled-steering work appends there.
+  reported rather than silently dropped. Truncation keeps the END of
+  this file and drops the start, which is the opposite of golden
+  patterns: this is the file that grows at the end, so the newest
+  standing corrections are the ones that survive and pruning from the
+  top preserves them. Both notices name the end that went. Keep
+  `## Guidance` as the last heading in it: the polled-steering work
+  appends there.
 
 - Two of the autonomy ladder's five declared demotion triggers now fire.
   `DemotionTrigger` has listed `CALIBRATION_REGRESSION` and
@@ -63,6 +68,24 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   load or cannot be read exits 2 instead of being read as "ladder off".
 
 ### Changed
+
+- The `ks init` scaffolds for `scripts/kstrl/golden-patterns.md` and
+  `scripts/kstrl/memory.md` are shorter. Their preambles described the
+  scaffold's own lifecycle, and that text is prompt text from your first
+  edit onward: the whole file reaches the engineer under a header saying
+  you wrote it, so "while this file is unchanged nothing is injected"
+  was being read at the moment it was injected. Each is now a title and
+  one sentence. The lifecycle notes are in `docs/runbook.md` and the
+  README, where they cost no tokens. A copy already on your disk is
+  still recognised as an unedited scaffold; the digest history is
+  append-only for exactly that reason.
+
+- Trailing newlines are no longer an edit. `ks init`'s scaffold
+  recognition compares the file with its trailing newlines collapsed as
+  well as raw, so a copy an editor normalised is still the body kstrl
+  wrote rather than an operator file to inject. Both readers of that
+  rule move together: the loader's injection decision and the staleness
+  notice `ks init --upgrade-prompts` prints.
 
 - A repeat of an open inbox item now refreshes its `evidence` alongside
   its `detail`. Only the prose half was refreshed before, so a deduped

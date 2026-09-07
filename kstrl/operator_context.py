@@ -81,6 +81,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from kstrl.config import KstrlConfig, relative_to_root
 from kstrl.delimiters import generate_data_delimiter
@@ -95,15 +96,31 @@ CUT_FLOOR = 0.9
 
 @dataclass(frozen=True)
 class OperatorFileKind:
-    """One operator-authored file, declared once and read everywhere.
+    """One operator-authored file, declared once and read in two places.
 
-    Everything that differs between two such files sits on this row, so
-    nothing below it spells any of them: the parent's once-per-run
-    notice, ``KstrlConfig.validate`` and every worker's prompt block all
-    follow the same declaration rather than a parallel one. R10.9 is the
-    case that claim was made about (review round 2, should-fix 5, and
-    ``_rows``' own docstring): the memory file is a second row, and no
-    function in this module or in ``kstrl/factory.py`` learned its name.
+    Everything that differs between two such files sits on this row, and
+    it reaches two of the three surfaces with no further edit: the
+    parent's once-per-run notice (:func:`operator_file_notices`) and
+    ``KstrlConfig.validate`` (:func:`configured_path_errors`) both walk
+    :data:`OPERATOR_FILES` through :func:`_rows` and take the subject,
+    the ``[paths]`` key and the budget off the row.
+
+    THE WORKER'S PROMPT BLOCK IS THE THIRD AND IT IS HAND-ORDERED, on
+    purpose. ``factory._run_component`` names each kind itself, and a
+    new row costs FIVE edits in ``kstrl/factory.py``: the import, the
+    ``_run_component`` parameter, the ``load_operator_file`` call, the
+    ``_path_relative_to_root`` hoist in the parent, and the positional
+    slot in ``_submit_args``. Round 1 of R10.9's review is the reason
+    this paragraph exists: the earlier wording claimed a row reached the
+    worker too, which would have made a third row validated, warned
+    about, and injected into no prompt at all, with nothing failing.
+    That is not a defect to loop away, because the ORDER is the feature
+    (memory after the retry context, #230) and a loop over a declaration
+    order cannot express a prompt order. It is a defect to CLOSE, and
+    ``tests/test_operator_files_reach_the_prompt.py`` is the closure: it
+    counts the ``load_operator_file(operator_file_spec(<KIND>, ...))``
+    sites in ``kstrl/factory.py`` per kind and fails unless every row
+    has exactly one.
     """
 
     #: Its ``[paths]`` key, matching a ``config_keys.STRING_KEYS`` row.
@@ -121,6 +138,17 @@ class OperatorFileKind:
     #: (``FeedforwardConfig.max_context_tokens`` is spent as ``* 4`` in
     #: ``build_feedforward_context``).
     max_chars: int
+    #: Which END of an over-budget file survives the cut. On the ROW
+    #: because the two files grow at opposite ends, and review round 1
+    #: (should-fix 2) measured what one shared direction costs: with 400
+    #: appended rules at a 4000-character budget the memory block
+    #: delivered rules 0000 to 0302 and dropped 0303 to 0399, so the 97
+    #: newest standing corrections were the ones that reached no prompt.
+    #: ``"head"`` for golden patterns, which an operator writes once and
+    #: prunes by hand and whose sections are order-neutral; ``"tail"``
+    #: for memory, which ``DEFAULT_MEMORY``, ``docs/runbook.md`` and
+    #: #231's ``/memory`` append all grow at the END.
+    keep: Literal["head", "tail"]
     #: The scaffolded filename whose digest history says "kstrl wrote
     #: this, the operator has not filled it in yet". Matches a
     #: ``SCAFFOLDED_TEMPLATES`` row in ``kstrl/init_cmd.py``.
@@ -134,6 +162,7 @@ GOLDEN_PATTERNS = OperatorFileKind(
     header="GOLDEN PATTERNS (operator-authored)",
     subject="Golden patterns",
     max_chars=6000,
+    keep="head",
     scaffold="golden-patterns.md",
 )
 
@@ -148,6 +177,7 @@ MEMORY = OperatorFileKind(
     header="MEMORY (standing feedback)",
     subject="Memory",
     max_chars=4000,
+    keep="tail",
     scaffold="memory.md",
 )
 
@@ -181,6 +211,9 @@ class OperatorFile:
     #: Its ``[paths]`` key, for the message about a value naming nothing.
     key: str
     max_chars: int
+    #: Which end of an over-budget file survives. Copied off the row; see
+    #: :attr:`OperatorFileKind.keep` for why it is per file.
+    keep: Literal["head", "tail"]
     #: The ``SCAFFOLDED_TEMPLATES`` filename this file is scaffolded
     #: from, when it is scaffolded at all. A body whose digest is in that
     #: template's history is an untouched skeleton and is treated as an
@@ -248,6 +281,7 @@ def operator_file_spec(kind: OperatorFileKind, root: Path, configured: Path | st
         subject=kind.subject,
         key=kind.key,
         max_chars=kind.max_chars,
+        keep=kind.keep,
         scaffold=kind.scaffold,
     )
 
@@ -276,30 +310,40 @@ def read_operator_file(spec: OperatorFile) -> OperatorText:
     scaffolded it. The last is the one review round 1 measured: an
     untouched skeleton is the operator saying nothing yet, and injecting
     it put 479 characters of angle-bracket placeholders at the head of
-    every engineer prompt of every component of every iteration, under a
-    header asserting the operator authored them.
+    every engineer prompt of every component of every ATTEMPT, under a
+    header asserting the operator authored them. Attempt, not iteration:
+    ``loop.run_loop`` builds the prompt once and reuses it for every
+    iteration of that attempt (round 1, nit 11), which is also the
+    latency #231 inherits, one attempt rather than one iteration.
     ``init_cmd.shipped_label`` owns the digest history, so this decision
     and the staleness notice ``ks init`` prints agree by construction.
-    The digest is taken on the DECODED text, so a CRLF copy of the
-    scaffold is still recognised and one appended newline is not: the
-    word for that is "unchanged", not "byte-identical" (review round 2,
-    nit 15).
+    The digest is taken on the RENDERED text, the same ``rstrip("\\n")``
+    the injected body goes through, so a CRLF copy of the scaffold is
+    still recognised and so is a copy with trailing newlines appended.
+    R10.9 round 1 (nit 3) is why the second one moved: comparing the raw
+    decoded text while rendering the stripped one meant
+    ``DEFAULT_MEMORY + "\\n"`` injected a placeholder block whose body was
+    byte-identical to the one the unedited file suppresses, and #231
+    makes a daemon the writer of this file, where an editor normalising
+    a trailing newline is an ordinary thing to happen. A leading newline
+    or any interior edit is still a change, because the strip is at the
+    end only.
 
     An unreadable file (a directory in its place, mode 000 on the file or
     on its parent, a name the filesystem will not take, bytes that are
     not UTF-8) returns "" and a ``message``: a bad operator file must not
     fail a run, but it must not be silent either.
 
-    Past ``spec.max_chars`` the text is cut at the last newline in the
-    budget window, but ONLY when that newline is at or past
+    Past ``spec.max_chars`` the text is cut at a line boundary inside the
+    budget window, but ONLY when that boundary still delivers
     ``CUT_FLOOR`` of the budget; otherwise the cut is at the budget
     boundary. Review round 2 measured the version without the floor:
     ordinary markdown written without hard wrapping is one long line per
     paragraph, and ``"# Golden patterns\\n" + "word " * 3000`` delivered
-    17 of the 6000 budgeted characters. The engineer got a heading. The
-    floor is on the CUT POINT; the trailing ``rstrip("\\n")`` can take
-    back the blank-line run the cut lands in, which is at most a few
-    characters and never content.
+    17 of the 6000 budgeted characters. The engineer got a heading. WHICH
+    END survives is ``spec.keep`` and belongs to the file, not to the
+    cut: see :func:`_cut`. Both the prompt's ``fact`` and the operator's
+    ``message`` name that end, out of one string.
 
     The character counts are the RENDERED body's, not the pre-strip
     window's (review round 1, nit 9), and the budget is compared against
@@ -326,16 +370,53 @@ def read_operator_file(spec: OperatorFile) -> OperatorText:
     if len(rendered) <= spec.max_chars:
         return OperatorText(rendered, None, None, absent=False)
 
-    window = rendered[: spec.max_chars]
-    newline = window.rfind("\n")
-    body = (window[:newline] if newline >= int(spec.max_chars * CUT_FLOOR) else window).rstrip("\n")
-    shown = f"truncated: {len(body)} of {len(text)} characters shown"
+    body = _cut(rendered, spec)
+    shown = f"truncated: {len(body)} of {len(text)} characters shown, {_KEPT[spec.keep]}"
     return OperatorText(
         body,
         f"{shown} from {spec.display}",
         f"{shown}; shorten {spec.path}",
         absent=False,
     )
+
+
+#: What the cut kept, said the same way to both audiences. One string per
+#: direction and one interpolation of it, so the prompt's ``fact`` and the
+#: operator's ``message`` cannot disagree about which end went. The
+#: operator needs the direction to prune correctly: told only "shorten
+#: it", somebody trimming a memory file from the bottom deletes exactly
+#: the entries the cut was already keeping.
+_KEPT: dict[str, str] = {
+    "head": "keeping the start of the file and dropping the end",
+    "tail": "keeping the end of the file and dropping the start",
+}
+
+
+def _cut(rendered: str, spec: OperatorFile) -> str:
+    """The part of an over-budget file this kind keeps.
+
+    The direction is ``spec.keep`` and it is a per-file property, not a
+    property of truncation: review round 1 (should-fix 2) measured one
+    shared "keep the head" against the file R10.9 documents in four
+    places as growing at the END, and 97 of 400 appended rules reached no
+    engineer prompt, the 97 newest ones. Both directions move the cut to
+    a line boundary and both refuse that move below :data:`CUT_FLOOR` of
+    the budget, for the reason ``read_operator_file`` records: unwrapped
+    markdown is one long line per paragraph, and a line-boundary cut with
+    no floor delivered 17 of 6000 characters.
+
+    The ``strip`` at each end is the mirror of the other: it takes back
+    the blank-line run the cut lands in, which is at most a few
+    characters and never content.
+    """
+    if spec.keep == "tail":
+        window = rendered[-spec.max_chars :]
+        newline = window.find("\n")
+        moved = window[newline + 1 :] if newline >= 0 else window
+        return (moved if len(moved) >= int(spec.max_chars * CUT_FLOOR) else window).lstrip("\n")
+    window = rendered[: spec.max_chars]
+    newline = window.rfind("\n")
+    return (window[:newline] if newline >= int(spec.max_chars * CUT_FLOOR) else window).rstrip("\n")
 
 
 def _rows(
@@ -346,10 +427,18 @@ def _rows(
     """Every operator-authored file, paired with its anchored default.
 
     One loop over :data:`OPERATOR_FILES`, so a row added there reaches
-    the parent's notice, ``KstrlConfig.validate`` and the worker's block
-    with no edit below this line. R10.9 added the memory row and neither
-    function below changed, because both take the subject and the
-    ``[paths]`` key off the row rather than spelling either one.
+    the two surfaces below this line with no edit: the parent's notice
+    (:func:`operator_file_notices`) and ``KstrlConfig.validate``
+    (:func:`configured_path_errors`). Both take the subject and the
+    ``[paths]`` key off the row rather than spelling either one, and
+    R10.9 added the memory row without changing either function.
+
+    IT DOES NOT REACH THE ENGINEER'S PROMPT. That is
+    ``factory._run_component``, which names each kind by hand and costs
+    five edits per row; :class:`OperatorFileKind` says which five and
+    which test refuses a row that has not paid them. An earlier wording
+    of this sentence claimed the worker too, which is a guard closed
+    over one surface reading as closed over all of them.
 
     Both paths come out of ``getattr(..., kind.field)`` and no branch
     names a field. That is what makes pairing one row with another row's

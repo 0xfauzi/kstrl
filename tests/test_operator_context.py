@@ -487,7 +487,7 @@ class TestAnUneditedScaffoldInjectsNothing:
     ``ks init`` writes a skeleton of three angle-bracket placeholders and
     some operator-facing instructions. Injecting that puts 479 characters
     at the head of every engineer prompt of every component of every
-    iteration, under a header asserting the operator wrote it. The
+    attempt, under a header asserting the operator wrote it. The
     end-to-end proof is in tests/test_spine_engineer_loop.py; this is the
     digest rule on its own.
     """
@@ -537,16 +537,34 @@ class TestAnUneditedScaffoldInjectsNothing:
 
         assert load_operator_file(golden(path, scaffold=GOLDEN_PATTERNS.scaffold)) == ""
 
-    def test_one_appended_newline_is_an_edit(self, tmp_path: Path) -> None:
-        """The other direction of nit 15, measured: the digest is over the
-        raw text while the render strips trailing newlines, so a scaffold
-        with one newline appended is injected even though its rendered
-        body is the body the unappended file suppresses. Normalising the
-        digest would give ``shipped_label`` a second definition of "kstrl
-        wrote this", which is the one thing that function exists to
-        prevent, so the behaviour stands and the docs say "unchanged"."""
+    @pytest.mark.parametrize("suffix", ["\n", "\n\n\n"], ids=["one", "three"])
+    def test_appended_newlines_are_not_an_edit(self, tmp_path: Path, suffix: str) -> None:
+        """R10.9 round 1, nit 3, and this case is the one that changed.
+
+        It used to assert the opposite. The digest was over the raw text
+        while the render is ``rstrip("\\n")``, so a scaffold with one
+        newline appended was injected with a body byte-identical to the
+        one the unappended file suppresses. The old docstring argued that
+        normalising would give ``shipped_label`` a second definition of
+        "kstrl wrote this"; the fix is that it has ONE definition and the
+        definition moved, so both callers, the loader and ``ks init``'s
+        staleness notice, widen together.
+
+        Three newlines as well as one, because ``rstrip`` is not a
+        one-character rule and an editor that adds a blank line at the
+        end adds more than one.
+        """
         path = tmp_path / "golden-patterns.md"
-        path.write_text(DEFAULT_GOLDEN_PATTERNS + "\n", encoding="utf-8")
+        path.write_text(DEFAULT_GOLDEN_PATTERNS + suffix, encoding="utf-8")
+
+        assert load_operator_file(golden(path, scaffold=GOLDEN_PATTERNS.scaffold)) == ""
+
+    def test_a_leading_newline_is_still_an_edit(self, tmp_path: Path) -> None:
+        """The bound on the widening: the strip is at the END only, so a
+        change anywhere else is a change. Without this the case above
+        reads as "newlines are ignored", which is not what shipped."""
+        path = tmp_path / "golden-patterns.md"
+        path.write_text("\n" + DEFAULT_GOLDEN_PATTERNS, encoding="utf-8")
 
         assert load_operator_file(golden(path, scaffold=GOLDEN_PATTERNS.scaffold)) != ""
 

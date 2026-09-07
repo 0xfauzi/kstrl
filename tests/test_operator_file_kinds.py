@@ -17,6 +17,7 @@ tables it names but does not own: ``config_keys.STRING_KEYS`` and
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import os
 import sys
@@ -26,9 +27,10 @@ import pytest
 
 from kstrl.config import KstrlConfig
 from kstrl.config_keys import STRING_KEYS
-from kstrl.init_cmd import SCAFFOLDED_TEMPLATES
+from kstrl.init_cmd import DEFAULT_GOLDEN_PATTERNS, DEFAULT_MEMORY, SCAFFOLDED_TEMPLATES
 from kstrl.operator_context import (
     CUT_FLOOR,
+    GOLDEN_PATTERNS,
     MEMORY,
     OPERATOR_FILES,
     OperatorFileKind,
@@ -91,7 +93,7 @@ class TestEveryKindBehavesTheSame:
         """#229's BLOCKER 1 for the NEXT file. Without the ledger row an
         untouched skeleton is not absent, not empty and not
         whitespace-only, so it reaches every engineer prompt of every
-        component of every iteration under a header saying the operator
+        component of every attempt under a header saying the operator
         wrote it."""
         path = tmp_path / kind.scaffold
         path.write_text(SHIPPED_BODIES[kind.scaffold], encoding="utf-8")
@@ -160,6 +162,59 @@ class TestEveryKindBehavesTheSame:
         assert f"[truncated: {len(body)} of {len(text)} characters shown" in block
         assert path.name in block
         assert [r.levelname for r in caplog.records] == ["WARNING"]
+
+    @KINDS
+    def test_the_end_the_row_declares_is_the_end_that_survives(
+        self,
+        kind: OperatorFileKind,
+        tmp_path: Path,
+    ) -> None:
+        """Round 1, should-fix 2, and the case that was red before the fix.
+
+        One shared "keep the head" was measured against memory.md with
+        400 appended rules at a 4000-character budget: rules 0000 to 0302
+        arrived and 0303 to 0399 did not, so the 97 NEWEST standing
+        corrections were the ones dropped from the one file this PR
+        documents in four places as growing at the end.
+
+        Numbered rules rather than filler, so the assertion names WHICH
+        end survived rather than only how much did. Both ends are
+        asserted in both directions, so a row whose ``keep`` flipped
+        fails here whichever way it flipped.
+        """
+        path = tmp_path / kind.scaffold
+        rules = [f"- rule {index:04d}" for index in range(kind.max_chars // 10)]
+        path.write_text("\n".join(rules) + "\n", encoding="utf-8")
+
+        result = read_operator_file(spec_for(kind, path))
+
+        assert result.fact is not None
+        oldest, newest = rules[0], rules[-1]
+        kept, dropped = (oldest, newest) if kind.keep == "head" else (newest, oldest)
+        assert kept in result.body, (kind.key, kind.keep)
+        assert dropped not in result.body, (kind.key, kind.keep)
+
+    @KINDS
+    def test_both_audiences_are_told_which_end_went(
+        self,
+        kind: OperatorFileKind,
+        tmp_path: Path,
+    ) -> None:
+        """ "Shorten it" is advice an operator cannot act on correctly
+        without knowing which end pruning preserves. The direction is in
+        the ONE ``shown`` string both notices are built from, so the
+        prompt's ``fact`` and the terminal's ``message`` cannot name
+        different ends."""
+        path = tmp_path / kind.scaffold
+        path.write_text(("x" * 19 + "\n") * (kind.max_chars // 20 + 100), encoding="utf-8")
+
+        result = read_operator_file(spec_for(kind, path))
+
+        assert result.fact is not None
+        assert result.message is not None
+        end = "start" if kind.keep == "head" else "end"
+        assert f"keeping the {end} of the file" in result.fact
+        assert f"keeping the {end} of the file" in result.message
 
     @KINDS
     def test_the_truncation_remedy_stays_out_of_the_prompt(
@@ -295,10 +350,35 @@ class TestTheTableTiesToTheOtherTables:
     def test_every_row_is_distinguishable_from_every_other(self) -> None:
         """The parametrized cases above compare a block against the OTHER
         rows' headers, and a run of tests over identical rows would pass
-        every one of them. Said out loud rather than left to luck."""
-        for attribute in ("key", "field", "header", "subject", "scaffold"):
+        every one of them. Said out loud rather than left to luck.
+
+        DERIVED FROM ``dataclasses.fields``, not hand-listed. Round 1
+        (nit 7) found the hand list carrying five of the six fields, and
+        the omitted one was ``max_chars``, whose collision is what makes
+        ``test_over_the_kinds_own_budget_it_truncates_and_announces``
+        vacuous, because that case sizes its fixture off the row. A
+        ledger of names to check is closed only over the fields somebody
+        remembered; a census of the dataclass is closed over the class.
+
+        Exemptions are by name WITH A REASON, and there is one:
+        :attr:`OperatorFileKind.keep` is a two-value enumeration, so with
+        three rows two of them must share it. It is not a name and not a
+        budget, and nothing distinguishes two files by it.
+        """
+        exempt = {"keep"}
+        checked = [f.name for f in dataclasses.fields(OperatorFileKind) if f.name not in exempt]
+
+        assert set(checked) | exempt == {f.name for f in dataclasses.fields(OperatorFileKind)}
+        for attribute in checked:
             values = [getattr(kind, attribute) for kind in OPERATOR_FILES]
             assert len(set(values)) == len(values), (attribute, values)
+
+    def test_every_row_declares_a_direction_the_cut_implements(self) -> None:
+        """``keep`` is exempt from the case above, so it gets its own: a
+        typo in it is a silent behaviour change, and ``Literal`` is a type
+        annotation rather than a run-time check."""
+        for kind in OPERATOR_FILES:
+            assert kind.keep in ("head", "tail"), (kind.key, kind.keep)
 
     def test_the_memory_row_is_the_one_the_issue_asked_for(self) -> None:
         """The numbers R10.9 specifies, pinned where a reader can see
@@ -307,4 +387,43 @@ class TestTheTableTiesToTheOtherTables:
         assert MEMORY.header == "MEMORY (standing feedback)"
         assert MEMORY.max_chars == 4000
         assert MEMORY.key == "memory"
+        assert MEMORY.keep == "tail"
+        assert GOLDEN_PATTERNS.keep == "head"
         assert KstrlConfig().memory_file == Path("scripts/kstrl/memory.md")
+
+
+class TestTheNewestStandingCorrectionSurvives:
+    """Round 1, should-fix 2, reproduced as the reviewer measured it.
+
+    The parametrized case above proves the direction is read off the row.
+    This one is the concrete file the review ran: the shipped scaffold
+    plus 400 appended rules, at the memory row's own budget, through the
+    same loader the factory calls.
+    """
+
+    def test_four_hundred_appended_rules_keep_the_newest(self, tmp_path: Path) -> None:
+        path = tmp_path / MEMORY.scaffold
+        rules = "".join(f"- rule {index:04d}\n" for index in range(400))
+        path.write_text(DEFAULT_MEMORY + rules, encoding="utf-8")
+
+        block = load_operator_file(spec_for(MEMORY, path, scaffold=MEMORY.scaffold))
+
+        assert "- rule 0399" in block
+        assert "- rule 0000" not in block
+        assert "keeping the end of the file and dropping the start" in block
+
+    def test_the_same_shape_of_golden_patterns_keeps_the_oldest(self, tmp_path: Path) -> None:
+        """The control on the case above. Same fixture shape at the other
+        row: if it also kept the tail, the assertion above would be about
+        truncation rather than about the row."""
+        path = tmp_path / GOLDEN_PATTERNS.scaffold
+        rules = "".join(f"- rule {index:04d}\n" for index in range(600))
+        path.write_text(DEFAULT_GOLDEN_PATTERNS + rules, encoding="utf-8")
+
+        block = load_operator_file(
+            spec_for(GOLDEN_PATTERNS, path, scaffold=GOLDEN_PATTERNS.scaffold)
+        )
+
+        assert "- rule 0000" in block
+        assert "- rule 0599" not in block
+        assert "keeping the start of the file and dropping the end" in block
