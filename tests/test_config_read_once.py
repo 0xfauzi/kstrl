@@ -28,7 +28,7 @@ from __future__ import annotations
 import io
 import subprocess
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -139,6 +139,27 @@ class TestAMidRunEditDoesNotChangeWhatIsEnforced:
         )
 
         assert {r.adequacy.enabled for r in readings} == {True}
+
+    def test_phase_one_is_handed_the_envelope_level_not_the_stored_one(
+        self, tmp_path: Path
+    ) -> None:
+        """The level Phase 1 ENFORCES, recorded rather than inferred.
+
+        ``test_phase_one_gets_the_clamped_autonomy_level`` asserts on the
+        pipeline's envelope, which is one step short: a mutation putting
+        ``AutonomyState.load(self.root_dir).level`` back inside
+        ``_phase_verify`` leaves that envelope correct and was measured
+        STILL GREEN against it. This records what the verifier was
+        handed, with the stored level deliberately different.
+        """
+        (tmp_path / "kstrl.toml").write_text(_BEFORE.format(autonomy="true"))
+        AutonomyState(level=4).save(tmp_path)
+        clamped = replace(RunEnvelope.load(tmp_path), autonomy_level=1)
+
+        readings = phase_verify_envelopes(tmp_path, [component("comp-a")], run_envelope=clamped)
+
+        assert AutonomyState.load(tmp_path).level == 4
+        assert {r.autonomy_level for r in readings} == {1}
 
     def test_a_malformed_mid_run_edit_does_not_abort_phase_one(self, tmp_path: Path) -> None:
         """The failure mode is DELETED, not handled.
@@ -605,6 +626,55 @@ class TestTheEnvelopeDoesNotOutliveItsRun:
             "run_factory wrote a resolved policy back onto the caller's "
             "FactoryConfig, which makes the injection seam an output too."
         )
+
+
+class TestTheInjectionSeamReachesTheRun:
+    """``FactoryConfig.policy_config`` and ``.fixtures_config`` are the
+    seams a caller uses to hand the factory config it did not read.
+
+    Measured by the round-1 review: deleting the ``policy_override``
+    argument was STILL GREEN, so a caller injecting a ``PolicyConfig``
+    would have had it silently ignored and nothing would have failed.
+    That is a semantic substitution with no report, which is the failure
+    CLAUDE.md names directly.
+    """
+
+    def test_an_injected_policy_is_what_the_run_enforces_and_records(self, tmp_path: Path) -> None:
+        (tmp_path / "kstrl.toml").write_text(_BEFORE.format(autonomy="false"))
+        injected = PolicyConfig(enabled=True, max_files_changed=42)
+
+        manifest, pipeline = _empty_run(
+            tmp_path,
+            FactoryConfig(
+                use_worktrees=False,
+                create_prs=False,
+                review_mode="skip",
+                policy_config=injected,
+            ),
+        )
+
+        assert pipeline.run_envelope.policy is injected
+        assert manifest.policy_hash == injected.envelope_hash()
+
+    def test_an_injected_fixtures_config_reaches_phase_one(self, tmp_path: Path) -> None:
+        from kstrl.fixtures import FixturesConfig
+
+        (tmp_path / "kstrl.toml").write_text(
+            _BEFORE.format(autonomy="false") + "\n[fixtures]\nenabled = false\n"
+        )
+        injected = FixturesConfig(enabled=True)
+
+        _, pipeline = _empty_run(
+            tmp_path,
+            FactoryConfig(
+                use_worktrees=False,
+                create_prs=False,
+                review_mode="skip",
+                fixtures_config=injected,
+            ),
+        )
+
+        assert pipeline.fixtures_config is injected
 
 
 class TestTheFactoryHandsThePipelineWhatItRecords:
