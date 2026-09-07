@@ -185,25 +185,15 @@ class TestTheKernelControl:
 
 
 class TestTheTriStateWhenPsGivesNoAnswer:
-    def test_a_nonzero_exit_is_unknown_not_absent(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        procs.fake_ps(monkeypatch, returncode=127, stderr="ps: command not found")
-        liveness = read_group_liveness(os.getpgrp())
-        assert liveness.live is None
-        assert "ps failed" in liveness.reason
-        assert "false negative" in liveness.reason
+    """A ``ps`` that RAISED, reported as unknown rather than as absent.
 
-    def test_a_missing_binary_is_unknown_not_absent(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """``ps`` absent raises OSError rather than exiting non-zero."""
-        procs.fake_ps(monkeypatch, raises=lambda: FileNotFoundError(2, "no ps"))
-        liveness = read_group_liveness(os.getpgrp())
-        assert liveness.live is None
-        assert "failed to run" in liveness.reason
+    The two cases below are the ones whose exception type is the subject.
+    Its non-zero-exit and missing-binary siblings moved to
+    ``tests/test_procgroup_members.py`` in #209 round 3, to sit with the
+    count twins that make the same assertion from the other side: those
+    four are one matched set, and splitting them across two files is what
+    let the count half go a round without being able to fail.
+    """
 
     def test_a_wedged_ps_is_unknown_not_absent(
         self,
@@ -282,8 +272,8 @@ class TestThePsCallIsBounded:
         does after ``kill()``, and the one ``Popen.__exit__`` does after
         it. Both are gone; that is what the clock here is measuring.
         """
-        monkeypatch.setattr("kstrl.procgroup.PS_TIMEOUT_SECONDS", 0.05)
-        monkeypatch.setattr("kstrl.procgroup.PS_KILL_GRACE_SECONDS", 0.05)
+        monkeypatch.setattr("kstrl.procgroup_listing.PS_TIMEOUT_SECONDS", 0.05)
+        monkeypatch.setattr("kstrl.procgroup_listing.PS_KILL_GRACE_SECONDS", 0.05)
         calls = procs.unkillable_ps(monkeypatch)
 
         started = time.monotonic()
@@ -310,8 +300,8 @@ class TestThePsCallIsBounded:
         below; this used to claim `subprocess._active` collects it, which
         round 2 measured false under warnings-as-errors.
         """
-        monkeypatch.setattr("kstrl.procgroup.PS_TIMEOUT_SECONDS", 0.01)
-        monkeypatch.setattr("kstrl.procgroup.PS_KILL_GRACE_SECONDS", 0.02)
+        monkeypatch.setattr("kstrl.procgroup_listing.PS_TIMEOUT_SECONDS", 0.01)
+        monkeypatch.setattr("kstrl.procgroup_listing.PS_KILL_GRACE_SECONDS", 0.02)
         calls = procs.unkillable_ps(monkeypatch)
 
         read_group_liveness(4242)
@@ -377,11 +367,11 @@ class TestThePsCallIsBounded:
         ``Popen.__del__`` could not be trusted to do the keeping, with the
         measurement, is in the ``kstrl.procgroup`` module docstring.
         """
-        monkeypatch.setattr("kstrl.procgroup.PS_ARGV", ("sleep", "30"))
-        monkeypatch.setattr("kstrl.procgroup.PS_TIMEOUT_SECONDS", 0.05)
-        monkeypatch.setattr("kstrl.procgroup.PS_KILL_GRACE_SECONDS", 0.05)
+        monkeypatch.setattr("kstrl.procgroup_listing.PS_ARGV", ("sleep", "30"))
+        monkeypatch.setattr("kstrl.procgroup_listing.PS_TIMEOUT_SECONDS", 0.05)
+        monkeypatch.setattr("kstrl.procgroup_listing.PS_KILL_GRACE_SECONDS", 0.05)
         # Nothing may be killed, so the child is genuinely abandoned alive.
-        monkeypatch.setattr("kstrl.procgroup.subprocess.Popen.kill", lambda self: None)
+        monkeypatch.setattr("kstrl.procgroup_listing.subprocess.Popen.kill", lambda self: None)
         read_group_liveness(4242)
         registered = list(procdispose._ABANDONED)
         assert len(registered) == 1
@@ -390,7 +380,7 @@ class TestThePsCallIsBounded:
         child.terminate()
         child.wait(timeout=10)
         # The next read sweeps it, which is the whole contract.
-        monkeypatch.setattr("kstrl.procgroup.PS_ARGV", ("true",))
+        monkeypatch.setattr("kstrl.procgroup_listing.PS_ARGV", ("true",))
         read_group_liveness(4242)
         assert procdispose._ABANDONED == [], "a dead child must leave the register"
 
@@ -408,8 +398,8 @@ class TestThePsCallIsBounded:
         fd_dir = Path("/dev/fd")
         if not fd_dir.is_dir():
             pytest.skip("no /dev/fd on this platform")
-        monkeypatch.setattr("kstrl.procgroup.PS_ARGV", ("sleep", "30"))
-        monkeypatch.setattr("kstrl.procgroup.PS_TIMEOUT_SECONDS", 0.05)
+        monkeypatch.setattr("kstrl.procgroup_listing.PS_ARGV", ("sleep", "30"))
+        monkeypatch.setattr("kstrl.procgroup_listing.PS_TIMEOUT_SECONDS", 0.05)
 
         before = len(os.listdir(fd_dir))
         liveness = read_group_liveness(4242)
@@ -571,7 +561,7 @@ _SPAWN_TARGETS = frozenset(
 _SCANNED_ROOTS = ("kstrl", "tests")
 
 #: The one file allowed to shell out to ``ps``.
-_PS_OWNER = "kstrl/procgroup.py"
+_PS_OWNER = "kstrl/procgroup_listing.py"
 
 
 def _leading_command(folded: str | None) -> str | None:
@@ -653,24 +643,35 @@ def _ps_call_lines(source: str, module: str = "") -> list[int]:
 #: Layer 1's inventory, per module. This file is excluded because its
 #: own fixtures spell the command on purpose; layer 2 still walks it.
 EXPECTED_PS_COMMAND_SPELLINGS: dict[str, int] = {
-    "procgroup.py": 6,  # PS_ARGV, plus five refusal messages
-    # #209's members read reports the same uid-filtered listing the
-    # liveness read does, from the one `_FILTERED_VIEW` sentence, so that
-    # part did not move this module's count; the row below is the test
-    # that asserts the refusal reaches its caller.
+    # RE-DERIVED BY RUNNING THIS CENSUS, not by editing the literal, at
+    # every step of #209 round 3. Reading a pin is not running a guard:
+    # a refactor that splits a file leaves the pin naming one file while
+    # the census counts two halves, and the unchanged literal then reads
+    # as evidence that nothing moved.
     #
-    # 5 -> 6 is `_UNREADABLE_ROW`, the fifth refusal message, added by
-    # #209's round-1 review when a row the parse cannot read became a
-    # refusal for both public reads instead of a silent drop. It is a
-    # diagnostic sentence beginning with the word, which is the case
-    # this census's own message says to add a count for, not a second
-    # place that shells out to `ps`: the walk below still finds exactly
-    # one call site.
-    "tests/test_procgroup_members.py": 1,
+    # `PS_ARGV` left this file when #209 round 3 split the `ps` call and
+    # its parse into `kstrl/procgroup_listing.py` for the 800-line
+    # ratchet. What stays is the five refusal messages, which are
+    # diagnostic sentences beginning with the word - the case this
+    # census's own message says to add a row for, not a second place
+    # that shells out to `ps`.
+    "procgroup.py": 5,
+    "procgroup_listing.py": 1,  # PS_ARGV itself, and the one call site
+    # The skip reason for a `ps` filtered to one uid. #209 round 3 moved
+    # it here from `tests/test_serve_process_tree.py` (a mark) and
+    # `tests/test_shutdown.py` (an in-body skip), which is why both of
+    # those rows are gone: three spellings of one predicate became one,
+    # after round 2 measured the local copy unable to fire.
+    "tests/helpers/procs.py": 1,
+    # #209's members read reports the same uid-filtered listing the
+    # liveness read does, from the one `_FILTERED_VIEW` sentence; these
+    # are the tests that assert the refusal reaches its caller. 1 -> 2 in
+    # round 3, when the two liveness ps-failure tests moved out of this
+    # file to sit with their count twins, taking a "ps failed" assertion
+    # with them.
+    "tests/test_procgroup_members.py": 2,
     "tests/test_process_scoping.py": 2,  # two assertions on those messages
     "tests/test_serve.py": 6,  # the fake's argv, plus five assertions
-    "tests/test_serve_process_tree.py": 1,  # the census class's skip reason
-    "tests/test_shutdown.py": 1,  # the degraded-reading message
 }
 
 

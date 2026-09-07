@@ -22,10 +22,14 @@ were reachable in only one of them before that.
 from __future__ import annotations
 
 import os
+import subprocess
 
 import pytest
 
+from kstrl import procgroup
 from kstrl.procgroup import (
+    _UNCOUNTABLE,
+    _UNMEASURABLE,
     GroupMembers,
     _Listing,
     _read_listing,
@@ -67,6 +71,13 @@ class TestTheParseReturnsPidsNotCounts:
             # so an isdigit test would fall through to a conversion that
             # raises out of a read with no handler for it.
             ("1 1 Ss\n60 \N{SUPERSCRIPT TWO} Ss\n50 7 Ss\n", "a pgid of unicode digits"),
+            # #209 round 2, S2. The pid check used to sit BELOW the group
+            # filter, so this row - unreadable pid, pgid naming some
+            # other group - was skipped before anything looked at its
+            # first column, and the listing cleared. `readable` is a
+            # property of the (listing, pgid) pair: a row that cannot be
+            # attributed to a group cannot be ruled OUT of this one.
+            ("1 1 Ss\nbad 999 Ss\n50 7 S\n", "a pid that is not a number, in another group"),
         ],
     )
     def test_a_row_the_parse_cannot_read_makes_the_listing_unreadable(
@@ -193,7 +204,27 @@ class TestTheMembershipReadRefusesWhatTheLivenessReadCanInterpret:
         )
         assert "undercount" in members.reason
 
-    def test_a_ps_that_did_not_run_is_refused(
+
+class TestAPsThatGaveNoAnswerIsRefusedByBOTHReads:
+    """A refusal is a HEAD plus ONE consequence, and each read appends its
+    own. All four cases live here because they are one matched set.
+
+    THE ABSENT HALF MATTERS AS MUCH AS THE PRESENT ONE. Each test below
+    asserts its read's own consequence is there AND that the other read's
+    is not. Round 2 of #209 measured why: with only the first assertion,
+    putting ``_UNMEASURABLE`` back into each of ``_listing_for``'s two
+    heads - so a count refusal carried BOTH consequences - left the count
+    tests green, twice, while their own failure message said they existed
+    to catch exactly that. An assertion that cannot fail on the defect it
+    names is not a control.
+
+    The liveness two moved here from ``tests/test_procgroup.py`` in round
+    3. Keeping the pairs in separate files is what let the count half go a
+    round without being able to fail, and it also put the file at 825 of
+    the 800-line ratchet.
+    """
+
+    def test_a_ps_that_did_not_run_is_refused_by_the_count(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -201,13 +232,18 @@ class TestTheMembershipReadRefusesWhatTheLivenessReadCanInterpret:
         members = read_group_members(4242)
         assert members.pids is None
         assert "ps failed to run" in members.reason
-        assert "undercount" in members.reason, (
+        assert _UNCOUNTABLE in members.reason, (
             "a ps failure is refused for the reason the CALLER was asking "
             "about; before #209's round-1 review this read reported the "
             "liveness consequence, which is an answer to another question"
         )
+        assert _UNMEASURABLE not in members.reason, (
+            "the count reported the liveness consequence as well as its "
+            "own, which is the shape round 2 measured this assertion "
+            "unable to see"
+        )
 
-    def test_a_nonzero_ps_is_refused(
+    def test_a_nonzero_ps_is_refused_by_the_count(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -215,7 +251,87 @@ class TestTheMembershipReadRefusesWhatTheLivenessReadCanInterpret:
         members = read_group_members(4242)
         assert members.pids is None
         assert "rc=127" in members.reason
-        assert "undercount" in members.reason
+        assert _UNCOUNTABLE in members.reason
+        assert _UNMEASURABLE not in members.reason, "the foreign consequence, as above"
+
+    def test_a_ps_that_did_not_run_is_refused_by_liveness(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``ps`` absent raises OSError rather than exiting non-zero."""
+        procs.fake_ps(monkeypatch, raises=lambda: FileNotFoundError(2, "no ps"))
+        liveness = read_group_liveness(os.getpgrp())
+        assert liveness.live is None
+        assert "failed to run" in liveness.reason
+        assert _UNMEASURABLE in liveness.reason
+        assert _UNCOUNTABLE not in liveness.reason, "the foreign consequence, as above"
+
+    def test_a_nonzero_ps_is_refused_by_liveness(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        procs.fake_ps(monkeypatch, returncode=127, stderr="ps: command not found")
+        liveness = read_group_liveness(os.getpgrp())
+        assert liveness.live is None
+        assert "ps failed" in liveness.reason
+        assert _UNMEASURABLE in liveness.reason
+        assert _UNCOUNTABLE not in liveness.reason, (
+            "the liveness read reported the COUNT's consequence as well as "
+            "its own; the two reads differ in exactly this and nothing else"
+        )
+
+
+class TestAColumnIsMatchedAsANumberNotAsText:
+    """#209 round 2, S1. ``_reads_as_int`` converts a cell to establish
+    that it reads as a number; comparing the cell to ``str(pgid)``, or to
+    ``"1"``, afterwards throws that conversion away.
+
+    Any spelling ``int()`` accepts and ``str`` does not produce was then
+    attributed to no group at all, with ``readable`` still true and no
+    refusal raised, so the count came back CONFIDENT and short. The
+    review measured all four rows below returning ``(51,)`` for a group
+    holding ``(50, 51)``, which is the undercount ``GroupMembers``
+    documents itself as unable to produce.
+
+    Unreachable on real ``ps`` output, whose columns come from the kernel
+    - 0 non-conforming rows in 16320 on one load and 16331 on another -
+    and reachable on the mangled stream the refusal beside it exists for.
+    """
+
+    @pytest.mark.parametrize(
+        "spelling",
+        [
+            "007",
+            "+7",
+            "0_7",
+            "\N{ARABIC-INDIC DIGIT SEVEN}",
+        ],
+    )
+    def test_a_pgid_int_accepts_is_the_group_it_names(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        spelling: str,
+    ) -> None:
+        procs.fake_ps(monkeypatch, stdout=f"1 1 Ss\n50 {spelling} Ss\n51 7 Ss\n")
+        members = read_group_members(7)
+        assert members.pids == (50, 51), (
+            f"the pgid spelled {spelling!r} was attributed to no group, so a "
+            f"group holding two processes was counted as {members.pids!r}"
+        )
+
+    @pytest.mark.parametrize("spelling", ["01", "+1", "0_1", "\N{ARABIC-INDIC DIGIT ONE}"])
+    def test_pid_1_is_pid_1_however_it_is_spelled(self, spelling: str) -> None:
+        """The completeness control is the same split one line up, and
+        it is the one whose failure direction is a REFUSAL rather than an
+        undercount: a pid-1 row the comparison does not recognise leaves
+        ``complete`` False, and the listing is then refused as filtered
+        to one uid when it is not. Measured while writing this: the
+        text comparison survives the four pgid rows above, so nothing but
+        this pins it."""
+        assert _read_listing(f"{spelling} 1 Ss\n50 7 Ss\n", pgid=7).complete is True, (
+            f"pid 1 spelled {spelling!r} did not mark the listing complete, "
+            f"so a full listing reads as filtered to this uid and is refused"
+        )
 
 
 class TestAnEmptyAnswerIsOnlyGivenForAGroupTheKernelAgreesIsEmpty:
@@ -264,12 +380,114 @@ class TestAnEmptyAnswerIsOnlyGivenForAGroupTheKernelAgreesIsEmpty:
         assert "kernel reports" in members.reason
         assert "undercount" in members.reason
 
+    @procs.NEEDS_A_READABLE_PS
     def test_it_reads_the_real_group_this_process_is_in(self) -> None:
         """The control for all the fakes above: the fake could be
         modelling a `ps` format that does not exist. This one asks about
         pytest's own group, which certainly holds pytest. The group is
         not one this test created, which is why it asserts only its own
-        membership and nothing about the size."""
+        membership and nothing about the size.
+
+        It is the ONE test here that reads the real listing, so it is the
+        one that needs the environment guard: under a `hidepid` mount or
+        a container `ps` that omits pid 1 the read refuses, correctly,
+        and this would go red pointing at `kstrl/procgroup.py` for an
+        environment that cannot be measured (#209 round 2, S5)."""
         members = read_group_members(os.getpgrp())
         assert members.pids is not None, members.reason
         assert os.getpid() in members.pids
+
+
+def _serving(
+    monkeypatch: pytest.MonkeyPatch,
+    stdout: str,
+    template: subprocess.CompletedProcess[str],
+) -> None:
+    """Make ``procgroup._read_ps`` hand back ``stdout`` and nothing else."""
+    replacement = subprocess.CompletedProcess(template.args, template.returncode, stdout, "")
+    monkeypatch.setattr(procgroup, "_read_ps", lambda: replacement)
+
+
+class TestTheSuiteSkipPredicateCanActuallyFire:
+    """#209 round 2, B1. ``tests/helpers/procs.ps_is_readable`` gates
+    every test that takes a group census, and in the shape it shipped in
+    it returned True on exactly the ``ps`` it exists to skip.
+
+    It was ``read_group_liveness(os.getpgrp()).live is True``.
+    ``_interpret`` answers True off a visible runner BEFORE it consults
+    the refusal table, correctly, because a partial listing can only show
+    FEWER processes; the caller's own group always holds the caller; and
+    under a ``ps`` filtered to one uid our own processes are precisely
+    the ones still visible. So it was True by construction everywhere,
+    while ``read_group_members`` refused the same listing and raised
+    through ``on_spawn``. A red test in ``kstrl/procgroup.py``'s name for
+    an environment that cannot be measured is what the guard exists to
+    prevent, and it was pointing the other way.
+
+    THE PLANT IS A REAL LISTING WITH ONE ROW REMOVED, which is the only
+    thing a ``hidepid`` mount or a container ``ps`` changes about the
+    answer. Both directions come off ONE real read, so the difference
+    between them is that row and nothing about load or timing. The PR
+    that shipped the broken predicate recorded it as the one guard it
+    could not mutate; every other test in this file fakes ``_read_ps``
+    for exactly this.
+    """
+
+    @staticmethod
+    def _real_read() -> subprocess.CompletedProcess[str]:
+        return procgroup._read_ps()
+
+    @staticmethod
+    def _without_pid_1(stdout: str) -> str:
+        return "".join(row for row in stdout.splitlines(keepends=True) if row.split()[:1] != ["1"])
+
+    def test_a_uid_filtered_listing_makes_the_predicate_false(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        real = self._real_read()
+        _serving(monkeypatch, self._without_pid_1(real.stdout), real)
+
+        assert read_group_liveness(os.getpgrp()).live is True, (
+            "the old spelling of this predicate, unchanged, on the very "
+            "listing it must refuse; without this the pair below could be "
+            "measuring a listing that broke everything rather than one "
+            "that is filtered"
+        )
+        assert procs.ps_is_readable() is False, (
+            "the skip predicate cleared a ps filtered to one uid, so every "
+            "census case runs there and reads as a defect in kstrl"
+        )
+
+    def test_the_skip_mark_built_from_it_would_fire(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The predicate is only half the guard. This asserts the other
+        half: the mark's CONDITION, built the way ``procs`` builds it, is
+        True under the filtered listing, so the skip fires rather than
+        merely being present."""
+        real = self._real_read()
+        _serving(monkeypatch, self._without_pid_1(real.stdout), real)
+        mark = pytest.mark.skipif(not procs.ps_is_readable(), reason="filtered ps")
+        assert mark.mark.args[0] is True, (
+            "the mark is attached to every census case and its condition "
+            "is False, so it can never skip anything"
+        )
+
+    def test_the_same_listing_with_pid_1_put_back_is_readable(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The control, and the honest half of the 2x2 the review
+        measured. Same real rows, pid 1 restored at the head, so the only
+        difference from the test above is the row whose absence means
+        "filtered". Restoring rather than trusting the machine's own
+        listing keeps this true on a host whose ``ps`` really is
+        filtered, where the assertion would otherwise be about the
+        environment instead of about the predicate."""
+        real = self._real_read()
+        _serving(monkeypatch, "1 1 Ss\n" + self._without_pid_1(real.stdout), real)
+        assert procs.ps_is_readable() is True
+        mark = pytest.mark.skipif(not procs.ps_is_readable(), reason="filtered ps")
+        assert mark.mark.args[0] is False
