@@ -1561,6 +1561,16 @@ class TestTheRefusalNamesTheRightKey:
     and those are two of the three fields the predicate reads. A fourth
     field would make serve's sentence name the wrong key, and no
     behavioural test would notice: this one fails on the delta.
+
+    DISCLOSED LIMIT. The walk enumerates one node shape, an
+    ``ast.Attribute`` whose value is the bare name ``config``, so a field
+    read as ``getattr(config, name)`` leaves ``reads`` equal to the
+    pinned three and CLEARS. Every other deviation makes the set smaller
+    or raises ``StopIteration``, both of which are red, so the walk is
+    wrong in the flagging direction on all but that one shape. Left as a
+    disclosure rather than widened: the subject is a three-branch
+    predicate a reader can hold in their head, and a dynamic field read
+    in it would be a stranger thing than the one this guards against.
     """
 
     def test_the_predicate_reads_the_three_fields_the_probe_accounts_for(self) -> None:
