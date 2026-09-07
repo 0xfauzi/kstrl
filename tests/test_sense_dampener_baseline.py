@@ -406,6 +406,16 @@ def test_the_identity_reads_still_answer_when_git_is_present(tmp_path: Path) -> 
     repo.mkdir()
     run_git("init", "-q", "-b", "main", cwd=repo)
     run_git("remote", "add", "origin", "https://github.com/0xfauzi/kstrl.git", cwd=repo)
+    # The identity is set HERE rather than inherited. Without these two lines
+    # the commit takes git's implicit identity from the account and the host,
+    # which exists on a developer machine and does not on a GitHub runner: the
+    # runner's gecos name is empty, so git refuses with "empty ident name" and
+    # this test alone failed on CI while passing everywhere it was written.
+    # The two sibling repositories in this pull request, in
+    # tests/test_check_result_measurement_behaviour.py and
+    # tests/test_sense_dampener_workflow.py, already configure both fields.
+    run_git("config", "user.email", "kstrl@example.com", cwd=repo)
+    run_git("config", "user.name", "kstrl", cwd=repo)
     run_git("commit", "-q", "--allow-empty", "-m", "base", cwd=repo)
 
     assert get_origin_slug(repo) == "0xfauzi/kstrl"
