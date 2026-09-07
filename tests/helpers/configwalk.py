@@ -4,11 +4,36 @@ Two layers, and the split is the point.
 
 Layer 1 discovers the CONFIG SURFACE without naming a single class: any
 scope whose own body calls one of the three primitives that actually
-reach the file. A new config dataclass therefore shows up as an
-unexplained delta in the surface census rather than as a hole in a list
-somebody forgot to extend. That is the closed-by-construction shape
+reach the file, then every class that HOLDS one of those, to a fixed
+point. A new config dataclass therefore shows up as an unexplained delta
+in the surface census rather than as a hole in a list somebody forgot to
+extend. That is the closed-by-construction shape
 ``EXPECTED_JOURNAL_PATH_SITES`` uses in
 ``tests/test_journal_one_writer.py``.
+
+WHY THE FIXED POINT, AND WHY OVER TYPES. Round 2 of #192 stopped at the
+first rule and the review measured what that cost: ``RunEnvelope``
+reaches ``kstrl.toml`` through ``config_preflight.resolve_or_report``
+and seven section loaders rather than through a bare primitive call of
+its own, so the envelope was not surface, so ``run_envelope =
+run_envelope or RunEnvelope.load(root_dir)`` planted in
+``ComponentPipeline.__init__`` - the one fallback ``pipeline.py``
+forbids by name - was invisible to layer 2 and passed the whole suite,
+6141 tests, unchanged. The closure runs over TYPES: a class one of whose
+annotated fields is typed by the surface is itself surface, and every
+method of it is a way to obtain config. Measured on ``kstrl/``: 2 extra
+rounds, 22 classes to 25 (``RunEnvelope``, ``EnvelopeResolution``,
+``FeatureParams``), 122 sites to 123.
+
+Over CALLS rather than types it does not converge and cannot be used:
+"any scope that references the surface" was measured on ``kstrl/`` at 5
+rounds, 22 classes to 33 and 8 free readers to 92, because it is the
+transitive closure of the call graph and every CLI command body reaches
+config eventually. By round 5 it enrols ``ComponentPipeline`` itself, so
+the pipeline's methods calling each other become config reads and the
+guard this exists to fix cannot be stated at all. The type closure stops
+because ``kstrl/`` has three classes that hold config and none of them
+is held by a fourth.
 
 Layer 2 counts every CALL of a layer-1 method and attributes it to the
 innermost scope that owns it, so a guard can ask "which scope of
@@ -41,22 +66,34 @@ names 22 loaders as VALUES and every one of them is a site. That is the
 direction a FLAGGING guard may be wrong in, and it is what makes the
 partial and the bound-name shapes visible at all.
 
-DISCLOSED LIMIT. Layer 1 still matches a primitive by bare ``Name``
-only, so ``c.load_toml_section`` after ``import kstrl.config as c``
-would not enrol its scope in the surface. Measured in ``kstrl/`` today:
-54 bare-name primitive calls and 0 in the attribute form, so the limit
-is latent rather than live.
-``TestConfigSurface::test_a_module_qualified_primitive_is_invisible`` is
-the strict xfail behind this paragraph; the day layer 1 is taught
-``astwalk.bindings`` too it XPASSes and this text has to be edited in
-the same diff.
+DISCLOSED LIMIT, in three shapes and one depth. Layer 1 still matches a
+primitive by bare ``Name`` only, so ``c.load_toml_section`` after
+``import kstrl.config as c`` would not enrol its scope in the surface;
+``getattr(mod, "load_toml_document")(root)`` names the primitive as a
+STRING, which no name resolution reaches; and
+``importlib.import_module("kstrl.policy").PolicyConfig.load(root)``
+builds the receiver at run time, so layer 2 has no name to resolve
+either. Measured in ``kstrl/`` today: 54 bare-name primitive calls, 0 in
+the attribute form, 0 in either dynamic form, so all three are latent
+rather than live. Each has its own strict xfail in
+``TestConfigSurface`` and ``TestTheRunReadsConfigOnlyBeforeItStarts``;
+the day one of them is closed it XPASSes and this text has to be edited
+in the same diff.
+
+The DEPTH is one level, and it is the same disclosure said about
+indirection rather than about spelling. A helper that calls a primitive
+is itself surface (it lands in ``free``) and its callers are therefore
+sites, but a helper that calls THAT helper is not: nothing in this file
+is transitive over calls, deliberately, for the reason the fixed-point
+paragraph above measures. A read two calls deep, or one call deep
+through a helper in another module, is invisible to both layers.
 """
 
 from __future__ import annotations
 
 import ast
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from tests.helpers.astwalk import all_nodes, bindings, label, own_nodes, parsed, scopes
@@ -82,13 +119,21 @@ class Surface:
     ``attributed`` and ``raw`` are the census control: every primitive
     call the walk found must land in exactly one scope, so an
     attribution that silently loses a call fails here rather than
-    quietly shrinking the surface.
+    quietly shrinking the surface. Both counts are taken in round 0 and
+    carried, because they are about the PRIMITIVE calls and the later
+    rounds add no primitive call.
+
+    ``rounds`` is how many times the type closure grew the set after
+    round 0. It is a census number rather than a diagnostic: a walk
+    whose closure stopped running reports 0 here, which is what the
+    round-2 walk this replaces did.
     """
 
     classes: dict[str, frozenset[str]]
     free: frozenset[str]
     attributed: int
     raw: int
+    rounds: int = 0
 
 
 def scopes_with_lambdas(tree: ast.Module) -> list[tuple[ast.AST, str]]:
@@ -142,13 +187,32 @@ def _raw_primitive_calls(tree: ast.Module) -> int:
 
 
 def surface(sources: Iterable[Path]) -> Surface:
-    """Layer 1 over a corpus of modules."""
+    """Layer 1 over a corpus of modules, iterated to a fixed point.
+
+    Round 0 is the direct readers; each further round adds every class
+    that HOLDS one of them in an annotated field. The loop terminates
+    because the class set only ever grows and the corpus is finite, and
+    the module docstring records why the closure is over types rather
+    than over calls.
+    """
+    trees = [parsed(source_file) for source_file in sources]
+    found = _direct_readers(trees)
+    rounds = 0
+    while True:
+        grown = _holders_of(trees, found)
+        if grown is None:
+            return replace(found, rounds=rounds)
+        found = grown
+        rounds += 1
+
+
+def _direct_readers(trees: list[ast.Module]) -> Surface:
+    """Round 0: every scope whose own body calls a parse primitive."""
     classes: dict[str, set[str]] = {}
     free: set[str] = set()
     attributed = 0
     raw = 0
-    for source_file in sources:
-        tree = parsed(source_file)
+    for tree in trees:
         raw += _raw_primitive_calls(tree)
         class_names = {n.name for n in all_nodes(tree) if isinstance(n, ast.ClassDef)}
         for node, qualified in scopes_with_lambdas(tree):
@@ -167,6 +231,66 @@ def surface(sources: Iterable[Path]) -> Surface:
         attributed=attributed,
         raw=raw,
     )
+
+
+def _holders_of(trees: list[ast.Module], found: Surface) -> Surface | None:
+    """One more round, or None when the surface stopped growing.
+
+    A class with an annotated field typed by a surface class holds
+    resolved configuration, so obtaining that class is obtaining
+    configuration and EVERY method of it is a way to obtain it. All of
+    them rather than the constructors, because ``RunEnvelope.resolve``
+    returns an ``EnvelopeResolution`` and not a ``RunEnvelope``, so a
+    rule keyed on the return type would miss the one method the review
+    measured a plant escaping through.
+
+    The over-match is the direction this file may be wrong in: a method
+    of a holder that reads nothing costs a reader one flagged line, and
+    measured on ``kstrl/`` it costs zero sites, because the extra
+    methods are called on instances rather than through the class name.
+    """
+    classes = {name: set(methods) for name, methods in found.classes.items()}
+    grew = False
+    for name, methods in _holders(trees, found).items():
+        if name in classes and methods <= classes[name]:
+            continue
+        classes.setdefault(name, set()).update(methods)
+        grew = True
+    if not grew:
+        return None
+    return replace(found, classes={name: frozenset(m) for name, m in classes.items()})
+
+
+def _holders(trees: list[ast.Module], found: Surface) -> dict[str, set[str]]:
+    """Every class that holds a surface class, and all of its methods."""
+    held: dict[str, set[str]] = {}
+    for tree in trees:
+        for node in all_nodes(tree):
+            if isinstance(node, ast.ClassDef) and _holds_surface(node, found):
+                held.setdefault(node.name, set()).update(
+                    item.name
+                    for item in node.body
+                    if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef)
+                )
+    return held
+
+
+def _holds_surface(node: ast.ClassDef, found: Surface) -> bool:
+    """Does this class declare a field typed by the surface?
+
+    Class-level annotations only. A PARAMETER annotated with a surface
+    class is not a holder: ``ComponentPipeline.__init__`` takes the
+    resolved ``RunEnvelope`` and is the one scope this whole guard says
+    must not resolve config, so counting parameters would enrol the
+    subject as part of the surface.
+    """
+    for item in node.body:
+        if not isinstance(item, ast.AnnAssign) or item.annotation is None:
+            continue
+        named = {n.id for n in all_nodes(item.annotation) if isinstance(n, ast.Name)}
+        if named & set(found.classes):
+            return True
+    return False
 
 
 @dataclass(frozen=True)

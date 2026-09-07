@@ -32,6 +32,8 @@ from pathlib import Path
 
 import pytest
 
+from kstrl import runenvelope
+from kstrl.config_preflight import _section_for
 from tests.helpers import astwalk, configwalk
 from tests.helpers.astwalk import KSTRL_PACKAGE, package_sources
 
@@ -50,7 +52,6 @@ EXPECTED_SURFACE_CLASSES: dict[str, frozenset[str]] = {
         "ContractConfig",
         "DivergenceConfig",
         "EvolutionConfig",
-        "FactoryConfig",
         "FeedforwardConfig",
         "FixturesConfig",
         "GitHubIntakeConfig",
@@ -69,11 +70,45 @@ EXPECTED_SURFACE_CLASSES: dict[str, frozenset[str]] = {
     )
 }
 
+#: The classes the type closure adds after round 0: the ones that HOLD a
+#: resolved section rather than reading one. Every method counts,
+#: because obtaining the holder is obtaining the config it holds, and
+#: ``RunEnvelope.resolve`` returns an ``EnvelopeResolution`` rather than
+#: a ``RunEnvelope``, so a rule keyed on the return type would not have
+#: caught the plant that made this necessary. ``EnvelopeResolution`` and
+#: ``FeatureParams`` define no methods, so they add no site; they are
+#: here because the census must show every holder, not only the useful
+#: ones.
+EXPECTED_SURFACE_CLASSES |= {
+    "EnvelopeResolution": frozenset(),
+    "FeatureParams": frozenset(),
+    "FactoryConfig": frozenset(
+        {"__post_init__", "engineer_verify_config", "from_env", "load", "resolved_verify_config"}
+    ),
+    "RunEnvelope": frozenset({"load", "policy_hash", "resolve"}),
+}
+
+#: How many rounds the type closure runs after round 0. The second
+#: control on the closure, beside ``RunEnvelope`` being in the pin above:
+#: a walk whose loop stopped running reports 0 here, which is exactly
+#: what the round-2 walk did and what let the pipeline plant through.
+EXPECTED_SURFACE_ROUNDS = 2
+
 #: The readers that own no class. ``load_toml_section`` is the primitive
 #: one layer up from the file; ``run`` is the ``ks run`` command body.
 #: ``resolve_or_report`` replaced ``load_or_report`` in this set when
 #: #192 split the scope-owning wrapper off the resolution: the wrapper
 #: no longer calls a primitive itself, so it is no longer surface.
+#:
+#: That swap NARROWED the walk as a side effect, which is worth naming
+#: because a production refactor quietly shrinking a static walk is the
+#: class CLAUDE.md logs eleven instances of. Measured by running this
+#: walk against the code before the split: exactly one site left,
+#: ``tui/widgets/config_problem.py::ConfigProblemBanner.load``, because
+#: it calls ``load_or_report`` and that name is no longer surface. It is
+#: latent for layer B, whose three modules call ``load_or_report``
+#: nowhere; the TUI's own config guard is
+#: ``tests/test_tui_config_guard.py``.
 EXPECTED_FREE_READERS = frozenset(
     {
         "_apply_toml_overrides",
@@ -94,7 +129,11 @@ EXPECTED_FREE_READERS = frozenset(
 #: through their owner, so a read planted in ``_submit_args`` reads
 #: ``_run_factory_locked._submit_args`` and is an offender.
 EXPECTED_FACTORY_SCOPES = frozenset({"_run_factory_locked", "_open_health_breach_items"})
-EXPECTED_FACTORY_SITES = 7
+#: 7 until the type closure enrolled ``RunEnvelope``; the eighth is
+#: ``RunEnvelope.resolve`` at the top of ``_run_factory_locked``, which
+#: is the run's one envelope resolution and the site the whole change is
+#: about being visible to the walk at last.
+EXPECTED_FACTORY_SITES = 8
 
 #: The sections ``RunEnvelope.resolve`` names, as the walk sees them.
 #: Pinned by REFERENCE, because the envelope hands each loader to
@@ -140,12 +179,71 @@ class ComponentPipeline:
         return PolicyConfig.load(self.root_dir)
 """
 
+#: The one fallback ``kstrl/pipeline.py``'s constructor forbids in its
+#: own words, spelled exactly as the comment there spells it. Round 2 of
+#: #192 shipped a walk that could not see it: layer A enrolled a class
+#: only when one of its own methods called a parse primitive by bare
+#: name, ``RunEnvelope.resolve`` reaches the file through
+#: ``resolve_or_report`` and seven loaders instead, so the envelope was
+#: not surface and this plant passed the whole suite.
+_REQUIRED_ENVELOPE = "        run_envelope: RunEnvelope,\n"
+_OPTIONAL_ENVELOPE = "        run_envelope: RunEnvelope | None = None,\n"
+_FALLBACK_ANCHOR = "        self.sandbox_config = run_envelope.sandbox\n"
+_FALLBACK = "        run_envelope = run_envelope or RunEnvelope.load(root_dir)\n"
+
+
+def _pipeline_with_the_forbidden_fallback(tmp_path: Path) -> Path:
+    """A copy of the real ``kstrl/pipeline.py`` with the fallback back in.
+
+    The positive control for ``sites == []``. An empty offender list is
+    what a clean module returns AND what a walk that stopped looking
+    returns, and ``pipeline.py`` is the module whose count is zero, so
+    it cannot be its own control the way ``factory.py`` and ``serve.py``
+    are each other's. This makes it one: the same walk over the same
+    module with the one forbidden line added must report a site.
+
+    Both anchors are asserted to occur exactly once before the edit, so
+    a rename that makes the plant apply to nothing is a failure rather
+    than a control that silently stops planting (#344).
+    """
+    source = (KSTRL_PACKAGE / "pipeline.py").read_text(encoding="utf-8")
+    for anchor in (_REQUIRED_ENVELOPE, _FALLBACK_ANCHOR):
+        assert source.count(anchor) == 1, (
+            f"the plant's anchor {anchor!r} occurs {source.count(anchor)} times "
+            "in kstrl/pipeline.py, so this control is not planting what it "
+            "says it plants. Retarget it; do not delete it."
+        )
+    planted = tmp_path / "pipeline.py"
+    planted.write_text(
+        source.replace(_REQUIRED_ENVELOPE, _OPTIONAL_ENVELOPE).replace(
+            _FALLBACK_ANCHOR, _FALLBACK + _FALLBACK_ANCHOR
+        ),
+        encoding="utf-8",
+    )
+    return planted
+
+
+@pytest.fixture(scope="module")
+def package_surface() -> configwalk.Surface:
+    """The whole config surface, walked once for this file.
+
+    Nine tests need it and each recomputed it: measured at a median
+    0.285 s a call, about 2.6 s of this file's 9.8 s. Module scope
+    rather than a cache on ``configwalk.surface`` itself, because
+    ``test_dropping_a_primitive_shrinks_the_surface`` monkeypatches
+    ``PARSE_PRIMITIVES`` and needs a fresh walk; a cached function would
+    hand it the unpatched answer and it would pass while measuring
+    nothing. The two tests that must walk for themselves call
+    ``configwalk.surface`` directly and say why.
+    """
+    return configwalk.surface(package_sources())
+
 
 class TestConfigSurface:
     """Layer A. Enumerates no class name of its own."""
 
-    def test_the_surface_is_the_pinned_one(self) -> None:
-        found = configwalk.surface(package_sources())
+    def test_the_surface_is_the_pinned_one(self, package_surface: configwalk.Surface) -> None:
+        found = package_surface
         assert found.classes == EXPECTED_SURFACE_CLASSES, (
             "the set of config classes in kstrl/ moved. A new one is not "
             "wrong, but it is a new place a run can resolve config from, "
@@ -155,8 +253,41 @@ class TestConfigSurface:
         assert found.free == EXPECTED_FREE_READERS, (
             f"the free config readers in kstrl/ moved. Found {sorted(found.free)}"
         )
+        assert found.rounds == EXPECTED_SURFACE_ROUNDS, (
+            "the type closure ran a different number of rounds. 0 means "
+            "it did not run at all, which is the round-2 walk that could "
+            "not see RunEnvelope; a higher number means kstrl/ grew a "
+            f"class that holds a holder. Found {found.rounds}"
+        )
 
-    def test_the_attribution_loses_no_primitive_call(self) -> None:
+    def test_the_closure_enrols_a_holder_it_was_never_told_about(self, tmp_path: Path) -> None:
+        """Layer A's fixed point, planted rather than pinned.
+
+        The pin above names ``RunEnvelope`` and would go red if the
+        closure stopped running, which is the control. This is the
+        mutation for the RULE: a class the walk has never heard of, that
+        calls no primitive and only HOLDS one, must be discovered with
+        every method of it, in one round.
+        """
+        planted = tmp_path / "holder.py"
+        planted.write_text(
+            _NEW_CONFIG_CLASS + "\n\n@dataclass\nclass WidgetEnvelope:\n"
+            "    widget: WidgetConfig\n\n"
+            "    @classmethod\n"
+            "    def build(cls, root_dir):\n"
+            "        return cls(widget=WidgetConfig.load(root_dir))\n",
+            encoding="utf-8",
+        )
+        found = configwalk.surface([planted])
+        assert found.rounds == 1
+        assert found.classes == {
+            "WidgetConfig": frozenset({"load"}),
+            "WidgetEnvelope": frozenset({"build"}),
+        }
+
+    def test_the_attribution_loses_no_primitive_call(
+        self, package_surface: configwalk.Surface
+    ) -> None:
         """The census control for layer A.
 
         ``own_nodes`` stops at a nested function and at a lambda, so a
@@ -166,7 +297,7 @@ class TestConfigSurface:
         agree, and the day they stop agreeing this says so instead of
         reporting a smaller surface.
         """
-        found = configwalk.surface(package_sources())
+        found = package_surface
         assert found.attributed == found.raw, (
             "a call to a parse primitive was found in kstrl/ that the "
             "per-scope walk could not attribute to a scope, so the "
@@ -260,6 +391,29 @@ class TestConfigSurface:
             '    return c.load_toml_section(c.resolve_config_file(root), "x")\n',
         )
 
+    @pytest.mark.xfail(strict=True, raises=AssertionError)
+    def test_a_primitive_named_as_a_string_is_invisible(self, tmp_path: Path) -> None:
+        """The second disclosed shape: the name is data, not a name.
+
+        ``getattr(c, "load_toml_document")(root)`` spells the primitive
+        in a STRING, so there is no ``ast.Name`` for layer 1 to match and
+        no binding for a resolver to follow. Measured in ``kstrl/``
+        today: 0 occurrences, so latent. Separate row from the
+        module-qualified one because they fail for different reasons and
+        closing one does not close the other.
+        """
+
+        def probe(source: str) -> object:
+            planted = tmp_path / "by_string.py"
+            planted.write_text(source, encoding="utf-8")
+            return configwalk.surface([planted]).raw
+
+        astwalk.blind_spot(
+            probe,
+            "import kstrl.config as c\n\n\ndef build(root):\n"
+            '    return getattr(c, "load_toml_document")(root)\n',
+        )
+
 
 class TestTheRunReadsConfigOnlyBeforeItStarts:
     """Layer B. Scoped to the three modules a run's config can be read
@@ -267,8 +421,19 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
     the offender rule by construction rather than by an exemption
     somebody has to remember."""
 
-    def test_the_pipeline_reads_no_config_at_all(self) -> None:
-        found = configwalk.surface(package_sources())
+    def test_the_pipeline_reads_no_config_at_all(
+        self, package_surface: configwalk.Surface, tmp_path: Path
+    ) -> None:
+        found = package_surface
+        control = configwalk.read_sites(_pipeline_with_the_forbidden_fallback(tmp_path), found)
+        assert control != [], (
+            "the walk reports nothing on a copy of kstrl/pipeline.py with "
+            "`run_envelope = run_envelope or RunEnvelope.load(root_dir)` "
+            "planted in the constructor, which is the one fallback that "
+            "file forbids by name. The assertion below therefore proves "
+            "nothing: a walk that cannot see the offender returns the "
+            "same empty list a clean module returns."
+        )
         sites = configwalk.read_sites(KSTRL_PACKAGE / "pipeline.py", found)
         assert sites == [], (
             "kstrl/pipeline.py resolves config. Its phases run per "
@@ -278,14 +443,16 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
             f"envelope is injected instead. Offenders: {sites}"
         )
 
-    def test_the_envelope_names_every_section_the_run_enforces(self) -> None:
+    def test_the_envelope_names_every_section_the_run_enforces(
+        self, package_surface: configwalk.Surface
+    ) -> None:
         """The seven sections, pinned where the walk can see them.
 
         ``AutonomyState`` is not here: it reads ``.kstrl/autonomy.json``
         rather than ``kstrl.toml``, so no config walk covers it and
         ``TestRunEnvelope`` drives it instead.
         """
-        found = configwalk.surface(package_sources())
+        found = package_surface
         sites = configwalk.read_sites(KSTRL_PACKAGE / "runenvelope.py", found)
         named = {site.target for site in sites if site.scope == "RunEnvelope.resolve"}
         assert named == EXPECTED_ENVELOPE_SECTIONS, (
@@ -293,8 +460,26 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
             "goes back to being resolved per component or inside a "
             f"constructor that cannot report a bad one (#192). Found {sorted(named)}"
         )
+        # Every one of them must ALSO be a loader `config_sections()`
+        # names, because that is what gives a rejected section its
+        # label. `_section_for` raises LookupError for a loader the
+        # registry does not hold, and LookupError is outside
+        # `SURFACE_REJECTIONS`, so it escapes `resolve_or_report`,
+        # escapes `RunEnvelope.resolve` and reproduces blocker 1 - a
+        # traceback out of run_factory - for the next section added to
+        # the envelope and not to the registry. Latent today, and this
+        # is what keeps it latent.
+        for target in sorted(EXPECTED_ENVELOPE_SECTIONS):
+            class_name, method = target.split(".")
+            loader = getattr(getattr(runenvelope, class_name), method)
+            assert _section_for(loader).sections, (
+                f"{target} resolves to a registry entry naming no toml "
+                "section, so a rejection of it would have no label."
+            )
 
-    def test_every_factory_config_read_is_run_level(self) -> None:
+    def test_every_factory_config_read_is_run_level(
+        self, package_surface: configwalk.Surface
+    ) -> None:
         """The half the pipeline scoping cannot see.
 
         ``_submit_args`` and ``_run_component`` run once per component
@@ -302,7 +487,7 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
         planted at the top of ``_submit_args`` passed this whole file
         before layer B walked factory.py.
         """
-        found = configwalk.surface(package_sources())
+        found = package_surface
         sites = configwalk.read_sites(KSTRL_PACKAGE / "factory.py", found)
         offenders = [site for site in sites if site.scope not in EXPECTED_FACTORY_SCOPES]
         assert offenders == [], (
@@ -317,7 +502,9 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
             ("serve.py", EXPECTED_SERVE_SITES),
         ],
     )
-    def test_the_site_count_is_pinned(self, module: str, expected: int) -> None:
+    def test_the_site_count_is_pinned(
+        self, package_surface: configwalk.Surface, module: str, expected: int
+    ) -> None:
         """The control for both assertions above.
 
         An empty offender list is what a clean module returns AND what a
@@ -326,7 +513,7 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
         both counts are non-zero, both are walked by the same call in
         the same run, and a walk that went blind takes them to zero.
         """
-        found = configwalk.surface(package_sources())
+        found = package_surface
         sites = configwalk.read_sites(KSTRL_PACKAGE / module, found)
         assert len(sites) == expected, (
             f"the number of config reads in kstrl/{module} moved. If it "
@@ -390,7 +577,7 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
         ],
     )
     def test_the_walk_flags_a_per_phase_read_however_it_is_written(
-        self, tmp_path: Path, shape: str, source: str
+        self, package_surface: configwalk.Surface, tmp_path: Path, shape: str, source: str
     ) -> None:
         """Layer B's mutation, once per call shape.
 
@@ -401,7 +588,35 @@ class TestTheRunReadsConfigOnlyBeforeItStarts:
         """
         planted = tmp_path / "pipeline.py"
         planted.write_text(source, encoding="utf-8")
-        found = configwalk.surface(package_sources())
-        sites = configwalk.read_sites(planted, found)
+        sites = configwalk.read_sites(planted, package_surface)
         assert sites != [], f"the {shape} shape is invisible to layer B"
         assert all(site.scope.startswith("ComponentPipeline._phase_verify") for site in sites)
+
+    @pytest.mark.xfail(strict=True, raises=AssertionError)
+    def test_a_receiver_built_at_run_time_is_invisible(
+        self, package_surface: configwalk.Surface, tmp_path: Path
+    ) -> None:
+        """The third disclosed shape, and layer B's own.
+
+        ``importlib.import_module("kstrl.policy").PolicyConfig.load(root)``
+        names the module in a STRING and builds the receiver while the
+        program runs, so there is no binding for ``astwalk.bindings`` to
+        follow and the eight shapes above all resolve where this one
+        cannot. Measured in ``kstrl/`` today: 0 occurrences, so latent.
+        The same class of miss covers a helper in ANOTHER module that
+        calls a surface class, because nothing here is transitive over
+        calls; ``configwalk``'s DISCLOSED LIMIT paragraph says both.
+        """
+
+        def probe(source: str) -> object:
+            planted = tmp_path / "pipeline.py"
+            planted.write_text(source, encoding="utf-8")
+            return len(configwalk.read_sites(planted, package_surface))
+
+        astwalk.blind_spot(
+            probe,
+            "import importlib\n\n\nclass ComponentPipeline:\n"
+            "    def _phase_verify(self, comp):\n"
+            '        mod = importlib.import_module("kstrl.policy")\n'
+            "        return mod.PolicyConfig.load(self.root_dir)\n",
+        )

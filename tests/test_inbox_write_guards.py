@@ -154,7 +154,7 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
 #: and returns the line naming ``[inbox]`` and the key, and the factory
 #: refuses the run with exit code 2 before the run directory exists
 #: (#192 round 2). That the envelope still names ``[inbox]`` at all is
-#: pinned by ``tests/test_config_read_once.py``'s
+#: pinned by ``tests/test_config_guard.py``'s
 #: ``EXPECTED_ENVELOPE_SECTIONS``, which walks references rather than
 #: calls, so dropping the section fails there instead of quietly
 #: shrinking this table.
