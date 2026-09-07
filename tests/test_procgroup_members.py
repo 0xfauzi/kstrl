@@ -51,9 +51,14 @@ class TestTheParseReturnsPidsNotCounts:
         assert listing == _Listing(complete=True, listed=(50,), running_pids=(50,))
 
     def test_a_pid_column_that_is_not_a_number_is_skipped(self) -> None:
-        """The parse now returns pids, so a row it cannot read must be
-        dropped from BOTH tuples rather than crashing the read or being
-        counted as an anonymous member."""
+        """The parse now returns pids, so a row it cannot read is either
+        dropped, crashed on, counted as an anonymous member, or made to
+        mark the whole listing untrustworthy. It is dropped, from BOTH
+        tuples. The fourth option is the one the module's fail direction
+        argues for and it is #209's handoff, not its change: it moves
+        what ``read_group_liveness`` tells the daemon's kill path, and
+        the ragged-row skip above has the same shape and is pinned by
+        the test above this one."""
         listing = _read_listing("1 1 Ss\nbad 7 Ss\n50 7 Ss\n", pgid=7)
         assert listing == _Listing(complete=True, listed=(50,), running_pids=(50,))
 

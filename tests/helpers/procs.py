@@ -116,10 +116,10 @@ def group_member_pids(pgid: int) -> list[int]:
     The reading lives in :func:`kstrl.procgroup.read_group_members`.
 
     POLICY, and it is the opposite of the daemon's, exactly as
-    :func:`group_has_live_member`'s is. This RAISES when the listing
-    cannot be trusted. A count is the reading with the most to lose from
-    a filtered view: a caller asserting "this group has one member" is
-    asserting there is no second one, and an undercount would confirm it.
+    :func:`group_has_live_member`'s is: an unreadable listing RAISES here
+    rather than degrading to a number. Why a count is the reading with
+    the most to lose from a partial view is argued once, in
+    :func:`kstrl.procgroup.read_group_members`, and not repeated here.
     """
     members = read_group_members(pgid)
     if members.pids is None:

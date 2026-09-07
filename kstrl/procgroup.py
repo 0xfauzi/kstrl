@@ -172,6 +172,16 @@ _UNMEASURABLE = (
     "'no live member' would be a false negative."
 )
 
+#: The other sentence two branches report, said once for the same reason.
+#: Both reads refuse a uid-filtered listing and each appends its own
+#: consequence; #209 wrote the head out a second time, which moved this
+#: module's ``ps``-spelling census for a copied sentence rather than for
+#: a new mechanism. ``{pgid}`` is filled in by the caller.
+_FILTERED_VIEW = (
+    "ps did not list pid 1, so the view is filtered to this uid and a "
+    "member of group {pgid} owned by another uid would be invisible."
+)
+
 
 @dataclass(frozen=True)
 class GroupLiveness:
@@ -207,7 +217,10 @@ class GroupMembers:
     and for the stronger of the two reasons: a caller counting members
     is usually asserting that there is no OTHER member, and a listing
     filtered to one uid would answer that with a confident undercount.
-    So an incomplete listing is a refusal here, never a short list.
+    So a uid-filtered listing is a refusal here, never a short list.
+    That is the one undercount this read is able to recognise: a row
+    ``_read_listing`` could not parse at all is dropped instead, which
+    it records and #209 leaves as a handoff.
     """
 
     #: Non-zombie members, in listing order. None means unmeasured.
@@ -451,7 +464,7 @@ def read_group_members(pgid: int) -> GroupMembers:
     ``ps`` call and its one parse. See :class:`GroupMembers` for why the
     reading lives here rather than beside the caller that needs it.
 
-    An INCOMPLETE listing is refused rather than returned short. The
+    A uid-filtered listing is refused rather than returned short. The
     liveness read can afford to interpret one - it has a second positive
     finding to fall back on - but a count has none: a view filtered to
     this uid would hand back "one member" for a group with two, and the
@@ -464,9 +477,7 @@ def read_group_members(pgid: int) -> GroupMembers:
     if not listing.complete:
         return GroupMembers(
             None,
-            f"ps did not list pid 1, so the view is filtered to this uid "
-            f"and a member of group {pgid} owned by another uid would be "
-            f"invisible. A count taken from it would be an undercount.",
+            f"{_FILTERED_VIEW.format(pgid=pgid)} A count taken from it would be an undercount.",
         )
     return GroupMembers(listing.running_pids)
 
@@ -559,12 +570,7 @@ def _interpret(listing: _Listing, pgid: int) -> GroupLiveness:
     if listing.running:
         return GroupLiveness(True)
     if not listing.complete:
-        return GroupLiveness(
-            None,
-            f"ps did not list pid 1, so the view is filtered to this uid "
-            f"and a running member of group {pgid} owned by another uid "
-            f"would be invisible. {_UNMEASURABLE}",
-        )
+        return GroupLiveness(None, f"{_FILTERED_VIEW.format(pgid=pgid)} {_UNMEASURABLE}")
     if listing.rows:
         # A complete listing that shows this group holding only zombies.
         # #298's case.
@@ -599,9 +605,18 @@ def _read_listing(stdout: str, pgid: int) -> _Listing:
         complete = complete or pid == "1"
         if group != want:
             continue
-        # A pid column that is not a number is a row this parse cannot
-        # read, and dropping it silently would undercount a group. Real
-        # ``ps`` does not emit one; a truncated listing might.
+        # A pid column that is not a number would raise out of a read
+        # that has no handler for it, so it is dropped, from BOTH tuples
+        # rather than only from the running one: an anonymous member is
+        # not something either caller can do anything with. Real ``ps``
+        # does not emit such a row - the one above it already drops a
+        # line with fewer than three columns the same way - so this is
+        # unreachable on real output. It is reachable in principle, and
+        # then it is an UNDERCOUNT, which is the direction this module
+        # otherwise refuses; the stronger reading, where a row the parse
+        # could not read marks the whole listing untrustworthy and both
+        # public reads refuse it, is #209's handoff rather than its
+        # change, because it moves what the daemon's kill path does.
         try:
             member = int(pid)
         except ValueError:

@@ -653,9 +653,11 @@ def _ps_call_lines(source: str, module: str = "") -> list[int]:
 #: Layer 1's inventory, per module. This file is excluded because its
 #: own fixtures spell the command on purpose; layer 2 still walks it.
 EXPECTED_PS_COMMAND_SPELLINGS: dict[str, int] = {
-    # PS_ARGV plus five "ps ..." messages (#209 added the filtered-listing
-    # refusal); the members test asserts that refusal reaches its caller.
-    "procgroup.py": 6,
+    "procgroup.py": 5,  # PS_ARGV, plus four "ps failed" messages
+    # #209's members read reports the same uid-filtered listing the
+    # liveness read does, from the one `_FILTERED_VIEW` sentence, so this
+    # module's count did not move; the new row below is the test that
+    # asserts the refusal reaches its caller.
     "tests/test_procgroup_members.py": 1,
     "tests/test_process_scoping.py": 2,  # two assertions on those messages
     "tests/test_serve.py": 6,  # the fake's argv, plus five assertions
