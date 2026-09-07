@@ -30,8 +30,8 @@ from kstrl.autonomy import (
     apply_demotion,
     flag_bundle_for,
     manual_override_notes,
-    pause_gate_for,
     resolve_runtime_level,
+    resolved_flag_bundle,
     save_ladder_state,
     strict_bool,
 )
@@ -3586,16 +3586,21 @@ def _run_factory_locked(
         # operator set. pause_gate_for is the only place that rule is
         # written; the note above asks it what it returned rather than
         # keeping a second copy.
-        factory_config.pause_before_pr_merge = pause_gate_for(
+        #
+        # Rebound to the bundle the run USES, not the one the level
+        # awarded, because the event below is what makes a run's
+        # permissions auditable: bundle.describe() would otherwise record
+        # "merge gate: off" for a run that pauses at every component, and
+        # rebinding that ONE field would leave "auto-merge when green:
+        # yes" beside "merge gate: ON". resolved_flag_bundle moves every
+        # dependent flag together.
+        bundle = resolved_flag_bundle(
             bundle,
             configured=factory_config.pause_before_pr_merge,
             explicit=pause_explicit,
         )
+        factory_config.pause_before_pr_merge = bundle.pause_before_pr_merge
         factory_config.review_mode = bundle.review_mode
-        # The event below describes the bundle the run USES, not the one
-        # the level awarded: bundle.describe() would otherwise record
-        # "merge gate: off" for a run that pauses at every component.
-        bundle = replace(bundle, pause_before_pr_merge=factory_config.pause_before_pr_merge)
         # The ladder can only ever WITHHOLD a permission the envelope
         # grants, never add one: below L3, new dependencies are refused
         # even if [policy] deps_allow_new is true.

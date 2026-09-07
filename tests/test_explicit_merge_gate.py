@@ -37,7 +37,13 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.autonomy import AutonomyLevel, AutonomyState, flag_bundle_for, pause_gate_for
+from kstrl.autonomy import (
+    AutonomyLevel,
+    AutonomyState,
+    flag_bundle_for,
+    pause_gate_for,
+    resolved_flag_bundle,
+)
 from kstrl.config import ConfigError
 from kstrl.events import AutonomyLevelApplied, CallbackSink, Event, EventBus
 from kstrl.factory import ComponentResult, FactoryConfig, run_factory
@@ -110,6 +116,53 @@ class TestPauseGateFor:
     def test_the_table_covers_every_level(self) -> None:
         """A level added to the ladder is a row missing here."""
         assert {row[0] for row in _GATE_TABLE} == set(AutonomyLevel)
+
+
+class TestTheResolvedBundle:
+    """``resolved_flag_bundle`` moves the dependent flags with the gate.
+
+    Round 1 rebound ``pause_before_pr_merge`` alone, so the audit record
+    could say a run pauses at a human at every component and auto-merges
+    when green. Both directions are pinned: a retained gate takes
+    auto-merge away, and nothing here may hand it back.
+    """
+
+    @pytest.mark.parametrize(("level", "configured", "explicit", "expected"), _GATE_TABLE)
+    def test_the_gate_matches_pause_gate_for_at_every_row(
+        self,
+        level: AutonomyLevel,
+        configured: bool,
+        explicit: bool,
+        expected: bool,
+    ) -> None:
+        resolved = resolved_flag_bundle(
+            flag_bundle_for(level), configured=configured, explicit=explicit
+        )
+        assert resolved.pause_before_pr_merge is expected
+
+    def test_a_retained_gate_withdraws_auto_merge(self) -> None:
+        bundle = flag_bundle_for(AutonomyLevel.L3_ENVELOPED_AUTO)
+        assert bundle.auto_merge_when_green is True
+        resolved = resolved_flag_bundle(bundle, configured=True, explicit=True)
+        assert resolved.pause_before_pr_merge is True
+        assert resolved.auto_merge_when_green is False
+
+    def test_no_gate_leaves_the_level_untouched(self) -> None:
+        bundle = flag_bundle_for(AutonomyLevel.L3_ENVELOPED_AUTO)
+        assert resolved_flag_bundle(bundle, configured=False, explicit=False) == bundle
+
+    def test_an_explicit_false_never_grants_auto_merge(self) -> None:
+        """The #174 direction, one flag over.
+
+        L1 withholds auto-merge and pauses. An explicit ``false`` may not
+        lower the gate, and it may not turn auto-merge on either: a
+        permission the ladder never granted cannot arrive through the
+        flag that depends on it.
+        """
+        bundle = flag_bundle_for(AutonomyLevel.L1_SUPERVISED)
+        resolved = resolved_flag_bundle(bundle, configured=False, explicit=True)
+        assert resolved.pause_before_pr_merge is True
+        assert resolved.auto_merge_when_green is False
 
 
 # ---------------------------------------------------------------------------
@@ -345,11 +398,22 @@ class TestTheRecord:
         Otherwise the one event that exists to make a run's permissions
         auditable records "merge gate: off" for a run that pauses at
         every component.
+
+        EVERY row, not the one this issue moved. Round 1 rebound
+        ``pause_before_pr_merge`` alone and left ``auto-merge when green:
+        yes`` beside ``merge gate: ON``, so the audit record said the run
+        stops at a human at every component AND merges without one. A
+        one-row assertion passes that.
         """
         events, _ = _l3_toml_run
-        flags = _applied(events).flags
-        assert any("merge gate: ON" in flag for flag in flags), flags
-        assert not any("merge gate: off" in flag for flag in flags), flags
+        assert _applied(events).flags == (
+            "merge gate: ON (human approves)",
+            "review mode: hard",
+            "plans: auto-accepted",
+            "new dependencies: permitted",
+            "auto-merge when green: no",
+            "deploy: blocked",
+        )
 
     def test_a_withheld_override_still_says_bundle_wins(self, tmp_path: Path) -> None:
         """L1 with an explicit false: the ladder withholds, and says so."""

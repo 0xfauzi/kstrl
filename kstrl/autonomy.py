@@ -54,7 +54,7 @@ import json
 import os
 import sys
 import warnings
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from enum import IntEnum
 from pathlib import Path
@@ -1120,6 +1120,31 @@ def pause_gate_for(bundle: FlagBundle, *, configured: bool, explicit: bool) -> b
     dropped at L3.
     """
     return bundle.pause_before_pr_merge or (explicit and configured)
+
+
+def resolved_flag_bundle(bundle: FlagBundle, *, configured: bool, explicit: bool) -> FlagBundle:
+    """The bundle the run USES, with every dependent flag rebuilt.
+
+    ``flag_bundle_for`` returns what a LEVEL awards. An explicit operator
+    gate can raise ``pause_before_pr_merge`` above that (see
+    :func:`pause_gate_for`), and the flags that depend on it have to move
+    with it or the audit record contradicts itself. Round 1 of #195
+    rebound one field with ``replace`` and shipped an
+    ``AutonomyLevelApplied`` reading ``merge gate: ON (human approves)``
+    beside ``auto-merge when green: yes``: a run that stops at a human at
+    every component and also merges without one.
+
+    ``auto_merge_when_green`` is the dependent flag, and only in the
+    withholding direction: a retained gate takes it away, and nothing
+    here may hand it back, because the ladder's False is a permission
+    never granted.
+    """
+    pause = pause_gate_for(bundle, configured=configured, explicit=explicit)
+    return replace(
+        bundle,
+        pause_before_pr_merge=pause,
+        auto_merge_when_green=bundle.auto_merge_when_green and not pause,
+    )
 
 
 def manual_override_notes(

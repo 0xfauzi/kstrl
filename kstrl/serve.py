@@ -1397,17 +1397,90 @@ def reap_leases(
 class MergeGate:
     """The merge-gate decision for one item.
 
-    ``refusal`` non-empty means the item must NOT run: the item asked
-    for a human merge gate and this repo cannot honour one, so silently
-    proceeding would be precisely the governance erosion R8.6 lists as a
-    failure mode. Until #195 the producer was the autonomy ladder
-    dropping the gate at L3; the ladder no longer does that, and the
-    producer is now a repo whose config makes the checkpoint unreachable.
+    ``refusal`` non-empty means the item must NOT run: this run would
+    pause at a human merge gate and this repo cannot honour one, so
+    silently proceeding would be precisely the governance erosion R8.6
+    lists as a failure mode. Until #195 the producer was the autonomy
+    ladder dropping the gate at L3; the ladder no longer does that, and
+    the producer is now a repo whose config makes the checkpoint
+    unreachable.
+
+    Built only by :func:`_merge_gate`, which is what makes the refusal
+    key on the RESOLVED gate rather than on the item's disposition.
     """
 
     pause_before_pr_merge: bool
     notes: tuple[str, ...] = ()
     refusal: str = ""
+
+
+def _merge_gate(
+    root_dir: Path,
+    *,
+    pause_before_pr_merge: bool,
+    wants_gate: bool,
+    notes: tuple[str, ...] = (),
+) -> MergeGate:
+    """The single exit of :func:`resolve_merge_gate`.
+
+    The unreachable-checkpoint refusal keys on the gate about to be
+    RETURNED, never on the item's own disposition. Round 1 of #195 asked
+    the disposition and so cleared the other way a gate arises: an
+    ``AUTO_MERGE`` item that L1 or L2 downgrades is promised a human gate
+    by the LADDER, and that gate is exactly as unreachable in a
+    ``create_prs = false`` repo. Measured at f4356cf, that case returned
+    ``pause=True, refusal=''``: the daemon logged "merge gate on", passed
+    ``--pause-before-pr-merge`` to the child, and the child never reached
+    ``_phase_checkpoint``. A control that CLEARS must be narrow
+    (CLAUDE.md guard-design rule 3), and asking the disposition cleared a
+    case it had not proved compliant.
+
+    Every ``MergeGate`` this module returns is built here, so a fifth
+    exit cannot skip the probe by construction.
+
+    ``merge_gate_unreachable_warning`` is the PREDICATE and not the text.
+    Its own sentences are written for ``run_factory``'s already-resolved
+    config and read as a second subject when pasted into this one (they
+    also tell the operator that ``ks serve`` honours the gate, inside the
+    ``ks serve`` message explaining why it cannot). The probe forces
+    ``pause_before_pr_merge=True`` and ``single_pr=False``, which leaves
+    ``create_prs`` as the only input that can still produce a warning, so
+    naming that key here is correct by construction;
+    ``tests/test_serve.py::TestTheRefusalNamesTheRightKey`` pins the set
+    of config fields the predicate reads so a fourth arm cannot make this
+    sentence wrong in silence.
+    """
+    from kstrl.factory import FactoryConfig, merge_gate_unreachable_warning
+
+    if not pause_before_pr_merge:
+        return MergeGate(pause_before_pr_merge=False, notes=notes)
+    unreachable = merge_gate_unreachable_warning(
+        replace(
+            FactoryConfig.load(root_dir),
+            pause_before_pr_merge=True,
+            single_pr=False,
+        )
+    )
+    if unreachable is None:
+        return MergeGate(pause_before_pr_merge=True, notes=notes)
+    subject = (
+        "the item requires a human merge gate"
+        if wants_gate
+        else "the autonomy level requires a human merge gate"
+    )
+    remedy = (
+        "Set the item to --auto-merge deliberately, or turn create_prs on."
+        if wants_gate
+        else "Raise the autonomy level to one that permits auto-merge, or turn create_prs on."
+    )
+    return MergeGate(
+        pause_before_pr_merge=True,
+        notes=notes,
+        refusal=(
+            f"{subject}, but [factory] create_prs = false means this repo "
+            f"creates no PR, so the checkpoint never runs. {remedy}"
+        ),
+    )
 
 
 def resolve_merge_gate(item: QueueItem, root_dir: Path) -> MergeGate:
@@ -1428,51 +1501,26 @@ def resolve_merge_gate(item: QueueItem, root_dir: Path) -> MergeGate:
     function can still see: a gate that will be honoured by nobody
     because the checkpoint it runs at is unreachable. ``ks factory``
     reaches ``_phase_checkpoint`` only when it creates per-component PRs,
-    so a repo whose ``[factory] create_prs = false`` turns a
-    ``stop_at_pr`` item into a silent auto-merge (#207's failure-open
-    shape, arriving through intake). Refused rather than run, because the
-    item asked for a human in writing.
+    so a repo whose ``[factory] create_prs = false`` turns a promised
+    human gate into a silent auto-merge (#207's failure-open shape,
+    arriving through intake). Refused rather than run.
 
-    Checked whether or not the ladder is enabled: the checkpoint is
-    unreachable for a config reason, not a level reason.
+    Every exit goes through :func:`_merge_gate`, which applies that
+    refusal to the gate this function RESOLVED. Both ways a gate arises
+    are covered: the item asking for one, and the ladder withholding
+    auto-merge from an item that did not. Checked whether or not the
+    ladder is enabled: the checkpoint is unreachable for a config reason,
+    not a level reason.
     """
     from kstrl.autonomy import AutonomyConfig, AutonomyState, flag_bundle_for, resolve_runtime_level
-    from kstrl.factory import FactoryConfig, merge_gate_unreachable_warning
     from kstrl.policy import PolicyConfig
 
     wants_gate = item.merge_disposition is MergeDisposition.STOP_AT_PR
-    if wants_gate:
-        # pause_before_pr_merge=True because that is what this item asks
-        # for; single_pr=False because `ks factory` takes single_pr from
-        # the MANIFEST and serve never passes --single-pr, so a toml
-        # value for it is not effective on this path and would refuse an
-        # item that is fine. Forcing both leaves create_prs as the only
-        # input that can still produce a warning, so the refusal below
-        # always names that branch; the reader does not have to open
-        # merge_gate_unreachable_warning to work out which of its three
-        # arms is reachable from here.
-        unreachable = merge_gate_unreachable_warning(
-            replace(
-                FactoryConfig.load(root_dir),
-                pause_before_pr_merge=True,
-                single_pr=False,
-            )
-        )
-        if unreachable is not None:
-            return MergeGate(
-                pause_before_pr_merge=True,
-                refusal=(
-                    f"item requires a human merge gate, but {unreachable} "
-                    "Set the item to --auto-merge deliberately, or make the "
-                    "repo create per-component PRs, rather than having the "
-                    "gate skipped silently."
-                ),
-            )
 
     config = AutonomyConfig.load(root_dir)
     if not config.enabled:
         # No ladder: the item's own disposition is authoritative.
-        return MergeGate(pause_before_pr_merge=wants_gate)
+        return _merge_gate(root_dir, pause_before_pr_merge=wants_gate, wants_gate=wants_gate)
 
     policy = PolicyConfig.load(root_dir)
     level, clamps = resolve_runtime_level(
@@ -1489,7 +1537,12 @@ def resolve_merge_gate(item: QueueItem, root_dir: Path) -> MergeGate:
             f"item requested auto-merge; {bundle.level.label} withholds it, "
             "so the PR waits for a human"
         )
-        return MergeGate(pause_before_pr_merge=True, notes=tuple(notes))
+        return _merge_gate(
+            root_dir,
+            pause_before_pr_merge=True,
+            wants_gate=wants_gate,
+            notes=tuple(notes),
+        )
 
     if wants_gate and not bundle.pause_before_pr_merge:
         # #195: the item's explicit request outranks the bundle's
@@ -1500,10 +1553,17 @@ def resolve_merge_gate(item: QueueItem, root_dir: Path) -> MergeGate:
             "auto-merge, but an explicit request outranks the ladder, so "
             "the gate is retained"
         )
-        return MergeGate(pause_before_pr_merge=True, notes=tuple(notes))
+        return _merge_gate(
+            root_dir,
+            pause_before_pr_merge=True,
+            wants_gate=wants_gate,
+            notes=tuple(notes),
+        )
 
-    return MergeGate(
+    return _merge_gate(
+        root_dir,
         pause_before_pr_merge=bundle.pause_before_pr_merge,
+        wants_gate=wants_gate,
         notes=tuple(notes),
     )
 
