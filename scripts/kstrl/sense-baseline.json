@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-09-07T00:16:57Z",
-  "base_ref": "908b9405f8cae94aeb448675ce5fc2f2cd20feae",
+  "generated_at": "2026-09-07T00:45:08Z",
+  "base_ref": "b47c63425b9d078c37398edd5378354194e577e3",
   "project": "0xfauzi/kstrl",
   "passed": true,
-  "sense_schema_version": 2,
+  "sense_schema_version": 3,
   "verify_digest": "c446b9151d1cd264",
   "measured_checks": [
     "linter",
