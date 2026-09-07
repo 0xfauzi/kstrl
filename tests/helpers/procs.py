@@ -41,7 +41,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from kstrl import procgroup
-from kstrl.procgroup import pid_is_alive, read_group_liveness
+from kstrl.procgroup import pid_is_alive, read_group_liveness, read_group_members
 
 
 def read_pid(pidfile: Path, timeout: float = 5.0) -> int:
@@ -96,6 +96,35 @@ def wait_for_pid_to_die(pid: int, timeout: float = 5.0) -> bool:
             return True
         time.sleep(0.02)
     return not pid_is_alive(pid)
+
+
+def group_member_pids(pgid: int) -> list[int]:
+    """The non-zombie pids in a group the test itself created.
+
+    The CENSUS twin of :func:`group_has_live_member`, which answers a
+    yes/no and so cannot say how many processes a spawn produced. #209
+    needs the count: whether ``caffeinate -i`` puts its forked assertion
+    holder inside the run's process group is a question about
+    membership, and a helper that escaped would outlive the timeout
+    path's group kill still holding a power assertion.
+
+    It DELEGATES rather than reading ``ps`` itself, and the first draft
+    of #209 did not, which is how this docstring came to be written:
+    ``tests/test_procgroup.py`` fails on any second ``ps`` in ``kstrl/``
+    or ``tests/``, because two copies of one parse drift on failure
+    handling until the daemon's answer and the suite's stop agreeing.
+    The reading lives in :func:`kstrl.procgroup.read_group_members`.
+
+    POLICY, and it is the opposite of the daemon's, exactly as
+    :func:`group_has_live_member`'s is. This RAISES when the listing
+    cannot be trusted. A count is the reading with the most to lose from
+    a filtered view: a caller asserting "this group has one member" is
+    asserting there is no second one, and an undercount would confirm it.
+    """
+    members = read_group_members(pgid)
+    if members.pids is None:
+        raise AssertionError(members.reason)
+    return list(members.pids)
 
 
 def group_has_live_member(pgid: int) -> bool:

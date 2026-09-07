@@ -184,6 +184,37 @@ class GroupLiveness:
     reason: str = ""
 
 
+@dataclass(frozen=True)
+class GroupMembers:
+    """WHICH pids are running in a group, or why that could not be read.
+
+    :class:`GroupLiveness` reduces the same listing to one bool, which is
+    all its caller needs. #209 needs the count: whether ``caffeinate -i``
+    puts its forked assertion holder INSIDE the run's process group is a
+    question about membership, and a helper that escaped the group would
+    survive the timeout path's ``killpg`` still holding
+    ``PreventUserIdleSystemSleep``.
+
+    It lives here, sharing one ``ps`` call and one parse with the
+    liveness read, because this module's whole claim is that it is the
+    only place in ``kstrl/`` or ``tests/`` that shells out to ``ps`` -
+    two copies drift on failure handling, and
+    ``tests/test_procgroup.py`` fails on a second one. The first draft of
+    #209 put a second ``ps`` in ``tests/helpers/procs.py`` and that net
+    is what caught it.
+
+    ``pids`` is None when nothing was measured, exactly as ``live`` is,
+    and for the stronger of the two reasons: a caller counting members
+    is usually asserting that there is no OTHER member, and a listing
+    filtered to one uid would answer that with a confident undercount.
+    So an incomplete listing is a refusal here, never a short list.
+    """
+
+    #: Non-zombie members, in listing order. None means unmeasured.
+    pids: tuple[int, ...] | None
+    reason: str = ""
+
+
 def _may_signal_group(pgid: int) -> bool:
     """Whether ``killpg(pgid, ...)`` is safe to issue at all.
 
@@ -407,16 +438,53 @@ def read_group_liveness(pgid: int) -> GroupLiveness:
     report it. The conditions, and the measurements showing that two
     earlier controls could not, are in the module docstring.
     """
+    listing, failure = _listing_for(pgid)
+    if listing is None:
+        return GroupLiveness(None, failure)
+    return _interpret(listing, pgid)
+
+
+def read_group_members(pgid: int) -> GroupMembers:
+    """The non-zombie pids in group ``pgid``, or why they could not be read.
+
+    The census twin of :func:`read_group_liveness`, sharing its one
+    ``ps`` call and its one parse. See :class:`GroupMembers` for why the
+    reading lives here rather than beside the caller that needs it.
+
+    An INCOMPLETE listing is refused rather than returned short. The
+    liveness read can afford to interpret one - it has a second positive
+    finding to fall back on - but a count has none: a view filtered to
+    this uid would hand back "one member" for a group with two, and the
+    caller would read that as an answer. Same fail direction as
+    everything else here, reached for a different reason.
+    """
+    listing, failure = _listing_for(pgid)
+    if listing is None:
+        return GroupMembers(None, failure)
+    if not listing.complete:
+        return GroupMembers(
+            None,
+            f"ps did not list pid 1, so the view is filtered to this uid "
+            f"and a member of group {pgid} owned by another uid would be "
+            f"invisible. A count taken from it would be an undercount.",
+        )
+    return GroupMembers(listing.running_pids)
+
+
+def _listing_for(pgid: int) -> tuple[_Listing | None, str]:
+    """One ``ps`` read, parsed for ``pgid``, or (None, why not).
+
+    The two public reads above share this so a ``ps`` that fails is
+    reported the same way to both. Two copies of that error handling is
+    the drift this module exists to prevent, one level up from the parse.
+    """
     try:
         out = _read_ps()
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
-        return GroupLiveness(None, f"ps failed to run ({exc!r}). {_UNMEASURABLE}")
+        return None, f"ps failed to run ({exc!r}). {_UNMEASURABLE}"
     if out.returncode != 0:
-        return GroupLiveness(
-            None,
-            f"ps failed (rc={out.returncode}): {out.stderr.strip()!r}. {_UNMEASURABLE}",
-        )
-    return _interpret(_read_listing(out.stdout, pgid), pgid)
+        return None, f"ps failed (rc={out.returncode}): {out.stderr.strip()!r}. {_UNMEASURABLE}"
+    return _read_listing(out.stdout, pgid), ""
 
 
 def _read_ps() -> subprocess.CompletedProcess[str]:
@@ -471,9 +539,20 @@ class _Listing:
 
     #: pid 1 was present, so the view is not filtered to our own uid.
     complete: bool
-    #: Rows carrying this pgid, and how many of them are not zombies.
-    rows: int
-    running: int
+    #: Pids carrying this pgid, zombies included.
+    listed: tuple[int, ...]
+    #: Of those, the ones that are not zombies. Kept as pids rather than
+    #: a count because :func:`read_group_members` needs them; the two
+    #: counts below are derived so ``_interpret`` reads as it did.
+    running_pids: tuple[int, ...]
+
+    @property
+    def rows(self) -> int:
+        return len(self.listed)
+
+    @property
+    def running(self) -> int:
+        return len(self.running_pids)
 
 
 def _interpret(listing: _Listing, pgid: int) -> GroupLiveness:
@@ -508,8 +587,8 @@ def _read_listing(stdout: str, pgid: int) -> _Listing:
     """
     want = str(pgid)
     complete = False
-    rows = 0
-    running = 0
+    listed: list[int] = []
+    running: list[int] = []
     for line in stdout.splitlines():
         parts = line.split()
         # A row missing a column would IndexError below. Real ps does not
@@ -520,12 +599,19 @@ def _read_listing(stdout: str, pgid: int) -> _Listing:
         complete = complete or pid == "1"
         if group != want:
             continue
-        rows += 1
+        # A pid column that is not a number is a row this parse cannot
+        # read, and dropping it silently would undercount a group. Real
+        # ``ps`` does not emit one; a truncated listing might.
+        try:
+            member = int(pid)
+        except ValueError:
+            continue
+        listed.append(member)
         # "Z" is the zombie state on both macOS and Linux, and flags may
         # follow it ("Z+", "Zl"), so match the prefix rather than the cell.
         if not state.startswith("Z"):
-            running += 1
-    return _Listing(complete=complete, rows=rows, running=running)
+            running.append(member)
+    return _Listing(complete=complete, listed=tuple(listed), running_pids=tuple(running))
 
 
 def _probe_says_gone(send: Callable[[], None]) -> bool:

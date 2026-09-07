@@ -29,7 +29,6 @@ from kstrl.procgroup import (
     PS_TIMEOUT_SECONDS,
     GroupLiveness,
     _kernel_says_group_is_empty,
-    _Listing,
     _read_listing,
     read_group_liveness,
     signal_probe_alive,
@@ -71,22 +70,10 @@ class TestTheListingReadsStatesNotJustGroups:
         assert listing.rows == 1, "the row must be counted whatever its state"
         assert bool(listing.running) is counts_as_running
 
-    def test_the_three_facts_are_not_transposed(self) -> None:
-        """All three would type-check in any order, so only cases where
-        they DIFFER can catch a swap."""
-        assert _read_listing("1 1 Ss\n50 7 Z\n", pgid=7) == _Listing(
-            complete=True, rows=1, running=0
-        )
-        assert _read_listing("50 7 Ss\n51 7 Z\n", pgid=7) == _Listing(
-            complete=False, rows=2, running=1
-        )
-
-    def test_a_ragged_row_is_skipped_without_dropping_its_neighbours(self) -> None:
-        """A row missing a column would IndexError. The rows either side
-        of it must still be read, or the skip is a silent truncation."""
-        listing = _read_listing("\n  7\n1 1 Ss\n50 7 Ss\n", pgid=7)
-        assert listing == _Listing(complete=True, rows=1, running=1)
-
+    # `test_the_three_facts_are_not_transposed` and the ragged-row test
+    # moved to tests/test_procgroup_members.py with #209: their expected
+    # values are `_Listing`'s two pid tuples now, so they read next to the
+    # reading built on them. This file was at 796 of the 800-line ratchet.
     def test_a_group_id_is_matched_whole_not_as_a_prefix(self) -> None:
         """#292 in miniature: 7 must not match 70."""
         assert _read_listing("1 1 Ss\n50 70 Ss\n", pgid=7).rows == 0
@@ -665,7 +652,10 @@ def _ps_call_lines(source: str, module: str = "") -> list[int]:
 #: Layer 1's inventory, per module. This file is excluded because its
 #: own fixtures spell the command on purpose; layer 2 still walks it.
 EXPECTED_PS_COMMAND_SPELLINGS: dict[str, int] = {
-    "procgroup.py": 5,  # PS_ARGV, plus four "ps failed" messages
+    # PS_ARGV plus five "ps ..." messages (#209 added the filtered-listing
+    # refusal); the members test asserts that refusal reaches its caller.
+    "procgroup.py": 6,
+    "tests/test_procgroup_members.py": 1,
     "tests/test_process_scoping.py": 2,  # two assertions on those messages
     "tests/test_serve.py": 6,  # the fake's argv, plus five assertions
     "tests/test_shutdown.py": 1,  # the degraded-reading message
