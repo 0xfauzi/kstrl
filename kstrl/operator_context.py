@@ -106,9 +106,12 @@ class OperatorFileKind:
     the ``[paths]`` key and the budget off the row.
 
     THE WORKER'S PROMPT BLOCK IS THE THIRD AND IT IS HAND-ORDERED, on
-    purpose. ``factory._run_component`` names each kind itself, and a
-    new row costs FIVE edits in ``kstrl/factory.py``: the import, the
-    ``_run_component`` parameter, the ``load_operator_file`` call, the
+    purpose. ``factory._run_component`` names each kind itself, and a new
+    row costs SIX hand edits in ``kstrl/factory.py``, which is the list
+    and not the number: the import of the kind constant, the
+    ``_run_component`` parameter carrying the configured path, the
+    ``load_operator_file`` call, THE ENTRY IN THE ``parts`` TUPLE that
+    puts the block in front of the engineer, the
     ``_path_relative_to_root`` hoist in the parent, and the positional
     slot in ``_submit_args``. Round 1 of R10.9's review is the reason
     this paragraph exists: the earlier wording claimed a row reached the
@@ -117,10 +120,17 @@ class OperatorFileKind:
     That is not a defect to loop away, because the ORDER is the feature
     (memory after the retry context, #230) and a loop over a declaration
     order cannot express a prompt order. It is a defect to CLOSE, and
-    ``tests/test_operator_files_reach_the_prompt.py`` is the closure: it
-    counts the ``load_operator_file(operator_file_spec(<KIND>, ...))``
-    sites in ``kstrl/factory.py`` per kind and fails unless every row
-    has exactly one.
+    ``tests/test_operator_files_reach_the_prompt.py`` is the closure.
+
+    ROUND 2 IS WHY THE ``parts`` ENTRY IS NAMED HERE. The first closure
+    counted ``load_operator_file(operator_file_spec(<KIND>, ...))`` sites
+    and called that proof of delivery, and this paragraph listed the
+    other five edits without it. A row that pays those five is loaded and
+    put in no prompt, which the reviewer planted and measured green on
+    every gate once one ordinary use kept ruff's F841 quiet. So the guard
+    reads the ``parts`` tuple as well: a declared row that is not an
+    element of it fails ``test_every_declared_row_reaches_the_prompt_
+    order``, naming the entry that is missing.
     """
 
     #: Its ``[paths]`` key, matching a ``config_keys.STRING_KEYS`` row.
@@ -442,10 +452,13 @@ def _rows(
 
     IT DOES NOT REACH THE ENGINEER'S PROMPT. That is
     ``factory._run_component``, which names each kind by hand and costs
-    five edits per row; :class:`OperatorFileKind` says which five and
-    which test refuses a row that has not paid them. An earlier wording
-    of this sentence claimed the worker too, which is a guard closed
-    over one surface reading as closed over all of them.
+    SIX edits per row, one of them the entry in the ``parts`` tuple that
+    is the prompt order; :class:`OperatorFileKind` lists all six and
+    names the test that refuses a row which has not paid them. An earlier
+    wording of this sentence claimed the worker too, which is a guard
+    closed over one surface reading as closed over all of them, and the
+    wording after that listed five of the six edits, leaving out the only
+    one that puts the block in front of the engineer.
 
     Both paths come out of ``getattr(..., kind.field)`` and no branch
     names a field. That is what makes pairing one row with another row's
