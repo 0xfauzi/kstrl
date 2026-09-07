@@ -508,6 +508,40 @@ def test_an_empty_env_var_is_an_explicit_empty_value(
     assert getattr(KstrlConfig.from_env(tmp_path), field_name) == ""
 
 
+@pytest.mark.parametrize(
+    ("env_var", "field_name"),
+    [(e, f) for _s, _k, e, f, is_path in STRING_KEYS if is_path],
+    ids=[f"{s}.{k}" for s, k, _e, _f, is_path in STRING_KEYS if is_path],
+)
+def test_an_empty_path_env_var_resolves_to_the_repo_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    env_var: str,
+    field_name: str,
+) -> None:
+    """The half the case above excludes, characterised rather than fixed.
+
+    ``_resolve_path("", root)`` is ``root / Path("")``, which is ``root``,
+    so an exported empty path key names the repository directory. Every
+    reader that then opens it gets EISDIR: measured on the memory row,
+    ``Memory: could not read <root>: [Errno 21] Is a directory`` on every
+    run of the project.
+
+    This is NOT an endorsement. It is #229 round 2's nit 14 and R10.9
+    round 1's nit 4, consciously preserved twice, and it was recorded
+    both times in a review report and held by nothing that runs. Pinned
+    over EVERY path row rather than over the one the review happened to
+    export, so the count is closed by construction: measured here, all
+    four behave identically, which is what makes it inherited behaviour
+    rather than something the memory row introduced. Whoever decides to
+    change it changes this case deliberately and sees the other three.
+    """
+    monkeypatch.setenv(env_var, "")
+
+    assert getattr(KstrlConfig.load(tmp_path), field_name) == tmp_path
+    assert getattr(KstrlConfig.from_env(tmp_path), field_name) == tmp_path
+
+
 def test_an_empty_toml_value_stays_unset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The other half of nit 11's asymmetry, so neither side can drift
     into the other without a named failure."""

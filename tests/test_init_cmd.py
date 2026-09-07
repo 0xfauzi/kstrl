@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from kstrl import init_cmd
+from kstrl.appendio import append_records
 from kstrl.cli import cli
 from kstrl.init_cmd import (
     _LANGUAGE_IGNORES,
@@ -450,6 +451,77 @@ class TestScaffoldContract:
             checked += 1
 
         assert checked >= 5
+
+
+def section_of(text: str, line: str) -> str | None:
+    """The last ``##`` heading at or above ``line`` in ``text``.
+
+    None when ``line`` is not in the file at all, so a case cannot pass
+    by asserting a section for a line that never landed.
+    """
+    current: str | None = None
+    for candidate in text.splitlines():
+        if candidate.startswith("## "):
+            current = candidate
+        if candidate == line:
+            return current
+    return None
+
+
+class TestTheAppendLandsUnderGuidance:
+    """R10.9 round 1, nit 9. ``## Guidance`` last, against a REAL file.
+
+    ``TestScaffoldContract.test_ks_init_scaffolds_memory`` pins
+    ``DEFAULT_MEMORY.rstrip("\n").endswith("## Guidance")``, which is a
+    pin on what kstrl SHIPS. Nothing read the headings of the file on
+    the operator's disk: ``grep -rn "Guidance" kstrl/`` returns only
+    ``init_cmd.py``. So the invariant #231's tail append depends on was
+    stated in a comment, in the runbook and in the README, and held by
+    nothing that runs.
+
+    These two cases run the real append against a real ``ks init``
+    scaffold. The first is the invariant. The second is the FAILURE
+    MODE, recorded as what actually happens rather than as a guard: an
+    operator who adds a section after ``## Guidance`` takes every append
+    from then on, and no gate in this repository goes red. It is #231's
+    to close, because #231 is what writes the file; this PR's job is to
+    stop claiming it is closed already.
+    """
+
+    def test_a_real_append_lands_under_guidance(self, tmp_path: Path) -> None:
+        code, _ = run_init_capturing(tmp_path)
+        memory = tmp_path / "scripts" / "kstrl" / "memory.md"
+        assert code == 0
+
+        repaired = append_records(memory, "- never touch migrations\n", repair="", lock=True)
+
+        body = memory.read_text(encoding="utf-8")
+        assert repaired is False, "the scaffold ends in a newline, so no repair pad is needed"
+        assert section_of(body, "- never touch migrations") == "## Guidance"
+
+    def test_a_section_after_guidance_takes_the_appends_and_nothing_notices(
+        self, tmp_path: Path
+    ) -> None:
+        """The measured blind spot, stated rather than implied.
+
+        Not an xfail: nothing here is expected to be fixed by a later
+        widening of a walk. It is a property of appending to a file whose
+        last heading the operator controls, and the only fix is #231
+        reading the headings before it writes.
+        """
+        code, _ = run_init_capturing(tmp_path)
+        memory = tmp_path / "scripts" / "kstrl" / "memory.md"
+        assert code == 0
+        memory.write_text(
+            memory.read_text(encoding="utf-8") + "\n## Notes\n\n- my own scratch\n",
+            encoding="utf-8",
+        )
+
+        append_records(memory, "- never touch migrations\n", repair="", lock=True)
+
+        body = memory.read_text(encoding="utf-8")
+        assert section_of(body, "- never touch migrations") == "## Notes"
+        assert "## Guidance" in body, "the section is still there, it just stopped being last"
 
 
 class TestExitCodes:
