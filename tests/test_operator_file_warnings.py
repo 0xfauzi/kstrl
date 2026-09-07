@@ -17,6 +17,8 @@ guaranteed to agree with.
 from __future__ import annotations
 
 import json
+import os
+import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -27,6 +29,7 @@ from kstrl.config import KstrlConfig
 from kstrl.factory import ComponentResult, FactoryConfig, run_factory
 from kstrl.init_cmd import DEFAULT_GOLDEN_PATTERNS
 from kstrl.manifest import Component, Manifest
+from kstrl.operator_context import GOLDEN_PATTERNS_SUBJECT
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 
@@ -191,6 +194,67 @@ class TestTheNoticeReachesTheOperatorExactlyOnce:
         warnings = _golden_warnings(_run(root, ("comp-a",), golden=unanchored.golden_patterns_file))
 
         assert warnings == []
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")
+    @pytest.mark.skipif(
+        hasattr(os, "geteuid") and os.geteuid() == 0,
+        reason="root bypasses file permissions",
+    )
+    def test_a_mode_000_parent_directory_warns_once_and_the_run_finishes(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Review round 2's blocker, at the level it escaped from.
+
+        The tests above chmod the FILE, whose ``os.stat`` succeeds and
+        whose ``open`` raises inside the guard. A mode-000 PARENT is the
+        case ``Path.exists`` re-raises (EACCES is not in CPython's
+        ``pathlib._ignore_error`` set), and the pre-check that used to
+        sit outside the guard let it out of ``run_factory`` and out of
+        the CLI: exit 1, and no component ever started.
+        """
+        root = _project(tmp_path, ("comp-a",))
+        locked = root / "scripts" / "kstrl" / "locked"
+        locked.mkdir()
+        (locked / "g.md").write_text("- a real pattern\n", encoding="utf-8")
+        locked.chmod(0o000)
+        try:
+            warnings = _golden_warnings(_run(root, ("comp-a",), golden=locked / "g.md"))
+        finally:
+            locked.chmod(0o755)
+
+        assert len(warnings) == 1
+        assert "could not read" in warnings[0]
+
+    def test_a_name_the_filesystem_will_not_take_warns_once_and_the_run_finishes(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The other errno ``Path.exists`` re-raises: ENAMETOOLONG."""
+        root = _project(tmp_path, ("comp-a",))
+        too_long = root / "scripts" / "kstrl" / ("g" * 400 + ".md")
+
+        warnings = _golden_warnings(_run(root, ("comp-a",), golden=too_long))
+
+        assert len(warnings) == 1
+        assert "could not read" in warnings[0]
+
+    def test_the_subject_comes_off_the_row_and_not_off_the_printer(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Should-fix 5: ``_report_operator_files`` used to print the
+        literal ``Golden patterns:`` in front of every message, so
+        R10.9's memory file would have announced itself under the
+        golden-patterns name the day its row landed."""
+        root = _project(tmp_path, ("comp-a",))
+        (root / GOLDEN_REL).write_text(("x" * 19 + "\n") * 500, encoding="utf-8")
+
+        ui = _run(root, ("comp-a",))
+
+        assert [w for w in ui.warnings if w.startswith(f"  {GOLDEN_PATTERNS_SUBJECT}: ")] == (
+            _golden_warnings(ui)
+        )
 
     @pytest.mark.parametrize(
         "body",

@@ -103,13 +103,9 @@ from kstrl.observability import (
     ProgressLog,
 )
 from kstrl.operator_context import (
-    GOLDEN_PATTERNS_HEADER,
-    GOLDEN_PATTERNS_MAX_CHARS,
-    GOLDEN_PATTERNS_SCAFFOLD,
-    OperatorFile,
-    configured_path_errors,
+    golden_patterns_spec,
     load_operator_file,
-    operator_file_notice,
+    operator_file_notices,
 )
 from kstrl.pipeline import ComponentPipeline, PipelineHooks, _iso_now
 from kstrl.policy import PolicyConfig
@@ -1948,36 +1944,19 @@ def _worker_scope(scope: ComponentScope | None) -> tuple[list[str], list[str]]:
     return list(scope.allowed_paths or ()), list(scope.harness_paths)
 
 
-def operator_file_notices(base_config: KstrlConfig, root_dir: Path) -> list[str]:
-    """What the operator has to hear about their own context files.
-
-    Derived in the PARENT, once per run (review round 1, S6 and S7). The
-    loader's ``logger.warning`` runs inside a pool worker whose stderr is
-    dup2'd into ``engineer.log``, so a truncated, unreadable or
-    misconfigured golden-patterns file left no mark on the terminal, the
-    TUI, the event stream or the PR body.
-
-    Once per run and not once per component, which the parent can only
-    do because the loader reads the repo ROOT: while the worker resolved
-    its own worktree first there was no path here that every worker was
-    guaranteed to agree with.
-    """
-    notices = configured_path_errors(base_config, KstrlConfig.anchored(root_dir), root_dir)
-    read_notice = operator_file_notice(
-        OperatorFile(
-            path=base_config.golden_patterns_file,
-            header=GOLDEN_PATTERNS_HEADER,
-            max_chars=GOLDEN_PATTERNS_MAX_CHARS,
-            scaffold=GOLDEN_PATTERNS_SCAFFOLD,
-        )
-    )
-    return notices if read_notice is None else [*notices, read_notice]
-
-
 def _report_operator_files(base_config: KstrlConfig, root_dir: Path, ui: UI) -> None:
-    """Say each of :func:`operator_file_notices` once, on the operator's UI."""
-    for notice in operator_file_notices(base_config, root_dir):
-        ui.warn(f"  Golden patterns: {notice}")
+    """Print each ``(subject, message)`` the operator's files produce, once.
+
+    The subject comes off the ROW, not off this function. It used to be
+    the literal ``Golden patterns:`` in front of every message, which
+    would have printed R10.9's memory file under the golden-patterns
+    name the day its row landed - one line below a docstring claiming
+    neither caller would have to change (review round 2, should-fix 5).
+    """
+    for subject, message in operator_file_notices(
+        base_config, KstrlConfig.anchored(root_dir), root_dir
+    ):
+        ui.warn(f"  {subject}: {message}")
 
 
 def _run_component(
@@ -2202,22 +2181,15 @@ def _run_component(
             pass  # feedforward failure is non-fatal
 
     # R10.8: the operator's own statement of what a good change looks
-    # like. Read from the REPO ROOT and never from `worktree_path`: the
-    # worktree is the tree this agent has been writing to, so reading it
-    # there would let one component choose what the next component is
-    # told, unfiltered and under a header saying the operator wrote it
-    # (review round 1, S3). `golden_patterns_file_str` may be absolute,
-    # from `relative_to_root`'s fallback; joining an absolute path onto
-    # the root yields that path, so both shapes reach the configured
-    # file. "" when absent, empty, or an untouched `ks init` scaffold.
-    golden_patterns = load_operator_file(
-        OperatorFile(
-            path=root_dir / golden_patterns_file_str,
-            header=GOLDEN_PATTERNS_HEADER,
-            max_chars=GOLDEN_PATTERNS_MAX_CHARS,
-            scaffold=GOLDEN_PATTERNS_SCAFFOLD,
-        )
-    )
+    # like. Resolved by `golden_patterns_spec` against the REPO ROOT and
+    # never against `worktree_path`: the worktree is the tree this agent
+    # has been writing to, so reading it there would let one component
+    # choose what the next component is told, unfiltered and under a
+    # header saying the operator wrote it (review round 1, S3). The same
+    # function resolves the parent's once-per-run notice, so the two
+    # cannot read different files (review round 2, should-fix 2). ""
+    # when absent, empty, or an unedited `ks init` scaffold.
+    golden_patterns = load_operator_file(golden_patterns_spec(root_dir, golden_patterns_file_str))
 
     # Build context prefix from previous retries
     context_prefix: str | None = None

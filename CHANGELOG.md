@@ -334,12 +334,18 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   the operator authored it. Its delimiter lines carry a fresh random
   token per build, so no line of the file can close the block early.
   Nothing is injected while the file is absent, empty, unreadable, or
-  still byte-identical to what `ks init` wrote: kstrl recognises its own
-  scaffold by digest, so an unedited skeleton costs no tokens. Past 6000
-  characters (about 1500 tokens) the text is cut at a line boundary, the
-  prompt says so and names the file, and the run warns once on your
-  terminal. A `[paths] golden_patterns` you set that names no file is
-  named on the terminal too, rather than silently omitting the block.
+  still unchanged since `ks init` wrote it: kstrl recognises its own
+  scaffold by digest over the decoded text, so a CRLF copy counts as
+  unchanged and an unedited skeleton costs no tokens. Past 6000
+  characters (about 1500 tokens) the text is cut at a line boundary
+  where that still delivers 90 percent of the budget and at the budget
+  boundary otherwise, so unwrapped markdown is not thrown away; the
+  prompt says how much arrived and the run warns once on your terminal
+  with the path and the remedy. A `[paths] golden_patterns` you set that
+  names no file is named on the terminal too, rather than silently
+  omitting the block. A file kstrl cannot even stat, because its parent
+  directory is mode 000 or its name is longer than the filesystem
+  allows, warns the same way instead of ending the run.
 
 - The evolve screen reports repaired journal writes. `ks evolve
   --status` has reported them since the repair was added and the TUI did
