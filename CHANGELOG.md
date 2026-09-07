@@ -352,6 +352,34 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Added
 
+- Golden patterns: an operator-authored file, injected into every factory
+  engineer prompt and every `ks run` prompt (`ks feature` and
+  `ks understand` do not read it). `ks init` scaffolds
+  `scripts/kstrl/golden-patterns.md` and you write what a good change
+  looks like in this repository, with a file to copy from for each
+  pattern. The distiller records what happened and feedforward computes
+  structure; neither says what is wanted, and nothing in kstrl did. The
+  path is `[paths] golden_patterns` in `kstrl.toml` or
+  `KSTRL_GOLDEN_PATTERNS_FILE`. The block sits between the distilled
+  knowledge and the architect's decisions, is read from the repo root
+  (never from a component worktree, which the engineer can write to), and
+  is read verbatim rather than filtered, the way `CLAUDE.md` already is:
+  the operator authored it. Its delimiter lines carry a fresh random
+  token per build, so no line of the file can close the block early.
+  Nothing is injected while the file is absent, empty, unreadable, or
+  still unchanged since `ks init` wrote it: kstrl recognises its own
+  scaffold by digest over the decoded text, so a CRLF copy counts as
+  unchanged and an unedited skeleton costs no tokens. Past 6000
+  characters (about 1500 tokens) the text is cut at a line boundary
+  where that still delivers 90 percent of the budget and at the budget
+  boundary otherwise, so unwrapped markdown is not thrown away; the
+  prompt says how much arrived and the run warns once on your terminal
+  with the path and the remedy. A `[paths] golden_patterns` you set that
+  names no file is named on the terminal too, rather than silently
+  omitting the block. A file kstrl cannot even stat, because its parent
+  directory is mode 000 or its name is longer than the filesystem
+  allows, warns the same way instead of ending the run.
+
 - **Breaking:** for daemon users, `ks serve` now stops admitting work
   while a kstrl-authored pull request is open. A repository with one
   open kstrl PR will admit nothing until it is merged or closed. The new

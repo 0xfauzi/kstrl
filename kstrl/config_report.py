@@ -47,52 +47,60 @@ class ConfigReport:
     unresolved: tuple[str, ...] = ()
 
 
-# (toml section, [(toml key, KstrlConfig field)]) - the documented
-# kstrl.toml surface for the base config.
-SHOW_SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
-    (
-        "agent",
-        [
-            ("type", "agent_type"),
-            ("command", "agent_cmd"),
-            ("model", "model"),
-            ("reasoning_effort", "model_reasoning_effort"),
-        ],
-    ),
-    (
-        "run",
-        [
-            ("max_iterations", "max_iterations"),
-            ("sleep_seconds", "sleep_seconds"),
-            ("interactive", "interactive"),
-        ],
-    ),
-    (
-        "paths",
-        [
-            ("prompt", "prompt_file"),
-            ("prd", "prd_file"),
-            ("progress", "progress_file"),
-            ("codebase_map", "codebase_map_file"),
-            ("allowed", "allowed_paths"),
-        ],
-    ),
-    (
-        "git",
-        [
-            ("branch", "kstrl_branch"),
-            ("auto_checkout", "auto_checkout"),
-        ],
-    ),
-    (
-        "ui",
-        [
-            ("ascii", "ascii_only"),
-            ("ui_mode", "ui_mode"),
-            ("no_color", "no_color"),
-        ],
-    ),
-]
+def _string_key_rows(section: str) -> list[tuple[str, str]]:
+    """``(toml key, field)`` for one section, from ``config.STRING_KEYS``.
+
+    Derived rather than hand-copied (review round 1, S8). Every string
+    key already declares its section, key and field in one table; a
+    second hand-maintained copy here is a row that can go missing, and
+    nothing tied the two: a tenth ``STRING_KEYS`` row used to drop
+    silently out of ``ks config`` and out of the generated README with
+    every gate green.
+
+    The import is inside the function so the table is read at CALL time.
+    A module-level ``from kstrl.config import STRING_KEYS`` snapshots the
+    tuple this module was imported with, which is derived enough to be
+    correct and not derived enough to be testable: the mutation in
+    tests/test_string_keys_reach_every_surface.py cannot reach it.
+    """
+    from kstrl.config import STRING_KEYS
+
+    return [(key, field_name) for sec, key, _env, field_name, _p in STRING_KEYS if sec == section]
+
+
+def show_sections() -> list[tuple[str, list[tuple[str, str]]]]:
+    """(toml section, [(toml key, KstrlConfig field)]) - the documented
+    kstrl.toml surface for the base config. The string-key rows come from
+    ``STRING_KEYS``; the rest are keys that table does not describe (a
+    list, ints, floats and bools, and the two UI fields with no toml
+    key of their own)."""
+    return [
+        ("agent", _string_key_rows("agent")),
+        (
+            "run",
+            [
+                ("max_iterations", "max_iterations"),
+                ("sleep_seconds", "sleep_seconds"),
+                ("interactive", "interactive"),
+            ],
+        ),
+        ("paths", [*_string_key_rows("paths"), ("allowed", "allowed_paths")]),
+        (
+            "git",
+            [
+                ("branch", "kstrl_branch"),
+                ("auto_checkout", "auto_checkout"),
+            ],
+        ),
+        (
+            "ui",
+            [
+                ("ascii", "ascii_only"),
+                ("ui_mode", "ui_mode"),
+                ("no_color", "no_color"),
+            ],
+        ),
+    ]
 
 
 def normalize_ui_mode(value: str) -> str:
@@ -186,11 +194,7 @@ def format_row_value(section: str, key: str, value: Any) -> str:
 
 def kstrl_config_defaults(root_dir: Path) -> KstrlConfig:
     """Built-in KstrlConfig defaults with paths anchored like load()."""
-    config = KstrlConfig()
-    config.prompt_file = root_dir / "scripts/kstrl/prompt.md"
-    config.prd_file = root_dir / "scripts/kstrl/prd.json"
-    config.codebase_map_file = root_dir / "scripts/kstrl/codebase_map.md"
-    return config
+    return KstrlConfig.anchored(root_dir)
 
 
 def _phase_sections() -> list[tuple[str, Any, list[str]]]:
@@ -345,7 +349,7 @@ def _base_rows(resolved: KstrlConfig, sources: dict[str, str]) -> list[ConfigRow
             value=format_row_value(section, toml_key, getattr(resolved, field_name)),
             source=sources[field_name],
         )
-        for section, keys in SHOW_SECTIONS
+        for section, keys in show_sections()
         for toml_key, field_name in keys
     ]
 
