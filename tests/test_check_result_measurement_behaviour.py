@@ -35,6 +35,7 @@ from kstrl.verify import (
     CheckResult,
     NotMeasured,
     VerificationResult,
+    VerifyConfig,
     check_bad_patterns,
     check_dead_code_ruff,
     check_diff_scope,
@@ -46,6 +47,7 @@ from kstrl.verify import (
     check_test_adequacy,
     check_test_suite,
     check_typecheck,
+    run_mechanical_verification,
 )
 
 #: A command that is not on any PATH. Runs through the shell, so a missing
@@ -56,6 +58,14 @@ MISSING_BINARY = "kstrl-there-is-no-such-tool-227"
 SLOW_COMMAND = f"{sys.executable} -c 'import time; time.sleep(30)'"
 
 TINY_TIMEOUT = 0.2
+
+#: A gate command that succeeds, and one that fails having produced a
+#: parseable finding. The second is the CONTROL for the first: a linter
+#: that ran and reported something measured, and its row must say so.
+PASSING_COMMAND = f"{sys.executable} -c 'pass'"
+FAILING_LINT_COMMAND = (
+    f"""{sys.executable} -c 'import sys; print("x.py:1:1: E501 long"); sys.exit(1)'"""
+)
 
 
 def _stub(directory: Path, name: str, body: str) -> None:
@@ -186,9 +196,7 @@ def test_a_gate_that_ran_and_failed_did_measure(tmp_path: Path) -> None:
     Without it, ``measured=False`` on every failing gate would pass them, and
     that mistake empties a baseline instead of filling it.
     """
-    failing = f"{sys.executable} -c 'import sys; print(\"x.py:1:1: E501 long\"); sys.exit(1)'"
-
-    _assert_measured(check_linter(tmp_path, command=failing, timeout=30))
+    _assert_measured(check_linter(tmp_path, command=FAILING_LINT_COMMAND, timeout=30))
 
 
 # --- diff-driven checks ---------------------------------------------------
@@ -457,3 +465,71 @@ def test_the_stubs_are_real_executables(only_path: Path) -> None:
 
     assert completed.returncode == 0
     assert completed.stdout.strip() == "Found 3 errors."
+
+
+# --- the verdict is a function of `passed` alone ---------------------------
+
+
+def _verdict_config(lint_command: str) -> VerifyConfig:
+    """Three gates, only the linter varying, and no diff-reading check.
+
+    ``check_diff_scope`` and ``check_bad_patterns`` are off so the verdict is
+    decided by the row under test and nothing else. ``tmp_path`` is not a git
+    repository, and leaving them on would add rows whose own outcome would
+    then be what the assertion measured.
+    """
+    return VerifyConfig(
+        test_command=PASSING_COMMAND,
+        typecheck_command=PASSING_COMMAND,
+        lint_command=lint_command,
+        check_diff_scope=False,
+        check_bad_patterns=False,
+        subprocess_timeout=30.0,
+    )
+
+
+def _linter_row(result: VerificationResult) -> CheckResult:
+    rows = [check for check in result.checks if check.name == "linter"]
+    assert len(rows) == 1, [check.name for check in result.checks]
+    return rows[0]
+
+
+def test_an_unmeasured_gate_still_fails_the_run(tmp_path: Path) -> None:
+    """``measured`` decides what a COMPARISON may call fixed, and nothing else.
+
+    ``run_mechanical_verification`` computes ``passed = all(c.passed for c in
+    checks)``. Adding ``if c.measured`` to that comprehension is the #227
+    fail-open: this repository's own test suite times out at the default
+    timeout, and a verdict that skipped unmeasured rows would report the
+    timeout as a passing run.
+
+    So: the same failing linter, once having measured nothing (its binary is
+    missing) and once having measured something (it ran and printed a
+    finding). The rows differ in ``measured`` and agree on ``passed``, and both
+    runs fail.
+    """
+    unmeasured = run_mechanical_verification(
+        tmp_path, None, "main", None, _verdict_config(MISSING_BINARY)
+    )
+    measured = run_mechanical_verification(
+        tmp_path, None, "main", None, _verdict_config(FAILING_LINT_COMMAND)
+    )
+
+    assert _linter_row(unmeasured).measured is False
+    assert _linter_row(measured).measured is True
+    assert _linter_row(unmeasured).passed is False
+    assert _linter_row(measured).passed is False
+
+    assert unmeasured.passed is False
+    assert measured.passed is False
+
+
+def test_a_run_whose_gates_all_passed_still_passes(tmp_path: Path) -> None:
+    """The control. Without it, a verdict wired to ``False`` would pass the
+    test above, and that mistake fails every run in the factory."""
+    result = run_mechanical_verification(
+        tmp_path, None, "main", None, _verdict_config(PASSING_COMMAND)
+    )
+
+    assert [check.passed for check in result.checks] == [True, True, True]
+    assert result.passed is True

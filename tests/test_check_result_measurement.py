@@ -46,6 +46,10 @@ from tests.helpers.astwalk.scope import own_nodes
 CONSTRUCTOR = "CheckResult"
 GATE_HELPER = "_failed_gate_result"
 
+#: The field itself, named once because two nets key on it: the constructions
+#: that set it, and the reads that act on it.
+MEASUREMENT = "measured"
+
 
 def _scope_names(tree: ast.Module) -> dict[int, str]:
     """Every node in a module mapped to the qualified name of its INNERMOST scope.
@@ -100,7 +104,7 @@ def _keyword(node: ast.Call, name: str) -> ast.expr | None:
 
 def declares_measurement(node: ast.AST) -> bool:
     """A ``CheckResult`` construction that says, in any spelling, what it measured."""
-    return constructs_a_check_result(node) and _keyword(node, "measured") is not None  # type: ignore[arg-type]
+    return constructs_a_check_result(node) and _keyword(node, MEASUREMENT) is not None  # type: ignore[arg-type]
 
 
 def fails_with_a_default_measurement(node: ast.AST) -> bool:
@@ -110,7 +114,7 @@ def fails_with_a_default_measurement(node: ast.AST) -> bool:
     decided statically, and this partition is here to be read by a person
     rather than to be exhaustive. The total census above is what is exhaustive.
     """
-    if not constructs_a_check_result(node) or _keyword(node, "measured") is not None:  # type: ignore[arg-type]
+    if not constructs_a_check_result(node) or _keyword(node, MEASUREMENT) is not None:  # type: ignore[arg-type]
         return False
     passed = _keyword(node, "passed")  # type: ignore[arg-type]
     return isinstance(passed, ast.Constant) and passed.value is False
@@ -134,7 +138,7 @@ def measurement_row(source_file: Path, node: ast.AST) -> str:
     an unchanged count. An expression pinned by its rendering is the only way
     a census can hold a computed value to account.
     """
-    argument = _keyword(node, "measured")  # type: ignore[arg-type]
+    argument = _keyword(node, MEASUREMENT)  # type: ignore[arg-type]
     rendered = ast.unparse(argument) if argument is not None else "MISSING"
     return f"{_site(source_file, node)}: measured={rendered}"
 
@@ -355,5 +359,86 @@ class TestEveryCheckResultIsAccountedFor:
                 "Exit 126 and 127 mean the command never started, and a gate that "
                 "reports measured=True in that case clears every one of its "
                 "baseline findings (#227)."
+            ),
+        )
+
+
+#: Every READ of a ``.measured`` attribute in ``kstrl/``, counted per function.
+#:
+#: The other direction of the same field. The three censuses above pin where
+#: the value is WRITTEN; this one pins who is allowed to act on it, and the
+#: answer is the dampener and nobody else. ``measured`` says whether a row is
+#: evidence about the ARTIFACT, which is a question about comparing two runs.
+#: It is not a question about whether this run passed, and the moment the
+#: mechanical verdict starts consulting it, a gate whose tool is missing stops
+#: failing the run: ``all(c.passed for c in checks if c.measured)`` turns a
+#: test suite that timed out into a PASS, silently, in the direction this
+#: repository keeps finding.
+#:
+#: ``pipeline.py`` reads a DIFFERENT field of the same name -
+#: ``FactUtilization.measured``, the R8 fact-utilization evidence flag - which
+#: no walk can tell apart from this one without type inference. Those two rows
+#: are pinned rather than excluded: this net flags, so over-matching costs
+#: somebody a census delta to read, and narrowing it to a set of modules
+#: somebody enumerated is how a guard goes blind on the module nobody thought
+#: of.
+EXPECTED_MEASUREMENT_READS: dict[str, int] = {
+    # The dampener: which checks may have a missing signature read as fixed.
+    "dampener.py: _measured_and_unmeasured: check.measured": 2,
+    # The fixtures row folds its per-fixture measurements with `all`.
+    "fixtures.py: check_fixtures: r.measured": 1,
+    # Not CheckResult.measured. FactUtilization's own field, R8.
+    "pipeline.py: ComponentPipeline._store_fact_utilization: util.measured": 2,
+    "pipeline.py: FactUtilization.to_dict: self.measured": 1,
+}
+
+
+def reads_the_measurement(node: ast.AST) -> bool:
+    """A LOAD of an attribute called ``measured``, in any spelling.
+
+    Deliberately blind to what it is read FROM: an attribute access cannot be
+    resolved to a type without inference this walk does not do, and a net that
+    guessed would clear the one site that matters. Reading is the whole
+    predicate; the dict above is where each read is accounted for.
+    """
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == MEASUREMENT
+        and isinstance(node.ctx, ast.Load)
+    )
+
+
+def read_row(source_file: Path, node: ast.AST) -> str:
+    """``dampener.py: _measured_and_unmeasured: check.measured``."""
+    return f"{_site(source_file, node)}: {ast.unparse(node)}"
+
+
+class TestTheVerdictDoesNotDependOnMeasurement:
+    """``measured`` changes what a COMPARISON says, never what a RUN says.
+
+    ``run_mechanical_verification`` computes ``passed = all(c.passed for c in
+    checks)``, and #227 must not have changed that. The behavioural half is
+    ``tests/test_check_result_measurement_behaviour.py``, which runs the real
+    function over a gate whose tool is missing and asserts the run still fails;
+    this half is the inventory, because a behavioural test speaks only for the
+    check it drove.
+    """
+
+    def test_the_places_that_read_a_measurement_are_pinned(self) -> None:
+        assert_census(
+            sources=package_sources(),
+            sees=reads_the_measurement,
+            key=read_row,
+            expected=EXPECTED_MEASUREMENT_READS,
+            control=(
+                "if check.measured:\n    pass\n",
+                "flag = self.measured\n",
+            ),
+            message=(
+                "Something new reads a `.measured`. If it is CheckResult.measured "
+                "and it reaches a PASS/FAIL verdict, that is the #227 fail-open: a "
+                "gate whose tool is missing reports measured=False, and a verdict "
+                "that skips unmeasured rows turns it into a pass. The field exists "
+                "to decide what a COMPARISON may call fixed."
             ),
         )
