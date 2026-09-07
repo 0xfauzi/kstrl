@@ -45,6 +45,9 @@ repositories; recording what is wrong today is the point.
 
 It refuses to overwrite an existing baseline. Pass `--force` when you mean to
 replace one, and do it in its own commit so the diff shows exactly what moved.
+Regenerating it on a branch cannot flatter that branch's own report: the
+workflow reads the baseline from the base ref, not from the pull request's
+checkout.
 
 Two things to get right when you write one:
 
@@ -194,12 +197,25 @@ every consumer's pull-request check the moment the sensor version bumped.
    git commit -m "chore: record the sense baseline"
    ```
 
-2. Copy `.github/workflows/sense-dampener.yml` from this repository. Four
+2. Copy `.github/workflows/sense-dampener.yml` from this repository. Six
    things in it are load-bearing and easy to lose:
 
    - `fetch-depth: 0` on the checkout. `ks sense` asks git for the diff
      against the base strictly; a shallow clone cannot reach the base and the
-     command exits 2 on every pull request.
+     command exits 2 on every pull request. It is also what puts every head in
+     `refs/remotes/origin/*`, which the next point needs.
+   - the baseline read out of the BASE ref with `git show`, into a temporary
+     file the run passes to `--compare-baseline`. The bare flag resolves inside
+     the checkout, and on a `pull_request` event that checkout is the merge
+     ref, carrying the pull request's own copy of the file: a branch that
+     regenerates its baseline and commits it is then compared against its own
+     signatures, and reports no regression. The step names the file after the
+     base commit, so the report says which ref supplied the yardstick.
+   - `timeout-minutes` above the WORST case, which is not one timeout. Five
+     subprocesses in a sense run are each handed `KSTRL_TIMEOUT_VERIFY` in
+     full, so at 1800 seconds the job needs 150 minutes plus install. A cap
+     below that is a cancelled job, and a cancelled job produces no report at
+     all - which is the one state this feature cannot report on.
    - `--base "$BASE_REF"` passed explicitly, from the event payload through an
      environment variable. A `pull_request` checkout is a detached merge ref;
      do not make base detection guess, and do not interpolate a ref name into

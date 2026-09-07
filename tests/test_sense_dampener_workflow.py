@@ -13,6 +13,7 @@ these need no dampener arithmetic.
 
 from __future__ import annotations
 
+import ast
 import os
 import shutil
 import subprocess
@@ -69,8 +70,39 @@ def test_the_workflow_runs_once_per_pull_request() -> None:
     assert "pull_request.number" in concurrency["group"]
 
 
-def test_every_job_is_bounded_above_the_sensor_it_runs() -> None:
-    """The cap has to sit above the sensor's own budget, with room to install.
+#: Checkout, uv install and `uv sync` measured at 9 seconds on run
+#: 34130546828 with a warm uv cache. Ten minutes is room, not an estimate.
+INSTALL_HEADROOM_SECONDS = 600
+
+VERIFY_PATH = Path(__file__).resolve().parents[1] / "kstrl/verify.py"
+
+#: Source in which the counter below MUST find exactly one spender. Without it
+#: a counter that stopped matching would report 0, the arithmetic would demand
+#: nothing, and the cap would be pinned against a multiplication by zero.
+_SPENDER_CONTROL = "check_test_suite(path, cmd, config.subprocess_timeout, tool)\n"
+
+
+def _timeout_spenders(source: str) -> int:
+    """How many subprocesses one sense run can each be given the FULL budget.
+
+    Counted out of ``kstrl/verify.py`` rather than written down, because the
+    number written down was wrong: round 1's comment said three gates may each
+    spend it and set a cap covering one. Today it is five - the three gates and
+    the two halves of the dead-code phase - and a sixth arriving has to move
+    the cap or fail here.
+    """
+    found = 0
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        for argument in [*node.args, *(keyword.value for keyword in node.keywords)]:
+            if isinstance(argument, ast.Attribute) and argument.attr == "subprocess_timeout":
+                found += 1
+    return found
+
+
+def test_every_job_is_bounded_above_the_worst_case_it_can_spend() -> None:
+    """The cap has to sit above what one run can spend, with room to install.
 
     ``timeout-minutes: 20`` against ``KSTRL_TIMEOUT_VERIFY: 1800`` was 1200
     seconds of job against 1800 seconds of subprocess: GitHub cancels the job
@@ -78,14 +110,28 @@ def test_every_job_is_bounded_above_the_sensor_it_runs() -> None:
     and no step summary. The measured=False mechanism this feature is built
     around would have been unreachable in the only place the workflow runs it.
 
-    Pinned as a RELATIONSHIP rather than as the number 40, so raising one
-    without the other fails here instead of on a runner in twenty minutes.
+    Round 1 raised it to 40 and pinned it against ONE gate's budget, which is
+    the same defect one multiplication out: the comment above it said three
+    gates may each spend the budget, that is 90 minutes, and 40 was green.
+    So the multiplier is COUNTED here, and it is five rather than three.
     """
-    install_headroom = 600
+    assert _timeout_spenders(_SPENDER_CONTROL) == 1, (
+        "the spender counter matched nothing in its own control, so the "
+        "arithmetic below is a multiplication by whatever it returns"
+    )
+    spenders = _timeout_spenders(VERIFY_PATH.read_text(encoding="utf-8"))
+    assert spenders >= 3, spenders
+
+    verify_timeout = float(_sense_step()["env"]["KSTRL_TIMEOUT_VERIFY"])
     for job in _workflow()["jobs"].values():
         assert isinstance(job["timeout-minutes"], int)
-        verify_timeout = float(_sense_step()["env"]["KSTRL_TIMEOUT_VERIFY"])
-        assert job["timeout-minutes"] * 60 >= verify_timeout + install_headroom
+        assert (
+            job["timeout-minutes"] * 60 >= spenders * verify_timeout + INSTALL_HEADROOM_SECONDS
+        ), (
+            f"{spenders} subprocesses can each spend {verify_timeout}s, so the job "
+            f"needs {(spenders * verify_timeout + INSTALL_HEADROOM_SECONDS) / 60} "
+            f"minutes and has {job['timeout-minutes']}"
+        )
 
 
 def test_the_checkout_is_deep_enough_to_reach_the_base() -> None:
@@ -138,10 +184,17 @@ def test_the_workflow_is_advisory() -> None:
     assert not any("--fail-on-regression" in run for run in _runs())
 
 
-def test_the_workflow_measures_at_the_timeout_the_baseline_was_written_at() -> None:
-    """A baseline and a comparison measured at different verify timeouts are
-    not a comparison: this repository's suite times out at the default 300s,
-    and a timed-out check contributes no signatures at all."""
+def test_the_workflow_pins_the_verify_timeout_and_the_compare_flags() -> None:
+    """The literal 1800, and the two flags the report shape depends on.
+
+    A baseline and a comparison measured at different verify timeouts are not a
+    comparison: this repository's suite times out at the default 300s, and a
+    timed-out check contributes no signatures at all. What this does NOT check
+    is that the committed baseline was written at this timeout - that needs the
+    digest, and it is
+    ``tests/test_sense_committed_baseline.py::test_the_committed_baseline_matches_this_repository``.
+    The old name for this test claimed the second thing and asserted the first.
+    """
     sense_steps = [s for s in _steps() if "uv run ks sense" in str(s.get("run", ""))]
 
     assert len(sense_steps) == 1
@@ -209,6 +262,61 @@ def _comment_step() -> dict[str, Any]:
     return steps[0]
 
 
+BASELINE_IN_TREE = "scripts/kstrl/sense-baseline.json"
+
+
+def _clone_with_origin(tmp_path: Path, baseline_on_base: str | None) -> Path:
+    """A checkout whose ``origin/main`` is a real remote-tracking ref.
+
+    What actions/checkout leaves behind at ``fetch-depth: 0``, reduced to the
+    part these tests read: a bare origin carrying the base branch, and a clone
+    detached from it the way a pull_request merge ref is. ``baseline_on_base``
+    is the file the BASE ref carries, or None for a base branch that has none.
+    """
+    from tests.spine_utils import git as run_git
+
+    origin = tmp_path / "origin.git"
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    run_git("init", "-q", "-b", "main", cwd=seed)
+    run_git("config", "user.email", "kstrl@example.com", cwd=seed)
+    run_git("config", "user.name", "kstrl", cwd=seed)
+    if baseline_on_base is not None:
+        (seed / "scripts" / "kstrl").mkdir(parents=True)
+        (seed / BASELINE_IN_TREE).write_text(baseline_on_base, encoding="utf-8")
+        run_git("add", "-A", cwd=seed)
+    run_git("commit", "-q", "--allow-empty", "-m", "base", cwd=seed)
+    run_git("clone", "-q", "--bare", str(seed), str(origin), cwd=tmp_path)
+
+    clone = tmp_path / "checkout"
+    run_git("clone", "-q", str(origin), str(clone), cwd=tmp_path)
+    run_git("config", "user.email", "kstrl@example.com", cwd=clone)
+    run_git("config", "user.name", "kstrl", cwd=clone)
+    return clone
+
+
+def _run_sense_step(clone: Path, tmp_path: Path, stand_in: str) -> tuple[str, str, Path]:
+    """Execute the real sense step with `uv run ks sense` replaced.
+
+    Returns the recorded ``rc=`` line, sense.md, and the clone. The stand-in is
+    a shell command, so a test decides what the sensor "did" without paying for
+    one; what is under test is the shell around it.
+    """
+    script = str(_sense_step()["run"]).replace("uv run ks sense", stand_in)
+    output = tmp_path / "gh-output"
+    output.write_text("", encoding="utf-8")
+
+    completed = _bash(script, clone, GITHUB_OUTPUT=str(output), BASE_REF="main")
+
+    assert completed.returncode == 0, completed.stderr
+    report = clone / "sense.md"
+    return (
+        output.read_text(encoding="utf-8"),
+        report.read_text(encoding="utf-8") if report.exists() else "",
+        clone,
+    )
+
+
 def test_the_sense_step_records_a_failure_it_cannot_itself_report(tmp_path: Path) -> None:
     """Why a separate failing step is needed at all, measured on the real script.
 
@@ -216,14 +324,96 @@ def test_the_sense_step_records_a_failure_it_cannot_itself_report(tmp_path: Path
     sense did. So the exit code only reaches the job through GITHUB_OUTPUT, and
     a step that keys on the wrong value there is a silently green dampener.
     """
+    clone = _clone_with_origin(tmp_path, baseline_on_base='{"schema_version": 1}\n')
+
+    recorded, _, _ = _run_sense_step(clone, tmp_path, "false")
+
+    assert "rc=1" in recorded
+
+
+def test_the_baseline_comes_from_the_base_ref_and_not_from_the_branch(
+    tmp_path: Path,
+) -> None:
+    """A branch cannot supply the yardstick it is judged by.
+
+    Round 2 of review on #357: `--compare-baseline` was passed bare, so the
+    path resolved inside the checkout - which on a pull_request event is the
+    merge ref, carrying the pull request's own copy. A branch that rewrote its
+    baseline and committed it was compared against its own signatures.
+
+    So the branch here does exactly that, with content that could not be
+    mistaken for the base's, and the file the step hands the sensor has to be
+    the BASE's bytes. The stand-in copies its `--compare-baseline` argument to
+    a known name, which is how the test reads what the sensor was given.
+    """
+    clone = _clone_with_origin(tmp_path, baseline_on_base='{"from": "the base ref"}\n')
+    (clone / "scripts" / "kstrl").mkdir(parents=True, exist_ok=True)
+    (clone / BASELINE_IN_TREE).write_text('{"from": "the branch"}\n', encoding="utf-8")
+    from tests.spine_utils import git as run_git
+
+    run_git("add", "-A", cwd=clone)
+    run_git("commit", "-q", "-m", "rewrite my own baseline", cwd=clone)
+
+    stand_in = "sh -c 'cp \"$2\" handed-to-the-sensor.json' --"
+    recorded, report, _ = _run_sense_step(clone, tmp_path, stand_in)
+
+    assert "rc=0" in recorded
+    handed = (clone / "handed-to-the-sensor.json").read_text(encoding="utf-8")
+    assert handed == '{"from": "the base ref"}\n'
+    assert report == ""
+
+
+def test_the_report_names_the_commit_the_baseline_came_from(tmp_path: Path) -> None:
+    """The comparison prints the path it was given, so the file is named after
+    the base commit. Without it the report says which FILE supplied the
+    baseline and never which ref, and the two are the whole question here."""
+    from tests.spine_utils import git as run_git
+
+    clone = _clone_with_origin(tmp_path, baseline_on_base="{}\n")
+    base_sha = run_git("rev-parse", "origin/main", cwd=clone).strip()
+
+    stand_in = "sh -c 'echo \"$2\"' --"
+    _, _, _ = _run_sense_step(clone, tmp_path, stand_in)
+
+    assert (clone / "sense.md").read_text(encoding="utf-8").strip() == (
+        f"baseline-from-{base_sha}.json"
+    )
+
+
+def test_a_base_ref_with_no_baseline_reports_that_and_stays_green(
+    tmp_path: Path,
+) -> None:
+    """The bootstrap case, which is this pull request's own.
+
+    A base branch with no baseline gives nothing to compare against. That is
+    not a regression and not a failure, so the step records rc=0 and writes a
+    report saying so - marker first, because the comment step finds its own
+    earlier comment by that line and would otherwise post a second one.
+    """
+    clone = _clone_with_origin(tmp_path, baseline_on_base=None)
+
+    recorded, report, _ = _run_sense_step(clone, tmp_path, "false")
+
+    assert "rc=0" in recorded
+    assert report.splitlines()[0] == dampener_report.MARKDOWN_MARKER
+    assert "No baseline on `main`" in report
+    assert not list(clone.glob("baseline-from-*.json"))
+
+
+def test_the_step_refuses_a_base_ref_it_cannot_resolve(tmp_path: Path) -> None:
+    """The control for the three above: without it, a step whose git commands
+    all failed would still write a report and record rc=0, and every pull
+    request would get "no baseline on the base ref" forever."""
+    clone = _clone_with_origin(tmp_path, baseline_on_base="{}\n")
     script = str(_sense_step()["run"]).replace("uv run ks sense", "false")
     output = tmp_path / "gh-output"
     output.write_text("", encoding="utf-8")
 
-    completed = _bash(script, tmp_path, GITHUB_OUTPUT=str(output), BASE_REF="main")
+    completed = _bash(script, clone, GITHUB_OUTPUT=str(output), BASE_REF="no-such-branch")
 
-    assert completed.returncode == 0
-    assert "rc=1" in output.read_text(encoding="utf-8")
+    assert completed.returncode == 1
+    assert "cannot resolve origin/no-such-branch" in completed.stderr
+    assert not (clone / "sense.md").exists()
 
 
 def test_the_comment_step_posts_nothing_when_there_is_no_report(tmp_path: Path) -> None:

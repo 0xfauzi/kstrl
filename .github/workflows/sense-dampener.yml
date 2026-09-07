@@ -44,12 +44,21 @@ jobs:
     # never fire: GitHub cancels the job first, and a cancelled job produces no
     # sense.md, no sense.err, no comment and no step summary - so the
     # measured=False mechanism this whole feature rests on would be unreachable
-    # in the only place the workflow exercises it. KSTRL_TIMEOUT_VERIFY is 1800
-    # below, and each of the three gates may spend it, so 40 minutes is 1800
-    # seconds plus ten for checkout, uv install and `uv sync`. The relationship
-    # is pinned by test_every_job_is_bounded rather than left to arithmetic
-    # somebody redoes.
-    timeout-minutes: 40
+    # in the only place the workflow exercises it.
+    #
+    # The worst case is not one timeout. FIVE subprocesses in one sense run are
+    # each handed KSTRL_TIMEOUT_VERIFY in full: the three gates, and the two
+    # halves of the dead-code phase when it is on. At 1800 seconds that is 9000
+    # seconds, so 150 minutes, and the ten on top is for checkout, uv install
+    # and `uv sync` - measured at 9 seconds on run 34130546828 with a warm uv
+    # cache, so ten minutes is room rather than an estimate.
+    #
+    # Round 1 of review set this to 40 with a comment that said three gates may
+    # each spend the budget, which is 90 minutes: the premise and the number
+    # disagreed, and the test underneath pinned ONE gate's budget so it stayed
+    # green. It now counts the spenders out of kstrl/verify.py, so a sixth one
+    # fails here rather than on a runner.
+    timeout-minutes: 160
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -74,7 +83,7 @@ jobs:
       - name: Install project
         run: uv sync --frozen --all-extras --dev
 
-      - name: Measure against the committed baseline
+      - name: Measure against the baseline on the base ref
         id: sense
         env:
           # The committed baseline was generated at this timeout, and the
@@ -93,11 +102,51 @@ jobs:
           # attacker-controlled on a fork pull request.
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
-          set +e
-          uv run ks sense --compare-baseline --format markdown \
-            --base "$BASE_REF" > sense.md 2> sense.err
-          echo "rc=$?" >> "$GITHUB_OUTPUT"
-          set -e
+          # The yardstick comes from the BASE ref, never from this checkout.
+          # `--compare-baseline` with no value resolves to the working tree's
+          # own scripts/kstrl/sense-baseline.json, and on a pull_request event
+          # that tree is refs/pull/N/merge - which carries the pull request's
+          # copy of the file. A branch that runs `ks sense --write-baseline
+          # --force` and commits the result was therefore compared against its
+          # own signatures: no regression, and green even under the documented
+          # graduation to blocking. Step 3 of docs/dampener.md said to
+          # regenerate the baseline in its own commit, and that was a
+          # convention with no mechanism behind it.
+          #
+          # origin/<base> only. actions/checkout at fetch-depth 0 fetches every
+          # head into refs/remotes/origin/*, and a bare "$BASE_REF" would
+          # resolve a LOCAL branch of that name, which on this event is either
+          # absent or whatever the merge ref left behind.
+          if ! base_sha="$(git rev-parse --verify --quiet "origin/$BASE_REF^{commit}")"; then
+            echo "cannot resolve origin/$BASE_REF; the checkout is not deep enough" >&2
+            exit 1
+          fi
+          # The report prints the path it was given, so naming the file after
+          # the commit is how the comment says which ref supplied the baseline.
+          baseline="baseline-from-$base_sha.json"
+          if git show "$base_sha:scripts/kstrl/sense-baseline.json" > "$baseline"; then
+            set +e
+            uv run ks sense --compare-baseline "$baseline" --format markdown \
+              --base "$BASE_REF" > sense.md 2> sense.err
+            echo "rc=$?" >> "$GITHUB_OUTPUT"
+            set -e
+          else
+            # No baseline on the base ref is not a failure and not a
+            # regression: there is nothing to compare against, and saying so is
+            # the honest report. Falling back to this branch's own copy is the
+            # defect this step exists to close.
+            rm -f "$baseline"
+            {
+              echo '<!-- kstrl-sense-dampener -->'
+              echo '## sense dampener'
+              echo ''
+              echo "No baseline on \`$BASE_REF\` at \`$base_sha\`, so there is"
+              echo 'nothing to compare this branch against. Write one on the'
+              echo "base branch with \`ks sense --write-baseline\`."
+            } > sense.md
+            : > sense.err
+            echo "rc=0" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Publish the report to the job summary
         # Unconditional, and this is the honest answer to the fork question:
