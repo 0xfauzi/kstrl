@@ -3553,13 +3553,27 @@ def _run_factory_locked(
             ui.warn(f"  Manual override ignored: {note}")
 
     # The pipeline must see the clamped envelope, not the raw config.
-    # #192: UNCONDITIONAL, and that is the fix. This assignment used to
-    # sit inside `if autonomy_active:`, so with [autonomy] disabled (the
-    # default) `factory_config.policy_config` stayed None and Phase 1's
+    # Only the ladder replaces `run_envelope`, so on the default path
+    # this re-assigns the object the constructor already received.
+    # UNCONDITIONAL anyway, and the honest reason is that it is
+    # DEFENCE and not the fix: a mutation restricting both lines to
+    # `if autonomy_active:` was measured STILL GREEN, because the
+    # envelope reaches the pipeline through the required constructor
+    # parameter, which is what the fix actually is. Deleting the second
+    # line is the non-equivalent mutation and it is caught. What the
+    # unconditional form buys is that a future clamp added outside the
+    # ladder block still reaches the pipeline (#192).
+    #
+    # Before #192, `factory_config.policy_config` was the ONLY channel
+    # and this assignment sat inside `if autonomy_active:`, so with
+    # [autonomy] disabled (the default) it stayed None and Phase 1's
     # `or PolicyConfig.load(root_dir)` fell through to disk once per
     # component. Measured on a two-component run: component B was held
     # to max_files_changed=500, deps_allow_new=true against a manifest
-    # recording the hash of 5 and false.
+    # recording the hash of 5 and false. It has no production reader
+    # left besides RunEnvelope.load's override seam at the top of this
+    # function; it stays because the ladder's own test reads the clamped
+    # envelope off it.
     factory_config.policy_config = run_envelope.policy
     pipeline.run_envelope = run_envelope
 
