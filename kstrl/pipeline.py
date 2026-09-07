@@ -39,7 +39,6 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl import events as ev
 from kstrl import git
-from kstrl.adequacy import AdequacyConfig
 from kstrl.agents.base import (
     ARCHITECT_COMPONENT,
     ARCHITECT_ROLE,
@@ -49,11 +48,9 @@ from kstrl.agents.base import (
     collect_usage,
     usage_coverage,
 )
-from kstrl.autonomy import AutonomyConfig, AutonomyState
 from kstrl.context import IterationContext, IterationRecord
 from kstrl.divergence import (
     AttemptReading,
-    DivergenceConfig,
     detect_divergence,
     review_finding_keys,
 )
@@ -65,8 +62,7 @@ from kstrl.findings import (
     finding_model,
     tag_finding_with_attempt,
 )
-from kstrl.fixtures import FixturesConfig
-from kstrl.inbox import Inbox, InboxConfig, InboxError, ItemKind, notifiable
+from kstrl.inbox import Inbox, InboxError, ItemKind, notifiable
 from kstrl.interaction import (
     CheckpointContext,
     InteractionChannel,
@@ -82,7 +78,7 @@ from kstrl.manifest import (
     Manifest,
 )
 from kstrl.observability import NotifyHooks
-from kstrl.policy import PolicyConfig, count_diff_size
+from kstrl.policy import count_diff_size
 from kstrl.prd import PRD
 from kstrl.review import (
     ReviewMode,
@@ -92,7 +88,7 @@ from kstrl.review import (
     setpoint_disagreements,
     setpoint_retry_context,
 )
-from kstrl.sandbox import SandboxConfig
+from kstrl.runenvelope import RunEnvelope
 from kstrl.scope import RunScope
 from kstrl.security import SecurityConfig, SecurityMode, SecurityResult
 from kstrl.statedir import ControlStateError
@@ -503,6 +499,9 @@ class ComponentPipeline:
         knowledge_config: KnowledgeConfig,
         factory_result: FactoryResult,
         run_scope: RunScope,
+        # #192: required, with no default and no ``or ...load()``
+        # fallback - that fallback is the defect the envelope removes.
+        run_envelope: RunEnvelope,
         hooks: PipelineHooks,
         worktree_paths: dict[str, Path],
         component_contexts: dict[str, str],
@@ -515,16 +514,48 @@ class ComponentPipeline:
         self.base_config = base_config
         self.ui = ui
         self.root_dir = root_dir
-        # #266 review finding 3: the reviewer roles were built with
-        # read_only=True and NO sandbox, so `[sandbox] enabled = true`
-        # reached the engineer and never the reviewers - the one pair of
-        # roles that now runs shell commands inside the tree under
-        # review. read_only is a permission-layer posture on the claude
-        # adapters; the operator's OS-level enforcement is a separate
-        # payload and both are wanted. Loaded once here rather than per
-        # phase: it is a run-level setting and the phases run per
-        # component attempt.
-        self.sandbox_config = SandboxConfig.load(root_dir)
+        # #192: every run-level config section this pipeline enforces
+        # arrives already resolved, and this constructor resolves none of
+        # its own. The phases run per component attempt, so a read here
+        # made a component's enforcement diverge from what the run
+        # recorded.
+        #
+        # Round 1 of #192 loaded these four in this constructor instead.
+        # The review measured the cost: a malformed [inbox] raised out of
+        # __init__ with no handler above it and above the line that
+        # records the architect's spend, so `serve` charged $0 for a
+        # launch that had spent real money (#257). The envelope is
+        # resolved before the run directory exists now, where a bad
+        # section is a refusal naming the section and the key.
+        #
+        # Named locally rather than read through ``self.run_envelope``
+        # at every use: these four are what the pipeline enforces, and
+        # ONE of the four names predates #192. Counted at the branch
+        # base 414d662: self.sandbox_config 3 readers, and
+        # self.fixtures_config, self.inbox_config and
+        # self.divergence_config 0 each, because those three sections
+        # were resolved into locals inside the phases. Round 1 of #192
+        # created the other three names, so keeping them is a choice
+        # this change made rather than a shape it inherited: one
+        # spelling per section at the point of use, against reading
+        # ``self.run_envelope.<section>`` at nine sites. The envelope
+        # also carries what the autonomy ladder can clamp - [policy],
+        # [adequacy] and the level - so the clamped values are the ones
+        # enforced and recorded. (Only PolicyConfig is hashed:
+        # ``policy.envelope_hash`` covers no adequacy field.)
+        #
+        # #266 review finding 3 for [sandbox]: the reviewer roles were
+        # built with read_only=True and NO sandbox, so `[sandbox]
+        # enabled = true` reached the engineer and never the reviewers -
+        # the one pair of roles that now runs shell commands inside the
+        # tree under review.
+        self.sandbox_config = run_envelope.sandbox
+        # R7.2: enabled=false (the default) makes
+        # run_mechanical_verification skip the fixtures check entirely.
+        self.fixtures_config = run_envelope.fixtures
+        self.inbox_config = run_envelope.inbox
+        self.divergence_config = run_envelope.divergence
+        self.run_envelope = run_envelope
         self.run_id = run_id
         self.bus = bus
         self.journal_path = journal_path
@@ -1767,10 +1798,9 @@ class ComponentPipeline:
         """Close an open item whose question the world has answered."""
         try:
             if self._inbox is None:
-                config = InboxConfig.load(self.root_dir)
-                if not config.enabled:
+                if not self.inbox_config.enabled:
                     return
-                self._inbox = Inbox(self.root_dir, config)
+                self._inbox = Inbox(self.root_dir, self.inbox_config)
             existing = self._inbox.find_by_dedupe_key(dedupe_key)
             if existing is not None and existing.is_open:
                 self._inbox.resolve(existing.id, comment=reason)
@@ -1779,9 +1809,10 @@ class ComponentPipeline:
             # reasons: Inbox.resolve reaches _append through _decide, so
             # it takes the control lock and can raise ControlStateError,
             # and InboxConfig.load casts per key, so a TOML date raises
-            # TypeError. Neither is an OSError, a ValueError or an
-            # InboxError, and this function's contract is that closing a
-            # stale item cannot fail the run that answered it.
+            # TypeError. #192 moved that cast to ``__init__``, behind
+            # the entry preflight; the tuple keeps TypeError anyway,
+            # because this function's contract is that closing a stale
+            # item cannot fail the run that answered it.
             self.ui.warn(f"  Inbox resolve failed (non-fatal): {exc}")
 
     def _inbox_suppress_generic(self, comp_id: str) -> None:
@@ -1814,11 +1845,10 @@ class ComponentPipeline:
         """
         try:
             if self._inbox is None:
-                config = InboxConfig.load(self.root_dir)
-                if not config.enabled:
+                if not self.inbox_config.enabled:
                     self._inbox_disabled = True
                     return
-                self._inbox = Inbox(self.root_dir, config)
+                self._inbox = Inbox(self.root_dir, self.inbox_config)
             if self._inbox_disabled:
                 return
             item = self._inbox.add(
@@ -1843,8 +1873,9 @@ class ComponentPipeline:
             # ControlStateError is a RuntimeError: Inbox._append takes
             # the control lock on every write, and the (OSError,
             # ValueError) pair all seven inbox sites were written with
-            # does not catch what that lock raises. TypeError is
-            # InboxConfig.load's per-key cast.
+            # does not catch what that lock raises. TypeError was
+            # InboxConfig.load's per-key cast, which #192 moved to
+            # ``__init__``; it stays for the reason _inbox_resolve gives.
             self.ui.warn(f"  Inbox write failed (non-fatal): {exc}")
 
     def _park_merge_pending(
@@ -2730,16 +2761,13 @@ class ComponentPipeline:
         # and Phase 1's was the one the agent could edit. Both now read
         # RunScope, resolved once before the first engineer call.
         scope = self.run_scope.for_component(comp.id)
-        # R7.2: fixtures config resolves from toml/env when the
-        # caller did not inject one; enabled=false (the default)
-        # makes run_mechanical_verification skip the check entirely.
-        fixtures_cfg = self.factory_config.fixtures_config or FixturesConfig.load(self.root_dir)
-        # R8.1 policy envelope: opt-in ([policy].enabled). enabled=false
-        # (the default) makes run_mechanical_verification skip the check.
-        policy_cfg = self.factory_config.policy_config or PolicyConfig.load(self.root_dir)
-        adequacy_cfg = AdequacyConfig.load(self.root_dir)
-        autonomy_cfg = AutonomyConfig.load(self.root_dir)
-        level = AutonomyState.load(self.root_dir).level if autonomy_cfg.enabled else 0
+        # #192: the same rule as ``run_scope`` one line up, for the four
+        # config values below. They came off disk per component until
+        # the run's envelope was resolved once and injected, so a
+        # mid-run edit to kstrl.toml changed what a later component was
+        # held to without changing the hash the manifest records. The
+        # level is the CLAMPED one the factory resolved, not the raw
+        # stored level this used to read.
         verification = self.hooks.run_mechanical_verification(
             wt_path,
             wt_path / comp.prd_path,
@@ -2753,10 +2781,10 @@ class ComponentPipeline:
             # fixtures Phase 1 still has to read from the live file
             # (#269). Outside every worktree, so not agent-writable.
             pre_run_prd_path=self.root_dir / comp.prd_path,
-            fixtures_config=fixtures_cfg,
-            policy_config=policy_cfg,
-            adequacy_config=adequacy_cfg,
-            autonomy_level=level,
+            fixtures_config=self.fixtures_config,
+            policy_config=self.run_envelope.policy,
+            adequacy_config=self.run_envelope.adequacy,
+            autonomy_level=self.run_envelope.autonomy_level,
             component_id=comp.id,
         )
         verify_duration = time.monotonic() - verify_start
@@ -2948,7 +2976,7 @@ class ComponentPipeline:
         attempts, so a missing reading breaks the streak by itself, which
         is the fail-open direction: the loop keeps its retries.
         """
-        config = DivergenceConfig.load(self.root_dir)
+        config = self.divergence_config
         if not config.measures:
             return None
         if review_result.infrastructure_error:
@@ -3685,12 +3713,12 @@ class ComponentPipeline:
         """R10.3: whether a set-point disagreement fails the component,
         and the severity its findings carry.
 
-        The autonomy level is resolved exactly as ``_phase_verify``
-        resolves it for the adequacy gate: the stored level when the
-        ladder is on, and 0 when it is off.
+        The autonomy level is the one ``_phase_verify`` uses for the
+        adequacy gate, and since #192 that is true by construction
+        rather than by two copies of the same expression: both read the
+        run's envelope, resolved once at run start.
         """
-        autonomy_cfg = AutonomyConfig.load(self.root_dir)
-        level = AutonomyState.load(self.root_dir).level if autonomy_cfg.enabled else 0
+        level = self.run_envelope.autonomy_level
         blocking = setpoint_blocks(self.factory_config, level)
         return blocking, "fail" if blocking else "advisory"
 

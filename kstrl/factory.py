@@ -27,6 +27,7 @@ from kstrl.autonomy import (
     AutonomyLevel,
     AutonomyState,
     DemotionTrigger,
+    FlagBundle,
     apply_demotion,
     flag_bundle_for,
     manual_override_notes,
@@ -114,6 +115,7 @@ from kstrl.review import (
     ReviewMode,
     run_review,
 )
+from kstrl.runenvelope import RunEnvelope
 from kstrl.sandbox import SandboxConfig
 from kstrl.scope import ComponentScope, RunScope
 from kstrl.security import (
@@ -332,8 +334,19 @@ class FactoryConfig:
     # fixtures execute PRD-defined commands, so the operator opts in.
     fixtures_config: FixturesConfig | None = None
     # R8.1: declarative merge-policy envelope for Phase 1. None means
-    # run_factory loads PolicyConfig.load(root_dir) - toml [policy] section
-    # + env. Opt-in ([policy].enabled = false): existing runs unchanged.
+    # run_factory resolves it from the toml [policy] section + env, via
+    # RunEnvelope.resolve's ``policy_override`` seam (#192). Opt-in
+    # ([policy].enabled = false): existing runs unchanged.
+    #
+    # INPUT ONLY: read once by RunEnvelope.resolve, never written back.
+    # Round 2 of #192 deleted the write-back that used to be described
+    # here, because it was unconditional: a caller reusing one
+    # FactoryConfig for a second run had run 1's clamped envelope
+    # already sitting in this field, so run 2 resolved nothing from
+    # kstrl.toml and recorded run 1's hash as its own. The run's
+    # resolved policy lives on the pipeline's RunEnvelope; read it
+    # there. TestTheEnvelopeDoesNotOutliveItsRun fails if the write
+    # comes back.
     policy_config: PolicyConfig | None = None
 
     def resolved_verify_config(self) -> VerifyConfig:
@@ -3194,6 +3207,88 @@ def _warn_unsandboxable_reviewers(
             )
 
 
+@dataclass(frozen=True)
+class _LadderOutcome:
+    """What the R8.2 ladder decided, split from what it PRINTS (#192).
+
+    The decision has to happen before ``ComponentPipeline`` is built,
+    because the bundle can clamp the policy envelope and the pipeline
+    must be handed the clamped one rather than have it assigned 155
+    lines later. The reporting has to happen where it always did: the
+    event bus and its file sinks do not exist yet at the decision point,
+    and ``_adversarial_phase_gates`` runs in between and must keep
+    reading the CONFIGURED ``review_mode`` rather than the bundle's.
+    Splitting them is what lets both be true at once.
+    """
+
+    level: AutonomyLevel
+    bundle: FlagBundle
+    #: Why ``resolve_runtime_level`` lowered the stored level. A tuple,
+    #: because ``frozen=True`` over a ``list`` is a claim the class does
+    #: not keep: ``hash()`` raised ``TypeError`` and ``.append()``
+    #: succeeded straight through the frozen dataclass.
+    clamps: tuple[str, ...]
+    #: Configured flags the bundle overruled, plus the withheld
+    #: ``deps_allow_new``.
+    overrides: tuple[str, ...]
+
+
+def _resolve_ladder(
+    run_envelope: RunEnvelope,
+    factory_config: FactoryConfig,
+    root_dir: Path,
+) -> tuple[RunEnvelope, _LadderOutcome | None]:
+    """The run's clamped envelope, and the ladder decision behind it.
+
+    ``None`` when ``[autonomy]`` is disabled, which is the default: the
+    config's own flags stand and the envelope is returned untouched.
+
+    Reads the stored state off the envelope rather than loading it
+    again. The second ``AutonomyState.load`` this replaces cost a
+    measured 17.2 ms, discarded its result, ensured the control state a
+    second time, and left a window in which a concurrent `ks autonomy
+    promote` made the two reads disagree.
+    """
+    state = run_envelope.autonomy_state
+    # Two spellings of one condition, and that is deliberate: the
+    # envelope loads the stored state only when the ladder is on, so
+    # ``state is None`` and ``not enabled`` are the same fact. The
+    # second is the half a type checker can see, and writing it as an
+    # assert instead would put a raise on the default path.
+    if not run_envelope.autonomy.enabled or state is None:
+        return run_envelope, None
+    level, clamps = resolve_runtime_level(
+        state,
+        run_envelope.autonomy,
+        policy_enabled=run_envelope.policy.enabled,
+        root_dir=root_dir,
+    )
+    # #192: the level the run OPERATES at. Phase 1 and the set-point
+    # gate re-read the RAW stored level: measured, a run clamped to L1
+    # had Phase 1 judging at the stored L4. No verdict changes at either
+    # level today (both consumers test only >= 1); it goes live the
+    # moment either threshold becomes level-graded.
+    clamped = replace(run_envelope, autonomy_level=int(level))
+    bundle = flag_bundle_for(level)
+    overrides = manual_override_notes(
+        bundle,
+        configured_pause_before_pr_merge=factory_config.pause_before_pr_merge,
+        configured_review_mode=factory_config.review_mode,
+    )
+    # The ladder can only ever WITHHOLD a permission the envelope
+    # grants, never add one: below L3, new dependencies are refused even
+    # if [policy] deps_allow_new is true.
+    if not bundle.deps_allow_new_permitted and clamped.policy.deps_allow_new:
+        clamped = replace(clamped, policy=replace(clamped.policy, deps_allow_new=False))
+        overrides.append(
+            f"[policy] deps_allow_new=true withheld at "
+            f"{bundle.level.label} (ladder clamps to false)"
+        )
+    return clamped, _LadderOutcome(
+        level=level, bundle=bundle, clamps=tuple(clamps), overrides=tuple(overrides)
+    )
+
+
 def _run_factory_locked(
     manifest: Manifest,
     factory_config: FactoryConfig,
@@ -3229,6 +3324,59 @@ def _run_factory_locked(
     # already persists failed_phase/failed_check; the full signature
     # list is a journal concern.
     component_failure_signatures: dict[str, list[str]] = {}
+
+    # #192: the run's config envelope, resolved ONCE, HERE, and injected
+    # into the pipeline, which never resolves one of its own.
+    # kstrl/runenvelope.py records the divergence that costs.
+    #
+    # Placed above the run directory's sinks deliberately, and that is
+    # the round-2 fix rather than the original placement. A section the
+    # entry preflight passed can be broken by the time this line runs -
+    # on `ks factory --spec` the architect spends 119 to 210 seconds
+    # between the two - and resolving seven sections in front of the run
+    # means seven that can reject. Rejecting HERE gives the operator the
+    # sentence and exit code 2 every other pre-spend refusal gives, and
+    # it happens before the run directory exists, so #257's invariant
+    # (nothing between the sinks and record_architect_usage returns
+    # early) is untouched.
+    #
+    # What it does to the money, stated rather than left as "there is no
+    # run yet": a refusal inside the `ks factory --spec` architect window
+    # lands on RunSpend.unmetered_phases' blocker-halt path, so `serve`
+    # charges the launch $0 and labels the day's total a floor with
+    # `architect` unmetered. That is the same treatment a spec blocker
+    # already gets. Measured: a launch whose architect spent $4.20 is
+    # charged $4.20 on origin/main, where the malformed [policy] happened
+    # to crash BELOW record_architect_usage, and $0.00 here. Charging it
+    # exactly needs a sink that exists before the run directory does,
+    # which is separate work; see the PR #359 handoff.
+    resolved = RunEnvelope.resolve(
+        root_dir,
+        policy_override=factory_config.policy_config,
+        fixtures_override=factory_config.fixtures_config,
+    )
+    run_envelope = resolved.envelope
+    if run_envelope is None:
+        _report_preflight(
+            ui,
+            "the run configuration cannot be resolved",
+            list(resolved.problems),
+        )
+        factory_result.exit_code = 2
+        return factory_result
+    # Off the envelope rather than a second AutonomyConfig.load: the two
+    # reads were nine lines apart and cost two parses of the same file
+    # (measured 0.988ms, and a nested toml_parse_scope does not collapse
+    # them because the inner scope shadows the outer cache).
+    autonomy_config = run_envelope.autonomy
+    # R8.2: the level this run OPERATES at, resolved BEFORE the pipeline
+    # is constructed so the pipeline's envelope is the clamped one by
+    # construction rather than by a re-assignment 155 lines below it.
+    # Only the RESOLUTION is here; the bus event, the operator warnings
+    # and the FactoryConfig flag overrides stay at their original place
+    # below, where the sinks exist and the ordering against
+    # _adversarial_phase_gates is unchanged.
+    run_envelope, ladder = _resolve_ladder(run_envelope, factory_config, root_dir)
 
     # Set up progress log. R3.2: defaults ON under .kstrl/ so a
     # walk-away run always leaves an event trail `ks status` can
@@ -3322,12 +3470,6 @@ def _run_factory_locked(
             max_cost_usd=factory_config.max_cost_usd,
         )
     )
-
-    # Loaded here rather than at the ladder resolution below because the
-    # #262 probe gate needs it first; it is a pure config read, and the
-    # ladder still resolves in its original place for the reason its own
-    # comment gives (the policy hash must record the clamped envelope).
-    autonomy_config = AutonomyConfig.load(root_dir)
 
     # R7.1: resolve which model family reviews this run's diffs ONCE so
     # the choice is stable across components and the homogeneity warning
@@ -3426,9 +3568,12 @@ def _run_factory_locked(
     # load-bearing rather than incidental: the pipeline owns the meter,
     # so the meter's lifetime has to start with the run directory's
     # rather than with the first phase's. The record just below says
-    # what breaks otherwise (#257 review). Construction is pure
-    # attribute assignment, so doing it ahead of a check that can reject
-    # the run costs nothing.
+    # what breaks otherwise (#257 review). Construction is pure attribute
+    # assignment again after #192 round 2: the four config sections it
+    # briefly resolved moved into the run envelope above, so a manifest
+    # the DAG check below rejects no longer does and discards that work,
+    # and there is nothing here that can raise before
+    # record_architect_usage.
     pipeline = ComponentPipeline(
         manifest=manifest,
         manifest_path=manifest_path,
@@ -3448,6 +3593,7 @@ def _run_factory_locked(
         knowledge_config=knowledge_config,
         factory_result=factory_result,
         run_scope=run_scope,
+        run_envelope=run_envelope,
         hooks=PipelineHooks(
             run_mechanical_verification=run_mechanical_verification,
             run_review=run_review,
@@ -3513,62 +3659,36 @@ def _run_factory_locked(
     # manifest alone (and later, from Linear).
     manifest.run_id = run_id
     manifest.completed_at = ""
-    # R8.1: record the resolved policy envelope's hash so the manifest is
-    # a self-contained audit record of what merge guardrails were in force
-    # for this run. Computed from the same source the Phase 1 check reads.
-    policy_config = factory_config.policy_config or PolicyConfig.load(root_dir)
-
-    # R8.2: derive this run's permissions from the autonomy level. The
+    # R8.2: apply this run's permissions from the autonomy level. The
     # bundle is computed at run start and WINS over contradicting config,
     # so a hand-edited flag cannot grant autonomy the ladder never
     # awarded; contradictions are recorded rather than silently dropped.
     # Opt-in: when [autonomy] is disabled the config's own flags stand.
     #
-    # Ordering matters: the level is resolved BEFORE the policy hash is
-    # taken, because the bundle can clamp the envelope (deps_allow_new),
-    # and the manifest must record the envelope actually enforced.
+    # RESOLVED far above, before the pipeline was constructed, because
+    # the bundle can clamp the envelope (deps_allow_new) and the pipeline
+    # must hold the clamped one. What is left here is the reporting and
+    # the FactoryConfig overrides, which stay in this position for two
+    # orderings that are load-bearing: the bus and its sinks exist by
+    # now, and `_adversarial_phase_gates` above read the CONFIGURED
+    # review_mode rather than the bundle's, exactly as before.
     autonomy_active = autonomy_config.enabled
-    autonomy_level: AutonomyLevel | None = None
-    if autonomy_active:
-        autonomy_state = AutonomyState.load(root_dir)
-        autonomy_level, clamps = resolve_runtime_level(
-            autonomy_state,
-            autonomy_config,
-            policy_enabled=policy_config.enabled,
-            root_dir=root_dir,
-        )
-        bundle = flag_bundle_for(autonomy_level)
-        overrides = manual_override_notes(
-            bundle,
-            configured_pause_before_pr_merge=factory_config.pause_before_pr_merge,
-            configured_review_mode=factory_config.review_mode,
-        )
-        factory_config.pause_before_pr_merge = bundle.pause_before_pr_merge
-        factory_config.review_mode = bundle.review_mode
-        # The ladder can only ever WITHHOLD a permission the envelope
-        # grants, never add one: below L3, new dependencies are refused
-        # even if [policy] deps_allow_new is true.
-        if not bundle.deps_allow_new_permitted and policy_config.deps_allow_new:
-            policy_config = replace(policy_config, deps_allow_new=False)
-            overrides.append(
-                f"[policy] deps_allow_new=true withheld at "
-                f"{bundle.level.label} (ladder clamps to false)"
-            )
+    if ladder is not None:
+        factory_config.pause_before_pr_merge = ladder.bundle.pause_before_pr_merge
+        factory_config.review_mode = ladder.bundle.review_mode
         bus.emit(
             AutonomyLevelApplied(
-                level=int(autonomy_level),
-                label=autonomy_level.label,
-                flags=tuple(bundle.describe()),
-                overrides=tuple(clamps + overrides),
+                level=int(ladder.level),
+                label=ladder.level.label,
+                flags=tuple(ladder.bundle.describe()),
+                overrides=tuple(ladder.clamps + ladder.overrides),
             )
         )
-        ui.kv("Autonomy", f"L{int(autonomy_level)} - {autonomy_level.label}")
-        for note in clamps:
+        ui.kv("Autonomy", f"L{int(ladder.level)} - {ladder.level.label}")
+        for note in ladder.clamps:
             ui.warn(f"  {note}")
-        for note in overrides:
+        for note in ladder.overrides:
             ui.warn(f"  Manual override ignored: {note}")
-        # The pipeline must see the clamped envelope, not the raw config.
-        factory_config.policy_config = policy_config
 
     # Issue #207 (review P1): checked AFTER autonomy resolution, because
     # the L1/L2 bundle can flip pause_before_pr_merge on when no config
@@ -3584,7 +3704,12 @@ def _run_factory_locked(
     if setpoint_warning is not None:
         ui.warn(setpoint_warning)
 
-    manifest.policy_hash = policy_config.envelope_hash()
+    # R8.1: the manifest is a self-contained audit record of what merge
+    # guardrails were in force for this run. #192: read back off the
+    # PIPELINE, not off a local, so the hash is taken from the object
+    # the pipeline will enforce and an edit that forgets the assignment
+    # above fails a test rather than diverging silently.
+    manifest.policy_hash = pipeline.run_envelope.policy_hash()
     manifest.save(manifest_path)
 
     # R0.2 crash recovery: MERGE_PENDING is re-pollable, not failed.
@@ -3626,8 +3751,13 @@ def _run_factory_locked(
     # that cannot be honored is refused loudly instead of silently
     # dropped (an operator who opted in must not believe the boundary
     # exists when it does not).
-    sandbox_cfg = SandboxConfig.load(root_dir)
-    if sandbox_cfg.enabled and base_config.agent_cmd:
+    #
+    # #192: off the envelope. This was the last section with two
+    # resolutions inside one run - here, and once more in
+    # ComponentPipeline.__init__ for the reviewer payload - so the
+    # warning an operator saw and the boundary the roles got could come
+    # from two different reads of the file.
+    if run_envelope.sandbox.enabled and base_config.agent_cmd:
         ui.warn(
             "  [sandbox] enabled but the agent is a custom command; "
             "sandbox settings CANNOT be applied to it and are ignored "
@@ -3840,8 +3970,8 @@ def _run_factory_locked(
             breaker_cfg.test_command,
             breaker_cfg.test_timeout,
             # R7.5: OS-level sandbox intent for the engineer's agent CLI.
-            sandbox_cfg.enabled,
-            sandbox_cfg.allow_network,
+            run_envelope.sandbox.enabled,
+            run_envelope.sandbox.allow_network,
             # R7.6: in-loop USD budget for the claude-sdk engineer.
             base_config.agent_budget_usd,
             # Chunk 6: worker event channel (None when progress logging
