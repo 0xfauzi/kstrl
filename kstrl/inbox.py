@@ -43,6 +43,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from kstrl.appendio import append_records
 from kstrl.atomicio import atomic_write_text
 from kstrl.statedir import CONTROL_INBOX, control_file, control_lock, ensure_control_state
 
@@ -63,6 +64,7 @@ class ItemKind(StrEnum):
     DEMOTION_NOTICE = "demotion_notice"  # R8.2 autonomy revoked
     CALIBRATION_DRIFT = "calibration_drift"  # detection rate moved
     TEST_ADEQUACY = "test_adequacy"  # R8.5 Layer 0 blocked a change
+    HEALTH_BREACH = "health_breach"  # R8.4 control-limit breach (#232)
 
     @property
     def action_required(self) -> bool:
@@ -103,7 +105,8 @@ class Priority(StrEnum):
 
 #: Default priority per kind. A demotion is high because autonomy was
 #: revoked and the evidence is perishable; drift is low because it is a
-#: trend, not an event.
+#: trend, not an event. A health breach sits between the two: it is a
+#: trend like drift, but one that may have cost a level in the same run.
 DEFAULT_PRIORITY: dict[ItemKind, Priority] = {
     ItemKind.POLICY_EXCEPTION: Priority.HIGH,
     ItemKind.MERGE_GATE: Priority.NORMAL,
@@ -112,6 +115,7 @@ DEFAULT_PRIORITY: dict[ItemKind, Priority] = {
     ItemKind.DEMOTION_NOTICE: Priority.HIGH,
     ItemKind.CALIBRATION_DRIFT: Priority.LOW,
     ItemKind.TEST_ADEQUACY: Priority.NORMAL,
+    ItemKind.HEALTH_BREACH: Priority.NORMAL,
 }
 
 _PRIORITY_ORDER = {Priority.HIGH: 0, Priority.NORMAL: 1, Priority.LOW: 2}
@@ -494,15 +498,44 @@ class Inbox:
 
     # -- writing -----------------------------------------------------------
     def _append(self, item: InboxItem) -> None:
-        """Append one line, creating the file atomically on first write."""
+        """Append one line, creating the file atomically on first write.
+
+        #331: through ``appendio``, which repairs an unterminated tail
+        before appending onto it. Without that, a crash mid-write cost
+        the NEXT item as well as the torn one, measured through
+        :meth:`items`: ``['first']`` where first and second were both
+        added.
+
+        A BARE PAD, no repair row, and the reason is measured rather
+        than stylistic. A valid-JSON row that ``InboxItem.from_dict``
+        returns None for is counted by
+        ``scan().unparseable_count()``, and ``serve`` adds that count
+        to ``open_count`` against the #190 admission cap. A repair row
+        would therefore consume admission capacity until the next
+        compaction: a running factory refusing work because an earlier
+        one crashed. The tear is still surfaced by that same count,
+        which is the point of the cap counting unreadable lines at all.
+
+        The ``control_lock`` is unchanged and still wraps the whole
+        probe and append, so #330's lock argument does not apply here:
+        this file already has the exclusion.
+
+        The ``"a+b"`` open widens what can fail - an inbox this process
+        can write but not read is refused rather than appended to
+        blind - and this is the LOUDEST of the three sites that widened,
+        which is why it is the one with no handler of its own.
+        ``pipeline._inbox_add`` catches ``(OSError, ValueError)`` and
+        warns through the run's UI, so an unreadable inbox says so and
+        the run continues. Before this change the same file was
+        appended to without ever being read.
+        """
         ensure_control_state(self.root_dir)
         path = self.path
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"schema_version": INBOX_SCHEMA_VERSION, **item.to_dict()}
         line = json.dumps(payload, separators=(",", ":"), default=str) + "\n"
         with control_lock(self.root_dir):
-            with open(path, "a", encoding="utf-8") as handle:
-                handle.write(line)
+            append_records(path, line, repair="")
 
     def add(
         self,
@@ -521,6 +554,19 @@ class Inbox:
         A repeat of a still-open item bumps its occurrence count instead of
         adding a row. A repeat of a DECIDED item opens a fresh one: you
         approved that failure once, and its recurrence is new information.
+
+        A repeat refreshes ``detail`` AND ``evidence`` together. They are
+        two descriptions of the same observation, and refreshing only the
+        prose left the structured half - the half ``ks inbox`` and the
+        TUI render, and the durable one - reporting the first occurrence
+        while the text reported the latest. Measured on a health-breach
+        item: ``detail`` said value 0.9 over 20 runs while ``evidence``
+        still said 0.4 over 8. ``title`` is deliberately NOT refreshed:
+        it is the row's label, and a repeat must not relabel a row an
+        operator has already read. Neither is ``run_id``: it is the run
+        that first raised the item, which is where an operator goes to
+        read what happened, and ``last_seen_at`` with ``occurrences`` is
+        what says the condition is still current.
         """
         now = _utc_now()
         existing = self.find_by_dedupe_key(dedupe_key)
@@ -529,6 +575,8 @@ class Inbox:
             existing.last_seen_at = _iso(now)
             if detail:
                 existing.detail = detail
+            if evidence:
+                existing.evidence = evidence
             self._append(existing)
             return existing
         item = InboxItem(

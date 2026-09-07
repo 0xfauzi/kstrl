@@ -33,9 +33,10 @@ from kstrl.fixtures import Fixture, FixturesConfig, check_fixtures, check_fixtur
 from kstrl.policy import PolicyConfig
 from kstrl.verify import (
     CheckResult,
+    NotMeasured,
     VerificationResult,
     check_bad_patterns,
-    check_dead_code,
+    check_dead_code_ruff,
     check_diff_scope,
     check_linter,
     check_policy_envelope,
@@ -101,7 +102,7 @@ def _assert_unmeasured(row: CheckResult) -> None:
         base_ref="0" * 40,
         project="proj",
         generated_at="2026-09-07T00:00:00Z",
-        sense_schema_version=2,
+        sense_schema_version=3,
         digest="d" * 16,
     )
     baseline = dampener.Baseline(
@@ -109,7 +110,7 @@ def _assert_unmeasured(row: CheckResult) -> None:
         base_ref="1" * 40,
         project="proj",
         passed=False,
-        sense_schema_version=2,
+        sense_schema_version=3,
         verify_digest="d" * 16,
         measured_checks=(row.name,),
         unmeasured_checks=(),
@@ -385,77 +386,64 @@ def test_a_schema_invalid_prd_measured_no_fixtures(tmp_path: Path) -> None:
     _assert_unmeasured(row)
 
 
-# --- dead code ------------------------------------------------------------
+# --- the other spelling of the same rule ---------------------------------
 
 
-def test_dead_code_with_neither_detector_measured_nothing(tmp_path: Path, only_path: Path) -> None:
-    row = check_dead_code(tmp_path, "main", read_only=True)
-
-    assert "neither vulture nor custom command" in row.message
-    _assert_unmeasured(row)
-
-
-def test_dead_code_with_ruff_but_no_vulture_measured_nothing(
-    tmp_path: Path,
-    only_path: Path,
+def test_a_not_measured_gap_lands_where_an_unmeasured_row_does(
+    tmp_path: Path, only_path: Path
 ) -> None:
-    """The second "vulture not installed" row: ruff DID report something.
+    """A gap and a ``measured=False`` row are the same fact in two shapes.
 
-    Half a measurement is not a measurement. The row's ``passed`` is still
-    True, so nothing about the verdict changes; what changes is that its
-    silence about dead code cannot clear a baseline finding.
+    #335 split the dead-code check so that every way it can measure nothing
+    returns a :class:`NotMeasured` gap rather than a passing row, which is why
+    nothing in that function carries ``measured=`` at all. The dampener has to
+    read both through one path, or half the mechanism is missing depending on
+    which check produced it.
+
+    Driven from the real function with ruff off PATH, so the gap is the
+    tool-missing one rather than a constructed object.
     """
-    _stub(only_path, "ruff", 'echo "Found 3 errors."')
+    outcome = check_dead_code_ruff(tmp_path, 30.0, read_only=True)
 
-    row = check_dead_code(tmp_path, "main", read_only=True)
+    assert isinstance(outcome, NotMeasured)
+    assert outcome.reason == "tool_missing"
 
-    assert "vulture not installed" in row.message
-    assert "3 auto-removable" in row.message
-    _assert_unmeasured(row)
+    signature = f"{outcome.check}:an-earlier-finding"
+    current = dampener.baseline_from_result(
+        VerificationResult(passed=True, checks=[], not_measured=[outcome]),
+        base_ref="0" * 40,
+        project="owner/repo",
+        generated_at="2026-09-07T00:00:00Z",
+        sense_schema_version=3,
+        digest="d" * 16,
+    )
+    baseline = dampener.Baseline(
+        generated_at="2026-09-06T00:00:00Z",
+        base_ref="1" * 40,
+        project="owner/repo",
+        passed=False,
+        sense_schema_version=3,
+        verify_digest="d" * 16,
+        measured_checks=(outcome.check,),
+        unmeasured_checks=(),
+        unmeasured_reasons={},
+        signatures={signature: 2},
+    )
 
+    comparison = dampener.compare(baseline, current)
 
-def test_dead_code_whose_scan_timed_out_measured_nothing(tmp_path: Path) -> None:
-    row = check_dead_code(tmp_path, "main", command=SLOW_COMMAND, timeout=TINY_TIMEOUT)
-
-    assert "timed out" in row.message
-    _assert_unmeasured(row)
-
-
-def test_dead_code_handed_no_python_files_measured_nothing(
-    tmp_path: Path,
-    only_path: Path,
-) -> None:
-    """vulture is installed and there is nothing for it to read."""
-    _stub(only_path, "vulture", "exit 0")
-
-    row = check_dead_code(tmp_path, "main", read_only=True)
-
-    assert row.passed is True
-    assert "No dead code issues" in row.message
-    _assert_unmeasured(row)
-
-
-def test_dead_code_says_so_when_ruff_did_not_run(tmp_path: Path, only_path: Path) -> None:
-    """The message stops being false as well as being marked.
-
-    With ruff absent the counters stay at zero, and the note used to read
-    "ruff reports 0 auto-removable, not removed" - a scan that never happened,
-    reported as a scan that found nothing.
-    """
-    _stub(only_path, "vulture", "exit 0")
-    (tmp_path / "src.py").write_text("x = 1\n", encoding="utf-8")
-
-    row = check_dead_code(tmp_path, "main", read_only=True)
-
-    assert "0 auto-removable" not in row.message
+    assert comparison.fixed == {}
+    assert comparison.unmeasured == {signature: 2}
+    assert outcome.check in comparison.stopped_measuring
+    assert comparison.regressed is True
 
 
 def test_the_stubs_are_real_executables(only_path: Path) -> None:
-    """The control for every PATH-driven test above.
+    """The control for the PATH-driven test above.
 
     A stub that is not executable makes ``shutil.which`` return None, which is
-    the same answer as "not installed" - so four tests would pass for the wrong
-    reason and one of them would be asserting nothing at all.
+    the same answer as "not installed" - so the test would pass for the wrong
+    reason and assert nothing at all.
     """
     _stub(only_path, "ruff", 'echo "Found 3 errors."')
 

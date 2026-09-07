@@ -13,8 +13,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn
 
 if TYPE_CHECKING:
+    from kstrl.adequacy import AdequacyConfig
     from kstrl.evolution import EvolutionConfig, EvolutionJournal
     from kstrl.interaction import InteractionChannel
+    from kstrl.policy import PolicyConfig
 
     # Annotation only, and the cheapest available: with
     # `from __future__ import annotations` above, _sense_document's
@@ -715,11 +717,16 @@ def _echo_journal_repairs(journal: EvolutionJournal, ui_impl: UI) -> None:
     all: a healthy journal that prints "0 repairs" every time teaches an
     operator to skip the line that matters.
 
-    Only ``ks evolve --status`` calls it. The evolve TUI screen renders
-    the same trends and stays silent about repairs, which is #333:
-    ``get_repair_count`` is click-free and on the journal, so that
-    screen can ask for itself, but claiming this helper serves the TUI
-    would be false. It lives in the click module.
+    Only ``ks evolve --status`` calls it, and that is still true after
+    #333: the evolve TUI screen reports repairs now, through
+    ``EvolveScreen._show_repairs``, which asks the journal for itself
+    because ``get_repair_count`` is click-free and on the journal. This
+    helper writes through ``UI`` in the click module and cannot be
+    reused as is, so the two are one measurement rendered twice rather
+    than two measurements. The wording is one string now, on the journal
+    (``repair_summary``): saying it was deliberately the same on both
+    was a claim with nothing keeping it (#352 round 2, N4). What is
+    still per-surface is the prefix and the decision to show anything.
 
     Takes the journal and asks IT for the path, rather than being handed
     both: a count from one journal printed beside another one's path is
@@ -729,15 +736,9 @@ def _echo_journal_repairs(journal: EvolutionJournal, ui_impl: UI) -> None:
     the staged complexity ratchet on a function this change is not
     otherwise touching.
     """
-    repairs = journal.get_repair_count()
-    if repairs:
-        ui_impl.warn(
-            f"  journal: {repairs} interrupted write(s) repaired. A crash left "
-            f"{journal.config.journal_path} without a trailing newline. The line above "
-            "each journal_repair row is what that write left behind: either a torn "
-            "fragment, which is lost, or a whole record that lost only its newline, "
-            "which is readable again. Read it to tell which."
-        )
+    summary = journal.repair_summary()
+    if summary is not None:
+        ui_impl.warn(f"  {summary}")
 
 
 def _preflight_root(ctx: click.Context) -> Path:
@@ -3631,20 +3632,26 @@ def status(
 #: "absent means disabled" is wrong about a v2 document, which is why
 #: this is a bump and not a silent addition.
 #:
-#: Scoped to that one check on purpose, because that is all v2
-#: delivers. ``not_measured`` is not yet a complete index of every
-#: check that did not run: ``check_dead_code`` still reports three
-#: non-measurements as passing rows, and ``require_self_critique`` with
-#: no ``progress_file_path`` and no PRD emits neither a row nor a gap.
-#: Both predate this and both are follow-ups on #306; a reader must not
-#: read an empty array as "everything enabled was measured".
+#: 3 (#335): the same two changes for the dead-code gate, by v2's own
+#: rule. ``check_dead_code`` fused a ruff auto-fix phase and a vulture
+#: scan into one row, so an absent ``dead_code`` row still meant only
+#: "turned off"; now it also means "asked for, measured nothing". And a
+#: NEW row name appears in ``checks``, ``dead_code_ruff``, which is the
+#: ruff half answering for itself. A v2 reader is wrong about a v3
+#: document on both counts.
 #:
-#: #227 added a ``dampener`` key and did NOT bump this, on the rule the v2
-#: bump was made under: a bump is for an addition that changes what an
-#: EXISTING key means. That key is absent exactly when ``--compare-baseline``
-#: was not asked for, it restates nothing, and a reader that does not know it
-#: ignores it. No existing key changes meaning.
-SENSE_SCHEMA_VERSION = 2
+#: Still not a complete index of every check that did not run:
+#: ``require_self_critique`` with no ``progress_file_path`` and no PRD
+#: emits neither a row nor a gap. That predates this and is a follow-up
+#: on #306; a reader must not read an empty array as "everything
+#: enabled was measured".
+#:
+#: #227 added a ``dampener`` key and did NOT bump this again, on the rule
+#: the v2 and v3 bumps were made under: a bump is for an addition that
+#: changes what an EXISTING key means. That key is absent exactly when
+#: ``--compare-baseline`` was not asked for, it restates nothing, and a
+#: reader that does not know it ignores it.
+SENSE_SCHEMA_VERSION = 3
 
 
 def _sense_document(
@@ -3656,9 +3663,9 @@ def _sense_document(
     """The ``ks sense --json`` document, at :data:`SENSE_SCHEMA_VERSION`.
 
     Its own function because it is a published contract and ``sense``
-    is a 200-line command: a reader checking what v2 promises should not
-    have to find it among the preflight, the base resolution and the
-    terminal rendering.
+    is a 200-line command: a reader checking what the current schema
+    promises should not have to find it among the preflight, the base
+    resolution and the terminal rendering.
 
     ``dampener_block`` is the #227 comparison, present only when
     ``--compare-baseline`` was given and omitted entirely otherwise.
@@ -3839,6 +3846,55 @@ def _sense_error(message: str, as_json: bool) -> NoReturn:
     sys.exit(2)
 
 
+def _sense_needs_diff(
+    verify_cfg: VerifyConfig,
+    policy_cfg: PolicyConfig,
+    adequacy_cfg: AdequacyConfig,
+) -> bool:
+    """Whether a check `ks sense` is about to run reads ``git diff``.
+
+    ``diff_scope`` and ``bad_patterns`` consume the diff through the
+    LENIENT git helpers, which map a bad ref, a missing base or a
+    non-repository onto an EMPTY file list, indistinguishable from
+    "nothing changed". diff_scope then reports "0 files, all within
+    scope", bad_patterns "scanned 0 Python files", and ``ks sense`` exits
+    0 having measured nothing. So the answer here gates one strict read
+    up front, and cannot-measure becomes exit 2.
+
+    The dead-code phase is here for a DIFFERENT reason since #335:
+    ``verify._changed_non_test_python`` reads strictly and records its
+    own ``command_failed`` gap, so nothing is silently reported as clean
+    if this predicate misses it. It stays in because an exit 2 naming
+    the base the operator should have passed is a better answer than a
+    gap they have to read the JSON to find, not because it is the only
+    thing standing between them and a false pass.
+
+    ``mutation_testing`` is deliberately absent: sense skips that check
+    outright (read-only), so its diff read never happens and demanding a
+    base for it would be a false exit 2.
+
+    ``dead_code_cleanup`` is one toggle over TWO phases since #335, and
+    only one of them reads a diff. ``dead_code_ruff`` scans ``.``, and
+    with ``[verify] dead_code_command`` set the detector is the
+    operator's own program, run without the diff read that only ever
+    existed to build vulture's argument list. The toggle alone therefore
+    stopped implying a diff is needed, and demanding one there is the
+    same false exit 2 mutation_testing is excluded for.
+
+    Its own function because ``sense`` is grandfathered at the cognitive
+    ratchet, so the extra clause is a refusal at commit time if it stays
+    inline - and because "does anything here need a base" now has an
+    answer worth stating once.
+    """
+    return bool(
+        verify_cfg.check_diff_scope
+        or verify_cfg.check_bad_patterns
+        or (verify_cfg.dead_code_cleanup and not verify_cfg.dead_code_command)
+        or policy_cfg.enabled
+        or adequacy_cfg.enabled
+    )
+
+
 @cli.command()
 @click.option(
     "--root",
@@ -3960,13 +4016,18 @@ def sense(
     policy / adequacy / dead-code / mutation checks from kstrl.toml),
     run by hand with no PRD, no branch, no worktree and no agent spend.
 
+    [verify] dead_code_cleanup produces two rows, `dead_code_ruff` for
+    the ruff F401/F811/F841 phase and `dead_code` for the vulture or
+    [verify] dead_code_command scan, so a phase that could not run does
+    not take the other one's answer with it (#335).
+
     The measurement is read-only. It runs against your live checkout,
     not a worktree kstrl owns, so it writes nothing to .kstrl/ and never
-    edits, stages, commits or leaves bytecode: the dead-code check
-    reports what it would remove instead of removing it, and mutation
-    testing cannot run at all because mutmut works by rewriting source.
-    The exception is the project's OWN configured test / typecheck /
-    lint commands, which are your programs and write their own caches.
+    edits, stages, commits or leaves bytecode: `dead_code_ruff` reports
+    what it would remove instead of removing it, and mutation testing
+    cannot run at all because mutmut works by rewriting source. The
+    exception is the project's OWN configured test / typecheck / lint
+    commands, which are your programs and write their own caches.
 
     A check that could not run gets NO row: it is reported under
     not_measured with the reason, never as a passing check (#306).
@@ -4039,23 +4100,7 @@ def sense(
 
     base = resolve_base_branch(base_branch, path)
 
-    # Every check below that consumes the diff reads it through the
-    # LENIENT git helpers, which map a bad ref, a missing base or a
-    # non-repository onto an EMPTY file list - indistinguishable from
-    # "nothing changed". diff_scope then reports "0 files, all within
-    # scope", bad_patterns "scanned 0 Python files", and `ks sense`
-    # exits 0 having measured nothing. mutation_testing is deliberately
-    # absent from this list: sense skips that check outright (read-only),
-    # so its diff read never happens and demanding a base for it would
-    # be a false exit 2.
-    needs_diff = (
-        verify_cfg.check_diff_scope
-        or verify_cfg.check_bad_patterns
-        or verify_cfg.dead_code_cleanup
-        or policy_cfg.enabled
-        or adequacy_cfg.enabled
-    )
-    if needs_diff:
+    if _sense_needs_diff(verify_cfg, policy_cfg, adequacy_cfg):
         # Ask git the same question once, strictly, before any check
         # runs. Cannot-measure is exit 2; it is never a pass.
         from kstrl import git as _git
@@ -4729,12 +4774,31 @@ def autonomy_replay_cmd(
     Reports what WOULD have fired and whether the sample is large enough
     to calibrate anything. Never mutates ladder state. Exit code 2 means
     "insufficient data", so a script cannot mistake it for a green run.
+
+    An UNREADABLE experiments.tsv exits 2 as well, and this is where it
+    gets a cause. ``load_runs`` used to swallow the OSError and the
+    decode error and return no runs, which reached the operator as
+    "INSUFFICIENT DATA": a sentence about the project's history for
+    what is a permission or an encoding problem. The exit code is the
+    same because nothing was replayed either way; the difference is
+    that the line above it now names the file and the error.
+
+    This is also the advisory mode for the R8.4 health rules: it reports
+    would-have-fired counts and never demotes, so a candidate rule set is
+    scored against real history before it is allowed to revoke a level.
     """
     from kstrl.autonomy_replay import replay_file
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
-    report = replay_file(experiments, root_dir)
+    try:
+        report = replay_file(experiments, root_dir)
+    except (OSError, ValueError) as exc:
+        # ValueError beside OSError because UnicodeDecodeError is one,
+        # and it escapes a fail-closed `except OSError` (CLAUDE.md,
+        # encoding is two-sided).
+        ui_impl.err(f"could not read the recorded run history: {exc}")
+        sys.exit(2)
     for line in report.render().splitlines():
         ui_impl.info(line)
     sys.exit(0 if report.sufficient_data else 2)

@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import py_compile
 import re
+import shlex
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -1409,6 +1411,30 @@ def _diff_scope_details(
 MUTATION_TESTING_CHECK = "mutation_testing"
 
 
+#: The Phase 1 check name for the vulture-or-``dead_code_command``
+#: phase, and the ``check`` on every :class:`NotMeasured` it produces.
+#:
+#: It keeps the name the fused check had, and the new phase beside it
+#: takes a new one, rather than the other way round. Three reasons, all
+#: checkable. ``evolution.signatures_from_verification`` emits a
+#: signature only for a FAILED check and the ruff phase has no failing
+#: return, so every ``dead_code:*`` signature any journal could ever
+#: carry came from this phase. This is the phase that reads
+#: ``git diff``, so this is the one :data:`DIFF_DEPENDENT_CHECKS`
+#: names. And ``[verify] dead_code_command`` replaces vulture outright,
+#: so a name mentioning vulture would be wrong whenever the operator's
+#: own detector runs.
+DEAD_CODE_CHECK = "dead_code"
+
+#: The Phase 1 check name for the ruff F401/F811/F841 phase (#335).
+#:
+#: New in the split, and NOT diff-dependent: ruff scans ``.``, so it has
+#: an honest answer with no base to diff against. It is still suppressed
+#: wherever ``[verify] dead_code_cleanup`` is turned off, which is what
+#: ``narrow_to_undiffed`` does, because one toggle owns both phases.
+DEAD_CODE_RUFF_CHECK = "dead_code_ruff"
+
+
 #: The Phase 1 check name for "no trustworthy scope could be read".
 #:
 #: Deliberately NOT ``scope_source``, which is already taken in the same
@@ -2025,6 +2051,43 @@ def _count_before(word: str, text: str) -> int:
     return count
 
 
+def _changed_non_test_python(
+    base_branch: str,
+    cwd: Path,
+    check: str,
+) -> list[str] | NotMeasured:
+    """The non-test Python files in ``git diff <base>...HEAD``.
+
+    One home for the rule, because two checks act on it and both report
+    ``no_target`` when it comes back empty: the mutation gate mutates
+    exactly these files and the dead-code scan scans exactly these
+    files. Widening what counts as a test file in one place and not the
+    other would make one of the two gaps say something the other does
+    not mean.
+
+    STRICT, and that is the whole reason ``check`` is a parameter. The
+    lenient read this helper started with maps a bad base ref, a missing
+    ``origin/<base>``, a non-repository and a git timeout all onto
+    ``[]`` - ``get_diff_names``' own docstring calls that fail-OPEN -
+    and both callers turn ``[]`` into ``no_target``, the one reason
+    token that means "nothing to scan, not a fault". A git read that
+    FAILED is a fault, the tokens are machine-read off
+    ``NotMeasured.as_token``, and ``command_failed`` already exists for
+    it (#335 round 2). Returning the gap rather than raising keeps both
+    call sites' shape: they already return ``NotMeasured`` on the line
+    after this one.
+    """
+    try:
+        changed = git.get_diff_names(base_branch, cwd, strict=True)
+    except git.GitDiffError as exc:
+        return NotMeasured(
+            check,
+            NOT_MEASURED_COMMAND_FAILED,
+            f"git could not read the diff against {base_branch}: {exc}",
+        )
+    return [f for f in changed if f.endswith(".py") and not f.startswith("test")]
+
+
 def check_mutation_score(
     cwd: Path,
     base_branch: str,
@@ -2086,8 +2149,6 @@ def check_mutation_score(
     skipping"), halt is not fail, and that layer is unbuilt. The sidecar
     is the third option: seen by the operator, gating nothing.
     """
-    import shutil
-
     start = time.monotonic()
 
     if not shutil.which("mutmut"):
@@ -2097,8 +2158,9 @@ def check_mutation_score(
             "mutmut is not on PATH, so [verify] mutation_testing measured nothing",
         )
 
-    changed = git.get_diff_names(base_branch, cwd)
-    py_files = [f for f in changed if f.endswith(".py") and not f.startswith("test")]
+    py_files = _changed_non_test_python(base_branch, cwd, MUTATION_TESTING_CHECK)
+    if isinstance(py_files, NotMeasured):
+        return py_files
     if not py_files:
         return NotMeasured(
             MUTATION_TESTING_CHECK,
@@ -2106,8 +2168,23 @@ def check_mutation_score(
             "the diff changed no non-test Python file, so there was nothing to mutate",
         )
 
-    # Run mutmut on changed files only
-    paths_arg = " ".join(py_files)
+    # One COMMA-separated argument, shell-quoted as a whole. This
+    # command is a STRING, which `run_scrubbed` hands to /bin/sh, and
+    # the names come out of an agent-authored diff: without the quoting
+    # a file called `$(id).py` executes (#335 round 2).
+    #
+    # Comma rather than space, which is what `--paths-to-mutate` is
+    # documented to take and what mutmut's own `split_paths` splits on.
+    # Measured on mutmut 2.5.1: `mutmut run --help` prints
+    # `Usage: mutmut run [OPTIONS] [ARGUMENT]`, one positional slot, so
+    # `--paths-to-mutate=a.py b.py c.py` exits non-zero with
+    # `Error: Got unexpected extra argument (c.py)` and mutates nothing,
+    # and the two-file form is accepted only because `b.py` fills that
+    # positional slot instead of being a path to mutate. Round 2 of #335
+    # shipped the space-separated form on the guess that the shell's
+    # word splitting was load-bearing; it is an outage for three or more
+    # changed files (#335 round 3).
+    paths_arg = shlex.quote(",".join(py_files))
     try:
         result = run_scrubbed(
             f"mutmut run --paths-to-mutate={paths_arg} --no-progress",
@@ -2160,6 +2237,61 @@ def check_mutation_score(
     )
 
 
+def _last_output_line(result: subprocess.CompletedProcess[str]) -> str:
+    """The last line a failed tool printed, capped, for a gap's detail.
+
+    stderr first because that is where a tool that could not start says
+    so, and the last line because that is where a Python traceback and
+    a git failure put the sentence a reader needs.
+
+    NOT because "a usage message puts it at the bottom", which is what
+    this said and is measurably false for the tool this module runs
+    most. ruff is a clap CLI, and clap prints the diagnosis FIRST and
+    `For more information, try '--help'.` last: measured on ruff 0.1.15,
+    stderr line 1 is ``error: invalid value 'concise' for
+    '--output-format <OUTPUT_FORMAT>'`` and the last line carries no
+    cause at all (#335 round 3). :func:`_tool_failure_line` is the
+    caller for that case.
+
+    Capped for the reason git.py caps its stderr at 500: this reaches
+    ``ks sense --json`` and the terminal, and one unbroken line of tool
+    output has no bound.
+
+    Each side is stripped BEFORE the choice, not after: ``stderr or
+    stdout`` on the raw strings picks stderr whenever it is truthy,
+    including when it holds nothing but a newline, and then returns "no
+    output" while the sentence the reader needs sits in stdout (#335
+    round 2).
+    """
+    tail = (result.stderr.strip() or result.stdout.strip()).splitlines()
+    return tail[-1][:500] if tail else "no output"
+
+
+#: clap's own prefix for the diagnosis, at the start of a line. ruff, uv
+#: and cargo all print it; a Python traceback never does.
+_CLAP_ERROR = re.compile(r"^error:.*", re.MULTILINE)
+
+
+def _tool_failure_line(result: subprocess.CompletedProcess[str]) -> str:
+    """Why a tool refused to run at all, capped, for a gap's detail.
+
+    The FIRST stderr line beginning ``error:`` when there is one, and
+    :func:`_last_output_line` otherwise. A tool that exits before doing
+    any work states the cause at the top and the remedy at the bottom,
+    so the last line is the wrong end of it.
+
+    Measured on the ruff versions below this phase's floor, which is the
+    reachable case for it: 0.0.272 prints ``error: unexpected argument
+    '--output-format' found`` then a 40-line usage block, and 0.1.0 and
+    0.1.15 print ``error: invalid value 'concise' for '--output-format
+    <OUTPUT_FORMAT>'`` then the possible values. Both end
+    ``For more information, try '--help'.``, which is what the gap
+    carried before and says nothing about the cause (#335 round 3).
+    """
+    found = _CLAP_ERROR.search(result.stderr)
+    return found.group(0).strip()[:500] if found else _last_output_line(result)
+
+
 def _no_counts(result: subprocess.CompletedProcess[str]) -> NotMeasured:
     """Why mutmut produced no killed or survived count.
 
@@ -2173,15 +2305,11 @@ def _no_counts(result: subprocess.CompletedProcess[str]) -> NotMeasured:
     correct no-op.
     """
     if result.returncode != 0:
-        tail = (result.stderr or result.stdout).strip().splitlines()
-        # Capped for the reason git.py caps its stderr at 500: this
-        # reaches `ks sense --json` and the terminal, and one unbroken
-        # line of tool output has no bound.
-        last = tail[-1][:500] if tail else "no output"
         return NotMeasured(
             MUTATION_TESTING_CHECK,
             NOT_MEASURED_COMMAND_FAILED,
-            f"mutmut run exited {result.returncode} and reported no counts: {last}",
+            f"mutmut run exited {result.returncode} and reported no counts: "
+            f"{_last_output_line(result)}",
         )
     return NotMeasured(
         MUTATION_TESTING_CHECK,
@@ -2190,24 +2318,379 @@ def _no_counts(result: subprocess.CompletedProcess[str]) -> NotMeasured:
     )
 
 
-def _ruff_note(*, measured: bool, read_only: bool, pending: int, fixed: int) -> str:
-    """The dead-code check's one phrase about its ruff phase.
+def _ruff_dead_code_command(read_only: bool) -> str:
+    """The ruff invocation for the phase, in each of its two modes.
 
-    One home so the read-only wording cannot drift from the auto-fix
-    wording, and its own function rather than a conditional expression
-    inside :func:`check_dead_code`, which the cognitive ratchet holds at
-    its current number.
+    ``--no-fix`` is explicit rather than implied by omitting ``--fix``: a
+    project can set ``fix = true`` under ``[tool.ruff]``, which turns a
+    bare ``ruff check`` into a fixing run. ``--no-cache`` so not even
+    ``.ruff_cache`` appears in a tree kstrl was asked only to measure.
 
-    ``measured=False`` is #227: ruff absent, or ruff timed out. Both leave
-    the counters at zero, and "0 auto-removable" is then a claim about a
-    scan that never happened. The row carrying this note is marked
-    ``measured=False`` for the same reason.
+    ``--output-format=concise`` for the same reason as ``--no-fix``, and
+    it is the load-bearing one: :func:`_ruff_count` reads a summary line
+    that only the text formats print, and ``[tool.ruff] output-format =
+    "json"`` in the measured project's own ``pyproject.toml`` removes
+    it. Measured on ruff 0.16.1, the flag beats both that key and
+    ``RUFF_OUTPUT_FORMAT`` in the environment, and concise keeps the
+    ``Found N errors``, ``(M fixed, K remaining)`` and ``[*] N fixable``
+    lines this phase parses (#335 round 2).
     """
-    if not measured:
-        return "ruff did not run, so its auto-removable count is not measured"
     if read_only:
-        return f"ruff reports {pending} auto-removable, not removed"
-    return f"ruff auto-fixed {fixed}"
+        return "ruff check --no-fix --no-cache --output-format=concise --select F401,F811,F841 ."
+    return "ruff check --fix --output-format=concise --select F401,F811,F841 ."
+
+
+#: ``Found 3 errors (2 fixed, 1 remaining).`` - a fixing run's summary.
+_RUFF_FIXED = re.compile(r"Found \d+ errors? \((\d+) fixed, (\d+) remaining\)")
+#: ``[*] 2 fixable with the `--fix` option.`` - what a --no-fix run WOULD
+#: remove. Older ruff says "potentially fixable".
+_RUFF_FIXABLE = re.compile(r"\[\*\] (\d+) (?:potentially )?fixable")
+#: ``Found 3 errors.`` with no ``(M fixed, K remaining)`` beside it and no
+#: ``[*]`` line beneath it: findings exist and ruff removed none of them,
+#: because every fix it has for them is unsafe. Printed in BOTH modes.
+_RUFF_FOUND = re.compile(r"Found (\d+) errors?")
+#: What ruff 0.3.3 and later print when they have nothing to report.
+#: 0.2.0 through 0.3.2 print nothing at all instead; see
+#: :func:`_ruff_said_nothing`.
+_RUFF_CLEAN = "All checks passed!"
+#: ruff's advice lines, which are not findings: ``warning: No Python
+#: files found under the given path(s)`` is the whole output of a run
+#: over a tree with no Python file in it, on every version measured.
+_RUFF_WARNING = "warning:"
+
+
+def _ruff_said_nothing(output: str) -> bool:
+    """Ruff printed no diagnostic, no summary and no error, only advice.
+
+    A shape, not a fallback. Measured with this phase's exact flags:
+    ruff 0.2.0, 0.3.0 and 0.3.2 print NOTHING on a clean tree, in either
+    mode, exiting 0; 0.3.3 onwards print ``All checks passed!`` there.
+    On a tree with no Python file in it, 0.2.0 and 0.3.0 print the
+    ``warning:`` line alone and 0.4.0 and 0.16.1 print it beside ``All
+    checks passed!``. So the empty output is real ruff on a real tree
+    across the whole supported range's lower half, and reading it as
+    unrecognisable turned a healthy clean run into a ``command_failed``
+    gap (#335 round 3).
+
+    The caller pairs this with ``returncode == 0``, which is what makes
+    it a measurement rather than a guess: exit 0 is ruff saying it
+    finished with nothing left to report, and every measured run that
+    fixed something printed ``Found N errors (M fixed, K remaining).``
+    even while exiting 0.
+    """
+    return not [
+        line
+        for line in output.splitlines()
+        if line.strip() and not line.strip().startswith(_RUFF_WARNING)
+    ]
+
+
+def _ruff_count(output: str, *, read_only: bool, returncode: int) -> int | None:
+    """How many findings ruff removed, or would remove, or ``None``.
+
+    Two different numbers off two different lines, because the two modes
+    print different things: a fixing run reports ``Found 3 errors (2
+    fixed, 1 remaining).`` and a ``--no-fix`` run reports ``Found 3
+    errors.`` followed by ``[*] 2 fixable with the `--fix` option.``
+    Last match wins in the fixing case, which is what the fused function
+    did.
+
+    ``None`` means the output matched NO shape this function knows, and
+    it is the reason this returns an optional at all. The version before
+    it returned 0 there, and 0 is also what "ruff removed nothing" says,
+    so an output kstrl could not read was reported as a clean auto-fix
+    phase - the defect class this whole change exists to close, in the
+    gate that closes it. Measured with ``output-format = "json"`` set in
+    a project's own config: ruff exits 1 with two unused imports found,
+    the summary line is absent, and the row read ``dead_code_ruff pass
+    ruff auto-fixed 0`` over a worktree ruff had just edited and nothing
+    had committed. The caller turns ``None`` into a ``command_failed``
+    gap. Recognition is POSITIVE - a known shape or nothing - so a
+    future ruff that renames its summary produces a gap rather than a
+    fabricated zero.
+
+    The read-only number is the ``[*]`` count, not the ``Found`` count.
+    They differ by the unsafe fixes: on one measured tree ``Found 3
+    errors.`` sat above ``[*] 2 fixable``, and the fixing run on the
+    same tree removed 2. Reading ``Found`` there made ``ks sense`` and
+    the factory report different numbers for the same tree while the
+    message called them "auto-removable" (#335 round 2).
+
+    The set of shapes is MEASURED, not remembered, and
+    ``tests/test_verify.py::RUFF_SHAPES`` is that measurement: every
+    entry is a captured stdout-plus-stderr from a real ruff run with
+    this phase's exact flags, tagged with the version that printed it,
+    across ruff 0.2.0, 0.3.0 and 0.16.1 and five trees. Round 2 of #335
+    recognised the fixing mode's ``Found N errors.`` nowhere, so a tree
+    whose only findings have unsafe fixes - one ``x = do_thing()`` an
+    agent left behind is enough - reported a healthy ruff run as a tool
+    failure, and a clean tree on ruff 0.2.0 did the same (#335 round 3).
+    """
+    if returncode == 0 and _ruff_said_nothing(output):
+        return 0
+    if read_only:
+        fixable = _RUFF_FIXABLE.search(output)
+        if fixable:
+            return int(fixable.group(1))
+        if _RUFF_FOUND.search(output):
+            return 0
+        return 0 if _RUFF_CLEAN in output else None
+    fixed = _RUFF_FIXED.findall(output)
+    if fixed:
+        return int(fixed[-1][0])
+    if _RUFF_FOUND.search(output):
+        return 0
+    return 0 if _RUFF_CLEAN in output else None
+
+
+def _ruff_remaining(output: str) -> int:
+    """Findings a fixing run located and did not remove.
+
+    Decoration, never a gate: it reads the same two lines
+    :func:`_ruff_count` reads, and 0 when neither is present, because by
+    then :func:`_ruff_count` has already refused an output it could not
+    read. It is in the message because ``ruff auto-fixed 0`` cannot
+    otherwise tell a clean tree from a tree with three unsafe-fix
+    ``F841``s - which is exactly the tree that reaches the ``Found N
+    errors.`` branch here, so without it the whole shape B1 of round 3
+    restored would report the same string as a clean run.
+    """
+    remaining = _RUFF_FIXED.findall(output)
+    if remaining:
+        return int(remaining[-1][1])
+    found = _RUFF_FOUND.search(output)
+    return int(found.group(1)) if found else 0
+
+
+def _commit_ruff_fixes(cwd: Path) -> str | None:
+    """Stage and commit what ruff removed, so later checks see a clean tree.
+
+    Everything EXCEPT the state directory (#274 review). Under
+    ``use_worktrees=False`` this runs with ``cwd`` at the project root,
+    so a bare ``git add -A`` commits kstrl's own live ``.kstrl/``
+    journals onto the component branch the moment ruff fixes one
+    finding - and ``check_diff_scope`` is deliberately un-carved, so the
+    next pass fails on them and they ride into the PR. In a worktree the
+    same exclusion is wanted for the opposite reason: a ``.kstrl/``
+    there is the agent's, and this must not commit it on the agent's
+    behalf.
+
+    A list, not a string: ``run_scrubbed`` only shells out for a string,
+    and the ``:(exclude)`` pathspec must reach git unmangled.
+
+    Returns ``None`` when the commit landed and a short reason when it
+    did not, and the caller says so in the row. Neither status used to
+    be read: ``run_scrubbed`` returns a ``CompletedProcess`` and never
+    raises on a non-zero exit, so a commit refused by a repo hook, or
+    aborted for want of a ``user.email``, left ruff's deletions on disk
+    and uncommitted while the row said ``ruff auto-fixed 2``. That is
+    the shape of the defect this change exists to remove, one step
+    further in: a step that did not happen, reported as done. The
+    earlier version's excuse, that the next check would notice, does not
+    hold - ``check_diff_scope``, ``check_bad_patterns`` and
+    ``check_test_adequacy`` all run BEFORE this point in
+    :func:`run_mechanical_verification` (#335 round 2).
+
+    A timeout is a reason like the other two rather than a silent pass,
+    for the extra reason that a timeout on ``git add`` skips the commit
+    entirely.
+    """
+    try:
+        staged = run_scrubbed(
+            ["git", "add", "-A", "--", ".", f":(exclude){STATE_DIR_NAME}"],
+            cwd=cwd,
+            timeout=30,
+        )
+        if staged.returncode != 0:
+            return f"git add exited {staged.returncode}: {_last_output_line(staged)}"
+        committed = run_scrubbed(
+            'git commit -m "chore: auto-remove dead code (ruff F401/F811/F841)"',
+            cwd=cwd,
+            timeout=30,
+        )
+        if committed.returncode != 0:
+            return f"git commit exited {committed.returncode}: {_last_output_line(committed)}"
+    except subprocess.TimeoutExpired:
+        return "git add or git commit exceeded 30s"
+    return None
+
+
+def _ruff_fix_message(cwd: Path, output: str, count: int) -> str:
+    """The fixing row's message, and the tidying it is allowed to claim.
+
+    Its own function so :func:`check_dead_code_ruff` does not pay three
+    branches for the wording of one string, and so the commit and the
+    sentence describing the commit cannot drift apart.
+    """
+    message = f"ruff auto-fixed {count}"
+    remaining = _ruff_remaining(output)
+    if remaining:
+        message += f", {remaining} remaining"
+    if count > 0:
+        problem = _commit_ruff_fixes(cwd)
+        if problem is not None:
+            message += f", not committed: {problem}"
+    return message
+
+
+def check_dead_code_ruff(
+    cwd: Path,
+    timeout: float = 300.0,
+    *,
+    read_only: bool = False,
+) -> CheckResult | NotMeasured:
+    """Auto-remove unused imports and locals with ruff F401/F811/F841.
+
+    The first half of what ``check_dead_code`` used to do in one
+    function, split out by #335 because one row covering two phases
+    reported a pass for whichever of the two had not run.
+    :func:`_dead_code_checks` records the full account.
+
+    Always a row when ruff ran AND said what it did, because zero fixes
+    is a measurement. Four paths return :class:`NotMeasured` instead,
+    and the ``reason`` token separates them:
+
+    - ``tool_missing``: ruff is not on PATH.
+    - ``timed_out``: the run exceeded ``timeout``.
+    - ``command_failed``: ruff exited outside 0 (clean or fixed) and 1
+      (findings). Measured on ruff 0.16.1, 2 is a configuration error;
+      anything else is a tool that did not complete. This is the path
+      that most needed splitting out - a bad ``ruff.toml`` printed no
+      count, parsed to zero fixes, and read as a clean auto-fix phase.
+    - ``command_failed`` again, for an exit inside 0 and 1 whose output
+      holds no shape :func:`_ruff_count` knows. Round 1 of this change
+      left that one open and it was the same defect one field over: an
+      unreadable output parsed to zero, which is also what "removed
+      nothing" says. The same token because the event is the same, a
+      ruff run that produced no measurement, and because a new reason
+      token would be new status vocabulary.
+
+    ``--output-format=concise`` puts a FLOOR under this phase at ruff
+    **0.2.0** (January 2024). Measured: 0.0.272 rejects
+    ``--output-format`` outright, 0.1.0 and 0.1.15 take the flag and
+    reject the value, and all three exit 2, so an older ruff on PATH
+    reaches the ``command_failed`` gap above rather than a wrong number.
+    The gap carries ruff's own diagnosis because
+    :func:`_tool_failure_line` reads the first ``error:`` line and not
+    the last one, which is ``For more information, try '--help'.``
+    A project's own pinned ruff is far past 0.2.0; the reachable case is
+    ``ks sense`` against a live checkout with a system-wide old ruff
+    first on PATH (#335 round 3).
+
+    ``read_only=True`` (``ks sense``, R10.1) runs the SAME rule set with
+    ``--no-fix`` and reports what the factory WOULD have removed instead
+    of removing it. Nothing is edited, staged or committed. The factory
+    owns the worktree it verifies, so editing and committing there is
+    free; ``ks sense`` runs against the operator's live checkout, where
+    a ``git add -A`` sweeps in every unrelated untracked file and the
+    commit moves their HEAD.
+
+    One divergence worth naming: the factory deletes the ruff-fixable
+    subset before the detector in :func:`check_dead_code` looks, so that
+    scan sees a cleaner tree than a read-only run does. A tree whose
+    only dead code is ruff-fixable can therefore fail there and pass
+    inside the factory. That is the tree being reported honestly, not a
+    bug - but it is a difference.
+    """
+    start = time.monotonic()
+
+    if not shutil.which("ruff"):
+        return NotMeasured(
+            DEAD_CODE_RUFF_CHECK,
+            NOT_MEASURED_TOOL_MISSING,
+            "ruff is not on PATH, so no unused import or local was looked for",
+        )
+
+    try:
+        result = run_scrubbed(_ruff_dead_code_command(read_only), cwd=cwd, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return NotMeasured(
+            DEAD_CODE_RUFF_CHECK,
+            NOT_MEASURED_TIMED_OUT,
+            f"ruff exceeded [verify] subprocess_timeout of {timeout}s",
+        )
+
+    if result.returncode not in (0, 1):
+        return NotMeasured(
+            DEAD_CODE_RUFF_CHECK,
+            NOT_MEASURED_COMMAND_FAILED,
+            f"ruff check exited {result.returncode}: {_tool_failure_line(result)}",
+        )
+
+    output = result.stdout + result.stderr
+    count = _ruff_count(output, read_only=read_only, returncode=result.returncode)
+    if count is None:
+        return NotMeasured(
+            DEAD_CODE_RUFF_CHECK,
+            NOT_MEASURED_COMMAND_FAILED,
+            f"ruff check exited {result.returncode} and printed no count line: "
+            f"{_last_output_line(result)}",
+        )
+    if read_only:
+        message = f"ruff reports {count} auto-removable, not removed"
+    else:
+        message = _ruff_fix_message(cwd, output, count)
+    return CheckResult(
+        name=DEAD_CODE_RUFF_CHECK,
+        passed=True,
+        message=message,
+        duration_seconds=time.monotonic() - start,
+    )
+
+
+def _dead_code_command(
+    cwd: Path,
+    base_branch: str,
+    command: str | None,
+) -> str | list[str] | NotMeasured:
+    """What :func:`check_dead_code` should run, or why it cannot run.
+
+    Its own function so the check does not pay a branch for a choice
+    made before anything executes, and so the two reasons there is
+    nothing to run are separated at the point where they are known
+    rather than reconstructed later.
+
+    A user-supplied ``command`` wins outright and is run as given, and
+    as a STRING: it is the operator's own program, in the same category
+    as ``test_command``, so it is their shell line and their quoting.
+
+    vulture's is an argv LIST, which ``run_scrubbed`` runs without a
+    shell. The names in it come from ``git diff --name-only`` over a
+    diff an agent wrote, which is the least trusted input in the
+    factory, and they used to be interpolated into a shell string: a
+    changed file called ``my file.py`` split into two arguments vulture
+    could not find and FAILED the component for the wrong reason, and
+    one called ``$(id).py`` executed (#335 round 2).
+
+    The paths go LAST and behind ``--``, which is the other half of that
+    same threat model: an argv list stops ``/bin/sh`` reading the names,
+    and ``--`` stops vulture's own parser reading them. Measured on
+    vulture 2.16 over a directory holding ``a.py`` and ``-v.py``:
+    ``vulture -v.py a.py --min-confidence 80`` exits 2 with
+    ``vulture: error: unrecognized arguments: -.py``, which
+    :func:`check_dead_code` used to report as a dead-code FAIL naming
+    the wrong cause, and ``vulture --min-confidence 80 -- -v.py a.py``
+    exits 0 (#335 round 3).
+    """
+    if command:
+        return command
+    if not shutil.which("vulture"):
+        return NotMeasured(
+            DEAD_CODE_CHECK,
+            NOT_MEASURED_TOOL_MISSING,
+            "vulture is not on PATH and no [verify] dead_code_command is set, "
+            "so nothing scanned for dead code",
+        )
+    py_files = _changed_non_test_python(base_branch, cwd, DEAD_CODE_CHECK)
+    if isinstance(py_files, NotMeasured):
+        return py_files
+    if not py_files:
+        return NotMeasured(
+            DEAD_CODE_CHECK,
+            NOT_MEASURED_NO_TARGET,
+            "the diff changed no non-test Python file, so there was nothing to scan",
+        )
+    return ["vulture", "--min-confidence", "80", "--", *py_files]
 
 
 def check_dead_code(
@@ -2215,205 +2698,127 @@ def check_dead_code(
     base_branch: str,
     command: str | None = None,
     timeout: float = 300.0,
-    read_only: bool = False,
-) -> CheckResult:
-    """Remove dead code with ruff auto-fix, then detect remaining dead code with vulture.
+) -> CheckResult | NotMeasured:
+    """Detect dead code with vulture, or with the operator's own command.
 
-    Two-phase approach:
-    1. ruff --fix --select F401,F811,F841 auto-removes unused imports, redefined
-       unused names, and unused local variables. Changes are staged and committed.
-    2. vulture scans for deeper dead code (unreachable functions, unused classes,
-       unused attributes). If a custom command is provided, it runs instead.
+    The second half of the old fused ``check_dead_code`` (#335). It
+    scans for what ruff cannot see - unreachable functions, unused
+    classes, unused attributes - over the non-test Python files in
+    ``git diff <base>...HEAD``, and findings are reported as a FAIL for
+    the engineer to fix on retry.
 
-    If ruff fixes anything, those fixes are committed automatically so the worktree
-    stays clean for subsequent checks. Vulture findings (if any) are reported as
-    failures for the agent to fix on retry.
+    Returns a row only when a scan happened. Five paths return
+    :class:`NotMeasured`, and each ``reason`` token is a different
+    event:
 
-    ``read_only=True`` (``ks sense``, R10.1) is the whole reason this
-    function takes a flag. Phase 1 inside the factory owns its worktree,
-    so editing and committing there is free; ``ks sense`` runs against
-    the operator's live checkout, where a ``git add -A`` sweeps in every
-    unrelated untracked file and the commit moves their HEAD. Read-only
-    therefore runs the SAME rule set with ``--no-fix`` (and ``--no-cache``,
-    so not even ``.ruff_cache`` appears) and reports what the factory
-    WOULD have removed instead of removing it. Nothing is edited, staged
-    or committed.
+    - ``tool_missing``: no ``[verify] dead_code_command`` and no vulture
+      on PATH.
+    - ``no_target``: the diff changed no non-test Python file. Nothing
+      to scan; not a fault.
+    - ``command_failed``: git could not read the diff at all, which is a
+      fault and is why :func:`_changed_non_test_python` reads strictly.
+    - ``timed_out``: the scan exceeded ``timeout``.
+    - ``command_failed``: the detector exited non-zero and this check
+      could read no finding out of what it printed. Measured on vulture
+      2.16: exit 3 is findings, 1 is invalid input and 2 is a bad
+      command line, so a non-zero exit with nothing to report is the
+      tool failing rather than a clean tree. The decision is on the EXIT
+      CODE, not on the output being empty: round 2 of #335 keyed the gap
+      on empty output alone, so a detector that exited non-zero and
+      printed only lines the ``__all__`` filter drops fell through to
+      ``no remaining dead code`` (#335 round 3).
 
-    One divergence worth naming: the factory deletes the ruff-fixable
-    subset before vulture looks, so vulture sees a cleaner tree than
-    read-only does. A tree whose only dead code is ruff-fixable can
-    therefore fail here and pass inside the factory. That is the tree
-    being reported honestly, not a bug - but it is a difference.
+    Every one of them used to be ``CheckResult(passed=True)``. A missing binary
+    is not something the engineer's next diff can fix, so none of them
+    is a FAIL either: a gap is seen by the operator and gates nothing.
 
-    A user-supplied ``command`` is run as given in both modes. It is the
-    operator's own program, in the same category as ``test_command``;
-    kstrl suppresses only its OWN writes.
+    No ``read_only`` flag, unlike the ruff phase: vulture and an
+    operator's own detector read the tree without changing it, so there
+    is nothing narrower for this to do.
     """
-    import shutil
-
     start = time.monotonic()
 
-    # --- Phase A: unused imports/variables (ruff F401,F811,F841) ---
-    if read_only:
-        # --no-fix is explicit rather than implied by omitting --fix: a
-        # project can set `fix = true` under [tool.ruff], which turns a
-        # bare `ruff check` into a fixing run.
-        ruff_cmd = "ruff check --no-fix --no-cache --select F401,F811,F841 ."
-    else:
-        ruff_cmd = "ruff check --fix --select F401,F811,F841 ."
-    ruff_fixed_count = 0
-    ruff_pending_count = 0
-    # #227: did phase A actually run? Both ways it does not - ruff absent, or
-    # ruff timing out - leave the two counters at zero, which the message
-    # below then reports as "0 auto-removable". That sentence is false, and a
-    # row carrying a false zero is not a measurement. Asked ONCE and reused
-    # below rather than branching twice: a second `if` here costs a cognitive
-    # point on a function the ratchet already holds at its current number.
-    ruff_on_path = shutil.which("ruff") is not None
-    ruff_measured = ruff_on_path
-
-    if ruff_on_path:
-        try:
-            ruff_result = run_scrubbed(ruff_cmd, cwd=cwd, timeout=timeout)
-            output = ruff_result.stdout + ruff_result.stderr
-            if read_only:
-                # Nothing was fixed, so count what ruff reported instead:
-                # "Found N errors."
-                found = re.search(r"Found (\d+) error", output)
-                if found:
-                    ruff_pending_count = int(found.group(1))
-            else:
-                # Count fixes from ruff output (lines like "Found X errors (Y fixed, ...)")
-                for line in output.splitlines():
-                    if "fixed" in line.lower():
-                        match = re.search(r"(\d+)\s+fix", line.lower())
-                        if match:
-                            ruff_fixed_count = int(match.group(1))
-        except subprocess.TimeoutExpired:
-            # Non-fatal: continue to vulture. Recorded rather than only
-            # swallowed (#227): a swallowed timeout used to leave the counts
-            # at zero with nothing anywhere saying they were never taken.
-            ruff_measured = False
-
-        # If ruff made changes, stage and commit them. `not read_only` is
-        # belt over braces: --no-fix already keeps the count at zero.
-        if not read_only and ruff_fixed_count > 0:
-            try:
-                # Stage all changes ruff made, EXCEPT the state directory
-                # (#274 review). Under use_worktrees=False this runs with
-                # cwd at the project root, so a bare `git add -A` commits
-                # kstrl's own live `.kstrl/` journals onto the component
-                # branch the moment ruff fixes one finding - and
-                # check_diff_scope is deliberately un-carved, so the next
-                # pass fails on them and they ride into the PR. In a
-                # worktree the same exclusion is wanted for the opposite
-                # reason: a `.kstrl/` there is the agent's, and this
-                # function must not commit it on the agent's behalf.
-                #
-                # A list, not a string: run_scrubbed only shells out for a
-                # string, and the `:(exclude)` pathspec must reach git
-                # unmangled.
-                run_scrubbed(
-                    ["git", "add", "-A", "--", ".", f":(exclude){STATE_DIR_NAME}"],
-                    cwd=cwd,
-                    timeout=30,
-                )
-                run_scrubbed(
-                    'git commit -m "chore: auto-remove dead code (ruff F401/F811/F841)"',
-                    cwd=cwd,
-                    timeout=30,
-                )
-            except subprocess.TimeoutExpired:
-                pass  # Non-fatal
-
-    # One phrase for every message below, so the read-only wording cannot
-    # drift from the auto-fix wording.
-    ruff_note = _ruff_note(
-        measured=ruff_measured,
-        read_only=read_only,
-        pending=ruff_pending_count,
-        fixed=ruff_fixed_count,
-    )
-    ruff_touched = bool(ruff_fixed_count or ruff_pending_count)
-
-    # --- Phase B: vulture or custom dead code detection ---
-    if command:
-        # User-provided dead code detection command
-        detect_cmd = command
-    elif shutil.which("vulture"):
-        # Default: vulture on changed Python files only
-        changed = git.get_diff_names(base_branch, cwd)
-        py_files = [f for f in changed if f.endswith(".py") and not f.startswith("test")]
-        if not py_files:
-            msg = f"No dead code issues ({ruff_note})"
-            return CheckResult(
-                name="dead_code",
-                passed=True,
-                message=msg,
-                duration_seconds=time.monotonic() - start,
-                # #227: vulture was handed nothing to read, so this pass is
-                # vacuous whatever the ruff phase did.
-                measured=False,
-            )
-        detect_cmd = f"vulture {' '.join(py_files)} --min-confidence 80"
-    else:
-        # Neither vulture nor custom command available
-        if ruff_touched:
-            return CheckResult(
-                name="dead_code",
-                passed=True,
-                message=f"{ruff_note}; vulture not installed",
-                duration_seconds=time.monotonic() - start,
-                measured=False,
-            )
-        return CheckResult(
-            name="dead_code",
-            passed=True,
-            message="Skipped: neither vulture nor custom command available",
-            duration_seconds=time.monotonic() - start,
-            measured=False,
-        )
+    detect_cmd = _dead_code_command(cwd, base_branch, command)
+    if isinstance(detect_cmd, NotMeasured):
+        return detect_cmd
 
     try:
         result = run_scrubbed(detect_cmd, cwd=cwd, timeout=timeout)
     except subprocess.TimeoutExpired:
-        return CheckResult(
-            name="dead_code",
-            passed=True,
-            message=f"Dead code scan timed out after {timeout}s, skipping",
-            duration_seconds=time.monotonic() - start,
-            measured=False,
+        return NotMeasured(
+            DEAD_CODE_CHECK,
+            NOT_MEASURED_TIMED_OUT,
+            f"the dead code scan exceeded [verify] subprocess_timeout of {timeout}s",
         )
 
     output = (result.stdout + result.stderr).strip()
-    if result.returncode != 0 and output:
-        # vulture returns exit code 1 when it finds dead code
-        lines = output.splitlines()
-        # Filter out common false positives (e.g., __all__, __init__)
+    if result.returncode != 0:
+        # Filter out common false positives (e.g., __all__, __init__).
         real_issues = [
             line
-            for line in lines
+            for line in output.splitlines()
             if line.strip() and not line.strip().startswith("#") and "__all__" not in line
         ]
         if real_issues:
-            prefix = f"{ruff_note}; " if ruff_touched else ""
             return CheckResult(
-                name="dead_code",
+                name=DEAD_CODE_CHECK,
                 passed=False,
-                message=f"{prefix}{len(real_issues)} dead code issues remaining",
+                message=f"{len(real_issues)} dead code issues remaining",
                 details=real_issues[:20],
                 duration_seconds=time.monotonic() - start,
             )
+        return NotMeasured(
+            DEAD_CODE_CHECK,
+            NOT_MEASURED_COMMAND_FAILED,
+            f"the dead code scan exited {result.returncode} and reported no finding "
+            f"this check could read: {_last_output_line(result)}",
+        )
 
-    msg_parts: list[str] = []
-    if ruff_touched:
-        msg_parts.append(ruff_note)
-    msg_parts.append("no remaining dead code")
     return CheckResult(
-        name="dead_code",
+        name=DEAD_CODE_CHECK,
         passed=True,
-        message="; ".join(msg_parts),
+        message="no remaining dead code",
         duration_seconds=time.monotonic() - start,
+    )
+
+
+def _dead_code_checks(
+    cwd: Path,
+    base_branch: str,
+    config: VerifyConfig,
+    *,
+    read_only: bool,
+) -> tuple[list[CheckResult], list[NotMeasured]]:
+    """``(rows, gaps)`` for the dead-code phases: at most one of each, twice.
+
+    The same shape as :func:`_mutation_checks`, for the same reason
+    (#306, #335): a check the operator TURNED OFF records nothing at
+    all, and a check they turned on that measured nothing records why.
+    One toggle, ``[verify] dead_code_cleanup``, still owns both phases -
+    splitting the ROW is not splitting the switch.
+
+    Order is load-bearing and is why this is a function rather than two
+    calls inline: ruff runs FIRST so the detector scans a tree with the
+    ruff-fixable subset already deleted. Reversing it changes what
+    vulture reports.
+    """
+    if not config.dead_code_cleanup:
+        return [], []
+    ruff_outcome = check_dead_code_ruff(
+        cwd,
+        config.subprocess_timeout,
+        read_only=read_only,
+    )
+    detect_outcome = check_dead_code(
+        cwd,
+        base_branch,
+        config.dead_code_command,
+        config.subprocess_timeout,
+    )
+    outcomes = (ruff_outcome, detect_outcome)
+    return (
+        [o for o in outcomes if isinstance(o, CheckResult)],
+        [o for o in outcomes if isinstance(o, NotMeasured)],
     )
 
 
@@ -2557,7 +2962,7 @@ DIFF_DEPENDENT_CHECKS: tuple[str, ...] = (
     "bad_patterns",
     "policy_envelope",
     "test_adequacy",
-    "dead_code",
+    DEAD_CODE_CHECK,
     MUTATION_TESTING_CHECK,
 )
 
@@ -2794,19 +3199,25 @@ def run_mechanical_verification(
     used for regression detection; None disables snapshotting only.
 
     ``read_only=True`` (``ks sense``, R10.1) forbids the two checks that
-    change the tree they measure: ``dead_code`` drops its ruff auto-fix
+    change the tree they measure: ``dead_code_ruff`` drops its auto-fix
     and the ``git add -A`` / ``git commit`` that followed it, and
     ``mutation_testing`` is not run at all. What remains still shells
     out to the project's OWN configured test / typecheck / lint (and
     fixture) commands, which are the operator's programs and write their
     own caches; kstrl suppresses only kstrl's writes.
 
-    ``mutation_testing`` appends NO ROW rather than a passing one
-    whenever no score was measured, read-only being one of six such
-    reasons (#306). See :func:`_mutation_checks`. A consumer reading
-    ``checks`` must already tolerate the row's absence, because
-    ``[verify] mutation_testing`` defaults to false; what changed is
-    that absence is now the ONLY thing a non-measurement can look like.
+    ``mutation_testing``, ``dead_code_ruff`` and ``dead_code`` append NO
+    ROW rather than a passing one whenever nothing was measured (#306,
+    #335). See :func:`_mutation_checks` and :func:`_dead_code_checks`. A
+    consumer reading ``checks`` must already tolerate those rows'
+    absence, because ``[verify] mutation_testing`` and ``[verify]
+    dead_code_cleanup`` both default to false; what changed is that
+    absence is now the ONLY thing a non-measurement can look like.
+
+    ``[verify] dead_code_cleanup`` produces TWO rows, not one: the ruff
+    F401/F811/F841 phase and the vulture-or-``dead_code_command`` phase
+    answer for themselves, because one row for both reported a pass for
+    a scan that never ran (#335).
 
     :attr:`VerificationResult.not_measured` is where the reason goes,
     and it is the half that makes the absence readable rather than
@@ -2883,16 +3294,14 @@ def run_mechanical_verification(
             )
         )
 
-    if config.dead_code_cleanup:
-        checks.append(
-            check_dead_code(
-                worktree_path,
-                base_branch,
-                config.dead_code_command,
-                config.subprocess_timeout,
-                read_only=read_only,
-            )
-        )
+    dead_code_rows, dead_code_gaps = _dead_code_checks(
+        worktree_path,
+        base_branch,
+        config,
+        read_only=read_only,
+    )
+    checks.extend(dead_code_rows)
+    not_measured.extend(dead_code_gaps)
 
     mutation_rows, mutation_gaps = _mutation_checks(
         worktree_path,

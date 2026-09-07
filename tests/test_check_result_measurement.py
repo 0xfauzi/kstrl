@@ -152,7 +152,8 @@ EXPECTED_CHECK_RESULT_SITES: dict[str, int] = {
     "verify.py: _failed_gate_result": 1,
     "verify.py: _self_critique_text": 2,
     "verify.py: check_bad_patterns": 2,
-    "verify.py: check_dead_code": 6,
+    "verify.py: check_dead_code": 2,
+    "verify.py: check_dead_code_ruff": 1,
     "verify.py: check_diff_scope": 3,
     "verify.py: check_linter": 2,
     "verify.py: check_mutation_score": 2,
@@ -191,9 +192,6 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     "verify.py: _self_critique_text: measured=False": 2,
     # "Scanned 0 Python files" opened nothing.
     "verify.py: check_bad_patterns: measured=bool(py_files)": 1,
-    # vulture absent (twice, with and without a ruff note), vulture timed out,
-    # and vulture handed no files to read.
-    "verify.py: check_dead_code: measured=False": 4,
     # No allowed paths configured: the check applies no rule and reads no diff.
     "verify.py: check_diff_scope: measured=False": 1,
     # The three gate timeouts. The tool started and was killed, so its findings
@@ -224,7 +222,10 @@ EXPECTED_FAILING_WITH_DEFAULT: dict[str, int] = {
     # Scanned the changed Python files and found empty files, syntax errors or
     # secret patterns in them.
     "verify.py: check_bad_patterns": 1,
-    # vulture ran over the changed files and reported dead code.
+    # vulture ran over the changed files and reported dead code. Every way that
+    # phase can measure NOTHING returns a NotMeasured gap instead of a row
+    # (#335), so it needs no measured argument at all: the dampener reads a gap
+    # and a measured=False row through the same code path.
     "verify.py: check_dead_code": 1,
     # Read the diff and applied the configured allowlist to it.
     "verify.py: check_diff_scope": 1,
