@@ -2288,6 +2288,18 @@ class TestPhaseReadingsRetireSkippableFindings:
     nothing - is pinned three ways: here on the budget cause, here on the
     operator's explicit skip, and at the unit layer in
     ``tests/test_context.py``.
+
+    WHY THIS CLASS IS HERE RATHER THAN IN A MODULE OF ITS OWN. The
+    context-layer cases went to ``tests/test_context_readings.py``
+    because ``tests/test_context.py`` was 687 lines against the
+    800-line ratchet. This file is long past that line already and the
+    ratchet fails only a file that NEWLY crosses it, so the ratchet
+    does not decide the question here. Coupling does: this class uses
+    five module-private helpers of this file - ``_make_pipeline``,
+    ``_factory_config``, ``_component``, ``_selection`` and
+    ``_ChoiceUI`` - so a separate module would import five private
+    names out of a collected test module rather than remove a
+    dependency. Counted rather than estimated.
     """
 
     def _attempt(
@@ -2587,12 +2599,26 @@ class TestPhaseReadingsRetireSkippableFindings:
         """Attempt 1 fails review in hard mode, attempt 2 reviews in
         advisory mode and security then fails.
 
-        The mode changes between the attempts because that is how an
-        advisory attempt comes to have a review-rank entry to retire,
-        and because the disagreement only survives UNCONVERTED in
-        advisory mode: ``apply_coverage_check`` records it in every mode
-        and turns it into an infrastructure error in HARD mode only,
-        which the predicate already refused.
+        THE MODE SWITCH BETWEEN THE ATTEMPTS IS A TEST SHORTCUT, and it
+        is not a route production can take. Every write of
+        ``factory_config.review_mode`` in ``kstrl/`` is CLI, config or
+        TUI parse time, or the autonomy bundle in
+        ``factory._run_factory_locked``, which lands before the first
+        component is submitted; ``pipeline.py``'s two are locals of
+        ``_phase_review``. So the mode is fixed for the life of a run
+        and nothing switches it mid-retry. What the switch buys is the
+        STATE the test then asserts directly: an advisory attempt
+        holding a review-rank entry from an earlier one. The production
+        route to that state is ``_setpoint_failure`` under
+        ``setpoint_agreement = "block"``, which the sibling
+        ``_pipeline`` docstring names for the same reason - both
+        docstrings describe the same shortcut and now say so the same
+        way.
+
+        Advisory mode is also the only mode in which the disagreement
+        survives UNCONVERTED: ``apply_coverage_check`` records it in
+        every mode and turns it into an infrastructure error in HARD
+        mode only, which the predicate already refused.
         """
         pipeline, manifest = self._pipeline(
             tmp_path,

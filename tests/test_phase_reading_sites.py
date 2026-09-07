@@ -13,12 +13,12 @@ the merge is correct - the behaviour tests in ``tests/test_pipeline.py``
 do that, one per writer, and this file's docstrings name them so the
 scope cannot be misread.
 
-Two rows in the first census are keyed by LOCATION rather than by phase,
-because their phase is a variable. ``test_the_only_unkeyable_recording_
-sites_are_the_two_fan_out_points`` measures that those two strings still
-name what they claim to, so a stale row cannot sit in the table watching
-nothing. The writer net's one disclosed miss carries a strict-xfail
-``blind_spot`` row for the same reason.
+Three rows in the first census are keyed by LOCATION rather than by
+phase, because their phase is a variable.
+``test_every_unkeyable_recording_site_is_inventoried`` measures that
+those three strings still name what they claim to, so a stale row cannot
+sit in the table watching nothing. The writer net's one disclosed miss
+carries a strict-xfail ``blind_spot`` row for the same reason.
 """
 
 from __future__ import annotations
@@ -33,23 +33,34 @@ from tests.helpers.astwalk import (
     all_nodes,
     assert_census,
     blind_spot,
+    census,
     folded_str,
     label,
     leaf_name,
     package_sources,
     parse,
     parsed,
-    scopes,
+    scope_of,
 )
 
-#: The two names a phase reading can be written through: the pipeline's
-#: private recorder and the context's own public method. Both, because
-#: a census that watched only the private one would clear the dangerous
-#: mutation: a reading for a phase that measured nothing can be written
-#: straight onto the context with ``ctx.add_phase_reading(...)`` and
-#: never touch the recorder. Measured in round 1 of review: with only
-#: the private name in this set, that planted writer left the file 2
-#: passed.
+#: Two of the THREE routes a phase reading can be written through: the
+#: pipeline's private recorder and the context's own public method.
+#: The third has no name to enrol here, so ``_records_a_reading``
+#: matches it by SHAPE below: ``readings`` is a public attribute of a
+#: non-frozen dataclass, so ``ctx.readings.add(PhaseReading(...))``
+#: writes a reading without touching either name and without the
+#: ``_require_known_phase`` check both of these go through.
+#:
+#: Both names, because a census that watched only the private one would
+#: clear the dangerous mutation: a reading for a phase that measured
+#: nothing can be written straight onto the context with
+#: ``ctx.add_phase_reading(...)`` and never touch the recorder.
+#: Measured in round 1 of review: with only the private name in this
+#: set, that planted writer left the file 2 passed. Round 2 measured
+#: the set spelling the same way: with the net at these two names
+#: alone, a planted ``ctx.readings.add(...)`` in
+#: ``ComponentPipeline._merge_phase_readings`` left the file 3 passed,
+#: 1 xfailed.
 _READING_WRITERS = frozenset({"_note_phase_reading", "add_phase_reading"})
 
 #: A call recording a phase reading, with a phase argument to key on.
@@ -64,17 +75,34 @@ _PUBLIC_RECORDING_CALL = """
 ctx.add_phase_reading("review", attempt=2)
 """
 
+#: The set spelling, which names neither writer and carries no phase the
+#: walk can read. THIRD CONTROL, one per route: neither string above
+#: fires on this shape, so without it the shape branch could be deleted
+#: and the two remaining controls would still pass.
+_SET_RECORDING_CALL = """
+ctx.readings.add(PhaseReading(attempt=1, phase="review"))
+"""
+
 #: The sites that write a reading whose phase is not a literal, keyed by
 #: WHERE they are rather than by a phase the walk cannot read.
 #:
-#: Both are fan-out points rather than observations: the pipeline's
+#: Two are fan-out points rather than observations: the pipeline's
 #: per-attempt merge replays what ``_note_phase_reading`` already
 #: recorded, and the deserialiser replays what a previous process
-#: serialised. Neither can be keyed by phase, and neither may be
-#: dropped from the inventory: an unkeyable site left out is exactly the
-#: absence this census exists to make loud. A new one is a NEW ROW here,
-#: not a bigger anonymous bucket, so the failure names the function.
-_FAN_OUT_SITES: dict[str, int] = {
+#: serialised. The third is not a fan-out point at all: it is the one
+#: SANCTIONED write to the set, the ``self.readings.add(...)`` inside
+#: ``IterationContext.add_phase_reading`` that every named route ends
+#: at. It is inventoried for the same reason as the other two, that its
+#: phase is a variable, and it is here rather than exempted so that a
+#: SECOND write to the set lands as a fourth row instead of merging
+#: into a count nobody reads.
+#:
+#: None of the three may be dropped: an unkeyable site left out is
+#: exactly the absence this census exists to make loud. A new one is a
+#: NEW ROW here, not a bigger anonymous bucket, so the failure names
+#: the function.
+_UNKEYABLE_SITES: dict[str, int] = {
+    "context.py::IterationContext.add_phase_reading": 1,
     "context.py::IterationContext.from_json": 1,
     "pipeline.py::ComponentPipeline._merge_phase_readings": 1,
 }
@@ -109,13 +137,27 @@ contexts[comp.id] = ctx.to_json()
 def _records_a_reading(node: ast.AST) -> bool:
     """Every call that writes a reading, whatever shape it takes.
 
+    THREE routes, not two. The two enrolled names, and ``.add`` on a
+    ``readings`` set, which is how a writer reaches the record without
+    naming either and without ``_require_known_phase``. Round 2 of
+    review planted that third spelling in
+    ``ComponentPipeline._merge_phase_readings`` and this file stayed 3
+    passed, 1 xfailed; it now lands as a second row for that function.
+
     Deliberately not conditioned on arity or on the phase being
     readable. A conjunct like ``len(node.args) >= 2`` would make a site
     spelled ``_note_phase_reading(comp, phase="review", ...)`` invisible
     and leave the census green, which is the second-site case the tests
     below exist to catch, failing in the skip direction.
     """
-    return isinstance(node, ast.Call) and leaf_name(node.func) in _READING_WRITERS
+    if not isinstance(node, ast.Call):
+        return False
+    writes_the_set = (
+        isinstance(node.func, ast.Attribute)
+        and node.func.attr == "add"
+        and leaf_name(node.func.value) == "readings"
+    )
+    return writes_the_set or leaf_name(node.func) in _READING_WRITERS
 
 
 def _writes_the_retry_context(node: ast.AST) -> bool:
@@ -175,51 +217,53 @@ def _phase_argument(source_file: Path, node: ast.AST) -> str:
 
 
 def _enclosing_site(source_file: Path, node: ast.AST) -> str:
-    """``file.py::Class.function`` for the innermost scope holding it.
+    """``file.py::Class.function`` for the scope the node belongs to.
 
-    Located by line range over :func:`scopes` rather than by a parent
-    map, which the top-down walk does not keep. A call at module level
-    keys to ``<module>``, which is also a row and also fails.
+    Through ``astwalk.scope_of`` rather than the line-range scan this
+    held in round 1. The map attributes by OWNERSHIP and stops at a
+    nested function, where a line-range scan credits a call inside a
+    nested helper to whichever ``def`` encloses it on the page. Round 2
+    of review found the same map already written in
+    ``tests/test_append_opens_have_one_home.py``, so it is now one
+    implementation in ``tests/helpers/astwalk`` with three callers
+    rather than two hand-rolled ones. A node the map does not hold keys
+    to ``<module>``, which is also a row and also fails.
     """
-    line = getattr(node, "lineno", 0)
-    innermost = ""
-    best = -1
-    for scope, qualified in scopes(parsed(source_file)):
-        if not isinstance(scope, ast.FunctionDef | ast.AsyncFunctionDef):
-            continue
-        if scope.lineno <= line <= (scope.end_lineno or scope.lineno) and scope.lineno > best:
-            innermost, best = qualified, scope.lineno
-    return f"{label(source_file)}::{innermost or '<module>'}"
+    owner = scope_of(parsed(source_file)).get(id(node), "<module>")
+    return f"{label(source_file)}::{owner}"
 
 
-def test_the_only_unkeyable_recording_sites_are_the_two_fan_out_points() -> None:
-    """``_FAN_OUT_SITES`` says WHERE, and this proves it.
+def test_every_unkeyable_recording_site_is_inventoried() -> None:
+    """``_UNKEYABLE_SITES`` says WHERE, and this proves it.
 
-    The census below pins two rows whose phase the walk cannot fold. A
+    The census below pins three rows whose phase the walk cannot fold. A
     location pinned in a table is a claim about the tree, so it is
     measured here rather than trusted: each named site really does hold
     exactly the number of unkeyable writers the table gives it, and
     ``_enclosing_site`` really does resolve to that qualified name. A
-    typo in either row would otherwise sit in the table forever, failing
+    typo in any row would otherwise sit in the table forever, failing
     nothing, while the row it was meant to pin went unwatched.
-    """
-    found: dict[str, int] = {}
-    for source_file in package_sources():
-        for node in all_nodes(parsed(source_file)):
-            if _records_a_reading(node) and not folded_str(_phase_argument_node(node)):
-                row = _enclosing_site(source_file, node)
-                found[row] = found.get(row, 0) + 1
 
-    assert found == _FAN_OUT_SITES, (
+    Counted with ``astwalk.census`` rather than the hand-rolled loop
+    round 1 shipped, which was that helper written out. Two ways to
+    count one corpus in one file is two things to keep true.
+    """
+    found = census(
+        package_sources(),
+        lambda node: _records_a_reading(node) and not folded_str(_phase_argument_node(node)),
+        key=_enclosing_site,
+    )
+
+    assert found == _UNKEYABLE_SITES, (
         "the sites that write a reading with a variable phase moved. "
-        "_FAN_OUT_SITES names them by function, and the census keys on "
-        f"the same strings, so a stale row watches nothing. Found: {found}"
+        "_UNKEYABLE_SITES names them by function, and the census keys "
+        f"on the same strings, so a stale row watches nothing. Found: {found}"
     )
 
 
 def test_every_skippable_phase_has_exactly_one_recording_site() -> None:
-    """One reading-writing call per skippable phase, plus the two
-    fan-out points, and nothing else.
+    """One reading-writing call per skippable phase, plus the three
+    inventoried sites whose phase is a variable, and nothing else.
 
     The per-phase expectation is DERIVED from ``SKIPPABLE_PHASES``
     rather than written out, so widening that set without adding a
@@ -233,23 +277,26 @@ def test_every_skippable_phase_has_exactly_one_recording_site() -> None:
     deliberate: the rank rule already infers those phases ran, so a
     record for one is a second, overlapping source of truth.
 
-    BOTH ENTRY POINTS are watched, not just the private recorder. The
+    EVERY ROUTE is watched, not just the private recorder. The
     mutation this exists to catch is a reading recorded for a phase that
-    measured nothing, and the public ``IterationContext.add_phase_
-    reading`` writes one without going anywhere near
-    ``_note_phase_reading``. Round 1 of review planted exactly that in
-    ``kstrl/pipeline.py`` and this file stayed 2 passed; it now lands as
-    a second row for that phase.
+    measured nothing, and both the public ``IterationContext.add_phase_
+    reading`` and a bare ``ctx.readings.add(...)`` write one without
+    going anywhere near ``_note_phase_reading``. Round 1 of review
+    planted the first in ``kstrl/pipeline.py`` and this file stayed 2
+    passed; round 2 planted the second and it stayed 3 passed, 1
+    xfailed. Each now lands as a second row, for the phase and for the
+    function respectively.
     """
     assert_census(
         sources=package_sources(),
         sees=_records_a_reading,
         key=_phase_argument,
-        expected={phase: 1 for phase in sorted(SKIPPABLE_PHASES)} | _FAN_OUT_SITES,
-        control=[_RECORDING_CALL, _PUBLIC_RECORDING_CALL],
+        expected={phase: 1 for phase in sorted(SKIPPABLE_PHASES)} | _UNKEYABLE_SITES,
+        control=[_RECORDING_CALL, _PUBLIC_RECORDING_CALL, _SET_RECORDING_CALL],
         message=(
             "the phase-reading recording sites no longer match "
-            "SKIPPABLE_PHASES plus the two fan-out points. A phase in "
+            "SKIPPABLE_PHASES plus the three inventoried sites whose "
+            "phase is a variable. A phase in "
             "that set with no site is a finding that an observed pass "
             "can never retire; a phase outside it with a site "
             "duplicates the rank rule; a new location row is a writer "

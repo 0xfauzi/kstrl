@@ -388,9 +388,12 @@ class IterationContext:
         measured_ranks = {PHASE_RANK[e.phase] for e in latest if not e.infrastructure}
         # The skippable phases observed in attempt N. Computed once here
         # rather than inline so each branch below stays a single
-        # membership test: complexipy measures this function at 14
-        # against a gate of 15 in this shape, and the pre-commit ratchet
-        # fails a rise in a function that is over.
+        # membership test: complexipy 7.0.1 measures this function at 14
+        # against the pre-commit gate of 15 in this shape. That is one
+        # point of headroom, NOT a function already over the gate: the
+        # hook runs --staged, so what it fails is a change that takes a
+        # function past 15. The headroom is what the branch chain below
+        # is written to keep.
         read_in_n = self._phases_read_in(n)
 
         for entry in self.entries:

@@ -601,6 +601,14 @@ class ComponentPipeline:
         # nothing outside the pipeline reads it. The record itself
         # travels between attempts inside the context's JSON, so a fresh
         # process picks up what the previous one observed.
+        #
+        # Only the two context writers merge these, so an attempt that
+        # ends WITHOUT writing a context - a terminal failure, a halt, a
+        # pass - drops what it observed. No test fails on that because
+        # the direction is safe: a reading that never arrives retires
+        # nothing, so a finding is shown again rather than cleared by an
+        # observation nobody carried forward. There is also no next
+        # attempt on those paths to show it to.
         self._phase_readings: dict[str, set[tuple[int, str]]] = {}
         # Components whose usage snapshot could not be retired
         # before this attempt launched; disk salvage is refused

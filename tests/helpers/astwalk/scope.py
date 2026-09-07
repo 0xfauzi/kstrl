@@ -72,6 +72,26 @@ def scopes(tree: ast.Module) -> list[tuple[ast.AST, str]]:
     return found
 
 
+def scope_of(tree: ast.Module) -> dict[int, str]:
+    """Every node in a module mapped to the qualified name of its scope.
+
+    :func:`own_nodes` stops at a nested function, so a helper defined
+    inside another one is credited to itself rather than to its
+    enclosing scope. That is the difference from a line-range scan over
+    :func:`scopes`, which credits such a helper to whichever ``def``
+    encloses it on the page.
+
+    Keyed by ``id``, so the tree must be the one the caller is walking.
+    :func:`~..corpus.parsed` caches on the source text and hands every
+    caller the same object, which is what makes that safe across guards.
+    """
+    owner: dict[int, str] = {}
+    for node, qualified in scopes(tree):
+        for child in own_nodes(node):
+            owner[id(child)] = qualified
+    return owner
+
+
 def _walk_scopes(node: ast.AST, prefix: str, found: list[tuple[ast.AST, str]]) -> None:
     for child in ast.iter_child_nodes(node):
         if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
