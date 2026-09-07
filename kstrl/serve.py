@@ -1428,7 +1428,11 @@ def resolve_merge_gate(item: QueueItem, root_dir: Path) -> MergeGate:
         # for; single_pr=False because `ks factory` takes single_pr from
         # the MANIFEST and serve never passes --single-pr, so a toml
         # value for it is not effective on this path and would refuse an
-        # item that is fine.
+        # item that is fine. Forcing both leaves create_prs as the only
+        # input that can still produce a warning, so the refusal below
+        # always names that branch; the reader does not have to open
+        # merge_gate_unreachable_warning to work out which of its three
+        # arms is reachable from here.
         unreachable = merge_gate_unreachable_warning(
             replace(
                 FactoryConfig.load(root_dir),

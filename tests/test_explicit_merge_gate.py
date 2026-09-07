@@ -30,8 +30,6 @@ cannot be added without this file's matrix being asked to grow.
 
 from __future__ import annotations
 
-import io
-import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -40,15 +38,17 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.autonomy import AutonomyLevel, AutonomyState, flag_bundle_for, pause_gate_for
-from kstrl.config import KstrlConfig
+from kstrl.config import ConfigError
 from kstrl.events import AutonomyLevelApplied, CallbackSink, Event, EventBus
 from kstrl.factory import ComponentResult, FactoryConfig, run_factory
-from kstrl.manifest import Component, Manifest
+from kstrl.manifest import Manifest
 from kstrl.review import ReviewResult
-from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
+from tests.conftest import git_in
 from tests.helpers.component_prd import write_component_prd
+from tests.helpers.demotion import make_ui
 from tests.helpers.factorycli import capture_run_factory, invoke_factory
+from tests.spine_utils import base_config, component, make_manifest
 
 # ---------------------------------------------------------------------------
 # The rule, on its own
@@ -118,16 +118,20 @@ class TestPauseGateFor:
 
 
 def _init_git_repo(root: Path) -> None:
-    def run(*args: str) -> None:
-        subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+    """A real repo: without one the diff phase fails as infrastructure and
+    no component reaches a terminal verdict.
 
-    run("init")
-    run("symbolic-ref", "HEAD", "refs/heads/main")
-    run("config", "user.email", "t@example.com")
-    run("config", "user.name", "tester")
+    ``git_in`` rather than a local ``subprocess.run`` closure: it is the
+    same call with a ``timeout=30``, so a git that hangs here is reported
+    as a hang instead of stalling the suite.
+    """
+    git_in(root, "init")
+    git_in(root, "symbolic-ref", "HEAD", "refs/heads/main")
+    git_in(root, "config", "user.email", "t@example.com")
+    git_in(root, "config", "user.name", "tester")
     (root / "README.md").write_text("base\n", encoding="utf-8")
-    run("add", ".")
-    run("commit", "-m", "base")
+    git_in(root, "add", ".")
+    git_in(root, "commit", "-m", "base")
 
 
 def _prepare(root: Path, level: AutonomyLevel, toml_pause: str | None) -> None:
@@ -162,23 +166,12 @@ def _for_the_run(config: FactoryConfig) -> FactoryConfig:
 
 
 def _manifest() -> Manifest:
-    return Manifest(
-        version="1",
-        spec_file="spec.md",
-        project_name="test",
-        base_branch="main",
-        single_pr=False,
-        components=[
-            Component(
-                "comp-a",
-                "Component A",
-                "Desc",
-                [],
-                "scripts/kstrl/feature/comp-a/prd.json",
-                "kstrl/factory/comp-a",
-            )
-        ],
-    )
+    """The one-component manifest, from the shared builders.
+
+    ``component("comp-a")`` produces exactly the prd_path and branch_name
+    ``_prepare`` writes, so the two cannot drift apart.
+    """
+    return make_manifest([component("comp-a")])
 
 
 def _run(root: Path, config: FactoryConfig) -> tuple[list[Event], str]:
@@ -188,19 +181,12 @@ def _run(root: Path, config: FactoryConfig) -> tuple[list[Event], str]:
     rather than to the real stream: PlainUI defaults to ``sys.stderr``,
     and a test asserting on ``capsys.readouterr().out`` for it passes
     vacuously against an empty string, which is how the first draft of
-    this file went green while asserting nothing.
+    this file went green while asserting nothing. ``make_ui`` is that
+    pairing, already shared, rather than a fourth independent discovery
+    of the same trap.
     """
-    base = KstrlConfig(
-        prompt_file=root / "scripts" / "kstrl" / "prompt.md",
-        prd_file=root / "scripts" / "kstrl" / "prd.json",
-        sleep_seconds=0,
-        agent_cmd="echo test",
-        kstrl_branch="",
-        kstrl_branch_explicit=True,
-        ui_mode="plain",
-        no_color=True,
-    )
-    sink = io.StringIO()
+    base = base_config(root, agent_cmd="echo test")
+    ui, sink = make_ui()
     events: list[Event] = []
 
     def _bus(**kwargs: Any) -> EventBus:
@@ -218,7 +204,7 @@ def _run(root: Path, config: FactoryConfig) -> tuple[list[Event], str]:
         patch("kstrl.factory.run_mechanical_verification", return_value=verification),
         patch("kstrl.factory.run_review", return_value=ReviewResult(passed=True, mode="hard")),
     ):
-        run_factory(_manifest(), config, base, PlainUI(no_color=True, file=sink), root)
+        run_factory(_manifest(), config, base, ui, root)
     return events, sink.getvalue()
 
 
@@ -231,14 +217,20 @@ _SOURCES: dict[str, tuple[str | None, str | None, bool]] = {
     "flag_true": (None, None, True),
 }
 
+#: The three rows of _SOURCES that are an explicit request for a gate.
+#: Named once, because it is also the parametrize list for the
+#: provenance test below and a sixth source would otherwise have to be
+#: remembered in three places.
+_EXPLICIT_TRUE_SOURCES = frozenset({"toml_true", "env_true", "flag_true"})
+
 #: The gate each source must produce, per level. L1/L2 pause whatever
 #: happens; at L3/L4 only the three explicit-true sources survive.
 _EXPECTED: dict[str, dict[AutonomyLevel, bool]] = {
     name: {
         AutonomyLevel.L1_SUPERVISED: True,
         AutonomyLevel.L2_GATED_MERGE: True,
-        AutonomyLevel.L3_ENVELOPED_AUTO: name in {"toml_true", "env_true", "flag_true"},
-        AutonomyLevel.L4_DEPLOY: name in {"toml_true", "env_true", "flag_true"},
+        AutonomyLevel.L3_ENVELOPED_AUTO: name in _EXPLICIT_TRUE_SOURCES,
+        AutonomyLevel.L4_DEPLOY: name in _EXPLICIT_TRUE_SOURCES,
     }
     for name in _SOURCES
 }
@@ -288,7 +280,7 @@ class TestEverySourceAtEveryLevel:
         _run(tmp_path, config)
         assert config.pause_before_pr_merge is _EXPECTED[source][level]
 
-    @pytest.mark.parametrize("source", ["toml_true", "env_true", "flag_true"])
+    @pytest.mark.parametrize("source", sorted(_EXPLICIT_TRUE_SOURCES))
     def test_explicit_sources_are_recorded_as_explicit(
         self,
         tmp_path: Path,
@@ -388,8 +380,6 @@ class TestStrictBoolean:
 
     @pytest.mark.parametrize("value", ['"false"', '"true"', "0", "1", '""'])
     def test_a_non_boolean_is_refused(self, tmp_path: Path, value: str) -> None:
-        from kstrl.config import ConfigError
-
         (tmp_path / "kstrl.toml").write_text(
             f"[factory]\npause_before_pr_merge = {value}\n", encoding="utf-8"
         )

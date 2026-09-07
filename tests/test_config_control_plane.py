@@ -36,7 +36,15 @@ from kstrl.feedforward import FeedforwardConfig
 from kstrl.init_cmd import DEFAULT_KSTRL_TOML
 from kstrl.knowledge import KnowledgeConfig
 from kstrl.verify import VerifyConfig
-from tests.helpers.factorycli import capture_run_factory, invoke_factory, write_manifest
+
+# The harness moved to tests/helpers/factorycli.py on #195, when
+# tests/test_explicit_merge_gate.py needed the same three pieces to prove
+# that --pause-before-pr-merge is recorded as an explicit request.
+# invoke_factory is imported under this file's existing private name so
+# its 31 call sites read unchanged and the alias cannot outlive the
+# import. write_manifest is not imported: invoke_factory writes its own.
+from tests.helpers.factorycli import capture_run_factory
+from tests.helpers.factorycli import invoke_factory as _invoke_factory
 
 # ---------------------------------------------------------------------------
 # Harness
@@ -47,13 +55,6 @@ from tests.helpers.factorycli import capture_run_factory, invoke_factory, write_
 def captured(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Replace run_factory with a capturing fake; return the capture dict."""
     return capture_run_factory(monkeypatch)
-
-
-# The three pieces below moved to tests/helpers/factorycli.py on #195,
-# when tests/test_explicit_merge_gate.py needed the same harness to
-# prove that --pause-before-pr-merge is recorded as an explicit request.
-_write_manifest = write_manifest
-_invoke_factory = invoke_factory
 
 
 def _invoke_run(tmp_path: Path, *extra_args: str) -> Any:
