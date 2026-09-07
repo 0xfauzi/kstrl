@@ -502,6 +502,37 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Changed
 
+- The retry context now records which of the review and security phases
+  produced a reading in each attempt, so an earlier finding from one of
+  them is dropped from the next attempt's prompt once that reviewer has
+  run again and passed, and the "Resolved or superseded" line names it.
+  Before this, a passing phase wrote nothing, so a criterion the
+  reviewer had already cleared still rendered under "Not re-measured"
+  and the agent was told to re-check something it had fixed. A phase
+  that did not run records nothing, so a finding from a reviewer the
+  operator turned off, or one an exhausted adversarial budget skipped in
+  advisory mode, is still shown; a reviewer that crashed is not a
+  reading and retires nothing either, and neither is one whose reported
+  diffstat git disagrees with, which #266 describes as a verdict reached
+  without the whole change in hand and which in advisory mode is neither
+  an infrastructure error nor a refusal. An attempt that records no
+  failure entry at all also retires what its readings measured: the
+  merge-conflict restart reaches the PR phase only after review and
+  security have both run and passed, so those readings are real and were
+  previously discarded. The contract gate goes through the same merge,
+  so a contract failure no longer re-raises a review finding an earlier
+  attempt cleared. Note on the issue's second acceptance criterion,
+  which asked for an attempt that skips review on an exhausted budget
+  and fails security: that is unreachable, because both phases consult
+  the same counter and review runs first, so a budget that skipped
+  review has already skipped security. The criterion's intent is pinned
+  three ways instead - the operator's explicit skip, the budget skip
+  with the HITL checkpoint as the failing gate, and the no-reading case
+  at the unit layer - and the two pipeline-layer tests assert the skip
+  itself rather than only its consequence, because a reviewer that runs
+  and crashes retires nothing either and would otherwise pass them
+  (#247).
+
 - **Breaking:** a hard-mode review or security phase that finds
   `max_adversarial_calls` already spent now halts the component instead of
   downgrading itself to a skip. Before this, an operator running with a cap and
