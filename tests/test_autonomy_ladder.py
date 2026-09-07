@@ -342,6 +342,7 @@ class TestConfig:
         )
         assert len(notes) == 2
         assert all("bundle wins" in n for n in notes)
+        assert all(n.startswith("Manual override ignored: ") for n in notes)
 
     def test_agreeing_config_produces_no_notes(self) -> None:
         bundle = flag_bundle_for(AutonomyLevel.L1_SUPERVISED)
@@ -648,7 +649,17 @@ class TestFactoryWiring:
         assert config.pause_before_pr_merge is True  # type: ignore[attr-defined]
         assert config.review_mode == "hard"  # type: ignore[attr-defined]
 
-    def test_l3_drops_the_merge_gate(self, tmp_path: Path) -> None:
+    def test_l3_drops_a_gate_the_operator_did_not_ask_for(self, tmp_path: Path) -> None:
+        """#195 narrowed what this case means, and it is still a case.
+
+        ``_run_factory_with_autonomy`` builds ``FactoryConfig(...)`` by
+        hand, so its ``pause_before_pr_merge=True`` carries no
+        provenance: nobody wrote it in kstrl.toml, in the environment or
+        on the command line. A True like that is still the ladder's to
+        drop at L3. An EXPLICIT one is not, and
+        ``tests/test_explicit_merge_gate.py`` is where that is measured,
+        through the real config sources.
+        """
         config = _run_factory_with_autonomy(
             tmp_path,
             AutonomyLevel.L3_ENVELOPED_AUTO,
@@ -656,6 +667,7 @@ class TestFactoryWiring:
             configured_pause=True,
         )
         assert config.pause_before_pr_merge is False  # type: ignore[attr-defined]
+        assert config.explicit_fields == frozenset()  # type: ignore[attr-defined]
 
     def test_disabled_ladder_leaves_config_untouched(
         self,

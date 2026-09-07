@@ -1451,6 +1451,62 @@ class TestMergeGate:
         gate = resolve_merge_gate(item, tmp_path)  # type: ignore[arg-type]
         assert gate.pause_before_pr_merge
 
+    def test_stop_at_pr_survives_l3(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """#195: the item wins, and this used to be a refusal.
+
+        ``STOP_AT_PR`` reaches the child as ``--pause-before-pr-merge``,
+        which ``run_factory`` now keeps at every level, so refusing the
+        item would refuse work that will in fact be gated.
+        """
+        from kstrl.autonomy import AutonomyLevel, AutonomyState
+
+        (tmp_path / "kstrl.toml").write_text(
+            "[autonomy]\nenabled = true\n[policy]\nenabled = true\n",
+            encoding="utf-8",
+        )
+        AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO)).save(tmp_path)
+        queue = _queue(tmp_path)
+        item = _add(queue, merge_disposition=MergeDisposition.STOP_AT_PR)
+        gate = resolve_merge_gate(item, tmp_path)  # type: ignore[arg-type]
+        assert gate.pause_before_pr_merge
+        assert not gate.refusal
+        assert any("outranks the ladder" in note for note in gate.notes), gate.notes
+
+    def test_stop_at_pr_is_refused_when_no_pr_is_created(self, tmp_path: Path) -> None:
+        """#195: the refusal re-aimed at the hole that is still real.
+
+        ``[factory] create_prs = false`` means the child never reaches
+        ``_phase_checkpoint``, so an item that asked for a human in
+        writing would be merged with nobody having looked. Checked with
+        the ladder off, because this is a config reason rather than a
+        level reason.
+        """
+        (tmp_path / "kstrl.toml").write_text("[factory]\ncreate_prs = false\n", encoding="utf-8")
+        queue = _queue(tmp_path)
+        item = _add(queue, merge_disposition=MergeDisposition.STOP_AT_PR)
+        gate = resolve_merge_gate(item, tmp_path)  # type: ignore[arg-type]
+        assert gate.refusal
+        assert "create_prs is off" in gate.refusal
+        assert gate.pause_before_pr_merge
+
+    def test_auto_merge_is_not_refused_when_no_pr_is_created(self, tmp_path: Path) -> None:
+        """The refusal is about the item's request, not about the repo.
+
+        An item that never asked for a gate is unaffected by a repo that
+        cannot honour one, and a guard that refused it would stop work
+        for a reason that does not apply to it.
+        """
+        (tmp_path / "kstrl.toml").write_text("[factory]\ncreate_prs = false\n", encoding="utf-8")
+        queue = _queue(tmp_path)
+        item = _add(queue, merge_disposition=MergeDisposition.AUTO_MERGE)
+        gate = resolve_merge_gate(item, tmp_path)  # type: ignore[arg-type]
+        assert not gate.refusal
+        assert not gate.pause_before_pr_merge
+
 
 # --------------------------------------------------------------------------
 # caffeinate
