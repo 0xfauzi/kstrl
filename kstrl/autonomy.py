@@ -704,8 +704,8 @@ def strict_bool(section: Mapping[str, Any], key: str, default: bool) -> bool:
     value is a string and every non-empty string reads as true, which is
     the wrong sentence for ``pause_before_pr_merge = 0`` - a plausible
     boolean spelling, and this key is far more hand-written than
-    ``[autonomy] enabled``. Same rule as the ``tomllib`` readers one
-    module over: report individually only the causes you can name.
+    ``[autonomy] enabled``. Same rule as the TOML readers one module
+    over: report individually only the causes you can name.
     """
     if key not in section:
         return default
