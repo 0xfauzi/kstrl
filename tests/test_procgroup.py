@@ -653,11 +653,19 @@ def _ps_call_lines(source: str, module: str = "") -> list[int]:
 #: Layer 1's inventory, per module. This file is excluded because its
 #: own fixtures spell the command on purpose; layer 2 still walks it.
 EXPECTED_PS_COMMAND_SPELLINGS: dict[str, int] = {
-    "procgroup.py": 5,  # PS_ARGV, plus four "ps failed" messages
+    "procgroup.py": 6,  # PS_ARGV, plus five refusal messages
     # #209's members read reports the same uid-filtered listing the
-    # liveness read does, from the one `_FILTERED_VIEW` sentence, so this
-    # module's count did not move; the new row below is the test that
-    # asserts the refusal reaches its caller.
+    # liveness read does, from the one `_FILTERED_VIEW` sentence, so that
+    # part did not move this module's count; the row below is the test
+    # that asserts the refusal reaches its caller.
+    #
+    # 5 -> 6 is `_UNREADABLE_ROW`, the fifth refusal message, added by
+    # #209's round-1 review when a row the parse cannot read became a
+    # refusal for both public reads instead of a silent drop. It is a
+    # diagnostic sentence beginning with the word, which is the case
+    # this census's own message says to add a count for, not a second
+    # place that shells out to `ps`: the walk below still finds exactly
+    # one call site.
     "tests/test_procgroup_members.py": 1,
     "tests/test_process_scoping.py": 2,  # two assertions on those messages
     "tests/test_serve.py": 6,  # the fake's argv, plus five assertions

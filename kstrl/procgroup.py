@@ -27,21 +27,23 @@ F1). ``ps`` may not show everything - a ``hidepid`` mount hides
 individual PROCESSES owned by other uids, so a group can show one
 visible zombie while hiding a running descendant that changed uid. That
 means "every row I saw for this group is a zombie" is NOT on its own a
-safe conclusion; it is only safe once the listing is known to be
-complete. So a "gone" needs both a listing that can be trusted and one
-of two positive findings:
+safe conclusion. A "gone" needs a listing that can be TRUSTED and then a
+positive finding:
 
-* THE LISTING IS COMPLETE. ``ps -A`` reported pid 1. Under ``hidepid``
-  the caller sees only its own uid's processes, and pid 1 belongs to
-  root; if we are root, nothing is hidden from us in the first place.
-  Either way, seeing pid 1 rules out a uid-filtered view. Measured on
-  this tree: pid 1 appears as ``['1', '1', 'Ss']`` in every listing while
-  running as uid 501. This costs nothing - ``pid=,pgid=,stat=`` measured
-  16.11ms per call against 16.10ms for ``pgid=,stat=`` on a 945-process
-  machine, inside the noise.
-* Then either every row listed for the group is a zombie, or the group
-  has no rows at all AND ``killpg(pgid, 0)`` raises ESRCH - the kernel
-  saying the group holds no process, which no listing filter can fake.
+* TRUSTED is two things, both decided in ``_listing_refusal``. ``ps -A``
+  reported pid 1, which rules out a uid-filtered view: under ``hidepid``
+  the caller sees only its own uid's processes and pid 1 belongs to
+  root, and if we are root nothing is hidden from us anyway. Measured on
+  this tree, pid 1 appears as ``['1', '1', 'Ss']`` in every listing while
+  running as uid 501, and the column costs nothing (``pid=,pgid=,stat=``
+  measured 16.11ms per call against 16.10ms for ``pgid=,stat=`` on a
+  945-process machine, inside the noise). And every row parsed, because
+  a row that cannot be attributed to a group cannot be ruled out of THIS
+  one.
+* The finding is then either that every row listed for the group is a
+  zombie, or that the group has no rows at all AND ``killpg(pgid, 0)``
+  raises ESRCH - the kernel saying the group holds no process, which no
+  listing filter can fake.
 
 Anything else is "cannot see".
 
@@ -165,21 +167,41 @@ PS_TIMEOUT_SECONDS = 5.0
 #: not the same as bounding the call; see the docstring on ``_read_ps``.
 PS_KILL_GRACE_SECONDS = 1.0
 
-#: Said once, because several branches report it and reflowed copies of
-#: one sentence are how the two answers drift apart.
+# A refusal message is a HEAD plus a CONSEQUENCE. Five heads: two in
+# ``_listing_for`` for a ``ps`` that did not answer, three below for a
+# listing that answered and cannot be believed. Two consequences, one
+# per public read. Each written once, because reflowed copies of one
+# sentence are how the two answers drift apart.
+
+#: What :func:`read_group_liveness` appends to any of the five.
 _UNMEASURABLE = (
     "Process-group liveness cannot be measured here, and reporting "
     "'no live member' would be a false negative."
 )
+#: What :func:`read_group_members` appends to the same five.
+_UNCOUNTABLE = "A count taken from it would be an undercount."
 
-#: The other sentence two branches report, said once for the same reason.
-#: Both reads refuse a uid-filtered listing and each appends its own
-#: consequence; #209 wrote the head out a second time, which moved this
-#: module's ``ps``-spelling census for a copied sentence rather than for
-#: a new mechanism. ``{pgid}`` is filled in by the caller.
+#: Head 1. "Running" because that is the member whose absence moves
+#: either answer. ``{pgid}`` is filled in by the caller, here and below.
 _FILTERED_VIEW = (
     "ps did not list pid 1, so the view is filtered to this uid and a "
-    "member of group {pgid} owned by another uid would be invisible."
+    "running member of group {pgid} owned by another uid would be "
+    "invisible."
+)
+
+#: Head 2. A row that cannot be attributed to a group leaves no listing
+#: that can be said to have shown every member of THIS one.
+_UNREADABLE_ROW = (
+    "ps emitted a row this parse could not read, so it could not be "
+    "attributed to a group and a member of group {pgid} may be missing "
+    "from the listing."
+)
+
+#: Head 3. The one control that tells an empty group apart from a
+#: listing that did not show it.
+_KERNEL_DISAGREES = (
+    "ps listed no process in group {pgid}, but the kernel reports that "
+    "group is not empty, so the listing did not show every process."
 )
 
 
@@ -199,28 +221,26 @@ class GroupMembers:
     """WHICH pids are running in a group, or why that could not be read.
 
     :class:`GroupLiveness` reduces the same listing to one bool, which is
-    all its caller needs. #209 needs the count: whether ``caffeinate -i``
-    puts its forked assertion holder INSIDE the run's process group is a
-    question about membership, and a helper that escaped the group would
-    survive the timeout path's ``killpg`` still holding
-    ``PreventUserIdleSystemSleep``.
+    all its caller needs. #209 needs the count: a ``caffeinate`` helper
+    that forked OUT of the run's process group would survive the timeout
+    path's ``killpg`` still holding ``PreventUserIdleSystemSleep``, and
+    a bool cannot see that.
 
-    It lives here, sharing one ``ps`` call and one parse with the
-    liveness read, because this module's whole claim is that it is the
-    only place in ``kstrl/`` or ``tests/`` that shells out to ``ps`` -
-    two copies drift on failure handling, and
-    ``tests/test_procgroup.py`` fails on a second one. The first draft of
-    #209 put a second ``ps`` in ``tests/helpers/procs.py`` and that net
-    is what caught it.
+    It lives here, sharing one ``ps`` call, one parse and one refusal
+    table with the liveness read, because this module's whole claim is
+    that it is the only place in ``kstrl/`` or ``tests/`` that shells out
+    to ``ps`` - two copies drift on failure handling, and
+    ``tests/test_procgroup.py`` fails on a second one.
 
-    ``pids`` is None when nothing was measured, exactly as ``live`` is,
-    and for the stronger of the two reasons: a caller counting members
-    is usually asserting that there is no OTHER member, and a listing
-    filtered to one uid would answer that with a confident undercount.
-    So a uid-filtered listing is a refusal here, never a short list.
-    That is the one undercount this read is able to recognise: a row
-    ``_read_listing`` could not parse at all is dropped instead, which
-    it records and #209 leaves as a handoff.
+    ``pids`` is None when nothing was measured, exactly as ``live`` is.
+    Both reads refuse the same five listings and differ only in the
+    consequence each appends, and in liveness being allowed to answer
+    True off a listing it would otherwise refuse: seeing a runner is
+    positive evidence, and a partial listing can only show FEWER
+    processes. A count has no such fallback. A caller counting members
+    is asserting there is no OTHER member, and a listing filtered to one
+    uid, or carrying a row the parse could not read, would answer that
+    with a confident undercount.
     """
 
     #: Non-zombie members, in listing order. None means unmeasured.
@@ -453,7 +473,7 @@ def read_group_liveness(pgid: int) -> GroupLiveness:
     """
     listing, failure = _listing_for(pgid)
     if listing is None:
-        return GroupLiveness(None, failure)
+        return GroupLiveness(None, f"{failure} {_UNMEASURABLE}")
     return _interpret(listing, pgid)
 
 
@@ -461,24 +481,18 @@ def read_group_members(pgid: int) -> GroupMembers:
     """The non-zombie pids in group ``pgid``, or why they could not be read.
 
     The census twin of :func:`read_group_liveness`, sharing its one
-    ``ps`` call and its one parse. See :class:`GroupMembers` for why the
-    reading lives here rather than beside the caller that needs it.
-
-    A uid-filtered listing is refused rather than returned short. The
-    liveness read can afford to interpret one - it has a second positive
-    finding to fall back on - but a count has none: a view filtered to
-    this uid would hand back "one member" for a group with two, and the
-    caller would read that as an answer. Same fail direction as
-    everything else here, reached for a different reason.
+    ``ps`` call, its one parse and all five refusal heads; see
+    :class:`GroupMembers` for why the reading lives here and
+    :func:`_listing_refusal` for what a second table cost. Every head is
+    refused rather than returned short, INCLUDING the ones liveness is
+    sometimes allowed to interpret.
     """
     listing, failure = _listing_for(pgid)
     if listing is None:
-        return GroupMembers(None, failure)
-    if not listing.complete:
-        return GroupMembers(
-            None,
-            f"{_FILTERED_VIEW.format(pgid=pgid)} A count taken from it would be an undercount.",
-        )
+        return GroupMembers(None, f"{failure} {_UNCOUNTABLE}")
+    refusal = _listing_refusal(listing, pgid)
+    if refusal:
+        return GroupMembers(None, f"{refusal} {_UNCOUNTABLE}")
     return GroupMembers(listing.running_pids)
 
 
@@ -487,14 +501,19 @@ def _listing_for(pgid: int) -> tuple[_Listing | None, str]:
 
     The two public reads above share this so a ``ps`` that fails is
     reported the same way to both. Two copies of that error handling is
-    the drift this module exists to prevent, one level up from the parse.
+    the drift this module exists to prevent, one level up from the
+    parse. Heads 4 and 5, and heads ONLY: the caller appends its own
+    consequence, as it does for the three in :func:`_listing_refusal`.
+    Appending the liveness consequence here for both reads is what made
+    the members read report a ``ps`` failure with the word "liveness"
+    in it (#209 round 1).
     """
     try:
         out = _read_ps()
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
-        return None, f"ps failed to run ({exc!r}). {_UNMEASURABLE}"
+        return None, f"ps failed to run ({exc!r})."
     if out.returncode != 0:
-        return None, f"ps failed (rc={out.returncode}): {out.stderr.strip()!r}. {_UNMEASURABLE}"
+        return None, f"ps failed (rc={out.returncode}): {out.stderr.strip()!r}."
     return _read_listing(out.stdout, pgid), ""
 
 
@@ -550,11 +569,16 @@ class _Listing:
 
     #: pid 1 was present, so the view is not filtered to our own uid.
     complete: bool
+    #: Every non-blank row parsed. False means at least one row could
+    #: not be attributed to a group, so this is not a full view of any
+    #: group. No default: a default is how a later constructor comes to
+    #: claim readability it never established.
+    readable: bool
     #: Pids carrying this pgid, zombies included.
     listed: tuple[int, ...]
-    #: Of those, the ones that are not zombies. Kept as pids rather than
-    #: a count because :func:`read_group_members` needs them; the two
-    #: counts below are derived so ``_interpret`` reads as it did.
+    #: Of those, the ones that are not zombies. Kept as pids rather
+    #: than a count because :func:`read_group_members` needs them; the
+    #: counts below are derived from them.
     running_pids: tuple[int, ...]
 
     @property
@@ -566,67 +590,126 @@ class _Listing:
         return len(self.running_pids)
 
 
+def _listing_refusal(listing: _Listing, pgid: int) -> str:
+    """Why this listing cannot be believed about ``pgid``, or "".
+
+    THE ONE TABLE BOTH PUBLIC READS CONSULT. It was two, and the two
+    disagreed: ``_interpret`` asked the kernel whether a group an empty
+    listing did not mention was really empty and ``read_group_members``
+    did not, so the same listing was a refusal for liveness and a
+    confident ``()`` for a count (#209 round 1). A guard that CLEARS
+    must refuse what it cannot prove, and an empty tuple is a clearing.
+    So the three refusals a parsed listing can earn are enumerated here,
+    once. Each answers one question - could this listing have hidden a
+    member of ``pgid`` - and the answer is No only when all three say
+    so; a fourth added here reaches both reads by construction rather
+    than by someone remembering the second site.
+
+    The kernel is consulted LAST and only for a listing showing the
+    group holding nothing: it costs a syscall, and a listing that
+    already shows a member has answered the question.
+    """
+    if not listing.complete:
+        return _FILTERED_VIEW.format(pgid=pgid)
+    if not listing.readable:
+        return _UNREADABLE_ROW.format(pgid=pgid)
+    if not listing.rows and not _kernel_says_group_is_empty(pgid):
+        return _KERNEL_DISAGREES.format(pgid=pgid)
+    return ""
+
+
 def _interpret(listing: _Listing, pgid: int) -> GroupLiveness:
+    """The liveness reading of a listing. A runner outranks a refusal.
+
+    Order is the whole content of this function. A visible non-zombie
+    member is positive evidence and no refusal can undo it: every
+    refusal says the listing may have shown too FEW processes, and
+    showing too few cannot stop a running process running. Below that,
+    refusing outranks answering False, because ``serve`` turns "no live
+    member" into "reaped" (#186 F1).
+    """
     if listing.running:
         return GroupLiveness(True)
-    if not listing.complete:
-        return GroupLiveness(None, f"{_FILTERED_VIEW.format(pgid=pgid)} {_UNMEASURABLE}")
-    if listing.rows:
-        # A complete listing that shows this group holding only zombies.
-        # #298's case.
-        return GroupLiveness(False)
-    if _kernel_says_group_is_empty(pgid):
-        return GroupLiveness(False)
-    return GroupLiveness(
-        None,
-        f"ps listed no process in group {pgid}, but the kernel reports "
-        f"that group is not empty, so the listing did not show every "
-        f"process. {_UNMEASURABLE}",
-    )
+    refusal = _listing_refusal(listing, pgid)
+    if refusal:
+        return GroupLiveness(None, f"{refusal} {_UNMEASURABLE}")
+    # Only zombies (#298's case), or a group the kernel agrees is empty.
+    return GroupLiveness(False)
 
 
 def _read_listing(stdout: str, pgid: int) -> _Listing:
-    """Parse ``pid pgid stat`` rows into the three facts that decide it.
+    """Parse ``pid pgid stat`` rows into the four facts that decide it.
 
-    Fields are named on ``_Listing`` rather than returned positionally,
-    because all three would type-check in any order.
+    Fields are named on ``_Listing`` rather than returned positionally
+    because all four would type-check in any order.
+
+    A ROW THIS CANNOT READ MAKES THE WHOLE LISTING UNREADABLE, and both
+    public reads then refuse it. Dropping the row instead is an
+    UNDERCOUNT, which this module refuses everywhere else (#209 round
+    1). Measured on all three trees: ``"1 1 Ss\\nbad 7 Ss\\n50 7 Z\\n"``
+    for group 7 gave ``live=True`` before #209 and ``live=False`` after
+    it, which ``serve`` reads as "the group is gone" for a group whose
+    only running member is the row that could not be read.
+
+    THE COST OF REFUSING IS ZERO ON REAL OUTPUT, measured because a
+    refusal a real ``ps`` could earn would stop the daemon reaping
+    anything: 20 reads of ``PS_ARGV`` on this machine gave 16320 rows,
+    every one exactly three columns with a numeric pid and pgid, because
+    the columns come from the kernel and the format asks for no free
+    text. Reachable on a truncated or mangled stream, which is what the
+    refusal is for.
+
+    Three shapes are unreadable: a non-blank row with fewer than three
+    columns, a pid column that is not a number, and a PGID column that
+    is not a number, because a group we cannot read cannot be ruled out.
+    A blank line is not, because it claims nothing.
     """
     want = str(pgid)
     complete = False
+    readable = True
     listed: list[int] = []
     running: list[int] = []
     for line in stdout.splitlines():
         parts = line.split()
-        # A row missing a column would IndexError below. Real ps does not
-        # emit one; a filtered or truncated listing might.
+        if not parts:
+            continue
         if len(parts) < 3:
+            readable = False
             continue
         pid, group, state = parts[0], parts[1], parts[2]
         complete = complete or pid == "1"
+        if not _reads_as_int(group):
+            readable = False
+            continue
         if group != want:
             continue
-        # A pid column that is not a number would raise out of a read
-        # that has no handler for it, so it is dropped, from BOTH tuples
-        # rather than only from the running one: an anonymous member is
-        # not something either caller can do anything with. Real ``ps``
-        # does not emit such a row - the one above it already drops a
-        # line with fewer than three columns the same way - so this is
-        # unreachable on real output. It is reachable in principle, and
-        # then it is an UNDERCOUNT, which is the direction this module
-        # otherwise refuses; the stronger reading, where a row the parse
-        # could not read marks the whole listing untrustworthy and both
-        # public reads refuse it, is #209's handoff rather than its
-        # change, because it moves what the daemon's kill path does.
-        try:
-            member = int(pid)
-        except ValueError:
+        if not _reads_as_int(pid):
+            readable = False
             continue
+        member = int(pid)
         listed.append(member)
         # "Z" is the zombie state on both macOS and Linux, and flags may
         # follow it ("Z+", "Zl"), so match the prefix rather than the cell.
         if not state.startswith("Z"):
             running.append(member)
-    return _Listing(complete=complete, listed=tuple(listed), running_pids=tuple(running))
+    return _Listing(
+        complete=complete, readable=readable, listed=tuple(listed), running_pids=tuple(running)
+    )
+
+
+def _reads_as_int(cell: str) -> bool:
+    """Whether a ``ps`` column is a number this parse can use.
+
+    ``int()`` rather than ``str.isdigit``: measured, ``"-5"`` is not
+    ``isdigit`` and converts while ``"\N{SUPERSCRIPT TWO}"`` is
+    ``isdigit`` and raises. Asking the conversion that will be done is
+    the only test that cannot drift from it.
+    """
+    try:
+        int(cell)
+    except ValueError:
+        return False
+    return True
 
 
 def _probe_says_gone(send: Callable[[], None]) -> bool:
