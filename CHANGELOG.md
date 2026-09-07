@@ -97,6 +97,51 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- A factory run now resolves every configuration section it enforces
+  exactly once, at run start, and every phase enforces that resolution
+  for every component. Phase 1 re-read `[policy]`, `[adequacy]` and the
+  autonomy level from `kstrl.toml` per component while
+  `manifest.policyHash` was computed once, so an edit to `kstrl.toml`
+  while a run was in flight changed what later components were held to
+  without changing the hash that records it: measured, a two-component
+  run enforced two different envelopes (`max_files_changed` 5 then 500,
+  `deps_allow_new` false then true) against one recorded hash, and the
+  adequacy posture flipped with nothing recording either posture. A
+  malformed mid-run edit raised out of a per-component load, and its
+  caller runs outside the `try` that wraps the component future, so it
+  aborted the whole run rather than failing one component; driving a
+  two-component run confirms both halves, the abort before and the
+  completion after. Phase 1 also used the raw stored autonomy level
+  rather than the clamped level the run operates at, so a run clamped
+  to L1 by `[autonomy] max_level` judged its adequacy gate at L4 (no
+  verdict changed at either level today; both consumers test only
+  `>= 1`). `[sandbox]`, `[fixtures]`, `[inbox]` and `[divergence]` are
+  resolved with them, which also removes the second `[sandbox]`
+  resolution a run used to make. Editing `kstrl.toml` mid-run now has no
+  effect on the running factory and takes effect at the next run. A run
+  with the ladder off, which is the default, reads no
+  `.kstrl/autonomy.json` at all: the stored ladder state is resolved
+  once per run when `[autonomy] enabled` and not otherwise, so a project
+  that never opted in pays neither the read, nor the control-directory
+  migration, nor a warning about a ladder it does not use (#192).
+
+- A configuration section a run cannot resolve is now refused before the
+  run starts, with exit code 2 and the section and the offending key
+  named, instead of a traceback. The entry preflight resolves every
+  section before the command body, but on `ks factory --spec` the
+  architect runs between that check and the run itself - measured at 119
+  to 210 seconds against a frontier model - so an edit made inside that
+  window arrives at the run's own resolution. Because the refusal
+  happens before the run directory exists, no run is recorded as having
+  cost nothing. What it does to the accounting, stated rather than left
+  implied: a refusal inside that window lands on
+  `RunSpend.unmetered_phases`' blocker-halt path, so the launch is
+  charged $0 and the day's total is labelled a floor with `architect`
+  unmetered, which is the treatment a spec blocker already gets.
+  Measured, a launch whose architect spent $4.20 is charged $4.20 on the
+  old code, where a malformed `[policy]` happened to crash below the
+  meter, and $0.00 with the refusal (#192, #257).
+
 - The reason `ks serve` supervises a factory run as a process GROUP was
   recorded wrongly, and nothing tested it. `caffeinate -i` does not exec
   its utility in place: measured on macOS 26.6.2 by enumerating the whole

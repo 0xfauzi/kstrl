@@ -145,12 +145,23 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
 #: Every ``InboxConfig.load`` call in ``kstrl/``. ``guarded`` here means
 #: an enclosing ``try`` names ``TypeError``, which is what a per-key cast
 #: raises on a TOML date or array.
+#: NOT IN THIS TABLE, and stated rather than left as an absence: the
+#: factory's run envelope resolves ``[inbox]`` by handing
+#: ``InboxConfig.load`` to ``config_preflight.resolve_or_report`` as a
+#: VALUE, so there is no call for this walk to find and no enclosing
+#: ``try`` for it to read. The disposition is made one frame away and it
+#: is not guarded here: ``resolve_or_report`` catches the ``TypeError``
+#: and returns the line naming ``[inbox]`` and the key, and the factory
+#: refuses the run with exit code 2 before the run directory exists
+#: (#192 round 2). That the envelope still names ``[inbox]`` at all is
+#: pinned by ``tests/test_config_guard.py``'s
+#: ``EXPECTED_ENVELOPE_SECTIONS``, which walks references rather than
+#: calls, so dropping the section fails there instead of quietly
+#: shrinking this table.
 EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
     "autonomy.py::apply_demotion": _GUARDED,
     "calibration_ladder.py::_open_drift_item": _GUARDED,
     "factory.py::_open_health_breach_items": _GUARDED,
-    "pipeline.py::ComponentPipeline._inbox_add": _GUARDED,
-    "pipeline.py::ComponentPipeline._inbox_resolve": _GUARDED,
     "serve.py::_file_inbox_item": _GUARDED,
     "serve.py::check_inbox_cap": Disposition(
         guarded=False,
