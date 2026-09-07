@@ -356,6 +356,93 @@ def test_a_fixture_that_ran_and_failed_did_measure(tmp_path: Path) -> None:
     _assert_measured(check_fixtures(fixtures, tmp_path, FixturesConfig()))
 
 
+def test_a_fixture_whose_process_could_not_be_launched_measured_nothing(
+    tmp_path: Path,
+) -> None:
+    """The other half of the command fixture's environment failure.
+
+    Deleting this site's ``measured=False`` left the suite green: the timeout
+    branch beside it was driven and this one was not. A directory that is not
+    there is the honest way in - ``run_scrubbed`` hands ``cwd`` to ``Popen``,
+    which raises ``FileNotFoundError`` - and it is a real failure mode, since a
+    worktree can be removed under a run.
+    """
+    fixtures = [
+        Fixture(
+            description="a fixture with nowhere to run",
+            fixture_type="cli",
+            input_data={"command": f"{sys.executable} -c 'pass'"},
+            expected={"exit_code": 0},
+        ),
+    ]
+
+    row = check_fixtures(fixtures, tmp_path / "gone", FixturesConfig())
+
+    assert row.passed is False
+    assert "Failed to run command" in "".join(row.details)
+    _assert_unmeasured(row)
+
+
+def test_a_function_fixture_that_timed_out_measured_nothing(tmp_path: Path) -> None:
+    """The function fixture runs its own subprocess and has its own two sites.
+
+    Both were unpinned: the command fixture's timeout was driven and stood in
+    for all four. ``time.sleep`` is the module and function, so the fixture
+    needs no file on disk to import.
+    """
+    fixtures = [
+        Fixture(
+            description="a function that sleeps",
+            fixture_type="function",
+            input_data={"module": "time", "function": "sleep", "args": [30]},
+            expected={"returns": None},
+        ),
+    ]
+
+    row = check_fixtures(fixtures, tmp_path, FixturesConfig(timeout=TINY_TIMEOUT))
+
+    assert row.passed is False
+    assert "Function fixture timed out" in "".join(row.details)
+    _assert_unmeasured(row)
+
+
+def test_a_function_fixture_that_could_not_be_launched_measured_nothing(
+    tmp_path: Path,
+) -> None:
+    fixtures = [
+        Fixture(
+            description="a function fixture with nowhere to run",
+            fixture_type="function",
+            input_data={"module": "time", "function": "time", "args": []},
+            expected={},
+        ),
+    ]
+
+    row = check_fixtures(fixtures, tmp_path / "gone", FixturesConfig())
+
+    assert row.passed is False
+    assert "Failed to launch fixture subprocess" in "".join(row.details)
+    _assert_unmeasured(row)
+
+
+def test_a_function_fixture_that_ran_and_failed_did_measure(tmp_path: Path) -> None:
+    """The control for the three above, on the function path specifically.
+
+    Without it, marking every function-fixture row unmeasured would pass them,
+    and that mistake empties a baseline instead of filling it.
+    """
+    fixtures = [
+        Fixture(
+            description="a function whose answer is wrong",
+            fixture_type="function",
+            input_data={"module": "time", "function": "time", "args": []},
+            expected={"returns": "not a timestamp"},
+        ),
+    ]
+
+    _assert_measured(check_fixtures(fixtures, tmp_path, FixturesConfig()))
+
+
 def test_a_malformed_fixture_definition_still_counts_as_measured(tmp_path: Path) -> None:
     """The line the sweep draws, pinned from the other side.
 
