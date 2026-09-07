@@ -55,6 +55,7 @@ from kstrl.observability import NotifyConfig, NotifyHooks, ProgressLog
 from kstrl.pipeline import ComponentPipeline, PipelineHooks
 from kstrl.prd import PRD
 from kstrl.review import ReviewResult
+from kstrl.runenvelope import RunEnvelope
 from kstrl.scope import ComponentScope, RunScope
 from kstrl.security import SecurityResult
 from kstrl.ui.plain import PlainUI
@@ -220,6 +221,7 @@ def _pipeline(
             cleanup_worktree=lambda *a, **k: None,
         ),
         run_scope=RunScope.resolve(_manifest([comp]), root, _base_config(root)),
+        run_envelope=RunEnvelope.load(root),
         worktree_paths={comp.id: wt_path},
         component_contexts={},
         fresh_base_retry_ids=set(),

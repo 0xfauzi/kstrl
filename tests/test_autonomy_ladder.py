@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -798,17 +799,36 @@ class TestBundleClampsPolicy:
         AutonomyState(level=int(AutonomyLevel.L1_SUPERVISED)).save(tmp_path)
         assert PolicyConfig.load(tmp_path).deps_allow_new is True
 
-        config = _run_factory_with_autonomy(
-            tmp_path,
-            AutonomyLevel.L1_SUPERVISED,
-            enabled=True,
-            configured_pause=True,
-            policy_enabled=True,
-        )
+        # Read off the PIPELINE, which is what enforces it. #192 round 2
+        # deleted the `factory_config.policy_config = run_envelope.policy`
+        # write this used to read: unconditional, that field was an input
+        # to the envelope resolution and an output of the ladder at once,
+        # so a second run_factory on the same FactoryConfig inherited run
+        # one's clamped envelope and recorded its hash as if it had read
+        # kstrl.toml. The clamp reaches the run through the pipeline's
+        # required constructor parameter.
+        import kstrl.factory as factory_module
+
+        built: list[Any] = []
+        real = factory_module.ComponentPipeline
+
+        def capture(**kwargs: Any) -> Any:
+            pipeline = real(**kwargs)
+            built.append(pipeline)
+            return pipeline
+
+        with patch("kstrl.factory.ComponentPipeline", side_effect=capture):
+            _run_factory_with_autonomy(
+                tmp_path,
+                AutonomyLevel.L1_SUPERVISED,
+                enabled=True,
+                configured_pause=True,
+                policy_enabled=True,
+            )
         # kstrl.toml is rewritten by the helper, so assert via the bundle:
         assert flag_bundle_for(AutonomyLevel.L1_SUPERVISED).deps_allow_new_permitted is False
-        assert config.policy_config is not None  # type: ignore[attr-defined]
-        assert config.policy_config.deps_allow_new is False  # type: ignore[attr-defined]
+        assert len(built) == 1
+        assert built[0].run_envelope.policy.deps_allow_new is False
 
     def test_l3_permits_new_dependencies(self) -> None:
         assert flag_bundle_for(AutonomyLevel.L3_ENVELOPED_AUTO).deps_allow_new_permitted is True

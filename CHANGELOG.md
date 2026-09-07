@@ -125,6 +125,51 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   inventories every config read in `kstrl/serve.py` by enclosing
   function, decides each GUARDED or UNGUARDED, and fails on an unguarded
   one that is not in the ledger (#195, #318).
+- A factory run now resolves every configuration section it enforces
+  exactly once, at run start, and every phase enforces that resolution
+  for every component. Phase 1 re-read `[policy]`, `[adequacy]` and the
+  autonomy level from `kstrl.toml` per component while
+  `manifest.policyHash` was computed once, so an edit to `kstrl.toml`
+  while a run was in flight changed what later components were held to
+  without changing the hash that records it: measured, a two-component
+  run enforced two different envelopes (`max_files_changed` 5 then 500,
+  `deps_allow_new` false then true) against one recorded hash, and the
+  adequacy posture flipped with nothing recording either posture. A
+  malformed mid-run edit raised out of a per-component load, and its
+  caller runs outside the `try` that wraps the component future, so it
+  aborted the whole run rather than failing one component; driving a
+  two-component run confirms both halves, the abort before and the
+  completion after. Phase 1 also used the raw stored autonomy level
+  rather than the clamped level the run operates at, so a run clamped
+  to L1 by `[autonomy] max_level` judged its adequacy gate at L4 (no
+  verdict changed at either level today; both consumers test only
+  `>= 1`). `[sandbox]`, `[fixtures]`, `[inbox]` and `[divergence]` are
+  resolved with them, which also removes the second `[sandbox]`
+  resolution a run used to make. Editing `kstrl.toml` mid-run now has no
+  effect on the running factory and takes effect at the next run. A run
+  with the ladder off, which is the default, reads no
+  `.kstrl/autonomy.json` at all: the stored ladder state is resolved
+  once per run when `[autonomy] enabled` and not otherwise, so a project
+  that never opted in pays neither the read, nor the control-directory
+  migration, nor a warning about a ladder it does not use (#192).
+
+- A configuration section a run cannot resolve is now refused before the
+  run starts, with exit code 2 and the section and the offending key
+  named, instead of a traceback. The entry preflight resolves every
+  section before the command body, but on `ks factory --spec` the
+  architect runs between that check and the run itself - measured at 119
+  to 210 seconds against a frontier model - so an edit made inside that
+  window arrives at the run's own resolution. Because the refusal
+  happens before the run directory exists, no run is recorded as having
+  cost nothing. What it does to the accounting, stated rather than left
+  implied: a refusal inside that window lands on
+  `RunSpend.unmetered_phases`' blocker-halt path, so the launch is
+  charged $0 and the day's total is labelled a floor with `architect`
+  unmetered, which is the treatment a spec blocker already gets.
+  Measured, a launch whose architect spent $4.20 is charged $4.20 on the
+  old code, where a malformed `[policy]` happened to crash below the
+  meter, and $0.00 with the refusal (#192, #257).
+
 - The reason `ks serve` supervises a factory run as a process GROUP was
   recorded wrongly, and nothing tested it. `caffeinate -i` does not exec
   its utility in place: measured on macOS 26.6.2 by enumerating the whole
@@ -508,6 +553,36 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   three tabs now carries the count, the path and which of the two
   outcomes the line above each row is, in the CLI's own words. Silent at
   zero, and it goes back to silent on reload when the count does.
+
+- `ks sense --write-baseline` records the current structured failure
+  signatures to `scripts/kstrl/sense-baseline.json` and
+  `ks sense --compare-baseline` reports what a branch added against it:
+  new signatures, signatures whose count rose, and signatures the branch
+  fixed. It is advisory - exit 0 whether or not it found a regression -
+  until `--fail-on-regression` is passed, and `--format markdown` renders
+  the report for a pull-request comment. A baseline signature whose check
+  produced no measurement in the current run is reported as unmeasured
+  rather than fixed, because a check that did not run cannot prove
+  anything; a sensor that timed out, whose tool is not installed, or that
+  passed vacuously contributes no signatures to a baseline at all. A
+  check the baseline measured and the branch did not is a REGRESSION in
+  its own right, reported by name with the reason: a branch whose test
+  suite stops finishing produces no signature for any of the other
+  buckets to hold, so without it the report read "no regression". The
+  baseline also records a digest of the three verify commands and the
+  subprocess timeout, and a comparison measured with a different one is
+  refused with exit 2 rather than reported. A workflow on this repository
+  posts the report on every pull request and never fails on a regression;
+  it reads the baseline out of the BASE ref rather than out of the pull
+  request's own checkout, so a branch cannot supply the yardstick it is
+  judged by, and a base branch that carries no baseline is reported as
+  nothing to compare against rather than compared against the branch.
+  What a gate reports as measured is decided by its PARSER: a failing
+  gate measured something only when a parser recognised its own tool
+  reporting the failure, so a missing tool is unmeasured whether the
+  command is `uv run <tool>` (exit 2) or a bare binary (exit 127).
+  `docs/dampener.md` covers adopting it in another repository and
+  graduating it to blocking (#227).
 - The architect's non-blocker spec findings now reach the engineer. They
   were written to `scripts/kstrl/spec-issues.json` on every decompose and
   nothing in `kstrl/` ever opened that file: across five recorded runs

@@ -437,21 +437,29 @@ class TestTheReadBytesExclusion:
     """``read_bytes`` then ``bytes.decode`` is deliberately out of scope,
     and the exclusion is pinned so it cannot silently grow.
 
-    All five sites guard the decode separately today, which is the shape
+    All six sites guard the decode separately today, which is the shape
     ``config.load_toml_document`` argues for: do the I/O outside the
-    guard so no widening can reach an ``OSError``. A sixth appearing is a
-    reason to look, so this fails rather than absorbing it.
+    guard so no widening can reach an ``OSError``. A seventh appearing is
+    a reason to look, so this fails rather than absorbing it.
+
+    ``dampener.py`` is the newest and arrived by that argument rather
+    than despite it: #357 round 1 measured ``read_text`` plus
+    ``except ValueError`` around ``json.loads`` letting a
+    ``RecursionError`` escape a function documented to exit 2, and the
+    fix was to move the I/O out and widen the parse guard to
+    ``Exception``, which is only safe once no OSError can reach it.
     """
 
     EXPECTED_READ_BYTES: dict[str, int] = {
         "breaker.py": 1,
         "config.py": 1,
+        "dampener.py": 1,
         "inbox.py": 1,
         "safemode.py": 1,
         "verify.py": 1,
     }
 
-    def test_the_read_bytes_sites_are_the_five_measured(self) -> None:
+    def test_the_read_bytes_sites_are_the_six_measured(self) -> None:
         assert_census(
             sources=package_sources(),
             sees=spells("read_bytes"),

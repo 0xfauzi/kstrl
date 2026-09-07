@@ -476,11 +476,60 @@ def get_head_sha(
             text=True,
             timeout=timeout,
         )
-    except subprocess.TimeoutExpired:
+    except (subprocess.TimeoutExpired, OSError):
+        # "not a repo" and "no git" are one answer to this question, and
+        # the dampener asks it on the same line as get_origin_slug.
         return None
     if result.returncode != 0:
         return None
     return result.stdout.strip() or None
+
+
+def get_origin_slug(
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> str | None:
+    """``owner/repo`` from ``origin``'s URL, or None.
+
+    Identity for an artifact one run writes and another reads (#227's sense
+    baseline). The DIRECTORY name is the obvious answer and it is the wrong
+    one here: every kstrl lane works in a git worktree named after an issue
+    number, so a baseline written in one records ``227`` and every later
+    comparison in a normal checkout reports a mismatch that means nothing.
+    ``origin`` is the same string in a worktree, in a fresh clone and under
+    ``actions/checkout``, which is the property the identity needs.
+
+    Both URL shapes, because both are ordinary: ``https://host/owner/repo.git``
+    and ``git@host:owner/repo.git``. A remote that is a local path yields its
+    last two segments, which is a weaker answer but still a stable one; a repo
+    with no remote at all yields None and the caller falls back.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "config", "--get", "remote.origin.url"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        # OSError beside the timeout, the same breadth as resolve_base_ref
+        # and _resolve_candidate: this function documents None for "no
+        # remote", and a machine with no git at all is the same answer
+        # from the caller's side. Without it, `ks sense --compare-baseline`
+        # raised FileNotFoundError out of the top of the run, AFTER paying
+        # for the whole measurement, where it documents exit 2.
+        return None
+    if result.returncode != 0:
+        return None
+    url = result.stdout.strip()
+    if not url:
+        return None
+    # `git@host:owner/repo.git` has no scheme; splitting on ":" first makes
+    # both shapes the same problem.
+    tail = url.rsplit(":", 1)[-1] if "://" not in url else url.split("://", 1)[1]
+    parts = [part for part in tail.removesuffix(".git").split("/") if part]
+    return "/".join(parts[-2:]) if len(parts) >= 2 else (parts[-1] if parts else None)
 
 
 def capture_workspace_baseline(
@@ -861,6 +910,17 @@ def get_diff_name_status(
         if strict:
             raise GitDiffError(
                 f"git diff --name-status against {base_ref} timed out after {timeout}s"
+            ) from exc
+        return []
+    except OSError as exc:
+        # The strict contract is that a diff this function could not
+        # produce arrives as GitDiffError, and `ks sense` turns that into
+        # exit 2 with a message naming the base. A missing git binary was
+        # the one way out of here that was neither: FileNotFoundError,
+        # exit 1, and a traceback where the command documents a refusal.
+        if strict:
+            raise GitDiffError(
+                f"git diff --name-status against {base_ref} could not run: {exc}"
             ) from exc
         return []
     if strict:
