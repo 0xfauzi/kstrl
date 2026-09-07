@@ -207,7 +207,7 @@ Three fixture types: `cli` (run a command, check output), `function` (import and
 
 kstrl is built for one person running it unattended, and it is designed around the difference between being in the loop and being on it. In the loop, you are a required step and nothing proceeds without you. On the loop, the factory runs itself and comes to you only at boundaries it cannot judge, while you adjust how it behaves between runs.
 
-Today the boundaries that reach you are: a spec the architect halts on (there is no override flag; the spec gets fixed), the optional checkpoint before a merge, a budget or breaker that stopped a run, and an inbox of decisions the daemon could not take alone. How much the factory may do without asking is one ordered level, earned by evidence plus your recorded acknowledgement and revoked automatically. The levers you turn between runs are the project prompt, `CLAUDE.md`, `kstrl.toml`, and the acceptance criteria themselves; the R10 work adds a standing feedback file the agent always reads last and a way for your pull-request comments to reach the next run.
+Today the boundaries that reach you are: a spec the architect halts on (there is no override flag; the spec gets fixed), the optional checkpoint before a merge, a budget or breaker that stopped a run, and an inbox of decisions the daemon could not take alone. How much the factory may do without asking is one ordered level, earned by evidence plus your recorded acknowledgement and revoked automatically. The levers you turn between runs are the project prompt, `CLAUDE.md`, `kstrl.toml`, and the acceptance criteria themselves; the R10 work adds a standing feedback file the agent always reads last and a way for your pull-request comments to reach the next run. One more lever is `scripts/kstrl/golden-patterns.md`, which `ks init` scaffolds and you fill in: what a good change looks like in this repository, with a file to copy from for each pattern, carried into every factory engineer prompt and every `ks run` prompt (`ks feature` and `ks understand` do not read it). It is yours to write and is read verbatim like `CLAUDE.md`, never generated for you. Until you edit it nothing is injected, because kstrl recognises its own scaffold and treats it as empty; past about 1500 tokens it is cut at a line boundary where that still delivers most of the budget and at the budget boundary otherwise, with how much arrived announced in the prompt and once on your terminal.
 
 ## Why not just use Claude Code directly?
 
@@ -291,11 +291,12 @@ interactive = false  # human-in-the-loop mode for the legacy loop
 
 # File locations
 [paths]
-prompt = "scripts/kstrl/prompt.md"              # engineer prompt file
-prd = "scripts/kstrl/prd.json"                  # PRD file
-progress = ""                                   # progress log the agent appends to; empty = each factory component writes beside its own PRD (inside its allowedPaths), set = that one path is forced on every component
-codebase_map = "scripts/kstrl/codebase_map.md"  # brownfield codebase notes
-allowed = []                                    # diff-scope allowlist, e.g. ["src/", "tests/"]; empty = unrestricted
+prompt = "scripts/kstrl/prompt.md"                    # engineer prompt file
+prd = "scripts/kstrl/prd.json"                        # PRD file
+progress = ""                                         # progress log the agent appends to; empty = each factory component writes beside its own PRD (inside its allowedPaths), set = that one path is forced on every component
+codebase_map = "scripts/kstrl/codebase_map.md"        # brownfield codebase notes
+golden_patterns = "scripts/kstrl/golden-patterns.md"  # operator-authored golden patterns, injected into every factory engineer prompt and every `ks run` prompt (R10.8)
+allowed = []                                          # diff-scope allowlist, e.g. ["src/", "tests/"]; empty = unrestricted
 
 # Branch handling
 [git]
