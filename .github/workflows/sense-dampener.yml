@@ -110,10 +110,16 @@ jobs:
           if [ -s sense.md ]; then
             cat sense.md >> "$GITHUB_STEP_SUMMARY"
           else
-            echo '## sense dampener: the sensor could not run' >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            cat sense.err >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            # One block redirect rather than four appends: shellcheck SC2129,
+            # and actionlint reports it. origin/main lints clean under
+            # actionlint 1.7.7 with shellcheck 0.10.0, so this is the only
+            # finding this workflow would have added.
+            {
+              echo '## sense dampener: the sensor could not run'
+              echo '```'
+              cat sense.err
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Post or update the pull-request comment
