@@ -102,6 +102,41 @@ def test_the_write_line_reports_counts_and_the_unmeasured_sensors(tmp_path: Path
     ) in result.output
 
 
+def test_the_baseline_records_the_project_and_not_the_directory(tmp_path: Path) -> None:
+    """`owner/repo` from origin, which is what survives a worktree.
+
+    The repository here is called ``proj`` on disk and ``owner/repo`` on the
+    remote, so a baseline that recorded the DIRECTORY name would be
+    indistinguishable from one that recorded the project unless the two
+    differ. They differ. Every kstrl lane measures inside a worktree named
+    after an issue number, so the directory name is the wrong identity here
+    for the same reason.
+    """
+    root = _make_repo(tmp_path)
+    git("remote", "add", "origin", "https://github.com/owner/repo.git", cwd=root)
+
+    assert _write(root).exit_code == 0
+
+    assert root.name == "proj"
+    assert _baseline_document(root)["project"] == "owner/repo"
+
+
+def test_a_baseline_from_another_project_is_a_note_on_the_report(tmp_path: Path) -> None:
+    """A note and not a refusal: a baseline copied between two checkouts of the
+    same project is legitimate, and only a person can tell that from a baseline
+    copied between two different ones."""
+    root = _make_repo(tmp_path)
+    git("remote", "add", "origin", "https://github.com/owner/repo.git", cwd=root)
+    assert _write(root).exit_code == 0
+    git("remote", "set-url", "origin", "https://github.com/owner/other.git", cwd=root)
+
+    result = _invoke(root, "--compare-baseline")
+
+    assert result.exit_code == 0, result.output
+    assert "'owner/repo'" in result.output
+    assert "'owner/other'" in result.output
+
+
 def test_write_baseline_refuses_overwrite_without_force(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
     assert _write(root).exit_code == 0
