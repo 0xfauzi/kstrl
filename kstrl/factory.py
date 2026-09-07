@@ -338,9 +338,9 @@ class FactoryConfig:
     # RunEnvelope.resolve's ``policy_override`` seam (#192). Opt-in
     # ([policy].enabled = false): existing runs unchanged.
     #
-    # INPUT ONLY. It is read once, by RunEnvelope.resolve, and never
-    # written back. Round 2 of #192 deleted the write-back that used to
-    # be here, because it was unconditional: a caller reusing one
+    # INPUT ONLY: read once by RunEnvelope.resolve, never written back.
+    # Round 2 of #192 deleted the write-back that used to be described
+    # here, because it was unconditional: a caller reusing one
     # FactoryConfig for a second run had run 1's clamped envelope
     # already sitting in this field, so run 2 resolved nothing from
     # kstrl.toml and recorded run 1's hash as its own. The run's
