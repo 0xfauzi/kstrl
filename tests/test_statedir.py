@@ -117,9 +117,16 @@ class TestMigration:
 
             with pytest.warns(DeprecationWarning, match="relocated control file"):
                 moved = migrate_control_state(repo)
-            assert set(moved) == set(CONTROL_FILENAMES)
+            # Everything that HAS a former in-tree location moves, which
+            # is what the migration is over. A post-R8.9 control file
+            # (pr_count_streak.json, #228) never lived in the tree, so it
+            # has no legacy path and nothing to migrate; asserting
+            # against CONTROL_FILENAMES here would demand a former
+            # location be invented for it.
+            assert set(moved) == set(legacy)
+            assert set(legacy) < set(CONTROL_FILENAMES)
 
-            for name in CONTROL_FILENAMES:
+            for name in legacy:
                 assert not legacy[name].exists()
                 target = control_file(repo, name)
                 assert target.read_text(encoding="utf-8") == f"legacy-{name}\n"
@@ -131,6 +138,25 @@ class TestMigration:
 
             # Second call is a no-op.
             assert migrate_control_state(repo) == []
+
+    def test_a_post_migration_control_file_has_no_legacy_location(
+        self,
+        repo: Path,
+    ) -> None:
+        """R10.7 / #228: a control file added after R8.9 was never in-tree.
+
+        It still has to be a real control file - resolvable through
+        ``control_file``, and inside the set ``_control_files_compromised``
+        checks for symlinks - without acquiring a former in-tree path that
+        ``legacy_control_remaining`` would then look for forever.
+        """
+        from kstrl.statedir import CONTROL_PR_COUNT_STREAK
+
+        assert CONTROL_PR_COUNT_STREAK in CONTROL_FILENAMES
+        with patch("kstrl.statedir._origin_url", return_value=None):
+            assert CONTROL_PR_COUNT_STREAK not in legacy_control_paths(repo)
+            path = control_file(repo, CONTROL_PR_COUNT_STREAK)
+            assert path.parent == control_dir(repo)
 
     def test_ensure_then_consumers_use_xdg(self, repo: Path) -> None:
         from kstrl.autonomy import AutonomyState

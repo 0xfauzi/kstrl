@@ -1073,11 +1073,11 @@ or a halt.</p>
 <line x1="306" y1="41" x2="316" y2="41" marker-end="url(#ar4)"/>
 <g data-gate="daily budget"><rect x="318" y="24" width="66" height="34" rx="3"/><text x="351" y="39" text-anchor="middle">budget</text><text x="351" y="52" text-anchor="middle" class="sub">pause</text></g>
 <line x1="384" y1="41" x2="394" y2="41" marker-end="url(#ar4)"/>
-<g data-gate="open-PR bound" id="w4-g-openpr"><rect x="396" y="24" width="66" height="34" rx="3" class="planned"/><text x="429" y="39" text-anchor="middle" class="plannedt">open PRs</text><text x="429" y="52" text-anchor="middle" class="sub">wait, R10.7</text></g>
+<g data-gate="inbox cap"><rect x="396" y="24" width="66" height="34" rx="3"/><text x="429" y="39" text-anchor="middle">inbox cap</text><text x="429" y="52" text-anchor="middle" class="sub">wait</text></g>
 <line x1="462" y1="41" x2="472" y2="41" marker-end="url(#ar4)"/>
-<g data-gate="inbox cap"><rect x="474" y="24" width="66" height="34" rx="3"/><text x="507" y="39" text-anchor="middle">inbox cap</text><text x="507" y="52" text-anchor="middle" class="sub">wait</text></g>
+<g data-gate="factory lock"><rect x="474" y="24" width="66" height="34" rx="3"/><text x="507" y="39" text-anchor="middle">lock</text><text x="507" y="52" text-anchor="middle" class="sub">wait</text></g>
 <line x1="540" y1="41" x2="550" y2="41" marker-end="url(#ar4)"/>
-<g data-gate="factory lock"><rect x="552" y="24" width="66" height="34" rx="3"/><text x="585" y="39" text-anchor="middle">lock</text><text x="585" y="52" text-anchor="middle" class="sub">wait</text></g>
+<g data-gate="open-PR bound" id="w4-g-openpr"><rect x="552" y="24" width="66" height="34" rx="3" class="planned"/><text x="585" y="39" text-anchor="middle" class="plannedt">open PRs</text><text x="585" y="52" text-anchor="middle" class="sub">wait, R10.7</text></g>
 <polyline points="585,58 585,80 68,80 68,90" marker-end="url(#ar4)"/>
 <g data-gate="claim"><rect x="6" y="92" width="124" height="22" rx="3" class="soft"/><text x="68" y="107" text-anchor="middle">claim one item</text></g>
 <text x="140" y="107" class="sub">recovery and the remote sync happen before the ledger gate; they never refuse</text>
@@ -1088,10 +1088,12 @@ so the next cycle re-checks; nothing is paused and nobody is paged. Untick "gh a
 refused, because an unknown number of open pull requests is not zero. Then set the poison
 streak to 3 as well and see the earlier gate win: the order is the mechanism.</p>
 <figcaption>The order is <code>serve_cycle</code> at <code>kstrl/serve.py:1866</code> onward on
-<code>72404e9</code>, with R10.7's gate placed where issue #228 puts it, in the gates tuple after
-<code>check_budget</code>. That is before the inbox cap and the factory lock, so the issue's
-sentence "a GitHub call happens only when everything else admits" holds for the three ledger
-gates and not for those two. Defaults: three consecutive poisons pause, the daily budget is off,
+<code>72404e9</code>, with R10.7's gate where the shipped code puts it: LAST, after the inbox cap
+and the factory lock, rather than in the gates tuple after <code>check_budget</code> as issue #228
+asked. The tuple is built eagerly, so a member of it runs even when an earlier member refuses, and
+a <code>gh</code> call per poll behind an already-refusing budget is a cost with no purchaser.
+Placed last, the issue's own sentence "a GitHub call happens only when everything else admits"
+holds for every gate above it. Defaults: three consecutive poisons pause, the daily budget is off,
 the bound is 1. <code>ks factory</code> and <code>ks run</code> never enter this function: a
 human typing the command is the authorisation. Swept by <code>admission_gates.py</code>:
 110592 rows; only the three ledger gates ever pause.</figcaption>
@@ -1571,12 +1573,12 @@ R.admit = function(a){
   if(a.poison_streak >= R.MAX_CONSECUTIVE_POISON){ return {gate:"poison breaker", kind:"pause", reason:a.poison_streak + " items poisoned in a row; something systemic"}; }
   if(a.budget_on && !a.allow_uncovered && !a.coverage_seen){ return {gate:"cost coverage", kind:"pause", reason:"a budget is set but no call ever reported a cost; the cap can never fire"}; }
   if(a.budget_on && a.budget_reached){ return {gate:"daily budget", kind:"pause", reason:"daily budget reached; resumes at local midnight"}; }
+  if(a.inbox_at_cap){ return {gate:"inbox cap", kind:"wait", reason:"the inbox is at its open-item cap; triage before queueing more"}; }
+  if(a.lock_held){ return {gate:"factory lock", kind:"wait", reason:"a factory run already holds this root"}; }
   if(a.after_r10_7 && a.max_open_prs > 0 && a.create_prs){
     if(!a.gh_ok){ return {gate:"open-PR bound", kind:"wait", reason:"cannot count open kstrl PRs: gh failed; an unknown count is not zero"}; }
     if(a.open_prs >= a.max_open_prs){ return {gate:"open-PR bound", kind:"wait", reason:a.open_prs + " kstrl PR(s) open (bound " + a.max_open_prs + "); waiting for review"}; }
   }
-  if(a.inbox_at_cap){ return {gate:"inbox cap", kind:"wait", reason:"the inbox is at its open-item cap; triage before queueing more"}; }
-  if(a.lock_held){ return {gate:"factory lock", kind:"wait", reason:"a factory run already holds this root"}; }
   if(!a.ready_item){ return {gate:"claim", kind:"skip", reason:"nothing ready"}; }
   return {gate:"claim", kind:"claim", reason:"one item leased and run"};
 };
