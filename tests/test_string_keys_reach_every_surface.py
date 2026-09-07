@@ -1,6 +1,6 @@
 """One table, five surfaces (#229 SHOULD-FIX 8).
 
-``config.STRING_KEYS`` is the declared set of kstrl.toml keys that
+``config_keys.STRING_KEYS`` is the declared set of kstrl.toml keys that
 overlay one ``KstrlConfig`` field from a string. Three consumers derive
 from it (the TOML overlay, the env overlay, ``KstrlConfig.anchored``) and
 two used to hand-copy it: ``config_report.show_sections``, which is what
@@ -16,8 +16,17 @@ class demonstrated live: a tenth row added to ``STRING_KEYS`` alone
 dropped out of ``ks config`` and out of the generated README with every
 gate green.
 
-The test is the mutation. It adds a tenth row at run time and asserts it
-appears on both surfaces with no other edit.
+The test is the mutation. It adds an eleventh row at run time and asserts
+it appears on both surfaces with no other edit.
+
+R10.9 moved the table into ``kstrl/config_keys.py`` because
+``kstrl/config.py`` was one line under the 800-line ratchet and could not
+take another ``[paths]`` row. ``kstrl.config`` re-exports the name and
+the three loaders read it from there; the two documentation surfaces read
+it from ``config_keys``, which is what the mutation below patches.
+:func:`test_the_re_export_is_the_same_object` is what makes that one
+table rather than two, so patching either name is patching the table the
+loaders use.
 """
 
 from __future__ import annotations
@@ -30,12 +39,12 @@ from types import ModuleType
 import pytest
 
 from kstrl import config as config_mod
-from kstrl import config_report
-from kstrl.config import STRING_KEYS
+from kstrl import config_keys, config_report
+from kstrl.config_keys import STRING_KEYS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-#: A tenth row. It aliases an existing FIELD on purpose: the point under
+#: One more row. It aliases an existing FIELD on purpose: the point under
 #: test is that the KEY travels, and inventing a dataclass field would
 #: test a KstrlConfig this repo does not ship.
 TENTH_ROW = ("paths", "tenth_row_probe", "KSTRL_TENTH_ROW_PROBE", "codebase_map_file", True)
@@ -55,7 +64,7 @@ def gen_docs() -> ModuleType:
 
 @pytest.fixture
 def tenth_row(monkeypatch: pytest.MonkeyPatch) -> tuple[str, str, str, str, bool]:
-    monkeypatch.setattr(config_mod, "STRING_KEYS", (*STRING_KEYS, TENTH_ROW))
+    monkeypatch.setattr(config_keys, "STRING_KEYS", (*STRING_KEYS, TENTH_ROW))
     return TENTH_ROW
 
 
@@ -102,3 +111,15 @@ class TestATenthRowNeedsNoHandEdit:
             assert sections[section][: len(declared)] == declared
             for key, field_name in declared:
                 assert specs[section].keys[key] == field_name
+
+
+class TestTheTwoNamesAreOneTable:
+    def test_the_re_export_is_the_same_object(self) -> None:
+        """``kstrl.config_keys`` owns the table and ``kstrl.config``
+        re-exports it. IDENTITY, not equality: the loaders read one name
+        and the two documentation surfaces read the other, and identity
+        is the only thing that makes them the same table rather than two
+        that happen to agree today. Rebinding either to a fresh tuple
+        fails here rather than surfacing as a key missing from `ks config`
+        six months later."""
+        assert config_mod.STRING_KEYS is config_keys.STRING_KEYS
