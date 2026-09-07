@@ -108,6 +108,7 @@ from tests.helpers.astwalk.scope import (
     declared_in,
     handler_clauses,
     own_nodes,
+    scope_of,
     scopes,
     try_body_nodes,
 )
@@ -144,6 +145,7 @@ __all__ = [
     "parse",
     "parsed",
     "resolved_calls",
+    "scope_of",
     "scopes",
     "spells",
     "test_sources",
