@@ -5,10 +5,20 @@ name: sense dampener
 # repository tracks in scripts/kstrl/sense-baseline.json, and post what the
 # branch ADDED as one pull-request comment.
 #
-# It is ADVISORY. `--fail-on-regression` is deliberately absent, so a
-# regression is reported and never fails the job. The only failure is exit 2,
-# which means the sensor itself could not run: a report nobody can trust is
-# worse than no report, so that one is loud.
+# It is ADVISORY as shipped: `--fail-on-regression` is deliberately absent, so
+# `ks sense` exits 0 on a regression and the job stays green.
+#
+# The job fails on ANY nonzero exit from the sense step, which is three
+# different things and all three are worth failing on. Exit 2 means the sensor
+# could not run at all. Exit 1 means either the command itself died, or - once
+# somebody adds `--fail-on-regression` - that the branch regressed and this
+# repository has chosen to block on that. Anything else is the runner killing
+# the step. A report nobody can trust is worse than no report.
+#
+# Round 1 of review on #227 measured the earlier arrangement, which failed only
+# on `rc == '2'`: adding `--fail-on-regression` exactly as docs/dampener.md
+# instructs produced `ks sense` exiting 1, `rc=1` recorded, and a GREEN job. The
+# documented graduation to blocking did not block.
 
 on:
   pull_request:
@@ -30,13 +40,16 @@ concurrency:
 jobs:
   dampener:
     runs-on: ubuntu-latest
-    # A full `ks sense` on this repository was measured at 327 seconds, 326.7
-    # of them the test suite, on a warm developer machine with other work
-    # sharing it. A cold runner also pays mypy's and ruff's first-run cost,
-    # which is NOT measured and is not guessed at here; 20 minutes is the
-    # measured figure with headroom, against ci.yml's 15 for the same suite
-    # minus the spine tier.
-    timeout-minutes: 20
+    # This has to sit ABOVE the sensor's own budget, or the sensor's timeout can
+    # never fire: GitHub cancels the job first, and a cancelled job produces no
+    # sense.md, no sense.err, no comment and no step summary - so the
+    # measured=False mechanism this whole feature rests on would be unreachable
+    # in the only place the workflow exercises it. KSTRL_TIMEOUT_VERIFY is 1800
+    # below, and each of the three gates may spend it, so 40 minutes is 1800
+    # seconds plus ten for checkout, uv install and `uv sync`. The relationship
+    # is pinned by test_every_job_is_bounded rather than left to arithmetic
+    # somebody redoes.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -70,6 +83,11 @@ jobs:
           # times out, which is a FAILING row rather than a gap, and its
           # fallback signature has the digits stripped - so a baseline
           # carrying it reads as FIXED the moment the suite fits.
+          #
+          # The baseline records a digest of the three verify commands and this
+          # timeout, and `ks sense --compare-baseline` refuses a mismatch with
+          # exit 2, so changing this number without regenerating the baseline
+          # is a red job rather than a wrong report.
           KSTRL_TIMEOUT_VERIFY: "1800"
           # Through env, not interpolated into the script: a ref name is
           # attacker-controlled on a fork pull request.
@@ -101,12 +119,21 @@ jobs:
       - name: Post or update the pull-request comment
         if: >-
           github.event.pull_request.head.repo.full_name == github.repository
-          && steps.sense.outputs.rc != '2'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          set -o pipefail
+          # The file, not the exit code, is the gate. `gh api -F body=@sense.md`
+          # on an empty file sends {"body": ""}, which GitHub rejects with 422,
+          # so the job would go red on the COMMENT step while the real
+          # diagnostic sat unread in sense.err. Anything that produced no
+          # report is the next step's business.
+          if [ ! -s sense.md ]; then
+            echo "no report to post; the failure step below explains why" >&2
+            exit 0
+          fi
           marker='<!-- kstrl-sense-dampener -->'
           # `--jq` runs once PER PAGE, so a `first` inside it is the first
           # match on THAT page, not the first overall. Measured against gh
@@ -115,20 +142,40 @@ jobs:
           # the PATCH below a multi-line id once a pull request passes the
           # 30-comment default page size. `--slurp` is refused alongside
           # `--jq`, so the filter emits every match and `head` picks one.
-          id="$(gh api --paginate "repos/$REPO/issues/$NUMBER/comments" \
-            --jq "map(select(.body | startswith(\"$marker\"))) | .[].id" | head -n 1)"
+          #
+          # Captured to a FILE and checked on its own status, rather than piped
+          # into `head`: the Actions default shell is `bash -e` with no
+          # pipefail, so `id="$(gh api ... | head -n 1)"` takes head's status
+          # and an API failure yielded an empty id, which falls into the POST
+          # branch and posts a SECOND comment. That is the duplicate-comment
+          # outcome the --paginate fix on this very line was made to prevent,
+          # reached by another route. An unreadable lookup is a refusal.
+          if ! gh api --paginate "repos/$REPO/issues/$NUMBER/comments" \
+            --jq "map(select(.body | startswith(\"$marker\"))) | .[].id" > comment-ids.txt; then
+            echo "the comment lookup failed; refusing to post rather than risk a duplicate" >&2
+            exit 1
+          fi
+          id="$(head -n 1 comment-ids.txt)"
           if [ -n "$id" ]; then
             gh api --method PATCH "repos/$REPO/issues/comments/$id" -F body=@sense.md
           else
             gh api --method POST "repos/$REPO/issues/$NUMBER/comments" -F body=@sense.md
           fi
 
-      - name: Fail only when the sensor could not run
-        # Exit 2 means the measurement could not happen: a missing baseline, a
-        # malformed one, a bad kstrl.toml, or git could not produce the diff.
-        # A regression is NOT a failure here, on purpose.
-        if: steps.sense.outputs.rc == '2'
+      - name: Fail unless the measurement produced a trustworthy report
+        # Every nonzero exit, not just 2. See the header for the three cases.
+        # This is also the half of "graduating to blocking" that is easy to
+        # lose: adding --fail-on-regression above makes ks sense exit 1, and
+        # without a step that keys on it the job stays green.
+        if: steps.sense.outputs.rc != '0'
+        env:
+          RC: ${{ steps.sense.outputs.rc }}
         run: |
-          cat sense.err
-          echo "ks sense exited 2: the measurement could not run." >&2
+          cat sense.err >&2
+          echo "ks sense exited $RC." >&2
+          echo "2: the measurement could not run (missing or malformed baseline," >&2
+          echo "   a baseline measured with a different verify configuration, bad" >&2
+          echo "   kstrl.toml, or git could not produce the diff)." >&2
+          echo "1: the command itself failed, or the branch regressed and this" >&2
+          echo "   workflow has been graduated to blocking (see docs/dampener.md)." >&2
           exit 1
