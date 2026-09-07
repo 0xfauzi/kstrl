@@ -97,6 +97,32 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- A `kstrl.toml` section that will not read no longer stops the `ks
+  serve` daemon. `serve` has no per-cycle handler, so an exception from a
+  config read on the poll path left `serve()` and killed the process;
+  under launchd it was then relaunched and died again on the same key.
+  Measured through a real `serve(once=True)` with the document rewritten
+  after daemon start: `[autonomy]`, `[policy]` and `[inbox]` killed the
+  cycle before this change and at `origin/main` alike, and `[factory]`
+  killed it only in the configuration this branch created - a
+  `[serve] max_open_prs = 0` repo, which is the documented way to switch
+  the open-PR bound off and therefore also switches off the one guarded
+  `[factory]` read that used to absorb the fault. All four now REFUSE:
+  the cycle completes and the poll's message names the section an
+  operator has to fix. The item WAITS rather than being poisoned,
+  because an unreadable section clears the moment the file is fixed,
+  while poison is documented as the state that is never retried
+  automatically; a refusal about the repo's resolved configuration
+  (`create_prs = false` against a promised human merge gate) is still
+  terminal. `[intake_github]` and `[serve]` survived at both revisions
+  and are unchanged. `[queue]` still kills the cycle, at `origin/main`
+  and here identically: it is read before the queue exists, so there is
+  nowhere to record a refusal, and it is recorded in
+  `tests/test_serve_config_reads.py::UNGUARDED_LEDGER` with that
+  measurement rather than changed. That module is also the guard: it
+  inventories every config read in `kstrl/serve.py` by enclosing
+  function, decides each GUARDED or UNGUARDED, and fails on an unguarded
+  one that is not in the ledger (#195, #318).
 - The reason `ks serve` supervises a factory run as a process GROUP was
   recorded wrongly, and nothing tested it. `caffeinate -i` does not exec
   its utility in place: measured on macOS 26.6.2 by enumerating the whole
