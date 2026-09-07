@@ -3538,12 +3538,12 @@ def _run_factory_locked(
     # load-bearing rather than incidental: the pipeline owns the meter,
     # so the meter's lifetime has to start with the run directory's
     # rather than with the first phase's. The record just below says
-    # what breaks otherwise (#257 review). Since #192 construction is no
-    # longer pure attribute assignment - it resolves four run-level
-    # config sections - so on a manifest the DAG check below rejects,
-    # that work is done and discarded. Measured at 0.617ms for the one
-    # document parse, against 0.538ms for the single SandboxConfig load
-    # it replaced, which is why the ordering still stands.
+    # what breaks otherwise (#257 review). Construction is pure attribute
+    # assignment again after #192 round 2: the four config sections it
+    # briefly resolved moved into the run envelope above, so a manifest
+    # the DAG check below rejects no longer does and discards that work,
+    # and there is nothing here that can raise before
+    # record_architect_usage.
     pipeline = ComponentPipeline(
         manifest=manifest,
         manifest_path=manifest_path,
