@@ -394,8 +394,10 @@ reported beside it.
 When you find yourself correcting the same thing on a second pull request,
 the correction belongs in `scripts/kstrl/memory.md`, not in another PR
 comment. A comment steers one change; a line in that file is read into every
-subsequent engineer prompt, after the retry context, so it steers every run
-until you remove it.
+subsequent engineer prompt of every run that reads it at all, after the retry
+context, so it steers those runs until you remove it. Which runs those are is
+the paragraph below: `ks factory`, `ks retry` and `ks run`, and not
+`ks feature` or `ks understand`.
 
 What belongs in it: permanent scope exclusions ("never touch the migrations
 directory"), areas whose findings are known false positives, and review

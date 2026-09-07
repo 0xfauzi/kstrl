@@ -531,10 +531,13 @@ def test_an_empty_path_env_var_resolves_to_the_repo_root(
     round 1's nit 4, consciously preserved twice, and it was recorded
     both times in a review report and held by nothing that runs. Pinned
     over EVERY path row rather than over the one the review happened to
-    export, so the count is closed by construction: measured here, all
-    four behave identically, which is what makes it inherited behaviour
-    rather than something the memory row introduced. Whoever decides to
-    change it changes this case deliberately and sees the other three.
+    export, so the count is closed by construction and is not written
+    down: the parametrization IS the set, every row in it behaves
+    identically, and that is what makes this inherited behaviour rather
+    than something the memory row introduced. Round 2 (nit 3) found the
+    sentence saying "all four" over six rows, on a set the same PR had
+    grown. Whoever decides to change it changes this case deliberately
+    and sees every other row it holds.
     """
     monkeypatch.setenv(env_var, "")
 

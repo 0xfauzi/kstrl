@@ -80,12 +80,22 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   still recognised as an unedited scaffold; the digest history is
   append-only for exactly that reason.
 
-- Trailing newlines are no longer an edit. `ks init`'s scaffold
-  recognition compares the file with its trailing newlines collapsed as
-  well as raw, so a copy an editor normalised is still the body kstrl
-  wrote rather than an operator file to inject. Both readers of that
-  rule move together: the loader's injection decision and the staleness
-  notice `ks init --upgrade-prompts` prints.
+- Trailing newlines are no longer an edit to the operator-file loader.
+  It compares the file with its trailing newlines collapsed as well as
+  raw, so a copy an editor normalised is still the body kstrl wrote
+  rather than an operator file to inject. `ks init --upgrade-prompts`
+  keeps the stricter rule it has always had and still asks for byte
+  identity: it replaces your bytes, so it acts only where none of them
+  can be yours, and a scaffold that gained a trailing newline is
+  reported and left alone rather than overwritten.
+
+- An over-budget operator file no longer gives up a whole line that
+  fitted. The cut moves to a line boundary, and where the budget window
+  already ended on one - the last `max_chars` characters starting just
+  after a newline, or the first `max_chars` ending just before one - the
+  move discarded a complete line for nothing. Both ends are fixed. This
+  is at most one entry per truncated read, and for `memory.md` it is one
+  of the newest ones.
 
 - A repeat of an open inbox item now refreshes its `evidence` alongside
   its `detail`. Only the prose half was refreshed before, so a deduped

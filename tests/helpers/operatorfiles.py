@@ -50,12 +50,18 @@ def spec_for(
     ``scaffold`` IS OPT-IN AND DEFAULTS TO OFF, which production does not
     do: ``operator_file_spec`` copies ``kind.scaffold`` and this
     overwrites it. Round 1 (nit 8) is why the docstring says so rather
-    than the default changing: eight of the eleven call sites want
-    suppression off, because they write a body that is not a shipped one
-    and would rather not depend on that; the three cases where
-    suppression is the subject pass ``scaffold=kind.scaffold``
-    explicitly, and they are the only ones for which the difference is
-    observable. A test that means "production's spec" must pass it.
+    than the default changing: most callers want suppression off, because
+    they write a body that is not a shipped one and would rather not
+    depend on that, and the cases where suppression is the SUBJECT pass
+    ``scaffold=kind.scaffold`` explicitly. Those are the only ones for
+    which the difference is observable, and a test that means
+    "production's spec" must pass it.
+
+    How many of each is deliberately not written here. Round 1 counted
+    them (eleven and three), round 2 re-measured the same sentence at
+    fifteen and four, and the count had gone stale on cases this same PR
+    added. The set is whatever ``grep -n "scaffold=" `` returns, and the
+    rule above does not depend on its size.
     """
     built = operator_file_spec(kind, path.parent, path)
     return replace(
