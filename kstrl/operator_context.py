@@ -371,21 +371,28 @@ def read_operator_file(spec: OperatorFile) -> OperatorText:
         return OperatorText(rendered, None, None, absent=False)
 
     body = _cut(rendered, spec)
-    shown = f"truncated: {len(body)} of {len(text)} characters shown, {_KEPT[spec.keep]}"
+    shown = f"truncated: {len(body)} of {len(text)} characters shown"
+    kept = _KEPT[spec.keep]
     return OperatorText(
         body,
-        f"{shown} from {spec.display}",
-        f"{shown}; shorten {spec.path}",
+        f"{shown} from {spec.display}, {kept}",
+        f"{shown}, {kept}; shorten {spec.path}",
         absent=False,
     )
 
 
-#: What the cut kept, said the same way to both audiences. One string per
-#: direction and one interpolation of it, so the prompt's ``fact`` and the
-#: operator's ``message`` cannot disagree about which end went. The
-#: operator needs the direction to prune correctly: told only "shorten
-#: it", somebody trimming a memory file from the bottom deletes exactly
-#: the entries the cut was already keeping.
+#: What the cut kept, said the same way to both audiences. ONE string per
+#: direction and ONE lookup of it, beside the one ``shown`` string both
+#: notices carry the numbers in, so the prompt's ``fact`` and the
+#: operator's ``message`` can disagree about neither the amount nor the
+#: end. The operator needs the direction to prune correctly: told only
+#: "shorten it", somebody trimming a memory file from the bottom deletes
+#: exactly the entries the cut was already keeping.
+#:
+#: The direction sits LAST in both, after the filename in ``fact``.
+#: Written between the count and the filename it produced "dropping the
+#: start from memory.md", where the closing phrase reads as part of the
+#: direction rather than as the file the count is about.
 _KEPT: dict[str, str] = {
     "head": "keeping the start of the file and dropping the end",
     "tail": "keeping the end of the file and dropping the start",
