@@ -44,13 +44,24 @@ CONTROL_INBOX = "inbox.jsonl"
 CONTROL_SPEND = "spend.json"
 CONTROL_PAUSE = "pause.json"
 CONTROL_GITHUB_PROCESSED = "github_processed.json"
+#: R10.7 / #228. The daemon's consecutive-inconclusive open-PR count.
+#: Control state rather than an in-tree artifact because it decides
+#: whether the daemon files an inbox item, and because launchd
+#: ``interval`` mode runs one ``ks serve --once`` process per firing:
+#: a counter that lived only in the process could never reach its
+#: threshold there. Post-R8.9, so it has no legacy in-tree location.
+CONTROL_PR_COUNT_STREAK = "pr_count_streak.json"
 
+#: Every file kstrl keeps in the XDG control directory. Wider than
+#: :func:`legacy_control_paths`, whose keys are the subset that also
+#: existed in-tree before R8.9 and therefore have something to migrate.
 CONTROL_FILENAMES: tuple[str, ...] = (
     CONTROL_AUTONOMY,
     CONTROL_INBOX,
     CONTROL_SPEND,
     CONTROL_PAUSE,
     CONTROL_GITHUB_PROCESSED,
+    CONTROL_PR_COUNT_STREAK,
 )
 
 #: Directories kstrl creates directly under ``.kstrl/``. A statement of
@@ -379,7 +390,15 @@ def control_file(root_dir: Path, name: str) -> Path:
 
 
 def legacy_control_paths(root_dir: Path) -> dict[str, Path]:
-    """Former in-tree locations for each control file (migration + halt set)."""
+    """Former in-tree locations, for the control files that had one.
+
+    The keys are a SUBSET of :data:`CONTROL_FILENAMES`, and the migration
+    and the halt set are both driven off this mapping rather than off
+    that tuple. A control file introduced after the R8.9 relocation never
+    lived in the tree, so it has no former location, nothing to migrate
+    and nothing that could be left behind: reading a legacy path for it
+    would be inventing one.
+    """
     queue = state_dir(root_dir) / "queue"
     return {
         CONTROL_AUTONOMY: state_dir(root_dir) / CONTROL_AUTONOMY,
@@ -528,9 +547,10 @@ def migrate_control_state(root_dir: Path) -> list[str]:
         return []
     target_root = control_dir(root_dir)
     moved: list[str] = []
-    legacy = legacy_control_paths(root_dir)
-    for name in CONTROL_FILENAMES:
-        src = legacy[name]
+    # Over the files that HAVE a former in-tree location, not over every
+    # control filename: a post-R8.9 file has nothing to migrate, and
+    # indexing it out of the legacy map would be a KeyError.
+    for name, src in legacy_control_paths(root_dir).items():
         dst = target_root / name
         try:
             src_present = src.exists() or src.is_symlink()
