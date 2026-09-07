@@ -449,13 +449,29 @@ def _fixture_file_text(fixture: Fixture, full_path: Path, rel_path: str) -> str 
     verdict, where "failed to read" would send the reader to permissions
     that are fine. Not ``errors="replace"``: that lets an assertion answer
     against a character nobody wrote.
+
+    Both rows measure NOTHING (#227). The caller reached here having seen
+    the file exist, and its ``contains`` expectations are substring tests
+    it could not run: the environment took the file away or handed back
+    bytes no expectation could be evaluated against. That is the same
+    pair, for the same reason, as ``verify._self_critique_text``.
     """
     try:
         return full_path.read_text(encoding="utf-8")
     except OSError as exc:
-        return FixtureResult(fixture, False, message=f"Failed to read file '{rel_path}': {exc}")
+        return FixtureResult(
+            fixture,
+            False,
+            message=f"Failed to read file '{rel_path}': {exc}",
+            measured=False,
+        )
     except UnicodeDecodeError as exc:
-        return FixtureResult(fixture, False, message=f"File '{rel_path}' is not valid UTF-8: {exc}")
+        return FixtureResult(
+            fixture,
+            False,
+            message=f"File '{rel_path}' is not valid UTF-8: {exc}",
+            measured=False,
+        )
 
 
 def run_file_fixture(fixture: Fixture, cwd: Path) -> FixtureResult:

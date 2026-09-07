@@ -109,17 +109,42 @@ signature measured something in this run; otherwise the signature lands in
 `unmeasured` and the report says the check did not run. Without that rule,
 uninstalling a linter reads as fixing every one of its findings.
 
-Measured, against a `check_linter` run whose command is not on PATH: the row
-comes back `passed=False measured=False "Linter failed (exit code 127)"`, and a
-baseline holding `linter:E501` 12 and `linter:F401` 3 compares to
-`fixed={}`, `unmeasured={'linter:E501': 12, 'linter:F401': 3}` and
-`stopped_measuring={'linter': ...}`. On the first version of this feature the
-same input produced `fixed={'linter:E501': 12, 'linter:F401': 3}`: the sentence
-above was the design and not the code.
+What a gate says it measured is decided by its PARSER, not by its exit status.
+`measured=True` means a parser for that gate saw its own tool reporting a
+failure: pytest's summary line with a failure count, a FAILED or ERROR line,
+mypy's `Found N errors in M files (checked ...)`, a ruff or eslint diagnostic,
+a tsc `TS` code. Anything else is `measured=False` - an empty stream, a
+traceback, a launcher's complaint.
+
+Measured, running `check_linter` against a tool that is not installed, in both
+command shapes:
+
+    uv run <missing> check .   -> exit 2,   measured=False
+    <missing> check .          -> exit 127, measured=False
+
+and with a baseline holding `linter:E501` 12 and `linter:F401` 3, both compare
+to `fixed={}`, `unmeasured={'linter:E501': 12, 'linter:F401': 3}` and
+`stopped_measuring={'linter': ...}`.
+
+Both shapes, because the exit status cannot tell them apart from a real
+finding. The first version of this feature refused exit 126 and 127, which are
+the POSIX shell's statuses for a command word it could not run - and the gate
+commands kstrl resolves are `uv run pytest`, `uv run mypy .` and `uv run ruff
+check .`, where uv spawns the child itself and reports its own exit 2. So the
+`uv run` row above produced `fixed={'linter:E501': 12, 'linter:F401': 3}`:
+uninstalling a linter read as fixing every one of its findings, for the exact
+command shape everybody runs. Exit 2 could not simply be added to the refused
+set either, since pytest, mypy and ruff all use 2 for their own errors.
+
+A gate that PASSES is measured on its status alone, and that is a different
+question with a different answer: a command that never started cannot exit 0,
+while a clean run prints no failure for any parser to recognise.
 
 A vacuous pass counts as measuring nothing for the same reason. `diff_scope`
-with no `--allowed-path` applies no rule, and `bad_patterns` over an empty diff
-opens no files; neither can prove a finding went away.
+with no `--allowed-path` applies no rule; over an empty diff both `diff_scope`
+and `bad_patterns` apply their rule to nothing and report the same reason, `no
+files in the diff`; and `bad_patterns` counts the files it OPENED, so a
+deletion-only commit measures nothing however many files it names.
 
 The reverse case is deliberately noisy: a signature from a check the BASELINE
 never measured is reported as `new`. That over-reports when a toolchain gains a

@@ -11,9 +11,14 @@ function that ships it, because the defect this closes was six correct-looking
 present, PATH is what says so: a directory of two-line stubs, not a patched
 ``shutil.which``.
 
-The gate-timeout cases use a real subprocess and a small timeout, which costs
-about a second in total; ``run_scrubbed`` signals the process group, so nothing
-outlives the assertion.
+The three verify gates are in ``tests/test_gate_measurement_behaviour.py``,
+which is a file rather than a section because they decide ``measured``
+differently: every check here knows from its own control flow whether it looked
+at anything, while a gate has to read its tool's output to find out.
+
+The fixture-timeout cases use a real subprocess and a small timeout, which
+costs about a second in total; ``run_scrubbed`` signals the process group, so
+nothing outlives the assertion.
 """
 
 from __future__ import annotations
@@ -32,40 +37,23 @@ from kstrl.adequacy import AdequacyConfig
 from kstrl.fixtures import Fixture, FixturesConfig, check_fixtures, check_fixtures_from_prd
 from kstrl.policy import PolicyConfig
 from kstrl.verify import (
-    CheckResult,
     NotMeasured,
     VerificationResult,
-    VerifyConfig,
     check_bad_patterns,
     check_dead_code_ruff,
     check_diff_scope,
-    check_linter,
     check_policy_envelope,
     check_prd_stories,
     check_scope_unreadable,
     check_self_critique,
     check_test_adequacy,
-    check_test_suite,
-    check_typecheck,
-    run_mechanical_verification,
 )
-
-#: A command that is not on any PATH. Runs through the shell, so a missing
-#: binary is exit 127 rather than FileNotFoundError.
-MISSING_BINARY = "kstrl-there-is-no-such-tool-227"
+from tests.helpers.measurement import assert_measured, assert_unmeasured
 
 #: Long enough that a sub-second timeout always fires first.
 SLOW_COMMAND = f"{sys.executable} -c 'import time; time.sleep(30)'"
 
 TINY_TIMEOUT = 0.2
-
-#: A gate command that succeeds, and one that fails having produced a
-#: parseable finding. The second is the CONTROL for the first: a linter
-#: that ran and reported something measured, and its row must say so.
-PASSING_COMMAND = f"{sys.executable} -c 'pass'"
-FAILING_LINT_COMMAND = (
-    f"""{sys.executable} -c 'import sys; print("x.py:1:1: E501 long"); sys.exit(1)'"""
-)
 
 
 def _stub(directory: Path, name: str, body: str) -> None:
@@ -94,112 +82,25 @@ def only_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tools
 
 
-def _assert_unmeasured(row: CheckResult) -> None:
-    """The row measured nothing, and the dampener treats it accordingly.
-
-    Both halves, because either alone is satisfiable by a broken mechanism: a
-    ``measured=False`` nothing reads is a comment, and a comparison that never
-    fills ``fixed`` would pass the second assertion with the field deleted.
-
-    The baseline is built to hold one signature this check produced earlier, so
-    the question "did this get fixed?" is live. It must be answered no.
-    """
-    assert row.measured is False, f"{row.name} claims to have measured: {row.message!r}"
-
-    signature = f"{row.name}:an-earlier-finding"
-    current = dampener.baseline_from_result(
-        VerificationResult(passed=row.passed, checks=[row], not_measured=[]),
-        base_ref="0" * 40,
-        project="proj",
-        generated_at="2026-09-07T00:00:00Z",
-        sense_schema_version=3,
-        digest="d" * 16,
-    )
-    baseline = dampener.Baseline(
-        generated_at="2026-09-06T00:00:00Z",
-        base_ref="1" * 40,
-        project="proj",
-        passed=False,
-        sense_schema_version=3,
-        verify_digest="d" * 16,
-        measured_checks=(row.name,),
-        unmeasured_checks=(),
-        unmeasured_reasons={},
-        signatures={signature: 3},
-    )
-
-    comparison = dampener.compare(baseline, current)
-
-    assert comparison.unmeasured == {signature: 3}
-    assert comparison.fixed == {}
-    assert comparison.new == {}
-    # The flagging half of the same fact: the sensor went dark, so the verdict
-    # is a regression rather than "no regression" and exit 0.
-    assert row.name in comparison.stopped_measuring
-    assert comparison.regressed is True
-    # And the row contributes no signature of its own, which is what stops a
-    # timeout message becoming a finding that later "gets fixed".
-    assert current.signatures == {}
-
-
-def _assert_measured(row: CheckResult) -> None:
-    """The control: the same check, having actually measured something."""
-    assert row.measured is True, f"{row.name} claims it measured nothing: {row.message!r}"
-
-
-# --- the three gates ------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    ("check", "name"),
-    [
-        (check_test_suite, "test_suite"),
-        (check_typecheck, "typecheck"),
-        (check_linter, "linter"),
-    ],
-)
-def test_a_gate_whose_tool_is_not_installed_measured_nothing(
-    check: object,
-    name: str,
-    tmp_path: Path,
-) -> None:
-    """Exit 127 from the shell means the command never started.
-
-    Measured on the head of #357: ``check_linter`` against a nonexistent binary
-    returned ``measured=True`` and the comparison reported
-    ``fixed={'linter:E501': 12, 'linter:F401': 3}`` - uninstalling a linter read
-    as fixing every one of its findings, which is precisely what
-    ``docs/dampener.md`` claimed the rule prevented.
-    """
-    row = check(tmp_path, command=MISSING_BINARY, timeout=30)  # type: ignore[operator]
-
-    assert row.passed is False
-    assert "127" in row.message
-    assert row.name == name
-    _assert_unmeasured(row)
-
-
-@pytest.mark.parametrize(
-    "check",
-    [check_test_suite, check_typecheck, check_linter],
-)
-def test_a_gate_that_timed_out_measured_nothing(check: object, tmp_path: Path) -> None:
-    row = check(tmp_path, command=SLOW_COMMAND, timeout=TINY_TIMEOUT)  # type: ignore[operator]
-
-    assert "timed out" in row.message
-    _assert_unmeasured(row)
-
-
-def test_a_gate_that_ran_and_failed_did_measure(tmp_path: Path) -> None:
-    """The control for both tests above.
-
-    Without it, ``measured=False`` on every failing gate would pass them, and
-    that mistake empties a baseline instead of filling it.
-    """
-    _assert_measured(check_linter(tmp_path, command=FAILING_LINT_COMMAND, timeout=30))
-
-
 # --- diff-driven checks ---------------------------------------------------
+
+
+def _git(*args: str, cwd: Path) -> None:
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+
+
+def _repo(root: Path) -> Path:
+    """A real repository on ``main``, with one empty commit as the base.
+
+    Real git, not a stub: what is under test is what the two diff-driven checks
+    do with the file list git gives them, and a stub would be the test deciding
+    that list.
+    """
+    _git("init", "-q", "-b", "main", cwd=root)
+    _git("config", "user.email", "kstrl@example.com", cwd=root)
+    _git("config", "user.name", "kstrl", cwd=root)
+    _git("commit", "-q", "--allow-empty", "-m", "base", cwd=root)
+    return root
 
 
 def test_diff_scope_with_no_allowed_paths_measured_nothing(tmp_path: Path) -> None:
@@ -209,19 +110,75 @@ def test_diff_scope_with_no_allowed_paths_measured_nothing(tmp_path: Path) -> No
 
     assert row.passed is True
     assert "No scope constraints" in row.message
-    _assert_unmeasured(row)
+    assert_unmeasured(row)
 
 
-def test_diff_scope_with_a_scope_to_apply_did_measure(tmp_path: Path) -> None:
-    _assert_measured(check_diff_scope(tmp_path, "main", allowed_paths=["src/**"]))
+def test_the_two_diff_driven_checks_agree_on_an_empty_diff(tmp_path: Path) -> None:
+    """One diff, two checks, one answer.
+
+    Round 2 of review on #357 ran them side by side on an empty diff and they
+    disagreed: ``diff_scope`` reported ``measured=True`` for "0 files, all
+    within scope" while ``bad_patterns`` reported ``measured=False`` for
+    "Scanned 0 Python files". Both apply a rule to nothing, so an adopter who
+    sets --allowed-path had every ``diff_scope`` baseline signature CLEARED by
+    a pull request whose diff touched none of the allowed globs.
+
+    The MESSAGES are asserted equal too, not only the flag: the dampener turns
+    a row's message into the reason a check is unmeasured, so two spellings of
+    one fact reach the operator as two different holes.
+    """
+    repo = _repo(tmp_path)
+
+    scope = check_diff_scope(repo, "main", allowed_paths=["src/**"])
+    patterns = check_bad_patterns(repo, "main")
+
+    assert scope.passed is True
+    assert patterns.passed is True
+    assert scope.message == patterns.message
+    assert_unmeasured(scope)
+    assert_unmeasured(patterns)
 
 
-def test_bad_patterns_having_scanned_nothing_measured_nothing(tmp_path: Path) -> None:
-    """ "Scanned 0 Python files" cannot prove a secret went away."""
-    row = check_bad_patterns(tmp_path, "main")
+def test_a_deletion_only_commit_measures_scope_and_not_content(tmp_path: Path) -> None:
+    """The two checks part company here, and this is why they are separate.
 
-    assert row.message == "Scanned 0 Python files, no issues"
-    _assert_unmeasured(row)
+    ``diff_scope`` decides on the file NAMES git reported, and it has three of
+    them, so it measured. ``bad_patterns`` has to OPEN each file, and every one
+    is gone from the worktree, so it measured nothing: round 2 of review
+    measured "Scanned 3 Python files, no issues" with ``measured=True`` from a
+    check that opened none of them, and a deleted file cannot be shown to be
+    free of secrets.
+    """
+    repo = _repo(tmp_path)
+    for name in ("a.py", "b.py", "c.py"):
+        (repo / name).write_text("value = 1\n", encoding="utf-8")
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-q", "-m", "add three", cwd=repo)
+    _git("checkout", "-q", "-b", "work", cwd=repo)
+    for name in ("a.py", "b.py", "c.py"):
+        (repo / name).unlink()
+    _git("commit", "-q", "-a", "-m", "delete three", cwd=repo)
+
+    scope = check_diff_scope(repo, "main", allowed_paths=["*.py"])
+    patterns = check_bad_patterns(repo, "main")
+
+    assert_measured(scope)
+    assert patterns.message == "Scanned 0 of 3 changed Python files, no issues"
+    assert_unmeasured(patterns)
+
+
+def test_bad_patterns_that_opened_a_file_did_measure(tmp_path: Path) -> None:
+    """The control for the two above on the scanning side."""
+    repo = _repo(tmp_path)
+    _git("checkout", "-q", "-b", "work", cwd=repo)
+    (repo / "a.py").write_text("value = 1\n", encoding="utf-8")
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-q", "-m", "add one", cwd=repo)
+
+    row = check_bad_patterns(repo, "main")
+
+    assert row.message == "Scanned 1 of 1 changed Python files, no issues"
+    assert_measured(row)
 
 
 def test_policy_envelope_that_could_not_read_the_diff_measured_nothing(tmp_path: Path) -> None:
@@ -229,7 +186,7 @@ def test_policy_envelope_that_could_not_read_the_diff_measured_nothing(tmp_path:
 
     assert row.passed is False
     assert "could not read the diff" in row.message
-    _assert_unmeasured(row)
+    assert_unmeasured(row)
 
 
 def test_test_adequacy_that_could_not_read_the_diff_measured_nothing(tmp_path: Path) -> None:
@@ -237,7 +194,7 @@ def test_test_adequacy_that_could_not_read_the_diff_measured_nothing(tmp_path: P
 
     assert row.passed is False
     assert "could not read the diff" in row.message
-    _assert_unmeasured(row)
+    assert_unmeasured(row)
 
 
 def test_a_scope_that_could_not_be_read_measured_nothing() -> None:
@@ -248,7 +205,7 @@ def test_a_scope_that_could_not_be_read_measured_nothing() -> None:
     absence from the next run would then read as a sensor that went dark on a
     harness somebody had just repaired.
     """
-    _assert_unmeasured(check_scope_unreadable("the pre-run PRD could not be parsed"))
+    assert_unmeasured(check_scope_unreadable("the pre-run PRD could not be parsed"))
 
 
 # --- PRD-driven checks ----------------------------------------------------
@@ -259,7 +216,7 @@ def test_prd_stories_that_could_not_load_the_prd_measured_nothing(tmp_path: Path
 
     assert row.passed is False
     assert "Failed to load PRD" in row.message
-    _assert_unmeasured(row)
+    assert_unmeasured(row)
 
 
 def test_prd_stories_that_read_the_prd_did_measure(tmp_path: Path) -> None:
@@ -283,14 +240,14 @@ def test_prd_stories_that_read_the_prd_did_measure(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    _assert_measured(check_prd_stories(prd))
+    assert_measured(check_prd_stories(prd))
 
 
 def test_a_progress_file_that_could_not_be_read_measured_nothing(tmp_path: Path) -> None:
     row = check_self_critique(tmp_path / "absent.txt")
 
     assert "Could not read progress file" in row.message
-    _assert_unmeasured(row)
+    assert_unmeasured(row)
 
 
 def test_a_progress_file_that_is_not_utf8_measured_nothing(tmp_path: Path) -> None:
@@ -300,14 +257,14 @@ def test_a_progress_file_that_is_not_utf8_measured_nothing(tmp_path: Path) -> No
     row = check_self_critique(progress)
 
     assert "not valid UTF-8" in row.message
-    _assert_unmeasured(row)
+    assert_unmeasured(row)
 
 
 def test_a_progress_file_with_no_self_critique_did_measure(tmp_path: Path) -> None:
     progress = tmp_path / "progress.txt"
     progress.write_text("## [2026-01-01] - [S1]\n- **Learnings:** none\n", encoding="utf-8")
 
-    _assert_measured(check_self_critique(progress))
+    assert_measured(check_self_critique(progress))
 
 
 # --- fixtures -------------------------------------------------------------
@@ -318,7 +275,7 @@ def test_a_run_with_no_fixtures_measured_nothing(tmp_path: Path) -> None:
 
     assert row.passed is True
     assert row.message == "No fixtures defined"
-    _assert_unmeasured(row)
+    assert_unmeasured(row)
 
 
 def test_one_fixture_that_timed_out_makes_the_whole_row_unmeasured(tmp_path: Path) -> None:
@@ -340,7 +297,7 @@ def test_one_fixture_that_timed_out_makes_the_whole_row_unmeasured(tmp_path: Pat
 
     assert row.passed is False
     assert "timed out" in "".join(row.details)
-    _assert_unmeasured(row)
+    assert_unmeasured(row)
 
 
 def test_a_fixture_that_ran_and_failed_did_measure(tmp_path: Path) -> None:
@@ -353,7 +310,7 @@ def test_a_fixture_that_ran_and_failed_did_measure(tmp_path: Path) -> None:
         ),
     ]
 
-    _assert_measured(check_fixtures(fixtures, tmp_path, FixturesConfig()))
+    assert_measured(check_fixtures(fixtures, tmp_path, FixturesConfig()))
 
 
 def test_a_fixture_whose_process_could_not_be_launched_measured_nothing(
@@ -380,7 +337,7 @@ def test_a_fixture_whose_process_could_not_be_launched_measured_nothing(
 
     assert row.passed is False
     assert "Failed to run command" in "".join(row.details)
-    _assert_unmeasured(row)
+    assert_unmeasured(row)
 
 
 def test_a_function_fixture_that_timed_out_measured_nothing(tmp_path: Path) -> None:
@@ -403,7 +360,7 @@ def test_a_function_fixture_that_timed_out_measured_nothing(tmp_path: Path) -> N
 
     assert row.passed is False
     assert "Function fixture timed out" in "".join(row.details)
-    _assert_unmeasured(row)
+    assert_unmeasured(row)
 
 
 def test_a_function_fixture_that_could_not_be_launched_measured_nothing(
@@ -422,7 +379,7 @@ def test_a_function_fixture_that_could_not_be_launched_measured_nothing(
 
     assert row.passed is False
     assert "Failed to launch fixture subprocess" in "".join(row.details)
-    _assert_unmeasured(row)
+    assert_unmeasured(row)
 
 
 def test_a_function_fixture_that_ran_and_failed_did_measure(tmp_path: Path) -> None:
@@ -440,7 +397,7 @@ def test_a_function_fixture_that_ran_and_failed_did_measure(tmp_path: Path) -> N
         ),
     ]
 
-    _assert_measured(check_fixtures(fixtures, tmp_path, FixturesConfig()))
+    assert_measured(check_fixtures(fixtures, tmp_path, FixturesConfig()))
 
 
 def test_a_malformed_fixture_definition_still_counts_as_measured(tmp_path: Path) -> None:
@@ -459,7 +416,7 @@ def test_a_malformed_fixture_definition_still_counts_as_measured(tmp_path: Path)
         ),
     ]
 
-    _assert_measured(check_fixtures(fixtures, tmp_path, FixturesConfig()))
+    assert_measured(check_fixtures(fixtures, tmp_path, FixturesConfig()))
 
 
 def test_a_prd_the_fixtures_check_could_not_read_measured_nothing(tmp_path: Path) -> None:
@@ -467,7 +424,7 @@ def test_a_prd_the_fixtures_check_could_not_read_measured_nothing(tmp_path: Path
 
     assert row.passed is False
     assert "could not be read" in row.message
-    _assert_unmeasured(row)
+    assert_unmeasured(row)
 
 
 def test_a_schema_invalid_prd_measured_no_fixtures(tmp_path: Path) -> None:
@@ -478,7 +435,7 @@ def test_a_schema_invalid_prd_measured_no_fixtures(tmp_path: Path) -> None:
 
     assert row.passed is False
     assert "schema validation" in row.message
-    _assert_unmeasured(row)
+    assert_unmeasured(row)
 
 
 # --- the other spelling of the same rule ---------------------------------
@@ -552,71 +509,3 @@ def test_the_stubs_are_real_executables(only_path: Path) -> None:
 
     assert completed.returncode == 0
     assert completed.stdout.strip() == "Found 3 errors."
-
-
-# --- the verdict is a function of `passed` alone ---------------------------
-
-
-def _verdict_config(lint_command: str) -> VerifyConfig:
-    """Three gates, only the linter varying, and no diff-reading check.
-
-    ``check_diff_scope`` and ``check_bad_patterns`` are off so the verdict is
-    decided by the row under test and nothing else. ``tmp_path`` is not a git
-    repository, and leaving them on would add rows whose own outcome would
-    then be what the assertion measured.
-    """
-    return VerifyConfig(
-        test_command=PASSING_COMMAND,
-        typecheck_command=PASSING_COMMAND,
-        lint_command=lint_command,
-        check_diff_scope=False,
-        check_bad_patterns=False,
-        subprocess_timeout=30.0,
-    )
-
-
-def _linter_row(result: VerificationResult) -> CheckResult:
-    rows = [check for check in result.checks if check.name == "linter"]
-    assert len(rows) == 1, [check.name for check in result.checks]
-    return rows[0]
-
-
-def test_an_unmeasured_gate_still_fails_the_run(tmp_path: Path) -> None:
-    """``measured`` decides what a COMPARISON may call fixed, and nothing else.
-
-    ``run_mechanical_verification`` computes ``passed = all(c.passed for c in
-    checks)``. Adding ``if c.measured`` to that comprehension is the #227
-    fail-open: this repository's own test suite times out at the default
-    timeout, and a verdict that skipped unmeasured rows would report the
-    timeout as a passing run.
-
-    So: the same failing linter, once having measured nothing (its binary is
-    missing) and once having measured something (it ran and printed a
-    finding). The rows differ in ``measured`` and agree on ``passed``, and both
-    runs fail.
-    """
-    unmeasured = run_mechanical_verification(
-        tmp_path, None, "main", None, _verdict_config(MISSING_BINARY)
-    )
-    measured = run_mechanical_verification(
-        tmp_path, None, "main", None, _verdict_config(FAILING_LINT_COMMAND)
-    )
-
-    assert _linter_row(unmeasured).measured is False
-    assert _linter_row(measured).measured is True
-    assert _linter_row(unmeasured).passed is False
-    assert _linter_row(measured).passed is False
-
-    assert unmeasured.passed is False
-    assert measured.passed is False
-
-
-def test_a_run_whose_gates_all_passed_still_passes(tmp_path: Path) -> None:
-    """The control. Without it, a verdict wired to ``False`` would pass the
-    test above, and that mistake fails every run in the factory."""
-    result = run_mechanical_verification(
-        tmp_path, None, "main", None, _verdict_config(PASSING_COMMAND)
-    )
-
-    assert [check.passed for check in result.checks] == [True, True, True]
-    assert result.passed is True

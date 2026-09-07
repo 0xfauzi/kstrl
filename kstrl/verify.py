@@ -1154,22 +1154,6 @@ def scrub_project_claude_md(
     return scrub_stale_verify_commands(claude_md, commands)
 
 
-#: POSIX shell status for a command that never ran: 127 is "command not
-#: found", 126 is "found but not executable". ``run_scrubbed`` runs a
-#: string command through the shell, so a missing tool arrives here as a
-#: return code rather than as ``FileNotFoundError``.
-#:
-#: #227: a gate that could not START its tool measured NOTHING, and the
-#: difference matters to the dampener rather than to the verdict. Before
-#: this, uninstalling a linter emptied ``linter:*`` from the current
-#: signatures while ``linter`` stayed in ``measured_checks``, so every one
-#: of its baseline findings was reported FIXED. Measured on the head of
-#: #357: ``check_linter`` against a nonexistent binary returned
-#: ``passed=False measured=True "Linter failed (exit code 127)"`` and the
-#: comparison reported ``fixed={'linter:E501': 12, 'linter:F401': 3}``.
-COMMAND_NOT_RUN_EXIT_CODES = frozenset({126, 127})
-
-
 def _failed_gate_result(
     name: str,
     message: str,
@@ -1177,8 +1161,6 @@ def _failed_gate_result(
     cmd: str,
     cwd: Path,
     start: float,
-    *,
-    measured: bool = True,
 ) -> CheckResult:
     """Enrich a parse and package it as the gate's failing CheckResult.
 
@@ -1187,12 +1169,25 @@ def _failed_gate_result(
     ``parsed.command`` the prompt label falls back to the parser name,
     which is exactly the #258 mislabel returning unannounced.
 
-    ``measured`` is keyword-only and defaults True: the ordinary failing
-    gate DID measure, and the caller passes False only for the exit codes
-    that mean the tool never started. Keyword-only because this function
-    already takes six positional arguments and a seventh boolean in that
-    line would be the #294 shape - a positional flag an unported caller
-    fills with the wrong thing.
+    #227: the row's ``measured`` is the parser's own answer, and this is
+    the only place it is decided. ``ParsedOutput.recognised`` is True
+    when a parser for this gate saw its tool reporting a failure - a
+    diagnostic in the tool's format, or the tool's own failure footer -
+    and False for everything else, uv's exit 2 for a command it could
+    not spawn and the shell's 127 included.
+
+    Decided here rather than passed in. Round 1 of #357 decided it at
+    the three call sites from the EXIT CODE, ``returncode not in {126,
+    127}``, and round 2 of review measured what that is worth on the
+    commands this repository actually ships: the gate defaults are
+    ``uv run pytest`` / ``uv run mypy .`` / ``uv run ruff check .``, and
+    uv spawns the child itself and reports its OWN status, which is 2.
+    So ``uv run <missing> check .`` returned ``measured=True`` and the
+    comparison reported ``fixed={'linter:E501': 12, 'linter:F401': 3}``
+    - uninstalling a linter read as fixing every one of its findings,
+    which is exactly what the exit-code rule existed to prevent. A
+    status is the LAUNCHER's, and only the tool's own report is
+    evidence that the tool ran.
     """
     parsed.command = cmd
     for failure in parsed.failures:
@@ -1217,7 +1212,7 @@ def _failed_gate_result(
         details=parsed.format_for_prompt(),
         duration_seconds=time.monotonic() - start,
         parsed=parsed,
-        measured=measured,
+        measured=parsed.recognised,
     )
 
 
@@ -1255,7 +1250,6 @@ def check_test_suite(
             cmd,
             cwd,
             start,
-            measured=result.returncode not in COMMAND_NOT_RUN_EXIT_CODES,
         )
 
     return CheckResult(
@@ -1296,7 +1290,6 @@ def check_typecheck(
             cmd,
             cwd,
             start,
-            measured=result.returncode not in COMMAND_NOT_RUN_EXIT_CODES,
         )
 
     return CheckResult(
@@ -1337,7 +1330,6 @@ def check_linter(
             cmd,
             cwd,
             start,
-            measured=result.returncode not in COMMAND_NOT_RUN_EXIT_CODES,
         )
 
     return CheckResult(
@@ -1346,6 +1338,16 @@ def check_linter(
         message="Linter passed",
         duration_seconds=time.monotonic() - start,
     )
+
+
+#: What the two diff-driven checks report when the diff handed them nothing.
+#:
+#: One constant because the dampener turns a row's message into the REASON a
+#: check is unmeasured, and round 2 of review on #357 found the two checks
+#: disagreeing about the same empty diff - one measured, one did not. They sit
+#: on the same `git diff`, so they answer this question together or the
+#: mechanism is a coin toss over which check the operator configured.
+NO_FILES_IN_THE_DIFF = "no files in the diff"
 
 
 def _diff_scope_details(
@@ -1624,6 +1626,22 @@ def check_diff_scope(
         )
 
     changed = git.get_diff_names(base_branch, cwd)
+    if not changed:
+        # The other vacuous pass, and the one round 1 of #357 missed: the rule
+        # exists but there is nothing to apply it to. Round 2 of review
+        # measured the two diff-driven checks side by side on one empty diff
+        # and found them disagreeing - `diff_scope` measured, `bad_patterns`
+        # did not - so an adopter who sets --allowed-path had every
+        # `diff_scope` baseline signature CLEARED by a pull request whose diff
+        # touched none of the allowed globs.
+        return CheckResult(
+            name="diff_scope",
+            passed=True,
+            message=NO_FILES_IN_THE_DIFF,
+            duration_seconds=time.monotonic() - start,
+            measured=False,
+        )
+
     # #264: the authored scope plus kstrl's own per-component files. The
     # two lists stay separate all the way into the failure details: an
     # operator reading "outside allowed scope" must be able to tell what
@@ -1677,6 +1695,12 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
     """
     start = time.monotonic()
     issues: list[str] = []
+    # Files this check actually OPENED, which is the number that says what it
+    # measured. `len(py_files)` is the number the diff NAMED: round 2 of review
+    # on #357 ran it on a deletion-only commit and got "Scanned 3 Python files,
+    # no issues" with measured=True, having opened none of them. A deleted file
+    # cannot be shown to be free of secrets.
+    scanned = 0
 
     changed = git.get_diff_names(base_branch, cwd)
     py_files = [f for f in changed if f.endswith(".py")]
@@ -1696,6 +1720,7 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
             # under a non-UTF-8 locale would silently change which
             # SECRET_PATTERNS matched below.
             content = full_path.read_text(encoding="utf-8")
+            scanned += 1
             if not content.strip():
                 issues.append(f"{rel_path}: empty file")
                 continue
@@ -1725,12 +1750,18 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
     return CheckResult(
         name="bad_patterns",
         passed=True,
-        message=f"Scanned {len(py_files)} Python files, no issues",
+        # The same sentence as check_diff_scope when the cause is the same, so
+        # an operator reading two unmeasured rows in one report does not have
+        # to work out whether two spellings mean one fact.
+        message=(
+            NO_FILES_IN_THE_DIFF
+            if not changed
+            else f"Scanned {scanned} of {len(py_files)} changed Python files, no issues"
+        ),
         duration_seconds=time.monotonic() - start,
-        # #227: "Scanned 0 Python files" is a vacuous pass - the same shape as
-        # diff_scope with no allowed paths. It cannot prove a secret or a
-        # syntax error went away, because it opened nothing.
-        measured=bool(py_files),
+        # #227: a scan that opened nothing is a vacuous pass. It cannot prove a
+        # secret or a syntax error went away.
+        measured=bool(scanned),
     )
 
 

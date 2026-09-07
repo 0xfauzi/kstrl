@@ -1,4 +1,4 @@
-"""Every ``CheckResult`` in ``kstrl/`` says whether it MEASURED anything.
+"""Every result row in ``kstrl/`` says whether it MEASURED anything.
 
 ``CheckResult.measured`` (#227) is what stops a sensor's silence reading as a
 fix: a row that timed out, whose tool is missing, or that passed vacuously
@@ -14,22 +14,34 @@ because it says nothing about the site nobody wrote yet.
 
 So the shape here is CLOSED BY CONSTRUCTION rather than a ledger of exceptions,
 in the form ``EXPECTED_JOURNAL_PATH_SITES`` takes: inventory every place a
-``CheckResult`` is CONSTRUCTED, and pin three partitions of it. A new row
-cannot be added, and an existing ``measured=False`` cannot be deleted, without
-moving one of these dicts. The reason goes in the diff that moves it.
+result row is CONSTRUCTED, and pin four partitions of it. A new row cannot be
+added, and an existing ``measured=False`` cannot be deleted, without moving one
+of these dicts. The reason goes in the diff that moves it.
 
 The behavioural half is elsewhere on purpose. This file proves the inventory;
 ``tests/test_check_result_measurement_behaviour.py`` drives the real check
 functions and proves that each unmeasured row lands in ``unmeasured`` rather
 than ``fixed``. Neither is sufficient alone: a census cannot tell whether the
 site is RIGHT, and a behavioural test cannot tell whether a site exists.
+
+TWO TYPES, ONE WALK. ``verify.CheckResult`` and ``fixtures.FixtureResult``
+carry the same field for the same reason, one level apart: a fixture row folds
+into the ``fixtures`` check row with ``all()``. Round 2 of review on #357
+measured what covering only the first is worth - a NEW ``FixtureResult``
+environment-failure row keeping the default measured=True was planted and the
+suite stayed green, which is round 1's own blocker one type down. So the nets
+below key on a SET of constructor names, and adding a third type of result row
+means adding its name to that set rather than writing a fourth guard.
 """
 
 from __future__ import annotations
 
 import ast
+import dataclasses
 from pathlib import Path
 
+from kstrl.fixtures import FixtureResult
+from kstrl.verify import CheckResult
 from tests.helpers.astwalk import (
     assert_census,
     label,
@@ -40,10 +52,10 @@ from tests.helpers.astwalk import (
 )
 from tests.helpers.astwalk.scope import own_nodes
 
-#: The constructor this file is about, and the helper that builds one on behalf
-#: of the three gates. Named as constants because both nets key on them and a
-#: rename that reached one and not the other would be a silent hole.
-CONSTRUCTOR = "CheckResult"
+#: The constructors this file is about, and the helper that builds one on
+#: behalf of the three gates. Named as constants because every net keys on them
+#: and a rename that reached one and not the other would be a silent hole.
+CONSTRUCTORS = ("CheckResult", "FixtureResult")
 GATE_HELPER = "_failed_gate_result"
 
 #: The field itself, named once because two nets key on it: the constructions
@@ -71,8 +83,8 @@ def _scope_names(tree: ast.Module) -> dict[int, str]:
     return found
 
 
-def constructs_a_check_result(node: ast.AST) -> bool:
-    """Is this node a ``CheckResult(...)`` construction?
+def constructor_of(node: ast.AST) -> str | None:
+    """The result type this node constructs, or None if it constructs neither.
 
     ``leaf_name`` so that both spellings count: the bare name every module in
     ``kstrl/`` uses today, and ``verify.CheckResult(...)`` if one ever imports
@@ -80,7 +92,15 @@ def constructs_a_check_result(node: ast.AST) -> bool:
     this layer is the NET, and a net that depends on import resolution goes
     quiet on the import shape nobody enumerated.
     """
-    return isinstance(node, ast.Call) and leaf_name(node.func) == CONSTRUCTOR
+    if not isinstance(node, ast.Call):
+        return None
+    name = leaf_name(node.func)
+    return name if name in CONSTRUCTORS else None
+
+
+def constructs_a_result(node: ast.AST) -> bool:
+    """Is this node a construction of either result type?"""
+    return constructor_of(node) is not None
 
 
 def calls_the_gate_helper(node: ast.AST) -> bool:
@@ -95,16 +115,37 @@ def calls_the_gate_helper(node: ast.AST) -> bool:
     return isinstance(node, ast.Call) and leaf_name(node.func) == GATE_HELPER
 
 
-def _keyword(node: ast.Call, name: str) -> ast.expr | None:
+#: Each result type's field order, for the arguments passed POSITIONALLY.
+#:
+#: ``kstrl/fixtures.py`` writes ``FixtureResult(fixture, False, message=...)``
+#: eighteen times, so a walk that reads keywords only sees no ``passed`` at
+#: those sites and silently drops them out of the partition that asks what they
+#: measured. Pinned here and checked against the real dataclasses by
+#: ``test_the_positional_field_order_is_the_dataclasses_own``, so reordering a
+#: field fails loudly rather than moving every row of every dict below.
+POSITIONAL_FIELDS: dict[str, tuple[str, ...]] = {
+    "CheckResult": ("name", "passed"),
+    "FixtureResult": ("fixture", "passed", "actual", "message", "measured"),
+}
+
+
+def _argument(node: ast.Call, name: str) -> ast.expr | None:
+    """The value passed for ``name``, whether by keyword or by position."""
     for keyword in node.keywords:
         if keyword.arg == name:
             return keyword.value
+    constructor = constructor_of(node)
+    order = POSITIONAL_FIELDS[constructor] if constructor else ()
+    if name in order:
+        index = order.index(name)
+        if index < len(node.args) and not isinstance(node.args[index], ast.Starred):
+            return node.args[index]
     return None
 
 
 def declares_measurement(node: ast.AST) -> bool:
-    """A ``CheckResult`` construction that says, in any spelling, what it measured."""
-    return constructs_a_check_result(node) and _keyword(node, MEASUREMENT) is not None  # type: ignore[arg-type]
+    """A result construction that says, in any spelling, what it measured."""
+    return constructs_a_result(node) and _argument(node, MEASUREMENT) is not None  # type: ignore[arg-type]
 
 
 def fails_with_a_default_measurement(node: ast.AST) -> bool:
@@ -114,9 +155,9 @@ def fails_with_a_default_measurement(node: ast.AST) -> bool:
     decided statically, and this partition is here to be read by a person
     rather than to be exhaustive. The total census above is what is exhaustive.
     """
-    if not constructs_a_check_result(node) or _keyword(node, MEASUREMENT) is not None:  # type: ignore[arg-type]
+    if not constructs_a_result(node) or _argument(node, MEASUREMENT) is not None:  # type: ignore[arg-type]
         return False
-    passed = _keyword(node, "passed")  # type: ignore[arg-type]
+    passed = _argument(node, "passed")  # type: ignore[arg-type]
     return isinstance(passed, ast.Constant) and passed.value is False
 
 
@@ -126,8 +167,13 @@ def _site(source_file: Path, node: ast.AST) -> str:
 
 
 def site_row(source_file: Path, node: ast.AST) -> str:
-    """``verify.py: check_linter`` - the module and the function that builds it."""
-    return _site(source_file, node)
+    """``verify.py: check_linter: CheckResult`` - module, function, type.
+
+    The type is in the key because one function may build both: without it, a
+    ``FixtureResult`` added to a function that already builds a ``CheckResult``
+    would read as a count that moved by one rather than as a new kind of row.
+    """
+    return f"{_site(source_file, node)}: {constructor_of(node)}"
 
 
 def measurement_row(source_file: Path, node: ast.AST) -> str:
@@ -138,36 +184,48 @@ def measurement_row(source_file: Path, node: ast.AST) -> str:
     an unchanged count. An expression pinned by its rendering is the only way
     a census can hold a computed value to account.
     """
-    argument = _keyword(node, MEASUREMENT)  # type: ignore[arg-type]
+    argument = _argument(node, MEASUREMENT)  # type: ignore[arg-type]
+    rendered = ast.unparse(argument) if argument is not None else "MISSING"
+    return f"{site_row(source_file, node)}: measured={rendered}"
+
+
+def helper_call_row(source_file: Path, node: ast.AST) -> str:
+    """The gate-helper call site plus its ``measured`` argument VERBATIM."""
+    argument = _argument(node, MEASUREMENT)  # type: ignore[arg-type]
     rendered = ast.unparse(argument) if argument is not None else "MISSING"
     return f"{_site(source_file, node)}: measured={rendered}"
 
 
-#: Every ``CheckResult(...)`` construction in ``kstrl/``, counted per function.
+#: Every result construction in ``kstrl/``, counted per function and per type.
 #:
 #: The net. A check cannot report anything without building one of these, so a
 #: new check, a new failure branch or a new vacuous pass has to appear here
 #: first, whatever it then says about ``measured``. Adding a row is not
 #: forbidden; it is the point. The diff that adds one is where somebody says
 #: what the new row measured.
-EXPECTED_CHECK_RESULT_SITES: dict[str, int] = {
-    "fixtures.py: check_fixtures": 2,
-    "fixtures.py: check_fixtures_from_prd": 2,
-    "verify.py: _failed_gate_result": 1,
-    "verify.py: _self_critique_text": 2,
-    "verify.py: check_bad_patterns": 2,
-    "verify.py: check_dead_code": 2,
-    "verify.py: check_dead_code_ruff": 1,
-    "verify.py: check_diff_scope": 3,
-    "verify.py: check_linter": 2,
-    "verify.py: check_mutation_score": 2,
-    "verify.py: check_policy_envelope": 4,
-    "verify.py: check_prd_stories": 4,
-    "verify.py: check_scope_unreadable": 1,
-    "verify.py: check_self_critique": 3,
-    "verify.py: check_test_adequacy": 3,
-    "verify.py: check_test_suite": 2,
-    "verify.py: check_typecheck": 2,
+EXPECTED_RESULT_SITES: dict[str, int] = {
+    "fixtures.py: _dispatch_fixture: FixtureResult": 1,
+    "fixtures.py: _fixture_file_text: FixtureResult": 2,
+    "fixtures.py: check_fixtures: CheckResult": 2,
+    "fixtures.py: check_fixtures_from_prd: CheckResult": 2,
+    "fixtures.py: run_cli_fixture: FixtureResult": 7,
+    "fixtures.py: run_file_fixture: FixtureResult": 8,
+    "fixtures.py: run_function_fixture: FixtureResult": 9,
+    "verify.py: _failed_gate_result: CheckResult": 1,
+    "verify.py: _self_critique_text: CheckResult": 2,
+    "verify.py: check_bad_patterns: CheckResult": 2,
+    "verify.py: check_dead_code: CheckResult": 2,
+    "verify.py: check_dead_code_ruff: CheckResult": 1,
+    "verify.py: check_diff_scope: CheckResult": 4,
+    "verify.py: check_linter: CheckResult": 2,
+    "verify.py: check_mutation_score: CheckResult": 2,
+    "verify.py: check_policy_envelope: CheckResult": 4,
+    "verify.py: check_prd_stories: CheckResult": 4,
+    "verify.py: check_scope_unreadable: CheckResult": 1,
+    "verify.py: check_self_critique: CheckResult": 3,
+    "verify.py: check_test_adequacy: CheckResult": 3,
+    "verify.py: check_test_suite: CheckResult": 2,
+    "verify.py: check_typecheck: CheckResult": 2,
 }
 
 #: Every construction that states its measurement, with the argument verbatim.
@@ -183,38 +241,51 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     # A run with no fixtures ran no oracle, so it cannot prove one stopped
     # failing; a run in which any fixture timed out or could not be launched
     # cannot either, and `all` is what makes that the narrow direction.
-    "fixtures.py: check_fixtures: measured=False": 1,
-    "fixtures.py: check_fixtures: measured=all((r.measured for r in results))": 1,
+    "fixtures.py: check_fixtures: CheckResult: measured=False": 1,
+    "fixtures.py: check_fixtures: CheckResult: measured=all((r.measured for r in results))": 1,
     # Unreadable PRD and schema-invalid PRD: the check could not learn WHICH
     # fixtures to run, so it ran none.
-    "fixtures.py: check_fixtures_from_prd: measured=False": 2,
-    # The three gates' shared failing row. Its own argument is threaded from
-    # the caller; EXPECTED_GATE_HELPER_CALLS below is what pins the callers.
-    "verify.py: _failed_gate_result: measured=measured": 1,
+    "fixtures.py: check_fixtures_from_prd: CheckResult: measured=False": 2,
+    # The file existed when the caller looked and could not be read, or could
+    # not be decoded. Either way the `contains` expectations never ran.
+    "fixtures.py: _fixture_file_text: FixtureResult: measured=False": 2,
+    # The command fixture's two environment failures: the process was killed on
+    # the timeout, or could not be launched at all.
+    "fixtures.py: run_cli_fixture: FixtureResult: measured=False": 2,
+    # The function fixture's own two, which are separate sites and separate
+    # branches from the command fixture's.
+    "fixtures.py: run_function_fixture: FixtureResult: measured=False": 2,
+    # The three gates' shared failing row, and the only place a gate's
+    # measurement is decided. `recognised` is the parser saying it saw its own
+    # tool report a failure; EXPECTED_GATE_HELPER_CALLS below is what stops a
+    # caller overriding it.
+    "verify.py: _failed_gate_result: CheckResult: measured=parsed.recognised": 1,
     # The progress file could not be read, or is not UTF-8. No bullets were
     # counted either way.
-    "verify.py: _self_critique_text: measured=False": 2,
-    # "Scanned 0 Python files" opened nothing.
-    "verify.py: check_bad_patterns: measured=bool(py_files)": 1,
-    # No allowed paths configured: the check applies no rule and reads no diff.
-    "verify.py: check_diff_scope: measured=False": 1,
+    "verify.py: _self_critique_text: CheckResult: measured=False": 2,
+    # Nothing was opened: an empty diff, or changed Python files that are all
+    # gone from the worktree.
+    "verify.py: check_bad_patterns: CheckResult: measured=bool(scanned)": 1,
+    # No allowed paths configured, and an empty diff: the check applies no rule
+    # or applies it to nothing.
+    "verify.py: check_diff_scope: CheckResult: measured=False": 2,
     # The three gate timeouts. The tool started and was killed, so its findings
     # are unknown rather than zero.
-    "verify.py: check_linter: measured=False": 1,
-    "verify.py: check_test_suite: measured=False": 1,
-    "verify.py: check_typecheck: measured=False": 1,
+    "verify.py: check_linter: CheckResult: measured=False": 1,
+    "verify.py: check_test_suite: CheckResult: measured=False": 1,
+    "verify.py: check_typecheck: CheckResult: measured=False": 1,
     # The diff could not be read, and the policy could not be parsed. Both are
     # the harness failing to establish its own input.
-    "verify.py: check_policy_envelope: measured=False": 2,
+    "verify.py: check_policy_envelope: CheckResult: measured=False": 2,
     # The PRD could not be loaded at all.
-    "verify.py: check_prd_stories: measured=False": 1,
+    "verify.py: check_prd_stories: CheckResult: measured=False": 1,
     # This check name exists ONLY in the unreadable state, so it never appears
     # on a healthy run. Marked rather than exempted: exempting it would put the
     # name in `measured_checks` on the one run that produces it, and its
     # absence from the next would then read as a sensor that stopped.
-    "verify.py: check_scope_unreadable: measured=False": 1,
+    "verify.py: check_scope_unreadable: CheckResult: measured=False": 1,
     # The diff could not be read.
-    "verify.py: check_test_adequacy: measured=False": 1,
+    "verify.py: check_test_adequacy: CheckResult: measured=False": 1,
 }
 
 #: Every construction with a literal ``passed=False`` and no ``measured``.
@@ -223,64 +294,110 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
 #: "the default was fine here" is a claim and this is where it is made. A new
 #: row appearing in this dict is the census delta that asks the question.
 EXPECTED_FAILING_WITH_DEFAULT: dict[str, int] = {
+    # An unknown fixture_type is a malformed PRD, which is a stable property of
+    # the artifact and whose disappearance is a real fix.
+    "fixtures.py: _dispatch_fixture: FixtureResult": 1,
+    # Three malformed definitions (no command, an empty command, a command the
+    # shell lexer refused) and the comparison of a real exit code, stdout and
+    # stderr against the expectation.
+    "fixtures.py: run_cli_fixture: FixtureResult": 4,
+    # Four malformed definitions, a spec that would not serialise, and a child
+    # that exited without a result - which is the function under test taking
+    # the process down, a property of the artifact.
+    "fixtures.py: run_function_fixture: FixtureResult": 6,
+    # Three malformed definitions (no path, an absolute or `..` path, a path
+    # escaping the worktree) and three real comparisons against the file: it
+    # was expected and absent, unexpected and present, or its content did not
+    # match.
+    "fixtures.py: run_file_fixture: FixtureResult": 6,
     # Scanned the changed Python files and found empty files, syntax errors or
     # secret patterns in them.
-    "verify.py: check_bad_patterns": 1,
+    "verify.py: check_bad_patterns: CheckResult": 1,
     # vulture ran over the changed files and reported dead code. Every way that
     # phase can measure NOTHING returns a NotMeasured gap instead of a row
     # (#335), so it needs no measured argument at all: the dampener reads a gap
     # and a measured=False row through the same code path.
-    "verify.py: check_dead_code": 1,
+    "verify.py: check_dead_code: CheckResult": 1,
     # Read the diff and applied the configured allowlist to it.
-    "verify.py: check_diff_scope": 1,
+    "verify.py: check_diff_scope: CheckResult": 1,
     # mutmut ran and produced killed/survived counts.
-    "verify.py: check_mutation_score": 1,
+    "verify.py: check_mutation_score: CheckResult": 1,
     # Evaluated the policy envelope against a diff it read successfully.
-    "verify.py: check_policy_envelope": 1,
+    "verify.py: check_policy_envelope: CheckResult": 1,
     # Compared the PRD against the pre-run snapshot, and counted stories that
     # are not marked passing. Both read the document.
-    "verify.py: check_prd_stories": 2,
+    "verify.py: check_prd_stories: CheckResult": 2,
     # Found the progress entry and counted its Self-Critique bullets.
-    "verify.py: check_self_critique": 2,
+    "verify.py: check_self_critique: CheckResult": 2,
 }
 
 #: Every call to the three gates' shared failing-row helper, with its
 #: ``measured`` argument verbatim.
 #:
-#: Without this the helper's own ``measured=measured`` would be pinned while a
-#: caller quietly stopped passing the argument, and the default would silently
-#: take over. ``MISSING`` renders in the key when a caller passes nothing, so
-#: that case fails loudly rather than reading as an unchanged count.
+#: ``MISSING`` at all three is the CORRECT state and the point of the net. The
+#: helper decides the measurement from the parse it is handed, so a gate that
+#: passes ``measured=`` at all is overriding the parser's evidence with the
+#: caller's opinion, and that is round 1's defect: the argument it passed was
+#: ``result.returncode not in {126, 127}``, which is the SHELL's vocabulary for
+#: a command it could not start, and the gate commands this repository ships go
+#: through ``uv run``, which reports its own exit 2 instead.
 EXPECTED_GATE_HELPER_CALLS: dict[str, int] = {
-    "verify.py: check_linter: measured=result.returncode not in COMMAND_NOT_RUN_EXIT_CODES": 1,
-    "verify.py: check_test_suite: measured=result.returncode not in COMMAND_NOT_RUN_EXIT_CODES": 1,
-    "verify.py: check_typecheck: measured=result.returncode not in COMMAND_NOT_RUN_EXIT_CODES": 1,
+    "verify.py: check_linter: measured=MISSING": 1,
+    "verify.py: check_test_suite: measured=MISSING": 1,
+    "verify.py: check_typecheck: measured=MISSING": 1,
 }
 
 
-class TestEveryCheckResultIsAccountedFor:
-    """Three partitions of one inventory, each with its own failure message."""
+class TestEveryResultRowIsAccountedFor:
+    """Four partitions of one inventory, each with its own failure message."""
 
-    def test_the_set_of_check_result_constructions_is_pinned(self) -> None:
+    def test_the_positional_field_order_is_the_dataclasses_own(self) -> None:
+        """The control for :data:`POSITIONAL_FIELDS`.
+
+        The three nets below read ``passed`` and ``measured`` by POSITION as
+        well as by keyword, because ``kstrl/fixtures.py`` passes them
+        positionally. A pinned index that no longer matches the dataclass would
+        read the wrong argument and answer confidently: a reordered
+        ``FixtureResult`` would have the walk take ``actual`` for ``passed``,
+        the partition would empty out, and the census would go quiet rather
+        than red. So the pin is checked against the classes themselves.
+        """
+        actual = {
+            "CheckResult": tuple(f.name for f in dataclasses.fields(CheckResult)),
+            "FixtureResult": tuple(f.name for f in dataclasses.fields(FixtureResult)),
+        }
+        for constructor, pinned in POSITIONAL_FIELDS.items():
+            assert actual[constructor][: len(pinned)] == pinned, (
+                f"{constructor}'s field order moved. POSITIONAL_FIELDS is how the "
+                f"nets in this file read a positional argument, so a stale prefix "
+                f"makes them read the wrong one: {actual[constructor]}"
+            )
+        assert set(POSITIONAL_FIELDS) == set(CONSTRUCTORS), (
+            "every constructor the nets walk needs its field order pinned, or a "
+            "positionally-passed measured= at its sites is invisible."
+        )
+
+    def test_the_set_of_result_constructions_is_pinned(self) -> None:
         """The net: a new row anywhere in ``kstrl/`` moves this dict.
 
         This is the layer that is closed by construction. It enumerates no
         failure modes and reads no arguments, so it sees a shape nobody
         anticipated: a check that measures nothing in a way this file's other
-        two partitions have no vocabulary for still has to build a
-        ``CheckResult``, and still lands here.
+        partitions have no vocabulary for still has to build one of these, and
+        still lands here.
         """
         assert_census(
             sources=package_sources(),
-            sees=constructs_a_check_result,
+            sees=constructs_a_result,
             key=site_row,
-            expected=EXPECTED_CHECK_RESULT_SITES,
+            expected=EXPECTED_RESULT_SITES,
             control=(
                 'row = CheckResult(name="x", passed=False)\n',
                 'row = verify.CheckResult(name="x", passed=False)\n',
+                'row = FixtureResult(fixture, False, message="m")\n',
             ),
             message=(
-                "The set of places kstrl builds a CheckResult changed. If this row "
+                "The set of places kstrl builds a result row changed. If this row "
                 "can report a failure having measured NOTHING - a timeout, a missing "
                 "tool, a vacuous pass over an empty file list - pass measured=False "
                 "so its silence cannot be read as a fix (#227). If it measured "
@@ -293,7 +410,7 @@ class TestEveryCheckResultIsAccountedFor:
 
         Round 1 of review on #357 deleted all six that existed and measured the
         full suite still green. The argument text is part of the key, so
-        weakening ``measured=bool(py_files)`` to ``measured=True`` fails here
+        weakening ``measured=bool(scanned)`` to ``measured=True`` fails here
         too rather than passing as an unchanged count.
         """
         assert_census(
@@ -304,9 +421,10 @@ class TestEveryCheckResultIsAccountedFor:
             control=(
                 "row = CheckResult(passed=False, measured=False)\n",
                 "row = CheckResult(passed=True, measured=scanned_something)\n",
+                'row = FixtureResult(fixture, False, "", "m", False)\n',
             ),
             message=(
-                "A CheckResult's measured argument moved. Deleting one makes a row "
+                "A result row's measured argument moved. Deleting one makes a row "
                 "that measured nothing contribute signatures to a sense baseline, "
                 "whose later absence reads as fixed (#227). If a check genuinely "
                 "started measuring, move its row and say so in the diff."
@@ -327,38 +445,42 @@ class TestEveryCheckResultIsAccountedFor:
             sees=fails_with_a_default_measurement,
             key=site_row,
             expected=EXPECTED_FAILING_WITH_DEFAULT,
-            control='row = CheckResult(name="x", passed=False, message="m")\n',
+            control=(
+                'row = CheckResult(name="x", passed=False, message="m")\n',
+                'row = FixtureResult(fixture, False, message="m")\n',
+            ),
             message=(
-                "A failing CheckResult carrying the default measured=True moved. "
+                "A failing result row carrying the default measured=True moved. "
                 "Every row in this dict claims the failure is evidence about the "
                 "artifact rather than about the environment. Add the new one with "
                 "the one line that says what it measured, or pass measured=False."
             ),
         )
 
-    def test_every_gate_still_tells_the_shared_helper_whether_it_measured(self) -> None:
+    def test_no_gate_overrides_the_shared_helper_s_measurement(self) -> None:
         """The hole the first three cannot see.
 
-        ``_failed_gate_result`` builds the row for all three gates, so its own
-        construction is one census row whatever the callers do. A gate that
-        stopped passing ``measured=`` would fall back to the default and no
-        dict above would move. Pinned by the argument's text, and ``MISSING``
-        is what renders when a caller passes none.
+        ``_failed_gate_result`` builds the row for all three gates and decides
+        ``measured`` from the parse, so its own construction is one census row
+        whatever the callers do. A gate that started passing ``measured=``
+        again would replace the parser's evidence with the caller's opinion and
+        no dict above would move. ``MISSING`` at all three is the state this
+        pins; the argument's text renders in the key when one appears.
         """
         assert_census(
             sources=package_sources(),
             sees=calls_the_gate_helper,
-            key=measurement_row,
+            key=helper_call_row,
             expected=EXPECTED_GATE_HELPER_CALLS,
             control=(
                 "row = _failed_gate_result(name, msg, parsed, cmd, cwd, start, measured=False)\n",
                 "row = _failed_gate_result(name, msg, parsed, cmd, cwd, start)\n",
             ),
             message=(
-                "A gate stopped telling _failed_gate_result whether its tool ran. "
-                "Exit 126 and 127 mean the command never started, and a gate that "
-                "reports measured=True in that case clears every one of its "
-                "baseline findings (#227)."
+                "A gate started deciding for itself whether its tool ran. That "
+                "decision belongs to the parser: round 1 of #357 made it from the "
+                "exit code, which is uv's status and not the tool's, so a missing "
+                "linter cleared every one of its baseline findings (#227)."
             ),
         )
 
