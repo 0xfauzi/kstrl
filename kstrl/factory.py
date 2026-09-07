@@ -109,6 +109,7 @@ from kstrl.review import (
     ReviewMode,
     run_review,
 )
+from kstrl.runenvelope import RunEnvelope
 from kstrl.sandbox import SandboxConfig
 from kstrl.scope import ComponentScope, RunScope
 from kstrl.security import (
@@ -327,8 +328,12 @@ class FactoryConfig:
     # fixtures execute PRD-defined commands, so the operator opts in.
     fixtures_config: FixturesConfig | None = None
     # R8.1: declarative merge-policy envelope for Phase 1. None means
-    # run_factory loads PolicyConfig.load(root_dir) - toml [policy] section
-    # + env. Opt-in ([policy].enabled = false): existing runs unchanged.
+    # run_factory resolves it from the toml [policy] section + env, via
+    # RunEnvelope.load's ``policy_override`` seam (#192). Opt-in
+    # ([policy].enabled = false): existing runs unchanged. run_factory
+    # writes the CLAMPED envelope back here after the autonomy ladder
+    # resolves, so this field is an input override on the way in and the
+    # run's resolved policy on the way out.
     policy_config: PolicyConfig | None = None
 
     def resolved_verify_config(self) -> VerifyConfig:
@@ -3286,6 +3291,15 @@ def _run_factory_locked(
     # comment gives (the policy hash must record the clamped envelope).
     autonomy_config = AutonomyConfig.load(root_dir)
 
+    # #192: the run's config envelope, resolved ONCE here and injected
+    # into the pipeline, which never resolves one of its own. Phase 1
+    # used to re-read [policy], [adequacy] and [autonomy] per component
+    # while the hash below was taken once, so a mid-run edit to
+    # kstrl.toml changed what later components were held to without
+    # changing the record of it. The autonomy ladder clamps this
+    # envelope below, before the hash is taken.
+    run_envelope = RunEnvelope.load(root_dir, policy_override=factory_config.policy_config)
+
     # R7.1: resolve which model family reviews this run's diffs ONCE so
     # the choice is stable across components and the homogeneity warning
     # prints once per run, not per component. Explicit config always
@@ -3405,6 +3419,7 @@ def _run_factory_locked(
         knowledge_config=knowledge_config,
         factory_result=factory_result,
         run_scope=run_scope,
+        run_envelope=run_envelope,
         hooks=PipelineHooks(
             run_mechanical_verification=run_mechanical_verification,
             run_review=run_review,
@@ -3471,10 +3486,11 @@ def _run_factory_locked(
     manifest.run_id = run_id
     manifest.completed_at = ""
     # R8.1: record the resolved policy envelope's hash so the manifest is
-    # a self-contained audit record of what merge guardrails were in force
-    # for this run. Computed from the same source the Phase 1 check reads.
-    policy_config = factory_config.policy_config or PolicyConfig.load(root_dir)
-
+    # a self-contained audit record of what merge guardrails were in
+    # force for this run. #192: computed from ``run_envelope``, resolved
+    # once above, which is also the object Phase 1 enforces. It used to
+    # be a second read of the same file, and the two could disagree.
+    #
     # R8.2: derive this run's permissions from the autonomy level. The
     # bundle is computed at run start and WINS over contradicting config,
     # so a hand-edited flag cannot grant autonomy the ladder never
@@ -3491,9 +3507,17 @@ def _run_factory_locked(
         autonomy_level, clamps = resolve_runtime_level(
             autonomy_state,
             autonomy_config,
-            policy_enabled=policy_config.enabled,
+            policy_enabled=run_envelope.policy.enabled,
             root_dir=root_dir,
         )
+        # #192: the level the run OPERATES at. Phase 1 and the set-point
+        # gate used to re-read the raw stored level, which is the level
+        # before max_level, the envelope ceiling and control-state
+        # location clamp it: measured, a run clamped to L1 had Phase 1
+        # judging at the stored L4. No verdict changed at either level
+        # today (both consumers test only >= 1), and it goes live the
+        # moment either threshold becomes level-graded.
+        run_envelope = replace(run_envelope, autonomy_level=int(autonomy_level))
         bundle = flag_bundle_for(autonomy_level)
         overrides = manual_override_notes(
             bundle,
@@ -3505,8 +3529,11 @@ def _run_factory_locked(
         # The ladder can only ever WITHHOLD a permission the envelope
         # grants, never add one: below L3, new dependencies are refused
         # even if [policy] deps_allow_new is true.
-        if not bundle.deps_allow_new_permitted and policy_config.deps_allow_new:
-            policy_config = replace(policy_config, deps_allow_new=False)
+        if not bundle.deps_allow_new_permitted and run_envelope.policy.deps_allow_new:
+            run_envelope = replace(
+                run_envelope,
+                policy=replace(run_envelope.policy, deps_allow_new=False),
+            )
             overrides.append(
                 f"[policy] deps_allow_new=true withheld at "
                 f"{bundle.level.label} (ladder clamps to false)"
@@ -3524,8 +3551,17 @@ def _run_factory_locked(
             ui.warn(f"  {note}")
         for note in overrides:
             ui.warn(f"  Manual override ignored: {note}")
-        # The pipeline must see the clamped envelope, not the raw config.
-        factory_config.policy_config = policy_config
+
+    # The pipeline must see the clamped envelope, not the raw config.
+    # #192: UNCONDITIONAL, and that is the fix. This assignment used to
+    # sit inside `if autonomy_active:`, so with [autonomy] disabled (the
+    # default) `factory_config.policy_config` stayed None and Phase 1's
+    # `or PolicyConfig.load(root_dir)` fell through to disk once per
+    # component. Measured on a two-component run: component B was held
+    # to max_files_changed=500, deps_allow_new=true against a manifest
+    # recording the hash of 5 and false.
+    factory_config.policy_config = run_envelope.policy
+    pipeline.run_envelope = run_envelope
 
     # Issue #207 (review P1): checked AFTER autonomy resolution, because
     # the L1/L2 bundle can flip pause_before_pr_merge on when no config
@@ -3541,7 +3577,11 @@ def _run_factory_locked(
     if setpoint_warning is not None:
         ui.warn(setpoint_warning)
 
-    manifest.policy_hash = policy_config.envelope_hash()
+    # #192: read back off the PIPELINE, not off a local. The hash is
+    # then literally taken from the object the pipeline will enforce, so
+    # a future edit that forgets the assignment above fails a test
+    # rather than diverging silently.
+    manifest.policy_hash = pipeline.run_envelope.policy_hash()
     manifest.save(manifest_path)
 
     # R0.2 crash recovery: MERGE_PENDING is re-pollable, not failed.

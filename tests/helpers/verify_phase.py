@@ -13,10 +13,12 @@ where the repo puts this.
 from __future__ import annotations
 
 import io
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from kstrl.adequacy import AdequacyConfig
 from kstrl.config import KstrlConfig
 from kstrl.events import CallbackSink, Event, EventBus, V1CompatSink
 from kstrl.factory import (
@@ -29,7 +31,9 @@ from kstrl.knowledge import KnowledgeConfig
 from kstrl.manifest import Component, Manifest
 from kstrl.observability import NotifyConfig, NotifyHooks, ProgressLog
 from kstrl.pipeline import ComponentPipeline, FailureAction, PipelineHooks, VerifyPhaseResult
+from kstrl.policy import PolicyConfig
 from kstrl.review import ReviewResult
+from kstrl.runenvelope import RunEnvelope
 from kstrl.scope import RunScope
 from kstrl.security import SecurityResult
 from kstrl.ui.plain import PlainUI
@@ -90,22 +94,34 @@ def _pipeline(
     verification: VerificationResult,
     *,
     ui: PlainUI | None = None,
+    components: Sequence[Component] | None = None,
+    verify_hook: Callable[..., VerificationResult] | None = None,
+    run_envelope: RunEnvelope | None = None,
 ) -> ComponentPipeline:
     """``ui`` is for a caller that needs to READ the narration: the
     default throws it away. Events are captured the way the rest of the
     suite does it, with ``pipeline.bus.add_sink`` after construction -
     ``ComponentPipeline.__init__`` emits nothing, so a sink attached
-    then sees every event a sink passed here would."""
+    then sees every event a sink passed here would.
+
+    ``components`` and ``verify_hook`` are for #192, which needs more
+    than one component in one pipeline and needs to READ what Phase 1
+    handed the verifier rather than only what it did with the answer.
+    ``run_envelope`` is for a caller pinning an envelope the factory
+    would have clamped; the default resolves one from ``root`` the way
+    an unclamped run does.
+    """
+    comps = list(components) if components is not None else [comp]
     manifest = Manifest(
         version="1",
         spec_file="spec.md",
         project_name="t",
         base_branch="main",
         single_pr=False,
-        components=[comp],
+        components=comps,
     )
     hooks = PipelineHooks(
-        run_mechanical_verification=lambda *a, **k: verification,
+        run_mechanical_verification=verify_hook or (lambda *a, **k: verification),
         run_review=lambda *a, **k: ReviewResult(passed=True, mode="advisory"),
         run_security_review=lambda *a, **k: SecurityResult(passed=True, mode="advisory"),
         distill_facts=lambda *a, **k: (1, "1 fact written"),
@@ -147,7 +163,11 @@ def _pipeline(
         notify=NotifyHooks(NotifyConfig(), run_id="run-test", project="t"),
         hooks=hooks,
         run_scope=RunScope({}),
-        worktree_paths={comp.id: root},
+        # #192: the run's config envelope. Required rather than
+        # defaulted, so a test cannot silently get a second
+        # resolution the factory never made.
+        run_envelope=run_envelope if run_envelope is not None else RunEnvelope.load(root),
+        worktree_paths={c.id: root for c in comps},
         component_contexts={},
         fresh_base_retry_ids=set(),
         component_failure_signatures={},
@@ -204,3 +224,65 @@ def phase_verify_surfaces(
         root,
     )
     return PhaseVerifySurfaces(result, narration.getvalue(), events)
+
+
+@dataclass(frozen=True)
+class EnvelopeReading:
+    """What Phase 1 handed the mechanical verifier for one component.
+
+    #192: the question is not what Phase 1 decided but what it ENFORCED,
+    so the record is the objects themselves rather than a verdict
+    derived from them.
+    """
+
+    component: str
+    policy: PolicyConfig
+    adequacy: AdequacyConfig
+    autonomy_level: int
+
+
+def phase_verify_envelopes(
+    root: Path,
+    comps: Sequence[Component],
+    *,
+    between: Callable[[], None] | None = None,
+    run_envelope: RunEnvelope | None = None,
+) -> list[EnvelopeReading]:
+    """Drive the REAL ``_phase_verify`` once per component, recording the
+    envelope each one was held to.
+
+    ``between`` runs after the first component and before the second: it
+    is the operator editing ``kstrl.toml`` while the run is in flight.
+    One pipeline for all of them, because the defect is a pipeline
+    re-resolving config it was handed once.
+    """
+    readings: list[EnvelopeReading] = []
+
+    def record(*_args: object, **kwargs: Any) -> VerificationResult:
+        readings.append(
+            EnvelopeReading(
+                component=str(kwargs["component_id"]),
+                policy=kwargs["policy_config"],
+                adequacy=kwargs["adequacy_config"],
+                autonomy_level=int(kwargs["autonomy_level"]),
+            )
+        )
+        return VerificationResult(passed=True, checks=[])
+
+    pipeline = _pipeline(
+        root,
+        comps[0],
+        VerificationResult(passed=True, checks=[]),
+        components=comps,
+        verify_hook=record,
+        run_envelope=run_envelope,
+    )
+    for position, comp in enumerate(comps):
+        if position == 1 and between is not None:
+            between()
+        pipeline._phase_verify(
+            comp,
+            ComponentResult(comp.id, success=True, iterations=1, duration_seconds=1.0),
+            root,
+        )
+    return readings

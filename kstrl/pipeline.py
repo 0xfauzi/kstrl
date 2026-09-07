@@ -39,7 +39,6 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl import events as ev
 from kstrl import git
-from kstrl.adequacy import AdequacyConfig
 from kstrl.agents.base import (
     ARCHITECT_COMPONENT,
     ARCHITECT_ROLE,
@@ -49,7 +48,7 @@ from kstrl.agents.base import (
     collect_usage,
     usage_coverage,
 )
-from kstrl.autonomy import AutonomyConfig, AutonomyState
+from kstrl.config import toml_parse_scope
 from kstrl.context import IterationContext, IterationRecord
 from kstrl.divergence import (
     AttemptReading,
@@ -82,7 +81,7 @@ from kstrl.manifest import (
     Manifest,
 )
 from kstrl.observability import NotifyHooks
-from kstrl.policy import PolicyConfig, count_diff_size
+from kstrl.policy import count_diff_size
 from kstrl.prd import PRD
 from kstrl.review import (
     ReviewMode,
@@ -92,6 +91,7 @@ from kstrl.review import (
     setpoint_disagreements,
     setpoint_retry_context,
 )
+from kstrl.runenvelope import RunEnvelope
 from kstrl.sandbox import SandboxConfig
 from kstrl.scope import RunScope
 from kstrl.security import SecurityConfig, SecurityMode, SecurityResult
@@ -439,6 +439,11 @@ class ComponentPipeline:
         knowledge_config: KnowledgeConfig,
         factory_result: FactoryResult,
         run_scope: RunScope,
+        # #192: required, and deliberately without a default or an
+        # ``or ...load()`` fallback. The fallback IS the defect the
+        # envelope removes: a second source that can disagree with the
+        # one ``manifest.policy_hash`` was computed from.
+        run_envelope: RunEnvelope,
         hooks: PipelineHooks,
         worktree_paths: dict[str, Path],
         component_contexts: dict[str, str],
@@ -457,10 +462,28 @@ class ComponentPipeline:
         # roles that now runs shell commands inside the tree under
         # review. read_only is a permission-layer posture on the claude
         # adapters; the operator's OS-level enforcement is a separate
-        # payload and both are wanted. Loaded once here rather than per
-        # phase: it is a run-level setting and the phases run per
-        # component attempt.
-        self.sandbox_config = SandboxConfig.load(root_dir)
+        # payload and both are wanted.
+        #
+        # #192 widened this: FOUR run-level configs are loaded once here
+        # rather than per phase, because the phases run per component
+        # attempt and re-reading them mid-run made a component's
+        # enforcement diverge from what the run recorded. One
+        # ``toml_parse_scope`` around the group, so the four sections
+        # cost one document parse rather than four.
+        #
+        # The hash-bearing three ([policy], [adequacy], [autonomy]) are
+        # NOT here: they are resolved before the pipeline exists and
+        # injected as ``run_envelope``, because the factory clamps them
+        # with the autonomy ladder and records the clamped hash.
+        with toml_parse_scope():
+            self.sandbox_config = SandboxConfig.load(root_dir)
+            # R7.2: fixtures resolve from toml/env when the caller did
+            # not inject one; enabled=false (the default) makes
+            # run_mechanical_verification skip the check entirely.
+            self.fixtures_config = factory_config.fixtures_config or FixturesConfig.load(root_dir)
+            self.inbox_config = InboxConfig.load(root_dir)
+            self.divergence_config = DivergenceConfig.load(root_dir)
+        self.run_envelope = run_envelope
         self.run_id = run_id
         self.bus = bus
         self.journal_path = journal_path
@@ -1624,10 +1647,9 @@ class ComponentPipeline:
         """Close an open item whose question the world has answered."""
         try:
             if self._inbox is None:
-                config = InboxConfig.load(self.root_dir)
-                if not config.enabled:
+                if not self.inbox_config.enabled:
                     return
-                self._inbox = Inbox(self.root_dir, config)
+                self._inbox = Inbox(self.root_dir, self.inbox_config)
             existing = self._inbox.find_by_dedupe_key(dedupe_key)
             if existing is not None and existing.is_open:
                 self._inbox.resolve(existing.id, comment=reason)
@@ -1636,9 +1658,13 @@ class ComponentPipeline:
             # reasons: Inbox.resolve reaches _append through _decide, so
             # it takes the control lock and can raise ControlStateError,
             # and InboxConfig.load casts per key, so a TOML date raises
-            # TypeError. Neither is an OSError, a ValueError or an
-            # InboxError, and this function's contract is that closing a
-            # stale item cannot fail the run that answered it.
+            # TypeError. #192 moved that cast to ``__init__``, where the
+            # entry preflight has already rejected the file that would
+            # raise it; the tuple keeps TypeError because this
+            # function's contract is that closing a stale item cannot
+            # fail the run that answered it, and narrowing a tuple on
+            # the strength of one caller moving is not a change this
+            # lane measured.
             self.ui.warn(f"  Inbox resolve failed (non-fatal): {exc}")
 
     def _inbox_suppress_generic(self, comp_id: str) -> None:
@@ -1671,11 +1697,10 @@ class ComponentPipeline:
         """
         try:
             if self._inbox is None:
-                config = InboxConfig.load(self.root_dir)
-                if not config.enabled:
+                if not self.inbox_config.enabled:
                     self._inbox_disabled = True
                     return
-                self._inbox = Inbox(self.root_dir, config)
+                self._inbox = Inbox(self.root_dir, self.inbox_config)
             if self._inbox_disabled:
                 return
             item = self._inbox.add(
@@ -1700,8 +1725,10 @@ class ComponentPipeline:
             # ControlStateError is a RuntimeError: Inbox._append takes
             # the control lock on every write, and the (OSError,
             # ValueError) pair all seven inbox sites were written with
-            # does not catch what that lock raises. TypeError is
-            # InboxConfig.load's per-key cast.
+            # does not catch what that lock raises. TypeError was
+            # InboxConfig.load's per-key cast, which #192 moved to
+            # ``__init__``; it stays here for the reason _inbox_resolve
+            # gives.
             self.ui.warn(f"  Inbox write failed (non-fatal): {exc}")
 
     def _park_merge_pending(
@@ -2583,16 +2610,18 @@ class ComponentPipeline:
         # and Phase 1's was the one the agent could edit. Both now read
         # RunScope, resolved once before the first engineer call.
         scope = self.run_scope.for_component(comp.id)
-        # R7.2: fixtures config resolves from toml/env when the
-        # caller did not inject one; enabled=false (the default)
-        # makes run_mechanical_verification skip the check entirely.
-        fixtures_cfg = self.factory_config.fixtures_config or FixturesConfig.load(self.root_dir)
-        # R8.1 policy envelope: opt-in ([policy].enabled). enabled=false
-        # (the default) makes run_mechanical_verification skip the check.
-        policy_cfg = self.factory_config.policy_config or PolicyConfig.load(self.root_dir)
-        adequacy_cfg = AdequacyConfig.load(self.root_dir)
-        autonomy_cfg = AutonomyConfig.load(self.root_dir)
-        level = AutonomyState.load(self.root_dir).level if autonomy_cfg.enabled else 0
+        # #192: the same rule as ``run_scope`` one line up. All four
+        # came off disk per component until the run's envelope was
+        # resolved once and injected, so an edit to kstrl.toml mid-run
+        # changed what a later component was held to without changing
+        # the hash the manifest records. ``[policy]`` opts in
+        # (enabled=false, the default, makes run_mechanical_verification
+        # skip the check) and the level is the CLAMPED one the factory
+        # resolved, not the raw stored level this used to read.
+        fixtures_cfg = self.fixtures_config
+        policy_cfg = self.run_envelope.policy
+        adequacy_cfg = self.run_envelope.adequacy
+        level = self.run_envelope.autonomy_level
         verification = self.hooks.run_mechanical_verification(
             wt_path,
             wt_path / comp.prd_path,
@@ -2801,7 +2830,7 @@ class ComponentPipeline:
         attempts, so a missing reading breaks the streak by itself, which
         is the fail-open direction: the loop keeps its retries.
         """
-        config = DivergenceConfig.load(self.root_dir)
+        config = self.divergence_config
         if not config.measures:
             return None
         if review_result.infrastructure_error:
@@ -3538,12 +3567,12 @@ class ComponentPipeline:
         """R10.3: whether a set-point disagreement fails the component,
         and the severity its findings carry.
 
-        The autonomy level is resolved exactly as ``_phase_verify``
-        resolves it for the adequacy gate: the stored level when the
-        ladder is on, and 0 when it is off.
+        The autonomy level is the one ``_phase_verify`` uses for the
+        adequacy gate, and since #192 that is true by construction
+        rather than by two copies of the same expression: both read the
+        run's envelope, resolved once at run start.
         """
-        autonomy_cfg = AutonomyConfig.load(self.root_dir)
-        level = AutonomyState.load(self.root_dir).level if autonomy_cfg.enabled else 0
+        level = self.run_envelope.autonomy_level
         blocking = setpoint_blocks(self.factory_config, level)
         return blocking, "fail" if blocking else "advisory"
 

@@ -46,6 +46,7 @@ from kstrl.pipeline import (
 )
 from kstrl.pr import PrOutcome
 from kstrl.review import ReviewConcern, ReviewResult
+from kstrl.runenvelope import RunEnvelope
 from kstrl.scope import RunScope
 from kstrl.security import SecurityConfig, SecurityResult
 from kstrl.ui.plain import PlainUI
@@ -218,6 +219,10 @@ def _make_pipeline(
         # first engineer call, built here the same way run_factory
         # builds it so the pipeline is judged against a real one.
         run_scope=RunScope.resolve(manifest, tmp_path, _base_config(tmp_path)),
+        # #192: the run's config envelope. Required rather than
+        # defaulted, so a test cannot silently get a second
+        # resolution the factory never made.
+        run_envelope=RunEnvelope.load(tmp_path),
         hooks=_recording_hooks(call_log, **(hooks_overrides or {})),
         worktree_paths={},
         component_contexts={},

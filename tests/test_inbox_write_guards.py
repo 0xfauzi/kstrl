@@ -149,8 +149,20 @@ EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
     "autonomy.py::apply_demotion": _GUARDED,
     "calibration_ladder.py::_open_drift_item": _GUARDED,
     "factory.py::_open_health_breach_items": _GUARDED,
-    "pipeline.py::ComponentPipeline._inbox_add": _GUARDED,
-    "pipeline.py::ComponentPipeline._inbox_resolve": _GUARDED,
+    "pipeline.py::ComponentPipeline.__init__": Disposition(
+        guarded=False,
+        reason=(
+            "#192 moved this off the two lazy inbox builders, which ran "
+            "per component mid-run, and onto pipeline construction, which "
+            "runs once per run. It propagates for the same reason "
+            "serve.py::check_inbox_cap does: [inbox] is a preflight "
+            "section, so a malformed value is a configuration problem "
+            "named before the pipeline is built, and a run must not start "
+            "on an inbox posture it could not read. The two builders keep "
+            "TypeError in their tuples because everything else they do "
+            "still must not fail a run"
+        ),
+    ),
     "serve.py::_file_inbox_item": _GUARDED,
     "serve.py::check_inbox_cap": Disposition(
         guarded=False,
