@@ -80,6 +80,14 @@ rather than live. Each has its own strict xfail in
 the day one of them is closed it XPASSes and this text has to be edited
 in the same diff.
 
+The bare-name rule is TWO matchers, :func:`_primitive_calls` per scope
+and :func:`_raw_primitive_calls` over the module, and a widening that
+teaches one and not the other is the shape those rows have to notice. A
+round-3 mutation taught the per-scope one the attribute form; ``raw``
+stayed 0 and the row kept xfailing, so the disclosure would have gone
+stale with nothing red. ``_everything_layer_one_saw`` in the guard file
+sums every count for that reason.
+
 The DEPTH is one level, and it is the same disclosure said about
 indirection rather than about spelling. A helper that calls a primitive
 is itself surface (it lands in ``free``) and its callers are therefore

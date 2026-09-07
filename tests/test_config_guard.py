@@ -223,6 +223,25 @@ def _pipeline_with_the_forbidden_fallback(tmp_path: Path) -> Path:
     return planted
 
 
+def _everything_layer_one_saw(planted: Path) -> int:
+    """Every count layer 1 reports on one module, added up.
+
+    The blind-spot rows below are truthy exactly when the walk saw
+    SOMETHING, so what they return decides which widenings they can
+    notice. Returning ``Surface`` itself would XPASS on a walk that saw
+    nothing, because a dataclass is truthy whatever it holds; returning
+    ``raw`` alone is the opposite failure and it was measured rather
+    than reasoned about. Layer 1 has TWO independent bare-name matchers
+    - ``_primitive_calls`` per scope and ``_raw_primitive_calls`` over
+    the module - and a round-3 mutation that taught the per-scope one
+    the attribute form left ``raw`` at 0, so the row kept xfailing while
+    the limit it discloses was closed. Summing every count covers both
+    matchers and the enrolment they feed.
+    """
+    found = configwalk.surface([planted])
+    return found.raw + found.attributed + len(found.free) + len(found.classes)
+
+
 @pytest.fixture(scope="module")
 def package_surface() -> configwalk.Surface:
     """The whole config surface, walked once for this file.
@@ -380,10 +399,7 @@ class TestConfigSurface:
         def probe(source: str) -> object:
             planted = tmp_path / "qualified.py"
             planted.write_text(source, encoding="utf-8")
-            # The COUNT, not the Surface: a dataclass is truthy whatever
-            # it holds, so returning one would XPASS this row on a walk
-            # that saw nothing at all.
-            return configwalk.surface([planted]).raw
+            return _everything_layer_one_saw(planted)
 
         astwalk.blind_spot(
             probe,
@@ -406,7 +422,7 @@ class TestConfigSurface:
         def probe(source: str) -> object:
             planted = tmp_path / "by_string.py"
             planted.write_text(source, encoding="utf-8")
-            return configwalk.surface([planted]).raw
+            return _everything_layer_one_saw(planted)
 
         astwalk.blind_spot(
             probe,

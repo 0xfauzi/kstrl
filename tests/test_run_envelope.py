@@ -567,19 +567,42 @@ class TestTheLadderOutcomeIsReallyFrozen:
     succeeded straight through the frozen dataclass. Nothing hashed or
     mutated one, so it was latent; ``tuple[str, ...]`` on both fields
     makes the declaration true instead of nearly true.
+
+    Driven through ``_resolve_ladder`` rather than over an instance this
+    test builds. A round-3 mutation reverted both annotations AND the
+    ``tuple(...)`` at the construction site and the first version of
+    this test stayed green, because it passed tuple literals of its own:
+    an annotation is not enforced at run time, so the only thing that
+    can be wrong is what the factory actually constructs.
     """
 
-    def test_it_hashes_and_refuses_to_grow(self) -> None:
-        from kstrl.autonomy import AutonomyLevel, flag_bundle_for
-        from kstrl.factory import _LadderOutcome
+    def test_the_ladder_builds_one_that_hashes_and_cannot_grow(self, tmp_path: Path) -> None:
+        from kstrl.factory import _resolve_ladder
+        from kstrl.runenvelope import RunEnvelope
 
-        outcome = _LadderOutcome(
-            level=AutonomyLevel.L1_SUPERVISED,
-            bundle=flag_bundle_for(AutonomyLevel.L1_SUPERVISED),
-            clamps=("clamped to L1",),
-            overrides=(),
+        # A stored L4 over max_level = 1 is the clamp; deps_allow_new
+        # granted by [policy] and withheld below L3 is the override. Both
+        # lists have to be non-empty or the tuple conversion is untested.
+        (tmp_path / "kstrl.toml").write_text(
+            "[autonomy]\nenabled = true\nmax_level = 1\n"
+            "[policy]\nenabled = true\ndeps_allow_new = true\n"
+        )
+        AutonomyState(level=4).save(tmp_path)
+        envelope = RunEnvelope.load(tmp_path)
+
+        _, outcome = _resolve_ladder(
+            envelope,
+            FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
+            tmp_path,
         )
 
+        assert outcome is not None
+        assert outcome.clamps and outcome.overrides, (
+            "both fields came back empty, so this test converts nothing "
+            f"and proves nothing. clamps={outcome.clamps}, "
+            f"overrides={outcome.overrides}"
+        )
+        assert isinstance(outcome.clamps, tuple) and isinstance(outcome.overrides, tuple)
         assert hash(outcome) == hash(outcome)
         with pytest.raises(AttributeError):
             outcome.clamps.append("a second clamp")  # type: ignore[attr-defined]
