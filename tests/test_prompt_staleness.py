@@ -247,6 +247,15 @@ _RECORDED_HISTORY: dict[str, tuple[tuple[str, str], ...]] = {
         ("e05fedd0ea1aff624966f4ee1e572c1af6f3926dd1b38b64678fdd6525a6f31a", "2026-07-20"),
         ("eb3637acf1918da23e27ad3f4d30bab32b1edd797b4bd1b5587b82b656affb09", "2026-07-21"),
     ),
+    # R10.8 (#229). The first row here whose reader is the RUN:
+    # operator_context.load_operator_file injects nothing when the file
+    # on disk matches one of these, so dropping a row does not merely
+    # lose a staleness notice, it puts placeholder text back at the head
+    # of every engineer prompt.
+    "golden-patterns.md": (
+        ("b8e9cd9725308cfce280d05c26033d25cb16f51ec42af2ac4a2bb05c601e48cf", "2026-09-06a"),
+        ("5f00b030f0a6e6cad4a56b678fa657ebce1a2d734e465ef82a8ca6df0638ca8a", "2026-09-06"),
+    ),
 }
 
 
@@ -264,10 +273,14 @@ _RECORDED_HISTORY: dict[str, tuple[tuple[str, str], ...]] = {
 # re-implementing the resolution that needs; this one asks
 # ``tests/helpers/astwalk.py`` for it instead.
 
-#: What every scaffolded prompt template's filename ends with. Suffix
-#: rather than equality so that ``scripts/kstrl/prompt.md`` folds too:
-#: four of the six modules below spell the path, not the bare name.
-_TEMPLATE_SUFFIX = "prompt.md"
+#: What a scaffolded template's filename ends with. Suffixes rather than
+#: equality so that ``scripts/kstrl/prompt.md`` folds too: four of the
+#: six modules below spell the path, not the bare name. The set is
+#: derived from the ledger, not typed out beside it: #229 enrolled a
+#: template whose name does not end in ``prompt.md``, and a hand-kept
+#: suffix list is exactly the second definition that goes stale while
+#: the walk keeps passing.
+_TEMPLATE_SUFFIXES = tuple(sorted({t.filename for t in SCAFFOLDED_TEMPLATES}))
 
 #: The one function `ks init` writes a scaffolded file through.
 _SCAFFOLD_WRITER = "_create_if_missing"
@@ -280,15 +293,30 @@ _SCAFFOLD_WRITER = "_create_if_missing"
 #: ``init_cmd.py``'s six are the three ledger rows and the three
 #: ``_create_if_missing`` calls. The rest are surfaces that point an
 #: operator at a file: the CLI's messages and options, the config's
-#: prompt-path default, its report row, the wizard's preview and
-#: ``launch``'s resolution of the engineer prompt.
+#: prompt-path default, the wizard's preview and ``launch``'s resolution
+#: of the engineer prompt.
+#:
+#: #229 moved this dict twice and both moves were re-derived by RUNNING
+#: the walk, never by editing the literal. First, ``config.py`` went from
+#: four spellings to one and ``config_report.py`` dropped out entirely:
+#: ``root_dir / "scripts/kstrl/prompt.md"`` had been copied into
+#: ``from_env``, ``from_toml``, ``load`` and ``kstrl_config_defaults``,
+#: and all four now go through ``KstrlConfig.anchored``, which anchors
+#: the FIELD default. Then the golden-patterns template was enrolled, and
+#: because ``_TEMPLATE_SUFFIXES`` is derived from the ledger the net
+#: widened to its filename in the same commit: ``config.py`` 1 to 2 (its
+#: field default), ``init_cmd.py`` 6 to 8 (the ledger row and the
+#: ``_create_if_missing`` call), ``init_wizard.py`` 3 to 4 (the scaffold
+#: preview), plus ``factory.py`` (the worker kwarg's default) and
+#: ``operator_context.py`` (the scaffold name the loader suppresses on).
 EXPECTED_TEMPLATE_FILENAMES: dict[str, int] = {
     "cli.py": 8,
-    "config.py": 4,
-    "config_report.py": 1,
-    "init_cmd.py": 6,
-    "init_wizard.py": 3,
+    "config.py": 2,
+    "factory.py": 1,
+    "init_cmd.py": 8,
+    "init_wizard.py": 4,
     "launch.py": 1,
+    "operator_context.py": 1,
 }
 
 
@@ -303,7 +331,7 @@ def _names_a_template(node: ast.AST) -> bool:
     residual rather than implying it away.
     """
     folded = astwalk.folded_str(node)
-    return folded is not None and folded.endswith(_TEMPLATE_SUFFIX)
+    return folded is not None and folded.endswith(_TEMPLATE_SUFFIXES)
 
 
 def _scaffolded_in(tree: ast.Module) -> set[tuple[str, str]]:
@@ -351,8 +379,36 @@ def _writes_a_scaffold(node: ast.Call, table: astwalk.Bindings) -> bool:
     )
 
 
+#: Scaffolded bodies `ks init` writes that the ledger deliberately does
+#: NOT hold, each with the reason. Equality against ``enrolled | this``
+#: is what keeps layer 2 exact: a NEW scaffolded body fails here whether
+#: somebody ledgers it or not, and the diff that adds a row is where
+#: somebody says which it is. Round 1 filtered on a ``_PROMPT`` name
+#: suffix instead, which meant #229's golden-patterns template could be
+#: added to `ks init` with no ledger row and nothing failing.
+_UNLEDGERED_SCAFFOLDS: dict[tuple[str, str], str] = {
+    ("progress.txt", "DEFAULT_PROGRESS"): (
+        "An append-only log. It is unrecognisable after the first "
+        "iteration, so a digest history could say nothing about it."
+    ),
+    ("codebase_map.md", "DEFAULT_CODEBASE_MAP"): (
+        "The operator's brownfield notes. Nothing in a run keys on "
+        "whether it is still the skeleton, and #303 records that the "
+        "H3b interaction for the operator-authored files kstrl generates "
+        "needs deciding on its own rather than in passing."
+    ),
+}
+
+
 def _scaffold_pair(node: ast.Call) -> list[tuple[str, str]]:
-    """The ``(filename, constant)`` one write names, if it names both."""
+    """The ``(filename, constant)`` one write names, if it names both.
+
+    Every ``_create_if_missing`` whose first argument folds to a filename
+    and whose second is a NAME, whatever that name is. Narrowing this to
+    ``*_PROMPT`` is what let a non-prompt template be scaffolded with no
+    ledger row; the exemptions are declared above instead, where they
+    can be read.
+    """
     if len(node.args) < 2:
         return []
     target, content = node.args[0], node.args[1]
@@ -360,7 +416,7 @@ def _scaffold_pair(node: ast.Call) -> list[tuple[str, str]]:
         astwalk.folded_str(target.right) if isinstance(target, ast.BinOp) else None
     )
     constant = astwalk.leaf_name(content)
-    if filename is None or constant is None or not constant.endswith("_PROMPT"):
+    if filename is None or constant is None:
         return []
     return [(filename, constant)]
 
@@ -430,14 +486,31 @@ class TestLedgerIntegrity:
         )
 
     def test_every_template_init_scaffolds_is_enrolled(self) -> None:
-        """Layer 2, the message: name the filename and the constant."""
+        """Layer 2, the message: name the filename and the constant.
+
+        EQUALITY against the ledger plus the declared exemptions, so a
+        new scaffolded body fails whichever side it belongs on.
+        """
         enrolled = {(t.filename, t.constant_name) for t in SCAFFOLDED_TEMPLATES}
-        assert _scaffolded_in(astwalk.parsed(Path(init_cmd.__file__))) == enrolled, (
-            "run_init and SCAFFOLDED_TEMPLATES disagree about which "
-            "prompt templates exist. Add the new one to the ledger with "
-            "its shipped history, or fix the filename/constant pairing; "
-            "an un-enrolled template reproduces #286 for itself."
+        assert _scaffolded_in(astwalk.parsed(Path(init_cmd.__file__))) == (
+            enrolled | set(_UNLEDGERED_SCAFFOLDS)
+        ), (
+            "run_init, SCAFFOLDED_TEMPLATES and _UNLEDGERED_SCAFFOLDS "
+            "disagree about which templates exist. Add the new one to "
+            "the ledger with its shipped history, or to the exemption "
+            "dict with the reason it needs none; an un-enrolled template "
+            "reproduces #286 for itself, and for a body a RUN reads it "
+            "also reproduces #229's injected placeholder block."
         )
+
+    def test_no_row_is_exempt_and_ledgered_at_once(self) -> None:
+        """The two halves of layer 2's expectation must not overlap, or
+        the union would hide a row dropped from the ledger."""
+        enrolled = {(t.filename, t.constant_name) for t in SCAFFOLDED_TEMPLATES}
+        assert enrolled & set(_UNLEDGERED_SCAFFOLDS) == set()
+
+    def test_every_exemption_carries_a_reason(self) -> None:
+        assert all(reason.strip() for reason in _UNLEDGERED_SCAFFOLDS.values())
 
     def test_filenames_match_what_init_scaffolds(self, tmp_path: Path) -> None:
         run_init_capturing(tmp_path)
@@ -482,10 +555,23 @@ class TestTheScaffoldWalkCatchesWhatItClaims:
         body = '_create_if_missing(kstrl_dir / "x_prompt.md", init_cmd.DEFAULT_X_PROMPT, ui)\n'
         assert self._found(body) == {("x_prompt.md", "DEFAULT_X_PROMPT")}
 
-    def test_a_write_that_is_not_a_prompt_body_is_not_a_hit(self) -> None:
-        """The line the walk draws: a scaffolded file whose body is not a
-        prompt constant is not a template, and ``ks init`` writes four."""
+    def test_a_write_whose_body_is_not_a_prompt_constant_is_still_a_hit(self) -> None:
+        """Where the walk's line MOVED (#229).
+
+        Round 1 drew it at the ``_PROMPT`` name suffix and returned the
+        empty set here, so a scaffolded body under any other name was
+        invisible to layer 2. It is seen now, and
+        ``_UNLEDGERED_SCAFFOLDS`` is where somebody says it needs no
+        ledger row.
+        """
         body = '_create_if_missing(kstrl_dir / "progress.txt", DEFAULT_PROGRESS, ui)\n'
+        assert self._found(body) == {("progress.txt", "DEFAULT_PROGRESS")}
+
+    def test_a_body_that_is_not_a_name_at_all_is_not_a_hit(self) -> None:
+        """The line that is still drawn: ``json.dumps(DEFAULT_PRD, ...)``
+        and ``kstrl_toml_for(root)`` are computed, not constants, so
+        there is no body a digest could recognise."""
+        body = '_create_if_missing(kstrl_dir / "prd.json", json.dumps(D, indent=2), ui)\n'
         assert self._found(body) == set()
 
     def test_prose_naming_the_writer_is_not_a_hit(self) -> None:

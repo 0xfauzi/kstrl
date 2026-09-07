@@ -1024,8 +1024,8 @@ Cycle: R10, milestone [R10: Control Loop](https://github.com/0xfauzi/kstrl/miles
 | 4 | 5.9 name safe mode | [#225](https://github.com/0xfauzi/kstrl/issues/225) | `[x]` |
 | 5 | 5.9 adversarial budget: hard mode halts | [#226](https://github.com/0xfauzi/kstrl/issues/226) | `[x]` |
 | 6 | 5.5 dampener | [#227](https://github.com/0xfauzi/kstrl/issues/227) | `[ ]` |
-| 7 | 5.6 flow control | [#228](https://github.com/0xfauzi/kstrl/issues/228) | `[x]` (this PR) |
-| 8 | 5.4 golden patterns | [#229](https://github.com/0xfauzi/kstrl/issues/229) | `[ ]` |
+| 7 | 5.6 flow control | [#228](https://github.com/0xfauzi/kstrl/issues/228) | `[x]` merged in #354 |
+| 8 | 5.4 golden patterns | [#229](https://github.com/0xfauzi/kstrl/issues/229) | `[x]` |
 | 9 | 5.7 memory file | [#230](https://github.com/0xfauzi/kstrl/issues/230) | `[ ]` |
 | 10 | 5.8 polled steering | [#231](https://github.com/0xfauzi/kstrl/issues/231) | `[ ]` |
 | 11 | 5.11 wire the dead demotion triggers | [#232](https://github.com/0xfauzi/kstrl/issues/232) | `[x]` merged in #350 |
