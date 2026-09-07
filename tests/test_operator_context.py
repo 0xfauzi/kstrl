@@ -612,6 +612,15 @@ class TestAnUneditedScaffoldInjectsNothing:
         green over the whole operator-file and staleness selection. So
         the case supplies the row the table cannot: a synthetic template
         whose history holds the digest of a two-newline body.
+
+        BOTH READERS ARE ASKED, and that is round 3's correction. Once
+        the raw rule became the default, asking only the default made
+        this case green again under normalise-only, because the raw
+        branch still answers: measured as plant N3b2, still green over
+        the operator-file, upgrade and staleness selection. The claim is
+        about the widened branch, so the widened branch is the one that
+        has to be asked, and the default is asked beside it to say the
+        widening ADDS rather than replaces.
         """
         body = "# Synthetic\n\nOne line.\n\n"
         digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
@@ -629,6 +638,7 @@ class TestAnUneditedScaffoldInjectsNothing:
         )
 
         assert shipped_label("synthetic.md", body) == "2026-01-01"
+        assert shipped_label("synthetic.md", body, ignore_trailing_newlines=True) == "2026-01-01"
 
     def test_a_leading_newline_is_still_an_edit(self, tmp_path: Path) -> None:
         """The bound on the widening: the strip is at the END only, so a
