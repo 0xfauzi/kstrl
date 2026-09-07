@@ -36,8 +36,8 @@ from kstrl.tui.bridge import start_command_thread
 from kstrl.ui.plain import PlainUI
 from tests import spine_utils
 from tests.helpers.procs import (
+    NEEDS_A_READABLE_PS,
     kill_group,
-    ps_is_readable,
     read_pid,
     wait_for_group_to_die,
 )
@@ -599,6 +599,7 @@ class TestTheOrphanCheckIsScopedToItsOwnGroup:
                 sentinel.kill()
                 sentinel.wait(timeout=10)
 
+    @NEEDS_A_READABLE_PS
     def test_a_zombie_does_not_count_as_a_live_member(self) -> None:
         """Why the check reads `ps` state instead of `killpg(pgid, 0)`.
 
@@ -617,17 +618,14 @@ class TestTheOrphanCheckIsScopedToItsOwnGroup:
         reports the group as present. Without that control, a False here
         could mean the zombie had simply been reaped and the test would
         have measured nothing.
+
+        The mark is the shared one because where ``ps`` is filtered to
+        one uid ``process_group_alive`` degrades to the signal probe,
+        which counts a zombie as alive by design, so the assertion below
+        would fail pointing at kstrl rather than at the environment.
         """
         from kstrl.procgroup import signal_probe_alive
         from kstrl.serve import process_group_alive
-
-        if not ps_is_readable():
-            pytest.skip(
-                "ps is absent or filtered here, so process_group_alive "
-                "degrades to the signal probe, which counts a zombie as "
-                "alive by design. The assertion below would fail pointing "
-                "at kstrl rather than at the environment."
-            )
 
         parent = subprocess.Popen(
             [

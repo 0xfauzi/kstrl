@@ -15,7 +15,7 @@ the defect lived on.
 
 Four checks, none of which spends money:
 
-1. :class:`TestTheRealRunnerExecsItsArgv` runs the shipping
+1. :class:`TestTheRealRunnerRunsItsArgvAsAChild` runs the shipping
    ``subprocess_factory_runner`` against a stub interpreter. Only
    ``sys.executable`` is replaced - argv construction, the caffeinate
    prefix, the env mutation, the process-group spawn and the
@@ -38,8 +38,14 @@ Measured, by mutation, against the rest of the suite:
 - Making ``_default_runner`` forward a wrong ``project_name`` passed all
   3140 tests before check 3 existed. It had zero references in ``tests/``.
 - Deleting ``*caffeinate_prefix(caffeinate)`` from the runner's command
-  passed all 3140 tests, on macOS as well as CI's ubuntu, because
-  caffeinate execs in place and so leaves no observable trace.
+  passed all 3140 tests, on macOS as well as CI's ubuntu, because the
+  utility keeps the pid, the argv and the exit status it was given
+  either way, so nothing this module asserts on moves. (The reason
+  recorded at the time was "caffeinate execs in place". #209 measured
+  the tree: it forks a helper into the run's process group instead. The
+  pid identity that makes the mutation invisible here is the same, and
+  the census in ``tests/test_serve_process_tree.py`` is what catches
+  that mutation now.)
 - Deleting the ``_run_intake`` call from ``serve_cycle`` - the #189 F1
   defect itself - is already caught by nine tests in
   ``tests/test_intake_github.py::TestServePollsIntake``, so this module
@@ -75,6 +81,7 @@ from kstrl.serve import (
     subprocess_factory_runner,
 )
 from kstrl.workqueue import Queue, QueueConfig
+from tests.helpers import procs
 from tests.helpers.executables import write_executable
 from tests.test_intake_github import REPO, _GhStub, _issue, _issue_payload
 
@@ -103,14 +110,20 @@ sys.exit(int(os.environ.get("SEAM_EXIT", "0")))
 
 #: Stands in for ``/usr/bin/caffeinate``, and works on any platform.
 #:
-#: The real one execs its utility in place (measured; see
-#: ``test_the_factory_still_runs_correctly_under_real_caffeinate``), so
-#: this does too - otherwise the pid assertions would diverge from
-#: production for reasons unrelated to the code under test. It drops the
-#: leading ``-i`` exactly as the real one consumes its own flags, and
-#: touches a marker first so its PRESENCE in the chain is observable.
-#: Without that marker the wrapper is undetectable: exec-in-place leaves
-#: the pid, the argv and the exit status all identical.
+#: It execs in place. The real one does NOT - it forks a helper into the
+#: run's process group and keeps the utility on the pid it was given
+#: (measured for #209; the census is in
+#: ``tests/test_serve_process_tree.py``). This fake deliberately models
+#: only the half the seam tests depend on: the pid, the argv and the
+#: exit status the utility ends up with, all of which the real one
+#: leaves identical. Modelling the surviving helper here would add a
+#: process to every seam test for a property no seam test asserts, and
+#: the macOS census test measures the real thing rather than a fake.
+#: It drops the leading ``-i`` exactly as the real one consumes its own
+#: flags, and touches a marker first so its PRESENCE in the chain is
+#: observable. Without that marker the wrapper is undetectable from the
+#: outside: it leaves the pid, the argv and the exit status all
+#: identical.
 _FAKE_CAFFEINATE = """#!/bin/sh
 : > "$SEAM_CAFFEINATE_MARKER"
 shift
@@ -234,8 +247,17 @@ def _exec_real_runner(
     )
 
 
-class TestTheRealRunnerExecsItsArgv:
-    """The half that was only ever patched out."""
+class TestTheRealRunnerRunsItsArgvAsAChild:
+    """The half that was only ever patched out.
+
+    Named for what the tests below actually establish. It was
+    ``...ExecsItsArgv`` while the case at the bottom spent a paragraph
+    explaining that "execs in place" was the wrong reading: measured on
+    macOS 26.6.2, ``caffeinate -i cmd`` FORKS, the utility keeps the pid
+    ``Popen`` returned, and a second ``caffeinate`` runs as its child. Pid
+    identity is all these can decide, and it cannot tell a fork that
+    leaves the utility on the given pid from an exec (#209 round 2, N7).
+    """
 
     def test_it_invokes_the_factory_as_a_module_of_this_interpreter(
         self,
@@ -418,7 +440,7 @@ class TestTheRealRunnerExecsItsArgv:
         assert not marker.exists(), "caffeinate = false still wrapped the run"
         assert ran.argv[:3] == ("-m", "kstrl", "factory")
 
-    @pytest.mark.skipif(sys.platform != "darwin", reason="caffeinate is macOS-only")
+    @procs.NEEDS_CAFFEINATE
     def test_the_factory_still_runs_correctly_under_real_caffeinate(
         self,
         tmp_path: Path,
@@ -427,23 +449,30 @@ class TestTheRealRunnerExecsItsArgv:
         """The wrapper must not disturb the argv, the exit code, or the
         pid the lease is adopted by.
 
-        Measured on macOS 25.5 while writing this: ``caffeinate -i cmd``
-        **execs in place**, so the pid ``on_spawn`` reports is the
-        factory's own - there is no intermediate process. That is pinned
-        here as a canary rather than assumed: ``subprocess_factory_runner``'s
-        docstring describes the factory as a GRANDCHILD of the daemon
-        under caffeinate, and the process-group termination path is built
-        around descendants outliving a signal to the direct child. If a
-        future caffeinate forks instead of exec'ing, this fails and that
-        reasoning wants re-checking.
+        ``caffeinate -i cmd`` leaves the utility on the pid ``Popen``
+        returned, so the pid ``on_spawn`` reports is the factory's own
+        and the lease adopts the right process. That is what the
+        assertion below pins.
+
+        WHAT THIS DOES NOT SHOW, corrected in #209. The reason recorded
+        here was "it execs in place", which pid identity cannot
+        establish: a fork that leaves the utility on the given pid looks
+        identical from here. Measured on macOS 26.6.2 by enumerating the
+        whole process GROUP, that is what happens - a second
+        ``caffeinate`` process runs as a child of the utility and holds
+        the power assertion. The group census lives in
+        ``tests/test_serve_process_tree.py``; this stays as the pid
+        canary, which is the half it can actually decide.
 
         This asserts topology only. Whether the power assertion survives a
         dark wake is a separate, unmeasured question tracked in #203.
-        """
-        import shutil
 
-        if shutil.which("caffeinate") is None:
-            pytest.skip("caffeinate not installed")
+        The mark is ``tests/helpers/procs.NEEDS_CAFFEINATE``, which is
+        both halves of the guard in one place. This test used to carry a
+        platform decorator and an in-body ``shutil.which`` skip, and that
+        pair had been written out three times across two files by #209
+        round 2, in three wordings.
+        """
         seen: list[int] = []
         outcome, ran = _exec_real_runner(
             tmp_path,
@@ -457,9 +486,10 @@ class TestTheRealRunnerExecsItsArgv:
             "caffeinate must pass the factory's exit status through; the classifier reads it"
         )
         assert seen == [ran.pid], (
-            "caffeinate no longer execs in place, so the daemon's direct "
-            "child is not the factory - re-check the process-group "
-            "termination path in subprocess_factory_runner"
+            "caffeinate no longer leaves the utility on the pid it was "
+            "given, so the daemon's direct child is not the factory and "
+            "the lease adopts the wrong process - re-check the "
+            "process-group termination path in subprocess_factory_runner"
         )
 
 
