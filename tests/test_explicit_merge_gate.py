@@ -42,6 +42,7 @@ import kstrl.cli as cli_mod
 from kstrl.autonomy import (
     AutonomyLevel,
     AutonomyState,
+    FlagBundle,
     flag_bundle_for,
     pause_gate_for,
     resolved_flag_bundle,
@@ -152,6 +153,33 @@ class TestTheResolvedBundle:
     def test_no_gate_leaves_the_level_untouched(self) -> None:
         bundle = flag_bundle_for(AutonomyLevel.L3_ENVELOPED_AUTO)
         assert resolved_flag_bundle(bundle, configured=False, explicit=False) == bundle
+
+    def test_a_level_that_neither_gates_nor_auto_merges_keeps_both_off(self) -> None:
+        """The `and` is load-bearing, and only this row proves it.
+
+        Measured: over the four levels the ladder has today,
+        `auto_merge_when_green` is exactly `not pause_before_pr_merge`,
+        so `bundle.auto_merge_when_green and not pause` and a bare
+        `not pause` agree on all 16 (level, configured, explicit) rows.
+        A mutation to the bare form was planted and came back STILL
+        GREEN, which is an equivalent mutant rather than a hole - until
+        somebody adds a level that withholds auto-merge without raising
+        the gate, and then the bare form GRANTS a permission the ladder
+        never gave. Built by hand rather than from `flag_bundle_for`,
+        because no level produces this combination yet.
+        """
+        neither = FlagBundle(
+            level=AutonomyLevel.L3_ENVELOPED_AUTO,
+            pause_before_pr_merge=False,
+            review_mode="hard",
+            auto_accept_plan=True,
+            deps_allow_new_permitted=True,
+            auto_merge_when_green=False,
+            deploy_permitted=False,
+        )
+        resolved = resolved_flag_bundle(neither, configured=False, explicit=False)
+        assert resolved.pause_before_pr_merge is False
+        assert resolved.auto_merge_when_green is False
 
     def test_an_explicit_false_never_grants_auto_merge(self) -> None:
         """The #174 direction, one flag over.
