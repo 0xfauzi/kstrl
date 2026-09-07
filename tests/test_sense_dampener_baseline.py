@@ -349,12 +349,64 @@ def test_a_repository_with_no_remote_has_no_slug(tmp_path: Path) -> None:
     run_git("init", "-q", "-b", "main", cwd=repo)
 
     # A directory that is not a repository at all: git exits nonzero and this
-    # returns None too. A path that does not EXIST is deliberately not covered:
-    # `subprocess` raises FileNotFoundError for a missing cwd, which every
-    # helper in kstrl/git.py lets out, and `ks sense` refuses a path that is
-    # not a directory before any of them is reached.
+    # returns None too. So does a path that does not EXIST, since `subprocess`
+    # raises FileNotFoundError for a missing cwd and this function now fails
+    # closed on OSError; `ks sense` refuses a path that is not a directory
+    # before any of it is reached, so that case is unreachable from the CLI.
     plain = tmp_path / "plain-directory"
     plain.mkdir()
 
     assert get_origin_slug(repo) is None
     assert get_origin_slug(plain) is None
+    assert get_origin_slug(tmp_path / "not-there") is None
+
+
+def test_the_dampener_s_identity_reads_fall_back_when_git_is_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A machine with no git gets the documented fallback, not a traceback.
+
+    Both functions are called on ONE line of `_sense_dampener_report`, after
+    the whole sensor run: `project=get_origin_slug(path) or path.name` and
+    `base_ref=get_head_sha(path)`. Round 2 of review on #357 emptied PATH and
+    measured both raising FileNotFoundError, so an operator paid for the
+    measurement and got exit 1 with a stack trace where the command documents
+    a fallback and exit 2.
+
+    PATH is emptied rather than `shutil.which` patched: what is under test is
+    what these functions do when the binary is not there, and the environment
+    is how a machine says so.
+
+    The third row is the reason this matters before the report is reached at
+    all: the strict diff read is what `ks sense` turns into exit 2, and it let
+    the same error out.
+    """
+    from kstrl.git import GitDiffError, get_diff_names, get_head_sha, get_origin_slug
+
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+
+    assert get_origin_slug(tmp_path) is None
+    assert get_head_sha(tmp_path) is None
+    with pytest.raises(GitDiffError, match="could not run"):
+        get_diff_names("main", tmp_path, strict=True)
+
+
+def test_the_identity_reads_still_answer_when_git_is_present(tmp_path: Path) -> None:
+    """The control for the test above.
+
+    Without it, `except (TimeoutExpired, OSError): return None` widened to
+    swallow everything would pass it, and a fallback that fires on every
+    machine records a project identity of `path.name` for every baseline - the
+    worktree-number defect the identity exists to prevent.
+    """
+    from kstrl.git import get_head_sha, get_origin_slug
+    from tests.spine_utils import git as run_git
+
+    repo = tmp_path / "present"
+    repo.mkdir()
+    run_git("init", "-q", "-b", "main", cwd=repo)
+    run_git("remote", "add", "origin", "https://github.com/0xfauzi/kstrl.git", cwd=repo)
+    run_git("commit", "-q", "--allow-empty", "-m", "base", cwd=repo)
+
+    assert get_origin_slug(repo) == "0xfauzi/kstrl"
+    assert get_head_sha(repo) is not None

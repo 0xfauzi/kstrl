@@ -476,7 +476,9 @@ def get_head_sha(
             text=True,
             timeout=timeout,
         )
-    except subprocess.TimeoutExpired:
+    except (subprocess.TimeoutExpired, OSError):
+        # "not a repo" and "no git" are one answer to this question, and
+        # the dampener asks it on the same line as get_origin_slug.
         return None
     if result.returncode != 0:
         return None
@@ -510,7 +512,13 @@ def get_origin_slug(
             text=True,
             timeout=timeout,
         )
-    except subprocess.TimeoutExpired:
+    except (subprocess.TimeoutExpired, OSError):
+        # OSError beside the timeout, the same breadth as resolve_base_ref
+        # and _resolve_candidate: this function documents None for "no
+        # remote", and a machine with no git at all is the same answer
+        # from the caller's side. Without it, `ks sense --compare-baseline`
+        # raised FileNotFoundError out of the top of the run, AFTER paying
+        # for the whole measurement, where it documents exit 2.
         return None
     if result.returncode != 0:
         return None
@@ -902,6 +910,17 @@ def get_diff_name_status(
         if strict:
             raise GitDiffError(
                 f"git diff --name-status against {base_ref} timed out after {timeout}s"
+            ) from exc
+        return []
+    except OSError as exc:
+        # The strict contract is that a diff this function could not
+        # produce arrives as GitDiffError, and `ks sense` turns that into
+        # exit 2 with a message naming the base. A missing git binary was
+        # the one way out of here that was neither: FileNotFoundError,
+        # exit 1, and a traceback where the command documents a refusal.
+        if strict:
+            raise GitDiffError(
+                f"git diff --name-status against {base_ref} could not run: {exc}"
             ) from exc
         return []
     if strict:
