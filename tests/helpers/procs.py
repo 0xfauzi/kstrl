@@ -149,7 +149,7 @@ def group_has_live_member(pgid: int) -> bool:
     so one parse bug could blind both at once. Two arguments answer it,
     and neither is "it will not happen". First, a second hand-written
     parse would not have been independent of the failure it is supposed
-    to catch: both copies read the same ``ps -A -o pgid=,stat=`` and both
+    to catch: both copies read the same ``ps -A`` listing and both
     would break together on a column shift, which is the named risk.
     Second, ``read_group_liveness`` no longer rests on the parse alone
     for the dangerous direction. A "gone" now requires either a zombie

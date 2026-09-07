@@ -74,6 +74,7 @@ class TestTheListingReadsStatesNotJustGroups:
     # moved to tests/test_procgroup_members.py with #209: their expected
     # values are `_Listing`'s two pid tuples now, so they read next to the
     # reading built on them. This file was at 796 of the 800-line ratchet.
+
     def test_a_group_id_is_matched_whole_not_as_a_prefix(self) -> None:
         """#292 in miniature: 7 must not match 70."""
         assert _read_listing("1 1 Ss\n50 70 Ss\n", pgid=7).rows == 0

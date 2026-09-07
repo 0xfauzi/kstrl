@@ -70,9 +70,9 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   `kstrl.procgroup.read_group_members`, sharing the one `ps` call and the
   one parse this tree allows; it refuses a uid-filtered listing outright,
   because a count taken from one is an undercount and its caller is
-  usually asserting there is no second member. `docs/continuous-intake.md` also corrects the assertion
-  name it quoted and records the suspend experiment #203 still needs.
-  (#209)
+  usually asserting there is no second member.
+  `docs/continuous-intake.md` also corrects the assertion name it quoted
+  and records the suspend experiment #203 still needs. (#209)
 - `ks serve` now has a regression test pinning that the daemon lock is
   taken BEFORE the lease reaper runs. `reap_leases` requeues a RUNNING
   item whose wall-clock lease has lapsed, and wall clock advances across
