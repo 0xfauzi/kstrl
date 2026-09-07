@@ -398,7 +398,15 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   baseline also records a digest of the three verify commands and the
   subprocess timeout, and a comparison measured with a different one is
   refused with exit 2 rather than reported. A workflow on this repository
-  posts the report on every pull request and never fails on a regression.
+  posts the report on every pull request and never fails on a regression;
+  it reads the baseline out of the BASE ref rather than out of the pull
+  request's own checkout, so a branch cannot supply the yardstick it is
+  judged by, and a base branch that carries no baseline is reported as
+  nothing to compare against rather than compared against the branch.
+  What a gate reports as measured is decided by its PARSER: a failing
+  gate measured something only when a parser recognised its own tool
+  reporting the failure, so a missing tool is unmeasured whether the
+  command is `uv run <tool>` (exit 2) or a bare binary (exit 127).
   `docs/dampener.md` covers adopting it in another repository and
   graduating it to blocking (#227).
 - The architect's non-blocker spec findings now reach the engineer. They
