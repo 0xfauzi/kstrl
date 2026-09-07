@@ -38,15 +38,17 @@ of them came to be stated wrongly for a year.
    writing this: a ``serve()`` mutated to run its cycle BEFORE acquiring
    the lock left every existing lock test in the suite green.
 
-The census is macOS-only because ``caffeinate`` is, and is skipped on a
-mac that does not have it installed. The lock tests are neither: they
-need ``fcntl``, exactly as ``TestServeLock`` next door does.
+Only the ``caffeinate=True`` cases are macOS-only; the two bare cases
+need neither ``caffeinate`` nor macOS and run on CI, which is where the
+``start_new_session`` mutation is caught. Every census case, bare or
+not, additionally needs a ``ps`` that is not filtered to one uid. The
+lock tests need none of that: they need ``fcntl``, exactly as
+``TestServeLock`` next door does.
 """
 
 from __future__ import annotations
 
 import os
-import shutil
 import sys
 import time
 from pathlib import Path
@@ -65,35 +67,30 @@ from kstrl.serve import (
 from kstrl.workqueue import ItemState, Queue, QueueConfig
 from tests.helpers import procs
 
-#: Gates the ``caffeinate=True`` cases and NOTHING else. Said once,
-#: because the earlier shape was a platform decorator plus an in-body
-#: ``shutil.which`` skip on each test, and the fourth copy of that pair
-#: next door in ``tests/test_serve_seam.py`` has already drifted in
-#: wording.
-#:
-#: It is a per-parameter mark rather than a class marker, which was
-#: round 1 of #209's S4. CI is ubuntu, and under a class marker the
-#: whole census contributed nothing there - including the two cases
-#: that need no ``caffeinate`` and no macOS. Measured: the mutation that
-#: drops ``start_new_session=True`` from ``run_supervised`` is caught by
-#: this census and by nothing else in this file, and
-#: ``start_new_session`` has nothing to do with macOS.
-_NEEDS_CAFFEINATE = pytest.mark.skipif(
-    sys.platform != "darwin" or shutil.which("caffeinate") is None,
-    reason="caffeinate is macOS-only and must be installed",
-)
+# BOTH MARKS BELOW ARE ALIASES OF ``tests/helpers/procs``, not copies.
+# Round 2 of #209 found the readable-``ps`` predicate spelled locally
+# here and unable to fire, and the caffeinate pair spelled a third way
+# across two files; the aliases exist so a ``procs.`` prefix does not
+# have to be read into every parameter list, and they are the same mark
+# objects, so a fix to either predicate reaches here by construction.
 
-#: Gates every case that takes a census, on either platform. Where ``ps``
-#: does not list pid 1 - a ``hidepid`` mount, a container - the read
-#: under ``procs.group_member_pids`` refuses, correctly, and raises
-#: through ``on_spawn``; the red test then reads as a defect in
+#: Gates the ``caffeinate=True`` cases and NOTHING else, as a
+#: per-parameter mark rather than a class marker: that was round 1 of
+#: #209's S4, and under a class marker the whole census contributed
+#: nothing on CI's ubuntu, including the two cases that need no
+#: ``caffeinate`` and no macOS. Measured: the mutation that drops
+#: ``start_new_session=True`` from ``run_supervised`` is caught by this
+#: census and by nothing else in this file, and ``start_new_session``
+#: has nothing to do with macOS.
+_NEEDS_CAFFEINATE = procs.NEEDS_CAFFEINATE
+
+#: Gates every census case on either platform. Where ``ps`` does not
+#: list pid 1 - a ``hidepid`` mount, a container - the read under
+#: ``procs.group_member_pids`` refuses, correctly, and raises through
+#: ``on_spawn``; the red test then reads as a defect in
 #: ``kstrl/procgroup.py`` rather than as an environment that cannot be
-#: measured. ``tests/test_shutdown.py`` skips on the same helper for the
-#: same reason. Evaluated once at import, which costs one ``ps``.
-_NEEDS_A_READABLE_PS = pytest.mark.skipif(
-    not procs.ps_is_readable(),
-    reason="ps here is absent or filtered to one uid, so a group census would be an undercount",
-)
+#: measured.
+_NEEDS_A_READABLE_PS = procs.NEEDS_A_READABLE_PS
 
 # --------------------------------------------------------------------------
 # 1. The run's process group

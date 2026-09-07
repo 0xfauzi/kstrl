@@ -15,7 +15,7 @@ the defect lived on.
 
 Four checks, none of which spends money:
 
-1. :class:`TestTheRealRunnerExecsItsArgv` runs the shipping
+1. :class:`TestTheRealRunnerRunsItsArgvAsAChild` runs the shipping
    ``subprocess_factory_runner`` against a stub interpreter. Only
    ``sys.executable`` is replaced - argv construction, the caffeinate
    prefix, the env mutation, the process-group spawn and the
@@ -81,6 +81,7 @@ from kstrl.serve import (
     subprocess_factory_runner,
 )
 from kstrl.workqueue import Queue, QueueConfig
+from tests.helpers import procs
 from tests.helpers.executables import write_executable
 from tests.test_intake_github import REPO, _GhStub, _issue, _issue_payload
 
@@ -246,8 +247,17 @@ def _exec_real_runner(
     )
 
 
-class TestTheRealRunnerExecsItsArgv:
-    """The half that was only ever patched out."""
+class TestTheRealRunnerRunsItsArgvAsAChild:
+    """The half that was only ever patched out.
+
+    Named for what the tests below actually establish. It was
+    ``...ExecsItsArgv`` while the case at the bottom spent a paragraph
+    explaining that "execs in place" was the wrong reading: measured on
+    macOS 26.6.2, ``caffeinate -i cmd`` FORKS, the utility keeps the pid
+    ``Popen`` returned, and a second ``caffeinate`` runs as its child. Pid
+    identity is all these can decide, and it cannot tell a fork that
+    leaves the utility on the given pid from an exec (#209 round 2, N7).
+    """
 
     def test_it_invokes_the_factory_as_a_module_of_this_interpreter(
         self,
@@ -430,7 +440,7 @@ class TestTheRealRunnerExecsItsArgv:
         assert not marker.exists(), "caffeinate = false still wrapped the run"
         assert ran.argv[:3] == ("-m", "kstrl", "factory")
 
-    @pytest.mark.skipif(sys.platform != "darwin", reason="caffeinate is macOS-only")
+    @procs.NEEDS_CAFFEINATE
     def test_the_factory_still_runs_correctly_under_real_caffeinate(
         self,
         tmp_path: Path,
@@ -456,11 +466,13 @@ class TestTheRealRunnerExecsItsArgv:
 
         This asserts topology only. Whether the power assertion survives a
         dark wake is a separate, unmeasured question tracked in #203.
-        """
-        import shutil
 
-        if shutil.which("caffeinate") is None:
-            pytest.skip("caffeinate not installed")
+        The mark is ``tests/helpers/procs.NEEDS_CAFFEINATE``, which is
+        both halves of the guard in one place. This test used to carry a
+        platform decorator and an in-body ``shutil.which`` skip, and that
+        pair had been written out three times across two files by #209
+        round 2, in three wordings.
+        """
         seen: list[int] = []
         outcome, ran = _exec_real_runner(
             tmp_path,
