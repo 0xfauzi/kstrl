@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-09-07T00:45:08Z",
-  "base_ref": "b47c63425b9d078c37398edd5378354194e577e3",
+  "generated_at": "2026-09-07T06:57:19Z",
+  "base_ref": "9715ec553e50573688b4a86a08093da73257fa8e",
   "project": "0xfauzi/kstrl",
   "passed": true,
   "sense_schema_version": 3,
