@@ -36,7 +36,9 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from click.testing import CliRunner
 
+import kstrl.cli as cli_mod
 from kstrl.autonomy import (
     AutonomyLevel,
     AutonomyState,
@@ -449,6 +451,37 @@ class TestStrictBoolean:
         )
         with pytest.raises(ConfigError, match="must be a boolean"):
             FactoryConfig.load(tmp_path)
+
+    @pytest.mark.parametrize(
+        ("args", "exit_code"),
+        [(["serve", "--print-plist", "--no-color"], 2), (["status"], 1)],
+        ids=["serve", "status"],
+    )
+    def test_the_refusal_arrives_as_the_command_s_own_exit_code(
+        self,
+        tmp_path: Path,
+        args: list[str],
+        exit_code: int,
+    ) -> None:
+        """Which number, per command, because there is more than one.
+
+        ``preflight_config`` raises ``ConfigError`` and chooses no exit
+        code: the entry seam turns it into exit 1, and ``ks serve``
+        carries its own contract of exit 2. Round 1's PR body said
+        "``config_preflight`` exit 2" for the ``ks factory`` path, which
+        is the wrong number for the command this issue is about, and
+        CLAUDE.md makes exit 2 the named convention for pre-spend
+        refusals, so a wrong one invites a later change to "restore" an
+        exit 2 that was never there. ``tests/test_config_preflight.py``
+        pins the same split for every seam command; this row is here so a
+        change to THIS key is measured against it.
+        """
+        (tmp_path / "kstrl.toml").write_text(
+            '[factory]\npause_before_pr_merge = "false"\n', encoding="utf-8"
+        )
+        result = CliRunner().invoke(cli_mod.cli, [*args, "--root", str(tmp_path)])
+        assert result.exit_code == exit_code, result.output
+        assert "must be a boolean" in result.output
 
     @pytest.mark.parametrize(("value", "expected"), [("true", True), ("false", False)])
     def test_a_real_boolean_loads(self, tmp_path: Path, value: str, expected: bool) -> None:

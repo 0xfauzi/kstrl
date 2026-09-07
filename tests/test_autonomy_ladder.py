@@ -339,6 +339,7 @@ class TestConfig:
             bundle,
             configured_pause_before_pr_merge=False,  # contradicts L1
             configured_review_mode="advisory",  # contradicts hard
+            pause_before_pr_merge_explicit=False,
         )
         assert len(notes) == 2
         assert all("bundle wins" in n for n in notes)
@@ -351,6 +352,7 @@ class TestConfig:
                 bundle,
                 configured_pause_before_pr_merge=True,
                 configured_review_mode="hard",
+                pause_before_pr_merge_explicit=False,
             )
             == []
         )

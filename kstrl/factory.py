@@ -295,6 +295,16 @@ class FactoryConfig:
     # `ks factory` CLI flag. A bare FactoryConfig() has none, which is
     # the safe direction: not-explicit means the ladder decides.
     #
+    # "The operator set it" is true of every source EXCEPT one, and the
+    # exception is named here rather than left for a later reader to
+    # discover: serve.subprocess_factory_runner always passes one of
+    # --pause-before-pr-merge / --no-pause-before-pr-merge to its child,
+    # synthesised from the queue item's merge disposition and the ladder.
+    # A serve child's provenance is therefore SERVE's decision, made on
+    # the operator's behalf, not a key the operator wrote. The two agree
+    # wherever the item's disposition came from a person; they do not
+    # where serve defaulted it.
+    #
     # Key presence, never a value comparison. An env var set to a value
     # equal to the default IS an explicit request, and comparing values
     # would read it as absent (measured: config_report gets exactly this

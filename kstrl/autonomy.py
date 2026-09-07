@@ -694,10 +694,18 @@ def strict_bool(section: Mapping[str, Any], key: str, default: bool) -> bool:
     guard.
 
     The message carries no section prefix. ``config_preflight`` puts the
-    section label in front of whatever the loader raises, and both keys
-    are unique to their own section, so each identifies itself on the one
-    surface that prints the exception bare (``python -m kstrl.calibration
-    compare``).
+    section label in front of whatever the loader raises, and each of
+    these keys is unique to its own section, so each identifies itself on
+    the one surface that prints the exception bare (``python -m
+    kstrl.calibration compare``).
+
+    It also names the type it actually READ rather than a cause the
+    operator may not have hit. The first draft explained that a quoted
+    value is a string and every non-empty string reads as true, which is
+    the wrong sentence for ``pause_before_pr_merge = 0`` - a plausible
+    boolean spelling, and this key is far more hand-written than
+    ``[autonomy] enabled``. Same rule as the ``tomllib`` readers one
+    module over: report individually only the causes you can name.
     """
     if key not in section:
         return default
@@ -706,8 +714,8 @@ def strict_bool(section: Mapping[str, Any], key: str, default: bool) -> bool:
     value = section[key]
     if not isinstance(value, bool):
         raise ConfigError(
-            f"{key} must be a boolean (true or false), got {value!r}. "
-            "A quoted value is a string, and every non-empty string reads as true."
+            f"{key} must be a boolean, written unquoted as true or false. "
+            f"Got {value!r}, which TOML reads as {type(value).__name__}."
         )
     return value
 
@@ -1152,7 +1160,7 @@ def manual_override_notes(
     *,
     configured_pause_before_pr_merge: bool | None = None,
     configured_review_mode: str | None = None,
-    pause_before_pr_merge_explicit: bool = False,
+    pause_before_pr_merge_explicit: bool,
 ) -> list[str]:
     """Config values that contradict the level's bundle, and what won.
 
@@ -1169,6 +1177,13 @@ def manual_override_notes(
 
     Each note carries its own verdict, because two of them now have
     different verdicts and a caller cannot prefix them with one label.
+
+    ``pause_before_pr_merge_explicit`` has no default on purpose. The
+    claim above holds only while it travels with
+    ``configured_pause_before_pr_merge``, and a default is exactly what
+    lets the two separate: a caller that passed the value and forgot the
+    provenance would get "bundle wins" for a gate the run in fact kept.
+    Required, so the compiler asks instead of the reader.
     """
     notes: list[str] = []
     if (

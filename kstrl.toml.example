@@ -305,8 +305,9 @@ flag_assertionless_tests = true    # report tests that assert nothing
 # placeholders - run `ks autonomy replay` before trusting them.
 [autonomy]
 # `enabled` and the two demote_on_* switches below are REFUSED unless written
-# as an unquoted true or false, unlike every other key in this file. `= "false"`
-# is a string, and every non-empty string reads as true; a typo that arms the
+# as an unquoted true or false, unlike most keys in this file (`[factory]
+# pause_before_pr_merge` is the fourth). `= "false"` is a string and `= 0` is an
+# integer, and coercing either arms a switch nobody armed; a typo that arms the
 # ladder or one of its revocation switches is worse than one that disarms it.
 enabled = false
 max_level = 4                      # hard local ceiling: refuse to run above this level

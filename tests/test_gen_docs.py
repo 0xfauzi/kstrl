@@ -112,6 +112,33 @@ class TestConfigProbing:
         for section in generated_sections:
             assert f"[{section}]" in reference
 
+    def test_a_provenance_field_is_not_probed_as_a_toml_key(self, gen_docs: ModuleType) -> None:
+        """#195: ``explicit_fields`` records which keys the operator set.
+
+        It has no toml key, no env var and no flag, so probing it as an
+        undocumented key would report an error about a field nobody can
+        write. It was already excluded, but by TYPE: ``_scalar_fields``
+        admits ``None/bool/int/float/str/Path/list`` and a ``frozenset``
+        falls out on its own. That is an accident of the field's type,
+        not a decision, and the next provenance field may be a scalar.
+        The exclusion is now declared, and this is what holds it.
+        """
+        from kstrl.factory import FactoryConfig
+
+        defaults = FactoryConfig()
+        provenance = {f.name for f in dataclasses.fields(defaults) if f.metadata.get("provenance")}
+        assert provenance, "no provenance field left to test; delete this test with the field"
+        assert provenance & gen_docs._scalar_fields(defaults) == set()
+
+    def test_a_provenance_field_never_reaches_the_readme(self) -> None:
+        """The end the operator sees, asserted on the committed file."""
+        from kstrl.factory import FactoryConfig
+
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        for f in dataclasses.fields(FactoryConfig()):
+            if f.metadata.get("provenance"):
+                assert f.name not in readme, f.name
+
     def test_example_toml_keys_are_all_documented(self, gen_docs: ModuleType) -> None:
         """kstrl.toml.example must not name keys the loaders ignore."""
         import tomllib

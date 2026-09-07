@@ -62,19 +62,31 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   raise, and that run still logs `bundle wins` (#195).
 - **Behaviour change:** `[factory] pause_before_pr_merge` is read
   strictly, the way `[autonomy] enabled` has been since #350. `= "false"`
-  is a string, every non-empty string reads as true, and since the key
-  now outranks the ladder a coerced string would manufacture an explicit
+  is a string, `= 0` is an integer, and since the key now outranks the
+  ladder a coerced non-boolean would manufacture an explicit
   request nobody wrote and keep the gate up at every level. A repo that
-  spells the value with quotes goes from silently gated to a
-  configuration problem reported at command entry. The env var is
+  spells the value with quotes, or as `0` / `1`, goes from silently gated
+  to a configuration problem reported at command entry: exit 1 on the
+  `ks factory` path and exit 2 under `ks serve`, which is the split every
+  command in the entry seam already has. The env var is
   unchanged and stays lenient, because an env var is a string by
   construction (#195).
-- `ks serve` no longer refuses a `stop_at_pr` item because the autonomy
-  level would auto-merge: that item is now honoured. The refusal is
-  re-aimed at the case that is still real and that no level fixes, a repo
-  whose `[factory] create_prs = false` means the merge checkpoint never
-  runs, so an item that asked for a human in writing would otherwise be
-  merged with nobody having looked (#195).
+- **Behaviour change:** `ks serve` no longer refuses a `stop_at_pr` item
+  because the autonomy level would auto-merge: that item is now honoured.
+  The refusal is re-aimed at the case that is still real and that no
+  level fixes, a repo whose `[factory] create_prs = false` means the
+  merge checkpoint never runs, so a run that promised a human merge gate
+  would otherwise merge with nobody having looked. Newly refused items go
+  TERMINAL, not skipped: `queue.poison` is documented as the state that
+  must never be retried automatically, and each refusal also files one
+  inbox item and sets `needs_human`, once per item. The set that newly
+  goes terminal, in a repo with `[factory] create_prs = false`: a
+  `stop_at_pr` item at L1, at L2, and with the autonomy ladder disabled;
+  and an `auto_merge` item at L1 or L2, where the LADDER raises the gate
+  the repo cannot honour. (At L3 and L4 a `stop_at_pr` item was already
+  refused, for a different reason.) `create_prs` defaults to `true`, so
+  only a repo that explicitly wrote `create_prs = false` is affected
+  (#195).
 - A repeat of an open inbox item now refreshes its `evidence` alongside
   its `detail`. Only the prose half was refreshed before, so a deduped
   item whose numbers move - a health breach, whose whole point is that

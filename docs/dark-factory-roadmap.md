@@ -962,9 +962,17 @@ old condition - a `stop_at_pr` item at L3 - is exactly the case that now
 works, so leaving it would have poisoned items the factory can honour.
 It now refuses the hole that is still real and that no level fixes: a
 repo whose `[factory] create_prs = false` never reaches the checkpoint,
-so an item that asked for a human in writing would be merged with nobody
-having looked. `MergeGate.refusal` keeps its five readers and gains a
-case with a test.
+so a run that promised a human merge gate would merge with nobody having
+looked. `MergeGate.refusal` keeps its six readers and gains a case with a
+test.
+
+The refusal keys on the RESOLVED gate, at one exit every `MergeGate` is
+built at, rather than on the queue item's own disposition. Round 1 asked
+the disposition and so cleared the other way a gate arises: an
+`auto_merge` item that L1 or L2 downgrades is promised a human gate by
+the ladder, and that gate is exactly as unreachable in a
+`create_prs = false` repo. Measured at that revision, the case returned
+`pause=True, refusal=''`. A control that CLEARS must be narrow.
 
 Two invariants in the substrate are money-safety properties rather than
 style, and both are mutation-checked:
