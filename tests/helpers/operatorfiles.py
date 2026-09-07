@@ -75,6 +75,26 @@ def split_block(block: str) -> tuple[str, list[str], str]:
     return lines[0], lines[1:-1], lines[-1]
 
 
+def assert_delimited(block: str, header: str) -> str:
+    """Both delimiters present, well formed, and carrying ONE token.
+
+    Takes the header rather than closing over one, so the R10.8 cases
+    and the cases parametrized over ``OPERATOR_FILES`` check the same
+    thing. The open-token-equals-close-token half is the reason this is
+    one function: an inline copy that checks each line separately passes
+    a block whose two delimiters carry different tokens, which is a
+    block a body could have split.
+    """
+    opened, _inner, closed = split_block(block)
+    start, end = f"=== {header} ", f"=== END {header} "
+    assert opened.startswith(start)
+    assert closed.startswith(end)
+    token = opened[len(start) :]
+    assert TOKEN.match(token), token
+    assert closed[len(end) :] == token
+    return token.split(" ")[0]
+
+
 def body_of(block: str) -> str:
     """The operator's own text out of a rendered block."""
     return block.split("\n", 1)[1].split("\n[truncated:", 1)[0]

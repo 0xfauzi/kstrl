@@ -24,9 +24,20 @@ R10.9 moved the table into ``kstrl/config_keys.py`` because
 take another ``[paths]`` row. ``kstrl.config`` re-exports the name and
 the three loaders read it from there; the two documentation surfaces read
 it from ``config_keys``, which is what the mutation below patches.
-:func:`test_the_re_export_is_the_same_object` is what makes that one
-table rather than two, so patching either name is patching the table the
-loaders use.
+
+WHAT THE MUTATION DOES AND DOES NOT REACH, measured rather than assumed.
+``from kstrl.config_keys import STRING_KEYS`` binds a SECOND name, so
+``monkeypatch.setattr(config_keys, ...)`` rebinds one and leaves
+``kstrl.config``'s binding alone: after the patch ``config_keys`` has
+eleven rows and ``config`` still has ten. The two documentation surfaces
+are what this file is about (S8 is the finding that a tenth row dropped
+out of ``ks config`` and the generated README), and they import at call
+time from ``config_keys``, so they see it. The three loaders do not, and
+do not need to: ``tests/test_config_toml.py`` is parametrized over
+``STRING_KEYS`` and covers every row through all three doors.
+:func:`test_the_re_export_is_the_same_object` is the separate claim, and
+it is about the OBJECT: one table read under two names, so the rows the
+loaders overlay and the rows the documentation prints cannot diverge.
 """
 
 from __future__ import annotations
@@ -119,7 +130,10 @@ class TestTheTwoNamesAreOneTable:
         re-exports it. IDENTITY, not equality: the loaders read one name
         and the two documentation surfaces read the other, and identity
         is the only thing that makes them the same table rather than two
-        that happen to agree today. Rebinding either to a fresh tuple
-        fails here rather than surfacing as a key missing from `ks config`
-        six months later."""
+        that happen to agree today. Rebinding either at SOURCE to a fresh
+        tuple fails here rather than surfacing as a key missing from
+        `ks config` six months later. What it does not claim is that
+        rebinding one name at RUN TIME moves the other: it does not, and
+        the module docstring says which surfaces the fixture above
+        therefore reaches."""
         assert config_mod.STRING_KEYS is config_keys.STRING_KEYS

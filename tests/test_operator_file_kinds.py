@@ -37,7 +37,13 @@ from kstrl.operator_context import (
     operator_file_notices,
     read_operator_file,
 )
-from tests.helpers.operatorfiles import SHIPPED_BODIES, TOKEN, body_of, spec_for, split_block
+from tests.helpers.operatorfiles import (
+    SHIPPED_BODIES,
+    assert_delimited,
+    body_of,
+    spec_for,
+    split_block,
+)
 
 #: One case per declared kind, so a third file is covered the day its row
 #: lands rather than the day someone remembers to copy these cases.
@@ -120,10 +126,11 @@ class TestEveryKindBehavesTheSame:
 
         block = load_operator_file(spec_for(kind, path))
 
-        opened, _inner, closed = split_block(block)
-        assert opened.startswith(f"=== {kind.header} ")
-        assert closed.startswith(f"=== END {kind.header} ")
-        assert TOKEN.match(opened[len(f"=== {kind.header} ") :])
+        # The same check the R10.8 cases make, taking the header off the
+        # row. Shared rather than restated: an inline copy checked each
+        # delimiter line on its own and so passed a block whose two lines
+        # carried DIFFERENT tokens.
+        assert_delimited(block, kind.header)
         for other in OPERATOR_FILES:
             if other.header != kind.header:
                 assert other.header not in block

@@ -338,18 +338,6 @@ def read_operator_file(spec: OperatorFile) -> OperatorText:
     )
 
 
-def _configured(config: KstrlConfig, kind: OperatorFileKind) -> Path:
-    """The path ``config`` holds for one kind, read off the row's field.
-
-    ``getattr`` on ``kind.field`` and not a per-kind branch. Pairing one
-    row with another row's field is the one-field-over defect #260 round
-    2 and #229's P5 plant both paid for, and a loop over the table cannot
-    commit it: there is one expression, and it names no field.
-    """
-    value: Path = getattr(config, kind.field)
-    return value
-
-
 def _rows(
     config: KstrlConfig,
     anchored: KstrlConfig,
@@ -362,9 +350,18 @@ def _rows(
     with no edit below this line. R10.9 added the memory row and neither
     function below changed, because both take the subject and the
     ``[paths]`` key off the row rather than spelling either one.
+
+    Both paths come out of ``getattr(..., kind.field)`` and no branch
+    names a field. That is what makes pairing one row with another row's
+    field impossible here rather than merely unlikely: it is the
+    one-field-over defect #260 round 2 and #229's P5 plant both paid
+    for, and the LOOP is the thing that prevents it.
     """
     return tuple(
-        (operator_file_spec(kind, root, _configured(config, kind)), _configured(anchored, kind))
+        (
+            operator_file_spec(kind, root, getattr(config, kind.field)),
+            getattr(anchored, kind.field),
+        )
         for kind in OPERATOR_FILES
     )
 

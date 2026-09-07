@@ -187,6 +187,72 @@ FEEDFORWARD_CONFIG: dict[str, object] = {
 }
 
 
+#: The spine fixture and the one call into the worker, at module level
+#: rather than on a class. Both test classes below drive the same seam,
+#: and the R10.9 class reached these by INSTANTIATING the R10.8 class
+#: (`TestGoldenPatternsReachTheEngineer()._prompt_after_run(...)`), which
+#: is a second path to one fixture and cost a wrapper method that nothing
+#: called. One definition, called by name.
+def _repo_with_source(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+    """A spine repo whose worktree has a module for feedforward to see.
+
+    Committed on main BEFORE the worktree is cut, because feedforward
+    reads the worktree, and an empty module map would make the
+    feedforward block "" and the ordering assertion vacuous.
+    """
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    root = tmp_path / "repo"
+    init_kstrl_repo(root, (COMP,))
+    (root / "src").mkdir()
+    (root / "src" / "mod.py").write_text("def f() -> int:\n    return 1\n")
+    git("add", "src/mod.py", cwd=root)
+    git("commit", "-q", "-m", "src", cwd=root)
+    worktree = _setup_worktree(COMP, BRANCH, "main", root, RUN_ID)
+
+    cap = tmp_path / "capture"
+    cap.mkdir()
+    agent_bin = tmp_path / "bin" / "fake-agent"
+    agent_bin.parent.mkdir()
+    agent_bin.write_text(f"#!/bin/bash\ncat > '{cap}/prompt.txt'\n{COMPLETE_LINE}\n")
+    agent_bin.chmod(0o755)
+    return root, worktree, cap, agent_bin
+
+
+def _run(
+    root: Path,
+    worktree: Path,
+    agent_bin: Path,
+    previous_context_json: str | None = None,
+) -> None:
+    _run_component(
+        COMP,
+        PRD_REL,
+        str(worktree),
+        str(root),
+        PROMPT_REL,
+        str(agent_bin),
+        None,  # model
+        None,  # reasoning
+        None,  # agent_type
+        0.0,  # sleep_seconds
+        previous_context_json=previous_context_json,
+        feedforward_config_dict=FEEDFORWARD_CONFIG,
+        knowledge_prefix=KNOWLEDGE_MARKER,
+        decisions_prefix=f"{DECISIONS_MARKER}\n\n- encoding: utf-8, named at every read",
+    )
+
+
+def _prompt_after_run(
+    tmp_path: Path,
+    write: Callable[[Path, Path], None],
+    previous_context_json: str | None = None,
+) -> str:
+    root, worktree, cap, agent = _repo_with_source(tmp_path)
+    write(root, worktree)
+    _run(root, worktree, agent, previous_context_json)
+    return (cap / "prompt.txt").read_text(encoding="utf-8")
+
+
 class TestGoldenPatternsReachTheEngineer:
     """R10.8, at the seam that decides it: the worker's prefix assembly.
 
@@ -194,65 +260,6 @@ class TestGoldenPatternsReachTheEngineer:
     that) but of the ORDER the engineer reads, captured off the real
     agent subprocess's stdin.
     """
-
-    def _repo_with_source(self, tmp_path: Path) -> tuple[Path, Path, Path, Path]:
-        """A spine repo whose worktree has a module for feedforward to see.
-
-        Committed on main BEFORE the worktree is cut, because feedforward
-        reads the worktree, and an empty module map would make the
-        feedforward block "" and the ordering assertion vacuous.
-        """
-        tmp_path.mkdir(parents=True, exist_ok=True)
-        root = tmp_path / "repo"
-        init_kstrl_repo(root, (COMP,))
-        (root / "src").mkdir()
-        (root / "src" / "mod.py").write_text("def f() -> int:\n    return 1\n")
-        git("add", "src/mod.py", cwd=root)
-        git("commit", "-q", "-m", "src", cwd=root)
-        worktree = _setup_worktree(COMP, BRANCH, "main", root, RUN_ID)
-
-        cap = tmp_path / "capture"
-        cap.mkdir()
-        agent_bin = tmp_path / "bin" / "fake-agent"
-        agent_bin.parent.mkdir()
-        agent_bin.write_text(f"#!/bin/bash\ncat > '{cap}/prompt.txt'\n{COMPLETE_LINE}\n")
-        agent_bin.chmod(0o755)
-        return root, worktree, cap, agent_bin
-
-    def _run(
-        self,
-        root: Path,
-        worktree: Path,
-        agent_bin: Path,
-        previous_context_json: str | None = None,
-    ) -> None:
-        _run_component(
-            COMP,
-            PRD_REL,
-            str(worktree),
-            str(root),
-            PROMPT_REL,
-            str(agent_bin),
-            None,  # model
-            None,  # reasoning
-            None,  # agent_type
-            0.0,  # sleep_seconds
-            previous_context_json=previous_context_json,
-            feedforward_config_dict=FEEDFORWARD_CONFIG,
-            knowledge_prefix=KNOWLEDGE_MARKER,
-            decisions_prefix=f"{DECISIONS_MARKER}\n\n- encoding: utf-8, named at every read",
-        )
-
-    def _prompt_after_run(
-        self,
-        tmp_path: Path,
-        write: Callable[[Path, Path], None],
-        previous_context_json: str | None = None,
-    ) -> str:
-        root, worktree, cap, agent = self._repo_with_source(tmp_path)
-        write(root, worktree)
-        self._run(root, worktree, agent, previous_context_json)
-        return (cap / "prompt.txt").read_text(encoding="utf-8")
 
     def test_golden_block_absent_leaves_the_prefix_byte_identical(self, tmp_path: Path) -> None:
         """With no file the engineer sees exactly what it saw without the
@@ -265,8 +272,8 @@ class TestGoldenPatternsReachTheEngineer:
         named for byte-identity and asserted delimiter-absence plus an
         ordering, which is a weaker claim than its own name.
         """
-        without = self._prompt_after_run(tmp_path / "a", lambda root, wt: None)
-        with_scaffold = self._prompt_after_run(
+        without = _prompt_after_run(tmp_path / "a", lambda root, wt: None)
+        with_scaffold = _prompt_after_run(
             tmp_path / "b", lambda root, wt: _write(root / GOLDEN_REL, DEFAULT_GOLDEN_PATTERNS)
         )
 
@@ -284,7 +291,7 @@ class TestGoldenPatternsReachTheEngineer:
         operator-facing instruction, under a header saying the operator
         authored them, on every iteration of every component forever.
         """
-        prompt = self._prompt_after_run(
+        prompt = _prompt_after_run(
             tmp_path, lambda root, wt: _write(root / GOLDEN_REL, DEFAULT_GOLDEN_PATTERNS)
         )
 
@@ -294,7 +301,7 @@ class TestGoldenPatternsReachTheEngineer:
     def test_one_edited_line_turns_the_block_on(self, tmp_path: Path) -> None:
         """The other side of the digest rule: the suppression is keyed on
         the body, so touching it is all it takes."""
-        prompt = self._prompt_after_run(
+        prompt = _prompt_after_run(
             tmp_path,
             lambda root, wt: _write(
                 root / GOLDEN_REL,
@@ -306,7 +313,7 @@ class TestGoldenPatternsReachTheEngineer:
         assert "- atomic writes: see `kstrl/atomicio.py`" in prompt
 
     def test_golden_block_between_knowledge_and_feedforward(self, tmp_path: Path) -> None:
-        prompt = self._prompt_after_run(
+        prompt = _prompt_after_run(
             tmp_path,
             lambda root, wt: _write(
                 root / GOLDEN_REL,
@@ -327,7 +334,7 @@ class TestGoldenPatternsReachTheEngineer:
         """The only copy read. `ks run` sets use_worktrees=False so the
         root IS the worktree there, and under the factory the root is the
         tree no component agent can write to."""
-        prompt = self._prompt_after_run(
+        prompt = _prompt_after_run(
             tmp_path, lambda root, wt: _write(root / GOLDEN_REL, "- from the repo root\n")
         )
 
@@ -341,7 +348,7 @@ class TestGoldenPatternsReachTheEngineer:
         component's agent choose what the next component's agent is told,
         unfiltered, under a header asserting the operator wrote it.
         """
-        prompt = self._prompt_after_run(
+        prompt = _prompt_after_run(
             tmp_path,
             lambda root, wt: _write(wt / GOLDEN_REL, "- planted by the previous agent\n"),
         )
@@ -356,7 +363,7 @@ class TestGoldenPatternsReachTheEngineer:
             _write(root / GOLDEN_REL, "- from the repo root\n")
             _write(wt / GOLDEN_REL, "- planted by the previous agent\n")
 
-        prompt = self._prompt_after_run(tmp_path, both)
+        prompt = _prompt_after_run(tmp_path, both)
 
         assert "- from the repo root" in prompt
         assert "planted by the previous agent" not in prompt
@@ -372,24 +379,6 @@ class TestMemoryIsReadAfterTheRetryContext:
     engineer prompt off a real agent subprocess's stdin and pins where
     the memory block lands in it.
     """
-
-    def _repo_with_source(self, tmp_path: Path) -> tuple[Path, Path, Path, Path]:
-        """The R10.8 fixture, reused verbatim.
-
-        Borrowed rather than copied so the two classes cannot come to
-        disagree about what a spine repo is.
-        """
-        return TestGoldenPatternsReachTheEngineer()._repo_with_source(tmp_path)
-
-    def _prompt_after_run(
-        self,
-        tmp_path: Path,
-        write: Callable[[Path, Path], None],
-        previous_context_json: str | None = None,
-    ) -> str:
-        return TestGoldenPatternsReachTheEngineer()._prompt_after_run(
-            tmp_path, write, previous_context_json
-        )
 
     @staticmethod
     def _failed_attempt() -> str:
@@ -414,7 +403,7 @@ class TestMemoryIsReadAfterTheRetryContext:
             _write(root / GOLDEN_REL, "# Golden patterns\n\n- atomic writes: see atomicio\n")
             _write(root / MEMORY_REL, "# Memory\n\n## Guidance\n\n- never touch migrations\n")
 
-        prompt = self._prompt_after_run(tmp_path, both, self._failed_attempt())
+        prompt = _prompt_after_run(tmp_path, both, self._failed_attempt())
 
         assert MEMORY_MARKER in prompt
         assert "- never touch migrations" in prompt
@@ -441,8 +430,8 @@ class TestMemoryIsReadAfterTheRetryContext:
         exists at the root, and the fixture is deterministic apart from
         the per-run temp path.
         """
-        without = self._prompt_after_run(tmp_path / "a", lambda root, wt: None)
-        with_scaffold = self._prompt_after_run(
+        without = _prompt_after_run(tmp_path / "a", lambda root, wt: None)
+        with_scaffold = _prompt_after_run(
             tmp_path / "b", lambda root, wt: _write(root / MEMORY_REL, DEFAULT_MEMORY)
         )
 
@@ -452,7 +441,7 @@ class TestMemoryIsReadAfterTheRetryContext:
         )
 
     def test_an_unedited_ks_init_scaffold_injects_nothing(self, tmp_path: Path) -> None:
-        prompt = self._prompt_after_run(
+        prompt = _prompt_after_run(
             tmp_path, lambda root, wt: _write(root / MEMORY_REL, DEFAULT_MEMORY)
         )
 
@@ -460,7 +449,7 @@ class TestMemoryIsReadAfterTheRetryContext:
         assert "Standing feedback for kstrl runs" not in prompt
 
     def test_one_edited_line_turns_the_block_on(self, tmp_path: Path) -> None:
-        prompt = self._prompt_after_run(
+        prompt = _prompt_after_run(
             tmp_path,
             lambda root, wt: _write(root / MEMORY_REL, DEFAULT_MEMORY + "- one durable rule\n"),
         )
@@ -469,7 +458,7 @@ class TestMemoryIsReadAfterTheRetryContext:
         assert "- one durable rule" in prompt
 
     def test_the_memory_root_copy_is_read(self, tmp_path: Path) -> None:
-        prompt = self._prompt_after_run(
+        prompt = _prompt_after_run(
             tmp_path, lambda root, wt: _write(root / MEMORY_REL, "- from the repo root\n")
         )
 
@@ -481,7 +470,7 @@ class TestMemoryIsReadAfterTheRetryContext:
         authorised reviewer's say-so, so a component agent that could
         substitute its own copy would be choosing what the next
         component is told under a header naming the operator."""
-        prompt = self._prompt_after_run(
+        prompt = _prompt_after_run(
             tmp_path,
             lambda root, wt: _write(wt / MEMORY_REL, "- planted by the previous agent\n"),
         )
@@ -494,7 +483,7 @@ class TestMemoryIsReadAfterTheRetryContext:
             _write(root / MEMORY_REL, "- from the repo root\n")
             _write(wt / MEMORY_REL, "- planted by the previous agent\n")
 
-        prompt = self._prompt_after_run(tmp_path, both)
+        prompt = _prompt_after_run(tmp_path, both)
 
         assert "- from the repo root" in prompt
         assert "planted by the previous agent" not in prompt
@@ -517,15 +506,13 @@ class TestMemoryIsReadAfterTheRetryContext:
         than deleted because deleting it would be a behaviour change
         smuggled into a refactor.
         """
-        prompt = self._prompt_after_run(tmp_path, lambda root, wt: None, absent)
+        prompt = _prompt_after_run(tmp_path, lambda root, wt: None, absent)
 
         assert "PREVIOUS ATTEMPT CONTEXT" not in prompt
 
     def test_an_empty_iteration_context_still_renders_its_header(self, tmp_path: Path) -> None:
         """The other half of the measurement above, so the claim in that
         docstring is checked rather than asserted."""
-        prompt = self._prompt_after_run(
-            tmp_path, lambda root, wt: None, IterationContext().to_json()
-        )
+        prompt = _prompt_after_run(tmp_path, lambda root, wt: None, IterationContext().to_json())
 
         assert "=== PREVIOUS ATTEMPT CONTEXT (Attempt 1) ===" in prompt
