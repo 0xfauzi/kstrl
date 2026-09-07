@@ -1461,13 +1461,16 @@ def _unreadable_config_gate(
     ``OSError`` is reachable too, because ``load_toml_section`` does not
     normalise it.
     """
+    # `rstrip(".")` because the cause is quoted mid-sentence and its own
+    # messages end with a full stop, which read as "as str.. The item".
+    detail = str(exc).rstrip(".")
     return MergeGate(
         pause_before_pr_merge=True,
         notes=notes,
         unreadable_section=section,
         refusal=(
             f"[{section}] cannot be read, so this item's merge gate cannot be "
-            f"resolved: {exc}. The item waits; fix the section and the next "
+            f"resolved: {detail}. The item waits; fix the section and the next "
             "poll picks it up."
         ),
     )
