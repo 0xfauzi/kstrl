@@ -32,22 +32,28 @@ passing resolved config across a process boundary, which is #193.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import io
+import subprocess
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
 from kstrl.autonomy import AutonomyState
 from kstrl.config import KstrlConfig
-from kstrl.factory import FactoryConfig, run_factory
-from kstrl.manifest import Manifest
+from kstrl.factory import ComponentResult, FactoryConfig, FactoryResult, run_factory
+from kstrl.manifest import Component, Manifest
 from kstrl.pipeline import ComponentPipeline
 from kstrl.policy import PolicyConfig
 from kstrl.runenvelope import RunEnvelope
 from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerificationResult
 from tests.helpers import astwalk, configwalk
 from tests.helpers.astwalk import KSTRL_PACKAGE, package_sources
+from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 from tests.helpers.verify_phase import component, phase_verify_envelopes
 
 # --- layer A: the config surface, discovered rather than listed ----------
@@ -515,15 +521,20 @@ class TestAMidRunEditDoesNotChangeWhatIsEnforced:
 
         assert {r.adequacy.enabled for r in readings} == {True}
 
-    def test_a_malformed_mid_run_edit_does_not_abort_the_run(self, tmp_path: Path) -> None:
+    def test_a_malformed_mid_run_edit_does_not_abort_phase_one(self, tmp_path: Path) -> None:
         """The failure mode is DELETED, not handled.
 
         At 414d662 an edit the entry preflight would have rejected
         reached a per-component load with nothing in front of it and
-        raised ``ValueError`` out of ``_phase_verify``; its caller
-        ``process_result`` runs outside the ``try`` that wraps
-        ``future.result()``, so one bad edit aborted the whole run. There
-        is no read left to raise from, so no handler is added.
+        raised ``ValueError`` out of ``_phase_verify``. There is no read
+        left to raise from, so no handler is added.
+
+        This drives ``_phase_verify`` directly, which is necessary and
+        is NOT the claim that a RUN survives the edit:
+        ``TestAMalformedMidRunEditDoesNotAbortTheRun`` drives the
+        scheduler for that, because it is ``process_result`` running
+        outside the ``try`` around ``future.result()`` that turned one
+        bad edit into a dead run.
         """
         (tmp_path / "kstrl.toml").write_text(_BEFORE.format(autonomy="false"))
         comps = [component("comp-a"), component("comp-b")]
@@ -536,6 +547,132 @@ class TestAMidRunEditDoesNotChangeWhatIsEnforced:
 
         assert [r.component for r in readings] == ["comp-a", "comp-b"]
         assert {r.policy.max_files_changed for r in readings} == {5}
+
+
+class TestAMalformedMidRunEditDoesNotAbortTheRun:
+    """The run, not one phase call.
+
+    Round 1 of #192 claimed this with a test that never entered
+    ``run_factory``: it called ``_phase_verify`` in a ``for`` loop, so
+    ``process_result``, the scheduler and the ``try`` around
+    ``future.result()`` were never reached, and the thing being asserted
+    was "``_phase_verify`` does not raise". The mechanism is that
+    ``process_result`` runs OUTSIDE that ``try``, so a ``ValueError``
+    from it takes the whole run down rather than one component.
+
+    The engineer is stubbed and the edit is made by the verification
+    hook for the first component, which is the operator saving
+    kstrl.toml while the run is between components.
+    """
+
+    @staticmethod
+    def _components() -> list[Component]:
+        first = component("comp-a")
+        second = component("comp-b")
+        return [first, second]
+
+    def test_both_components_are_verified_and_the_run_returns(self, tmp_path: Path) -> None:
+        (tmp_path / "kstrl.toml").write_text(_BEFORE.format(autonomy="false"))
+        comps = self._components()
+        verified: list[str] = []
+
+        def verify(*_args: Any, **kwargs: Any) -> VerificationResult:
+            verified.append(str(kwargs["component_id"]))
+            if len(verified) == 1:
+                (tmp_path / "kstrl.toml").write_text(_MALFORMED, encoding="utf-8")
+            return VerificationResult(passed=True, checks=[])
+
+        with (
+            patch("kstrl.factory.run_mechanical_verification", side_effect=verify),
+            patch(
+                "kstrl.factory._run_component",
+                # First positional is the component id: the worker takes
+                # primitives, not the Component, because it runs in
+                # another process.
+                side_effect=lambda comp_id, *a, **k: ComponentResult(
+                    comp_id, success=True, iterations=1
+                ),
+            ),
+        ):
+            outcome = _drive_run(
+                tmp_path,
+                FactoryConfig(
+                    use_worktrees=False,
+                    create_prs=False,
+                    max_parallel=1,
+                    max_retries=0,
+                    retry_delay=0,
+                    review_mode="skip",
+                ),
+                components=comps,
+            )
+
+        assert verified == ["comp-a", "comp-b"], (
+            "the run did not reach both components after a malformed "
+            "mid-run edit to kstrl.toml. At 414d662 the second "
+            "_phase_verify re-read [policy], raised ValueError, and "
+            "process_result took the run down with it."
+        )
+        assert outcome.result.exit_code == 0
+        assert outcome.pipelines[0].run_envelope.policy.max_files_changed == 5
+
+
+class TestAMalformedSectionIsARefusalAndNotATraceback:
+    """Blocker 1 of the round-1 review, as a test.
+
+    Every section the envelope resolves is one more that can reject in
+    front of a run. The entry preflight resolves all of them before the
+    command body, but on ``ks factory --spec`` the architect runs for
+    119 to 210 seconds between that check and this resolution, so an
+    operator's edit inside the window arrives here. Measured on the
+    round-1 branch: `[inbox] open_item_cap = "many"` left ``run_factory``
+    as an unhandled ValueError, and it did so above the line that records
+    the architect's spend.
+    """
+
+    @pytest.mark.parametrize(
+        ("section", "body", "key"),
+        [
+            ("[inbox]", '[inbox]\nopen_item_cap = "many"\n', "open_item_cap"),
+            ("[policy]", '[policy]\nmax_files_changed = "two"\n', "max_files_changed"),
+        ],
+    )
+    def test_it_refuses_with_exit_2_and_names_the_key(
+        self, tmp_path: Path, section: str, body: str, key: str
+    ) -> None:
+        (tmp_path / "kstrl.toml").write_text(body, encoding="utf-8")
+
+        outcome = _drive_run(
+            tmp_path,
+            FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
+        )
+
+        assert outcome.result.exit_code == 2, (
+            "a section the run cannot resolve must refuse the way every "
+            "other pre-spend check refuses, not leave run_factory as a "
+            "traceback."
+        )
+        assert section in outcome.narration
+        assert key in outcome.narration
+
+    def test_it_refuses_before_the_pipeline_is_built(self, tmp_path: Path) -> None:
+        """Which is what keeps #257's invariant intact.
+
+        ``record_architect_usage`` is the first thing done to the
+        pipeline and nothing between the run directory's sinks and it may
+        return early. This refusal happens above the sinks, so no run
+        directory exists to report $0 for and no early exit was inserted
+        into that window.
+        """
+        (tmp_path / "kstrl.toml").write_text('[inbox]\nopen_item_cap = "many"\n')
+
+        outcome = _drive_run(
+            tmp_path,
+            FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
+        )
+
+        assert outcome.pipelines == []
+        assert not (tmp_path / ".kstrl" / "runs").exists()
 
 
 class TestTheParseCountDoesNotGrowWithComponents:
@@ -602,25 +739,68 @@ class TestTheParseCountDoesNotGrowWithComponents:
 # --- the factory half: the hash is taken off what the pipeline enforces ---
 
 
-def _empty_run(tmp_path: Path, config: FactoryConfig) -> tuple[Manifest, ComponentPipeline]:
-    """Drive ``run_factory`` over an empty manifest and hand back the
-    pipeline it built.
+def _init_git_repo(root: Path) -> None:
+    """A repo the diff phase can read."""
 
-    Empty because the subject is everything ``run_factory`` does BEFORE
-    scheduling: resolve the envelope, clamp it with the autonomy ladder,
-    hand it to the pipeline and record its hash.
+    def run(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True)
+
+    run("init")
+    run("symbolic-ref", "HEAD", "refs/heads/main")
+    run("config", "user.email", "t@example.com")
+    run("config", "user.name", "tester")
+    (root / "README.md").write_text("base\n", encoding="utf-8")
+    run("add", ".")
+    run("commit", "-m", "base")
+
+
+@dataclass(frozen=True)
+class RunOutcome:
+    """Everything one ``run_factory`` left behind that these tests read."""
+
+    manifest: Manifest
+    result: FactoryResult
+    pipelines: list[ComponentPipeline]
+    narration: str
+
+
+def _drive_run(
+    tmp_path: Path,
+    config: FactoryConfig,
+    *,
+    components: Sequence[Component] = (),
+) -> RunOutcome:
+    """Drive the REAL ``run_factory`` and hand back what it produced.
+
+    With no components the subject is everything ``run_factory`` does
+    BEFORE scheduling: resolve the envelope, refuse a section it cannot
+    read, clamp with the autonomy ladder, hand the result to the
+    pipeline and record its hash.
+
+    With components the scheduler, ``process_result`` and the ``try``
+    around ``future.result()`` are all entered, which is what makes a
+    mid-run failure a failure of the RUN rather than of one call. The
+    engineer is stubbed at ``kstrl.factory._run_component`` because the
+    subject is the phase chain around it, not the loop.
     """
     scripts = tmp_path / "scripts" / "kstrl"
     scripts.mkdir(parents=True, exist_ok=True)
     (scripts / "prompt.md").write_text("p", encoding="utf-8")
     (scripts / "prd.json").write_text('{"branchName": "t", "userStories": []}', encoding="utf-8")
+    for comp in components:
+        write_component_prd(tmp_path, comp.prd_path, stories=[PASSING_STORY])
+    if components:
+        # Without a real repo the diff phase fails as infrastructure and
+        # no component reaches a terminal verdict, so the run's exit code
+        # would say nothing about the config edit under test.
+        _init_git_repo(tmp_path)
     manifest = Manifest(
         version="1",
         spec_file="spec.md",
         project_name="t",
         base_branch="main",
         single_pr=False,
-        components=[],
+        components=list(components),
     )
     manifest.save(tmp_path / "manifest.json")
     built: list[ComponentPipeline] = []
@@ -631,12 +811,9 @@ def _empty_run(tmp_path: Path, config: FactoryConfig) -> tuple[Manifest, Compone
         built.append(pipeline)
         return pipeline
 
-    import kstrl.factory as factory_module
-
-    original = factory_module.ComponentPipeline
-    factory_module.ComponentPipeline = capture  # type: ignore[misc]
-    try:
-        run_factory(
+    narration = io.StringIO()
+    with patch("kstrl.factory.ComponentPipeline", side_effect=capture):
+        result = run_factory(
             manifest,
             config,
             KstrlConfig(
@@ -645,13 +822,17 @@ def _empty_run(tmp_path: Path, config: FactoryConfig) -> tuple[Manifest, Compone
                 sleep_seconds=0,
                 agent_cmd="echo test",
             ),
-            PlainUI(no_color=True),
+            PlainUI(no_color=True, file=narration),
             tmp_path,
         )
-    finally:
-        factory_module.ComponentPipeline = original  # type: ignore[misc]
-    assert len(built) == 1
-    return manifest, built[0]
+    return RunOutcome(manifest, result, built, narration.getvalue())
+
+
+def _empty_run(tmp_path: Path, config: FactoryConfig) -> tuple[Manifest, ComponentPipeline]:
+    """:func:`_drive_run` for the tests that only want the pipeline."""
+    outcome = _drive_run(tmp_path, config)
+    assert len(outcome.pipelines) == 1
+    return outcome.manifest, outcome.pipelines[0]
 
 
 class TestTheFactorySideParseCountIsPinned:
