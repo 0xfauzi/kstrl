@@ -32,6 +32,12 @@ UNMEASURED_NOTE = "a check that did not run cannot prove a fix"
 #: The fifth bucket's title, for the same reason.
 STOPPED_MEASURING_NOTE = "these sensors measured on the baseline and not here"
 
+#: The footer, in the two states the flag puts the job in. Both spellings live
+#: here because the renderer is the only thing that says them and the workflow
+#: test reads THESE rather than retyping either.
+ADVISORY_FOOTER = "This report is advisory: it never fails the job."
+BLOCKING_FOOTER = "This job fails on a regression."
+
 
 def short_ref(base_ref: str | None) -> str:
     """The baseline's provenance sha, abbreviated, or ``unknown``."""
@@ -103,6 +109,22 @@ def render_human(comparison: Comparison, baseline: Baseline, path: Path) -> list
     return lines
 
 
+def cell(text: str) -> str:
+    """One free-text value, safe to put between two pipes.
+
+    Every other value in these tables is a signature or an integer. A REASON is
+    neither: it is a check message or a `reason: detail` pair, and both carry
+    subprocess and git stderr verbatim. Measured in round 2 of review on #357:
+    a reason of "command_failed: git said\nfatal: bad | ref" ended the row
+    mid-cell and shifted every later column of the posted comment.
+
+    Newlines collapse rather than escape, because a markdown table row IS a
+    line and there is no escape that keeps one; the pipe has one and it is
+    used. Nothing else in GitHub-flavoured markdown can break a row.
+    """
+    return " ".join(text.split()).replace("|", "\\|")
+
+
 def _markdown_table(title: str, header: str, rows: list[str]) -> list[str]:
     if not rows:
         return []
@@ -118,11 +140,23 @@ def _markdown_table(title: str, header: str, rows: list[str]) -> list[str]:
     ]
 
 
-def render_markdown(comparison: Comparison, baseline: Baseline, path: Path) -> str:
+def render_markdown(
+    comparison: Comparison,
+    baseline: Baseline,
+    path: Path,
+    *,
+    fail_on_regression: bool = False,
+) -> str:
     """The pull-request comment. First line is :data:`MARKDOWN_MARKER`, exactly.
 
     A workflow finds its own earlier comment by that line and edits it in place,
     so nothing may precede it: not a blank line, not a heading.
+
+    ``fail_on_regression`` is the mode actually in force, and the footer is
+    rendered from it. It used to say "advisory: it never fails the job"
+    unconditionally, while ``docs/dampener.md`` says adding the flag is the
+    whole of graduating to blocking - so the comment sitting on a pull request
+    that had just been failed by this report denied that it could.
     """
     lines = [
         MARKDOWN_MARKER,
@@ -152,7 +186,7 @@ def render_markdown(comparison: Comparison, baseline: Baseline, path: Path) -> s
         _markdown_table(
             f"Stopped measuring ({STOPPED_MEASURING_NOTE})",
             "| check | why |",
-            [f"| `{c}` | {why} |" for c, why in comparison.stopped_measuring.items()],
+            [f"| `{c}` | {cell(why)} |" for c, why in comparison.stopped_measuring.items()],
         )
     )
     lines.extend(
@@ -170,7 +204,7 @@ def render_markdown(comparison: Comparison, baseline: Baseline, path: Path) -> s
         )
     )
     lines.append("")
-    lines.append("This report is advisory: it never fails the job.")
+    lines.append(BLOCKING_FOOTER if fail_on_regression else ADVISORY_FOOTER)
     return "\n".join(lines)
 
 

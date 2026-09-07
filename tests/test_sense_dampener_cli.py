@@ -312,6 +312,28 @@ def test_markdown_format_starts_with_the_marker(tmp_path: Path) -> None:
     assert result.output.splitlines()[0] == dampener_report.MARKDOWN_MARKER
 
 
+def test_the_posted_comment_says_which_mode_failed_the_job(tmp_path: Path) -> None:
+    """The renderer is handed the mode, and this is the wire that carries it.
+
+    The unit test in ``tests/test_sense_dampener.py`` proves the two footers
+    render; this proves the CLI passes the flag it was given rather than the
+    default. Both directions, on one repository with one regression: the
+    advisory run exits 0 and says so, the blocking run exits 1 and says so.
+    """
+    root = _make_repo(tmp_path, lint_command=_LINT_FROM_FILE_COMMAND)
+    assert _write(root).exit_code == 0
+    _set_lint_findings(root, _E501_FINDING)
+
+    advisory = _invoke(root, "--compare-baseline", "--format", "markdown")
+    blocking = _invoke(root, "--compare-baseline", "--format", "markdown", "--fail-on-regression")
+
+    assert advisory.exit_code == 0
+    assert dampener_report.ADVISORY_FOOTER in advisory.output
+    assert blocking.exit_code == 1
+    assert dampener_report.BLOCKING_FOOTER in blocking.output
+    assert dampener_report.ADVISORY_FOOTER not in blocking.output
+
+
 def test_a_sense_schema_change_is_reported_not_refused(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
     assert _write(root).exit_code == 0

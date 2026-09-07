@@ -3776,7 +3776,14 @@ def _sense_dampener_report(
         block = dampener_report.comparison_document(comparison, mode.baseline, current, mode.path)
         click.echo(json.dumps(_sense_document(path, base, result, block), indent=2))
     elif mode.output_format == dampener.FORMAT_MARKDOWN:
-        click.echo(dampener_report.render_markdown(comparison, mode.baseline, mode.path))
+        click.echo(
+            dampener_report.render_markdown(
+                comparison,
+                mode.baseline,
+                mode.path,
+                fail_on_regression=mode.fail_on_regression,
+            )
+        )
     else:
         for line in dampener_report.render_human(comparison, mode.baseline, mode.path):
             click.echo(line)

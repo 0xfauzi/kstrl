@@ -383,6 +383,58 @@ def test_markdown_carries_a_table_per_non_empty_bucket() -> None:
     assert "advisory" in text
 
 
+def test_a_reason_with_a_pipe_or_a_newline_stays_in_its_cell() -> None:
+    """The only free-text value in any of these tables.
+
+    Every other one is a signature or an integer. A reason is a check message
+    or a `reason: detail` pair, and both carry subprocess and git stderr
+    verbatim. Measured in round 2 of review on #357: this exact string ended
+    the row mid-cell and shifted every later column of the posted comment.
+    """
+    reason = "command_failed: git said\nfatal: bad | ref"
+    comparison = _comparison(stopped_measuring={"diff_scope": reason})
+
+    text = dampener_report.render_markdown(comparison, _baseline({}), Path("b.json"))
+
+    row = next(line for line in text.splitlines() if line.startswith("| `diff_scope`"))
+    assert row == "| `diff_scope` | command_failed: git said fatal: bad \\| ref |"
+    assert row.count("|") == 3 + 1  # three cell walls, plus the escaped pipe
+    assert "fatal: bad | ref" not in text
+
+
+def test_the_human_report_needs_no_escaping() -> None:
+    """The control for the escape above, and the reason it is not shared.
+
+    `render_human` prints one reason per line with no cell walls, so the same
+    string has to arrive there INTACT. An escape applied in both places would
+    put a backslash in front of every pipe an operator reads in a terminal.
+    """
+    reason = "command_failed: git said\nfatal: bad | ref"
+    comparison = _comparison(stopped_measuring={"diff_scope": reason})
+
+    lines = dampener_report.render_human(comparison, _baseline({}), Path("b.json"))
+
+    assert any("fatal: bad | ref" in line for line in lines)
+
+
+def test_the_footer_says_what_the_mode_in_force_does() -> None:
+    """`docs/dampener.md` says adding --fail-on-regression is the whole of
+    graduating to blocking. Before this, the comment sitting on a pull request
+    that had just been failed by this very report said it never fails a job."""
+    comparison = _comparison(new={"linter:E501": 1})
+    base = _baseline({})
+
+    advisory = dampener_report.render_markdown(comparison, base, Path("b.json"))
+    blocking = dampener_report.render_markdown(
+        comparison, base, Path("b.json"), fail_on_regression=True
+    )
+
+    assert advisory.endswith(dampener_report.ADVISORY_FOOTER)
+    assert blocking.endswith(dampener_report.BLOCKING_FOOTER)
+    assert dampener_report.ADVISORY_FOOTER not in blocking
+    assert dampener_report.BLOCKING_FOOTER not in advisory
+
+
 def test_markdown_omits_the_table_of_an_empty_bucket() -> None:
     text = dampener_report.render_markdown(_comparison(), _baseline({}), Path("b.json"))
 
