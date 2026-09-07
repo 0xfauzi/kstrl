@@ -53,9 +53,7 @@ PHASE_RANK: dict[str, int] = {
 #: `_phase_security` downgrade to SKIP when the adversarial LLM budget
 #: runs out and let the component carry on, and `review_mode = "skip"`
 #: turns the reviewer off outright, so a later contract failure does not
-#: prove the reviewer ran. Entries from these phases are only ever
-#: retired by a fresh reading from the same phase, which is observed
-#: rather than inferred.
+#: prove the reviewer ran.
 #:
 #: An entry from one of these phases is therefore retired only by an
 #: OBSERVED reading, and there are exactly two: a fresh entry at the
@@ -182,10 +180,20 @@ class PhaseReading:
       treating that as evidence would retire a live finding on the
       strength of an exception.
 
-    Only ``SKIPPABLE_PHASES`` phases are ever recorded. For every other
-    phase, having run is already inferable from a higher-ranked failure
-    in the same attempt, so a record would be redundant and would give
-    the rank rule a second, overlapping source of truth.
+    Only ``SKIPPABLE_PHASES`` phases are recorded, and the accuracy of
+    that sentence is worth stating: it describes the CALL SITES, not
+    this type. ``add_phase_reading`` checks the name against
+    ``PHASE_RANK``, the same vocabulary an entry is checked against,
+    because an entry is retired when a reading names its phase and two
+    vocabularies would be two definitions of that join. A reading for a
+    non-skippable phase is therefore accepted and is a silent no-op:
+    ``_buckets`` only ever subtracts from ``SKIPPABLE_PHASES``. What
+    keeps the sites honest is the census in
+    ``tests/test_phase_reading_sites.py``, which fails a recording site
+    for any phase outside the set: for every other phase, having run is
+    already inferable from a higher-ranked failure in the same attempt,
+    so a record would be redundant and would give the rank rule a
+    second, overlapping source of truth.
     """
 
     attempt: int
@@ -332,26 +340,39 @@ class IterationContext:
         the gate that fired; the max is the safe general form).
 
         - attempt ``N``: current, rendered in full.
-        - rank above ``Q``: that sensor never ran in attempt ``N``, so
-          its reading is un-re-measured, not stale. Rendered in full.
         - rank equal to ``Q``: the same sensor produced a fresh reading
           that supersedes the old one. Observed, so it holds even for a
           skippable phase - but only when attempt ``N``'s entry at that
           rank is a measurement. A sensor that crashed produced no
-          reading, so it retires nothing.
-        - rank below ``Q``: the phase ran in attempt ``N`` and passed, or
-          ``Q`` would be lower. That is an inference, and it is only
-          sound for a phase that always runs once its predecessor
-          passes, so ``SKIPPABLE_PHASES`` is excluded from it. The
-          inference stays barred for those phases; what #247 adds is the
-          other route to the same conclusion, which is OBSERVATION: the
-          phase recorded a ``PhaseReading`` for attempt ``N`` and no
-          entry, so it ran and it passed.
+          reading, so it retires nothing. Tested FIRST, above the
+          readings branch, so a record written for a phase that crashed
+          could still not talk its way past the crashed-sensor rule.
+        - a ``SKIPPABLE_PHASES`` entry at any other rank: retired only
+          when that phase recorded a ``PhaseReading`` for attempt ``N``,
+          which is an OBSERVATION that it ran and returned a verdict.
+          The inference below stays barred for these phases, in both
+          directions: a lower-ranked skippable entry is not retired by a
+          higher-ranked failure, and a higher-ranked one is not held
+          back once its own phase has been observed.
+        - rank below ``Q``, every other phase: the phase ran in attempt
+          ``N`` and passed, or ``Q`` would be lower. That is the
+          inference, and it is sound for a phase that always runs once
+          its predecessor passes.
+        - rank above ``Q``, every other phase: that sensor never ran in
+          attempt ``N``, so its reading is un-re-measured, not stale.
+          Rendered in full.
 
-        When attempt ``N`` produced no entry at all, ``Q`` sits below
-        every rank and nothing is retired: a plain engineer-loop failure
-        and a merge-conflict restart record an ``IterationRecord`` and no
-        entry, and no sensor ran in such an attempt.
+        When attempt ``N`` produced no entry at all, ``Q`` is -1 and no
+        inference retires anything - but an observation still does. The
+        reachable case is the merge-conflict restart, which records an
+        ``IterationRecord`` and no entry: it fires at the ``pr`` phase,
+        reached only after review and security have both run and passed,
+        so both recorded a reading and ``retry_or_fail`` merged it.
+        Until the readings branch moved above the rank comparison those
+        records existed, were discarded, and the finding the attempt had
+        just cleared was shown again. A plain engineer-loop failure also
+        records no entry, and there no sensor ran, so there is no
+        reading and nothing moves.
         """
         current: list[FailureEntry] = []
         not_remeasured: list[FailureEntry] = []
@@ -365,13 +386,12 @@ class IterationContext:
         # got that far), but it is not a reading of its own phase, so it
         # cannot supersede an earlier real finding there.
         measured_ranks = {PHASE_RANK[e.phase] for e in latest if not e.infrastructure}
-        # The skippable phases whose older entries the rank rule still
-        # may not retire. Computed as a set here, and through a helper
-        # rather than inline, so the branch below stays a single
-        # membership test and this function's cognitive complexity does
-        # not rise: it is already at 18 against a gate of 15, and the
-        # pre-commit ratchet fails a rise in a function that is over.
-        unread_skippable = SKIPPABLE_PHASES - self._phases_read_in(n)
+        # The skippable phases observed in attempt N. Computed once here
+        # rather than inline so each branch below stays a single
+        # membership test: complexipy measures this function at 14
+        # against a gate of 15 in this shape, and the pre-commit ratchet
+        # fails a rise in a function that is over.
+        read_in_n = self._phases_read_in(n)
 
         for entry in self.entries:
             if entry.attempt == LEGACY_ATTEMPT:
@@ -385,17 +405,14 @@ class IterationContext:
                 not_remeasured.append(entry)
             elif entry.attempt == n:
                 current.append(entry)
-            elif PHASE_RANK[entry.phase] > q:
-                not_remeasured.append(entry)
             elif PHASE_RANK[entry.phase] == q:
-                if q in measured_ranks:
-                    resolved.append(entry)
-                else:
-                    not_remeasured.append(entry)
-            elif entry.phase in unread_skippable:
-                not_remeasured.append(entry)
-            else:
+                (resolved if q in measured_ranks else not_remeasured).append(entry)
+            elif entry.phase in SKIPPABLE_PHASES:
+                (resolved if entry.phase in read_in_n else not_remeasured).append(entry)
+            elif PHASE_RANK[entry.phase] < q:
                 resolved.append(entry)
+            else:
+                not_remeasured.append(entry)
         return _Buckets(current, not_remeasured, resolved, n)
 
     def format_for_prompt(self) -> str:
@@ -532,12 +549,17 @@ class IterationContext:
         # that held before #247: a context written by an older parent
         # process degrades to showing the finding rather than to
         # dropping it.
+        #
+        # Through ``add_phase_reading`` rather than straight into the
+        # set, so the read path checks the phase name against the same
+        # ``_require_known_phase`` the write path does. A deserialiser
+        # that accepted a name the writer refuses would be the second,
+        # weaker definition of the vocabulary that helper exists to
+        # prevent, and the weaker one is the one that decides.
         for reading_data in parsed.get("readings", []):
-            ctx.readings.add(
-                PhaseReading(
-                    attempt=reading_data["attempt"],
-                    phase=reading_data["phase"],
-                )
+            ctx.add_phase_reading(
+                reading_data["phase"],
+                attempt=reading_data["attempt"],
             )
         if "entries" in parsed:
             for entry_data in parsed["entries"]:

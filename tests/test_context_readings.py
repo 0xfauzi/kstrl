@@ -20,6 +20,7 @@ from kstrl.context import (
     PHASE_RANK,
     SKIPPABLE_PHASES,
     IterationContext,
+    IterationRecord,
     PhaseReading,
 )
 from tests.test_context import (
@@ -77,6 +78,58 @@ class TestReadingsRetireOnlyWhatTheyMeasured:
         assert "criterion X" in section(text, NOT_REMEASURED)
         assert section(text, RESOLVED) == ""
 
+    def test_a_reading_retires_a_finding_when_the_attempt_recorded_no_entry(
+        self,
+    ) -> None:
+        """The merge-conflict restart, which records no entry.
+
+        Attempt 2 reaches the ``pr`` phase, so review and security both
+        ran and passed and both recorded a reading; the PR then hits a
+        merge conflict, ``_retry_after_merge_conflict`` adds an
+        ``IterationRecord`` and no ``FailureEntry``, and
+        ``retry_or_fail`` merges the readings in. ``Q`` is then -1, so
+        no inference retires anything - and until the readings branch
+        moved above the rank comparison the records were there and were
+        discarded, and attempt 3 was told to re-check a criterion
+        attempt 2 had cleared.
+
+        The engineer-loop failure is the same shape with the opposite
+        answer, and the second half asserts it: no sensor ran, so there
+        is no reading and the finding is still shown.
+        """
+        ctx = IterationContext()
+        ctx.add_review_finding("criterion X", attempt=1, phase="review")
+        ctx.add_iteration(
+            IterationRecord(
+                iteration=3,
+                success=False,
+                attempt=2,
+                error="merge conflict with the base branch",
+            )
+        )
+        ctx.add_phase_reading("review", attempt=2)
+        ctx.add_phase_reading("security", attempt=2)
+
+        text = ctx.format_for_prompt()
+        assert "criterion X" not in text
+        assert "from review passed or were re-measured in attempt 2" in section(text, RESOLVED)
+        assert section(text, NOT_REMEASURED) == ""
+
+        no_sensor_ran = IterationContext()
+        no_sensor_ran.add_review_finding("criterion X", attempt=1, phase="review")
+        no_sensor_ran.add_iteration(
+            IterationRecord(
+                iteration=3,
+                success=False,
+                attempt=2,
+                error="engineer loop gave up",
+            )
+        )
+
+        text = no_sensor_ran.format_for_prompt()
+        assert "criterion X" in section(text, NOT_REMEASURED)
+        assert section(text, RESOLVED) == ""
+
     def test_a_reading_for_an_unknown_phase_is_rejected(self) -> None:
         """Same vocabulary and the same refusal as ``_add``: the only
         strings the record holds are phase names from ``PHASE_RANK``."""
@@ -111,6 +164,61 @@ class TestReadingsCrossTheProcessBoundary:
         assert back.readings == {PhaseReading(attempt=2, phase="review")}
         assert back.format_for_prompt() == ctx.format_for_prompt()
         assert "criterion X" not in back.format_for_prompt()
+
+    def test_a_reading_naming_an_unknown_phase_is_refused_on_read(self) -> None:
+        """The read path checks the same vocabulary as the write path.
+
+        ``_require_known_phase`` says it is the one definition of a
+        phase name this object accepts, and an entry is retired when a
+        reading names its phase, so a deserialiser that accepted a name
+        ``add_phase_reading`` refuses would be the second, weaker
+        definition of that join. The direction the leniency failed in
+        was safe - an unknown phase can only fail to subtract from
+        ``SKIPPABLE_PHASES``, so it under-retires - which is why this is
+        about the invariant the helper states rather than about a live
+        drop.
+        """
+        payload = json.dumps(
+            {
+                "records": [],
+                "entries": [],
+                "readings": [{"attempt": 1, "phase": "distill"}],
+            }
+        )
+
+        with pytest.raises(ValueError) as exc:
+            IterationContext.from_json(payload)
+        assert "unknown phase 'distill'" in str(exc.value)
+
+    def test_the_serialised_readings_are_in_a_stable_order(self) -> None:
+        """``to_json`` sorts, and this is what fails if it stops.
+
+        The source is a set, so its iteration order is a function of the
+        hash seed and differs between parent processes. The string is
+        what crosses the ProcessPoolExecutor boundary, so an unsorted
+        list makes the same context serialise differently run to run,
+        and any later comparison of two contexts by their bytes is then
+        wrong for a reason nobody would look for.
+
+        The residual, stated: with the sort deleted the emitted order is
+        the set's, which agrees with this assertion only if the seed
+        happens to produce it. Six readings makes that one arrangement
+        in 720, and the mutation was planted to confirm it goes red.
+        """
+        ctx = IterationContext()
+        for attempt in (3, 1, 2):
+            for phase in ("security", "review"):
+                ctx.add_phase_reading(phase, attempt=attempt)
+
+        serialised = json.loads(ctx.to_json())["readings"]
+        assert serialised == [
+            {"attempt": 1, "phase": "review"},
+            {"attempt": 1, "phase": "security"},
+            {"attempt": 2, "phase": "review"},
+            {"attempt": 2, "phase": "security"},
+            {"attempt": 3, "phase": "review"},
+            {"attempt": 3, "phase": "security"},
+        ]
 
     def test_a_context_written_before_readings_existed_reads_back_clean(
         self,
@@ -188,14 +296,22 @@ class TestBucketRuleSweepWithReadings:
         q = PHASE_RANK[sequence[-1]]
         assert [e.attempt for e in b.current] == [n]
         for e in b.not_remeasured:
-            # Every skippable phase has a reading at n, so the only
-            # dated survivors are the ones ranked ABOVE q, which no
-            # phase ran past. The crashed-sensor rule holds nothing
-            # back here: this sweep records no infrastructure entries.
-            assert e.attempt == 0 or (e.attempt < n and PHASE_RANK[e.phase] > q)
+            # Every skippable phase has a reading at n, so no dated
+            # skippable entry survives here at any rank: the readings
+            # branch retires them by observation, including the ones
+            # ranked ABOVE q that no inference could reach. The dated
+            # survivors are the other phases ranked above q, which
+            # nothing in attempt n ran past. The crashed-sensor rule
+            # holds nothing back here: this sweep records no
+            # infrastructure entries.
+            assert e.attempt == 0 or (
+                e.attempt < n and PHASE_RANK[e.phase] > q and e.phase not in SKIPPABLE_PHASES
+            )
         for e in b.resolved:
             assert 0 < e.attempt < n
-            assert PHASE_RANK[e.phase] <= q
+            # At or below q is the inference; above it is only reachable
+            # for a skippable phase, and only because one was observed.
+            assert PHASE_RANK[e.phase] <= q or e.phase in SKIPPABLE_PHASES
 
     def test_every_entry_lands_in_exactly_one_bucket(self) -> None:
         cases = 0
@@ -220,7 +336,12 @@ class TestBucketRuleSweepWithReadings:
         for text in after - before:
             entry = next(e for e in with_readings.entries if e.text == text)
             assert entry.phase in SKIPPABLE_PHASES
-            assert PHASE_RANK[entry.phase] < q
+            # Not AT q: an entry at the failing gate's own rank is
+            # decided by the branch above the readings one, so a record
+            # can never move it. That is the crashed-sensor rule, and
+            # this inequality is what fails if the two branches are
+            # reordered.
+            assert PHASE_RANK[entry.phase] != q
             assert entry.attempt < len(sequence)
         return len(after - before)
 
@@ -228,10 +349,18 @@ class TestBucketRuleSweepWithReadings:
         """Diff the two sweeps rather than restating either.
 
         The entries that change bucket between ``TestBucketRuleSweep``'s
-        contexts and these are exactly the skippable-phase entries
-        ranked strictly below ``q``. Asserting the difference is what
-        makes this a statement about the record's effect rather than a
-        second copy of the rule.
+        contexts and these are exactly the skippable-phase entries whose
+        rank is not ``q``. Asserting the difference is what makes this a
+        statement about the record's effect rather than a second copy of
+        the rule.
+
+        The total is PINNED rather than asserted positive. ``moved > 0``
+        passes on one moved entry out of 5600 sequences, which is the
+        same shape as a record that has almost stopped working; round 1
+        of review measured it at 810 and it is 1944 now that a reading
+        also retires a skippable entry ranked above ``q``. A change in
+        either direction is a change in what the record retires, and it
+        should be read before the number is edited.
         """
         moved = sum(self.check_one_difference(seq) for seq in sweep_sequences())
-        assert moved > 0
+        assert moved == 1944
