@@ -52,6 +52,24 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- A factory run now resolves its policy envelope, adequacy posture and
+  autonomy level exactly once, at run start, and Phase 1 enforces that
+  resolution for every component. Phase 1 re-read all three from
+  `kstrl.toml` per component while `manifest.policyHash` was computed
+  once, so an edit to `kstrl.toml` while a run was in flight changed
+  what later components were held to without changing the hash that
+  records it: measured, a two-component run enforced two different
+  envelopes (`max_files_changed` 5 then 500, `deps_allow_new` false then
+  true) against one recorded hash, and the adequacy posture flipped with
+  nothing recording either posture. A malformed mid-run edit reached a
+  per-component load with nothing in front of it and aborted the whole
+  run rather than failing one component. Phase 1 also used the raw
+  stored autonomy level rather than the clamped level the run operates
+  at, so a run clamped to L1 by `[autonomy] max_level` judged its
+  adequacy gate at L4 (no verdict changed at either level today; both
+  consumers test only `>= 1`). Editing `kstrl.toml` mid-run now has no
+  effect on the running factory and takes effect at the next run (#192).
+
 - `dead_code` no longer reports a pass when nothing was measured. One row
   covered two phases - a ruff F401/F811/F841 auto-fix that ran and a vulture
   scan that did not - so nine states in which one of them measured nothing
