@@ -1265,9 +1265,13 @@ class TestSubprocessTimeoutAudit:
     - kstrl/serve.py: subprocess_factory_runner communicate(timeout) +
       group kill (R8.6). Popen is REQUIRED here rather than incidental:
       review #186 F1 showed subprocess.run's timeout signals only the
-      direct child, which on macOS is the caffeinate wrapper, so the
-      factory itself outlived the timeout and the daemon requeued an
-      item that was still executing.
+      direct child, and a factory's own descendants (agent subprocesses,
+      git, the verify commands) outlive that signal, so the run kept
+      going and the daemon requeued an item that was still executing.
+      This entry used to say the direct child is the caffeinate wrapper
+      and the factory a grandchild; #209 measured the tree and it is
+      not. The direct child is the factory, and the descendants survive
+      a direct-child kill with caffeinate on and off alike.
     - kstrl/procgroup.py: two bounded communicate(timeout) calls around a
       kill, then the child is abandoned (#309). Popen is REQUIRED here
       too, and for a different reason: subprocess.run's timeout handler

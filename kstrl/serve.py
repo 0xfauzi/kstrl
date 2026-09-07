@@ -1462,10 +1462,30 @@ def resolve_merge_gate(item: QueueItem, root_dir: Path) -> MergeGate:
 def caffeinate_prefix(enabled: bool) -> list[str]:
     """``caffeinate -i`` when it is available and wanted.
 
-    ``-i`` prevents idle SLEEP without keeping the display awake. Held
-    only for the duration of one run (it wraps the child process, so it
-    dies with it), which is what lets the laptop sleep between items
-    instead of being pinned awake by the daemon itself.
+    ``-i`` prevents idle SLEEP without keeping the display awake. The
+    assertion lasts only as long as one run, which is what lets the
+    laptop sleep between items instead of being pinned awake by the
+    daemon itself.
+
+    HOW IT IS HELD (measured for #209 on macOS 26.6.2, Darwin 25.6.0;
+    the earlier text here said "it wraps the child process", which is
+    not the shape). ``caffeinate -i <utility>`` does not exec the
+    utility in place: it FORKS. The process the daemon spawned keeps the
+    pid ``Popen`` returned and becomes the utility, and a second
+    ``caffeinate`` process appears as a CHILD of it, in the same process
+    group and session. That child is the assertion holder - ``pmset -g
+    assertions`` names it ``PreventUserIdleSystemSleep ...
+    "caffeinate command-line tool"`` against the child's pid, not the
+    utility's - so the assertion is not inherited across an exec by the
+    factory. Measured lifetime: the helper is gone at the first sample
+    after the utility exits, and gone after a ``killpg`` on the
+    spawn-time group, with the ``pmset`` row gone in both cases. It
+    leaks neither a process nor a power assertion.
+
+    Because the helper is INSIDE the spawned group, the group kill on
+    the timeout path releases the power assertion as well as reaping the
+    factory. ``tests/test_serve_process_tree.py`` pins that membership:
+    exactly two members with caffeinate, one without.
     """
     if not enabled or sys.platform != "darwin":
         return []
@@ -1494,14 +1514,27 @@ def subprocess_factory_runner(
     after a crash.
 
     **Why a process group and not ``subprocess.run(timeout=...)``.**
-    That helper signals only its DIRECT child. On macOS the direct child
-    is the ``caffeinate`` wrapper, so the factory itself is a grandchild
-    and outlived the timeout while this code recorded an infrastructure
-    failure and requeued the item - two factories on one repo, which is
-    exactly what ``factory.lock`` exists to prevent (#186 F1, reproduced:
-    descendants were still running after ``TimeoutExpired``). So:
-    ``start_new_session=True`` puts the child in its own process group,
-    and the timeout path signals the GROUP and waits for it.
+    That helper signals only its DIRECT child, and a factory is not one
+    process: it spawns agent subprocesses, git and the verify commands,
+    and those outlive a signal to the direct child. That is what #186 F1
+    reproduced - descendants still running after ``TimeoutExpired``,
+    while this code recorded an infrastructure failure and requeued the
+    item, two factories on one repo, which is exactly what
+    ``factory.lock`` exists to prevent. So: ``start_new_session=True``
+    puts the child in its own process group, and the timeout path
+    signals the GROUP and waits for it. The shape is still measured by
+    ``tests/test_serve.py::TestProcessGroupSupervision``.
+
+    THE GROUP IS NOT A CAFFEINATE WORKAROUND, and this docstring used to
+    say it was: "on macOS the direct child is the ``caffeinate``
+    wrapper, so the factory itself is a grandchild". Both halves are
+    false. The daemon's direct child IS the factory (see
+    :func:`caffeinate_prefix`: caffeinate forks a helper into the run's
+    group rather than exec'ing the utility), and a descendant was
+    measured surviving a direct-child kill with ``caffeinate`` on and
+    off alike (#209, macOS 26.6.2). So the group path must NOT be made
+    conditional on ``caffeinate``: turning the flag off removes the
+    helper, not the factory's own descendants.
 
     ``on_spawn`` receives the child's pid so the caller can make it the
     lease owner. Without that the lease records the DAEMON's pid, and a

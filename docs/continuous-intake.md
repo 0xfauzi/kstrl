@@ -293,15 +293,39 @@ crash-looping daemon would attempt six restarts a minute.
 
 ## 5. caffeinate: what it does and does not prevent
 
-`[serve] caffeinate = true` (the default on macOS) wraps each factory run
-in `caffeinate -i`, so the machine will not fall asleep mid-run, and sleeps
-freely between runs.
+`[serve] caffeinate = true` (the default on macOS) runs each factory run
+under `caffeinate -i`, so the machine will not fall asleep mid-run, and
+sleeps freely between runs.
 
-**Measured** with `pmset -g assertions` around a child process:
+**Measured** (2026-09-07, macOS 26.6.2 build 25G83, Darwin 25.6.0 arm64)
+by enumerating the run's whole process group with `ps -g <pgid>` and
+reading `pmset -g assertions` against the pids in it:
 
-- During the run, a new assertion appears:
-  `PreventUserIdleSystemSleep ... caffeinate asserting on behalf of <child>`.
-- After the child exits, that assertion is **gone**. Nothing lingers.
+- `caffeinate -i <utility>` **forks**; it does not exec the utility in
+  place. The utility keeps the pid the daemon's `Popen` returned, and a
+  second `caffeinate` process runs as a **child of the utility**, inside
+  the same process group and session. So the daemon's direct child is
+  the factory itself, and the group has two members rather than one.
+- The assertion is held by that second process, not by the factory:
+  `pid <helper>(caffeinate): ... PreventUserIdleSystemSleep named:
+  "caffeinate command-line tool"`. An earlier version of this section
+  quoted the name as `caffeinate asserting on behalf of <child>`, which
+  is not what this machine prints.
+- After the utility exits, both the helper and the assertion row are
+  **gone** at the first sample. So are they after a SIGKILL of the
+  direct child alone, and after a `killpg` on the spawn-time group.
+  Nothing lingers, and no power assertion outlives a run.
+- Because the helper is inside the run's process group, the timeout
+  path's group kill releases the power assertion as well as reaping the
+  factory. `tests/test_serve_process_tree.py` pins that membership:
+  exactly two processes in the group with caffeinate, one without, so a
+  future caffeinate that forks the helper OUT of the group fails a test
+  instead of quietly pinning the machine awake after a timeout.
+
+**Which flag asserts what**, measured the same way: `-i` gives
+`PreventUserIdleSystemSleep`, `-s` gives `PreventSystemSleep`, `-d` gives
+`PreventUserIdleDisplaySleep`, and `-im` gives `PreventUserIdleSystemSleep`
+plus `PreventDiskIdle`. All are named `"caffeinate command-line tool"`.
 
 **The caveat that matters:** the assertion is
 `PreventUserIdleSystemSleep`, not `PreventSystemSleep`. It prevents *idle*
@@ -314,6 +338,19 @@ and the same factory child resume and the cycle finishes. The lease TTL
 may have elapsed during the suspend, but nothing reaps it, because the
 process holding the run is the same one that would do the reaping and it
 is busy running.
+
+That last sentence is about **keepalive mode only.** In interval mode
+the next firing is a different process, so "the same one that would do
+the reaping" does not apply, and what protects the suspended run is
+`serve_lock`: the second firing takes the daemon lock *before* it
+reaches the lease reaper, fails to get it, and exits 2 without touching
+the lease. That ordering is the whole safety property, because
+`reap_leases` requeues on `lease_expired(moment)` compared against **wall
+clock**, which advances across a suspend - so a run suspended overnight
+blows its 3600s lease while its pid is very much alive.
+`tests/test_serve_process_tree.py::TestTheReaperRunsOnlyUnderTheDaemonLock`
+pins it (#203 item 3): before that class existed, a `serve()` mutated to
+run its cycle before acquiring the lock left all 18 lock tests green.
 
 The recovery machinery exists for the case where the process really is
 gone - a crash, an OOM kill, a reboot - not for an ordinary lid close.
@@ -366,6 +403,40 @@ and exiting nonzero.
   suspended machine. **If you plan to run this on a laptop, close the lid
   mid-run once and confirm the cycle finishes on wake and the calendar
   job fires.**
+
+- **Whether `caffeinate -i` holds a run up against a dark wake's return
+  to sleep** (#203 items 1 and 2). §5's assertion topology is measured;
+  this is not, and it needs a real suspend on real hardware, so it has
+  not been guessed. Interval mode can fire inside a dark wake: one
+  observed firing landed in a 2-second `DarkWake ... SleepService`
+  window with the lid still shut, which is fine for an empty cycle at
+  0.08-0.12s and is not fine for a factory run at 10-20 minutes. A dark
+  wake ends on a **SleepService timer**, not an idle timer, and whether
+  `PreventUserIdleSystemSleep` blocks that transition is unknown.
+
+  The experiment, so it does not have to be re-derived. It costs no LLM
+  spend - a `sleep` child is enough:
+
+  1. `caffeinate -i /bin/sleep 300`, and record the pid and start time.
+  2. Confirm with `pmset -g assertions` that a
+     `PreventUserIdleSystemSleep ... "caffeinate command-line tool"` row
+     appears against the forked helper's pid (it is a child of the
+     `sleep`, not the `sleep` itself; see §5).
+  3. Close the lid and leave the machine on battery until a
+     `DarkWake ... SleepService` entry appears in `pmset -g log`.
+  4. Read `pmset -g log` for that window. **The question is whether a
+     `Sleep  Sleep Service Back to Sleep` line follows while the
+     assertion's pid is still alive.**
+  5. Repeat once with `caffeinate -s`, which asserts `PreventSystemSleep`
+     (measured, §5).
+
+  What each result decides: if `-i` holds the machine up, document that
+  a run started in a dark wake completes and change nothing. If it does
+  not and `-s` does, switch `caffeinate_prefix` to `-s` and accept that
+  the machine stays awake for the length of a run. If neither holds,
+  interval mode is not safe unattended on a laptop and the guide must
+  say so. Record the answer here either way rather than closing #203 on
+  the first two steps.
 - **Automated coverage of a real factory run.** Still true, and still
   deliberate: a suite that spawned real runs would cost dollars per
   assertion, so no test runs a factory. The end-to-end path above is
@@ -392,14 +463,22 @@ and exiting nonzero.
   | Drop `caffeinate_prefix` from the runner's command | 3,140 pass |
   | `_default_runner` ignores `serve.caffeinate` | 3,140 pass |
 
-  The caffeinate ones are worth knowing about: `caffeinate -i` **execs in
-  place** (measured, macOS 25.5), so the wrapper leaves the child's pid,
-  argv and exit status all identical and its absence is invisible from
-  the outside. The tests use a fake `caffeinate` on `PATH` that touches a
-  marker before exec'ing, which is the only way the wiring is observable
-  at all - and they patch `sys.platform` so they run on CI's ubuntu
-  rather than skipping there, which is where a macOS-gated test would
-  have been useless.
+  The caffeinate ones are worth knowing about, and the reason recorded
+  here in #205 was wrong. It said `caffeinate -i` **execs in place**
+  (measured, macOS 25.5); #209 re-measured by enumerating the process
+  group and it **forks a helper into the run's group** instead (§5).
+  What makes those mutations invisible is the half that is true either
+  way: the utility keeps the pid, argv and exit status it was given, so
+  nothing the seam tests read moves when the prefix is dropped. Pid
+  identity cannot tell the two mechanisms apart, which is why the 25.5
+  reading did not establish what it claimed and why **no claim is made
+  here about whether caffeinate behaved differently then**. The seam
+  tests use a fake `caffeinate` on `PATH` that touches a marker before
+  exec'ing, which is the only way the wiring is observable at all - and
+  they patch `sys.platform` so they run on CI's ubuntu rather than
+  skipping there, which is where a macOS-gated test would have been
+  useless. The group census that *does* catch a dropped prefix on macOS
+  is `tests/test_serve_process_tree.py`.
 
   What remains uncovered is everything *below* `ks factory`'s argument
   parsing: no component is built, no review runs, and the classification

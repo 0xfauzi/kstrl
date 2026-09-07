@@ -52,6 +52,34 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- The reason `ks serve` supervises a factory run as a process GROUP was
+  recorded wrongly, and nothing tested it. `caffeinate -i` does not exec
+  its utility in place: measured on macOS 26.6.2 by enumerating the whole
+  group, it forks, the utility keeps the pid the daemon was given, and a
+  second `caffeinate` process inside the run's process group holds the
+  `PreventUserIdleSystemSleep` assertion. So the factory is the daemon's
+  DIRECT child, not a grandchild, and what makes the group necessary is
+  the factory's own descendants - agent subprocesses, git, the verify
+  commands - which were measured surviving a signal to the direct child
+  with caffeinate on and off alike. Nothing behavioural changed; the
+  `kstrl/serve.py` docstrings, `docs/continuous-intake.md` and the PR
+  #186 review record now state the measured reason, and a new macOS test
+  pins the run group's membership so a change in caffeinate fails a test
+  instead of silently leaving the machine unable to idle-sleep after a
+  timed-out run. The membership reading that test needs is
+  `kstrl.procgroup.read_group_members`, sharing the one `ps` call and the
+  one parse this tree allows; it refuses a uid-filtered listing outright,
+  because a count taken from one is an undercount and its caller is
+  usually asserting there is no second member. `docs/continuous-intake.md` also corrects the assertion
+  name it quoted and records the suspend experiment #203 still needs.
+  (#209)
+- `ks serve` now has a regression test pinning that the daemon lock is
+  taken BEFORE the lease reaper runs. `reap_leases` requeues a RUNNING
+  item whose wall-clock lease has lapsed, and wall clock advances across
+  a suspend, so a run suspended overnight is only protected from a second
+  scheduled firing by that ordering. Measured: a `serve()` that ran its
+  cycle before acquiring the lock left all 18 pre-existing lock tests
+  green. (#203 item 3)
 - `dead_code` no longer reports a pass when nothing was measured. One row
   covered two phases - a ruff F401/F811/F841 auto-fix that ran and a vulture
   scan that did not - so nine states in which one of them measured nothing
