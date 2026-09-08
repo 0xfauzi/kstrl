@@ -160,7 +160,14 @@ EXPECTED_ENVELOPE_SECTIONS = frozenset(
 #: hash). Pinned by EQUALITY rather than ``>=``: the number is the
 #: control for the walk, and a daemon read that disappeared is worth the
 #: same failure as one that appeared.
-EXPECTED_SERVE_SITES = 10
+#:
+#: 10 to 11 for #195's ``FactoryConfig.load`` in ``serve._merge_gate``.
+#: The number is also pinned from the other direction, by enclosing
+#: function and with a GUARDED/UNGUARDED verdict per site, in
+#: ``tests/test_serve_config_reads.py``; the two walks agree at 11 today
+#: and were written for different subjects, this one for reads DURING a
+#: run and that one for reads that may not escape the poll loop.
+EXPECTED_SERVE_SITES = 11
 
 _NEW_CONFIG_CLASS = """
 class WidgetConfig:

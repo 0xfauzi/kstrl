@@ -340,9 +340,31 @@ class TestConfig:
             bundle,
             configured_pause_before_pr_merge=False,  # contradicts L1
             configured_review_mode="advisory",  # contradicts hard
+            pause_before_pr_merge_explicit=False,
         )
         assert len(notes) == 2
         assert all("bundle wins" in n for n in notes)
+        assert all(n.startswith("Manual override ignored: ") for n in notes)
+
+    def test_the_provenance_argument_has_no_default(self) -> None:
+        """#195 round 2: the pairing is enforced, not documented.
+
+        ``manual_override_notes`` claims its note cannot disagree with
+        the decision, and that holds only while
+        ``pause_before_pr_merge_explicit`` travels with
+        ``configured_pause_before_pr_merge``. A default is what lets the
+        two separate: a caller passing the value and forgetting the
+        provenance would be told "bundle wins" for a gate the run in fact
+        kept. Nothing else in the suite fails when the default comes
+        back, because every existing caller passes both.
+        """
+        import inspect
+
+        parameter = inspect.signature(manual_override_notes).parameters[
+            "pause_before_pr_merge_explicit"
+        ]
+        assert parameter.default is inspect.Parameter.empty
+        assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
 
     def test_agreeing_config_produces_no_notes(self) -> None:
         bundle = flag_bundle_for(AutonomyLevel.L1_SUPERVISED)
@@ -351,6 +373,7 @@ class TestConfig:
                 bundle,
                 configured_pause_before_pr_merge=True,
                 configured_review_mode="hard",
+                pause_before_pr_merge_explicit=False,
             )
             == []
         )
@@ -649,7 +672,17 @@ class TestFactoryWiring:
         assert config.pause_before_pr_merge is True  # type: ignore[attr-defined]
         assert config.review_mode == "hard"  # type: ignore[attr-defined]
 
-    def test_l3_drops_the_merge_gate(self, tmp_path: Path) -> None:
+    def test_l3_drops_a_gate_the_operator_did_not_ask_for(self, tmp_path: Path) -> None:
+        """#195 narrowed what this case means, and it is still a case.
+
+        ``_run_factory_with_autonomy`` builds ``FactoryConfig(...)`` by
+        hand, so its ``pause_before_pr_merge=True`` carries no
+        provenance: nobody wrote it in kstrl.toml, in the environment or
+        on the command line. A True like that is still the ladder's to
+        drop at L3. An EXPLICIT one is not, and
+        ``tests/test_explicit_merge_gate.py`` is where that is measured,
+        through the real config sources.
+        """
         config = _run_factory_with_autonomy(
             tmp_path,
             AutonomyLevel.L3_ENVELOPED_AUTO,
@@ -657,6 +690,7 @@ class TestFactoryWiring:
             configured_pause=True,
         )
         assert config.pause_before_pr_merge is False  # type: ignore[attr-defined]
+        assert config.explicit_fields == frozenset()  # type: ignore[attr-defined]
 
     def test_disabled_ladder_leaves_config_untouched(
         self,

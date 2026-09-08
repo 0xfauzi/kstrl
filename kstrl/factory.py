@@ -32,7 +32,9 @@ from kstrl.autonomy import (
     flag_bundle_for,
     manual_override_notes,
     resolve_runtime_level,
+    resolved_flag_bundle,
     save_ladder_state,
+    strict_bool,
 )
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import start_heartbeat as _start_heartbeat
@@ -281,7 +283,37 @@ class FactoryConfig:
     max_adversarial_calls: int = 0
     # E6: when True, pause and prompt the user before each component's
     # PR creation step. Off by default; opt-in for sensitive projects.
+    #
+    # Since #195 this is the one flag that OUTRANKS the autonomy ladder,
+    # and only when the operator set it: see explicit_fields below.
     pause_before_pr_merge: bool = False
+    # #195: which config keys the OPERATOR set, as opposed to keys that
+    # kept their built-in default. PROVENANCE, not a setting: it has no
+    # toml key, no env var and no CLI flag of its own, and it is marked
+    # metadata["provenance"] so the surfaces that sweep dataclass fields
+    # (cli._collect_toml_notes) can skip it by asking rather than by
+    # matching a name.
+    #
+    # Populated by FactoryConfig.load (key presence in [factory] / env
+    # var presence), FactoryConfig.from_env (env var presence) and the
+    # `ks factory` CLI flag. A bare FactoryConfig() has none, which is
+    # the safe direction: not-explicit means the ladder decides.
+    #
+    # "The operator set it" is true of every source EXCEPT one, and the
+    # exception is named here rather than left for a later reader to
+    # discover: serve.subprocess_factory_runner always passes one of
+    # --pause-before-pr-merge / --no-pause-before-pr-merge to its child,
+    # synthesised from the queue item's merge disposition and the ladder.
+    # A serve child's provenance is therefore SERVE's decision, made on
+    # the operator's behalf, not a key the operator wrote. The two agree
+    # wherever the item's disposition came from a person; they do not
+    # where serve defaulted it.
+    #
+    # Key presence, never a value comparison. An env var set to a value
+    # equal to the default IS an explicit request, and comparing values
+    # would read it as absent (measured: config_report gets exactly this
+    # wrong for KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE=0).
+    explicit_fields: frozenset[str] = field(default=frozenset(), metadata={"provenance": True})
     # R3.1: run-level token budget. 0 means unbounded. Compared against
     # the run's aggregated total_tokens (a lower bound when some calls
     # report no usage); on breach the factory halts LOUDLY - the current
@@ -406,6 +438,11 @@ class FactoryConfig:
             pause_before_pr_merge=_parse_bool(
                 os.environ.get("KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE")
             ),
+            explicit_fields=(
+                frozenset({"pause_before_pr_merge"})
+                if "KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE" in os.environ
+                else frozenset()
+            ),
             progress_log_enabled=_parse_bool(
                 os.environ.get("KSTRL_FACTORY_PROGRESS_LOG_ENABLED", "1")
             ),
@@ -474,7 +511,16 @@ class FactoryConfig:
                 "[factory] max_cost_usd",
             )
         if "pause_before_pr_merge" in section:
-            config.pause_before_pr_merge = bool(section["pause_before_pr_merge"])
+            # strict_bool, not bool(): since #195 an explicit true here
+            # outranks the autonomy ladder, so coercing `= "false"` to
+            # True would manufacture an explicit request the operator
+            # never wrote and then keep the gate up at every level. This
+            # makes a quoted value a config_preflight refusal, the same
+            # way [autonomy] enabled is.
+            config.pause_before_pr_merge = strict_bool(
+                section, "pause_before_pr_merge", config.pause_before_pr_merge
+            )
+            config.explicit_fields |= {"pause_before_pr_merge"}
         if "progress_log_enabled" in section:
             config.progress_log_enabled = bool(section["progress_log_enabled"])
         if "keep_worktrees_on_failure" in section:
@@ -502,6 +548,7 @@ class FactoryConfig:
             config.pause_before_pr_merge = _parse_bool(
                 os.environ["KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE"]
             )
+            config.explicit_fields |= {"pause_before_pr_merge"}
         if "KSTRL_FACTORY_PROGRESS_LOG_ENABLED" in os.environ:
             config.progress_log_enabled = _parse_bool(
                 os.environ["KSTRL_FACTORY_PROGRESS_LOG_ENABLED"]
@@ -3302,10 +3349,32 @@ def _resolve_ladder(
     # moment either threshold becomes level-graded.
     clamped = replace(run_envelope, autonomy_level=int(level))
     bundle = flag_bundle_for(level)
+    pause_explicit = "pause_before_pr_merge" in factory_config.explicit_fields
     overrides = manual_override_notes(
         bundle,
         configured_pause_before_pr_merge=factory_config.pause_before_pr_merge,
         configured_review_mode=factory_config.review_mode,
+        pause_before_pr_merge_explicit=pause_explicit,
+    )
+    # #195: the bundle may RAISE this gate and may not lower one the
+    # operator set. `pause_gate_for` is the only place that rule is
+    # written; the notes above ask it what it returned rather than
+    # keeping a second copy.
+    #
+    # Rebound to the bundle the run USES, not the one the level awarded,
+    # because the event this feeds is what makes a run's permissions
+    # auditable: `bundle.describe()` would otherwise record "merge gate:
+    # off" for a run that pauses at every component, and rebinding that
+    # ONE field would leave "auto-merge when green: yes" beside "merge
+    # gate: ON". `resolved_flag_bundle` moves every dependent flag
+    # together. Ordered after `manual_override_notes`, which compares the
+    # CONFIGURED value against what the LEVEL awarded, and before the
+    # `deps_allow_new` clamp, which reads a field `resolved_flag_bundle`
+    # does not touch.
+    bundle = resolved_flag_bundle(
+        bundle,
+        configured=factory_config.pause_before_pr_merge,
+        explicit=pause_explicit,
     )
     # The ladder can only ever WITHHOLD a permission the envelope
     # grants, never add one: below L3, new dependencies are refused even
@@ -3719,8 +3788,11 @@ def _run_factory_locked(
         ui.kv("Autonomy", f"L{int(ladder.level)} - {ladder.level.label}")
         for note in ladder.clamps:
             ui.warn(f"  {note}")
+        # Each note carries its own verdict since #195: one of them
+        # reports a gate the run RETAINED, and a blanket "Manual override
+        # ignored" prefix would have contradicted it.
         for note in ladder.overrides:
-            ui.warn(f"  Manual override ignored: {note}")
+            ui.warn(f"  {note}")
 
     # Issue #207 (review P1): checked AFTER autonomy resolution, because
     # the L1/L2 bundle can flip pause_before_pr_merge on when no config

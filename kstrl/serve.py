@@ -1397,15 +1397,154 @@ def reap_leases(
 class MergeGate:
     """The merge-gate decision for one item.
 
-    ``refusal`` non-empty means the item must NOT run: the autonomy
-    ladder would auto-merge something that explicitly asked for a human,
-    and silently proceeding is precisely the governance erosion R8.6
-    lists as a failure mode.
+    ``refusal`` non-empty means the item must NOT run: this run would
+    pause at a human merge gate and this repo cannot honour one, so
+    silently proceeding would be precisely the governance erosion R8.6
+    lists as a failure mode. Until #195 the producer was the autonomy
+    ladder dropping the gate at L3; the ladder no longer does that, and
+    the producer is now a repo whose config makes the checkpoint
+    unreachable.
+
+    Built only by :func:`_merge_gate` and
+    :func:`_unreadable_config_gate`, which is what makes the refusal key
+    on the RESOLVED gate rather than on the item's disposition.
+
+    ``unreadable_section`` names the ``kstrl.toml`` section a config read
+    could not complete, and empty means the refusal is about the repo's
+    resolved configuration rather than about reading it. The distinction
+    decides whether the item is POISONED or WAITS, and it is a fact about
+    the refusal's cause rather than a new outcome: a ``create_prs =
+    false`` repo will not stop conflicting with a promised human gate
+    until somebody changes a policy, so that item is terminal, while a
+    quoted boolean is a typo that clears the moment the file is fixed.
+    Poisoning on the typo would cost one terminal item per poll for as
+    long as the operator took to notice, and poison is documented as the
+    state that is never retried automatically.
     """
 
     pause_before_pr_merge: bool
     notes: tuple[str, ...] = ()
     refusal: str = ""
+    unreadable_section: str = ""
+
+
+def _unreadable_config_gate(
+    section: str,
+    exc: BaseException,
+    notes: tuple[str, ...] = (),
+) -> MergeGate:
+    """The gate a config read that could not complete resolves to.
+
+    A config read on the poll path may REFUSE and it may not CLEAR, and
+    above all it may not ESCAPE. ``serve``'s ``_cycle`` has no handler
+    and neither does ``serve_cycle``, so an exception here leaves
+    ``serve()`` and stops the daemon; under launchd it is relaunched on
+    ``LAUNCHD_THROTTLE_SECONDS`` and dies again on the same key. That is
+    the failure ``check_open_pr_bound`` already carries a paragraph
+    about, and #318's rule stated for this module.
+
+    Fail-closed by construction: the gate is on and the refusal is
+    non-empty, so an unreadable section can never be the thing that lets
+    an item run. ``unreadable_section`` then makes it a WAIT rather than
+    a poison; see :class:`MergeGate`.
+
+    The caught set is the whole surface and not an enumeration, for the
+    reason ``check_open_pr_bound`` gives: every outcome that is not a
+    config means one thing here, and a list of the types believed
+    reachable is the defect rather than the precaution. What that would
+    have to enumerate, measured through the real loaders rather than
+    reasoned about: ``ConfigError`` from a quoted boolean, from a
+    document that will not parse and from one that is not UTF-8; a plain
+    ``ValueError`` from an ``int()`` cast on a string; and a ``TypeError``
+    from the same cast on a TOML date, which is NOT a ``ValueError`` and
+    is the type an author writing that list by inspection leaves out.
+    ``OSError`` is reachable too, because ``load_toml_section`` does not
+    normalise it.
+    """
+    # `rstrip(".")` because the cause is quoted mid-sentence and its own
+    # messages end with a full stop, which read as "as str.. The item".
+    detail = str(exc).rstrip(".")
+    return MergeGate(
+        pause_before_pr_merge=True,
+        notes=notes,
+        unreadable_section=section,
+        refusal=(
+            f"[{section}] cannot be read, so this item's merge gate cannot be "
+            f"resolved: {detail}. The item waits; fix the section and the next "
+            "poll picks it up."
+        ),
+    )
+
+
+def _merge_gate(
+    root_dir: Path,
+    *,
+    pause_before_pr_merge: bool,
+    wants_gate: bool,
+    notes: tuple[str, ...] = (),
+) -> MergeGate:
+    """The single exit of :func:`resolve_merge_gate`.
+
+    The unreachable-checkpoint refusal keys on the gate about to be
+    RETURNED, never on the item's own disposition. Round 1 of #195 asked
+    the disposition and so cleared the other way a gate arises: an
+    ``AUTO_MERGE`` item that L1 or L2 downgrades is promised a human gate
+    by the LADDER, and that gate is exactly as unreachable in a
+    ``create_prs = false`` repo. Measured at f4356cf, that case returned
+    ``pause=True, refusal=''``: the daemon logged "merge gate on", passed
+    ``--pause-before-pr-merge`` to the child, and the child never reached
+    ``_phase_checkpoint``. A control that CLEARS must be narrow
+    (CLAUDE.md guard-design rule 3), and asking the disposition cleared a
+    case it had not proved compliant.
+
+    Every ``MergeGate`` this module returns is built here, so a fifth
+    exit cannot skip the probe by construction.
+
+    ``merge_gate_unreachable_warning`` is the PREDICATE and not the text.
+    Its own sentences are written for ``run_factory``'s already-resolved
+    config and read as a second subject when pasted into this one (they
+    also tell the operator that ``ks serve`` honours the gate, inside the
+    ``ks serve`` message explaining why it cannot). The probe forces
+    ``pause_before_pr_merge=True`` and ``single_pr=False``, which leaves
+    ``create_prs`` as the only input that can still produce a warning, so
+    naming that key here is correct by construction;
+    ``tests/test_serve.py::TestTheRefusalNamesTheRightKey`` pins the set
+    of config fields the predicate reads so a fourth arm cannot make this
+    sentence wrong in silence.
+    """
+    from kstrl.factory import FactoryConfig, merge_gate_unreachable_warning
+
+    if not pause_before_pr_merge:
+        return MergeGate(pause_before_pr_merge=False, notes=notes)
+    try:
+        probe = replace(
+            FactoryConfig.load(root_dir),
+            pause_before_pr_merge=True,
+            single_pr=False,
+        )
+    except Exception as exc:  # noqa: BLE001 - anything but a config is the same answer
+        return _unreadable_config_gate("factory", exc, notes)
+    unreachable = merge_gate_unreachable_warning(probe)
+    if unreachable is None:
+        return MergeGate(pause_before_pr_merge=True, notes=notes)
+    subject = (
+        "the item requires a human merge gate"
+        if wants_gate
+        else "the autonomy level requires a human merge gate"
+    )
+    remedy = (
+        "Set the item to --auto-merge deliberately, or turn create_prs on."
+        if wants_gate
+        else "Raise the autonomy level to one that permits auto-merge, or turn create_prs on."
+    )
+    return MergeGate(
+        pause_before_pr_merge=True,
+        notes=notes,
+        refusal=(
+            f"{subject}, but [factory] create_prs = false means this repo "
+            f"creates no PR, so the checkpoint never runs. {remedy}"
+        ),
+    )
 
 
 def resolve_merge_gate(item: QueueItem, root_dir: Path) -> MergeGate:
@@ -1416,27 +1555,44 @@ def resolve_merge_gate(item: QueueItem, root_dir: Path) -> MergeGate:
     - The item asks for AUTO_MERGE and the ladder withholds it: downgrade
       to a human gate. This is the ladder doing its job - it may always
       withhold a permission.
-    - The item asks for STOP_AT_PR and the ladder's bundle forces
-      ``pause_before_pr_merge=False`` (L3+): the ladder would GRANT
-      auto-merge over an explicit request for a human. Refuse the item.
+    - The item asks for STOP_AT_PR and the ladder's bundle would
+      auto-merge (L3+): the item wins. ``STOP_AT_PR`` reaches the child
+      as ``--pause-before-pr-merge``, which is an EXPLICIT request, and
+      since #195 ``run_factory`` keeps an explicit gate at every level.
+      Nothing to refuse; this used to be the refusal below.
 
-    The second case cannot be fixed here: ``run_factory`` assigns
-    ``factory_config.pause_before_pr_merge = bundle.pause_before_pr_merge``
-    unconditionally, so passing the flag would be overridden and logged
-    as a "manual override ignored". Making the ladder honour a
-    MORE-restrictive request is an R8.2 change, not an R8.6 one, so this
-    refuses loudly instead of quietly letting a merge through.
+    The refusal that remains is a different hole, and it is the one this
+    function can still see: a gate that will be honoured by nobody
+    because the checkpoint it runs at is unreachable. ``ks factory``
+    reaches ``_phase_checkpoint`` only when it creates per-component PRs,
+    so a repo whose ``[factory] create_prs = false`` turns a promised
+    human gate into a silent auto-merge (#207's failure-open shape,
+    arriving through intake). Refused rather than run.
+
+    Every exit goes through :func:`_merge_gate`, which applies that
+    refusal to the gate this function RESOLVED. Both ways a gate arises
+    are covered: the item asking for one, and the ladder withholding
+    auto-merge from an item that did not. Checked whether or not the
+    ladder is enabled: the checkpoint is unreachable for a config reason,
+    not a level reason.
     """
     from kstrl.autonomy import AutonomyConfig, AutonomyState, flag_bundle_for, resolve_runtime_level
     from kstrl.policy import PolicyConfig
 
     wants_gate = item.merge_disposition is MergeDisposition.STOP_AT_PR
-    config = AutonomyConfig.load(root_dir)
+
+    try:
+        config = AutonomyConfig.load(root_dir)
+    except Exception as exc:  # noqa: BLE001 - anything but a config is the same answer
+        return _unreadable_config_gate("autonomy", exc)
     if not config.enabled:
         # No ladder: the item's own disposition is authoritative.
-        return MergeGate(pause_before_pr_merge=wants_gate)
+        return _merge_gate(root_dir, pause_before_pr_merge=wants_gate, wants_gate=wants_gate)
 
-    policy = PolicyConfig.load(root_dir)
+    try:
+        policy = PolicyConfig.load(root_dir)
+    except Exception as exc:  # noqa: BLE001 - anything but a config is the same answer
+        return _unreadable_config_gate("policy", exc)
     level, clamps = resolve_runtime_level(
         AutonomyState.load(root_dir),
         config,
@@ -1451,23 +1607,33 @@ def resolve_merge_gate(item: QueueItem, root_dir: Path) -> MergeGate:
             f"item requested auto-merge; {bundle.level.label} withholds it, "
             "so the PR waits for a human"
         )
-        return MergeGate(pause_before_pr_merge=True, notes=tuple(notes))
-
-    if wants_gate and not bundle.pause_before_pr_merge:
-        return MergeGate(
+        return _merge_gate(
+            root_dir,
             pause_before_pr_merge=True,
+            wants_gate=wants_gate,
             notes=tuple(notes),
-            refusal=(
-                f"item requires a human merge gate but {bundle.level.label} "
-                "auto-merges when green, and run_factory lets the ladder's "
-                "bundle override the flag. Set the item to --auto-merge "
-                "deliberately, or lower [autonomy] max_level, rather than "
-                "having the gate removed silently."
-            ),
         )
 
-    return MergeGate(
+    if wants_gate and not bundle.pause_before_pr_merge:
+        # #195: the item's explicit request outranks the bundle's
+        # permission to auto-merge. Recorded, not refused, and the child
+        # is told in the same words run_factory will use.
+        notes.append(
+            f"item requires a human merge gate; {bundle.level.label} would "
+            "auto-merge, but an explicit request outranks the ladder, so "
+            "the gate is retained"
+        )
+        return _merge_gate(
+            root_dir,
+            pause_before_pr_merge=True,
+            wants_gate=wants_gate,
+            notes=tuple(notes),
+        )
+
+    return _merge_gate(
+        root_dir,
         pause_before_pr_merge=bundle.pause_before_pr_merge,
+        wants_gate=wants_gate,
         notes=tuple(notes),
     )
 
@@ -2098,7 +2264,18 @@ def check_inbox_cap(root_dir: Path) -> Admission:
     """
     from kstrl.inbox import Inbox, InboxConfig
 
-    config = InboxConfig.load(root_dir)
+    try:
+        config = InboxConfig.load(root_dir)
+    except Exception as exc:  # noqa: BLE001 - anything but a config is the same answer
+        # Same rule as `check_open_pr_bound`: the read is INSIDE the
+        # guard, the caught set is the whole surface rather than the
+        # types believed reachable, and a cap that cannot be evaluated
+        # refuses. `serve` has no per-cycle handler, so letting this out
+        # stops the daemon on an operator's typo (#318).
+        return Admission(
+            allowed=False,
+            reason=f"[inbox] cannot be read, so the open-item cap cannot be evaluated: {exc}",
+        )
     if not config.enabled or config.open_item_cap <= 0:
         return Admission(allowed=True)
     scan = Inbox(root_dir, config).scan()
@@ -2665,6 +2842,17 @@ def _file_inbox_item(
     rather than the three types someone expected: ``Inbox.add`` reaches
     ``_append``, which takes the control lock, and ``InboxConfig.load``
     casts per key.
+
+    The enumeration stands, and it was checked rather than assumed. It
+    was widened to ``except Exception`` on the theory that a deeply
+    nested array reaches this as a ``RecursionError``, and measured:
+    ``config.load_toml_document`` normalises every parser fault to
+    ``ConfigError`` first, so what escapes ``InboxConfig.load`` is a
+    ``ConfigError``, a plain ``ValueError`` from an ``int()`` cast, or a
+    ``TypeError`` from ``int()`` on a TOML date, all three in the list.
+    ``tests/test_inbox_write_guards.py`` pins two of them by name and by
+    ORIGIN, so the wider spelling makes that guard fire; see
+    ``tests/test_serve_config_reads.py::UNGUARDED_LEDGER``.
     """
     try:
         from kstrl.inbox import Inbox, InboxConfig, ItemKind
@@ -2684,6 +2872,82 @@ def _file_inbox_item(
         return item.id
     except (OSError, TypeError, ValueError, KeyError, ControlStateError):
         return ""
+
+
+def _poison_for_merge_gate(
+    queue: Queue,
+    ledger: SpendLedger,
+    candidate: QueueItem,
+    gate: MergeGate,
+) -> QueueItem | None:
+    """Make a refused item terminal, unless the refusal clears itself.
+
+    Called with the queue mutex held. Returns the poisoned item, or None
+    when nothing was poisoned, which is the caller's signal that this
+    refusal is a WAIT: nothing claimed, no attempt charged, re-checked on
+    the next poll.
+
+    The split is between a refusal about the repo's RESOLVED
+    configuration and one about being unable to READ it. A ``create_prs
+    = false`` repo does not stop conflicting with a promised human merge
+    gate on its own, so that item needs a person and is terminal. A
+    quoted boolean is a typo that clears the moment the file is fixed,
+    and poison is documented as the state that is never retried
+    automatically, so poisoning there would cost one terminal item per
+    poll for as long as the typo stood and leave every one of them behind
+    after the fix.
+    """
+    if gate.unreadable_section:
+        return None
+    queue.poison(
+        candidate,
+        reason=f"merge-gate conflict: {gate.refusal}",
+        actor="serve",
+    )
+    ledger.record_terminal(poisoned=True)
+    return queue.get(candidate.item_id)
+
+
+def _report_merge_gate_refusal(
+    root_dir: Path,
+    result: CycleResult,
+    candidate: QueueItem,
+    gate: MergeGate,
+    refused_item: QueueItem | None,
+    observer: ServeObserver,
+) -> None:
+    """Tell the operator and the front-end about a poisoned item.
+
+    Nothing to report when ``refused_item`` is None: the refusal was a
+    wait, the item is untouched, and the caller has already put the
+    message on ``CycleResult.skipped``, which is where the daemon prints
+    a self-clearing refusal.
+
+    Runs OUTSIDE the queue mutex on purpose: the writeback makes two
+    ``gh`` calls at the configured timeout, and holding the mutex across
+    them blocks every local queue transition (#187 F10).
+    """
+    if refused_item is None:
+        return
+    observer.err(f"{candidate.item_id[:12]}: {gate.refusal}")
+    result.needs_human = True
+    result.inbox_items += (
+        _file_inbox_item(
+            root_dir,
+            kind_name="merge_gate",
+            title=(f"Queue item {candidate.item_id[:12]} needs a merge decision"),
+            detail=gate.refusal,
+            dedupe_key=f"queue-merge-gate:{candidate.item_id}",
+            evidence={"item_id": candidate.item_id},
+        ),
+    )
+    _report_remote_outcome(
+        root_dir,
+        refused_item,
+        state="poison",
+        detail=gate.refusal,
+        observer=observer,
+    )
 
 
 def _record_count_failure(
@@ -3092,39 +3356,20 @@ def serve_cycle(
             return result
         gate = resolve_merge_gate(candidate, root_dir)
         if gate.refusal:
-            queue.poison(
-                candidate,
-                reason=f"merge-gate conflict: {gate.refusal}",
-                actor="serve",
-            )
-            ledger.record_terminal(poisoned=True)
-            refused_item = queue.get(candidate.item_id)
+            refused_item = _poison_for_merge_gate(queue, ledger, candidate, gate)
         else:
             leased = queue.lease(candidate, actor="serve")
 
-    if refused_item is not None:
-        obs.err(f"{candidate.item_id[:12]}: {gate.refusal}")
-        result.needs_human = True
-        result.inbox_items += (
-            _file_inbox_item(
-                root_dir,
-                kind_name="merge_gate",
-                title=(f"Queue item {candidate.item_id[:12]} needs a merge decision"),
-                detail=gate.refusal,
-                dedupe_key=f"queue-merge-gate:{candidate.item_id}",
-                evidence={"item_id": candidate.item_id},
-            ),
-        )
-        # Outside the mutex: two gh calls at the configured timeout must
-        # not block every local queue transition (#187 F10).
-        _report_remote_outcome(
-            root_dir,
-            refused_item,
-            state="poison",
-            detail=gate.refusal,
-            observer=obs,
-        )
+    if gate.refusal:
         result.skipped = gate.refusal
+        _report_merge_gate_refusal(
+            root_dir,
+            result,
+            candidate,
+            gate,
+            refused_item,
+            obs,
+        )
         return result
 
     for note in gate.notes:

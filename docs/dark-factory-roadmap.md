@@ -950,21 +950,44 @@ a human merge gate and logs it as "manual override ignored". The R8.2
 docstring says the failure mode it guards is a hand-edited flag
 *granting* autonomy the ladder never awarded, but the implementation is
 symmetric and also refuses a MORE-restrictive request. Rather than change
-ladder semantics from inside R8.6, `serve.resolve_merge_gate` REFUSES an
+ladder semantics from inside R8.6, `serve.resolve_merge_gate` REFUSED an
 item whose `stop_at_pr` the current level cannot honour (poison + inbox
 item) instead of letting the gate be removed silently. Unreachable
 today - `[autonomy] enabled` defaults false and L2+ entry is still
-blocked on the user-run measurements - but it needs an R8.2 decision
-before L3 is real.
+blocked on the user-run measurements - but it needed an R8.2 decision
+before L3 is real. That decision is below, and it has shipped.
 
-**RESOLVED 2026-08-03**
+**RESOLVED 2026-08-03, shipped**
 ([#195](https://github.com/0xfauzi/kstrl/issues/195)): an explicit
 `pause_before_pr_merge = true` survives every level - the bundle may only
 WITHHOLD autonomy, never remove a human gate the operator asked for,
-mirroring PR #174 correction 1 in the opposite direction.
-`serve.resolve_merge_gate`'s refusal stays as a defense-in-depth
-backstop. Implementation wrinkle recorded in the issue: `FactoryConfig`
-must learn explicit-vs-default provenance for the flag first.
+mirroring PR #174 correction 1 in the opposite direction. The rule is
+`autonomy.pause_gate_for`, one expression with one caller, and the run
+records `gate retained by explicit request` in the log and in
+`autonomy_level_applied` (whose `flags` now describe the RESOLVED bundle,
+because a bundle-derived `flags` said "merge gate: off" for a run that
+pauses). `FactoryConfig.explicit_fields` is the provenance the issue
+called for: key presence in `[factory]`, env-var presence, or the CLI
+flag, never a comparison against the default. A configured-but-defaulted
+`true` is still dropped at L3, which is what makes this a rule about the
+operator rather than about the value.
+
+`serve.resolve_merge_gate`'s refusal was re-aimed rather than kept. Its
+old condition - a `stop_at_pr` item at L3 - is exactly the case that now
+works, so leaving it would have poisoned items the factory can honour.
+It now refuses the hole that is still real and that no level fixes: a
+repo whose `[factory] create_prs = false` never reaches the checkpoint,
+so a run that promised a human merge gate would merge with nobody having
+looked. `MergeGate.refusal` keeps its six readers and gains a case with a
+test.
+
+The refusal keys on the RESOLVED gate, at one exit every `MergeGate` is
+built at, rather than on the queue item's own disposition. Round 1 asked
+the disposition and so cleared the other way a gate arises: an
+`auto_merge` item that L1 or L2 downgrades is promised a human gate by
+the ladder, and that gate is exactly as unreachable in a
+`create_prs = false` repo. Measured at that revision, the case returned
+`pause=True, refusal=''`. A control that CLEARS must be narrow.
 
 Two invariants in the substrate are money-safety properties rather than
 style, and both are mutation-checked:

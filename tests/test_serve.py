@@ -1456,6 +1456,150 @@ class TestMergeGate:
         gate = resolve_merge_gate(item, tmp_path)  # type: ignore[arg-type]
         assert gate.pause_before_pr_merge
 
+    def test_stop_at_pr_survives_l3(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """#195: the item wins, and this used to be a refusal.
+
+        ``STOP_AT_PR`` reaches the child as ``--pause-before-pr-merge``,
+        which ``run_factory`` now keeps at every level, so refusing the
+        item would refuse work that will in fact be gated.
+        """
+        from kstrl.autonomy import AutonomyLevel, AutonomyState
+
+        (tmp_path / "kstrl.toml").write_text(
+            "[autonomy]\nenabled = true\n[policy]\nenabled = true\n",
+            encoding="utf-8",
+        )
+        AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO)).save(tmp_path)
+        queue = _queue(tmp_path)
+        item = _add(queue, merge_disposition=MergeDisposition.STOP_AT_PR)
+        gate = resolve_merge_gate(item, tmp_path)  # type: ignore[arg-type]
+        assert gate.pause_before_pr_merge
+        assert not gate.refusal
+        assert any("outranks the ladder" in note for note in gate.notes), gate.notes
+
+    def test_stop_at_pr_is_refused_when_no_pr_is_created(self, tmp_path: Path) -> None:
+        """#195: the refusal re-aimed at the hole that is still real.
+
+        ``[factory] create_prs = false`` means the child never reaches
+        ``_phase_checkpoint``, so an item that asked for a human in
+        writing would be merged with nobody having looked. Checked with
+        the ladder off, because this is a config reason rather than a
+        level reason.
+        """
+        (tmp_path / "kstrl.toml").write_text("[factory]\ncreate_prs = false\n", encoding="utf-8")
+        queue = _queue(tmp_path)
+        item = _add(queue, merge_disposition=MergeDisposition.STOP_AT_PR)
+        gate = resolve_merge_gate(item, tmp_path)  # type: ignore[arg-type]
+        assert gate.refusal
+        assert gate.pause_before_pr_merge
+        assert gate.refusal == (
+            "the item requires a human merge gate, but [factory] create_prs "
+            "= false means this repo creates no PR, so the checkpoint never "
+            "runs. Set the item to --auto-merge deliberately, or turn "
+            "create_prs on."
+        )
+
+    def test_auto_merge_is_not_refused_when_no_pr_is_created(self, tmp_path: Path) -> None:
+        """The refusal is about the RESOLVED gate, and here there is none.
+
+        An item that never asked for a gate, in a repo whose ladder is
+        off, resolves to no gate at all, so nothing is promised and there
+        is nothing to refuse. A guard that refused it would stop work for
+        a reason that does not apply to it.
+        """
+        (tmp_path / "kstrl.toml").write_text("[factory]\ncreate_prs = false\n", encoding="utf-8")
+        queue = _queue(tmp_path)
+        item = _add(queue, merge_disposition=MergeDisposition.AUTO_MERGE)
+        gate = resolve_merge_gate(item, tmp_path)  # type: ignore[arg-type]
+        assert not gate.refusal
+        assert not gate.pause_before_pr_merge
+
+    def test_a_gate_the_ladder_raised_is_refused_when_no_pr_is_created(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The other way a gate arises, and round 1 cleared it.
+
+        Round 1 keyed the refusal on the ITEM's disposition, so an
+        ``AUTO_MERGE`` item that L1 downgrades reached
+        ``pause=True, refusal=''`` in a ``create_prs = false`` repo: the
+        daemon logged "merge gate on", passed ``--pause-before-pr-merge``
+        to the child, and the child never reached ``_phase_checkpoint``.
+        A gate the LADDER raised is exactly as unreachable as one the
+        item asked for, and a control that CLEARS must be narrow.
+        """
+        (tmp_path / "kstrl.toml").write_text(
+            "[factory]\ncreate_prs = false\n[autonomy]\nenabled = true\n",
+            encoding="utf-8",
+        )
+        queue = _queue(tmp_path)
+        item = _add(queue, merge_disposition=MergeDisposition.AUTO_MERGE)
+        gate = resolve_merge_gate(item, tmp_path)  # type: ignore[arg-type]
+        assert gate.pause_before_pr_merge
+        assert gate.refusal
+        assert gate.refusal == (
+            "the autonomy level requires a human merge gate, but [factory] "
+            "create_prs = false means this repo creates no PR, so the "
+            "checkpoint never runs. Raise the autonomy level to one that "
+            "permits auto-merge, or turn create_prs on."
+        )
+
+
+class TestTheRefusalNamesTheRightKey:
+    """``_merge_gate`` writes its own sentence, so the sentence needs a pin.
+
+    Round 1 interpolated ``merge_gate_unreachable_warning``'s text, which
+    was written for ``run_factory``'s already-resolved config and read as
+    two subjects colliding. The text is now serve's own and names
+    ``[factory] create_prs`` outright, which is correct only because the
+    probe forces ``pause_before_pr_merge=True`` and ``single_pr=False``
+    and those are two of the three fields the predicate reads. A fourth
+    field would make serve's sentence name the wrong key, and no
+    behavioural test would notice: this one fails on the delta.
+
+    DISCLOSED LIMIT. The walk enumerates one node shape, an
+    ``ast.Attribute`` whose value is the bare name ``config``, so a field
+    read as ``getattr(config, name)`` leaves ``reads`` equal to the
+    pinned three and CLEARS. Every other deviation makes the set smaller
+    or raises ``StopIteration``, both of which are red, so the walk is
+    wrong in the flagging direction on all but that one shape. Left as a
+    disclosure rather than widened: the subject is a three-branch
+    predicate a reader can hold in their head, and a dynamic field read
+    in it would be a stranger thing than the one this guards against.
+    """
+
+    def test_the_predicate_reads_the_three_fields_the_probe_accounts_for(self) -> None:
+        import ast
+
+        from tests.helpers.astwalk import KSTRL_PACKAGE, parsed
+
+        tree = parsed(KSTRL_PACKAGE / "factory.py")
+        fn = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "merge_gate_unreachable_warning"
+        )
+        reads = {
+            node.attr
+            for node in ast.walk(fn)
+            if isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "config"
+        }
+        assert reads == {"pause_before_pr_merge", "create_prs", "single_pr"}, (
+            "merge_gate_unreachable_warning reads a config field serve's "
+            "refusal sentence does not account for. serve._merge_gate forces "
+            "pause_before_pr_merge and single_pr and then tells the operator "
+            "the reason is [factory] create_prs; a new field breaks that "
+            "sentence. Either force it in the probe too, or stop naming a "
+            "single key in the refusal."
+        )
+
 
 # --------------------------------------------------------------------------
 # caffeinate

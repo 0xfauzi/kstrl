@@ -506,9 +506,15 @@ def _collect_toml_notes(
     identically on both sides, so they cancel out). Fields whose CLI
     flag was explicitly passed are excluded: the flag wins, so the toml
     value is not effective.
+
+    Fields marked ``metadata={"provenance": True}`` are skipped: they
+    record where a value CAME FROM rather than being a value, so they
+    have no toml key and no built-in default worth reporting. Asked at
+    the declaration rather than matched by name here, so a second
+    provenance field needs no edit to this function.
     """
     for f in dataclass_fields(loaded):
-        if f.name in flag_overridden:
+        if f.name in flag_overridden or f.metadata.get("provenance"):
             continue
         loaded_val = getattr(loaded, f.name)
         baseline_val = getattr(baseline, f.name)
@@ -2740,6 +2746,12 @@ def factory(
         factory_config.max_cost_usd = max_cost_usd
     if pause_before_pr_merge is not None:
         factory_config.pause_before_pr_merge = pause_before_pr_merge
+        # #195: passing the flag either way is an explicit operator
+        # request, so the ladder may not lower it. This is also what
+        # makes `ks serve` honour a stop_at_pr item at L3: its child
+        # always gets one of --pause-before-pr-merge /
+        # --no-pause-before-pr-merge (serve.subprocess_factory_runner).
+        factory_config.explicit_fields |= {"pause_before_pr_merge"}
     if no_worktrees:
         factory_config.use_worktrees = False
     if keep_worktrees_on_failure:

@@ -69,6 +69,51 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Changed
 
+- An explicit `pause_before_pr_merge = true` now survives every autonomy
+  level. The R8.2 flag bundle may withhold autonomy the operator did not
+  earn; it may not remove a human merge gate the operator asked for. At
+  L3 and L4 the gate was previously dropped and the run logged a manual
+  override ignored; it is now retained, and both the run log and the
+  `autonomy_level_applied` event say `gate retained by explicit
+  request`. That event's `flags` describe the bundle the run USED rather
+  than the one the level awarded, so it can no longer record "merge
+  gate: off" for a run that pauses at every component. Explicit means
+  the operator wrote it - a `[factory]` key present in kstrl.toml,
+  `KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE` set, or
+  `--pause-before-pr-merge` / `--no-pause-before-pr-merge` passed - and
+  never a value that merely equals the default, so
+  `KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE=0` is an explicit false. A value
+  nobody wrote is unchanged: with no key, no env var and no flag, L3 and
+  L4 still derive the gate from the level. The reverse asymmetry is
+  unchanged too: an explicit `false` does not lower the gate L1 and L2
+  raise, and that run still logs `bundle wins` (#195).
+- **Behaviour change:** `[factory] pause_before_pr_merge` is read
+  strictly, the way `[autonomy] enabled` has been since #350. `= "false"`
+  is a string, `= 0` is an integer, and since the key now outranks the
+  ladder a coerced non-boolean would manufacture an explicit
+  request nobody wrote and keep the gate up at every level. A repo that
+  spells the value with quotes, or as `0` / `1`, goes from silently gated
+  to a configuration problem reported at command entry: exit 1 on the
+  `ks factory` path and exit 2 under `ks serve`, which is the split every
+  command in the entry seam already has. The env var is
+  unchanged and stays lenient, because an env var is a string by
+  construction (#195).
+- **Behaviour change:** `ks serve` no longer refuses a `stop_at_pr` item
+  because the autonomy level would auto-merge: that item is now honoured.
+  The refusal is re-aimed at the case that is still real and that no
+  level fixes, a repo whose `[factory] create_prs = false` means the
+  merge checkpoint never runs, so a run that promised a human merge gate
+  would otherwise merge with nobody having looked. Newly refused items go
+  TERMINAL, not skipped: `queue.poison` is documented as the state that
+  must never be retried automatically, and each refusal also files one
+  inbox item and sets `needs_human`, once per item. The set that newly
+  goes terminal, in a repo with `[factory] create_prs = false`: a
+  `stop_at_pr` item at L1, at L2, and with the autonomy ladder disabled;
+  and an `auto_merge` item at L1 or L2, where the LADDER raises the gate
+  the repo cannot honour. (At L3 and L4 a `stop_at_pr` item was already
+  refused, for a different reason.) `create_prs` defaults to `true`, so
+  only a repo that explicitly wrote `create_prs = false` is affected
+  (#195).
 - The `ks init` scaffolds for `scripts/kstrl/golden-patterns.md` and
   `scripts/kstrl/memory.md` are shorter. Their preambles described the
   scaffold's own lifecycle, and that text is prompt text from your first
@@ -107,6 +152,34 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- A `kstrl.toml` section that will not read no longer stops the `ks
+  serve` daemon. `serve` has no per-cycle handler, so an exception from a
+  config read on the poll path left `serve()` and killed the process;
+  under launchd it was then relaunched and died again on the same key.
+  Measured through a real `serve(once=True)` with the document rewritten
+  after daemon start: `[autonomy]`, `[policy]` and `[inbox]` killed the
+  cycle before this change and at `origin/main` alike, and `[factory]`
+  killed it only in the configuration this branch created - a
+  `[serve] max_open_prs = 0` repo, which is the documented way to switch
+  the open-PR bound off and therefore also switches off the one guarded
+  `[factory]` read that used to absorb the fault. All four now REFUSE:
+  the cycle completes and the poll's message names the section an
+  operator has to fix. The item WAITS rather than being poisoned,
+  because an unreadable section clears the moment the file is fixed,
+  while poison is documented as the state that is never retried
+  automatically; a refusal about the repo's resolved configuration
+  (`create_prs = false` against a promised human merge gate) is still
+  terminal. `[intake_github]` and `[serve]` survived at both revisions
+  and are unchanged. `[queue]` still kills the cycle, at `origin/main`
+  and here identically: it is read before the queue exists, so there is
+  nowhere to record a refusal, and it is recorded in
+  `tests/test_serve_config_reads.py::UNGUARDED_LEDGER` with that
+  measurement rather than changed, as is `_file_inbox_item`'s narrower
+  handler, which another guard pins by name and by origin. That module
+  is also the guard: it
+  inventories every config read in `kstrl/serve.py` by enclosing
+  function, decides each GUARDED or UNGUARDED, and fails on an unguarded
+  one that is not in the ledger (#195, #318).
 - A factory run now resolves every configuration section it enforces
   exactly once, at run start, and every phase enforces that resolution
   for every component. Phase 1 re-read `[policy]`, `[adequacy]` and the

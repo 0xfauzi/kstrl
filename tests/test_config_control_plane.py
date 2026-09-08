@@ -31,12 +31,20 @@ from click.testing import CliRunner
 import kstrl.cli as cli_mod
 import kstrl.evolution as evolution_mod
 from kstrl.evolution import EvolutionConfig
-from kstrl.factory import FactoryConfig, FactoryResult
+from kstrl.factory import FactoryConfig
 from kstrl.feedforward import FeedforwardConfig
 from kstrl.init_cmd import DEFAULT_KSTRL_TOML
 from kstrl.knowledge import KnowledgeConfig
-from kstrl.manifest import Component, Manifest
 from kstrl.verify import VerifyConfig
+
+# The harness moved to tests/helpers/factorycli.py on #195, when
+# tests/test_explicit_merge_gate.py needed the same three pieces to prove
+# that --pause-before-pr-merge is recorded as an explicit request.
+# invoke_factory is imported under this file's existing private name so
+# its 31 call sites read unchanged and the alias cannot outlive the
+# import. write_manifest is not imported: invoke_factory writes its own.
+from tests.helpers.factorycli import capture_run_factory
+from tests.helpers.factorycli import invoke_factory as _invoke_factory
 
 # ---------------------------------------------------------------------------
 # Harness
@@ -46,69 +54,7 @@ from kstrl.verify import VerifyConfig
 @pytest.fixture
 def captured(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Replace run_factory with a capturing fake; return the capture dict."""
-    box: dict[str, Any] = {}
-
-    def fake_run_factory(
-        manifest: Manifest,
-        factory_config: FactoryConfig,
-        base_config: Any,
-        ui: Any,
-        root_dir: Path,
-        manifest_path: Path | None = None,
-        **kwargs: Any,
-    ) -> FactoryResult:
-        box["manifest"] = manifest
-        box["factory_config"] = factory_config
-        box["base_config"] = base_config
-        box["root_dir"] = root_dir
-        return FactoryResult(exit_code=0)
-
-    monkeypatch.setattr(cli_mod, "run_factory", fake_run_factory)
-    return box
-
-
-def _write_manifest(tmp_path: Path) -> Path:
-    manifest = Manifest(
-        version="1",
-        spec_file="spec.md",
-        project_name="cp-test",
-        base_branch="main",
-        single_pr=False,
-        components=[
-            Component(
-                id="c1",
-                title="c1",
-                description="component one",
-                dependencies=[],
-                prd_path="scripts/kstrl/prd.json",
-                branch_name="kstrl/factory/c1",
-            ),
-        ],
-    )
-    path = tmp_path / "manifest.json"
-    manifest.save(path)
-    return path
-
-
-def _invoke_factory(tmp_path: Path, *extra_args: str) -> Any:
-    manifest_path = _write_manifest(tmp_path)
-    runner = CliRunner()
-    return runner.invoke(
-        cli_mod.cli,
-        [
-            "factory",
-            "--manifest",
-            str(manifest_path),
-            "--root",
-            str(tmp_path),
-            "--yes",
-            "--agent-cmd",
-            "true",
-            "--ui",
-            "plain",
-            *extra_args,
-        ],
-    )
+    return capture_run_factory(monkeypatch)
 
 
 def _invoke_run(tmp_path: Path, *extra_args: str) -> Any:

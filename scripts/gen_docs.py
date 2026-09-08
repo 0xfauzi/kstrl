@@ -781,8 +781,21 @@ def _write_probe_toml(path: Path, specs: list[SectionSpec], extra: dict[str, lis
 
 
 def _scalar_fields(defaults: Any) -> set[str]:
+    """Fields that could plausibly be a documented toml key.
+
+    Provenance fields are excluded by DECLARATION, not by type.
+    ``FactoryConfig.explicit_fields`` (#195) records which keys the
+    operator set; it has no toml key, no env var and no flag of its own,
+    so probing it as an undocumented key would be an error report about a
+    field that cannot be written. It happened to fall out of the type
+    list already, being a ``frozenset``, and a scalar-typed provenance
+    field added later would not have. Asking the field is the check that
+    survives the next one.
+    """
     names: set[str] = set()
     for f in dataclasses.fields(defaults):
+        if f.metadata.get("provenance"):
+            continue
         value = getattr(defaults, f.name)
         if value is None or isinstance(value, (bool, int, float, str, Path, list)):
             names.add(f.name)
