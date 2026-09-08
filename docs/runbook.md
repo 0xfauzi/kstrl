@@ -389,6 +389,36 @@ accounting files and no events), or its `events.jsonl` could not be
 opened. When that happens the last finished run's verdict is still
 reported beside it.
 
+## Standing feedback
+
+When you find yourself correcting the same thing on a second pull request,
+the correction belongs in `scripts/kstrl/memory.md`, not in another PR
+comment. A comment steers one change; a line in that file is read into every
+subsequent engineer prompt of every run that reads it at all, after the retry
+context, so it steers those runs until you remove it. Which runs those are is
+the paragraph below: `ks factory`, `ks retry` and `ks run`, and not
+`ks feature` or `ks understand`.
+
+What belongs in it: permanent scope exclusions ("never touch the migrations
+directory"), areas whose findings are known false positives, and review
+feedback that should change how future work is done. What does not: one-off
+instructions for the change in front of you, and anything that reads as a run
+log. The file is version controlled and it is yours; kstrl never rewrites it.
+
+Two operational notes. `ks init` scaffolds it, and while it is unchanged
+nothing is injected, so a fresh project pays nothing for the feature. Keep
+`## Guidance` as the last heading: appends land at the end of the file, and
+nothing in kstrl checks that, so a section you add after it will take them.
+The budget is about 1000 tokens; past that the block keeps the END of the
+file and drops the start, so your newest standing corrections are the ones
+that survive and pruning from the top is what preserves them. Both the prompt
+and the terminal warning say which end went. `ks factory`, `ks retry` and
+`ks run` read it; `ks feature` and `ks understand` do not.
+
+Golden patterns truncate the other way, keeping the start and dropping the
+end, because that file is written once and pruned by hand and its sections do
+not carry an order.
+
 ## Where to find things
 
 - Tracker for the hardening roadmap: `docs/adversarial-roadmap.md`

@@ -6,7 +6,7 @@ halves: `ks init` wrote a skeleton that was not absent, not empty and not
 whitespace-only, and the loader suppressed only those three. Both halves
 had tests; nothing ran them together, and the measured result was 479
 characters of angle-bracket placeholders at the head of every engineer
-prompt of every component of every iteration of every newly initialised
+prompt of every component of every attempt of every newly initialised
 project, under a header asserting the operator had authored them.
 
 So this file runs the real ``run_init``, the real ``ks run`` command
@@ -34,6 +34,7 @@ from tests.spine_utils import git
 pytestmark = pytest.mark.spine
 
 GOLDEN_REL = "scripts/kstrl/golden-patterns.md"
+MEMORY_REL = "scripts/kstrl/memory.md"
 PRD = {
     "branchName": "kstrl/golden",
     "userStories": [
@@ -151,3 +152,51 @@ class TestTheScaffoldGoesNowhereUntilItIsEdited:
 
         assert "=== GOLDEN PATTERNS (operator-authored) KSTRL-DATA-" in prompt
         assert "- atomic writes: see `kstrl/atomicio.py`" in prompt
+
+
+class TestTheMemoryScaffoldGoesNowhereUntilItIsEdited:
+    """R10.9 through the shipped CLI path, not through `_run_component`.
+
+    Same join as the class above and the same reason for testing it here:
+    `ks init` writes a body that is not absent, not empty and not
+    whitespace-only, and only the ledger row stops it reaching the
+    engineer. Both halves have unit tests; this runs them together.
+    """
+
+    def test_a_fresh_project_sends_no_memory_block(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        root = _initialised_project(tmp_path)
+        scaffold = (root / MEMORY_REL).read_text(encoding="utf-8")
+        assert "## Guidance" in scaffold, "ks init stopped writing the skeleton"
+
+        prompt = _captured_prompts(root, tmp_path / "prompt.txt", monkeypatch)
+
+        assert "=== MEMORY" not in prompt
+        assert "Standing feedback for kstrl runs" not in prompt
+
+    def test_an_edited_file_reaches_the_engineer_after_the_claude_md_check(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`ks run` is the second command that reads the file, and the
+        acceptance criterion names it. The retry context is absent on
+        attempt 1 of a one-iteration run, so the ORDER assertion lives in
+        tests/test_spine_engineer_loop.py where a retry context can be
+        constructed; what this pins is that the block arrives at all
+        through the real CLI, and lands before the CLAUDE.md prepend.
+        """
+        root = _initialised_project(tmp_path)
+        with (root / MEMORY_REL).open("a", encoding="utf-8") as handle:
+            handle.write("- never touch the migrations directory\n")
+
+        prompt = _captured_prompts(root, tmp_path / "prompt.txt", monkeypatch)
+
+        assert "=== MEMORY (standing feedback) KSTRL-DATA-" in prompt
+        assert "- never touch the migrations directory" in prompt
+        assert prompt.index("=== END MEMORY (standing feedback) KSTRL-DATA-") < prompt.index(
+            "# Project Context (from CLAUDE.md)"
+        )

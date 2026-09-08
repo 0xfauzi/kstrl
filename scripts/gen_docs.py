@@ -143,7 +143,8 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.adequacy import AdequacyConfig
     from kstrl.autonomy import AutonomyConfig
     from kstrl.breaker import BreakerConfig
-    from kstrl.config import STRING_KEYS, KstrlConfig
+    from kstrl.config import KstrlConfig
+    from kstrl.config_keys import STRING_KEYS
     from kstrl.contract import ContractConfig
     from kstrl.divergence import DivergenceConfig
     from kstrl.evolution import EvolutionConfig
@@ -169,7 +170,7 @@ def _section_specs() -> list[SectionSpec]:
     kstrl_defaults = KstrlConfig()
 
     def string_keys(section: str) -> dict[str, str]:
-        """The ``{toml key: field}`` rows ``KstrlConfig.STRING_KEYS`` owns
+        """The ``{toml key: field}`` rows ``config_keys.STRING_KEYS`` owns
         for one section.
 
         Derived, not transcribed (review round 1, S8). The same table
@@ -470,6 +471,9 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("paths", "codebase_map"): "brownfield codebase notes",
     ("paths", "golden_patterns"): "operator-authored golden patterns, injected "
     "into every factory engineer prompt and every `ks run` prompt (R10.8)",
+    ("paths", "memory"): "operator-authored standing feedback, injected into "
+    "every factory engineer prompt and every `ks run` prompt after the retry "
+    "context (R10.9)",
     ("paths", "allowed"): 'diff-scope allowlist, e.g. ["src/", "tests/"]; empty = unrestricted',
     ("git", "branch"): "branch override; empty = use PRD branchName",
     ("git", "auto_checkout"): "check the branch out automatically",

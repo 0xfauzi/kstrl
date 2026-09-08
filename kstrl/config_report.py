@@ -48,7 +48,7 @@ class ConfigReport:
 
 
 def _string_key_rows(section: str) -> list[tuple[str, str]]:
-    """``(toml key, field)`` for one section, from ``config.STRING_KEYS``.
+    """``(toml key, field)`` for one section, from ``config_keys.STRING_KEYS``.
 
     Derived rather than hand-copied (review round 1, S8). Every string
     key already declares its section, key and field in one table; a
@@ -58,12 +58,18 @@ def _string_key_rows(section: str) -> list[tuple[str, str]]:
     every gate green.
 
     The import is inside the function so the table is read at CALL time.
-    A module-level ``from kstrl.config import STRING_KEYS`` snapshots the
-    tuple this module was imported with, which is derived enough to be
+    A module-level ``from kstrl.config_keys import STRING_KEYS`` snapshots
+    the tuple this module was imported with, which is derived enough to be
     correct and not derived enough to be testable: the mutation in
     tests/test_string_keys_reach_every_surface.py cannot reach it.
+
+    From ``config_keys``, which owns the table, rather than from
+    ``kstrl.config``, which re-exports it (R10.9 moved it out because
+    ``config.py`` was at the 800-line ratchet). The two names are the
+    same object and that file pins the identity, so this is the same
+    table the overlays read.
     """
-    from kstrl.config import STRING_KEYS
+    from kstrl.config_keys import STRING_KEYS
 
     return [(key, field_name) for sec, key, _env, field_name, _p in STRING_KEYS if sec == section]
 

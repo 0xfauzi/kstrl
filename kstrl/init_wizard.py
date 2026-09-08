@@ -67,17 +67,24 @@ def plan_scaffold(root: Path) -> list[ScaffoldEntry]:
         kstrl_dir / "progress.txt",
         kstrl_dir / "codebase_map.md",
         kstrl_dir / "golden-patterns.md",
+        kstrl_dir / "memory.md",
         kstrl_dir / "understand_prompt.md",
         kstrl_dir / "feature_understand_prompt.md",
         root / "CLAUDE.md",
         root / "AGENTS.md",
     ]
     # One pass over the templates rather than a per-path lookup: the
-    # only paths that can carry a label are the three under
+    # only paths that can carry a label are the ones under
     # scripts/kstrl/ that classify_scaffold already covers, and asking
     # it once keeps "which statuses are speakable" written in init_cmd
     # alone. Absent, current, edited and unknown all say nothing, the
     # same rule as the run-time warning.
+    #
+    # How many those are is deliberately NOT written here. It was "the
+    # three" when SCAFFOLDED_TEMPLATES had three rows, stayed "three"
+    # when R10.8 made it four, and R10.9 makes it five: a hand-counted
+    # number in a comment goes stale on the row that nobody thinks to
+    # recount. The set is whatever classify_scaffold returns.
     stale = {
         state.path: state.shipped_label
         for state in classify_scaffold(root)
