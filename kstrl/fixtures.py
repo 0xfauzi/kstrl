@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from kstrl.atomicio import atomic_write_json
+from kstrl.fixtures_snapshot import check_snapshot_regression, save_snapshot
 from kstrl.prd import PRD
 from kstrl.verify import CheckResult, run_scrubbed
 
@@ -52,6 +52,17 @@ class FixtureResult:
     passed: bool
     actual: str = ""
     message: str = ""
+    # #227, the same field and the same rule as `verify.CheckResult.measured`,
+    # one level down. False when this fixture produced a row having measured
+    # NOTHING about the software: the command timed out, or the process could
+    # not be launched at all. `check_fixtures` folds these into the one
+    # `fixtures` CheckResult with `all()`, so one unmeasured fixture makes the
+    # whole row unmeasured - the clearing side has to be the narrow one.
+    #
+    # A malformed fixture DEFINITION is deliberately still measured=True: it
+    # is a stable, reproducible property of the PRD, and its disappearance is
+    # a real fix. This field marks the environment failing, not the artifact.
+    measured: bool = True
 
 
 @dataclass
@@ -166,12 +177,14 @@ def run_cli_fixture(
             fixture=fixture,
             passed=False,
             message=f"Command timed out after {timeout}s",
+            measured=False,
         )
     except OSError as exc:
         return FixtureResult(
             fixture=fixture,
             passed=False,
             message=f"Failed to run command: {exc}",
+            measured=False,
         )
 
     stdout = result.stdout
@@ -395,12 +408,14 @@ def run_function_fixture(
             fixture=fixture,
             passed=False,
             message=f"Function fixture timed out after {timeout}s",
+            measured=False,
         )
     except OSError as exc:
         return FixtureResult(
             fixture=fixture,
             passed=False,
             message=f"Failed to launch fixture subprocess: {exc}",
+            measured=False,
         )
 
     payload = _parse_runner_result(result.stdout)
@@ -434,13 +449,29 @@ def _fixture_file_text(fixture: Fixture, full_path: Path, rel_path: str) -> str 
     verdict, where "failed to read" would send the reader to permissions
     that are fine. Not ``errors="replace"``: that lets an assertion answer
     against a character nobody wrote.
+
+    Both rows measure NOTHING (#227). The caller reached here having seen
+    the file exist, and its ``contains`` expectations are substring tests
+    it could not run: the environment took the file away or handed back
+    bytes no expectation could be evaluated against. That is the same
+    pair, for the same reason, as ``verify._self_critique_text``.
     """
     try:
         return full_path.read_text(encoding="utf-8")
     except OSError as exc:
-        return FixtureResult(fixture, False, message=f"Failed to read file '{rel_path}': {exc}")
+        return FixtureResult(
+            fixture,
+            False,
+            message=f"Failed to read file '{rel_path}': {exc}",
+            measured=False,
+        )
     except UnicodeDecodeError as exc:
-        return FixtureResult(fixture, False, message=f"File '{rel_path}' is not valid UTF-8: {exc}")
+        return FixtureResult(
+            fixture,
+            False,
+            message=f"File '{rel_path}' is not valid UTF-8: {exc}",
+            measured=False,
+        )
 
 
 def run_file_fixture(fixture: Fixture, cwd: Path) -> FixtureResult:
@@ -583,6 +614,10 @@ def check_fixtures(
             passed=True,
             message="No fixtures defined",
             duration_seconds=time.monotonic() - start,
+            # #227: a vacuous pass, the same shape as diff_scope with no
+            # allowed paths. It ran no oracle, so it cannot prove one stopped
+            # failing.
+            measured=False,
         )
 
     results: list[FixtureResult] = []
@@ -630,6 +665,12 @@ def check_fixtures(
         message=message,
         details=details,
         duration_seconds=time.monotonic() - start,
+        # #227: one fixture that measured nothing makes the whole row
+        # unmeasured. `all` and not `any`, because this field gates the
+        # CLEARING side of the dampener and that side has to be the narrow
+        # one: a run in which one fixture timed out cannot prove that another
+        # baseline signature went away.
+        measured=all(r.measured for r in results),
     )
 
 
@@ -658,6 +699,10 @@ def check_fixtures_from_prd(
             message=("PRD could not be read for the fixtures check (failing closed)"),
             details=[f"Error: {exc}"],
             duration_seconds=time.monotonic() - start,
+            # #227: the check could not learn which fixtures to run, so it ran
+            # none. Failing closed decides the verdict; measured=False is what
+            # stops the absent signatures reading as fixed.
+            measured=False,
         )
     errors = PRD.validate_schema(data)
     if errors:
@@ -670,6 +715,7 @@ def check_fixtures_from_prd(
             ),
             details=errors[:10],
             duration_seconds=time.monotonic() - start,
+            measured=False,
         )
     fixtures = load_fixtures_from_prd_data(data)
     return check_fixtures(fixtures, cwd, config, component_id=component_id)
@@ -704,89 +750,3 @@ def load_fixtures_from_prd_data(prd_data: dict[str, Any]) -> list[Fixture]:
         fixtures.append(fixture)
 
     return fixtures
-
-
-def save_snapshot(
-    component_id: str,
-    fixtures: list[Fixture],
-    results: list[FixtureResult],
-    snapshot_dir: Path,
-) -> None:
-    """Save successful fixture outputs as a JSON snapshot for regression detection.
-
-    Only saves results for fixtures that passed. The snapshot captures the actual
-    output so future runs can detect behavioral regressions. Written
-    atomically through ``atomicio``, which owns that pattern (#291).
-    """
-    snapshot_dir.mkdir(parents=True, exist_ok=True)
-    snapshot_path = snapshot_dir / f"{component_id}.json"
-
-    snapshot_entries = []
-    for fixture, result in zip(fixtures, results, strict=True):
-        if result.passed:
-            snapshot_entries.append(
-                {
-                    "description": fixture.description,
-                    "fixture_type": fixture.fixture_type,
-                    "actual": result.actual,
-                }
-            )
-
-    snapshot_data = {
-        "component_id": component_id,
-        "fixture_count": len(snapshot_entries),
-        "entries": snapshot_entries,
-    }
-
-    atomic_write_json(snapshot_path, snapshot_data)
-
-
-def check_snapshot_regression(
-    component_id: str,
-    results: list[FixtureResult],
-    snapshot_dir: Path,
-) -> list[str]:
-    """Compare current results against saved snapshots to detect regressions.
-
-    Returns a list of regression descriptions. An empty list means no regressions.
-    A regression is detected when a fixture that previously passed now fails,
-    or when its actual output has changed.
-    """
-    snapshot_path = snapshot_dir / f"{component_id}.json"
-
-    if not snapshot_path.exists():
-        return []
-
-    try:
-        snapshot_data = json.loads(snapshot_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError, OSError):
-        return ["Failed to read snapshot file - cannot check for regressions"]
-
-    previous_entries = {entry["description"]: entry for entry in snapshot_data.get("entries", [])}
-
-    regressions: list[str] = []
-
-    for result in results:
-        description = result.fixture.description
-        previous = previous_entries.get(description)
-
-        if previous is None:
-            # New fixture - no regression possible
-            continue
-
-        # Previously passed but now fails
-        if not result.passed:
-            regressions.append(
-                f"Regression in '{description}': previously passed, now fails - {result.message}"
-            )
-            continue
-
-        # Output changed from previous snapshot
-        if result.actual != previous.get("actual", ""):
-            regressions.append(
-                f"Output changed in '{description}': "
-                f"previous={previous.get('actual', '')!r}, "
-                f"current={result.actual!r}"
-            )
-
-    return regressions

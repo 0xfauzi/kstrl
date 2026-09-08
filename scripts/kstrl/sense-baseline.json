@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-07T15:28:15Z",
+  "base_ref": "04e80524d159134d41cb19c3656a71e0a6739e66",
+  "project": "0xfauzi/kstrl",
+  "passed": true,
+  "sense_schema_version": 3,
+  "verify_digest": "c446b9151d1cd264",
+  "measured_checks": [
+    "linter",
+    "test_suite",
+    "typecheck"
+  ],
+  "unmeasured_checks": [
+    "bad_patterns",
+    "diff_scope"
+  ],
+  "unmeasured_reasons": {
+    "bad_patterns": "no files in the diff",
+    "diff_scope": "No scope constraints (allowed_paths not set)"
+  },
+  "signatures": {}
+}

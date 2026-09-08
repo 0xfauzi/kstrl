@@ -99,6 +99,7 @@ def _union(results: list[ParsedOutput]) -> ParsedOutput:
         merged.failures.extend(result.failures)
     merged.total_errors = sum(r.total_errors for r in results)
     merged.raw_summary = "\n".join(r.raw_summary for r in results if r.raw_summary)
+    merged.recognised = any(r.recognised for r in results)
     return merged
 
 
@@ -113,7 +114,13 @@ def parse_gate_output(raw: str, gate: str, tool: str | None = None) -> ParsedOut
     results = [TOOL_PARSERS[name](text) for name in GATE_TOOLS[gate]]
     found = [result for result in results if result.failures]
     if not found:
-        # Nobody understood it. The primary's result carries the raw
-        # tail, which is the only honest thing left to show.
-        return results[0]
+        # Nobody found a failure. The primary's result carries the raw
+        # tail, which is the only honest thing left to show - but the
+        # recognition answer belongs to EVERY parser the gate tried, or
+        # a footer the secondary recognised would be lost by returning
+        # the primary, and the gate would call a real measurement
+        # unmeasured (#227).
+        primary = results[0]
+        primary.recognised = any(result.recognised for result in results)
+        return primary
     return _union(found)

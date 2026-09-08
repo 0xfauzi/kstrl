@@ -92,7 +92,12 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "factory.py": 6,
     "feature_cmd.py": 2,
     "feedforward.py": 8,
-    "fixtures.py": 3,
+    # 3 until the snapshot half of fixtures.py moved to
+    # fixtures_snapshot.py under the 800-line ratchet. The read that
+    # went with it is the row below; the count is re-derived by
+    # running the census, not edited to match.
+    "fixtures.py": 2,
+    "fixtures_snapshot.py": 1,
     "inbox.py": 1,
     # 3 until #352 routed ``_ensure_gitignore``'s append through
     # ``appendio``, which encodes once for every appender. The two left
@@ -191,7 +196,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "feedforward.py py_file.read_text(encoding='utf-8', errors='replace')",
     "fixtures.py full_path.read_text(encoding='utf-8')",
     "fixtures.py open(prd_path, encoding='utf-8')",
-    "fixtures.py snapshot_path.read_text(encoding='utf-8')",
+    "fixtures_snapshot.py snapshot_path.read_text(encoding='utf-8')",
     "init_cmd.py open(prd_file, encoding='utf-8')",
     # ``init_cmd.py path.open('a', encoding='utf-8')`` was here until
     # #352. The read is DELETED, not unseen: ``_ensure_gitignore``'s

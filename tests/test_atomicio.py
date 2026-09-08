@@ -697,7 +697,7 @@ class TestTheReadSideNamesTheSameEncoding:
         result = self._probe(
             tmp_path,
             "from pathlib import Path\n"
-            "from kstrl.fixtures import check_snapshot_regression\n"
+            "from kstrl.fixtures_snapshot import check_snapshot_regression\n"
             "print('REGRESSIONS:', check_snapshot_regression('comp-a', [], Path(sys.argv[1])))\n",
         )
         assert result.returncode == 0, result.stderr

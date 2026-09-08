@@ -145,6 +145,11 @@ def parse_vitest_output(raw: str) -> ParsedOutput:
 
     summary = [line.strip() for line in lines if _VITEST_SUMMARY_RE.match(line.strip())]
     result.raw_summary = "\n".join(summary)
+    # A FAIL block, or a vitest footer reporting a failure count. The
+    # footer alone will not do: _VITEST_SUMMARY_RE matches the passing
+    # footer too, and "3 passed (3)" from the half of a chained command
+    # that worked says nothing about the half that failed (#227).
+    result.recognised = bool(result.failures) or bool(FAILED_COUNT_RE.search(result.raw_summary))
     if not result.failures and not result.raw_summary:
         result.raw_summary = "\n".join(lines[-5:])
 
@@ -214,6 +219,10 @@ def parse_tsc_output(raw: str) -> ParsedOutput:
             continue
         if _TSC_SUMMARY_RE.match(stripped):
             result.raw_summary = stripped
+
+    # A TS diagnostic in either format, or one of tsc's three measured
+    # failure tails. Computed before the fallback fills the same field.
+    result.recognised = bool(result.failures) or bool(result.raw_summary)
 
     if not result.failures and not result.raw_summary:
         result.raw_summary = "\n".join(lines[-3:])
@@ -325,6 +334,9 @@ def parse_eslint_output(raw: str) -> ParsedOutput:
 
     lines = raw.splitlines()
     result.failures, result.raw_summary = _eslint_scan(lines)
+    # A diagnostic in one of eslint's formats, or its "N problems"
+    # footer, which eslint prints only when there are problems.
+    result.recognised = bool(result.failures) or bool(result.raw_summary)
     if not result.failures and not result.raw_summary:
         result.raw_summary = "\n".join(lines[-3:])
 
