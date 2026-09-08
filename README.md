@@ -208,7 +208,32 @@ Three fixture types: `cli` (run a command, check output), `function` (import and
 
 kstrl is built for one person running it unattended, and it is designed around the difference between being in the loop and being on it. In the loop, you are a required step and nothing proceeds without you. On the loop, the factory runs itself and comes to you only at boundaries it cannot judge, while you adjust how it behaves between runs.
 
-Today the boundaries that reach you are: a spec the architect halts on (there is no override flag; the spec gets fixed), the optional checkpoint before a merge, a budget or breaker that stopped a run, and an inbox of decisions the daemon could not take alone. How much the factory may do without asking is one ordered level, earned by evidence plus your recorded acknowledgement and revoked automatically. The levers you turn between runs are the project prompt, `CLAUDE.md`, `kstrl.toml`, and the acceptance criteria themselves; the R10 work adds a standing feedback file the agent always reads last and a way for your pull-request comments to reach the next run. One more lever is `scripts/kstrl/golden-patterns.md`, which `ks init` scaffolds and you fill in: what a good change looks like in this repository, with a file to copy from for each pattern, carried into every factory engineer prompt and every `ks run` prompt (`ks feature` and `ks understand` do not read it). It is yours to write and is read verbatim like `CLAUDE.md`, never generated for you. Until you edit it nothing is injected, because kstrl recognises its own scaffold and treats it as empty; past about 1500 tokens it is cut at a line boundary where that still delivers most of the budget and at the budget boundary otherwise, with how much arrived announced in the prompt and once on your terminal.
+Today the boundaries that reach you are: a spec the architect halts on (there is no override flag; the spec gets fixed), the optional checkpoint before a merge, a budget or breaker that stopped a run, and an inbox of decisions the daemon could not take alone. How much the factory may do without asking is one ordered level, earned by evidence plus your recorded acknowledgement and revoked automatically. The levers you turn between runs are the project prompt, `CLAUDE.md`, `kstrl.toml`, and the acceptance criteria themselves; the R10 work adds a way for your pull-request comments to reach the next run. One more lever is `scripts/kstrl/golden-patterns.md`, which `ks init` scaffolds and you fill in: what a good change looks like in this repository, with a file to copy from for each pattern, carried into every factory engineer prompt and every `ks run` prompt (`ks feature` and `ks understand` do not read it). It is yours to write and is read verbatim like `CLAUDE.md`, never generated for you. Until you edit it nothing is injected, because kstrl recognises its own scaffold and treats it as empty; past about 1500 tokens it keeps the START of the file and drops the end, cut at a line boundary where that still delivers most of the budget and at the budget boundary otherwise, with how much arrived and which end went announced in the prompt and once on your terminal.
+
+### Steering the loop
+
+`scripts/kstrl/memory.md` is the standing-feedback lever, and `ks init`
+scaffolds it beside the golden patterns. Where golden patterns say what good
+code looks like here and change rarely, memory carries your standing
+corrections and grows as you review: permanent scope exclusions, areas whose
+findings are known false positives, and the feedback you have given more than
+once. What does not belong in it is a one-off instruction or a run log; an
+entry changes future runs rather than one pull request, which is the whole
+point of the file.
+
+The position is the mechanism. It is read into the engineer prompt AFTER the
+retry context and before `CLAUDE.md`, so your correction frames how this
+attempt's failures get acted on rather than the other way round. It reaches
+every factory engineer prompt and every `ks run` prompt (`ks feature` and
+`ks understand` do not read it), from the repo root and never from a
+component's worktree. Until you edit it nothing is injected, because kstrl
+recognises its own scaffold; past about 1000 tokens it keeps the END of the
+file and drops the start, which is the opposite of golden patterns and is
+because this is the file that grows at the end. Your newest corrections
+survive, pruning from the top is what preserves them, and how much arrived and
+which end went are announced in the prompt and once on your terminal. Keep
+`## Guidance` as the last section: R10.10 will append your `/memory`
+pull-request comments to the end of the file.
 
 ## Why not just use Claude Code directly?
 
@@ -297,6 +322,7 @@ prd = "scripts/kstrl/prd.json"                        # PRD file
 progress = ""                                         # progress log the agent appends to; empty = each factory component writes beside its own PRD (inside its allowedPaths), set = that one path is forced on every component
 codebase_map = "scripts/kstrl/codebase_map.md"        # brownfield codebase notes
 golden_patterns = "scripts/kstrl/golden-patterns.md"  # operator-authored golden patterns, injected into every factory engineer prompt and every `ks run` prompt (R10.8)
+memory = "scripts/kstrl/memory.md"                    # operator-authored standing feedback, injected into every factory engineer prompt and every `ks run` prompt after the retry context (R10.9)
 allowed = []                                          # diff-scope allowlist, e.g. ["src/", "tests/"]; empty = unrestricted
 
 # Branch handling

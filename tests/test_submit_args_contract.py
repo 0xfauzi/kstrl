@@ -1,6 +1,6 @@
 """The scheduler's positional tuple, bound name by name (#229 BLOCKER 2).
 
-``factory._submit_args`` builds a 34-element POSITIONAL tuple and the
+``factory._submit_args`` builds a 35-element POSITIONAL tuple and the
 pool calls ``_run_component`` with it, 1800 lines away. Most of the slots
 are strings. Rotating three adjacent ``str`` slots is type-compatible, so
 mypy is silent, and review round 1 measured what the suite said about it:
@@ -245,6 +245,7 @@ class TestTheWholeSubmitTupleIsBound:
             "progress_file_str": "scripts/kstrl/feature/comp-a/progress.txt",
             "codebase_map_file_str": "scripts/kstrl/codebase_map.md",
             "golden_patterns_file_str": "scripts/kstrl/golden-patterns.md",
+            "memory_file_str": "scripts/kstrl/memory.md",
             "agent_iteration_timeout": 1800.0,
             "component_timeout": 7200.0,
             "max_iterations": 10,
@@ -270,20 +271,26 @@ class TestTheWholeSubmitTupleIsBound:
             assert bound[name].startswith(str(root)), name
             assert bound[name].endswith(bound["run_id"]), name
 
-    def test_the_three_string_path_slots_are_distinguishable(self, tmp_path: Path) -> None:
-        """The rotation review round 1 planted is a permutation of these
-        three, so the test above is worth nothing unless their values
-        differ from each other. Said out loud rather than left to luck."""
+    def test_the_four_string_path_slots_are_distinguishable(self, tmp_path: Path) -> None:
+        """The rotation review round 1 planted is a permutation of these,
+        so the test above is worth nothing unless their values differ
+        from each other. Said out loud rather than left to luck.
+
+        Four since R10.9, not three: ``memory_file_str`` sits next to
+        ``golden_patterns_file_str`` and is the same type, so it widens
+        the set of type-compatible rotations mypy stays silent about.
+        """
         root = _project(tmp_path)
 
         bound, _kwargs = _positional(root)
-        trio = [
+        quartet = [
             str(bound["progress_file_str"]),
             str(bound["codebase_map_file_str"]),
             str(bound["golden_patterns_file_str"]),
+            str(bound["memory_file_str"]),
         ]
 
-        assert len(set(trio)) == 3, trio
+        assert len(set(quartet)) == 4, quartet
 
     @pytest.mark.parametrize(
         "max_parallel, expected",

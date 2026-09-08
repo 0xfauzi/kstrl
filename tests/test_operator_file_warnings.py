@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -30,11 +31,12 @@ from kstrl.config import KstrlConfig
 from kstrl.factory import ComponentResult, FactoryConfig, run_factory
 from kstrl.init_cmd import DEFAULT_GOLDEN_PATTERNS
 from kstrl.manifest import Component, Manifest
-from kstrl.operator_context import GOLDEN_PATTERNS_SUBJECT
+from kstrl.operator_context import GOLDEN_PATTERNS, MEMORY
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 
 GOLDEN_REL = "scripts/kstrl/golden-patterns.md"
+MEMORY_REL = "scripts/kstrl/memory.md"
 
 
 class RecordingUI(PlainUI):
@@ -100,7 +102,12 @@ def _manifest(component_ids: tuple[str, ...]) -> Manifest:
     )
 
 
-def _run(root: Path, component_ids: tuple[str, ...], golden: Path | None = None) -> RecordingUI:
+def _run(
+    root: Path,
+    component_ids: tuple[str, ...],
+    golden: Path | None = None,
+    memory: Path | None = None,
+) -> RecordingUI:
     factory_config = FactoryConfig(
         use_worktrees=False,
         create_prs=False,
@@ -124,6 +131,8 @@ def _run(root: Path, component_ids: tuple[str, ...], golden: Path | None = None)
     base.kstrl_branch_explicit = True
     if golden is not None:
         base.golden_patterns_file = golden
+    if memory is not None:
+        base.memory_file = memory
     ui = RecordingUI()
 
     def done(*args: Any, **kwargs: Any) -> ComponentResult:
@@ -138,7 +147,11 @@ def _run(root: Path, component_ids: tuple[str, ...], golden: Path | None = None)
 
 
 def _golden_warnings(ui: RecordingUI) -> list[str]:
-    return [w for w in ui.warnings if "Golden patterns" in w]
+    return [w for w in ui.warnings if GOLDEN_PATTERNS.subject in w]
+
+
+def _memory_warnings(ui: RecordingUI) -> list[str]:
+    return [w for w in ui.warnings if MEMORY.subject in w]
 
 
 class TestTheNoticeReachesTheOperatorExactlyOnce:
@@ -257,14 +270,18 @@ class TestTheNoticeReachesTheOperatorExactlyOnce:
         """
         root = _project(tmp_path, ("comp-a",))
         (root / GOLDEN_REL).write_text(("x" * 19 + "\n") * 500, encoding="utf-8")
-        monkeypatch.setattr(operator_context, "GOLDEN_PATTERNS_SUBJECT", "Second row")
+        # The ROW is moved, not a loose constant: under R10.9 the subject
+        # lives on an OperatorFileKind, and patching OPERATOR_FILES is
+        # what "the printer follows the table" now means.
+        moved = replace(GOLDEN_PATTERNS, subject="Second row")
+        monkeypatch.setattr(operator_context, "OPERATOR_FILES", (moved,))
 
         ui = _run(root, ("comp-a",))
 
         assert [w for w in ui.warnings if "truncated:" in w] == [
             w for w in ui.warnings if w.startswith("  Second row: ")
         ]
-        assert GOLDEN_PATTERNS_SUBJECT not in " ".join(ui.warnings)
+        assert GOLDEN_PATTERNS.subject not in " ".join(ui.warnings)
 
     @pytest.mark.parametrize(
         "body",
@@ -281,3 +298,68 @@ class TestTheNoticeReachesTheOperatorExactlyOnce:
             (root / GOLDEN_REL).write_text(body, encoding="utf-8")
 
         assert _golden_warnings(_run(root, ("comp-a",))) == []
+
+
+class TestTwoFilesAreTwoSubjects:
+    """R10.9 is the case #229's should-fix 5 was fixed for.
+
+    ``_report_operator_files`` used to print the literal
+    ``Golden patterns:`` in front of every message, which would have
+    announced the memory file under the golden-patterns name the day its
+    row landed. Nothing exercised two rows at once until now, so the fix
+    was argued rather than measured.
+    """
+
+    def test_both_files_misconfigured_warns_once_each_under_its_own_subject(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        root = _project(tmp_path, ("comp-a",))
+        golden_typo = root / "scripts" / "kstrl" / "gloden-patterns.md"
+        memory_typo = root / "scripts" / "kstrl" / "memroy.md"
+
+        ui = _run(root, ("comp-a",), golden=golden_typo, memory=memory_typo)
+
+        golden_lines = _golden_warnings(ui)
+        memory_lines = _memory_warnings(ui)
+        assert len(golden_lines) == 1
+        assert len(memory_lines) == 1
+        # Two lines, two subjects, two paths, two [paths] keys. A printer
+        # that hardcoded one subject would put both under it, and a
+        # `_rows` that paired one row with the other's field would name
+        # the same path twice.
+        assert golden_lines != memory_lines
+        assert str(golden_typo) in golden_lines[0]
+        assert "golden_patterns" in golden_lines[0]
+        assert str(memory_typo) in memory_lines[0]
+        assert "[paths] memory" in memory_lines[0]
+
+    def test_a_truncated_memory_file_warns_once_naming_the_path(self, tmp_path: Path) -> None:
+        """Issue test 2, at the surface the operator actually reads. The
+        loader's own ``logger.warning`` runs in a pool worker whose stderr
+        is redirected into a per-component log file."""
+        root = _project(tmp_path, ("comp-a", "comp-b"))
+        (root / MEMORY_REL).write_text(("x" * 19 + "\n") * 450, encoding="utf-8")
+
+        warnings = _memory_warnings(_run(root, ("comp-a", "comp-b")))
+
+        assert len(warnings) == 1
+        assert "truncated:" in warnings[0]
+        assert "of 9000 characters shown" in warnings[0]
+        assert MEMORY_REL in warnings[0]
+
+    @pytest.mark.parametrize(
+        "body",
+        [None, "", "- a standing rule\n"],
+        ids=["absent", "empty", "written"],
+    )
+    def test_the_ordinary_memory_states_say_nothing(
+        self,
+        tmp_path: Path,
+        body: str | None,
+    ) -> None:
+        root = _project(tmp_path, ("comp-a",))
+        if body is not None:
+            (root / MEMORY_REL).write_text(body, encoding="utf-8")
+
+        assert _memory_warnings(_run(root, ("comp-a",))) == []

@@ -104,9 +104,11 @@ from kstrl.observability import (
     ProgressLog,
 )
 from kstrl.operator_context import (
-    golden_patterns_spec,
+    GOLDEN_PATTERNS,
+    MEMORY,
     load_operator_file,
     operator_file_notices,
+    operator_file_spec,
 )
 from kstrl.pipeline import ComponentPipeline, PipelineHooks, _iso_now
 from kstrl.policy import PolicyConfig
@@ -1957,6 +1959,22 @@ def _worker_scope(scope: ComponentScope | None) -> tuple[list[str], list[str]]:
     return list(scope.allowed_paths or ()), list(scope.harness_paths)
 
 
+def _retry_block(previous_context_json: str | None) -> str:
+    """The previous attempt's context for the prompt, or "" for nothing.
+
+    Hoisted out of ``_run_component`` so the prefix ORDER can be one
+    literal tuple rather than a list plus a trailing ``if`` (#230). The
+    behaviour is exactly what that ``if`` did, and the two "" cases are
+    the same two: no context at all, and a context that formats to
+    whitespace. "" is dropped by the comprehension that builds the
+    order, which is why this can return one instead of signalling.
+    """
+    if not previous_context_json:
+        return ""
+    formatted = IterationContext.from_json(previous_context_json).format_for_prompt()
+    return formatted if formatted.strip() else ""
+
+
 def _report_operator_files(base_config: KstrlConfig, root_dir: Path, ui: UI) -> None:
     """Print each ``(subject, message)`` the operator's files produce, once.
 
@@ -1965,6 +1983,10 @@ def _report_operator_files(base_config: KstrlConfig, root_dir: Path, ui: UI) -> 
     would have printed R10.9's memory file under the golden-patterns
     name the day its row landed - one line below a docstring claiming
     neither caller would have to change (review round 2, should-fix 5).
+    That row has now landed and this function did not change, which is
+    what the claim was; ``tests/test_operator_file_warnings.py`` runs
+    both files misconfigured at once and checks the two lines carry
+    different subjects.
     """
     for subject, message in operator_file_notices(
         base_config, KstrlConfig.anchored(root_dir), root_dir
@@ -1992,6 +2014,7 @@ def _run_component(
     progress_file_str: str | None = None,
     codebase_map_file_str: str = "scripts/kstrl/codebase_map.md",
     golden_patterns_file_str: str = "scripts/kstrl/golden-patterns.md",
+    memory_file_str: str = "scripts/kstrl/memory.md",
     agent_iteration_timeout: float = 1800.0,
     component_timeout: float = 7200.0,
     max_iterations: int = 10,
@@ -2193,26 +2216,38 @@ def _run_component(
         except Exception:
             pass  # feedforward failure is non-fatal
 
-    # R10.8: the operator's own statement of what a good change looks
-    # like. Resolved by `golden_patterns_spec` against the REPO ROOT and
-    # never against `worktree_path`: the worktree is the tree this agent
-    # has been writing to, so reading it there would let one component
-    # choose what the next component is told, unfiltered and under a
-    # header saying the operator wrote it (review round 1, S3). The same
-    # function resolves the parent's once-per-run notice, so the two
-    # cannot read different files (review round 2, should-fix 2). ""
+    # R10.8 and R10.9: the operator's own files, one call each through
+    # the one resolver. Resolved by `operator_file_spec` against the REPO
+    # ROOT and never against `worktree_path`: the worktree is the tree
+    # this agent has been writing to, so reading it there would let one
+    # component choose what the next component is told, unfiltered and
+    # under a header saying the operator wrote it (review round 1, S3).
+    # The same function resolves the parent's once-per-run notice, so the
+    # two cannot read different files (review round 2, should-fix 2). ""
     # when absent, empty, or an unedited `ks init` scaffold.
-    golden_patterns = load_operator_file(golden_patterns_spec(root_dir, golden_patterns_file_str))
+    golden_patterns = load_operator_file(
+        operator_file_spec(GOLDEN_PATTERNS, root_dir, golden_patterns_file_str)
+    )
+    memory = load_operator_file(operator_file_spec(MEMORY, root_dir, memory_file_str))
 
     # Build context prefix from previous retries
     context_prefix: str | None = None
-    # One list rather than one `if` per source: four context blocks reach
-    # the engineer the same way and differ only in where they were built,
-    # so adding the fifth should not mean adding a branch. The order is
-    # repo-standing (knowledge, then the operator's patterns), then
+    # ONE literal tuple, so the ORDER is a value a reader can see and a
+    # test can pin rather than a property of statement sequence. Every
+    # block reaches the engineer the same way and differs only in where
+    # it was built, so adding one is a row here and not a branch; the
+    # retry context was an `if` appending to this list until R10.9, and a
+    # second `if` would have made "memory is last" true by accident.
+    #
+    # Repo-standing first (knowledge, then the operator's patterns), then
     # run-level (the architect's decisions), then tree-computed
-    # (feedforward), then attempt-level (the retry context appended
-    # below).
+    # (feedforward), then attempt-level (the retry context), then MEMORY.
+    # Memory is last on purpose: the retry context is the controller's
+    # output for this attempt, and memory is the operator's standing
+    # correction to how that output should be acted on, so it is read
+    # after it (#230). `run_loop` then prepends this whole prefix to
+    # CLAUDE.md plus the templated prompt, so the memory block also sits
+    # before `# Project Context (from CLAUDE.md)`.
     parts: list[str] = [
         block
         for block in (
@@ -2220,14 +2255,11 @@ def _run_component(
             golden_patterns,
             decisions_prefix,
             feedforward_prefix,
+            _retry_block(previous_context_json),
+            memory,
         )
         if block
     ]
-    if previous_context_json:
-        ctx = IterationContext.from_json(previous_context_json)
-        formatted = ctx.format_for_prompt()
-        if formatted.strip():
-            parts.append(formatted)
     if parts:
         context_prefix = "\n\n".join(parts)
 
@@ -3838,6 +3870,7 @@ def _run_factory_locked(
     # (base_config.component_progress_file, called from _submit_args).
     codebase_map_file_rel = _path_relative_to_root(base_config.codebase_map_file)
     golden_patterns_file_rel = _path_relative_to_root(base_config.golden_patterns_file)
+    memory_file_rel = _path_relative_to_root(base_config.memory_file)
 
     _report_operator_files(base_config, root_dir, ui)
 
@@ -3933,11 +3966,12 @@ def _run_factory_locked(
             # keeps the engineer's progress log inside allowedPaths.
             base_config.component_progress_file(comp.prd_path, root_dir),
             codebase_map_file_rel,
-            # R10.8: the worker joins this onto root_dir and nothing
-            # else. Sent as a root-relative string for the same reason
-            # the other path slots are: the worker is a separate process
-            # and gets paths, not a config object.
+            # R10.8 and R10.9: the worker joins each of these onto
+            # root_dir and nothing else. Sent as root-relative strings
+            # for the same reason the other path slots are: the worker
+            # is a separate process and gets paths, not a config object.
             golden_patterns_file_rel,
+            memory_file_rel,
             timeout_cfg.agent_iteration,
             timeout_cfg.component_total,
             # R2.3 (CRIT-8): forward the invoking config's loop settings;

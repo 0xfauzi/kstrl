@@ -12,6 +12,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+# Re-exported: the loaders below read it from this module's namespace,
+# and it is defined in kstrl/config_keys.py because it is the part of
+# this file that grows a row per new [paths] file. Same object, pinned
+# by tests/test_string_keys_reach_every_surface.py.
+from kstrl.config_keys import STRING_KEYS as STRING_KEYS
+
 
 def _parse_bool(value: str | None) -> bool:
     """Parse boolean from environment variable."""
@@ -233,33 +239,6 @@ def component_harness_paths(
     )
 
 
-#: Every kstrl.toml key that overlays one KstrlConfig field from a string:
-#: (section, key, env var, field, is_path). A path row's value is resolved
-#: against the root and its field default anchored there by
-#: ``KstrlConfig.anchored``; every other row takes the string verbatim.
-#: THE TWO DOORS DISAGREE ABOUT "" and both rules belong here, or a reader
-#: of one will "fix" the other: the TOML door needs a NON-EMPTY string
-#: (``branch = ""`` means "no override") while the env door applies any var
-#: that is SET (test_an_empty_env_var_is_an_explicit_empty_value). One row,
-#: not a hand-copied branch per key in the two overlays, the anchoring
-#: block, ``config_report.show_sections`` and ``scripts/gen_docs.py``: a key
-#: added to some of those differed silently by the door it came in through.
-#: tests/test_config_toml.py checks the field names against the real
-#: dataclass fields, because ``setattr`` on a typo invents an attribute instead of
-#: raising. Unprefixed env names are compatibility; a new row takes KSTRL_.
-STRING_KEYS: tuple[tuple[str, str, str, str, bool], ...] = (
-    ("paths", "prompt", "PROMPT_FILE", "prompt_file", True),
-    ("paths", "prd", "PRD_FILE", "prd_file", True),
-    ("paths", "progress", "PROGRESS_FILE", "progress_file", True),
-    ("paths", "codebase_map", "CODEBASE_MAP_FILE", "codebase_map_file", True),
-    ("paths", "golden_patterns", "KSTRL_GOLDEN_PATTERNS_FILE", "golden_patterns_file", True),
-    ("agent", "type", "KSTRL_AGENT_TYPE", "agent_type", False),
-    ("agent", "command", "AGENT_CMD", "agent_cmd", False),
-    ("agent", "model", "MODEL", "model", False),
-    ("agent", "reasoning_effort", "MODEL_REASONING_EFFORT", "model_reasoning_effort", False),
-)
-
-
 @dataclass
 class KstrlConfig:
     """Configuration for the kstrl agentic loop."""
@@ -293,6 +272,9 @@ class KstrlConfig:
     codebase_map_file: Path = Path("scripts/kstrl/codebase_map.md")
     # R10.8: operator-authored; operator_context.py says who reads it.
     golden_patterns_file: Path = Path("scripts/kstrl/golden-patterns.md")
+    # R10.9: the operator's standing feedback, read AFTER the retry
+    # context; operator_context.py says who reads it.
+    memory_file: Path = Path("scripts/kstrl/memory.md")
     sleep_seconds: float = 2.0
     interactive: bool = False
     allowed_paths: list[str] = field(default_factory=list)
