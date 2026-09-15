@@ -25,7 +25,7 @@ from kstrl.factory import ComponentResult, FactoryConfig
 from kstrl.manifest import Component
 from kstrl.policy import PolicyConfig
 from kstrl.verify import VerificationResult
-from tests.helpers.run_config import BEFORE, MALFORMED, drive_run, empty_run
+from tests.helpers.run_config import BEFORE, MALFORMED, count_toml_parses, drive_run, empty_run
 from tests.helpers.verify_phase import component
 
 
@@ -244,24 +244,7 @@ class TestTheFactorySideParseCountIsPinned:
     def test_a_run_resolves_each_section_once(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from kstrl import config as config_module
-        from kstrl import config_toml as toml_module
-
-        original_loads = toml_module.tomllib.loads
-        counts = {"calls": 0, "parses": 0}
-        original_doc = config_module.load_toml_document
-
-        def counting_doc(path: Path) -> dict[str, Any]:
-            counts["calls"] += 1
-            return original_doc(path)
-
-        def counting_loads(text: str, **kwargs: Any) -> dict[str, Any]:
-            counts["parses"] += 1
-            return original_loads(text, **kwargs)
-
-        monkeypatch.setattr(config_module, "load_toml_document", counting_doc)
-        monkeypatch.setattr(toml_module, "load_toml_document", counting_doc)
-        monkeypatch.setattr(toml_module.tomllib, "loads", counting_loads)
+        counts = count_toml_parses(monkeypatch)
         (tmp_path / "kstrl.toml").write_text(BEFORE.format(autonomy="false"))
 
         empty_run(
@@ -269,7 +252,7 @@ class TestTheFactorySideParseCountIsPinned:
             FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
         )
 
-        assert (counts["calls"], counts["parses"]) == (13, 7), (
+        assert (counts.calls, counts.parses) == (13, 7), (
             "the cost of a run's config resolution moved. This is a "
             "census pin, not a performance budget: a number that grew "
             "means a section is being resolved twice, and the fix is to "

@@ -134,9 +134,9 @@ back above, so every name this module exported still resolves here. That
 is where the uniqueness claim is written and where the net that enforces
 it points: there is one such call in ``kstrl/`` or ``tests/``, and
 ``tests/test_procgroup_listing.py`` fails on a second in either root. A
-rule with
-no mechanism is not a plan: the argument for centralising the parse is
-that two copies drift, and nothing but a net stops a third landing.
+rule with no mechanism is not a plan: the argument for centralising the
+parse is that two copies drift, and nothing but a net stops a third
+landing.
 """
 
 from __future__ import annotations

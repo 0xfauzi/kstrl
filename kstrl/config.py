@@ -14,11 +14,9 @@ from typing import Protocol
 # by tests/test_string_keys_reach_every_surface.py.
 from kstrl.config_keys import STRING_KEYS as STRING_KEYS
 
-# Re-exported. Reading and parsing kstrl.toml is a separate job from the
-# dataclasses below, and #366 moved it to kstrl/config_toml.py for the
-# 800-line file-length ratchet. Every caller in this tree still imports
-# these five names from kstrl.config; the ``as`` spelling is what makes
-# that a re-export under mypy --strict rather than a private import.
+# Re-exported from kstrl/config_toml.py, where reading kstrl.toml lives
+# (#366). The ``as`` spelling is what makes this a re-export under mypy
+# --strict rather than a private import.
 from kstrl.config_toml import UNPARSEABLE_TOML_MESSAGE as UNPARSEABLE_TOML_MESSAGE
 from kstrl.config_toml import ConfigError as ConfigError
 from kstrl.config_toml import load_toml_document as load_toml_document

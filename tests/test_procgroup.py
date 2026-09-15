@@ -4,14 +4,6 @@ Three answers and no fourth: live, gone, or unknown. The reading itself
 and the parse of it belong to ``kstrl/procgroup_listing.py`` and are
 tested in ``tests/test_procgroup_listing.py``, which #366 split out of
 this file for the 800-line ratchet.
-
-Before either file existed the parse was pinned only through two
-consumer suites, each of which was really testing its own POLICY (raise
-vs degrade). That left the load-bearing part - which rows count as
-running - reachable only via ``tests/test_shutdown.py``'s real
-never-reaping-parent tree, an expensive and timing-sensitive fixture
-that can only ever produce the one zombie spelling the local kernel
-happens to print.
 """
 
 from __future__ import annotations

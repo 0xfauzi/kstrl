@@ -1,11 +1,10 @@
 """Reading ``kstrl.toml``: the parse, its error taxonomy, and the scope
 that parses one file once.
 
-Split out of ``kstrl/config.py`` by #366, which was 19 lines under the
-800-line file-length ratchet. Nothing here changed in the move. Every
-name below is re-exported from ``kstrl.config``, which is where every
-caller in this tree imports it from, so the split is invisible outside
-these two files.
+Split out of ``kstrl/config.py`` by #366 for the 800-line file-length
+ratchet; nothing here changed in the move. ``kstrl.config`` re-exports
+every name below, and every production caller still imports them from
+there.
 """
 
 from __future__ import annotations

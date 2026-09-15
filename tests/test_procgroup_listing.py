@@ -427,7 +427,11 @@ EXPECTED_PS_COMMAND_SPELLINGS: dict[str, int] = {
     # every step of #209 round 3. Reading a pin is not running a guard:
     # a refactor that splits a file leaves the pin naming one file while
     # the census counts two halves, and the unchanged literal then reads
-    # as evidence that nothing moved.
+    # as evidence that nothing moved. #366 moved this guard and its
+    # `exclude=Path(__file__)` here together and re-ran the census: the
+    # two excluded nodes moved with it and `tests/test_procgroup.py`
+    # contributes no row, so the literal below is unchanged by
+    # measurement, not by assumption.
     #
     # `PS_ARGV` left this file when #209 round 3 split the `ps` call and
     # its parse into `kstrl/procgroup_listing.py` for the 800-line
