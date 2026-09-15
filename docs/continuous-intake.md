@@ -292,30 +292,24 @@ ks serve --print-plist                                        # keepalive
 ks serve --print-plist --plist-mode interval --plist-interval 10
 ```
 
-- **`keepalive`** (default) - one long-lived `ks serve` pacing itself from
-  `[serve] poll_interval_seconds`; launchd relaunches it when it **exits**.
-  The pacing is one call, `sleep(cfg.poll_interval_seconds)` in
-  `kstrl/serve.py::serve`, where `sleep = sleeper or time.sleep`. There
-  is no deadline arithmetic in the loop, so N cycles cost exactly N-1
-  polls; `tests/test_serve_poll_pacing.py` runs the real CLI and pins
-  that. The daemon survives a suspend: measured 2026-08-03, one process
-  lived through three suspends totalling 1272s, held `serve.lock`
-  throughout and exited normally. What is **not** settled is whether the
-  suspended seconds are charged against an in-flight poll; see §7.
+- **`keepalive`** (default) - one long-lived `ks serve` pacing itself
+  with one call, `sleep(cfg.poll_interval_seconds)` in
+  `kstrl/serve.py::serve`, after every cycle; launchd relaunches it when
+  it **exits**. The poll is a delay between cycles, not a period: a
+  cycle that takes T pushes the next poll to T plus the interval, and a
+  bounded `--max-cycles N` run costs N-1 polls
+  (`tests/test_serve_poll_pacing.py` pins that against the real CLI).
+  The daemon survives a suspend (measured, §7). What is **not** settled
+  is whether the suspended seconds are charged against an in-flight
+  poll; see §7.
 - **`interval`** - `ks serve --once` on a **calendar** schedule.
   `--plist-interval` is in MINUTES and must divide an hour evenly
   (1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60) or be whole hours.
-  Firings missed during a suspend **coalesce into one**: measured
-  2026-08-03, a 975s clamshell sleep (16:41:25 to 16:57:40) passed three
-  5-minute boundaries and exactly one catch-up run followed, completing
-  16:57:40.783, under a second after the wake. Confirmed independently on
-  the next boundary, where the catch-up completed 17:03:17 after a
-  17:02:44 lid open.
+  Firings missed during a suspend **coalesce into one** (measured
+  2026-08-03, numbers in §7).
 
-These are not two packagings of one cadence. Keepalive paces itself from
-whatever clock `time.sleep` counts; interval fires against the wall clock
-and collapses a backlog into a single run. On a laptop that sleeps, the
-two modes do measurably different work. Neither is wrong, and which you
+On a laptop that sleeps the two modes differ: keepalive resumes its
+interval, interval collapses the missed firings into one run. Which you
 want depends on whether a missed window should be made up.
 
 ### What launchd does NOT do
@@ -514,23 +508,17 @@ documentation.
   either. **Neither explanation is written here, because neither was
   measured.**
 
-  `scripts/sleep_poll_experiment.sh` settles it, and costs no LLM spend:
-  the scratch queue it builds is paused and empty, so every cycle is a
-  gate check. It captures the two things the 2026-08-03 run did not:
-
-  1. the exit code and the `cycles:` line, which separate "ran N cycles"
-     from "was cut short". `serve()` returns from its bounded branch only
-     when `len(bounded) >= max_cycles`, and `ks serve` prints
-     `cycles: len(results)`, so an exit-0 run prints exactly N.
-  2. start and end timestamps in `pmset -g log`'s own format, so the
-     suspended intervals subtract cleanly. Suspend ONCE, not three times,
-     and the arithmetic has a single unknown.
-
-  What the result decides. If awake time is at or above (N-1) polls, the
-  interval counts awake time only and a suspend pauses it. If awake time
-  is below that, suspend seconds were credited against the sleep and the
-  interval is closer to wall clock. Write the number and the branch here
-  and delete this bullet.
+  `scripts/sleep_poll_experiment.sh` settles it and costs no LLM spend:
+  the scratch queue is empty, so every cycle is a gate check. It captures
+  what the 2026-08-03 run did not: the exit code and the `cycles:` line
+  (an exit-0 run that prints one prints exactly N), and the suspended
+  seconds summed from `pmset -g log` inside its own window, so a run
+  with no suspend is reported as void. Only the one poll in flight when
+  the lid closes is affected, so it defaults to 2 cycles at a 300s poll
+  and the margin is that poll's remaining seconds. If awake time is at
+  or above (N-1) polls, the poll counts awake time only and a suspend
+  pauses it; if below, suspend seconds were credited against it. Write
+  the number and the branch here and delete this bullet.
 
 - **Whether `caffeinate -i` holds a run up against a dark wake's return
   to sleep** (#203 items 1 and 2). §5's assertion topology is measured;

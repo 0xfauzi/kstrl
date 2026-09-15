@@ -2,111 +2,64 @@
 #
 # Owner experiment for docs/continuous-intake.md section 7: does an
 # in-flight poll sleep keep counting while the machine is suspended?
-#
-# `ks serve` paces its loop with a plain `sleep(poll_interval_seconds)`
-# in `kstrl/serve.py::serve`, where `sleep` is `time.sleep`. Nothing in
-# kstrl recomputes how much of the interval has elapsed, so the answer
-# belongs to the OS and only a real suspend can settle it.
-#
-# Costs no LLM spend: the scratch queue is paused and empty, so every
-# cycle is a no-op gate check.
+# Run from anywhere in the checkout; it needs `uv` and a real suspend.
 #
 # Usage:
 #   scripts/sleep_poll_experiment.sh [cycles] [poll_seconds]
-#   KS="uv run ks" scripts/sleep_poll_experiment.sh 8 60
 #
-# The defaults reproduce the 2026-08-03 run: 8 cycles at a 60s poll.
+# Defaults: 2 cycles at a 300s poll. Only the ONE poll in flight when the
+# lid closes is affected by a suspend, so the margin between the two
+# answers is that poll's remaining seconds; more cycles cost more time
+# and prove nothing. Close the lid about 10s after the run starts and
+# leave it shut for longer than the poll.
 set -euo pipefail
+cd "$(dirname "$0")/.."
 
-CYCLES="${1:-8}"
-POLL="${2:-60}"
-
-# Split KS on whitespace so `KS="uv run ks"` works from a checkout that
-# has not installed the console script.
-IFS=' ' read -r -a KS_CMD <<<"${KS:-ks}"
-
-if ! command -v "${KS_CMD[0]}" >/dev/null 2>&1; then
-  echo "cannot find '${KS_CMD[0]}' on PATH; try KS=\"uv run ks\" $0" >&2
-  exit 2
-fi
-
+CYCLES="${1:-2}"
+POLL="${2:-300}"
 NEEDED=$(( (CYCLES - 1) * POLL ))
 
 ROOT="$(mktemp -d)"
-cat >"${ROOT}/kstrl.toml" <<TOML
-[serve]
-poll_interval_seconds = ${POLL}
-caffeinate = false
-max_open_prs = 0
-TOML
+printf '[serve]\npoll_interval_seconds = %s\nmax_open_prs = 0\n' "${POLL}" >"${ROOT}/kstrl.toml"
 
-"${KS_CMD[@]}" queue pause --root "${ROOT}" --reason "sleep/poll experiment" --no-color
-
-cat <<TXT
-
-scratch root: ${ROOT}
-plan:         ${CYCLES} cycles at a ${POLL}s poll.
-              ${CYCLES} cycles cost $(( CYCLES - 1 )) polls, so the run needs
-              ${NEEDED}s of whatever time the poll sleep counts.
-
-Close the lid ONCE, about 30s after the run starts, and leave it shut for
-longer than ${NEEDED}s. Open it again and wait for the run to exit. One
-suspend, not three: the arithmetic below has room for a single unknown.
-
-TXT
-
-read -r -p "press return to start the run " _ || true
+echo "scratch root: ${ROOT}"
+echo "plan: ${CYCLES} cycles at a ${POLL}s poll, so ${NEEDED}s of whatever the poll counts."
+echo "Close the lid ONCE about 10s in, keep it shut for more than ${POLL}s, then open it and wait."
+read -r -p "press return to start " _ || true
 
 START_EPOCH="$(date +%s)"
-START_ISO="$(date '+%Y-%m-%d %H:%M:%S')"
+START_ISO="$(date -r "${START_EPOCH}" '+%Y-%m-%d %H:%M:%S')"
 echo "start: ${START_ISO}"
-
 set +e
-"${KS_CMD[@]}" serve --root "${ROOT}" --max-cycles "${CYCLES}" --no-color 2>&1 |
-  tee "${ROOT}/serve.log"
+uv run ks serve --root "${ROOT}" --max-cycles "${CYCLES}" --no-color 2>&1 | tee "${ROOT}/serve.log"
 RC="${PIPESTATUS[0]}"
 set -e
-
 END_EPOCH="$(date +%s)"
-END_ISO="$(date '+%Y-%m-%d %H:%M:%S')"
+END_ISO="$(date -r "${END_EPOCH}" '+%Y-%m-%d %H:%M:%S')"
 WALL=$(( END_EPOCH - START_EPOCH ))
 
+# pmset's Sleep lines carry the suspend's length ("... 975 secs"); sum
+# them inside the window. Zero suspends means the run measured nothing.
+SLEEPS="$(pmset -g log | awk -v s="${START_ISO}" -v e="${END_ISO}" '($1" "$2) >= s && ($1" "$2) <= e' | grep -E ' Sleep +' || true)"
+COUNT="$(printf '%s\n' "${SLEEPS}" | grep -c . || true)"
+SUSPENDED="$(printf '%s\n' "${SLEEPS}" | grep -oE '[0-9]+ secs' | awk '{s+=$1} END {print s+0}')"
+AWAKE=$(( WALL - SUSPENDED ))
+
 echo
-echo "end:       ${END_ISO}"
-echo "exit code: ${RC}"
-echo "wall:      ${WALL}s"
-grep -E '^[[:space:]]*cycles:' "${ROOT}/serve.log" ||
-  echo "cycles: LINE NOT PRINTED (the run did not finish)"
-echo "log:       ${ROOT}/serve.log"
-
-cat <<TXT
-
-Now read the sleep accounting for this window:
-
-    pmset -g log | awk '\$0 >= "${START_ISO}" && \$0 <= "${END_ISO}"' | grep -E 'Sleep|Wake'
-
-Add up the suspended intervals, then:
-
-    awake = ${WALL} - suspended
-
-How to read it:
-
-  * awake >= ${NEEDED}  the poll sleep counts AWAKE time only; a suspend
-                        pauses it and the interval finishes on wake.
-  * awake <  ${NEEDED}  suspend time was credited against the poll sleep,
-                        so the interval is closer to wall clock than to
-                        awake time. Record how much.
-
-Both branches need the cycles line above to read ${CYCLES}. An exit code
-of 0 with a smaller number is impossible, so a smaller number means the
-run was cut short and the measurement is void.
-
-Write the number and the branch into docs/continuous-intake.md section 7
-and delete the open question there. Do not write either branch up without
-the arithmetic.
-
-The scratch root is left in place on purpose; delete it when you are
-done:
-
-    rm -rf "${ROOT}"
-TXT
+echo "end:        ${END_ISO}"
+echo "exit code:  ${RC}"
+grep -E '^[[:space:]]*cycles:' "${ROOT}/serve.log" || echo "cycles:     LINE NOT PRINTED (the run did not finish; the measurement is void)"
+echo "wall:       ${WALL}s"
+echo "suspends:   ${COUNT} (${SUSPENDED}s)"
+[ -n "${SLEEPS}" ] && printf '%s\n' "${SLEEPS}"
+echo "awake:      ${AWAKE}s against ${NEEDED}s needed"
+if [ "${COUNT}" -eq 0 ]; then
+  echo "VOID: no suspend inside the window."
+elif [ "${COUNT}" -gt 1 ]; then
+  echo "WARNING: ${COUNT} suspends; the arithmetic tolerates one unknown, so treat this as a hint."
+elif [ "${AWAKE}" -ge "${NEEDED}" ]; then
+  echo "branch 1: the poll counted AWAKE time only (suspend paused it)."
+else
+  echo "branch 2: $(( NEEDED - AWAKE ))s of suspend was credited against the poll."
+fi
+echo "Write the numbers and the branch into docs/continuous-intake.md section 7. Log: ${ROOT}/serve.log"
