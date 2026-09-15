@@ -30,17 +30,11 @@ kstrl is designed as a loop that closes on evidence instead. The parts are delib
 - **What stops it running away?** Bounds on everything: iterations, time, tokens, cost, work in flight, and a written envelope of what a merge may touch. When a bound trips, the run stops loudly and tells you why.
 - **Where do you stand?** On the loop, not in it. Boundary conditions route to you: a spec the architect cannot decompose, a merge you asked to approve, a budget that ran out. Everything else flows, and everything is recorded.
 
-kstrl is those loops, nested. Read the figure from the inside out: the innermost band is the fastest and the only one with no sensor of its own; every band around it acts on what the one inside produced and measures it with something the agent did not write. The marker on each band says whether it closes today.
+kstrl is those loops, nested, innermost fastest. The innermost is the only one with no sensor of its own; every loop around it acts on what the one inside produced and measures it with something the agent did not write. The loops, their clock rates, what acts, what measures and whether each closes today are the table at the top of [ARCHITECTURE.md](ARCHITECTURE.md).
 
-![The loops kstrl is built as](docs/atlas/figures/loops.svg)
+The reviewers are the point: independent, adversarial, and expected to distrust the implementing agent. The harness distrusts the reviewers in turn: an empty, partial or oversized review fails closed, and a reviewer's own claim to have searched thoroughly is shown as a hint and never used as a gate. The only thing that proves a reviewer works is calibration: planting known bugs and measuring how often each role catches them. The full phase-by-phase pipeline lives in [ARCHITECTURE.md](ARCHITECTURE.md), and the reasoning behind the loop is in [docs/control-loop-design.md](docs/control-loop-design.md).
 
-This is the forward path through the system, generated from the code: every component the path touches, in its region, with the artifact on every edge. What the path does not touch is not drawn; the [system map](docs/atlas/figures/system.svg) has everything.
-
-![How a spec becomes a merged pull request](docs/atlas/figures/layer-work.svg)
-
-The reviewers are the point: independent, adversarial, and expected to distrust the implementing agent. The harness distrusts the reviewers in turn: an empty, partial or oversized review fails closed, and a reviewer's own claim to have searched thoroughly is shown as a hint and never used as a gate. The only thing that proves a reviewer works is calibration: planting known bugs and measuring how often each role catches them. The full phase-by-phase pipeline, with every diagram this README used to carry, lives in [ARCHITECTURE.md](ARCHITECTURE.md), and the reasoning behind the loop is in [docs/control-loop-design.md](docs/control-loop-design.md).
-
-**Documentation**: the [live system atlas](https://0xfauzi.github.io/kstrl/atlas/) is the map, generated from the code; [ARCHITECTURE.md](ARCHITECTURE.md) is the detailed system tour (pipeline, iteration loop, factory scheduling, state layout), [docs/adversarial-design.md](docs/adversarial-design.md) covers the full 8-role taxonomy, [docs/env-vars.md](docs/env-vars.md) every environment variable, [docs/runbook.md](docs/runbook.md) operator failure recovery, [docs/dampener.md](docs/dampener.md) the sense baseline and the pull-request regression report, and [docs/linear-integration.md](docs/linear-integration.md) the optional Linear mirror. [examples/](examples/) has a scaffolded uv project and two sample feature specs.
+**Documentation**: [ARCHITECTURE.md](ARCHITECTURE.md) is the detailed system tour (pipeline, iteration loop, factory scheduling, state layout), [docs/adversarial-design.md](docs/adversarial-design.md) covers the full 8-role taxonomy, [docs/env-vars.md](docs/env-vars.md) every environment variable, [docs/runbook.md](docs/runbook.md) operator failure recovery, [docs/dampener.md](docs/dampener.md) the sense baseline and the pull-request regression report, and [docs/linear-integration.md](docs/linear-integration.md) the optional Linear mirror. [examples/](examples/) has a scaffolded uv project and two sample feature specs.
 
 ## Quick start
 
@@ -134,7 +128,7 @@ kstrl factory --manifest scripts/kstrl/manifest.json --max-parallel 4
 
 Each component runs in an isolated git worktree (`.kstrl/worktrees/<run>/<component>`) with its own PRD. `ks run` is actually factory mode with a single component - the same verification pipeline runs whether you're building one feature or twenty.
 
-Scheduling, worktree isolation, merge gating, and the contract-testing bisect are diagrammed in [ARCHITECTURE.md](ARCHITECTURE.md#factory-mode).
+Scheduling, worktree isolation, merge gating, and the contract-testing bisect are described in [ARCHITECTURE.md](ARCHITECTURE.md#factory-mode).
 
 ## Linear integration - the factory, mirrored into your tracker
 
@@ -568,9 +562,7 @@ The agent updates `passes` and `notes` as it works, and kstrl reads them between
 
 ## Architecture
 
-Start with the **live system atlas**: <https://0xfauzi.github.io/kstrl/atlas/>. It is generated from this code, not drawn by hand: every component, what it does, what flows between them, which parts are built and which are planned, in layers you can switch between (how a spec becomes a merged PR; who measures what; what feeds back to the agent; where you stand; how autonomy is earned and lost). Click a component to see what it is to its neighbours.
-
-Then [ARCHITECTURE.md](ARCHITECTURE.md), which opens with the loops kstrl is built as and their clock rates, and treats the phase chain as one tick of the middle two. The reasoning behind the loop, with what closes today and what each cycle closes next, is [docs/control-loop-design.md](docs/control-loop-design.md). The adversarial role taxonomy and design invariants are in [docs/adversarial-design.md](docs/adversarial-design.md).
+Start with [ARCHITECTURE.md](ARCHITECTURE.md), which opens with the loops kstrl is built as and their clock rates, and treats the phase chain as one tick of the middle two. The reasoning behind the loop, with what closes today and what each cycle closes next, is [docs/control-loop-design.md](docs/control-loop-design.md). The adversarial role taxonomy and design invariants are in [docs/adversarial-design.md](docs/adversarial-design.md).
 
 ## Development
 
