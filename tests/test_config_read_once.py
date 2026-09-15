@@ -147,9 +147,10 @@ class TestTheParseCountDoesNotGrowWithComponents:
     @staticmethod
     def _counts(tmp_path: Path, count: int, monkeypatch: pytest.MonkeyPatch) -> tuple[int, int]:
         from kstrl import config as config_module
+        from kstrl import config_toml as toml_module
 
         original = config_module.load_toml_document
-        original_loads = config_module.tomllib.loads
+        original_loads = toml_module.tomllib.loads
         calls = 0
         parses = 0
 
@@ -164,7 +165,8 @@ class TestTheParseCountDoesNotGrowWithComponents:
             return original_loads(text, **kwargs)
 
         monkeypatch.setattr(config_module, "load_toml_document", counting)
-        monkeypatch.setattr(config_module.tomllib, "loads", counting_loads)
+        monkeypatch.setattr(toml_module, "load_toml_document", counting)
+        monkeypatch.setattr(toml_module.tomllib, "loads", counting_loads)
         comps = [component(f"comp-{index}") for index in range(count)]
         phase_verify_envelopes(tmp_path, comps)
         return calls, parses

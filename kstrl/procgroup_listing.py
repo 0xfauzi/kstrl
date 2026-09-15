@@ -23,7 +23,8 @@ class the module next door exists to write down.
 
 THE UNIQUENESS CLAIM MOVED WITH THE CALL. This module is the
 only place in ``kstrl/`` or ``tests/`` that shells out to ``ps``,
-and ``tests/test_procgroup.py`` fails on a second one in either root. The
+and ``tests/test_procgroup_listing.py`` fails on a second one in either
+root. The
 argument for centralising the parse - that two copies drift on failure
 handling until the daemon's answer and the suite's stop agreeing - is
 next door with the reading it protects; the net that enforces it points

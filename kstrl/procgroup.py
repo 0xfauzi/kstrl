@@ -133,7 +133,8 @@ out of this file by #209 round 3 for the 800-line ratchet and imported
 back above, so every name this module exported still resolves here. That
 is where the uniqueness claim is written and where the net that enforces
 it points: there is one such call in ``kstrl/`` or ``tests/``, and
-``tests/test_procgroup.py`` fails on a second in either root. A rule with
+``tests/test_procgroup_listing.py`` fails on a second in either root. A
+rule with
 no mechanism is not a plan: the argument for centralising the parse is
 that two copies drift, and nothing but a net stops a third landing.
 """
@@ -244,8 +245,8 @@ class GroupMembers:
     It lives here, sharing one ``ps`` call, one parse and one refusal
     table with the liveness read, because the reading has exactly one
     call site in this tree and it is in ``kstrl.procgroup_listing``: two
-    copies drift on failure handling, and ``tests/test_procgroup.py``
-    fails on a second one.
+    copies drift on failure handling, and
+    ``tests/test_procgroup_listing.py`` fails on a second one.
 
     ``pids`` is None when nothing was measured, exactly as ``live`` is.
     Both reads refuse the same five listings and differ only in the

@@ -245,8 +245,9 @@ class TestTheFactorySideParseCountIsPinned:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from kstrl import config as config_module
+        from kstrl import config_toml as toml_module
 
-        original_loads = config_module.tomllib.loads
+        original_loads = toml_module.tomllib.loads
         counts = {"calls": 0, "parses": 0}
         original_doc = config_module.load_toml_document
 
@@ -259,7 +260,8 @@ class TestTheFactorySideParseCountIsPinned:
             return original_loads(text, **kwargs)
 
         monkeypatch.setattr(config_module, "load_toml_document", counting_doc)
-        monkeypatch.setattr(config_module.tomllib, "loads", counting_loads)
+        monkeypatch.setattr(toml_module, "load_toml_document", counting_doc)
+        monkeypatch.setattr(toml_module.tomllib, "loads", counting_loads)
         (tmp_path / "kstrl.toml").write_text(BEFORE.format(autonomy="false"))
 
         empty_run(
