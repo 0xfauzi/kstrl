@@ -18,6 +18,7 @@ from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryConfig
 from kstrl.manifest import Component, Manifest
 from kstrl.verify import VerifyConfig
+from tests.helpers import gitrepo
 
 STUB_PR_URL = "https://github.com/spine/repo/pull/41"
 STUB_PR_NUMBER = 41
@@ -67,8 +68,7 @@ def init_kstrl_repo(
     """
     root.mkdir(parents=True, exist_ok=True)
     git("init", "-q", "-b", "main", cwd=root)
-    git("config", "user.email", "spine@test", cwd=root)
-    git("config", "user.name", "Spine Test", cwd=root)
+    gitrepo.set_identity(root)
     (root / ".gitignore").write_text("scripts/kstrl/\n.kstrl/\n")
     (root / "README.md").write_text("seed\n")
     git("add", ".gitignore", "README.md", cwd=root)

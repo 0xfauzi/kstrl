@@ -54,6 +54,7 @@ from kstrl.verify import (
     check_scope_unreadable,
     run_mechanical_verification,
 )
+from tests.helpers import gitrepo
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 
 
@@ -69,8 +70,7 @@ def repo_with_protected_file(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q", "-b", "main")
-    _git(repo, "config", "user.email", "t@t")
-    _git(repo, "config", "user.name", "t")
+    gitrepo.set_identity(repo)
     (repo / "protected").mkdir()
     (repo / "allowed").mkdir()
     (repo / "protected" / "gate.py").write_text(

@@ -27,6 +27,7 @@ from kstrl.loop import run_loop
 from kstrl.manifest import ComponentStatus
 from kstrl.observability import read_progress_events
 from kstrl.ui.plain import PlainUI
+from tests.helpers import gitrepo
 
 
 def _git(args: list[str], cwd: Path) -> None:
@@ -42,8 +43,7 @@ def _git(args: list[str], cwd: Path) -> None:
 def _init_repo(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
     _git(["init", "-q"], path)
-    _git(["config", "user.email", "test@example.com"], path)
-    _git(["config", "user.name", "Test"], path)
+    gitrepo.set_identity(path)
     (path / "README.md").write_text("seed\n")
     _git(["add", "."], path)
     _git(["commit", "-q", "-m", "seed"], path)

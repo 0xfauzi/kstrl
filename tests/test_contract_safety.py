@@ -40,6 +40,7 @@ from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
+from tests.helpers import gitrepo
 
 # Fails (with output) whenever bad_marker.txt exists in the tested tree.
 MARKER_TEST_CMD = "if [ -f bad_marker.txt ]; then echo INTEGRATION BROKEN; exit 1; fi"
@@ -61,8 +62,7 @@ def _init_repo(root: Path) -> None:
     """Real git repo on main with the kstrl scaffolding committed."""
     root.mkdir(parents=True, exist_ok=True)
     _git("init", "-q", "-b", "main", cwd=root)
-    _git("config", "user.email", "t@t", cwd=root)
-    _git("config", "user.name", "t", cwd=root)
+    gitrepo.set_identity(root)
     (root / "conflict.txt").write_text("base\n")
     kstrl_dir = root / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True)

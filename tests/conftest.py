@@ -27,6 +27,7 @@ import pytest
 
 from kstrl.config import STRING_KEYS
 from kstrl.git import DiffStat, get_diff_stat
+from tests.helpers import gitrepo
 
 # Repository root that contains this test suite, independent of CWD.
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -419,8 +420,7 @@ def make_review_repo(
         raise ValueError("make_review_repo: base_files={} would leave nothing to commit")
     path.mkdir(parents=True, exist_ok=True)
     git_in(path, "init", "-q")
-    git_in(path, "config", "user.email", "kstrl@test.invalid")
-    git_in(path, "config", "user.name", "kstrl tests")
+    gitrepo.set_identity(path)
     _write_all(path, base_files if base_files is not None else {"README.md": "base\n"})
     git_in(path, "add", "-A")
     git_in(path, "commit", "-qm", "base")

@@ -43,6 +43,7 @@ from kstrl.fixtures import FixturesConfig
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import SCOPE_UNREADABLE_CHECK, VerifyConfig
+from tests.helpers import gitrepo
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 
 
@@ -58,8 +59,7 @@ def _init_repo(root: Path) -> None:
     component is refused and its sibling is not.
     """
     _git(root, "init", "-b", "main")
-    _git(root, "config", "user.email", "test@test")
-    _git(root, "config", "user.name", "test")
+    gitrepo.set_identity(root)
     (root / "README.md").write_text("seed\n", encoding="utf-8")
     _git(root, "add", "README.md")
     _git(root, "commit", "-m", "seed")
