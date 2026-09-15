@@ -23,6 +23,7 @@ import os
 import stat
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -33,6 +34,7 @@ from kstrl.serve import (
     OpenPrCountStreak,
     RunOutcome,
     ServeConfig,
+    _file_inbox_item,
     _record_count_failure,
     serve,
 )
@@ -224,6 +226,29 @@ class TestAFailedWriteDoesNotDisarmTheAlarm:
         items = _open_items(tmp_path)
         assert len(items) == 1, "exactly one item across both polls"
         assert items[0].occurrences == 1
+
+
+class TestTheWriteSwallowsTheWholeSurface:
+    """#364: the caught set is the callee's whole surface, not an enumeration.
+
+    `Inbox._append` takes the control lock, so a write can raise a
+    `RuntimeError` that is not a `ControlStateError`. An inbox write must
+    not be able to undo a queue transition that already happened, so the
+    caller gets an empty id either way.
+    """
+
+    def test_a_runtime_error_from_the_write_still_returns_empty(self, tmp_path: Path) -> None:
+        (tmp_path / "kstrl.toml").write_text("[inbox]\nenabled = true\n", encoding="utf-8")
+        with patch("kstrl.inbox.Inbox.add", side_effect=RuntimeError("control lock busy")):
+            got = _file_inbox_item(
+                tmp_path,
+                kind_name="halted_run",
+                title="t",
+                detail="d",
+                dedupe_key="k",
+                evidence={},
+            )
+        assert got == ""
 
 
 class TestADamagedFileFailsTowardTheAlarm:

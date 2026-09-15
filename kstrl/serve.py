@@ -2836,23 +2836,16 @@ def _file_inbox_item(
     caller carries on. The queue journal remains the authoritative record
     either way.
 
-    Every one of the seven callers is already past the transition it is
-    recording: the queue has been paused, the item poisoned or intake
-    halted. That is why the caught set is the callee's whole surface
-    rather than the three types someone expected: ``Inbox.add`` reaches
-    ``_append``, which takes the control lock, and ``InboxConfig.load``
-    casts per key.
-
-    The enumeration stands, and it was checked rather than assumed. It
-    was widened to ``except Exception`` on the theory that a deeply
-    nested array reaches this as a ``RecursionError``, and measured:
-    ``config.load_toml_document`` normalises every parser fault to
-    ``ConfigError`` first, so what escapes ``InboxConfig.load`` is a
-    ``ConfigError``, a plain ``ValueError`` from an ``int()`` cast, or a
-    ``TypeError`` from ``int()`` on a TOML date, all three in the list.
-    ``tests/test_inbox_write_guards.py`` pins two of them by name and by
-    ORIGIN, so the wider spelling makes that guard fire; see
-    ``tests/test_serve_config_reads.py::UNGUARDED_LEDGER``.
+    The caught set is the callee's WHOLE SURFACE, not the types somebody
+    expected: ``Inbox.add`` reaches ``_append``, which takes the control
+    lock, and ``InboxConfig.load`` casts per key. The enumeration that
+    stood here caught a ``ConfigError``, a plain ``ValueError`` and a
+    ``TypeError``, all measured, and it was still two guards reading one
+    site by two rules. #364 reconciled them:
+    ``tests/helpers/astwalk.catches_everything`` is the one rule, and
+    ``tests/test_inbox_write_guards.py`` reads it, so a handler that
+    catches everything satisfies both the by-origin and the by-name
+    requirement without either guard being narrowed.
     """
     try:
         from kstrl.inbox import Inbox, InboxConfig, ItemKind
@@ -2870,7 +2863,7 @@ def _file_inbox_item(
             run_id=run_id,
         )
         return item.id
-    except (OSError, TypeError, ValueError, KeyError, ControlStateError):
+    except Exception:  # noqa: BLE001 - an inbox write must never fail its caller
         return ""
 
 
@@ -3194,6 +3187,51 @@ def _wait_gate_refusal(
     return None
 
 
+def _report_reaped(
+    root_dir: Path,
+    queue: Queue,
+    result: CycleResult,
+    obs: ServeObserver,
+) -> None:
+    """Narrate what recovery did, and file the poisons a human must see.
+
+    Its own function because both complexity ratchets in
+    `.pre-commit-config.yaml` fail on any REGRESSION, and `serve_cycle`
+    measured 31 cyclomatic / 50 cognitive before #364 added the config
+    refusal above. Moving this block takes it to 29 / 48. Nothing here
+    changed: the caller is where it was, between the recovery lock and
+    the intake stage.
+    """
+    if result.swept_staging:
+        obs.info(f"Swept {result.swept_staging} abandoned staging item(s)")
+    for item_id in result.reaped.requeued + result.reaped.failed_for_retry:
+        obs.warn(f"Reaped {item_id[:12]}: owner gone, requeued")
+    for item_id in result.reaped.poisoned:
+        obs.err(f"Reaped {item_id[:12]}: no attempts left, poisoned")
+        result.needs_human = True
+        _report_remote_outcome(
+            root_dir,
+            queue.get(item_id),
+            state="poison",
+            detail=("The run was interrupted and the item had no attempts left."),
+            observer=obs,
+        )
+        result.inbox_items += (
+            _file_inbox_item(
+                root_dir,
+                kind_name="halted_run",
+                title=f"Queue item {item_id[:12]} poisoned after an interrupted run",
+                detail=(
+                    "The run was interrupted and the item had no attempts left. "
+                    "Inspect with `ks queue show` and requeue with "
+                    "`ks queue retry --reset-attempts` if it should run again."
+                ),
+                dedupe_key=f"queue-poison:{item_id}",
+                evidence={"item_id": item_id, "cause": "interrupted run"},
+            ),
+        )
+
+
 def serve_cycle(
     root_dir: Path,
     *,
@@ -3218,14 +3256,33 @@ def serve_cycle(
     ``pr_count_streak`` is the loop's memory across cycles, and is None
     for a single cycle because one poll cannot have a streak.
     :func:`serve_loop` owns the instance.
+
+    Both config reads are inside one ``except Exception`` and REFUSE
+    (#364). ``serve`` has no per-cycle handler, so a ``[queue]`` section
+    made malformed after the daemon started used to leave ``serve()``
+    entirely; under launchd the job was relaunched on
+    ``LAUNCHD_THROTTLE_SECONDS`` and died again on the same key. Four
+    ``[queue]`` faults and a document that is not TOML at all were
+    measured escaping here, spanning ``ValueError``, ``TypeError``,
+    ``ConfigError`` and ``QueueError`` (a ``RuntimeError``), which is why
+    the caught set is the whole surface rather than an enumeration.
+    Nothing is claimed and no attempt is charged: the message is the
+    refusal's only home, and the poll interval is the retry.
     """
-    cfg = config or ServeConfig.load(root_dir)
-    qcfg = queue_config or QueueConfig.load(root_dir)
     obs: ServeObserver = observer or _NullObserver()
+    result = CycleResult()
+    section = "[serve]"
+    try:
+        cfg = config or ServeConfig.load(root_dir)
+        section = "[queue]"
+        qcfg = queue_config or QueueConfig.load(root_dir)
+    except Exception as exc:  # noqa: BLE001 - anything but a config is the same answer
+        result.skipped = f"{section} cannot be read, so this poll is refused: {exc}"
+        obs.err(result.skipped)
+        return result
     queue = Queue(root_dir, qcfg)
     ledger = SpendLedger(root_dir)
     moment = now or _utc_now()
-    result = CycleResult()
 
     queue.ensure_dirs()
 
@@ -3256,34 +3313,7 @@ def serve_cycle(
         result.reaped = reap_leases(queue, now=moment)
         for _item_id in result.reaped.poisoned:
             ledger.record_terminal(poisoned=True)
-    if result.swept_staging:
-        obs.info(f"Swept {result.swept_staging} abandoned staging item(s)")
-    for item_id in result.reaped.requeued + result.reaped.failed_for_retry:
-        obs.warn(f"Reaped {item_id[:12]}: owner gone, requeued")
-    for item_id in result.reaped.poisoned:
-        obs.err(f"Reaped {item_id[:12]}: no attempts left, poisoned")
-        result.needs_human = True
-        _report_remote_outcome(
-            root_dir,
-            queue.get(item_id),
-            state="poison",
-            detail=("The run was interrupted and the item had no attempts left."),
-            observer=obs,
-        )
-        result.inbox_items += (
-            _file_inbox_item(
-                root_dir,
-                kind_name="halted_run",
-                title=f"Queue item {item_id[:12]} poisoned after an interrupted run",
-                detail=(
-                    "The run was interrupted and the item had no attempts left. "
-                    "Inspect with `ks queue show` and requeue with "
-                    "`ks queue retry --reset-attempts` if it should run again."
-                ),
-                dedupe_key=f"queue-poison:{item_id}",
-                evidence={"item_id": item_id, "cause": "interrupted run"},
-            ),
-        )
+    _report_reaped(root_dir, queue, result, obs)
 
     # 2. Pull remote work in BEFORE the gates, so newly-admitted items face
     #    the same budget, breaker and cap checks as everything else. The

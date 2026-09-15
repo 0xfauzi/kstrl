@@ -90,9 +90,11 @@ class Disposition:
     """What a site is contracted to do with a control-state failure.
 
     ``guarded`` means an enclosing ``try`` in the same function names
-    ``ControlStateError`` BY ORIGIN. ``propagates`` means the exception is
-    the caller's answer, and the reason has to say why that is right
-    there; a row without one fails.
+    ``ControlStateError`` by ORIGIN, or catches everything
+    (``astwalk.catches_everything``, the rule shared with
+    ``tests/test_serve_config_reads.py`` since #364). ``propagates`` means
+    the exception is the caller's answer, and the reason has to say why
+    that is right there; a row without one fails.
     """
 
     guarded: bool
@@ -293,18 +295,43 @@ def _config_load_rows(source: Path) -> dict[str, tuple[ast.Call, ast.AST]]:
     return rows
 
 
-def _catching(scope: ast.AST, call: ast.Call, table: astwalk.Bindings) -> list[astwalk.Clause]:
-    """The clauses of every ``try`` in this scope whose BODY holds the call.
+def _enclosing_tries(scope: ast.AST, call: ast.Call) -> list[ast.Try | ast.TryStar]:
+    """Every ``try`` in this scope whose BODY holds the call.
 
     ``try_body_nodes`` rather than ``ast.walk``, so a handler is not
     credited with guarding a call in a function merely DEFINED in its
     body.
     """
+    return [
+        node
+        for node in astwalk.own_nodes(scope)
+        if isinstance(node, ast.Try | ast.TryStar) and call in astwalk.try_body_nodes(node)
+    ]
+
+
+def _catching(scope: ast.AST, call: ast.Call, table: astwalk.Bindings) -> list[astwalk.Clause]:
+    """The clauses of every ``try`` that holds the call, in order."""
     found: list[astwalk.Clause] = []
-    for node in astwalk.own_nodes(scope):
-        if isinstance(node, ast.Try | ast.TryStar) and call in astwalk.try_body_nodes(node):
-            found.extend(astwalk.handler_clauses(node, table))
+    for node in _enclosing_tries(scope, call):
+        found.extend(astwalk.handler_clauses(node, table))
     return found
+
+
+def _broadly_caught(scope: ast.AST, call: ast.Call, table: astwalk.Bindings) -> bool:
+    """Is the call inside a ``try`` that catches EVERYTHING (#364)?
+
+    The second way a site can satisfy this guard, and the reconciliation
+    the issue asked for. ``astwalk.catches_everything`` is the one rule,
+    shared with ``tests/test_serve_config_reads.py``: before #364 that
+    walk wanted ``except Exception`` at ``serve._file_inbox_item`` while
+    this one wanted ``ControlStateError`` and ``TypeError`` by name, and
+    the site could not satisfy both. A handler that catches everything
+    catches strictly more than either name, so it clears here too - and
+    nothing weaker does, because ``catches_everything`` refuses an
+    enumeration, a ``BaseException``, a bare ``except:``, a rebound
+    ``Exception`` and any ladder that re-raises.
+    """
+    return any(astwalk.catches_everything(node, table) for node in _enclosing_tries(scope, call))
 
 
 def _all_rows(subject: str) -> dict[str, tuple[ast.Call, ast.AST, astwalk.Bindings]]:
@@ -395,16 +422,18 @@ class TestMutationInventory:
         clauses = _catching(scope, call, table)
         caught = {origin for clause in clauses for origin in clause.origins}
         expected = EXPECTED_MUTATIONS[key]
+        broad = _broadly_caught(scope, call, table)
         if expected.guarded:
-            assert CONTROL_ERROR in caught, (
+            assert CONTROL_ERROR in caught or broad, (
                 f"{key} writes to the inbox without an enclosing handler "
-                f"naming {CONTROL_ERROR} by origin. Inbox._append takes the "
-                "control lock on every write, so this site can raise a "
-                f"RuntimeError its clause does not catch. Caught: {sorted(caught)}"
+                f"naming {CONTROL_ERROR} by origin, and without one that "
+                "catches everything. Inbox._append takes the control lock "
+                f"on every write, so this site can raise a RuntimeError a "
+                f"narrow clause does not catch. Caught: {sorted(caught)}"
             )
         else:
             assert expected.reason, f"{key} propagates and says nothing about why"
-            assert CONTROL_ERROR not in caught, (
+            assert CONTROL_ERROR not in caught and not broad, (
                 f"{key} is enrolled as propagating and now catches "
                 f"{CONTROL_ERROR}. Move it to guarded."
             )
@@ -445,10 +474,63 @@ class TestConfigLoadInventory:
         names = {name for clause in _catching(scope, call, table) for name in clause.names}
         expected = EXPECTED_CONFIG_LOADS[key]
         if expected.guarded:
-            assert "TypeError" in names, (
-                f"{key} reads InboxConfig without catching TypeError. "
-                "int(section['open_item_cap']) on a TOML date raises one, "
-                "and it is not a ValueError. Caught: " + repr(sorted(names))
+            assert "TypeError" in names or _broadly_caught(scope, call, table), (
+                f"{key} reads InboxConfig without catching TypeError and "
+                "without catching everything. int(section['open_item_cap']) "
+                "on a TOML date raises one, and it is not a ValueError. "
+                "Caught: " + repr(sorted(names))
             )
         else:
             assert expected.reason, f"{key} propagates and says nothing about why"
+
+
+class TestTheTwoWaysASiteClears:
+    """One control per disjunct, because the rule is now a disjunction.
+
+    ``CONTROL_ERROR in caught or broad`` stays green with either half
+    deleted, so each half is proved on its own planted source. The third
+    case is the one that must clear NEITHER, which is what stops a
+    widening from turning into a clearing.
+    """
+
+    @staticmethod
+    def _site(handler: str) -> tuple[ast.AST, ast.Call, astwalk.Bindings]:
+        source = (
+            "from kstrl.inbox import Inbox, InboxConfig\n"
+            "from kstrl.statedir import ControlStateError\n"
+            "def emit(root):\n"
+            "    try:\n"
+            "        box = Inbox(root, InboxConfig.load(root))\n"
+            "        box.add('kind', 'title')\n"
+            f"    except {handler}:\n"
+            "        return ''\n"
+        )
+        tree = astwalk.parse(source)
+        table = astwalk.bindings(tree, module="probe")
+        scope = next(node for node, name in astwalk.scopes(tree) if name == "emit")
+        call = next(
+            node
+            for node in astwalk.own_nodes(scope)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "add"
+        )
+        return scope, call, table
+
+    def test_naming_the_origin_clears_and_is_not_broad(self) -> None:
+        scope, call, table = self._site("ControlStateError")
+        caught = {origin for clause in _catching(scope, call, table) for origin in clause.origins}
+        assert CONTROL_ERROR in caught
+        assert not _broadly_caught(scope, call, table)
+
+    def test_catching_everything_clears_and_names_no_origin(self) -> None:
+        scope, call, table = self._site("Exception")
+        caught = {origin for clause in _catching(scope, call, table) for origin in clause.origins}
+        assert CONTROL_ERROR not in caught
+        assert _broadly_caught(scope, call, table)
+
+    def test_a_narrow_handler_clears_neither_way(self) -> None:
+        scope, call, table = self._site("ValueError")
+        caught = {origin for clause in _catching(scope, call, table) for origin in clause.origins}
+        assert CONTROL_ERROR not in caught
+        assert not _broadly_caught(scope, call, table)
