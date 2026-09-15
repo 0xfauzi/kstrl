@@ -21,6 +21,7 @@ import ast
 import json
 import os
 import subprocess
+import threading
 import time
 from collections.abc import Iterator
 from concurrent.futures import Future
@@ -32,7 +33,7 @@ from kstrl.agents.claude_code import ClaudeCodeAgent
 from kstrl.agents.claude_sdk import ClaudeSdkAgent
 from kstrl.agents.codex import CodexAgent
 from kstrl.agents.custom import CustomAgent
-from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
+from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX, kill_active_process_groups
 from kstrl.config import KstrlConfig
 from kstrl.factory import (
     ComponentResult,
@@ -53,6 +54,103 @@ from tests.helpers.procs import read_pid
 # Generous bound for "killed within the deadline": 1s deadline + 5s
 # SIGTERM grace + slack. A hang would previously block forever.
 KILL_BOUND_SECONDS = 12.0
+
+#: Deadline the claude-sdk battery runs with. A MEASUREMENT, not a round
+#: number (#365, 2026-09-15, 10-CPU machine).
+#:
+#: These three tests drive the real adapter, which spawns
+#: ``python -u -m kstrl.agents.sdk_runner`` through DeadlineStreamer. The
+#: deadline therefore has to cover that runner's own startup - a python
+#: interpreter, ``import claude_agent_sdk``, and the SDK spawning the
+#: fake CLI - because until the CLI runs there is no marker line and no
+#: pidfile for the assertions to find. Measured: 0.388-0.418s alone
+#: (n=20), and 1.069 / 3.403 / 5.801s min/median/max with 25 copies of
+#: the same startup running at once (n=100). At the old 4.0s the CLI had
+#: not started in 8 of 25 concurrent runs, and 23 of 25 concurrent pytest
+#: processes running this class had a failure (20 of 25 on a second run
+#: at lower background load) - the flake this issue was filed for. The
+#: adapter itself returned at deadline + 9 to 28 ms in all 25, so the
+#: enforcement was never the thing that slipped.
+#:
+#: The tail grows with concurrency - at 40-way it is 1.466 / 4.967 /
+#: 8.814s (n=80) - so the margin is taken against the harsher number:
+#: 20.0 is 2.3x the 40-way worst case and 3.4x the 25-way one. Bounded
+#: from above as well, because a deadline is only a deadline if something
+#: is still running when it fires: the runner was measured NOT to exit on
+#: its own inside 60s. Validated at 50 of 50 runs at 25-way concurrency,
+#: the adapter returning at 20.002-20.054s.
+#:
+#: WHAT IT COSTS: each test here runs for its whole deadline, so this
+#: class is 60s rather than 12s.
+SDK_DEADLINE_SECONDS = 20.0
+
+#: The adapters this file drives through the fuse. A union of the four
+#: concrete classes, all already imported above, rather than a Protocol:
+#: ``[tool.mypy] files = ["kstrl"]``, so nothing typechecks this module,
+#: and a structural type that no checker reads is a mechanism that buys
+#: nothing.
+_DeadlineAgent = ClaudeCodeAgent | ClaudeSdkAgent | CodexAgent | CustomAgent
+
+
+def _lines_under_fuse(
+    agent: _DeadlineAgent,
+    prompt: str,
+    cwd: Path,
+    *,
+    timeout: float | None,
+) -> list[str]:
+    """Drain ``agent.run`` on a worker thread under a REAL-TIME fuse.
+
+    What this replaces, and why it is not the same thing: every test
+    below used to do ``list(agent.run(...))`` and then assert that the
+    measured elapsed time was under a bound. MEASURED (#365): with the
+    reaper's deadline check removed, the claude-sdk path did not return
+    in 60s and the custom path did not return in 30s. The iteration
+    never ends, so the assertion after it never runs - the suite goes
+    silent and slow rather than red, which is the failure mode CLAUDE.md
+    records as worse than going blind. A bound that is checked after the
+    thing it bounds is not a bound.
+
+    So the wait is bounded here instead, in wall-clock time, in the test,
+    which is the one place the defect being detected cannot switch off.
+    The fuse is ``timeout + KILL_BOUND_SECONDS``: the deadline the caller
+    asked for, plus the 5s SIGTERM grace and slack. ``timeout=None``
+    (no deadline armed at all) gets ``KILL_BOUND_SECONDS`` alone. That
+    is 1.0s wider than the ``elapsed < KILL_BOUND_SECONDS`` assertion it
+    replaces at the six ``timeout=1.0`` sites, and the trade is stated
+    in the PR: a bound 1s wider that fires beats a tighter one that a hang
+    skips.
+
+    On expiry the abandoned process group is reclaimed through
+    ``kill_active_process_groups`` before the failure is raised, so a
+    failing run does not leave a ``sleep 300`` behind for the rest of the
+    session; measured, it signalled the one hung streamer in the probe
+    this docstring cites.
+    """
+    fuse = (timeout or 0.0) + KILL_BOUND_SECONDS
+    lines: list[str] = []
+    failures: list[Exception] = []
+    done = threading.Event()
+
+    def drive() -> None:
+        try:
+            lines.extend(agent.run(prompt, cwd, timeout=timeout))
+        except Exception as exc:
+            failures.append(exc)
+        finally:
+            done.set()
+
+    threading.Thread(target=drive, daemon=True).start()
+    if not done.wait(fuse):
+        kill_active_process_groups()
+        done.wait(KILL_BOUND_SECONDS)
+        raise AssertionError(
+            f"agent.run did not return within the {fuse}s fuse "
+            f"(deadline={timeout}): the deadline was not enforced"
+        )
+    if failures:
+        raise failures[0]
+    return lines
 
 
 def _wait_pid_dead(pid: int, timeout: float = 8.0) -> bool:
@@ -125,11 +223,8 @@ class TestCustomAgentDeadline:
         pidfile = tmp_path / "agent.pid"
         agent = CustomAgent(f"echo $$ > {pidfile}; exec sleep 300")
 
-        start = time.monotonic()
-        lines = list(agent.run("prompt", tmp_path, timeout=1.0))
-        elapsed = time.monotonic() - start
+        lines = _lines_under_fuse(agent, "prompt", tmp_path, timeout=1.0)
 
-        assert elapsed < KILL_BOUND_SECONDS
         assert any(line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines)
         assert agent.final_message is None
         pid = _read_pid(pidfile)
@@ -144,11 +239,8 @@ class TestCustomAgentDeadline:
             f"sh -c 'echo $$ > {child_pidfile}; sleep 300 & echo $! > {grandchild_pidfile}; wait'"
         )
 
-        start = time.monotonic()
-        lines = list(agent.run("prompt", tmp_path, timeout=1.0))
-        elapsed = time.monotonic() - start
+        lines = _lines_under_fuse(agent, "prompt", tmp_path, timeout=1.0)
 
-        assert elapsed < KILL_BOUND_SECONDS
         assert any(line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines)
         child = _read_pid(child_pidfile)
         grandchild = _read_pid(grandchild_pidfile)
@@ -161,11 +253,8 @@ class TestCustomAgentDeadline:
         pidfile = tmp_path / "agent.pid"
         agent = CustomAgent(f"echo hello; echo $$ > {pidfile}; exec sleep 300")
 
-        start = time.monotonic()
-        lines = list(agent.run("prompt", tmp_path, timeout=1.0))
-        elapsed = time.monotonic() - start
+        lines = _lines_under_fuse(agent, "prompt", tmp_path, timeout=1.0)
 
-        assert elapsed < KILL_BOUND_SECONDS
         assert "hello" in lines
         assert any(line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines)
         pid = _read_pid(pidfile)
@@ -188,11 +277,8 @@ class TestCustomAgentDeadline:
         agent = CustomAgent(f"echo $$ > {pidfile}; exec sleep 300")
         big_prompt = "x" * 512 * 1024  # > 64KB pipe buffer
 
-        start = time.monotonic()
-        lines = list(agent.run(big_prompt, tmp_path, timeout=1.0))
-        elapsed = time.monotonic() - start
+        lines = _lines_under_fuse(agent, big_prompt, tmp_path, timeout=1.0)
 
-        assert elapsed < KILL_BOUND_SECONDS
         assert any(line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines)
         assert _wait_pid_dead(_read_pid(pidfile))
 
@@ -217,11 +303,8 @@ class TestClaudeCodeAgentDeadline:
         monkeypatch.setenv("PATH", f"{bindir}:{os.environ['PATH']}")
 
         agent = ClaudeCodeAgent()
-        start = time.monotonic()
-        lines = list(agent.run("prompt", tmp_path, timeout=1.0))
-        elapsed = time.monotonic() - start
+        lines = _lines_under_fuse(agent, "prompt", tmp_path, timeout=1.0)
 
-        assert elapsed < KILL_BOUND_SECONDS
         assert "working" in lines
         assert any(line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines)
         assert _wait_pid_dead(_read_pid(pidfile))
@@ -259,11 +342,8 @@ class TestCodexAgentDeadline:
         monkeypatch.setattr(CodexAgent, "_supports_output_last_message", None)
 
         agent = CodexAgent()
-        start = time.monotonic()
-        lines = list(agent.run("prompt", tmp_path, timeout=1.0))
-        elapsed = time.monotonic() - start
+        lines = _lines_under_fuse(agent, "prompt", tmp_path, timeout=1.0)
 
-        assert elapsed < KILL_BOUND_SECONDS
         assert "starting" in lines
         assert any(line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines)
         assert agent.final_message is None
@@ -279,8 +359,9 @@ class TestClaudeSdkAgentDeadline:
     direct child on close (measured 2026-07-20, SDK 0.2.123) - so these
     tests drive the REAL runner + REAL SDK against fake CLIs injected
     via ``ClaudeAgentOptions.cli_path`` and assert the whole tree dies
-    on breach. Startup overhead is measured (~0.2s SDK import), so the
-    deadlines below have ample margin.
+    on breach. Startup overhead is measured and it is NOT small under
+    load: see :data:`SDK_DEADLINE_SECONDS`, which is what these
+    deadlines are.
     """
 
     def _fake_cli(self, tmp_path: Path, body: str) -> Path:
@@ -304,11 +385,8 @@ class TestClaudeSdkAgentDeadline:
             f"echo $$ > {pidfile}\nexec sleep 300\n",
         )
         agent = self._agent(cli)
-        start = time.monotonic()
-        lines = list(agent.run("prompt", tmp_path, timeout=4.0))
-        elapsed = time.monotonic() - start
+        lines = _lines_under_fuse(agent, "prompt", tmp_path, timeout=SDK_DEADLINE_SECONDS)
 
-        assert elapsed < 4.0 + KILL_BOUND_SECONDS
         assert any(line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines)
         assert agent.usage_records[-1].source == "timeout"
         assert _wait_pid_dead(_read_pid(pidfile))
@@ -325,11 +403,8 @@ class TestClaudeSdkAgentDeadline:
             f"echo fake-cli-started 1>&2\necho $$ > {pidfile}\nexec sleep 300\n",
         )
         agent = self._agent(cli)
-        start = time.monotonic()
-        lines = list(agent.run("prompt", tmp_path, timeout=4.0))
-        elapsed = time.monotonic() - start
+        lines = _lines_under_fuse(agent, "prompt", tmp_path, timeout=SDK_DEADLINE_SECONDS)
 
-        assert elapsed < 4.0 + KILL_BOUND_SECONDS
         assert "fake-cli-started" in lines
         assert any(line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines)
         assert _wait_pid_dead(_read_pid(pidfile))
@@ -346,7 +421,7 @@ class TestClaudeSdkAgentDeadline:
             f"sleep 300 &\necho $! > {grandchild_pidfile}\nwait\n",
         )
         agent = self._agent(cli)
-        lines = list(agent.run("prompt", tmp_path, timeout=4.0))
+        lines = _lines_under_fuse(agent, "prompt", tmp_path, timeout=SDK_DEADLINE_SECONDS)
 
         assert any(line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines)
         assert _wait_pid_dead(_read_pid(grandchild_pidfile))
@@ -374,6 +449,118 @@ class TestClaudeSdkAgentDeadline:
         assert any("claude-agent-sdk is not installed" in line for line in lines)
         assert not any(line.startswith(TIMEOUT_MESSAGE_PREFIX) for line in lines)
         assert agent.usage_records[-1].source == "unavailable"
+
+
+class TestTheFuseIsTheBound:
+    """#365: the fuse's positive control, the deadline constant pinned to
+    its measurement, and the sdk battery's call sites pinned to both.
+    See SDK_DEADLINE_SECONDS and _lines_under_fuse above."""
+
+    def test_a_streamer_with_no_deadline_fails_the_fuse_instead_of_hanging(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The positive control for the fuse, and the reason it exists.
+
+        MEASURED (#365): with the reaper's deadline check removed the
+        custom path did not return in 30s and the sdk path did not
+        return in 60s, so `list(agent.run(...))` plus an `elapsed`
+        assertion cannot go red for that mutation - the assertion never
+        runs. `timeout=None` reproduces exactly that state without
+        editing kstrl/, so this test would pass vacuously if the fuse
+        were ever deleted or widened to something a hang can outlast.
+        """
+        pidfile = tmp_path / "agent.pid"
+        agent = CustomAgent(f"echo hello; echo $$ > {pidfile}; exec sleep 300")
+
+        started = time.monotonic()
+        with pytest.raises(AssertionError, match="did not return within"):
+            _lines_under_fuse(agent, "prompt", tmp_path, timeout=None)
+        elapsed = time.monotonic() - started
+
+        # The lower bound is not decoration. A fuse mistakenly written as
+        # `done.wait(0)` raises this very message immediately, so without
+        # it the test passes for a fuse that bounds nothing.
+        assert elapsed >= 0.9 * KILL_BOUND_SECONDS, (
+            f"the fuse returned after {elapsed:.2f}s, so it did not wait "
+            f"its {KILL_BOUND_SECONDS}s budget"
+        )
+        assert elapsed < 2 * KILL_BOUND_SECONDS
+        assert _wait_pid_dead(_read_pid(pidfile)), (
+            "the fuse must reclaim the abandoned process group, not leak a sleep 300"
+        )
+
+    def test_the_deadline_constant_dominates_the_measured_startup(self) -> None:
+        """The constant is a measurement, so it is pinned to the
+        measurement rather than to a taste.
+
+        MEASURED (#365, 2026-09-15, 10-CPU machine): the sdk_runner's
+        startup - a python interpreter, `import claude_agent_sdk`, and
+        the SDK spawning the CLI - is 0.39-0.42s alone (n=20),
+        1.07 / 3.40 / 5.80s min/median/max with 25 copies running at
+        once (n=100), and 1.47 / 4.97 / 8.81s at 40 (n=80). Until it
+        finishes there is no marker line and no pidfile for the battery
+        to assert on, so the deadline has to dominate it. 4.0s did not:
+        the CLI had not started in 8 of 25 concurrent runs, and 23 of 25
+        (and, on a second run, 20 of 25) concurrent pytest processes
+        running this class had a failure.
+
+        The multiplier is against the 40-way number because the tail
+        grows with concurrency and the reported condition is not a
+        ceiling.
+        """
+        measured_worst_startup = 8.814  # 40-way concurrency, n=80
+
+        assert SDK_DEADLINE_SECONDS >= 2.0 * measured_worst_startup, (
+            "SDK_DEADLINE_SECONDS no longer dominates the measured startup of "
+            "the sdk_runner; re-run trial_startup.py through concurrent.py "
+            "before lowering it"
+        )
+        assert SDK_DEADLINE_SECONDS < 60.0, (
+            "the runner was measured NOT to exit on its own inside 60s "
+            "(probe_no_deadline.py); a deadline at or past that is unproven"
+        )
+
+    def test_the_sdk_battery_is_driven_through_the_fuse_at_the_measured_deadline(
+        self,
+    ) -> None:
+        """A pin on the call sites, because the constant alone proves
+        nothing about the tests that were flaking.
+
+        A deadline literal left behind at one of the three sites passes
+        every other check in this file and reproduces #365 exactly: it
+        is green alone and red under load.
+        """
+        battery = next(
+            node
+            for node in ast.walk(ast.parse(Path(__file__).read_text(encoding="utf-8")))
+            if isinstance(node, ast.ClassDef) and node.name == "TestClaudeSdkAgentDeadline"
+        )
+        wanted = (
+            "test_silent_hang_is_killed",
+            "test_hang_after_output_is_killed",
+            "test_grandchild_is_killed_too",
+        )
+        found = {
+            fn.name: [
+                (ast.unparse(call.func), ast.unparse(kw.value))
+                for call in ast.walk(fn)
+                if isinstance(call, ast.Call)
+                for kw in call.keywords
+                if kw.arg == "timeout"
+            ]
+            for fn in battery.body
+            if isinstance(fn, ast.FunctionDef) and fn.name in wanted
+        }
+
+        assert found == {
+            name: [("_lines_under_fuse", "SDK_DEADLINE_SECONDS")] for name in wanted
+        }, (
+            "every test in the claude-sdk battery must drain through "
+            "_lines_under_fuse at SDK_DEADLINE_SECONDS. A literal deadline left "
+            "at one call site is the flake #365 was filed for, and it passes "
+            f"alone every time. Found: {found}"
+        )
 
 
 class TestSignalGroupSafety:
