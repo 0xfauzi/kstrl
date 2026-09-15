@@ -30,7 +30,7 @@ kstrl is designed as a loop that closes on evidence instead. The parts are delib
 - **What stops it running away?** Bounds on everything: iterations, time, tokens, cost, work in flight, and a written envelope of what a merge may touch. When a bound trips, the run stops loudly and tells you why.
 - **Where do you stand?** On the loop, not in it. Boundary conditions route to you: a spec the architect cannot decompose, a merge you asked to approve, a budget that ran out. Everything else flows, and everything is recorded.
 
-kstrl is those loops, nested, innermost fastest. The innermost is the only one with no sensor of its own; every loop around it acts on what the one inside produced and measures it with something the agent did not write. The loops, their clock rates, what acts, what measures and whether each closes today are the table at the top of [ARCHITECTURE.md](ARCHITECTURE.md).
+kstrl is those loops, nested, innermost fastest. The innermost is the only one with no sensor of its own; every loop around it acts on what the one inside produced and measures it with something the agent did not write. The loops, their clock rates and what measures each are the table at the top of [ARCHITECTURE.md](ARCHITECTURE.md).
 
 The reviewers are the point: independent, adversarial, and expected to distrust the implementing agent. The harness distrusts the reviewers in turn: an empty, partial or oversized review fails closed, and a reviewer's own claim to have searched thoroughly is shown as a hint and never used as a gate. The only thing that proves a reviewer works is calibration: planting known bugs and measuring how often each role catches them. The full phase-by-phase pipeline lives in [ARCHITECTURE.md](ARCHITECTURE.md), and the reasoning behind the loop is in [docs/control-loop-design.md](docs/control-loop-design.md).
 
@@ -559,10 +559,6 @@ The PRD (`prd.json`) is a list of user stories with testable acceptance criteria
 The agent updates `passes` and `notes` as it works, and kstrl reads them between iterations to decide whether to continue. Treat `passes` as the agent's claim, not the verdict: mechanical verification checks the flag is set, and the reviewer independently judges every criterion. Acceptance criteria should be concrete and testable - commands the agent can run, behavior it can verify - because they are the set point every check measures against.
 
 `allowedPaths` is optional for a hand-written PRD (it feeds the Phase 1 diff-scope check); the architect is required to emit it for every decomposed component.
-
-## Architecture
-
-Start with [ARCHITECTURE.md](ARCHITECTURE.md), which opens with the loops kstrl is built as and their clock rates, and treats the phase chain as one tick of the middle two. The reasoning behind the loop, with what closes today and what each cycle closes next, is [docs/control-loop-design.md](docs/control-loop-design.md). The adversarial role taxonomy and design invariants are in [docs/adversarial-design.md](docs/adversarial-design.md).
 
 ## Development
 

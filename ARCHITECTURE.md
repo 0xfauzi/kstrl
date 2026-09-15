@@ -21,11 +21,6 @@ a target it steers toward, something that acts, something that measures the
 result independently of the thing that acted, and a clock. The phase chain in
 the next section is what happens inside one tick of the two middle loops.
 
-Read the table from the top down: the first row is the fastest loop, and each
-row names what acts, what measures it, and what it steers toward. A loop with
-nothing measuring it yet says so in its own column. The table is section 2 of
-[docs/control-loop-design.md](docs/control-loop-design.md).
-
 | Rate | Loop | What acts | What measures | What it steers toward |
 |---|---|---|---|---|
 | seconds | implement | the engineer agent | nothing yet (the breaker and the scope fence watch it, neither reads the code) | one story's acceptance criteria |
@@ -53,7 +48,7 @@ closes the rest is the R10 milestone.
 ## The pipeline: one tick of the accept and integrate loops
 
 Every component - whether from `ks run` (single component) or a factory
-run (many) - moves through the same phase chain, set out below.
+run (many) - moves through the same phase chain.
 
 Phase 0 also includes an architect/PRD-red-team pass at decompose time
 that halts on blocker-severity spec issues; its findings persist to
@@ -131,10 +126,10 @@ iterations; every sensor sits one loop up, in the phase chain above. Adding a
 fast sensor here is R10.12, gated on evidence that the loop actually iterates
 (in the recorded runs so far it completes on iteration one).
 
-Look at what reaches `EngineerLoop`: the next failing story, the stall
-verdict, the scope verdict, and last attempt's failures. No sensor has an
-edge into the inner loop. The two components in the measure region that do
-have edges out, the findings store and the contract tester, feed the
+What reaches `EngineerLoop` is the next failing story, the stall verdict,
+the scope verdict, and last attempt's failures. No sensor feeds the inner
+loop directly. The two measuring components that do feed anything, the
+findings store and the contract tester, feed the
 pipeline and the scheduler, never the loop.
 
 Guardrails around the loop: allowed-paths enforcement runs BEFORE the
@@ -146,7 +141,7 @@ groups with deadline kills, so a hung grandchild dies with its parent).
 
 ## Factory mode
 
-The forward path, left to right: intake, plan, build, decide, ship. The
+The forward path: intake, plan, build, decide, ship. The
 scheduler is where the parallelism lives: one worktree per ready component,
 and a component counts as complete only when its merge is confirmed.
 
@@ -163,7 +158,7 @@ MERGE_PENDING without scheduling dependents past it.
 
 ## The learning loop
 
-The learning loop as it exists today is open at the last edge:
+The learning loop as it exists today is open at the last step:
 proposals are written and nothing reads them back into a run, and no
 mechanism yet checks whether an applied proposal helped. The one learning
 path that is closed is the per-component knowledge layer (distill facts,
@@ -171,10 +166,10 @@ inject them into later components, measure their uptake as a lower bound).
 The design that closes the rest, with attribution and a playbook shared
 across projects, is [docs/continuous-learning-design.md](docs/continuous-learning-design.md) (R9).
 
-Three edges are the whole learning layer today: facts from the distiller
+Three flows are the whole learning loop today: facts from the distiller
 into later components' prompts, outcomes into the journal, and patterns from
-the journal into proposals. No edge leaves a proposal. The playbook and the
-runtime signals have no edge yet, because they are not built.
+the journal into proposals. Nothing reads a proposal back. The playbook and
+the runtime signals are not built.
 
 Failures are journaled as structured signatures (`linter:E501`,
 `typecheck:arg-type`, `diff_scope:rename`), not flattened strings;
@@ -186,9 +181,9 @@ are documented in [docs/evolution-metrics.md](docs/evolution-metrics.md).
 
 ## Where you stand
 
-Every channel between you and the factory, and nothing else: the spec in,
+Every channel between you and the factory: the spec in,
 the board out, the inbox where decisions wait, the promotion only you can
-make, and the two GitHub edges that are the factory's way in and way out.
+make, and the two GitHub channels that are the factory's way in and way out.
 Everything else runs without you.
 
 ## Trust
@@ -196,15 +191,15 @@ Everything else runs without you.
 How autonomy is earned and lost: run outcomes into the ladder, the ladder's
 flag bundle into the pipeline (it can only withhold), a policy violation
 demoting without appeal, and the ladder, the ledger and the inbox all kept
-in the control directory outside the tree. The calibration edge is R10.11:
+in the control directory outside the tree. Calibration is R10.11:
 the component exists, the demotion it would trigger is not wired yet.
 
 ## The event-stream substrate
 
 Events in, views out: the pipeline and the scheduler emit typed events, the
 bus fans them out to the reducer, the legacy log and the tracker mirror, and
-the reducer drives the dashboard and `ks status`. No edge on this layer goes
-back into control flow.
+the reducer drives the dashboard and `ks status`. No view feeds back into
+control flow.
 
 The TUI is a view, never the record. Every run - factory, decompose,
 feature, understand - appends typed, schema-versioned events to
