@@ -2,15 +2,19 @@
 
 One entry per lesson under `docs/lessons/`, newest last, plus the agreed
 vocabulary the lessons rely on. A lesson teaches a change on the day it
-landed and is not edited afterwards; when a later change reverses one, the
-new entry names what it reverses, the old entry gains `superseded-by:`, and
-the old lesson gains a banner. The checker:
+landed and is not edited afterwards, except that a link whose target has
+left the repository is rewritten to plain text and recorded in its entry;
+when a later change reverses one, the new entry names what it reverses, the
+old entry gains `superseded-by:`, and the old lesson gains a banner. The checker:
 
     python3 ~/.claude/skills/explain-pr/scripts/lesson_lint.py --register docs/lessons/register.md
 
 Each lesson's widgets have their rules pulled into standalone scripts under
 `docs/lessons/verify/<lesson>/`; run them to reproduce the sweeps the lesson
-quotes.
+quotes. `verify/pr-221/map_paths.py` no longer runs: the atlas model it
+imported left the repository in cba2b05, and the numeric `rules:` and the
+`parts:` ids in that entry name the atlas's invariants and components, which
+have no definition in the tree now (#368).
 
 ## Glossary
 
@@ -48,8 +52,9 @@ entry is revised in place.
 - parts: Sense, MechanicalVerifier, CLI, RetryContext, Pipeline, Scheduler, Reviewer, SecurityReviewer, ContractTester, FixturesOracle, Findings, PRD, SafeMode, AutonomyLadder, ServeDaemon, Dampener, EvolutionJournal, FlowControl, PullRequests, OperatorContext, WorkQueue, Steering, GitHubIntake, Calibration, Inbox, HealthTrending, EngineerLoop, Operator
 - rules: H1, H2, H3, H4, 6, 7, 8, 9, 12, 13, 14, doctrine 5 (frozen phase count), doctrine 6 (no new outcome vocabularies)
 - reverses: (none)
+- edited: 2026-09-15, links into the removed atlas rewritten to plain text (#368)
 
-What the lesson taught. The end architecture as one clickable map: the atlas's own drawing of kstrl with the components the R10 plan reaches marked, a TODAY and END STATE toggle, a per-component panel, and a thirteen-step walk of one spec from labelled issue to journal that lights, on the same drawing, which component acts and which component measures each step. The walk makes the two open loops visible by their missing amber card: the engineer's inner loop (only the breaker and the path guard measure it, and neither reads the code) and the unbuilt operate loop. Eight decisions, each as a rule the reader operates: who may say a story is done (the set-point agreement rule with its blocking rule folded in), why the agent sees only what is failing now (the rank rule, with the corrected legacy special case), what happens when the review budget runs out, why the daemon can refuse work (the admission gates in the order the code evaluates them, with R10.7's bound placed where issue #228 puts it), how autonomy is earned and lost (the ladder with its clamps and the manual-override note), the order the context is assembled and why the memory file follows the retry context, why a sensor must run by hand first, and which loop a change belongs to (the observe band is not a loop; a sink is never control flow). Every rule was swept outside the page in Python, and the page's inline script was then run under node against the same grids: 960, 1560, 144, 110592, 75, 80, 31 and 34 rows agree, and every "try this" move reproduces. The build order, the graduation rule, the three prohibitions and where each new file lives are one table.
+What the lesson taught. The end architecture as one clickable map of kstrl with the components the R10 plan reaches marked, a TODAY and END STATE toggle, a per-component panel, and a thirteen-step walk of one spec from labelled issue to journal that lights, on the same drawing, which component acts and which component measures each step. The walk makes the two open loops visible by their missing amber card: the engineer's inner loop (only the breaker and the path guard measure it, and neither reads the code) and the unbuilt operate loop. Eight decisions, each as a rule the reader operates: who may say a story is done (the set-point agreement rule with its blocking rule folded in), why the agent sees only what is failing now (the rank rule, with the corrected legacy special case), what happens when the review budget runs out, why the daemon can refuse work (the admission gates in the order the code evaluates them, with R10.7's bound placed where issue #228 puts it), how autonomy is earned and lost (the ladder with its clamps and the manual-override note), the order the context is assembled and why the memory file follows the retry context, why a sensor must run by hand first, and which loop a change belongs to (the observe band is not a loop; a sink is never control flow). Every rule was swept outside the page in Python, and the page's inline script was then run under node against the same grids: 960, 1560, 144, 110592, 75, 80, 31 and 34 rows agree, and every "try this" move reproduces. The build order, the graduation rule, the three prohibitions and where each new file lives are one table.
 
 Two corrections the sweeps forced on the lesson's own drafts: the level-triggered retry context is bounded, not smaller (it is longer than today's for one or two attempts and adds one history line per further attempt where the old format adds a full failure text), and "every permission in the bundle is monotone" only holds once the merge gate is read as a restriction rather than a permission. One place the material and the brief disagree, decided for the material: issue #228 inserts the open-PR bound into the gates tuple after `check_budget`, which is before the inbox cap and the factory lock, so the lesson draws it there and says the issue's "only when everything else admits" holds for the three ledger gates only.
 
