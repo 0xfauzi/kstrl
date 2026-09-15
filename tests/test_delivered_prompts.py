@@ -17,10 +17,9 @@ silently not.
 This module closes the free half. Each role's DELIVERED text is rendered
 through its real production builder against a fixed fixture below, and
 its ``(sha256, length)`` is pinned in ``_EXPECTED_DELIVERED``. A change
-to interpolation logic, to a truncation limit, to the order sections are
-assembled in, or to a builder's own wording now moves a digest, and the
-length beside it puts the byte delta in the diff where a reviewer reads
-it.
+to interpolation logic, to the order sections are assembled in, or to a
+builder's own wording now moves a digest, and the length beside it puts
+the byte delta in the diff where a reviewer reads it.
 
 No runtime gate goes with it. Issue #325's option 3 was a per-prompt
 size budget enforced at delivery; that is a new production failure path
@@ -46,6 +45,15 @@ implicit:
   to the token's SHAPE is therefore invisible to these digests;
   ``tests/test_prompt_injection_guard.py`` owns that.
 - The engineer's absolute paths, normalised to ``<ROOT>``.
+- Every truncation limit in the code. Every fixture input here is far
+  smaller than every limit, so raising or lowering one moves no digest.
+  Measured: changing the 50000 character diff cut in
+  ``knowledge.distill_facts`` to 20 leaves all 25 tests here green, and
+  ``tests/test_knowledge.py`` green too, because that test asserts only
+  that the truncation marker is present. Covering a limit would need a
+  fixture input larger than it, and for the distiller the cut is in
+  ``distill_facts``, which is already named above as having no verbatim
+  test.
 - For the security row, that ``security.py`` still calls
   ``git.repo_change_source``: the block is passed in as an argument
   here, exactly as ``run_security_review`` passes it. That wiring is
@@ -57,7 +65,7 @@ implicit:
   the two phases that have a builder and an entry point taking a repo
   (review, security) and requires the agent to receive the builder's
   string with nothing added. Measured: appending one line to ``prompt``
-  in ``run_review`` after ``build_review_prompt`` returns leaves all 23
+  in ``run_review`` after ``build_review_prompt`` returns leaves all 24
   other tests here and all of ``tests/test_prompt_versions.py`` green,
   and fails only that test. The same wrapping in ``decompose_spec``
   (kstrl/decompose.py:2264), ``distill_facts``
