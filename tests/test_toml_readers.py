@@ -61,7 +61,7 @@ reaches the import, the call, `getattr(tomllib, "load")` and
 every string a node holds and folds what it can.
 
 LAYER 2 is the walk below, which resolves names and says which line and
-which clause. It is not redundant: layer 1 can only say "config.py's
+which clause. It is not redundant: layer 1 can only say "config_toml.py's
 count moved", which is the wrong message when the answer is "this parse
 ends on a `ValueError`". Layer 1 in turn catches what layer 2 cannot, and
 the list is at the bottom of this docstring.
@@ -74,7 +74,7 @@ ships with a suppression list is a guard that rots. This one keys on the
 CALL rather than on the handler, so its population is every tomllib parse
 in the package - three sites, all compliant as of this change:
 
-    kstrl/config.py       except Exception  (#318 round 3)
+    kstrl/config_toml.py  except Exception  (#318 round 3)
     kstrl/verify.py       except Exception  (#318 round 3, was ValueError)
     kstrl/feedforward.py  except Exception  (x2, pre-existing)
 
@@ -333,7 +333,7 @@ def _scan_file(source: Path) -> Scan:
 #: handles the four unrelated exception families ``tomllib.load`` raises.
 EXPECTED_TOMLLIB_SPELLINGS: dict[str, int] = {
     # the import, the parse, and the TOMLDecodeError clause above it
-    "config.py": 3,
+    "config_toml.py": 3,
     # the import and two parses
     "feedforward.py": 3,
     # a function-local import and one parse
@@ -343,7 +343,7 @@ EXPECTED_TOMLLIB_SPELLINGS: dict[str, int] = {
 #: Every parse layer 2 resolves, keyed by module and origin. Four calls
 #: in three modules, and the same three the docstring names.
 EXPECTED_TOML_PARSES: tuple[str, ...] = (
-    "config.py: tomllib.loads",
+    "config_toml.py: tomllib.loads",
     "feedforward.py: tomllib.loads",
     "feedforward.py: tomllib.loads",
     "verify.py: tomllib.loads",
@@ -600,7 +600,7 @@ class TestTheWalkSeesWhatItClaimsTo:
         and should be deleted rather than left as decoration."""
         modules = {source.name for source in package_sources() if _scan_file(source).parses}
 
-        assert {"config.py", "verify.py", "feedforward.py"} <= modules, modules
+        assert {"config_toml.py", "verify.py", "feedforward.py"} <= modules, modules
 
 
 class TestNoTomlReaderEnumeratesItsExceptions:

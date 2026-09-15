@@ -8,9 +8,11 @@ the decision table rather than restating the argument.
 
 `_may_signal_group` is here too, because `safe_pgid` calls it and tests
 for one rule split across two files drift. It came out of
-`tests/test_procgroup.py`, which is about the `ps` READ: that file was at
-798 lines against a `file-length-ratchet` hook that fails a file crossing
-800, so the two halves needed separating anyway and this is the seam.
+`tests/test_procgroup.py`, which was then about the `ps` READ: that file
+was at 798 lines against a `file-length-ratchet` hook that fails a file
+crossing 800, so the two halves needed separating anyway and this is the
+seam. #366 moved the `ps` READ on again, to
+`tests/test_procgroup_listing.py`.
 """
 
 from __future__ import annotations
