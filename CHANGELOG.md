@@ -26,7 +26,12 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   agent or the repository's own commands, and `--measure` (Tier B) is
   not built: it exits 2 naming `ks sense` as the command that already
   runs the measurement it would wrap.
-
+- `[intake_github] allowed_actors` (`KSTRL_INTAKE_GITHUB_ALLOWED_ACTORS`,
+  comma separated): the GitHub logins allowed to apply the trigger label,
+  and so to authorize factory spend. Empty, the default, changes nothing;
+  non-empty fails closed on every uncertainty. `ks queue sync` and the
+  daemon both name the actor in a refusal. See
+  [`docs/continuous-intake.md`](docs/continuous-intake.md) (#188).
 - A memory file: `scripts/kstrl/memory.md`, operator-authored standing
   feedback read into every factory engineer prompt and every `ks run`
   prompt (`ks feature` and `ks understand` do not read it). `ks init`

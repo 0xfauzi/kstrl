@@ -603,7 +603,11 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("inbox", "notify_action_required"): "notify on action-required items and demotions only",
     ("intake_github", "enabled"): "poll GitHub Issues for labelled work (opt-in outbound poller)",
     ("intake_github", "repo"): "owner/name to poll; empty resolves from the checkout's remote",
-    ("intake_github", "queued_label"): "the trigger label; applying it requires repo write access",
+    ("intake_github", "queued_label"): "the trigger label; allowed_actors decides who may apply it",
+    (
+        "intake_github",
+        "allowed_actors",
+    ): "logins allowed to apply the trigger label; empty = anyone who can label",
     ("intake_github", "label_prefix"): "prefix for the state labels written back to the issue",
     ("intake_github", "max_items_per_sync"): "upper bound on items admitted per sync",
     ("intake_github", "default_priority"): "queue priority given to remote-sourced items",
@@ -737,6 +741,12 @@ def _sentinel_for(section: str, key: str, default: Any) -> Any:
     return "sentinel-value"
 
 
+# `_sentinel_for` above has a `list` branch and `_toml_literal` below has
+# none for `tuple`: a `tuple` default falls through both to the plain
+# string `"sentinel-value"`, and a field whose loader validates it as a
+# list (e.g. `GitHubIntakeConfig.allowed_actors`, #188) would then fail
+# generation. Every list-typed config field must default to a real
+# `list`, never a `tuple`, or this probe cannot exercise it.
 def _toml_literal(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
