@@ -27,6 +27,7 @@ from kstrl.factory import FactoryConfig, FactoryResult, run_factory
 from kstrl.manifest import Component, Manifest
 from kstrl.pipeline import ComponentPipeline
 from kstrl.ui.plain import PlainUI
+from tests.helpers import gitrepo
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 
 
@@ -123,8 +124,7 @@ def init_git_repo(root: Path) -> None:
 
     run("init")
     run("symbolic-ref", "HEAD", "refs/heads/main")
-    run("config", "user.email", "t@example.com")
-    run("config", "user.name", "tester")
+    gitrepo.set_identity(root)
     (root / "README.md").write_text("base\n", encoding="utf-8")
     run("add", ".")
     run("commit", "-m", "base")

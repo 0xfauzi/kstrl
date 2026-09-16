@@ -9,6 +9,7 @@ from kstrl.config import KstrlConfig
 from kstrl.events import EventBus
 from kstrl.loop import COMPLETION_MARKER, run_loop
 from kstrl.ui.plain import PlainUI
+from tests.helpers import gitrepo
 
 
 class MockAgent:
@@ -181,16 +182,7 @@ class TestRunLoop:
             check=True,
             capture_output=True,
         )
-        subprocess.run(
-            ["git", "-C", str(tmp_path), "config", "user.email", "t@t"],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(tmp_path), "config", "user.name", "t"],
-            check=True,
-            capture_output=True,
-        )
+        gitrepo.set_identity(tmp_path)
         (tmp_path / "stub").write_text("stub")
         subprocess.run(
             ["git", "-C", str(tmp_path), "add", "stub"],
@@ -306,16 +298,7 @@ class TestGuardsRunBeforeCompletion:
             check=True,
             capture_output=True,
         )
-        subprocess.run(
-            ["git", "-C", str(tmp_path), "config", "user.email", "t@t"],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(tmp_path), "config", "user.name", "t"],
-            check=True,
-            capture_output=True,
-        )
+        gitrepo.set_identity(tmp_path)
         kstrl_dir = tmp_path / "scripts" / "kstrl"
         kstrl_dir.mkdir(parents=True)
         (kstrl_dir / "prompt.md").write_text("test prompt")

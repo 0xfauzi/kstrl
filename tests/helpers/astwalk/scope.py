@@ -230,3 +230,51 @@ def _clause_name(part: ast.expr, table: Bindings) -> str | None:
     if found.guessed:
         return None
     return found.dotted.rsplit(".", 1)[-1]
+
+
+def catches_everything(node: ast.Try | ast.TryStar, table: Bindings) -> bool:
+    """Does this ``try`` catch everything its body can raise?
+
+    ``table`` is REQUIRED: a clearing rule must not resolve names
+    without one. With a default of ``None`` this cleared ``except
+    Exception:`` when ``Exception`` had been rebound through an import
+    alias and nobody passed a table, because :func:`_clause_name` falls
+    back to the bare spelling when it cannot resolve - the exact alias
+    hole this predicate exists to close (#364).
+
+    ONE rule, in one place, because two guards asked the same question
+    of ``serve._file_inbox_item`` and answered it differently: the
+    config-read walk wanted the whole surface, the inbox-write walk
+    wanted ``ControlStateError`` and ``TypeError`` by name, and a third
+    site could have satisfied neither (#364).
+
+    Two conditions, both required, because this answer CLEARS a site.
+
+    A clause naming ``Exception`` exactly. ``BaseException`` and a bare
+    ``except:`` do not count: everything a body raises about its own
+    subject derives from ``Exception``, while ``KeyboardInterrupt`` and
+    ``SystemExit`` are about the process, so catching them is a different
+    and worse thing rather than a broader version of the same one. An
+    enumeration of types (``except (OSError, ValueError)``) does not
+    count either - that is the defect #318 shipped three times. The name
+    is resolved through ``table``, so ``from json import JSONDecodeError
+    as Exception`` does not clear.
+
+    And NO clause of this ``try`` re-raises. Siblings do not chain: a
+    narrow clause above that re-raises lets its own type out past the
+    broad one below, and a broad clause that re-raises guards nothing at
+    all. The walk cannot decide which exception a re-raising ladder still
+    lets through, so it declines to clear. It looks only for a literal
+    ``raise`` inside a handler, so a handler that re-raises through a
+    helper call, one that calls ``sys.exit``, and a raising ``finally``
+    all still CLEAR; no enrolled row is mis-cleared that way today, and
+    widening the walk is a follow-up.
+    """
+    clauses = handler_clauses(node, table)
+    if not any(clause.decided and "Exception" in clause.names for clause in clauses):
+        return False
+    for handler in node.handlers:
+        for child in [handler, *own_nodes(handler)]:
+            if isinstance(child, ast.Raise):
+                return False
+    return True

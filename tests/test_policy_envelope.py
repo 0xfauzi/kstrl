@@ -31,6 +31,7 @@ from kstrl.policy import (
     parse_new_dependencies,
 )
 from kstrl.verify import check_policy_envelope, run_mechanical_verification
+from tests.helpers import gitrepo
 
 
 # --------------------------------------------------------------------------
@@ -480,8 +481,7 @@ def _git_cmd(args: list[str], cwd: Path) -> None:
 def _init_repo(root: Path) -> None:
     _git_cmd(["init"], root)
     _git_cmd(["symbolic-ref", "HEAD", "refs/heads/main"], root)
-    _git_cmd(["config", "user.email", "t@example.com"], root)
-    _git_cmd(["config", "user.name", "tester"], root)
+    gitrepo.set_identity(root)
     (root / "README.md").write_text("base\n")
     _git_cmd(["add", "."], root)
     _git_cmd(["commit", "-m", "base"], root)

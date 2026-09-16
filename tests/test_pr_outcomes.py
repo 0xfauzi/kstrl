@@ -36,6 +36,7 @@ from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.pr import PrOutcome, push_create_and_merge_pr, wait_for_merge
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
+from tests.helpers import gitrepo
 
 STUB_PR_URL = "https://github.com/stub/repo/pull/7"
 
@@ -90,8 +91,7 @@ def _make_repo(
         (feature / "prd.json").write_text(_prd_json())
     (root / ".gitignore").write_text(".kstrl/\nscripts/kstrl/manifest.json\n")
     _git("init", "-b", "main", cwd=root)
-    _git("config", "user.email", "kstrl-test@example.com", cwd=root)
-    _git("config", "user.name", "kstrl Test", cwd=root)
+    gitrepo.set_identity(root)
     _git("add", "-A", cwd=root)
     _git("commit", "-m", "init", cwd=root)
     if with_origin:
@@ -109,8 +109,7 @@ def _advance_origin(tmp_path: Path, filename: str = "file1.txt") -> str:
     squash merge landing remotely. Returns the new origin/main sha."""
     clone = tmp_path / f"clone-{filename}"
     _git("clone", "-b", "main", str(tmp_path / "origin.git"), str(clone), cwd=tmp_path)
-    _git("config", "user.email", "other@example.com", cwd=clone)
-    _git("config", "user.name", "Other", cwd=clone)
+    gitrepo.set_identity(clone)
     (clone / filename).write_text("remote change")
     _git("add", "-A", cwd=clone)
     _git("commit", "-m", f"add {filename}", cwd=clone)

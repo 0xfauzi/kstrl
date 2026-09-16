@@ -37,6 +37,7 @@ from kstrl.names import (
 )
 from kstrl.pr import push_branch
 from kstrl.ui.plain import PlainUI
+from tests.helpers import gitrepo
 
 # Unicode dash confusables: non-breaking hyphen, minus sign, en dash.
 NB_HYPHEN = "‑"
@@ -413,8 +414,7 @@ def git_repo_with_origin(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
-    subprocess.run(["git", "config", "user.email", "t@t"], cwd=repo, check=True)
-    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    gitrepo.set_identity(repo)
     (repo / "f.txt").write_text("a\n")
     subprocess.run(["git", "add", "f.txt"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-qm", "init"], cwd=repo, check=True)
