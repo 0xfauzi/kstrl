@@ -89,6 +89,8 @@ def test_a_packages_src_monorepo_dependency_graph_reaches_the_engineer(tmp_path:
     assert "api" in body
     assert "models" in body
     assert "Thing" in body
+    assert body.splitlines()[0].startswith("api -> models"), body
+    assert "packages.demo.src.demo_pkg" not in body, body
 
 
 def test_the_file_budget_is_spent_on_source_and_not_on_directory_order(
