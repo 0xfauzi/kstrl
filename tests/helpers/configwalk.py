@@ -107,7 +107,8 @@ from pathlib import Path
 from tests.helpers.astwalk import all_nodes, bindings, label, own_nodes, parsed, scopes
 from tests.helpers.astwalk.resolve import Bindings
 
-#: The three functions in ``kstrl/config.py`` that reach the file. Every
+#: The three functions that reach the file: the two parsers in
+#: ``kstrl/config_toml.py`` and the resolver in ``kstrl/config.py``. Every
 #: config dataclass's ``load`` bottoms out in one of them, which is what
 #: lets layer 1 enumerate no class names of its own.
 PARSE_PRIMITIVES = frozenset({"load_toml_section", "load_toml_document", "resolve_config_file"})

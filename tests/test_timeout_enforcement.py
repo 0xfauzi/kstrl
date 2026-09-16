@@ -1278,7 +1278,7 @@ class TestSubprocessTimeoutAudit:
       waits on the killed child with NO deadline and Popen.__exit__ waits
       again, so `timeout=` cannot bound a ps that will not die. Measured
       under a fake wedged child: 60.06s before, sub-second after
-      (tests/test_procgroup.py::TestThePsCallIsBounded).
+      (tests/test_procgroup_listing.py::TestThePsCallIsBounded).
     """
 
     #: Spawn-and-wait entry points that must carry a ``timeout=``.
@@ -1579,7 +1579,7 @@ class TestSubprocessTimeoutAudit:
         have caught #309: that unbounded wait was inside CPython, not in
         this tree, so no walk of ``kstrl/`` could see it. The thing that
         catches a revert to ``subprocess.run`` is the clock in
-        ``tests/test_procgroup.py::TestThePsCallIsBounded``, which
+        ``tests/test_procgroup_listing.py::TestThePsCallIsBounded``, which
         measured 60.06s against the old body. What this catches is the
         sibling the scope invites and nobody was checking: a
         hand-rolled ``Popen`` in one of these five files that waits on

@@ -438,7 +438,7 @@ class TestTheReadBytesExclusion:
     and the exclusion is pinned so it cannot silently grow.
 
     All six sites guard the decode separately today, which is the shape
-    ``config.load_toml_document`` argues for: do the I/O outside the
+    ``config_toml.load_toml_document`` argues for: do the I/O outside the
     guard so no widening can reach an ``OSError``. A seventh appearing is
     a reason to look, so this fails rather than absorbing it.
 
@@ -452,7 +452,7 @@ class TestTheReadBytesExclusion:
 
     EXPECTED_READ_BYTES: dict[str, int] = {
         "breaker.py": 1,
-        "config.py": 1,
+        "config_toml.py": 1,
         "dampener.py": 1,
         "inbox.py": 1,
         "safemode.py": 1,
