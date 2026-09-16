@@ -281,13 +281,30 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # constant and the body of DECISIONS_CONTEXT_PROMPT, both enrolled.
     "decisions.py": 2,
     "decompose.py": 2,
+    # #303: the seven fragments IterationContext.format_for_prompt
+    # assembles, plus their shared version constant.
+    "context.py": 14,
+    # #303: the in-loop scope-violation guard's version constant plus
+    # its one fragment.
+    "factory.py": 2,
     "git.py": 4,
-    "init_cmd.py": 12,
-    "knowledge.py": 2,
+    # #303: CLAUDE_MD_PROMPT_VERSION plus the six _generate_claude_md
+    # section constants and the ten per-language table entries.
+    "init_cmd.py": 44,
+    # #303: the knowledge-context version constant plus its two
+    # fragments.
+    "knowledge.py": 6,
     "loop.py": 2,
-    "review.py": 2,
+    # #303: FIX_HINT_PROMPT_VERSION plus the twelve _HINT_PATTERNS
+    # bodies.
+    "parsers.py": 24,
+    # #303: SETPOINT_RETRY_PROMPT_VERSION plus the five
+    # setpoint_retry_context fragments.
+    "review.py": 12,
     "security.py": 2,
-    "verify.py": 2,
+    # #303: four version constants (diff-scope details, PRD tamper,
+    # scope-unreadable, policy envelope) plus their thirteen fragments.
+    "verify.py": 22,
 }
 
 

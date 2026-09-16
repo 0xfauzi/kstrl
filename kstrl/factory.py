@@ -145,6 +145,30 @@ if TYPE_CHECKING:
     from kstrl.ui.base import UI
 
 
+#: H3 (#303): the in-loop guard-violation error _run_component builds when
+#: the component's own guard catches a scope violation before Phase 1 runs.
+#: Its wording differs from verify._diff_scope_details by a sentence and
+#: three punctuation marks; both copies are enrolled as they stand, not
+#: unified, because unifying them is a text change that owes calibration.
+IN_LOOP_SCOPE_VIOLATION_PROMPT_VERSION = "1.0.0"
+
+IN_LOOP_SCOPE_VIOLATION_PROMPT = (
+    "{count} file(s) outside the "
+    "component's allowed scope, caught in-loop after "
+    "iteration {iterations}: {listed}. "
+    "Base branch: {base_branch} "
+    "(scope is judged on `git diff {base_branch}...HEAD`; "
+    "do NOT `git checkout {base_branch} -- <path>`, revert "
+    "only your own out-of-scope commits/edits). "
+    "Allowed paths (complete list): "
+    "{allowed_paths}; "
+    "plus harness artifacts (kstrl's own files, already in "
+    "scope, no need to widen allowedPaths): "
+    "{harness_paths}. "
+    "Do not widen allowedPaths."
+)
+
+
 class BudgetConfigError(ValueError):
     """A budget ceiling was configured with a value that cannot bound
     anything.
@@ -2457,25 +2481,18 @@ def _run_component(
             shown = list(result.guard_violations[:15])
             more = len(result.guard_violations) - len(shown)
             listed = ", ".join(shown) + (f" ... and {more} more" if more else "")
-            error = (
-                f"{len(result.guard_violations)} file(s) outside the "
-                f"component's allowed scope, caught in-loop after "
-                f"iteration {result.iterations}: {listed}. "
-                f"Base branch: {base_branch} "
-                f"(scope is judged on `git diff {base_branch}...HEAD`; "
-                f"do NOT `git checkout {base_branch} -- <path>`, revert "
-                "only your own out-of-scope commits/edits). "
-                f"Allowed paths (complete list): "
-                f"{', '.join(authored_paths)}; "
-                # #264: the two sets stay separate. The harness artifacts
-                # are already in scope, so naming them here stops the
-                # retry agent reading its own PRD or progress log as the
-                # thing it must stop writing - which is the one edit it
-                # cannot make and still pass prd_stories.
-                f"plus harness artifacts (kstrl's own files, already in "
-                f"scope, no need to widen allowedPaths): "
-                f"{', '.join(harness_paths)}. "
-                "Do not widen allowedPaths."
+            # #264: the two sets stay separate. The harness artifacts are
+            # already in scope, so naming them here stops the retry agent
+            # reading its own PRD or progress log as the thing it must
+            # stop writing - which is the one edit it cannot make and
+            # still pass prd_stories.
+            error = IN_LOOP_SCOPE_VIOLATION_PROMPT.format(
+                count=len(result.guard_violations),
+                iterations=result.iterations,
+                listed=listed,
+                base_branch=base_branch,
+                allowed_paths=", ".join(authored_paths),
+                harness_paths=", ".join(harness_paths),
             )
         elif result.no_progress:
             error = (

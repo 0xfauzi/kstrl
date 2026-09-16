@@ -798,6 +798,27 @@ def _tamper_changes(prd: PRD, pre_run_prd_path: Path | None) -> list[str]:
     return prd.tamper_changes(pre_run)
 
 
+#: H3 (#303): the fragments check_prd_stories' tamper branch assembles
+#: into its refusal text. One version constant because they are one body
+#: of instructions delivered by one builder.
+PRD_TAMPER_PROMPT_VERSION = "1.0.0"
+
+PRD_TAMPER_FIELDS_PROMPT = (
+    "It {changes}. A component may set `passes` "
+    "and `notes` on its own stories and nothing else: it may "
+    "not rewrite the criteria or the fixtures it is judged "
+    "against."
+)
+PRD_TAMPER_GATES_PROMPT = (
+    "Every gate that reads this file - these stories, the "
+    "approved fixtures, the criteria the reviewer is given - "
+    "is judging a document the component rewrote. Restore it "
+    "to what the run started with; do not treat this as "
+    "permission to change what the component is measured "
+    "against."
+)
+
+
 def check_prd_stories(prd_path: Path, pre_run_prd_path: Path | None = None) -> CheckResult:
     """Re-read PRD from disk and verify all stories have passes=true.
 
@@ -834,16 +855,8 @@ def check_prd_stories(prd_path: Path, pre_run_prd_path: Path | None = None) -> C
             passed=False,
             message="The PRD is not the one this run started with; failing closed",
             details=[
-                f"It {'; '.join(tampered)}. A component may set `passes` "
-                "and `notes` on its own stories and nothing else: it may "
-                "not rewrite the criteria or the fixtures it is judged "
-                "against.",
-                "Every gate that reads this file - these stories, the "
-                "approved fixtures, the criteria the reviewer is given - "
-                "is judging a document the component rewrote. Restore it "
-                "to what the run started with; do not treat this as "
-                "permission to change what the component is measured "
-                "against.",
+                PRD_TAMPER_FIELDS_PROMPT.format(changes="; ".join(tampered)),
+                PRD_TAMPER_GATES_PROMPT,
             ],
             duration_seconds=time.monotonic() - start,
         )
@@ -1349,6 +1362,25 @@ def check_linter(
 #: mechanism is a coin toss over which check the operator configured.
 NO_FILES_IN_THE_DIFF = "no files in the diff"
 
+#: H3 (#303): the fragments _diff_scope_details assembles into a diff-scope
+#: failure's retry text. One version constant because they are one body of
+#: instructions delivered by one builder.
+DIFF_SCOPE_DETAILS_PROMPT_VERSION = "1.0.0"
+
+DIFF_SCOPE_BASE_BRANCH_PROMPT = (
+    "Base branch: {base_branch} "
+    "(scope is judged on `git diff {base_branch}...HEAD`; "
+    "do NOT `git checkout {base_branch} -- <path>`, revert only "
+    "your own out-of-scope commits/edits)"
+)
+DIFF_SCOPE_ALLOWED_PATHS_PROMPT = "Allowed paths (complete list): {allowed_paths}"
+DIFF_SCOPE_HARNESS_PATHS_PROMPT = (
+    "Plus harness artifacts (kstrl's own files, already in "
+    "scope, no need to widen allowedPaths): {harness_paths}"
+)
+DIFF_SCOPE_VIOLATIONS_PROMPT = "Files outside allowed scope:\n{violations}"
+DIFF_SCOPE_TRUNCATION_PROMPT = "  ... and {count} more"
+
 
 def _diff_scope_details(
     base_branch: str,
@@ -1375,25 +1407,21 @@ def _diff_scope_details(
     shown = violations[:15]
     violation_lines = [f"  - {v}" for v in shown]
     if len(violations) > len(shown):
-        violation_lines.append(f"  ... and {len(violations) - len(shown)} more")
+        violation_lines.append(
+            DIFF_SCOPE_TRUNCATION_PROMPT.format(count=len(violations) - len(shown))
+        )
     harness_note = (
-        [
-            "Plus harness artifacts (kstrl's own files, already in "
-            f"scope, no need to widen allowedPaths): {', '.join(harness_paths)}"
-        ]
+        [DIFF_SCOPE_HARNESS_PATHS_PROMPT.format(harness_paths=", ".join(harness_paths))]
         if harness_paths
         else []
     )
     return [
-        f"Base branch: {base_branch} "
-        f"(scope is judged on `git diff {base_branch}...HEAD`; "
-        f"do NOT `git checkout {base_branch} -- <path>`, revert only "
-        "your own out-of-scope commits/edits)",
-        f"Allowed paths (complete list): {', '.join(allowed_paths)}",
+        DIFF_SCOPE_BASE_BRANCH_PROMPT.format(base_branch=base_branch),
+        DIFF_SCOPE_ALLOWED_PATHS_PROMPT.format(allowed_paths=", ".join(allowed_paths)),
         *harness_note,
         # One multi-line entry so as_context()'s details[:10] slice
         # cannot drop violations or the truncation marker.
-        "Files outside allowed scope:\n" + "\n".join(violation_lines),
+        DIFF_SCOPE_VIOLATIONS_PROMPT.format(violations="\n".join(violation_lines)),
     ]
 
 
@@ -1478,6 +1506,34 @@ def scope_unreadable_error(cause: str) -> str:
 #: says the cause is missing.
 NO_CAUSE_RECORDED = "(no cause recorded; the scope resolver supplied an empty error)"
 
+#: H3 (#303): the fragments check_scope_unreadable assembles into its
+#: refusal text. One version constant because they are one body of
+#: instructions delivered by one builder.
+SCOPE_UNREADABLE_PROMPT_VERSION = "1.0.0"
+
+SCOPE_UNREADABLE_EXPLANATION_PROMPT = (
+    "The allowedPaths this component must be judged against "
+    "could not be established before the run started, so no "
+    "diff can be proven in-scope. This is NOT a diff violation, "
+    "and NOT something an engineer can fix from inside the "
+    "worktree: the scope is read from the pre-run checkout, "
+    "outside this worktree, and is fixed for the life of the "
+    "run, so neither narrowing nor widening the diff changes "
+    "this verdict."
+)
+SCOPE_UNREADABLE_REMEDY_PROMPT = (
+    "The Error line above names which of two faults this is. A "
+    "pre-run PRD that would not read or parse: restore that "
+    "file in the main checkout and start a new run. No "
+    "plan-time scope resolved for this component at all: the "
+    "PRD is not the problem, the manifest and the run's "
+    "resolved scope disagree about which components exist, and "
+    "that is a harness fault to report rather than a file to "
+    "repair. A run-wide --allowed-paths fixes neither: scope "
+    "resolution refuses before it reaches the flag, so a re-run "
+    "with it set fails identically."
+)
+
 
 def check_scope_unreadable(allowed_paths_error: str) -> CheckResult:
     """Report that no trustworthy scope could be established (R1.5, #294).
@@ -1541,24 +1597,8 @@ def check_scope_unreadable(allowed_paths_error: str) -> CheckResult:
         message="Scope could not be read at plan time; failing closed",
         details=[
             f"Error: {cause}",
-            "The allowedPaths this component must be judged against "
-            "could not be established before the run started, so no "
-            "diff can be proven in-scope. This is NOT a diff violation, "
-            "and NOT something an engineer can fix from inside the "
-            "worktree: the scope is read from the pre-run checkout, "
-            "outside this worktree, and is fixed for the life of the "
-            "run, so neither narrowing nor widening the diff changes "
-            "this verdict.",
-            "The Error line above names which of two faults this is. A "
-            "pre-run PRD that would not read or parse: restore that "
-            "file in the main checkout and start a new run. No "
-            "plan-time scope resolved for this component at all: the "
-            "PRD is not the problem, the manifest and the run's "
-            "resolved scope disagree about which components exist, and "
-            "that is a harness fault to report rather than a file to "
-            "repair. A run-wide --allowed-paths fixes neither: scope "
-            "resolution refuses before it reaches the flag, so a re-run "
-            "with it set fails identically.",
+            SCOPE_UNREADABLE_EXPLANATION_PROMPT,
+            SCOPE_UNREADABLE_REMEDY_PROMPT,
         ],
         findings=[
             Finding.infrastructure_error(
@@ -1765,6 +1805,15 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
     )
 
 
+#: H3 (#303): the fragment check_policy_envelope assembles into its
+#: diff-unreadable refusal text.
+POLICY_ENVELOPE_PROMPT_VERSION = "1.0.0"
+
+POLICY_DIFF_UNREADABLE_PROMPT = (
+    "The change cannot be proven within policy; do not treat this as permission to merge."
+)
+
+
 def check_policy_envelope(
     cwd: Path,
     base_branch: str,
@@ -1799,8 +1848,7 @@ def check_policy_envelope(
             ),
             details=[
                 f"Error: {exc}",
-                "The change cannot be proven within policy; do not treat "
-                "this as permission to merge.",
+                POLICY_DIFF_UNREADABLE_PROMPT,
             ],
             findings=[
                 Finding.infrastructure_error(

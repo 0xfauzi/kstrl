@@ -680,16 +680,45 @@ def add_source_context(failure: ParsedFailure, worktree_path: Path, context_line
 
 # Each entry: (compiled regex matching the message, hint template)
 # Use {m} in the template to interpolate the regex match object.
+#: H3a (#303): the twelve repair instructions generate_fix_hint hands the
+#: engineer on its retry. One shared version constant because they are one
+#: body of instructions delivered by one builder, and because parsers.py is
+#: 767 lines against the repo's 800-line ratchet.
+FIX_HINT_PROMPT_VERSION = "1.0.0"
+
+MISSING_ARGUMENT_HINT_PROMPT = (
+    "Check the function signature - a required argument is missing from the call."
+)
+TOO_MANY_ARGUMENTS_HINT_PROMPT = (
+    "Too many arguments passed - check the function signature for expected parameters."
+)
+OPTIONAL_TYPE_HINT_PROMPT = "The value can be None - add a None check or guard before using it."
+NO_ATTRIBUTE_HINT_PROMPT = "Attribute not found - check for typos or verify the object type."
+IMPORT_FAILED_HINT_PROMPT = (
+    "Import failed - verify the module is installed and the name is correct."
+)
+UNDEFINED_NAME_HINT_PROMPT = "Undefined name - check for typos or add the missing import."
+ARGUMENT_TYPE_HINT_PROMPT = (
+    "Type mismatch in argument - convert or check the value before passing it."
+)
+RETURN_TYPE_HINT_PROMPT = (
+    "Return type does not match the declared signature - fix the return value or annotation."
+)
+ASSERTION_HINT_PROMPT = "Assertion failed - check the expected vs actual values."
+UNUSED_IMPORT_HINT_PROMPT = "Unused import - remove it or use it."
+RUFF_UNDEFINED_NAME_HINT_PROMPT = "Undefined name - add the missing import or definition."
+LINE_TOO_LONG_HINT_PROMPT = "Line too long - break it up or shorten the expression."
+
 _HINT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # Missing positional argument
     (
         re.compile(r"missing (\d+) required positional argument", re.IGNORECASE),
-        "Check the function signature - a required argument is missing from the call.",
+        MISSING_ARGUMENT_HINT_PROMPT,
     ),
     # Too many arguments
     (
         re.compile(r"takes \d+ positional arguments? but \d+ (?:was|were) given", re.IGNORECASE),
-        "Too many arguments passed - check the function signature for expected parameters.",
+        TOO_MANY_ARGUMENTS_HINT_PROMPT,
     ),
     # Optional type not handled (str | None assigned to str, etc.)
     (
@@ -698,21 +727,21 @@ _HINT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
             r"(?:Optional|None)",
             re.IGNORECASE,
         ),
-        "The value can be None - add a None check or guard before using it.",
+        OPTIONAL_TYPE_HINT_PROMPT,
     ),
     (
         re.compile(r'has no attribute "([^"]+)"', re.IGNORECASE),
-        "Attribute not found - check for typos or verify the object type.",
+        NO_ATTRIBUTE_HINT_PROMPT,
     ),
     # Import errors
     (
         re.compile(r"(?:No module named|cannot import name|ModuleNotFoundError)", re.IGNORECASE),
-        "Import failed - verify the module is installed and the name is correct.",
+        IMPORT_FAILED_HINT_PROMPT,
     ),
     # Name not defined
     (
         re.compile(r"name '([^']+)' is not defined", re.IGNORECASE),
-        "Undefined name - check for typos or add the missing import.",
+        UNDEFINED_NAME_HINT_PROMPT,
     ),
     # Argument type mismatch
     (
@@ -720,32 +749,32 @@ _HINT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
             r'Argument.*has incompatible type "([^"]+)".*expected "([^"]+)"',
             re.IGNORECASE,
         ),
-        "Type mismatch in argument - convert or check the value before passing it.",
+        ARGUMENT_TYPE_HINT_PROMPT,
     ),
     # Return type mismatch
     (
         re.compile(r"Incompatible return value type", re.IGNORECASE),
-        "Return type does not match the declared signature - fix the return value or annotation.",
+        RETURN_TYPE_HINT_PROMPT,
     ),
     # Assert / comparison failures
     (
         re.compile(r"AssertionError|assert .+ == .+", re.IGNORECASE),
-        "Assertion failed - check the expected vs actual values.",
+        ASSERTION_HINT_PROMPT,
     ),
     # Ruff: unused import
     (
         re.compile(r"F401", re.IGNORECASE),
-        "Unused import - remove it or use it.",
+        UNUSED_IMPORT_HINT_PROMPT,
     ),
     # Ruff: undefined name
     (
         re.compile(r"F821", re.IGNORECASE),
-        "Undefined name - add the missing import or definition.",
+        RUFF_UNDEFINED_NAME_HINT_PROMPT,
     ),
     # Ruff: line too long
     (
         re.compile(r"E501", re.IGNORECASE),
-        "Line too long - break it up or shorten the expression.",
+        LINE_TOO_LONG_HINT_PROMPT,
     ),
 ]
 
