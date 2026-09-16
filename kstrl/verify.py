@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import py_compile
 import re
@@ -11,7 +12,7 @@ import signal
 import subprocess
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from functools import partial
 from pathlib import Path
@@ -23,9 +24,11 @@ if TYPE_CHECKING:
     from kstrl.fixtures import FixturesConfig
 from kstrl.adequacy import (
     AdequacyConfig,
+    coverage_targets,
     evaluate_layer0,
     is_test_path,
     layer0_blocks,
+    measure_patch_coverage,
 )
 from kstrl.config import component_progress_path, relative_to_root
 from kstrl.findings import Finding
@@ -129,6 +132,7 @@ def run_scrubbed(
     cwd: Path,
     timeout: float,
     term_grace: float = _SCRUB_TERM_GRACE_SECONDS,
+    extra_env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a verification subprocess: scrubbed env, own process group.
 
@@ -139,6 +143,21 @@ def run_scrubbed(
     signalled (SIGTERM, grace, SIGKILL) so a test that backgrounds a
     server cannot leak it past the deadline. A string ``cmd`` runs through
     the shell exactly as before; a list does not.
+
+    ``extra_env`` carries values KSTRL ITSELF CHOSE for one command,
+    layered on top of the scrub, never values inherited from the
+    operator's environment - so the scrub's guarantee (no secret reaches
+    a verification subprocess) is unchanged.
+    ``tests/test_patch_coverage.py::test_extra_env_does_not_reopen_the_scrub``
+    is what holds that. Its only caller today is the patch-coverage check
+    (:func:`check_patch_coverage`), which points ``COVERAGE_FILE`` at a
+    throwaway directory so pytest-cov's data file cannot land in the tree
+    being measured. The rejected alternative is ``--cov-config`` pointed
+    at a temp ``.coveragerc`` with ``data_file`` set: that would need no
+    change here at all, but it REPLACES the project's own coverage
+    configuration wholesale (``source``, ``omit``, ``branch``, plugins),
+    so the number it produces would stop meaning what the project's own
+    config says it means. ``COVERAGE_FILE`` overrides only the data file.
 
     Raises :class:`subprocess.TimeoutExpired` after the group is dead so
     existing callers' timeout handling keeps working unchanged.
@@ -158,6 +177,9 @@ def run_scrubbed(
     grandchild does routinely, and it runs once per verification command
     per iteration rather than once per timed-out run.
     """
+    env = scrubbed_subprocess_env()
+    if extra_env:
+        env.update(extra_env)
     proc = subprocess.Popen(
         cmd,
         shell=isinstance(cmd, str),
@@ -165,7 +187,7 @@ def run_scrubbed(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        env=scrubbed_subprocess_env(),
+        env=env,
         start_new_session=True,
     )
     try:
@@ -1439,6 +1461,12 @@ def _diff_scope_details(
 MUTATION_TESTING_CHECK = "mutation_testing"
 
 
+#: The Phase 1 check name for R8.5 Layer 1, patch coverage (#152). Diff-
+#: dependent, so it is in :data:`DIFF_DEPENDENT_CHECKS`; enrolled in
+#: :data:`kstrl.evolution._CATEGORY_BY_CHECK` like every other check name.
+PATCH_COVERAGE_CHECK = "patch_coverage"
+
+
 #: The Phase 1 check name for the vulture-or-``dead_code_command``
 #: phase, and the ``check`` on every :class:`NotMeasured` it produces.
 #:
@@ -2394,6 +2422,284 @@ def _no_counts(result: subprocess.CompletedProcess[str]) -> NotMeasured:
     )
 
 
+# ---------------------------------------------------------------------------
+# R8.5 Layer 1 (#152): patch coverage. Advisory, no floor - see
+# check_patch_coverage's docstring for the full register.
+# ---------------------------------------------------------------------------
+_SHELL_OPERATORS: tuple[str, ...] = ("&", "|", ";", "\n", "<", ">", "`", "$")
+
+
+def _coverage_command(test_command: str, json_path: Path) -> list[str] | None:
+    """The pytest-cov invocation for ``test_command``, or ``None`` when it
+    is not a single pytest invocation this can safely extend.
+
+    ``None`` when the resolved command contains any :data:`_SHELL_OPERATORS`
+    character, when ``shlex.split`` cannot tokenize it, or when no token
+    is exactly ``"pytest"``. Otherwise a LIST - never a string - so
+    :func:`run_scrubbed` runs it with ``shell=False`` and a file name that
+    came out of an agent-authored diff can never be interpreted by a
+    shell (the hazard #335 round 2 found on the mutation command).
+
+    Appends nothing beyond the two ``--cov`` flags: no ``-q``, no
+    ``-p no:cacheprovider``. The coverage run is the operator's own
+    command plus coverage, and an added flag like ``-p no:cacheprovider``
+    would break a command that relies on ``--lf``.
+    """
+    if any(op in test_command for op in _SHELL_OPERATORS):
+        return None
+    try:
+        tokens = shlex.split(test_command)
+    except ValueError:
+        return None
+    if "pytest" not in tokens:
+        return None
+    return [*tokens, "--cov=.", f"--cov-report=json:{json_path}"]
+
+
+def _coverage_report(
+    cwd: Path,
+    command: list[str],
+    timeout: float,
+    tmp: Path,
+    json_path: Path,
+) -> dict[str, object] | NotMeasured:
+    """Run the coverage command and hand back the parsed report or the gap.
+
+    ``COVERAGE_FILE`` points pytest-cov's data file at ``tmp`` (D3): the
+    project's rootdir is left untouched by this run, so a subsequent
+    ``git add -A`` (``[verify] dead_code_cleanup``) cannot pick up a
+    ``.coverage`` a target project's own ``.gitignore`` may not list.
+
+    Checked in this order:
+
+    1. :class:`subprocess.TimeoutExpired` -> ``timed_out``. ``run_scrubbed``
+       has already killed the whole process group by the time it raises;
+       there is nothing left to clean up here.
+    2. :class:`OSError` -> ``command_failed``. Reachable, not defensive
+       padding: the command runs as a LIST with no shell, so a configured
+       ``test_command`` like ``PYTHONPATH=. pytest`` - no shell operator,
+       a ``pytest`` token, so :func:`_coverage_command` accepts it -
+       splits to ``["PYTHONPATH=.", "pytest"]`` and ``execvp`` raises
+       ``FileNotFoundError``. Without this handler that is a traceback
+       out of Phase 1.
+    3. no JSON on disk -> ``tool_missing``. FIRST among the "ran but
+       produced nothing useful" checks because a missing pytest-cov exits
+       4 and writes no file (critic-measured: ``error: unrecognized
+       arguments: --cov=.``), and ``tool_missing`` is the token an
+       operator can act on.
+    4. non-zero exit -> ``command_failed``: a partial run's coverage is
+       not a measurement of the suite.
+    5. the JSON fails to parse -> ``command_failed``. ``(OSError,
+       ValueError)``, not ``json.JSONDecodeError`` alone:
+       ``UnicodeDecodeError`` is a ``ValueError`` and would escape a
+       narrower clause. ``encoding="utf-8"`` is named explicitly for the
+       same reason.
+    """
+    try:
+        result = run_scrubbed(
+            command,
+            cwd=cwd,
+            timeout=timeout,
+            extra_env={"COVERAGE_FILE": str(tmp / ".coverage")},
+        )
+    except subprocess.TimeoutExpired:
+        return NotMeasured(
+            PATCH_COVERAGE_CHECK,
+            NOT_MEASURED_TIMED_OUT,
+            f"the coverage run exceeded {timeout}s",
+        )
+    except OSError as exc:
+        return NotMeasured(
+            PATCH_COVERAGE_CHECK,
+            NOT_MEASURED_COMMAND_FAILED,
+            f"the coverage command could not be started: {exc}",
+        )
+    if not json_path.exists():
+        return NotMeasured(
+            PATCH_COVERAGE_CHECK,
+            NOT_MEASURED_TOOL_MISSING,
+            "pytest-cov is not installed for this project's test command, "
+            f"so [adequacy] patch_coverage measured nothing: {_last_output_line(result)}",
+        )
+    if result.returncode != 0:
+        return NotMeasured(
+            PATCH_COVERAGE_CHECK,
+            NOT_MEASURED_COMMAND_FAILED,
+            f"the test command exited {result.returncode} under coverage; "
+            "a partial run's coverage is not a measurement of the suite",
+        )
+    try:
+        parsed: object = json.loads(json_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return NotMeasured(
+            PATCH_COVERAGE_CHECK,
+            NOT_MEASURED_COMMAND_FAILED,
+            f"the coverage report could not be read: {exc}",
+        )
+    if not isinstance(parsed, dict):
+        return NotMeasured(
+            PATCH_COVERAGE_CHECK,
+            NOT_MEASURED_COMMAND_FAILED,
+            "the coverage report was not a JSON object",
+        )
+    return parsed
+
+
+def check_patch_coverage(
+    cwd: Path,
+    base_branch: str,
+    test_command: str | None,
+    timeout: float,
+) -> CheckResult | NotMeasured:
+    """R8.5 Layer 1 (#152): what fraction of the lines this diff ADDED to
+    non-test Python files did the project's own test suite execute.
+
+    Runs ``test_command`` a SECOND time (D1), under ``--cov=.
+    --cov-report=json:<tmp>``, rather than folding coverage flags into
+    the existing :func:`check_test_suite` run: folding would let an
+    advisory measurement turn a green suite RED whenever pytest-cov is
+    not installed for the project (measured: exit 4, no JSON), which is
+    the position kstrl's own first external target (deckgen) is in
+    today.
+
+    Four reason tokens, and why each is not the others:
+
+    - ``tool_missing``: ``test_command`` is not a single pytest
+      invocation this can extend (:func:`_coverage_command` returned
+      ``None``), or the coverage run produced no JSON (pytest-cov is not
+      installed for THIS project, even though the harness's own venv has
+      it).
+    - ``no_target``: the diff added no line to a non-test Python file.
+      Checked BEFORE the run (:func:`kstrl.adequacy.coverage_targets`
+      empty) so the no-op case costs nothing, and AGAIN after the run
+      (D5: the added lines carried no statement coverage can measure, so
+      ``coverage.total`` is 0) - a git read that FAILED is a fault and
+      is ``command_failed``, never this token.
+    - ``timed_out``: the coverage run exceeded ``timeout``, the same
+      ``[verify] subprocess_timeout`` :func:`check_test_suite` uses, so
+      this check cannot double Phase 1's ceiling.
+    - ``command_failed``: the coverage command could not be started, git
+      could not read the diff, exited non-zero, or its JSON could not be
+      parsed.
+
+    D7/D9 stated outright: this is ADVISORY ALWAYS. There is no floor
+    key, no level reads here, and the finding is emitted at every
+    percentage including 100%, because the distribution a floor would
+    later be set from is the point of shipping this now. The run is
+    bounded by ``timeout``: a hung project suite cannot outlive the
+    check, because it goes through :func:`run_scrubbed`, which already
+    spawns with ``start_new_session=True`` and signals the whole process
+    group (SIGTERM, grace, SIGKILL) before raising
+    :class:`subprocess.TimeoutExpired`.
+    """
+    start = time.monotonic()
+    with tempfile.TemporaryDirectory(prefix="kstrl-coverage-") as tmp_name:
+        tmp = Path(tmp_name)
+        json_path = tmp / "coverage.json"
+        command = _coverage_command(resolve_test_command(test_command), json_path)
+        if command is None:
+            return NotMeasured(
+                PATCH_COVERAGE_CHECK,
+                NOT_MEASURED_TOOL_MISSING,
+                f"[verify] test_command is not a single pytest invocation this "
+                f"can extend: {test_command!r}",
+            )
+        try:
+            diff_text = git.get_diff_content(base_branch, cwd)
+        except git.GitDiffError as exc:
+            return NotMeasured(
+                PATCH_COVERAGE_CHECK,
+                NOT_MEASURED_COMMAND_FAILED,
+                f"git could not read the diff against {base_branch}: {exc}",
+            )
+        targets = coverage_targets(diff_text)
+        if not targets:
+            return NotMeasured(
+                PATCH_COVERAGE_CHECK,
+                NOT_MEASURED_NO_TARGET,
+                "the diff added no line to a non-test Python file",
+            )
+        report = _coverage_report(cwd, command, timeout, tmp, json_path)
+        if isinstance(report, NotMeasured):
+            return report
+        coverage = measure_patch_coverage(targets, report)
+        if coverage.total == 0:
+            return NotMeasured(
+                PATCH_COVERAGE_CHECK,
+                NOT_MEASURED_NO_TARGET,
+                "the changed lines contain no statement coverage can measure",
+            )
+
+    top_files = coverage.files[:5]
+    more = len(coverage.files) - 5
+    return CheckResult(
+        name=PATCH_COVERAGE_CHECK,
+        passed=True,
+        message=(
+            f"patch coverage {coverage.percent:.1f}% "
+            f"({coverage.covered}/{coverage.total} changed executable lines) [advisory]"
+        ),
+        details=[
+            f"{path}: {c}/{t} changed executable line(s) covered" for path, c, t in coverage.files
+        ]
+        + (
+            [f"not in the coverage report: {', '.join(coverage.unmeasured)}"]
+            if coverage.unmeasured
+            else []
+        ),
+        findings=[
+            Finding.adequacy_finding(
+                category="patch_coverage",
+                explanation=(
+                    f"patch coverage {coverage.percent:.1f}% "
+                    f"({coverage.covered}/{coverage.total} changed executable lines): "
+                    + "; ".join(f"{p} {c}/{t}" for p, c, t in top_files)
+                    + (f"; +{more} more file(s)" if more > 0 else "")
+                ),
+                severity="advisory",
+                suggestion=(
+                    "Advisory only: R8.5 Layer 1 records the number, no floor is "
+                    "configured and none blocks. The floor is set later from the "
+                    "recorded distribution."
+                ),
+            )
+        ],
+        duration_seconds=time.monotonic() - start,
+    )
+
+
+def _patch_coverage_checks(
+    cwd: Path,
+    base_branch: str,
+    config: VerifyConfig,
+    adequacy_config: AdequacyConfig | None,
+) -> tuple[list[CheckResult], list[NotMeasured]]:
+    """``(rows, gaps)`` for patch coverage: at most one of each (#306).
+
+    Exact shape of :func:`_mutation_checks`, for the exact reason its
+    docstring gives: a check nobody asked for records nothing at all.
+    BOTH switches are read: ``adequacy_config.enabled`` is Layer 0's
+    master switch for the ``[adequacy]`` section, and an operator reading
+    ``enabled = false`` must not get a second full test run out of this
+    one sitting under it. ``adequacy_config.patch_coverage`` is Layer 1's
+    own opt-in on top of that.
+
+    Deliberately NO ``read_only`` parameter here, unlike
+    :func:`_mutation_checks`. mutmut skips under ``read_only`` because it
+    REWRITES the files it mutates; the coverage run has no such property
+    (D3's ``COVERAGE_FILE`` redirect writes nothing into the tree), so
+    ``ks sense`` measures this check too - the cheap way to collect the
+    distribution a future floor will be set from, across repositories,
+    without factory spend.
+    """
+    if adequacy_config is None or not (adequacy_config.enabled and adequacy_config.patch_coverage):
+        return [], []
+    outcome = check_patch_coverage(cwd, base_branch, config.test_command, config.subprocess_timeout)
+    if isinstance(outcome, NotMeasured):
+        return [], [outcome]
+    return [outcome], []
+
+
 def _ruff_dead_code_command(read_only: bool) -> str:
     """The ruff invocation for the phase, in each of its two modes.
 
@@ -3040,6 +3346,7 @@ DIFF_DEPENDENT_CHECKS: tuple[str, ...] = (
     "test_adequacy",
     DEAD_CODE_CHECK,
     MUTATION_TESTING_CHECK,
+    PATCH_COVERAGE_CHECK,
 )
 
 
@@ -3086,9 +3393,9 @@ def run_undiffed_verification(
     The ONLY safe entry point for that case, and it is a function rather
     than a documented convention because :func:`narrow_to_undiffed`
     cannot deliver the guarantee its name promises (#288 review round
-    2). Its ``replace`` reaches four of the six
-    :data:`DIFF_DEPENDENT_CHECKS`; ``policy_envelope`` and
-    ``test_adequacy`` are gated by ``policy_config`` and
+    2). Its ``replace`` reaches four of the seven
+    :data:`DIFF_DEPENDENT_CHECKS`; ``policy_envelope``, ``test_adequacy``
+    and ``patch_coverage`` (#152) are gated by ``policy_config`` and
     ``adequacy_config``, which are separate ARGUMENTS to
     :func:`run_mechanical_verification`, and ``allowed_paths_error``
     outranks the ``check_diff_scope`` toggle entirely because
@@ -3100,7 +3407,7 @@ def run_undiffed_verification(
     narrowing cannot see.
 
     This owns all of them. There is no parameter here for anything that
-    consumes a diff, so the four suppressed by config and the three
+    consumes a diff, so the four suppressed by config and the four
     suppressed by argument are suppressed the same way: by not being
     reachable. ``read_only=True`` for the same reason ``ks sense`` uses
     it (R10.1) - the two checks that would rewrite the tree they measure
@@ -3290,6 +3597,13 @@ def run_mechanical_verification(
     dead_code_cleanup`` both default to false; what changed is that
     absence is now the ONLY thing a non-measurement can look like.
 
+    ``patch_coverage`` (R8.5 Layer 1, #152) follows the same rule: it
+    appends NO ROW when it measured nothing, same as ``mutation_testing``
+    (see :func:`_patch_coverage_checks`). It is opt-in twice over
+    (``[adequacy] enabled`` AND ``[adequacy] patch_coverage``), and when
+    both are on it runs the project's test command a SECOND time, under
+    coverage, so it is off by default.
+
     ``[verify] dead_code_cleanup`` produces TWO rows, not one: the ruff
     F401/F811/F841 phase and the vulture-or-``dead_code_command`` phase
     answer for themselves, because one row for both reported a pass for
@@ -3369,6 +3683,12 @@ def run_mechanical_verification(
                 autonomy_level,
             )
         )
+
+    coverage_rows, coverage_gaps = _patch_coverage_checks(
+        worktree_path, base_branch, config, adequacy_config
+    )
+    checks.extend(coverage_rows)
+    not_measured.extend(coverage_gaps)
 
     dead_code_rows, dead_code_gaps = _dead_code_checks(
         worktree_path,

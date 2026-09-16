@@ -206,6 +206,10 @@ EXPECTED_CATEGORIES = {
     # #335: the ruff half of the split dead-code gate.
     "dead_code_ruff": "verification",
     "mutation_testing": "verification",
+    # R8.5 Layer 1 (#152). Advisory and never fails, so it files no
+    # signature today; enrolled anyway because the table is the list of
+    # check names, not the list of names that have failed so far.
+    "patch_coverage": "verification",
     "prd_stories": "verification",
     "verification": "verification",
     # #315: the three Phase 1 gates the table did not carry.

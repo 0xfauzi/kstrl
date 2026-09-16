@@ -14,6 +14,18 @@ diff and the changed test files, needs no test execution, no coverage
 run, no mutation tooling, and no historical data. It answers two
 questions:
 
+R8.5 Layer 1 (patch coverage, #152) lives in this module too, but only
+its arithmetic does: :func:`added_line_numbers`, :func:`coverage_targets`
+and :func:`measure_patch_coverage` are pure functions over a diff and an
+already-produced coverage report. The coverage RUN - running the
+project's test command a second time under ``--cov`` and the subprocess
+handling around it - is :func:`kstrl.verify.check_patch_coverage`,
+because it needs ``run_scrubbed`` and this module has no subprocess or
+I/O dependency today. Layer 1 is advisory with no floor, same as Layer
+0: it measures and reports, and the finding is emitted at every
+percentage including 100%, because the distribution a floor would later
+be set from is the whole point of shipping it now.
+
 1. **Did this change weaken the existing suite?** Deleted tests,
    newly-skipped tests, and assertions replaced by nothing are all
    legitimate sometimes and suspicious always, so they are reported with
@@ -51,6 +63,7 @@ from __future__ import annotations
 import ast
 import re
 import textwrap
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -677,6 +690,189 @@ def analyze_test_diff(diff_text: str) -> DiffDiscipline:
 
 
 # ---------------------------------------------------------------------------
+# R8.5 Layer 1 (#152): patch coverage arithmetic. No I/O, no subprocess -
+# the coverage RUN is kstrl.verify.check_patch_coverage.
+# ---------------------------------------------------------------------------
+_HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+
+def _hunk_start(line: str) -> int:
+    """The new-side first line number of a hunk header, or 0."""
+    match = _HUNK_RE.match(line)
+    return int(match.group(1)) if match else 0
+
+
+def added_line_numbers(diff_text: str) -> dict[str, set[int]]:
+    """New-side line numbers a unified diff ADDS, keyed by new-side path.
+
+    D4: measured identical whether the diff was fetched at ``-U0`` or the
+    default ``-U3`` (:func:`kstrl.git.get_diff_content`'s context size) -
+    a hunk header gives the new-side start line and every ``+`` or
+    context line advances the counter from there, so the amount of
+    unchanged context around a hunk cannot change where an added line
+    lands. So no new ``-U0`` git helper is added to :mod:`kstrl.git`; the
+    diff ``get_diff_content`` already fetches is enough.
+
+    Same header-parsing rule :func:`analyze_test_diff` already uses: a
+    ``+++ `` line (note the trailing space) immediately after a ``--- ``
+    line is a file header, never a diff line that merely happens to
+    start with the same three characters. Both halves are load-bearing -
+    the trailing space rules out a plain ``line.startswith("+++")``
+    match, and the ``prev`` guard rules out an ADDED line whose content
+    looks like a header.
+    """
+    added: dict[str, set[int]] = {}
+    path = ""
+    lineno = 0
+    prev = ""
+    for line in diff_text.splitlines():
+        if line.startswith("diff --git"):
+            path, lineno = "", 0
+        elif line.startswith("+++ ") and prev.startswith("--- "):
+            path, lineno = _new_side_path(line), 0
+        elif line.startswith("@@"):
+            lineno = _hunk_start(line)
+        elif path and lineno:
+            lineno = _record_added_line(line, lineno, path, added)
+        prev = line
+    return added
+
+
+def _new_side_path(header_line: str) -> str:
+    """The path from a ``+++ `` header, or ``""`` for a deleted file."""
+    path = _diff_path(header_line)
+    return "" if path == _DEV_NULL else path
+
+
+def _record_added_line(line: str, lineno: int, path: str, added: dict[str, set[int]]) -> int:
+    """Record ``lineno`` under ``path`` when ``line`` is a ``+`` line; return
+    the new-side line number the NEXT line will carry."""
+    if line.startswith("+"):
+        added.setdefault(path, set()).add(lineno)
+        return lineno + 1
+    if line.startswith("-") or line.startswith("\\"):
+        return lineno
+    return lineno + 1
+
+
+def coverage_targets(diff_text: str) -> dict[str, set[int]]:
+    """:func:`added_line_numbers`, filtered to non-test ``.py`` files.
+
+    ONE home for the rule: :func:`kstrl.verify.check_patch_coverage`
+    needs it BEFORE it spends a second full test run (the pre-flight
+    ``no_target`` check), and :func:`measure_patch_coverage` needs the
+    identical set AFTER the run to know which files and lines the ratio
+    is over. Two copies is how the pre-flight and the arithmetic come to
+    disagree about what counts.
+
+    D6, measured on the fixture in ``tests/test_patch_coverage.py``:
+    including the changed TEST file moves the number from 50.0% to
+    66.7%, because a test file is close to 100% covered by construction
+    (it has to run to be counted at all). Uses :func:`is_test_path`,
+    adequacy's own canonical rule and already what
+    :func:`kstrl.verify.check_test_adequacy` uses - not
+    ``verify._changed_non_test_python``'s ``not f.startswith("test")``,
+    which misses ``src/tests/x.py`` and ``pkg/foo_test.py``.
+    """
+    added = added_line_numbers(diff_text)
+    return {
+        path: lines
+        for path, lines in added.items()
+        if path.endswith(".py") and not is_test_path(path)
+    }
+
+
+@dataclass(frozen=True)
+class PatchCoverage:
+    """The result of measuring patch coverage over one diff.
+
+    ``files`` is sorted ``(path, covered, total)`` tuples, one per target
+    file the coverage report actually measured. ``unmeasured`` names
+    targets the coverage report has no usable entry for at all - present
+    in the diff but absent from (or malformed in) the report, which D5
+    treats as a THIRD state, not 0% and not skipped.
+    """
+
+    covered: int
+    total: int
+    files: tuple[tuple[str, int, int], ...]
+    unmeasured: tuple[str, ...]
+
+    @property
+    def percent(self) -> float:
+        if self.total == 0:
+            raise ValueError("patch coverage is undefined with no changed executable lines")
+        return 100.0 * self.covered / self.total
+
+
+def _int_set(entry: object, key: str) -> set[int] | None:
+    """The ints at ``entry[key]``, or ``None`` if the shape is wrong.
+
+    ``entry`` is ``object`` all the way down because it comes from a JSON
+    file this code did not write - a coverage report from a pytest-cov
+    version this was never tested against is not required to carry the
+    shape expected here.
+    """
+    if not isinstance(entry, dict):
+        return None
+    value = entry.get(key)
+    if not isinstance(value, list):
+        return None
+    return {item for item in value if isinstance(item, int)}
+
+
+def measure_patch_coverage(
+    targets: Mapping[str, set[int]], report: Mapping[str, object]
+) -> PatchCoverage:
+    """The patch-coverage ratio: covered changed lines over changed
+    executable lines, restricted to ``targets``.
+
+    ``report`` is a parsed ``coverage json`` document. Keys inside
+    ``report["files"]`` are repo-relative POSIX paths - the same
+    spelling ``git diff`` produces - with at most a leading ``./``
+    stripped; critic-verified against a real report that no further
+    normalisation is needed.
+
+    D5: a target whose added lines carry no statement (a comment-only or
+    blank-only change) drops out of BOTH sides of the ratio rather than
+    counting as 0/0 or 100%. The same rule handles ``# pragma: no
+    cover`` lines with no special case: coverage puts them in
+    ``excluded_lines``, which is neither ``executed_lines`` nor
+    ``missing_lines``, so they are absent from both sides of the
+    intersection below without anything here naming them.
+
+    A target present in ``targets`` but with no usable entry in
+    ``report["files"]`` is UNMEASURED, not 0%: the coverage tool simply
+    never produced a reading for it, which is a different fact than "it
+    ran and nothing executed".
+    """
+    raw_files = report.get("files")
+    files: dict[str, object] = raw_files if isinstance(raw_files, dict) else {}
+    normalized = {(key[2:] if key.startswith("./") else key): value for key, value in files.items()}
+
+    covered = 0
+    total = 0
+    per_file: list[tuple[str, int, int]] = []
+    unmeasured: list[str] = []
+    for path, lines in sorted(targets.items()):
+        entry = normalized.get(path)
+        executed = _int_set(entry, "executed_lines")
+        missing = _int_set(entry, "missing_lines")
+        if executed is None or missing is None:
+            unmeasured.append(path)
+            continue
+        c = len(lines & executed)
+        t = len(lines & (executed | missing))
+        if t == 0:
+            continue
+        per_file.append((path, c, t))
+        covered += c
+        total += t
+
+    return PatchCoverage(covered, total, tuple(per_file), tuple(unmeasured))
+
+
+# ---------------------------------------------------------------------------
 # Config and level-gated severity
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
@@ -699,6 +895,12 @@ class AdequacyConfig:
     require_strong_oracle: bool = True
     #: Report tests that assert nothing at all.
     flag_assertionless_tests: bool = True
+    #: R8.5 Layer 1. Runs the project's pytest command a SECOND time under
+    #: coverage and records what fraction of the lines this change ADDED
+    #: was executed. Advisory always: there is no floor key and no level
+    #: can create one. Off by default because it costs a second full test
+    #: run.
+    patch_coverage: bool = False
 
     @classmethod
     def from_env(cls) -> AdequacyConfig:
@@ -712,6 +914,7 @@ class AdequacyConfig:
             layer0=layer0 or defaults.layer0,
             require_strong_oracle=defaults.require_strong_oracle,
             flag_assertionless_tests=defaults.flag_assertionless_tests,
+            patch_coverage=defaults.patch_coverage,
         )
 
     @classmethod
@@ -737,6 +940,11 @@ class AdequacyConfig:
             if "flag_assertionless_tests" in section
             else defaults.flag_assertionless_tests
         )
+        patch_coverage = (
+            bool(section["patch_coverage"])
+            if "patch_coverage" in section
+            else defaults.patch_coverage
+        )
         if "KSTRL_ADEQUACY_ENABLED" in os.environ:
             enabled = os.environ["KSTRL_ADEQUACY_ENABLED"] == "1"
         if "KSTRL_ADEQUACY_LAYER0" in os.environ:
@@ -746,6 +954,7 @@ class AdequacyConfig:
             layer0=layer0,
             require_strong_oracle=require_strong,
             flag_assertionless_tests=flag_assertionless,
+            patch_coverage=patch_coverage,
         )
 
     def __post_init__(self) -> None:

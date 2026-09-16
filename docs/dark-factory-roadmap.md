@@ -574,13 +574,24 @@ duckdb extra is wired for the query subcommand only.
 
 ## R8.5 Test-suite adequacy gate (L) - [#152](https://github.com/0xfauzi/kstrl/issues/152)
 
-Status: `[~]` - **Layer 0 only.** Shipped in `kstrl/adequacy.py` +
-`check_test_adequacy`: test-diff discipline (deleted tests - including a
-deleted test FILE - added skip/xfail in any of its spellings, net
-assertion loss) and oracle-signal linting (a new test file needs one
-falsifiable assertion; tests that assert nothing are reported). Opt-in
-via `[adequacy] enabled`, ADVISORY first; with the R8.2 ladder on, Layer
-0 blocks from L1 up per the level table.
+Status: `[~]` - **Layer 0 and Layer 1 shipped; Layers 2 and 3 remain.**
+Layer 0 is in `kstrl/adequacy.py` + `check_test_adequacy`: test-diff
+discipline (deleted tests - including a deleted test FILE - added
+skip/xfail in any of its spellings, net assertion loss) and oracle-signal
+linting (a new test file needs one falsifiable assertion; tests that
+assert nothing are reported). Opt-in via `[adequacy] enabled`, ADVISORY
+first; with the R8.2 ladder on, Layer 0 blocks from L1 up per the level
+table.
+
+Layer 1 (patch coverage, #152) is `[adequacy] patch_coverage` (opt-in,
+off by default, toml-only). When on, `check_patch_coverage` runs the
+project's own test command a second time under `--cov=.
+--cov-report=json:<tmp>` and reports what fraction of the lines the diff
+ADDED to non-test Python files the suite executed. ADVISORY ONLY, with
+NO FLOOR: the finding is emitted at every percentage including 100%,
+because the number kstrl reports is the empirical distribution a floor
+will later be set from, and a gate that blocks on an invented number
+teaches people to switch gates off. No autonomy level touches it.
 
 Two scoping rules decide whether the gate is usable rather than merely
 strict:
@@ -608,13 +619,14 @@ advisory asks for none.
 
 Layer 0 needs no test execution, no coverage run, no mutation tooling and
 no historical data, which is why it went first: it is the only layer whose
-thresholds are not waiting on evidence that does not exist yet.
+thresholds are not waiting on evidence that does not exist yet. Layer 1
+needs a test execution and a coverage run, no more than that, and ships
+the same way Layer 0 did: measuring and reporting, with no floor, so the
+distribution the floor will need is a byproduct of running it rather than
+a precondition for shipping it.
 
 **Not built, and not claimed:**
 
-- **Layer 1** (patch coverage floor, `diff-cover --fail-under`) - adds a
-  dependency and wants a measured floor rather than the roadmap's ~85%
-  placeholder.
 - **Layer 2** (diff-scoped mutation) - `check_mutation_score` already
   exists and is file-scoped to changed files, but the R8.5 requirements
   on top of it (max 1 mutant per line, hard wall-clock cap, sampling
@@ -624,14 +636,15 @@ thresholds are not waiting on evidence that does not exist yet.
   runs.
 - **Layer 3** (fixtures oracle required at high autonomy) - `[fixtures]`
   exists and is opt-in; promoting it to mandatory at L3+ is a small
-  level-gate that belongs with the same pass as Layer 1/2.
+  level-gate that belongs with the same pass as Layer 2.
 - **Cross-family review defaulting on at L3+** and the calibration
   family-delta - user-run measurements (overlaps remediation R7.1).
 
-The distinction that matters for sequencing: Layer 0 degrades to nothing
-without data because it needs none. Layers 1-2 need an empirical
-distribution to set a threshold anyone should trust, and shipping them
-against invented numbers is the failure this cycle keeps trying to avoid.
+The distinction that matters for sequencing: Layers 0 and 1 degrade to
+nothing without data because they need none - Layer 1's own coverage run
+IS the measurement. Layer 2 needs an empirical distribution to set a
+threshold anyone should trust, and shipping it against an invented number
+is the failure this cycle keeps trying to avoid.
 
 **Why.** The lights-out precondition in every tradition is an evaluator-grade
 test suite, and the evidence says agent-written tests cannot be assumed

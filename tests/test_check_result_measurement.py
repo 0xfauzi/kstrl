@@ -219,6 +219,11 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     "verify.py: check_diff_scope: CheckResult": 4,
     "verify.py: check_linter: CheckResult": 2,
     "verify.py: check_mutation_score: CheckResult": 2,
+    # R8.5 Layer 1 (#152): ran the project's own test command a second
+    # time under coverage and read back a percentage over the diff's
+    # changed lines. One construction site, the passing row - every
+    # not-measured path returns NotMeasured instead (#306).
+    "verify.py: check_patch_coverage: CheckResult": 1,
     "verify.py: check_policy_envelope: CheckResult": 4,
     "verify.py: check_prd_stories: CheckResult": 4,
     "verify.py: check_scope_unreadable: CheckResult": 1,

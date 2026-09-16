@@ -97,6 +97,13 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_launch_session.py": 1,
     "tests/test_loop.py": 2,
     "tests/test_notify.py": 1,
+    # #152. Five real commits (the shared base/feature fixture plus three
+    # branch variants), all through gitrepo.set_identity. The sixth is
+    # the module docstring's own prose - "real temp git repository" and
+    # "feature commit" land "git" and "commit" as separate exact tokens
+    # in the same folded string, the identical shape gitrepo.py's own
+    # row above is declared for.
+    "tests/test_patch_coverage.py": 6,
     "tests/test_policy_envelope.py": 4,
     "tests/test_pr_outcomes.py": 3,
     "tests/test_progress_scope.py": 9,
