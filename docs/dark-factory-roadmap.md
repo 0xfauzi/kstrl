@@ -1393,8 +1393,9 @@ the same doctrine at repo granularity.
 
 **Design.** Mechanical only (no LLM), advisory-first, two tiers. Tier A
 (static, instant): git/gh state, config validity, verification commands
-configured or inferable, language detection (Python gets full
-feedforward; otherwise warn, see #200), source/test roots, `.gitignore`
+configured or inferable, source-root detection (the feedforward stage
+emits nothing when `_find_top_source_dirs` finds no root, as on deckgen;
+warn on that, not on language, see #378), source/test roots, `.gitignore`
 coverage, protected-path candidates suggested for `[policy] paths_deny`.
 Tier B (measured, behind an explicit flag, prints what it will run
 first): baseline suite run (red baseline = NOT READY), timing, a
@@ -1418,10 +1419,17 @@ milestone): [#199](https://github.com/0xfauzi/kstrl/issues/199) feeds
 `codebase_map.md` + extracted interfaces into the architect prompt (the
 planner is currently the context-starved side of the pipeline; H2/H3
 apply since `DECOMPOSE_PROMPT` changes);
-[#200](https://github.com/0xfauzi/kstrl/issues/200) is the
-research-first verdict on language-pluggable interface extraction
-(ctags/tree-sitter as edge integrations per doctrine 1, demand check
-before any build).
+[#200](https://github.com/0xfauzi/kstrl/issues/200) verdict recorded
+2026-09-16: DEFER the language plug-in. Non-Python source is in the
+intake (deckgen has a TypeScript front end), but `extract_public_interfaces`
+already returns nothing on deckgen's Python, and on this repo its 30-file
+cap fills inside whichever top-level package directory order yields
+first, so the binding defect is file selection, not language coverage;
+that defect is #378. Reopens when a real run schedules a component
+against non-Python source; if the plug-in is ever built, integrate
+`universal-ctags`, ranked on footprint, fidelity, absent-tool behaviour
+and churn in the
+[verdict comment](https://github.com/0xfauzi/kstrl/issues/200#issuecomment-5689911463).
 
 **Failure modes.** A green doctor is repo-readiness, not spec-readiness
 (it cannot tell you a task is too cross-cutting for the component
