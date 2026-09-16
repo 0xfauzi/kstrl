@@ -729,13 +729,10 @@ class TestPrUrls:
 
     def test_a_malformed_pr_urls_value_falls_back(self) -> None:
         base = QueueItem(item_id="q-1", title="t", spec_filename="s.md").to_dict()
-        for payload in ("not a list", None, 7, {"a": 1}):
+        for payload in ("not a list", None, 7, {"a": 1}, ["ok", 3, "", None]):
             decoded = QueueItem.from_dict({**base, "pr_urls": payload})
             assert decoded is not None
             assert decoded.pr_urls == ()
-        mixed = QueueItem.from_dict({**base, "pr_urls": ["ok", 3, "", None]})
-        assert mixed is not None
-        assert mixed.pr_urls == ("ok",)
 
     def test_finish_failed_records_them_too(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path)

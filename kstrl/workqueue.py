@@ -273,17 +273,16 @@ def _as_str(data: dict[str, Any], key: str, default: str = "") -> str:
 
 
 def _as_str_tuple(data: dict[str, Any], key: str) -> tuple[str, ...]:
-    """Decode a list of strings, dropping anything that is not one.
+    """Decode a list of strings, or fall back to ``()`` whole.
 
-    Same tolerance rule as ``_as_str``: a sidecar is operator-writable,
-    so a malformed value falls back to the field's default rather than
-    losing the whole item. Empty strings are dropped because the callers
-    treat "" as "no PR", never as a PR whose URL is blank.
+    One tolerance rule: a value that is a list where every entry is a
+    string decodes as-is; anything else - not a list, or a list with one
+    non-string entry - decodes to the field's default.
     """
     value = data.get(key)
-    if not isinstance(value, list):
-        return ()
-    return tuple(entry for entry in value if isinstance(entry, str) and entry)
+    if isinstance(value, list) and all(isinstance(entry, str) for entry in value):
+        return tuple(value)
+    return ()
 
 
 @dataclass
@@ -1072,6 +1071,7 @@ class Queue:
         reason: str = "",
         actor: str = "",
         charge_attempt: bool = False,
+        detail: dict[str, Any] | None = None,
         **updates: Any,
     ) -> QueueItem:
         """Move ``item`` to ``to_state``, recording why.
@@ -1079,7 +1079,9 @@ class Queue:
         Writes ``meta.json`` first and renames second - the rename is the
         commit point (see the module docstring). ``charge_attempt``
         increments ``attempts`` in the pre-rename write, so an interrupted
-        transition over-counts rather than under-counts.
+        transition over-counts rather than under-counts. ``detail`` is
+        journalled beside the transition; omitted or ``None`` journals
+        the field's own default (an empty dict).
         """
         from_state = item.state
         legal = _LEGAL_TRANSITIONS.get(from_state, frozenset())
@@ -1132,6 +1134,7 @@ class Queue:
                 reason=reason,
                 actor=actor,
                 attempts=item.attempts,
+                detail=detail or {},
             )
         )
         return item
@@ -1241,21 +1244,16 @@ class Queue:
         actor: str = "",
         pr_urls: tuple[str, ...] = (),
     ) -> QueueItem:
-        """Record a green finish, and any PR the run left behind.
-
-        An EMPTY ``pr_urls`` writes nothing rather than writing (): a
-        later attempt whose manifest could not be read must not erase
-        what an earlier one recorded.
-        """
-        updates: dict[str, Any] = {"last_error": ""}
-        if pr_urls:
-            updates["pr_urls"] = pr_urls
+        """A green finish, unioned with any PR the run left behind."""
+        union = tuple(dict.fromkeys(item.pr_urls + pr_urls))
         return self.transition(
             item,
             ItemState.DONE,
             reason="completed",
             actor=actor,
-            **updates,
+            last_error="",
+            pr_urls=union,
+            detail={"pr_urls": list(union)} if union else None,
         )
 
     def finish_failed(
@@ -1266,21 +1264,16 @@ class Queue:
         actor: str = "",
         pr_urls: tuple[str, ...] = (),
     ) -> QueueItem:
-        """Record a red finish that MAY be retried.
-
-        Whether it actually is retried is the daemon's decision (PR 2),
-        made on positive evidence of an infrastructure error. Landing in
-        ``failed/`` is not permission to retry.
-        """
-        updates: dict[str, Any] = {"last_error": error}
-        if pr_urls:
-            updates["pr_urls"] = pr_urls
+        """A red finish that MAY be retried, unioned with any PR the run left behind."""
+        union = tuple(dict.fromkeys(item.pr_urls + pr_urls))
         return self.transition(
             item,
             ItemState.FAILED,
             reason="failed",
             actor=actor,
-            **updates,
+            last_error=error,
+            pr_urls=union,
+            detail={"pr_urls": list(union)} if union else None,
         )
 
     def poison(

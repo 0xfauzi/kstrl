@@ -3249,6 +3249,25 @@ def _report_reaped(
         )
 
 
+def _read_manifest_json(path: Path) -> dict[str, Any] | None:
+    """The manifest's raw JSON object, or ``None`` if it cannot be read.
+
+    The parser's error taxonomy belongs to the parser: this does the
+    file read and the ``json.loads`` for every post-run manifest reader
+    in this module, and catches ``Exception`` exactly because both
+    callers read this file after the spend is charged and after the
+    verdict is decided, so nothing either one hits may end the cycle.
+    Measured: a 20000-deep nested JSON array makes ``json.loads`` raise
+    ``RecursionError``, which is a ``RuntimeError`` and escapes the
+    narrower tuple ``classify_run`` uses on the pre-verdict path.
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def _pr_urls_from_manifest(
     manifest_path: Path,
     owned: bool,
@@ -3259,27 +3278,25 @@ def _pr_urls_from_manifest(
     ``owned`` false means this invocation produced no manifest of its
     own, so there is nothing to attribute and nothing to say - the same
     refusal ``classify_run`` makes, for the same reason (#186 F2).
-
-    ``Exception`` exactly, and it is the only clause. This read is
-    bookkeeping that runs after the spend is charged and after the
-    verdict is decided, so nothing it can hit may end the cycle, and the
-    enumerated tuple this module uses for ``Manifest.load`` elsewhere is
-    not wide enough: measured, a 20000-deep nested JSON array makes that
-    call raise ``RecursionError``, which is a ``RuntimeError``.
     """
     if not owned:
         return ()
-    try:
-        manifest = Manifest.load(manifest_path)
-    except Exception as exc:
-        observer.warn(f"  could not read PR URLs from {manifest_path} ({exc}); recording none")
+    data = _read_manifest_json(manifest_path)
+    if data is None:
+        observer.warn(f"  could not read PR URLs from {manifest_path}; recording none")
         return ()
-    found: list[str] = []
-    for component in manifest.components:
-        url = component.pr_url.strip()
-        if url and url not in found:
-            found.append(url)
-    return tuple(found)
+    components = data.get("components")
+    if not isinstance(components, list):
+        return ()
+    return tuple(
+        dict.fromkeys(
+            url
+            for c in components
+            if isinstance(c, dict)
+            and isinstance(c.get("prUrl"), str)
+            and (url := c["prUrl"].strip())
+        )
+    )
 
 
 def serve_cycle(
@@ -3776,17 +3793,12 @@ def _derive_project_name(item: QueueItem) -> str:
 def _run_id_from_manifest(manifest_path: Path) -> str:
     """The run id the factory recorded, or "" if it never got that far.
 
-    ONE clause for all three causes: every one of them returns "", the
-    caller then falls back to selecting by mtime, and no message is
-    emitted about which happened. #320 adds ``UnicodeDecodeError`` here
-    rather than a second handler for that reason.
+    Routed through ``_read_manifest_json``: every cause of an unreadable
+    manifest returns "" here, the caller then falls back to selecting by
+    mtime, and no message is emitted about which happened.
     """
-    try:
-        raw = manifest_path.read_text(encoding="utf-8")
-        data = json.loads(raw)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return ""
-    if not isinstance(data, dict):
+    data = _read_manifest_json(manifest_path)
+    if data is None:
         return ""
     # "runId", not "run_id": Manifest.to_dict is camelCase on disk.
     # Review #186 F2 - reading the snake_case key returned "" for every
