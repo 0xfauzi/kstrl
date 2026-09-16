@@ -18,7 +18,7 @@ trustworthy, so they are requirements, not suggestions.
   holds the release stage and runtime feedback; continuous learning is
   [#217](https://github.com/0xfauzi/kstrl/issues/217). Comment on an issue
   before starting so work is not duplicated. To understand the system first,
-  read the atlas ([docs/atlas](docs/atlas)) and the lessons ([docs/lessons](docs/lessons)).
+  read [ARCHITECTURE.md](ARCHITECTURE.md) and the lessons ([docs/lessons](docs/lessons)).
 - **Report a security vulnerability**: do *not* open a public issue. See
   [SECURITY.md](SECURITY.md).
 

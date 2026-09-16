@@ -2354,7 +2354,7 @@ class TestGroupLivenessDegradesRatherThanGuessing:
 
     Only the POLICY is here. The reading's tri-state, its parse and the
     conditions under which a "gone" is evidence are pinned in
-    `tests/test_procgroup.py`, and the zombie case itself needs a real
+    `tests/test_procgroup_listing.py`, and the zombie case itself needs a real
     unreaped tree and lives in
     `tests/test_shutdown.py::test_a_zombie_does_not_count_as_a_live_member`.
 
