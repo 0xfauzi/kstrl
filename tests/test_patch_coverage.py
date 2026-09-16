@@ -426,6 +426,90 @@ def test_a_hanging_coverage_run_is_a_timed_out_sidecar(tmp_path: Path) -> None:
     assert gap.as_token() == "patch_coverage:timed_out"
 
 
+def test_a_hanging_coverage_json_spawn_is_a_timed_out_sidecar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Blocker 1 (PR #388 review, #152): the data spawn and the ``coverage
+    json`` spawn share ONE ``[verify] subprocess_timeout`` budget rather
+    than each getting the full amount handed to
+    :func:`kstrl.verify.check_patch_coverage`.
+
+    Deliberately makes the DATA spawn itself slow (``slow.txt``: 8s,
+    within the 10s budget, so it succeeds) rather than instant, because a
+    fast data spawn does NOT distinguish the fix from the bug: fixed and
+    buggy code differ only by however long the data spawn itself took,
+    and with a near-instant data spawn that difference is too small for
+    a wall-clock assertion to catch (measured: a fast-data-spawn version
+    of this test stayed green under the exact plant below, at both a 5s
+    and a 15s budget).
+
+    With the data spawn burning 8 of the 10s: fixed code hands the JSON
+    spawn whatever remains (about 2s), so total coverage-phase time
+    tracks the ORIGINAL 10s budget regardless of how the 10s split
+    between the two spawns (measured: ~10.2s). The bug hands the JSON
+    spawn a second full 10s on top of the 8 already spent (measured:
+    ~18.2s) - proved by planting ``timeout`` back in at the JSON spawn's
+    ``_run_coverage_step`` call (kstrl/verify.py, the line right after
+    the ``remaining <= 0`` check). Neither figure includes
+    ``verify._SCRUB_TERM_GRACE_SECONDS``: a plain ``time.sleep`` has no
+    SIGTERM handler, so the kill is immediate and ``proc.wait(term_grace)``
+    returns long before its own timeout. 14 sits with about 4s of margin
+    on both sides of the fixed (~10.2s) and buggy (~18.2s) figures.
+    """
+    _repo(tmp_path)
+    (tmp_path / "slow.txt").write_text("8", encoding="utf-8")
+    monkeypatch.setattr(
+        "kstrl.verify._coverage_json_command",
+        lambda tokens, data_file, targets, json_path: [
+            sys.executable,
+            "-c",
+            "import time; time.sleep(30)",
+        ],
+    )
+
+    start = time.monotonic()
+    result = _run(tmp_path, subprocess_timeout=10.0)
+    elapsed = time.monotonic() - start
+    assert elapsed < 14, f"took {elapsed:.1f}s; the shared budget did not bound the run"
+
+    gap = _only_gap(result, "timed_out")
+    assert gap.as_token() == "patch_coverage:timed_out"
+
+
+def test_an_undecodable_coverage_report_is_a_command_failed_sidecar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``UnicodeDecodeError`` is a ``ValueError``, is NOT a
+    ``json.JSONDecodeError``, and ``except (OSError, ValueError)`` around
+    the coverage report read in :func:`kstrl.verify._coverage_report` is
+    the only thing standing between a bad byte on disk and a traceback
+    out of :func:`kstrl.verify.run_mechanical_verification`. Narrowing
+    that clause to ``except json.JSONDecodeError`` clears every other
+    test in this file (proved: the plant left ``tests/test_patch_coverage.py``
+    at "17 passed" before this test existed) because nothing else writes
+    invalid utf-8 into the report file.
+
+    The stub makes the JSON spawn exit 0 (so the ``returncode != 0``
+    check above the read does not fire) and write bytes that ARE a valid
+    file but are NOT valid utf-8, which is exactly the shape ``coverage
+    json`` itself would never produce and a narrower except clause would
+    let through as an unhandled exception."""
+    _repo(tmp_path)
+    monkeypatch.setattr(
+        "kstrl.verify._coverage_json_command",
+        lambda tokens, data_file, targets, json_path: [
+            sys.executable,
+            "-c",
+            "import pathlib, sys; pathlib.Path(sys.argv[1]).write_bytes(b'\\xff\\xfe not json')",
+            str(json_path),
+        ],
+    )
+
+    result = _run(tmp_path)
+
+    _only_gap(result, "command_failed")
+
+
 def test_a_shell_operator_in_the_test_command_is_refused_before_any_run(
     tmp_path: Path,
 ) -> None:

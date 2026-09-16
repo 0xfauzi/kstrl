@@ -2549,6 +2549,7 @@ def _coverage_report(
     timeout: float,
     targets: Iterable[str],
     json_path: Path,
+    spawn_start: float,
 ) -> dict[str, object] | NotMeasured:
     """Run the two coverage spawns (#152 simplify pass) and hand back the
     parsed report or the gap.
@@ -2567,6 +2568,15 @@ def _coverage_report(
     it produces would stop meaning what the project's own config says it
     means. ``COVERAGE_FILE`` overrides only the data file.
 
+    ``timeout`` and ``spawn_start`` share ONE budget across both spawns
+    (#152 blocker 1): the data spawn is handed ``timeout`` in full, but
+    the JSON spawn is handed whatever remains of ``timeout`` measured
+    from ``spawn_start``, not another full ``timeout``. Without this,
+    ``check_patch_coverage`` could spend up to ``2 * timeout`` - twice
+    the ``[verify] subprocess_timeout`` ceiling every other check in
+    this module is bounded by - which is exactly what the docstring on
+    :func:`check_patch_coverage` claims cannot happen.
+
     1. The DATA spawn (:func:`_coverage_data_command`), through
        :func:`_run_coverage_step`. No ``.coverage`` on disk afterwards is
        ``tool_missing`` - FIRST among the "ran but produced nothing
@@ -2575,10 +2585,15 @@ def _coverage_report(
        --cov=.``), and ``tool_missing`` is the token an operator can act
        on. A non-zero exit otherwise is ``command_failed``: a partial
        run's coverage is not a measurement of the suite.
-    2. The JSON spawn (:func:`_coverage_json_command`), through the same
-       step function. A non-zero exit or no JSON on disk is
-       ``command_failed``.
-    3. The JSON fails to parse, or parses to something that is not an
+    2. The remaining budget is checked BEFORE the JSON spawn: if the
+       data spawn alone used up ``timeout`` (or came close enough that
+       nothing useful remains), this returns ``timed_out`` without
+       spawning ``coverage json`` at all, rather than handing it a
+       second full ``timeout``.
+    3. The JSON spawn (:func:`_coverage_json_command`), through the same
+       step function, bounded by the REMAINING budget. A non-zero exit
+       or no JSON on disk is ``command_failed``.
+    4. The JSON fails to parse, or parses to something that is not an
        object, is ONE ``command_failed`` site: the object check raises
        ``ValueError`` inside the same ``try`` the parse is in, so
        ``except (OSError, ValueError)`` catches both. ``ValueError`` and
@@ -2604,8 +2619,16 @@ def _coverage_report(
             f"the test command exited {data_result.returncode} under coverage; "
             "a partial run's coverage is not a measurement of the suite",
         )
+    remaining = timeout - (time.monotonic() - spawn_start)
+    if remaining <= 0:
+        return NotMeasured(
+            PATCH_COVERAGE_CHECK,
+            NOT_MEASURED_TIMED_OUT,
+            "the coverage data spawn used the full [verify] subprocess_timeout "
+            "budget, leaving nothing for the coverage json spawn",
+        )
     json_result = _run_coverage_step(
-        _coverage_json_command(tokens, data_file, targets, json_path), cwd, timeout, data_file
+        _coverage_json_command(tokens, data_file, targets, json_path), cwd, remaining, data_file
     )
     if isinstance(json_result, NotMeasured):
         return json_result
@@ -2671,9 +2694,13 @@ def check_patch_coverage(
       (D5: the added lines carried no statement coverage can measure, so
       ``coverage.total`` is 0) - a git read that FAILED is a fault and is
       ``command_failed``, never this token.
-    - ``timed_out``: either spawn exceeded ``timeout``, the same
-      ``[verify] subprocess_timeout`` :func:`check_test_suite` uses, so
-      this check cannot double Phase 1's ceiling.
+    - ``timed_out``: the two spawns share ONE ``timeout`` budget, the
+      same ``[verify] subprocess_timeout`` :func:`check_test_suite`
+      uses, not one ``timeout`` each. The data spawn is bounded by
+      ``timeout`` directly; the JSON spawn is bounded by whatever
+      remains of ``timeout`` once the data spawn returns, and gets
+      ``timed_out`` with no second spawn at all when nothing remains.
+      This check cannot double Phase 1's ceiling.
     - ``command_failed``: a spawn could not be started, git could not
       read the diff, either spawn exited non-zero, or the JSON could not
       be parsed.
@@ -2681,11 +2708,12 @@ def check_patch_coverage(
     D7/D9 stated outright: this is ADVISORY ALWAYS. There is no floor
     key, no level reads here, and the finding is emitted at every
     percentage including 100%, because the distribution a floor would
-    later be set from is the point of shipping this now. Both spawns are
-    bounded by ``timeout``: a hung project suite cannot outlive the
-    check, because each goes through :func:`run_scrubbed`, which already
-    spawns with ``start_new_session=True`` and signals the whole process
-    group (SIGTERM, grace, SIGKILL) before raising
+    later be set from is the point of shipping this now. Both spawns
+    together are bounded by ONE ``timeout``, not one each: a hung
+    project suite cannot outlive the check, because each spawn goes
+    through :func:`run_scrubbed`, which already spawns with
+    ``start_new_session=True`` and signals the whole process group
+    (SIGTERM, grace, SIGKILL) before raising
     :class:`subprocess.TimeoutExpired`.
     """
     start = time.monotonic()
@@ -2715,9 +2743,10 @@ def check_patch_coverage(
     # The two pre-flight refusals above cost nothing: no temp dir is
     # created for a command this check cannot extend, an unreadable
     # diff, or a diff with no target at all.
+    spawn_start = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="kstrl-coverage-") as tmp_name:
         json_path = Path(tmp_name) / "coverage.json"
-        report = _coverage_report(cwd, tokens, timeout, targets, json_path)
+        report = _coverage_report(cwd, tokens, timeout, targets, json_path, spawn_start)
     if isinstance(report, NotMeasured):
         return report
     coverage = measure_patch_coverage(targets, report)
@@ -3682,13 +3711,17 @@ def run_mechanical_verification(
     fixture) commands, which are the operator's programs and write their
     own caches; kstrl suppresses only kstrl's writes.
 
-    ``mutation_testing``, ``dead_code_ruff`` and ``dead_code`` append NO
-    ROW rather than a passing one whenever nothing was measured (#306,
-    #335). See :func:`_mutation_checks` and :func:`_dead_code_checks`. A
-    consumer reading ``checks`` must already tolerate those rows'
-    absence, because ``[verify] mutation_testing`` and ``[verify]
-    dead_code_cleanup`` both default to false; what changed is that
-    absence is now the ONLY thing a non-measurement can look like.
+    ``mutation_testing``, ``dead_code_ruff``, ``dead_code`` and
+    ``patch_coverage`` append NO ROW rather than a passing one whenever
+    nothing was measured (#306, #335, #152). See :func:`_mutation_checks`,
+    :func:`_dead_code_checks` and :func:`_patch_coverage_checks`.
+    ``patch_coverage`` also runs the project's own test command a SECOND
+    time when ``[adequacy] enabled`` and ``[adequacy] patch_coverage`` are
+    both on; it is off by default for that reason. A consumer reading
+    ``checks`` must already tolerate those rows' absence, because
+    ``[verify] mutation_testing`` and ``[verify] dead_code_cleanup`` both
+    default to false; what changed is that absence is now the ONLY thing
+    a non-measurement can look like.
 
     ``[verify] dead_code_cleanup`` produces TWO rows, not one: the ruff
     F401/F811/F841 phase and the vulture-or-``dead_code_command`` phase
