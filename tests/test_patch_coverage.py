@@ -304,17 +304,77 @@ def test_covered_lines_is_what_files_is_derived_from() -> None:
 
 
 def test_a_command_that_cannot_be_started_is_a_sidecar(tmp_path: Path) -> None:
-    """Two things at once. It is the OSError test: the coverage command
-    runs as a LIST with no shell, so a configured `PYTHONPATH=. pytest`
-    splits to `["PYTHONPATH=.", "pytest"]` and `execvp` raises
-    `FileNotFoundError`. It is ALSO the list-versus-string test: handed
-    to `run_scrubbed` as a STRING, `/bin/sh` reads `PYTHONPATH=.` as an
-    env assignment and the run SUCCEEDS, producing a row - which is what
-    the plant for this test trips."""
+    """The OSError test: the coverage command runs as a LIST with no
+    shell, so a configured `PYTHONPATH=. pytest` splits to
+    `["PYTHONPATH=.", "pytest"]` and `execvp` raises `FileNotFoundError`.
+
+    It is NOT the list-versus-string test (blocker 1, PR #388 round 3 of
+    independent verification, #152). It was believed to be: stringify
+    EITHER coverage spawn alone and this test still passes, because the
+    OTHER spawn still runs as a list and its own `FileNotFoundError`
+    satisfies `command_failed` in its place - proved on the shipped head
+    with `__pycache__` purged and `PYTHONDONTWRITEBYTECODE=1`: stringifying
+    just `_coverage_data_command` leaves all 19 tests green, and so does
+    stringifying just `_coverage_json_command`. Only mutating BOTH at
+    once goes red, which this single test cannot tell apart from the
+    property it names. `test_each_coverage_spawn_runs_as_a_list_never_a_string`
+    is the one that actually pins list-versus-string, per spawn."""
     _repo(tmp_path)
     result = _run(tmp_path, test_command="PYTHONPATH=. pytest")
 
     _only_gap(result, "command_failed")
+
+
+def test_each_coverage_spawn_runs_as_a_list_never_a_string(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Blocker 1 (PR #388, round 3 of independent verification, #152):
+    the property `test_a_command_that_cannot_be_started_is_a_sidecar`'s
+    docstring used to claim - that every coverage spawn runs as a list,
+    never a shell string, so a file name out of an agent-authored diff
+    can never reach `/bin/sh` - needs its own pin, because that test's
+    single `PYTHONPATH=. pytest` plant is satisfied by either spawn's
+    `FileNotFoundError` alone and cannot tell "both spawns are lists"
+    from "at least one is".
+
+    Wraps `run_scrubbed` to RECORD every `cmd` it is handed and delegate
+    to the real function, so the coverage run still measures for real.
+    `check_test_suite`, `check_typecheck` and `check_linter` also go
+    through `run_scrubbed` in this same run, each with the OPERATOR'S
+    own command handed through unchanged - legitimately a shell string,
+    since a project's own multi-step command line (`pytest && ...`) is
+    meant to reach a shell. Stringifying is only ever a defect on the
+    two commands THIS check builds itself out of `targets`, so the pin
+    filters to those two by CONTENT (`--cov=.` for the data spawn, the
+    literal `"coverage"` token for the json spawn), not by call order -
+    a stringified spawn drops out of the filter entirely (it is no
+    longer a list), so the count assertion below is what catches it,
+    directly, with no dependence on which `FileNotFoundError` happens to
+    fire first.
+
+    Proved red-then-green (`find . -name __pycache__ ... -exec rm -rf
+    {} +`, `PYTHONDONTWRITEBYTECODE=1`, each with the other spawn
+    reverted): stringifying `_coverage_data_command`'s return -
+    `" ".join(shlex.quote(t) for t in [*tokens, "--cov=.",
+    "--cov-report="])` in place of the list - drops `coverage_calls` to
+    1 and this test fails; stringifying `_coverage_json_command`'s
+    return the same way does too; the unmodified tree passes both."""
+    _repo(tmp_path)
+    recorded: list[str | list[str]] = []
+    real_run_scrubbed = run_scrubbed
+
+    def _recording_run_scrubbed(cmd: str | list[str], **kwargs: object) -> object:
+        recorded.append(cmd)
+        return real_run_scrubbed(cmd, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr("kstrl.verify.run_scrubbed", _recording_run_scrubbed)
+    _run(tmp_path)
+
+    coverage_calls = [
+        c for c in recorded if isinstance(c, list) and ("--cov=." in c or "coverage" in c)
+    ]
+    assert len(coverage_calls) >= 2, recorded
+    assert all(isinstance(c, list) for c in coverage_calls)
 
 
 def test_added_line_numbers_is_context_size_agnostic() -> None:
