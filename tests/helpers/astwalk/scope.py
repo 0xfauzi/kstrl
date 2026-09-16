@@ -264,7 +264,11 @@ def catches_everything(node: ast.Try | ast.TryStar, table: Bindings) -> bool:
     narrow clause above that re-raises lets its own type out past the
     broad one below, and a broad clause that re-raises guards nothing at
     all. The walk cannot decide which exception a re-raising ladder still
-    lets through, so it declines to clear.
+    lets through, so it declines to clear. It looks only for a literal
+    ``raise`` inside a handler, so a handler that re-raises through a
+    helper call, one that calls ``sys.exit``, and a raising ``finally``
+    all still CLEAR; no enrolled row is mis-cleared that way today, and
+    widening the walk is a follow-up.
     """
     clauses = handler_clauses(node, table)
     if not any(clause.decided and "Exception" in clause.names for clause in clauses):
