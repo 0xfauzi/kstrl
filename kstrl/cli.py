@@ -5349,6 +5349,8 @@ def queue_show(
             f"pid {item.lease_pid} on {item.lease_host} "
             f"until {item.lease_expires_at}" + (" (EXPIRED)" if item.lease_expired() else ""),
         )
+    for url in item.pr_urls:
+        ui_impl.kv("pr", url)
     if item.last_error:
         ui_impl.kv("last error", item.last_error)
     if item.poison_reason:
