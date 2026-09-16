@@ -23,7 +23,14 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.intake_github import GhResult, GitHubIntakeConfig, SyncResult, sync
+from kstrl.intake_github import (
+    Authorization,
+    GhResult,
+    GitHubIntakeConfig,
+    SyncResult,
+    authorization_refusal,
+    sync,
+)
 from kstrl.serve import _NullObserver, serve_cycle
 from kstrl.workqueue import Queue, QueueConfig
 from tests.test_intake_github import (
@@ -210,6 +217,38 @@ class TestTheLatestTriggerEventWins:
             cli_result = _invoke(["queue", "sync"], tmp_path)
         assert BOT in cli_result.output
 
+    def test_two_events_in_the_same_second_are_decided_by_timeline_order(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """GitHub stamps ``createdAt`` to the second, so an operator label
+        and a bot re-application can carry the identical timestamp. The
+        timeline is chronological, so the later node wins the tie; ``>``
+        in place of ``>=`` would hand the tie to the earlier actor and
+        left the whole suite green (verifier plant MINE-3 on PR #382)."""
+        _toml(tmp_path)
+        same_second = "2026-07-30T10:00:00Z"
+        gh = _GhStub(
+            issues=_issue_payload(_issue(7)),
+            auth=_auth_payload(
+                nodes=[
+                    {
+                        "createdAt": same_second,
+                        "label": {"name": "kstrl:queued"},
+                        "actor": {"login": "0xfauzi"},
+                    },
+                    {
+                        "createdAt": same_second,
+                        "label": {"name": "kstrl:queued"},
+                        "actor": {"login": BOT},
+                    },
+                ]
+            ),
+        )
+        calls, result = _cycle(tmp_path, gh)
+        assert calls == [], "a same-second bot re-application inherited the authorization"
+        assert result.synced == ()
+
 
 class TestItFailsClosed:
     def test_an_unreadable_timeline_is_refused(self, tmp_path: Path) -> None:
@@ -221,6 +260,15 @@ class TestItFailsClosed:
         )
         result = _sync(tmp_path, gh)
         assert result.enqueued == ()
+
+    def test_a_refusal_with_no_reason_is_still_a_refusal(self) -> None:
+        """``authorization_refusal`` returns "" only for an admission, so a
+        refusal that arrives without a reason must not read as one. No
+        production path builds ``Authorization(ok=False, reason="")``
+        today; this pins the fallback so the day one does, the gate stays
+        shut (verifier plant MINE-4 on PR #382)."""
+        config = GitHubIntakeConfig(allowed_actors=["0xfauzi"])
+        assert authorization_refusal(config, Authorization(ok=False, reason="")) != ""
 
     def test_a_labelling_event_with_no_actor_is_refused(self, tmp_path: Path) -> None:
         """GitHub returns a null actor for a deleted account. Unknown is
