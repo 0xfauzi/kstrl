@@ -638,9 +638,8 @@ def _format_section(title: str, facts: list[Fact]) -> str:
     return "\n".join(lines)
 
 
-#: H3 (#303): the fragments build_knowledge_context assembles into the
-#: knowledge prefix. One version constant because they are one body of
-#: instructions delivered by one builder.
+#: H3 (#303): fragments build_knowledge_context assembles; versioned as
+#: one body (docs/adversarial-roadmap.md, H3a sweep row).
 KNOWLEDGE_CONTEXT_PROMPT_VERSION = "1.0.0"
 
 KNOWLEDGE_CONTEXT_PROMPT = (

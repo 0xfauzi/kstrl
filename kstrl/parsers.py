@@ -680,10 +680,8 @@ def add_source_context(failure: ParsedFailure, worktree_path: Path, context_line
 
 # Each entry: (compiled regex matching the message, hint template)
 # Use {m} in the template to interpolate the regex match object.
-#: H3a (#303): the twelve repair instructions generate_fix_hint hands the
-#: engineer on its retry. One shared version constant because they are one
-#: body of instructions delivered by one builder, and because parsers.py is
-#: 767 lines against the repo's 800-line ratchet.
+#: H3a (#303): fragments generate_fix_hint hands the engineer; versioned
+#: as one body (docs/adversarial-roadmap.md, H3a sweep row).
 FIX_HINT_PROMPT_VERSION = "1.0.0"
 
 MISSING_ARGUMENT_HINT_PROMPT = (

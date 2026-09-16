@@ -529,9 +529,8 @@ def setpoint_disagreements(
     return [tag_finding_with_model(f, review.reviewer_model) for f in out]
 
 
-#: H3 (#303): the fragments setpoint_retry_context assembles into the
-#: engineer's retry text. One version constant because they are one body
-#: of instructions delivered by one builder.
+#: H3 (#303): fragments setpoint_retry_context assembles; versioned as one
+#: body (docs/adversarial-roadmap.md, H3a sweep row).
 SETPOINT_RETRY_PROMPT_VERSION = "1.0.0"
 
 SETPOINT_RETRY_PROMPT = (

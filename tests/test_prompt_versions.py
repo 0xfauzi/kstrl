@@ -127,6 +127,7 @@ from kstrl.verify import (
 )
 from tests.conftest import make_review_repo
 from tests.helpers.builder_prompts import (
+    _BUILDERS,
     BUILDER_PROMPTS,
     BUILDER_RENDER_EXEMPT,
     BUILDER_SNAPSHOTS,
@@ -302,6 +303,14 @@ def _drift_message(name: str, expected: tuple[str, str], actual: tuple[str, str]
             "project and nothing can tell an operator their prompt.md is "
             "behind.\n"
         )
+    if name in BUILDER_VERSIONS:
+        builder_version_name = next(v for _m, v, names in _BUILDERS if name in names)
+        parts.append(
+            f"  Note: {name} is a #303 builder fragment. {name}_VERSION does "
+            f"not exist; the constant to bump is {builder_version_name}, "
+            "declared above the builder's bodies, because the version's unit "
+            "is the text one builder delivers, not one fragment.\n"
+        )
     parts.append(
         "All of these writes are required. The PR diff with prompt + version + "
         "snapshot all moving is the audit trail.\n"
@@ -438,12 +447,10 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
 #: to disk verbatim by ``ks init`` and read back by ``run_loop``; it is
 #: never interpolated, so there is no render step to orphan. Its reach is
 #: covered by H3b's scaffold ledger instead
-#: (``test_engineer_prompt_bump_reaches_existing_projects``). The 53
-#: names in BUILDER_RENDER_EXEMPT (#303) are each one branch of a
-#: multi-branch builder, so no single production function returns any one
-#: of them verbatim; see ``tests/helpers/builder_prompts.py`` for why and
-#: ``tests/test_builder_prompts.py`` for where their orphan guards live
-#: instead.
+#: (``test_engineer_prompt_bump_reaches_existing_projects``). The
+#: BUILDER_RENDER_EXEMPT names (#303) are exempt for the reason given in
+#: ``tests/helpers/builder_prompts.py``'s module docstring; their orphan
+#: guards live in ``tests/test_builder_prompts.py`` instead.
 _RENDER_EXEMPT = frozenset({"DEFAULT_PROMPT"}) | BUILDER_RENDER_EXEMPT
 
 

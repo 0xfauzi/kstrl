@@ -211,9 +211,8 @@ class _Buckets:
     measured_attempt: int
 
 
-#: H3 (#303): the seven fragments format_for_prompt assembles into the
-#: retry prompt. One version constant because they are one body of
-#: instructions delivered by one builder.
+#: H3 (#303): fragments format_for_prompt assembles; versioned as one body
+#: (docs/adversarial-roadmap.md, H3a sweep row).
 ITERATION_CONTEXT_PROMPT_VERSION = "1.0.0"
 
 ITERATION_CONTEXT_HEADER_PROMPT = "=== PREVIOUS ATTEMPT CONTEXT (Attempt {attempt}) ==="

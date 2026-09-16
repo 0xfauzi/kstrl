@@ -798,9 +798,8 @@ def _tamper_changes(prd: PRD, pre_run_prd_path: Path | None) -> list[str]:
     return prd.tamper_changes(pre_run)
 
 
-#: H3 (#303): the fragments check_prd_stories' tamper branch assembles
-#: into its refusal text. One version constant because they are one body
-#: of instructions delivered by one builder.
+#: H3 (#303): fragments check_prd_stories' tamper branch assembles;
+#: versioned as one body (docs/adversarial-roadmap.md, H3a sweep row).
 PRD_TAMPER_PROMPT_VERSION = "1.0.0"
 
 PRD_TAMPER_FIELDS_PROMPT = (
@@ -1362,9 +1361,8 @@ def check_linter(
 #: mechanism is a coin toss over which check the operator configured.
 NO_FILES_IN_THE_DIFF = "no files in the diff"
 
-#: H3 (#303): the fragments _diff_scope_details assembles into a diff-scope
-#: failure's retry text. One version constant because they are one body of
-#: instructions delivered by one builder.
+#: H3 (#303): fragments _diff_scope_details assembles; versioned as one
+#: body (docs/adversarial-roadmap.md, H3a sweep row).
 DIFF_SCOPE_DETAILS_PROMPT_VERSION = "1.0.0"
 
 DIFF_SCOPE_BASE_BRANCH_PROMPT = (
@@ -1506,9 +1504,8 @@ def scope_unreadable_error(cause: str) -> str:
 #: says the cause is missing.
 NO_CAUSE_RECORDED = "(no cause recorded; the scope resolver supplied an empty error)"
 
-#: H3 (#303): the fragments check_scope_unreadable assembles into its
-#: refusal text. One version constant because they are one body of
-#: instructions delivered by one builder.
+#: H3 (#303): fragments check_scope_unreadable assembles; versioned as one
+#: body (docs/adversarial-roadmap.md, H3a sweep row).
 SCOPE_UNREADABLE_PROMPT_VERSION = "1.0.0"
 
 SCOPE_UNREADABLE_EXPLANATION_PROMPT = (

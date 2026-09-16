@@ -1720,7 +1720,7 @@ def _detect_project_context(root: Path) -> dict[str, str]:
 
 
 #: H3 (#303): the per-language bodies looked up by _LANGUAGE_STANDARDS and
-#: _LANGUAGE_ANTIPATTERNS. Versioned under CLAUDE_MD_PROMPT_VERSION above
+#: _LANGUAGE_ANTIPATTERNS. Versioned under CLAUDE_MD_PROMPT_VERSION below
 #: (declared with the other _generate_claude_md fragments): both tables
 #: feed the one builder that CLAUDE_MD_PROMPT_VERSION describes. Neither
 #: dict is ever .format()ed, which is what makes the literal `interface{}`
@@ -1844,10 +1844,9 @@ _LANGUAGE_ANTIPATTERNS: dict[str, str] = {
 }
 
 
-#: H3 (#303): the fragments _generate_claude_md assembles into the
-#: generated CLAUDE.md, plus the language tables it looks values up in.
-#: One version constant because they are one body of instructions
-#: delivered by one builder.
+#: H3 (#303): fragments _generate_claude_md assembles (plus the language
+#: tables it looks values up in); versioned as one body
+#: (docs/adversarial-roadmap.md, H3a sweep row).
 CLAUDE_MD_PROMPT_VERSION = "1.0.0"
 
 CLAUDE_MD_OVERVIEW_PROMPT = (
