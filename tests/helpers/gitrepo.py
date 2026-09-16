@@ -10,17 +10,22 @@ instead of forty-two times, and `tests/test_git_identity.py` is what keeps it
 that way.
 
 ON THE REPOSITORY, NOT IN THE ENVIRONMENT. `GIT_AUTHOR_NAME` and its three
-siblings would also work for a plain subprocess, and it would be a smaller
-change. It is not what this does, because `kstrl.verify.scrubbed_subprocess_env`
-passes an allowlisted environment to its children and none of the four names is
-on the allowlist, so an environment-carried identity does not reach the commit
-`kstrl/verify.py` makes for the dead-code cleanup. Repository configuration
-reaches every caller, including a worktree, which shares its repository's
-config. `tests/test_git_identity_helper.py` measures the worktree half.
+siblings would also work for a plain subprocess, and setting them once,
+session-wide, would be a smaller change. It is rejected because a
+session-wide ambient identity restores exactly the masking that caused
+#357: every repository would commit whether or not it went through
+`set_identity`, so no test would depend on the repository carrying its own
+identity and there is nowhere left for a guard to stand. `HOME` is in fact
+ON `kstrl.verify.scrubbed_subprocess_env`'s allowlist and does reach the
+commit `kstrl/verify.py` makes for the dead-code cleanup: pointing `HOME`
+at a config that carries an identity makes that commit succeed, measured
+directly. Repository configuration reaches every caller too, including a
+worktree, which shares its repository's config, without masking anything:
+`tests/test_git_identity_helper.py` measures the worktree half.
 
-BOTH KEYS, ALWAYS. git refuses the commit for a missing name and for a missing
-email separately, and the second message only appears once the first is fixed,
-so a half-fix reads as a fix until CI says otherwise.
+BOTH KEYS, ALWAYS. git refuses the commit for a missing name and for a
+missing email separately, and the second message only appears once the
+first is fixed, so a half-fix reads as a fix until CI says otherwise.
 """
 
 from __future__ import annotations
@@ -29,15 +34,38 @@ import subprocess
 from pathlib import Path
 
 #: What every temp repository in this suite commits as. `.invalid` is the
-#: reserved TLD from RFC 2606, so the address cannot reach anybody.
-IDENTITY_NAME = "kstrl tests"
-IDENTITY_EMAIL = "kstrl@test.invalid"
+#: reserved TLD from RFC 2606, so the address cannot reach anybody. One
+#: mapping rather than four constants and a tuple, so the pair a commit
+#: needs travels together everywhere it is used.
+IDENTITY: dict[str, str] = {
+    "user.name": "kstrl tests",
+    "user.email": "kstrl@test.invalid",
+}
 
-#: The config keys themselves. Named constants so the two spellings this
-#: file is pinned at by `tests/test_git_identity.py` are these two lines
-#: and nothing else, and so a test can ask for a key without spelling it.
-IDENTITY_KEY_NAME = "user.name"
-IDENTITY_KEY_EMAIL = "user.email"
+#: How long a single git call this helper makes is allowed to run before it
+#: is killed. A module constant rather than a literal inside `git_in`, so a
+#: test can lower it with `monkeypatch.setattr` against a slow git stub and
+#: prove the fuse still fires, without adding a `timeout=` parameter to
+#: `git_in` that would touch every one of its existing callers.
+GIT_TIMEOUT_SECONDS = 30
+
+
+def git_in(repo: Path, *args: str) -> None:
+    """Run ``git <args>`` with ``repo`` as the working directory.
+
+    The one git runner the suite's fixtures share, moved here from
+    ``tests/conftest.py`` so the identity helper and the repository
+    builders that call it live in one module. Re-exported from
+    ``tests.conftest`` unchanged, so its existing callers do not move.
+    """
+    subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=GIT_TIMEOUT_SECONDS,
+    )
 
 
 def set_identity(repo: Path) -> None:
@@ -47,13 +75,5 @@ def set_identity(repo: Path) -> None:
     because a helper that quietly does nothing on a wrong path is the same
     defect as the one this module exists to close.
     """
-    for key, value in (
-        (IDENTITY_KEY_NAME, IDENTITY_NAME),
-        (IDENTITY_KEY_EMAIL, IDENTITY_EMAIL),
-    ):
-        subprocess.run(
-            ["git", "-C", str(repo), "config", key, value],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+    for key, value in IDENTITY.items():
+        git_in(repo, "config", key, value)

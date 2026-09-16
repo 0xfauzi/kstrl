@@ -18,7 +18,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import subprocess
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +27,11 @@ import pytest
 from kstrl.config import STRING_KEYS
 from kstrl.git import DiffStat, get_diff_stat
 from tests.helpers import gitrepo
+
+#: Re-exported so this module's existing callers do not have to move; the
+#: one git runner every fixture in this file uses now lives beside the
+#: identity helper in ``tests/helpers/gitrepo.py`` (#367).
+from tests.helpers.gitrepo import git_in as git_in
 
 # Repository root that contains this test suite, independent of CWD.
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -354,17 +358,6 @@ class ReviewRepo:
         }
         payload.update(overrides)
         return json.dumps(payload)
-
-
-def git_in(repo: Path, *args: str) -> None:
-    subprocess.run(
-        ["git", *args],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
 
 
 DEFAULT_REVIEW_PRD = json.dumps(

@@ -1,13 +1,8 @@
 """Where the git identity is spelled, and which modules commit (#367).
 
-A repository made by ``git init`` has no ``user.name`` and no
-``user.email`` of its own. On a developer machine git fills both in,
-from ``~/.gitconfig`` or failing that from the account name and the
-hostname, so a test that commits into such a repository passes locally
-and fails on a runner, which fills in neither. CI on PR #357 is the only
-thing that caught it; the fix there was two ``git config`` lines in one
-test, and 42 other pairs across 37 files were each a separate chance to
-forget. This file is the mechanism that replaces remembering.
+What a repository needs and why it lives on the repository rather than
+in the environment is ``tests/helpers/gitrepo.py``'s docstring; this
+file is the mechanism that keeps that the only place it is spelled.
 
 LAYER 1 pins every spelling of the two keys. After #367 there are five,
 two of them the helper and three of them prose. A test that configures a
@@ -15,11 +10,15 @@ repository by hand instead of calling ``tests.helpers.gitrepo.set_identity``
 adds a row here.
 
 LAYER 2 pins every module that runs ``git commit``. It does NOT prove
-those commits have an identity, and nothing static can: the repository
-is usually built in another module. What it does is make a new commit
-site impossible to add silently, so the diff that adds a row is where
-somebody says which repository it commits into and that the repository
-went through the helper.
+those commits have an identity: the repository is usually built in
+another module. What it does is make a new commit site impossible to add
+silently, so the diff that adds a row is where somebody says which
+repository it commits into and that the repository went through the
+helper. Its limit: the census is on the COMMIT side, so a new test
+function added to an already-declared file that hand-inits its own
+repository and commits into it is invisible here too; a creation-side
+census, over ``git init`` / ``git clone`` instead of ``git commit``, is
+the next step and not this one.
 
 WHAT NEITHER LAYER SEES. Both read values ``astwalk.folded_str`` can
 decide, so a command the interpreter assembles at run time
@@ -101,6 +100,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_review_gates.py": 1,
     "tests/test_review_payload.py": 2,
     "tests/test_run_honesty.py": 1,
+    # Prose, not a commit: a tuple of literal argv-prefix strings an
+    # allowlist test checks a Claude reviewer's permission RULES against
+    # ("git commit" among them), never spawned.
     "tests/test_sandbox.py": 1,
     "tests/test_scheduler.py": 1,
     "tests/test_scope_hardening.py": 4,
@@ -116,6 +118,11 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_spine_worktree.py": 5,
     "tests/test_state_dir_scope.py": 2,
     "tests/test_timeout_enforcement.py": 3,
+    # Prose, not commits: assertion strings checking what
+    # `run_scrubbed`'s rendered command STARTS WITH or what a mocked
+    # call log CONTAINS, plus a docstring paragraph. Nothing here spawns
+    # git; the one real commit `run_scrubbed` makes belongs to
+    # `kstrl/verify.py`, which is production code and out of this census.
     "tests/test_verify.py": 5,
 }
 
@@ -135,6 +142,8 @@ def _spells_an_identity_key(node: ast.AST) -> bool:
     f-string counts exactly like one written at the call.
     """
     value = astwalk.folded_str(node) or ""
+    if "user." not in value:
+        return False
     return any(key in value for key in IDENTITY_KEYS)
 
 
@@ -152,6 +161,8 @@ def _names_a_commit(node: ast.AST) -> bool:
     this to collide with, which is what lets it stay this simple.
     """
     value = astwalk.folded_str(node) or ""
+    if "commit" not in value:
+        return False
     tokens = [Path(token).name for token in value.split()]
     if tokens == ["commit"]:
         return True
@@ -206,32 +217,21 @@ class TestGitIdentityHasOneHome:
 
 
 class TestBothLayersCatchAPlantedSite:
-    """A guard nobody mutated is a guard nobody tested, per layer."""
+    """A guard nobody mutated is a guard nobody tested, per layer.
+
+    The three positive plants that used to live here are redundant with
+    ``assert_census``'s own control assertion above: both layers'
+    ``control=`` strings ARE a raw commit, a shell-stub commit and a
+    config pair, and ``assert_census`` already fails loudly if any of
+    them stops firing. What that control cannot show is the other
+    direction, that the net has a bound rather than matching everything
+    that mentions committing, which is the one test kept here.
+    """
 
     def _probe(self, tmp_path: Path, body: str) -> Path:
         planted = tmp_path / "planted.py"
         planted.write_text(body, encoding="utf-8")
         return planted
-
-    def test_a_raw_commit_in_a_new_file_is_seen(self, tmp_path: Path) -> None:
-        planted = self._probe(
-            tmp_path,
-            'import subprocess\n\nsubprocess.run(["git", "commit", "-qm", "x"])\n',
-        )
-        assert astwalk.census([planted], _names_a_commit) == {"planted.py": 1}
-
-    def test_a_commit_inside_a_shell_stub_is_seen(self, tmp_path: Path) -> None:
-        planted = self._probe(tmp_path, 'STUB = "git add -A\\ngit commit -q -m x\\n"\n')
-        assert astwalk.census([planted], _names_a_commit) == {"planted.py": 1}
-
-    def test_a_config_pair_in_a_new_file_is_seen(self, tmp_path: Path) -> None:
-        planted = self._probe(
-            tmp_path,
-            "import subprocess\n\n"
-            'subprocess.run(["git", "config", "user.email", "x@y"])\n'
-            'subprocess.run(["git", "config", "user.name", "x"])\n',
-        )
-        assert astwalk.census([planted], _spells_an_identity_key) == {"planted.py": 2}
 
     def test_prose_about_committing_is_not_a_commit_site(self, tmp_path: Path) -> None:
         """The over-match has a bound: `commits` is not `commit`."""
