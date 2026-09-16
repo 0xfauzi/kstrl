@@ -125,7 +125,13 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # skip-direction failure: a later commit adding one genuine read and
     # dropping the flag would have left the count at 5 and the census
     # green. The flag is now ``--state=open``, one token, and the fifth
-    # read is the open-PR count streak (#228 round 2).
+    # read is the open-PR count streak (#228 round 2). #231's simplify
+    # pass (2026-09-16) removed one raw ``read_text`` call
+    # (``_run_id_from_manifest``'s) and added another
+    # (``_read_manifest_json``'s, the shared reader both post-run
+    # functions now go through), so this LAYER 1 count - raw
+    # occurrences, not deduplicated - is unmoved at 5 even though the
+    # deduplicated spelling list below loses a row.
     "serve.py": 5,
     "statedir.py": 1,
     "tui/embed.py": 1,
@@ -229,7 +235,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     # above: ``mark_applied`` appends through ``appendio`` now.
     "proposals.py path.read_text(encoding='utf-8')",
     "security.py prd_path.read_text(encoding='utf-8')",
-    "serve.py manifest_path.read_text(encoding='utf-8')",
     "serve.py open(lock_path, 'a+', encoding='utf-8')",
     "serve.py path.read_text(encoding='utf-8')",
     "serve.py self.path.read_text(encoding='utf-8')",

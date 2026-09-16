@@ -85,6 +85,11 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   writes cannot drift apart per trigger. Compare's exit codes are
   unchanged, except that on a regression a `kstrl.toml` that will not
   load or cannot be read exits 2 instead of being read as "ladder off".
+- Queue items record the PR URLs their factory run produced (#231, PR 1 of 2).
+  `ks serve` reads them out of the run's own manifest after the run finishes
+  and writes them through the existing queue transition, so `ks queue show
+  <id>` names the pull request an item produced. A manifest this run does not
+  own, or cannot read, records nothing.
 
 ### Changed
 

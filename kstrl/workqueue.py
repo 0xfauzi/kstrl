@@ -272,6 +272,19 @@ def _as_str(data: dict[str, Any], key: str, default: str = "") -> str:
     return value if isinstance(value, str) else default
 
 
+def _as_str_tuple(data: dict[str, Any], key: str) -> tuple[str, ...]:
+    """Decode a list of strings, or fall back to ``()`` whole.
+
+    One tolerance rule: a value that is a list where every entry is a
+    string decodes as-is; anything else - not a list, or a list with one
+    non-string entry - decodes to the field's default.
+    """
+    value = data.get(key)
+    if isinstance(value, list) and all(isinstance(entry, str) for entry in value):
+        return tuple(value)
+    return ()
+
+
 @dataclass
 class QueueItem:
     """One unit of intake: a spec plus everything decided about it.
@@ -317,6 +330,12 @@ class QueueItem:
     #: PR 2). Empty means "now". A payload written before this field
     #: existed decodes to empty, i.e. immediately ready.
     not_before: str = ""
+    #: PR URLs the last factory run recorded for this item, read out of
+    #: the run's manifest after it finished. Data on an existing record,
+    #: not a state: nothing in the queue branches on it. An item written
+    #: before this field existed decodes to (), which is also what a run
+    #: that opened no PR leaves.
+    pr_urls: tuple[str, ...] = ()
     schema_version: int = QUEUE_SCHEMA_VERSION
 
     @property
@@ -380,6 +399,7 @@ class QueueItem:
             "last_run_id": self.last_run_id,
             "poison_reason": self.poison_reason,
             "not_before": self.not_before,
+            "pr_urls": list(self.pr_urls),
         }
 
     @classmethod
@@ -448,6 +468,7 @@ class QueueItem:
             last_run_id=_as_str(data, "last_run_id"),
             poison_reason=_as_str(data, "poison_reason"),
             not_before=_as_str(data, "not_before"),
+            pr_urls=_as_str_tuple(data, "pr_urls"),
             schema_version=_as_int(
                 data,
                 "schema_version",
@@ -1050,6 +1071,7 @@ class Queue:
         reason: str = "",
         actor: str = "",
         charge_attempt: bool = False,
+        detail: dict[str, Any] | None = None,
         **updates: Any,
     ) -> QueueItem:
         """Move ``item`` to ``to_state``, recording why.
@@ -1057,7 +1079,9 @@ class Queue:
         Writes ``meta.json`` first and renames second - the rename is the
         commit point (see the module docstring). ``charge_attempt``
         increments ``attempts`` in the pre-rename write, so an interrupted
-        transition over-counts rather than under-counts.
+        transition over-counts rather than under-counts. ``detail`` is
+        journalled beside the transition; omitted or ``None`` journals
+        the field's own default (an empty dict).
         """
         from_state = item.state
         legal = _LEGAL_TRANSITIONS.get(from_state, frozenset())
@@ -1110,6 +1134,7 @@ class Queue:
                 reason=reason,
                 actor=actor,
                 attempts=item.attempts,
+                detail=detail or {},
             )
         )
         return item
@@ -1212,13 +1237,23 @@ class Queue:
         )
         return item
 
-    def finish_ok(self, item: QueueItem, *, actor: str = "") -> QueueItem:
+    def finish_ok(
+        self,
+        item: QueueItem,
+        *,
+        actor: str = "",
+        pr_urls: tuple[str, ...] = (),
+    ) -> QueueItem:
+        """A green finish, unioned with any PR the run left behind."""
+        union = tuple(dict.fromkeys(item.pr_urls + pr_urls))
         return self.transition(
             item,
             ItemState.DONE,
             reason="completed",
             actor=actor,
             last_error="",
+            pr_urls=union,
+            detail={"pr_urls": list(union)} if union else None,
         )
 
     def finish_failed(
@@ -1227,19 +1262,18 @@ class Queue:
         *,
         error: str = "",
         actor: str = "",
+        pr_urls: tuple[str, ...] = (),
     ) -> QueueItem:
-        """Record a red finish that MAY be retried.
-
-        Whether it actually is retried is the daemon's decision (PR 2),
-        made on positive evidence of an infrastructure error. Landing in
-        ``failed/`` is not permission to retry.
-        """
+        """A red finish that MAY be retried, unioned with any PR the run left behind."""
+        union = tuple(dict.fromkeys(item.pr_urls + pr_urls))
         return self.transition(
             item,
             ItemState.FAILED,
             reason="failed",
             actor=actor,
             last_error=error,
+            pr_urls=union,
+            detail={"pr_urls": list(union)} if union else None,
         )
 
     def poison(

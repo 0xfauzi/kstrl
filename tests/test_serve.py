@@ -14,13 +14,16 @@ would cost dollars per assertion at a measured $1.70-2.60 per iteration.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
 import time
 import warnings
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -52,6 +55,7 @@ from kstrl.serve import (
     Verdict,
     _group_liveness_for_reap,
     _NullObserver,
+    _pr_urls_from_manifest,
     _unreaped_timeout_detail,
     backoff_seconds,
     caffeinate_prefix,
@@ -85,6 +89,7 @@ from kstrl.workqueue import (
     MergeDisposition,
     Queue,
     QueueConfig,
+    QueueItem,
 )
 from tests.helpers import procs
 
@@ -2004,6 +2009,286 @@ class TestServeCycle:
         serve_cycle(tmp_path, runner=_stub_runner(RunOutcome(0), calls))
         done = [i for i in queue.items() if i.state is ItemState.DONE]
         assert done[0].title == "urgent"
+
+
+class TestQueueItemsRememberTheirPrs:
+    @staticmethod
+    def _manifest_path(root: Path) -> Path:
+        return root / "scripts" / "kstrl" / "manifest.json"
+
+    @staticmethod
+    def _with_pr(comp_id: str, pr_url: str) -> Component:
+        """A completed component carrying the PR its run opened."""
+        component = _component(comp_id, "completed")
+        component.pr_url = pr_url
+        return component
+
+    def _cycle(
+        self,
+        root: Path,
+        write_manifest: Callable[[Path], None] | None = None,
+        *,
+        returncode: int = 0,
+        **queue_kw: Any,
+    ) -> tuple[Verdict, QueueItem, Queue, list[str]]:
+        """Add one item, optionally lay down a manifest, run one cycle.
+
+        Returns the verdict, the item re-read from disk, the queue (for
+        the sidecar and the journal), and every observer line mentioning
+        a PR URL - the shape every test in this class needs.
+        """
+        queue = _queue(root, **queue_kw)
+        _add(queue)
+        if write_manifest is not None:
+            write_manifest(self._manifest_path(root))
+        obs = _NullObserver()
+        result = serve_cycle(root, observer=obs, runner=_stub_runner(RunOutcome(returncode)))
+        item = queue.items()[0]  # a fresh read from meta.json on disk
+        return result.verdict, item, queue, [line for line in obs.lines if "PR URL" in line]
+
+    def test_a_finished_run_records_the_prs_from_its_manifest(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        verdict, item, queue, _ = self._cycle(
+            tmp_path,
+            lambda p: _manifest(
+                p,
+                [
+                    self._with_pr("comp-a", "https://github.com/o/r/pull/1"),
+                    self._with_pr("comp-b", ""),
+                    self._with_pr("comp-c", "https://github.com/o/r/pull/3"),
+                    self._with_pr("comp-d", "   "),
+                ],
+            ),
+        )
+        assert verdict is Verdict.SUCCESS
+        assert item.state is ItemState.DONE
+        assert item.pr_urls == (
+            "https://github.com/o/r/pull/1",
+            "https://github.com/o/r/pull/3",
+        )
+        meta = (queue.item_dir(item) / "meta.json").read_text(encoding="utf-8")
+        assert json.loads(meta)["pr_urls"] == [
+            "https://github.com/o/r/pull/1",
+            "https://github.com/o/r/pull/3",
+        ]
+        entries = queue.journal_entries(item.item_id)
+        assert [entry["to"] for entry in entries] == [
+            "queued",
+            "leased",
+            "running",
+            "done",
+        ]
+        assert entries[-1]["detail"] == {
+            "pr_urls": [
+                "https://github.com/o/r/pull/1",
+                "https://github.com/o/r/pull/3",
+            ]
+        }
+
+    def test_a_pr_url_repeated_across_components_is_recorded_once(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        _, item, _, _ = self._cycle(
+            tmp_path,
+            lambda p: _manifest(
+                p,
+                [
+                    self._with_pr("comp-a", "https://github.com/o/r/pull/9"),
+                    self._with_pr("comp-b", "https://github.com/o/r/pull/9"),
+                ],
+            ),
+        )
+        assert item.pr_urls == ("https://github.com/o/r/pull/9",)
+
+    def test_a_failed_run_still_records_the_prs_it_opened(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        _, item, _, _ = self._cycle(
+            tmp_path,
+            lambda p: _manifest(
+                p,
+                [
+                    _component("comp-a", "failed", [_spec_finding()]),
+                    self._with_pr("comp-b", "https://github.com/o/r/pull/4"),
+                ],
+            ),
+            returncode=1,
+            max_attempts=3,
+        )
+        assert item.state is ItemState.POISON
+        assert item.pr_urls == ("https://github.com/o/r/pull/4",)
+
+    def test_an_unreadable_manifest_records_nothing_and_warns(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The manifest is read twice on the post-run path - once to
+        decide ownership, once for PR URLs - through the same reader. A
+        file present for the first read and gone for the second (an
+        operator's cleanup mid-cycle, a concurrent process) must warn
+        and record nothing rather than raise."""
+        import kstrl.serve as serve_module
+
+        real_run_id_from_manifest = serve_module._run_id_from_manifest
+
+        def _read_then_remove(path: Path) -> str:
+            run_id = real_run_id_from_manifest(path)
+            path.unlink(missing_ok=True)
+            return run_id
+
+        monkeypatch.setattr(serve_module, "_run_id_from_manifest", _read_then_remove)
+
+        verdict, item, _, warned = self._cycle(
+            tmp_path,
+            lambda p: _manifest(p, [self._with_pr("comp-a", "https://github.com/o/r/pull/1")]),
+        )
+
+        assert verdict is Verdict.SUCCESS
+        assert item.state is ItemState.DONE
+        assert item.pr_urls == ()
+        assert len(warned) == 1, warned
+        assert warned[0].startswith("warn: ")
+        assert "manifest.json" in warned[0]
+
+    @pytest.mark.parametrize("kind", ["other-run", "missing", "corrupt", "top-level-array"])
+    def test_an_unowned_manifest_is_not_attributed(self, tmp_path: Path, kind: str) -> None:
+        """None of these four is owned by this invocation, so none may
+        be attributed or warned about - the same refusal ``classify_run``
+        makes, for the same reason (#186 F2), extended to PR URLs."""
+
+        def write_other_run(p: Path) -> None:
+            _manifest(
+                p,
+                [self._with_pr("comp-a", "https://github.com/o/r/pull/1")],
+                run_id="factory-20260101-000000.000000-zzz",
+            )
+
+        def write_corrupt(p: Path) -> None:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("{not json", encoding="utf-8")
+
+        def write_top_level_array(p: Path) -> None:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text('["a", "b"]', encoding="utf-8")
+
+        writers: dict[str, Callable[[Path], None] | None] = {
+            "other-run": write_other_run,
+            "missing": None,
+            "corrupt": write_corrupt,
+            "top-level-array": write_top_level_array,
+        }
+
+        verdict, item, _, warned = self._cycle(tmp_path, writers[kind])
+
+        assert verdict is Verdict.SUCCESS
+        assert item.state is ItemState.DONE
+        assert item.pr_urls == ()
+        assert not warned
+
+    def test_a_deeply_nested_manifest_does_not_break_the_cycle(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """A 20000-deep nested JSON array raises RecursionError straight
+        out of ``json.loads``, which is a ``RuntimeError`` and escapes
+        the tuple ``classify_run`` uses. Bookkeeping after the spend may
+        not end a cycle for any reason at all."""
+
+        def write_deeply_nested(p: Path) -> None:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("[" * 20000 + "]" * 20000, encoding="utf-8")
+
+        verdict, item, _, _ = self._cycle(tmp_path, write_deeply_nested)
+
+        assert verdict is Verdict.SUCCESS
+        assert item.state is ItemState.DONE
+        assert item.pr_urls == ()
+
+    def test_a_non_string_pr_url_is_ignored_rather_than_raised(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """A manifest key with the wrong TYPE may not end the cycle.
+
+        ``_pr_urls_from_manifest`` reads the raw dict, so nothing has
+        validated ``prUrl`` by the time it is stripped, and the call in
+        ``serve_cycle`` is inside no ``try``.
+        """
+
+        def write_bad_pr_url(p: Path) -> None:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(
+                json.dumps(
+                    {
+                        "runId": "factory-20260730-000000.000000-aaa",
+                        "components": [
+                            {"id": "comp-a", "prUrl": None},
+                            {"id": "comp-b", "prUrl": 42},
+                            {"id": "comp-c", "prUrl": "https://github.com/o/r/pull/7"},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+        verdict, item, _, _ = self._cycle(tmp_path, write_bad_pr_url)
+        assert verdict is Verdict.SUCCESS
+        assert item.state is ItemState.DONE
+        assert item.pr_urls == ("https://github.com/o/r/pull/7",)
+
+    def test_a_components_value_that_is_not_a_list_is_ignored_rather_than_raised(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The container's TYPE guard, one level above the ``prUrl`` one.
+
+        Weakened to ``is None``, the helper iterates an int and raises
+        after the spend is charged, leaving the item in ``running``.
+        """
+
+        def write_bad_components(p: Path) -> None:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(
+                json.dumps(
+                    {
+                        "runId": "factory-20260730-000000.000000-aaa",
+                        "components": 42,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+        verdict, item, _, _ = self._cycle(tmp_path, write_bad_components)
+        assert verdict is Verdict.SUCCESS
+        assert item.state is ItemState.DONE
+        assert item.pr_urls == ()
+
+
+class TestPrUrlsFromManifestDedupesItself:
+    """``_pr_urls_from_manifest`` called directly, not through a cycle.
+
+    ``Queue.finish_ok``/``finish_failed`` union-dedupe their own
+    ``pr_urls`` argument (Decision 3), which would silently absorb a
+    regression in THIS function's own dedupe - a duplicate it returned
+    would still come out deduped after the finishers union it with an
+    empty ``item.pr_urls``. This proves the claim at its source instead.
+    """
+
+    def test_a_repeated_url_is_recorded_once_in_file_order(self, tmp_path: Path) -> None:
+        path = tmp_path / "manifest.json"
+        _manifest(
+            path,
+            [
+                TestQueueItemsRememberTheirPrs._with_pr("comp-a", "https://x/pull/9"),
+                TestQueueItemsRememberTheirPrs._with_pr("comp-b", "https://x/pull/9"),
+            ],
+        )
+        assert _pr_urls_from_manifest(path, True, _NullObserver()) == ("https://x/pull/9",)
 
 
 class TestServeLoop:
