@@ -170,3 +170,26 @@ def test_a_package_whose_name_starts_with_test_is_still_source(tmp_path: Path) -
 
     assert "testpkg/core.py" in section
     assert "class Widget" in section
+
+
+def test_a_crash_in_extraction_is_recorded_and_does_not_take_the_context_down(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bug in the walk must not take the whole context down, and it must
+    not go silent either: the assembly block records what it swallowed
+    instead of dropping the section (#378)."""
+    pkg = tmp_path / "mylib"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "core.py").write_text("class Widget:\n    pass\n", encoding="utf-8")
+
+    def boom(root: Path) -> str:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("kstrl.feedforward.extract_public_interfaces", boom)
+
+    context = build_feedforward_context(tmp_path, FeedforwardConfig())
+    section = _section(context, "Public interfaces")
+
+    assert "## Public interfaces" in context
+    assert "interface extraction failed: RuntimeError: boom" in section
