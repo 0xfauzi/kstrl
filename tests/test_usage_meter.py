@@ -3929,6 +3929,9 @@ class TestBudgetConfigErrorReachesTheOperator:
     Review follow-up on #180: validation landed at the library boundary,
     but `ks factory` exited 1 with empty output and an uncaught
     BudgetConfigError - a traceback where a config error belongs.
+
+    tmp_path IS the cwd (conftest.isolate_kstrl_state, autouse), so a
+    relative path in a CLI arg resolves against it.
     """
 
     @staticmethod
@@ -3968,6 +3971,7 @@ class TestBudgetConfigErrorReachesTheOperator:
         self,
         command: list[str],
         toml_value: str,
+        tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Proven against the harsher of the two environments: no agent
@@ -3978,13 +3982,10 @@ class TestBudgetConfigErrorReachesTheOperator:
         from kstrl.cli import cli
         from kstrl.factory import BudgetConfigError
 
-        runner = CliRunner()
-        with runner.isolated_filesystem() as fs:
-            root = Path(fs)
-            (root / "kstrl.toml").write_text(f"[factory]\nmax_cost_usd = {toml_value}\n")
-            (root / "m.json").write_text(json.dumps(self._manifest()))
-            (root / "s.md").write_text("# spec\n")
-            result = runner.invoke(cli, command, catch_exceptions=True)
+        (tmp_path / "kstrl.toml").write_text(f"[factory]\nmax_cost_usd = {toml_value}\n")
+        (tmp_path / "m.json").write_text(json.dumps(self._manifest()))
+        (tmp_path / "s.md").write_text("# spec\n")
+        result = CliRunner().invoke(cli, command, catch_exceptions=True)
 
         assert not isinstance(result.exception, BudgetConfigError)
         assert result.exit_code == 1
@@ -3993,6 +3994,7 @@ class TestBudgetConfigErrorReachesTheOperator:
 
     def test_the_flag_override_is_checked_before_any_work_starts(
         self,
+        tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """`--max-cost-usd` bypasses every config-path validator, so the
@@ -4003,16 +4005,13 @@ class TestBudgetConfigErrorReachesTheOperator:
 
         from kstrl.cli import cli
 
-        runner = CliRunner()
-        with runner.isolated_filesystem() as fs:
-            root = Path(fs)
-            (root / "kstrl.toml").write_text("[factory]\nmax_cost_usd = 0\n")
-            (root / "m.json").write_text(json.dumps(self._manifest()))
-            result = runner.invoke(
-                cli,
-                ["factory", "--manifest", "m.json", "--max-cost-usd", "inf", "--agent-cmd", "true"],
-                catch_exceptions=True,
-            )
+        (tmp_path / "kstrl.toml").write_text("[factory]\nmax_cost_usd = 0\n")
+        (tmp_path / "m.json").write_text(json.dumps(self._manifest()))
+        result = CliRunner().invoke(
+            cli,
+            ["factory", "--manifest", "m.json", "--max-cost-usd", "inf", "--agent-cmd", "true"],
+            catch_exceptions=True,
+        )
 
         output = _strip_ansi(result.output)
         assert result.exit_code == 1
@@ -4037,6 +4036,9 @@ class TestCeilingsAreCheckedBeforeAnythingSpends:
     under the very ceiling that was supposed to bound it. Measured, not
     assumed: the fake agent below records its own invocation, and these
     tests fail if it ever runs.
+
+    tmp_path IS the cwd (conftest.isolate_kstrl_state, autouse), so a
+    relative path in a CLI arg resolves against it.
     """
 
     @staticmethod
@@ -4063,30 +4065,28 @@ class TestCeilingsAreCheckedBeforeAnythingSpends:
         toml_value: str,
         extra_args: list[str],
         expected: str,
+        tmp_path: Path,
     ) -> None:
         from click.testing import CliRunner
 
         from kstrl.cli import cli
 
-        runner = CliRunner()
-        with runner.isolated_filesystem() as fs:
-            root = Path(fs)
-            script, marker = self._fake_agent(root)
-            (root / "kstrl.toml").write_text(f"[factory]\nmax_cost_usd = {toml_value}\n")
-            (root / "s.md").write_text("# spec\nbuild a thing\n")
-            result = runner.invoke(
-                cli,
-                ["factory", "--spec", "s.md", "--project-name", "p", "--agent-cmd", str(script)]
-                + extra_args,
-                catch_exceptions=True,
-            )
-            spent = marker.exists()
+        script, marker = self._fake_agent(tmp_path)
+        (tmp_path / "kstrl.toml").write_text(f"[factory]\nmax_cost_usd = {toml_value}\n")
+        (tmp_path / "s.md").write_text("# spec\nbuild a thing\n")
+        result = CliRunner().invoke(
+            cli,
+            ["factory", "--spec", "s.md", "--project-name", "p", "--agent-cmd", str(script)]
+            + extra_args,
+            catch_exceptions=True,
+        )
+        spent = marker.exists()
 
         assert not spent, "an agent call happened before the ceiling was checked"
         assert result.exit_code == 1
         assert expected in _strip_ansi(result.output)
 
-    def test_a_valid_ceiling_does_not_block_the_spec_path(self) -> None:
+    def test_a_valid_ceiling_does_not_block_the_spec_path(self, tmp_path: Path) -> None:
         """The preflight must reject bad values without rejecting good
         ones - otherwise it would read as 'fixed' while breaking every
         ordinary run."""
@@ -4094,21 +4094,18 @@ class TestCeilingsAreCheckedBeforeAnythingSpends:
 
         from kstrl.cli import cli
 
-        runner = CliRunner()
-        with runner.isolated_filesystem() as fs:
-            root = Path(fs)
-            script, marker = self._fake_agent(root)
-            (root / "kstrl.toml").write_text(
-                "[factory]\nmax_cost_usd = 5.0\nmax_total_tokens = 1000\n"
-            )
-            (root / "s.md").write_text("# spec\nbuild a thing\n")
-            result = runner.invoke(
-                cli,
-                ["factory", "--spec", "s.md", "--project-name", "p", "--agent-cmd", str(script)],
-                catch_exceptions=True,
-            )
-            reached_agent = marker.exists()
-            output = _strip_ansi(result.output)
+        script, marker = self._fake_agent(tmp_path)
+        (tmp_path / "kstrl.toml").write_text(
+            "[factory]\nmax_cost_usd = 5.0\nmax_total_tokens = 1000\n"
+        )
+        (tmp_path / "s.md").write_text("# spec\nbuild a thing\n")
+        result = CliRunner().invoke(
+            cli,
+            ["factory", "--spec", "s.md", "--project-name", "p", "--agent-cmd", str(script)],
+            catch_exceptions=True,
+        )
+        reached_agent = marker.exists()
+        output = _strip_ansi(result.output)
 
         # The run proceeds to the architect (and then fails on the fake
         # agent's empty output, which is fine - what matters is that the
@@ -5431,25 +5428,27 @@ def _invoke_factory_cli(
     setup: Callable[[Path], None] | None = None,
     catch_exceptions: bool = False,
 ) -> Any:
-    """`ks factory` in an isolated filesystem holding a spec and a manifest.
+    """`ks factory` in the test's cwd, seeded with a spec and a manifest.
 
     ``setup`` seeds anything else the case needs (a kstrl.toml, say).
     ``catch_exceptions`` is for the tests that assert an exception did
     NOT escape - with the default, an escaping one fails the test as a
     traceback rather than as the assertion that explains it.
+
+    The cwd IS that checkout: ``conftest.isolate_kstrl_state`` is autouse
+    and chdirs every test into its own empty ``tmp_path``, so the
+    relative ``s.md`` / ``m.json`` in each caller's args resolve here.
     """
     from click.testing import CliRunner
 
     from kstrl.cli import cli
 
-    runner = CliRunner()
-    with runner.isolated_filesystem() as fs:
-        root = Path(fs)
-        (root / "s.md").write_text("# spec\n")
-        _make_manifest([_component("comp-a")]).save(root / "m.json")
-        if setup is not None:
-            setup(root)
-        return runner.invoke(cli, args, catch_exceptions=catch_exceptions)
+    root = Path.cwd()
+    (root / "s.md").write_text("# spec\n")
+    _make_manifest([_component("comp-a")]).save(root / "m.json")
+    if setup is not None:
+        setup(root)
+    return CliRunner().invoke(cli, args, catch_exceptions=catch_exceptions)
 
 
 class TestFactoryHandsTheArchitectSpendToTheRun:
