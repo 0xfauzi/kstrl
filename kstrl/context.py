@@ -211,6 +211,28 @@ class _Buckets:
     measured_attempt: int
 
 
+#: H3 (#303): fragments format_for_prompt assembles; versioned as one body
+#: (docs/adversarial-roadmap.md, H3a sweep row).
+ITERATION_CONTEXT_PROMPT_VERSION = "1.0.0"
+
+ITERATION_CONTEXT_HEADER_PROMPT = "=== PREVIOUS ATTEMPT CONTEXT (Attempt {attempt}) ==="
+ITERATION_CONTEXT_CURRENT_PROMPT = "## Current failures (measured in attempt {attempt}, {gate})"
+ITERATION_CONTEXT_NOT_REMEASURED_PROMPT = "## Not re-measured"
+ITERATION_CONTEXT_NOT_REMEASURED_SINCE_PROMPT = " since attempt {attempt}"
+ITERATION_CONTEXT_RESOLVED_PROMPT = (
+    "## Resolved or superseded\n"
+    "{count} earlier finding(s) from {phases} "
+    "passed or were re-measured in attempt {attempt} and are "
+    "omitted."
+)
+ITERATION_CONTEXT_HISTORY_PROMPT = "## Attempt history"
+ITERATION_CONTEXT_CLOSING_PROMPT = (
+    "Fix the current failures. Re-check the not-re-measured items "
+    "yourself; do not assume they still apply.\n"
+    "=== END PREVIOUS CONTEXT ==="
+)
+
+
 @dataclass
 class IterationContext:
     """Accumulated context across retries for a component.
@@ -422,7 +444,7 @@ class IterationContext:
         """Format accumulated context as text to prepend to the agent prompt."""
         sections: list[str] = []
         latest = self._latest_attempt()
-        sections.append(f"=== PREVIOUS ATTEMPT CONTEXT (Attempt {latest + 1}) ===")
+        sections.append(ITERATION_CONTEXT_HEADER_PROMPT.format(attempt=latest + 1))
 
         buckets = self._buckets()
         measured = buckets.measured_attempt
@@ -433,14 +455,14 @@ class IterationContext:
                 key=lambda e: PHASE_RANK[e.phase],
             ).phase
             sections.append("")
-            sections.append(f"## Current failures (measured in attempt {measured}, {gate})")
+            sections.append(ITERATION_CONTEXT_CURRENT_PROMPT.format(attempt=measured, gate=gate))
             sections.extend(e.text for e in buckets.current)
 
         if buckets.not_remeasured:
             dated = [e.attempt for e in buckets.not_remeasured if e.attempt > LEGACY_ATTEMPT]
-            heading = "## Not re-measured"
+            heading = ITERATION_CONTEXT_NOT_REMEASURED_PROMPT
             if dated:
-                heading += f" since attempt {min(dated)}"
+                heading += ITERATION_CONTEXT_NOT_REMEASURED_SINCE_PROMPT.format(attempt=min(dated))
             sections.append("")
             sections.append(heading)
             for entry in buckets.not_remeasured:
@@ -459,17 +481,16 @@ class IterationContext:
                 )
             )
             sections.append("")
-            sections.append("## Resolved or superseded")
             sections.append(
-                f"{len(buckets.resolved)} earlier finding(s) from {names} "
-                f"passed or were re-measured in attempt {measured} and are "
-                f"omitted."
+                ITERATION_CONTEXT_RESOLVED_PROMPT.format(
+                    count=len(buckets.resolved), phases=names, attempt=measured
+                )
             )
 
         if self.records:
             measured_attempts = {e.attempt for e in self.entries if e.attempt > LEGACY_ATTEMPT}
             sections.append("")
-            sections.append("## Attempt history")
+            sections.append(ITERATION_CONTEXT_HISTORY_PROMPT)
             for position, rec in enumerate(self.records, start=1):
                 attempt = rec.attempt if rec.attempt > LEGACY_ATTEMPT else position
                 status = "completed" if rec.success else "FAILED"
@@ -489,11 +510,7 @@ class IterationContext:
                 sections.append(line)
 
         sections.append("")
-        sections.append(
-            "Fix the current failures. Re-check the not-re-measured items "
-            "yourself; do not assume they still apply."
-        )
-        sections.append("=== END PREVIOUS CONTEXT ===")
+        sections.append(ITERATION_CONTEXT_CLOSING_PROMPT)
 
         return "\n".join(sections)
 

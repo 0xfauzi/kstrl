@@ -84,6 +84,7 @@ from kstrl.loop import COMPLETION_MARKER
 from kstrl.manifest import Component
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
+from tests.helpers.builder_prompts import BUILDER_RENDER_EXEMPT
 from tests.helpers.component_prd import write_component_prd
 from tests.test_prompt_versions import (
     _MARKER_HEAD,
@@ -348,7 +349,11 @@ def test_every_enrolled_prompt_is_delivered_somewhere() -> None:
     union: set[str] = set()
     for spec in _ROLES.values():
         union |= spec.covers
-    missing = sorted(set(_PROMPTS) - union)
+    # The 53 #303 builder fragments are single branches of a multi-branch
+    # builder, so no one role's delivered text carries all of them. Their
+    # delivered-output digests and orphan guards live in
+    # tests/test_builder_prompts.py, not here.
+    missing = sorted(set(_PROMPTS) - union - BUILDER_RENDER_EXEMPT)
     assert not missing, (
         f"enrolled prompts with no delivered digest: {missing}. Add each "
         "to the covers set of the role that carries it, and add a row to "

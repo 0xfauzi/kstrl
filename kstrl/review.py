@@ -529,6 +529,33 @@ def setpoint_disagreements(
     return [tag_finding_with_model(f, review.reviewer_model) for f in out]
 
 
+#: H3 (#303): fragments setpoint_retry_context assembles; versioned as one
+#: body (docs/adversarial-roadmap.md, H3a sweep row).
+SETPOINT_RETRY_PROMPT_VERSION = "1.0.0"
+
+SETPOINT_RETRY_PROMPT = (
+    "Set-point disagreement: you marked the stories below done, but "
+    "the reviewer did not confirm them. {did} Implement each one "
+    "properly and set the flag again only once its acceptance "
+    "criteria are genuinely met."
+)
+SETPOINT_REVERTED_PROMPT = "Their `passes` flags have been reset to false in the PRD."
+SETPOINT_NOT_REVERTED_PROMPT = (
+    "Their `passes` flags could NOT be reset automatically: set each "
+    "one back to false yourself before doing anything else."
+)
+SETPOINT_PARTIALLY_JUDGED_PROMPT = (
+    "  - Every criterion the reviewer judged passed, but it "
+    "did not judge them all. Nothing here says the story is "
+    "wrong; it says the story is unconfirmed."
+)
+SETPOINT_NO_VERDICT_PROMPT = (
+    "  - The reviewer returned no verdict for this story, so "
+    "there is no criterion-level evidence to act on. Check "
+    "the story against its acceptance criteria yourself."
+)
+
+
 def setpoint_retry_context(
     disagreements: list[Finding],
     review: ReviewResult,
@@ -553,17 +580,9 @@ def setpoint_retry_context(
     """
     if not disagreements:
         return ""
-    did = (
-        "Their `passes` flags have been reset to false in the PRD."
-        if reverted
-        else "Their `passes` flags could NOT be reset automatically: set each "
-        "one back to false yourself before doing anything else."
-    )
+    did = SETPOINT_REVERTED_PROMPT if reverted else SETPOINT_NOT_REVERTED_PROMPT
     lines = [
-        "Set-point disagreement: you marked the stories below done, but "
-        f"the reviewer did not confirm them. {did} Implement each one "
-        "properly and set the flag again only once its acceptance "
-        "criteria are genuinely met.",
+        SETPOINT_RETRY_PROMPT.format(did=did),
     ]
     for finding in disagreements:
         lines.append(f"- {finding.explanation}")
@@ -576,15 +595,7 @@ def setpoint_retry_context(
             # both leave `unmet` empty, and the second used to be
             # described as the first - contradicting the finding printed
             # directly above it, which had just said "pass on only 1 of 2".
-            lines.append(
-                "  - Every criterion the reviewer judged passed, but it "
-                "did not judge them all. Nothing here says the story is "
-                "wrong; it says the story is unconfirmed."
-                if judged
-                else "  - The reviewer returned no verdict for this story, so "
-                "there is no criterion-level evidence to act on. Check "
-                "the story against its acceptance criteria yourself."
-            )
+            lines.append(SETPOINT_PARTIALLY_JUDGED_PROMPT if judged else SETPOINT_NO_VERDICT_PROMPT)
             continue
         for cr in unmet:
             lines.append(f"  - [{cr.verdict}] {cr.criterion}")

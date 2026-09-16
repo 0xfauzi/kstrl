@@ -40,7 +40,7 @@ WALL=$(( END_EPOCH - START_EPOCH ))
 
 # pmset's Sleep lines carry the suspend's length ("... 975 secs"); sum
 # them inside the window. Zero suspends means the run measured nothing.
-SLEEPS="$(pmset -g log | awk -v s="${START_ISO}" -v e="${END_ISO}" '($1" "$2) >= s && ($1" "$2) <= e' | grep -E ' Sleep +' || true)"
+SLEEPS="$(pmset -g log | awk -v s="${START_ISO}" -v e="${END_ISO}" '($1" "$2) >= s && ($1" "$2) <= e && $4=="Sleep"' || true)"
 COUNT="$(printf '%s\n' "${SLEEPS}" | grep -c . || true)"
 SUSPENDED="$(printf '%s\n' "${SLEEPS}" | grep -oE '[0-9]+ secs' | awk '{s+=$1} END {print s+0}')"
 AWAKE=$(( WALL - SUSPENDED ))

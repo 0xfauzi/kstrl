@@ -638,6 +638,20 @@ def _format_section(title: str, facts: list[Fact]) -> str:
     return "\n".join(lines)
 
 
+#: H3 (#303): fragments build_knowledge_context assembles; versioned as
+#: one body (docs/adversarial-roadmap.md, H3a sweep row).
+KNOWLEDGE_CONTEXT_PROMPT_VERSION = "1.0.0"
+
+KNOWLEDGE_CONTEXT_PROMPT = (
+    "## Component Knowledge\n"
+    "Durable facts captured from prior successful iterations. Treat as"
+    " ground truth unless contradicted by the current diff."
+)
+KNOWLEDGE_OVERFLOW_PROMPT = (
+    "*Note: {tiers} tier{plural} exceeded the token budget; some facts were truncated or dropped.*"
+)
+
+
 def build_knowledge_context(
     manifest: Manifest,
     component: Component,
@@ -716,11 +730,7 @@ def build_knowledge_context(
     if not (core_kept or dep_kept or sibling_kept):
         return ""
 
-    parts: list[str] = ["## Component Knowledge"]
-    parts.append(
-        "Durable facts captured from prior successful iterations. Treat as"
-        " ground truth unless contradicted by the current diff."
-    )
+    parts: list[str] = [KNOWLEDGE_CONTEXT_PROMPT]
     parts.append("")
 
     core_section = _format_section(_core_section_title(component.id), core_kept)
@@ -745,10 +755,10 @@ def build_knowledge_context(
         overflow_flags.append("sibling")
     if overflow_flags:
         parts.append(
-            "*Note: "
-            f"{', '.join(overflow_flags)} tier"
-            f"{'s' if len(overflow_flags) > 1 else ''}"
-            " exceeded the token budget; some facts were truncated or dropped.*"
+            KNOWLEDGE_OVERFLOW_PROMPT.format(
+                tiers=", ".join(overflow_flags),
+                plural="s" if len(overflow_flags) > 1 else "",
+            )
         )
         parts.append("")
 
