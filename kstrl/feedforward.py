@@ -44,6 +44,20 @@ _MAX_MODULE_MAP_DIRS = 50
 # Max files to scan for public interfaces
 _MAX_PUBLIC_INTERFACE_FILES = 30
 
+# How far below the repo root a source root may sit. Measured on the
+# deckgen monorepo (#378): `packages/<name>/src/<pkg>` sits four levels
+# down and is invisible at three, while five and six find nothing more
+# on either deckgen or kstrl and cost 15.6 ms against 4.7 ms.
+_MAX_SOURCE_ROOT_DEPTH = 4
+
+# Directory names whose subtree is never the source under change. Exact
+# names, never a prefix: `testpkg` and `testing` are ordinary packages,
+# and a prefix match deletes them from the engineer's view silently.
+# The extractor already skips FILES named `test*`; this is what keeps a
+# test PACKAGE from spending the whole file budget before any source is
+# read.
+_TEST_DIR_NAMES = frozenset({"test", "tests"})
+
 
 @dataclass
 class FeedforwardConfig:
@@ -198,34 +212,109 @@ def build_module_map(root: Path) -> str:
     return "\n".join(lines)
 
 
-def _find_top_source_dirs(root: Path) -> list[Path]:
-    """Find top-level source directories to scan for public interfaces.
-
-    Looks for common patterns: src/, lib/, or a directory matching the project name.
-    Falls back to any directory at root level that contains .py files.
-    """
-    candidates: list[Path] = []
-
-    for name in ("src", "lib"):
-        candidate = root / name
-        if candidate.is_dir():
-            candidates.append(candidate)
-
-    # Look for package directories (contain __init__.py at root level)
+def _is_test_path(root: Path, candidate: Path) -> bool:
+    """True when *candidate* sits in or under a test directory."""
     try:
-        for entry in root.iterdir():
-            if (
-                entry.is_dir()
-                and not _should_skip_dir(entry.name)
-                and not _is_hidden(entry.name)
-                and (entry / "__init__.py").exists()
-                and entry not in candidates
-            ):
-                candidates.append(entry)
-    except PermissionError:
-        pass
+        rel = candidate.relative_to(root)
+    except ValueError:
+        return False
+    return any(part in _TEST_DIR_NAMES for part in rel.parts)
 
-    return candidates
+
+def _rel_name(root: Path, path: Path) -> str:
+    """*path* relative to *root* when it is under it, else the full path."""
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _classify_dir(directory: Path) -> tuple[bool, list[Path], list[Path]]:
+    """One directory, read once: (holds .py files, child packages, other children).
+
+    An unreadable directory reads as empty, which is what the caller did
+    with a `PermissionError` before #378. This is split out of
+    `_collect_source_dirs` because the two as one function measure
+    cognitive complexity 18 against the pre-commit gate of 15; split they
+    measure 10 and 8.
+    """
+    try:
+        entries = list(directory.iterdir())
+    except OSError:
+        return False, [], []
+    holds_py = any(e.suffix == ".py" and e.is_file() for e in entries)
+    child_packages: list[Path] = []
+    plain_subdirs: list[Path] = []
+    for entry in entries:
+        if not entry.is_dir() or _should_skip_dir(entry.name):
+            continue
+        if (entry / "__init__.py").is_file():
+            child_packages.append(entry)
+        else:
+            plain_subdirs.append(entry)
+    return holds_py, child_packages, plain_subdirs
+
+
+def _collect_source_dirs(root: Path) -> tuple[list[Path], list[Path]]:
+    """Directories under *root* that could hold the repo's own source.
+
+    Returns (packages, loose): every directory holding ``__init__.py``
+    within ``_MAX_SOURCE_ROOT_DEPTH`` levels, and every directory below
+    *root* that holds ``.py`` files directly. The walk stops at a
+    package rather than descending into it, so a subpackage is never a
+    candidate of its own.
+
+    *root* itself is never a loose candidate: the caller rglobs what it
+    is given, and rglobbing the repo root would descend into exactly the
+    directories ``_should_skip_dir`` exists to keep this walk out of.
+    """
+    packages: list[Path] = []
+    loose: list[Path] = []
+    stack: list[tuple[Path, int]] = [(root, 0)]
+    while stack:
+        directory, depth = stack.pop()
+        holds_py, child_packages, plain_subdirs = _classify_dir(directory)
+        if holds_py and directory != root:
+            loose.append(directory)
+        if depth >= _MAX_SOURCE_ROOT_DEPTH:
+            continue
+        packages.extend(child_packages)
+        stack.extend((child, depth + 1) for child in plain_subdirs)
+    return packages, loose
+
+
+def _find_top_source_dirs(root: Path) -> list[Path]:
+    """Candidate source roots under *root*, in NO meaningful order.
+
+    Packages when the tree has any, otherwise directories holding ``.py``
+    files. Test directories are dropped from both: the caller reads at
+    most ``_MAX_PUBLIC_INTERFACE_FILES`` files, and a test package that
+    spends that budget leaves the engineer with none of the source it is
+    about to change.
+
+    The order is deliberately not meaningful. ``_ordered_source_roots``
+    decides the order the budget is spent in, so that it is a property
+    of the repo rather than of ``iterdir``.
+    """
+    packages, loose = _collect_source_dirs(root)
+    return [d for d in (packages or loose) if not _is_test_path(root, d)]
+
+
+def _ordered_source_roots(root: Path) -> list[tuple[Path, list[Path]]]:
+    """Each candidate root with its ``.py`` files, biggest root first.
+
+    Ties break on the path, so the whole order is a total order over
+    distinct paths and no part of it comes from the filesystem.
+    """
+    scanned: list[tuple[Path, list[Path]]] = []
+    for src_dir in _find_top_source_dirs(root):
+        try:
+            py_files = sorted(src_dir.rglob("*.py"))
+        except OSError:
+            py_files = []
+        scanned.append((src_dir, py_files))
+    scanned.sort(key=lambda item: (-len(item[1]), item[0].as_posix()))
+    return scanned
 
 
 def _extract_symbols_from_file(filepath: Path) -> list[str]:
@@ -285,23 +374,26 @@ def _format_function_signature(node: ast.FunctionDef | ast.AsyncFunctionDef) -> 
 
 
 def extract_public_interfaces(root: Path) -> str:
-    """Extract public classes and functions from Python files.
+    """Body of the "Public interfaces" section: public classes and functions.
 
-    Skips files starting with '_' or 'test'. Only scans top-level source
-    directories. Caps at 30 files.
+    Skips files starting with '_' or 'test'. Reads at most
+    ``_MAX_PUBLIC_INTERFACE_FILES`` files, biggest source root first.
+
+    Never returns "". When nothing was extracted the body is one line
+    saying why, because an absent section reads exactly like a repo with
+    no public symbols: #378 measured a whole run where the engineer was
+    told nothing and no artifact recorded that the stage had tried.
     """
-    source_dirs = _find_top_source_dirs(root)
-    if not source_dirs:
-        return ""
+    scanned = _ordered_source_roots(root)
+    if not scanned:
+        return (
+            f"(none: no Python source root found under {root}; searched "
+            f"{_MAX_SOURCE_ROOT_DEPTH} levels for a package or a directory "
+            f"of .py files, excluding tests)"
+        )
 
     file_symbols: list[tuple[str, list[str]]] = []
-
-    for src_dir in source_dirs:
-        try:
-            py_files = sorted(src_dir.rglob("*.py"))
-        except PermissionError:
-            continue
-
+    for _src_dir, py_files in scanned:
         for py_file in py_files:
             if len(file_symbols) >= _MAX_PUBLIC_INTERFACE_FILES:
                 break
@@ -312,14 +404,15 @@ def extract_public_interfaces(root: Path) -> str:
 
             symbols = _extract_symbols_from_file(py_file)
             if symbols:
-                try:
-                    rel = py_file.relative_to(root)
-                except ValueError:
-                    continue
-                file_symbols.append((rel.as_posix(), symbols))
+                file_symbols.append((_rel_name(root, py_file), symbols))
 
     if not file_symbols:
-        return ""
+        names = ", ".join(sorted(_rel_name(root, d) for d, _ in scanned)[:5])
+        return (
+            f"(none: no public classes or functions in the first "
+            f"{_MAX_PUBLIC_INTERFACE_FILES} files of {len(scanned)} source "
+            f"root(s): {names})"
+        )
 
     lines: list[str] = []
     for filepath, symbols in file_symbols:
@@ -732,10 +825,9 @@ def build_feedforward_context(
     if config.public_interfaces:
         try:
             content = extract_public_interfaces(worktree_path)
-            if content:
-                sections.append(("Public interfaces", content))
-        except Exception:
-            pass
+        except Exception as exc:
+            content = f"(none: interface extraction failed: {type(exc).__name__}: {exc})"
+        sections.append(("Public interfaces", content))
 
     if config.conventions:
         try:

@@ -82,8 +82,11 @@ class TestExtractPublicInterfaces:
         assert "_private_helper" not in result
 
     def test_extract_public_interfaces_empty(self, tmp_path: Path) -> None:
+        # #378: an empty body and an absent section read the same to the
+        # engineer, so the body now says why instead of being "".
         result = extract_public_interfaces(tmp_path)
-        assert result == ""
+        assert "no Python source root found" in result
+        assert ": class " not in result and ": def " not in result
 
     def test_extract_public_interfaces_skips_test_files(self, tmp_path: Path) -> None:
         pkg = tmp_path / "mylib"
@@ -189,10 +192,15 @@ class TestBuildFeedforwardContext:
         assert "##" in result
 
     def test_build_feedforward_context_empty_project(self, tmp_path: Path) -> None:
+        # #378: no source files and no config files is now a context block
+        # carrying one section that says the stage looked and found nothing.
+        # An absent block was indistinguishable from the stage never running.
         config = FeedforwardConfig(enabled=True)
         result = build_feedforward_context(tmp_path, config)
-        # No source files, no config files - should return empty
-        assert result == ""
+        assert "## Public interfaces" in result
+        assert "no Python source root found" in result
+        assert "## Module map" not in result
+        assert "## Conventions" not in result
 
 
 # ---------------------------------------------------------------------------
