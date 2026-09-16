@@ -20,9 +20,9 @@ is never what the next run's clean-tree check trips over.
 
 from __future__ import annotations
 
+import dataclasses
 import subprocess
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -31,7 +31,7 @@ from kstrl import git, pr
 from kstrl.adequacy import is_test_path
 from kstrl.atomicio import atomic_write_json
 from kstrl.config import resolve_config_file
-from kstrl.config_preflight import collect_config_problems
+from kstrl.config_preflight import config_problem_lines
 from kstrl.feedforward import (
     _MAX_PUBLIC_INTERFACE_FILES,
     _find_top_source_dirs,
@@ -65,9 +65,6 @@ EXIT_REFUSED = 2
 DOCTOR_DIR_NAME = "doctor"
 
 _STAMP_FORMAT = "%Y%m%d-%H%M%S"
-
-#: How long one git subprocess this module runs may take.
-_GIT_TIMEOUT = 30.0
 
 #: What `--measure` says instead of measuring. Tier B is not built;
 #: the measurement it would wrap already ships as `ks sense` (#222).
@@ -116,7 +113,7 @@ PROTECTED_PATH_CANDIDATES: tuple[str, ...] = (
 )
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class DoctorCheck:
     """One Tier A answer: what was measured, and what to do about it."""
 
@@ -125,26 +122,22 @@ class DoctorCheck:
     detail: str
     fix: str = ""
 
-    def to_dict(self) -> dict[str, str]:
-        return {
-            "name": self.name,
-            "status": self.status,
-            "detail": self.detail,
-            "fix": self.fix,
-        }
+
+#: What one check function returns: status, detail, fix. The name is
+#: not part of it; `CHECKS` carries that, once, so it is never a
+#: fourth positional argument every check has to repeat.
+_CheckResult = tuple[str, str, str]
 
 
-def check_git_repo(root: Path) -> DoctorCheck:
+def check_git_repo(root: Path) -> _CheckResult:
     """A repository with commits and a base branch kstrl can reach.
 
     Consumed by `factory`, which cuts one git worktree per component
     off the base branch, and by every Phase 1 check that reads
     `git diff <base>...HEAD`.
     """
-    name = "git_repo"
     if not git.is_git_repo(root):
-        return DoctorCheck(
-            name,
+        return (
             STATUS_FAIL,
             f"{root} is not inside a git repository; factory cuts a "
             f"worktree per component and Phase 1 diffs against a base "
@@ -153,8 +146,7 @@ def check_git_repo(root: Path) -> DoctorCheck:
         )
     head = git.get_head_sha(root)
     if head is None:
-        return DoctorCheck(
-            name,
+        return (
             STATUS_FAIL,
             "the repository has no commits, so there is no base ref for "
             "factory to cut a component worktree from",
@@ -164,8 +156,7 @@ def check_git_repo(root: Path) -> DoctorCheck:
     try:
         git.get_diff_names(base, root, strict=True)
     except git.GitDiffError as exc:
-        return DoctorCheck(
-            name,
+        return (
             STATUS_WARN,
             f"git.detect_base_branch answered {base!r} and git cannot "
             f"measure a diff against it ({exc}); the diff-scope, "
@@ -173,25 +164,23 @@ def check_git_repo(root: Path) -> DoctorCheck:
             f"Create or fetch {base}, or name the long-lived branch with "
             f"`ks sense --base` and `ks run --base-branch`.",
         )
-    return DoctorCheck(
-        name,
+    return (
         STATUS_OK,
         f"git repository at HEAD {head[:12]}, base branch {base} "
         f"(git.detect_base_branch, what factory cuts worktrees from)",
+        "",
     )
 
 
-def check_git_clean(root: Path) -> DoctorCheck:
+def check_git_clean(root: Path) -> _CheckResult:
     """Uncommitted work does not reach the engineer.
 
     Consumed by `factory` (each component worktree starts from the
     base ref) and by `git.capture_workspace_baseline`, which has to
     subtract pre-existing dirt from the in-loop scope guard.
     """
-    name = "git_clean"
     if not git.is_git_repo(root):
-        return DoctorCheck(
-            name,
+        return (
             STATUS_WARN,
             "not a git repository, so the working tree could not be read",
             "Fix git_repo first.",
@@ -199,8 +188,7 @@ def check_git_clean(root: Path) -> DoctorCheck:
     changed = sorted(git.get_changed_files(root))
     if changed:
         listed = ", ".join(changed[:5])
-        return DoctorCheck(
-            name,
+        return (
             STATUS_WARN,
             f"{len(changed)} uncommitted or untracked file(s) ({listed}); "
             f"factory cuts each component worktree from the base ref, so "
@@ -209,38 +197,36 @@ def check_git_clean(root: Path) -> DoctorCheck:
             f"in-loop scope guard",
             "Commit or stash before starting a run.",
         )
-    return DoctorCheck(
-        name,
+    return (
         STATUS_OK,
         "clean tree; every component worktree starts from the base ref "
         "with nothing for the scope guard to subtract",
+        "",
     )
 
 
-def check_github_cli(root: Path) -> DoctorCheck:
+def check_github_cli(root: Path) -> _CheckResult:
     """Pushing a branch and opening a PR.
 
     Consumed by `pr.push_create_and_merge_pr`, which shells out to
     `gh`. Degraded mode, never a failure: the factory runs with
     `[factory] create_prs = false` and the operator merges by hand.
     """
-    name = "github_cli"
     slug = git.get_origin_slug(root)
     available = pr.is_gh_available()
     if available and slug:
-        return DoctorCheck(
-            name,
+        return (
             STATUS_OK,
             f"gh is authenticated and origin is {slug}, so "
             f"pr.push_create_and_merge_pr can push and open PRs",
+            "",
         )
     missing = []
     if not available:
         missing.append("`gh` is not on PATH or `gh auth status` exited non-zero")
     if not slug:
         missing.append("there is no `origin` remote")
-    return DoctorCheck(
-        name,
+    return (
         STATUS_WARN,
         "degraded mode: " + "; ".join(missing) + "; kstrl.pr can push no branch and open no PR",
         "Run `gh auth login` and add an origin remote, or set "
@@ -248,75 +234,83 @@ def check_github_cli(root: Path) -> DoctorCheck:
     )
 
 
-def check_kstrl_config(root: Path) -> DoctorCheck:
+def check_kstrl_config(root: Path) -> _CheckResult:
     """Every configuration section resolves.
 
     Consumed by `config_preflight.preflight_config`, the same check
     every other command runs before it starts anything. This command
-    is exempt from that seam and runs the check here instead, so a
-    broken file is a reported finding rather than a refusal.
+    is exempt from that seam and reports the same problems as a
+    finding instead of a refusal, through
+    `config_preflight.config_problem_lines`, the helper already split
+    out for `ks config show` and the TUI config screen so a third copy
+    of "what is wrong with this configuration" is not written here. A
+    document that will not parse folds into that one line; this check
+    keeps no narrower idea of a parse failure than that helper does.
     """
-    name = "kstrl_config"
     path = resolve_config_file(root)
     warnings: list[str] = []
-    try:
-        problems = collect_config_problems(root, warnings.append)
-    except (OSError, ValueError) as exc:
-        # The same breadth `ks sense` uses at cli.py's own call of the
-        # preflight: ConfigError is a ValueError, and that is what a
-        # document which will not parse arrives as.
-        return DoctorCheck(
-            name,
-            STATUS_FAIL,
-            f"{path} cannot be used: {exc}",
-            "Fix kstrl.toml; `ks config show` prints every row it can "
-            "still resolve beside the rejected sections.",
-        )
+    problems = config_problem_lines(root, warn=warnings.append)
     if problems:
-        return DoctorCheck(
-            name,
+        return (
             STATUS_FAIL,
             f"{len(problems)} unusable section(s) in {path}: " + "; ".join(problems),
             "Fix the named sections; every other kstrl command refuses while they stand.",
         )
     if not path.exists():
-        return DoctorCheck(
-            name,
+        return (
             STATUS_OK,
             f"no kstrl.toml at {path}; every section uses its built-in "
             f"default, which is a supported configuration",
+            "",
         )
     if warnings:
-        return DoctorCheck(
-            name,
+        return (
             STATUS_WARN,
             "; ".join(warnings),
             "Fix the degrading sections; they warn and continue today.",
         )
-    return DoctorCheck(
-        name,
+    return (
         STATUS_OK,
-        f"{path} resolves in full (config_preflight.collect_config_problems)",
+        f"{path} resolves in full (config_preflight.config_problem_lines)",
+        "",
     )
 
 
-def check_verify_commands(root: Path) -> DoctorCheck:
+def _not_evaluated(name: str) -> _CheckResult:
+    """The shared row for a check whose own section could not be
+    loaded because kstrl.toml itself did not load.
+
+    `check_kstrl_config` already reports that failure once, with the
+    fragment naming what is wrong; a check that re-runs the same
+    failed load to build its own message would repeat that text under
+    a second name, and a third check doing the same would make it
+    three. This is the pointer instead. Each caller still keeps its
+    own `except (OSError, ValueError)`: a bug inside a check must
+    still traceback rather than get silently swallowed by a catch-all
+    in `run_checks`.
+    """
+    return (
+        STATUS_FAIL,
+        "not evaluated: kstrl.toml did not load (see kstrl_config)",
+        "",
+    )
+
+
+def check_verify_commands(root: Path) -> _CheckResult:
     """The three commands Phase 1 will run.
 
     Consumed by `verify.resolve_verify_commands`. Tier A resolves
     them and prints them; it does not run them, so it cannot say
-    whether they pass.
+    whether they pass. A failed load routes through `_not_evaluated`
+    rather than restating the exception: `check_kstrl_config` already
+    reports the same failed load, once, with the fragment naming what
+    is wrong; this check's own catch stays, because a bug inside it
+    must still traceback rather than get swallowed by a catch-all.
     """
-    name = "verify_commands"
     try:
         config = VerifyConfig.load(root)
-    except (OSError, ValueError) as exc:
-        return DoctorCheck(
-            name,
-            STATUS_FAIL,
-            f"[verify] could not be loaded ({exc}), so Phase 1 cannot resolve the commands it runs",
-            "Fix the [verify] section of kstrl.toml.",
-        )
+    except (OSError, ValueError):
+        return _not_evaluated("verify_commands")
     commands = resolve_verify_commands(config, root)
     stated = f"test `{commands.test}`, typecheck `{commands.typecheck}`, lint `{commands.lint}`"
     unset = [
@@ -329,8 +323,7 @@ def check_verify_commands(root: Path) -> DoctorCheck:
         if value is None
     ]
     if unset and not (root / "pyproject.toml").exists():
-        return DoctorCheck(
-            name,
+        return (
             STATUS_WARN,
             f"{len(unset)} of 3 commands fall back to a `uv run` default "
             f"({', '.join(unset)}) and there is no pyproject.toml at "
@@ -338,11 +331,11 @@ def check_verify_commands(root: Path) -> DoctorCheck:
             "Set [verify] test_command / typecheck_command / lint_command "
             "to the commands this project actually uses.",
         )
-    return DoctorCheck(
-        name,
+    return (
         STATUS_OK,
         f"Phase 1 will run {stated} (verify.resolve_verify_commands); "
         f"Tier A does not run them, `ks sense` does",
+        "",
     )
 
 
@@ -366,7 +359,7 @@ def _interface_file_count(text: str) -> int:
     return sum(1 for line in text.splitlines() if line.split(":", 1)[0].endswith(".py"))
 
 
-def check_source_root(root: Path) -> DoctorCheck:
+def check_source_root(root: Path) -> _CheckResult:
     """What the engineer is actually shown of this repository.
 
     Consumed by `feedforward.extract_public_interfaces`, the Phase 0
@@ -377,7 +370,6 @@ def check_source_root(root: Path) -> DoctorCheck:
     `_find_top_source_dirs` returns nothing and the section is
     empty.
     """
-    name = "source_root"
     # `is_relative_to` rather than a bare `relative_to`: PR #381
     # rewrites the function this reads, and a path it returned from
     # outside `root` would turn a report into a ValueError traceback.
@@ -388,8 +380,7 @@ def check_source_root(root: Path) -> DoctorCheck:
     listed = ", ".join(roots[:5]) if roots else "none"
     count = _interface_file_count(extract_public_interfaces(root))
     if count == 0:
-        return DoctorCheck(
-            name,
+        return (
             STATUS_WARN,
             f"feedforward.extract_public_interfaces summarises 0 files "
             f"for the engineer; source roots found: {listed}",
@@ -397,16 +388,16 @@ def check_source_root(root: Path) -> DoctorCheck:
             "extraction does not reach this layout, so the engineer works "
             "without an interface section. Track issue #378.",
         )
-    return DoctorCheck(
-        name,
+    return (
         STATUS_OK,
         f"feedforward.extract_public_interfaces summarises {count} file(s) "
         f"of a {_MAX_PUBLIC_INTERFACE_FILES}-file budget from source "
         f"root(s): {listed}",
+        "",
     )
 
 
-def check_test_root(root: Path) -> DoctorCheck:
+def check_test_root(root: Path) -> _CheckResult:
     """Tracked files that read as tests.
 
     Counted with `adequacy.is_test_path`, the same predicate the
@@ -415,28 +406,25 @@ def check_test_root(root: Path) -> DoctorCheck:
     probe would find nothing on deckgen, whose tests live under
     `packages/*/tests`.
     """
-    name = "test_root"
     try:
         result = subprocess.run(
             ["git", "ls-files", "-z"],
             cwd=root,
             capture_output=True,
             text=True,
-            timeout=_GIT_TIMEOUT,
+            timeout=git.DEFAULT_TIMEOUT,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
-        return DoctorCheck(name, STATUS_WARN, f"git could not list tracked files: {exc}", "")
+        return (STATUS_WARN, f"git could not list tracked files: {exc}", "")
     if result.returncode != 0:
-        return DoctorCheck(
-            name,
+        return (
             STATUS_WARN,
             f"git ls-files exited {result.returncode}, so no tracked file could be classified",
             "Fix git_repo first.",
         )
     tests = sorted(path for path in result.stdout.split("\0") if path and is_test_path(path))
     if not tests:
-        return DoctorCheck(
-            name,
+        return (
             STATUS_WARN,
             "0 tracked paths read as tests to adequacy.is_test_path, the "
             "predicate the [adequacy] gate classifies a diff with, so that "
@@ -444,14 +432,14 @@ def check_test_root(root: Path) -> DoctorCheck:
             "nothing to run",
             "Add tests, or expect the adequacy gate to report nothing.",
         )
-    return DoctorCheck(
-        name,
+    return (
         STATUS_OK,
         f"{len(tests)} tracked test path(s), e.g. {', '.join(tests[:3])} (adequacy.is_test_path)",
+        "",
     )
 
 
-def check_gitignore(root: Path) -> DoctorCheck:
+def check_gitignore(root: Path) -> _CheckResult:
     """`.kstrl/` is ignored.
 
     Asked of git rather than of the .gitignore text, because the
@@ -471,36 +459,34 @@ def check_gitignore(root: Path) -> DoctorCheck:
     (`config.component_harness_files`), and ignoring it would hide
     files kstrl expects to be committed.
     """
-    name = "gitignore"
     probe = f"{STATE_DIR_NAME}/runs/probe.json"
+    ignore_line = f"{STATE_DIR_NAME}/"
     try:
         result = subprocess.run(
             ["git", "check-ignore", "-q", "--", probe],
             cwd=root,
             capture_output=True,
-            timeout=_GIT_TIMEOUT,
+            timeout=git.DEFAULT_TIMEOUT,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
-        return DoctorCheck(name, STATUS_WARN, f"git check-ignore failed: {exc}", "")
+        return (STATUS_WARN, f"git check-ignore failed: {exc}", "")
     if result.returncode == 0:
-        return DoctorCheck(
-            name,
+        return (
             STATUS_OK,
             f"git ignores {probe}, so the in-loop scope guard does not "
             f"count kstrl's own run journals against a component",
+            "",
         )
     if result.returncode == 1:
-        return DoctorCheck(
-            name,
+        return (
             STATUS_WARN,
             f"{probe} is not ignored; the in-loop scope guard counts every "
             f"untracked file against the component's allowedPaths, and "
             f"`git add -A` would commit kstrl's run journals",
-            "Add the line `.kstrl/` to .gitignore, which is what "
+            f"Add the line `{ignore_line}` to .gitignore, which is what "
             "`ks init` scaffolds (init_cmd.gitignore_block).",
         )
-    return DoctorCheck(
-        name,
+    return (
         STATUS_WARN,
         f"git check-ignore exited {result.returncode}, so whether "
         f"{probe} is ignored could not be decided",
@@ -508,35 +494,29 @@ def check_gitignore(root: Path) -> DoctorCheck:
     )
 
 
-def check_protected_paths(root: Path) -> DoctorCheck:
+def check_protected_paths(root: Path) -> _CheckResult:
     """CI, migration and deploy paths a component could edit.
 
     Consumed by `policy.evaluate_policy` through `[policy]
     paths_deny`. `verify.py` calls that gate only when the section is
     enabled, and that gate carries the non-overridable
     ENFORCEMENT_MACHINERY_PATHS halt, so a disabled section leaves CI
-    unprotected as well.
+    unprotected as well. A failed load routes through `_not_evaluated`;
+    see `check_verify_commands` for why.
     """
-    name = "protected_paths"
     try:
         config = PolicyConfig.load(root)
-    except (OSError, ValueError) as exc:
-        return DoctorCheck(
-            name,
-            STATUS_FAIL,
-            f"[policy] could not be loaded ({exc})",
-            "Fix the [policy] section of kstrl.toml.",
-        )
+    except (OSError, ValueError):
+        return _not_evaluated("protected_paths")
     present = [name_ for name_ in PROTECTED_PATH_CANDIDATES if (root / name_).exists()]
     if not present:
-        return DoctorCheck(
-            name,
+        return (
             STATUS_OK,
             "none of the candidate CI, migration or deploy paths exist here",
+            "",
         )
     if not config.enabled:
-        return DoctorCheck(
-            name,
+        return (
             STATUS_WARN,
             f"found {', '.join(present)}, and [policy] enabled is false, so "
             f"neither paths_deny nor the non-overridable "
@@ -562,45 +542,47 @@ def check_protected_paths(root: Path) -> DoctorCheck:
     ]
     if uncovered:
         suggestions = ", ".join(f'"{candidate}/**"' for candidate in uncovered)
-        return DoctorCheck(
-            name,
+        return (
             STATUS_WARN,
             f"[policy] is enabled and its patterns do not cover "
             f"{', '.join(uncovered)} (tested with policy._match_glob, the "
             f"gate's own matcher; the candidate list itself is a heuristic)",
             f"Add to [policy] paths_deny: {suggestions}",
         )
-    return DoctorCheck(
-        name,
+    return (
         STATUS_OK,
         f"[policy] is enabled and covers every candidate found ({', '.join(present)})",
+        "",
     )
 
 
-#: Every check, in report order. A tuple rather than a list built
-#: inside `run_checks`, so the order is a declaration rather than a
-#: side effect of how the loop happens to be written.
-CHECKS = (
-    check_git_repo,
-    check_git_clean,
-    check_github_cli,
-    check_kstrl_config,
-    check_verify_commands,
-    check_source_root,
-    check_test_root,
-    check_gitignore,
-    check_protected_paths,
+#: Every check, in report order, paired with the name it is reported
+#: under. A tuple rather than a list built inside `run_checks`, so the
+#: order is a declaration rather than a side effect of how the loop
+#: happens to be written. The name lives here, once, rather than as a
+#: local inside each check function repeated into every one of its
+#: returns.
+CHECKS: tuple[tuple[str, Callable[[Path], _CheckResult]], ...] = (
+    ("git_repo", check_git_repo),
+    ("git_clean", check_git_clean),
+    ("github_cli", check_github_cli),
+    ("kstrl_config", check_kstrl_config),
+    ("verify_commands", check_verify_commands),
+    ("source_root", check_source_root),
+    ("test_root", check_test_root),
+    ("gitignore", check_gitignore),
+    ("protected_paths", check_protected_paths),
 )
 
 # There is deliberately NO `CHECK_NAMES` constant here (decision 12).
-# Each name is written once, in its own check function, and
+# Each name is written once, in the `CHECKS` table above, and
 # `tests/test_doctor.py` owns the tuple it compares the report
 # against.
 
 
 def run_checks(root: Path) -> list[DoctorCheck]:
     """Run every Tier A check against ``root``, in report order."""
-    return [check(root) for check in CHECKS]
+    return [DoctorCheck(name, *check(root)) for name, check in CHECKS]
 
 
 def verdict(checks: Sequence[DoctorCheck]) -> str:
@@ -639,7 +621,7 @@ def diagnose(root: Path) -> dict[str, Any]:
         "root": str(root),
         "generated_at": now.isoformat().replace("+00:00", "Z"),
         "verdict": verdict(checks),
-        "checks": [check.to_dict() for check in checks],
+        "checks": [dataclasses.asdict(check) for check in checks],
         "fix_first": fix_first(checks),
         "fit_boundaries": list(FIT_BOUNDARIES),
         "report_path": str(report_path(root, now.strftime(_STAMP_FORMAT))),

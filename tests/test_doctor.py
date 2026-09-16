@@ -25,6 +25,7 @@ from click.testing import CliRunner, Result
 
 from kstrl import doctor
 from kstrl.cli import cli
+from kstrl.feedforward import extract_public_interfaces
 from tests.helpers.fakegh import put_gh_on_path
 from tests.helpers.gitrepo import git_in, set_identity
 
@@ -55,11 +56,6 @@ EXPECTED_CHECK_NAMES = (
 @pytest.fixture(autouse=True)
 def _gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     put_gh_on_path(tmp_path, monkeypatch, GH_OK)
-
-
-def _unauthenticated_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Replace the autouse stub for one test."""
-    put_gh_on_path(tmp_path, monkeypatch, GH_UNAUTHENTICATED)
 
 
 def ready_repo(tmp_path: Path, name: str = "demo") -> Path:
@@ -142,7 +138,7 @@ def test_an_unauthenticated_gh_is_a_warning_not_a_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = ready_repo(tmp_path)
-    _unauthenticated_gh(tmp_path, monkeypatch)
+    put_gh_on_path(tmp_path, monkeypatch, GH_UNAUTHENTICATED)
     result = run_doctor(root)
     assert result.exit_code == 0, result.output
     assert "ks doctor: ready-with-warnings" in result.output
@@ -212,6 +208,19 @@ def test_the_interface_count_ignores_the_sentence_an_empty_section_carries() -> 
     )
 
 
+def test_the_interface_count_is_zero_through_the_real_extractor(tmp_path: Path) -> None:
+    """The control the pasted-sentence test above cannot give: an empty
+    directory run through the REAL `extract_public_interfaces`, not a
+    copy of what it once returned. The pasted-sentence test stays
+    green if PR #381 rewords its `(none: ...)` sentences; this one
+    stays green only if the real function's output, whatever its
+    words, still counts to 0.
+    """
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert doctor._interface_file_count(extract_public_interfaces(empty)) == 0
+
+
 def test_a_repo_that_does_not_ignore_the_state_dir_warns_with_the_line_to_add(
     tmp_path: Path,
 ) -> None:
@@ -224,6 +233,11 @@ def test_a_repo_that_does_not_ignore_the_state_dir_warns_with_the_line_to_add(
     assert "[warn] gitignore" in result.output
     assert ".kstrl/" in result.output
     assert "scripts/kstrl/" not in result.output
+    # Pinned on the fix LINE specifically, not just anywhere in the
+    # report: the probe path in the check's own detail also contains
+    # ".kstrl/", so a fix text that lost the leading dot would still
+    # pass a bare substring check on the whole report.
+    assert "Add the line `.kstrl/` to .gitignore" in result.output
 
 
 def test_ci_and_migrations_are_suggested_as_paths_deny_entries(tmp_path: Path) -> None:
@@ -259,6 +273,14 @@ def test_a_broken_kstrl_toml_is_a_failed_check_not_a_refusal(tmp_path: Path) -> 
     assert "kstrl.toml" in result.output
     # the exemption is the point: the other checks still ran
     assert "[ok] git_repo" in result.output
+    # `check_verify_commands` and `check_protected_paths` also fail to
+    # load this file, but they point at kstrl_config instead of
+    # repeating its own parse-error text: one row carries it, not
+    # three.
+    assert result.output.count("Invalid TOML") == 1
+    assert result.output.count("not evaluated: kstrl.toml did not load (see kstrl_config)") == 2
+    assert "[fail] verify_commands" in result.output
+    assert "[fail] protected_paths" in result.output
 
 
 def test_the_report_lands_under_the_state_dir_and_matches_the_json(tmp_path: Path) -> None:
@@ -343,3 +365,27 @@ def test_a_root_that_is_not_a_directory_is_refused_before_anything_is_written(
     assert "root is not a directory" in result.output
     assert not (tmp_path / "nope").exists()
     assert "ks doctor:" not in result.output
+
+
+def test_the_refusals_carry_the_same_json_envelope_as_sense(tmp_path: Path) -> None:
+    """`ks doctor`'s two refusals (a bad `--root` and `--measure`) route
+    through the same `_sense_error` helper `ks sense` uses, so `--json`
+    prints the same one-key document on both commands, naming the
+    doctor's own schema version rather than sense's.
+    """
+    missing = tmp_path / "nope"
+    bad_root = run_doctor(missing, "--json")
+    assert bad_root.exit_code == 2, bad_root.output
+    assert "error:" in bad_root.output
+    document = json.loads(bad_root.stdout)
+    assert document["schema_version"] == doctor.DOCTOR_SCHEMA_VERSION
+    assert "root is not a directory" in document["error"]
+
+    root = ready_repo(tmp_path)
+    measured = run_doctor(root, "--measure", "--json")
+    assert measured.exit_code == 2, measured.output
+    assert "error:" in measured.output
+    measured_document = json.loads(measured.stdout)
+    assert measured_document["schema_version"] == doctor.DOCTOR_SCHEMA_VERSION
+    assert "ks sense" in measured_document["error"]
+    assert not (root / ".kstrl").exists()  # it refused before measuring anything
