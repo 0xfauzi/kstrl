@@ -14,11 +14,15 @@ those commits have an identity: the repository is usually built in
 another module. What it does is make a new commit site impossible to add
 silently, so the diff that adds a row is where somebody says which
 repository it commits into and that the repository went through the
-helper. Its limit: the census is on the COMMIT side, so a new test
-function added to an already-declared file that hand-inits its own
-repository and commits into it is invisible here too; a creation-side
-census, over ``git init`` / ``git clone`` instead of ``git commit``, is
-the next step and not this one.
+helper. Its limit: it pins per-file COUNTS, so any new or changed
+commit spelling, in a new file or an already-declared one, moves a count
+and forces a declaration (measured: one added init-and-commit function
+in a declared file turns it red); what it cannot do is PROVE that the
+repository a declared commit runs in carries an identity. A test that
+hand-inits a repository and hands it to production code that commits
+never appears here at all, because ``kstrl/`` is outside this corpus. A
+creation-side census, over ``git init`` / ``git clone`` instead of
+``git commit``, is the next step and not this one.
 
 WHAT NEITHER LAYER SEES. Both read values ``astwalk.folded_str`` can
 decide, so a command the interpreter assembles at run time
