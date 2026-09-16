@@ -75,14 +75,17 @@ class TestCliValidation:
         assert "not a valid integer" in result.output
 
     def test_run_missing_prompt_file(self) -> None:
-        # cwd is this test's empty tmp_path (conftest.isolate_kstrl_state): no prompt.md.
+        # cwd is this test's empty tmp_path (conftest.isolate_kstrl_state), so
+        # nothing under scripts/kstrl exists.
         runner = CliRunner()
         result = runner.invoke(
             cli,
             ["run", "1", "--agent-cmd", "echo test", "--branch", ""],
         )
-        # Should fail because prompt file doesn't exist
+        # The PRD gate fires first and is what makes this non-zero; the prompt
+        # preflight is never reached.
         assert result.exit_code != 0
+        assert "PRD file not found" in result.output
 
     def test_run_uses_prompt_env_for_root(self, tmp_path: Path, monkeypatch) -> None:
         """``PROMPT_FILE`` env var should anchor the root-discovery logic
