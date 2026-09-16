@@ -582,31 +582,61 @@ class TestTheFuseIsTheBound:
         )
 
     @classmethod
-    def _timeout_calls(cls, fn: ast.FunctionDef | ast.AsyncFunctionDef) -> list[tuple[str, str]]:
-        """Every ``timeout=`` keyword call inside ``fn``, as ``(callee
-        source, value source)`` pairs.
+    def _rows_for_call(cls, call: ast.Call) -> list[tuple[str, str]]:
+        """Every timeout row a single call contributes, as ``(callee
+        source, value source)`` pairs. See ``_timeout_calls`` for what the
+        two rules mean and why both exist; this is split out purely to
+        keep the per-call branching out of the walk's loop body."""
+        callee = ast.unparse(call.func)
+        if callee == "subprocess.run":
+            return []
+        rows = [(callee, ast.unparse(kw.value)) for kw in call.keywords if kw.arg == "timeout"]
+        if callee.endswith(".run"):
+            value = (
+                ast.unparse(call.args[2])
+                if len(call.args) >= 3
+                else "<positional-or-missing timeout>"
+            )
+            rows.append((callee, value))
+        return rows
 
-        Collects EVERY call carrying a ``timeout=`` keyword, not only the
-        two spellings this file already knows about (``_lines_under_fuse``
-        and ``agent.run``): an inclusion filter keyed on callee spelling
-        clears whatever call it does not recognise, which is exactly the
-        #365 regression this census exists to catch (a call site moved to
-        an unfused ``some_agent.run(..., timeout=...)`` produced an empty
-        list here and was silently skipped rather than flagged). The one
-        exclusion is ``subprocess.run`` by exact spelling: several
-        fixtures call it with ``timeout=30`` to warm the fake CLI (see
-        SDK_DEADLINE_SECONDS), and that warm-up has nothing to do with
-        which deadline constant a test is driven at.
+    @classmethod
+    def _timeout_calls(cls, fn: ast.FunctionDef | ast.AsyncFunctionDef) -> list[tuple[str, str]]:
+        """Every timeout-carrying call inside ``fn``, as ``(callee source,
+        value source)`` pairs.
+
+        Two sources of rows, both closed by construction rather than by an
+        allowlist of callee spellings (see ``_rows_for_call``):
+
+        1. Every ``timeout=`` KEYWORD on any call, so a call site moved to
+           an unfused ``some_agent.run(..., timeout=...)`` is a row.
+        2. Every call whose callee text ends with ``.run`` gets a row even
+           when the deadline is passed POSITIONALLY, using the third
+           positional argument (index 2) when there are 3 or more, or the
+           literal ``<positional-or-missing timeout>`` otherwise. This is
+           the fix for the #365 round-3 finding: ``Agent.run`` is declared
+           ``run(self, prompt, cwd=None, timeout=None)``
+           (``kstrl/agents/base.py``), so a plant that passes the deadline
+           positionally - ``list(agent.run("prompt", tmp_path, 1.0))`` -
+           carried no ``timeout=`` keyword at all and produced an empty
+           list under rule 1 alone, which cleared the plant instead of
+           flagging it. The rule is 'every ``*.run(`` call in a battery
+           method that is not ``_lines_under_fuse`` is a row', not a list
+           of spellings this file happens to know about today.
+
+        The one exclusion from BOTH rules is ``subprocess.run`` by exact
+        spelling: several fixtures call it with ``timeout=30`` to warm the
+        fake CLI (see SDK_DEADLINE_SECONDS), and that warm-up has nothing
+        to do with which deadline constant a test is driven at.
 
         ``astwalk.own_nodes`` stops at a nested function, matching every
         other walk in this file, though none of these methods define
         one."""
         return [
-            (ast.unparse(call.func), ast.unparse(kw.value))
+            row
             for call in astwalk.own_nodes(fn)
-            if isinstance(call, ast.Call) and ast.unparse(call.func) != "subprocess.run"
-            for kw in call.keywords
-            if kw.arg == "timeout"
+            if isinstance(call, ast.Call)
+            for row in cls._rows_for_call(call)
         ]
 
     def _is_disclosed_exception(
