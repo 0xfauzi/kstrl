@@ -105,6 +105,7 @@ from tests.helpers.astwalk.resolve import (
 )
 from tests.helpers.astwalk.scope import (
     Clause,
+    catches_everything,
     declared_in,
     handler_clauses,
     own_nodes,
@@ -130,6 +131,7 @@ __all__ = [
     "bound_names",
     "blind_spot",
     "calls_to",
+    "catches_everything",
     "census",
     "declared_in",
     "dotted",

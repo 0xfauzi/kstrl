@@ -13,6 +13,7 @@ from kstrl.cli import _format_component_status, _run_structural_override_notices
 from kstrl.factory import FactoryConfig
 from kstrl.git import BASE_BRANCH_CANDIDATES, detect_base_branch, resolve_base_branch
 from kstrl.manifest import Component, ComponentStatus, Manifest
+from tests.helpers import gitrepo
 from tests.spine_utils import git as spine_git
 
 
@@ -225,8 +226,7 @@ class TestRunStructuralOverrideNotices:
         if toml_body:
             (project / "kstrl.toml").write_text(toml_body)
         spine_git("init", "-q", "-b", "main", cwd=project)
-        spine_git("config", "user.email", "cli@test", cwd=project)
-        spine_git("config", "user.name", "CLI Test", cwd=project)
+        gitrepo.set_identity(project)
         spine_git("add", "-A", cwd=project)
         spine_git("commit", "-q", "-m", "init", cwd=project)
         return project
@@ -429,8 +429,7 @@ def _repo_on(tmp_path: Path, branch: str, name: str = "proj") -> Path:
     root = tmp_path / name
     root.mkdir()
     spine_git("init", "-q", "-b", branch, cwd=root)
-    spine_git("config", "user.email", "base@test", cwd=root)
-    spine_git("config", "user.name", "Base Test", cwd=root)
+    gitrepo.set_identity(root)
     (root / "a.txt").write_text("a\n")
     spine_git("add", "-A", cwd=root)
     spine_git("commit", "-q", "-m", "init", cwd=root)

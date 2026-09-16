@@ -48,6 +48,7 @@ from kstrl.serve import RunOutcome, Verdict, classify_run
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
 from tests.conftest import ReviewRepo
+from tests.helpers import gitrepo
 
 
 class MockReviewAgent:
@@ -1176,18 +1177,9 @@ class TestR13DiffErrors:
             capture_output=True,
             check=True,
         )
+        gitrepo.set_identity(tmp_path)
         subprocess.run(
-            [
-                "git",
-                "-c",
-                "user.email=t@t",
-                "-c",
-                "user.name=t",
-                "commit",
-                "--allow-empty",
-                "-m",
-                "init",
-            ],
+            ["git", "commit", "--allow-empty", "-m", "init"],
             cwd=tmp_path,
             capture_output=True,
             check=True,

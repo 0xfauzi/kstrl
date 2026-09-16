@@ -31,6 +31,7 @@ from kstrl.observability import (
     read_progress_events,
 )
 from kstrl.ui.plain import PlainUI
+from tests.helpers import gitrepo
 from tests.helpers.component_prd import write_component_prd
 from tests.spine_utils import (
     base_config,
@@ -524,8 +525,7 @@ def _make_pr_repo(tmp_path: Path, comp_ids: tuple[str, ...]) -> Path:
         )
     (root / ".gitignore").write_text(".kstrl/\nscripts/kstrl/manifest.json\n")
     git("init", "-q", "-b", "main", cwd=root)
-    git("config", "user.email", "notify@test", cwd=root)
-    git("config", "user.name", "Notify Test", cwd=root)
+    gitrepo.set_identity(root)
     git("add", "-A", cwd=root)
     git("commit", "-q", "-m", "init", cwd=root)
     origin = tmp_path / "origin.git"

@@ -27,7 +27,7 @@ import pytest
 
 from kstrl.factory import _cleanup_worktree, _setup_worktree, run_factory
 from kstrl.ui.plain import PlainUI
-from tests.helpers import procs
+from tests.helpers import gitrepo, procs
 from tests.spine_utils import (
     base_config,
     component,
@@ -78,8 +78,7 @@ def _init_plain_repo(root: Path) -> tuple[str, str]:
     """
     root.mkdir(parents=True, exist_ok=True)
     git("init", "-q", "-b", "main", cwd=root)
-    git("config", "user.email", "spine@test", cwd=root)
-    git("config", "user.name", "Spine Test", cwd=root)
+    gitrepo.set_identity(root)
     (root / "README.md").write_text("seed\n")
     git("add", "README.md", cwd=root)
     git("commit", "-q", "-m", "init", cwd=root)
@@ -137,8 +136,7 @@ class TestWorktreeLifecycle:
         # now one commit behind the remote.
         clone = tmp_path / "clone"
         git("clone", "-q", "-b", "develop", str(origin), str(clone), cwd=tmp_path)
-        git("config", "user.email", "other@test", cwd=clone)
-        git("config", "user.name", "Other", cwd=clone)
+        gitrepo.set_identity(clone)
         (clone / "remote.txt").write_text("landed remotely\n")
         git("add", "remote.txt", cwd=clone)
         git("commit", "-q", "-m", "remote-only commit", cwd=clone)

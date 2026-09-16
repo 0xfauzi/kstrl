@@ -24,6 +24,7 @@ from typing import Any
 import pytest
 
 from kstrl import dampener_report
+from tests.helpers import gitrepo
 
 WORKFLOW_PATH = Path(__file__).resolve().parents[1] / ".github/workflows/sense-dampener.yml"
 
@@ -289,8 +290,7 @@ def _clone_with_origin(tmp_path: Path, baseline_on_base: str | None) -> Path:
     seed = tmp_path / "seed"
     seed.mkdir()
     run_git("init", "-q", "-b", "main", cwd=seed)
-    run_git("config", "user.email", "kstrl@example.com", cwd=seed)
-    run_git("config", "user.name", "kstrl", cwd=seed)
+    gitrepo.set_identity(seed)
     if baseline_on_base is not None:
         (seed / "scripts" / "kstrl").mkdir(parents=True)
         (seed / BASELINE_IN_TREE).write_text(baseline_on_base, encoding="utf-8")
@@ -300,8 +300,7 @@ def _clone_with_origin(tmp_path: Path, baseline_on_base: str | None) -> Path:
 
     clone = tmp_path / "checkout"
     run_git("clone", "-q", str(origin), str(clone), cwd=tmp_path)
-    run_git("config", "user.email", "kstrl@example.com", cwd=clone)
-    run_git("config", "user.name", "kstrl", cwd=clone)
+    gitrepo.set_identity(clone)
     return clone
 
 

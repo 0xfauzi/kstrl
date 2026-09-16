@@ -30,6 +30,7 @@ from kstrl.autonomy import (
     manual_override_notes,
 )
 from kstrl.autonomy_replay import load_runs, replay, replay_file
+from tests.helpers import gitrepo
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.replay import clean_run, failing_run, run_record
 
@@ -534,8 +535,7 @@ def _init_git_repo(root: Path) -> None:
 
     run("init")
     run("symbolic-ref", "HEAD", "refs/heads/main")
-    run("config", "user.email", "t@example.com")
-    run("config", "user.name", "tester")
+    gitrepo.set_identity(root)
     (root / "README.md").write_text("base\n")
     run("add", ".")
     run("commit", "-m", "base")

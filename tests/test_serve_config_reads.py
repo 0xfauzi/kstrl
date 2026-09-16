@@ -39,7 +39,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.serve import OpenPrCount, RunOutcome, serve
+from kstrl.serve import OpenPrCount, RunOutcome, ServeConfig, _NullObserver, serve, serve_cycle
 from kstrl.workqueue import ItemState, MergeDisposition, Queue, QueueConfig
 from tests.helpers.astwalk import (
     KSTRL_PACKAGE,
@@ -47,14 +47,14 @@ from tests.helpers.astwalk import (
     assert_census,
     bindings,
     blind_spot,
-    handler_clauses,
-    own_nodes,
+    catches_everything,
     parse,
     parsed,
     scope_of,
     spells,
     try_body_nodes,
 )
+from tests.helpers.bad_toml import MALFORMED_TOML
 
 SERVE_SOURCE = KSTRL_PACKAGE / "serve.py"
 
@@ -117,35 +117,6 @@ class LoadScan:
     undecided: tuple[str, ...] = ()
 
 
-def _broad_and_total(node: ast.Try | ast.TryStar, table: Any) -> bool:
-    """Does this ``try`` catch everything the document can raise?
-
-    Two conditions, both required, because this answer CLEARS a site.
-
-    A clause naming ``Exception`` exactly. ``BaseException`` and a bare
-    ``except:`` do not count: everything about a malformed DOCUMENT
-    derives from ``Exception``, while ``KeyboardInterrupt`` and
-    ``SystemExit`` are about the process, so catching them is a different
-    and worse thing rather than a broader version of the same one. An
-    enumeration of types (``except (OSError, ValueError)``) does not
-    count either - that is the defect #318 shipped three times.
-
-    And NO clause of this ``try`` re-raises. Siblings do not chain: a
-    narrow clause above that re-raises lets its own type out past the
-    broad one below, and a broad clause that re-raises guards nothing at
-    all. The walk cannot decide which exception a re-raising ladder still
-    lets through, so it declines to clear.
-    """
-    clauses = handler_clauses(node, table)
-    if not any(clause.decided and "Exception" in clause.names for clause in clauses):
-        return False
-    for handler in node.handlers:
-        for child in [handler, *own_nodes(handler)]:
-            if isinstance(child, ast.Raise):
-                return False
-    return True
-
-
 def _guarding_tries(tree: ast.Module, table: Any) -> set[int]:
     """Node ids covered by a ``try`` this walk can prove catches everything.
 
@@ -157,7 +128,7 @@ def _guarding_tries(tree: ast.Module, table: Any) -> set[int]:
     for node in all_nodes(tree):
         if not isinstance(node, ast.Try | ast.TryStar):
             continue
-        if not _broad_and_total(node, table):
+        if not catches_everything(node, table):
             continue
         covered |= {id(child) for child in try_body_nodes(node)}
     return covered
@@ -232,22 +203,6 @@ EXPECTED_OTHER_LOADS = {
 #: row here with no site fails too, because a give-up nobody needs is a
 #: give-up nobody re-examines.
 UNGUARDED_LEDGER = {
-    "_file_inbox_item": (
-        "narrower on purpose, and pinned that way by another guard. "
-        "`tests/test_inbox_write_guards.py` requires this handler to name "
-        "`ControlStateError` by ORIGIN and `TypeError` by name, because "
-        "`Inbox._append` takes the control lock and `int()` on a TOML date "
-        "is not a ValueError; `except Exception` was tried here and makes "
-        "both names disappear, so that guard fires. It catches strictly "
-        "more, and the enumeration is complete over what was MEASURED to "
-        "escape `InboxConfig.load`: a ConfigError, a plain ValueError and a "
-        "TypeError. A deeply nested array does not escape as a "
-        "RecursionError, because `config.load_toml_document` normalises "
-        "every parser fault to ConfigError first. Reconciling the two "
-        "guards' rules - one wants the whole surface, the other wants the "
-        "names - is a decision for the owner, not a side effect of this "
-        "change."
-    ),
     "serve": (
         "daemon entry. `serve` is not in `_PREFLIGHT_EXEMPT`, so a malformed "
         "document is refused at command entry with exit 2 before this runs, "
@@ -255,19 +210,6 @@ UNGUARDED_LEDGER = {
         "[serve]. Measured on this branch and at origin/main 037f0e1: a "
         "[serve] section made malformed AFTER daemon start does not reach a "
         "load, and the cycle completes."
-    ),
-    "serve_cycle": (
-        "`ServeConfig` here is reached only when `serve_cycle` is called "
-        "directly, which is a command entry and preflighted, because "
-        "`serve` passes its own down. `QueueConfig` IS re-read every poll, "
-        "and it is the frame a malformed [queue] section - or a document "
-        "that is not TOML at all - dies in: measured through a real "
-        "serve(once=True) at origin/main 037f0e1 and on this branch, "
-        "identically at both, so it is a pre-existing hole recorded here "
-        "rather than one this change introduces. Not fixed with the others "
-        "because a cycle that cannot read the queue config has no queue to "
-        "record a refusal in, so its failure mode is a decision about the "
-        "cycle rather than about the merge gate."
     ),
 }
 
@@ -479,6 +421,50 @@ def _stub_run(**kwargs: object) -> RunOutcome:
     return RunOutcome(0)
 
 
+def _serve_with_edit(
+    tmp_path: Path, document: str, *, cycles: int | None = None
+) -> tuple[list[Any], Queue]:
+    """Rewrite ``kstrl.toml`` between ``serve``'s own load and the first poll.
+
+    The seam both ``TestAMalformedSectionDoesNotStopTheDaemon`` and
+    ``TestAnUnreadableQueueConfigRefusesTheCycle`` need, so it is written
+    once rather than twice (#364 simplify pass): ``cycles=None`` runs
+    ``serve(..., once=True)`` for the single-cycle scenarios,
+    ``cycles=N`` runs a bounded ``max_cycles=N`` loop with a no-op
+    sleeper so "the daemon survives" is observable without a real sleep.
+    Returns every cycle's result alongside the queue; a once-caller reads
+    ``results[0]``.
+    """
+    toml = tmp_path / "kstrl.toml"
+    toml.write_text(CLEAN_TOML, encoding="utf-8")
+    queue = Queue(tmp_path, QueueConfig())
+    queue.add("# Spec\n\nDo the thing.\n", merge_disposition=MergeDisposition.STOP_AT_PR)
+
+    from kstrl import serve as serve_module
+
+    real = serve_module._load_pr_count_streak
+
+    def edit_then_load(root_dir: Path, observer: Any) -> Any:
+        toml.write_text(document, encoding="utf-8")
+        return real(root_dir, observer)
+
+    with patch("kstrl.serve._load_pr_count_streak", edit_then_load):
+        with patch(
+            "kstrl.serve.count_open_kstrl_prs",
+            lambda cwd, limit=100: OpenPrCount(count=0, saturated=False),
+        ):
+            if cycles is None:
+                results = serve(tmp_path, runner=_stub_run, once=True)
+            else:
+                results = serve(
+                    tmp_path,
+                    runner=_stub_run,
+                    max_cycles=cycles,
+                    sleeper=lambda _seconds: None,
+                )
+    return results, queue
+
+
 class TestAMalformedSectionDoesNotStopTheDaemon:
     """The reachable case is an operator editing kstrl.toml mid-run.
 
@@ -495,34 +481,12 @@ class TestAMalformedSectionDoesNotStopTheDaemon:
     guarded ``[factory]`` read that would otherwise absorb the fault.
     """
 
-    @staticmethod
-    def _run(tmp_path: Path, document: str) -> tuple[object, Queue]:
-        toml = tmp_path / "kstrl.toml"
-        toml.write_text(CLEAN_TOML, encoding="utf-8")
-        queue = Queue(tmp_path, QueueConfig())
-        queue.add("# Spec\n\nDo the thing.\n", merge_disposition=MergeDisposition.STOP_AT_PR)
-
-        from kstrl import serve as serve_module
-
-        real = serve_module._load_pr_count_streak
-
-        def edit_then_load(root_dir: Path, observer: Any) -> Any:
-            toml.write_text(document, encoding="utf-8")
-            return real(root_dir, observer)
-
-        with patch("kstrl.serve._load_pr_count_streak", edit_then_load):
-            with patch(
-                "kstrl.serve.count_open_kstrl_prs",
-                lambda cwd, limit=100: OpenPrCount(count=0, saturated=False),
-            ):
-                results = serve(tmp_path, runner=_stub_run, once=True)
-        return results[0], queue
-
     @pytest.mark.parametrize("document,section", MALFORMED_SECTIONS)
     def test_the_cycle_completes_and_the_item_waits(
         self, tmp_path: Path, document: str, section: str
     ) -> None:
-        result, queue = self._run(tmp_path, document)
+        results, queue = _serve_with_edit(tmp_path, document)
+        result = results[0]
         assert section in result.skipped, (
             "the cycle's own message must name the section an operator has "
             f"to fix. Got: {result.skipped!r}"
@@ -537,9 +501,111 @@ class TestAMalformedSectionDoesNotStopTheDaemon:
 
     def test_a_clean_document_still_runs_the_item(self, tmp_path: Path) -> None:
         """The control: the seam itself does not stop anything."""
-        result, queue = self._run(tmp_path, CLEAN_TOML)
+        results, queue = _serve_with_edit(tmp_path, CLEAN_TOML)
+        result = results[0]
         assert result.ran_item != ""
         assert result.skipped == ""
+
+
+# --------------------------------------------------------------------------
+# [queue] is the one poll-path read #361 left unguarded (#364)
+# --------------------------------------------------------------------------
+
+#: The document that mis-casts ``[queue] max_attempts`` to a plain
+#: ``ValueError``. Named once because three scenarios below reuse it.
+QUEUE_INT_CAST_DOCUMENT = CLEAN_TOML + '[queue]\nmax_attempts = "two"\n'
+
+#: A document that is not TOML at all, imported rather than restated
+#: (#364 simplify pass): the real fixture the loader tests already
+#: enrol, so a fault this module asserts about is the same one measured
+#: at ``tests/test_config_toml.py`` rather than an inline lookalike.
+NOT_TOML_AT_ALL = MALFORMED_TOML.decode()
+
+#: Documents that break the cycle's OWN config reads, which happen before
+#: the queue object exists. Kept apart from MALFORMED_SECTIONS because
+#: `resolve_merge_gate` never sees these: nothing is claimed, so there is
+#: no MergeGate for TestTheRefusingGateIsFailClosed to assert about.
+#:
+#: Four faults, three exception types, measured rather than assumed at
+#: cb3b88d: a plain ValueError from int() on a quoted number, QueueError
+#: (a RuntimeError, which no (OSError, ValueError) enumeration catches)
+#: from __post_init__, TypeError from int() on a TOML date, and a
+#: document that is not TOML at all, which arrives as ConfigError - a
+#: ValueError subclass, not a fourth type.
+CYCLE_CONFIG_DOCUMENTS = [
+    pytest.param(
+        QUEUE_INT_CAST_DOCUMENT,
+        id="queue-int-cast-valueerror",
+    ),
+    pytest.param(
+        CLEAN_TOML + "[queue]\nmax_attempts = 0\n",
+        id="queue-post-init-queueerror",
+    ),
+    pytest.param(
+        CLEAN_TOML + "[queue]\nmax_attempts = 1979-05-27\n",
+        id="queue-toml-date-typeerror",
+    ),
+    pytest.param(NOT_TOML_AT_ALL, id="not-toml-at-all"),
+]
+
+
+class TestAnUnreadableQueueConfigRefusesTheCycle:
+    """#364: the daemon refuses and waits; it does not exit.
+
+    ``serve`` passes its own ``ServeConfig`` down, so the read that a
+    mid-run edit reaches is ``QueueConfig.load``, and the refusal names
+    ``[queue]`` even for a document that is not TOML at all. Before this
+    change every document below took ``serve()`` down with the exception
+    in the traceback, and under launchd the relaunch died on the same key.
+    """
+
+    @pytest.mark.parametrize("document", CYCLE_CONFIG_DOCUMENTS)
+    def test_the_cycle_refuses_and_the_item_waits(self, tmp_path: Path, document: str) -> None:
+        results, queue = _serve_with_edit(tmp_path, document)
+        result = results[0]
+        assert "[queue]" in result.skipped, (
+            "the cycle's own message is the refusal's only home here: no "
+            f"item was claimed, so there is nothing else to record it on. Got: {result.skipped!r}"
+        )
+        assert result.ran_item == ""
+        assert not result.needs_human, (
+            "an operator typo clears when the file is fixed, so this is a "
+            "wait rather than a decision for a human"
+        )
+        states = [item.state for item in queue.items()]
+        assert states == [ItemState.QUEUED], f"the item must wait, not move. Got: {states}"
+
+    def test_the_daemon_survives_to_the_next_poll(self, tmp_path: Path) -> None:
+        """Two bounded cycles, both refusing, both returning."""
+        results, _queue = _serve_with_edit(tmp_path, QUEUE_INT_CAST_DOCUMENT, cycles=2)
+        assert len(results) == 2
+        assert all("[queue]" in result.skipped for result in results), [
+            result.skipped for result in results
+        ]
+
+    def test_a_direct_cycle_names_the_serve_section(self, tmp_path: Path) -> None:
+        """Called without a config, the [serve] read is the one that fails."""
+        (tmp_path / "kstrl.toml").write_text(NOT_TOML_AT_ALL, encoding="utf-8")
+        result = serve_cycle(tmp_path, runner=_stub_run)
+        assert "[serve]" in result.skipped, result.skipped
+        assert result.ran_item == ""
+
+    def test_the_refusal_is_narrated_through_the_observer(self, tmp_path: Path) -> None:
+        """The log line is the refusal's home, so it is asserted, not assumed."""
+        (tmp_path / "kstrl.toml").write_text(QUEUE_INT_CAST_DOCUMENT, encoding="utf-8")
+        obs = _NullObserver()
+        result = serve_cycle(tmp_path, config=ServeConfig(), observer=obs, runner=_stub_run)
+        assert "[queue]" in result.skipped
+        assert result.skipped == (
+            "[queue] cannot be read, so this poll is refused: invalid literal "
+            "for int() with base 10: 'two'. The poll retries after the next "
+            "interval; fix the section."
+        ), (
+            "the exact shape of _unreadable_section_reason's message (#364 "
+            "simplify pass) had no pin at this site until now"
+        )
+        spoken = [line for line in obs.lines if line.startswith("err:") and "[queue]" in line]
+        assert spoken != [], obs.lines
 
 
 class TestTheRefusingGateIsFailClosed:
@@ -582,3 +648,19 @@ class TestTheRefusingGateIsFailClosed:
         gate = self._gate(tmp_path, CLEAN_TOML)
         assert gate.unreadable_section == ""
         assert gate.refusal == ""
+
+    def test_the_exact_text_survives_the_shared_function_unchanged(self, tmp_path: Path) -> None:
+        """#364 simplify pass: `_unreadable_section_reason` is now what builds
+        this text, and the #361 tests above only check ``section in
+        gate.refusal``. This is the one exact pin, and it is the scenario
+        that matters for it: `pause_before_pr_merge = "false"` is a strict-bool
+        cast whose own message ends in a full stop, which is exactly what
+        ``str(exc).rstrip(".")`` exists to not double up on."""
+        gate = self._gate(tmp_path, CLEAN_TOML + '[factory]\npause_before_pr_merge = "false"\n')
+        assert gate.refusal == (
+            "[factory] cannot be read, so this item's merge gate cannot be "
+            "resolved: pause_before_pr_merge must be a boolean, written "
+            "unquoted as true or false. Got 'false', which TOML reads as "
+            "str. The item waits; fix the section and the next poll picks "
+            "it up."
+        )

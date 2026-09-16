@@ -29,6 +29,7 @@ from click.testing import CliRunner
 from kstrl.cli import cli
 from kstrl.init_cmd import run_init
 from kstrl.ui.plain import PlainUI
+from tests.helpers import gitrepo
 from tests.spine_utils import git
 
 pytestmark = pytest.mark.spine
@@ -54,8 +55,7 @@ def _initialised_project(tmp_path: Path) -> Path:
     root = tmp_path / "project"
     root.mkdir(parents=True)
     git("init", "-q", "-b", "main", cwd=root)
-    git("config", "user.email", "e2e@test", cwd=root)
-    git("config", "user.name", "E2E Test", cwd=root)
+    gitrepo.set_identity(root)
     (root / "README.md").write_text("seed\n", encoding="utf-8")
     git("add", "README.md", cwd=root)
     git("commit", "-q", "-m", "seed", cwd=root)
