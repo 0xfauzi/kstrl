@@ -1418,10 +1418,14 @@ milestone): [#199](https://github.com/0xfauzi/kstrl/issues/199) feeds
 `codebase_map.md` + extracted interfaces into the architect prompt (the
 planner is currently the context-starved side of the pipeline; H2/H3
 apply since `DECOMPOSE_PROMPT` changes);
-[#200](https://github.com/0xfauzi/kstrl/issues/200) is the
-research-first verdict on language-pluggable interface extraction
-(ctags/tree-sitter as edge integrations per doctrine 1, demand check
-before any build).
+[#200](https://github.com/0xfauzi/kstrl/issues/200) closed DEFERRED on
+2026-09-16: non-Python source is in the intake (deckgen carries 29,289
+lines of TypeScript), but `extract_public_interfaces` returns the empty
+string on that repo's 234,535 lines of Python and zero `kstrl/` files
+on this one, so the binding defect is source-root and file-budget
+selection, not language coverage; integrate `universal-ctags` if it is
+ever built. The reasoning against all four criteria is in the verdict
+comment on that issue.
 
 **Failure modes.** A green doctor is repo-readiness, not spec-readiness
 (it cannot tell you a task is too cross-cutting for the component
