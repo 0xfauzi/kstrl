@@ -16,15 +16,16 @@
 # Usage:
 #   scripts/dark_wake_caffeinate_experiment.sh [seconds] [flag]
 #
-# Defaults: 1800 seconds under -i. Run it twice, once with -i and once
-# with -s, and write both answers into docs/continuous-intake.md section
-# 7. Run it on BATTERY with the lid shut: on AC with the lid open there
-# is no dark wake to measure. 1800s because the SleepService dark wakes
-# on this machine on 2026-09-15 came 17, 28, 18 and 17 minutes apart
-# (`pmset -g log | grep rtc/SleepService`), so a shorter window can end
-# before one lands and report VOID.
+# Defaults: 1800 seconds under -i. Run it twice: the -i leg on BATTERY
+# with the lid shut, the -s leg on AC with the lid shut (man caffeinate:
+# "-s ... is valid only when system is running on AC power", so on
+# battery -s is not a remedy at all - this script refuses that leg
+# rather than reporting a result that measures nothing). Write both
+# answers into docs/continuous-intake.md section 7. 1800s because the
+# SleepService dark wakes on this machine on 2026-09-15 came 17, 28, 18
+# and 17 minutes apart (`pmset -g log | grep rtc/SleepService`), so a
+# shorter window can end before one lands and report VOID.
 set -euo pipefail
-cd "$(dirname "$0")/.."
 
 HOLD="${1:-1800}"
 FLAG="${2:--i}"
@@ -41,6 +42,7 @@ read -r -p "press return to start " _ || true
 
 START_EPOCH="$(date +%s)"
 START_ISO="$(date -r "${START_EPOCH}" '+%Y-%m-%d %H:%M:%S')"
+SECONDS=0
 caffeinate "${FLAG}" /bin/sleep "${HOLD}" &
 CHILD="$!"
 # Kill only the child this script started, and only if it outlives the
@@ -62,54 +64,54 @@ echo "every sleep assertion held right now, this run's helper included:"
 pmset -g assertions | grep -E "PreventUserIdleSystemSleep|PreventSystemSleep" |
   grep -v "^ *Prevent" || true
 
+if [ "${FLAG}" = "-s" ] && pmset -g batt | head -1 | grep -q "Battery Power"; then
+  echo "VOID: caffeinate -s is valid only on AC power (man caffeinate); run"
+  echo "the -s leg on AC with the lid shut."
+  exit 1
+fi
+
 wait "${CHILD}" || true
 trap - EXIT
 END_EPOCH="$(date +%s)"
 END_ISO="$(date -r "${END_EPOCH}" '+%Y-%m-%d %H:%M:%S')"
-WALL=$(( END_EPOCH - START_EPOCH ))
+WALL="${SECONDS}"
 
-# The window is start-to-child-exit, and the assertion lives exactly as
-# long as the child, so every line inside the window happened while the
-# assertion was held. That is the whole point of reading it this way.
+# The window is start-to-child-exit, and the assertion lives as long as
+# the child, so every line inside the window happened while the
+# assertion was held.
 WINDOW="$(pmset -g log | awk -v s="${START_ISO}" -v e="${END_ISO}" '($1" "$2) >= s && ($1" "$2) <= e')"
-DARK="$(printf '%s\n' "${WINDOW}" | grep -E ' DarkWake +' | grep 'SleepService' || true)"
-BACK="$(printf '%s\n' "${WINDOW}" | grep 'Sleep Service Back to Sleep' || true)"
-SLEEPS="$(printf '%s\n' "${WINDOW}" | grep -E ' Sleep +' || true)"
-DARK_N="$(printf '%s\n' "${DARK}" | grep -c . || true)"
-BACK_N="$(printf '%s\n' "${BACK}" | grep -c . || true)"
-SLEEP_N="$(printf '%s\n' "${SLEEPS}" | grep -c . || true)"
+count() { printf '%s\n' "$1" | grep -c . || true; }
+DARK="$(printf '%s\n' "${WINDOW}" | awk '$4=="DarkWake"' || true)"
+SLEEPS="$(printf '%s\n' "${WINDOW}" | awk '$4=="Sleep"' || true)"
+BACK="$(printf '%s\n' "${SLEEPS}" | grep -E "Sleep Service Back to Sleep|Maintenance Sleep" || true)"
+DARK_N="$(count "${DARK}")"
+SLEEP_N="$(count "${SLEEPS}")"
+BACK_N="$(count "${BACK}")"
 
 echo
 echo "end:       ${END_ISO}"
 echo "wall:      ${WALL}s against a ${HOLD}s child"
 echo "sleeps:    ${SLEEP_N}"
-echo "dark wakes on a SleepService timer: ${DARK_N}"
-echo "returns to sleep while the assertion was held: ${BACK_N}"
+echo "dark wakes: ${DARK_N}"
 [ -n "${SLEEPS}" ] && printf '%s\n' "${SLEEPS}"
 [ -n "${DARK}" ] && printf '%s\n' "${DARK}"
-[ -n "${BACK}" ] && printf '%s\n' "${BACK}"
 
 echo
 if [ "${BACK_N}" -gt 0 ]; then
-  echo "branch B: ${FLAG} did NOT hold. The machine entered 'Sleep Service Back"
-  echo "to Sleep' ${BACK_N} time(s) while the assertion was held, so a factory"
-  echo "run started inside a dark wake would have been suspended."
-  echo "Next: run this again with -s. If -s gives branch A, switch"
-  echo "caffeinate_prefix in kstrl/serve.py to -s and accept that the machine"
-  echo "stays awake for the length of a run. If -s also gives branch B,"
-  echo "interval mode is not safe unattended on a laptop and section 5 must"
-  echo "say so."
+  echo "branch B: ${FLAG} did NOT hold. The machine entered a SleepService or"
+  echo "Maintenance return to sleep ${BACK_N} time(s) while the assertion was"
+  echo "held, so a factory run started inside a dark wake would have been"
+  echo "suspended."
 elif [ "${DARK_N}" -gt 0 ]; then
-  echo "branch A: ${FLAG} HELD. ${DARK_N} dark wake(s) on a SleepService timer"
-  echo "and no return to sleep while the assertion was held, so a run started"
-  echo "inside a dark wake finishes. Document it and change nothing."
+  echo "branch A: ${FLAG} HELD. ${DARK_N} dark wake(s) and no return to sleep"
+  echo "while the assertion was held, so a run started inside a dark wake"
+  echo "finishes."
 elif [ "${SLEEP_N}" -gt 0 ]; then
-  echo "VOID for this question: the machine slept ${SLEEP_N} time(s) but no dark"
-  echo "wake on a SleepService timer landed inside the window, so the"
-  echo "transition being asked about never came up. Run it longer, on battery."
+  echo "VOID for this question: the machine slept ${SLEEP_N} time(s) but no"
+  echo "dark wake landed inside the window, so the transition being asked"
+  echo "about never came up. Run it longer, on battery."
 else
   echo "VOID: no suspend inside the window. Nothing was measured."
 fi
 echo
-echo "Write the branch and the lines above into docs/continuous-intake.md"
-echo "section 7, and delete the NOT-verified bullet for #203."
+echo "docs/continuous-intake.md section 7 says what each pair of results decides."

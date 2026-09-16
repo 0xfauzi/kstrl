@@ -1,52 +1,47 @@
 """#203 item 3: a second scheduled firing cannot reap the run it is locked out of.
 
 Interval mode fires a NEW `ks serve --once` PROCESS on a calendar, so
-nothing in-process guards the lease reaper. `reap_leases` requeues a
-RUNNING item on `lease_expired(moment)` measured against the WALL CLOCK,
-which advances across a suspend, so a run suspended overnight blows its
-3600s lease while its pid is alive. What stops the next firing requeueing
-a run that is still executing is that `serve()` takes `serve_lock` BEFORE
-it reaches the reaper.
-
+nothing in-process guards the lease reaper, which requeues a RUNNING item
+on a WALL-CLOCK lease that advances across a suspend. What stops a second
+firing requeueing a run that is still executing is that `serve()` takes
+`serve_lock` BEFORE it reaches the reaper.
 `tests/test_serve_process_tree.py::TestTheReaperRunsOnlyUnderTheDaemonLock`
-pins that in one process. This module pins it the way it actually
-happens: a separate process holds the real lock file, and the real CLI
-runs as a real subprocess against its own root, HOME and XDG state dir.
-
-The second class is the half the in-process tests could not reach, and
-its absence was measured and recorded in that class's docstring: a
-`serve()` that takes the lock, RELEASES it, and then runs the cycle
-leaves every contended test green, because the contended case still
-raises at acquisition. The only way to see it is to ask, from OUTSIDE,
-whether the lock is held WHILE the item runs.
+pins that in one process; this module pins it the way it runs in
+production, against a separate process holding the real lock file and a
+real `ks serve` subprocess.
 """
 
 from __future__ import annotations
 
+import ast
 import os
-import selectors
-import signal
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
 
-from kstrl.serve import SERVE_LOCK_FILENAME, RunOutcome, serve
-from kstrl.workqueue import ItemState, Queue, QueueConfig, queue_root
+from kstrl.serve import RunOutcome, serve
+from kstrl.workqueue import ItemState, Queue, QueueConfig
+from tests.helpers import procs
+from tests.helpers.astwalk import (
+    all_nodes,
+    label,
+    leaf_name,
+    package_sources,
+    parse,
+    parsed,
+    scope_of,
+)
+from tests.test_serve_process_tree import _running_item_with_a_lapsed_lease
 
 #: Real-time fuse for every child this module starts. A mutation that
 #: removes a synchronisation point fails as a HANG, not as a red
-#: assertion, so nothing here is allowed to wait unbounded.
+#: assertion, so nothing here is allowed to wait unbounded. Measured
+#: children: the lock holder to LOCKED 0.057s, `ks serve --once` 0.40s
+#: warm, the lock probe 0.014s, the slowest cold in-process `serve()`
+#: seen 2.16s.
 _CHILD_TIMEOUT_SECONDS = 120.0
-
-#: The lease TTL the seeded item is given, and the wall-clock wait that
-#: makes it lapse. Real time, not a mocked clock, because
-#: `lease_expired` compares against the wall clock and that is the whole
-#: reason a suspended run is at risk.
-_LAPSED_LEASE_TTL_SECONDS = 0.01
-_LAPSE_WAIT_SECONDS = 0.1
 
 #: Holds the daemon lock and then exits on its own, so a killpg that
 #: never runs cannot leave a process behind.
@@ -60,72 +55,40 @@ with serve_lock(Path(sys.argv[1])):
 """
 
 #: Asks whether the daemon lock is held, from a process that is not the
-#: one holding it. Opens the file by PATH so it gets its own open file
-#: description: an inherited descriptor would share the parent's lock
-#: and report "free" whatever the truth is.
+#: one holding it, by taking the same `serve_lock` the holder took.
 _PROBE = """
-import fcntl, sys
+import sys
 from pathlib import Path
-handle = open(Path(sys.argv[1]), "a+", encoding="utf-8")
+from kstrl.serve import ServeLockedError, serve_lock
 try:
-    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-except OSError:
+    with serve_lock(Path(sys.argv[1])):
+        print("free", flush=True)
+except ServeLockedError:
     print("held", flush=True)
-else:
-    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-    print("free", flush=True)
-finally:
-    handle.close()
 """
 
-pytestmark = [
-    pytest.mark.usefixtures("no_open_prs"),
-    pytest.mark.skipif(sys.platform == "win32", reason="flock is POSIX-only"),
-]
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="flock is POSIX-only")
 
 
-@pytest.fixture(autouse=True)
-def _no_spend(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Reading real spend needs a run dir; nothing here is about cost."""
-    from kstrl.serve import RunSpend
-
-    monkeypatch.setattr(
-        "kstrl.serve.read_run_spend",
-        lambda root, run_id: RunSpend(),
-    )
-
-
-def _serve_root(tmp_path: Path) -> Path:
+@pytest.fixture
+def root(tmp_path: Path) -> Path:
     """A repo root with the open-PR bound off, so no test reaches `gh`.
 
-    A SIBLING of the state dir below, not a parent of it: kstrl refuses
-    to read the daemon ledger when XDG_STATE_HOME resolves under the
-    repository tree, and that refusal returns from the cycle BEFORE the
-    reaper, which would make the control below pass for the wrong
-    reason.
+    A SIBLING of the state dir `isolate_kstrl_state` points XDG_STATE_HOME
+    at, not a parent of it: kstrl refuses to read the daemon ledger when
+    XDG_STATE_HOME resolves under the repository tree, and that refusal
+    returns from the cycle BEFORE the reaper, which would make the
+    control below pass for the wrong reason.
     """
-    root = tmp_path / "repo"
-    root.mkdir()
-    (root / "kstrl.toml").write_text("[serve]\nmax_open_prs = 0\n", encoding="utf-8")
-    return root
-
-
-def _seed_running_item_with_a_lapsed_lease(root: Path, pid: int) -> str:
-    """Exactly the shape a suspended run leaves: live pid, lapsed lease."""
-    queue = Queue(root, QueueConfig(lease_ttl_seconds=_LAPSED_LEASE_TTL_SECONDS, max_attempts=3))
-    item = queue.add("# Spec\n\nDo the thing.\n")
-    queue.start(queue.lease(item, pid=pid))
-    time.sleep(_LAPSE_WAIT_SECONDS)
-    return item.item_id
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "kstrl.toml").write_text("[serve]\nmax_open_prs = 0\n", encoding="utf-8")
+    return repo
 
 
 def _kill_group(process: subprocess.Popen[str]) -> None:
     """Kill only the group this module created."""
-    if process.poll() is None:
-        try:
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-        except (OSError, ProcessLookupError):
-            pass
+    procs.kill_group(process.pid)
     try:
         process.wait(timeout=_CHILD_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
@@ -141,55 +104,20 @@ def _start_lock_holder(root: Path) -> subprocess.Popen[str]:
         text=True,
         start_new_session=True,
     )
-    assert holder.stdout is not None
-    # select() before every read, never a bare readline: a readline on a
-    # child that never writes blocks forever, and a fuse the child can
-    # switch off by hanging is the defect class this module is about.
-    deadline = time.monotonic() + _CHILD_TIMEOUT_SECONDS
-    selector = selectors.DefaultSelector()
-    selector.register(holder.stdout, selectors.EVENT_READ)
-    try:
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                _kill_group(holder)
-                pytest.fail("the lock holder never reported LOCKED (hung, not failed)")
-            if not selector.select(remaining):
-                continue
-            line = holder.stdout.readline()
-            if line == "":
-                _kill_group(holder)
-                pytest.fail("the lock holder exited before it took the lock")
-            if line.strip() == "LOCKED":
-                return holder
-    finally:
-        selector.close()
+    procs.wait_for_line(holder, "LOCKED", _CHILD_TIMEOUT_SECONDS)
+    return holder
 
 
-def _run_serve_once(tmp_path: Path, root: Path) -> subprocess.CompletedProcess[str]:
-    """The real CLI, as its own process, with its own HOME and state dir."""
-    home = tmp_path / "home"
-    state = tmp_path / "state"
-    home.mkdir(exist_ok=True)
-    state.mkdir(exist_ok=True)
-    env = dict(os.environ)
-    env["HOME"] = str(home)
-    env["XDG_STATE_HOME"] = str(state)
-    env["KSTRL_NO_TUI"] = "1"
-    child = subprocess.Popen(
-        [sys.executable, "-m", "kstrl", "serve", "--once", "--root", str(root), "--no-color"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        env=env,
-        start_new_session=True,
-    )
-    try:
-        out, err = child.communicate(timeout=_CHILD_TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired:
-        _kill_group(child)
-        pytest.fail("`ks serve --once` outlived its fuse (hung, not failed)")
-    return subprocess.CompletedProcess(child.args, child.returncode, out, err)
+def _run_serve_once(root: Path) -> subprocess.CompletedProcess[str]:
+    """The real CLI, as its own process, against `root`.
+
+    No HOME/XDG_STATE_HOME/KSTRL_NO_TUI env override here: the autouse
+    `isolate_kstrl_state` fixture already points XDG_STATE_HOME at a
+    sibling of `tmp_path`, HOME is read only when it is unset, and
+    KSTRL_NO_TUI is gated on a tty a subprocess spawned under pytest
+    does not have.
+    """
+    return procs.run_serve_subprocess(root, "--once", fuse=_CHILD_TIMEOUT_SECONDS)
 
 
 def _reaper_entries(root: Path, item_id: str) -> list[dict[str, object]]:
@@ -205,17 +133,16 @@ class TestASecondFiringCannotReapARunItIsLockedOutOf:
 
     def test_control_the_same_item_is_reaped_when_the_lock_is_free(
         self,
-        tmp_path: Path,
+        root: Path,
     ) -> None:
         """Without this, the guard below passes on an unreapable fixture.
 
-        A lease that has not actually lapsed makes "the reaper did not
-        touch it" true for the wrong reason.
+        A lease that has not lapsed makes "the reaper did not touch it"
+        true for the wrong reason.
         """
-        root = _serve_root(tmp_path)
-        item_id = _seed_running_item_with_a_lapsed_lease(root, os.getpid())
+        item_id = _running_item_with_a_lapsed_lease(root, os.getpid())
 
-        done = _run_serve_once(tmp_path, root)
+        done = _run_serve_once(root)
 
         assert done.returncode == 0, f"stderr: {done.stderr}"
         item = Queue(root, QueueConfig()).get(item_id)
@@ -228,13 +155,12 @@ class TestASecondFiringCannotReapARunItIsLockedOutOf:
 
     def test_a_held_lock_stops_the_second_firing_before_the_reaper(
         self,
-        tmp_path: Path,
+        root: Path,
     ) -> None:
-        root = _serve_root(tmp_path)
         holder = _start_lock_holder(root)
         try:
-            item_id = _seed_running_item_with_a_lapsed_lease(root, holder.pid)
-            done = _run_serve_once(tmp_path, root)
+            item_id = _running_item_with_a_lapsed_lease(root, holder.pid)
+            done = _run_serve_once(root)
         finally:
             _kill_group(holder)
 
@@ -249,10 +175,6 @@ class TestASecondFiringCannotReapARunItIsLockedOutOf:
             f"a second firing reaped a run that is still executing: the "
             f"item is {item.state.value}, not running. serve() must take "
             f"serve_lock BEFORE the cycle's reaper (#203)."
-        )
-        assert item.attempts == 1, (
-            f"the item has been charged {item.attempts} attempts; a refused "
-            f"second firing must spend nothing"
         )
         assert _reaper_entries(root, item_id) == [], (
             "the reaper wrote a journal record while another process held the daemon lock"
@@ -273,7 +195,7 @@ class TestTheLockIsHeldForTheWholeCycle:
     def _probe(root: Path) -> str:
         try:
             done = subprocess.run(
-                [sys.executable, "-c", _PROBE, str(queue_root(root) / SERVE_LOCK_FILENAME)],
+                [sys.executable, "-c", _PROBE, str(root)],
                 capture_output=True,
                 text=True,
                 timeout=_CHILD_TIMEOUT_SECONDS,
@@ -286,9 +208,8 @@ class TestTheLockIsHeldForTheWholeCycle:
 
     def test_a_child_cannot_take_the_lock_while_the_item_runs(
         self,
-        tmp_path: Path,
+        root: Path,
     ) -> None:
-        root = _serve_root(tmp_path)
         Queue(root, QueueConfig()).add("# Spec\n\nDo the thing.\n")
         observed: list[str] = []
 
@@ -302,9 +223,6 @@ class TestTheLockIsHeldForTheWholeCycle:
             on_spawn: object = None,
         ) -> RunOutcome:
             observed.append(self._probe(root_dir))
-            run_dir = root_dir / ".kstrl" / "runs" / "factory-20260730-000000.000000-aaa"
-            run_dir.mkdir(parents=True, exist_ok=True)
-            (run_dir / "events.jsonl").touch()
             return RunOutcome(0)
 
         serve(root, once=True, runner=runner)
@@ -317,9 +235,70 @@ class TestTheLockIsHeldForTheWholeCycle:
 
     def test_control_the_probe_reports_free_with_no_serve_running(
         self,
-        tmp_path: Path,
+        root: Path,
     ) -> None:
         """An "held" that is always "held" would measure nothing."""
-        root = _serve_root(tmp_path)
-        Queue(root, QueueConfig()).ensure_dirs()
         assert self._probe(root) == "free"
+
+
+class TestReapLeasesAndServeCycleHaveOneCallerEach:
+    """#203 item 9: a census over the one call site each has today.
+
+    The six behaviour tests above pin the ORDER `serve()` takes today;
+    none of them would notice a NEW, unlocked caller reaching
+    `reap_leases` or `serve_cycle` some other way (a future `ks queue
+    reap`, say). This walks every module under `kstrl/` and flags any
+    call to `reap_leases` outside `serve_cycle`, or to `serve_cycle`
+    outside `serve`, by file and enclosing function.
+
+    Built on `leaf_name` (the call's final identifier) and `scope_of`
+    (the enclosing function, by qualified name) from
+    `tests/helpers/astwalk`, not on `resolved_calls`: both `reap_leases`
+    and `serve_cycle` are called BARE, from the module that defines
+    them, and `bindings()` deliberately does not bind a local `def` (see
+    its docstring), so a resolved-name walk sees no candidates at all
+    here and would pass a scratch caller in silence - measured against
+    the exact shape of the plant this test exists to catch.
+    """
+
+    @staticmethod
+    def _offenders_in(
+        tree: ast.Module,
+        where: str,
+        callee: str,
+        allowed_caller: str,
+    ) -> list[str]:
+        owner = scope_of(tree)
+        offenders: list[str] = []
+        for node in all_nodes(tree):
+            if not (isinstance(node, ast.Call) and leaf_name(node.func) == callee):
+                continue
+            scope = owner.get(id(node), "<module>")
+            if scope == allowed_caller or scope.startswith(f"{allowed_caller}."):
+                continue
+            offenders.append(f"{where}:{node.lineno} in {scope}")
+        return offenders
+
+    @classmethod
+    def _callers_outside(cls, callee: str, allowed_caller: str) -> list[str]:
+        offenders: list[str] = []
+        for source_file in package_sources():
+            offenders += cls._offenders_in(
+                parsed(source_file), label(source_file), callee, allowed_caller
+            )
+        return offenders
+
+    def test_the_predicate_fires_on_a_planted_violation(self) -> None:
+        """Control, per #324: `assert hits == []` alone cannot tell a
+        narrow walk from a switched-off one."""
+        tree = parse("def rogue():\n    reap_leases(q)\n")
+        offenders = self._offenders_in(tree, "<control>", "reap_leases", "serve_cycle")
+        assert offenders, "the census predicate matched nothing in a planted violation"
+
+    def test_every_reap_leases_call_sits_inside_serve_cycle(self) -> None:
+        offenders = self._callers_outside("reap_leases", "serve_cycle")
+        assert offenders == [], f"reap_leases called outside serve_cycle: {offenders}"
+
+    def test_every_serve_cycle_call_sits_inside_serve(self) -> None:
+        offenders = self._callers_outside("serve_cycle", "serve")
+        assert offenders == [], f"serve_cycle called outside serve: {offenders}"

@@ -35,8 +35,13 @@ from kstrl.factory import FactoryConfig, FactoryResult, run_factory
 from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
+from tests.helpers import procs
 
 COMPLETE_LINE = "echo '<promise>COMPLETE</promise>'"
+
+#: Bound for the lock-holder child's ready line. A mutation that removes
+#: its print fails as a hang, not a red assertion, without this.
+_LOCK_HOLDER_TIMEOUT_SECONDS = 10.0
 
 # Child process that takes the run-level flock and holds it until killed,
 # standing in for a live first factory invocation.
@@ -195,10 +200,9 @@ class _HeldLock:
             [sys.executable, "-c", _LOCK_HOLDER_SCRIPT, str(self.lock_path)],
             stdout=subprocess.PIPE,
             text=True,
+            start_new_session=True,
         )
-        assert self.proc.stdout is not None
-        line = self.proc.stdout.readline().strip()
-        assert line == "locked", f"lock-holder child failed: {line!r}"
+        procs.wait_for_line(self.proc, "locked", _LOCK_HOLDER_TIMEOUT_SECONDS)
         return self
 
     def __exit__(self, *exc: object) -> None:

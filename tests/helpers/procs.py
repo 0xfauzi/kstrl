@@ -29,6 +29,7 @@ boundary where the agent is a grandchild.
 from __future__ import annotations
 
 import os
+import select
 import shutil
 import signal
 import subprocess
@@ -63,6 +64,65 @@ def read_pid(pidfile: Path, timeout: float = 5.0) -> int:
             pass
         time.sleep(0.005)
     raise AssertionError(f"pid file never appeared: {pidfile}")
+
+
+def wait_for_line(proc: subprocess.Popen[str], expected: str, timeout: float) -> None:
+    """Read one ready-line from ``proc.stdout``, bounded, or fail loudly.
+
+    ``select.select`` before the read, never a bare ``readline``: a child
+    that never writes blocks a bare readline forever, and a fuse the
+    child can switch off by hanging is the defect class this exists to
+    close (#203's own module names it as the hang this module is about).
+    On any mismatch it kills the group ``proc`` leads
+    (``kill_group(proc.pid)``, which needs ``start_new_session=True`` at
+    spawn so the pgid is the pid) and fails naming HUNG (nothing arrived
+    within ``timeout``) versus EXITED (the pipe closed, or the wrong line
+    came) - a caller should never have to guess which from the message.
+    """
+    assert proc.stdout is not None
+    ready, _, _ = select.select([proc.stdout], [], [], timeout)
+    line = proc.stdout.readline() if ready else ""
+    if line.strip() == expected:
+        return
+    kill_group(proc.pid)
+    if not ready:
+        pytest.fail(f"never printed {expected!r} within {timeout}s (hung, not failed)")
+    if line == "":
+        pytest.fail(f"exited before printing {expected!r} (exited, not hung)")
+    pytest.fail(f"printed {line.strip()!r}, not {expected!r} (exited, not hung)")
+
+
+def run_serve_subprocess(
+    root: Path,
+    *args: str,
+    fuse: float,
+    merge_stderr: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    """The real `ks serve` CLI, as its own process, against ``root``.
+
+    ``start_new_session=True`` so ``kill_group(child.pid)`` reaches the
+    whole group on the timeout path, since ``subprocess``'s own timeout
+    kills only the interpreter it spawned. A mutation that makes the loop
+    never return fails loudly here rather than hanging the suite.
+    """
+    argv = [sys.executable, "-m", "kstrl", "serve", "--root", str(root), "--no-color", *args]
+    child = subprocess.Popen(
+        argv,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT if merge_stderr else subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        out, err = child.communicate(timeout=fuse)
+    except subprocess.TimeoutExpired:
+        kill_group(child.pid)
+        try:
+            child.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
+        pytest.fail(f"`ks serve` outlived its {fuse}s fuse (hung, not failed)")
+    return subprocess.CompletedProcess(child.args, child.returncode, out, err or "")
 
 
 #: A child that records its own pid and then does nothing until killed.

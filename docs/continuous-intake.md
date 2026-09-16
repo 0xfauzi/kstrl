@@ -430,7 +430,7 @@ clock**, which advances across a suspend - so a run suspended overnight
 blows its 3600s lease while its pid is very much alive.
 `tests/test_serve_process_tree.py::TestTheReaperRunsOnlyUnderTheDaemonLock`
 pins it in one process, and `tests/test_serve_lock_before_reaper.py` pins
-it the way interval mode actually runs it: a separate process holds the
+it the way interval mode runs it: a separate process holds the
 lock file and a real `ks serve --once` subprocess exits 2 with the lease
 untouched and no reaper row in the journal (#203 item 3). Before those
 existed, a `serve()` mutated to run its cycle before acquiring the lock
@@ -443,21 +443,10 @@ Measured 2026-09-16: under that mutation all 361 tests in the five serve
 suites pass and that one test is the only red in them.
 
 **What the assertion does against a DARK WAKE is not settled** (#203 items
-1 and 2). A dark wake ends on a SleepService timer rather than an idle
-timer, and interval mode can fire inside one: §7 has the observed case.
-One reading points at "`-i` does not hold", and it is an observation rather
-than the experiment. On 2026-09-15 this laptop entered
-`Sleep Service Back to Sleep` five times (20:21:43, 20:38:10, 21:06:17,
-21:24:10, 21:41:42), each about two seconds after a
-`DarkWake ... rtc/SleepService`, while a `caffeinate` process alive since
-2026-09-06 07:49:35 held `PreventUserIdleSystemSleep` throughout - the same
-assertion `caffeinate -i` takes. Read with `pmset -g log` and
-`pmset -g assertions`. Nothing about the flag changes on that: the holder
-was not started for this purpose, the machine was doing many other things,
-and `-s` was not tried.
-`scripts/dark_wake_caffeinate_experiment.sh` is the controlled version. It
-needs a real suspend, costs no LLM spend, and §7 says what each outcome
-decides.
+1 and 2). A dark wake ends on a SleepService or Maintenance timer, not an
+idle timer, and interval mode can fire inside one. §7 has the observation,
+the script, the two legs with their power conditions, and what each pair
+of outcomes decides.
 
 The recovery machinery exists for the case where the process really is
 gone - a crash, an OOM kill, a reboot - not for an ordinary lid close.
@@ -555,34 +544,39 @@ documentation.
   firing landed in a 2-second `DarkWake ... SleepService` window with the
   lid still shut, which is fine for an empty cycle at 0.08-0.12s and is not
   fine for a factory run at 10-20 minutes. A dark wake ends on a
-  **SleepService timer**, not an idle timer, and whether
+  **SleepService or Maintenance timer**, not an idle timer, and whether
   `PreventUserIdleSystemSleep` blocks that transition is unknown.
 
-  What IS observed, and why it is not an answer: on 2026-09-15 five
-  `Sleep Service Back to Sleep` transitions followed five
-  `DarkWake ... rtc/SleepService` entries by about two seconds each, while
-  a `caffeinate` process alive since 2026-09-06 held
-  `PreventUserIdleSystemSleep`. That points at branch B below. It was an
-  unrelated holder on a busy machine and `-s` was never tried, so it moves
-  no default.
+  A leaning, not a measurement, because the holder was not started for
+  this purpose, the machine was doing many other things, and `-s` was
+  never tried: on 2026-09-15 this laptop entered `Sleep Service Back to
+  Sleep` five times (20:21:43, 20:38:10, 21:06:17, 21:24:10, 21:41:42),
+  each about two seconds after a `DarkWake ... rtc/SleepService`, while a
+  `caffeinate` process alive since 2026-09-06 07:49:35 held
+  `PreventUserIdleSystemSleep` throughout, the same assertion `caffeinate
+  -i` takes. Read with `pmset -g log` and `pmset -g assertions`. That
+  leans towards branch B below, on an unrelated and uncontrolled holder.
 
   `scripts/dark_wake_caffeinate_experiment.sh` is the controlled run. It
-  costs no LLM spend - the child is `/bin/sleep` - and it needs the lid
-  shut on battery. Run it twice, `-i` then `-s`, on the default 1800s
-  window: the observed dark wakes came 17 to 28 minutes apart, so a shorter
-  window can end before one lands. It reads `pmset -g log` only between the
-  child starting and the child exiting, which is exactly the interval the
-  assertion was held, and reports VOID rather than a branch when no dark
-  wake landed inside it.
+  costs no LLM spend, the child is `/bin/sleep`. The `-i` leg runs on
+  BATTERY with the lid shut; the `-s` leg runs on AC with the lid shut,
+  because `man caffeinate` limits `-s` to AC power and the script refuses
+  that leg on battery rather than reporting a void result as a branch.
+  Run both on the default 1800s window: the observed dark wakes came 17
+  to 28 minutes apart, so a shorter window can end before one lands. It
+  reads `pmset -g log` only between the child starting and the child
+  exiting, the interval the assertion was held, and reports VOID rather
+  than a branch when no dark wake landed inside it.
 
   What each result decides: **branch A** (a dark wake in the window and no
   return to sleep) means a run started in a dark wake completes; document
-  it and change nothing. **branch B** (a return to sleep while the
-  assertion was held) under `-i` but branch A under `-s` means switching
-  `caffeinate_prefix` to `-s`, accepting that the machine stays awake for
-  the length of a run. Branch B under both means interval mode is not safe
-  unattended on a laptop and §5 must say so. Write the branch and
-  the `pmset` lines here either way, and delete this bullet.
+  it and change nothing. **branch B on battery under `-i`** decides
+  between the two remedies #203 names: document that a run can suspend
+  and resume across a dark wake (open dependency on #204: whether the run
+  timeout counts suspended seconds), or require AC for unattended interval
+  mode. If `-s` on AC also gives branch B, interval mode is not safe
+  unattended at all and §5 must say so. Write the branch and the `pmset`
+  lines here either way, and delete this bullet.
 - **Automated coverage of a real factory run.** Still true, and still
   deliberate: a suite that spawned real runs would cost dollars per
   assertion, so no test runs a factory. The end-to-end path above is
