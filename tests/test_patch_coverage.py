@@ -353,6 +353,22 @@ def test_added_line_numbers_is_context_size_agnostic() -> None:
     assert "evil.py" not in result
     assert "evil2.py" not in result
 
+    removals = (
+        "diff --git a/mod.py b/mod.py\n"
+        "--- a/mod.py\n"
+        "+++ b/mod.py\n"
+        "@@ -1,5 +1,5 @@\n"
+        " def a():\n"
+        "-    x = 1\n"
+        "-    y = 2\n"
+        "+    x = 10\n"
+        "+    y = 20\n"
+        " # tail\n"
+    )
+    # a `-` line is old-side only, so it must not advance the new-side
+    # counter; with it advancing this reads {4, 5}.
+    assert added_line_numbers(removals) == {"mod.py": {2, 3}}
+
 
 def test_a_hanging_coverage_run_is_a_timed_out_sidecar(tmp_path: Path) -> None:
     _repo(tmp_path)
