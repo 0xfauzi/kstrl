@@ -4863,10 +4863,14 @@ def _load_history_or_exit(
     try:
         config = EvolutionConfig.load(root_dir)
         return load_runs(experiments or config.experiments_path), config
-    except (OSError, ValueError) as exc:
+    except (OSError, TypeError, ValueError) as exc:
         # ValueError beside OSError because UnicodeDecodeError is one and
         # escapes a fail-closed `except OSError` (CLAUDE.md, encoding is
-        # two-sided).
+        # two-sided). TypeError because `EvolutionConfig.load` raises it
+        # for a toml array where a number belongs; the list of what that
+        # loader raises lives on `EvolutionConfig.load_or_none`'s
+        # docstring. Without it a config typo is a traceback at exit 1,
+        # which `ks health` documents as a breach.
         ui.err(f"could not read the recorded run history: {exc}")
         sys.exit(2)
 

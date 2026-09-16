@@ -168,6 +168,25 @@ def test_autonomy_replay_reports_health_breaches_without_mutating(tmp_path: Path
     assert AutonomyState.load(tmp_path).level == int(AutonomyLevel.L3_ENVELOPED_AUTO)
 
 
+def test_a_malformed_evolution_key_is_a_named_refusal_not_a_traceback(
+    tmp_path: Path,
+) -> None:
+    """``EvolutionConfig.load`` raises ``TypeError`` for a toml array where
+    a number belongs. Both commands must refuse at exit 2 with the history
+    line, because ``ks health`` documents exit 1 as a breach and
+    ``ks autonomy replay`` never read ``[evolution]`` before this PR."""
+    write_history(tmp_path, DRIFT12)
+    # After the history: the helper places the file through the same loader.
+    (tmp_path / "kstrl.toml").write_text(
+        "[evolution]\nmin_pattern_frequency = [1]\n", encoding="utf-8"
+    )
+    for args in (["health"], ["autonomy", "replay"]):
+        result = CliRunner().invoke(cli, [*args, "--root", str(tmp_path), "--no-color"])
+        assert result.exit_code == 2, (args, result.output)
+        assert "could not read the recorded run history" in result.output, (args, result.output)
+        assert "Traceback" not in result.output, (args, result.output)
+
+
 def test_replay_and_health_agree_when_experiments_path_moves(tmp_path: Path) -> None:
     """``[evolution] experiments_path`` must move BOTH report halves of
     ``ks autonomy replay``, not just its health-breach half.
@@ -224,6 +243,10 @@ def test_the_process_exit_code_is_one_when_a_metric_breaches(tmp_path: Path) -> 
         (FLAT9 + (0.10, 0.10, 0.145), None, None, None, None),
         (FLAT9 + (0.166,) * 5, "EWMA(0.2) beyond 3 sigma", 0.146202, 0.142642, 14),
         (FLAT9 + (0.09, 0.12, 0.10), None, None, None, None),
+        # Pins the monitored window at MONITORED_RUNS points: in control with the
+        # 3-point window, and a 4-point window fires 2 of 3 beyond 2 sigma at
+        # 0.145000 against 0.144846.
+        (FLAT9 + (0.145, 0.10, 0.10, 0.145), None, None, None, None),
         ((0.10, 0.12, 0.09, 0.11, 0.10, 0.90, 0.92), None, None, None, None),
         (
             (0.10, 0.12, 0.09, 0.11, 0.10, 0.90, 0.92, 0.95),
