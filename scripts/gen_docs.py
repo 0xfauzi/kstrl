@@ -603,7 +603,11 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("inbox", "notify_action_required"): "notify on action-required items and demotions only",
     ("intake_github", "enabled"): "poll GitHub Issues for labelled work (opt-in outbound poller)",
     ("intake_github", "repo"): "owner/name to poll; empty resolves from the checkout's remote",
-    ("intake_github", "queued_label"): "the trigger label; applying it requires repo write access",
+    ("intake_github", "queued_label"): "the trigger label; allowed_actors decides who may apply it",
+    (
+        "intake_github",
+        "allowed_actors",
+    ): "logins allowed to apply the trigger label; empty = anyone who can label",
     ("intake_github", "label_prefix"): "prefix for the state labels written back to the issue",
     ("intake_github", "max_items_per_sync"): "upper bound on items admitted per sync",
     ("intake_github", "default_priority"): "queue priority given to remote-sourced items",

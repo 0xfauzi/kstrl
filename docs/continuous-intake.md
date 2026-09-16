@@ -220,18 +220,38 @@ to keep reachable.
 
 **Read this before enabling it on a repo that others can reach.**
 
-A stranger can open an issue but cannot label it. However:
+A stranger can open an issue but cannot label it. Applying a label,
+though, is not the boundary it looks like:
 
-- Applying a label needs the **Triage** role, **not** push access. On an
-  organization repo, a triager who cannot push a line of code can
-  authorize factory spend.
+- It needs the **Triage** role, **not** push access. On an organization
+  repo, a triager who cannot push a line of code could authorize factory
+  spend.
 - Any GitHub Action in the repo with `issues: write` can apply the label,
-  so a workflow can trigger spend with no human involved.
+  so a workflow could trigger spend with no human involved.
 
-This is a permission designed for *managing issues*, borrowed to authorize
-*money*. [Issue #188](https://github.com/0xfauzi/kstrl/issues/188) replaces
-it with an explicit actor allowlist. Until then, the residual risk is
-exactly those two bullets.
+`allowed_actors` makes the decision kstrl's own instead of inheriting
+GitHub's:
+
+```toml
+[intake_github]
+allowed_actors = ["0xfauzi"]   # or KSTRL_INTAKE_GITHUB_ALLOWED_ACTORS=0xfauzi,someone-else
+```
+
+Set, an issue is admitted only when the actor of the **latest**
+`kstrl:queued` labelling event is on the list. Only the trigger label is
+consulted: the `kstrl:running` / `kstrl:done` labels this adapter writes
+back go on under the operator's own token, and counting those would let
+the adapter authorize itself. Logins are compared without regard to case.
+
+It fails **closed**. A timeline that cannot be read, a labelling event
+carrying no actor login, and a sync that did not check at all are all
+refusals, because "we could not tell who labelled it" is not evidence
+that a trusted actor did. `ks queue sync` and `ks serve --dry-run` print
+every refusal with the actor and the label named, so a label that did
+nothing can be explained.
+
+Left empty (the default), nothing changes: anyone who can label can
+spend, and the two bullets above are the residual risk.
 
 **What is enforced today:** an issue edited *after* it was labelled is
 refused. GitHub lets an issue author rewrite the body after a maintainer

@@ -5455,8 +5455,10 @@ def queue_sync(
     Polls open issues carrying the trigger label and enqueues the ones
     not already seen. Remote items ALWAYS stop at the PR for a human.
 
-    The label is the authorization: applying it needs write access to the
-    repository, so an issue from a stranger cannot queue a factory run.
+    The trigger label is the authorization, and applying it needs only
+    GitHub's Triage role. Set [intake_github] allowed_actors to the logins
+    you trust to spend; an issue labelled by anyone else is refused and
+    the refusal names the actor.
     """
     from kstrl.intake_github import GitHubIntakeConfig, IntakeError
     from kstrl.intake_github import sync as run_sync

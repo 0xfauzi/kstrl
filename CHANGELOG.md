@@ -13,6 +13,18 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Added
 
+- `[intake_github] allowed_actors`: the GitHub logins allowed to apply the
+  trigger label, and so to authorize factory spend
+  (`KSTRL_INTAKE_GITHUB_ALLOWED_ACTORS`, comma separated). Empty, the
+  default, changes nothing. Non-empty, an issue is admitted only when the
+  actor of the latest `kstrl:queued` labelling event is on the list; the
+  state labels the adapter writes back under the operator's own token are
+  never consulted, so it cannot authorize itself. An unreadable timeline
+  and a labelling event with no actor login are refusals, and
+  `ks queue sync` prints each refusal with the actor and the label named.
+  Applying a label needs only GitHub's Triage role and any Action holding
+  `issues: write` can do it, so the permission that used to authorize
+  spend was one designed for managing issues (#188).
 - A memory file: `scripts/kstrl/memory.md`, operator-authored standing
   feedback read into every factory engineer prompt and every `ks run`
   prompt (`ks feature` and `ks understand` do not read it). `ks init`
