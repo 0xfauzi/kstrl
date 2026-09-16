@@ -22,6 +22,7 @@ from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
 from tests.conftest import snapshot_kstrl_dir
+from tests.helpers import gitrepo
 from tests.spine_utils import git
 
 _OK_COMMAND = f"{sys.executable} -c 'print(1)'"
@@ -49,8 +50,7 @@ def _make_repo(tmp_path: Path, lint_command: str = _OK_COMMAND) -> Path:
     root = tmp_path / "proj"
     root.mkdir()
     git("init", "-q", "-b", "main", cwd=root)
-    git("config", "user.email", "sense@test", cwd=root)
-    git("config", "user.name", "Sense Test", cwd=root)
+    gitrepo.set_identity(root)
     (root / "pyproject.toml").write_text('[project]\nname = "proj"\nversion = "0.0.1"\n')
     (root / "src").mkdir()
     (root / "src" / "a.py").write_text("def a() -> int:\n    return 1\n")

@@ -611,6 +611,76 @@ class TestTheExceptLadder:
         assert clause.names == frozenset({"ValueError"}) and not clause.decided
 
 
+class TestCatchesEverythingIsTheOneRule:
+    """Sole-killer controls for #364's shared rule, at its own layer.
+
+    Both ``tests/test_serve_config_reads.py`` and
+    ``tests/test_inbox_write_guards.py`` call ``catches_everything``
+    through their own census machinery, so a mutation to the predicate
+    itself can hide behind whatever ``kstrl/`` happens to contain today.
+    These are planted sources with no dependency on that content.
+    """
+
+    @staticmethod
+    def _try(source: str) -> tuple[ast.Try | ast.TryStar, astwalk.Bindings]:
+        tree = astwalk.parse(source)
+        node = next(n for n in ast.walk(tree) if isinstance(n, ast.Try | ast.TryStar))
+        return node, astwalk.bindings(tree)
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            pytest.param("try:\n    pass\nexcept Exception:\n    pass\n", id="plain-exception"),
+            pytest.param(
+                "try:\n    pass\nexcept (OSError, Exception):\n    pass\n",
+                id="exception-in-a-tuple",
+            ),
+        ],
+    )
+    def test_it_clears(self, source: str) -> None:
+        node, table = self._try(source)
+        assert astwalk.catches_everything(node, table)
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            pytest.param("try:\n    pass\nexcept BaseException:\n    pass\n", id="base-exception"),
+            pytest.param("try:\n    pass\nexcept:\n    pass\n", id="bare-except"),
+            pytest.param(
+                "try:\n    pass\nexcept (OSError, ValueError):\n    pass\n", id="enumeration"
+            ),
+            pytest.param(
+                "from json import JSONDecodeError as Exception\n"
+                "try:\n    pass\nexcept Exception:\n    pass\n",
+                id="import-alias",
+            ),
+            pytest.param("try:\n    pass\nexcept Exception:\n    raise\n", id="reraises"),
+        ],
+    )
+    def test_it_refuses(self, source: str) -> None:
+        node, table = self._try(source)
+        assert not astwalk.catches_everything(node, table)
+
+    @pytest.mark.xfail(strict=True, raises=AssertionError)
+    def test_a_plain_rebind_of_exception_is_a_disclosed_miss(self) -> None:
+        """The same blind spot named for ``handler_clauses`` above
+        (``test_a_rebound_builtin_is_a_disclosed_miss``) reaches this
+        predicate too: a plain assignment rebinds no origin this table
+        records, so ``Exception = ValueError`` reads as the builtin by
+        spelling alone and ``catches_everything`` clears it. Only the
+        IMPORT-alias shape is closed today (``test_it_refuses``, above);
+        widening to plain rebinds is a follow-up, not this change.
+        """
+
+        def probe(source: str) -> bool:
+            node, table = self._try(source)
+            return not astwalk.catches_everything(node, table)
+
+        astwalk.blind_spot(
+            probe, "Exception = ValueError\ntry:\n    pass\nexcept Exception:\n    pass\n"
+        )
+
+
 # --- the corpus -----------------------------------------------------------
 
 

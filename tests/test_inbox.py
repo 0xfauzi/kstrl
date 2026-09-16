@@ -29,6 +29,7 @@ from kstrl.inbox import (
     notifiable,
     summarize,
 )
+from tests.helpers import gitrepo
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.settle import drained, mounted
 
@@ -379,8 +380,7 @@ def _init_git_repo(root: Path) -> None:
 
     run("init")
     run("symbolic-ref", "HEAD", "refs/heads/main")
-    run("config", "user.email", "t@example.com")
-    run("config", "user.name", "tester")
+    gitrepo.set_identity(root)
     (root / "README.md").write_text("base\n")
     run("add", ".")
     run("commit", "-m", "base")

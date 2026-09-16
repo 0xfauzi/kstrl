@@ -25,6 +25,7 @@ from kstrl.adequacy import (
     lint_test_source,
 )
 from kstrl.verify import check_test_adequacy
+from tests.helpers import gitrepo
 
 
 # --------------------------------------------------------------------------
@@ -585,8 +586,7 @@ def _repo(root: Path) -> None:
 
     run("init")
     run("symbolic-ref", "HEAD", "refs/heads/main")
-    run("config", "user.email", "t@example.com")
-    run("config", "user.name", "tester")
+    gitrepo.set_identity(root)
     (root / "tests").mkdir()
     (root / "tests" / "test_core.py").write_text(
         "def test_adds():\n    assert add(2, 2) == 4\n\n"

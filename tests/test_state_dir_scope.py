@@ -60,7 +60,7 @@ from kstrl.statedir import (
 )
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import _diff_scope_details, check_dead_code_ruff, check_diff_scope
-from tests.helpers import astwalk
+from tests.helpers import astwalk, gitrepo
 from tests.test_loop import MockAgent
 
 PROJECT = Path("/project")
@@ -115,8 +115,7 @@ def repo(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     root.mkdir()
     _git(root, "init", "-q", "-b", "main")
-    _git(root, "config", "user.email", "t@example.com")
-    _git(root, "config", "user.name", "T")
+    gitrepo.set_identity(root)
     (root / "src").mkdir()
     (root / "src" / "app.py").write_text("x\n")
     _git(root, "add", "-A")

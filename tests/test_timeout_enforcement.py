@@ -50,7 +50,7 @@ from kstrl.loop import run_loop
 from kstrl.manifest import Component, Manifest
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
-from tests.helpers import astwalk, procs
+from tests.helpers import astwalk, gitrepo, procs
 from tests.helpers.procs import read_pid
 
 # Generous bound for "killed within the deadline": 1s deadline + 5s
@@ -213,8 +213,7 @@ def _git(*args: str, cwd: Path) -> None:
 def _init_repo(root: Path) -> None:
     """Real git repo with the kstrl scaffolding committed to main."""
     _git("init", "-q", "-b", "main", cwd=root)
-    _git("config", "user.email", "t@t", cwd=root)
-    _git("config", "user.name", "t", cwd=root)
+    gitrepo.set_identity(root)
     kstrl_dir = root / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True)
     (kstrl_dir / "prompt.md").write_text("test prompt\n")

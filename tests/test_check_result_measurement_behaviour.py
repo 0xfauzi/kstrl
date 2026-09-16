@@ -48,6 +48,7 @@ from kstrl.verify import (
     check_self_critique,
     check_test_adequacy,
 )
+from tests.helpers import gitrepo
 from tests.helpers.measurement import assert_measured, assert_unmeasured
 
 #: Long enough that a sub-second timeout always fires first.
@@ -97,8 +98,7 @@ def _repo(root: Path) -> Path:
     that list.
     """
     _git("init", "-q", "-b", "main", cwd=root)
-    _git("config", "user.email", "kstrl@example.com", cwd=root)
-    _git("config", "user.name", "kstrl", cwd=root)
+    gitrepo.set_identity(root)
     _git("commit", "-q", "--allow-empty", "-m", "base", cwd=root)
     return root
 
