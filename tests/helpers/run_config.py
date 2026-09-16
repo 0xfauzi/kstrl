@@ -11,18 +11,60 @@ from __future__ import annotations
 
 import io
 import subprocess
+import tomllib
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
+from kstrl import config as _config_module
+from kstrl import config_toml as _toml_module
 from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryConfig, FactoryResult, run_factory
 from kstrl.manifest import Component, Manifest
 from kstrl.pipeline import ComponentPipeline
 from kstrl.ui.plain import PlainUI
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
+
+
+@dataclass
+class TomlParseCounts:
+    """How many times one run opened and parsed ``kstrl.toml``."""
+
+    calls: int = 0
+    parses: int = 0
+
+
+def count_toml_parses(monkeypatch: pytest.MonkeyPatch) -> TomlParseCounts:
+    """Count document loads and ``tomllib`` parses for the rest of the test.
+
+    ``load_toml_document`` is bound in two namespaces since #366 split the
+    reader into ``kstrl/config_toml.py``: ``load_toml_section`` resolves it
+    there, and ``kstrl.config._apply_toml_overrides`` resolves it in
+    ``kstrl.config``. Both are patched so a count that reaches either path
+    is a count, not a silent under-count. ``tomllib.loads`` is looked up at
+    call time on the module object, so patching the module is enough.
+    """
+    counts = TomlParseCounts()
+    original_doc = _toml_module.load_toml_document
+    original_loads = tomllib.loads
+
+    def counting_doc(path: Path) -> dict[str, Any]:
+        counts.calls += 1
+        return original_doc(path)
+
+    def counting_loads(text: str, **kwargs: Any) -> dict[str, Any]:
+        counts.parses += 1
+        return original_loads(text, **kwargs)
+
+    monkeypatch.setattr(_config_module, "load_toml_document", counting_doc)
+    monkeypatch.setattr(_toml_module, "load_toml_document", counting_doc)
+    monkeypatch.setattr(tomllib, "loads", counting_loads)
+    return counts
+
 
 BEFORE = """\
 [policy]
