@@ -3060,7 +3060,7 @@ def _run_intake(
     outage must not stop local work.
     """
     try:
-        from kstrl.intake_github import GitHubIntakeConfig
+        from kstrl.intake_github import Decision, GitHubIntakeConfig
         from kstrl.intake_github import sync as intake_sync
 
         config = GitHubIntakeConfig.load(root_dir)
@@ -3083,6 +3083,11 @@ def _run_intake(
         observer.info(f"Intake queued {ref}")
     for error in result.errors:
         observer.warn(f"  intake: {error}")
+    # #188 simplify pass item 2: a refusal only ``ks queue sync``/`--dry-run`
+    # could show was invisible from the daemon's own narration.
+    for entry in result.planned:
+        if entry.decision is Decision.REFUSE_UNAUTHORIZED:
+            observer.warn(f"  intake refused {entry.issue.source_ref(result.repo)}: {entry.reason}")
     return result.enqueued, result.errors
 
 

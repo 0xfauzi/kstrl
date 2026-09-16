@@ -5435,6 +5435,12 @@ def queue_resume(root: Path | None, ui: str, no_color: bool) -> None:
     sys.exit(0)
 
 
+def _allowed_actors_kv(actors: list[str]) -> str:
+    """Beside `label`: a config typo then prints differently from a
+    working gate (#188 simplify pass item 3)."""
+    return ", ".join(actors) if actors else "(empty: anyone who can apply the label may spend)"
+
+
 @queue_group.command(name="sync")
 @click.option(
     "--dry-run",
@@ -5455,8 +5461,10 @@ def queue_sync(
     Polls open issues carrying the trigger label and enqueues the ones
     not already seen. Remote items ALWAYS stop at the PR for a human.
 
-    The label is the authorization: applying it needs write access to the
-    repository, so an issue from a stranger cannot queue a factory run.
+    The trigger label is the authorization, and applying it needs only
+    GitHub's Triage role. Set [intake_github] allowed_actors to the logins
+    you trust to spend; an issue labelled by anyone else is refused and
+    the refusal names the actor.
     """
     from kstrl.intake_github import GitHubIntakeConfig, IntakeError
     from kstrl.intake_github import sync as run_sync
@@ -5496,6 +5504,7 @@ def queue_sync(
     heading = "Would sync from" if dry_run else "Sync from"
     ui_impl.section(f"{heading} {result.repo or 'unknown repo'}")
     ui_impl.kv("label", config.queued_label)
+    ui_impl.kv("allowed_actors", _allowed_actors_kv(config.allowed_actors))
     ui_impl.kv("polled", str(result.polled))
     if dry_run:
         ui_impl.kv("would enqueue", str(len(result.would_enqueue)))
@@ -5735,6 +5744,7 @@ def serve(
             intake_config = None
             ui_impl.warn(f"  intake config unreadable: {exc}")
         if intake_config is not None and intake_config.enabled:
+            ui_impl.kv("allowed_actors", _allowed_actors_kv(intake_config.allowed_actors))
             plan = intake_sync(
                 queue,
                 _replace(intake_config, dry_run=True),
