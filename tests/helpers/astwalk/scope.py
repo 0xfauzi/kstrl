@@ -232,8 +232,15 @@ def _clause_name(part: ast.expr, table: Bindings) -> str | None:
     return found.dotted.rsplit(".", 1)[-1]
 
 
-def catches_everything(node: ast.Try | ast.TryStar, table: Bindings | None = None) -> bool:
+def catches_everything(node: ast.Try | ast.TryStar, table: Bindings) -> bool:
     """Does this ``try`` catch everything its body can raise?
+
+    ``table`` is REQUIRED: a clearing rule must not resolve names
+    without one. With a default of ``None`` this cleared ``except
+    Exception:`` when ``Exception`` had been rebound through an import
+    alias and nobody passed a table, because :func:`_clause_name` falls
+    back to the bare spelling when it cannot resolve - the exact alias
+    hole this predicate exists to close (#364).
 
     ONE rule, in one place, because two guards asked the same question
     of ``serve._file_inbox_item`` and answered it differently: the

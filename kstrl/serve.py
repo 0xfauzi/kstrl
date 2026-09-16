@@ -1428,6 +1428,25 @@ class MergeGate:
     unreadable_section: str = ""
 
 
+def _unreadable_section_reason(
+    section: str, exc: BaseException, reason: str, next_step: str
+) -> str:
+    """The one phrasing an unreadable config section resolves to (#364).
+
+    Shared by :func:`_unreadable_config_gate` (`[factory]`, `[autonomy]`,
+    `[policy]`, #361) and ``serve_cycle``'s own `[queue]`/`[serve]`
+    refusal, so the two do not drift onto two different sentences for
+    the same fact. ``section`` is bare; the brackets are added HERE, at
+    format time. ``str(exc).rstrip(".")`` because the cause is quoted
+    mid-sentence and its own messages already end with a full stop,
+    which would otherwise read as "...as str.. The item...". ``reason``
+    is what cannot be done because the section could not be read;
+    ``next_step`` is what the operator does about it.
+    """
+    detail = str(exc).rstrip(".")
+    return f"[{section}] cannot be read, so {reason}: {detail}. {next_step}"
+
+
 def _unreadable_config_gate(
     section: str,
     exc: BaseException,
@@ -1461,17 +1480,15 @@ def _unreadable_config_gate(
     ``OSError`` is reachable too, because ``load_toml_section`` does not
     normalise it.
     """
-    # `rstrip(".")` because the cause is quoted mid-sentence and its own
-    # messages end with a full stop, which read as "as str.. The item".
-    detail = str(exc).rstrip(".")
     return MergeGate(
         pause_before_pr_merge=True,
         notes=notes,
         unreadable_section=section,
-        refusal=(
-            f"[{section}] cannot be read, so this item's merge gate cannot be "
-            f"resolved: {detail}. The item waits; fix the section and the next "
-            "poll picks it up."
+        refusal=_unreadable_section_reason(
+            section,
+            exc,
+            "this item's merge gate cannot be resolved",
+            "The item waits; fix the section and the next poll picks it up.",
         ),
     )
 
@@ -2838,14 +2855,9 @@ def _file_inbox_item(
 
     The caught set is the callee's WHOLE SURFACE, not the types somebody
     expected: ``Inbox.add`` reaches ``_append``, which takes the control
-    lock, and ``InboxConfig.load`` casts per key. The enumeration that
-    stood here caught a ``ConfigError``, a plain ``ValueError`` and a
-    ``TypeError``, all measured, and it was still two guards reading one
-    site by two rules. #364 reconciled them:
-    ``tests/helpers/astwalk.catches_everything`` is the one rule, and
-    ``tests/test_inbox_write_guards.py`` reads it, so a handler that
-    catches everything satisfies both the by-origin and the by-name
-    requirement without either guard being narrowed.
+    lock, and ``InboxConfig.load`` casts per key. Both guards that read
+    this site clear on ``tests.helpers.astwalk.catches_everything``, the
+    one rule #364 reconciled them onto.
     """
     try:
         from kstrl.inbox import Inbox, InboxConfig, ItemKind
@@ -3261,23 +3273,27 @@ def serve_cycle(
     (#364). ``serve`` has no per-cycle handler, so a ``[queue]`` section
     made malformed after the daemon started used to leave ``serve()``
     entirely; under launchd the job was relaunched on
-    ``LAUNCHD_THROTTLE_SECONDS`` and died again on the same key. Four
-    ``[queue]`` faults and a document that is not TOML at all were
-    measured escaping here, spanning ``ValueError``, ``TypeError``,
-    ``ConfigError`` and ``QueueError`` (a ``RuntimeError``), which is why
-    the caught set is the whole surface rather than an enumeration.
+    ``LAUNCHD_THROTTLE_SECONDS`` and died again on the same key. The
+    fault types measured escaping here are enumerated once, at
+    ``tests.test_serve_config_reads.CYCLE_CONFIG_DOCUMENTS``, which is
+    why the caught set is the whole surface rather than an enumeration.
     Nothing is claimed and no attempt is charged: the message is the
     refusal's only home, and the poll interval is the retry.
     """
     obs: ServeObserver = observer or _NullObserver()
     result = CycleResult()
-    section = "[serve]"
+    section = "serve"
     try:
         cfg = config or ServeConfig.load(root_dir)
-        section = "[queue]"
+        section = "queue"
         qcfg = queue_config or QueueConfig.load(root_dir)
     except Exception as exc:  # noqa: BLE001 - anything but a config is the same answer
-        result.skipped = f"{section} cannot be read, so this poll is refused: {exc}"
+        result.skipped = _unreadable_section_reason(
+            section,
+            exc,
+            "this poll is refused",
+            "The poll retries after the next interval; fix the section.",
+        )
         obs.err(result.skipped)
         return result
     queue = Queue(root_dir, qcfg)
