@@ -14,7 +14,17 @@ merged one component and failed nothing.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from pathlib import Path
+
 from kstrl.autonomy_replay import RunRecord
+from kstrl.evolution import EXPERIMENTS_HEADER, EvolutionConfig
+
+#: A run_id containing an invalid utf-8 byte: the reachable "unreadable
+#: history" fixture (the mode-0200 half needs a permission the superuser
+#: ignores). #151's simplify pass hoisted this out of byte-identical
+#: copies in tests/test_autonomy_ladder.py and tests/test_health_trending.py.
+UNDECODABLE_TSV = b"run_id\ttimestamp\nrun-1\xff\t2026-01-01\n"
 
 
 def run_record(**overrides: object) -> RunRecord:
@@ -32,6 +42,46 @@ def run_record(**overrides: object) -> RunRecord:
     }
     fields.update(overrides)
     return RunRecord(**fields)  # type: ignore[arg-type]
+
+
+def write_runs(root: Path, records: Sequence[RunRecord]) -> None:
+    """Write ``records`` to this project's CONFIGURED experiments.tsv.
+
+    Resolves the path the same way the module under test does
+    (``EvolutionConfig.load``), so a test that moves
+    ``[evolution] experiments_path`` writes to the file the code will
+    actually read rather than a hardcoded default. The four columns
+    ``RunRecord`` does not track (avg_iterations, avg_duration_s,
+    total_tokens, unreported_calls) get a fixed placeholder: nothing
+    reading through ``RunRecord`` sees them, so no test asserts on their
+    value.
+    """
+    path = EvolutionConfig.load(root).experiments_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [EXPERIMENTS_HEADER]
+    for r in records:
+        cost = "" if r.total_cost_usd is None else str(r.total_cost_usd)
+        lines.append(
+            "\t".join(
+                (
+                    r.run_id,
+                    r.timestamp,
+                    r.project,
+                    str(r.components_total),
+                    str(r.completed),
+                    str(r.failed),
+                    str(r.skipped),
+                    "1.00",
+                    "100.0",
+                    f"{r.retry_rate:.4f}",
+                    r.common_failure,
+                    "1000",
+                    cost,
+                    "0",
+                )
+            )
+        )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def clean_run(index: int) -> RunRecord:

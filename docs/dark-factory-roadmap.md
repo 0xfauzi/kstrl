@@ -508,7 +508,7 @@ renders and acts; an ntfy hook example is documented.
 
 ## R8.4 Factory health trending (M) - [#151](https://github.com/0xfauzi/kstrl/issues/151)
 
-Status: `[ ]` - Depends on: none (feeds R8.2)
+Status: `[~]` - stage 1 shipped (advisory). Depends on: none (feeds R8.2)
 
 **Two-stage delivery (decided 2026-08-03).** Stage 1 ships the evidence
 surface only: `ks health` reporting plus the documented historical
@@ -541,6 +541,39 @@ trend cannot walk the ladder to L1 one run at a time; that bounds the damage, it
 does not excuse a rule set nobody replayed. Pick the rules with these two
 numbers in front of you.
 
+**Replay captured (2026-09-16).** This repository's own recorded history
+(`ks autonomy replay --root <this repo>`): 5 recorded runs, 2 decisive, 3
+infra-aborted, 0 would-have-fired breaches, because every series sits below
+the n floor of 8 - `retry_rate n=2`, `cost_per_merged_component n=1`,
+`infrastructure_error_rate n=2`. Mu and sigma are estimated from a baseline
+of `n - 3` points rather than known, so the real false-alarm rate is far
+above the textbook figures above. Monte Carlo over the exact rule set (one
+point beyond 3 sigma, then 2-of-3 beyond 2 sigma, then EWMA(0.2) beyond 3
+sigma), 200,000 stationary trials per n:
+
+| n | p(fire) per metric per run | 1 in | across 3 metrics | 1 in |
+|---|---|---|---|---|
+| 8 | 0.102 | 10 | 0.276 | 4 |
+| 12 | 0.048 | 21 | 0.137 | 7 |
+| 20 | 0.024 | 41 | 0.071 | 14 |
+| 30 | 0.016 | 63 | 0.047 | 21 |
+
+`demote_on_health_breach` must stay false until a project's history is long
+enough to bring that rate down. The EWMA rule earns its place on the same
+grounds: 0.0007 of added false-alarm probability at n = 8, and it doubles
+detection of a six-run sustained shift at n = 30 (0.31 to 0.64).
+
+**Metrics not trended (2026-09-16).** Three metrics are trended: retry rate,
+cost per merged component, `infrastructure_error` rate. Two are not.
+Calibration detection delta is captured by the opt-in calibration suite into
+a results directory rather than once per factory run, so there is no per-run
+series; a regression there already demotes through
+`DemotionTrigger.CALIBRATION_REGRESSION` in `kstrl/calibration_ladder.py`.
+Human-edit rate is not recorded anywhere: `AutonomyState.record_merged_component(human_edited=...)`
+in `kstrl/autonomy.py` has exactly one caller in the tree and it is
+`tests/test_autonomy_ladder.py`, so production always records a merge as
+clean.
+
 **Why.** Demotion triggers need trend detection over run metrics, and the
 operator needs an evidence surface. The journal and `experiments.tsv` record
 the data; nothing trends it.
@@ -554,8 +587,9 @@ self-contained wheel - right for `ks health query "<sql>"` but stays an
 optional extra: autonomy safety logic must not depend on an optional
 dependency.
 
-**Design.** Metrics: retry rate, cost per merged component,
-`infrastructure_error` rate, calibration detection deltas, human-edit rate.
+**Design.** Metrics: three trended (retry rate, cost per merged component,
+`infrastructure_error` rate), two not (calibration detection delta,
+human-edit rate); see "Metrics not trended (2026-09-16)" above for why.
 Control limits computed from the repo's own baseline period, never fixed
 constants; minimum n >= 8 decisive runs before any automatic transition.
 `ks health` renders per-metric EWMA vs control limits with sparklines;

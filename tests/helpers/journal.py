@@ -105,8 +105,20 @@ def audit(project: Any, spec_file: str | None = None) -> dict[str, Any]:
     }
 
 
-def component_result(run_id: str, component_id: str) -> dict[str, Any]:
-    return {
+#: Sentinel default for ``component_result``'s ``findings_summary``: tells
+#: the default finding apart from an explicit ``None``, which OMITS the key
+#: entirely (the "no findings_summary" fixture #151's health tests need,
+#: since a missing key is not a measured zero).
+_DEFAULT_FINDINGS: Any = object()
+
+
+def component_result(
+    run_id: str,
+    component_id: str,
+    *,
+    findings_summary: dict[str, Any] | None = _DEFAULT_FINDINGS,
+) -> dict[str, Any]:
+    entry: dict[str, Any] = {
         "schema_version": 2,
         "timestamp": "2026-08-20T00:00:00Z",
         "run_id": run_id,
@@ -114,9 +126,16 @@ def component_result(run_id: str, component_id: str) -> dict[str, Any]:
         "component_id": component_id,
         "event_type": "component_result",
         "failure_signatures": ["tests:assertion"],
-        "findings_summary": {"by_category": {"scope_creep": 1}},
         "knowledge_utilization": {"measured": True, "injected": 3, "referenced": 2},
     }
+    summary = (
+        {"by_category": {"scope_creep": 1}}
+        if findings_summary is _DEFAULT_FINDINGS
+        else findings_summary
+    )
+    if summary is not None:
+        entry["findings_summary"] = summary
+    return entry
 
 
 def journal_at(tmp_path: Path) -> EvolutionJournal:

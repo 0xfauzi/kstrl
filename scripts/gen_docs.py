@@ -595,7 +595,8 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ),
     ("autonomy", "demote_on_health_breach"): (
         "demote one level on an R8.4 health control-limit breach "
-        "(an inbox item is opened either way)"
+        "(an inbox item is opened either way); run `ks health` first - the "
+        "measured false-alarm rate at the n floor is in roadmap R8.4"
     ),
     ("inbox", "enabled"): "record exceptions awaiting a human decision",
     ("inbox", "open_item_cap"): "open items after which queue intake pauses; 0 = unbounded",
