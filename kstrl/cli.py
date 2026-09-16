@@ -4934,14 +4934,14 @@ def health_cmd(root: Path | None, ui: str, no_color: bool) -> None:
     means the recorded history could not be read, and the line above it
     names the cause.
     """
-    from kstrl.health import _breaches, _render, readings_from
+    from kstrl.health import health_report, readings_from
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
     runs, config = _load_history_or_exit(ui_impl, root_dir)
     readings = readings_from(runs, config.journal_path)
-    breaches = _breaches(readings)
-    for line in _render(readings, breaches).splitlines():
+    summary, breaches = health_report(readings)
+    for line in summary.splitlines():
         ui_impl.info(line)
     sys.exit(1 if breaches else 0)
 

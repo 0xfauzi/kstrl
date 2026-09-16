@@ -273,10 +273,23 @@ def _render(readings: Sequence[MetricReading], breaches: Sequence[HealthBreach])
     return "\n".join(lines)
 
 
+def health_report(readings: Sequence[MetricReading]) -> tuple[str, list[HealthBreach]]:
+    """The plain-text ``ks health`` report and its breach list, from readings
+    already computed.
+
+    The one place that turns a ``readings_from(...)`` result into the
+    rendered report: ``ks health`` (``kstrl/cli.py::health_cmd``) and
+    ``health_status`` both funnel through here, so there is exactly one
+    caller of ``_render`` and ``_breaches`` and neither is reached from
+    outside this module (#151, #387).
+    """
+    breaches = _breaches(readings)
+    return _render(readings, breaches), breaches
+
+
 def health_status(root_dir: Path) -> tuple[str, list[HealthBreach]]:
     """The plain-text ``ks health`` report and its breach list, from ONE read."""
     config = EvolutionConfig.load(root_dir)
     runs = load_runs(config.experiments_path)
     readings = readings_from(runs, config.journal_path)
-    breaches = _breaches(readings)
-    return _render(readings, breaches), breaches
+    return health_report(readings)

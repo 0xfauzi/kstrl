@@ -563,6 +563,17 @@ enough to bring that rate down. The EWMA rule earns its place on the same
 grounds: 0.0007 of added false-alarm probability at n = 8, and it doubles
 detection of a six-run sustained shift at n = 30 (0.31 to 0.64).
 
+**Metrics not trended (2026-09-16).** Three metrics are trended: retry rate,
+cost per merged component, `infrastructure_error` rate. Two are not.
+Calibration detection delta is captured by the opt-in calibration suite into
+a results directory rather than once per factory run, so there is no per-run
+series; a regression there already demotes through
+`DemotionTrigger.CALIBRATION_REGRESSION` in `kstrl/calibration_ladder.py`.
+Human-edit rate is not recorded anywhere: `AutonomyState.record_merged_component(human_edited=...)`
+in `kstrl/autonomy.py` has exactly one caller in the tree and it is
+`tests/test_autonomy_ladder.py`, so production always records a merge as
+clean.
+
 **Why.** Demotion triggers need trend detection over run metrics, and the
 operator needs an evidence surface. The journal and `experiments.tsv` record
 the data; nothing trends it.
@@ -576,8 +587,9 @@ self-contained wheel - right for `ks health query "<sql>"` but stays an
 optional extra: autonomy safety logic must not depend on an optional
 dependency.
 
-**Design.** Metrics: retry rate, cost per merged component,
-`infrastructure_error` rate, calibration detection deltas, human-edit rate.
+**Design.** Metrics: three trended (retry rate, cost per merged component,
+`infrastructure_error` rate), two not (calibration detection delta,
+human-edit rate); see "Metrics not trended (2026-09-16)" above for why.
 Control limits computed from the repo's own baseline period, never fixed
 constants; minimum n >= 8 decisive runs before any automatic transition.
 `ks health` renders per-metric EWMA vs control limits with sparklines;

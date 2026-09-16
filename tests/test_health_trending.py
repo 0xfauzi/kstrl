@@ -308,6 +308,30 @@ def test_the_infrastructure_error_rate_comes_from_the_journal(tmp_path: Path) ->
     assert breach.window_runs == 12
 
 
+def test_ks_health_reports_the_journal_series(tmp_path: Path) -> None:
+    """Drives the journal-derived series through the real CLI, not ``health_status``.
+
+    The five UNIT-3 tests above all call ``kstrl.health.health_status``
+    directly. #387's blocker 1 found that no production code called it any
+    more: ``ks health`` (``kstrl/cli.py::health_cmd``) had its own second
+    copy of the render/breach logic, reachable through the private names
+    ``_breaches`` and ``_render``, so the CLI path these tests were meant
+    to stand in for was untested. This test closes that gap by going
+    through ``CliRunner`` and the ``health`` command exactly as an operator
+    would.
+    """
+    write_history(tmp_path, (0.1,) * 12)
+    write_journal(tmp_path, [0, 1, 0, 1, 0, 0, 1, 0, 1, 5, 5, 5])
+    result = CliRunner().invoke(cli, ["health", "--root", str(tmp_path), "--no-color"])
+
+    assert result.exit_code == 1, result.output
+    assert "n=12" in metric_line(result.output, "infrastructure_error_rate")
+    assert (
+        "  - infrastructure_error_rate: 1 point beyond 3 sigma "
+        "(value 5.0000 beyond limit 1.9352 over 12 run(s))"
+    ) in result.output
+
+
 def test_a_component_entry_without_a_findings_summary_drops_its_run(tmp_path: Path) -> None:
     import kstrl.health
 
