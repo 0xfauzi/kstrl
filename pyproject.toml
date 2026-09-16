@@ -88,6 +88,14 @@ asyncio_mode = "auto"
 markers = [
     "spine: real-git spine tier (R4.2) - unmocked worktree/PR/lock paths; deselect with -m 'not spine' to keep the fast tier fast",
 ]
+# Closed by construction over every future deprecation in every
+# dependency (#384), not a ledger of one name. Not a blanket `error`:
+# that costs 8 tests that deliberately provoke a RuntimeWarning or a
+# UserWarning from kstrl's own fail-closed paths.
+filterwarnings = [
+    "error::DeprecationWarning",
+    "error::PendingDeprecationWarning",
+]
 
 # R4.4 coverage measurement. relative_files lets CI combine data files
 # recorded in different checkouts (fast tier + spine tier jobs) and lets

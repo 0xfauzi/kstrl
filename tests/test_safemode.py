@@ -635,7 +635,11 @@ class TestRoundTwoFindings:
             encoding="utf-8",
         )
 
-        reasons = safe_mode_reasons(tmp_path)
+        # statedir.py's migration warns DeprecationWarning (R8.9: the
+        # legacy in-tree path is no longer written), which this test's
+        # subject deliberately provokes rather than avoids.
+        with pytest.warns(DeprecationWarning):
+            reasons = safe_mode_reasons(tmp_path)
 
         assert not legacy.exists()  # migrated before any reader ran
         assert [r.source for r in reasons] == ["queue"]

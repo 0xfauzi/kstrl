@@ -59,15 +59,19 @@ def _invoke(args: list[str], *, toml: str | bytes | None = None) -> Result:
     :data:`~tests.helpers.bad_toml.TOML_PARSE_FAULTS`. One write for
     both, so the ``str`` cases are utf-8 on a machine whose locale is
     not.
+
+    The cwd IS the checkout. ``conftest.isolate_kstrl_state`` is autouse
+    and chdirs every test into its own empty ``tmp_path``, so the
+    relative ``s.md`` / ``m.json`` in the arg tables above resolve here
+    and a kstrl.toml written here is the one a cwd-rooted preflight
+    reads.
     """
-    runner = CliRunner()
-    with runner.isolated_filesystem() as fs:
-        root = Path(fs)
-        (root / "s.md").write_text("# spec\n")
-        make_manifest([component("comp-a")]).save(root / "m.json")
-        if toml is not None:
-            (root / "kstrl.toml").write_bytes(toml.encode() if isinstance(toml, str) else toml)
-        return runner.invoke(cli, args, catch_exceptions=True)
+    root = Path.cwd()
+    (root / "s.md").write_text("# spec\n")
+    make_manifest([component("comp-a")]).save(root / "m.json")
+    if toml is not None:
+        (root / "kstrl.toml").write_bytes(toml.encode() if isinstance(toml, str) else toml)
+    return CliRunner().invoke(cli, args, catch_exceptions=True)
 
 
 def _no_agents(monkeypatch: pytest.MonkeyPatch) -> list[str]:
@@ -483,25 +487,29 @@ class TestTheRootIsTheOneTheCommandWillUse:
         clean.mkdir()
         _stub_run_factory(monkeypatch)
 
-        runner = CliRunner()
-        with runner.isolated_filesystem() as fs:
-            root = Path(fs)
-            (root / "kstrl.toml").write_bytes(MALFORMED_TOML)
-            make_manifest([component("comp-a")]).save(clean / "m.json")
-            result = runner.invoke(
-                cli,
-                [
-                    "factory",
-                    "--manifest",
-                    str(clean / "m.json"),
-                    "--root",
-                    str(clean),
-                    "--agent-cmd",
-                    "true",
-                    "--yes",
-                ],
-                catch_exceptions=True,
-            )
+        # The cwd is the SUBJECT here, so this test sets its own rather
+        # than reusing the autouse one: the broken file has to sit in a
+        # directory that is not `clean` and not an ancestor of it, which
+        # is what the two siblings under tmp_path give.
+        cwd = tmp_path / "elsewhere"
+        cwd.mkdir()
+        (cwd / "kstrl.toml").write_bytes(MALFORMED_TOML)
+        monkeypatch.chdir(cwd)
+        make_manifest([component("comp-a")]).save(clean / "m.json")
+        result = CliRunner().invoke(
+            cli,
+            [
+                "factory",
+                "--manifest",
+                str(clean / "m.json"),
+                "--root",
+                str(clean),
+                "--agent-cmd",
+                "true",
+                "--yes",
+            ],
+            catch_exceptions=True,
+        )
 
         assert result.exit_code == 0, result.output
 
@@ -674,7 +682,7 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
 
         assert result.exit_code == 2
         assert "[fail] kstrl_config" in result.output
-        assert "[ok] git_repo" not in result.output  # isolated_filesystem is not a repo
+        assert "[ok] git_repo" not in result.output  # the tmp_path cwd is not a repo
         assert fragment in result.output
 
     def test_sense_checks_sections_it_does_not_itself_read(self) -> None:
