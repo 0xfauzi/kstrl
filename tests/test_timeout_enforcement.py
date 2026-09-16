@@ -84,8 +84,14 @@ KILL_BOUND_SECONDS = 12.0
 #:     min 0.178  p50 0.192  p90 0.222  p99 0.754  max 1.121s  (n=200, 0/200 over 4.0s)
 #: The warm tail has one outlier at 1.121s against a p99 of 0.754s;
 #: ordinary process-spawn contention at 25-way, not the fresh-exec cost
-#: the warm-up removes. 4.0s is 3.6x that observed max and 5.3x its p99.
-SDK_DEADLINE_SECONDS = 4.0
+#: the warm-up removes. 12.0s is 10.7x that observed max and 15.9x its
+#: p99.
+#: STORM-TESTED under load (loadstorm.py, #365 round 2): at 4.0s the
+#: battery failed 25 of 25 processes under 25 concurrent pytest
+#: processes plus 25 busy CPU processes (label v2_sdk25_burn25_at4,
+#: reproduced at v2_sdk25_load20 and v2_sdk25_load20_b); at 12.0s it
+#: passed 25 of 25 processes under the same load (label fix1).
+SDK_DEADLINE_SECONDS = 12.0
 
 #: Deadline the claude-code, custom and codex batteries run with when
 #: their fake CLI needs to be UP (not merely started) before the
@@ -560,7 +566,7 @@ class TestTheFuseIsTheBound:
         measured_sdk_warm_worst = 1.121  # 25-way, n=200; see SDK_DEADLINE_SECONDS
         measured_cli_warm_worst = 0.005  # 25-way, n=100; see CLI_DEADLINE_SECONDS
 
-        assert SDK_DEADLINE_SECONDS >= 3.5 * measured_sdk_warm_worst, (
+        assert SDK_DEADLINE_SECONDS >= 10.0 * measured_sdk_warm_worst, (
             "SDK_DEADLINE_SECONDS no longer dominates the measured warm "
             "startup of the sdk_runner; re-run concurrent.py against "
             "trial_startup_warm.py before lowering it"
@@ -575,33 +581,30 @@ class TestTheFuseIsTheBound:
             "(probe_no_deadline.py); a deadline at or past that is unproven"
         )
 
-    @staticmethod
-    def _is_deadline_call(func: ast.expr) -> bool:
-        """Whether ``func`` is one of the two calls this census is about:
-        ``_lines_under_fuse(...)`` or ``agent.run(...)`` directly. NOT
-        every call with a ``timeout=`` keyword: several fixtures also
-        call ``subprocess.run(..., timeout=30, ...)`` to warm the fake
-        CLI (see SDK_DEADLINE_SECONDS), and that call has nothing to do
-        with which deadline constant a test is driven at."""
-        if ast.unparse(func) == "_lines_under_fuse":
-            return True
-        return (
-            isinstance(func, ast.Attribute)
-            and func.attr == "run"
-            and ast.unparse(func.value) == "agent"
-        )
-
     @classmethod
     def _timeout_calls(cls, fn: ast.FunctionDef | ast.AsyncFunctionDef) -> list[tuple[str, str]]:
-        """Every ``timeout=`` keyword passed to a deadline call inside
-        ``fn``, as ``(callee source, value source)`` pairs.
+        """Every ``timeout=`` keyword call inside ``fn``, as ``(callee
+        source, value source)`` pairs.
+
+        Collects EVERY call carrying a ``timeout=`` keyword, not only the
+        two spellings this file already knows about (``_lines_under_fuse``
+        and ``agent.run``): an inclusion filter keyed on callee spelling
+        clears whatever call it does not recognise, which is exactly the
+        #365 regression this census exists to catch (a call site moved to
+        an unfused ``some_agent.run(..., timeout=...)`` produced an empty
+        list here and was silently skipped rather than flagged). The one
+        exclusion is ``subprocess.run`` by exact spelling: several
+        fixtures call it with ``timeout=30`` to warm the fake CLI (see
+        SDK_DEADLINE_SECONDS), and that warm-up has nothing to do with
+        which deadline constant a test is driven at.
+
         ``astwalk.own_nodes`` stops at a nested function, matching every
         other walk in this file, though none of these methods define
         one."""
         return [
             (ast.unparse(call.func), ast.unparse(kw.value))
             for call in astwalk.own_nodes(fn)
-            if isinstance(call, ast.Call) and cls._is_deadline_call(call.func)
+            if isinstance(call, ast.Call) and ast.unparse(call.func) != "subprocess.run"
             for kw in call.keywords
             if kw.arg == "timeout"
         ]
