@@ -111,7 +111,7 @@ def group_member_pids(pgid: int) -> list[int]:
     path's group kill still holding a power assertion.
 
     It DELEGATES rather than reading ``ps`` itself.
-    ``tests/test_procgroup.py`` fails on any second ``ps`` in ``kstrl/``
+    ``tests/test_procgroup_listing.py`` fails on any second ``ps`` in ``kstrl/``
     or ``tests/``, because two copies of one parse drift on failure
     handling until the daemon's answer and the suite's stop agreeing.
     The reading lives in :func:`kstrl.procgroup.read_group_members`.

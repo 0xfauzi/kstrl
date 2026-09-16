@@ -60,7 +60,7 @@ THE GRACE IS A REQUIRED ARGUMENT, not a default read from a constant.
 ``grace: float = PS_KILL_GRACE_SECONDS`` is the obvious signature and is
 wrong twice over: a default argument is evaluated ONCE at import, so the
 constant stops being the live answer the moment anything rebinds it
-(measured - two of ``tests/test_procgroup.py``'s bound tests set it to
+(measured - two of ``tests/test_procgroup_listing.py``'s bound tests set it to
 0.02 and got 1.0), and that constant is named for the ``ps`` read, which
 is one caller out of four. Every caller says how long it is willing to
 wait.
