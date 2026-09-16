@@ -24,14 +24,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
 
 import pytest
 
 from kstrl.autonomy import AutonomyState
 from kstrl.policy import PolicyConfig
 from kstrl.runenvelope import RunEnvelope
-from tests.helpers.run_config import AFTER, BEFORE, MALFORMED, edit
+from tests.helpers.run_config import AFTER, BEFORE, MALFORMED, count_toml_parses, edit
 from tests.helpers.verify_phase import component, phase_verify_envelopes
 
 
@@ -146,28 +145,10 @@ class TestTheParseCountDoesNotGrowWithComponents:
 
     @staticmethod
     def _counts(tmp_path: Path, count: int, monkeypatch: pytest.MonkeyPatch) -> tuple[int, int]:
-        from kstrl import config as config_module
-
-        original = config_module.load_toml_document
-        original_loads = config_module.tomllib.loads
-        calls = 0
-        parses = 0
-
-        def counting(path: Path) -> dict[str, Any]:
-            nonlocal calls
-            calls += 1
-            return original(path)
-
-        def counting_loads(text: str, **kwargs: Any) -> dict[str, Any]:
-            nonlocal parses
-            parses += 1
-            return original_loads(text, **kwargs)
-
-        monkeypatch.setattr(config_module, "load_toml_document", counting)
-        monkeypatch.setattr(config_module.tomllib, "loads", counting_loads)
+        counts = count_toml_parses(monkeypatch)
         comps = [component(f"comp-{index}") for index in range(count)]
         phase_verify_envelopes(tmp_path, comps)
-        return calls, parses
+        return counts.calls, counts.parses
 
     def test_one_component_and_eight_cost_the_same(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

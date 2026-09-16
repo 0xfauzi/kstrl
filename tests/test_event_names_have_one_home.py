@@ -663,7 +663,8 @@ class TestJournalEventNamesHaveOneHome:
         ``package_sources()``.
 
         ``exclude=Path(__file__)`` for the reason the two peers pass it
-        (``tests/test_procgroup.py`` and ``tests/test_process_scoping.py``):
+        (``tests/test_procgroup_listing.py`` and
+        ``tests/test_process_scoping.py``):
         a guard that names the shapes it forbids should not scan itself.
         DISCLOSED, because ``exclude`` takes one path and the exposure
         is a sibling: ``tests/test_event_name_shapes.py`` is in this
