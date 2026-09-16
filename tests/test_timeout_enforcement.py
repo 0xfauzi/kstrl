@@ -513,24 +513,31 @@ class TestTheFuseIsTheBound:
     }
 
     #: (class, method) pairs disclosed as needing a ``timeout=`` value
-    #: other than their class's constant, with the one-line reason.
-    #: Closed over the METHOD'S OWN LINES via astwalk.declared_in in the
-    #: test below, not over its name alone, so a same-named method added
-    #: to a different battery class later is never silently covered by
-    #: this row.
-    _DISCLOSED_TIMEOUT_EXCEPTIONS: dict[tuple[str, str], str] = {
+    #: other than their class's constant. Each row carries the EXACT call
+    #: rows the census must find in that method plus the one-line reason,
+    #: so the disclosure clears the method only while its calls still have
+    #: that shape: a disclosure that cleared by name alone let the routed
+    #: missing-sdk test be reverted to a bare ``agent.run(...)`` with the
+    #: census green (#365, verifier round 4). Closed over the METHOD'S OWN
+    #: LINES via astwalk.declared_in in the test below, not over its name
+    #: alone, so a same-named method added to a different battery class
+    #: later is never silently covered by this row. Re-derive a row by
+    #: running ``_timeout_calls`` on the method, never by reading it off.
+    _DISCLOSED_TIMEOUT_EXCEPTIONS: dict[tuple[str, str], tuple[list[tuple[str, str]], str]] = {
         (
             "TestClaudeSdkAgentDeadline",
             "test_missing_sdk_fails_fast_with_install_hint",
         ): (
+            [("_lines_under_fuse", "30.0")],
             "fails fast on an import error before any subprocess starts, so "
             "it is not a startup-race deadline; bounded by KILL_BOUND_SECONDS "
-            "via an explicit fuse= instead of SDK_DEADLINE_SECONDS"
+            "via an explicit fuse= instead of SDK_DEADLINE_SECONDS",
         ),
         ("TestCustomAgentDeadline", "test_no_timeout_still_completes_normally"): (
+            [("agent.run", "None"), ("agent.run", "<positional-or-missing timeout>")],
             "not a deadline test (C5): timeout=None with a command that "
             "exits on its own, asserting normal completion rather than a "
-            "kill, so there is nothing to route through the fuse"
+            "kill, so there is nothing to route through the fuse",
         ),
     }
 
@@ -638,30 +645,33 @@ class TestTheFuseIsTheBound:
             for row in cls._rows_for_call(call)
         ]
 
-    def _is_disclosed_exception(
+    def _disclosed_rows(
         self,
         tree: ast.Module,
         class_name: str,
         fn: ast.FunctionDef | ast.AsyncFunctionDef,
-    ) -> bool:
-        """Whether ``fn`` is a named, reasoned exception to its class's
-        constant. Checked against the method's OWN LINES via
-        ``astwalk.declared_in``, not its name alone, so a same-named
-        method added to a different class later is never silently
-        covered by this row."""
-        if (class_name, fn.name) not in self._DISCLOSED_TIMEOUT_EXCEPTIONS:
-            return False
+    ) -> list[tuple[str, str]] | None:
+        """The call rows a disclosed exception promises for ``fn``, or
+        ``None`` when ``fn`` is not disclosed. Checked against the method's
+        OWN LINES via ``astwalk.declared_in``, not its name alone, so a
+        same-named method added to a different class later is never
+        silently covered by this row."""
+        row = self._DISCLOSED_TIMEOUT_EXCEPTIONS.get((class_name, fn.name))
+        if row is None:
+            return None
         method_lines = astwalk.declared_in(tree, class_name, fn.name)
         assert fn.lineno in method_lines, (
             f"{class_name}.{fn.name} could not be relocated by declared_in; re-derive the exception"
         )
-        return True
+        return row[0]
 
     def _class_violations(
         self, tree: ast.Module, class_name: str, constant: str
     ) -> dict[str, list[tuple[str, str]]]:
         """Every method of ``class_name`` whose ``timeout=`` calls are
-        neither ``[("_lines_under_fuse", constant)]`` nor disclosed."""
+        neither ``[("_lines_under_fuse", constant)]`` nor exactly the rows
+        its disclosure promises; a disclosed method whose calls drift is
+        flagged, not cleared."""
         class_node = next(
             node
             for node in astwalk.all_nodes(tree)
@@ -674,7 +684,7 @@ class TestTheFuseIsTheBound:
             calls = self._timeout_calls(fn)
             if not calls or calls == [("_lines_under_fuse", constant)]:
                 continue
-            if self._is_disclosed_exception(tree, class_name, fn):
+            if calls == self._disclosed_rows(tree, class_name, fn):
                 continue
             violations[fn.name] = calls
         return violations
