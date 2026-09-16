@@ -35,6 +35,7 @@ from kstrl.init_cmd import (
     staleness_notice,
 )
 from kstrl.init_wizard import plan_scaffold
+from tests.helpers import gitrepo
 from tests.spine_utils import git as spine_git
 from tests.test_init_cmd import run_init_capturing
 from tests.test_prompt_staleness import (
@@ -531,8 +532,7 @@ class TestOperatorActuallySeesIt:
         (kstrl_dir / "prd.json").write_text('{"branchName": "test", "userStories": []}')
         (project / "kstrl.toml").write_text('[factory]\nreview_mode = "skip"\n')
         spine_git("init", "-q", "-b", "main", cwd=project)
-        spine_git("config", "user.email", "cli@test", cwd=project)
-        spine_git("config", "user.name", "CLI Test", cwd=project)
+        gitrepo.set_identity(project)
         spine_git("add", "-A", cwd=project)
         spine_git("commit", "-q", "-m", "init", cwd=project)
         return project

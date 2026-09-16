@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 
 from kstrl import dampener, dampener_report
+from tests.helpers import gitrepo
 from tests.test_sense_dampener import DIGEST, PROJECT, _baseline
 
 # --- the document on disk -----------------------------------------------
@@ -414,8 +415,7 @@ def test_the_identity_reads_still_answer_when_git_is_present(tmp_path: Path) -> 
     # The two sibling repositories in this pull request, in
     # tests/test_check_result_measurement_behaviour.py and
     # tests/test_sense_dampener_workflow.py, already configure both fields.
-    run_git("config", "user.email", "kstrl@example.com", cwd=repo)
-    run_git("config", "user.name", "kstrl", cwd=repo)
+    gitrepo.set_identity(repo)
     run_git("commit", "-q", "--allow-empty", "-m", "base", cwd=repo)
 
     assert get_origin_slug(repo) == "0xfauzi/kstrl"

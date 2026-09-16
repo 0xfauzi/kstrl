@@ -32,6 +32,7 @@ from kstrl.init_wizard import plan_scaffold
 from kstrl.policy import LOCKFILE_BASENAMES
 from kstrl.ui.plain import PlainUI
 from kstrl.ui.rich_ui import RichUI
+from tests.helpers import gitrepo
 from tests.spine_utils import git
 
 
@@ -51,8 +52,7 @@ def make_repo(parent: Path, name: str, manifest: str, contents: str) -> Path:
     repo = parent / name
     repo.mkdir()
     git("init", "-q", "-b", "main", cwd=repo)
-    git("config", "user.email", "t@t", cwd=repo)
-    git("config", "user.name", "t", cwd=repo)
+    gitrepo.set_identity(repo)
     (repo / manifest).write_text(contents)
     git("add", manifest, cwd=repo)
     git("commit", "-qm", "init", cwd=repo)

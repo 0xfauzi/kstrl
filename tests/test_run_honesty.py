@@ -38,6 +38,7 @@ from kstrl.loop import LoopResult
 from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
+from tests.helpers import gitrepo
 
 COMPLETE_LINE = "echo '<promise>COMPLETE</promise>'"
 COMP_PRD_PATH = "scripts/kstrl/feature/comp-a/prd.json"
@@ -61,8 +62,7 @@ def _init_repo(root: Path) -> None:
     small Python source file so feedforward has content to summarize."""
     root.mkdir(parents=True, exist_ok=True)
     _git("init", "-q", "-b", "main", cwd=root)
-    _git("config", "user.email", "t@t", cwd=root)
-    _git("config", "user.name", "t", cwd=root)
+    gitrepo.set_identity(root)
     src = root / "src"
     src.mkdir()
     (src / "app.py").write_text("def greet(name: str) -> str:\n    return f'hello {name}'\n")

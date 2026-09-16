@@ -34,6 +34,7 @@ from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.review import ReviewConcern, ReviewResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
+from tests.helpers import gitrepo
 
 # ---------------------------------------------------------------------------
 # Shared builders (pattern follows tests/test_review_gates.py)
@@ -143,8 +144,7 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 def _init_git_repo(root: Path) -> None:
     _git(root, "init", "-q", "-b", "main")
-    _git(root, "config", "user.email", "r33@test")
-    _git(root, "config", "user.name", "R33 Test")
+    gitrepo.set_identity(root)
     (root / ".gitignore").write_text("scripts/kstrl/\n.kstrl/\n")
     (root / "README.md").write_text("seed\n")
     _git(root, "add", ".gitignore", "README.md")

@@ -27,6 +27,7 @@ from kstrl.tui.screens.options import OptionsModal
 from kstrl.tui.screens.overview import OverviewScreen
 from kstrl.tui.screens.retry import RetryScreen
 from kstrl.tui.session import LaunchError, start_run_session
+from tests.helpers import gitrepo
 from tests.helpers.settle import drained, mounted, settled
 from tests.spine_utils import git as spine_git
 from tests.test_decompose import VALID_DECOMPOSE_OUTPUT, MockDecomposeAgent
@@ -83,8 +84,7 @@ class FakeSession:
 def _git_repo_on(root: Path, branch: str) -> Path:
     """One-commit repo at ``root`` whose only branch is ``branch``."""
     spine_git("init", "-q", "-b", branch, cwd=root)
-    spine_git("config", "user.email", "launch@test", cwd=root)
-    spine_git("config", "user.name", "Launch Test", cwd=root)
+    gitrepo.set_identity(root)
     (root / "a.txt").write_text("a\n")
     spine_git("add", "-A", cwd=root)
     spine_git("commit", "-q", "-m", "init", cwd=root)
