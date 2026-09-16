@@ -2041,6 +2041,10 @@ class TestQueueItemsRememberTheirPrs:
         )
         meta = (queue.item_dir(item) / "meta.json").read_text(encoding="utf-8")
         assert "https://github.com/o/r/pull/3" in meta
+        assert json.loads(meta)["pr_urls"] == [
+            "https://github.com/o/r/pull/1",
+            "https://github.com/o/r/pull/3",
+        ]
         assert [entry["to"] for entry in queue.journal_entries(item.item_id)] == [
             "queued",
             "leased",
