@@ -359,7 +359,7 @@ class TestTheWalkAgainstTheRealPackage:
         other git helper, which is what the sibling guard checks. 70 and
         71 are ``kstrl/doctor.py`` (#198): ``git ls-files -z`` in
         ``check_test_root`` and ``git check-ignore -q`` in
-        ``check_gitignore``, both carrying ``timeout=_GIT_TIMEOUT``, which
+        ``check_gitignore``, both carrying ``timeout=git.DEFAULT_TIMEOUT``, which
         is what the sibling audit in ``tests/test_timeout_enforcement.py``
         checks and which passes unchanged.
         """

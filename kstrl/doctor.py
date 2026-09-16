@@ -2,10 +2,12 @@
 
 Tier A only. Every check is static and mechanical: nothing here runs
 the repository's own test, typecheck or lint commands, spawns an
-agent, or spends anything. Measured cost of the whole set: 0.392 s
-on this repository and 0.437 s on deckgen, under load average 5.6 to
-6.3. `ks doctor --measure` (Tier B) is not built; `ks sense` already
-runs the measurement it would wrap.
+agent, or spends anything. Measured cost: about 0.3 to 0.5 s per run
+on this repository (three runs: 387, 403 and 493 ms), of which one
+gh auth status network round trip is about 250 ms (bounded by
+pr.GH_TIMEOUT when offline); the eight local checks together are
+the rest. `ks doctor --measure` (Tier B) is not
+built; `ks sense` already runs the measurement it would wrap.
 
 The anti-chimera rule from the issue: doctor checks ONLY what kstrl
 consumes, and every check's ``detail`` names the kstrl component

@@ -352,12 +352,13 @@ def test_every_report_carries_the_fit_boundaries(tmp_path: Path) -> None:
 def test_a_root_that_is_not_a_directory_is_refused_before_anything_is_written(
     tmp_path: Path,
 ) -> None:
-    """The exit code alone cannot catch a missing guard here: without it
-    `git.is_git_repo` swallows the OSError, `git_repo` fails, and the
-    verdict is not-ready with the same exit 2. What the guard buys is
-    that `write_report`'s `mkdir(parents=True)` never runs on a path
-    the operator mistyped, so the assertion is on the message and on
-    the absence of the directory.
+    """Without the guard the command does not fall through to a
+    not-ready verdict: check_source_root reaches Path.iterdir on the
+    missing directory and the command dies with FileNotFoundError and
+    exit 1 (measured). The assertions are on the message and on the
+    absence of the directory because what the guard buys is that
+    write_report's mkdir(parents=True) never runs on a path the
+    operator mistyped.
     """
     missing = tmp_path / "nope" / "deeper"
     result = run_doctor(missing)
