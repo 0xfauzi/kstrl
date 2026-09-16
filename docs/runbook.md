@@ -2,6 +2,52 @@
 
 Recovery procedures for the failure modes that actually happen during factory runs.
 
+## Before you point kstrl at a repository
+
+`ks doctor [--root <path>] [--json]` runs nine static checks over a
+repository and reports whether kstrl can point at it. Every check is
+mechanical: nothing here runs the repository's own test, typecheck or
+lint commands, spawns an agent, or spends anything. The nine checks are
+`git_repo` (a repository with commits and a base branch factory can cut
+a worktree from), `git_clean` (uncommitted work does not reach the
+engineer), `github_cli` (`gh` authenticated and an `origin` remote, for
+pushing branches and opening PRs), `kstrl_config` (`kstrl.toml` resolves
+in full), `verify_commands` (the test, typecheck and lint commands
+Phase 1 will run), `source_root` (whether `feedforward.extract_public_interfaces`
+gives the engineer anything to read), `test_root` (tracked paths that
+read as tests to `adequacy.is_test_path`), `gitignore` (whether
+`.kstrl/` is ignored, so the in-loop scope guard does not count kstrl's
+own run journals against a component), and `protected_paths` (CI,
+migration and deploy paths that `[policy] paths_deny` does not cover).
+
+There are three verdicts. `ready` (exit 0): every check passed.
+`ready-with-warnings` (exit 0): at least one check warned, none failed.
+`not-ready` (exit 2): at least one check failed, most commonly no git
+repository or a `kstrl.toml` that will not parse. The report is also
+written as JSON under `.kstrl/doctor/report-<UTC stamp>.json`.
+
+`ks doctor --measure` (Tier B: a flakiness smoke and a cost projection)
+is not built and exits 2 naming the command that already runs the
+measurement it would wrap: `ks sense`, which runs the mechanical sensors
+against a tree with no PRD, branch, worktree or agent spend.
+
+A green verdict from `ks doctor` is not the same as a spec being ready
+to run. Every report ends with the same four sentences, because none of
+this is a small print an operator should have to find on their own:
+
+- A green verdict is repo-readiness, not spec-readiness. Nothing here
+  can tell you whether the work you are about to describe fits the
+  component model.
+- kstrl is not for cross-cutting refactors. The factory decomposes a
+  spec into components that each merge on their own, and a change that
+  has to land everywhere at once has no such decomposition.
+- kstrl is not for spec-free exploration. Every iteration is graded
+  against a PRD, so work whose acceptance criteria are not known yet has
+  nothing to grade.
+- Tier A reads the repository and runs none of your commands, so it
+  cannot tell you whether your suite is green, fast or flaky. Run
+  `ks sense` for that.
+
 ## Phase 1: mechanical verification failed
 
 **Symptom**: `Phase 1 FAILED for <comp_id>: <check_names>`

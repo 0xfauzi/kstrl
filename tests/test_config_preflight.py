@@ -600,7 +600,7 @@ class TestAConfigThatWillNotParseIsReportedNotCrashed:
         it is checked against the live registry, not against a number
         somebody wrote in a comment.
 
-        The three exempt commands are covered by
+        The four exempt commands are covered by
         ``TestTheCommandsThatMustSurviveABrokenConfig``, which runs its
         cases over ``TOML_PARSE_FAULTS``.
         """
@@ -610,11 +610,11 @@ class TestAConfigThatWillNotParseIsReportedNotCrashed:
 
 
 class TestTheCommandsThatMustSurviveABrokenConfig:
-    """Three exemptions, each of which would otherwise take away the tool
+    """Four exemptions, each of which would otherwise take away the tool
     the operator recovers with, or replace a machine contract with a
     weaker one.
 
-    The three parametrized cases run against EVERY shape a kstrl.toml
+    The four parametrized cases run against EVERY shape a kstrl.toml
     can fail to parse in (``TOML_PARSE_FAULTS``), because an exemption
     that survives one fault and not another is not an exemption. #318 was
     exactly that, twice: round 1, `config show` printed the codec
@@ -660,6 +660,22 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
 
         assert result.exit_code == 2
         assert fragment in json.loads(result.stdout)["error"]
+
+    @pytest.mark.parametrize(("toml", "fragment"), TOML_PARSE_FAULTS)
+    def test_doctor_reports_a_broken_config_instead_of_refusing_to_run(
+        self,
+        toml: bytes,
+        fragment: str,
+    ) -> None:
+        """The doctor is the surface an operator diagnoses WITH. Under the
+        seam it would print one refusal and none of its nine checks, for
+        the config it exists to report on."""
+        result = _invoke(["doctor"], toml=toml)
+
+        assert result.exit_code == 2
+        assert "[fail] kstrl_config" in result.output
+        assert "[ok] git_repo" not in result.output  # isolated_filesystem is not a repo
+        assert fragment in result.output
 
     def test_sense_checks_sections_it_does_not_itself_read(self) -> None:
         """`sense` loads four sections of its own. An exemption that
@@ -725,6 +741,10 @@ class TestTheHomeShellIsNotAFifthExemption:
     and ``decompose_spec`` directly), so a bad ``[linear]`` value paid
     for the architect and then aborted. The original #272 defect, on the
     path a user reaches by typing `ks`.
+
+    ``ks doctor`` (#198) made the documented exempt list five, so the
+    shell would now be a sixth; the name is kept because it records
+    the #272 defect rather than a live count.
     """
 
     @staticmethod

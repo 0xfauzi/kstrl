@@ -1379,8 +1379,9 @@ Depends on: none; BLOCKS enabling `[autonomy]` at L3+ and unattended
 
 ## R8.10 Repo readiness: `ks doctor` (M) - [#198](https://github.com/0xfauzi/kstrl/issues/198)
 
-Status: `[ ]` - Added 2026-08-03. Depends on: none; recommended before
-the first unattended `ks serve` on any new repo
+Status: Tier A shipped (#198); Tier B still open. Added 2026-08-03.
+Depends on: none; recommended before the first unattended `ks serve` on
+any new repo
 
 **Why.** Majority usage is expected to be brownfield, and the most
 expensive failure mode on a new repo is discovering unsuitability
@@ -1405,6 +1406,17 @@ reusing the shipped R8.5 linting machinery read-only, and a projected
 cost/wall-clock range per component from measured timing. Verdict:
 ready / ready-with-warnings / not-ready, plus an ordered fix-first
 list, written to a timestamped report.
+
+**Measured (Tier A, 2026-09-16).** The whole static set costs 0.392 s
+on this repository and 0.437 s on deckgen, under load average 5.6 to
+6.3, and runs none of the repository's own commands. Two of the nine
+checks fire on real repositories today: deckgen's source root is
+`[]` and its interface section is empty, and this repository spends
+30 of its 30-file budget starting at `tests/conftest.py` with zero
+files from `kstrl/` (#378). Test-root detection counts tracked paths
+through `adequacy.is_test_path` rather than probing for `tests/`,
+because deckgen has no root `tests/` directory at all: 342 of 578
+tracked paths here, 188 of 2332 there, in 5 to 7 ms.
 
 **Scope constraint (anti-chimera).** Doctor checks ONLY what kstrl
 actually consumes; it is not a general repo linter. Additions must name

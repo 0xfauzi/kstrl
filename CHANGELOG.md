@@ -13,6 +13,19 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Added
 
+- `ks doctor [--root <path>] [--json]` (Tier A, #198): nine static checks
+  over whether a repository is ready to point kstrl at, each naming the
+  kstrl component that consumes its signal - git and gh state,
+  `kstrl.toml` validity, the verify commands Phase 1 will run, the
+  source root and file budget the feedforward stage reaches, tracked
+  test paths, whether `.kstrl/` is ignored, and CI or migration paths
+  `[policy] paths_deny` does not cover. Verdict `ready` /
+  `ready-with-warnings` / `not-ready`, exit 0 for the first two and 2 for
+  the third, with the report also written to
+  `.kstrl/doctor/report-<UTC stamp>.json`. Nothing here runs an LLM, an
+  agent or the repository's own commands, and `--measure` (Tier B) is
+  not built: it exits 2 naming `ks sense` as the command that already
+  runs the measurement it would wrap.
 - `[intake_github] allowed_actors` (`KSTRL_INTAKE_GITHUB_ALLOWED_ACTORS`,
   comma separated): the GitHub logins allowed to apply the trigger label,
   and so to authorize factory spend. Empty, the default, changes nothing;

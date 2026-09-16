@@ -205,6 +205,11 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     "agents/codex.py": ("DeadlineStreamer", "subprocess"),
     "breaker.py": ("subprocess",),
     "contract.py": ("subprocess",),
+    # doctor.py (#198) runs two short git commands and waits for each
+    # with a timeout; it creates, signals, waits on or abandons no
+    # process group, so there is nothing here for `kstrl.procgroup` to
+    # own.
+    "doctor.py": ("subprocess",),
     "fixtures.py": ("subprocess",),
     "git.py": ("subprocess",),
     "intake_github.py": ("subprocess",),

@@ -82,6 +82,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_check_result_measurement_behaviour.py": 5,
     "tests/test_cli.py": 2,
     "tests/test_contract_safety.py": 4,
+    # `ready_repo` calls `tests.helpers.gitrepo.set_identity` before it
+    # commits (#198), once per scenario that builds its own fixture.
+    "tests/test_doctor.py": 7,
     "tests/test_explicit_merge_gate.py": 1,
     "tests/test_feature_verification.py": 1,
     "tests/test_feature_verification_attribution.py": 1,

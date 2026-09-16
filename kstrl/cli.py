@@ -638,13 +638,23 @@ def _timestamp() -> str:
 #   itself, under that contract.
 # - `ks serve` has the same documented exit 2, and also calls the
 #   preflight itself, before `--print-plist` returns.
+# - `ks doctor` REPORTS a rejected configuration as one of its nine
+#   checks, with the not-ready verdict and the exit 2 that go with
+#   it, and calls `config_preflight.config_problem_lines` itself to
+#   do so. Under the seam, the command an operator diagnoses WITH
+#   would print one refusal and none of its checks, for the very file
+#   it exists to report on.
 #
-# The last three are exempt from the SEAM, never from the check: each
-# runs the same `preflight_config` in its own body, under its own
-# contract. `init` is the one command exempt from the check itself, for
-# the reason above. An exemption that skipped the check for any other
-# reason would be the property #272 removed, smuggled back in under a
-# name.
+# The last four are exempt from the SEAM, never from the check: each
+# still resolves every section in its own body, under its own
+# contract, but not all of them the same way. `sense` and `serve` call
+# `preflight_config` and turn a rejection into their own documented
+# refusal; `config show` and `doctor` REPORT instead, through the
+# reporting half of the same traversal (`collect_config_problems` /
+# `config_problem_lines`) rather than the raising one. `init` is the
+# one command exempt from the check itself, for the reason above. An
+# exemption that skipped the check for any other reason would be the
+# property #272 removed, smuggled back in under a name.
 #
 # Bare `ks` is NOT on this list and is not a command: its callback
 # belongs to the group, so it preflights explicitly (see `cli`).
@@ -652,7 +662,7 @@ def _timestamp() -> str:
 # Keyed by the TOP-LEVEL command name (see `_KstrlCommand._top_level_name`),
 # so `ks config show` is covered by "config" while a later `ks queue init`
 # is not exempted by its leaf name.
-_PREFLIGHT_EXEMPT = frozenset({"init", "config", "sense"})
+_PREFLIGHT_EXEMPT = frozenset({"init", "config", "sense", "doctor"})
 
 # Sections a command is ABOUT, promoted from degrading to fatal for that
 # command only. `[evolution]` degrades everywhere because the journal is
@@ -3849,17 +3859,29 @@ def _sense_report(
     sys.exit(1)
 
 
-def _sense_error(message: str, as_json: bool) -> NoReturn:
+def _sense_error(
+    message: str,
+    as_json: bool,
+    *,
+    schema_version: int = SENSE_SCHEMA_VERSION,
+) -> NoReturn:
     """Exit 2: the measurement itself could not run.
 
     One ``error:`` line on stderr always; with ``--json`` a one-key
     document on stdout so a pipe reading stdout sees the failure too.
+
+    Shared with ``ks doctor``'s two refusals (``--measure`` and a
+    ``--root`` that is not a directory), which named this exact
+    contract in the PR body without going through it: printing the
+    JSON error document is what ``--json`` on a refusal means, and a
+    caller with its own schema names it with ``schema_version`` rather
+    than getting sense's.
     """
     click.echo(f"error: {message}", err=True)
     if as_json:
         click.echo(
             json.dumps(
-                {"schema_version": SENSE_SCHEMA_VERSION, "error": message},
+                {"schema_version": schema_version, "error": message},
             )
         )
     sys.exit(2)
@@ -4159,6 +4181,54 @@ def sense(
         no_color=no_color,
         digest=digest,
     )
+
+
+@cli.command()
+@click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    help="Repository to assess; kstrl.toml is read from here (defaults to current directory)",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Print the report as one JSON document instead of a table",
+)
+@click.option(
+    "--measure",
+    is_flag=True,
+    help="Tier B (not built): prints the command that already measures this tree",
+)
+def doctor(root: Path | None, as_json: bool, measure: bool) -> None:
+    """Assess whether this repository is ready to point kstrl at.
+
+    Exit 0 for ready and ready-with-warnings, 2 for not-ready.
+    """
+    from kstrl import doctor as doctor_mod
+
+    if measure:
+        _sense_error(
+            doctor_mod.MEASURE_NOT_BUILT, as_json, schema_version=doctor_mod.DOCTOR_SCHEMA_VERSION
+        )
+
+    root_dir = (root or Path.cwd()).resolve()
+    if not root_dir.is_dir():
+        _sense_error(
+            f"root is not a directory: {root_dir}",
+            as_json,
+            schema_version=doctor_mod.DOCTOR_SCHEMA_VERSION,
+        )
+
+    document = doctor_mod.diagnose(root_dir)
+    failure = doctor_mod.write_report(document)
+    if failure is not None:
+        click.echo(f"warning: {failure}", err=True)
+    if as_json:
+        click.echo(json.dumps(document, indent=2))
+    else:
+        click.echo(doctor_mod.render_text(document))
+    sys.exit(doctor_mod.exit_code_for(document["verdict"]))
 
 
 @cli.command()

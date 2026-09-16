@@ -115,6 +115,11 @@ EXPECTED_FREE_READERS = frozenset(
         "_blamed_toml_value",
         "_masthead",
         "build_config_report",
+        # doctor.check_kstrl_config (#198) reads the config to REPORT on
+        # it, never to resolve a run from it, so it does not belong in
+        # RunEnvelope, which is the question this guard's own failure
+        # message asks.
+        "check_kstrl_config",
         "collect_config_problems",
         "load_toml_section",
         "resolve_or_report",

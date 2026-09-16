@@ -256,6 +256,7 @@ ks autonomy status              Show the current level, its flag bundle, and wha
 ks config show                  Print the fully resolved config with the source of each value.
 ks dash                         Live dashboard over a factory run (observe-only).
 ks decompose                    Decompose a spec into components and generate PRDs.
+ks doctor                       Assess whether this repository is ready to point kstrl at.
 ks evolve                       Analyze factory runs and propose harness improvements.
 ks factory                      Run the software factory - decompose and execute a spec.
 ks feature                      Run feature understanding, then implementation.
