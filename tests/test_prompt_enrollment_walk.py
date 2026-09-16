@@ -281,13 +281,37 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # constant and the body of DECISIONS_CONTEXT_PROMPT, both enrolled.
     "decisions.py": 2,
     "decompose.py": 2,
+    # #303: 0 pre-existing + 7 new fragments x 2 spellings each (the
+    # declaration and its one use site) = 14. The version constant adds
+    # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
+    "context.py": 14,
+    # #303: 0 pre-existing + 1 new fragment x 2 spellings each (the
+    # declaration and its one use site) = 2. The version constant adds
+    # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
+    "factory.py": 2,
     "git.py": 4,
-    "init_cmd.py": 12,
-    "knowledge.py": 2,
+    # #303: 12 pre-existing + 16 new fragments x 2 spellings each (the
+    # declaration and its one use site) = 44. The version constant adds
+    # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
+    "init_cmd.py": 44,
+    # #303: 2 pre-existing + 2 new fragments x 2 spellings each (the
+    # declaration and its one use site) = 6. The version constant adds
+    # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
+    "knowledge.py": 6,
     "loop.py": 2,
-    "review.py": 2,
+    # #303: 0 pre-existing + 12 new fragments x 2 spellings each (the
+    # declaration and its one use site) = 24. The version constant adds
+    # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
+    "parsers.py": 24,
+    # #303: 2 pre-existing + 5 new fragments x 2 spellings each (the
+    # declaration and its one use site) = 12. The version constant adds
+    # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
+    "review.py": 12,
     "security.py": 2,
-    "verify.py": 2,
+    # #303: 2 pre-existing + 10 new fragments x 2 spellings each (the
+    # declaration and its one use site) = 22. The four *_PROMPT_VERSION
+    # constants add nothing: the walk keys on names ending in _PROMPT.
+    "verify.py": 22,
 }
 
 

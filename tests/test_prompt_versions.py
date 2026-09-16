@@ -126,6 +126,13 @@ from kstrl.verify import (
     VerificationResult,
 )
 from tests.conftest import make_review_repo
+from tests.helpers.builder_prompts import (
+    _BUILDERS,
+    BUILDER_PROMPTS,
+    BUILDER_RENDER_EXEMPT,
+    BUILDER_SNAPSHOTS,
+    BUILDER_VERSIONS,
+)
 from tests.helpers.component_prd import write_component_prd
 from tests.test_review_payload import RecordingAgent
 
@@ -144,6 +151,7 @@ _PROMPTS: dict[str, str] = {
     "REPO_CHANGE_SOURCE_PROMPT": REPO_CHANGE_SOURCE_PROMPT,
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT,
     "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT,
+    **BUILDER_PROMPTS,
 }
 
 _VERSIONS: dict[str, str] = {
@@ -156,6 +164,7 @@ _VERSIONS: dict[str, str] = {
     "REPO_CHANGE_SOURCE_PROMPT": REPO_CHANGE_SOURCE_PROMPT_VERSION,
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT_VERSION,
     "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT_VERSION,
+    **BUILDER_VERSIONS,
 }
 
 # Joint snapshot: (sha256_hash, semver_version). Both must move together
@@ -262,6 +271,7 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "1630b9ee2c33c3513965f03e28a4f2e4d76c4cbf434b031fdb789819f23fae23",
         "1.0.0",
     ),
+    **BUILDER_SNAPSHOTS,
 }
 
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
@@ -292,6 +302,14 @@ def _drift_message(name: str, expected: tuple[str, str], actual: tuple[str, str]
             "row (#286). Without it the bump reaches no already-initialised "
             "project and nothing can tell an operator their prompt.md is "
             "behind.\n"
+        )
+    if name in BUILDER_VERSIONS:
+        builder_version_name = next(v for _m, v, names in _BUILDERS if name in names)
+        parts.append(
+            f"  Note: {name} is a #303 builder fragment. {name}_VERSION does "
+            f"not exist; the constant to bump is {builder_version_name}, "
+            "declared above the builder's bodies, because the version's unit "
+            "is the text one builder delivers, not one fragment.\n"
         )
     parts.append(
         "All of these writes are required. The PR diff with prompt + version + "
@@ -429,8 +447,11 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
 #: to disk verbatim by ``ks init`` and read back by ``run_loop``; it is
 #: never interpolated, so there is no render step to orphan. Its reach is
 #: covered by H3b's scaffold ledger instead
-#: (``test_engineer_prompt_bump_reaches_existing_projects``).
-_RENDER_EXEMPT = frozenset({"DEFAULT_PROMPT"})
+#: (``test_engineer_prompt_bump_reaches_existing_projects``). The
+#: BUILDER_RENDER_EXEMPT names (#303) are exempt for the reason given in
+#: ``tests/helpers/builder_prompts.py``'s module docstring; their orphan
+#: guards live in ``tests/test_builder_prompts.py`` instead.
+_RENDER_EXEMPT = frozenset({"DEFAULT_PROMPT"}) | BUILDER_RENDER_EXEMPT
 
 
 def test_every_prompt_has_a_renderer() -> None:
