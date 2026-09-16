@@ -712,6 +712,48 @@ class TestCorruptionHandling:
         assert decoded.to_dict() == original.to_dict()
 
 
+class TestPrUrls:
+    def test_pr_urls_round_trip_through_the_sidecar(self, tmp_path: Path) -> None:
+        queue = _queue(tmp_path)
+        item = queue.start(queue.lease(_add(queue)))
+        queue.finish_ok(item, pr_urls=("https://x/pull/1", "https://x/pull/2"))
+        reloaded = queue.items()[0]  # decoded from meta.json on disk
+        assert reloaded.pr_urls == ("https://x/pull/1", "https://x/pull/2")
+
+    def test_an_item_written_before_this_field_reads_as_empty(self) -> None:
+        data = QueueItem(item_id="q-1", title="t", spec_filename="s.md").to_dict()
+        del data["pr_urls"]
+        decoded = QueueItem.from_dict(data)
+        assert decoded is not None
+        assert decoded.pr_urls == ()
+
+    def test_a_malformed_pr_urls_value_falls_back(self) -> None:
+        base = QueueItem(item_id="q-1", title="t", spec_filename="s.md").to_dict()
+        for payload in ("not a list", None, 7, {"a": 1}, ["ok", 3, "", None]):
+            decoded = QueueItem.from_dict({**base, "pr_urls": payload})
+            assert decoded is not None
+            assert decoded.pr_urls == ()
+
+    def test_finish_failed_records_them_too(self, tmp_path: Path) -> None:
+        queue = _queue(tmp_path)
+        item = queue.start(queue.lease(_add(queue)))
+        queue.finish_failed(item, error="boom", pr_urls=("https://x/pull/5",))
+        assert queue.items()[0].pr_urls == ("https://x/pull/5",)
+
+    def test_an_empty_collection_does_not_erase_what_is_recorded(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        queue = _queue(tmp_path)
+        item = queue.start(queue.lease(_add(queue)))
+        queue.finish_failed(item, error="boom", pr_urls=("https://x/pull/5",))
+        failed = queue.items()[0]
+        requeued = queue.requeue(failed)
+        item = queue.start(queue.lease(requeued))
+        queue.finish_ok(item, pr_urls=())
+        assert queue.items()[0].pr_urls == ("https://x/pull/5",)
+
+
 class TestLeases:
     def test_lease_records_pid_host_and_expiry(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path, lease_ttl_seconds=60)
