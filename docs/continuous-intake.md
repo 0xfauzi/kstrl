@@ -429,8 +429,35 @@ the lease. That ordering is the whole safety property, because
 clock**, which advances across a suspend - so a run suspended overnight
 blows its 3600s lease while its pid is very much alive.
 `tests/test_serve_process_tree.py::TestTheReaperRunsOnlyUnderTheDaemonLock`
-pins it (#203 item 3): before that class existed, a `serve()` mutated to
-run its cycle before acquiring the lock left all 18 lock tests green.
+pins it in one process, and `tests/test_serve_lock_before_reaper.py` pins
+it the way interval mode actually runs it: a separate process holds the
+lock file and a real `ks serve --once` subprocess exits 2 with the lease
+untouched and no reaper row in the journal (#203 item 3). Before those
+existed, a `serve()` mutated to run its cycle before acquiring the lock
+left all 18 lock tests green. The second class in the new module covers
+what neither of those reaches. A `serve()` that takes the lock, RELEASES
+it and then runs the cycle leaves every contended test green, because
+acquisition still raises whichever side of the cycle it sits on; so a
+child process is asked whether the lock is held WHILE an item runs.
+Measured 2026-09-16: under that mutation all 361 tests in the five serve
+suites pass and that one test is the only red in them.
+
+**What the assertion does against a DARK WAKE is not settled** (#203 items
+1 and 2). A dark wake ends on a SleepService timer rather than an idle
+timer, and interval mode can fire inside one: §7 has the observed case.
+One reading points at "`-i` does not hold", and it is an observation rather
+than the experiment. On 2026-09-15 this laptop entered
+`Sleep Service Back to Sleep` five times (20:21:43, 20:38:10, 21:06:17,
+21:24:10, 21:41:42), each about two seconds after a
+`DarkWake ... rtc/SleepService`, while a `caffeinate` process alive since
+2026-09-06 07:49:35 held `PreventUserIdleSystemSleep` throughout - the same
+assertion `caffeinate -i` takes. Read with `pmset -g log` and
+`pmset -g assertions`. Nothing about the flag changes on that: the holder
+was not started for this purpose, the machine was doing many other things,
+and `-s` was not tried.
+`scripts/dark_wake_caffeinate_experiment.sh` is the controlled version. It
+needs a real suspend, costs no LLM spend, and §7 says what each outcome
+decides.
 
 The recovery machinery exists for the case where the process really is
 gone - a crash, an OOM kill, a reboot - not for an ordinary lid close.
@@ -459,7 +486,8 @@ gone - a crash, an OOM kill, a reboot - not for an ordinary lid close.
 
 **Verified by test:** the queue state machine and its money-safety
 invariants, the retry classifier's every branch, all four backstops, the
-lease reaper, process-group termination, the GitHub adapter's parsing,
+lease reaper, the daemon lock being held before and across the lease
+reaper (#203), process-group termination, the GitHub adapter's parsing,
 planning, idempotency, authorization binding and writeback, and that the
 generated plist parses with `plistlib`/`plutil` in both modes.
 
@@ -520,39 +548,41 @@ documentation.
   pauses it; if below, suspend seconds were credited against it. Write
   the number and the branch here and delete this bullet.
 
-- **Whether `caffeinate -i` holds a run up against a dark wake's return
-  to sleep** (#203 items 1 and 2). §5's assertion topology is measured;
-  this is not, and it needs a real suspend on real hardware, so it has
-  not been guessed. Interval mode can fire inside a dark wake: one
-  observed firing landed in a 2-second `DarkWake ... SleepService`
-  window with the lid still shut, which is fine for an empty cycle at
-  0.08-0.12s and is not fine for a factory run at 10-20 minutes. A dark
-  wake ends on a **SleepService timer**, not an idle timer, and whether
+- **Whether `caffeinate -i` holds a run up against a dark wake's return to
+  sleep** (#203 items 1 and 2). §5's assertion topology is measured;
+  this is not, and it needs a real suspend on real hardware, so it has not
+  been guessed. Interval mode can fire inside a dark wake: one observed
+  firing landed in a 2-second `DarkWake ... SleepService` window with the
+  lid still shut, which is fine for an empty cycle at 0.08-0.12s and is not
+  fine for a factory run at 10-20 minutes. A dark wake ends on a
+  **SleepService timer**, not an idle timer, and whether
   `PreventUserIdleSystemSleep` blocks that transition is unknown.
 
-  The experiment, so it does not have to be re-derived. It costs no LLM
-  spend - a `sleep` child is enough:
+  What IS observed, and why it is not an answer: on 2026-09-15 five
+  `Sleep Service Back to Sleep` transitions followed five
+  `DarkWake ... rtc/SleepService` entries by about two seconds each, while
+  a `caffeinate` process alive since 2026-09-06 held
+  `PreventUserIdleSystemSleep`. That points at branch B below. It was an
+  unrelated holder on a busy machine and `-s` was never tried, so it moves
+  no default.
 
-  1. `caffeinate -i /bin/sleep 300`, and record the pid and start time.
-  2. Confirm with `pmset -g assertions` that a
-     `PreventUserIdleSystemSleep ... "caffeinate command-line tool"` row
-     appears against the forked helper's pid (it is a child of the
-     `sleep`, not the `sleep` itself; see §5).
-  3. Close the lid and leave the machine on battery until a
-     `DarkWake ... SleepService` entry appears in `pmset -g log`.
-  4. Read `pmset -g log` for that window. **The question is whether a
-     `Sleep  Sleep Service Back to Sleep` line follows while the
-     assertion's pid is still alive.**
-  5. Repeat once with `caffeinate -s`, which asserts `PreventSystemSleep`
-     (measured, §5).
+  `scripts/dark_wake_caffeinate_experiment.sh` is the controlled run. It
+  costs no LLM spend - the child is `/bin/sleep` - and it needs the lid
+  shut on battery. Run it twice, `-i` then `-s`, on the default 1800s
+  window: the observed dark wakes came 17 to 28 minutes apart, so a shorter
+  window can end before one lands. It reads `pmset -g log` only between the
+  child starting and the child exiting, which is exactly the interval the
+  assertion was held, and reports VOID rather than a branch when no dark
+  wake landed inside it.
 
-  What each result decides: if `-i` holds the machine up, document that
-  a run started in a dark wake completes and change nothing. If it does
-  not and `-s` does, switch `caffeinate_prefix` to `-s` and accept that
-  the machine stays awake for the length of a run. If neither holds,
-  interval mode is not safe unattended on a laptop and the guide must
-  say so. Record the answer here either way rather than closing #203 on
-  the first two steps.
+  What each result decides: **branch A** (a dark wake in the window and no
+  return to sleep) means a run started in a dark wake completes; document
+  it and change nothing. **branch B** (a return to sleep while the
+  assertion was held) under `-i` but branch A under `-s` means switching
+  `caffeinate_prefix` to `-s`, accepting that the machine stays awake for
+  the length of a run. Branch B under both means interval mode is not safe
+  unattended on a laptop and §5 must say so. Write the branch and
+  the `pmset` lines here either way, and delete this bullet.
 - **Automated coverage of a real factory run.** Still true, and still
   deliberate: a suite that spawned real runs would cost dollars per
   assertion, so no test runs a factory. The end-to-end path above is
