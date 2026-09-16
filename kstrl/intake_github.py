@@ -65,6 +65,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from kstrl.config import _parse_paths
 from kstrl.statedir import (
     CONTROL_GITHUB_PROCESSED,
     control_file,
@@ -151,16 +152,9 @@ def run_gh(
 
 
 def _validate_allowed_actors(value: Any) -> None:
-    """Reject an ``allowed_actors`` value the adapter could not act on.
+    """Reject an ``allowed_actors`` value the adapter cannot act on.
 
-    Takes ``Any`` rather than ``list[str]`` because that is what both
-    doors actually hand it: a toml array member can be any TOML type, and
-    the type annotation on the field describes what a VALID value is, not
-    what arrives. Raising :class:`IntakeError` here puts the fault on the
-    pre-spend path every other ``[intake_github]`` fault takes
-    (``config_preflight.collect_config_problems`` calls
-    ``GitHubIntakeConfig.load``), so a typo is one named line before a
-    poll rather than a surprise at admission time.
+    ``Any`` rather than ``list[str]``: a toml array member can be any type.
     """
     if not isinstance(value, list):
         raise IntakeError(
@@ -172,19 +166,6 @@ def _validate_allowed_actors(value: Any) -> None:
             raise IntakeError(
                 f"intake_github.allowed_actors[{index}] must be a non-empty string, got {entry!r}"
             )
-
-
-def _actors_from_env(value: str) -> list[str]:
-    """``"a, b"`` -> ``["a", "b"]``; a set but empty var means no allowlist.
-
-    Comma separated and whitespace trimmed, the spelling ``KstrlConfig``
-    already uses for ``[paths] allowed`` (``config._parse_paths``). The
-    two doors disagree about ``""`` the way every other pair in this
-    project does: a toml ``allowed_actors = []`` and a SET but empty env
-    var both mean "no allowlist", while an UNSET env var means "whatever
-    the file said".
-    """
-    return [name.strip() for name in value.split(",") if name.strip()]
 
 
 @dataclass(frozen=True)
@@ -212,22 +193,10 @@ class GitHubIntakeConfig:
     dry_run: bool = False
     timeout_seconds: float = 60.0
     #: GitHub logins allowed to apply the trigger label, and so to
-    #: authorize spend. EMPTY (the default) keeps the inherited-permission
-    #: behaviour: anyone who can label the issue can spend, which includes
-    #: any Action in the repo holding ``issues: write``. Non-empty, the
-    #: actor of the LATEST trigger-label event must be on this list or the
-    #: issue is refused. Compared case-insensitively, because GitHub
-    #: logins are, and refusing a capitalization difference that reads as
-    #: identical in the log is how a control gets deleted.
-    #:
-    #: ``list``, not ``tuple``, even though the dataclass is frozen:
-    #: ``scripts/gen_docs.py`` derives the README row and the probe value
-    #: from the DEFAULT's type, and ``_sentinel_for`` / ``_toml_literal``
-    #: have a ``list`` branch and no ``tuple`` branch, so a tuple default
-    #: would be probed with the string ``"sentinel-value"`` and blow up
-    #: generation. A list default makes instances unhashable; measured
-    #: that nothing hashes this config (``grep -rn "GitHubIntakeConfig"
-    #: kstrl/ tests/`` finds no set, dict key or ``hash()`` use).
+    #: authorize spend. EMPTY (the default, and a SET-BUT-EMPTY env var)
+    #: keeps the inherited-permission behaviour: anyone who can label the
+    #: issue can spend. Non-empty, the LATEST trigger-label event's actor
+    #: must be on this list. Compared case-insensitively.
     allowed_actors: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -284,9 +253,7 @@ class GitHubIntakeConfig:
             comment_on_result=(defaults.comment_on_result if comment is None else comment == "1"),
             dry_run=defaults.dry_run if dry is None else dry == "1",
             timeout_seconds=(defaults.timeout_seconds if timeout is None else float(timeout)),
-            allowed_actors=(
-                list(defaults.allowed_actors) if actors is None else _actors_from_env(actors)
-            ),
+            allowed_actors=(defaults.allowed_actors if actors is None else _parse_paths(actors)),
         )
 
     @classmethod
@@ -334,10 +301,7 @@ class GitHubIntakeConfig:
                 if "timeout_seconds" in section
                 else defaults.timeout_seconds
             ),
-            "allowed_actors": section.get(
-                "allowed_actors",
-                list(defaults.allowed_actors),
-            ),
+            "allowed_actors": section.get("allowed_actors", defaults.allowed_actors),
         }
         env_map: dict[str, tuple[str, Callable[[str], Any]]] = {
             "KSTRL_INTAKE_GITHUB_ENABLED": ("enabled", lambda v: v == "1"),
@@ -352,7 +316,7 @@ class GitHubIntakeConfig:
             ),
             "KSTRL_INTAKE_GITHUB_DRY_RUN": ("dry_run", lambda v: v == "1"),
             "KSTRL_INTAKE_GITHUB_TIMEOUT": ("timeout_seconds", float),
-            "KSTRL_INTAKE_GITHUB_ALLOWED_ACTORS": ("allowed_actors", _actors_from_env),
+            "KSTRL_INTAKE_GITHUB_ALLOWED_ACTORS": ("allowed_actors", _parse_paths),
         }
         for var, (name, cast) in env_map.items():
             if var in os.environ:
@@ -753,45 +717,24 @@ def authorization_refusal(
     :func:`verify_authorization`), and was the actor who applied the
     trigger label one this project chose to trust (#188)?
 
-    ``allowed_actors`` empty keeps the inherited-permission behaviour:
-    anyone who can apply the label can spend. Non-empty, it fails CLOSED
-    on every uncertainty, exactly as the edit binding does. An unreadable
-    timeline, a labelling event carrying no actor login, and a sync that
-    did not check at all are all refusals, because "we could not tell who
-    labelled it" is not evidence that a trusted actor did.
+    An unreadable authorization falls through to "the authorization check
+    refused without saying why" rather than "", which would read as an
+    admission.
 
-    The caller keys on this being NON-EMPTY, so a refused authorization
-    carrying no reason must not fall through to "" and be admitted: the
-    branch this function replaced refused on the boolean ``ok``, and the
-    ``or`` below is what keeps the two identical rather than trading a
-    boolean refusal for a truthy-string one.
-
-    Only the TRIGGER label's events can reach here:
-    :func:`verify_authorization` filters on ``config.queued_label`` before
-    it records an actor, so the state labels this adapter writes back
-    under the operator's own token, which IS on the allowlist, cannot
-    authorize anything.
+    ``allowed_actors`` empty means no allowlist: this returns "" and keeps
+    the inherited-permission behaviour, anyone who can apply the label can
+    spend.
     """
     if auth is not None and not auth.ok:
         return auth.reason or "the authorization check refused without saying why"
-    allowed = {name.strip().casefold() for name in config.allowed_actors}
-    if not allowed:
+    if not config.allowed_actors:
         return ""
-    if auth is None:
+    allowed = {name.strip().casefold() for name in config.allowed_actors}
+    actor = auth.actor if auth is not None else ""
+    if actor.strip().casefold() not in allowed:
         return (
-            "[intake_github] allowed_actors is set but this sync did not "
-            "check who applied the label"
-        )
-    if not auth.actor:
-        return (
-            f"the {config.queued_label} labelling event carries no actor "
-            "login, so it cannot be matched against [intake_github] "
-            "allowed_actors"
-        )
-    if auth.actor.strip().casefold() not in allowed:
-        return (
-            f"{config.queued_label} was applied by {auth.actor}, who is not "
-            f"in [intake_github] allowed_actors "
+            f"{config.queued_label} was applied by {actor or 'an unknown actor'}, "
+            f"who is not in [intake_github] allowed_actors "
             f"({', '.join(config.allowed_actors)})"
         )
     return ""

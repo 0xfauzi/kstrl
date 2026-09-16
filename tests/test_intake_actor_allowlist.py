@@ -6,6 +6,13 @@ a real ``kstrl.toml`` through the real loader, runs the real adapter
 against a stubbed ``gh`` transport, and calls the factory runner. So the
 assertions here are "did the runner get called" and "what did the operator
 surfaces print", never "what did the helper return".
+
+Only the tests that must prove the DAEMON reaches the runner drive
+``serve_cycle`` (via ``_cycle``). Everything else drives ``sync()``
+directly (via ``_sync``): the wire from a refusal decision to the runner
+is input-independent, the tests kept on ``serve_cycle`` cover it in both
+directions, and ``sync()`` is 5x-20x cheaper per test (#188 simplify pass
+item 7).
 """
 
 from __future__ import annotations
@@ -15,11 +22,9 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-from click.testing import CliRunner, Result
 
-from kstrl.cli import cli
-from kstrl.intake_github import GhResult, GitHubIntakeConfig
-from kstrl.serve import RunOutcome, serve_cycle
+from kstrl.intake_github import GhResult, GitHubIntakeConfig, SyncResult, sync
+from kstrl.serve import _NullObserver, serve_cycle
 from kstrl.workqueue import Queue, QueueConfig
 from tests.test_intake_github import (
     REPO,
@@ -28,20 +33,16 @@ from tests.test_intake_github import (
     _issue,
     _issue_payload,
 )
+from tests.test_queue_cli import _invoke
+from tests.test_serve_seam import _enable_github_intake, _recording_runner
 
-#: Held open for the same reason tests/test_intake_github.py holds it: none
-#: of this is about flow control. The fixture monkeypatches
-#: kstrl.serve.count_open_kstrl_prs for every test in this module, so no
-#: test here patches it again. See the fixture's docstring in
-#: tests/conftest.py.
+#: Nothing here is about flow control; the fixture's docstring in
+#: tests/conftest.py says why the R10.7 bound has to be held open.
 pytestmark = pytest.mark.usefixtures("no_open_prs")
 
 #: The actor the issue is actually about: any Action with ``issues: write``
 #: can apply the trigger label, with no human involved at all.
 BOT = "github-actions[bot]"
-OWNER = "0xfauzi"
-
-TRIGGER = "kstrl:queued"
 
 
 def _toml(root: Path, *, allowed: str | None = '["0xfauzi"]') -> None:
@@ -50,31 +51,10 @@ def _toml(root: Path, *, allowed: str | None = '["0xfauzi"]') -> None:
     ``allowed=None`` omits the key entirely, which is the pre-feature
     configuration.
     """
-    lines = [
-        "[intake_github]",
-        "enabled = true",
-        f'repo = "{REPO}"',
-        "comment_on_result = false",
-    ]
-    if allowed is not None:
-        lines.append(f"allowed_actors = {allowed}")
-    root.joinpath("kstrl.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def _recording_runner(calls: list[dict[str, Any]]) -> Any:
-    def runner(
-        *,
-        root_dir: Path,
-        spec_path: Path,
-        project_name: str,
-        pause_before_pr_merge: bool,
-        timeout_seconds: float,
-        on_spawn: Any = None,
-    ) -> RunOutcome:
-        calls.append({"project_name": project_name, "spec_path": spec_path})
-        return RunOutcome(0)
-
-    return runner
+    _enable_github_intake(
+        root,
+        extra=f"allowed_actors = {allowed}\n" if allowed is not None else "",
+    )
 
 
 def _cycle(root: Path, gh: _GhStub) -> tuple[list[dict[str, Any]], Any]:
@@ -85,8 +65,12 @@ def _cycle(root: Path, gh: _GhStub) -> tuple[list[dict[str, Any]], Any]:
     return calls, result
 
 
-def _invoke(args: list[str], root: Path) -> Result:
-    return CliRunner().invoke(cli, [*args, "--root", str(root), "--ui", "plain", "--no-color"])
+def _sync(root: Path, gh: _GhStub) -> SyncResult:
+    """The decision alone, without the daemon composition ``_cycle`` above
+    already proves."""
+    queue = Queue(root, QueueConfig())
+    with patch("kstrl.intake_github.run_gh", gh):
+        return sync(queue, GitHubIntakeConfig.load(root), root)
 
 
 class TestWhoMayAuthorizeSpend:
@@ -95,7 +79,7 @@ class TestWhoMayAuthorizeSpend:
         _toml(tmp_path)
         gh = _GhStub(
             issues=_issue_payload(_issue(7)),
-            auth=_auth_payload(actor=OWNER),
+            auth=_auth_payload(),
         )
         calls, result = _cycle(tmp_path, gh)
         assert len(calls) == 1, (
@@ -120,9 +104,9 @@ class TestWhoMayAuthorizeSpend:
         """GitHub logins are case-insensitive; a refusal on capitalization
         alone reads as a broken control and gets deleted."""
         _toml(tmp_path, allowed='["0xFAUZI"]')
-        gh = _GhStub(issues=_issue_payload(_issue(7)), auth=_auth_payload(actor=OWNER))
-        calls, _ = _cycle(tmp_path, gh)
-        assert len(calls) == 1
+        gh = _GhStub(issues=_issue_payload(_issue(7)), auth=_auth_payload())
+        result = _sync(tmp_path, gh)
+        assert result.enqueued == (f"{REPO}#7",)
 
     def test_a_state_label_applied_later_by_the_operator_does_not_admit(
         self,
@@ -138,59 +122,105 @@ class TestWhoMayAuthorizeSpend:
                 nodes=[
                     {
                         "createdAt": "2026-07-30T10:00:00Z",
-                        "label": {"name": TRIGGER},
+                        "label": {"name": "kstrl:queued"},
                         "actor": {"login": BOT},
                     },
                     {
                         "createdAt": "2026-07-30T11:00:00Z",
                         "label": {"name": "kstrl:running"},
-                        "actor": {"login": OWNER},
+                        "actor": {"login": "0xfauzi"},
                     },
                 ]
             ),
         )
-        calls, result = _cycle(tmp_path, gh)
-        assert calls == [], "a state label written back by the adapter authorized a run"
-        assert result.synced == ()
+        result = _sync(tmp_path, gh)
+        assert result.enqueued == (), "a state label written back by the adapter authorized a run"
 
     def test_an_empty_allowlist_admits_exactly_as_before(self, tmp_path: Path) -> None:
         """Opt-in: with no allowed_actors key, nothing about today changes."""
         _toml(tmp_path, allowed=None)
         gh = _GhStub(issues=_issue_payload(_issue(7)), auth=_auth_payload(actor=BOT))
-        calls, _ = _cycle(tmp_path, gh)
-        assert len(calls) == 1
+        result = _sync(tmp_path, gh)
+        assert result.enqueued == (f"{REPO}#7",)
 
 
-class TestItFailsClosed:
-    def test_an_unreadable_timeline_never_reaches_the_factory(self, tmp_path: Path) -> None:
-        """ "We could not check" is not evidence a trusted actor labelled it."""
-        _toml(tmp_path)
-        gh = _GhStub(
-            issues=_issue_payload(_issue(7)),
-            auth=GhResult(ok=False, error="HTTP 502"),
-        )
-        calls, _ = _cycle(tmp_path, gh)
-        assert calls == []
+class TestTheLatestTriggerEventWins:
+    """``kstrl/intake_github.py:709`` keys authorization to the LATEST
+    trigger-label event, not the first. Until now nothing pinned that
+    choice: earliest-wins left the whole suite green (#188 simplify pass
+    item 1)."""
 
-    def test_an_unreadable_timeline_is_refused_with_no_allowlist_either(
+    def test_a_bot_first_then_an_operator_reapplying_is_admitted(
         self,
         tmp_path: Path,
     ) -> None:
-        """The #187 F1 refusal must survive the refactor that absorbs it.
+        """A bot's initial label followed by the operator re-applying it
+        later must admit: the later act is the one that decides."""
+        _toml(tmp_path)
+        gh = _GhStub(
+            issues=_issue_payload(_issue(7)),
+            auth=_auth_payload(
+                nodes=[
+                    {
+                        "createdAt": "2026-07-30T10:00:00Z",
+                        "label": {"name": "kstrl:queued"},
+                        "actor": {"login": BOT},
+                    },
+                    {
+                        "createdAt": "2026-07-30T11:00:00Z",
+                        "label": {"name": "kstrl:queued"},
+                        "actor": {"login": "0xfauzi"},
+                    },
+                ]
+            ),
+        )
+        calls, result = _cycle(tmp_path, gh)
+        assert len(calls) == 1
+        assert result.synced == (f"{REPO}#7",)
 
-        With the allowlist EMPTY there is no second reason to refuse, so
-        this is the test that goes red if ``authorization_refusal`` stops
-        honouring ``auth.ok``. Its sibling above cannot do that job: with
-        the allowlist on, an admitted-but-actorless authorization is
-        refused by the no-actor branch instead, and the test stays green.
-        """
+    def test_an_operator_first_then_a_bot_reapplying_is_refused(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The reverse must also hold: a bot re-applying the label later
+        does not inherit an operator's earlier authorization, and the
+        printed reason names the actor who actually holds it now."""
+        _toml(tmp_path)
+        gh = _GhStub(
+            issues=_issue_payload(_issue(7)),
+            auth=_auth_payload(
+                nodes=[
+                    {
+                        "createdAt": "2026-07-30T10:00:00Z",
+                        "label": {"name": "kstrl:queued"},
+                        "actor": {"login": "0xfauzi"},
+                    },
+                    {
+                        "createdAt": "2026-07-30T11:00:00Z",
+                        "label": {"name": "kstrl:queued"},
+                        "actor": {"login": BOT},
+                    },
+                ]
+            ),
+        )
+        calls, result = _cycle(tmp_path, gh)
+        assert calls == [], "a later bot re-application inherited an earlier authorization"
+        assert result.synced == ()
+        with patch("kstrl.intake_github.run_gh", gh):
+            cli_result = _invoke(["queue", "sync"], tmp_path)
+        assert BOT in cli_result.output
+
+
+class TestItFailsClosed:
+    def test_an_unreadable_timeline_is_refused(self, tmp_path: Path) -> None:
+        """The test plant 3 moves."""
         _toml(tmp_path, allowed=None)
         gh = _GhStub(
             issues=_issue_payload(_issue(7)),
             auth=GhResult(ok=False, error="HTTP 502"),
         )
-        calls, _ = _cycle(tmp_path, gh)
-        assert calls == []
+        result = _sync(tmp_path, gh)
+        assert result.enqueued == ()
 
     def test_a_labelling_event_with_no_actor_is_refused(self, tmp_path: Path) -> None:
         """GitHub returns a null actor for a deleted account. Unknown is
@@ -202,14 +232,39 @@ class TestItFailsClosed:
                 nodes=[
                     {
                         "createdAt": "2026-07-30T10:00:00Z",
-                        "label": {"name": TRIGGER},
+                        "label": {"name": "kstrl:queued"},
                         "actor": None,
                     },
                 ]
             ),
         )
-        calls, _ = _cycle(tmp_path, gh)
-        assert calls == [], "a labelling event with no actor login authorized a run"
+        result = _sync(tmp_path, gh)
+        assert result.enqueued == ()
+
+
+class TestTheDaemonNarratesARefusal:
+    """kstrl/serve.py::_run_intake (#188 simplify pass item 2): a refusal
+    silently dropped by the daemon is a control nobody watching it run can
+    see working."""
+
+    def test_a_refusal_is_narrated(self, tmp_path: Path) -> None:
+        _toml(tmp_path)
+        gh = _GhStub(issues=_issue_payload(_issue(7)), auth=_auth_payload(actor=BOT))
+        obs = _NullObserver()
+        with patch("kstrl.intake_github.run_gh", gh):
+            serve_cycle(tmp_path, runner=_recording_runner([]), observer=obs)
+        warns = [line for line in obs.lines if "intake refused" in line]
+        assert len(warns) == 1, obs.lines
+        assert BOT in warns[0]
+        assert "kstrl:queued" in warns[0]
+
+    def test_an_empty_allowlist_narrates_nothing(self, tmp_path: Path) -> None:
+        _toml(tmp_path, allowed=None)
+        gh = _GhStub(issues=_issue_payload(_issue(7)), auth=_auth_payload(actor=BOT))
+        obs = _NullObserver()
+        with patch("kstrl.intake_github.run_gh", gh):
+            serve_cycle(tmp_path, runner=_recording_runner([]), observer=obs)
+        assert not any("intake refused" in line for line in obs.lines)
 
 
 class TestTheOperatorCanFindOutWhy:
@@ -222,14 +277,13 @@ class TestTheOperatorCanFindOutWhy:
         with patch("kstrl.intake_github.run_gh", gh):
             result = _invoke(["queue", "sync"], tmp_path)
         assert result.exit_code == 0, result.output
-        # BOTH tokens below appear only inside the refusal reason. Do NOT
-        # assert on the bare label instead: `ks queue sync` prints
-        # `label: kstrl:queued` in its header regardless, so that assertion
-        # passes with no refusal at all. Measured on this tree before the
-        # change (see measurements.md section 7).
         assert "refuse_unauthorized" in result.output
         assert BOT in result.output
-        assert "allowed_actors" in result.output
+        # The printed allowlist itself (kstrl/cli.py's own kv line:
+        # "allowed_actors:0xfauzi"), not its incidental mention inside the
+        # refusal reason ("allowed_actors (0xfauzi)") - the two render
+        # differently, and only the kv line's own spelling proves it.
+        assert "allowed_actors:0xfauzi" in result.output
         assert Queue(tmp_path, QueueConfig()).items() == []
 
     def test_serve_dry_run_names_the_actor(self, tmp_path: Path) -> None:
@@ -239,29 +293,17 @@ class TestTheOperatorCanFindOutWhy:
             result = _invoke(["serve", "--dry-run"], tmp_path)
         assert f"skip {REPO}#7:" in result.output, result.output
         assert BOT in result.output
+        assert "allowed_actors:0xfauzi" in result.output
 
 
 class TestTheValueIsCheckedBeforeAnythingIsSpent:
-    """A config fault is reported by the pre-spend entry check, through the
-    same path every other [intake_github] fault takes, not at admission
-    time when the poll has already been paid for.
-
-    Driven through the real CLI rather than through ``preflight_config``,
-    because the observable outcome an operator gets is the exit status and
-    the line, and the phrase asserted below is the one only the pre-spend
-    path prints. Measured on this tree with an existing bad key
-    (``max_items_per_sync = 0``): ``ks queue sync`` exits 1 and prints
-    ``error: configuration rejected before anything was started; fix it and
-    run again:`` followed by
-    ``[intake_github] intake_github.max_items_per_sync must be >= 1, got 0
-    (kstrl.toml has [intake_github] max_items_per_sync = 0)``.
-    """
+    """A config fault is reported by the pre-spend entry check, before a
+    poll is ever paid for."""
 
     @pytest.mark.parametrize(
         ("value", "fragment"),
         [
             ('"0xfauzi"', "must be a list"),
-            ('["0xfauzi", ""]', "allowed_actors[1]"),
             ("[7]", "allowed_actors[0]"),
             ('["0xfauzi", "   "]', "allowed_actors[1]"),
         ],
@@ -296,7 +338,7 @@ class TestTheValueIsCheckedBeforeAnythingIsSpent:
 class TestTheEnvDoor:
     """The env var must reach the GATE, not just the dataclass.
 
-    Both tests run a real cycle, because a loader that parses the variable
+    Both tests run a real sync, because a loader that parses the variable
     into a field nothing consults is the same as not reading it.
     """
 
@@ -308,8 +350,8 @@ class TestTheEnvDoor:
         _toml(tmp_path, allowed="[]")
         monkeypatch.setenv("KSTRL_INTAKE_GITHUB_ALLOWED_ACTORS", "0xfauzi, someone-else")
         gh = _GhStub(issues=_issue_payload(_issue(7)), auth=_auth_payload(actor=BOT))
-        calls, _ = _cycle(tmp_path, gh)
-        assert calls == [], "the env allowlist was parsed but never consulted"
+        result = _sync(tmp_path, gh)
+        assert result.enqueued == (), "the env allowlist was parsed but never consulted"
 
     def test_a_set_but_empty_env_var_turns_the_allowlist_off(
         self,
@@ -323,5 +365,5 @@ class TestTheEnvDoor:
         _toml(tmp_path)
         monkeypatch.setenv("KSTRL_INTAKE_GITHUB_ALLOWED_ACTORS", "")
         gh = _GhStub(issues=_issue_payload(_issue(7)), auth=_auth_payload(actor=BOT))
-        calls, _ = _cycle(tmp_path, gh)
-        assert len(calls) == 1
+        result = _sync(tmp_path, gh)
+        assert result.enqueued == (f"{REPO}#7",)

@@ -216,12 +216,12 @@ An issue carrying `kstrl:queued` becomes a queue item. The verdict comes
 back as a state label and a comment. Polling only - no webhooks, nothing
 to keep reachable.
 
-### What actually authorizes work
+### What authorizes work
 
 **Read this before enabling it on a repo that others can reach.**
 
 A stranger can open an issue but cannot label it. Applying a label,
-though, is not the boundary it looks like:
+though, is a weaker check than it looks:
 
 - It needs the **Triage** role, **not** push access. On an organization
   repo, a triager who cannot push a line of code could authorize factory
