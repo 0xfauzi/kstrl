@@ -75,14 +75,16 @@ class TestCliValidation:
         assert "not a valid integer" in result.output
 
     def test_run_missing_prompt_file(self) -> None:
+        # The cwd is already an empty directory of this test's own:
+        # conftest.isolate_kstrl_state is autouse and chdirs every test
+        # into its tmp_path, so nothing here has a prompt.md to find.
         runner = CliRunner()
-        with runner.isolated_filesystem():
-            result = runner.invoke(
-                cli,
-                ["run", "1", "--agent-cmd", "echo test", "--branch", ""],
-            )
-            # Should fail because prompt file doesn't exist
-            assert result.exit_code != 0
+        result = runner.invoke(
+            cli,
+            ["run", "1", "--agent-cmd", "echo test", "--branch", ""],
+        )
+        # Should fail because prompt file doesn't exist
+        assert result.exit_code != 0
 
     def test_run_uses_prompt_env_for_root(self, tmp_path: Path, monkeypatch) -> None:
         """``PROMPT_FILE`` env var should anchor the root-discovery logic
