@@ -4872,16 +4872,27 @@ def autonomy_replay_cmd(
     same because nothing was replayed either way; the difference is
     that the line above it now names the file and the error.
 
-    This is also the advisory mode for the R8.4 health rules: it reports
-    would-have-fired counts and never demotes, so a candidate rule set is
-    scored against real history before it is allowed to revoke a level.
+    This is also the advisory mode for the R8.4 health rules: it now
+    reports would-have-fired breaches and never demotes, so a candidate
+    rule set is scored against real history before it is allowed to
+    revoke a level.
     """
     from kstrl.autonomy_replay import replay_file
+    from kstrl.health import breach_lines, health_breaches
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
     try:
         report = replay_file(experiments, root_dir)
+        # One guard, because both reads refuse the same way: OSError for
+        # unreadable, ValueError for undecodable or unparseable. They do
+        # not always read the SAME file: with --experiments unset,
+        # replay_file takes <root>/.kstrl/experiments.tsv while
+        # health_breaches takes EvolutionConfig.load(root).experiments_path,
+        # which [evolution] experiments_path can move. The R8.4 rules are
+        # ADVISORY here: this command reports and never mutates ladder
+        # state (#151).
+        breaches = health_breaches(root_dir, experiments)
     except (OSError, ValueError) as exc:
         # ValueError beside OSError because UnicodeDecodeError is one,
         # and it escapes a fail-closed `except OSError` (CLAUDE.md,
@@ -4890,7 +4901,40 @@ def autonomy_replay_cmd(
         sys.exit(2)
     for line in report.render().splitlines():
         ui_impl.info(line)
+    ui_impl.info("R8.4 health rules (advisory), would have fired on this history:")
+    for line in breach_lines(breaches) or ["  (none)"]:
+        ui_impl.info(line)
     sys.exit(0 if report.sufficient_data else 2)
+
+
+@cli.command(name="health")
+@_autonomy_root_option
+@_autonomy_ui_option
+@_autonomy_no_color_option
+def health_cmd(root: Path | None, ui: str, no_color: bool) -> None:
+    """Trend the factory's own run metrics against its own history (R8.4).
+
+    Advisory. Exit 1 means at least one metric is outside the control
+    limits computed from this repository's baseline period; exit 0 means
+    no breach, which includes a history too short to say anything; exit 2
+    means the recorded history could not be read, and the line above it
+    names the cause.
+    """
+    from kstrl.health import health_status
+
+    root_dir = (root or Path.cwd()).resolve()
+    ui_impl = _autonomy_ui(ui, no_color)
+    try:
+        summary, breaches = health_status(root_dir)
+    except (OSError, ValueError) as exc:
+        # ValueError beside OSError because UnicodeDecodeError is one and
+        # escapes a fail-closed `except OSError` (CLAUDE.md, encoding is
+        # two-sided). Same clause as `ks autonomy replay` above.
+        ui_impl.err(f"could not read the recorded run history: {exc}")
+        sys.exit(2)
+    for line in summary.splitlines():
+        ui_impl.info(line)
+    sys.exit(1 if breaches else 0)
 
 
 @cli.group(name="inbox")

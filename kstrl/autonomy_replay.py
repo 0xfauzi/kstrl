@@ -136,6 +136,10 @@ class RunRecord:
     skipped: int
     retry_rate: float
     common_failure: str
+    #: The run's recorded spend, or None when no usage was tracked. NOT 0.0:
+    #: ``record_run`` writes an empty column for an untracked run, and a zero
+    #: there would read as "measured, free" (#151).
+    total_cost_usd: float | None = None
 
     @property
     def infra_aborted(self) -> bool:
@@ -166,6 +170,14 @@ def _as_float(value: str) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _as_float_or_none(value: str) -> float | None:
+    """A blank or unparseable cost column means unmeasured, not zero."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def load_runs(path: Path) -> list[RunRecord]:
@@ -214,6 +226,7 @@ def load_runs(path: Path) -> list[RunRecord]:
                     skipped=_as_int(row.get("skipped", "0")),
                     retry_rate=_as_float(row.get("retry_rate", "0")),
                     common_failure=(row.get("common_failure") or "").strip(),
+                    total_cost_usd=_as_float_or_none(row.get("total_cost_usd", "")),
                 )
             )
     return runs

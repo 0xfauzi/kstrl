@@ -521,6 +521,7 @@ SEAM_COMMANDS: list[tuple[list[str], int]] = [
     (["evolve"], 1),
     (FACTORY_ARGS, 1),
     (["feature", "--prd", "s.md", "--agent-cmd", "true"], 1),
+    (["health"], 1),
     (["inbox", "ls"], 1),
     (["queue", "ls"], 1),
     (["retry", "comp-a"], 1),

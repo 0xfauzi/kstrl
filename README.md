@@ -260,6 +260,7 @@ ks doctor                       Assess whether this repository is ready to point
 ks evolve                       Analyze factory runs and propose harness improvements.
 ks factory                      Run the software factory - decompose and execute a spec.
 ks feature                      Run feature understanding, then implementation.
+ks health                       Trend the factory's own run metrics against its own history (R8.4).
 ks inbox approve ITEM_ID        Accept the exception and close the item.
 ks inbox ls                     List items awaiting a decision.
 ks inbox reject ITEM_ID         Refuse the exception, recording why.

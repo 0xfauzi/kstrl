@@ -316,9 +316,16 @@ EXPECTED_JOURNAL_PATH_SITES: dict[str, int] = {
     # module and the TUI at all. Two modules fewer that get hold of it
     # is the direction this guard exists to push.
     "evolution.py: self.config.journal_path": 4,
+    "health.py: config.journal_path": 1,
     "pipeline.py: self.journal_path": 4,
     "workqueue.py: self.journal_path": 2,
 }
+#: The ``health.py`` row above is a READ, added by #151: R8.4 trending
+#: needs the journal for the infrastructure-error-rate series
+#: (``_readings`` calls ``read_progress_events(config.journal_path)``).
+#: It never appends; ``kstrl/health.py`` performs no file I/O of its
+#: own and goes through the same tolerant reader ``EvolutionJournal``
+#: uses.
 
 
 class TestOneWriter:
