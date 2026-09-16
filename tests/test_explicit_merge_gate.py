@@ -54,6 +54,7 @@ from kstrl.manifest import Manifest
 from kstrl.review import ReviewResult
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
 from tests.conftest import git_in
+from tests.helpers import gitrepo
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.demotion import make_ui
 from tests.helpers.factorycli import capture_run_factory, invoke_factory
@@ -210,8 +211,7 @@ def _init_git_repo(root: Path) -> None:
     """
     git_in(root, "init")
     git_in(root, "symbolic-ref", "HEAD", "refs/heads/main")
-    git_in(root, "config", "user.email", "t@example.com")
-    git_in(root, "config", "user.name", "tester")
+    gitrepo.set_identity(root)
     (root / "README.md").write_text("base\n", encoding="utf-8")
     git_in(root, "add", ".")
     git_in(root, "commit", "-m", "base")

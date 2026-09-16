@@ -35,6 +35,7 @@ from kstrl.verify import (
     run_mechanical_verification,
     run_undiffed_verification,
 )
+from tests.helpers import gitrepo
 from tests.test_feature_cmd import (
     NOOP_VERIFY_COMMAND,
     ScriptedChannel,
@@ -187,8 +188,7 @@ def _init_repo(root: Path) -> None:
     about a repository rather than about a mock.
     """
     _run_git(root, "init", "-q", "-b", "main", ".")
-    _run_git(root, "config", "user.email", "test@example.com")
-    _run_git(root, "config", "user.name", "Test")
+    gitrepo.set_identity(root)
     (root / "seed.txt").write_text("seed\n", encoding="utf-8")
     _run_git(root, "add", "-A")
     _run_git(root, "commit", "-q", "-m", "seed")

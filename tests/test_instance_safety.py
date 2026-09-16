@@ -35,6 +35,7 @@ from kstrl.factory import FactoryConfig, FactoryResult, run_factory
 from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
+from tests.helpers import gitrepo
 
 COMPLETE_LINE = "echo '<promise>COMPLETE</promise>'"
 
@@ -79,8 +80,7 @@ def _init_repo(root: Path, comp_ids: tuple[str, ...] = ("comp-a",)) -> None:
     gitignored, so provisioning must copy prompt + PRD into worktrees)."""
     root.mkdir(parents=True, exist_ok=True)
     _git("init", "-q", "-b", "main", cwd=root)
-    _git("config", "user.email", "t@t", cwd=root)
-    _git("config", "user.name", "t", cwd=root)
+    gitrepo.set_identity(root)
     (root / ".gitignore").write_text("scripts/kstrl/\n")
     (root / "README.md").write_text("seed\n")
     _git("add", ".gitignore", "README.md", cwd=root)

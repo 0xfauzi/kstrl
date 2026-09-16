@@ -60,6 +60,7 @@ from kstrl.scope import ComponentScope, RunScope
 from kstrl.security import SecurityResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerificationResult, VerifyConfig, run_mechanical_verification
+from tests.helpers import gitrepo
 
 COMPONENT_ID = "hmac-sign-verify"
 FEATURE_DIR = f"scripts/kstrl/feature/{COMPONENT_ID}"
@@ -1290,8 +1291,7 @@ def _git_repo(root: Path) -> None:
         check=True,
         capture_output=True,
     )
-    _git("config", "user.email", "t@t", cwd=root)
-    _git("config", "user.name", "t", cwd=root)
+    gitrepo.set_identity(root)
     kstrl_dir = root / "scripts" / "kstrl"
     kstrl_dir.mkdir(parents=True, exist_ok=True)
     (kstrl_dir / "prompt.md").write_text("test prompt")
