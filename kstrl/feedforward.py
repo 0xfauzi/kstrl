@@ -10,6 +10,7 @@ import ast
 import json
 import os
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -212,31 +213,14 @@ def build_module_map(root: Path) -> str:
     return "\n".join(lines)
 
 
-def _is_test_path(root: Path, candidate: Path) -> bool:
-    """True when *candidate* sits in or under a test directory."""
-    try:
-        rel = candidate.relative_to(root)
-    except ValueError:
-        return False
-    return any(part in _TEST_DIR_NAMES for part in rel.parts)
-
-
-def _rel_name(root: Path, path: Path) -> str:
-    """*path* relative to *root* when it is under it, else the full path."""
-    try:
-        return path.relative_to(root).as_posix()
-    except ValueError:
-        return path.as_posix()
-
-
 def _classify_dir(directory: Path) -> tuple[bool, list[Path], list[Path]]:
     """One directory, read once: (holds .py files, child packages, other children).
 
     An unreadable directory reads as empty, which is what the caller did
-    with a `PermissionError` before #378. This is split out of
-    `_collect_source_dirs` because the two as one function measure
-    cognitive complexity 18 against the pre-commit gate of 15; split they
-    measure 10 and 8.
+    with a `PermissionError` before #378. A `test`/`tests` child is
+    skipped here, not filtered afterward: the walk never descends into
+    one, so a test package can never spend the file budget the caller
+    reads with, and a package below it is never reached either.
     """
     try:
         entries = list(directory.iterdir())
@@ -246,7 +230,7 @@ def _classify_dir(directory: Path) -> tuple[bool, list[Path], list[Path]]:
     child_packages: list[Path] = []
     plain_subdirs: list[Path] = []
     for entry in entries:
-        if not entry.is_dir() or _should_skip_dir(entry.name):
+        if not entry.is_dir() or _should_skip_dir(entry.name) or entry.name in _TEST_DIR_NAMES:
             continue
         if (entry / "__init__.py").is_file():
             child_packages.append(entry)
@@ -255,18 +239,22 @@ def _classify_dir(directory: Path) -> tuple[bool, list[Path], list[Path]]:
     return holds_py, child_packages, plain_subdirs
 
 
-def _collect_source_dirs(root: Path) -> tuple[list[Path], list[Path]]:
-    """Directories under *root* that could hold the repo's own source.
+def _find_top_source_dirs(root: Path) -> list[Path]:
+    """Candidate source roots under *root*, in NO meaningful order.
 
-    Returns (packages, loose): every directory holding ``__init__.py``
-    within ``_MAX_SOURCE_ROOT_DEPTH`` levels, and every directory below
-    *root* that holds ``.py`` files directly. The walk stops at a
-    package rather than descending into it, so a subpackage is never a
-    candidate of its own.
+    Every directory holding ``__init__.py`` within
+    ``_MAX_SOURCE_ROOT_DEPTH`` levels, or, when the tree has no packages
+    at all, every directory below *root* that holds ``.py`` files
+    directly. The walk stops at a package rather than descending into
+    it, so a subpackage is never a candidate of its own.
 
     *root* itself is never a loose candidate: the caller rglobs what it
     is given, and rglobbing the repo root would descend into exactly the
     directories ``_should_skip_dir`` exists to keep this walk out of.
+
+    The order is deliberately not meaningful. ``_ordered_source_roots``
+    decides the order the budget is spent in, so that it is a property
+    of the repo rather than of ``iterdir``.
     """
     packages: list[Path] = []
     loose: list[Path] = []
@@ -280,24 +268,7 @@ def _collect_source_dirs(root: Path) -> tuple[list[Path], list[Path]]:
             continue
         packages.extend(child_packages)
         stack.extend((child, depth + 1) for child in plain_subdirs)
-    return packages, loose
-
-
-def _find_top_source_dirs(root: Path) -> list[Path]:
-    """Candidate source roots under *root*, in NO meaningful order.
-
-    Packages when the tree has any, otherwise directories holding ``.py``
-    files. Test directories are dropped from both: the caller reads at
-    most ``_MAX_PUBLIC_INTERFACE_FILES`` files, and a test package that
-    spends that budget leaves the engineer with none of the source it is
-    about to change.
-
-    The order is deliberately not meaningful. ``_ordered_source_roots``
-    decides the order the budget is spent in, so that it is a property
-    of the repo rather than of ``iterdir``.
-    """
-    packages, loose = _collect_source_dirs(root)
-    return [d for d in (packages or loose) if not _is_test_path(root, d)]
+    return packages or loose
 
 
 def _ordered_source_roots(root: Path) -> list[tuple[Path, list[Path]]]:
@@ -392,111 +363,65 @@ def extract_public_interfaces(root: Path) -> str:
             f"of .py files, excluding tests)"
         )
 
+    # Private and test files are dropped before the budget is spent on them.
+    candidates = [f for _, files in scanned for f in files if not f.name.startswith(("_", "test"))]
+
     file_symbols: list[tuple[str, list[str]]] = []
-    for _src_dir, py_files in scanned:
-        for py_file in py_files:
-            if len(file_symbols) >= _MAX_PUBLIC_INTERFACE_FILES:
-                break
-
-            # Skip private and test files
-            if py_file.name.startswith("_") or py_file.name.startswith("test"):
-                continue
-
-            symbols = _extract_symbols_from_file(py_file)
-            if symbols:
-                file_symbols.append((_rel_name(root, py_file), symbols))
+    for py_file in candidates:
+        if len(file_symbols) >= _MAX_PUBLIC_INTERFACE_FILES:
+            break
+        symbols = _extract_symbols_from_file(py_file)
+        if symbols:
+            file_symbols.append((py_file.relative_to(root).as_posix(), symbols))
 
     if not file_symbols:
-        names = ", ".join(sorted(_rel_name(root, d) for d, _ in scanned)[:5])
+        names = ", ".join(sorted(d.relative_to(root).as_posix() for d, _ in scanned)[:5])
         return (
             f"(none: no public classes or functions in the first "
             f"{_MAX_PUBLIC_INTERFACE_FILES} files of {len(scanned)} source "
             f"root(s): {names})"
         )
 
-    lines: list[str] = []
-    for filepath, symbols in file_symbols:
-        lines.append(f"{filepath}: {', '.join(symbols)}")
-
-    return "\n".join(lines)
-
-
-def _find_project_package_names(root: Path) -> set[str]:
-    """Identify the project's own package names for internal import detection.
-
-    Looks for directories with __init__.py and src/ subdirectories.
-    """
-    packages: set[str] = set()
-
-    # Check for top-level packages
-    try:
-        for entry in root.iterdir():
-            if (
-                entry.is_dir()
-                and not _should_skip_dir(entry.name)
-                and not _is_hidden(entry.name)
-                and (entry / "__init__.py").exists()
-            ):
-                packages.add(entry.name)
-    except PermissionError:
-        pass
-
-    # Check src/ for packages
-    src = root / "src"
-    if src.is_dir():
-        try:
-            for entry in src.iterdir():
-                if entry.is_dir() and (entry / "__init__.py").exists():
-                    packages.add(entry.name)
-        except PermissionError:
-            pass
-
-    return packages
+    return "\n".join(f"{filepath}: {', '.join(symbols)}" for filepath, symbols in file_symbols)
 
 
 def build_dependency_graph(root: Path) -> str:
     """Build a module-level dependency graph from Python imports.
 
-    Only tracks internal imports (within the project). Parses all .py files
-    and builds edges between modules.
+    Only tracks internal imports (within the project). Parses all .py
+    files under the same source roots ``extract_public_interfaces`` uses
+    (#378: the top-level-``__init__.py``-or-``src/<pkg>`` rule this
+    replaced is silently empty on a ``packages/<name>/src/<pkg>``
+    monorepo, the same defect the interface extractor had, in the same
+    module).
     """
-    packages = _find_project_package_names(root)
-    if not packages:
+    roots = _find_top_source_dirs(root)
+    if not roots:
         return ""
+    packages = {d.name for d in roots}
 
-    # Collect all .py files in project packages
-    all_py_files: list[Path] = []
-    for pkg_name in packages:
-        pkg_dir = root / pkg_name
-        if pkg_dir.is_dir():
-            try:
-                all_py_files.extend(sorted(pkg_dir.rglob("*.py")))
-            except PermissionError:
-                pass
-
-    src = root / "src"
-    if src.is_dir():
-        for pkg_name in packages:
-            pkg_dir = src / pkg_name
-            if pkg_dir.is_dir():
-                try:
-                    all_py_files.extend(sorted(pkg_dir.rglob("*.py")))
-                except PermissionError:
-                    pass
+    all_py_files: list[tuple[Path, Path]] = []
+    for src_dir in roots:
+        try:
+            all_py_files.extend((f, src_dir) for f in sorted(src_dir.rglob("*.py")))
+        except OSError:
+            pass
 
     # Parse imports from each file
     # edges: dict of (source_module -> dict of target_module -> set of imported names)
     edges: dict[str, dict[str, set[str]]] = {}
 
-    for py_file in all_py_files:
+    for py_file, src_dir in all_py_files:
         try:
             source = py_file.read_text(encoding="utf-8", errors="replace")
             tree = ast.parse(source, filename=str(py_file))
         except (SyntaxError, Exception):
             continue
 
-        # Determine the module name for this file
-        source_module = _path_to_module(py_file, root, packages)
+        # Determine the module name for this file, relative to the
+        # directory that CONTAINS its source root, so the leading part
+        # of the relative path is the package name itself.
+        source_module = _path_to_module(py_file, src_dir.parent, packages)
         if not source_module:
             continue
 
@@ -563,11 +488,6 @@ def _path_to_module(filepath: Path, root: Path, packages: set[str]) -> str | Non
         return None
 
     parts = list(rel.parts)
-
-    # Strip 'src/' prefix if present
-    if parts and parts[0] == "src":
-        parts = parts[1:]
-
     if not parts:
         return None
 
@@ -766,6 +686,42 @@ def _extract_package_json_conventions(root: Path, bullets: list[str]) -> None:
         pass
 
 
+def _append_section(
+    sections: list[tuple[str, str]], heading: str, build: Callable[[], str]
+) -> None:
+    """Run *build* and append its result under *heading*, unless empty.
+
+    A crash inside *build* does not take the whole context down; it is
+    RECORDED as the section's content instead of dropped (#378: the
+    public-interfaces section used to be the only one of the four that
+    said what it swallowed).
+    """
+    try:
+        content = build()
+    except Exception as exc:
+        content = f"(none: {heading.lower()} failed: {type(exc).__name__}: {exc})"
+    if content:
+        sections.append((heading, content))
+
+
+def _dependency_graph_section(
+    root: Path, component_id: str, component_deps: list[str] | None
+) -> str:
+    """The "Dependency graph" body, filtered to *component_id* and its
+    direct dependencies when component context is available."""
+    content = build_dependency_graph(root)
+    if content and component_deps:
+        relevant = set(component_deps)
+        if component_id:
+            relevant.add(component_id)
+        filtered_lines = [
+            line for line in content.splitlines() if any(dep in line for dep in relevant)
+        ]
+        if filtered_lines:
+            content = "\n".join(filtered_lines)
+    return content
+
+
 def build_feedforward_context(
     worktree_path: Path,
     config: FeedforwardConfig | None = None,
@@ -795,47 +751,22 @@ def build_feedforward_context(
     sections: list[tuple[str, str]] = []
 
     if config.module_map:
-        try:
-            content = build_module_map(worktree_path)
-            if content:
-                sections.append(("Module map", content))
-        except Exception:
-            pass
+        _append_section(sections, "Module map", lambda: build_module_map(worktree_path))
 
     if config.dependency_graph:
-        try:
-            content = build_dependency_graph(worktree_path)
-            # Filter to relevant edges when component context is available
-            if content and component_deps:
-                relevant = set(component_deps)
-                if component_id:
-                    relevant.add(component_id)
-                filtered_lines = []
-                for line in content.splitlines():
-                    # Keep lines that mention any relevant component
-                    if any(dep in line for dep in relevant):
-                        filtered_lines.append(line)
-                if filtered_lines:
-                    content = "\n".join(filtered_lines)
-            if content:
-                sections.append(("Dependency graph", content))
-        except Exception:
-            pass
+        _append_section(
+            sections,
+            "Dependency graph",
+            lambda: _dependency_graph_section(worktree_path, component_id, component_deps),
+        )
 
     if config.public_interfaces:
-        try:
-            content = extract_public_interfaces(worktree_path)
-        except Exception as exc:
-            content = f"(none: interface extraction failed: {type(exc).__name__}: {exc})"
-        sections.append(("Public interfaces", content))
+        _append_section(
+            sections, "Public interfaces", lambda: extract_public_interfaces(worktree_path)
+        )
 
     if config.conventions:
-        try:
-            content = extract_conventions(worktree_path)
-            if content:
-                sections.append(("Conventions", content))
-        except Exception:
-            pass
+        _append_section(sections, "Conventions", lambda: extract_conventions(worktree_path))
 
     if not sections:
         return ""
