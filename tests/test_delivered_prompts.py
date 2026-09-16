@@ -371,11 +371,12 @@ def test_the_declared_constant_reaches_the_delivered_text(role: str, tmp_path: P
             _pin_delimiters(mp)
             mp.setattr(_HOME_MODULE[const], const, _ORPHAN_MARKER)
             delivered = spec.render(tmp_path / f"{role}-{const}")
-        assert _MARKER_HEAD in delivered, (
+        assert _MARKER_HEAD in delivered and _MARKER_TAIL in delivered, (
             f"the {role} role's covers names {const}, but patching "
             f"{_HOME_MODULE[const].__name__}.{const} changed nothing in "
             "its delivered text. Either the row is wrong or the renderer "
-            "stopped reading the constant."
+            "stopped reading the constant. A head present with no tail means "
+            "the renderer reintroduced a size cap and is clipping the constant."
         )
 
 
