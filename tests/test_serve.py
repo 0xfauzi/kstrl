@@ -2209,6 +2209,38 @@ class TestQueueItemsRememberTheirPrs:
         assert item.state is ItemState.DONE
         assert item.pr_urls == ()
 
+    def test_a_non_string_pr_url_is_ignored_rather_than_raised(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """A manifest key with the wrong TYPE may not end the cycle.
+
+        ``_pr_urls_from_manifest`` reads the raw dict, so nothing has
+        validated ``prUrl`` by the time it is stripped, and the call in
+        ``serve_cycle`` is inside no ``try``.
+        """
+
+        def write_bad_pr_url(p: Path) -> None:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(
+                json.dumps(
+                    {
+                        "runId": "factory-20260730-000000.000000-aaa",
+                        "components": [
+                            {"id": "comp-a", "prUrl": None},
+                            {"id": "comp-b", "prUrl": 42},
+                            {"id": "comp-c", "prUrl": "https://github.com/o/r/pull/7"},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+        verdict, item, _, _ = self._cycle(tmp_path, write_bad_pr_url)
+        assert verdict is Verdict.SUCCESS
+        assert item.state is ItemState.DONE
+        assert item.pr_urls == ("https://github.com/o/r/pull/7",)
+
 
 class TestPrUrlsFromManifestDedupesItself:
     """``_pr_urls_from_manifest`` called directly, not through a cycle.
