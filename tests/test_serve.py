@@ -2155,9 +2155,9 @@ class TestQueueItemsRememberTheirPrs:
         assert warned[0].startswith("warn: ")
         assert "manifest.json" in warned[0]
 
-    @pytest.mark.parametrize("kind", ["other-run", "missing", "corrupt"])
+    @pytest.mark.parametrize("kind", ["other-run", "missing", "corrupt", "top-level-array"])
     def test_an_unowned_manifest_is_not_attributed(self, tmp_path: Path, kind: str) -> None:
-        """None of these three is owned by this invocation, so none may
+        """None of these four is owned by this invocation, so none may
         be attributed or warned about - the same refusal ``classify_run``
         makes, for the same reason (#186 F2), extended to PR URLs."""
 
@@ -2172,10 +2172,15 @@ class TestQueueItemsRememberTheirPrs:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text("{not json", encoding="utf-8")
 
+        def write_top_level_array(p: Path) -> None:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text('["a", "b"]', encoding="utf-8")
+
         writers: dict[str, Callable[[Path], None] | None] = {
             "other-run": write_other_run,
             "missing": None,
             "corrupt": write_corrupt,
+            "top-level-array": write_top_level_array,
         }
 
         verdict, item, _, warned = self._cycle(tmp_path, writers[kind])
