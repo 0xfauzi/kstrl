@@ -1719,8 +1719,13 @@ def _detect_project_context(root: Path) -> dict[str, str]:
     return ctx
 
 
-_LANGUAGE_STANDARDS: dict[str, str] = {
-    "Python": """
+#: H3 (#303): the per-language bodies looked up by _LANGUAGE_STANDARDS and
+#: _LANGUAGE_ANTIPATTERNS. Versioned under CLAUDE_MD_PROMPT_VERSION below
+#: (declared with the other _generate_claude_md fragments): both tables
+#: feed the one builder that CLAUDE_MD_PROMPT_VERSION describes. Neither
+#: dict is ever .format()ed, which is what makes the literal `interface{}`
+#: inside GO_ANTIPATTERNS_PROMPT harmless.
+PYTHON_STANDARDS_PROMPT = """
 - Use type hints on ALL function signatures
 - Use `from __future__ import annotations` in every file
 - Use `T | None` not `Optional[T]`, `A | B` not `Union[A, B]`
@@ -1732,8 +1737,8 @@ _LANGUAGE_STANDARDS: dict[str, str] = {
 - No star imports, no circular imports
 - No bare `except:` clauses - always specify the exception type
 - No mutable default arguments (use `field(default_factory=...)`)
-""",
-    "Rust": """
+"""
+RUST_STANDARDS_PROMPT = """
 - Use `Result<T, E>` for fallible operations, not panics
 - Prefer `&str` over `String` in function parameters
 - Use `derive` macros: Debug, Clone, PartialEq where appropriate
@@ -1744,8 +1749,8 @@ _LANGUAGE_STANDARDS: dict[str, str] = {
 - Use `thiserror` for library errors, `anyhow` for application errors
 - Minimize `unwrap()` - use `?` or explicit error handling
 - Prefer `impl Trait` over `dyn Trait` when the concrete type is known
-""",
-    "TypeScript": """
+"""
+TYPESCRIPT_STANDARDS_PROMPT = """
 - Enable strict mode in tsconfig.json
 - Use explicit return types on all exported functions
 - Prefer `interface` over `type` for object shapes
@@ -1756,8 +1761,8 @@ _LANGUAGE_STANDARDS: dict[str, str] = {
 - Use `const` by default, `let` only when mutation is needed, never `var`
 - Prefer named exports over default exports
 - Use template literals over string concatenation
-""",
-    "Go": """
+"""
+GO_STANDARDS_PROMPT = """
 - Handle every error - never use `_` for error returns
 - Use table-driven tests
 - Keep interfaces small (1-3 methods)
@@ -1768,8 +1773,8 @@ _LANGUAGE_STANDARDS: dict[str, str] = {
 - Document all exported identifiers
 - Use `go vet` and `golangci-lint` in CI
 - Prefer channels for synchronization, mutexes for state protection
-""",
-    "Java": """
+"""
+JAVA_STANDARDS_PROMPT = """
 - Use final for variables that should not be reassigned
 - Prefer composition over inheritance
 - Use Optional<T> instead of null for return types
@@ -1777,8 +1782,8 @@ _LANGUAGE_STANDARDS: dict[str, str] = {
 - Use try-with-resources for AutoCloseable resources
 - Prefer immutable collections where possible
 - Use meaningful exception types, not generic RuntimeException
-""",
-    "Kotlin": """
+"""
+KOTLIN_STANDARDS_PROMPT = """
 - Prefer val over var (immutability by default)
 - Use data classes for plain data holders
 - Use sealed classes for restricted hierarchies
@@ -1786,11 +1791,9 @@ _LANGUAGE_STANDARDS: dict[str, str] = {
 - Use coroutines for async operations, not callbacks
 - Leverage null safety - avoid `!!` operator
 - Use `when` expressions exhaustively
-""",
-}
+"""
 
-_LANGUAGE_ANTIPATTERNS: dict[str, str] = {
-    "Python": """
+PYTHON_ANTIPATTERNS_PROMPT = """
 - Do NOT use `typing.Optional` or `typing.Union` - use `|` syntax
 - Do NOT use `Any` without a TODO comment explaining why
 - Do NOT use mutable default arguments (`def f(x=[])`)
@@ -1799,39 +1802,67 @@ _LANGUAGE_ANTIPATTERNS: dict[str, str] = {
 - Do NOT use `type: ignore` without a specific mypy error code
 - Do NOT use `global` or `nonlocal` unless absolutely necessary
 - Do NOT suppress linter warnings without justification
-""",
-    "Rust": """
+"""
+RUST_ANTIPATTERNS_PROMPT = """
 - Do NOT use `unwrap()` or `expect()` in library code
 - Do NOT use `unsafe` without a SAFETY comment explaining the invariant
 - Do NOT use `clone()` to avoid borrow checker issues - redesign instead
 - Do NOT use `Box<dyn Any>` as an escape hatch from the type system
 - Do NOT ignore compiler warnings - treat them as errors
 - Do NOT use `String` in struct fields when `&str` with a lifetime would work
-""",
-    "TypeScript": """
+"""
+TYPESCRIPT_ANTIPATTERNS_PROMPT = """
 - Do NOT use `any` - use `unknown` and narrow with type guards
 - Do NOT use `!` non-null assertion operator without justification
 - Do NOT use `var` - use `const` or `let`
 - Do NOT use `==` - always use `===`
 - Do NOT ignore TypeScript errors with `@ts-ignore` without a specific reason
 - Do NOT use `Function` or `Object` types - use specific signatures
-""",
-    "Go": """
+"""
+GO_ANTIPATTERNS_PROMPT = """
 - Do NOT use `panic` for error handling in library code
 - Do NOT ignore errors with `_`
 - Do NOT use `init()` functions unless absolutely necessary
 - Do NOT use global mutable state
 - Do NOT use `interface{}` / `any` as an escape hatch from the type system
-""",
+"""
+
+_LANGUAGE_STANDARDS: dict[str, str] = {
+    "Python": PYTHON_STANDARDS_PROMPT,
+    "Rust": RUST_STANDARDS_PROMPT,
+    "TypeScript": TYPESCRIPT_STANDARDS_PROMPT,
+    "Go": GO_STANDARDS_PROMPT,
+    "Java": JAVA_STANDARDS_PROMPT,
+    "Kotlin": KOTLIN_STANDARDS_PROMPT,
 }
 
+_LANGUAGE_ANTIPATTERNS: dict[str, str] = {
+    "Python": PYTHON_ANTIPATTERNS_PROMPT,
+    "Rust": RUST_ANTIPATTERNS_PROMPT,
+    "TypeScript": TYPESCRIPT_ANTIPATTERNS_PROMPT,
+    "Go": GO_ANTIPATTERNS_PROMPT,
+}
+
+
+#: H3 (#303): fragments _generate_claude_md assembles (plus the language
+#: tables it looks values up in); versioned as one body
+#: (docs/adversarial-roadmap.md, H3a sweep row).
+CLAUDE_MD_PROMPT_VERSION = "1.0.0"
+
+CLAUDE_MD_OVERVIEW_PROMPT = (
+    "# CLAUDE.md - {name}\n"
+    "\n"
+    "## Project Overview\n"
+    "- **Language**: {language}{framework_line}\n"
+    "- **Project**: {name}\n"
+)
 
 # What the generated CLAUDE.md says about verification, and why it names
 # no commands. CLAUDE.md is prepended verbatim into the engineer prompt
 # (loop.build_project_context), so anything written here is an
 # instruction the agent follows; deriving the right commands would still
 # be a second copy, and two copies drift. See the #261 note in verify.py.
-_VERIFICATION_SECTION = """
+CLAUDE_MD_VERIFICATION_PROMPT = """
 ## Verification
 
 kstrl resolves this project's test, typecheck and lint commands at run
@@ -1850,32 +1881,9 @@ test_command = "uv run pytest -q && cd web && npm run test"
 ```
 """
 
+CLAUDE_MD_STANDARDS_HEADING_PROMPT = "## Coding Standards"
 
-def _generate_claude_md(ctx: dict[str, str]) -> str:
-    """Generate CLAUDE.md content from detected project context."""
-    lang = ctx["language"]
-    framework_line = f" ({ctx['framework']})" if ctx["framework"] else ""
-
-    sections = [f"# CLAUDE.md - {ctx['name']}", ""]
-
-    # Project overview
-    sections.append("## Project Overview")
-    sections.append(f"- **Language**: {lang}{framework_line}")
-    sections.append(f"- **Project**: {ctx['name']}")
-    sections.append("")
-
-    sections.append(_VERIFICATION_SECTION.strip())
-    sections.append("")
-
-    # Coding standards
-    standards = _LANGUAGE_STANDARDS.get(lang, "")
-    if standards:
-        sections.append("## Coding Standards")
-        sections.append(standards.strip())
-        sections.append("")
-
-    # Implementation principles (language-agnostic, elite-level)
-    sections.append("""## Implementation Principles
+CLAUDE_MD_PRINCIPLES_PROMPT = """## Implementation Principles
 
 ### First Principles Thinking
 - Reason from first principles about WHY the code should work, not just HOW
@@ -1918,18 +1926,11 @@ def _generate_claude_md(ctx: dict[str, str]) -> str:
 - Handle ALL variants of enums and match/switch expressions
 - Implement ALL methods of an interface/protocol/trait, not just the common ones
 - Do not leave partial implementations - either fully implement or explicitly raise/panic with a reason
-- Documentation matches behavior - if docs say it does X, it must do X""")
-    sections.append("")
+- Documentation matches behavior - if docs say it does X, it must do X"""
 
-    # Anti-patterns
-    antipatterns = _LANGUAGE_ANTIPATTERNS.get(lang, "")
-    if antipatterns:
-        sections.append("## What NOT To Do")
-        sections.append(antipatterns.strip())
-        sections.append("")
+CLAUDE_MD_ANTIPATTERNS_HEADING_PROMPT = "## What NOT To Do"
 
-    # Agent learnings section (agents append patterns, gotchas, conventions here)
-    sections.append("""## Agent Learnings
+CLAUDE_MD_LEARNINGS_PROMPT = """## Agent Learnings
 
 > This section is maintained by AI agents working on this codebase.
 > Agents: append patterns, gotchas, and conventions you discover below.
@@ -1942,7 +1943,43 @@ def _generate_claude_md(ctx: dict[str, str]) -> str:
 <!-- Agents: add surprises and non-obvious behaviors here -->
 
 ### Conventions
-<!-- Agents: add established conventions here -->""")
+<!-- Agents: add established conventions here -->"""
+
+
+def _generate_claude_md(ctx: dict[str, str]) -> str:
+    """Generate CLAUDE.md content from detected project context."""
+    lang = ctx["language"]
+    framework_line = f" ({ctx['framework']})" if ctx["framework"] else ""
+
+    sections = [
+        CLAUDE_MD_OVERVIEW_PROMPT.format(
+            name=ctx["name"], language=lang, framework_line=framework_line
+        )
+    ]
+
+    sections.append(CLAUDE_MD_VERIFICATION_PROMPT.strip())
+    sections.append("")
+
+    # Coding standards
+    standards = _LANGUAGE_STANDARDS.get(lang, "")
+    if standards:
+        sections.append(CLAUDE_MD_STANDARDS_HEADING_PROMPT)
+        sections.append(standards.strip())
+        sections.append("")
+
+    # Implementation principles (language-agnostic, elite-level)
+    sections.append(CLAUDE_MD_PRINCIPLES_PROMPT)
+    sections.append("")
+
+    # Anti-patterns
+    antipatterns = _LANGUAGE_ANTIPATTERNS.get(lang, "")
+    if antipatterns:
+        sections.append(CLAUDE_MD_ANTIPATTERNS_HEADING_PROMPT)
+        sections.append(antipatterns.strip())
+        sections.append("")
+
+    # Agent learnings section (agents append patterns, gotchas, conventions here)
+    sections.append(CLAUDE_MD_LEARNINGS_PROMPT)
     sections.append("")
 
     return "\n".join(sections) + "\n"

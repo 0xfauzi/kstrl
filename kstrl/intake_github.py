@@ -16,11 +16,12 @@ and the first version of this module overclaimed it:
   label, so a workflow can trigger spend with no human involved.
 
 So this is a permission designed for *managing issues*, borrowed to
-authorize *money*. Issue #188 replaces it with an explicit actor
-allowlist, which is what makes the authorization this project's own
-decision rather than an inherited one. Until then the residual risk is
-exactly the two bullets above, bounded by the adapter being off by
-default.
+authorize *money*. ``allowed_actors`` (#188) replaces it with a decision
+this project owns: with the list non-empty, only the actor of the latest
+TRIGGER-label event may authorize a run, and every uncertainty about who
+that was is a refusal. Left empty it changes nothing, and the residual
+risk is exactly the two bullets above, bounded by the adapter being off
+by default.
 
 What IS enforced here is that the authorized bytes are the bytes that
 run: an issue edited after it was labelled is refused, because GitHub
@@ -64,6 +65,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from kstrl.config import _parse_paths
 from kstrl.statedir import (
     CONTROL_GITHUB_PROCESSED,
     control_file,
@@ -149,6 +151,23 @@ def run_gh(
     return GhResult(ok=True, stdout=completed.stdout)
 
 
+def _validate_allowed_actors(value: Any) -> None:
+    """Reject an ``allowed_actors`` value the adapter cannot act on.
+
+    ``Any`` rather than ``list[str]``: a toml array member can be any type.
+    """
+    if not isinstance(value, list):
+        raise IntakeError(
+            "intake_github.allowed_actors must be a list of GitHub logins, got "
+            f"{type(value).__name__}"
+        )
+    for index, entry in enumerate(value):
+        if not isinstance(entry, str) or not entry.strip():
+            raise IntakeError(
+                f"intake_github.allowed_actors[{index}] must be a non-empty string, got {entry!r}"
+            )
+
+
 @dataclass(frozen=True)
 class GitHubIntakeConfig:
     """``[intake_github]`` config. Off by default.
@@ -162,7 +181,7 @@ class GitHubIntakeConfig:
     enabled: bool = False
     #: ``owner/name``; empty resolves from the checkout's origin remote.
     repo: str = ""
-    #: The label that authorizes work. Applying it needs write access.
+    #: The label that authorizes work. Who may apply it is ``allowed_actors``.
     queued_label: str = "kstrl:queued"
     #: Prefix for the state labels written back.
     label_prefix: str = "kstrl:"
@@ -173,6 +192,12 @@ class GitHubIntakeConfig:
     comment_on_result: bool = True
     dry_run: bool = False
     timeout_seconds: float = 60.0
+    #: GitHub logins allowed to apply the trigger label, and so to
+    #: authorize spend. EMPTY (the default, and a SET-BUT-EMPTY env var)
+    #: keeps the inherited-permission behaviour: anyone who can label the
+    #: issue can spend. Non-empty, the LATEST trigger-label event's actor
+    #: must be on this list. Compared case-insensitively.
+    allowed_actors: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.queued_label.strip():
@@ -187,6 +212,7 @@ class GitHubIntakeConfig:
             )
         if self.repo and self.repo.count("/") != 1:
             raise IntakeError(f"intake_github.repo must be 'owner/name', got {self.repo!r}")
+        _validate_allowed_actors(self.allowed_actors)
 
     def state_label(self, state: str) -> str:
         return f"{self.label_prefix}{state}"
@@ -216,6 +242,7 @@ class GitHubIntakeConfig:
         comment = os.environ.get("KSTRL_INTAKE_GITHUB_COMMENT")
         dry = os.environ.get("KSTRL_INTAKE_GITHUB_DRY_RUN")
         timeout = os.environ.get("KSTRL_INTAKE_GITHUB_TIMEOUT")
+        actors = os.environ.get("KSTRL_INTAKE_GITHUB_ALLOWED_ACTORS")
         return cls(
             enabled=defaults.enabled if enabled is None else enabled == "1",
             repo=defaults.repo if repo is None else repo,
@@ -226,6 +253,7 @@ class GitHubIntakeConfig:
             comment_on_result=(defaults.comment_on_result if comment is None else comment == "1"),
             dry_run=defaults.dry_run if dry is None else dry == "1",
             timeout_seconds=(defaults.timeout_seconds if timeout is None else float(timeout)),
+            allowed_actors=(defaults.allowed_actors if actors is None else _parse_paths(actors)),
         )
 
     @classmethod
@@ -273,6 +301,7 @@ class GitHubIntakeConfig:
                 if "timeout_seconds" in section
                 else defaults.timeout_seconds
             ),
+            "allowed_actors": section.get("allowed_actors", defaults.allowed_actors),
         }
         env_map: dict[str, tuple[str, Callable[[str], Any]]] = {
             "KSTRL_INTAKE_GITHUB_ENABLED": ("enabled", lambda v: v == "1"),
@@ -287,6 +316,7 @@ class GitHubIntakeConfig:
             ),
             "KSTRL_INTAKE_GITHUB_DRY_RUN": ("dry_run", lambda v: v == "1"),
             "KSTRL_INTAKE_GITHUB_TIMEOUT": ("timeout_seconds", float),
+            "KSTRL_INTAKE_GITHUB_ALLOWED_ACTORS": ("allowed_actors", _parse_paths),
         }
         for var, (name, cast) in env_map.items():
             if var in os.environ:
@@ -564,8 +594,9 @@ class Authorization:
 
     ok: bool
     reason: str = ""
-    #: Who applied the trigger label. Captured and surfaced in skip
-    #: reasons now; issue #188 turns it into an allowlist decision.
+    #: Who applied the trigger label. Surfaced in skip reasons, and the
+    #: value :func:`authorization_refusal` matches against
+    #: ``allowed_actors`` (#188).
     actor: str = ""
     labeled_at: str = ""
     last_edited_at: str = ""
@@ -675,6 +706,40 @@ def verify_authorization(
     )
 
 
+def authorization_refusal(
+    config: GitHubIntakeConfig,
+    auth: Authorization | None,
+) -> str:
+    """Why this issue is not authorized, or "" when it is.
+
+    Two questions, one answer, because to an operator they are the same
+    refusal: were the authorized bytes the bytes that will run (#187 F1,
+    :func:`verify_authorization`), and was the actor who applied the
+    trigger label one this project chose to trust (#188)?
+
+    An unreadable authorization falls through to "the authorization check
+    refused without saying why" rather than "", which would read as an
+    admission.
+
+    ``allowed_actors`` empty means no allowlist: this returns "" and keeps
+    the inherited-permission behaviour, anyone who can apply the label can
+    spend.
+    """
+    if auth is not None and not auth.ok:
+        return auth.reason or "the authorization check refused without saying why"
+    if not config.allowed_actors:
+        return ""
+    allowed = {name.strip().casefold() for name in config.allowed_actors}
+    actor = auth.actor if auth is not None else ""
+    if actor.strip().casefold() not in allowed:
+        return (
+            f"{config.queued_label} was applied by {actor or 'an unknown actor'}, "
+            f"who is not in [intake_github] allowed_actors "
+            f"({', '.join(config.allowed_actors)})"
+        )
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # Planning: one side-effect-free decision tree
 # ---------------------------------------------------------------------------
@@ -770,12 +835,13 @@ def plan_sync(
             )
             continue
         auth = authorizer(issue) if authorizer is not None else None
-        if auth is not None and not auth.ok:
+        refusal = authorization_refusal(config, auth)
+        if refusal:
             planned.append(
                 PlannedIssue(
                     issue,
                     Decision.REFUSE_UNAUTHORIZED,
-                    auth.reason,
+                    refusal,
                     auth,
                 )
             )

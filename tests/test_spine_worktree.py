@@ -27,7 +27,7 @@ import pytest
 
 from kstrl.factory import _cleanup_worktree, _setup_worktree, run_factory
 from kstrl.ui.plain import PlainUI
-from tests.helpers import gitrepo
+from tests.helpers import gitrepo, procs
 from tests.spine_utils import (
     base_config,
     component,
@@ -38,6 +38,10 @@ from tests.spine_utils import (
 )
 
 pytestmark = pytest.mark.spine
+
+#: Bound for a lock-holder child's ready line. A mutation that removes
+#: its print fails as a hang, not a red assertion, without this.
+_LOCK_HOLDER_TIMEOUT_SECONDS = 10.0
 
 RUN_ID = "spine-run-1"
 COMP = "comp-a"
@@ -267,11 +271,11 @@ class TestComponentLockTwoProcessExclusion:
             [sys.executable, "-c", _LOCK_HOLDER_SCRIPT, str(lock_path)],
             stdout=subprocess.PIPE,
             text=True,
+            start_new_session=True,
         )
         child: subprocess.Popen[str] | None = None
         try:
-            assert holder.stdout is not None
-            assert holder.stdout.readline().strip() == "locked"
+            procs.wait_for_line(holder, "locked", _LOCK_HOLDER_TIMEOUT_SECONDS)
 
             child = subprocess.Popen(
                 [sys.executable, "-c", _SETUP_CHILD_SCRIPT, str(root), str(ready), RUN_ID],
@@ -334,10 +338,10 @@ class TestRunLockTwoProcessExclusion:
             [sys.executable, "-c", _LOCK_HOLDER_SCRIPT, str(lock_path)],
             stdout=subprocess.PIPE,
             text=True,
+            start_new_session=True,
         )
         try:
-            assert holder.stdout is not None
-            assert holder.stdout.readline().strip() == "locked"
+            procs.wait_for_line(holder, "locked", _LOCK_HOLDER_TIMEOUT_SECONDS)
 
             manifest = make_manifest([component(COMP)])
             refused = run_factory(

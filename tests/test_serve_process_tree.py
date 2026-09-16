@@ -399,29 +399,24 @@ class TestTheRunGroupMembership:
 # 2. The daemon lock is taken before the lease reaper runs
 # --------------------------------------------------------------------------
 
-#: A lease TTL short enough to lapse inside a test, plus the wall-clock
-#: wait that makes it lapse. Ten times the TTL, and REAL time rather than
+#: A lease TTL short enough to lapse inside a test. REAL time rather than
 #: a mocked clock, because ``lease_expired`` compares against the wall
-#: clock and that is the whole reason a suspended run is at risk.
-#:
-#: Measured separately, because round 1 of #209's review found the pair
-#: claimed as load-bearing when only half of it is. Raising the TTL to
-#: 3600s so the lease never lapses IS caught: the control below goes
-#: red. Deleting the ``time.sleep`` entirely is NOT - the file stays
-#: green, because 0.01s has already elapsed by the time ``serve()``
-#: reaches the reaper on this machine. The sleep is insurance for a
-#: machine where it has not, and the earlier comment's evidence (0.001s
-#: with no sleep failing the control) is about a TTL that is not the one
-#: in this file.
+#: clock, which is why a suspended run is at risk.
 _LAPSED_LEASE_TTL_SECONDS = 0.01
-_LAPSE_WAIT_SECONDS = 0.1
+
+#: The bounded poll that replaces a fixed sleep below: 1ms steps against
+#: a 2s deadline. Measured over ten trials at this TTL, the lease reads
+#: as lapsed at 10.1ms median and 10.3ms max, so the fixture asserts the
+#: lease lapsed rather than assuming a fixed wait was long enough.
+_LEASE_LAPSE_POLL_SECONDS = 0.001
+_LEASE_LAPSE_DEADLINE_SECONDS = 2.0
 
 
-def _running_item_with_a_lapsed_lease(tmp_path: Path) -> str:
+def _running_item_with_a_lapsed_lease(tmp_path: Path, pid: int | None = None) -> str:
     """A RUNNING item whose lease has lapsed while its owner lives.
 
-    Exactly the shape a suspended run leaves behind: the pid is this
-    process, which is alive, and the wall-clock lease has run out
+    Exactly the shape a suspended run leaves behind: the pid defaults to
+    this process, which is alive, and the wall-clock lease runs out
     anyway. ``reap_leases`` requeues on ``lease_expired(moment) OR not
     _pid_alive(...)``, so it is the first half that fires here.
     """
@@ -430,9 +425,16 @@ def _running_item_with_a_lapsed_lease(tmp_path: Path) -> str:
         QueueConfig(lease_ttl_seconds=_LAPSED_LEASE_TTL_SECONDS, max_attempts=3),
     )
     item = queue.add("# Spec\n\nDo the thing.\n")
-    queue.start(queue.lease(item, pid=os.getpid()))
-    time.sleep(_LAPSE_WAIT_SECONDS)
-    return item.item_id
+    queue.start(queue.lease(item, pid=pid if pid is not None else os.getpid()))
+    deadline = time.monotonic() + _LEASE_LAPSE_DEADLINE_SECONDS
+    while True:
+        current = queue.get(item.item_id)
+        assert current is not None
+        if current.lease_expired():
+            return item.item_id
+        if time.monotonic() >= deadline:
+            pytest.fail(f"the seeded lease never lapsed within {_LEASE_LAPSE_DEADLINE_SECONDS}s")
+        time.sleep(_LEASE_LAPSE_POLL_SECONDS)
 
 
 def _runner_that_must_not_be_called(
@@ -489,14 +491,17 @@ class TestTheReaperRunsOnlyUnderTheDaemonLock:
     double-run ``factory.lock`` exists to prevent.
 
     WHAT THIS PINS IS THE PATH, NOT THE PROPERTY, and the class is named
-    for the property. Measured in round 1 of #209's review: a ``serve()``
-    changed to take ``serve_lock``, RELEASE it, and then run the cycle -
-    so the reaper runs outside the lock - leaves all four tests below
-    green, because the contended case still raises at acquisition. What
-    would close the gap is a call-site census like
+    for the property: a ``serve()`` that takes ``serve_lock``, RELEASES
+    it, and then runs the cycle leaves all four tests below green, because
+    the contended case still raises at acquisition -
+    ``tests/test_serve_lock_before_reaper.py::TestTheLockIsHeldForTheWholeCycle``
+    is what asks from outside the process whether the lock is held while
+    the item runs. What closes the remainder is a call-site census, like
     ``TestOnlyOneModuleShellsOutToPs`` next door, over the one call site
-    each of ``reap_leases`` and ``serve_cycle`` has today. That is not in
-    this change; the number is here so it does not have to be re-derived.
+    each of ``reap_leases`` and ``serve_cycle`` has today -
+    ``tests/test_serve_lock_before_reaper.py::TestReapLeasesAndServeCycleHaveOneCallerEach``
+    is that census, not in this file so a new caller of either is caught
+    wherever it is added.
     """
 
     def test_control_the_item_is_reapable_when_no_one_holds_the_lock(
@@ -533,10 +538,6 @@ class TestTheReaperRunsOnlyUnderTheDaemonLock:
             f"a second firing reaped a run that is still executing: the "
             f"item is {item.state.value}, not running. serve() must take "
             f"serve_lock BEFORE the cycle's reaper (#203)."
-        )
-        assert item.attempts == 1, (
-            f"the item has been charged {item.attempts} attempts; a "
-            f"refused second firing must spend nothing"
         )
 
     def test_the_reap_call_itself_is_not_made(

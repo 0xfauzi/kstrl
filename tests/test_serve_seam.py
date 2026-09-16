@@ -668,9 +668,9 @@ class TestACycleWithNoInjectedRunnerLaunchesTheRealCommand:
 # --------------------------------------------------------------------------
 
 
-def _enable_github_intake(root: Path) -> None:
+def _enable_github_intake(root: Path, extra: str = "") -> None:
     (root / "kstrl.toml").write_text(
-        f'[intake_github]\nenabled = true\nrepo = "{REPO}"\ncomment_on_result = false\n',
+        f'[intake_github]\nenabled = true\nrepo = "{REPO}"\ncomment_on_result = false\n' + extra,
         encoding="utf-8",
     )
 

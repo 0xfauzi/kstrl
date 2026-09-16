@@ -264,7 +264,8 @@ max_open_prs = 1                   # scheduled admission stops while this many k
 [intake_github]
 enabled = false
 repo = ""                          # "owner/name"; empty resolves from the checkout
-queued_label = "kstrl:queued"      # the trigger; applying it requires write access
+queued_label = "kstrl:queued"      # the trigger; allowed_actors decides who may apply it
+allowed_actors = []                # logins allowed to apply it; empty = anyone who can label
 label_prefix = "kstrl:"            # state labels written back: running/done/failed/poison
 max_items_per_sync = 5             # a label applied to 50 issues must not queue 50 runs
 default_priority = 0
