@@ -1,16 +1,17 @@
 """R8.5 Layer 1 (#152): patch coverage, advisory, no floor.
 
-Fourteen tests. Twelve drive :func:`run_mechanical_verification` - the
-real entry point Layer 0 uses too - over a real temp git repository and
-assert on what the phase produced. Two are unit tests on pure functions;
-each names the end-to-end test that covers the same property on a real
-run, so a unit test is never the only evidence for a claim.
+Most tests drive :func:`run_mechanical_verification` - the real entry
+point Layer 0 uses too - over a real temp git repository and assert on
+what the phase produced. A few are unit tests on pure functions; each
+names the end-to-end test that covers the same property on a real run,
+so a unit test is never the only evidence for a claim.
 
-The shared fixture (``_base_repo`` + ``_feature_branch``) is a base
-commit on ``main`` and a feature commit on ``feature`` that adds six
-executable lines to ``mod.py``, three of them covered by a new test.
-Measured numbers this fixture produces (critic-verified from a real git
-repo and a real coverage JSON):
+The shared fixture (:data:`BASE_FILES` + :data:`FEAT_FILES`, built
+through ``tests.conftest.make_review_repo``) is a base commit on
+``main`` and a feature commit on ``feature`` that adds six executable
+lines to ``mod.py``, three of them covered by a new test. Measured
+numbers this fixture produces (critic-verified from a real git repo and
+a real coverage JSON):
 
 | number | value |
 |---|---|
@@ -27,12 +28,21 @@ import shlex
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
-from kstrl.adequacy import AdequacyConfig, added_line_numbers, measure_patch_coverage
+from kstrl.adequacy import (
+    AdequacyConfig,
+    added_line_numbers,
+    analyze_test_diff,
+    measure_patch_coverage,
+)
 from kstrl.verify import VerifyConfig, run_mechanical_verification, run_scrubbed
-from tests.helpers import gitrepo
+from tests.conftest import make_review_repo
+
+if TYPE_CHECKING:
+    from kstrl.verify import NotMeasured, VerificationResult
 
 BASE_MOD = "def covered_before(n):\n    return n + 1\n"
 BASE_TEST = (
@@ -69,56 +79,38 @@ def pytest_sessionstart(session):
         )
 """
 
+#: Committed on ``main`` by every repo this file builds (#152 simplify
+#: pass: the single home for what used to be six hand-rolled builders,
+#: now one call to ``tests.conftest.make_review_repo`` per scenario).
+BASE_FILES = {"conftest.py": CONFTEST, "mod.py": BASE_MOD, "test_mod.py": BASE_TEST}
 
-def _base_repo(root: Path) -> None:
-    gitrepo.git_in(root, "init", "-b", "main")
-    gitrepo.set_identity(root)
-    (root / "conftest.py").write_text(CONFTEST, encoding="utf-8")
-    (root / "mod.py").write_text(BASE_MOD, encoding="utf-8")
-    (root / "test_mod.py").write_text(BASE_TEST, encoding="utf-8")
-    gitrepo.git_in(root, "add", "-A")
-    gitrepo.git_in(root, "commit", "-m", "base")
+#: The shared half-covered feature commit the module docstring's table
+#: describes: three of six added lines in ``mod.py`` executed.
+FEAT_FILES = {"mod.py": FEAT_MOD, "test_mod.py": FEAT_TEST}
 
+#: A branch whose only change to ``mod.py`` is two appended comment
+#: lines; ``test_mod.py`` is untouched (stays at ``BASE_TEST``).
+COMMENT_ONLY_FILES = {"mod.py": BASE_MOD + "# a comment\n# another comment\n"}
 
-def _feature_branch(root: Path) -> None:
-    """Half-covered feature commit: the shared fixture the table above describes."""
-    gitrepo.git_in(root, "checkout", "-b", "feature")
-    (root / "mod.py").write_text(FEAT_MOD, encoding="utf-8")
-    (root / "test_mod.py").write_text(FEAT_TEST, encoding="utf-8")
-    gitrepo.git_in(root, "add", "-A")
-    gitrepo.git_in(root, "commit", "-m", "half covered")
+#: A branch that adds a test function; ``mod.py`` is untouched.
+TEST_ONLY_FILES = {"test_mod.py": BASE_TEST + "\n\ndef test_extra():\n    assert True\n"}
 
-
-def _repo(root: Path) -> None:
-    _base_repo(root)
-    _feature_branch(root)
+#: The half-covered feature, plus one added test that fails outright.
+FAILING_FEATURE_FILES = {
+    "mod.py": FEAT_MOD,
+    "test_mod.py": FEAT_TEST + "\n\ndef test_false():\n    assert False\n",
+}
 
 
-def _comment_only_branch(root: Path) -> None:
-    """A branch whose only change to mod.py is two appended comment lines."""
-    gitrepo.git_in(root, "checkout", "-b", "comment-only")
-    (root / "mod.py").write_text(BASE_MOD + "# a comment\n# another comment\n", encoding="utf-8")
-    gitrepo.git_in(root, "add", "-A")
-    gitrepo.git_in(root, "commit", "-m", "comments only")
-
-
-def _test_only_branch(root: Path) -> None:
-    """A branch that adds a test function; mod.py is untouched."""
-    gitrepo.git_in(root, "checkout", "-b", "test-only")
-    extra = BASE_TEST + "\n\ndef test_extra():\n    assert True\n"
-    (root / "test_mod.py").write_text(extra, encoding="utf-8")
-    gitrepo.git_in(root, "add", "-A")
-    gitrepo.git_in(root, "commit", "-m", "test only")
-
-
-def _failing_feature_branch(root: Path) -> None:
-    """The half-covered feature, plus one added test that fails outright."""
-    gitrepo.git_in(root, "checkout", "-b", "feature-fail")
-    (root / "mod.py").write_text(FEAT_MOD, encoding="utf-8")
-    failing = FEAT_TEST + "\n\ndef test_false():\n    assert False\n"
-    (root / "test_mod.py").write_text(failing, encoding="utf-8")
-    gitrepo.git_in(root, "add", "-A")
-    gitrepo.git_in(root, "commit", "-m", "half covered, failing")
+def _repo(tmp_path: Path, files: dict[str, str] | None = None) -> None:
+    """``BASE_FILES`` committed on ``main``, plus ``files`` (default
+    :data:`FEAT_FILES`) committed on a ``feature`` branch, through
+    ``make_review_repo`` - the branch name is never read by anything in
+    this file, only ``base_branch="main"`` is. Operates on ``tmp_path``
+    in place, the same calling convention the six retired builders used."""
+    make_review_repo(
+        tmp_path, base_files=BASE_FILES, files=files if files is not None else FEAT_FILES
+    )
 
 
 def _run(
@@ -129,7 +121,7 @@ def _run(
     subprocess_timeout: float = 120.0,
     enabled: bool = True,
     patch_coverage: bool = True,
-):
+) -> VerificationResult:
     return run_mechanical_verification(
         root,
         None,
@@ -149,6 +141,19 @@ def _run(
 
 def _runs_count(root: Path) -> int:
     return (root / "runs.txt").read_text(encoding="utf-8").count("run")
+
+
+def _only_gap(result: VerificationResult, reason: str) -> NotMeasured:
+    """The single ``patch_coverage`` gap in ``result``: no row alongside
+    it, exactly one gap, and it carries ``reason``.
+
+    #152 simplify pass: one helper for the seven "sidecar, not a row"
+    tests in this file, which all asserted this same shape by hand."""
+    assert [c for c in result.checks if c.name == "patch_coverage"] == []
+    gaps = [g for g in result.not_measured if g.check == "patch_coverage"]
+    assert len(gaps) == 1, gaps
+    assert gaps[0].reason == reason, gaps[0]
+    return gaps[0]
 
 
 # ---------------------------------------------------------------------------
@@ -194,38 +199,32 @@ def test_a_non_pytest_test_command_is_a_sidecar_not_a_row(tmp_path: Path) -> Non
     _repo(tmp_path)
     result = _run(tmp_path, test_command="true")
 
-    assert [c for c in result.checks if c.name == "patch_coverage"] == []
-    gaps = [g for g in result.not_measured if g.check == "patch_coverage"]
-    assert len(gaps) == 1
-    assert gaps[0].reason == "tool_missing"
-    assert gaps[0].as_token() == "patch_coverage:tool_missing"
+    gap = _only_gap(result, "tool_missing")
+    assert gap.as_token() == "patch_coverage:tool_missing"
     assert [
         f for c in result.checks for f in c.findings if f.category == "adequacy_patch_coverage"
     ] == []
 
 
-def test_off_by_default_runs_the_test_command_once(tmp_path: Path) -> None:
-    off_root = tmp_path / "off"
-    off_root.mkdir()
-    _repo(off_root)
-    result = _run(off_root, patch_coverage=False)
+@pytest.mark.parametrize(
+    ("enabled", "patch_coverage"),
+    [(True, False), (False, True)],
+    ids=["patch_coverage-off", "adequacy-disabled"],
+)
+def test_off_by_default_runs_the_test_command_once(
+    tmp_path: Path, enabled: bool, patch_coverage: bool
+) -> None:
+    """Both switches are required: ``[adequacy] enabled`` (Layer 0's
+    master switch) and ``[adequacy] patch_coverage`` (Layer 1's own
+    opt-in on top of it). An implementation reading only one of the two
+    would pass whichever case here it does not cover - the empty gap
+    list is load-bearing: a check nobody asked for records NOTHING."""
+    _repo(tmp_path)
+    result = _run(tmp_path, enabled=enabled, patch_coverage=patch_coverage)
 
-    assert _runs_count(off_root) == 1
+    assert _runs_count(tmp_path) == 1
     assert [c for c in result.checks if c.name == "patch_coverage"] == []
     assert [g for g in result.not_measured if g.check == "patch_coverage"] == []
-
-    # Mirror case: [adequacy] enabled=False with patch_coverage=True also
-    # runs once and records nothing. Both switches are required - an
-    # implementation reading only `patch_coverage` and ignoring `enabled`
-    # would pass every other test in this file.
-    disabled_root = tmp_path / "disabled"
-    disabled_root.mkdir()
-    _repo(disabled_root)
-    result2 = _run(disabled_root, enabled=False, patch_coverage=True)
-
-    assert _runs_count(disabled_root) == 1
-    assert [c for c in result2.checks if c.name == "patch_coverage"] == []
-    assert [g for g in result2.not_measured if g.check == "patch_coverage"] == []
 
 
 def test_turning_it_on_runs_the_test_command_twice(tmp_path: Path) -> None:
@@ -240,13 +239,10 @@ def test_a_comment_only_change_is_no_target_not_a_hundred_percent(tmp_path: Path
     `coverage_targets` is non-empty, the pre-flight does not fire, the
     coverage run happens (runs.txt == 2), and `no_target` is reached
     through `coverage.total == 0` once the report is read (D5)."""
-    _base_repo(tmp_path)
-    _comment_only_branch(tmp_path)
-    result = _run(tmp_path, base_branch="main")
+    _repo(tmp_path, files=COMMENT_ONLY_FILES)
+    result = _run(tmp_path)
 
-    assert [c for c in result.checks if c.name == "patch_coverage"] == []
-    gaps = [g for g in result.not_measured if g.check == "patch_coverage"]
-    assert len(gaps) == 1 and gaps[0].reason == "no_target"
+    _only_gap(result, "no_target")
     assert _runs_count(tmp_path) == 2
 
 
@@ -254,24 +250,18 @@ def test_a_diff_with_no_non_test_python_file_costs_no_second_run(tmp_path: Path)
     """The pre-flight `if not targets` path: `is_test_path` filters
     test_mod.py out, `coverage_targets` is empty, and the check returns
     BEFORE spending a second full test run (runs.txt == 1)."""
-    _base_repo(tmp_path)
-    _test_only_branch(tmp_path)
-    result = _run(tmp_path, base_branch="main")
+    _repo(tmp_path, files=TEST_ONLY_FILES)
+    result = _run(tmp_path)
 
-    assert [c for c in result.checks if c.name == "patch_coverage"] == []
-    gaps = [g for g in result.not_measured if g.check == "patch_coverage"]
-    assert len(gaps) == 1 and gaps[0].reason == "no_target"
+    _only_gap(result, "no_target")
     assert _runs_count(tmp_path) == 1
 
 
 def test_a_failing_suite_is_a_sidecar_not_a_number(tmp_path: Path) -> None:
-    _base_repo(tmp_path)
-    _failing_feature_branch(tmp_path)
-    result = _run(tmp_path, base_branch="main")
+    _repo(tmp_path, files=FAILING_FEATURE_FILES)
+    result = _run(tmp_path)
 
-    gaps = [g for g in result.not_measured if g.check == "patch_coverage"]
-    assert len(gaps) == 1 and gaps[0].reason == "command_failed"
-    assert [c for c in result.checks if c.name == "patch_coverage"] == []
+    _only_gap(result, "command_failed")
 
 
 def test_an_empty_report_is_not_a_hundred_percent() -> None:
@@ -279,12 +269,38 @@ def test_an_empty_report_is_not_a_hundred_percent() -> None:
     a file the diff changed. The same property on a real run is
     test_a_comment_only_change_is_no_target_not_a_hundred_percent, which
     reaches `total == 0` through `run_mechanical_verification` and a real
-    coverage JSON."""
+    coverage JSON.
+
+    #152 simplify pass dropped `PatchCoverage.percent`: its only caller
+    (`verify.check_patch_coverage`) already returns `NotMeasured` before
+    computing a percentage whenever `total == 0`, so the property's own
+    raise was unreachable in practice. `covered_lines` and `files` both
+    come back empty for the same reason: `mod.py` never made it past the
+    `unmeasured` branch."""
     pc = measure_patch_coverage({"mod.py": {1, 2, 3}}, {"files": {}})
     assert (pc.covered, pc.total) == (0, 0)
     assert pc.unmeasured == ("mod.py",)
-    with pytest.raises(ValueError):
-        _ = pc.percent
+    assert pc.covered_lines == ()
+    assert pc.files == ()
+
+
+def test_covered_lines_is_what_files_is_derived_from() -> None:
+    """#152 simplify pass: `PatchCoverage` gains `covered_lines`, the
+    actual EXECUTED line numbers per measured target - Layer 2
+    (diff-scoped mutation, not yet built) needs to know WHICH lines to
+    mutate, not only how many - and `files`'s covered count for a path
+    is `len(...)` of that same path's `covered_lines` entry, so the two
+    cannot disagree: they come from one computation, not two."""
+    report = {
+        "files": {
+            "mod.py": {"executed_lines": [1, 2, 5], "missing_lines": [3, 4]},
+        }
+    }
+    pc = measure_patch_coverage({"mod.py": {1, 2, 3, 4, 5}}, report)
+    assert pc.covered_lines == (("mod.py", frozenset({1, 2, 5})),)
+    assert pc.files == (("mod.py", 3, 5),)
+    assert pc.covered == 3
+    assert pc.total == 5
 
 
 def test_a_command_that_cannot_be_started_is_a_sidecar(tmp_path: Path) -> None:
@@ -298,13 +314,11 @@ def test_a_command_that_cannot_be_started_is_a_sidecar(tmp_path: Path) -> None:
     _repo(tmp_path)
     result = _run(tmp_path, test_command="PYTHONPATH=. pytest")
 
-    gaps = [g for g in result.not_measured if g.check == "patch_coverage"]
-    assert len(gaps) == 1 and gaps[0].reason == "command_failed"
-    assert [c for c in result.checks if c.name == "patch_coverage"] == []
+    _only_gap(result, "command_failed")
 
 
 def test_added_line_numbers_is_context_size_agnostic() -> None:
-    """Unit. Three cases, all confirmed against a reference implementation
+    """Unit. Four cases, all confirmed against a reference implementation
     of the spec. The same parser on a real diff is
     test_the_verify_phase_records_the_patch_coverage_finding and
     test_a_comment_only_change_is_no_target_not_a_hundred_percent, whose
@@ -370,6 +384,31 @@ def test_added_line_numbers_is_context_size_agnostic() -> None:
     assert added_line_numbers(removals) == {"mod.py": {2, 3}}
 
 
+def test_a_header_lookalike_added_line_is_not_read_as_a_new_file() -> None:
+    """Unit, on `analyze_test_diff`. #152 simplify pass: it and
+    `added_line_numbers` share `_iter_diff_lines`'s header walk.
+    `added_line_numbers`'s own header-lookalike case above pins the
+    `prev.startswith("--- ")` guard through ITS OWN redundant check on
+    the yielded line, which stays correct even if the shared walk's copy
+    of the guard is dropped - so THIS test is what actually pins the
+    guard living in `_iter_diff_lines` itself: with it dropped, a
+    content line reading `+++ b/evil_test.py` gets read as a real file
+    header and the added test below is attributed to `evil_test.py`
+    instead of the file the hunk is actually in."""
+    diff = (
+        "diff --git a/test_mod.py b/test_mod.py\n"
+        "--- a/test_mod.py\n+++ b/test_mod.py\n"
+        "@@ -1,1 +1,4 @@\n"
+        " x = 1\n"
+        "+++ b/evil_test.py\n"
+        "+def test_added_fn():\n"
+        "     pass\n"
+    )
+    result = analyze_test_diff(diff)
+    assert result.added_tests == {("test_mod.py", "test_added_fn")}
+    assert not any(path == "evil_test.py" for path, _ in result.added_tests)
+
+
 def test_a_hanging_coverage_run_is_a_timed_out_sidecar(tmp_path: Path) -> None:
     _repo(tmp_path)
     (tmp_path / "slow.txt").write_text("30", encoding="utf-8")
@@ -383,10 +422,8 @@ def test_a_hanging_coverage_run_is_a_timed_out_sidecar(tmp_path: Path) -> None:
     # run, and an unbounded test cannot tell "caught" from "still going".
     assert elapsed < 25, f"took {elapsed:.1f}s; the timeout handler did not bound the run"
 
-    gaps = [g for g in result.not_measured if g.check == "patch_coverage"]
-    assert len(gaps) == 1 and gaps[0].reason == "timed_out"
-    assert gaps[0].as_token() == "patch_coverage:timed_out"
-    assert [c for c in result.checks if c.name == "patch_coverage"] == []
+    gap = _only_gap(result, "timed_out")
+    assert gap.as_token() == "patch_coverage:timed_out"
 
 
 def test_a_shell_operator_in_the_test_command_is_refused_before_any_run(
@@ -398,9 +435,7 @@ def test_a_shell_operator_in_the_test_command_is_refused_before_any_run(
         test_command=f"{shlex.quote(sys.executable)} -m pytest && echo done",
     )
 
-    gaps = [g for g in result.not_measured if g.check == "patch_coverage"]
-    assert len(gaps) == 1 and gaps[0].reason == "tool_missing"
-    assert [c for c in result.checks if c.name == "patch_coverage"] == []
+    _only_gap(result, "tool_missing")
     # refused BEFORE spending a run: only check_test_suite ran
     assert _runs_count(tmp_path) == 1
 

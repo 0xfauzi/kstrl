@@ -585,9 +585,11 @@ table.
 
 Layer 1 (patch coverage, #152) is `[adequacy] patch_coverage` (opt-in,
 off by default, toml-only). When on, `check_patch_coverage` runs the
-project's own test command a second time under `--cov=.
---cov-report=json:<tmp>` and reports what fraction of the lines the diff
-ADDED to non-test Python files the suite executed. ADVISORY ONLY, with
+project's own test command a second time under `--cov=. --cov-report=`
+(data only), then a second spawn (`coverage json --include=<targets>`)
+turns the data into a report narrowed to the changed files, and reports
+what fraction of the lines the diff ADDED to non-test Python files the
+suite executed. ADVISORY ONLY, with
 NO FLOOR: the finding is emitted at every percentage including 100%,
 because the number kstrl reports is the empirical distribution a floor
 will later be set from, and a gate that blocks on an invented number

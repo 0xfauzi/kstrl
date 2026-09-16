@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from kstrl.findings import (
+    ADEQUACY_CATEGORY_PREFIX,
     SETPOINT_DISAGREEMENT_CATEGORY,
     render_findings_markdown,
 )
@@ -572,12 +573,18 @@ def _generate_pr_body(
     # is neither. Without this it would reach the manifest and the
     # journal and be invisible on the pull request, which for an
     # advisory-only gate is the same as not existing.
+    #
+    # #152 simplify pass adds every adequacy finding (patch coverage,
+    # Layer 0's test-diff discipline) for the identical reason: they are
+    # advisory, `review_findings` does not carry them, and a finding
+    # absent from the pull request is the same as not existing.
     callouts = [
         f
         for f in component.findings
         if f.is_infrastructure_error
         or f.is_phase_skip
         or f.category == SETPOINT_DISAGREEMENT_CATEGORY
+        or f.category.startswith(ADEQUACY_CATEGORY_PREFIX)
     ]
     if callouts:
         lines.append(render_findings_markdown(callouts).rstrip())

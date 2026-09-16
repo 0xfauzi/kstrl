@@ -63,7 +63,7 @@ from __future__ import annotations
 import ast
 import re
 import textwrap
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -646,27 +646,52 @@ def _diff_path(header: str) -> str:
     return path
 
 
-def analyze_test_diff(diff_text: str) -> DiffDiscipline:
-    """Extract suite-weakening signals from a unified diff."""
-    result = DiffDiscipline()
-    current = ""
+def _iter_diff_lines(diff_text: str) -> Iterator[tuple[str, str, str]]:
+    """Walk a unified diff, yielding ``(source, target, line)``.
+
+    ``source``/``target`` are the paths from the most recent file header
+    - a ``+++ `` line immediately preceded by a ``--- `` line, the guard
+    that keeps a content line whose TEXT merely starts with ``+++`` from
+    being read as one - and reset to ``("", "")`` on every ``diff --git``
+    that starts a new file entry, matching git's own file boundary. Both
+    :func:`analyze_test_diff` and :func:`added_line_numbers` (#152
+    simplify pass) need exactly this parse; what a DELETED
+    (``target == _DEV_NULL``) or ADDED (``source == _DEV_NULL``) file
+    means for "the current path" is left to each caller, because they
+    read it differently - one keeps the source path for a deletion, the
+    other drops the path entirely.
+    """
+    source = ""
+    target = ""
     prev = ""
     for line in diff_text.splitlines():
         if line.startswith("diff --git"):
-            current = ""
+            source, target = "", ""
         elif line.startswith("+++ ") and prev.startswith("--- "):
             target = _diff_path(line)
             source = _diff_path(prev)
-            # A DELETED file is `--- a/tests/x.py` / `+++ /dev/null`.
-            # Keeping the source path is the whole point: deleting a test
-            # file outright is the most direct way to weaken a suite, and
-            # clearing `current` here made it the one case that reported
-            # nothing at all. An ADDED file (`--- /dev/null`) keeps the
-            # target, which is already the non-empty side.
-            current = source if target == _DEV_NULL else target
-            if current == _DEV_NULL:
-                current = ""
-        elif current and is_test_path(current):
+        yield source, target, line
+        prev = line
+
+
+def analyze_test_diff(diff_text: str) -> DiffDiscipline:
+    """Extract suite-weakening signals from a unified diff."""
+    result = DiffDiscipline()
+    prev = ""
+    for source, target, line in _iter_diff_lines(diff_text):
+        if line.startswith("diff --git") or (line.startswith("+++ ") and prev.startswith("--- ")):
+            prev = line
+            continue
+        # A DELETED file is `--- a/tests/x.py` / `+++ /dev/null`. Keeping
+        # the source path is the whole point: deleting a test file
+        # outright is the most direct way to weaken a suite, and
+        # dropping it here made that the one case that reported nothing
+        # at all. An ADDED file (`--- /dev/null`) keeps the target,
+        # which is already the non-empty side.
+        current = source if target == _DEV_NULL else target
+        if current == _DEV_NULL:
+            current = ""
+        if current and is_test_path(current):
             if line.startswith("-") and not line.startswith("---"):
                 body = line[1:]
                 match = _DEF_RE.match(body)
@@ -705,43 +730,36 @@ def _hunk_start(line: str) -> int:
 def added_line_numbers(diff_text: str) -> dict[str, set[int]]:
     """New-side line numbers a unified diff ADDS, keyed by new-side path.
 
-    D4: measured identical whether the diff was fetched at ``-U0`` or the
-    default ``-U3`` (:func:`kstrl.git.get_diff_content`'s context size) -
-    a hunk header gives the new-side start line and every ``+`` or
-    context line advances the counter from there, so the amount of
-    unchanged context around a hunk cannot change where an added line
-    lands. So no new ``-U0`` git helper is added to :mod:`kstrl.git`; the
-    diff ``get_diff_content`` already fetches is enough.
+    D4: measured byte-identical whether the diff was fetched at ``-U0``
+    or the default ``-U3`` (:func:`kstrl.git.get_diff_content`'s context
+    size; see the PR body), so no new ``-U0`` git helper is added to
+    :mod:`kstrl.git`.
 
-    Same header-parsing rule :func:`analyze_test_diff` already uses: a
-    ``+++ `` line (note the trailing space) immediately after a ``--- ``
-    line is a file header, never a diff line that merely happens to
-    start with the same three characters. Both halves are load-bearing -
-    the trailing space rules out a plain ``line.startswith("+++")``
-    match, and the ``prev`` guard rules out an ADDED line whose content
-    looks like a header.
+    Header parsing is :func:`_iter_diff_lines`, the same walk
+    :func:`analyze_test_diff` uses: a ``+++ `` line (note the trailing
+    space) immediately after a ``--- `` line is a file header, never a
+    diff line that merely happens to start with the same three
+    characters. Both halves are load-bearing - the trailing space rules
+    out a plain ``line.startswith("+++")`` match, and the ``prev`` guard
+    rules out an ADDED line whose content looks like a header.
     """
     added: dict[str, set[int]] = {}
     path = ""
     lineno = 0
     prev = ""
-    for line in diff_text.splitlines():
+    # The source path (a DELETED file's identity) contributes no ADDED
+    # line either way, so it is unused here on purpose.
+    for _source, target, line in _iter_diff_lines(diff_text):
         if line.startswith("diff --git"):
             path, lineno = "", 0
         elif line.startswith("+++ ") and prev.startswith("--- "):
-            path, lineno = _new_side_path(line), 0
+            path, lineno = ("" if target == _DEV_NULL else target), 0
         elif line.startswith("@@"):
             lineno = _hunk_start(line)
         elif path and lineno:
             lineno = _record_added_line(line, lineno, path, added)
         prev = line
     return added
-
-
-def _new_side_path(header_line: str) -> str:
-    """The path from a ``+++ `` header, or ``""`` for a deleted file."""
-    path = _diff_path(header_line)
-    return "" if path == _DEV_NULL else path
 
 
 def _record_added_line(line: str, lineno: int, path: str, added: dict[str, set[int]]) -> int:
@@ -767,12 +785,10 @@ def coverage_targets(diff_text: str) -> dict[str, set[int]]:
 
     D6, measured on the fixture in ``tests/test_patch_coverage.py``:
     including the changed TEST file moves the number from 50.0% to
-    66.7%, because a test file is close to 100% covered by construction
-    (it has to run to be counted at all). Uses :func:`is_test_path`,
-    adequacy's own canonical rule and already what
-    :func:`kstrl.verify.check_test_adequacy` uses - not
-    ``verify._changed_non_test_python``'s ``not f.startswith("test")``,
-    which misses ``src/tests/x.py`` and ``pkg/foo_test.py``.
+    66.7% (see the PR body), because a test file is close to 100%
+    covered by construction, so it uses :func:`is_test_path`, adequacy's
+    own canonical rule and already what
+    :func:`kstrl.verify.check_test_adequacy` uses.
     """
     added = added_line_numbers(diff_text)
     return {
@@ -786,23 +802,34 @@ def coverage_targets(diff_text: str) -> dict[str, set[int]]:
 class PatchCoverage:
     """The result of measuring patch coverage over one diff.
 
+    ``covered_lines`` is, per measured target, the changed lines that
+    EXECUTED - the actual line numbers, not only a count. Layer 2
+    (diff-scoped mutation, not yet built) needs to know WHICH lines to
+    mutate, not only how many; #152's simplify pass adds this field so
+    that data exists the first time it is needed rather than being
+    reconstructed from the diff and the report a second time.
+
     ``files`` is sorted ``(path, covered, total)`` tuples, one per target
-    file the coverage report actually measured. ``unmeasured`` names
-    targets the coverage report has no usable entry for at all - present
-    in the diff but absent from (or malformed in) the report, which D5
-    treats as a THIRD state, not 0% and not skipped.
+    file the coverage report actually measured; its covered count for a
+    path is ``len(...)`` of that path's ``covered_lines`` entry, so the
+    two never disagree because they come from the same computation.
+    ``unmeasured`` names targets the coverage report has no usable entry
+    for at all - present in the diff but absent from (or malformed in)
+    the report, which D5 treats as a THIRD state, not 0% and not
+    skipped.
+
+    No ``percent`` property: the only caller, ``verify.check_patch_coverage``,
+    already returns ``NotMeasured(no_target)`` before computing a
+    percentage whenever ``total == 0``, so a property that exists only to
+    raise on that case never has anything left to catch. Compute
+    ``100.0 * covered / total`` at the call site, after that guard.
     """
 
     covered: int
     total: int
+    covered_lines: tuple[tuple[str, frozenset[int]], ...]
     files: tuple[tuple[str, int, int], ...]
     unmeasured: tuple[str, ...]
-
-    @property
-    def percent(self) -> float:
-        if self.total == 0:
-            raise ValueError("patch coverage is undefined with no changed executable lines")
-        return 100.0 * self.covered / self.total
 
 
 def _int_set(entry: object, key: str) -> set[int] | None:
@@ -852,7 +879,8 @@ def measure_patch_coverage(
 
     covered = 0
     total = 0
-    per_file: list[tuple[str, int, int]] = []
+    covered_lines: list[tuple[str, frozenset[int]]] = []
+    line_totals: dict[str, int] = {}
     unmeasured: list[str] = []
     for path, lines in sorted(targets.items()):
         entry = normalized.get(path)
@@ -861,15 +889,21 @@ def measure_patch_coverage(
         if executed is None or missing is None:
             unmeasured.append(path)
             continue
-        c = len(lines & executed)
+        hit = lines & executed
         t = len(lines & (executed | missing))
         if t == 0:
             continue
-        per_file.append((path, c, t))
-        covered += c
+        covered_lines.append((path, frozenset(hit)))
+        line_totals[path] = t
+        covered += len(hit)
         total += t
 
-    return PatchCoverage(covered, total, tuple(per_file), tuple(unmeasured))
+    # `files` is DERIVED from `covered_lines` (#152 simplify pass), not a
+    # second independent computation: its covered count for a path is
+    # `len(...)` of that path's `covered_lines` entry, so a defect that
+    # breaks one breaks the other rather than the two silently disagreeing.
+    per_file = tuple((path, len(hit), line_totals[path]) for path, hit in covered_lines)
+    return PatchCoverage(covered, total, tuple(covered_lines), per_file, tuple(unmeasured))
 
 
 # ---------------------------------------------------------------------------
