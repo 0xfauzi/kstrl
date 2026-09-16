@@ -221,6 +221,7 @@ def test_the_process_exit_code_is_one_when_a_metric_breaches(tmp_path: Path) -> 
     [
         (DRIFT12, "1 point beyond 3 sigma", 0.95, 0.147132, 12),
         (FLAT9 + (0.10, 0.140, 0.145), "2 of 3 beyond 2 sigma", 0.145, 0.132903, 12),
+        (FLAT9 + (0.10, 0.10, 0.145), None, None, None, None),
         (FLAT9 + (0.166,) * 5, "EWMA(0.2) beyond 3 sigma", 0.146202, 0.142642, 14),
         (FLAT9 + (0.09, 0.12, 0.10), None, None, None, None),
         ((0.10, 0.12, 0.09, 0.11, 0.10, 0.90, 0.92), None, None, None, None),
