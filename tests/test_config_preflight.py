@@ -64,8 +64,7 @@ def _invoke(args: list[str], *, toml: str | bytes | None = None) -> Result:
     and chdirs every test into its own empty ``tmp_path``, so the
     relative ``s.md`` / ``m.json`` in the arg tables above resolve here
     and a kstrl.toml written here is the one a cwd-rooted preflight
-    reads. Click's ``CliRunner.isolated_filesystem`` used to stack a
-    second temp dir on that; it is deprecated in 8.5 and gone in 9.0.
+    reads.
     """
     root = Path.cwd()
     (root / "s.md").write_text("# spec\n")

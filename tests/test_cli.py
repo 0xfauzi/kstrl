@@ -75,9 +75,7 @@ class TestCliValidation:
         assert "not a valid integer" in result.output
 
     def test_run_missing_prompt_file(self) -> None:
-        # The cwd is already an empty directory of this test's own:
-        # conftest.isolate_kstrl_state is autouse and chdirs every test
-        # into its tmp_path, so nothing here has a prompt.md to find.
+        # cwd is this test's empty tmp_path (conftest.isolate_kstrl_state): no prompt.md.
         runner = CliRunner()
         result = runner.invoke(
             cli,

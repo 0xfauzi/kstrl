@@ -3929,6 +3929,9 @@ class TestBudgetConfigErrorReachesTheOperator:
     Review follow-up on #180: validation landed at the library boundary,
     but `ks factory` exited 1 with empty output and an uncaught
     BudgetConfigError - a traceback where a config error belongs.
+
+    tmp_path IS the cwd (conftest.isolate_kstrl_state, autouse), so a
+    relative path in a CLI arg resolves against it.
     """
 
     @staticmethod
@@ -3979,12 +3982,9 @@ class TestBudgetConfigErrorReachesTheOperator:
         from kstrl.cli import cli
         from kstrl.factory import BudgetConfigError
 
-        # tmp_path IS the cwd (conftest.isolate_kstrl_state, autouse),
-        # so the relative m.json in `command` resolves to the file below.
-        root = tmp_path
-        (root / "kstrl.toml").write_text(f"[factory]\nmax_cost_usd = {toml_value}\n")
-        (root / "m.json").write_text(json.dumps(self._manifest()))
-        (root / "s.md").write_text("# spec\n")
+        (tmp_path / "kstrl.toml").write_text(f"[factory]\nmax_cost_usd = {toml_value}\n")
+        (tmp_path / "m.json").write_text(json.dumps(self._manifest()))
+        (tmp_path / "s.md").write_text("# spec\n")
         result = CliRunner().invoke(cli, command, catch_exceptions=True)
 
         assert not isinstance(result.exception, BudgetConfigError)
@@ -4005,10 +4005,8 @@ class TestBudgetConfigErrorReachesTheOperator:
 
         from kstrl.cli import cli
 
-        # tmp_path IS the cwd (conftest.isolate_kstrl_state, autouse).
-        root = tmp_path
-        (root / "kstrl.toml").write_text("[factory]\nmax_cost_usd = 0\n")
-        (root / "m.json").write_text(json.dumps(self._manifest()))
+        (tmp_path / "kstrl.toml").write_text("[factory]\nmax_cost_usd = 0\n")
+        (tmp_path / "m.json").write_text(json.dumps(self._manifest()))
         result = CliRunner().invoke(
             cli,
             ["factory", "--manifest", "m.json", "--max-cost-usd", "inf", "--agent-cmd", "true"],
@@ -4038,6 +4036,9 @@ class TestCeilingsAreCheckedBeforeAnythingSpends:
     under the very ceiling that was supposed to bound it. Measured, not
     assumed: the fake agent below records its own invocation, and these
     tests fail if it ever runs.
+
+    tmp_path IS the cwd (conftest.isolate_kstrl_state, autouse), so a
+    relative path in a CLI arg resolves against it.
     """
 
     @staticmethod
@@ -4070,12 +4071,9 @@ class TestCeilingsAreCheckedBeforeAnythingSpends:
 
         from kstrl.cli import cli
 
-        # tmp_path IS the cwd (conftest.isolate_kstrl_state, autouse),
-        # so the relative s.md in the args resolves to the file below.
-        root = tmp_path
-        script, marker = self._fake_agent(root)
-        (root / "kstrl.toml").write_text(f"[factory]\nmax_cost_usd = {toml_value}\n")
-        (root / "s.md").write_text("# spec\nbuild a thing\n")
+        script, marker = self._fake_agent(tmp_path)
+        (tmp_path / "kstrl.toml").write_text(f"[factory]\nmax_cost_usd = {toml_value}\n")
+        (tmp_path / "s.md").write_text("# spec\nbuild a thing\n")
         result = CliRunner().invoke(
             cli,
             ["factory", "--spec", "s.md", "--project-name", "p", "--agent-cmd", str(script)]
@@ -4096,11 +4094,11 @@ class TestCeilingsAreCheckedBeforeAnythingSpends:
 
         from kstrl.cli import cli
 
-        # tmp_path IS the cwd (conftest.isolate_kstrl_state, autouse).
-        root = tmp_path
-        script, marker = self._fake_agent(root)
-        (root / "kstrl.toml").write_text("[factory]\nmax_cost_usd = 5.0\nmax_total_tokens = 1000\n")
-        (root / "s.md").write_text("# spec\nbuild a thing\n")
+        script, marker = self._fake_agent(tmp_path)
+        (tmp_path / "kstrl.toml").write_text(
+            "[factory]\nmax_cost_usd = 5.0\nmax_total_tokens = 1000\n"
+        )
+        (tmp_path / "s.md").write_text("# spec\nbuild a thing\n")
         result = CliRunner().invoke(
             cli,
             ["factory", "--spec", "s.md", "--project-name", "p", "--agent-cmd", str(script)],
@@ -5430,7 +5428,7 @@ def _invoke_factory_cli(
     setup: Callable[[Path], None] | None = None,
     catch_exceptions: bool = False,
 ) -> Any:
-    """`ks factory` in an isolated filesystem holding a spec and a manifest.
+    """`ks factory` in the test's cwd, seeded with a spec and a manifest.
 
     ``setup`` seeds anything else the case needs (a kstrl.toml, say).
     ``catch_exceptions`` is for the tests that assert an exception did
