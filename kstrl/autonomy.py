@@ -746,7 +746,9 @@ class AutonomyConfig:
     #: Demote one level on an R8.4 health control-limit breach. Advisory
     #: first for the same reason, and additionally suppressed while a
     #: cool-down is running: a breach is a windowed trend, so it persists
-    #: across runs and would otherwise cost a level per run.
+    #: across runs and would otherwise cost a level per run. Run
+    #: ``ks health`` first; the measured false-alarm rate at the n floor
+    #: is in roadmap R8.4.
     demote_on_health_breach: bool = False
 
     @classmethod

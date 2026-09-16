@@ -37,10 +37,8 @@ from kstrl.autonomy import (
     AutonomyState,
     DemotionTrigger,
 )
-from kstrl.evolution import INFRASTRUCTURE_CHECKS, experiment_rows
+from kstrl.evolution import INFRASTRUCTURE_CHECKS, EvolutionConfig, experiment_rows
 from kstrl.verify import SCOPE_UNREADABLE_CHECK
-
-DEFAULT_EXPERIMENTS_PATH = Path(".kstrl/experiments.tsv")
 
 #: The prefixes this module adds to the ones the journal's own
 #: taxonomy supplies. It asks a WIDER question than that taxonomy does:
@@ -165,19 +163,16 @@ def _as_int(value: str) -> int:
         return 0
 
 
-def _as_float(value: str) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return 0.0
-
-
 def _as_float_or_none(value: str) -> float | None:
     """A blank or unparseable cost column means unmeasured, not zero."""
     try:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _as_float(value: str) -> float:
+    return _as_float_or_none(value) or 0.0
 
 
 def load_runs(path: Path) -> list[RunRecord]:
@@ -190,9 +185,7 @@ def load_runs(path: Path) -> list[RunRecord]:
     concatenation against the header: the ladder then saw a run whose
     numeric columns had shifted, and ``_as_int`` turned every one of
     them into 0 without raising. That is a fabricated run in the
-    population ``ks autonomy replay`` reports on. (Not in a live
-    promotion: this function has one caller, :func:`replay_file`, and
-    that command never mutates ladder state.) The shared parser drops a
+    population ``ks autonomy replay`` reports on. The shared parser drops a
     row whose width does not fit the file's header.
 
     MISSING is no runs; UNREADABLE is a refusal, and UNPARSEABLE joins
@@ -381,8 +374,16 @@ def replay(runs: list[RunRecord]) -> ReplayReport:
 
 
 def replay_file(path: Path | None = None, root_dir: Path | None = None) -> ReplayReport:
-    """Replay from an experiments.tsv path (default ``.kstrl/`` under root)."""
+    """Replay from an experiments.tsv path.
+
+    The default path is ``EvolutionConfig.load(root_dir).experiments_path``
+    (``<root>/.kstrl/experiments.tsv`` unless ``[evolution]
+    experiments_path`` moves it): the same rule :func:`kstrl.health.health_breaches`
+    resolves against, so the two report halves ``ks autonomy replay``
+    renders agree about which file they read (#151's simplify pass;
+    before it, this function's own default ignored the config key that
+    the health half already honored).
+    """
     if path is None:
-        base = root_dir or Path.cwd()
-        path = base / DEFAULT_EXPERIMENTS_PATH
+        path = EvolutionConfig.load(root_dir).experiments_path
     return replay(load_runs(path))

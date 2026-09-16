@@ -32,7 +32,7 @@ from kstrl.autonomy import (
 from kstrl.autonomy_replay import load_runs, replay, replay_file
 from tests.helpers import gitrepo
 from tests.helpers.component_prd import write_component_prd
-from tests.helpers.replay import clean_run, failing_run, run_record
+from tests.helpers.replay import UNDECODABLE_TSV, clean_run, failing_run, run_record
 
 
 def _eligible_state(level: AutonomyLevel = AutonomyLevel.L1_SUPERVISED) -> AutonomyState:
@@ -448,7 +448,7 @@ class TestReplay:
         superuser ignores, so it is not the one asserted here.
         """
         path = tmp_path / "experiments.tsv"
-        path.write_bytes(b"run_id\ttimestamp\nrun-1\xff\t2026-01-01\n")
+        path.write_bytes(UNDECODABLE_TSV)
 
         with pytest.raises(ValueError):
             load_runs(path)

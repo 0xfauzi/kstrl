@@ -316,16 +316,24 @@ EXPECTED_JOURNAL_PATH_SITES: dict[str, int] = {
     # module and the TUI at all. Two modules fewer that get hold of it
     # is the direction this guard exists to push.
     "evolution.py: self.config.journal_path": 4,
-    "health.py: config.journal_path": 1,
+    "cli.py: config.journal_path": 2,
+    "health.py: config.journal_path": 2,
     "pipeline.py: self.journal_path": 4,
     "workqueue.py: self.journal_path": 2,
 }
-#: The ``health.py`` row above is a READ, added by #151: R8.4 trending
-#: needs the journal for the infrastructure-error-rate series
-#: (``_readings`` calls ``read_progress_events(config.journal_path)``).
-#: It never appends; ``kstrl/health.py`` performs no file I/O of its
-#: own and goes through the same tolerant reader ``EvolutionJournal``
-#: uses.
+#: The ``health.py`` and ``cli.py`` rows above are READS, added by #151:
+#: R8.4 trending needs the journal for the infrastructure-error-rate
+#: series (``readings_from`` calls
+#: ``read_progress_events(journal_path)``). Neither appends;
+#: ``kstrl/health.py`` performs no file I/O of its own and goes through
+#: the same tolerant reader ``EvolutionJournal`` uses. ``health.py``'s
+#: count moved from 1 to 2 and ``cli.py`` gained a fresh row in #151's
+#: simplify pass: ``health_breaches`` and ``health_status`` each obtain
+#: ``config.journal_path`` once to call the new ``readings_from`` entry
+#: point (one occurrence apiece), and ``ks autonomy replay`` /
+#: ``ks health`` each do the same so they can load the run history ONCE
+#: and hand it, plus the journal path, to that same entry point instead
+#: of re-reading the history a second time.
 
 
 class TestOneWriter:

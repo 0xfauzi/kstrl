@@ -10,7 +10,6 @@ seam test: that is the one test that proves #232 and #151 actually meet.
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -20,75 +19,64 @@ import pytest
 from click.testing import CliRunner
 
 from kstrl.cli import cli
+from tests.helpers.journal import component_result, journal_at
+from tests.helpers.replay import UNDECODABLE_TSV, run_record, write_runs
 
 FLAT9 = (0.10, 0.12, 0.09, 0.11, 0.10, 0.13, 0.08, 0.10, 0.11)
+DRIFT12 = FLAT9 + (0.90, 0.92, 0.95)
+DRIFT12_LINE = (
+    "  - retry_rate: 1 point beyond 3 sigma (value 0.9500 beyond limit 0.1471 over 12 run(s))"
+)
 
 
 def write_history(
     root: Path,
     retry_rates: Sequence[float],
     *,
-    completed: int = 2,
     cost: str = "1.00",
     common_failures: Sequence[str] | None = None,
 ) -> None:
-    """Write .kstrl/experiments.tsv with one run per rate.
+    """Write .kstrl/experiments.tsv with one run per rate, run-NN ids.
 
-    ``common_failures`` is per ROW, not one string for the file: the
-    infra-aborted fixture needs a failure prefix on the last three runs
-    and a clean value on the first nine, which a single string cannot
-    express.
+    Through the shared builders (``tests/helpers/replay.py``) rather than
+    a hand-rolled writer: ``run_record`` for the row, ``write_runs`` for
+    the file, both already serialising under ``EXPERIMENTS_HEADER``.
     """
-    from kstrl.evolution import EXPERIMENTS_HEADER
-
     failures = tuple(common_failures or ("",) * len(retry_rates))
     assert len(failures) == len(retry_rates)
-    state = root / ".kstrl"
-    state.mkdir(parents=True, exist_ok=True)
-    lines = [EXPERIMENTS_HEADER]
-    for index, rate in enumerate(retry_rates):
-        lines.append(
-            "\t".join(
-                (
-                    f"run-{index:02d}",
-                    f"2026-09-{index + 1:02d}T00:00:00Z",
-                    "proj",
-                    "2",
-                    str(completed),
-                    "0",
-                    "0",
-                    "1.00",
-                    "100.0",
-                    f"{rate:.4f}",
-                    failures[index],
-                    "1000",
-                    cost,
-                    "0",
-                )
-            )
+    total_cost = None if cost == "" else float(cost)
+    records = [
+        run_record(
+            run_id=f"run-{index:02d}",
+            timestamp=f"2026-09-{index + 1:02d}T00:00:00Z",
+            project="proj",
+            components_total=2,
+            retry_rate=rate,
+            common_failure=failures[index],
+            total_cost_usd=total_cost,
         )
-    (state / "experiments.tsv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        for index, rate in enumerate(retry_rates)
+    ]
+    write_runs(root, records)
 
 
 def write_journal(root: Path, infra_counts: Sequence[int | None]) -> None:
     """One ``component_result`` entry per run, run-NN aligned with write_history.
 
-    ``None`` writes the entry WITHOUT a ``findings_summary`` key, which is
-    the missing-measurement case: a missing key is not a measured zero.
+    ``None`` omits ``findings_summary`` entirely, which is the
+    missing-measurement case: a missing key is not a measured zero.
     """
-    state = root / ".kstrl"
-    state.mkdir(parents=True, exist_ok=True)
-    lines = []
-    for index, count in enumerate(infra_counts):
-        entry: dict[str, object] = {
-            "event_type": "component_result",
-            "run_id": f"run-{index:02d}",
-            "component_id": "comp-a",
-        }
-        if count is not None:
-            entry["findings_summary"] = {"total": 1, "infrastructure_errors": count}
-        lines.append(json.dumps(entry))
-    (state / "evolution.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    entries = [
+        component_result(
+            f"run-{index:02d}",
+            "comp-a",
+            findings_summary=(
+                None if count is None else {"total": 1, "infrastructure_errors": count}
+            ),
+        )
+        for index, count in enumerate(infra_counts)
+    ]
+    journal_at(root).append_entries(entries)
 
 
 def metric_line(text: str, metric: str) -> str:
@@ -110,44 +98,39 @@ def metric_line(text: str, metric: str) -> str:
 
 
 def test_ks_health_reports_a_drifting_retry_rate(tmp_path: Path) -> None:
-    write_history(tmp_path, FLAT9 + (0.90, 0.92, 0.95))
+    write_history(tmp_path, DRIFT12)
     result = CliRunner().invoke(cli, ["health", "--root", str(tmp_path), "--no-color"])
 
     assert result.exit_code == 1, result.output
-    assert (
-        "  - retry_rate: 1 point beyond 3 sigma (value 0.9500 beyond limit 0.1471 over 12 run(s))"
-    ) in result.output
+    assert DRIFT12_LINE in result.output
     assert "n=12" in metric_line(result.output, "retry_rate")
     assert "Advisory only." in result.output
 
 
-def test_ks_health_is_quiet_on_a_flat_history(tmp_path: Path) -> None:
-    write_history(tmp_path, FLAT9 + (0.09, 0.12, 0.10))
+@pytest.mark.parametrize(
+    ("values", "expected_exit_code", "fragment"),
+    [
+        (FLAT9 + (0.09, 0.12, 0.10), 0, "No breaches."),
+        ((0.10, 0.12, 0.09, 0.11, 0.10, 0.90, 0.92), 0, "need 8"),
+        (
+            (0.10, 0.12, 0.09, 0.11, 0.10, 0.90, 0.92, 0.95),
+            1,
+            "retry_rate: 1 point beyond 3 sigma (value 0.9500 beyond limit 0.1346 over 8 run(s))",
+        ),
+    ],
+    ids=["flat_history", "seven_runs_below_the_floor", "eight_runs_at_the_floor"],
+)
+def test_ks_health_exit_code_and_report(
+    tmp_path: Path,
+    values: tuple[float, ...],
+    expected_exit_code: int,
+    fragment: str,
+) -> None:
+    write_history(tmp_path, values)
     result = CliRunner().invoke(cli, ["health", "--root", str(tmp_path), "--no-color"])
 
-    assert result.exit_code == 0, result.output
-    assert "1 point beyond 3 sigma" not in result.output
-    assert "No breaches." in result.output
-    assert "n=12" in metric_line(result.output, "retry_rate")
-
-
-def test_seven_runs_are_below_the_floor(tmp_path: Path) -> None:
-    write_history(tmp_path, (0.10, 0.12, 0.09, 0.11, 0.10, 0.90, 0.92))
-    result = CliRunner().invoke(cli, ["health", "--root", str(tmp_path), "--no-color"])
-
-    assert result.exit_code == 0, result.output
-    assert "1 point beyond 3 sigma" not in result.output
-    assert "need 8" in metric_line(result.output, "retry_rate")
-
-
-def test_eight_runs_are_at_the_floor_and_fire(tmp_path: Path) -> None:
-    write_history(tmp_path, (0.10, 0.12, 0.09, 0.11, 0.10, 0.90, 0.92, 0.95))
-    result = CliRunner().invoke(cli, ["health", "--root", str(tmp_path), "--no-color"])
-
-    assert result.exit_code == 1, result.output
-    assert (
-        "  - retry_rate: 1 point beyond 3 sigma (value 0.9500 beyond limit 0.1346 over 8 run(s))"
-    ) in result.output
+    assert result.exit_code == expected_exit_code, result.output
+    assert fragment in result.output
 
 
 def test_the_factory_seam_opens_an_inbox_item_from_the_real_module(tmp_path: Path) -> None:
@@ -156,7 +139,7 @@ def test_the_factory_seam_opens_an_inbox_item_from_the_real_module(tmp_path: Pat
     from kstrl.inbox import ItemKind
     from tests.helpers.demotion import inbox_items, run_outcome, write_config
 
-    write_history(tmp_path, FLAT9 + (0.90, 0.92, 0.95))
+    write_history(tmp_path, DRIFT12)
     write_config(tmp_path, demote_on_health=False)
     run_outcome(tmp_path)
 
@@ -174,21 +157,47 @@ def test_the_factory_seam_opens_an_inbox_item_from_the_real_module(tmp_path: Pat
 def test_autonomy_replay_reports_health_breaches_without_mutating(tmp_path: Path) -> None:
     from kstrl.autonomy import AutonomyLevel, AutonomyState
 
-    write_history(tmp_path, FLAT9 + (0.90, 0.92, 0.95))
+    write_history(tmp_path, DRIFT12)
     AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO)).save(tmp_path)
     result = CliRunner().invoke(cli, ["autonomy", "replay", "--root", str(tmp_path), "--no-color"])
 
     assert result.exit_code == 0, result.output
     assert "R8.4 health rules (advisory)" in result.output
-    assert (
-        "  - retry_rate: 1 point beyond 3 sigma (value 0.9500 beyond limit 0.1471 over 12 run(s))"
-    ) in result.output
+    assert DRIFT12_LINE in result.output
     assert "Autonomy threshold replay" in result.output
     assert AutonomyState.load(tmp_path).level == int(AutonomyLevel.L3_ENVELOPED_AUTO)
 
 
+def test_replay_and_health_agree_when_experiments_path_moves(tmp_path: Path) -> None:
+    """``[evolution] experiments_path`` must move BOTH report halves of
+    ``ks autonomy replay``, not just its health-breach half.
+
+    Before #151's simplify pass, ``replay_file`` resolved its default
+    through ``DEFAULT_EXPERIMENTS_PATH`` while ``health_breaches``
+    (called by the SAME command, for the second half of its own report)
+    resolved through ``EvolutionConfig.load``: moving the file in
+    ``kstrl.toml`` moved one half of one command's own output and left
+    the other reading an empty default.
+    """
+    (tmp_path / "kstrl.toml").write_text(
+        '[evolution]\nexperiments_path = "custom/history.tsv"\n', encoding="utf-8"
+    )
+    write_history(tmp_path, DRIFT12)
+    assert not (tmp_path / ".kstrl" / "experiments.tsv").exists()
+    assert (tmp_path / "custom" / "history.tsv").exists()
+
+    replay_result = CliRunner().invoke(
+        cli, ["autonomy", "replay", "--root", str(tmp_path), "--no-color"]
+    )
+    health_result = CliRunner().invoke(cli, ["health", "--root", str(tmp_path), "--no-color"])
+
+    assert "Runs recorded:        12" in replay_result.output, replay_result.output
+    assert DRIFT12_LINE in replay_result.output, replay_result.output
+    assert DRIFT12_LINE in health_result.output, health_result.output
+
+
 def test_the_process_exit_code_is_one_when_a_metric_breaches(tmp_path: Path) -> None:
-    write_history(tmp_path, FLAT9 + (0.90, 0.92, 0.95))
+    write_history(tmp_path, DRIFT12)
     proc = subprocess.run(
         [sys.executable, "-m", "kstrl", "health", "--root", str(tmp_path), "--no-color"],
         capture_output=True,
@@ -210,7 +219,7 @@ def test_the_process_exit_code_is_one_when_a_metric_breaches(tmp_path: Path) -> 
 @pytest.mark.parametrize(
     ("values", "expected_rule", "expected_value", "expected_limit", "expected_window"),
     [
-        (FLAT9 + (0.90, 0.92, 0.95), "1 point beyond 3 sigma", 0.95, 0.147132, 12),
+        (DRIFT12, "1 point beyond 3 sigma", 0.95, 0.147132, 12),
         (FLAT9 + (0.10, 0.140, 0.145), "2 of 3 beyond 2 sigma", 0.145, 0.132903, 12),
         (FLAT9 + (0.166,) * 5, "EWMA(0.2) beyond 3 sigma", 0.146202, 0.142642, 14),
         (FLAT9 + (0.09, 0.12, 0.10), None, None, None, None),
@@ -313,10 +322,27 @@ def test_a_component_entry_without_a_findings_summary_drops_its_run(tmp_path: Pa
     assert breach.window_runs == 11
 
 
+def test_a_boolean_infrastructure_errors_count_drops_its_run(tmp_path: Path) -> None:
+    """``isinstance(True, int)`` is ``True``; a bool is not a measured count.
+
+    Added by #151's simplify pass: PS5 (the grouping rewrite keeping a
+    run whose count is a bool) left every OTHER fixture in this file
+    green, because none of them used a bool value, so the exclusion had
+    no test actually depending on it.
+    """
+    import kstrl.health
+
+    write_history(tmp_path, (0.1,) * 12)
+    write_journal(tmp_path, [True, 1, 0, 1, 0, 0, 1, 0, 1, 5, 5, 5])
+    summary, breaches = kstrl.health.health_status(tmp_path)
+
+    assert "n=11" in metric_line(summary, "infrastructure_error_rate")
+
+
 def test_an_undecodable_experiments_file_is_a_refusal(tmp_path: Path) -> None:
     state = tmp_path / ".kstrl"
     state.mkdir(parents=True, exist_ok=True)
-    (state / "experiments.tsv").write_bytes(b"run_id\ttimestamp\nrun-1\xff\t2026-01-01\n")
+    (state / "experiments.tsv").write_bytes(UNDECODABLE_TSV)
 
     result = CliRunner().invoke(cli, ["health", "--root", str(tmp_path), "--no-color"])
 

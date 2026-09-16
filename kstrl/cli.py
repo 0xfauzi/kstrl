@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 if TYPE_CHECKING:
     from kstrl.adequacy import AdequacyConfig
+    from kstrl.autonomy_replay import RunRecord
     from kstrl.evolution import EvolutionConfig, EvolutionJournal
     from kstrl.interaction import InteractionChannel
     from kstrl.policy import PolicyConfig
@@ -4843,6 +4844,33 @@ def autonomy_history(root: Path | None, ui: str, no_color: bool) -> None:
     sys.exit(0)
 
 
+def _load_history_or_exit(
+    ui: UI, root_dir: Path, experiments: Path | None = None
+) -> tuple[list[RunRecord], EvolutionConfig]:
+    """Load the recorded run history once, or print why not and exit 2.
+
+    ``ks health`` and ``ks autonomy replay`` both route through this: one
+    path-resolution rule (``EvolutionConfig.load``), one refusal class,
+    where before #151's simplify pass each command wrote its own
+    ``except (OSError, ValueError)`` clause, and ``ks autonomy replay``
+    read the file a second time through a DIFFERENT default. Returning
+    the config too, not just the runs, is what lets a caller reach
+    ``journal_path`` without a second ``kstrl.toml`` read.
+    """
+    from kstrl.autonomy_replay import load_runs
+    from kstrl.evolution import EvolutionConfig
+
+    try:
+        config = EvolutionConfig.load(root_dir)
+        return load_runs(experiments or config.experiments_path), config
+    except (OSError, ValueError) as exc:
+        # ValueError beside OSError because UnicodeDecodeError is one and
+        # escapes a fail-closed `except OSError` (CLAUDE.md, encoding is
+        # two-sided).
+        ui.err(f"could not read the recorded run history: {exc}")
+        sys.exit(2)
+
+
 @autonomy_group.command(name="replay")
 @_autonomy_root_option
 @click.option(
@@ -4872,33 +4900,19 @@ def autonomy_replay_cmd(
     same because nothing was replayed either way; the difference is
     that the line above it now names the file and the error.
 
-    This is also the advisory mode for the R8.4 health rules: it now
-    reports would-have-fired breaches and never demotes, so a candidate
-    rule set is scored against real history before it is allowed to
-    revoke a level.
+    This is also the advisory mode for the R8.4 health rules: it reports
+    would-have-fired breaches and never demotes, so a candidate rule set is
+    scored against real history before it is allowed to revoke a level.
     """
-    from kstrl.autonomy_replay import replay_file
-    from kstrl.health import breach_lines, health_breaches
+    from kstrl.autonomy_replay import replay
+    from kstrl.health import breach_lines, readings_from
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
-    try:
-        report = replay_file(experiments, root_dir)
-        # One guard, because both reads refuse the same way: OSError for
-        # unreadable, ValueError for undecodable or unparseable. They do
-        # not always read the SAME file: with --experiments unset,
-        # replay_file takes <root>/.kstrl/experiments.tsv while
-        # health_breaches takes EvolutionConfig.load(root).experiments_path,
-        # which [evolution] experiments_path can move. The R8.4 rules are
-        # ADVISORY here: this command reports and never mutates ladder
-        # state (#151).
-        breaches = health_breaches(root_dir, experiments)
-    except (OSError, ValueError) as exc:
-        # ValueError beside OSError because UnicodeDecodeError is one,
-        # and it escapes a fail-closed `except OSError` (CLAUDE.md,
-        # encoding is two-sided).
-        ui_impl.err(f"could not read the recorded run history: {exc}")
-        sys.exit(2)
+    runs, config = _load_history_or_exit(ui_impl, root_dir, experiments)
+    report = replay(runs)
+    readings = readings_from(runs, config.journal_path)
+    breaches = [r.breach for r in readings if r.breach is not None]
     for line in report.render().splitlines():
         ui_impl.info(line)
     ui_impl.info("R8.4 health rules (advisory), would have fired on this history:")
@@ -4920,19 +4934,14 @@ def health_cmd(root: Path | None, ui: str, no_color: bool) -> None:
     means the recorded history could not be read, and the line above it
     names the cause.
     """
-    from kstrl.health import health_status
+    from kstrl.health import _breaches, _render, readings_from
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
-    try:
-        summary, breaches = health_status(root_dir)
-    except (OSError, ValueError) as exc:
-        # ValueError beside OSError because UnicodeDecodeError is one and
-        # escapes a fail-closed `except OSError` (CLAUDE.md, encoding is
-        # two-sided). Same clause as `ks autonomy replay` above.
-        ui_impl.err(f"could not read the recorded run history: {exc}")
-        sys.exit(2)
-    for line in summary.splitlines():
+    runs, config = _load_history_or_exit(ui_impl, root_dir)
+    readings = readings_from(runs, config.journal_path)
+    breaches = _breaches(readings)
+    for line in _render(readings, breaches).splitlines():
         ui_impl.info(line)
     sys.exit(1 if breaches else 0)
 

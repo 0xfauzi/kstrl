@@ -541,20 +541,15 @@ trend cannot walk the ladder to L1 one run at a time; that bounds the damage, it
 does not excuse a rule set nobody replayed. Pick the rules with these two
 numbers in front of you.
 
-**Replay captured (2026-09-16).** `kstrl/health.py` (#151) supplies
-`health_breaches`, `ks health` and the `ks autonomy replay` reporting, both
-advisory: no change to `kstrl/factory.py` and no automatic demotion beyond
-the existing seam under `[autonomy] demote_on_health_breach` (default
-false). Run against this repository's own recorded history
+**Replay captured (2026-09-16).** This repository's own recorded history
 (`ks autonomy replay --root <this repo>`): 5 recorded runs, 2 decisive, 3
 infra-aborted, 0 would-have-fired breaches, because every series sits below
-the n floor of 8 - `retry_rate n=2 (1.5, 0.5)`,
-`cost_per_merged_component n=1`, `infrastructure_error_rate n=2 (0.0, 0.0)`.
-The false-alarm table above assumes mu and sigma are KNOWN; here they are
-estimated from a baseline of `n - 3` points and three monitored points are
-each tested, so the real rate is much higher. Monte Carlo over the exact
-rule set (one point beyond 3 sigma, then 2-of-3 beyond 2 sigma, then
-EWMA(0.2) beyond 3 sigma), 200,000 stationary trials per n:
+the n floor of 8 - `retry_rate n=2`, `cost_per_merged_component n=1`,
+`infrastructure_error_rate n=2`. Mu and sigma are estimated from a baseline
+of `n - 3` points rather than known, so the real false-alarm rate is far
+above the textbook figures above. Monte Carlo over the exact rule set (one
+point beyond 3 sigma, then 2-of-3 beyond 2 sigma, then EWMA(0.2) beyond 3
+sigma), 200,000 stationary trials per n:
 
 | n | p(fire) per metric per run | 1 in | across 3 metrics | 1 in |
 |---|---|---|---|---|
@@ -563,21 +558,10 @@ EWMA(0.2) beyond 3 sigma), 200,000 stationary trials per n:
 | 20 | 0.024 | 41 | 0.071 | 14 |
 | 30 | 0.016 | 63 | 0.047 | 21 |
 
-At the issue's floor of n = 8 the rule set fires on pure stationary noise
-about once every 10 runs per metric, 37x the textbook 1-in-370 above.
 `demote_on_health_breach` must stay false until a project's history is long
-enough to bring that rate down; this repository's own 5 runs are nowhere
-near it.
-
-The EWMA rule is kept on the same measured grounds, not because the issue
-names it: adding it to the two Western Electric rules costs 0.0007 of
-false-alarm probability at n = 8 (0.1034 to 0.1041) and doubles detection of
-a six-run sustained shift at n = 30 (0.31 to 0.64) - the slow drift the
-3-point monitored window otherwise misses. The baseline period is the
-series minus the last 3 runs; a shift running longer than that window
-partly contaminates the baseline and hides itself (power 0.13 against 0.36
-at n = 8 when the shift covers 6 points instead of 3), which is the residual
-case the EWMA rule partially covers.
+enough to bring that rate down. The EWMA rule earns its place on the same
+grounds: 0.0007 of added false-alarm probability at n = 8, and it doubles
+detection of a six-run sustained shift at n = 30 (0.31 to 0.64).
 
 **Why.** Demotion triggers need trend detection over run metrics, and the
 operator needs an evidence surface. The journal and `experiments.tsv` record
