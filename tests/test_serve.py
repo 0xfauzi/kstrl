@@ -2241,6 +2241,33 @@ class TestQueueItemsRememberTheirPrs:
         assert item.state is ItemState.DONE
         assert item.pr_urls == ("https://github.com/o/r/pull/7",)
 
+    def test_a_components_value_that_is_not_a_list_is_ignored_rather_than_raised(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """The container's TYPE guard, one level above the ``prUrl`` one.
+
+        Weakened to ``is None``, the helper iterates an int and raises
+        after the spend is charged, leaving the item in ``running``.
+        """
+
+        def write_bad_components(p: Path) -> None:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(
+                json.dumps(
+                    {
+                        "runId": "factory-20260730-000000.000000-aaa",
+                        "components": 42,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+        verdict, item, _, _ = self._cycle(tmp_path, write_bad_components)
+        assert verdict is Verdict.SUCCESS
+        assert item.state is ItemState.DONE
+        assert item.pr_urls == ()
+
 
 class TestPrUrlsFromManifestDedupesItself:
     """``_pr_urls_from_manifest`` called directly, not through a cycle.
