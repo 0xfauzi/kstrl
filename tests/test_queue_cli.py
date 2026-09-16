@@ -268,6 +268,16 @@ class TestShow:
         assert result.exit_code == 1
         assert "matches multiple items" in result.output
 
+    def test_show_prints_the_recorded_prs(self, tmp_path: Path, spec_file: Path) -> None:
+        _invoke(["queue", "add", str(spec_file)], tmp_path)
+        queue = _queue(tmp_path)
+        item = queue.start(queue.lease(queue.items()[0]))
+        queue.finish_ok(item, pr_urls=("https://x/pull/1", "https://x/pull/2"))
+        result = _invoke(["queue", "show", item.item_id], tmp_path)
+        assert result.exit_code == 0
+        assert "https://x/pull/1" in result.output
+        assert "https://x/pull/2" in result.output
+
 
 class TestRetry:
     def test_retry_requeues_a_failed_item(

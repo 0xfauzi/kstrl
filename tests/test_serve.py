@@ -14,6 +14,7 @@ would cost dollars per assertion at a measured $1.70-2.60 per iteration.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -2004,6 +2005,206 @@ class TestServeCycle:
         serve_cycle(tmp_path, runner=_stub_runner(RunOutcome(0), calls))
         done = [i for i in queue.items() if i.state is ItemState.DONE]
         assert done[0].title == "urgent"
+
+
+class TestQueueItemsRememberTheirPrs:
+    @staticmethod
+    def _with_pr(comp_id: str, pr_url: str) -> Component:
+        """A completed component carrying the PR its run opened."""
+        component = _component(comp_id, "completed")
+        component.pr_url = pr_url
+        return component
+
+    def test_a_finished_run_records_the_prs_from_its_manifest(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        queue = _queue(tmp_path)
+        _add(queue)
+        _manifest(
+            tmp_path / "scripts" / "kstrl" / "manifest.json",
+            [
+                self._with_pr("comp-a", "https://github.com/o/r/pull/1"),
+                self._with_pr("comp-b", ""),
+                self._with_pr("comp-c", "https://github.com/o/r/pull/3"),
+                self._with_pr("comp-d", "   "),
+            ],
+        )
+
+        serve_cycle(tmp_path, runner=_stub_runner(RunOutcome(0)))
+
+        item = queue.items()[0]  # a fresh read from meta.json on disk
+        assert item.state is ItemState.DONE
+        assert item.pr_urls == (
+            "https://github.com/o/r/pull/1",
+            "https://github.com/o/r/pull/3",
+        )
+        meta = (queue.item_dir(item) / "meta.json").read_text(encoding="utf-8")
+        assert "https://github.com/o/r/pull/3" in meta
+        assert [entry["to"] for entry in queue.journal_entries(item.item_id)] == [
+            "queued",
+            "leased",
+            "running",
+            "done",
+        ]
+
+    def test_a_pr_url_repeated_across_components_is_recorded_once(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        queue = _queue(tmp_path)
+        _add(queue)
+        _manifest(
+            tmp_path / "scripts" / "kstrl" / "manifest.json",
+            [
+                self._with_pr("comp-a", "https://github.com/o/r/pull/9"),
+                self._with_pr("comp-b", "https://github.com/o/r/pull/9"),
+            ],
+        )
+
+        serve_cycle(tmp_path, runner=_stub_runner(RunOutcome(0)))
+
+        item = queue.items()[0]
+        assert item.pr_urls == ("https://github.com/o/r/pull/9",)
+
+    def test_a_failed_run_still_records_the_prs_it_opened(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        queue = _queue(tmp_path, max_attempts=3)
+        _add(queue)
+        _manifest(
+            tmp_path / "scripts" / "kstrl" / "manifest.json",
+            [
+                _component("comp-a", "failed", [_spec_finding()]),
+                self._with_pr("comp-b", "https://github.com/o/r/pull/4"),
+            ],
+        )
+
+        serve_cycle(tmp_path, runner=_stub_runner(RunOutcome(1)))
+
+        item = queue.items()[0]
+        assert item.state is ItemState.POISON
+        assert item.pr_urls == ("https://github.com/o/r/pull/4",)
+
+    def test_an_unreadable_manifest_records_nothing_and_warns(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        queue = _queue(tmp_path)
+        _add(queue)
+        path = tmp_path / "scripts" / "kstrl" / "manifest.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"runId": "factory-20260730-000000.000000-aaa", "version": "1"}),
+            encoding="utf-8",
+        )
+        obs = _NullObserver()
+
+        result = serve_cycle(
+            tmp_path,
+            observer=obs,
+            runner=_stub_runner(RunOutcome(0)),
+        )
+
+        assert result.verdict is Verdict.SUCCESS
+        item = queue.items()[0]
+        assert item.state is ItemState.DONE
+        assert item.pr_urls == ()
+        warned = [line for line in obs.lines if "PR URL" in line]
+        assert len(warned) == 1, obs.lines
+        assert warned[0].startswith("warn: ")
+        assert "manifest.json" in warned[0]
+
+    def test_a_manifest_from_another_run_is_not_attributed(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        queue = _queue(tmp_path)
+        _add(queue)
+        _manifest(
+            tmp_path / "scripts" / "kstrl" / "manifest.json",
+            [self._with_pr("comp-a", "https://github.com/o/r/pull/1")],
+            run_id="factory-20260101-000000.000000-zzz",
+        )
+        obs = _NullObserver()
+
+        serve_cycle(
+            tmp_path,
+            observer=obs,
+            runner=_stub_runner(RunOutcome(0)),
+        )
+
+        item = queue.items()[0]
+        assert item.state is ItemState.DONE
+        assert item.pr_urls == ()
+        assert not [line for line in obs.lines if "PR URL" in line]
+
+    def test_a_missing_manifest_is_silent(self, tmp_path: Path) -> None:
+        queue = _queue(tmp_path)
+        _add(queue)
+        obs = _NullObserver()
+
+        serve_cycle(
+            tmp_path,
+            observer=obs,
+            runner=_stub_runner(RunOutcome(0)),
+        )
+
+        item = queue.items()[0]
+        assert item.state is ItemState.DONE
+        assert item.pr_urls == ()
+        assert not [line for line in obs.lines if "PR URL" in line]
+
+    def test_a_corrupt_manifest_does_not_break_the_cycle(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        queue = _queue(tmp_path)
+        _add(queue)
+        path = tmp_path / "scripts" / "kstrl" / "manifest.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{not json", encoding="utf-8")
+
+        result = serve_cycle(tmp_path, runner=_stub_runner(RunOutcome(0)))
+
+        assert result.verdict is Verdict.SUCCESS
+        item = queue.items()[0]
+        assert item.state is ItemState.DONE
+        assert item.pr_urls == ()
+
+    def test_a_manifest_read_that_raises_outside_the_enumerated_tuple_is_survived(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """RecursionError is a RuntimeError, so the tuple used at
+        serve.py:1070 lets it out. Bookkeeping after the spend may not
+        end a cycle for any reason at all."""
+        queue = _queue(tmp_path)
+        _add(queue)
+        _manifest(
+            tmp_path / "scripts" / "kstrl" / "manifest.json",
+            [self._with_pr("comp-a", "https://github.com/o/r/pull/1")],
+        )
+
+        def _boom(path: Path) -> Manifest:
+            raise RecursionError("maximum recursion depth exceeded")
+
+        monkeypatch.setattr("kstrl.serve.Manifest.load", _boom)
+        obs = _NullObserver()
+
+        result = serve_cycle(
+            tmp_path,
+            observer=obs,
+            runner=_stub_runner(RunOutcome(0)),
+        )
+
+        assert result.verdict is Verdict.SUCCESS
+        item = queue.items()[0]
+        assert item.state is ItemState.DONE
+        assert item.pr_urls == ()
+        assert [line for line in obs.lines if "PR URL" in line]
 
 
 class TestServeLoop:

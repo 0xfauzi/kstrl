@@ -40,6 +40,10 @@ cannot edit them. First use migrates any legacy in-tree copies and writes
 the same `origin` remote share one control dir: do not run two `ks serve`
 daemons against that ledger at once.
 
+When a run finishes, the PR URLs its manifest recorded are written onto the
+item, and `ks queue show <id>` lists them; a manifest the run does not own, or
+one that cannot be read, records nothing.
+
 `ks queue pause` stops new work being claimed; it does not touch a run
 already in flight. `ks queue resume` re-opens intake.
 

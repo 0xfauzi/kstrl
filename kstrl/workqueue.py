@@ -272,6 +272,20 @@ def _as_str(data: dict[str, Any], key: str, default: str = "") -> str:
     return value if isinstance(value, str) else default
 
 
+def _as_str_tuple(data: dict[str, Any], key: str) -> tuple[str, ...]:
+    """Decode a list of strings, dropping anything that is not one.
+
+    Same tolerance rule as ``_as_str``: a sidecar is operator-writable,
+    so a malformed value falls back to the field's default rather than
+    losing the whole item. Empty strings are dropped because the callers
+    treat "" as "no PR", never as a PR whose URL is blank.
+    """
+    value = data.get(key)
+    if not isinstance(value, list):
+        return ()
+    return tuple(entry for entry in value if isinstance(entry, str) and entry)
+
+
 @dataclass
 class QueueItem:
     """One unit of intake: a spec plus everything decided about it.
@@ -317,6 +331,12 @@ class QueueItem:
     #: PR 2). Empty means "now". A payload written before this field
     #: existed decodes to empty, i.e. immediately ready.
     not_before: str = ""
+    #: PR URLs the last factory run recorded for this item, read out of
+    #: the run's manifest after it finished. Data on an existing record,
+    #: not a state: nothing in the queue branches on it. An item written
+    #: before this field existed decodes to (), which is also what a run
+    #: that opened no PR leaves.
+    pr_urls: tuple[str, ...] = ()
     schema_version: int = QUEUE_SCHEMA_VERSION
 
     @property
@@ -380,6 +400,7 @@ class QueueItem:
             "last_run_id": self.last_run_id,
             "poison_reason": self.poison_reason,
             "not_before": self.not_before,
+            "pr_urls": list(self.pr_urls),
         }
 
     @classmethod
@@ -448,6 +469,7 @@ class QueueItem:
             last_run_id=_as_str(data, "last_run_id"),
             poison_reason=_as_str(data, "poison_reason"),
             not_before=_as_str(data, "not_before"),
+            pr_urls=_as_str_tuple(data, "pr_urls"),
             schema_version=_as_int(
                 data,
                 "schema_version",
@@ -1212,13 +1234,28 @@ class Queue:
         )
         return item
 
-    def finish_ok(self, item: QueueItem, *, actor: str = "") -> QueueItem:
+    def finish_ok(
+        self,
+        item: QueueItem,
+        *,
+        actor: str = "",
+        pr_urls: tuple[str, ...] = (),
+    ) -> QueueItem:
+        """Record a green finish, and any PR the run left behind.
+
+        An EMPTY ``pr_urls`` writes nothing rather than writing (): a
+        later attempt whose manifest could not be read must not erase
+        what an earlier one recorded.
+        """
+        updates: dict[str, Any] = {"last_error": ""}
+        if pr_urls:
+            updates["pr_urls"] = pr_urls
         return self.transition(
             item,
             ItemState.DONE,
             reason="completed",
             actor=actor,
-            last_error="",
+            **updates,
         )
 
     def finish_failed(
@@ -1227,6 +1264,7 @@ class Queue:
         *,
         error: str = "",
         actor: str = "",
+        pr_urls: tuple[str, ...] = (),
     ) -> QueueItem:
         """Record a red finish that MAY be retried.
 
@@ -1234,12 +1272,15 @@ class Queue:
         made on positive evidence of an infrastructure error. Landing in
         ``failed/`` is not permission to retry.
         """
+        updates: dict[str, Any] = {"last_error": error}
+        if pr_urls:
+            updates["pr_urls"] = pr_urls
         return self.transition(
             item,
             ItemState.FAILED,
             reason="failed",
             actor=actor,
-            last_error=error,
+            **updates,
         )
 
     def poison(

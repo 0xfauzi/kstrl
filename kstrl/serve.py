@@ -3249,6 +3249,39 @@ def _report_reaped(
         )
 
 
+def _pr_urls_from_manifest(
+    manifest_path: Path,
+    owned: bool,
+    observer: ServeObserver,
+) -> tuple[str, ...]:
+    """Every distinct PR URL an owned manifest records, in file order.
+
+    ``owned`` false means this invocation produced no manifest of its
+    own, so there is nothing to attribute and nothing to say - the same
+    refusal ``classify_run`` makes, for the same reason (#186 F2).
+
+    ``Exception`` exactly, and it is the only clause. This read is
+    bookkeeping that runs after the spend is charged and after the
+    verdict is decided, so nothing it can hit may end the cycle, and the
+    enumerated tuple this module uses for ``Manifest.load`` elsewhere is
+    not wide enough: measured, a 20000-deep nested JSON array makes that
+    call raise ``RecursionError``, which is a ``RuntimeError``.
+    """
+    if not owned:
+        return ()
+    try:
+        manifest = Manifest.load(manifest_path)
+    except Exception as exc:
+        observer.warn(f"  could not read PR URLs from {manifest_path} ({exc}); recording none")
+        return ()
+    found: list[str] = []
+    for component in manifest.components:
+        url = component.pr_url.strip()
+        if url and url not in found:
+            found.append(url)
+    return tuple(found)
+
+
 def serve_cycle(
     root_dir: Path,
     *,
@@ -3571,6 +3604,7 @@ def serve_cycle(
         manifest_path=manifest_path if owns_manifest else None,
         owned_run_ids=owned_runs,
     )
+    pr_urls = _pr_urls_from_manifest(manifest_path, owns_manifest, obs)
     result.verdict = verdict.verdict
     result.reason = verdict.reason
     evidence = dict(verdict.evidence)
@@ -3591,7 +3625,7 @@ def serve_cycle(
             obs.err(f"{running.item_id[:12]} vanished mid-run")
             return result
         if verdict.verdict is Verdict.SUCCESS:
-            queue.finish_ok(current, actor="serve")
+            queue.finish_ok(current, actor="serve", pr_urls=pr_urls)
             ledger.record_terminal(poisoned=False)
             finished = queue.get(running.item_id)
             succeeded = True
@@ -3624,7 +3658,12 @@ def serve_cycle(
             obs.err(f"{running.item_id[:12]} vanished mid-run")
             return result
 
-        queue.finish_failed(current, error=verdict.reason, actor="serve")
+        queue.finish_failed(
+            current,
+            error=verdict.reason,
+            actor="serve",
+            pr_urls=pr_urls,
+        )
         failed = queue.get(running.item_id)
         if failed is None:
             return result
