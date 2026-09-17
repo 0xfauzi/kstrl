@@ -67,7 +67,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Final, Protocol
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.atomicio import atomic_write_json
@@ -104,6 +104,9 @@ from kstrl.workqueue import (
     queue_lock,
     queue_root,
 )
+
+if TYPE_CHECKING:
+    from kstrl.intake_github import GitHubIntakeConfig
 
 SERVE_LOCK_FILENAME = "serve.lock"
 
@@ -2339,6 +2342,11 @@ class OpenPrCount:
 
     count: int
     saturated: bool
+    #: The numbers of the PRs the marker matched, in payload order. R10.10
+    #: reads comments on exactly these PRs: the list and the count come
+    #: from ONE pass over ONE payload, so a second lister would be a
+    #: second answer to "which PRs are kstrl's".
+    marked_numbers: tuple[int, ...] = ()
 
 
 def count_open_kstrl_prs(cwd: Path, *, limit: int = 100) -> OpenPrCount:
@@ -2385,6 +2393,11 @@ def count_open_kstrl_prs(cwd: Path, *, limit: int = 100) -> OpenPrCount:
     The spawn and its four transport failures belong to
     :func:`~kstrl.intake_github.run_gh`, which is the package's one gh
     invocation. Only the shapes of a bad PAYLOAD are decided here.
+
+    ``number`` is now validated too, alongside ``body``, because R10.10's
+    polled steering channel reads comments on exactly the PRs this
+    returns as ``marked_numbers``: a row whose number is absent or the
+    wrong type must refuse rather than be silently skipped.
     """
     from kstrl.intake_github import run_gh
 
@@ -2398,7 +2411,7 @@ def count_open_kstrl_prs(cwd: Path, *, limit: int = 100) -> OpenPrCount:
         raise RuntimeError(f"gh pr list returned unparseable JSON: {exc}") from exc
     if not isinstance(rows, list):
         raise RuntimeError(f"gh pr list returned {type(rows).__name__}, expected a list")
-    count = 0
+    marked: list[int] = []
     for index, row in enumerate(rows):
         # The TYPE of ``body`` is checked, not just its presence. A
         # validator that admits a field the parser then coerces is the
@@ -2407,16 +2420,23 @@ def count_open_kstrl_prs(cwd: Path, *, limit: int = 100) -> OpenPrCount:
         # would have been counted as unmarked PRs rather than refused.
         # ``gh pr list --json body`` returns a string or null today; the
         # only scenario this validation is for is the one where that
-        # changes.
+        # changes. ``bool`` is excluded from the ``number`` check because
+        # ``isinstance(True, int)`` is true.
         if (
             not isinstance(row, dict)
             or "body" not in row
             or not isinstance(row["body"], str | None)
+            or not isinstance(row.get("number"), int)
+            or isinstance(row.get("number"), bool)
         ):
             raise RuntimeError(f"gh pr list row {index} is not a PR record: {row!r:.120}")
         if (row["body"] or "").rstrip().endswith(PR_FOOTER_MARKER):
-            count += 1
-    return OpenPrCount(count=count, saturated=len(rows) >= limit)
+            marked.append(row["number"])
+    return OpenPrCount(
+        count=len(marked),
+        saturated=len(rows) >= limit,
+        marked_numbers=tuple(marked),
+    )
 
 
 #: Consecutive inconclusive counts before the daemon files an item.
@@ -3047,6 +3067,36 @@ def _run_intake(
     queue: Queue,
     observer: ServeObserver,
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Pull remote work in, then act on steering comments. Best effort.
+
+    ONE config read for both, and the two halves key on different
+    switches: `enabled` admits labelled issues and spends money,
+    `steer_enabled` reads comments and writes the operator's checkout.
+    Coupling them would mean an operator who wants only the steering
+    channel has to switch on issue intake.
+
+    Strictly additive, like the adapter itself: every failure is recorded
+    and the cycle continues to drain whatever is already queued. A GitHub
+    outage must not stop local work.
+    """
+    try:
+        from kstrl.intake_github import GitHubIntakeConfig
+
+        config = GitHubIntakeConfig.load(root_dir)
+    except Exception as exc:  # noqa: BLE001 - additive by contract
+        observer.warn(f"GitHub intake raised: {exc}")
+        return (), (str(exc),)
+    enqueued, errors = _sync_remote_issues(root_dir, queue, observer, config)
+    _run_steering(root_dir, queue, observer, config)
+    return enqueued, errors
+
+
+def _sync_remote_issues(
+    root_dir: Path,
+    queue: Queue,
+    observer: ServeObserver,
+    config: GitHubIntakeConfig,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Pull remote work into the queue, best effort.
 
     Review #189 F1: without this the daemon drained a queue nothing could
@@ -3059,13 +3109,12 @@ def _run_intake(
     and the cycle continues to drain whatever is already queued. A GitHub
     outage must not stop local work.
     """
+    if not config.enabled:
+        return (), ()
     try:
-        from kstrl.intake_github import Decision, GitHubIntakeConfig
+        from kstrl.intake_github import Decision
         from kstrl.intake_github import sync as intake_sync
 
-        config = GitHubIntakeConfig.load(root_dir)
-        if not config.enabled:
-            return (), ()
         result = intake_sync(
             queue,
             config,
@@ -3089,6 +3138,53 @@ def _run_intake(
         if entry.decision is Decision.REFUSE_UNAUTHORIZED:
             observer.warn(f"  intake refused {entry.issue.source_ref(result.repo)}: {entry.reason}")
     return result.enqueued, result.errors
+
+
+def _run_steering(
+    root_dir: Path,
+    queue: Queue,
+    observer: ServeObserver,
+    config: GitHubIntakeConfig,
+) -> None:
+    """Act on `/memory` and `/iterate` comments on open kstrl PRs (#231).
+
+    Narration only: the effects are the memory file, the queue and the
+    acknowledgement comments. Every refusal is spoken, never silent,
+    which is #188's rule applied to the same surface.
+
+    No `steer_enabled` check here. `poll_steering` returns an empty
+    result as its first statement when the switch is off, above every
+    I/O call and above the ledger construction, and one gate with one
+    home is the point (Decision 7).
+
+    Returns None, so steering failures reach the observer and NOT
+    `CycleResult.sync_errors`. Deliberate: `sync_errors` is the remote
+    INTAKE's field, read by the CLI and the TUI as "what the issue
+    adapter could not admit", and folding a comment-poll failure into it
+    would make a steering outage read as an intake outage. Adding a
+    `CycleResult` field instead would mean editing `serve_cycle`'s body,
+    which the ratchet forbids.
+    """
+    try:
+        from kstrl.intake_github import poll_steering
+
+        result = poll_steering(
+            config,
+            root_dir,
+            queue,
+            commit_guard=lambda: queue_lock(root_dir, blocking=True),
+        )
+    except Exception as exc:  # noqa: BLE001 - additive by contract
+        observer.warn(f"GitHub steering raised: {exc}")
+        return
+    for key in result.applied:
+        observer.info(f"Steering applied {key}")
+    for item_id in result.enqueued:
+        observer.info(f"Steering queued a re-run as {item_id}")
+    for key, reason in result.skipped.items():
+        observer.warn(f"  steering skipped {key}: {reason}")
+    for error in result.errors:
+        observer.warn(f"  steering: {error}")
 
 
 def _report_remote_outcome(

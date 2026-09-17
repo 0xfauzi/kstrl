@@ -39,7 +39,9 @@ class TestCountOpenKstrlPrs:
         rows = [_marked(1), _unmarked(2), _marked(3)]
 
         with patch(_GH_RUN, return_value=_completed(0, stdout=json.dumps(rows))) as run:
-            assert count_open_kstrl_prs(tmp_path) == OpenPrCount(count=2, saturated=False)
+            assert count_open_kstrl_prs(tmp_path) == OpenPrCount(
+                count=2, saturated=False, marked_numbers=(1, 3)
+            )
 
         # `--state=open` is ONE token deliberately. Split in two, the
         # bare literal "open" in kstrl/serve.py is counted by the

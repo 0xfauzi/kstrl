@@ -58,6 +58,19 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   top preserves them. Both notices name the end that went. Keep
   `## Guidance` as the last heading in it: the polled-steering work
   appends there.
+- `[intake_github] steer_enabled` (`KSTRL_INTAKE_GITHUB_STEER_ENABLED`,
+  default off, #231): `ks serve` polls comments on open kstrl-authored
+  pull requests for `/memory <text>` and `/iterate <text>`. `/memory`
+  appends the text under `## Guidance` in the memory file, finding the
+  heading rather than assuming it is last, and adding it when the file
+  has none; `/iterate` does that and then re-queues the run that
+  produced the PR, matched by the PR's own URL (recorded on the queue
+  item since PR 1 of this feature), stopped at the next PR by the R8.6
+  merge gate. Who may steer is `allowed_actors` (#188) - no second
+  allowlist. The daemon writes the memory file and does not commit it;
+  the comment id is recorded in the processed ledger after the write
+  succeeds, so a failure retries and a success never re-applies. See
+  [`docs/continuous-intake.md`](docs/continuous-intake.md) section 3.5.
 
 - Two of the autonomy ladder's five declared demotion triggers now fire.
   `DemotionTrigger` has listed `CALIBRATION_REGRESSION` and

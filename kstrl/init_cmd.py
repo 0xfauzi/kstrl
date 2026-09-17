@@ -273,12 +273,13 @@ with a file to copy from for each pattern.
 # last"). Both are gone. What belongs in the file is in docs/runbook.md
 # and in the README, where it costs no tokens.
 #
-# `## Guidance` is LAST and must stay last. R10.10 (#231) appends a
-# `/memory` comment to the END of the file and expects it to land in
-# that section; a section added after it would take the appends. That
-# invariant is now a code comment and a test rather than a line of the
-# shipped body, because the engineer cannot act on it and the operator
-# reads it in the runbook.
+# `## Guidance` is LAST because that is where an operator looks for it,
+# not because the writer depends on it: R10.10 (#231) finds the heading
+# and inserts at the end of THAT section, and adds the heading when the
+# file has none. A section added after `## Guidance` therefore keeps its
+# own contents. That is stated here and held by
+# `tests/test_steering.py`, not by a line of the shipped body, because
+# the engineer cannot act on it and the operator reads it in the runbook.
 DEFAULT_MEMORY = """# Memory
 
 Standing feedback for kstrl runs in this repository: durable rules that

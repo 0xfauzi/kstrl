@@ -104,7 +104,9 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # are both reads: the PRD file and ``_read_text_or_none``.
     "init_cmd.py": 2,
     "init_wizard.py": 1,
-    "intake_github.py": 1,
+    # 2 since #231: the ledger's own read, plus the memory-file read
+    # `_append_guidance` added for the polled steering channel.
+    "intake_github.py": 2,
     "knowledge.py": 3,
     "licensing.py": 1,
     "loop.py": 2,
@@ -212,6 +214,9 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "init_cmd.py path.read_text(encoding='utf-8')",
     "init_wizard.py toml_path.read_text(encoding='utf-8')",
     "intake_github.py self.path.read_text(encoding='utf-8')",
+    # #231's polled steering channel: the memory file, read before
+    # `/memory` appends under `## Guidance`.
+    "intake_github.py spec.path.read_text(encoding='utf-8')",
     "knowledge.py path.read_text(encoding='utf-8')",
     "knowledge.py prd_path.read_text(encoding='utf-8')",
     "knowledge.py target.read_text(encoding='utf-8')",

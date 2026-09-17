@@ -615,6 +615,10 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("intake_github", "dry_run"): "poll and log, but send no labels or comments",
     ("intake_github", "timeout_seconds"): "per-gh-invocation timeout in seconds",
     (
+        "intake_github",
+        "steer_enabled",
+    ): "act on /memory and /iterate comments on open kstrl PRs (writes the memory file)",
+    (
         "serve",
         "poll_interval_seconds",
     ): "seconds between poll cycles when ks serve runs as a daemon",

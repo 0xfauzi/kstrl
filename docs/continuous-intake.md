@@ -280,6 +280,64 @@ do not expect label-then-sync-in-one-breath to work.
 
 ---
 
+## 3.5 Steering from a pull request
+
+**Read this before enabling it.** With this on, `ks serve` becomes a
+WRITER of your checkout: it appends to `[paths] memory`
+(`scripts/kstrl/memory.md` by default) on your local disk, from a
+comment somebody else typed on GitHub. The daemon does NOT commit that
+change - an uncommitted edit appearing under `git status` after a cycle
+is expected, and keeping it is your `git commit`.
+
+Off by default:
+
+```toml
+[intake_github]
+steer_enabled = true       # or KSTRL_INTAKE_GITHUB_STEER_ENABLED=1
+```
+
+Two commands, read from comments on any OPEN pull request `ks serve`
+itself opened (identified by the same footer `ks queue show` and the
+open-PR bound already key on):
+
+- `/memory <text>` appends `- <text> (from PR #<n> by @<login>, <date>)`
+  under the `## Guidance` heading in the memory file. kstrl finds that
+  heading and inserts at the end of ITS section - a section you added
+  after `## Guidance` keeps its own contents - and adds the heading if
+  the file has none at all. A record over 500 characters, an empty one,
+  or one containing a line starting with `#` (which would restructure
+  the file) is refused: kstrl posts why, in one comment, and writes
+  nothing.
+- `/iterate <text>` does the `/memory` step above (skipped when `<text>`
+  is empty) and then re-queues the work that produced this PR, found by
+  the PR's URL recorded on the queue item (PR 1 of this feature). A PR
+  from a manual `ks factory` run, or any PR no queue item recorded, gets
+  one comment back: `Cannot iterate: no queue item recorded this PR`,
+  and nothing is queued. The re-run does not start while this PR stays
+  open - the R10.7 open-PR bound holds it, the same as any other queued
+  item.
+
+Who may steer is `allowed_actors`, the SAME list section 3 above
+describes for issue labelling - there is no second allowlist. Non-empty,
+the comment's author must be on it; empty, GitHub's own
+`author_association` must be `OWNER`, `MEMBER` or `COLLABORATOR`. Every
+refusal - unauthorized, malformed, or the per-cycle cap - is posted or
+logged, never silent.
+
+The comment id is recorded in the processed ledger, under the same XDG
+control directory the issue adapter's ledger lives in, AFTER the write
+(or the re-queue) succeeds. A write that fails is retried the next
+cycle; one that succeeded is never re-applied, even if the acknowledgement
+comment itself fails to post.
+
+`max_items_per_sync` caps how many comments one cycle acts on, oldest
+first; the rest wait for the next poll.
+
+`dry_run = true` logs what a comment would do and writes or posts
+nothing.
+
+---
+
 ## 4. Scheduling with launchd
 
 Generate a LaunchAgent for this checkout. Every command below was run as
