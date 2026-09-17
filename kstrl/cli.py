@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 if TYPE_CHECKING:
     from kstrl.adequacy import AdequacyConfig
+    from kstrl.autonomy_replay import RunRecord
     from kstrl.evolution import EvolutionConfig, EvolutionJournal
     from kstrl.interaction import InteractionChannel
     from kstrl.policy import PolicyConfig
@@ -4843,6 +4844,37 @@ def autonomy_history(root: Path | None, ui: str, no_color: bool) -> None:
     sys.exit(0)
 
 
+def _load_history_or_exit(
+    ui: UI, root_dir: Path, experiments: Path | None = None
+) -> tuple[list[RunRecord], EvolutionConfig]:
+    """Load the recorded run history once, or print why not and exit 2.
+
+    ``ks health`` and ``ks autonomy replay`` both route through this: one
+    path-resolution rule (``EvolutionConfig.load``), one refusal class,
+    where before #151's simplify pass each command wrote its own
+    ``except (OSError, ValueError)`` clause, and ``ks autonomy replay``
+    read the file a second time through a DIFFERENT default. Returning
+    the config too, not just the runs, is what lets a caller reach
+    ``journal_path`` without a second ``kstrl.toml`` read.
+    """
+    from kstrl.autonomy_replay import load_runs
+    from kstrl.evolution import EvolutionConfig
+
+    try:
+        config = EvolutionConfig.load(root_dir)
+        return load_runs(experiments or config.experiments_path), config
+    except (OSError, TypeError, ValueError) as exc:
+        # ValueError beside OSError because UnicodeDecodeError is one and
+        # escapes a fail-closed `except OSError` (CLAUDE.md, encoding is
+        # two-sided). TypeError because `EvolutionConfig.load` raises it
+        # for a toml array where a number belongs; the list of what that
+        # loader raises lives on `EvolutionConfig.load_or_none`'s
+        # docstring. Without it a config typo is a traceback at exit 1,
+        # which `ks health` documents as a breach.
+        ui.err(f"could not read the recorded run history: {exc}")
+        sys.exit(2)
+
+
 @autonomy_group.command(name="replay")
 @_autonomy_root_option
 @click.option(
@@ -4873,24 +4905,49 @@ def autonomy_replay_cmd(
     that the line above it now names the file and the error.
 
     This is also the advisory mode for the R8.4 health rules: it reports
-    would-have-fired counts and never demotes, so a candidate rule set is
+    would-have-fired breaches and never demotes, so a candidate rule set is
     scored against real history before it is allowed to revoke a level.
     """
-    from kstrl.autonomy_replay import replay_file
+    from kstrl.autonomy_replay import replay
+    from kstrl.health import breach_lines, readings_from
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
-    try:
-        report = replay_file(experiments, root_dir)
-    except (OSError, ValueError) as exc:
-        # ValueError beside OSError because UnicodeDecodeError is one,
-        # and it escapes a fail-closed `except OSError` (CLAUDE.md,
-        # encoding is two-sided).
-        ui_impl.err(f"could not read the recorded run history: {exc}")
-        sys.exit(2)
+    runs, config = _load_history_or_exit(ui_impl, root_dir, experiments)
+    report = replay(runs)
+    readings = readings_from(runs, config.journal_path)
+    breaches = [r.breach for r in readings if r.breach is not None]
     for line in report.render().splitlines():
         ui_impl.info(line)
+    ui_impl.info("R8.4 health rules (advisory), would have fired on this history:")
+    for line in breach_lines(breaches) or ["  (none)"]:
+        ui_impl.info(line)
     sys.exit(0 if report.sufficient_data else 2)
+
+
+@cli.command(name="health")
+@_autonomy_root_option
+@_autonomy_ui_option
+@_autonomy_no_color_option
+def health_cmd(root: Path | None, ui: str, no_color: bool) -> None:
+    """Trend the factory's own run metrics against its own history (R8.4).
+
+    Advisory. Exit 1 means at least one metric is outside the control
+    limits computed from this repository's baseline period; exit 0 means
+    no breach, which includes a history too short to say anything; exit 2
+    means the recorded history could not be read, and the line above it
+    names the cause.
+    """
+    from kstrl.health import health_report, readings_from
+
+    root_dir = (root or Path.cwd()).resolve()
+    ui_impl = _autonomy_ui(ui, no_color)
+    runs, config = _load_history_or_exit(ui_impl, root_dir)
+    readings = readings_from(runs, config.journal_path)
+    summary, breaches = health_report(readings)
+    for line in summary.splitlines():
+        ui_impl.info(line)
+    sys.exit(1 if breaches else 0)
 
 
 @cli.group(name="inbox")
