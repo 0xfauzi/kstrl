@@ -465,6 +465,7 @@ enabled = false                  # run the Layer 0 test-adequacy checks (opt-in)
 layer0 = "advisory"              # advisory | block; the ladder can raise it, never lower
 require_strong_oracle = true     # each new test file needs one falsifiable assertion
 flag_assertionless_tests = true  # report tests that assert nothing at all
+patch_coverage = false           # run the project's pytest command a second time under coverage and report patch coverage (advisory, no floor)
 
 # Phase 2.5 security review
 [security]

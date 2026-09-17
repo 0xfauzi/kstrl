@@ -323,6 +323,12 @@ class TestDiffDiscipline:
         assert result.added_tests == {("tests/t.py", "test_a")}
         assert result.deleted_tests() == []
 
+    # A companion test for the shared `_iter_diff_lines` header walk
+    # (#152 simplify pass) lives in tests/test_patch_coverage.py, not
+    # here: this file is already over the 800-line pre-commit ratchet
+    # and must not cross it (see that file's
+    # test_a_header_lookalike_added_line_is_not_read_as_a_new_file).
+
     # -- P2-e: the skip forms a decorator-only regex cannot see ---------
     @pytest.mark.parametrize(
         "line",

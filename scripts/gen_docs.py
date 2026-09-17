@@ -651,6 +651,11 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("adequacy", "layer0"): "advisory | block; the ladder can raise it, never lower",
     ("adequacy", "require_strong_oracle"): "each new test file needs one falsifiable assertion",
     ("adequacy", "flag_assertionless_tests"): "report tests that assert nothing at all",
+    (
+        "adequacy",
+        "patch_coverage",
+    ): "run the project's pytest command a second time under coverage and report "
+    "patch coverage (advisory, no floor)",
     ("security", "mode"): "skip | advisory | hard",
     ("security", "agent_cmd"): "empty = inherit [agent]",
     ("security", "agent_type"): "empty = inherit [agent]",
