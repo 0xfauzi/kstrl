@@ -636,6 +636,10 @@ _CATEGORY_BY_CHECK = {
     # signature today; enrolled anyway because the table is the list of
     # check names, not the list of names that have failed so far.
     "patch_coverage": "verification",
+    # R8.5 Layer 2 (#152). Same reasoning as patch_coverage: advisory,
+    # never fails, no signature today, enrolled because the table is
+    # every check name.
+    "diff_mutation": "verification",
     "prd_stories": "verification",
     "verification": "verification",
     # #315: mechanical gates that the table did not carry, so every

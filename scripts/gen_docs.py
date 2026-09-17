@@ -556,7 +556,10 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("verify", "dead_code_command"): "empty = smart default when dead_code_cleanup is on",
     ("verify", "mutation_testing"): "optional mutation testing",
     ("verify", "mutation_threshold"): "minimum mutation kill rate (percent)",
-    ("verify", "mutation_timeout"): "seconds for the mutation run",
+    (
+        "verify",
+        "mutation_timeout",
+    ): "seconds for each mutation run ([verify] mutation_testing and [adequacy] diff_mutation)",
     ("verify", "subprocess_timeout"): "seconds per verification subprocess",
     (
         "verify",
@@ -656,6 +659,11 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "patch_coverage",
     ): "run the project's pytest command a second time under coverage and report "
     "patch coverage (advisory, no floor)",
+    (
+        "adequacy",
+        "diff_mutation",
+    ): "mutate the changed AND covered lines and report what fraction the suite "
+    "detects (advisory, no floor; needs patch_coverage)",
     ("security", "mode"): "skip | advisory | hard",
     ("security", "agent_cmd"): "empty = inherit [agent]",
     ("security", "agent_type"): "empty = inherit [agent]",

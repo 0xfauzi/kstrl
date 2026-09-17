@@ -301,6 +301,9 @@ require_strong_oracle = true       # each new test file needs one falsifiable as
 flag_assertionless_tests = true    # report tests that assert nothing
 # patch_coverage = false           # Layer 1 (#152): a second full test run under
                                     # coverage; advisory, no floor - see docs/env-vars.md
+# diff_mutation = false            # Layer 2 (#152): mutate the changed+covered lines
+                                    # patch_coverage measured; needs patch_coverage = true;
+                                    # advisory, no floor - see docs/env-vars.md
 
 # Autonomy ladder (R8.2): one ordered level (L1-L4) replaces the scatter of
 # independent autonomy flags. The level derives a flag bundle at run start and

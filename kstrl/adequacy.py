@@ -63,7 +63,8 @@ from __future__ import annotations
 import ast
 import re
 import textwrap
-from collections.abc import Iterator, Mapping
+import xml.etree.ElementTree as ET
+from collections.abc import Collection, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -907,6 +908,222 @@ def measure_patch_coverage(
 
 
 # ---------------------------------------------------------------------------
+# R8.5 Layer 2 (#152): diff-scoped mutation. Pure functions only - the
+# subprocess handling around mutmut lives in
+# :func:`kstrl.verify.check_diff_mutation`, for the same reason Layer 1's
+# split does (see :func:`measure_patch_coverage`'s module-docstring
+# paragraph): this module has no subprocess or I/O dependency today.
+# ---------------------------------------------------------------------------
+def mutation_patch(targets: Mapping[str, Collection[int]]) -> str:
+    """A synthetic unified diff naming exactly ``targets`` as added lines.
+
+    mutmut 2.5.1's ``--use-patch-file`` reads ONLY the new-side line
+    numbers of ``+`` lines (``read_patch_data``; measurements.md section
+    2a), so a patch naming exactly the changed-and-covered lines selects
+    exactly those lines for mutation and nothing else - not the rest of
+    the target file, and not an untouched one.
+
+    No ``a/``/``b/`` prefixes. whatthepatch strips them only when the
+    document also carries a git ``index`` line; with the prefixes present
+    ``+++ b/mod.py`` resolves to the path ``b/mod.py``, which then
+    selects nothing at all (measurements 2c, verified end to end). The
+    ``+x`` line's content is never read - ``read_patch_data`` keeps only
+    ``change.new``, the new-side line number - so ``x`` is a deliberate
+    placeholder, not a value to improve.
+
+    One header pair per file, files sorted, and one one-line hunk per
+    line, lines sorted, so the output is deterministic given ``targets``.
+    Each hunk is ``@@ -<n-1>,0 +<n>,1 @@``, which stays valid at ``n ==
+    1`` (``@@ -0,0 +1,1 @@``): an added covered line can be a module's
+    first line.
+    """
+    pieces: list[str] = []
+    for path in sorted(targets):
+        numbers = sorted(set(targets[path]))
+        if not numbers:
+            continue
+        pieces.append(f"--- {path}\n+++ {path}\n")
+        for lineno in numbers:
+            pieces.append(f"@@ -{lineno - 1},0 +{lineno},1 @@\n+x\n")
+    return "".join(pieces)
+
+
+#: A mutant mutmut ran and the runner's test suite killed - the change it
+#: made produced a test failure, so the mutant is detected.
+MUTANT_KILLED: str = "killed"
+#: A mutant mutmut ran and the runner's test suite did NOT catch - the
+#: mutated code passed every test unchanged.
+MUTANT_SURVIVED: str = "survived"
+#: mutmut generated the mutant but a truncated run never got to it.
+MUTANT_UNTESTED: str = "untested"
+#: Any status this code does not classify as one of the three above - a
+#: timeout, a suspicious result, or a message this code has never seen.
+#: Never treated as killed: an inconclusive result is not a detection.
+MUTANT_INCONCLUSIVE: str = "inconclusive"
+
+#: ``mutmut junitxml`` names each mutant ``Mutant #<id>``.
+_MUTANT_NAME_RE = re.compile(r"^Mutant #(\d+)$")
+
+
+@dataclass(frozen=True)
+class Mutant:
+    """One mutant, as reported by ``mutmut junitxml``."""
+
+    mutant_id: int
+    path: str
+    line: int
+    status: str
+
+
+def _mutant_status(testcase: ET.Element) -> str:
+    """The status of one ``<testcase>`` element, per measurements 2e/2g.
+
+    | mutmut status | junitxml rendering |
+    |---|---|
+    | ``ok_killed`` | bare ``<testcase>``, no child element |
+    | ``bad_survived`` | ``<failure message="bad_survived">`` |
+    | ``bad_timeout`` | ``<error type="timeout" message="bad_timeout">`` |
+    | ``untested`` (with ``--untested-policy=error``) | ``<error message="untested">`` |
+    | ``skipped`` | nothing, ever - identical to killed |
+
+    A ``<failure>`` whose message is not ``"bad_survived"``, or an
+    ``<error>`` whose message is not ``"untested"``, is a status this
+    code has never seen and is reported :data:`MUTANT_INCONCLUSIVE`
+    rather than guessed at. ``skipped`` is unreachable except through a
+    project's own ``mutmut_config.py`` (measurements 2g), which
+    :func:`kstrl.verify.check_diff_mutation` refuses before any spawn.
+    """
+    failure = testcase.find("failure")
+    if failure is not None:
+        return MUTANT_SURVIVED if failure.get("message") == "bad_survived" else MUTANT_INCONCLUSIVE
+    error = testcase.find("error")
+    if error is not None:
+        return MUTANT_UNTESTED if error.get("message") == "untested" else MUTANT_INCONCLUSIVE
+    return MUTANT_KILLED
+
+
+def parse_mutant_report(xml_text: str) -> tuple[Mutant, ...]:
+    """Every mutant in a ``mutmut junitxml --untested-policy=error
+    --suspicious-policy=error`` report, in document order.
+
+    Raises :class:`ValueError` for any report this cannot read in full -
+    malformed XML (:class:`xml.etree.ElementTree.ParseError`, re-raised
+    as :class:`ValueError` so one clause covers both), a ``<testcase>``
+    whose ``name`` does not match ``Mutant #<int>``, or one missing a
+    usable ``file`` or ``line`` attribute. A testcase this cannot read is
+    a REFUSAL, never a silently dropped row: dropping one is how a
+    denominator shrinks with nothing failing (CLAUDE.md).
+    """
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as exc:
+        raise ValueError(f"mutmut junitxml report is not valid XML: {exc}") from exc
+
+    mutants: list[Mutant] = []
+    for testcase in root.iter("testcase"):
+        name = testcase.get("name") or ""
+        match = _MUTANT_NAME_RE.match(name)
+        if match is None:
+            raise ValueError(f"mutmut junitxml testcase has no readable id: name={name!r}")
+        path = testcase.get("file")
+        if not path:
+            raise ValueError(f"mutmut junitxml testcase {name!r} has no file attribute")
+        line_text = testcase.get("line")
+        try:
+            line = int(line_text) if line_text is not None else None
+        except ValueError:
+            line = None
+        if line is None:
+            raise ValueError(f"mutmut junitxml testcase {name!r} has no readable line attribute")
+        mutants.append(Mutant(int(match.group(1)), path, line, _mutant_status(testcase)))
+    return tuple(mutants)
+
+
+#: Statuses a line's SELECTED mutant must carry (D4): the two mutmut
+#: itself distinguishes as an outcome, never :data:`MUTANT_UNTESTED` or
+#: :data:`MUTANT_INCONCLUSIVE`.
+_DEFINITE_STATUSES = (MUTANT_KILLED, MUTANT_SURVIVED)
+
+
+@dataclass(frozen=True)
+class MutationScore:
+    """The result of scoring a mutmut report against ``targets``.
+
+    ``target_lines`` (L) is what kstrl asked mutmut to mutate, known
+    before the run. ``mutable_lines`` (G) is how many of those lines the
+    report carries at least one mutant for - a ``def`` line, for
+    instance, mutmut simply cannot mutate, so ``G <= L`` even on a
+    complete run. ``measured_lines`` (M) is how many of THOSE have a
+    selected mutant with a definite status; ``M < G`` is what a truncated
+    run looks like. ``killed_lines`` (K) is the killed subset of
+    ``measured_lines``. ``survivors`` is every line whose selected mutant
+    survived, sorted ``(path, line)`` - one entry per LINE, because the
+    line is the actionable unit and the unit the score counts.
+    """
+
+    target_lines: int
+    mutable_lines: int
+    measured_lines: int
+    killed_lines: int
+    survivors: tuple[tuple[str, int], ...]
+
+
+def score_mutants(
+    targets: Mapping[str, Collection[int]], mutants: Iterable[Mutant]
+) -> MutationScore:
+    """Score ``mutants`` against ``targets``, one verdict per line (D4).
+
+    mutmut's own scoping is never trusted for the number (D3): a mutant
+    outside ``targets`` - mutmut mutating a line kstrl did not ask for -
+    is dropped here, silently, because the synthetic patch is a request,
+    not a guarantee, and it is this function's job to hold the line even
+    if mutmut's did not.
+
+    mutmut has no per-line cap (measurements 2d: one line produced three
+    mutants), so the denominator here is LINES, not mutants. For each
+    target line, only that line's mutants with a DEFINITE status
+    (:data:`MUTANT_KILLED` or :data:`MUTANT_SURVIVED`) are candidates;
+    the SELECTED mutant is the one among those with the lowest
+    ``mutant_id``, and the line's verdict is that mutant's status. A line
+    with no definite-status mutant is not measured at all - not in
+    ``measured_lines``, not in ``killed_lines``. Lowest id rather than
+    any, because mutmut generates and runs mutants in id order, so lowest
+    is deterministic given the source; "lowest with a definite status"
+    rather than bare-lowest, because a truncated run leaves ``untested``
+    rows at low ids (measurements 2f run A), and taking the bare lowest
+    there would throw away a line whose other mutants actually ran.
+    """
+    by_line: dict[tuple[str, int], list[Mutant]] = {}
+    for mutant in mutants:
+        lines = targets.get(mutant.path)
+        if lines is None or mutant.line not in lines:
+            continue
+        by_line.setdefault((mutant.path, mutant.line), []).append(mutant)
+
+    measured_lines = 0
+    killed_lines = 0
+    survivors: list[tuple[str, int]] = []
+    for (path, line), line_mutants in by_line.items():
+        definite = [m for m in line_mutants if m.status in _DEFINITE_STATUSES]
+        if not definite:
+            continue
+        selected = min(definite, key=lambda m: m.mutant_id)
+        measured_lines += 1
+        if selected.status == MUTANT_KILLED:
+            killed_lines += 1
+        else:
+            survivors.append((path, line))
+
+    return MutationScore(
+        target_lines=sum(len(set(lines)) for lines in targets.values()),
+        mutable_lines=len(by_line),
+        measured_lines=measured_lines,
+        killed_lines=killed_lines,
+        survivors=tuple(sorted(survivors)),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Config and level-gated severity
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
@@ -935,6 +1152,12 @@ class AdequacyConfig:
     #: can create one. Off by default because it costs a second full test
     #: run.
     patch_coverage: bool = False
+    #: R8.5 Layer 2 (#152). Mutates the changed AND covered lines this
+    #: change added and reports what fraction of them the suite detects a
+    #: change to. Needs `patch_coverage` for the coverage half, rewrites
+    #: source while it runs, and is capped by [verify] mutation_timeout.
+    #: Advisory always: no floor key, and no level can create one.
+    diff_mutation: bool = False
 
     @classmethod
     def from_env(cls) -> AdequacyConfig:
@@ -949,6 +1172,7 @@ class AdequacyConfig:
             require_strong_oracle=defaults.require_strong_oracle,
             flag_assertionless_tests=defaults.flag_assertionless_tests,
             patch_coverage=defaults.patch_coverage,
+            diff_mutation=defaults.diff_mutation,
         )
 
     @classmethod
@@ -979,6 +1203,9 @@ class AdequacyConfig:
             if "patch_coverage" in section
             else defaults.patch_coverage
         )
+        diff_mutation = (
+            bool(section["diff_mutation"]) if "diff_mutation" in section else defaults.diff_mutation
+        )
         if "KSTRL_ADEQUACY_ENABLED" in os.environ:
             enabled = os.environ["KSTRL_ADEQUACY_ENABLED"] == "1"
         if "KSTRL_ADEQUACY_LAYER0" in os.environ:
@@ -989,12 +1216,19 @@ class AdequacyConfig:
             require_strong_oracle=require_strong,
             flag_assertionless_tests=flag_assertionless,
             patch_coverage=patch_coverage,
+            diff_mutation=diff_mutation,
         )
 
     def __post_init__(self) -> None:
         if self.layer0 not in ("advisory", "block"):
             raise ValueError(
                 f"invalid [adequacy] layer0 {self.layer0!r}; expected 'advisory' or 'block'"
+            )
+        if self.diff_mutation and not self.patch_coverage:
+            raise ValueError(
+                "[adequacy] diff_mutation needs patch_coverage = true: Layer 2 "
+                "mutates only the changed lines Layer 1 measured as covered, and "
+                "it runs no coverage run of its own"
             )
 
 
