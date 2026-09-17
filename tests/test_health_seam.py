@@ -1,7 +1,7 @@
-"""R10.11 (#232): the R8.4 health seam, inert until #151 lands.
+"""R10.11 (#232): the R8.4 health seam, meeting the real module (#151).
 
-``kstrl/health.py`` does not exist yet, so what ships here is the
-meeting point: the import guard, a ``health_breach`` inbox kind and
+``kstrl/health.py`` now exists, so what ships here is the meeting
+point: the import guard, a ``health_breach`` inbox kind and
 ``[autonomy] demote_on_health_breach``. The seam is shown to fire
 against a monkeypatched module rather than assumed to, and the guard's
 narrowing - which is what keeps a broken ``kstrl.health`` loud instead
@@ -13,7 +13,6 @@ machinery. The applier it calls is pinned in
 
 from __future__ import annotations
 
-import importlib.util
 import sys
 from pathlib import Path
 from typing import Any
@@ -38,16 +37,13 @@ from tests.helpers.demotion import (
 
 
 class TestHealthSeam:
-    def test_health_seam_inert_without_module(self, tmp_path: Path) -> None:
-        """Until #151 lands there is no kstrl.health, and nothing fires."""
-        assert "kstrl.health" not in sys.modules
-        assert importlib.util.find_spec("kstrl.health") is None
-        write_config(tmp_path, demote_on_health=True)
-        AutonomyState(level=int(AutonomyLevel.L2_GATED_MERGE)).save(tmp_path)
-        run_outcome(tmp_path)
-
-        assert inbox_items(tmp_path) == []
-        assert AutonomyState.load(tmp_path).level == int(AutonomyLevel.L2_GATED_MERGE)
+    # test_health_seam_inert_without_module used to assert
+    # `importlib.util.find_spec("kstrl.health") is None`, pinning the
+    # state before #151 landed. `kstrl/health.py` now exists, and the
+    # real seam's inert-until-the-module-exists behaviour has no test
+    # to replace this one with: it is superseded by
+    # tests/test_health_trending.py::test_the_factory_seam_opens_an_inbox_item_from_the_real_module,
+    # which drives the seam against the real module end to end.
 
     def test_health_module_present_but_missing_function_raises(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -83,7 +79,13 @@ class TestHealthSeam:
         clause on the import, including ``except ImportError`` and a
         clause with no ``.name`` check at all.
         """
-        assert "kstrl.health" not in sys.modules
+        # kstrl.health is a real module (#151): an earlier test in this
+        # session may have imported it already, and import_module then
+        # returns the cache instead of reaching BrokenHealthFinder.
+        # monkeypatch restores whatever was here (or removes the key
+        # again) once the test ends, so this does not leak into other
+        # tests.
+        monkeypatch.delitem(sys.modules, "kstrl.health", raising=False)
         monkeypatch.setattr(sys, "meta_path", [BrokenHealthFinder(), *sys.meta_path])
         write_config(tmp_path, demote_on_health=True)
         AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO)).save(tmp_path)
