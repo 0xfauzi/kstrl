@@ -610,10 +610,16 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "allowed_actors",
     ): "logins allowed to apply the trigger label; empty = anyone who can label",
     ("intake_github", "label_prefix"): "prefix for the state labels written back to the issue",
-    ("intake_github", "max_items_per_sync"): "upper bound on items admitted per sync",
+    (
+        "intake_github",
+        "max_items_per_sync",
+    ): "upper bound on items admitted per sync, and on steering comments acted on per cycle",
     ("intake_github", "default_priority"): "queue priority given to remote-sourced items",
     ("intake_github", "comment_on_result"): "post the queue's verdict back to the source issue",
-    ("intake_github", "dry_run"): "poll and log, but send no labels or comments",
+    (
+        "intake_github",
+        "dry_run",
+    ): "poll and log, but send no labels or comments; also suppresses steering's memory-file write",
     ("intake_github", "timeout_seconds"): "per-gh-invocation timeout in seconds",
     (
         "intake_github",

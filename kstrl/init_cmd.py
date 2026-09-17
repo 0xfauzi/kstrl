@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Literal, NamedTuple
 from kstrl import git
 from kstrl.appendio import append_records
 from kstrl.atomicio import atomic_write_text
+from kstrl.operator_context import GUIDANCE_HEADING
 from kstrl.prd import PRD
 
 if TYPE_CHECKING:
@@ -280,12 +281,16 @@ with a file to copy from for each pattern.
 # own contents. That is stated here and held by
 # `tests/test_steering.py`, not by a line of the shipped body, because
 # the engineer cannot act on it and the operator reads it in the runbook.
-DEFAULT_MEMORY = """# Memory
+# Interpolated rather than a second literal of the heading (#231 B1):
+# `operator_context.GUIDANCE_HEADING` is what the writer and the
+# truncator both read, and `tests/test_steering.py` pins this body to
+# end with it so the three cannot drift apart again.
+DEFAULT_MEMORY = f"""# Memory
 
 Standing feedback for kstrl runs in this repository: durable rules that
 should change future runs, not one-off instructions.
 
-## Guidance
+{GUIDANCE_HEADING}
 """
 
 DEFAULT_FEATURE_UNDERSTAND = """# Feature Understand Notes

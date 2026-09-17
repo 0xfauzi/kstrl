@@ -336,6 +336,40 @@ first; the rest wait for the next poll.
 `dry_run = true` logs what a comment would do and writes or posts
 nothing.
 
+**Cost.** Every cycle steering is on adds 2 + P `gh` subprocess calls,
+where P is the number of open, kstrl-authored pull requests: one `gh
+repo view` and one `gh pr list` (both shared with issue intake's own
+resolution, when that is also on), plus one comments fetch per marked
+PR, plus one `gh pr comment` per command actually acted on. Off, it adds
+zero. Measured against this repository, per-call wall time over three
+runs each: `gh repo view` 0.39/0.59/0.51 s, `gh pr list`
+0.41/0.74/0.39 s, `gh api ... --paginate` 0.30 to 0.55 s.
+
+**The watermark.** Every cycle used to re-fetch a marked pull request's
+ENTIRE comment history, even the comments already recorded - measured on
+this repository, one PR with three comments: 130477 bytes with no
+filter, 2 bytes with a `since` set past all three. At the 60 second
+default poll that is roughly 179 MiB/day for a single long-lived PR, all
+of it already in the ledger. Each pull request now carries a persisted
+watermark - the greatest comment `updated_at` such that every comment at
+or before it was resolved (recorded in the ledger, or terminally
+refused) on some earlier cycle - sent as `since` on the next fetch. A
+comment the per-cycle cap deferred, or one that errored, holds the
+watermark below itself, so it is still refetched and retried. The
+watermark is derived only from `updated_at` values GitHub actually
+returned, never from a clock reading, so it cannot skip a comment this
+process has not seen.
+
+**The one behaviour change.** Because an authorisation refusal now also
+advances the watermark, widening `allowed_actors` later does not
+resurrect a comment that was refused before its pull request's watermark
+passed it - that comment is simply never fetched again. Before this, an
+unauthorised comment was re-read and re-refused on every cycle
+indefinitely, so widening the allowlist would pick it up on the very
+next poll. An operator who wants an old, already-refused comment acted
+on after widening the allowlist should edit it (which bumps its
+`updated_at` past the watermark) or leave a fresh comment instead.
+
 ---
 
 ## 4. Scheduling with launchd

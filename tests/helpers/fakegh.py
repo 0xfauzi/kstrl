@@ -18,6 +18,7 @@ from subprocess import CompletedProcess
 
 import pytest
 
+from kstrl.intake_github import GhResult
 from kstrl.pr import PR_FOOTER_MARKER
 from tests.helpers.executables import write_executable
 
@@ -101,3 +102,50 @@ def marked(number: int) -> dict[str, object]:
 
 def unmarked(number: int) -> dict[str, object]:
     return {"number": number, "body": "A hand-written PR body"}
+
+
+class GhRouter:
+    """Shared `gh` stub skeleton: records argv, answers `repo view`,
+    `pr list` and `issue list`, and falls back to an empty success.
+
+    #231 D2. Hoisted out of `tests/test_steering.py::_SteerGh`, which
+    re-implemented this skeleton against `tests/test_intake_github.py::
+    _GhStub`'s own copy of it - about 18 of `_SteerGh`'s 60 lines were
+    this skeleton, not the routes steering actually needed. A subclass
+    overrides `_route` for anything beyond the three answered here;
+    `_route` sees a call only when this dispatch did not already answer
+    it, and returning ``None`` from it falls through to the
+    empty-success default.
+    """
+
+    def __init__(self, *, prs: list[dict[str, object]] | None = None, repo: str = "") -> None:
+        self.prs = prs if prs is not None else []
+        self.repo = repo
+        self.calls: list[list[str]] = []
+
+    def __call__(
+        self,
+        args: list[str],
+        *,
+        timeout: float,
+        cwd: Path | None = None,
+    ) -> GhResult:
+        self.calls.append(list(args))
+        head = args[:2]
+        if head == ["repo", "view"]:
+            return GhResult(ok=True, stdout=json.dumps({"nameWithOwner": self.repo}))
+        if head == ["pr", "list"]:
+            return GhResult(ok=True, stdout=json.dumps(self.prs))
+        if head == ["issue", "list"]:
+            return GhResult(ok=True, stdout="[]")
+        routed = self._route(head, args)
+        if routed is not None:
+            return routed
+        return GhResult(ok=True, stdout="")
+
+    def _route(self, head: list[str], args: list[str]) -> GhResult | None:
+        """Subclass hook: a route beyond the shared three, or ``None``."""
+        return None
+
+    def argv_for(self, *head: str) -> list[list[str]]:
+        return [c for c in self.calls if c[: len(head)] == list(head)]

@@ -85,9 +85,24 @@ from typing import Literal
 
 from kstrl.config import KstrlConfig, relative_to_root
 from kstrl.delimiters import generate_data_delimiter
-from kstrl.init_cmd import shipped_label
+from kstrl.operator_guidance import GUIDANCE_HEADING as GUIDANCE_HEADING
+from kstrl.operator_guidance import MAX_MEMORY_CHARS as MAX_MEMORY_CHARS
+from kstrl.operator_guidance import _heading_span
+from kstrl.operator_guidance import append_guidance_record as append_guidance_record
+from kstrl.operator_guidance import insert_under_guidance as insert_under_guidance
+from kstrl.operator_guidance import memory_text_refusal as memory_text_refusal
 
 logger = logging.getLogger(__name__)
+
+# `GUIDANCE_HEADING`, `MAX_MEMORY_CHARS`, `_heading_span`,
+# `memory_text_refusal`, `insert_under_guidance` and
+# `append_guidance_record` live in `kstrl.operator_guidance` (#231's
+# simplify pass, B1, moved them there when this module crossed the
+# 800-line ratchet) and are re-exported here: this module is still the
+# one place every OTHER reader imports the memory-file vocabulary from
+# (`init_cmd.GUIDANCE_HEADING`, `intake_github`'s writer calls), and
+# `_heading_span` is shared with `_cut_tail_at_anchor` below, the
+# truncator's half of the same "one heading, read the same way" rule.
 
 #: The fraction of the budget a truncating cut must still deliver. See
 #: :func:`read_operator_file` for what it is defending against.
@@ -213,13 +228,20 @@ class OperatorFileKind:
     #: newest standing corrections were the ones that reached no prompt.
     #: ``"head"`` for golden patterns, which an operator writes once and
     #: prunes by hand and whose sections are order-neutral; ``"tail"``
-    #: for memory, which ``DEFAULT_MEMORY``, ``docs/runbook.md`` and
-    #: #231's ``/memory`` append all grow at the END.
+    #: for memory, whose newest entries land under ``anchor_heading``
+    #: below rather than literally at the end of the file.
     keep: Literal["head", "tail"]
     #: The scaffolded filename whose digest history says "kstrl wrote
     #: this, the operator has not filled it in yet". Matches a
     #: ``SCAFFOLDED_TEMPLATES`` row in ``kstrl/init_cmd.py``.
     scaffold: str
+    #: R10.10 (#231). ``None`` for every row but memory. When set, a
+    #: ``"tail"`` cut keeps the newest content of THIS heading's
+    #: section rather than the newest bytes of the file - see
+    #: :func:`_cut_tail_at_anchor` for why a plain suffix cut stopped
+    #: being correct once ``/memory`` appends under a heading instead of
+    #: at the literal end.
+    anchor_heading: str | None = None
 
     def __post_init__(self) -> None:
         """A row this module's own cut cannot honour is refused here.
@@ -255,6 +277,7 @@ MEMORY = OperatorFileKind(
     max_chars=4000,
     keep="tail",
     scaffold="memory.md",
+    anchor_heading=GUIDANCE_HEADING,
 )
 
 #: Declaration order, which is what :func:`_rows` walks. NOT the prompt
@@ -295,6 +318,8 @@ class OperatorFile:
     #: template's history is an untouched skeleton and is treated as an
     #: empty file: see :func:`read_operator_file`.
     scaffold: str | None = None
+    #: Copied off the row; see :attr:`OperatorFileKind.anchor_heading`.
+    anchor_heading: str | None = None
 
     def __post_init__(self) -> None:
         """The same refusal the row makes, made again on the spec.
@@ -371,6 +396,7 @@ def operator_file_spec(kind: OperatorFileKind, root: Path, configured: Path | st
         max_chars=kind.max_chars,
         keep=kind.keep,
         scaffold=kind.scaffold,
+        anchor_heading=kind.anchor_heading,
     )
 
 
@@ -460,6 +486,12 @@ def read_operator_file(spec: OperatorFile) -> OperatorText:
         return OperatorText("", None, f"could not read {spec.path}: {exc}", absent=False)
     if not text.strip():
         return OperatorText("", None, None, absent=False)
+    # Deferred: a module-level import here would make this module import
+    # `kstrl.init_cmd`, which imports THIS module for `GUIDANCE_HEADING`
+    # (#231 B1). One of the two has to be local, and this is the branch
+    # that needs it.
+    from kstrl.init_cmd import shipped_label
+
     if spec.scaffold is not None and (
         shipped_label(spec.scaffold, text, ignore_trailing_newlines=True) is not None
     ):
@@ -471,7 +503,12 @@ def read_operator_file(spec: OperatorFile) -> OperatorText:
 
     body = _cut(rendered, spec)
     shown = f"truncated: {len(body)} of {len(text)} characters shown"
-    kept = _KEPT[spec.keep]
+    kept = (
+        f"keeping the newest of {spec.anchor_heading!r} and dropping earlier entries "
+        "and anything after that section"
+        if spec.anchor_heading is not None
+        else _KEPT[spec.keep]
+    )
     return OperatorText(
         body,
         f"{shown} from {spec.display}, {kept}",
@@ -515,17 +552,72 @@ def _cut(rendered: str, spec: OperatorFile) -> str:
     probes are in range.
     """
     if spec.keep == "tail":
-        window = rendered[-spec.max_chars :]
-        if rendered[-spec.max_chars - 1] == "\n":
-            return window.lstrip("\n")
-        newline = window.find("\n")
-        moved = window[newline + 1 :] if newline >= 0 else window
-        return (moved if len(moved) >= int(spec.max_chars * CUT_FLOOR) else window).lstrip("\n")
+        if spec.anchor_heading is not None:
+            anchored = _cut_tail_at_anchor(rendered, spec)
+            if anchored is not None:
+                return anchored
+        return _tail_window(rendered, spec.max_chars)
     window = rendered[: spec.max_chars]
     if rendered[spec.max_chars] == "\n":
         return window.rstrip("\n")
     newline = window.rfind("\n")
     return (window[:newline] if newline >= int(spec.max_chars * CUT_FLOOR) else window).rstrip("\n")
+
+
+def _tail_window(rendered: str, max_chars: int) -> str:
+    """The suffix of ``rendered`` this many characters keeps, at a line boundary.
+
+    The ordinary tail arm of :func:`_cut`, factored out so
+    :func:`_cut_tail_at_anchor`'s fallback (the anchor section is itself
+    over budget) shares the exact same boundary-and-floor logic rather
+    than a second copy of it that could drift from this one.
+    """
+    window = rendered[-max_chars:]
+    if rendered[-max_chars - 1] == "\n":
+        return window.lstrip("\n")
+    newline = window.find("\n")
+    moved = window[newline + 1 :] if newline >= 0 else window
+    return (moved if len(moved) >= int(max_chars * CUT_FLOOR) else window).lstrip("\n")
+
+
+def _cut_tail_at_anchor(rendered: str, spec: OperatorFile) -> str | None:
+    """The tail-keeping cut, anchored to ``spec.anchor_heading``'s section.
+
+    #231 A1. Once ``/memory`` appends new entries under ``## Guidance``
+    rather than at the literal end of the file, a plain suffix-of-file
+    cut stops protecting the newest entries: an operator section written
+    AFTER ``## Guidance`` (``## Notes``, say) sits closer to the true end
+    of the file than the newest Guidance entries do, and once that
+    section alone is larger than the budget, a literal tail cut keeps
+    NONE of Guidance - including the entry just recorded - while keeping
+    all of the unrelated section. That is the exact opposite of the
+    file's stated intent, which is to keep the newest STANDING
+    CORRECTIONS.
+
+    So "tail" is restated for an anchored file: keep the newest content
+    of the anchor section (plus the small fixed preamble before it, such
+    as the ``# Memory`` intro), and drop anything after the section
+    first. Only when the preamble plus the WHOLE anchor section still
+    exceeds the budget does an ordinary suffix cut apply, to that
+    preamble-plus-section text alone - which drops the OLDEST entries
+    first, because :func:`insert_under_guidance` always inserts at the
+    end.
+
+    Returns ``None`` when the heading is absent, so the caller falls
+    back to the plain file-tail cut - e.g. a memory file written before
+    ``## Guidance`` was ever added, which :func:`insert_under_guidance`
+    also treats as legal (it adds the heading rather than refusing).
+    """
+    lines = rendered.split("\n")
+    start, end = _heading_span(lines, spec.anchor_heading or "")
+    if start < 0:
+        return None
+    preamble = "\n".join(lines[:start])
+    anchored = "\n".join(lines[start:end])
+    kept = anchored if not preamble else f"{preamble}\n{anchored}"
+    if len(kept) <= spec.max_chars:
+        return kept.rstrip("\n")
+    return _tail_window(kept, spec.max_chars)
 
 
 def _rows(
@@ -662,3 +754,10 @@ def load_operator_file(spec: OperatorFile) -> str:
         lines.append(f"[{result.fact}]")
     lines.append(f"=== END {spec.header} {token} ===")
     return "\n".join(lines)
+
+
+# R10.10 (#231): the memory-file WRITE path -
+# `memory_text_refusal`/`insert_under_guidance`/`append_guidance_record`
+# - lives in `kstrl.operator_guidance` and is re-exported above, split
+# out (#231's simplify pass, B1) when this module crossed the 800-line
+# ratchet. The reader stays here; the writer's own docstrings are there.

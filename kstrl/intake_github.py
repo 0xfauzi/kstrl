@@ -65,7 +65,6 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from kstrl.atomicio import atomic_write_text
 from kstrl.config import _parse_paths
 from kstrl.statedir import (
     CONTROL_GITHUB_PROCESSED,
@@ -92,23 +91,15 @@ MAX_SPEC_CHARS = 60_000
 #: R10.10. The two steering commands, spelled as the first whitespace
 #: token of a comment body. A token match rather than the `"/memory "`
 #: prefix the issue names, so `/iterate` with no text is a command (the
-#: issue allows it) and `/memorywipe` is not.
+#: issue allows it) and `/memorywipe` is not. `_STEER_COMMANDS` itself is
+#: derived from `_STEER_HANDLERS`, near the handlers, so the dispatch
+#: table is the one place a third command is registered (#231 A3).
 STEER_MEMORY = "/memory"
 STEER_ITERATE = "/iterate"
-_STEER_COMMANDS = frozenset({STEER_MEMORY, STEER_ITERATE})
 
 #: Who may steer when `allowed_actors` is empty. GitHub's own
 #: author_association vocabulary, upper case as the API returns it.
 _STEER_ASSOCIATIONS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
-
-#: Cap on one `/memory` text. A FORMAT guard, not a tuning parameter:
-#: the record is one bullet in a file that reaches every engineer prompt.
-MAX_MEMORY_CHARS = 500
-
-#: The heading `/memory` writes under. `init_cmd.DEFAULT_MEMORY` ships it
-#: last and `tests/test_steering.py` pins the two together, because two
-#: spellings of it is how the writer and the scaffold come to disagree.
-GUIDANCE_HEADING = "## Guidance"
 
 #: Poll paging. The window GROWS until the admission cap can be filled or
 #: the inbox is exhausted, because skipped issues do not consume the cap
@@ -526,6 +517,12 @@ class ProcessedLedger:
 
     root_dir: Path
     _entries: dict[str, dict[str, Any]] = field(default_factory=dict)
+    #: R10.10 (#231 C1). The steering `since` cursor, one per pull
+    #: request (`"<repo>#<number>"`), persisted BESIDE the processed-ids
+    #: entries above - same file, same lock, same atomic write - rather
+    #: than a second control file with its own load and write path. See
+    #: :meth:`watermark` and :meth:`set_watermark`.
+    _watermarks: dict[str, str] = field(default_factory=dict)
 
     @property
     def path(self) -> Path:
@@ -542,16 +539,23 @@ class ProcessedLedger:
             # ledger. Nothing here reports the cause, so #320's
             # separate-remedy rule has no message to separate.
             self._entries = {}
+            self._watermarks = {}
             return self
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
             self._entries = {}
+            self._watermarks = {}
             return self
         if isinstance(data, dict) and isinstance(data.get("processed"), dict):
             self._entries = {str(k): v for k, v in data["processed"].items() if isinstance(v, dict)}
         else:
             self._entries = {}
+        watermarks = data.get("watermarks") if isinstance(data, dict) else None
+        if isinstance(watermarks, dict):
+            self._watermarks = {str(k): v for k, v in watermarks.items() if isinstance(v, str)}
+        else:
+            self._watermarks = {}
         return self
 
     def contains(self, source_ref: str) -> bool:
@@ -572,6 +576,23 @@ class ProcessedLedger:
     def entries(self) -> dict[str, dict[str, Any]]:
         return dict(self._entries)
 
+    def watermark(self, key: str) -> str:
+        """The persisted steering ``since`` cursor for ``key``, or ``""``."""
+        return self._watermarks.get(key, "")
+
+    def set_watermark(self, key: str, value: str) -> None:
+        """Advance ``key``'s steering watermark to ``value``, and persist it.
+
+        A no-op when ``value`` does not advance the stored one: the
+        watermark must be monotonic (#231 C1's rule is a maximum, not a
+        replacement), and skipping the write also skips taking the lock
+        on a cycle that resolved nothing new for this pull request.
+        """
+        if value <= self._watermarks.get(key, ""):
+            return
+        self._watermarks[key] = value
+        self._write()
+
     def _write(self) -> None:
         from kstrl.workqueue import atomic_write
 
@@ -582,7 +603,7 @@ class ProcessedLedger:
             atomic_write(
                 path,
                 json.dumps(
-                    {"version": 1, "processed": self._entries},
+                    {"version": 1, "processed": self._entries, "watermarks": self._watermarks},
                     indent=2,
                     ensure_ascii=False,
                 )
@@ -1002,6 +1023,31 @@ def apply_state_label(
     return "" if result.ok else result.error
 
 
+def _gh_comment(
+    subcommand: str,
+    label: str,
+    config: GitHubIntakeConfig,
+    repo: str,
+    number: int,
+    body: str,
+    root_dir: Path,
+) -> str:
+    """Run ``gh <subcommand> comment``. Returns "" or an error naming ``label #N``.
+
+    #231 B6. Shared by :func:`post_comment` (the issue verdict
+    writeback, gated on ``comment_on_result``) and the steering
+    acknowledgement (gated on nothing - it is the only feedback a
+    commenter gets). The gate differs; the call and the error mapping do
+    not, so only ``post_comment`` still carries a gate of its own.
+    """
+    result = run_gh(
+        [subcommand, "comment", str(number), "--repo", repo, "--body", body],
+        timeout=config.timeout_seconds,
+        cwd=root_dir,
+    )
+    return "" if result.ok else f"could not comment on {label} #{number}: {result.error}"
+
+
 def post_comment(
     config: GitHubIntakeConfig,
     repo: str,
@@ -1012,12 +1058,7 @@ def post_comment(
     """Comment on the source issue. Returns an error string, or ""."""
     if config.dry_run or not config.comment_on_result:
         return ""
-    result = run_gh(
-        ["issue", "comment", str(number), "--repo", repo, "--body", body],
-        timeout=config.timeout_seconds,
-        cwd=root_dir,
-    )
-    return "" if result.ok else result.error
+    return _gh_comment("issue", "issue", config, repo, number, body, root_dir)
 
 
 def issue_number_from_ref(source_ref: str) -> int:
@@ -1037,6 +1078,49 @@ def repo_from_ref(source_ref: str) -> str:
     return head if sep and head.count("/") == 1 else ""
 
 
+def _resolve_sync_repos(
+    config: GitHubIntakeConfig,
+    root_dir: Path,
+    local_repo: str | None,
+) -> tuple[str, str]:
+    """The inbox repo (`[intake_github] repo`) and an error, or `("", "")`.
+
+    #231 B2. Extracted out of `sync` so that accepting a caller-resolved
+    `local_repo` adds no branching to `sync` ITSELF: `sync` is already
+    over its complexity gate and the ratchet forbids raising it further,
+    while this function is new and starts under it. `local_repo=None`
+    (every direct caller, including `ks queue sync`) resolves the
+    checkout's own repo here exactly as `sync` used to inline; a
+    non-``None`` value is `serve._run_intake`'s own resolution, already
+    run once for steering's benefit, and is what deletes the SECOND
+    `gh repo view` on a cycle where steering is also on - about 1440
+    duplicate spawns/day at the default poll interval.
+
+    The inbox must be the repo the factory will actually run against:
+    `target_repo` is metadata, and `serve` always executes in `root_dir`.
+    """
+    repo, error = resolve_repo(config, root_dir)
+    if error:
+        return "", error
+    if local_repo is None:
+        local_repo, local_error = checkout_repo(config, root_dir)
+        if local_error:
+            return (
+                repo,
+                f"refusing to admit work without confirming the execution "
+                f"repository: {local_error}",
+            )
+    if local_repo.lower() != repo.lower():
+        return (
+            repo,
+            f"refusing cross-repository intake: the inbox is {repo} but this "
+            f"checkout is {local_repo}, and a run would execute against "
+            f"{local_repo}. Point [intake_github] repo at {local_repo}, or "
+            "run the daemon from a checkout of the inbox repository.",
+        )
+    return repo, ""
+
+
 def sync(
     queue: Queue,
     config: GitHubIntakeConfig,
@@ -1045,6 +1129,7 @@ def sync(
     now_iso: str = "",
     verify: bool = True,
     commit_guard: Callable[[], AbstractContextManager[Any]] | None = None,
+    local_repo: str | None = None,
 ) -> SyncResult:
     """Admit labelled issues into the local queue.
 
@@ -1065,33 +1150,19 @@ def sync(
     per-issue authorization now happen unlocked; the plan is then RE-run
     under the guard against fresh queue state, which costs nothing
     because authorization is memoized.
+
+    ``local_repo``: see :func:`_resolve_sync_repos`.
     """
     result = SyncResult()
     if not config.enabled:
         result.errors = ("[intake_github] enabled is false",)
         return result
 
-    repo, error = resolve_repo(config, root_dir)
+    repo, error = _resolve_sync_repos(config, root_dir, local_repo)
+    if repo:
+        result.repo = repo
     if error:
         result.errors = (error,)
-        return result
-    result.repo = repo
-
-    # The inbox must be the repo the factory will actually run against:
-    # target_repo is metadata, and serve always executes in root_dir.
-    local_repo, local_error = checkout_repo(config, root_dir)
-    if local_error:
-        result.errors = (
-            f"refusing to admit work without confirming the execution repository: {local_error}",
-        )
-        return result
-    if local_repo.lower() != repo.lower():
-        result.errors = (
-            f"refusing cross-repository intake: the inbox is {repo} but this "
-            f"checkout is {local_repo}, and a run would execute against "
-            f"{local_repo}. Point [intake_github] repo at {local_repo}, or "
-            "run the daemon from a checkout of the inbox repository.",
-        )
         return result
 
     ledger = ProcessedLedger(root_dir).load()
@@ -1318,6 +1389,12 @@ class SteerCommand:
     association: str
     command: str
     text: str
+    #: R10.10 C1. GitHub's own last-edit timestamp on the comment, ISO
+    #: 8601 UTC (`"2026-09-02T16:11:25Z"`). The watermark this module
+    #: persists is drawn only from values seen here - never from a clock
+    #: reading - and an edit that changes it is exactly what re-surfaces
+    #: an already-resolved comment.
+    updated_at: str
 
     def ledger_key(self, repo: str) -> str:
         """The `ProcessedLedger` key. Prefixed so it cannot collide with
@@ -1344,13 +1421,44 @@ class SteerOutcome:
 
 @dataclass
 class SteerResult:
-    """What one steering poll did. Every field is read by `serve._run_steering`."""
+    """What one steering poll did.
+
+    `repo`, `applied`, `enqueued` and `errors` are read by
+    `serve._run_intake`'s caller or `serve._run_steering`'s narration.
+    `repo` is the exception: it is read only inside this module (by
+    `_act_on_commands`'s ledger keys), kept on the result because it is
+    also useful to a caller inspecting `poll_steering`'s return directly,
+    the way tests do.
+    """
 
     repo: str = ""
     applied: tuple[str, ...] = ()
     enqueued: tuple[str, ...] = ()
     skipped: dict[str, str] = field(default_factory=dict)
     errors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class SteerContext:
+    """Everything one steering poll's handlers need, built once.
+
+    #231 B4. `_act_on_commands` and `_apply_one` were each an
+    8-parameter signature, six of the parameters pure pass-through
+    between them, and `commit_guard` was threaded five hops to be read
+    only by `_requeue`. `memory_spec` is resolved ONCE here rather than
+    once per command, which is also what fixes `_memory_spec` running a
+    full `KstrlConfig.load(root_dir)` inside a leaf on the daemon poll
+    path.
+    """
+
+    config: GitHubIntakeConfig
+    root_dir: Path
+    queue: Queue
+    ledger: ProcessedLedger
+    repo: str
+    stamp: str
+    commit_guard: Callable[[], AbstractContextManager[Any]] | None
+    memory_spec: OperatorFile
 
 
 def _pr_url(repo: str, number: int) -> str:
@@ -1386,7 +1494,9 @@ def _is_comment_record(row: Any) -> bool:
     list would produce a ledger key that looks fine and dedupes nothing.
     `user` may be null - GitHub returns that for a deleted account - and
     a comment with no login cannot be authorised, which
-    `_steer_refusal` refuses by name.
+    `_steer_refusal` refuses by name. `updated_at` (#231 C1) is required
+    for the same reason `id` is: the watermark is built only from values
+    validated here, never assumed.
     """
     return (
         isinstance(row, dict)
@@ -1394,6 +1504,7 @@ def _is_comment_record(row: Any) -> bool:
         and not isinstance(row.get("id"), bool)
         and isinstance(row.get("body"), str)
         and isinstance(row.get("author_association"), str)
+        and isinstance(row.get("updated_at"), str)
         and isinstance(row.get("user"), dict | None)
     )
 
@@ -1413,6 +1524,7 @@ def _parse_command(row: Any, number: int, url: str) -> SteerCommand | None:
         association=str(row["author_association"]).strip().upper(),
         command=parts[0],
         text=parts[1].strip() if len(parts) > 1 else "",
+        updated_at=str(row["updated_at"]),
     )
 
 
@@ -1421,6 +1533,7 @@ def _pr_steering_commands(
     repo: str,
     number: int,
     root_dir: Path,
+    since: str,
 ) -> tuple[list[SteerCommand], str]:
     """Every steering command on one PR, oldest first, or an error string.
 
@@ -1429,14 +1542,26 @@ def _pr_steering_commands(
     gh 2.73.0 on a three-page response), and the endpoint already returns
     them ascending by `created_at`, so "oldest first" costs no sort.
 
+    `since` (#231 C1): appended as a query parameter when non-empty. It
+    is the persisted watermark - the greatest `updated_at` such that
+    every comment at or before it was resolved on some earlier cycle -
+    and GitHub filters the endpoint to comments whose `updated_at` is at
+    or after it, which is safe precisely because it keys on `updated_at`
+    and not `created_at`: a `/memory` edited after the cut is fetched
+    again. Measured on this repository: 130477 bytes for one PR's three
+    comments with no `since`, 2 bytes with a `since` after all three.
+
     A payload this cannot read is an ERROR, never an empty list: a gate
     that counts what it could not parse as zero is the fail-open shape
     this repository keeps finding. `except Exception` and not a tuple of
     names, because `json.loads` raises `RecursionError` on deeply nested
     input and that is a `RuntimeError`, not a `ValueError` (#318).
     """
+    endpoint = f"repos/{repo}/issues/{number}/comments?per_page=100"
+    if since:
+        endpoint = f"{endpoint}&since={since}"
     result = run_gh(
-        ["api", f"repos/{repo}/issues/{number}/comments?per_page=100", "--paginate"],
+        ["api", endpoint, "--paginate"],
         timeout=config.timeout_seconds,
         cwd=root_dir,
     )
@@ -1448,11 +1573,14 @@ def _pr_steering_commands(
         return [], f"comments on PR #{number} were unparseable: {exc}"
     if not isinstance(rows, list):
         return [], f"comments on PR #{number} returned {type(rows).__name__}, expected a list"
+    # #231 B8: loop-invariant (repo and number are both fixed for this
+    # call), hoisted out of the loop below.
+    url = _pr_url(repo, number)
     commands: list[SteerCommand] = []
     for index, row in enumerate(rows):
         if not _is_comment_record(row):
             return [], f"comment row {index} on PR #{number} is not a comment record: {row!r:.120}"
-        parsed = _parse_command(row, number, _pr_url(repo, number))
+        parsed = _parse_command(row, number, url)
         if parsed is not None:
             commands.append(parsed)
     return commands, ""
@@ -1484,70 +1612,15 @@ def _steer_refusal(config: GitHubIntakeConfig, cmd: SteerCommand) -> str:
     return ""
 
 
-def _memory_refusal(text: str) -> str:
-    """Why this text may not be appended, or "" when it may.
-
-    Three FORMAT guards, not tuning parameters: an empty record says
-    nothing, an enormous one crowds out every other standing correction
-    in a file with a 4000-character prompt budget, and a heading
-    restructures the file that `## Guidance` has to stay the last section
-    of. Indentation is stripped before the `#` test, because CommonMark
-    treats up to three leading spaces as a heading too.
-    """
-    if not text:
-        return "the command carried no text"
-    if len(text) > MAX_MEMORY_CHARS:
-        return f"the text is {len(text)} characters, over the {MAX_MEMORY_CHARS} character limit"
-    if any(line.lstrip().startswith("#") for line in text.splitlines()):
-        return "the text has a line starting with `#`, which would restructure the file"
-    return ""
-
-
-def _insert_under_guidance(body: str, record: str) -> str:
-    """`body` with `record` at the END of its `## Guidance` section.
-
-    Reading the headings is the point, and it is what
-    `tests/test_init_cmd.py::TestTheAppendLandsUnderGuidance` measured
-    the absence of: a tail append lands under whatever section the
-    operator put last, so a `## Notes` they added takes every `/memory`
-    from then on and no gate goes red.
-
-    A file with no `## Guidance` heading GAINS one at the end rather than
-    being refused. That deletes a refusal path, a second comment shape,
-    and a terminal-versus-retryable distinction in the return type, for a
-    change to the operator's file that is small, visible and uncommitted.
-
-    The LAST matching heading wins, which is where a tail append would
-    have gone, so duplicates do not change the answer.
-    """
-    lines = body.split("\n")
-    heading = -1
-    for index, line in enumerate(lines):
-        if line.rstrip() == GUIDANCE_HEADING:
-            heading = index
-    if heading < 0:
-        text = body if body.endswith("\n") else body + "\n"
-        return f"{text}\n{GUIDANCE_HEADING}\n{record}\n"
-    end = len(lines)
-    for index in range(heading + 1, len(lines)):
-        if lines[index].startswith("## "):
-            end = index
-            break
-    while end > heading + 1 and lines[end - 1].strip() == "":
-        end -= 1
-    lines.insert(end, record)
-    joined = "\n".join(lines)
-    return joined if joined.endswith("\n") else joined + "\n"
-
-
 def _memory_spec(root_dir: Path) -> OperatorFile:
     """The memory file, resolved the ONE way every other reader resolves it.
 
     `operator_context.operator_file_spec` is where that resolution lives,
     and its docstring records what a second answer cost: the parent and
-    the worker read different files. This writer uses the same one, and
-    takes `display` from it so the acknowledgement names the file the way
-    the operator's terminal does.
+    the worker read different files. This writer uses the same one.
+    Called once per poll, by `poll_steering`, into `SteerContext.memory_spec`
+    - not once per command, which is what it cost before #231's simplify
+    pass (B4).
     """
     from kstrl.config import KstrlConfig
     from kstrl.operator_context import MEMORY, operator_file_spec
@@ -1555,51 +1628,45 @@ def _memory_spec(root_dir: Path) -> OperatorFile:
     return operator_file_spec(MEMORY, root_dir, KstrlConfig.load(root_dir).memory_file)
 
 
-def _append_guidance(spec: OperatorFile, cmd: SteerCommand) -> str:
-    """Append one record under `## Guidance`. Returns "" or a RETRYABLE error.
-
-    `FileNotFoundError` first and `(OSError, ValueError)` last: the broad
-    clause has to be last or the narrow one above it is unreachable, and
-    `ValueError` travels with `OSError` because `UnicodeDecodeError` is a
-    `ValueError` and escapes a fail-closed `except OSError`.
-
-    Through `atomicio.atomic_write_text`, never a hand-rolled
-    `mkstemp` + `os.replace`: `mkstemp` creates 0600 and `os.replace`
-    carries that onto the destination, which would silently retighten a
-    git-tracked operator file. `tests/test_atomicio.py` AST-walks
-    `kstrl/` and fails on a new `mkstemp`.
-    """
-    try:
-        body = spec.path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        from kstrl.init_cmd import DEFAULT_MEMORY
-
-        body = DEFAULT_MEMORY
-    except (OSError, ValueError) as exc:
-        return f"could not read {spec.display}: {exc}"
-    record = f"- {cmd.text} (from PR #{cmd.pr_number} by @{cmd.login}, {_utc_now_iso()[:10]})"
-    try:
-        spec.path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(spec.path, _insert_under_guidance(body, record))
-    except OSError as exc:
-        return f"could not write {spec.display}: {exc}"
-    return ""
-
-
-def _memory_outcome(root_dir: Path, cmd: SteerCommand) -> SteerOutcome:
-    refusal = _memory_refusal(cmd.text)
-    if refusal:
-        return SteerOutcome(comment=f"Not recorded: {refusal}")
-    spec = _memory_spec(root_dir)
-    error = _append_guidance(spec, cmd)
-    if error:
-        return SteerOutcome(error=error)
-    return SteerOutcome(comment=_recorded_comment(spec, cmd))
+def _guidance_record(cmd: SteerCommand) -> str:
+    """The one line `/memory` appends: the text, its provenance, its date."""
+    return f"- {cmd.text} (from PR #{cmd.pr_number} by @{cmd.login}, {_utc_now_iso()[:10]})"
 
 
 def _recorded_comment(spec: OperatorFile, cmd: SteerCommand) -> str:
     """The acknowledgement. Says where it went and that it is not committed."""
     return f'Recorded to {spec.display}: "{cmd.text}". Commit it to keep it.'
+
+
+def _record_memory(
+    ctx: SteerContext,
+    cmd: SteerCommand,
+    *,
+    refusal_prefix: str,
+) -> tuple[SteerOutcome, bool]:
+    """Validate and append `cmd.text` under `## Guidance`. `(outcome, ok)`.
+
+    #231 B5. `_memory_outcome` and `_iterate_outcome` used to re-run the
+    same four steps - refusal check, resolve the spec, append, build the
+    acknowledgement - differing only in the refusal's prefix, which is
+    the one thing each caller still supplies. `ok` is True only when the
+    append succeeded, the branch `_iterate_outcome` continues past to
+    requeue; `_memory_outcome` returns `outcome` either way.
+    """
+    from kstrl.operator_context import append_guidance_record, memory_text_refusal
+
+    refusal = memory_text_refusal(cmd.text)
+    if refusal:
+        return SteerOutcome(comment=f"{refusal_prefix}{refusal}"), False
+    error = append_guidance_record(ctx.memory_spec, _guidance_record(cmd))
+    if error:
+        return SteerOutcome(error=error), False
+    return SteerOutcome(comment=_recorded_comment(ctx.memory_spec, cmd)), True
+
+
+def _memory_outcome(ctx: SteerContext, cmd: SteerCommand) -> SteerOutcome:
+    outcome, _ok = _record_memory(ctx, cmd, refusal_prefix="Not recorded: ")
+    return outcome
 
 
 def _item_for_pr(queue: Queue, url: str) -> QueueItem | None:
@@ -1656,29 +1723,20 @@ def _requeue(
         )
 
 
-def _iterate_outcome(
-    root_dir: Path,
-    queue: Queue,
-    cmd: SteerCommand,
-    commit_guard: Callable[[], AbstractContextManager[Any]] | None,
-) -> SteerOutcome:
+def _iterate_outcome(ctx: SteerContext, cmd: SteerCommand) -> SteerOutcome:
     """`/memory` first, then re-queue. An empty text skips the memory step."""
     lines: list[str] = []
     if cmd.text:
-        refusal = _memory_refusal(cmd.text)
-        if refusal:
-            return SteerOutcome(comment=f"Not recorded and not queued: {refusal}")
-        spec = _memory_spec(root_dir)
-        error = _append_guidance(spec, cmd)
-        if error:
-            return SteerOutcome(error=error)
-        lines.append(_recorded_comment(spec, cmd))
-    original = _item_for_pr(queue, cmd.pr_url)
+        outcome, ok = _record_memory(ctx, cmd, refusal_prefix="Not recorded and not queued: ")
+        if not ok:
+            return outcome
+        lines.append(outcome.comment)
+    original = _item_for_pr(ctx.queue, cmd.pr_url)
     if original is None:
         lines.append("Cannot iterate: no queue item recorded this PR")
         return SteerOutcome(comment="\n".join(lines))
     try:
-        item = _requeue(queue, original, cmd, commit_guard)
+        item = _requeue(ctx.queue, original, cmd, ctx.commit_guard)
     except (QueueError, OSError, ValueError) as exc:
         return SteerOutcome(error=f"could not re-queue {original.item_id}: {exc}")
     lines.append(
@@ -1688,24 +1746,34 @@ def _iterate_outcome(
     return SteerOutcome(comment="\n".join(lines), item_id=item.item_id)
 
 
-def _run_command(
-    root_dir: Path,
-    queue: Queue,
-    cmd: SteerCommand,
-    commit_guard: Callable[[], AbstractContextManager[Any]] | None,
-) -> SteerOutcome:
-    if cmd.command == STEER_MEMORY:
-        return _memory_outcome(root_dir, cmd)
-    return _iterate_outcome(root_dir, queue, cmd, commit_guard)
+#: R10.10 A3. Closed by construction: `_STEER_COMMANDS` (what
+#: `_parse_command` treats as a command at all) is DERIVED from this
+#: mapping's keys rather than declared separately, so a command
+#: registered here is automatically a member of the set `_parse_command`
+#: recognises, and a command `_parse_command` could recognise but this
+#: mapping does not is a `KeyError` in `_run_command`, not a silent fall
+#: through to `/iterate` - the most expensive thing this subsystem can
+#: do, since it re-queues a run. There is no `else` branch left to fall
+#: into.
+_STEER_HANDLERS: dict[str, Callable[[SteerContext, SteerCommand], SteerOutcome]] = {
+    STEER_MEMORY: _memory_outcome,
+    STEER_ITERATE: _iterate_outcome,
+}
+_STEER_COMMANDS = frozenset(_STEER_HANDLERS)
 
 
-def _post_pr_comment(
-    config: GitHubIntakeConfig,
-    repo: str,
-    number: int,
-    body: str,
-    root_dir: Path,
-) -> str:
+def _run_command(ctx: SteerContext, cmd: SteerCommand) -> SteerOutcome:
+    try:
+        handler = _STEER_HANDLERS[cmd.command]
+    except KeyError:
+        raise RuntimeError(
+            f"no steering handler registered for {cmd.command!r}; refusing rather "
+            "than silently falling through to /iterate, which would re-queue work"
+        ) from None
+    return handler(ctx, cmd)
+
+
+def _post_pr_comment(ctx: SteerContext, number: int, body: str) -> str:
     """Acknowledge on the PR. Returns an error string, or "".
 
     NOT through `post_comment`: that one is gated on
@@ -1715,25 +1783,15 @@ def _post_pr_comment(
     """
     if not body:
         return ""
-    result = run_gh(
-        ["pr", "comment", str(number), "--repo", repo, "--body", body],
-        timeout=config.timeout_seconds,
-        cwd=root_dir,
-    )
-    return "" if result.ok else f"could not comment on PR #{number}: {result.error}"
+    return _gh_comment("pr", "PR", ctx.config, ctx.repo, number, body, ctx.root_dir)
 
 
-def _apply_one(
-    config: GitHubIntakeConfig,
-    root_dir: Path,
-    queue: Queue,
-    ledger: ProcessedLedger,
-    cmd: SteerCommand,
-    result: SteerResult,
-    stamp: str,
-    commit_guard: Callable[[], AbstractContextManager[Any]] | None,
-) -> None:
+def _apply_one(ctx: SteerContext, cmd: SteerCommand, result: SteerResult) -> bool:
     """Run one command, record it, acknowledge it. In that order.
+
+    Returns whether it RESOLVED - was recorded in the ledger - which
+    `_act_on_commands` needs to decide whether this comment may advance
+    its PR's watermark (#231 C1).
 
     The ledger is written AFTER the action succeeded and BEFORE the
     acknowledgement, and the order is the whole retry story: a failed
@@ -1741,56 +1799,109 @@ def _apply_one(
     failed acknowledgement does not cause the memory line to be written
     twice. The durable artifact is the file; the comment is best effort.
     """
-    outcome = _run_command(root_dir, queue, cmd, commit_guard)
+    outcome = _run_command(ctx, cmd)
     key = cmd.ledger_key(result.repo)
     if outcome.error:
         result.errors += (outcome.error,)
-        return
-    ledger.record(key, item_id=outcome.item_id, when=stamp)
+        return False
+    ctx.ledger.record(key, item_id=outcome.item_id, when=ctx.stamp)
     result.applied += (key,)
     if outcome.item_id:
         result.enqueued += (outcome.item_id,)
-    post_error = _post_pr_comment(config, result.repo, cmd.pr_number, outcome.comment, root_dir)
+    post_error = _post_pr_comment(ctx, cmd.pr_number, outcome.comment)
     if post_error:
         result.errors += (post_error,)
+    return True
+
+
+def _advance_watermark(
+    watermarks: dict[int, str],
+    blocked: set[int],
+    number: int,
+    updated_at: str,
+) -> None:
+    """Record `updated_at` as resolved for PR `number`, this cycle.
+
+    A no-op once `number` is `blocked`: the watermark rule is about a
+    PREFIX of a PR's comments, in fetch order, so one unresolved comment
+    stops any LATER comment of the same PR from advancing it either
+    (`_act_on_commands`'s docstring has the full rule).
+    """
+    if number in blocked:
+        return
+    if updated_at > watermarks.get(number, ""):
+        watermarks[number] = updated_at
+
+
+def _act_on_one(
+    ctx: SteerContext,
+    cmd: SteerCommand,
+    result: SteerResult,
+    acted: int,
+) -> tuple[bool | None, bool]:
+    """One command through the gate: seen, authorised, capped, dry run, act.
+
+    Returns `(resolved, consumed_cap)`. `resolved` is what
+    `_act_on_commands`'s docstring means for the watermark: `True`
+    resolved, `False` did not, `None` means "already seen", which is
+    resolved too but must not itself increment `acted` a second time.
+    `consumed_cap` is whether THIS call should count against
+    `max_items_per_sync` on the NEXT one - only a dry-run observation or
+    a real attempt does, the same two branches the cap check itself
+    guards, which is what keeps this and the cap check from disagreeing.
+    """
+    key = cmd.ledger_key(result.repo)
+    if ctx.ledger.contains(key):
+        return None, False
+    reason = _steer_refusal(ctx.config, cmd)
+    if reason:
+        result.skipped[key] = reason
+        return True, False
+    if acted >= ctx.config.max_items_per_sync:
+        result.skipped[key] = "the per-cycle cap is full; it waits for the next cycle"
+        return False, False
+    if ctx.config.dry_run:
+        result.skipped[key] = f"dry run: would apply {cmd.command} from comment {cmd.comment_id}"
+        return False, True
+    return _apply_one(ctx, cmd, result), True
 
 
 def _act_on_commands(
-    config: GitHubIntakeConfig,
-    root_dir: Path,
-    queue: Queue,
-    ledger: ProcessedLedger,
+    ctx: SteerContext,
     commands: Sequence[SteerCommand],
     result: SteerResult,
-    stamp: str,
-    commit_guard: Callable[[], AbstractContextManager[Any]] | None,
-) -> None:
+) -> dict[int, str]:
     """The per-comment gate order: seen, authorised, capped, dry run, act.
 
     An already-recorded comment and an unauthorised one do NOT consume
     the cap, for the same reason a skipped issue does not consume the
     admission cap (#187 F6): a hundred comments kstrl will never act on
     must not crowd out the one it will.
+
+    Returns the per-PR watermark THIS CYCLE earned (#231 C1): for each
+    PR number, the greatest `updated_at` among its comments such that
+    every comment at or before it, in fetch order, was RESOLVED -
+    already in the ledger, terminally refused (authorisation or format),
+    or freshly applied with no error. A comment the per-cycle cap
+    deferred, one a dry run only observed, or one that errored holds its
+    PR's watermark below itself - each is retried on a future cycle, and
+    `since` must not skip past it. Once a PR has produced one such
+    unresolved comment, no LATER comment of that same PR (in fetch order)
+    can advance its watermark either, because the rule is about a
+    PREFIX: `since` must still surface the earlier, unresolved one.
     """
     acted = 0
+    blocked: set[int] = set()
+    watermarks: dict[int, str] = {}
     for cmd in commands:
-        key = cmd.ledger_key(result.repo)
-        if ledger.contains(key):
-            continue
-        reason = _steer_refusal(config, cmd)
-        if reason:
-            result.skipped[key] = reason
-            continue
-        if acted >= config.max_items_per_sync:
-            result.skipped[key] = "the per-cycle cap is full; it waits for the next cycle"
-            continue
-        acted += 1
-        if config.dry_run:
-            result.skipped[key] = (
-                f"dry run: would apply {cmd.command} from comment {cmd.comment_id}"
-            )
-            continue
-        _apply_one(config, root_dir, queue, ledger, cmd, result, stamp, commit_guard)
+        resolved, consumed_cap = _act_on_one(ctx, cmd, result, acted)
+        if consumed_cap:
+            acted += 1
+        if resolved is False:
+            blocked.add(cmd.pr_number)
+        else:
+            _advance_watermark(watermarks, blocked, cmd.pr_number, cmd.updated_at)
+    return watermarks
 
 
 def poll_steering(
@@ -1798,6 +1909,8 @@ def poll_steering(
     root_dir: Path,
     queue: Queue,
     *,
+    repo: str,
+    marked_numbers: tuple[int, ...],
     commit_guard: Callable[[], AbstractContextManager[Any]] | None = None,
 ) -> SteerResult:
     """Act on `/memory` and `/iterate` comments on open kstrl PRs (R10.10).
@@ -1807,12 +1920,17 @@ def poll_steering(
     GitHub every cycle; reading one more endpoint changes nothing about
     that decision.
 
+    `repo` and `marked_numbers` are RESOLVED BY THE CALLER
+    (`serve._run_intake`), not by this function: #231's simplify pass
+    (B2) deleted this module's own `checkout_repo` call and its deferred
+    `from kstrl.serve import count_open_kstrl_prs` (the inward import
+    that made `serve` import `intake_github` import `serve`), because
+    both were a SECOND `gh repo view` / `gh pr list` on any cycle where
+    issue intake was also on - `_run_intake` now resolves each once and
+    shares the answer with `_sync_remote_issues` too.
+
     Strictly additive, like the rest of this module: every failure
-    returns as a value in `errors` and the cycle continues. The repo is
-    the CHECKOUT's, not `[intake_github] repo`, because `gh pr list` runs
-    with `cwd=root_dir` and lists the checkout's PRs; taking the repo
-    from config would key the ledger and the comment endpoint to one
-    repository while reading another's pull requests.
+    returns as a value in `errors` and the cycle continues.
 
     `commit_guard` is entered ONLY around `Queue.add`, never around the
     network work, for the reason #189 N1 records: the daemon once held
@@ -1835,35 +1953,29 @@ def poll_steering(
     result = SteerResult()
     if not config.steer_enabled:
         return result
-    repo, error = checkout_repo(config, root_dir)
-    if error:
-        result.errors = (error,)
-        return result
     result.repo = repo
-    try:
-        from kstrl.serve import count_open_kstrl_prs
-
-        counted = count_open_kstrl_prs(root_dir)
-    except Exception as exc:  # noqa: BLE001 - an unknown PR list is not an empty one
-        result.errors = (f"could not list the open kstrl PRs: {exc}",)
-        return result
+    ledger = ProcessedLedger(root_dir).load()
     commands: list[SteerCommand] = []
-    for number in counted.marked_numbers:
-        found, parse_error = _pr_steering_commands(config, repo, number, root_dir)
+    for number in marked_numbers:
+        since = ledger.watermark(f"{repo}#{number}")
+        found, parse_error = _pr_steering_commands(config, repo, number, root_dir, since)
         if parse_error:
             result.errors += (parse_error,)
             continue
         commands.extend(found)
-    _act_on_commands(
-        config,
-        root_dir,
-        queue,
-        ProcessedLedger(root_dir).load(),
-        commands,
-        result,
-        _utc_now_iso(),
-        commit_guard,
+    ctx = SteerContext(
+        config=config,
+        root_dir=root_dir,
+        queue=queue,
+        ledger=ledger,
+        repo=repo,
+        stamp=_utc_now_iso(),
+        commit_guard=commit_guard,
+        memory_spec=_memory_spec(root_dir),
     )
+    watermarks = _act_on_commands(ctx, commands, result)
+    for number, value in watermarks.items():
+        ledger.set_watermark(f"{repo}#{number}", value)
     return result
 
 

@@ -2338,15 +2338,24 @@ class OpenPrCount:
     not tell "zero open" from "zero within the newest hundred", and the
     second one is exactly the condition the bound exists for. Hence a
     pair, not an ``int``.
+
+    ``count`` is a property over ``marked_numbers`` rather than a stored
+    field, so the two cannot be constructed out of agreement.
+    ``tests/test_flow_control.py`` once built a fake with a non-zero
+    ``count`` and an empty ``marked_numbers``, which was uncatchable
+    while both were independent fields.
     """
 
-    count: int
     saturated: bool
     #: The numbers of the PRs the marker matched, in payload order. R10.10
     #: reads comments on exactly these PRs: the list and the count come
     #: from ONE pass over ONE payload, so a second lister would be a
     #: second answer to "which PRs are kstrl's".
     marked_numbers: tuple[int, ...] = ()
+
+    @property
+    def count(self) -> int:
+        return len(self.marked_numbers)
 
 
 def count_open_kstrl_prs(cwd: Path, *, limit: int = 100) -> OpenPrCount:
@@ -2433,7 +2442,6 @@ def count_open_kstrl_prs(cwd: Path, *, limit: int = 100) -> OpenPrCount:
         if (row["body"] or "").rstrip().endswith(PR_FOOTER_MARKER):
             marked.append(row["number"])
     return OpenPrCount(
-        count=len(marked),
         saturated=len(rows) >= limit,
         marked_numbers=tuple(marked),
     )
@@ -3069,11 +3077,19 @@ def _run_intake(
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Pull remote work in, then act on steering comments. Best effort.
 
-    ONE config read for both, and the two halves key on different
-    switches: `enabled` admits labelled issues and spends money,
-    `steer_enabled` reads comments and writes the operator's checkout.
-    Coupling them would mean an operator who wants only the steering
-    channel has to switch on issue intake.
+    ONE config read, and - when either half is on - ONE resolution of
+    the checkout's own repo, shared by both: `enabled` admits labelled
+    issues and spends money, `steer_enabled` reads comments and writes
+    the operator's checkout. Coupling them would mean an operator who
+    wants only the steering channel has to switch on issue intake.
+
+    #231's simplify pass (B2) moved the repo resolution here from `sync`
+    and `poll_steering`, which each used to resolve it independently -
+    a second `gh repo view` on any cycle where both are on - and moved
+    the open-PR count steering needs here too, which is what deletes
+    `poll_steering`'s deferred `from kstrl.serve import
+    count_open_kstrl_prs`, the inward import that made this module
+    import `intake_github` import this module back.
 
     Strictly additive, like the adapter itself: every failure is recorded
     and the cycle continues to drain whatever is already queued. A GitHub
@@ -3086,8 +3102,25 @@ def _run_intake(
     except Exception as exc:  # noqa: BLE001 - additive by contract
         observer.warn(f"GitHub intake raised: {exc}")
         return (), (str(exc),)
-    enqueued, errors = _sync_remote_issues(root_dir, queue, observer, config)
-    _run_steering(root_dir, queue, observer, config)
+    if not config.enabled and not config.steer_enabled:
+        return (), ()
+
+    from kstrl.intake_github import checkout_repo
+
+    repo, repo_error = checkout_repo(config, root_dir)
+    if repo_error:
+        observer.warn(f"GitHub intake raised: {repo_error}")
+        return (), (repo_error,)
+
+    marked_numbers: tuple[int, ...] = ()
+    if config.steer_enabled:
+        try:
+            marked_numbers = count_open_kstrl_prs(root_dir).marked_numbers
+        except Exception as exc:  # noqa: BLE001 - an unknown PR list is not an empty one
+            observer.warn(f"GitHub steering raised: could not list the open kstrl PRs: {exc}")
+
+    enqueued, errors = _sync_remote_issues(root_dir, queue, observer, config, repo)
+    _run_steering(root_dir, queue, observer, config, repo, marked_numbers)
     return enqueued, errors
 
 
@@ -3096,6 +3129,7 @@ def _sync_remote_issues(
     queue: Queue,
     observer: ServeObserver,
     config: GitHubIntakeConfig,
+    repo: str,
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Pull remote work into the queue, best effort.
 
@@ -3104,6 +3138,10 @@ def _sync_remote_issues(
     installed LaunchAgent could never admit a labelled issue - the
     adapter and the daemon were each correct and their composition did
     nothing.
+
+    `repo` (#231 B2): the checkout's repo, already resolved once by
+    `_run_intake` and passed through to `sync`'s `local_repo`, so `sync`
+    does not resolve it a second time.
 
     Strictly additive, like the adapter itself: every failure is recorded
     and the cycle continues to drain whatever is already queued. A GitHub
@@ -3123,6 +3161,7 @@ def _sync_remote_issues(
             # the local commit, so a slow GitHub cannot block
             # `ks queue pause` or any other transition (#189 N1).
             commit_guard=lambda: queue_lock(root_dir, blocking=True),
+            local_repo=repo,
         )
     except Exception as exc:  # noqa: BLE001 - additive by contract
         observer.warn(f"GitHub intake raised: {exc}")
@@ -3145,6 +3184,8 @@ def _run_steering(
     queue: Queue,
     observer: ServeObserver,
     config: GitHubIntakeConfig,
+    repo: str,
+    marked_numbers: tuple[int, ...],
 ) -> None:
     """Act on `/memory` and `/iterate` comments on open kstrl PRs (#231).
 
@@ -3152,10 +3193,14 @@ def _run_steering(
     acknowledgement comments. Every refusal is spoken, never silent,
     which is #188's rule applied to the same surface.
 
+    `repo` and `marked_numbers` (#231 B2): resolved once by `_run_intake`
+    and passed straight through, so `poll_steering` need not resolve
+    either itself.
+
     No `steer_enabled` check here. `poll_steering` returns an empty
-    result as its first statement when the switch is off, above every
-    I/O call and above the ledger construction, and one gate with one
-    home is the point (Decision 7).
+    result as its first statement when the switch is off, above the
+    `ProcessedLedger` construction, and one gate with one home is the
+    point (Decision 7).
 
     Returns None, so steering failures reach the observer and NOT
     `CycleResult.sync_errors`. Deliberate: `sync_errors` is the remote
@@ -3172,6 +3217,8 @@ def _run_steering(
             config,
             root_dir,
             queue,
+            repo=repo,
+            marked_numbers=marked_numbers,
             commit_guard=lambda: queue_lock(root_dir, blocking=True),
         )
     except Exception as exc:  # noqa: BLE001 - additive by contract
