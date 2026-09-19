@@ -77,7 +77,11 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "factory.py": 3,  # one subclass, two bare raises
     "git.py": 1,
     "inbox.py": 1,
-    "intake_github.py": 1,
+    # Two since #231: IntakeError (the subclass), plus a bare raise in
+    # `_run_command` when a `SteerCommand` reaches no handler in
+    # `_STEER_HANDLERS` - the closed-by-construction guard's unreachable
+    # branch (A3), which is operator-unreachable but still counted.
+    "intake_github.py": 2,
     "pr.py": 4,  # no subclass: four bare raises
     # One bare raise, plus four from the R10.7 open-PR bound (#228), all
     # in count_open_kstrl_prs: a failed gh result, the two bad-payload

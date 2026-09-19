@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
@@ -1456,7 +1457,14 @@ class TestServePollsIntake:
     ) -> None:
         self._enable(tmp_path)
         _queue(tmp_path).ensure_dirs()
-        with patch("kstrl.intake_github.sync") as sync:
+        # #231 B2: `_run_intake` resolves the checkout's repo itself, once,
+        # above both `sync` and steering - stubbed here so that resolution
+        # succeeds without a real `gh` subprocess, the way it would in the
+        # checkout `_enable` sets up.
+        with (
+            patch("kstrl.intake_github.checkout_repo", return_value=(REPO, "")),
+            patch("kstrl.intake_github.sync") as sync,
+        ):
             sync.return_value = SyncResult(repo=REPO)
             self._cycle(tmp_path)
         assert sync.call_count == 1
@@ -1515,9 +1523,12 @@ class TestServePollsIntake:
         self._enable(tmp_path)
         queue = _queue(tmp_path)
         queue.add("# local\n", title="local work")
-        with patch(
-            "kstrl.intake_github.sync",
-            side_effect=RuntimeError("boom"),
+        with (
+            patch("kstrl.intake_github.checkout_repo", return_value=(REPO, "")),
+            patch(
+                "kstrl.intake_github.sync",
+                side_effect=RuntimeError("boom"),
+            ),
         ):
             result = self._cycle(tmp_path)
         assert any("boom" in e for e in result.sync_errors)
@@ -1705,3 +1716,51 @@ class TestIntakeLockDiscipline:
             result = sync(queue, _config(), tmp_path, commit_guard=guard)
         assert result.enqueued == (), "the refreshed plan must see the race"
         assert len(queue.items()) == 1, "no duplicate admission"
+
+
+class TestSteerDispatchIsClosedByConstruction:
+    """#231 A3. `_STEER_COMMANDS` is derived from `_STEER_HANDLERS`'s own
+    keys, so an unregistered command cannot silently fall through to
+    `/iterate` - the most expensive thing this subsystem can do, since
+    it re-queues a run.
+
+    This class does NOT catch plant P3 (a command added to
+    `_STEER_COMMANDS` outside the `frozenset(_STEER_HANDLERS)`
+    derivation): the test below constructs a `SteerCommand` in Python and
+    calls `_run_command` directly, so it never reads `_STEER_COMMANDS` at
+    all and cannot see a mismatch between the two. The tests that catch
+    P3 are `tests/test_steering.py::test_the_command_set_is_exactly_the_handler_keys`
+    (the structural control: `set(_STEER_COMMANDS) == set(_STEER_HANDLERS)`)
+    and `tests/test_steering.py::test_an_unhandled_command_does_not_drop_the_rest_of_the_cycle`
+    (the behavioural control: a real cycle proves the escaped `RuntimeError`
+    does not also silently drop every other comment in the same poll).
+    """
+
+    def test_an_unregistered_command_raises_rather_than_falling_through(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        from kstrl.intake_github import SteerCommand, SteerContext, _run_command
+
+        ctx = SteerContext(
+            config=_config(),
+            root_dir=tmp_path,
+            queue=_queue(tmp_path),
+            ledger=ProcessedLedger(tmp_path).load(),
+            repo=REPO,
+            stamp="2026-09-17T00:00:00Z",
+            commit_guard=None,
+            memory_spec=cast(Any, None),
+        )
+        cmd = SteerCommand(
+            pr_number=7,
+            pr_url=f"https://github.com/{REPO}/pull/7",
+            comment_id=1,
+            login="alice",
+            association="OWNER",
+            command="/bogus",
+            text="",
+            updated_at="2026-01-01T00:00:00Z",
+        )
+        with pytest.raises(RuntimeError, match="no steering handler registered"):
+            _run_command(ctx, cmd)

@@ -272,6 +272,7 @@ default_priority = 0
 comment_on_result = true           # post the verdict back to the source issue
 dry_run = false                    # true = poll and log, send no writebacks
 timeout_seconds = 60.0
+steer_enabled = false              # true = act on /memory and /iterate comments on open kstrl PRs
 
 # Across-attempt divergence detector (#265). The retry loop can drive a
 # component the wrong way: the review fails, the engineer answers by writing

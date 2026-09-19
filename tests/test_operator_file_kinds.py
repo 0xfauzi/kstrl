@@ -214,9 +214,16 @@ class TestEveryKindBehavesTheSame:
 
         assert result.fact is not None
         assert result.message is not None
-        end = "start" if kind.keep == "head" else "end"
-        assert f"keeping the {end} of the file" in result.fact
-        assert f"keeping the {end} of the file" in result.message
+        # #231 A1: an anchored row (memory) states which SECTION survives,
+        # not which end of the FILE does - a plain "end of the file" is
+        # the claim the anchor exists to stop being true.
+        if kind.anchor_heading is not None:
+            expected = f"keeping the newest of {kind.anchor_heading!r}"
+        else:
+            end = "start" if kind.keep == "head" else "end"
+            expected = f"keeping the {end} of the file"
+        assert expected in result.fact
+        assert expected in result.message
 
     @KINDS
     def test_the_truncation_remedy_stays_out_of_the_prompt(
@@ -543,7 +550,38 @@ class TestTheNewestStandingCorrectionSurvives:
 
         assert "- rule 0399" in block
         assert "- rule 0000" not in block
-        assert "keeping the end of the file and dropping the start" in block
+        # #231 A1: the anchored notice names the SECTION, not the file.
+        assert "keeping the newest of '## Guidance' and dropping earlier entries" in block
+
+    def test_a_trailing_section_does_not_starve_the_newest_guidance_entry(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#231 A1's own reproduction, and the test that fails if the
+        truncation rule and `/memory`'s placement rule ever disagree
+        again.
+
+        After #231, `/memory` appends under ``## Guidance`` - a SECTION,
+        not the literal end of the file - so an operator section written
+        after it (``## Notes``) sits closer to the true end of the file
+        than the newest Guidance entry does. Before A1's fix, a plain
+        suffix-of-file cut kept an oversized ``## Notes`` in full and
+        dropped every Guidance entry, including the one just recorded,
+        which is the opposite of what "keep the newest standing
+        correction" means. The entry the append just added MUST survive
+        truncation regardless of what a trailing section holds.
+        """
+        newest = "- never touch migrations (from PR #7 by @0xfauzi, 2026-09-17)"
+        body = f"{DEFAULT_MEMORY}{newest}\n## Notes\n" + ("scratch notes\n" * 2000)
+        path = tmp_path / MEMORY.scaffold
+        path.write_text(body, encoding="utf-8")
+
+        result = read_operator_file(spec_for(MEMORY, path))
+
+        assert newest in result.body
+        assert "scratch notes" not in result.body
+        assert result.fact is not None
+        assert "truncated" in result.fact
 
     def test_the_same_shape_of_golden_patterns_keeps_the_oldest(self, tmp_path: Path) -> None:
         """The control on the case above. Same fixture shape at the other
