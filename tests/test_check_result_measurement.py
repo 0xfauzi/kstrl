@@ -229,8 +229,11 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     # R8.5 Layer 1 (#152): ran the project's own test command a second
     # time under coverage and read back a percentage over the diff's
     # changed lines. One construction site, the passing row - every
-    # not-measured path returns NotMeasured instead (#306).
-    "verify.py: check_patch_coverage: CheckResult": 1,
+    # not-measured path returns NotMeasured instead (#306). #152 simplify
+    # pass, B2 moved this row's construction out of check_patch_coverage
+    # (which now returns the measurement alone) into _patch_coverage_row,
+    # called by _patch_coverage_checks.
+    "verify.py: _patch_coverage_row: CheckResult": 1,
     "verify.py: check_policy_envelope: CheckResult": 4,
     "verify.py: check_prd_stories: CheckResult": 4,
     "verify.py: check_scope_unreadable: CheckResult": 1,

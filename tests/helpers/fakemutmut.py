@@ -26,17 +26,25 @@ The fake cannot read configuration from the environment: `run_scrubbed`
 script needs - where to record argv, what junitxml to print, which file
 to corrupt - is baked into its body with an f-string instead of read from
 an environment variable.
+
+#152 simplify pass, D2: this module used to carry TWO shell templates,
+`_FAKE_MUTMUT` and `_FAILING_MUTMUT`, differing only in whether the `run`
+branch does the cache/mutate/sleep/restore work and prints a stderr line
+first, and whether `junitxml` prints the canned report or exits 0 with
+nothing - the two failure-before-anything-runs facts measurements.md 2a
+records. One template now carries both as shell-side `if` gates
+(`{cache}`, `{has_stderr}`) rather than two copies of the case statement
+around them.
 """
 
 from __future__ import annotations
 
-import os
 import shlex
 from pathlib import Path
 
 import pytest
 
-from tests.helpers.executables import write_executable
+from tests.helpers.executables import put_on_path
 
 #: mutmut 2.5.1's junitxml rendering, per mutant status (measurements.md
 #: section 2e): a killed mutant is a bare ``<testcase>``; a survivor
@@ -75,11 +83,29 @@ def junit(*mutants: tuple[int, str, int, str]) -> str:
     )
 
 
-#: ``{recdir}``, ``{mutate}``, ``{sleep_seconds}`` and ``{run_exit}`` are
-#: filled in by :func:`put_mutmut_on_path`. Two subcommands only, matching
-#: what `check_diff_mutation` actually spawns
-#: (``kstrl/verify.py::_mutation_spawns``); anything else exits 97 so an
-#: unexpected subcommand is loud rather than silently a no-op.
+#: One template for both installers below (#152 simplify pass, D2).
+#: ``{recdir}``, ``{mutate}``, ``{sleep_seconds}``, ``{run_exit}``,
+#: ``{restore}``, ``{cache}``, ``{has_stderr}`` and ``{stderr}`` are all
+#: filled in by :func:`put_mutmut_on_path` and :func:`put_failing_mutmut`
+#: - every placeholder on every call, whether or not that installer's
+#: shape uses it, so ``str.format`` never raises ``KeyError`` on the
+#: branch it does not take.
+#:
+#: ``{cache}`` (``1``/``0``) gates the whole cache/mutate/sleep/restore
+#: block in ``run`` and the choice, in ``junitxml``, between printing the
+#: canned report and exiting 0 with nothing - real mutmut's shape when it
+#: fails FATALLY before doing any work at all (measurements.md 2a: the
+#: missing ``whatthepatch`` extra touches neither ``.mutmut-cache`` nor
+#: any ``.bak``). ``{has_stderr}`` (``1``/``0``) gates one ``echo`` line;
+#: ``{stderr}`` is already shell-quoted by the Python side
+#: (:func:`shlex.quote`), so it is spelled UNQUOTED in the template - a
+#: second layer of shell quoting around an already-quoted value would
+#: escape the embedded double quote real mutmut's own remedy line carries
+#: (``'pip install --force-reinstall mutmut[patch]"'``).
+#:
+#: Two subcommands only, matching what `check_diff_mutation` actually
+#: spawns (``kstrl/verify.py::_mutation_spawns``); anything else exits 97
+#: so an unexpected subcommand is loud rather than silently a no-op.
 _FAKE_MUTMUT = """#!/bin/sh
 case "$1" in
   run)
@@ -92,16 +118,21 @@ case "$1" in
           ;;
       esac
     done
-    touch .mutmut-cache
-    if [ -n "{mutate}" ]; then
-      cat "{mutate}" > "{mutate}.bak"
-      printf 'MUTANT\\n' >> "{mutate}"
+    if [ {has_stderr} -eq 1 ]; then
+      echo {stderr} 1>&2
     fi
-    if [ {sleep_seconds} -gt 0 ]; then
-      sleep {sleep_seconds}
-    fi
-    if [ -n "{mutate}" ] && [ {restore} -eq 1 ]; then
-      mv "{mutate}.bak" "{mutate}"
+    if [ {cache} -eq 1 ]; then
+      touch .mutmut-cache
+      if [ -n "{mutate}" ]; then
+        cat "{mutate}" > "{mutate}.bak"
+        printf 'MUTANT\\n' >> "{mutate}"
+      fi
+      if [ {sleep_seconds} -gt 0 ]; then
+        sleep {sleep_seconds}
+      fi
+      if [ -n "{mutate}" ] && [ {restore} -eq 1 ]; then
+        mv "{mutate}.bak" "{mutate}"
+      fi
     fi
     exit {run_exit}
     ;;
@@ -110,7 +141,11 @@ case "$1" in
     for a in "$@"; do
       printf '%s\\n' "$a" >> "{recdir}/argv-junitxml.txt"
     done
-    cat "{recdir}/junit.xml"
+    if [ {cache} -eq 1 ]; then
+      cat "{recdir}/junit.xml"
+    else
+      exit 0
+    fi
     ;;
   *)
     exit 97
@@ -148,47 +183,18 @@ def put_mutmut_on_path(
     recdir = tmp_path / "mutmut-record"
     recdir.mkdir()
     (recdir / "junit.xml").write_text(junit, encoding="utf-8")
-    bindir = tmp_path / "fakebin"
-    bindir.mkdir(exist_ok=True)
     body = _FAKE_MUTMUT.format(
         recdir=recdir,
         mutate=mutate,
         sleep_seconds=int(sleep),
         run_exit=run_exit,
         restore=1 if restore else 0,
+        cache=1,
+        has_stderr=0,
+        stderr=shlex.quote(""),
     )
-    write_executable(bindir / "mutmut", body)
-    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
+    put_on_path(tmp_path, monkeypatch, "mutmut", body)
     return recdir
-
-
-#: ``{recdir}``, ``{stderr}`` and ``{exit_code}`` filled in by
-#: :func:`put_failing_mutmut`. Unlike :data:`_FAKE_MUTMUT`, the `run`
-#: branch here does NOT touch ``.mutmut-cache`` or any ``.bak`` - real
-#: mutmut's own fatal-before-anything-runs failures (measurements.md 2a:
-#: the missing ``whatthepatch`` extra) touch neither.
-_FAILING_MUTMUT = """#!/bin/sh
-case "$1" in
-  run)
-    shift
-    for a in "$@"; do
-      printf '%s\\n' "$a" >> "{recdir}/argv-run.txt"
-    done
-    echo {stderr} 1>&2
-    exit {exit_code}
-    ;;
-  junitxml)
-    shift
-    for a in "$@"; do
-      printf '%s\\n' "$a" >> "{recdir}/argv-junitxml.txt"
-    done
-    exit 0
-    ;;
-  *)
-    exit 97
-    ;;
-esac
-"""
 
 
 def put_failing_mutmut(
@@ -209,13 +215,15 @@ def put_failing_mutmut(
     """
     recdir = tmp_path / "mutmut-record"
     recdir.mkdir(exist_ok=True)
-    bindir = tmp_path / "fakebin"
-    bindir.mkdir(exist_ok=True)
-    body = _FAILING_MUTMUT.format(
+    body = _FAKE_MUTMUT.format(
         recdir=recdir,
+        mutate="",
+        sleep_seconds=0,
+        run_exit=exit_code,
+        restore=0,
+        cache=0,
+        has_stderr=1,
         stderr=shlex.quote(stderr),
-        exit_code=exit_code,
     )
-    write_executable(bindir / "mutmut", body)
-    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
+    put_on_path(tmp_path, monkeypatch, "mutmut", body)
     return recdir

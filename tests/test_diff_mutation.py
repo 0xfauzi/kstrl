@@ -8,7 +8,11 @@ output is copied from the REAL mutmut 2.5.1 runs recorded in the lane's
 this file implements) each name the end-to-end test that covers the same
 property, so a unit test is never the only evidence for a claim.
 
-The shared fixture is `tests/test_patch_coverage.py`'s, on purpose - it is
+The shared fixture is `tests/test_patch_coverage.py`'s, in fact rather than
+only in name (#152 simplify pass, D1: both files now import the source
+constants and the ``_repo``/``_run``/``_only_gap`` builders from
+``tests/helpers/adequacy_fixture.py``, so editing the fixture in one place
+cannot leave the other suite silently testing something else). It is
 already measured there: ``mod.py`` on the feature branch adds executable
 lines 5, 6, 9, 10, 11, 12, of which 5, 6 and 9 are COVERED by the new test
 (``def`` lines execute at import) and 10, 11, 12 are missing. Layer 1 reports
@@ -19,10 +23,10 @@ check writes or in anything it reports.
 
 from __future__ import annotations
 
+import functools
 import shlex
 import shutil
 import stat
-import sys
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -32,29 +36,22 @@ import pytest
 from kstrl.adequacy import AdequacyConfig, mutation_patch, parse_mutant_report
 from kstrl.config import ConfigError
 from kstrl.config_preflight import preflight_config
-from kstrl.verify import (
-    VerifyConfig,
-    _mutation_run_command,
-    run_mechanical_verification,
+from kstrl.verify import _mutation_run_command
+from tests.helpers.adequacy_fixture import (
+    BASE_MOD,
+    BASE_TEST,
+    FEAT_MOD,
+    FEAT_TEST,
+    only_gap,
+    repo_builder,
+    run_adequacy,
 )
-from tests.conftest import make_review_repo
+from tests.helpers.executables import put_on_path
 from tests.helpers.fakemutmut import junit, put_failing_mutmut, put_mutmut_on_path
 
 if TYPE_CHECKING:
-    from kstrl.verify import NotMeasured, VerificationResult
-
-BASE_MOD = "def covered_before(n):\n    return n + 1\n"
-BASE_TEST = (
-    "from mod import covered_before\n\n\ndef test_before():\n    assert covered_before(1) == 2\n"
-)
-FEAT_MOD = (
-    "def covered_before(n):\n    return n + 1\n\n\ndef added_covered(n):\n    return n * 2\n"
-    "\n\ndef added_missing(n):\n    x = n - 1\n    y = x * 3\n    return y\n"
-)
-FEAT_TEST = (
-    "from mod import added_covered, covered_before\n\n\ndef test_before():\n"
-    "    assert covered_before(1) == 2\n\n\ndef test_added():\n    assert added_covered(3) == 6\n"
-)
+    from kstrl.findings import Finding
+    from kstrl.verify import CheckResult, NotMeasured, VerificationResult
 
 #: A plain, empty conftest.py - NOT `tests/test_patch_coverage.py`'s, whose
 #: `pytest_sessionstart` hook is there to count runs and stall the SECOND
@@ -70,60 +67,57 @@ TARGET_PATCH = (
     "--- mod.py\n+++ mod.py\n@@ -4,0 +5,1 @@\n+x\n@@ -5,0 +6,1 @@\n+x\n@@ -8,0 +9,1 @@\n+x\n"
 )
 
+#: The minimal report that just gets a green row: one mutant, line 6,
+#: killed. Spelled eight times before #152 simplify pass, D4, in every
+#: test that needs mutmut to succeed but does not care about the score.
+ONE_LINE_KILLED = junit((1, "mod.py", 6, "killed"))
 
-def _repo(tmp_path: Path, files: dict[str, str] | None = None) -> None:
-    """``BASE_FILES`` on ``main``, plus ``files`` (default :data:`FEAT_FILES`)
-    on a ``feature`` branch, in place on ``tmp_path`` - `tests/test_patch_coverage.py`'s
-    ``_repo`` convention."""
-    make_review_repo(
-        tmp_path, base_files=BASE_FILES, files=files if files is not None else FEAT_FILES
-    )
+#: `tests/helpers/adequacy_fixture.py`'s builder, closed over this file's
+#: own base/feature commits (#152 simplify pass, D1).
+_repo = repo_builder(BASE_FILES, FEAT_FILES)
 
-
-def _run(
-    root: Path,
-    *,
-    base_branch: str = "main",
-    test_command: str | None = None,
-    subprocess_timeout: float = 120.0,
-    mutation_timeout: float = 120.0,
-    enabled: bool = True,
-    patch_coverage: bool = True,
-    diff_mutation: bool = True,
-    read_only: bool = False,
-) -> VerificationResult:
-    return run_mechanical_verification(
-        root,
-        None,
-        base_branch,
-        None,
-        VerifyConfig(
-            test_command=test_command or f"{shlex.quote(sys.executable)} -m pytest",
-            typecheck_command="true",
-            lint_command="true",
-            check_diff_scope=False,
-            check_bad_patterns=False,
-            subprocess_timeout=subprocess_timeout,
-            mutation_timeout=mutation_timeout,
-        ),
-        adequacy_config=AdequacyConfig(
-            enabled=enabled, patch_coverage=patch_coverage, diff_mutation=diff_mutation
-        ),
-        read_only=read_only,
-    )
+#: `run_adequacy` with ONE default flipped - `diff_mutation=True`, since
+#: nearly every test in this file wants Layer 2 on - rather than a second
+#: copy of its body (#152 simplify pass, D1). Every parameter past `root`
+#: is keyword-only, so this bound keyword can never collide with a
+#: positional fill the way a bound POSITIONAL default could.
+_run = functools.partial(run_adequacy, diff_mutation=True)
 
 
 def _only_gap(result: VerificationResult, check: str, reason: str) -> NotMeasured:
-    """The single ``check`` gap in ``result``: no row alongside it, exactly
-    one gap, and it carries ``reason`` - the three-argument form of
-    `tests/test_patch_coverage.py`'s ``_only_gap`` (#152: this file needs it
-    for two check names, ``diff_mutation`` and, in test 12, ``patch_coverage``
-    too)."""
-    assert [c for c in result.checks if c.name == check] == []
-    gaps = [g for g in result.not_measured if g.check == check]
-    assert len(gaps) == 1, gaps
-    assert gaps[0].reason == reason, gaps[0]
-    return gaps[0]
+    """`tests/helpers/adequacy_fixture.only_gap`, re-exported under this
+    file's existing name so its ~15 call sites need no edit (#152
+    simplify pass, D1)."""
+    return only_gap(result, check, reason)
+
+
+def _row(result: VerificationResult) -> CheckResult:
+    """The single ``diff_mutation`` row in ``result`` (#152 simplify
+    pass, D4: this exact expression was repeated five times)."""
+    return next(c for c in result.checks if c.name == "diff_mutation")
+
+
+def _finding(result: VerificationResult) -> Finding:
+    """The single ``adequacy_diff_mutation`` finding in ``result``,
+    wherever it was lifted (#152 simplify pass, D4: repeated three times,
+    one of them already checking uniqueness by hand - this does that
+    check for all three rather than for one)."""
+    findings = [
+        f for c in result.checks for f in c.findings if f.category == "adequacy_diff_mutation"
+    ]
+    assert len(findings) == 1, findings
+    return findings[0]
+
+
+def _no_spawn_gap(result: VerificationResult, recdir: Path, reason: str, fragment: str) -> None:
+    """The pre-spend refusal shape (#152 simplify pass, D4: repeated
+    three times): a single ``diff_mutation`` gap carrying ``reason``,
+    whose detail names ``fragment``, and mutmut was never spawned at all
+    - the refusal is BEFORE any spawn, so ``argv-run.txt`` does not
+    exist."""
+    gap = _only_gap(result, "diff_mutation", reason)
+    assert fragment in gap.detail
+    assert not (recdir / "argv-run.txt").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -147,19 +141,15 @@ def test_the_verify_phase_records_the_diff_mutation_finding(
         run_exit=2,
     )
     result = _run(tmp_path)
-    rows = [c for c in result.checks if c.name == "diff_mutation"]
-    assert len(rows) == 1
-    row = rows[0]
+    row = _row(result)
     assert row.passed is True
     assert row.measured is True
     assert "100.0%" in row.message
-    # The exact expression kstrl/pipeline.py:2797 uses to lift check
-    # findings into the component's finding stream.
-    findings = [f for c in result.checks for f in c.findings]
-    diff_findings = [f for f in findings if f.category == "adequacy_diff_mutation"]
-    assert len(diff_findings) == 1
-    assert diff_findings[0].severity == "advisory"
-    assert diff_findings[0].phase == "adequacy"
+    # _finding's own expression is kstrl/pipeline.py:2797's, which lifts
+    # check findings into the component's finding stream.
+    finding = _finding(result)
+    assert finding.severity == "advisory"
+    assert finding.phase == "adequacy"
     assert result.passed is True
     assert [g for g in result.not_measured if g.check == "diff_mutation"] == []
     assert not (tmp_path / ".mutmut-cache").exists()
@@ -174,7 +164,7 @@ def test_only_changed_and_covered_lines_are_offered_to_mutmut(
     synthetic patch naming exactly the changed-and-covered lines selects
     exactly those lines and nothing mutmut was not asked for."""
     _repo(tmp_path)
-    recdir = put_mutmut_on_path(tmp_path, monkeypatch, junit=junit((1, "mod.py", 6, "killed")))
+    recdir = put_mutmut_on_path(tmp_path, monkeypatch, junit=ONE_LINE_KILLED)
     _run(tmp_path)
     patch_text = (recdir / "patch.diff").read_text()
     assert patch_text == TARGET_PATCH
@@ -202,15 +192,13 @@ def test_a_changed_line_the_suite_never_ran_is_not_in_the_denominator(
         run_exit=2,
     )
     result = _run(tmp_path)
-    row = next(c for c in result.checks if c.name == "diff_mutation")
+    row = _row(result)
     assert "100.0%" in row.message
     assert "1/1" in row.message
     details = "\n".join(row.details)
     assert "mod.py:11" not in row.message
     assert "mod.py:11" not in details
-    finding = next(
-        f for c in result.checks for f in c.findings if f.category == "adequacy_diff_mutation"
-    )
+    finding = _finding(result)
     assert "mod.py:11" not in finding.explanation
     assert "3 changed+covered line(s) targeted" in details
 
@@ -237,7 +225,7 @@ def test_at_most_one_mutant_per_line_and_the_lowest_definite_id_decides(
     _repo(tmp_path)
     put_mutmut_on_path(tmp_path, monkeypatch, junit=junit(*rows), run_exit=2)
     result = _run(tmp_path)
-    row = next(c for c in result.checks if c.name == "diff_mutation")
+    row = _row(result)
     assert "0.0%" in row.message
     assert "0/1" in row.message
     # What "any killed on the line wins" (100.0%) and "count every
@@ -249,8 +237,13 @@ def test_at_most_one_mutant_per_line_and_the_lowest_definite_id_decides(
     assert "1 measured" in details
 
 
+@pytest.mark.parametrize(
+    "first_status",
+    ["killed", "untested"],
+    ids=["one-line-measured", "nothing-measured"],
+)
 def test_the_cap_bounds_the_run_and_the_tree_is_restored(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, first_status: str
 ) -> None:
     """Requirement 3 (hard wall-clock cap) and D7 (the tree is restored
     from mutmut's own ``.bak``, measurements 2h). ``mutation_timeout=2.0``
@@ -258,12 +251,19 @@ def test_the_cap_bounds_the_run_and_the_tree_is_restored(
     this run, not the fake finishing early. The 20s assertion bound
     separates "the cap fired" from "the cap did not exist" (the fake sleeps
     30s) - it is not a performance assertion; the run_scrubbed timeout path
-    costs the cap plus up to two `_SCRUB_TERM_GRACE_SECONDS` (5.0)."""
+    costs the cap plus up to two `_SCRUB_TERM_GRACE_SECONDS` (5.0).
+
+    #152 simplify pass, D4: the two ids differ only in line 6's status -
+    ``one-line-measured`` (``killed``) is a sampled 100.0% row; line 9
+    stays ``untested`` either way, so ``nothing-measured``'s two
+    ``untested`` lines are D6's OTHER truncated shape, zero definite
+    verdicts, which is a ``timed_out`` SIDECAR rather than a ``0.0%``
+    row - zero killed out of zero measured is not a score."""
     _repo(tmp_path)
     recdir = put_mutmut_on_path(
         tmp_path,
         monkeypatch,
-        junit=junit((1, "mod.py", 6, "killed"), (2, "mod.py", 9, "untested")),
+        junit=junit((1, "mod.py", 6, first_status), (2, "mod.py", 9, "untested")),
         sleep=30,
         mutate="mod.py",
     )
@@ -271,39 +271,21 @@ def test_the_cap_bounds_the_run_and_the_tree_is_restored(
     result = _run(tmp_path, mutation_timeout=2.0)
     elapsed = time.monotonic() - start
     assert elapsed < 20
-    row = next(c for c in result.checks if c.name == "diff_mutation")
     assert (tmp_path / "mod.py").read_text() == FEAT_MOD
     assert not (tmp_path / "mod.py.bak").exists()
     assert not (tmp_path / ".mutmut-cache").exists()
-    assert "sampled" in row.message
-    assert "100.0%" in row.message
-    details = "\n".join(row.details)
-    assert "3 changed+covered line(s) targeted; 2 produced a mutant; 1 measured" in details
-    assert result.passed is True
-    # The report spawn still runs AFTER the cap fires - what makes a
-    # truncated run scoreable at all.
-    assert (recdir / "argv-junitxml.txt").exists()
-
-
-def test_a_truncated_run_that_measured_nothing_is_a_timed_out_sidecar(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Requirement 3: a run that measured ZERO lines within the cap is a
-    ``timed_out`` sidecar (D6) - never a ``0.0%`` row. Zero killed out of
-    zero measured is not a score."""
-    _repo(tmp_path)
-    put_mutmut_on_path(
-        tmp_path,
-        monkeypatch,
-        junit=junit((1, "mod.py", 6, "untested"), (2, "mod.py", 9, "untested")),
-        sleep=30,
-        mutate="mod.py",
-    )
-    result = _run(tmp_path, mutation_timeout=2.0)
-    _only_gap(result, "diff_mutation", "timed_out")
-    assert (tmp_path / "mod.py").read_text() == FEAT_MOD
-    assert not (tmp_path / "mod.py.bak").exists()
-    assert not (tmp_path / ".mutmut-cache").exists()
+    if first_status == "killed":
+        row = _row(result)
+        assert "sampled" in row.message
+        assert "100.0%" in row.message
+        details = "\n".join(row.details)
+        assert "3 changed+covered line(s) targeted; 2 produced a mutant; 1 measured" in details
+        assert result.passed is True
+        # The report spawn still runs AFTER the cap fires - what makes a
+        # truncated run scoreable at all.
+        assert (recdir / "argv-junitxml.txt").exists()
+    else:
+        _only_gap(result, "diff_mutation", "timed_out")
 
 
 def test_survivors_are_recorded_as_file_and_line(
@@ -320,13 +302,11 @@ def test_survivors_are_recorded_as_file_and_line(
         run_exit=2,
     )
     result = _run(tmp_path)
-    row = next(c for c in result.checks if c.name == "diff_mutation")
+    row = _row(result)
     details = "\n".join(row.details)
     assert "mod.py:6" in details
     assert "mod.py:9" in details
-    finding = next(
-        f for c in result.checks for f in c.findings if f.category == "adequacy_diff_mutation"
-    )
+    finding = _finding(result)
     assert "mod.py:6" in finding.explanation
     assert "mod.py:9" in finding.explanation
     assert "0.0%" in row.message
@@ -336,7 +316,7 @@ def test_survivors_are_recorded_as_file_and_line(
 def test_mutmut_missing_is_a_sidecar_not_a_row(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A PATH containing ONLY a symlink to the real `git`, built
+    """A PATH containing ONLY a wrapper that execs the real `git`, built
     deterministically rather than `skipif`d, so `shutil.which("mutmut")`
     is None on any machine including one with mutmut installed. Also
     asserts Layer 1's OWN row still ran at 50.0%: without that second
@@ -349,14 +329,24 @@ def test_mutmut_missing_is_a_sidecar_not_a_row(
     `sys.executable`, and this file's `typecheck_command="true"` /
     `lint_command="true"` are shell builtins - nothing in this run needs a
     PATH lookup except `git`.
+
+    `put_on_path(..., prepend=False)` (#152 simplify pass, D3) REPLACES
+    PATH outright rather than merely putting the wrapper first: a symlink
+    ahead of a real mutmut on some other PATH entry would still leave
+    `shutil.which("mutmut")` finding that real one, which is exactly what
+    this test exists to rule out.
     """
     _repo(tmp_path)
     git_path = shutil.which("git")
     assert git_path is not None
-    bindir = tmp_path / "gitonly"
-    bindir.mkdir()
-    (bindir / "git").symlink_to(Path(git_path))
-    monkeypatch.setenv("PATH", str(bindir))
+    put_on_path(
+        tmp_path,
+        monkeypatch,
+        "git",
+        f'#!/bin/sh\nexec {shlex.quote(git_path)} "$@"\n',
+        dirname="gitonly",
+        prepend=False,
+    )
     result = _run(tmp_path)
     gap = _only_gap(result, "diff_mutation", "tool_missing")
     assert "mutmut" in gap.detail
@@ -424,7 +414,7 @@ def test_a_diff_with_no_changed_and_covered_line_never_spawns_mutmut(
     mutate, with the SAME reason token - never a second, independently
     guessed reason."""
     _repo(tmp_path, files={"mod.py": BASE_MOD + "# a comment\n"})
-    recdir = put_mutmut_on_path(tmp_path, monkeypatch, junit=junit((1, "mod.py", 6, "killed")))
+    recdir = put_mutmut_on_path(tmp_path, monkeypatch, junit=ONE_LINE_KILLED)
     result = _run(tmp_path)
     _only_gap(result, "diff_mutation", "no_target")
     _only_gap(result, "patch_coverage", "no_target")
@@ -447,7 +437,7 @@ def test_off_by_default_never_spawns_mutmut(
     (a check reading only its own sub-toggle, not the section's master
     switch too); ``diff_mutation`` reads both for the same reason."""
     _repo(tmp_path)
-    recdir = put_mutmut_on_path(tmp_path, monkeypatch, junit=junit((1, "mod.py", 6, "killed")))
+    recdir = put_mutmut_on_path(tmp_path, monkeypatch, junit=ONE_LINE_KILLED)
     result = _run(
         tmp_path, enabled=enabled, patch_coverage=patch_coverage, diff_mutation=diff_mutation
     )
@@ -463,7 +453,7 @@ def test_read_only_is_a_sidecar_because_mutmut_rewrites_source(
     mutates, so this cannot run under ``ks sense`` (``read_only=True``) at
     all, where Layer 1's coverage run writes nothing into the tree."""
     _repo(tmp_path)
-    recdir = put_mutmut_on_path(tmp_path, monkeypatch, junit=junit((1, "mod.py", 6, "killed")))
+    recdir = put_mutmut_on_path(tmp_path, monkeypatch, junit=ONE_LINE_KILLED)
     result = _run(tmp_path, read_only=True)
     _only_gap(result, "diff_mutation", "read_only")
     assert not (recdir / "argv-run.txt").exists()
@@ -505,11 +495,9 @@ def test_a_project_with_a_mutmut_config_hook_is_refused(
     be trusted, and this check refuses before any spawn instead."""
     _repo(tmp_path)
     (tmp_path / "mutmut_config.py").write_text("def pre_mutation(context):\n    pass\n")
-    recdir = put_mutmut_on_path(tmp_path, monkeypatch, junit=junit((1, "mod.py", 6, "killed")))
+    recdir = put_mutmut_on_path(tmp_path, monkeypatch, junit=ONE_LINE_KILLED)
     result = _run(tmp_path)
-    gap = _only_gap(result, "diff_mutation", "command_failed")
-    assert "mutmut_config.py" in gap.detail
-    assert not (recdir / "argv-run.txt").exists()
+    _no_spawn_gap(result, recdir, "command_failed", "mutmut_config.py")
 
 
 def test_a_backup_file_already_beside_a_target_is_refused_before_the_spend(
@@ -521,11 +509,9 @@ def test_a_backup_file_already_beside_a_target_is_refused_before_the_spend(
     in this file while silently destroying a project's own file on a real
     run - this is the test that makes that impossible."""
     _repo(tmp_path, files={**FEAT_FILES, "mod.py.bak": "not mutmut's\n"})
-    recdir = put_mutmut_on_path(tmp_path, monkeypatch, junit=junit((1, "mod.py", 6, "killed")))
+    recdir = put_mutmut_on_path(tmp_path, monkeypatch, junit=ONE_LINE_KILLED)
     result = _run(tmp_path)
-    gap = _only_gap(result, "diff_mutation", "command_failed")
-    assert "mod.py.bak" in gap.detail
-    assert not (recdir / "argv-run.txt").exists()
+    _no_spawn_gap(result, recdir, "command_failed", "mod.py.bak")
     assert (tmp_path / "mod.py.bak").read_text() == "not mutmut's\n"
     assert (tmp_path / "mod.py").read_text() == FEAT_MOD
 
@@ -556,7 +542,7 @@ def test_a_truncated_run_whose_every_mutable_line_was_measured_is_still_sampled(
     start = time.monotonic()
     result = _run(tmp_path, mutation_timeout=2.0)
     assert time.monotonic() - start < 20
-    row = next(c for c in result.checks if c.name == "diff_mutation")
+    row = _row(result)
     details = "\n".join(row.details)
     assert "3 changed+covered line(s) targeted; 2 produced a mutant; 2 measured" in details
     assert "50.0%" in row.message
@@ -577,12 +563,10 @@ def test_the_layer_one_gap_reason_is_inherited_not_guessed(
     ``argv-run.txt`` assertion is the second half of the claim: the
     inherited gap is returned BEFORE any spawn, so mutmut is never run."""
     _repo(tmp_path)
-    recdir = put_mutmut_on_path(tmp_path, monkeypatch, junit=junit((1, "mod.py", 6, "killed")))
+    recdir = put_mutmut_on_path(tmp_path, monkeypatch, junit=ONE_LINE_KILLED)
     result = _run(tmp_path, test_command="true")
     _only_gap(result, "patch_coverage", "tool_missing")
-    gap = _only_gap(result, "diff_mutation", "tool_missing")
-    assert "tool_missing" in gap.detail
-    assert not (recdir / "argv-run.txt").exists()
+    _no_spawn_gap(result, recdir, "tool_missing", "tool_missing")
 
 
 @pytest.mark.parametrize(
@@ -617,7 +601,7 @@ def test_the_mode_of_a_mutated_file_survives_the_run(
     put_mutmut_on_path(
         tmp_path,
         monkeypatch,
-        junit=junit((1, "mod.py", 6, "killed")),
+        junit=ONE_LINE_KILLED,
         sleep=sleep,
         mutate="mod.py",
         restore=restore,
@@ -627,6 +611,113 @@ def test_the_mode_of_a_mutated_file_survives_the_run(
     assert not (tmp_path / "mod.py.bak").exists()
     assert stat.S_IMODE((tmp_path / "mod.py").stat().st_mode) == 0o755
     assert [c for c in result.checks if c.name == "diff_mutation"] != []
+
+
+def test_a_sampled_score_is_tagged_not_only_worded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A3: sampled must be readable as DATA, not only a headline
+    substring - a floor-setter needs to separate sampled from complete
+    without parsing prose. Reuses the cap-bounded scenario
+    ``test_the_cap_bounds_the_run_and_the_tree_is_restored`` (sampled,
+    100.0%). The prose stays; this adds a second, machine-readable place
+    the same fact is true."""
+    _repo(tmp_path)
+    put_mutmut_on_path(
+        tmp_path,
+        monkeypatch,
+        junit=junit((1, "mod.py", 6, "killed"), (2, "mod.py", 9, "untested")),
+        sleep=30,
+        mutate="mod.py",
+    )
+    result = _run(tmp_path, mutation_timeout=2.0)
+    row = _row(result)
+    finding = _finding(result)
+    assert "sampled" in row.message
+    assert "sampled" in finding.tags
+
+
+def test_a_complete_score_is_not_tagged_sampled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half of A3: NOT sampled must not carry the tag either,
+    or the previous test would be evidence of nothing. Reuses the plain,
+    uncapped scenario ``test_the_verify_phase_records_the_diff_mutation_finding``
+    already measures at 100.0% with every line definite."""
+    _repo(tmp_path)
+    put_mutmut_on_path(
+        tmp_path,
+        monkeypatch,
+        junit=junit((1, "mod.py", 6, "killed"), (2, "mod.py", 9, "killed")),
+    )
+    result = _run(tmp_path)
+    row = _row(result)
+    finding = _finding(result)
+    assert "sampled" not in row.message
+    assert "sampled" not in finding.tags
+
+
+def test_layer_ones_own_duration_refuses_before_spending_the_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A1: mutmut always pays its baseline test-suite run in full before
+    mutating a line - the same suite Layer 1 just measured coverage of -
+    and the inlined `_remove_mutation_cache` deletes `.mutmut-cache`
+    before every run, so mutmut's own cache-hit early return is
+    unreachable. A cap already <= Layer 1's own measured duration would
+    therefore certainly be exhausted by the baseline alone, so this check
+    refuses before spending it. `mutation_timeout=0.001` guarantees the
+    comparison without a sleep: no real pytest spawn completes in 1ms."""
+    _repo(tmp_path)
+    recdir = put_mutmut_on_path(tmp_path, monkeypatch, junit=ONE_LINE_KILLED)
+    result = _run(tmp_path, mutation_timeout=0.001)
+    coverage_row = next(c for c in result.checks if c.name == "patch_coverage")
+    assert coverage_row.passed is True
+    assert coverage_row.duration_seconds >= 0.001
+    _no_spawn_gap(result, recdir, "timed_out", "mutation_timeout")
+
+
+#: Module-level code (not a `conftest.py` hook, so `test_mod.py` - already
+#: excluded from coverage targets by `is_test_path` - is the only file
+#: that differs from the standard fixture) counts pytest invocations and
+#: fails ONLY the first, so `[verify] test_suite` (invocation 1) fails
+#: while Layer 1's coverage run (invocation 2) PASSES - the decoupling
+#: A2's test needs, since Layer 1 gapping is what already stops Layer 2
+#: when the two runs agree.
+_FLAKY_ONCE_TEST = (
+    "from pathlib import Path\n"
+    "from mod import added_covered, covered_before\n\n"
+    "_COUNTER = Path(__file__).parent / 'runs.txt'\n"
+    "_N = int(_COUNTER.read_text()) if _COUNTER.exists() else 0\n"
+    "_COUNTER.write_text(str(_N + 1))\n\n\n"
+    "def test_before():\n"
+    "    assert covered_before(1) == 2\n\n\n"
+    "def test_added():\n"
+    "    assert added_covered(3) == 6\n\n\n"
+    "def test_flaky_gate():\n"
+    "    assert _N != 0\n"
+)
+
+
+def test_a_failing_test_suite_never_spawns_mutmut(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A2: mutmut's baseline run is the whole suite again, so spawning it
+    once `[verify] test_suite` already failed runs the suite a THIRD time
+    only to abort. :data:`_FLAKY_ONCE_TEST` makes the scenario reachable:
+    `check_test_suite` is invocation 1 (fails), Layer 1's coverage run is
+    invocation 2 (PASSES) - so Layer 1's own gap is not what stops Layer
+    2 here. Layer 1's row is asserted passing for that reason: without
+    it this test passes just as well via the pre-existing `coverage is
+    None` branch, which is not the case A2 covers."""
+    _repo(tmp_path, files={"mod.py": FEAT_MOD, "test_mod.py": _FLAKY_ONCE_TEST})
+    recdir = put_mutmut_on_path(tmp_path, monkeypatch, junit=ONE_LINE_KILLED)
+    result = _run(tmp_path)
+    test_row = next(c for c in result.checks if c.name == "test_suite")
+    assert test_row.passed is False
+    coverage_row = next(c for c in result.checks if c.name == "patch_coverage")
+    assert coverage_row.passed is True
+    _no_spawn_gap(result, recdir, "command_failed", "test_suite")
 
 
 # ---------------------------------------------------------------------------

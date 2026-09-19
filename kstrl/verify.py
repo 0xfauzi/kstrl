@@ -2208,6 +2208,32 @@ def _changed_non_test_python(
     return [f for f in changed if f.endswith(".py") and not is_test_path(f)]
 
 
+#: The ``read_only`` detail both mutmut-backed checks (#152 simplify
+#: pass, B4) return, byte-identical: mutmut REWRITES the file it
+#: mutates, so neither can run under ``ks sense``. One string rather
+#: than two copies 300 lines apart drifting on the next edit.
+_MUTMUT_READ_ONLY_DETAIL = "mutmut rewrites the files it mutates and cannot run read-only"
+
+
+def _mutmut_missing(check: str, config_key: str) -> NotMeasured:
+    """The ``tool_missing`` sidecar both mutmut-backed checks (#152
+    simplify pass, B4) return when ``shutil.which("mutmut")`` is None:
+    ``[verify] mutation_testing`` and ``[adequacy] diff_mutation`` carried
+    a byte-identical refusal block, and this is the one copy.
+
+    ``config_key`` is the bracketed section-and-key an operator would
+    read in ``kstrl.toml`` (``"[verify] mutation_testing"`` or
+    ``"[adequacy] diff_mutation"``), spelled out in full rather than
+    reassembled from ``check`` so the two checks can keep their own exact
+    wording without this helper guessing at it.
+    """
+    return NotMeasured(
+        check,
+        NOT_MEASURED_TOOL_MISSING,
+        f"mutmut is not on PATH, so {config_key} measured nothing",
+    )
+
+
 def check_mutation_score(
     cwd: Path,
     base_branch: str,
@@ -2272,11 +2298,7 @@ def check_mutation_score(
     start = time.monotonic()
 
     if not shutil.which("mutmut"):
-        return NotMeasured(
-            MUTATION_TESTING_CHECK,
-            NOT_MEASURED_TOOL_MISSING,
-            "mutmut is not on PATH, so [verify] mutation_testing measured nothing",
-        )
+        return _mutmut_missing(MUTATION_TESTING_CHECK, "[verify] mutation_testing")
 
     py_files = _changed_non_test_python(base_branch, cwd, MUTATION_TESTING_CHECK)
     if isinstance(py_files, NotMeasured):
@@ -2320,7 +2342,7 @@ def check_mutation_score(
 
     # Parse mutmut results
     try:
-        results_proc = run_scrubbed("mutmut results", cwd=cwd, timeout=30)
+        results_proc = run_scrubbed("mutmut results", cwd=cwd, timeout=_MUTATION_REPORT_TIMEOUT)
         output = results_proc.stdout
     except subprocess.TimeoutExpired:
         output = result.stdout
@@ -2445,17 +2467,24 @@ def _no_counts(result: subprocess.CompletedProcess[str]) -> NotMeasured:
 _SHELL_OPERATORS: tuple[str, ...] = ("&", "|", ";", "\n", "<", ">", "`", "$")
 
 
-def _coverage_command(test_command: str) -> list[str] | None:
+def _validated_pytest_tokens(test_command: str) -> list[str] | None:
     """The tokenised ``test_command``, validated as a single pytest
-    invocation this check can safely extend under coverage - or
-    ``None``.
+    invocation - or ``None``.
+
+    Named for what it does rather than for its first caller (#152
+    simplify pass, B5): despite the old name it does nothing
+    coverage-specific, and R8.5 Layer 2 (:func:`_diff_mutation_preflight`)
+    calls it too, to build the ``--runner=`` value it hands mutmut - not
+    to "extend under coverage" at all.
 
     ``None`` when the resolved command contains any :data:`_SHELL_OPERATORS`
     character, when ``shlex.split`` cannot tokenize it, or when no token
     is exactly ``"pytest"``. The tokens are never handed to a shell:
-    :func:`_coverage_report` runs both of its spawns as LISTS, so a file
-    name that came out of an agent-authored diff can never be interpreted
-    by one (the hazard #335 round 2 found on the mutation command).
+    :func:`_coverage_report` runs both of its spawns as LISTS, and
+    :func:`_mutation_run_command` shell-joins them into a single
+    ``--runner=`` value it never hands a shell either, so a file name
+    that came out of an agent-authored diff can never be interpreted by
+    one (the hazard #335 round 2 found on the mutation command).
     """
     if any(op in test_command for op in _SHELL_OPERATORS):
         return None
@@ -2667,15 +2696,21 @@ def check_patch_coverage(
     base_branch: str,
     test_command: str | None,
     timeout: float,
-) -> tuple[CheckResult | NotMeasured, PatchCoverage | None]:
+) -> PatchCoverage | NotMeasured:
     """R8.5 Layer 1 (#152): what fraction of the lines this diff ADDED to
     non-test Python files did the project's own test suite execute.
 
-    Returns ``(outcome, coverage)``. ``coverage`` is the
-    :class:`kstrl.adequacy.PatchCoverage` this check measured, or
-    ``None`` on every path that returns :class:`NotMeasured`. R8.5 Layer
-    2 (#152, :func:`check_diff_mutation`) consumes it rather than paying
-    for a second coverage run: mutmut cannot compute "changed AND
+    Returns the measured :class:`kstrl.adequacy.PatchCoverage` on
+    success, or the :class:`NotMeasured` sidecar naming why not (#152
+    simplify pass, B2: this used to return ``(outcome, coverage)``, a
+    tuple whose second element is derivable from the first's type -
+    ``coverage`` non-``None`` iff ``outcome`` is a passing
+    :class:`CheckResult` - forcing five ``return X, None`` sites for no
+    information the caller could not already have. The row a success
+    builds is now :func:`_patch_coverage_row`, called from
+    :func:`_patch_coverage_checks`, which is also where ``coverage``
+    reaches R8.5 Layer 2 (:func:`_diff_mutation_checks`) rather than
+    paying for a second coverage run: mutmut cannot compute "changed AND
     covered" itself (its ``--use-coverage`` and ``--use-patch-file`` are
     mutually exclusive), and this check already has the intersection.
 
@@ -2703,8 +2738,9 @@ def check_patch_coverage(
     Four reason tokens, and why each is not the others:
 
     - ``tool_missing``: ``test_command`` is not a single pytest
-      invocation this can extend (:func:`_coverage_command` returned
-      ``None``), or the first spawn produced no coverage data (pytest-cov
+      invocation this can extend (:func:`_validated_pytest_tokens`
+      returned ``None``), or the first spawn produced no coverage data
+      (pytest-cov
       is not installed for THIS project, even though the harness's own
       venv has it).
     - ``no_target``: the diff added no line to a non-test Python file.
@@ -2735,38 +2771,28 @@ def check_patch_coverage(
     (SIGTERM, grace, SIGKILL) before raising
     :class:`subprocess.TimeoutExpired`.
     """
-    start = time.monotonic()
-    tokens = _coverage_command(resolve_test_command(test_command))
+    tokens = _validated_pytest_tokens(resolve_test_command(test_command))
     if tokens is None:
-        return (
-            NotMeasured(
-                PATCH_COVERAGE_CHECK,
-                NOT_MEASURED_TOOL_MISSING,
-                f"[verify] test_command is not a single pytest invocation this "
-                f"can extend: {test_command!r}",
-            ),
-            None,
+        return NotMeasured(
+            PATCH_COVERAGE_CHECK,
+            NOT_MEASURED_TOOL_MISSING,
+            f"[verify] test_command is not a single pytest invocation this "
+            f"can extend: {test_command!r}",
         )
     try:
         diff_text = git.get_diff_content(base_branch, cwd)
     except git.GitDiffError as exc:
-        return (
-            NotMeasured(
-                PATCH_COVERAGE_CHECK,
-                NOT_MEASURED_COMMAND_FAILED,
-                f"git could not read the diff against {base_branch}: {exc}",
-            ),
-            None,
+        return NotMeasured(
+            PATCH_COVERAGE_CHECK,
+            NOT_MEASURED_COMMAND_FAILED,
+            f"git could not read the diff against {base_branch}: {exc}",
         )
     targets = coverage_targets(diff_text)
     if not targets:
-        return (
-            NotMeasured(
-                PATCH_COVERAGE_CHECK,
-                NOT_MEASURED_NO_TARGET,
-                "the diff added no line to a non-test Python file",
-            ),
-            None,
+        return NotMeasured(
+            PATCH_COVERAGE_CHECK,
+            NOT_MEASURED_NO_TARGET,
+            "the diff added no line to a non-test Python file",
         )
     # The two pre-flight refusals above cost nothing: no temp dir is
     # created for a command this check cannot extend, an unreadable
@@ -2776,18 +2802,26 @@ def check_patch_coverage(
         json_path = Path(tmp_name) / "coverage.json"
         report = _coverage_report(cwd, tokens, timeout, targets, json_path, spawn_start)
     if isinstance(report, NotMeasured):
-        return report, None
+        return report
     coverage = measure_patch_coverage(targets, report)
     if coverage.total == 0:
-        return (
-            NotMeasured(
-                PATCH_COVERAGE_CHECK,
-                NOT_MEASURED_NO_TARGET,
-                "the changed lines contain no statement coverage can measure",
-            ),
-            None,
+        return NotMeasured(
+            PATCH_COVERAGE_CHECK,
+            NOT_MEASURED_NO_TARGET,
+            "the changed lines contain no statement coverage can measure",
         )
+    return coverage
 
+
+def _patch_coverage_row(coverage: PatchCoverage, start: float) -> CheckResult:
+    """The passing ``patch_coverage`` row for a measured ``coverage``
+    (#152 simplify pass, B2), split out of :func:`check_patch_coverage` so
+    that function can return the measurement alone. ``start`` is the
+    caller's own :func:`time.monotonic` reading, taken immediately before
+    it called :func:`check_patch_coverage` - the row's ``duration_seconds``
+    is therefore the same wall clock the inlined version measured, not a
+    second, later clock.
+    """
     headline = (
         f"patch coverage {100.0 * coverage.covered / coverage.total:.1f}% "
         f"({coverage.covered}/{coverage.total} changed executable lines)"
@@ -2795,32 +2829,29 @@ def check_patch_coverage(
     per_file = [
         f"{path}: {c}/{t} changed executable line(s) covered" for path, c, t in coverage.files
     ]
-    return (
-        CheckResult(
-            name=PATCH_COVERAGE_CHECK,
-            passed=True,
-            message=f"{headline} [advisory]",
-            details=per_file
-            + (
-                [f"not in the coverage report: {', '.join(coverage.unmeasured)}"]
-                if coverage.unmeasured
-                else []
-            ),
-            findings=[
-                Finding.adequacy_finding(
-                    category="patch_coverage",
-                    explanation=f"{headline}: " + "; ".join(per_file),
-                    severity="advisory",
-                    suggestion=(
-                        "Advisory only: R8.5 Layer 1 records the number, no floor is "
-                        "configured and none blocks. The floor is set later from the "
-                        "recorded distribution."
-                    ),
-                )
-            ],
-            duration_seconds=time.monotonic() - start,
+    return CheckResult(
+        name=PATCH_COVERAGE_CHECK,
+        passed=True,
+        message=f"{headline} [advisory]",
+        details=per_file
+        + (
+            [f"not in the coverage report: {', '.join(coverage.unmeasured)}"]
+            if coverage.unmeasured
+            else []
         ),
-        coverage,
+        findings=[
+            Finding.adequacy_finding(
+                category="patch_coverage",
+                explanation=f"{headline}: " + "; ".join(per_file),
+                severity="advisory",
+                suggestion=(
+                    "Advisory only: R8.5 Layer 1 records the number, no floor is "
+                    "configured and none blocks. The floor is set later from the "
+                    "recorded distribution."
+                ),
+            )
+        ],
+        duration_seconds=time.monotonic() - start,
     )
 
 
@@ -2829,10 +2860,15 @@ def _patch_coverage_checks(
     base_branch: str,
     config: VerifyConfig,
     adequacy_config: AdequacyConfig | None,
-) -> tuple[list[CheckResult], list[NotMeasured], PatchCoverage | None]:
-    """``(rows, gaps, coverage)`` for patch coverage: at most one row and
+) -> tuple[list[CheckResult], NotMeasured | None, PatchCoverage | None]:
+    """``(rows, gap, coverage)`` for patch coverage: at most one row and
     one gap (#306), plus the measured :class:`PatchCoverage` when there
     is one.
+
+    ``gap`` is the SINGLE outcome (#152 simplify pass, B1's sibling on
+    the Layer 1 side), not a list: this function by construction produces
+    at most one, so a caller that wants a list still builds it, once, at
+    the point that needs one.
 
     Exact shape of :func:`_mutation_checks`, for the exact reason its
     docstring gives: a check nobody asked for records nothing at all.
@@ -2856,13 +2892,12 @@ def _patch_coverage_checks(
     inside :func:`check_patch_coverage`.
     """
     if adequacy_config is None or not (adequacy_config.enabled and adequacy_config.patch_coverage):
-        return [], [], None
-    outcome, coverage = check_patch_coverage(
-        cwd, base_branch, config.test_command, config.subprocess_timeout
-    )
+        return [], None, None
+    start = time.monotonic()
+    outcome = check_patch_coverage(cwd, base_branch, config.test_command, config.subprocess_timeout)
     if isinstance(outcome, NotMeasured):
-        return [], [outcome], None
-    return [outcome], [], coverage
+        return [], outcome, None
+    return [_patch_coverage_row(outcome, start)], None, outcome
 
 
 # ---------------------------------------------------------------------------
@@ -3007,6 +3042,27 @@ def _restore_mutated_sources(cwd: Path, modes: Mapping[str, int]) -> None:
 
     No cache delete here, no glob, no ``Path.rglob("*.bak")`` - only the
     exact targets this check chose.
+
+    SYMLINK IDENTITY (#152 simplify pass, C1) is DECLINED here rather
+    than defended, and this paragraph is that decline, not silence.
+    ``os.replace`` swaps the directory entry, so if ``target`` were a
+    symlink, replacing it over ``bak`` would turn a shared link into a
+    plain file - ``kstrl/atomicio.py``'s module docstring documents the
+    identical property for the atomic-write helper, and
+    ``init_cmd._rewrite_blockers`` refuses to rewrite a symlinked
+    ``prompt.md`` for exactly this reason. This function does not, for
+    two reasons neither of which is "it cannot happen": mutmut itself
+    reads ``context.filename`` with a plain ``open()`` and would mutate
+    THROUGH a symlinked target the same way, so a symlink identity loss
+    here is downstream of one mutmut already risks, not one this
+    function introduces; and :func:`_preexisting_backups` already
+    refuses the one shape that would make restoring a symlink actively
+    destructive (a ``.bak`` already on disk). Refusing on
+    ``target.is_symlink()`` in :func:`_diff_mutation_preflight` instead
+    is the shape that would close it, mirroring ``_rewrite_blockers``,
+    and is recorded as not built in this round: no fixture in this repo
+    constructs a symlinked mutation target, so a refusal here would be
+    unmeasured code guarding an unmeasured scenario.
     """
     for path, mode in modes.items():
         target = cwd / path
@@ -3019,21 +3075,6 @@ def _restore_mutated_sources(cwd: Path, modes: Mapping[str, int]) -> None:
             continue
         if current != mode:
             target.chmod(mode)
-
-
-def _remove_mutation_cache(cwd: Path) -> None:
-    """Delete ``<cwd>/.mutmut-cache``, if it exists.
-
-    Its own function because it is called at two different points and
-    the two must not be fused: ``.mutmut-cache`` has no relocation knob
-    (``cache.init_db`` hard-codes ``os.path.join(os.getcwd(),
-    '.mutmut-cache')``), so it has to be deleted BEFORE the run (a stale
-    cache from an earlier run - this check's own previous run, or
-    ``[verify] mutation_testing``'s - would be read as this run's
-    inventory) and again AFTER the report spawn (which READS it, so
-    deleting any earlier would empty the report).
-    """
-    (cwd / ".mutmut-cache").unlink(missing_ok=True)
 
 
 def _mutation_spawns(
@@ -3073,7 +3114,12 @@ def _mutation_spawns(
     could read them again - the happy path leaves no ``.bak`` at all and
     mutmut's own ``shutil.move`` has already dropped the mode by then.
     """
-    _remove_mutation_cache(cwd)
+    # ``.mutmut-cache`` has no relocation knob (``cache.init_db``
+    # hard-codes ``os.path.join(os.getcwd(), '.mutmut-cache')``), so a
+    # stale cache from an earlier run - this check's own previous run, or
+    # ``[verify] mutation_testing``'s - would be read as this run's
+    # inventory unless it is gone before mutmut starts.
+    (cwd / ".mutmut-cache").unlink(missing_ok=True)
     modes = _target_modes(cwd, paths)
     truncated = False
     result: subprocess.CompletedProcess[str] | None = None
@@ -3109,8 +3155,11 @@ def _mutation_spawns(
     finally:
         # AFTER the report spawn, on every exit path from here: a path
         # that returns without this leaves `.mutmut-cache` for
-        # `[verify] dead_code_cleanup`'s `git add -A` to pick up.
-        _remove_mutation_cache(cwd)
+        # `[verify] dead_code_cleanup`'s `git add -A` to pick up. Inlined
+        # rather than shared with the BEFORE-the-run delete above (#152
+        # simplify pass, B6): the two must never be fused into one call,
+        # and the ordering constraint is already stated where each fires.
+        (cwd / ".mutmut-cache").unlink(missing_ok=True)
     if report is None:
         return NotMeasured(
             DIFF_MUTATION_CHECK,
@@ -3134,9 +3183,14 @@ def _diff_mutation_preflight(
     not.
 
     In cost order: ``test_command`` must be a single pytest invocation
-    this can extend (reachable only if Layer 1's own token check somehow
-    passed and this one did not; kept rather than assumed unreachable);
-    mutmut must be on PATH; ``coverage.covered_lines`` - the
+    (reachable only if Layer 1's own token check somehow passed and this
+    one did not - config validation already refuses ``diff_mutation =
+    true`` with ``patch_coverage = false``, so both checks tokenise the
+    SAME ``[verify] test_command``; kept rather than assumed unreachable,
+    and given its OWN sentence rather than Layer 1's - #152 simplify
+    pass, B5 - because this check does not "extend" the command the way
+    Layer 1's coverage spawn does, it wraps it whole into a ``--runner=``
+    value); mutmut must be on PATH; ``coverage.covered_lines`` - the
     changed-and-covered set Layer 1 measured - must be non-empty; no
     project-level ``mutmut_config.py`` (the only route to mutmut's
     ``skipped`` status, which renders identically to a killed mutant in
@@ -3146,20 +3200,16 @@ def _diff_mutation_preflight(
     on disk from one mutmut is about to write, and refuses rather than
     risk overwriting the project's file.
     """
-    tokens = _coverage_command(resolve_test_command(test_command))
+    tokens = _validated_pytest_tokens(resolve_test_command(test_command))
     if tokens is None:
         return NotMeasured(
             DIFF_MUTATION_CHECK,
             NOT_MEASURED_TOOL_MISSING,
-            f"[verify] test_command is not a single pytest invocation this "
-            f"can extend: {test_command!r}",
+            f"[verify] test_command is not a single pytest invocation mutmut's "
+            f"runner can wrap: {test_command!r}",
         )
     if not shutil.which("mutmut"):
-        return NotMeasured(
-            DIFF_MUTATION_CHECK,
-            NOT_MEASURED_TOOL_MISSING,
-            "mutmut is not on PATH, so [adequacy] diff_mutation measured nothing",
-        )
+        return _mutmut_missing(DIFF_MUTATION_CHECK, "[adequacy] diff_mutation")
     targets: dict[str, set[int]] = {
         path: set(lines) for path, lines in coverage.covered_lines if lines
     }
@@ -3210,6 +3260,14 @@ def _diff_mutation_score_result(
     the headline, because a reader needs to know the denominator shrank
     whichever of the two caused it. D4's selection rule already decided
     ``score`` before this is called; this only renders it.
+
+    ``sampled`` also reaches the finding as a TAG (#152 simplify pass,
+    A3), not only as the ``[sampled: ...]`` substring on the headline: a
+    reader that wants to set a floor from the recorded distribution must
+    be able to separate a sampled score from a complete one without
+    parsing prose, and ``Finding.tags`` is where every other structured
+    fact about a finding already lives. The prose stays; this adds a
+    second, machine-readable place the same fact is true.
     """
     if score.measured_lines == 0:
         if truncated:
@@ -3272,6 +3330,7 @@ def _diff_mutation_score_result(
                 explanation=headline + ": " + "; ".join(details),
                 severity="advisory",
                 suggestion=suggestion,
+                extra_tags=("sampled",) if sampled else (),
             )
         ],
         duration_seconds=time.monotonic() - start,
@@ -3344,8 +3403,10 @@ def _diff_mutation_checks(
     config: VerifyConfig,
     adequacy_config: AdequacyConfig | None,
     coverage: PatchCoverage | None,
-    coverage_gaps: list[NotMeasured],
+    coverage_gap: NotMeasured | None,
+    coverage_duration: float,
     *,
+    test_suite_passed: bool,
     read_only: bool,
 ) -> tuple[list[CheckResult], list[NotMeasured]]:
     """``(rows, gaps)`` for R8.5 Layer 2, diff-scoped mutation (#152).
@@ -3362,13 +3423,45 @@ def _diff_mutation_checks(
     ran and produced no measurement; config validation
     (``AdequacyConfig.__post_init__``) already refuses
     ``diff_mutation = true`` with ``patch_coverage = false``, so this
-    branch is only ever Layer 1 having run and gapped. The reason is
-    INHERITED from Layer 1's own gap rather than reported as a fresh
+    branch is only ever Layer 1 having run and gapped, and ``coverage_gap``
+    is therefore never ``None`` here either - Layer 1 having run and
+    PRODUCED a measurement is exactly the ``coverage is not None`` branch
+    below. The reason is INHERITED from Layer 1's own gap (#152 simplify
+    pass, B1: ``coverage_gap`` is now the single outcome
+    :func:`_patch_coverage_checks` returns, not a list this function
+    scanned for it, and there is no guessed fallback for the case that
+    invariant already rules out) rather than reported as a fresh
     ``no_target``: Layer 1 gapping for ``tool_missing`` or
     ``command_failed`` is not "no target", and reporting it as one would
     tell the operator the diff was empty when pytest-cov was actually
     missing. Every value ``reason`` can take here is one of the six
     existing ``NOT_MEASURED_*`` tokens; this invents no vocabulary.
+
+    Two more refusals sit here, both BEFORE any mutmut spawn and both
+    added in the #152 simplify pass over a real run on kstrl itself
+    (Group A):
+
+    - ``test_suite_passed=False`` (A2): the ``[verify] test_suite`` row
+      already in ``checks`` failed. mutmut's own baseline is "run the
+      suite once before mutating anything", so spawning it over a
+      failing suite runs the suite a THIRD time (once for the test
+      check, once under Layer 1's coverage) only to raise "Tests don't
+      run cleanly without mutations" and abort - a wasted 457s run on
+      this repo, measured. Layer 1 has the identical pre-existing shape
+      and is NOT fixed in this round; see the PR body for why.
+    - ``coverage_duration >= config.mutation_timeout`` (A1): Layer 1's
+      OWN measured coverage-run duration already meets or exceeds the
+      cap this check's mutation run would be bounded by. mutmut always
+      pays its baseline test-suite run in full before mutating a single
+      line (``_remove_mutation_cache`` - now inlined into
+      :func:`_mutation_spawns` - deletes ``.mutmut-cache`` before every
+      run, so the cache-hit early return ``time_test_suite`` offers is
+      unreachable), and that baseline is the SAME suite Layer 1 just
+      ran under coverage - so a baseline that takes at least as long as
+      the cap has already been measured to certainly exhaust it before
+      a single mutant runs. No invented ratio: this compares the two
+      measured durations directly, never a tightened factor guessed
+      without a second repository's numbers beside kstrl's own.
     """
     if adequacy_config is None or not (adequacy_config.enabled and adequacy_config.diff_mutation):
         return [], []
@@ -3377,18 +3470,52 @@ def _diff_mutation_checks(
             NotMeasured(
                 DIFF_MUTATION_CHECK,
                 NOT_MEASURED_READ_ONLY,
-                "mutmut rewrites the files it mutates and cannot run read-only",
+                _MUTMUT_READ_ONLY_DETAIL,
             )
         ]
     if coverage is None:
-        inherited = next((g for g in coverage_gaps if g.check == PATCH_COVERAGE_CHECK), None)
-        reason = inherited.reason if inherited is not None else NOT_MEASURED_NO_TARGET
+        # Never a guessed default here (#152 simplify pass, B1): the
+        # config-validated invariant this docstring states above makes
+        # `coverage_gap is None` in this branch unreachable, so an
+        # `assert` states that rather than a fallback silently guessing
+        # `no_target` for a state that never occurs.
+        assert coverage_gap is not None, (
+            "Layer 1 measured no coverage but recorded no gap; "
+            "AdequacyConfig.__post_init__ should have refused "
+            "diff_mutation=true with patch_coverage=false before this ran"
+        )
+        reason = coverage_gap.reason
         return [], [
             NotMeasured(
                 DIFF_MUTATION_CHECK,
                 reason,
                 "R8.5 Layer 1 produced no coverage measurement "
                 f"({reason}), so Layer 2 has nothing to mutate",
+            )
+        ]
+    if not test_suite_passed:
+        return [], [
+            NotMeasured(
+                DIFF_MUTATION_CHECK,
+                NOT_MEASURED_COMMAND_FAILED,
+                "[verify] test_suite already failed; mutmut's own baseline run "
+                "would only run the suite a third time to abort with 'Tests "
+                "don't run cleanly without mutations', so Layer 2 refuses "
+                "before spending anything",
+            )
+        ]
+    if coverage_duration >= config.mutation_timeout:
+        return [], [
+            NotMeasured(
+                DIFF_MUTATION_CHECK,
+                NOT_MEASURED_TIMED_OUT,
+                f"R8.5 Layer 1's own coverage run already took "
+                f"{coverage_duration:.0f}s, at or beyond the "
+                f"{config.mutation_timeout:.0f}s [verify] mutation_timeout cap "
+                "this check's mutation run would share; mutmut always pays "
+                "that same suite's baseline in full before mutating a single "
+                "line, so it would certainly exhaust the cap before "
+                "measuring anything, and Layer 2 refuses before spending it",
             )
         ]
     outcome = check_diff_mutation(cwd, coverage, config.test_command, config.mutation_timeout)
@@ -4013,7 +4140,7 @@ def _mutation_checks(
             NotMeasured(
                 MUTATION_TESTING_CHECK,
                 NOT_MEASURED_READ_ONLY,
-                "mutmut rewrites the files it mutates and cannot run read-only",
+                _MUTMUT_READ_ONLY_DETAIL,
             )
         ]
     outcome = check_mutation_score(
@@ -4385,18 +4512,21 @@ def run_mechanical_verification(
             )
         )
 
-    coverage_rows, coverage_gaps, coverage = _patch_coverage_checks(
+    coverage_rows, coverage_gap, coverage = _patch_coverage_checks(
         worktree_path, base_branch, config, adequacy_config
     )
     checks.extend(coverage_rows)
-    not_measured.extend(coverage_gaps)
+    if coverage_gap is not None:
+        not_measured.append(coverage_gap)
 
     mutation_diff_rows, mutation_diff_gaps = _diff_mutation_checks(
         worktree_path,
         config,
         adequacy_config,
         coverage,
-        coverage_gaps,
+        coverage_gap,
+        coverage_rows[0].duration_seconds if coverage_rows else 0.0,
+        test_suite_passed=next(c.passed for c in checks if c.name == GATE_TEST),
         read_only=read_only,
     )
     checks.extend(mutation_diff_rows)

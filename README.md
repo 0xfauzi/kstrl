@@ -384,7 +384,7 @@ dead_code_cleanup = false      # optional dead-code check
 dead_code_command = ""         # empty = smart default when dead_code_cleanup is on
 mutation_testing = false       # optional mutation testing
 mutation_threshold = 50.0      # minimum mutation kill rate (percent)
-mutation_timeout = 600.0       # seconds for each mutation run ([verify] mutation_testing and [adequacy] diff_mutation)
+mutation_timeout = 600.0       # seconds for the mutation spawn itself ([verify] mutation_testing and [adequacy] diff_mutation); the check's own wall-clock ceiling is higher (~650s at this default: the spawn's own SIGTERM/SIGKILL grace plus the fixed report-spawn timeout and its own grace)
 subprocess_timeout = 300.0     # seconds per verification subprocess
 require_self_critique = false  # fail Phase 1 if the ## Self-Critique block is missing/sparse
 self_critique_min_bullets = 3  # minimum substantive bullets in the block

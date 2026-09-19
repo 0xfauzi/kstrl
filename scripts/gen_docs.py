@@ -559,7 +559,10 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     (
         "verify",
         "mutation_timeout",
-    ): "seconds for each mutation run ([verify] mutation_testing and [adequacy] diff_mutation)",
+    ): "seconds for the mutation spawn itself ([verify] mutation_testing and "
+    "[adequacy] diff_mutation); the check's own wall-clock ceiling is higher "
+    "(~650s at this default: the spawn's own SIGTERM/SIGKILL grace plus the "
+    "fixed report-spawn timeout and its own grace)",
     ("verify", "subprocess_timeout"): "seconds per verification subprocess",
     (
         "verify",
