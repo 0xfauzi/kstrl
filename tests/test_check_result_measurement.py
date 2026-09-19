@@ -217,13 +217,23 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     "verify.py: check_dead_code: CheckResult": 2,
     "verify.py: check_dead_code_ruff: CheckResult": 1,
     "verify.py: check_diff_scope: CheckResult": 4,
+    # R8.5 Layer 2 (#152): the one PASSING row, built by
+    # _diff_mutation_score_result on behalf of check_diff_mutation (the
+    # complexity ratchet forced a three-way split - see
+    # check_diff_mutation's own docstring). Every not-measured path
+    # returns NotMeasured instead (#306), same convention as
+    # check_patch_coverage.
+    "verify.py: _diff_mutation_score_result: CheckResult": 1,
     "verify.py: check_linter: CheckResult": 2,
     "verify.py: check_mutation_score: CheckResult": 2,
     # R8.5 Layer 1 (#152): ran the project's own test command a second
     # time under coverage and read back a percentage over the diff's
     # changed lines. One construction site, the passing row - every
-    # not-measured path returns NotMeasured instead (#306).
-    "verify.py: check_patch_coverage: CheckResult": 1,
+    # not-measured path returns NotMeasured instead (#306). #152 simplify
+    # pass, B2 moved this row's construction out of check_patch_coverage
+    # (which now returns the measurement alone) into _patch_coverage_row,
+    # called by _patch_coverage_checks.
+    "verify.py: _patch_coverage_row: CheckResult": 1,
     "verify.py: check_policy_envelope: CheckResult": 4,
     "verify.py: check_prd_stories: CheckResult": 4,
     "verify.py: check_scope_unreadable: CheckResult": 1,

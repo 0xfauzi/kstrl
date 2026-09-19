@@ -184,6 +184,7 @@ class Finding:
         location: str = "",
         severity: str = "advisory",
         suggestion: str = "",
+        extra_tags: tuple[str, ...] = (),
     ) -> Finding:
         """Build a Finding for an R8.5 test-adequacy concern.
 
@@ -191,6 +192,13 @@ class Finding:
         advisory-first: these layers are judged against thresholds that
         have not been measured yet, and a gate that blocks on an invented
         number teaches people to switch gates off.
+
+        ``extra_tags`` (#152 simplify pass, A3) appends beyond the base
+        two: a caller that needs a state carried as DATA rather than only
+        as a substring of ``explanation`` - R8.5 Layer 2's ``sampled``
+        flag, for instance - adds a tag here instead of inventing a new
+        field, so a reader of ``Finding.tags`` (not only the prose) can
+        tell a sampled score from a complete one.
         """
         return cls(
             phase="adequacy",
@@ -199,7 +207,7 @@ class Finding:
             location=location,
             explanation=explanation,
             suggestion=suggestion,
-            tags=("adequacy", f"adequacy:{category}"),
+            tags=("adequacy", f"adequacy:{category}") + extra_tags,
         )
 
     @classmethod

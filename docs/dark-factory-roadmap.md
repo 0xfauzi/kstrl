@@ -608,7 +608,7 @@ duckdb extra is wired for the query subcommand only.
 
 ## R8.5 Test-suite adequacy gate (L) - [#152](https://github.com/0xfauzi/kstrl/issues/152)
 
-Status: `[~]` - **Layer 0 and Layer 1 shipped; Layers 2 and 3 remain.**
+Status: `[~]` - **Layers 0, 1 and 2 shipped; Layer 3 remains.**
 Layer 0 is in `kstrl/adequacy.py` + `check_test_adequacy`: test-diff
 discipline (deleted tests - including a deleted test FILE - added
 skip/xfail in any of its spellings, net assertion loss) and oracle-signal
@@ -653,34 +653,72 @@ location, so a recurring finding collapses onto one item); advisory ones
 deliberately do not, because the inbox is a queue of decisions and an
 advisory asks for none.
 
+Layer 2 (diff-scoped mutation, #152) is `[adequacy] diff_mutation`
+(opt-in, off by default, toml-only, and REFUSED at config load unless
+`patch_coverage` is also on). It mutates only the lines `patch_coverage`
+already measured as changed AND covered - it consumes Layer 1's
+`PatchCoverage` rather than running a second coverage pass - and reports
+what fraction of them the suite detects a change to. This is a NEW
+advisory check beside the pre-existing file-scoped `[verify]
+mutation_testing` / `check_mutation_score`, not a rework of it: the two
+answer different questions (a threshold-gated score over a whole changed
+FILE versus a floor-free score over changed-and-covered LINES), and
+`check_mutation_score` produces no score at all against real mutmut
+2.5.1 (`--no-progress` suppresses every count line mutmut 2.5.1 prints,
+and `mutmut results`' own format changed under it - measured, and left
+as recorded-not-done rather than fixed here, since repairing an existing
+gate's verdict is a separate decision with its own blast radius).
+
+The roadmap's four Layer 2 requirements, and how each is met: **mutants
+only on changed AND covered lines** - a synthetic patch file naming
+exactly that line set, handed to mutmut's `--use-patch-file` (its
+`--use-coverage` and `--use-patch-file` are mutually exclusive, and
+`--use-coverage` would need a `.coverage` file in the project tree,
+which Layer 1's own D3 refuses to write), with the reported mutants
+filtered back to the same set before scoring, so mutmut's own selection
+is never trusted for the number. **Max one mutant per line** - mutmut
+has no such flag, so this is applied when SCORING: the lowest-id mutant
+with a killed-or-survived status decides the line's verdict, so a
+truncated run's low-id `untested` rows do not win by default. **A hard
+wall-clock cap with sampling recorded in the audit trail** - bounded by
+`[verify] mutation_timeout` (default 600s, the same cap `[verify]
+mutation_testing` uses); a cap that fires reports a SAMPLED score,
+labelled as such, naming how many target lines were planned versus
+actually measured, never a bare percentage that hides the shrink; a run
+that measured zero lines is a `timed_out` sidecar, never a `0.0%` row.
+**Surviving mutants fed back as concrete test targets** - every
+surviving line is recorded as `path:line` in the check's details and in
+its advisory finding (which reaches the PR body and the component's
+finding stream); wiring survivors into an automatic remediation
+iteration of the engineer is a pipeline change and is NOT built - the
+data a later pass needs is on disk after this lands.
+
+ADVISORY ALWAYS, same as Layer 1: no floor key, nothing blocks, no
+autonomy level reads it. Unlike Layer 1, it does NOT run under `ks
+sense`: mutmut rewrites the source files it mutates (restored afterward
+from the `.bak` mutmut itself writes, on every run including a timed-out
+one), where Layer 1's coverage run writes nothing into the tree.
+
 Layer 0 needs no test execution, no coverage run, no mutation tooling and
 no historical data, which is why it went first: it is the only layer whose
 thresholds are not waiting on evidence that does not exist yet. Layer 1
-needs a test execution and a coverage run, no more than that, and ships
-the same way Layer 0 did: measuring and reporting, with no floor, so the
-distribution the floor will need is a byproduct of running it rather than
-a precondition for shipping it.
+needs a test execution and a coverage run, no more than that. Layer 2
+needs mutation tooling on top of that, and ships the same way Layers 0
+and 1 did: measuring and reporting, with no floor, so the distribution a
+future floor will need is a byproduct of running it rather than a
+precondition for shipping it - a real kstrl diff measured 114 mutants on
+66 mutable lines at 1.73 mutants per mutable line, and running every one
+of them against this repo's own ~457s suite would take about 14.5 hours,
+which is why the cap and the sampling label exist rather than a promise
+to run every mutant.
 
 **Not built, and not claimed:**
 
-- **Layer 2** (diff-scoped mutation) - `check_mutation_score` already
-  exists and is file-scoped to changed files, but the R8.5 requirements
-  on top of it (max 1 mutant per line, hard wall-clock cap, sampling
-  recorded in the audit trail, surviving mutants fed back as remediation
-  targets) are unbuilt. Its >= 70% gate is explicitly "thresholds set
-  from the empirical distribution", and that distribution needs real
-  runs.
 - **Layer 3** (fixtures oracle required at high autonomy) - `[fixtures]`
   exists and is opt-in; promoting it to mandatory at L3+ is a small
-  level-gate that belongs with the same pass as Layer 2.
+  level-gate.
 - **Cross-family review defaulting on at L3+** and the calibration
   family-delta - user-run measurements (overlaps remediation R7.1).
-
-The distinction that matters for sequencing: Layers 0 and 1 degrade to
-nothing without data because they need none - Layer 1's own coverage run
-IS the measurement. Layer 2 needs an empirical distribution to set a
-threshold anyone should trust, and shipping it against an invented number
-is the failure this cycle keeps trying to avoid.
 
 **Why.** The lights-out precondition in every tradition is an evaluator-grade
 test suite, and the evidence says agent-written tests cannot be assumed

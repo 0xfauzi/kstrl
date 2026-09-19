@@ -32,30 +32,20 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from kstrl.adequacy import (
-    AdequacyConfig,
-    added_line_numbers,
-    analyze_test_diff,
-    measure_patch_coverage,
+from kstrl.adequacy import added_line_numbers, analyze_test_diff, measure_patch_coverage
+from kstrl.verify import run_scrubbed
+from tests.helpers.adequacy_fixture import (
+    BASE_MOD,
+    BASE_TEST,
+    FEAT_MOD,
+    FEAT_TEST,
+    only_gap,
+    repo_builder,
+    run_adequacy,
 )
-from kstrl.verify import VerifyConfig, run_mechanical_verification, run_scrubbed
-from tests.conftest import make_review_repo
 
 if TYPE_CHECKING:
     from kstrl.verify import NotMeasured, VerificationResult
-
-BASE_MOD = "def covered_before(n):\n    return n + 1\n"
-BASE_TEST = (
-    "from mod import covered_before\n\n\ndef test_before():\n    assert covered_before(1) == 2\n"
-)
-FEAT_MOD = (
-    "def covered_before(n):\n    return n + 1\n\n\ndef added_covered(n):\n    return n * 2\n"
-    "\n\ndef added_missing(n):\n    x = n - 1\n    y = x * 3\n    return y\n"
-)
-FEAT_TEST = (
-    "from mod import added_covered, covered_before\n\n\ndef test_before():\n"
-    "    assert covered_before(1) == 2\n\n\ndef test_added():\n    assert added_covered(3) == 6\n"
-)
 
 # The BASE commit's conftest.py, never changed afterwards so it never
 # enters the diff and never becomes a coverage target. Two jobs only:
@@ -102,41 +92,18 @@ FAILING_FEATURE_FILES = {
 }
 
 
-def _repo(tmp_path: Path, files: dict[str, str] | None = None) -> None:
-    """``BASE_FILES`` committed on ``main``, plus ``files`` (default
-    :data:`FEAT_FILES`) committed on a ``feature`` branch, through
-    ``make_review_repo`` - the branch name is never read by anything in
-    this file, only ``base_branch="main"`` is. Operates on ``tmp_path``
-    in place, the same calling convention the six retired builders used."""
-    make_review_repo(
-        tmp_path, base_files=BASE_FILES, files=files if files is not None else FEAT_FILES
-    )
+#: ``tests/helpers/adequacy_fixture.py``'s builder, closed over this
+#: file's own base/feature commits (#152 simplify pass, D1) - the branch
+#: name is never read by anything in this file, only ``base_branch="main"``
+#: is.
+_repo = repo_builder(BASE_FILES, FEAT_FILES)
 
-
-def _run(
-    root: Path,
-    *,
-    base_branch: str = "main",
-    test_command: str | None = None,
-    subprocess_timeout: float = 120.0,
-    enabled: bool = True,
-    patch_coverage: bool = True,
-) -> VerificationResult:
-    return run_mechanical_verification(
-        root,
-        None,
-        base_branch,
-        None,
-        VerifyConfig(
-            test_command=test_command or f"{shlex.quote(sys.executable)} -m pytest",
-            typecheck_command="true",
-            lint_command="true",
-            check_diff_scope=False,
-            check_bad_patterns=False,
-            subprocess_timeout=subprocess_timeout,
-        ),
-        adequacy_config=AdequacyConfig(enabled=enabled, patch_coverage=patch_coverage),
-    )
+#: This file's every call site names the same keywords
+#: ``tests/helpers/adequacy_fixture.run_adequacy`` already accepts, with
+#: the SAME defaults (``diff_mutation`` and ``read_only`` both ``False``),
+#: so importing it under this file's own name is the whole migration -
+#: no wrapper to keep in sync (#152 simplify pass, D1).
+_run = run_adequacy
 
 
 def _runs_count(root: Path) -> int:
@@ -144,16 +111,11 @@ def _runs_count(root: Path) -> int:
 
 
 def _only_gap(result: VerificationResult, reason: str) -> NotMeasured:
-    """The single ``patch_coverage`` gap in ``result``: no row alongside
-    it, exactly one gap, and it carries ``reason``.
-
-    #152 simplify pass: one helper for the seven "sidecar, not a row"
-    tests in this file, which all asserted this same shape by hand."""
-    assert [c for c in result.checks if c.name == "patch_coverage"] == []
-    gaps = [g for g in result.not_measured if g.check == "patch_coverage"]
-    assert len(gaps) == 1, gaps
-    assert gaps[0].reason == reason, gaps[0]
-    return gaps[0]
+    """The single ``patch_coverage`` gap in ``result`` -
+    ``tests/helpers/adequacy_fixture.only_gap`` with the check name fixed,
+    since every call site in this file wants the same one (#152 simplify
+    pass, D1)."""
+    return only_gap(result, "patch_coverage", reason)
 
 
 # ---------------------------------------------------------------------------
