@@ -384,7 +384,7 @@ dead_code_cleanup = false      # optional dead-code check
 dead_code_command = ""         # empty = smart default when dead_code_cleanup is on
 mutation_testing = false       # optional mutation testing
 mutation_threshold = 50.0      # minimum mutation kill rate (percent)
-mutation_timeout = 600.0       # seconds for the mutation run
+mutation_timeout = 600.0       # seconds for each mutation run ([verify] mutation_testing and [adequacy] diff_mutation)
 subprocess_timeout = 300.0     # seconds per verification subprocess
 require_self_critique = false  # fail Phase 1 if the ## Self-Critique block is missing/sparse
 self_critique_min_bullets = 3  # minimum substantive bullets in the block
@@ -466,6 +466,7 @@ layer0 = "advisory"              # advisory | block; the ladder can raise it, ne
 require_strong_oracle = true     # each new test file needs one falsifiable assertion
 flag_assertionless_tests = true  # report tests that assert nothing at all
 patch_coverage = false           # run the project's pytest command a second time under coverage and report patch coverage (advisory, no floor)
+diff_mutation = false            # mutate the changed AND covered lines and report what fraction the suite detects (advisory, no floor; needs patch_coverage)
 
 # Phase 2.5 security review
 [security]
