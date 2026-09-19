@@ -11,7 +11,14 @@ refuse a mock here).
 Every SHAPE the script prints - the junitxml this module builds, and the
 run/report exit codes callers choose - is copied from real mutmut 2.5.1
 runs recorded in `measurements.md` section 2e; a test that installs canned
-junit rows through :func:`junit` names that section in its docstring.
+junit rows through :func:`junit` names that section in its docstring. One
+detail was imagined rather than measured until #152 round 2: the backup
+file's permission bits. Real `mutmut.mutate_file` writes the backup with
+`open(path + '.bak', 'w')` (the umask default), not a copy of the
+source's mode, and `mutmut.run_mutation`'s `finally` restores it with
+`shutil.move` (a rename), which carries that mode onto the target. The
+fake now creates the backup the same way (a shell redirection, not `cp`)
+so a test can see the mode loss `cp` was hiding.
 
 The fake cannot read configuration from the environment: `run_scrubbed`
 (`kstrl/verify.py`) scrubs everything outside
@@ -87,11 +94,14 @@ case "$1" in
     done
     touch .mutmut-cache
     if [ -n "{mutate}" ]; then
-      cp "{mutate}" "{mutate}.bak"
+      cat "{mutate}" > "{mutate}.bak"
       printf 'MUTANT\\n' >> "{mutate}"
     fi
     if [ {sleep_seconds} -gt 0 ]; then
       sleep {sleep_seconds}
+    fi
+    if [ -n "{mutate}" ] && [ {restore} -eq 1 ]; then
+      mv "{mutate}.bak" "{mutate}"
     fi
     exit {run_exit}
     ;;
@@ -117,6 +127,7 @@ def put_mutmut_on_path(
     run_exit: int = 0,
     sleep: float = 0.0,
     mutate: str = "",
+    restore: bool = False,
 ) -> Path:
     """Install a fake `mutmut`; return the directory it records into.
 
@@ -130,6 +141,9 @@ def put_mutmut_on_path(
     ``mutate``                  a file (relative to the check's cwd) to back up
                                  and corrupt before sleeping - the SIGTERM-leaves-
                                  a-mutant-on-disk shape measured in measurements 2h
+    ``restore``                 model mutmut's own ``finally: move(bak, filename)``
+                                 (``mutmut.run_mutation``) by renaming the backup
+                                 back over the target before exiting
     """
     recdir = tmp_path / "mutmut-record"
     recdir.mkdir()
@@ -141,6 +155,7 @@ def put_mutmut_on_path(
         mutate=mutate,
         sleep_seconds=int(sleep),
         run_exit=run_exit,
+        restore=1 if restore else 0,
     )
     write_executable(bindir / "mutmut", body)
     monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")

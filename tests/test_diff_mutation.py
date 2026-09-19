@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import shlex
 import shutil
+import stat
 import sys
 import time
 from pathlib import Path
@@ -527,6 +528,105 @@ def test_a_backup_file_already_beside_a_target_is_refused_before_the_spend(
     assert not (recdir / "argv-run.txt").exists()
     assert (tmp_path / "mod.py.bak").read_text() == "not mutmut's\n"
     assert (tmp_path / "mod.py").read_text() == FEAT_MOD
+
+
+def test_a_truncated_run_whose_every_mutable_line_was_measured_is_still_sampled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Requirement 3 of #152, the half no other test separates: the cap
+    fired, and EVERY line mutmut reported a mutant for still reached a
+    definite status, so ``measured_lines < mutable_lines`` is FALSE and
+    ``truncated`` is the only thing that can label this score sampled.
+    The shipped ``test_the_cap_bounds_the_run_and_the_tree_is_restored``
+    cannot make that separation: its report leaves line 9 ``untested``, so
+    the second disjunct holds its ``sampled`` assertion up on its own.
+    1.73 mutants per mutable line (measurements.md) is what makes this
+    shape ordinary rather than exotic - a cap that fires once every target
+    line has one verdict leaves the rest of that line's mutants
+    ``untested`` and off the denominator. Canned junit rows are mutmut
+    2.5.1's own rendering (measurements.md section 2e)."""
+    _repo(tmp_path)
+    put_mutmut_on_path(
+        tmp_path,
+        monkeypatch,
+        junit=junit((1, "mod.py", 6, "killed"), (2, "mod.py", 9, "survived")),
+        sleep=30,
+        mutate="mod.py",
+    )
+    start = time.monotonic()
+    result = _run(tmp_path, mutation_timeout=2.0)
+    assert time.monotonic() - start < 20
+    row = next(c for c in result.checks if c.name == "diff_mutation")
+    details = "\n".join(row.details)
+    assert "3 changed+covered line(s) targeted; 2 produced a mutant; 2 measured" in details
+    assert "50.0%" in row.message
+    assert "[sampled: 2 of 3 changed+covered lines measured" in row.message
+
+
+def test_the_layer_one_gap_reason_is_inherited_not_guessed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The inheritance rule in ``_diff_mutation_checks``, in the only case
+    that separates it from its default: Layer 1 gaps ``tool_missing`` (a
+    ``test_command`` it cannot extend), so Layer 2's gap must read
+    ``tool_missing`` too. ``no_target`` there would tell an operator the
+    diff was empty when the real cause was a test command nothing could
+    measure. ``test_a_diff_with_no_changed_and_covered_line_never_spawns_mutmut``
+    cannot make this separation: Layer 1 gaps ``no_target`` there, which is
+    also the hard-coded default, so the two readings agree. The
+    ``argv-run.txt`` assertion is the second half of the claim: the
+    inherited gap is returned BEFORE any spawn, so mutmut is never run."""
+    _repo(tmp_path)
+    recdir = put_mutmut_on_path(tmp_path, monkeypatch, junit=junit((1, "mod.py", 6, "killed")))
+    result = _run(tmp_path, test_command="true")
+    _only_gap(result, "patch_coverage", "tool_missing")
+    gap = _only_gap(result, "diff_mutation", "tool_missing")
+    assert "tool_missing" in gap.detail
+    assert not (recdir / "argv-run.txt").exists()
+
+
+@pytest.mark.parametrize(
+    ("restore", "mutation_timeout", "sleep"),
+    [(True, 120.0, 0), (False, 2.0, 30)],
+    ids=["mutmut-restored-it", "cap-fired"],
+)
+def test_the_mode_of_a_mutated_file_survives_the_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    restore: bool,
+    mutation_timeout: float,
+    sleep: int,
+) -> None:
+    """mutmut 2.5.1 writes its backup with ``open(path + '.bak', 'w')`` -
+    the umask default - and restores it with ``shutil.move``, which
+    renames (both read out of the installed 2.5.1 package:
+    ``mutmut.mutate_file`` and ``mutmut.run_mutation``'s ``finally``).
+    Either way the backup's mode lands on the source file, so a 0755
+    module comes back 0644 with its content correct: a mode change git
+    can see and ``[verify] dead_code_cleanup``'s ``git add -A`` can
+    commit, and, at 0600, a loosening git cannot see at all. Both paths
+    are covered because they lose the mode in different places -
+    ``mutmut-restored-it`` inside mutmut, where kstrl never sees a
+    ``.bak`` at all, and ``cap-fired`` inside ``_restore_mutated_sources``
+    where kstrl's own ``os.replace`` does it. The assertion is robust to
+    the developer's umask: a file created by redirection is never
+    executable whatever the umask, so it can never accidentally equal
+    0o755."""
+    _repo(tmp_path)
+    (tmp_path / "mod.py").chmod(0o755)
+    put_mutmut_on_path(
+        tmp_path,
+        monkeypatch,
+        junit=junit((1, "mod.py", 6, "killed")),
+        sleep=sleep,
+        mutate="mod.py",
+        restore=restore,
+    )
+    result = _run(tmp_path, mutation_timeout=mutation_timeout)
+    assert (tmp_path / "mod.py").read_text() == FEAT_MOD
+    assert not (tmp_path / "mod.py.bak").exists()
+    assert stat.S_IMODE((tmp_path / "mod.py").stat().st_mode) == 0o755
+    assert [c for c in result.checks if c.name == "diff_mutation"] != []
 
 
 # ---------------------------------------------------------------------------

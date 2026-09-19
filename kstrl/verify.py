@@ -9,6 +9,7 @@ import re
 import shlex
 import shutil
 import signal
+import stat
 import subprocess
 import tempfile
 import time
@@ -2942,16 +2943,52 @@ def _preexisting_backups(cwd: Path, paths: Iterable[str]) -> list[str]:
     return sorted(path for path in paths if (cwd / f"{path}.bak").exists())
 
 
-def _restore_mutated_sources(cwd: Path, paths: Iterable[str]) -> None:
-    """Restore every ``<path>.bak`` mutmut wrote over its target.
+def _target_modes(cwd: Path, paths: Iterable[str]) -> dict[str, int]:
+    """The permission bits of every mutation target, read BEFORE the run.
+
+    mutmut 2.5.1 does not preserve them: it writes its backup with
+    ``open(path + '.bak', 'w')`` (the umask default) and restores it with
+    ``shutil.move``, which renames, so the backup's mode lands on the
+    source file. A 0755 module therefore comes back 0644 with its content
+    correct - a change git can see, and one ``[verify]
+    dead_code_cleanup``'s ``git add -A`` can commit - and a 0600 one comes
+    back loosened with git seeing nothing at all.
+    :func:`_restore_mutated_sources` puts these back.
+
+    A target that cannot be stat'ed is dropped rather than raised on: it
+    is a file that vanished between Layer 1 measuring it and this check
+    starting, so mutmut cannot mutate it either, and the run's own
+    ``command_failed`` sidecar is where that is reported. Dropping it here
+    also drops its ``.bak`` restore, which is correct for the same reason:
+    a file that is not there has no backup beside it.
+
+    ``except OSError`` exactly. :meth:`Path.stat` raises nothing else here,
+    and nothing in this function parses a document, so CLAUDE.md's
+    ``tomllib`` rule (catch ``Exception``) does not apply.
+    """
+    modes: dict[str, int] = {}
+    for path in paths:
+        try:
+            modes[path] = stat.S_IMODE((cwd / path).stat().st_mode)
+        except OSError:
+            continue
+    return modes
+
+
+def _restore_mutated_sources(cwd: Path, modes: Mapping[str, int]) -> None:
+    """Restore every ``<path>.bak`` mutmut wrote over its target, and the
+    target's original permission bits.
 
     Safe ONLY because :func:`_preexisting_backups` already refused when a
     ``.bak`` was there before the run (D7): every ``.bak`` this function
     sees is therefore one mutmut wrote, and it is byte-identical to the
     file as mutmut found it (``mutate_file`` writes the backup before the
-    mutation - measurements 2h). :func:`os.replace`, never ``git checkout
-    --``: the ``.bak`` is right whether or not the engineer's own work in
-    this file is committed.
+    mutation - measurements 2h), but NOT mode-identical: mutmut's own
+    ``open(path + '.bak', 'w')`` and ``shutil.move`` restore lose the
+    mode, and so does kstrl's own :func:`os.replace` on the timed-out
+    path. :func:`os.replace`, never ``git checkout --``: the ``.bak`` is
+    right whether or not the engineer's own work in this file is
+    committed.
 
     Measured (2h): SIGTERM to the process group - what
     :func:`run_scrubbed` sends first - leaves the source file MUTATED
@@ -2959,13 +2996,29 @@ def _restore_mutated_sources(cwd: Path, paths: Iterable[str]) -> None:
     it writes the mutation. Without this restore, the cap firing hands
     ``[verify] dead_code_cleanup``'s ``git add -A`` a mutant to commit.
 
+    The chmod is UNCONDITIONAL, outside the ``.bak`` branch, because the
+    two paths lose the mode in different places: a run that finished
+    leaves no ``.bak`` at all and mutmut's own ``shutil.move`` already
+    dropped the mode, while a run the cap killed leaves one and the
+    ``os.replace`` above drops it. One restore covers both
+    (``test_the_mode_of_a_mutated_file_survives_the_run`` pins both ids;
+    moving the chmod into the branch leaves ``[cap-fired]`` green and only
+    ``[mutmut-restored-it]`` red, which is plant P4).
+
     No cache delete here, no glob, no ``Path.rglob("*.bak")`` - only the
     exact targets this check chose.
     """
-    for path in paths:
+    for path, mode in modes.items():
+        target = cwd / path
         bak = cwd / f"{path}.bak"
         if bak.exists():
-            os.replace(bak, cwd / path)
+            os.replace(bak, target)
+        try:
+            current = stat.S_IMODE(target.stat().st_mode)
+        except OSError:
+            continue
+        if current != mode:
+            target.chmod(mode)
 
 
 def _remove_mutation_cache(cwd: Path) -> None:
@@ -3014,8 +3067,14 @@ def _mutation_spawns(
     restore there is then a no-op). ``.mutmut-cache`` must SURVIVE that
     restore - the report spawn below reads it - and is removed in ITS
     OWN ``finally``, once that read is done, never before.
+
+    The targets' permission bits are captured here, before any spawn,
+    because mutmut has already changed them by the time this function
+    could read them again - the happy path leaves no ``.bak`` at all and
+    mutmut's own ``shutil.move`` has already dropped the mode by then.
     """
     _remove_mutation_cache(cwd)
+    modes = _target_modes(cwd, paths)
     truncated = False
     result: subprocess.CompletedProcess[str] | None = None
     try:
@@ -3029,7 +3088,7 @@ def _mutation_spawns(
             f"the mutation command could not be started: {exc}",
         )
     finally:
-        _restore_mutated_sources(cwd, paths)
+        _restore_mutated_sources(cwd, modes)
     if result is not None and result.returncode & 1:
         return NotMeasured(
             DIFF_MUTATION_CHECK,
