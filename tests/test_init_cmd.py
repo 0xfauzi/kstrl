@@ -480,12 +480,14 @@ class TestTheAppendLandsUnderGuidance:
     nothing that runs.
 
     These two cases run the real append against a real ``ks init``
-    scaffold. The first is the invariant. The second is the FAILURE
-    MODE, recorded as what actually happens rather than as a guard: an
-    operator who adds a section after ``## Guidance`` takes every append
-    from then on, and no gate in this repository goes red. It is #231's
-    to close, because #231 is what writes the file; this PR's job is to
-    stop claiming it is closed already.
+    scaffold. The first is the invariant. The second pins what
+    ``append_records`` itself does: a BLIND TAIL APPEND takes every
+    section added after ``## Guidance`` from then on, and no gate in
+    this repository goes red on it. #231 closed the blind spot for the
+    writer it added (``/memory`` reads the headings and inserts into the
+    ``## Guidance`` section, held by ``tests/test_steering.py`` cases 3
+    and 4 and by its plant 6); ``append_records`` below is unchanged and
+    still has the property this class names.
     """
 
     def test_a_real_append_lands_under_guidance(self, tmp_path: Path) -> None:
@@ -502,12 +504,13 @@ class TestTheAppendLandsUnderGuidance:
     def test_a_section_after_guidance_takes_the_appends_and_nothing_notices(
         self, tmp_path: Path
     ) -> None:
-        """The measured blind spot, stated rather than implied.
+        """What a blind tail append does, stated rather than implied.
 
         Not an xfail: nothing here is expected to be fixed by a later
-        widening of a walk. It is a property of appending to a file whose
-        last heading the operator controls, and the only fix is #231
-        reading the headings before it writes.
+        widening of a walk. It is a property of ``append_records``
+        appending to a file whose last heading the operator controls.
+        #231's writer does not use ``append_records``; it reads the
+        headings before it writes, held by ``tests/test_steering.py``.
         """
         code, _ = run_init_capturing(tmp_path)
         memory = tmp_path / "scripts" / "kstrl" / "memory.md"

@@ -451,7 +451,7 @@ def _serve_with_edit(
     with patch("kstrl.serve._load_pr_count_streak", edit_then_load):
         with patch(
             "kstrl.serve.count_open_kstrl_prs",
-            lambda cwd, limit=100: OpenPrCount(count=0, saturated=False),
+            lambda cwd, limit=100: OpenPrCount(saturated=False),
         ):
             if cycles is None:
                 results = serve(tmp_path, runner=_stub_run, once=True)

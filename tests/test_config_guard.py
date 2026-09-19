@@ -86,6 +86,10 @@ EXPECTED_SURFACE_CLASSES |= {
         {"__post_init__", "engineer_verify_config", "from_env", "load", "resolved_verify_config"}
     ),
     "RunEnvelope": frozenset({"load", "policy_hash", "resolve"}),
+    # #231 B4: `SteerContext` holds the `GitHubIntakeConfig` a steering
+    # poll resolved once, the same holder pattern as `EnvelopeResolution`
+    # and `FeatureParams` above, and defines no methods of its own.
+    "SteerContext": frozenset(),
 }
 
 #: How many rounds the type closure runs after round 0. The second
