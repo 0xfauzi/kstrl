@@ -522,6 +522,47 @@ def test_a_failed_acknowledgement_does_not_cause_a_second_write(tmp_path: Path) 
 
 
 # ---------------------------------------------------------------------------
+# A3: the steer dispatch is closed by construction
+# ---------------------------------------------------------------------------
+#
+# `tests/test_intake_github.py::TestSteerDispatchIsClosedByConstruction`
+# constructs a `SteerCommand` in Python and calls `_run_command` directly,
+# so it never reads `_STEER_COMMANDS` and cannot catch a command added
+# there without a handler (plant P3: `_STEER_COMMANDS = frozenset(
+# _STEER_HANDLERS) | {"/prompt"}`). These two do.
+
+
+def test_the_command_set_is_exactly_the_handler_keys() -> None:
+    """The structural control for plant P3. `_STEER_COMMANDS` must be
+    exactly the handler keys, not a superset or a subset of them.
+    """
+    from kstrl.intake_github import _STEER_COMMANDS, _STEER_HANDLERS
+
+    assert set(_STEER_COMMANDS) == set(_STEER_HANDLERS)
+
+
+def test_an_unhandled_command_does_not_drop_the_rest_of_the_cycle(tmp_path: Path) -> None:
+    """The behavioural control for plant P3. A command `_parse_command`
+    recognises but `_STEER_HANDLERS` has no entry for raises inside
+    `_run_command`. That `RuntimeError` must not also silently drop
+    every OTHER command already fetched in the same poll: the `/memory`
+    comment fetched after the unhandled one must still land.
+    """
+    _setup(tmp_path)
+    gh = _SteerGh(
+        prs=[marked(7)],
+        comments={
+            7: [
+                _comment(111, "/prompt rewrite everything"),
+                _comment(112, "/memory never touch migrations"),
+            ]
+        },
+    )
+    _cycle(tmp_path, gh)
+    assert "- never touch migrations (" in _memory_path(tmp_path).read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
 # C1: the per-pull-request watermark
 # ---------------------------------------------------------------------------
 
@@ -614,6 +655,36 @@ def test_watermark_orders_by_updated_at_not_fetch_position(tmp_path: Path) -> No
     api_calls = gh.argv_for("api")
     assert len(api_calls) == 3
     assert f"since={_updated_at(200)}" in api_calls[2][1]
+
+
+def test_the_watermark_floor_is_the_earliest_unresolved_comment(tmp_path: Path) -> None:
+    """The docstring's rule, pinned on the LEAST half: the watermark is
+    the greatest SEEN value strictly less than the LEAST unresolved
+    value, never the greatest. With two comments deferred by the cap in
+    the same cycle (102 at `updated_at(9)`, 103 at `updated_at(3)`), the
+    floor must be keyed off the EARLIER of the two (103) or the later
+    one's `updated_at` would sit below a watermark advanced past it,
+    which `since` (inclusive on GitHub's real API, hence the stub's `>=`
+    filter) would then never return again.
+    """
+    _setup(tmp_path, extra="max_items_per_sync = 1\n")
+    gh = _SteerGh(
+        prs=[marked(7)],
+        comments={
+            7: [
+                _comment(101, "/memory one", updated_at=_updated_at(1)),
+                _comment(102, "/memory two", updated_at=_updated_at(9)),
+                _comment(103, "/memory three", updated_at=_updated_at(3)),
+                _comment(104, "ordinary review prose", updated_at=_updated_at(5)),
+            ]
+        },
+    )
+    for _ in range(5):
+        _cycle(tmp_path, gh)
+    body = _memory_path(tmp_path).read_text(encoding="utf-8")
+    assert "- one (" in body
+    assert "- two (" in body
+    assert "- three (" in body, "the T3 comment was skipped by the watermark"
 
 
 def test_a_pr_with_only_prose_comments_still_advances_the_watermark(tmp_path: Path) -> None:

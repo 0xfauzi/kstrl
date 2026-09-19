@@ -1722,9 +1722,18 @@ class TestSteerDispatchIsClosedByConstruction:
     """#231 A3. `_STEER_COMMANDS` is derived from `_STEER_HANDLERS`'s own
     keys, so an unregistered command cannot silently fall through to
     `/iterate` - the most expensive thing this subsystem can do, since
-    it re-queues a run. Plant P3 registers a third command in
-    `_STEER_COMMANDS` without a handler; this is the test that must
-    catch it by raising rather than re-queueing.
+    it re-queues a run.
+
+    This class does NOT catch plant P3 (a command added to
+    `_STEER_COMMANDS` outside the `frozenset(_STEER_HANDLERS)`
+    derivation): the test below constructs a `SteerCommand` in Python and
+    calls `_run_command` directly, so it never reads `_STEER_COMMANDS` at
+    all and cannot see a mismatch between the two. The tests that catch
+    P3 are `tests/test_steering.py::test_the_command_set_is_exactly_the_handler_keys`
+    (the structural control: `set(_STEER_COMMANDS) == set(_STEER_HANDLERS)`)
+    and `tests/test_steering.py::test_an_unhandled_command_does_not_drop_the_rest_of_the_cycle`
+    (the behavioural control: a real cycle proves the escaped `RuntimeError`
+    does not also silently drop every other comment in the same poll).
     """
 
     def test_an_unregistered_command_raises_rather_than_falling_through(
