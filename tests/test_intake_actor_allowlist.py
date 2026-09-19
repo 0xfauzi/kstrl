@@ -33,6 +33,7 @@ from kstrl.intake_github import (
 )
 from kstrl.serve import _NullObserver, serve_cycle
 from kstrl.workqueue import Queue, QueueConfig
+from tests.helpers.runners import recording_runner
 from tests.test_intake_github import (
     REPO,
     _auth_payload,
@@ -41,7 +42,7 @@ from tests.test_intake_github import (
     _issue_payload,
 )
 from tests.test_queue_cli import _invoke
-from tests.test_serve_seam import _enable_github_intake, _recording_runner
+from tests.test_serve_seam import _enable_github_intake
 
 #: Nothing here is about flow control; the fixture's docstring in
 #: tests/conftest.py says why the R10.7 bound has to be held open.
@@ -68,7 +69,7 @@ def _cycle(root: Path, gh: _GhStub) -> tuple[list[dict[str, Any]], Any]:
     """One real serve cycle against a stubbed gh. Returns (runner calls, result)."""
     calls: list[dict[str, Any]] = []
     with patch("kstrl.intake_github.run_gh", gh):
-        result = serve_cycle(root, runner=_recording_runner(calls))
+        result = serve_cycle(root, runner=recording_runner(calls))
     return calls, result
 
 
@@ -300,7 +301,7 @@ class TestTheDaemonNarratesARefusal:
         gh = _GhStub(issues=_issue_payload(_issue(7)), auth=_auth_payload(actor=BOT))
         obs = _NullObserver()
         with patch("kstrl.intake_github.run_gh", gh):
-            serve_cycle(tmp_path, runner=_recording_runner([]), observer=obs)
+            serve_cycle(tmp_path, runner=recording_runner([]), observer=obs)
         warns = [line for line in obs.lines if "intake refused" in line]
         assert len(warns) == 1, obs.lines
         assert BOT in warns[0]
@@ -311,7 +312,7 @@ class TestTheDaemonNarratesARefusal:
         gh = _GhStub(issues=_issue_payload(_issue(7)), auth=_auth_payload(actor=BOT))
         obs = _NullObserver()
         with patch("kstrl.intake_github.run_gh", gh):
-            serve_cycle(tmp_path, runner=_recording_runner([]), observer=obs)
+            serve_cycle(tmp_path, runner=recording_runner([]), observer=obs)
         assert not any("intake refused" in line for line in obs.lines)
 
 

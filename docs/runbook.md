@@ -449,17 +449,39 @@ What belongs in it: permanent scope exclusions ("never touch the migrations
 directory"), areas whose findings are known false positives, and review
 feedback that should change how future work is done. What does not: one-off
 instructions for the change in front of you, and anything that reads as a run
-log. The file is version controlled and it is yours; kstrl never rewrites it.
+log. The file is version controlled and it is yours; with `[intake_github]
+steer_enabled` on, kstrl is also a WRITER of it, through `/memory` comments
+on its own pull requests (see below) - every write is an ordinary,
+uncommitted change to your working tree, visible in `git diff` like anything
+else you wrote by hand.
 
 Two operational notes. `ks init` scaffolds it, and while it is unchanged
-nothing is injected, so a fresh project pays nothing for the feature. Keep
-`## Guidance` as the last heading: appends land at the end of the file, and
-nothing in kstrl checks that, so a section you add after it will take them.
-The budget is about 1000 tokens; past that the block keeps the END of the
-file and drops the start, so your newest standing corrections are the ones
-that survive and pruning from the top is what preserves them. Both the prompt
-and the terminal warning say which end went. `ks factory`, `ks retry` and
-`ks run` read it; `ks feature` and `ks understand` do not.
+nothing is injected, so a fresh project pays nothing for the feature. Keep a
+`## Guidance` heading in it: both the daemon's `/memory` writer and the
+prompt-loader's truncation key on that heading specifically, not on the
+literal end of the file, so a section you add stays yours - a `## Notes`
+section written after `## Guidance` keeps its own content rather than
+collecting future `/memory` appends. If you remove the heading, the next
+`/memory` write adds it back at the end of the file rather than refusing.
+The budget is about 1000 tokens; past that the block keeps the NEWEST
+content of the `## Guidance` section and drops anything after that section
+first, so your newest standing corrections are the ones that survive and
+pruning the oldest lines from the top of `## Guidance` is what preserves
+them. Both the prompt and the terminal warning say which section and
+direction. `ks factory`, `ks retry` and `ks run` read it; `ks feature` and
+`ks understand` do not.
+
+**The polled steering channel** (`[intake_github] steer_enabled`, off by
+default): with issue intake also configured, a comment `/memory <text>` on
+one of kstrl's own open pull requests appends `<text>` under `## Guidance`
+the way described above, and `/iterate [text]` does that (if `text` is
+given) and then re-queues the story that produced the PR, to run again once
+it is merged or closed. Who may issue either command reuses
+`[intake_github] allowed_actors` - there is no second allowlist. See
+`docs/continuous-intake.md` for the full contract, including the one
+efficiency-driven behaviour change: a per-pull-request watermark means a
+comment refused before that watermark advanced is not re-read even if you
+later widen `allowed_actors` to include its author.
 
 Golden patterns truncate the other way, keeping the start and dropping the
 end, because that file is written once and pruned by hand and its sections do

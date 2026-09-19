@@ -104,13 +104,25 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # are both reads: the PRD file and ``_read_text_or_none``.
     "init_cmd.py": 2,
     "init_wizard.py": 1,
+    # Back to 1 (the ledger's own read) since #231's simplify pass (B1):
+    # the memory-file read `_append_guidance` added moved to
+    # `operator_context.append_guidance_record`, which is the module
+    # that already owns the reader.
     "intake_github.py": 1,
     "knowledge.py": 3,
     "licensing.py": 1,
     "loop.py": 2,
     "manifest.py": 1,
     "observability.py": 1,
+    # Back to 1 (the existing `read_operator_file` read): the
+    # `append_guidance_record` read #231 B1 added here moved again, to
+    # `operator_guidance.py`, when this module crossed the 800-line
+    # ratchet and that write path split out (the addendum's simplify
+    # pass).
     "operator_context.py": 1,
+    # The `append_guidance_record` read, moved from `operator_context.py`
+    # in the same split.
+    "operator_guidance.py": 1,
     "parsers.py": 1,
     "pipeline.py": 3,
     "prd.py": 1,
@@ -225,6 +237,11 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "observability.py for line in f on an open() handle",
     "observability.py open(path, encoding='utf-8')",
     "operator_context.py spec.path.read_text(encoding='utf-8')",
+    # `append_guidance_record`'s read, same spelling as the row above
+    # because both read an `OperatorFile.path`, moved to
+    # `operator_guidance.py` when that write path split out of
+    # `operator_context.py` under the 800-line ratchet.
+    "operator_guidance.py spec.path.read_text(encoding='utf-8')",
     "parsers.py source_path.read_text(encoding='utf-8')",
     "pipeline.py open(path, 'a', buffering=1, encoding='utf-8')",
     "pipeline.py progress_path.read_text(encoding='utf-8')",

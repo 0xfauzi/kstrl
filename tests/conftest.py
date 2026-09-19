@@ -294,7 +294,7 @@ def no_open_prs(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(
         "kstrl.serve.count_open_kstrl_prs",
-        lambda root: OpenPrCount(count=0, saturated=False),
+        lambda root: OpenPrCount(saturated=False),
     )
 
 

@@ -64,8 +64,13 @@ def _boom(_: Path) -> OpenPrCount:
 
 
 def _counts(count: int, *, saturated: bool = False) -> Callable[[Path], OpenPrCount]:
-    """A counter seam that reports ``count``, page full or not."""
-    return lambda _: OpenPrCount(count=count, saturated=saturated)
+    """A counter seam that reports ``count``, page full or not.
+
+    ``count`` is a property over ``marked_numbers`` now, so the numbers
+    are synthesized (the gate reads only the count, never the specific
+    numbers) at a length that produces the requested count.
+    """
+    return lambda _: OpenPrCount(saturated=saturated, marked_numbers=tuple(range(count)))
 
 
 def _raises(exc: BaseException) -> Callable[[Path], OpenPrCount]:

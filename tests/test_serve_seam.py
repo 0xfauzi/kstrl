@@ -83,6 +83,7 @@ from kstrl.serve import (
 from kstrl.workqueue import Queue, QueueConfig
 from tests.helpers import procs
 from tests.helpers.executables import write_executable
+from tests.helpers.runners import recording_runner
 from tests.test_intake_github import REPO, _GhStub, _issue, _issue_payload
 
 # --------------------------------------------------------------------------
@@ -668,50 +669,15 @@ class TestACycleWithNoInjectedRunnerLaunchesTheRealCommand:
 # --------------------------------------------------------------------------
 
 
-def _enable_github_intake(root: Path, extra: str = "") -> None:
+def _enable_github_intake(root: Path, extra: str = "", *, enabled: bool = True) -> None:
+    """A real `[intake_github]` block. `enabled=False` (#231 D1) is what
+    `tests/test_steering.py` wants: intake off, steering on via `extra`.
+    """
+    flag = "true" if enabled else "false"
     (root / "kstrl.toml").write_text(
-        f'[intake_github]\nenabled = true\nrepo = "{REPO}"\ncomment_on_result = false\n' + extra,
+        f'[intake_github]\nenabled = {flag}\nrepo = "{REPO}"\ncomment_on_result = false\n' + extra,
         encoding="utf-8",
     )
-
-
-def _recording_runner(
-    calls: list[dict[str, Any]],
-    outcome: RunOutcome | None = None,
-) -> Any:
-    """A factory stand-in for the composition tests.
-
-    These tests are about whether the daemon reaches the runner AT ALL
-    with remotely-sourced work, so the runner records and returns; the
-    stub-driven classification tests own everything past that point.
-    """
-    result = outcome or RunOutcome(0)
-
-    def runner(
-        *,
-        root_dir: Path,
-        spec_path: Path,
-        project_name: str,
-        pause_before_pr_merge: bool,
-        timeout_seconds: float,
-        on_spawn: Callable[[int], None] | None = None,
-    ) -> RunOutcome:
-        # The spec is read at CALL time on purpose. The queue moves the
-        # item out of running/ when the cycle finishes, so a path
-        # captured here and read afterwards is already stale - which is
-        # correct behaviour, and would otherwise read as a defect.
-        calls.append(
-            {
-                "spec_path": spec_path,
-                "spec_exists": spec_path.exists(),
-                "spec_text": (spec_path.read_text(encoding="utf-8") if spec_path.exists() else ""),
-                "project_name": project_name,
-                "pause_before_pr_merge": pause_before_pr_merge,
-            }
-        )
-        return result
-
-    return runner
 
 
 class TestRemoteWorkSurvivesTheSeam:
@@ -746,7 +712,7 @@ class TestRemoteWorkSurvivesTheSeam:
         )
         calls: list[dict[str, Any]] = []
         with patch("kstrl.intake_github.run_gh", gh):
-            serve_cycle(tmp_path, runner=_recording_runner(calls))
+            serve_cycle(tmp_path, runner=recording_runner(calls))
 
         assert len(calls) == 1
         assert calls[0]["spec_exists"], (
@@ -766,7 +732,7 @@ class TestRemoteWorkSurvivesTheSeam:
         gh = _GhStub(issues=_issue_payload(_issue(4)))
         calls: list[dict[str, Any]] = []
         with patch("kstrl.intake_github.run_gh", gh):
-            serve_cycle(tmp_path, runner=_recording_runner(calls))
+            serve_cycle(tmp_path, runner=recording_runner(calls))
 
         assert len(calls) == 1
         assert calls[0]["pause_before_pr_merge"] is True

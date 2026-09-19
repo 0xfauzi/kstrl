@@ -1027,7 +1027,7 @@ Cycle: R10, milestone [R10: Control Loop](https://github.com/0xfauzi/kstrl/miles
 | 7 | 5.6 flow control | [#228](https://github.com/0xfauzi/kstrl/issues/228) | `[x]` merged in #354 |
 | 8 | 5.4 golden patterns | [#229](https://github.com/0xfauzi/kstrl/issues/229) | `[x]` merged in #355 |
 | 9 | 5.7 memory file | [#230](https://github.com/0xfauzi/kstrl/issues/230) | `[x]` |
-| 10 | 5.8 polled steering | [#231](https://github.com/0xfauzi/kstrl/issues/231) | `[ ]` |
+| 10 | 5.8 polled steering | [#231](https://github.com/0xfauzi/kstrl/issues/231) | `[x]` |
 | 11 | 5.11 wire the dead demotion triggers | [#232](https://github.com/0xfauzi/kstrl/issues/232) | `[x]` merged in #350 |
 | 12 | 5.10 iterate faster (blocked on entry criterion) | [#233](https://github.com/0xfauzi/kstrl/issues/233) | `[ ]` |
 | 13 | section 4, reframe ARCHITECTURE.md | [#234](https://github.com/0xfauzi/kstrl/issues/234) | `[ ]` |

@@ -280,6 +280,114 @@ do not expect label-then-sync-in-one-breath to work.
 
 ---
 
+## 3.5 Steering from a pull request
+
+**Read this before enabling it.** With this on, `ks serve` becomes a
+WRITER of your checkout: it appends to `[paths] memory`
+(`scripts/kstrl/memory.md` by default) on your local disk, from a
+comment somebody else typed on GitHub. The daemon does NOT commit that
+change - an uncommitted edit appearing under `git status` after a cycle
+is expected, and keeping it is your `git commit`.
+
+Off by default:
+
+```toml
+[intake_github]
+steer_enabled = true       # or KSTRL_INTAKE_GITHUB_STEER_ENABLED=1
+```
+
+Two commands, read from comments on any OPEN pull request `ks serve`
+itself opened (identified by the same footer `ks queue show` and the
+open-PR bound already key on):
+
+- `/memory <text>` appends `- <text> (from PR #<n> by @<login>, <date>)`
+  under the `## Guidance` heading in the memory file. kstrl finds that
+  heading and inserts at the end of ITS section - a section you added
+  after `## Guidance` keeps its own contents - and adds the heading if
+  the file has none at all. A record over 500 characters, an empty one,
+  or one containing a line starting with `#` (which would restructure
+  the file) is refused: kstrl posts why, in one comment, and writes
+  nothing.
+- `/iterate <text>` does the `/memory` step above (skipped when `<text>`
+  is empty) and then re-queues the work that produced this PR, found by
+  the PR's URL recorded on the queue item (PR 1 of this feature). A PR
+  from a manual `ks factory` run, or any PR no queue item recorded, gets
+  one comment back: `Cannot iterate: no queue item recorded this PR`,
+  and nothing is queued. The re-run does not start while this PR stays
+  open - the R10.7 open-PR bound holds it, the same as any other queued
+  item.
+
+Who may steer is `allowed_actors`, the SAME list section 3 above
+describes for issue labelling - there is no second allowlist. Non-empty,
+the comment's author must be on it; empty, GitHub's own
+`author_association` must be `OWNER`, `MEMBER` or `COLLABORATOR`. Every
+refusal - unauthorized, malformed, or the per-cycle cap - is posted or
+logged, never silent.
+
+The comment id is recorded in the processed ledger, under the same XDG
+control directory the issue adapter's ledger lives in, AFTER the write
+(or the re-queue) succeeds. A write that fails is retried the next
+cycle; one that succeeded is never re-applied, even if the acknowledgement
+comment itself fails to post.
+
+`max_items_per_sync` caps how many comments one cycle acts on, oldest
+first; the rest wait for the next poll.
+
+`dry_run = true` logs what a comment would do and writes or posts
+nothing.
+
+**Cost.** Every cycle steering is on adds 2 + P `gh` subprocess calls,
+where P is the number of open, kstrl-authored pull requests: one `gh
+repo view` and one `gh pr list` (both shared with issue intake's own
+resolution, when that is also on), plus one comments fetch per marked
+PR, plus one `gh pr comment` per command actually acted on. Off, it adds
+zero. Measured against this repository, per-call wall time over three
+runs each: `gh repo view` 0.39/0.59/0.51 s, `gh pr list`
+0.41/0.74/0.39 s, `gh api ... --paginate` 0.30 to 0.55 s.
+
+**The watermark.** Every cycle used to re-fetch a marked pull request's
+ENTIRE comment history, even the comments already recorded - measured on
+this repository, one PR with three comments: 130477 bytes with no
+filter, 2 bytes with a `since` set past all three. At the 60 second
+default poll that is roughly 179 MiB/day for a single long-lived PR, all
+of it already in the ledger. Each pull request now carries a persisted
+watermark, sent as `since` on the next fetch: the greatest `updated_at`
+among comments SEEN this cycle that is still less than the smallest
+`updated_at` among comments that did NOT resolve (capped, dry-run, or
+errored), or the greatest of everything seen when nothing is
+unresolved. A PR with nothing eligible keeps its previous watermark
+unchanged.
+
+Two corrections to the first version of this rule, both found by a
+review that ran a repro. First, the watermark is ordered by `updated_at`
+VALUE, never by a comment's position in the fetch, because the fetch is
+ascending by `created_at` while `since` filters on `updated_at`: an
+older comment edited after a newer one was created sits earlier in the
+fetch and later in `updated_at` order, so a rule keyed on fetch position
+could advance the watermark past a still-unresolved comment. Second,
+every VALIDATED comment counts as "seen", not only the ones that parsed
+as `/memory` or `/iterate` - a pull request carrying nothing but
+ordinary review prose used to get no watermark at all and was refetched
+in full every cycle, which is precisely the case the 130477-byte
+measurement came from. An ordinary comment is trivially resolved, so it
+still advances the watermark once seen.
+
+The watermark is derived only from `updated_at` values GitHub actually
+returned, never from a clock reading, so it cannot skip a comment this
+process has not seen.
+
+**The one behaviour change.** Because an authorisation refusal now also
+advances the watermark, widening `allowed_actors` later does not
+resurrect a comment that was refused before its pull request's watermark
+passed it - that comment is simply never fetched again. Before this, an
+unauthorised comment was re-read and re-refused on every cycle
+indefinitely, so widening the allowlist would pick it up on the very
+next poll. An operator who wants an old, already-refused comment acted
+on after widening the allowlist should edit it (which bumps its
+`updated_at` past the watermark) or leave a fresh comment instead.
+
+---
+
 ## 4. Scheduling with launchd
 
 Generate a LaunchAgent for this checkout. Every command below was run as

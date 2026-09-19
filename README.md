@@ -225,9 +225,12 @@ recognises its own scaffold; past about 1000 tokens it keeps the END of the
 file and drops the start, which is the opposite of golden patterns and is
 because this is the file that grows at the end. Your newest corrections
 survive, pruning from the top is what preserves them, and how much arrived and
-which end went are announced in the prompt and once on your terminal. Keep
-`## Guidance` as the last section: R10.10 will append your `/memory`
-pull-request comments to the end of the file.
+which end went are announced in the prompt and once on your terminal.
+`/memory <text>` and `/iterate <text>` comments on an open kstrl pull request
+are appended under `## Guidance` by `ks serve` when
+`[intake_github] steer_enabled` is on; kstrl finds that heading rather than
+appending to the end of the file, and adds the heading if the file has none.
+The daemon writes the file and does not commit it.
 
 ## Why not just use Claude Code directly?
 
@@ -432,12 +435,13 @@ enabled = false                # poll GitHub Issues for labelled work (opt-in ou
 repo = ""                      # owner/name to poll; empty resolves from the checkout's remote
 queued_label = "kstrl:queued"  # the trigger label; allowed_actors decides who may apply it
 label_prefix = "kstrl:"        # prefix for the state labels written back to the issue
-max_items_per_sync = 5         # upper bound on items admitted per sync
+max_items_per_sync = 5         # upper bound on items admitted per sync, and on steering comments acted on per cycle
 default_priority = 0           # queue priority given to remote-sourced items
 comment_on_result = true       # post the queue's verdict back to the source issue
-dry_run = false                # poll and log, but send no labels or comments
+dry_run = false                # poll and log, but send no labels or comments; also suppresses steering's memory-file write
 timeout_seconds = 60.0         # per-gh-invocation timeout in seconds
 allowed_actors = []            # logins allowed to apply the trigger label; empty = anyone who can label
+steer_enabled = false          # act on /memory and /iterate comments on open kstrl PRs (writes the memory file)
 
 # Continuous-intake daemon (R8.6)
 [serve]

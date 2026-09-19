@@ -51,13 +51,34 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   while the file is absent, empty, unreadable or still the unedited
   `ks init` scaffold, truncation announced in the prompt and warned once
   on your terminal with the path, and a `[paths] memory` naming no file
-  reported rather than silently dropped. Truncation keeps the END of
-  this file and drops the start, which is the opposite of golden
-  patterns: this is the file that grows at the end, so the newest
-  standing corrections are the ones that survive and pruning from the
-  top preserves them. Both notices name the end that went. Keep
-  `## Guidance` as the last heading in it: the polled-steering work
-  appends there.
+  reported rather than silently dropped. Truncation keeps the NEWEST
+  content of the `## Guidance` section and drops anything after that
+  section first, which is the opposite of golden patterns: golden
+  patterns is order-neutral and written once, while this file's newest
+  standing corrections are what survive here, and pruning the oldest
+  lines from the top of `## Guidance` is what preserves them. Both
+  notices name the section and the direction. See the polled-steering
+  entry below for where `/memory` finds `## Guidance` and adds it when
+  the file has none.
+- `[intake_github] steer_enabled` (`KSTRL_INTAKE_GITHUB_STEER_ENABLED`,
+  default off, #231): `ks serve` polls comments on open kstrl-authored
+  pull requests for `/memory <text>` and `/iterate <text>`. `/memory`
+  appends the text under `## Guidance` in the memory file, finding the
+  heading rather than assuming it is last, and adding it when the file
+  has none; `/iterate` does that and then re-queues the run that
+  produced the PR, matched by the PR's own URL (recorded on the queue
+  item since PR 1 of this feature), stopped at the next PR by the R8.6
+  merge gate. Who may steer is `allowed_actors` (#188) - no second
+  allowlist. The daemon writes the memory file and does not commit it;
+  the comment id is recorded in the processed ledger after the write
+  succeeds, so a failure retries and a success never re-applies. A
+  per-pull-request watermark (the `since` GitHub's comments endpoint
+  accepts) means an already-resolved cycle's comments are not
+  re-fetched; the one consequence is that widening `allowed_actors`
+  later does not resurrect a comment refused before its watermark
+  advanced past it. Costs 2 + P `gh` subprocess calls per poll cycle
+  when on (P = open, kstrl-authored pull requests), zero when off. See
+  [`docs/continuous-intake.md`](docs/continuous-intake.md) section 3.5.
 
 - Two of the autonomy ladder's five declared demotion triggers now fire.
   `DemotionTrigger` has listed `CALIBRATION_REGRESSION` and
