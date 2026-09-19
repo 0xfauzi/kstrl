@@ -705,3 +705,22 @@ def test_a_pr_with_only_prose_comments_still_advances_the_watermark(tmp_path: Pa
     assert len(api_calls) == 2
     assert "since=" not in api_calls[0][1]
     assert f"since={_updated_at(111)}" in api_calls[1][1]
+
+
+def test_a_refused_comment_still_advances_the_watermark(tmp_path: Path) -> None:
+    """The other half of C1's rule, and the control the addendum's own
+    plant list omitted. A refusal is TERMINAL: nothing will ever be acted
+    on for that comment, so it is resolved and must not hold the
+    watermark. Treating it as unresolved pins this PR's `since` below it
+    forever and refetches the whole comment history every cycle, which is
+    the cost C1 exists to remove, with nothing red.
+    """
+    _setup(tmp_path)
+    gh = _gh("/memory nope", login="drive-by", association="NONE")
+    _cycle(tmp_path, gh)
+    _cycle(tmp_path, gh)
+    assert _memory_path(tmp_path).read_text(encoding="utf-8") == DEFAULT_MEMORY
+    api_calls = gh.argv_for("api")
+    assert len(api_calls) == 2
+    assert "since=" not in api_calls[0][1]
+    assert f"since={_updated_at(111)}" in api_calls[1][1]
