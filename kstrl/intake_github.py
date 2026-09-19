@@ -1216,7 +1216,8 @@ def sync(
 
     if config.dry_run:
         # Planned, reported, nothing written. The CLI's --dry-run uses the
-        # same planner, so the two cannot disagree.
+        # same planner, so the two cannot disagree. Unlike steering's
+        # `_act_on_one`, a dry run here consumes no admission cap.
         result.would_enqueue = tuple(
             entry.issue.source_ref(repo) for entry in planned if entry.decision.admits
         )
@@ -1901,6 +1902,11 @@ def _act_on_one(
     if acted >= ctx.config.max_items_per_sync:
         result.skipped[key] = "the per-cycle cap is full; it waits for the next cycle"
         return False, False
+    # A dry run CONSUMES the cap here, deliberately: the preview has to show
+    # what a real cycle would do, cap included. `sync` differs, since its dry
+    # run consumes no admission cap, and that divergence is recorded rather
+    # than reconciled, because reconciling it means the shared gate
+    # abstraction neither channel has yet.
     if ctx.config.dry_run:
         result.skipped[key] = f"dry run: would apply {cmd.command} from comment {cmd.comment_id}"
         return False, True
