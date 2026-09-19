@@ -58,7 +58,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -1534,22 +1534,33 @@ def _pr_steering_commands(
     number: int,
     root_dir: Path,
     since: str,
-) -> tuple[list[SteerCommand], str]:
-    """Every steering command on one PR, oldest first, or an error string.
+) -> tuple[list[SteerCommand], tuple[str, ...], str]:
+    """Every steering command on one PR, plus every validated comment's
+    `updated_at`, or an error string.
 
     PR comments ARE issue comments, so this is the issues endpoint.
     `--paginate` merges the pages into one JSON array (measured against
-    gh 2.73.0 on a three-page response), and the endpoint already returns
-    them ascending by `created_at`, so "oldest first" costs no sort.
+    gh 2.73.0 on a three-page response). "Oldest first" is no longer
+    load-bearing for the watermark (#231 C1-fix-a: the fetch is ordered
+    by `created_at` while `since` filters on `updated_at`, so a caller
+    that trusted fetch order to mean `updated_at` order was wrong), but
+    it costs no sort either way, so it is left as GitHub returns it.
 
     `since` (#231 C1): appended as a query parameter when non-empty. It
-    is the persisted watermark - the greatest `updated_at` such that
-    every comment at or before it was resolved on some earlier cycle -
-    and GitHub filters the endpoint to comments whose `updated_at` is at
-    or after it, which is safe precisely because it keys on `updated_at`
-    and not `created_at`: a `/memory` edited after the cut is fetched
-    again. Measured on this repository: 130477 bytes for one PR's three
-    comments with no `since`, 2 bytes with a `since` after all three.
+    is the persisted watermark, and GitHub filters the endpoint to
+    comments whose `updated_at` is at or after it, which is safe
+    precisely because it keys on `updated_at` and not `created_at`: a
+    `/memory` edited after the cut is fetched again. Measured on this
+    repository: 130477 bytes for one PR's three comments with no
+    `since`, 2 bytes with a `since` after all three.
+
+    The second return value is `updated_at` for EVERY validated row,
+    commands and ordinary prose alike (#231 C1-fix-b: a row that never
+    parses as a command still counts as "seen" and, being trivially
+    resolved, can still advance the watermark - the earlier version fed
+    the watermark only from parsed commands, so a PR carrying nothing
+    but review prose was refetched in full every cycle, which is
+    exactly the case the 130477-byte measurement came from).
 
     A payload this cannot read is an ERROR, never an empty list: a gate
     that counts what it could not parse as zero is the fail-open shape
@@ -1566,24 +1577,30 @@ def _pr_steering_commands(
         cwd=root_dir,
     )
     if not result.ok:
-        return [], f"could not read comments on PR #{number}: {result.error}"
+        return [], (), f"could not read comments on PR #{number}: {result.error}"
     try:
         rows = json.loads(result.stdout or "[]")
     except Exception as exc:  # noqa: BLE001 - the parser's taxonomy is the parser's
-        return [], f"comments on PR #{number} were unparseable: {exc}"
+        return [], (), f"comments on PR #{number} were unparseable: {exc}"
     if not isinstance(rows, list):
-        return [], f"comments on PR #{number} returned {type(rows).__name__}, expected a list"
+        return [], (), f"comments on PR #{number} returned {type(rows).__name__}, expected a list"
     # #231 B8: loop-invariant (repo and number are both fixed for this
     # call), hoisted out of the loop below.
     url = _pr_url(repo, number)
     commands: list[SteerCommand] = []
+    seen: list[str] = []
     for index, row in enumerate(rows):
         if not _is_comment_record(row):
-            return [], f"comment row {index} on PR #{number} is not a comment record: {row!r:.120}"
+            return (
+                [],
+                (),
+                f"comment row {index} on PR #{number} is not a comment record: {row!r:.120}",
+            )
+        seen.append(str(row["updated_at"]))
         parsed = _parse_command(row, number, url)
         if parsed is not None:
             commands.append(parsed)
-    return commands, ""
+    return commands, tuple(seen), ""
 
 
 def _steer_refusal(config: GitHubIntakeConfig, cmd: SteerCommand) -> str:
@@ -1814,23 +1831,47 @@ def _apply_one(ctx: SteerContext, cmd: SteerCommand, result: SteerResult) -> boo
     return True
 
 
-def _advance_watermark(
-    watermarks: dict[int, str],
-    blocked: set[int],
-    number: int,
-    updated_at: str,
-) -> None:
-    """Record `updated_at` as resolved for PR `number`, this cycle.
+def _compute_watermarks(
+    seen_by_pr: Mapping[int, Sequence[str]],
+    unresolved_by_pr: Mapping[int, Sequence[str]],
+) -> dict[int, str]:
+    """The per-PR steering watermark this cycle earned (#231 C1, corrected
+    2026-09-19).
 
-    A no-op once `number` is `blocked`: the watermark rule is about a
-    PREFIX of a PR's comments, in fetch order, so one unresolved comment
-    stops any LATER comment of the same PR from advancing it either
-    (`_act_on_commands`'s docstring has the full rule).
+    Ordered by `updated_at` VALUE, never by position in the fetched
+    list (C1-fix-a): the fetch is ascending by `created_at` while
+    `since` filters on `updated_at`, so an older comment edited after a
+    newer one was created sits earlier in fetch order and later in
+    `updated_at` order. A rule that blocked "every later comment in
+    fetch order" once an unresolved one was seen could therefore have
+    already advanced the watermark past that same unresolved comment's
+    `updated_at` from an earlier, resolved row - skipping it forever.
+
+    `seen_by_pr` is every validated comment's `updated_at`, commands and
+    ordinary prose alike (C1-fix-b: only parsed commands used to feed
+    this and a prose-only PR never got a watermark at all).
+    `unresolved_by_pr` is the `updated_at` of every command that did NOT
+    resolve this cycle (capped, dry-run, or errored).
+
+    For each PR: with nothing unresolved, the watermark is the greatest
+    of everything seen. With something unresolved, it is the greatest
+    SEEN value strictly less than the LEAST unresolved value - strict,
+    because GitHub's `since` is inclusive, so a watermark equal to an
+    unresolved comment's `updated_at` would still skip it. A PR with no
+    such value (including one with nothing seen at all) is OMITTED
+    entirely, leaving its persisted watermark unchanged.
     """
-    if number in blocked:
-        return
-    if updated_at > watermarks.get(number, ""):
-        watermarks[number] = updated_at
+    watermarks: dict[int, str] = {}
+    for number, seen in seen_by_pr.items():
+        unresolved = unresolved_by_pr.get(number, ())
+        if unresolved:
+            floor = min(unresolved)
+            eligible = [t for t in seen if t < floor]
+        else:
+            eligible = list(seen)
+        if eligible:
+            watermarks[number] = max(eligible)
+    return watermarks
 
 
 def _act_on_one(
@@ -1869,6 +1910,7 @@ def _act_on_one(
 def _act_on_commands(
     ctx: SteerContext,
     commands: Sequence[SteerCommand],
+    seen_by_pr: Mapping[int, Sequence[str]],
     result: SteerResult,
 ) -> dict[int, str]:
     """The per-comment gate order: seen, authorised, capped, dry run, act.
@@ -1878,30 +1920,22 @@ def _act_on_commands(
     admission cap (#187 F6): a hundred comments kstrl will never act on
     must not crowd out the one it will.
 
-    Returns the per-PR watermark THIS CYCLE earned (#231 C1): for each
-    PR number, the greatest `updated_at` among its comments such that
-    every comment at or before it, in fetch order, was RESOLVED -
-    already in the ledger, terminally refused (authorisation or format),
-    or freshly applied with no error. A comment the per-cycle cap
-    deferred, one a dry run only observed, or one that errored holds its
-    PR's watermark below itself - each is retried on a future cycle, and
-    `since` must not skip past it. Once a PR has produced one such
-    unresolved comment, no LATER comment of that same PR (in fetch order)
-    can advance its watermark either, because the rule is about a
-    PREFIX: `since` must still surface the earlier, unresolved one.
+    Returns the per-PR watermark THIS CYCLE earned, via
+    `_compute_watermarks` (#231 C1, corrected 2026-09-19): every command
+    that did not resolve (capped, dry-run, or errored) is collected by
+    PR number and handed to it alongside `seen_by_pr`, which carries
+    every validated comment's `updated_at` regardless of whether it
+    parsed as a command.
     """
     acted = 0
-    blocked: set[int] = set()
-    watermarks: dict[int, str] = {}
+    unresolved_by_pr: dict[int, list[str]] = {}
     for cmd in commands:
         resolved, consumed_cap = _act_on_one(ctx, cmd, result, acted)
         if consumed_cap:
             acted += 1
         if resolved is False:
-            blocked.add(cmd.pr_number)
-        else:
-            _advance_watermark(watermarks, blocked, cmd.pr_number, cmd.updated_at)
-    return watermarks
+            unresolved_by_pr.setdefault(cmd.pr_number, []).append(cmd.updated_at)
+    return _compute_watermarks(seen_by_pr, unresolved_by_pr)
 
 
 def poll_steering(
@@ -1956,13 +1990,16 @@ def poll_steering(
     result.repo = repo
     ledger = ProcessedLedger(root_dir).load()
     commands: list[SteerCommand] = []
+    seen_by_pr: dict[int, tuple[str, ...]] = {}
     for number in marked_numbers:
         since = ledger.watermark(f"{repo}#{number}")
-        found, parse_error = _pr_steering_commands(config, repo, number, root_dir, since)
+        found, seen, parse_error = _pr_steering_commands(config, repo, number, root_dir, since)
         if parse_error:
             result.errors += (parse_error,)
             continue
         commands.extend(found)
+        if seen:
+            seen_by_pr[number] = seen
     ctx = SteerContext(
         config=config,
         root_dir=root_dir,
@@ -1973,7 +2010,7 @@ def poll_steering(
         commit_guard=commit_guard,
         memory_spec=_memory_spec(root_dir),
     )
-    watermarks = _act_on_commands(ctx, commands, result)
+    watermarks = _act_on_commands(ctx, commands, seen_by_pr, result)
     for number, value in watermarks.items():
         ledger.set_watermark(f"{repo}#{number}", value)
     return result

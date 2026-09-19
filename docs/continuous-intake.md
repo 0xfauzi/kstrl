@@ -351,12 +351,28 @@ this repository, one PR with three comments: 130477 bytes with no
 filter, 2 bytes with a `since` set past all three. At the 60 second
 default poll that is roughly 179 MiB/day for a single long-lived PR, all
 of it already in the ledger. Each pull request now carries a persisted
-watermark - the greatest comment `updated_at` such that every comment at
-or before it was resolved (recorded in the ledger, or terminally
-refused) on some earlier cycle - sent as `since` on the next fetch. A
-comment the per-cycle cap deferred, or one that errored, holds the
-watermark below itself, so it is still refetched and retried. The
-watermark is derived only from `updated_at` values GitHub actually
+watermark, sent as `since` on the next fetch: the greatest `updated_at`
+among comments SEEN this cycle that is still less than the smallest
+`updated_at` among comments that did NOT resolve (capped, dry-run, or
+errored), or the greatest of everything seen when nothing is
+unresolved. A PR with nothing eligible keeps its previous watermark
+unchanged.
+
+Two corrections to the first version of this rule, both found by a
+review that ran a repro. First, the watermark is ordered by `updated_at`
+VALUE, never by a comment's position in the fetch, because the fetch is
+ascending by `created_at` while `since` filters on `updated_at`: an
+older comment edited after a newer one was created sits earlier in the
+fetch and later in `updated_at` order, so a rule keyed on fetch position
+could advance the watermark past a still-unresolved comment. Second,
+every VALIDATED comment counts as "seen", not only the ones that parsed
+as `/memory` or `/iterate` - a pull request carrying nothing but
+ordinary review prose used to get no watermark at all and was refetched
+in full every cycle, which is precisely the case the 130477-byte
+measurement came from. An ordinary comment is trivially resolved, so it
+still advances the watermark once seen.
+
+The watermark is derived only from `updated_at` values GitHub actually
 returned, never from a clock reading, so it cannot skip a comment this
 process has not seen.
 

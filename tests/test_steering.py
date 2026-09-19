@@ -569,3 +569,68 @@ def test_the_cap_deferred_comment_still_blocks_the_watermark(tmp_path: Path) -> 
     # still asks for everything from 112 onward, which is what lets 113
     # (deferred, never resolved in cycle 1) be seen again.
     assert f"since={_updated_at(112)}" in api_calls[1][1]
+
+
+def test_watermark_orders_by_updated_at_not_fetch_position(tmp_path: Path) -> None:
+    """C1-fix-a's control: the fetch is ascending by `created_at`, `since`
+    filters on `updated_at`, and those are not the same order.
+
+    Comment 111 is fetched FIRST (fetch position 0) and resolves, but was
+    EDITED after comment 112 (fetch position 1) was created, so its
+    `updated_at` is the LATER of the two. Comment 112 is deferred by the
+    cap and never resolves this cycle. A rule keyed on fetch position
+    would advance the watermark to comment 111's `updated_at` before it
+    ever saw comment 112 was unresolved, silently skipping 112 forever.
+    The corrected rule orders by `updated_at` value and must not advance
+    the watermark past comment 112's still-unresolved timestamp.
+    """
+    _setup(tmp_path, extra="max_items_per_sync = 1\n")
+    gh = _SteerGh(
+        prs=[marked(7)],
+        comments={
+            7: [
+                _comment(111, "/memory one", updated_at=_updated_at(200)),
+                _comment(112, "/memory two", updated_at=_updated_at(50)),
+            ]
+        },
+    )
+    _cycle(tmp_path, gh)
+    body = _memory_path(tmp_path).read_text(encoding="utf-8")
+    assert "- one (" in body
+    assert "- two (" not in body
+    _cycle(tmp_path, gh)
+    api_calls = gh.argv_for("api")
+    assert len(api_calls) == 2
+    # No watermark was eligible after cycle 1 (comment 111's later
+    # updated_at is not less than comment 112's, the unresolved floor),
+    # so the PR is omitted entirely and cycle 2 still asks for
+    # everything.
+    assert "since=" not in api_calls[1][1]
+    body = _memory_path(tmp_path).read_text(encoding="utf-8")
+    assert "- two (" in body
+    # Now both are resolved: a third cycle's watermark is the greatest
+    # of the two, which is comment 111's (200), not comment 112's (50).
+    _cycle(tmp_path, gh)
+    api_calls = gh.argv_for("api")
+    assert len(api_calls) == 3
+    assert f"since={_updated_at(200)}" in api_calls[2][1]
+
+
+def test_a_pr_with_only_prose_comments_still_advances_the_watermark(tmp_path: Path) -> None:
+    """C1-fix-b's control. Only comments that parsed as a command used to
+    feed the watermark, so a PR carrying nothing but ordinary review
+    prose was refetched in full every cycle - precisely the case the
+    130477-byte measurement came from. A validated comment that is not a
+    command is trivially resolved and must advance the watermark too.
+    """
+    _setup(tmp_path)
+    gh = _SteerGh(
+        prs=[marked(7)],
+        comments={7: [_comment(111, "Looks good, nice work.")]},
+    )
+    _cycle(tmp_path, gh)
+    _cycle(tmp_path, gh)
+    api_calls = gh.argv_for("api")
+    assert len(api_calls) == 2
+    assert "since=" not in api_calls[0][1]
+    assert f"since={_updated_at(111)}" in api_calls[1][1]
