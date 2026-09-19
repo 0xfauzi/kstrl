@@ -934,16 +934,22 @@ class TestCheckMutationScore:
 
     @pytest.mark.parametrize(
         "changed",
-        [["readme.md"], ["test_main.py", "tests/test_foo.py"]],
-        ids=["no-python", "only-test-python"],
+        [
+            ["readme.md"],
+            ["test_main.py", "tests/test_foo.py"],
+            ["pkg/foo_test.py"],
+        ],
+        ids=["no-python", "only-test-python", "test-suffix-not-prefix"],
     )
     def test_no_mutable_file_changed_measures_nothing(
         self,
         tmp_path: Path,
         changed: list[str],
     ) -> None:
-        """Both halves of the filter: the ``.py`` clause and the
-        ``startswith("test")`` clause."""
+        """Both halves of the filter: the ``.py`` clause and
+        ``is_test_path`` (#152 simplify pass; was a bare
+        ``not f.startswith("test")``, which missed ``pkg/foo_test.py``
+        entirely - the third case pins that fix)."""
         with (
             patch("shutil.which", return_value="/usr/bin/mutmut"),
             patch("kstrl.verify.git.get_diff_names", return_value=changed),

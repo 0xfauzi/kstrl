@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from kstrl.findings import Finding
 from kstrl.manifest import Component, Manifest
 from kstrl.pr import _generate_pr_body, is_gh_available
 
@@ -94,3 +95,22 @@ class TestGeneratePrBody:
         manifest = _test_manifest()
         body = _generate_pr_body(manifest.components[0], manifest)
         assert "kstrl" in body
+
+    def test_body_includes_an_adequacy_finding(self) -> None:
+        """#152 simplify pass: an advisory adequacy finding (patch
+        coverage, or Layer 0's test-diff discipline) is invisible
+        everywhere but the manifest, the journal and events.jsonl unless
+        the callouts predicate admits it - the same trap R10.3 closed
+        for set-point disagreements."""
+        manifest = _test_manifest()
+        manifest.components[0].findings = [
+            Finding.adequacy_finding(
+                category="patch_coverage",
+                explanation="patch coverage 50.0% (3/6 changed executable lines): mod.py 3/6",
+                severity="advisory",
+                suggestion="Advisory only: no floor is configured and none blocks.",
+            )
+        ]
+        body = _generate_pr_body(manifest.components[0], manifest)
+        assert "adequacy_patch_coverage" in body
+        assert "50.0%" in body

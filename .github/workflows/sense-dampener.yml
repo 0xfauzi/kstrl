@@ -46,19 +46,25 @@ jobs:
     # measured=False mechanism this whole feature rests on would be unreachable
     # in the only place the workflow exercises it.
     #
-    # The worst case is not one timeout. FIVE subprocesses in one sense run are
-    # each handed KSTRL_TIMEOUT_VERIFY in full: the three gates, and the two
-    # halves of the dead-code phase when it is on. At 1800 seconds that is 9000
-    # seconds, so 150 minutes, and the ten on top is for checkout, uv install
-    # and `uv sync` - measured at 9 seconds on run 34130546828 with a warm uv
-    # cache, so ten minutes is room rather than an estimate.
+    # The worst case is not one timeout. SIX call sites in one sense run are
+    # each handed a KSTRL_TIMEOUT_VERIFY-sized budget: the three gates, the
+    # two halves of the dead-code phase when it is on, and R8.5 Layer 1's
+    # patch coverage run (#152) when [adequacy] patch_coverage is on. Patch
+    # coverage counts as ONE budget here, not two, even though it spawns
+    # coverage twice internally (the pytest data run, then `coverage json`):
+    # the two spawns SHARE one budget rather than each getting the full
+    # amount, so patch coverage cannot spend more than the other five spend
+    # each - see kstrl/verify.py::_coverage_report. At 1800 seconds that is
+    # 10800 seconds, so 180 minutes, and the ten on top is for checkout, uv
+    # install and `uv sync` - measured at 9 seconds on run 34130546828 with a
+    # warm uv cache, so ten minutes is room rather than an estimate.
     #
     # Round 1 of review set this to 40 with a comment that said three gates may
     # each spend the budget, which is 90 minutes: the premise and the number
     # disagreed, and the test underneath pinned ONE gate's budget so it stayed
-    # green. It now counts the spenders out of kstrl/verify.py, so a sixth one
+    # green. It now counts the spenders out of kstrl/verify.py, so a seventh one
     # fails here rather than on a runner.
-    timeout-minutes: 160
+    timeout-minutes: 190
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

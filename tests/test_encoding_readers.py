@@ -150,7 +150,10 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "tui/runs.py": 2,
     "tui/session.py": 1,
     "tui/tail.py": 2,
-    "verify.py": 4,
+    # 5 since #152: check_patch_coverage's coverage-report read
+    # (json_path.read_text(encoding='utf-8')), alongside CLAUDE.md, the
+    # bad-patterns scan and the self-critique progress log.
+    "verify.py": 5,
     "workqueue.py": 6,
 }
 
@@ -258,6 +261,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "tui/session.py open(run_paths.root / 'orchestrator.log', 'a', buffering=1, encoding='",
     "verify.py (root / 'CLAUDE.md').read_text(encoding='utf-8')",
     "verify.py full.read_text(encoding='utf-8', errors='replace')",
+    "verify.py json_path.read_text(encoding='utf-8')",
     "verify.py progress_path.read_text(encoding='utf-8')",
     "workqueue.py meta_path.read_text(encoding='utf-8')",
     "workqueue.py open(lock_path, 'a+', encoding='utf-8')",
