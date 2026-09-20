@@ -45,9 +45,9 @@ repositories; recording what is wrong today is the point.
 
 It refuses to overwrite an existing baseline. Pass `--force` when you mean to
 replace one, and do it in its own commit so the diff shows exactly what moved.
-Regenerating it on a branch cannot flatter that branch's own report: the
-workflow reads the baseline from the base ref, not from the pull request's
-checkout.
+Regenerating it on a branch cannot flatter that branch's own report, as long as
+the workflow reads the baseline from the base ref rather than from the pull
+request's checkout.
 
 Two things to get right when you write one:
 
@@ -70,11 +70,12 @@ is a REGRESSION (see below), so the holes are visible rather than quiet.
 
 The timeout is the other usual cause. kstrl's own test suite takes about 327
 seconds and the default verify timeout is 300, so its own baseline is generated
-with `KSTRL_TIMEOUT_VERIFY=1800` and the workflow sets the same value. A
-baseline and a comparison measured at different timeouts are not a comparison,
-and that is enforced rather than asked for: the baseline records a digest of
-the three verify commands and the timeout, and `--compare-baseline` refuses a
-mismatch with exit 2, naming both digests.
+with `KSTRL_TIMEOUT_VERIFY=1800`, pinned as `BASELINE_TIMEOUT_SECONDS` in
+`tests/test_sense_committed_baseline.py`; your workflow must set the same
+value. A baseline and a comparison measured at different timeouts are not a
+comparison, and that is enforced rather than asked for: the baseline records
+a digest of the three verify commands and the timeout, and
+`--compare-baseline` refuses a mismatch with exit 2, naming both digests.
 
 ## Comparing a branch
 
@@ -187,6 +188,25 @@ a note rather than a refusal is a `sense_schema_version` that has moved since
 the baseline was written: the document still parses, and refusing would break
 every consumer's pull-request check the moment the sensor version bumped.
 
+## kstrl does not run this on itself
+
+`main` is green here, so the set of failures a branch ADDS and the set it HAS
+are the same set, and `scripts/kstrl/sense-baseline.json` records no signatures
+at all. The second set is what the `test` and `lint` jobs in
+`.github/workflows/ci.yml` already report, and unlike a dampener comment those
+can fail the build. Measured over five runs before it was deleted, the job took
+360 to 454 seconds per push to repeat them; over the last seven pull requests it
+reported one finding twice, and both times the finding was WRONG: a false
+positive, the secret-pattern fixture in `tests/test_verify.py` matching itself
+rather than a real secret. That scanner defect is now filed as #399. So the
+job went in #394, and `tests/test_own_ci_workflows.py` pins that this
+repository's test suite runs in one workflow only.
+
+The baseline file stays: it is the worked example this page points at, and
+`tests/test_sense_committed_baseline.py` checks it still matches this checkout.
+The dampener is for brownfield repositories, which is what the rest of this
+page is about.
+
 ## Adding it to a repository
 
 1. Write and commit a baseline:
@@ -197,8 +217,13 @@ every consumer's pull-request check the moment the sensor version bumped.
    git commit -m "chore: record the sense baseline"
    ```
 
-2. Copy `.github/workflows/sense-dampener.yml` from this repository. Six
-   things in it are load-bearing and easy to lose:
+2. Add a `pull_request` workflow that checks the branch out, runs `uv run ks
+   sense --compare-baseline <the baseline from the base ref> --format
+   markdown`, and posts the report as one pull-request comment.
+   [`docs/examples/sense-dampener.yml`](examples/sense-dampener.yml) is a
+   complete worked example; copy it and adjust `KSTRL_TIMEOUT_VERIFY` to what
+   your own baseline was written at. Six things in it are load-bearing and
+   easy to lose:
 
    - `fetch-depth: 0` on the checkout. `ks sense` asks git for the diff
      against the base strictly; a shallow clone cannot reach the base and the
@@ -211,11 +236,28 @@ every consumer's pull-request check the moment the sensor version bumped.
      regenerates its baseline and commits it is then compared against its own
      signatures, and reports no regression. The step names the file after the
      base commit, so the report says which ref supplied the yardstick.
-   - `timeout-minutes` above the WORST case, which is not one timeout. Five
+   - `timeout-minutes` above the WORST case, which is not one timeout. Six
      subprocesses in a sense run are each handed `KSTRL_TIMEOUT_VERIFY` in
-     full, so at 1800 seconds the job needs 150 minutes plus install. A cap
-     below that is a cancelled job, and a cancelled job produces no report at
-     all - which is the one state this feature cannot report on.
+     full - the three gates, the two halves of the dead-code phase, and R8.5
+     Layer 1's patch coverage run - so at 1800 seconds the job needs 180
+     minutes plus install. This number has been wrong before; re-derive it
+     rather than trust it, by walking `kstrl/verify.py` for every call that
+     hands it `config.subprocess_timeout`:
+
+     ```
+     uv run python3 -c "
+     import ast, pathlib
+     src = pathlib.Path('kstrl/verify.py').read_text()
+     calls = [a for n in ast.walk(ast.parse(src)) if isinstance(n, ast.Call)
+              for a in [*n.args, *(k.value for k in n.keywords)]
+              if isinstance(a, ast.Attribute) and a.attr == 'subprocess_timeout']
+     print(len(calls))
+     "
+     ```
+
+     prints 6 on this checkout. A cap below the worst case is a cancelled
+     job, and a cancelled job produces no report at all - which is the one
+     state this feature cannot report on.
    - `--base "$BASE_REF"` passed explicitly, from the event payload through an
      environment variable. A `pull_request` checkout is a detached merge ref;
      do not make base detection guess, and do not interpolate a ref name into
@@ -226,9 +268,9 @@ every consumer's pull-request check the moment the sensor version bumped.
      unconditionally, which a fork author can read. Do NOT reach for
      `pull_request_target` to fix this: it runs the pull request's own test
      suite with a write token.
-   - the last step, which fails on ANY nonzero exit from `ks sense`. As
-     shipped that is only the sensor failing, because without
-     `--fail-on-regression` a regression exits 0. It is also the half of
+   - the last step, which fails on ANY nonzero exit from `ks sense`. Without
+     `--fail-on-regression` that is only the sensor failing, because a
+     regression exits 0. It is also the half of
      graduating to blocking that is easy to lose: see below.
 
 3. Set `KSTRL_TIMEOUT_VERIFY` in the workflow's env to whatever you generated
@@ -238,7 +280,8 @@ every consumer's pull-request check the moment the sensor version bumped.
 
 In this order, and do not skip the middle step:
 
-1. **Advisory.** Leave it as shipped. Read the comments it posts.
+1. **Advisory.** Start without `--fail-on-regression`. Read the comments it
+   posts.
 2. **Blocking.** Once the comments have been right on several real pull
    requests, add `--fail-on-regression` to the `ks sense` invocation in the
    workflow. That is the whole change, and it is only the whole change because
