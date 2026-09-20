@@ -1585,9 +1585,19 @@ class TestTheRefusalNamesTheRightKey:
 
         tree = parsed(KSTRL_PACKAGE / "factory.py")
         fn = next(
-            node
-            for node in ast.walk(tree)
-            if isinstance(node, ast.FunctionDef) and node.name == "merge_gate_unreachable_warning"
+            (
+                node
+                for node in ast.walk(tree)
+                if isinstance(node, ast.FunctionDef)
+                and node.name == "merge_gate_unreachable_warning"
+            ),
+            None,
+        )
+        assert fn is not None, (
+            "merge_gate_unreachable_warning is no longer a module-level "
+            "function in kstrl/factory.py. Without the default this "
+            "raised a bare StopIteration, which reads identically whether "
+            "the subject moved or this walk broke (#193)."
         )
         reads = {
             node.attr

@@ -56,6 +56,7 @@ from kstrl.pipeline import ComponentPipeline, PipelineHooks
 from kstrl.prd import PRD
 from kstrl.review import ReviewResult
 from kstrl.runenvelope import RunEnvelope
+from kstrl.runstate import RunState
 from kstrl.scope import ComponentScope, RunScope
 from kstrl.security import SecurityResult
 from kstrl.ui.plain import PlainUI
@@ -201,7 +202,6 @@ def _pipeline(
         ),
         security_selection=None,
         knowledge_config=KnowledgeConfig(enabled=True),
-        factory_result=FactoryResult(),
         hooks=PipelineHooks(
             run_mechanical_verification=(
                 run_mechanical_verification
@@ -223,10 +223,10 @@ def _pipeline(
         ),
         run_scope=RunScope.resolve(_manifest([comp]), root, _base_config(root)),
         run_envelope=RunEnvelope.load(root),
-        worktree_paths={comp.id: wt_path},
-        component_contexts={},
-        fresh_base_retry_ids=set(),
-        component_failure_signatures={},
+        run_state=RunState(
+            factory_result=FactoryResult(),
+            worktree_paths={comp.id: wt_path},
+        ),
     )
     if knowledge_prefix is not None:
         pipeline.record_injected_knowledge(comp.id, knowledge_prefix)

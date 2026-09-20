@@ -27,9 +27,12 @@ from collections.abc import Iterator
 from concurrent.futures import Future
 from concurrent.futures import wait as wait_for_futures
 from pathlib import Path
+from typing import Any
+from unittest.mock import patch
 
 import pytest
 
+from kstrl import factory as factory_mod
 from kstrl.agents.base import Agent
 from kstrl.agents.claude_code import ClaudeCodeAgent
 from kstrl.agents.claude_sdk import ClaudeSdkAgent
@@ -2057,3 +2060,84 @@ class TestSubprocessTimeoutAudit:
         it, so the limit cannot quietly change into something else.
         """
         assert _unbounded_wait_findings(ast.parse("proc.wait(timeout=grace)\n")) == []
+
+
+class TestFreshBaseRetryReachesTheScheduler:
+    """#193: the pipeline's fresh-base request must reach the scheduler.
+
+    ``ComponentPipeline`` writes ``fresh_base_retry_ids`` (pipeline.py
+    .add) and ``_launch_component`` reads it (factory.py) to pass
+    ``fresh_from_base=True`` into ``_setup_worktree``. The two halves are
+    the SAME set object, and nothing in the suite noticed when it stopped
+    being: a measured plant replacing the constructor argument with
+    ``set(fresh_base_retry_ids)`` left tests/test_factory.py,
+    tests/test_pipeline.py and this file at 187 passed, the control's
+    exact line. This test is the missing half: it asserts the
+    SCHEDULER's read, not the pipeline's write.
+    """
+
+    def test_a_timeout_retry_recreates_the_worktree_from_base(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        _init_repo(tmp_path)
+
+        manifest = Manifest(
+            version="1",
+            spec_file="spec.md",
+            project_name="t",
+            base_branch="main",
+            single_pr=False,
+            components=[
+                Component(
+                    "a",
+                    "A",
+                    "",
+                    [],
+                    "scripts/kstrl/feature/a/prd.json",
+                    "kstrl/factory/a",
+                )
+            ],
+        )
+        config = FactoryConfig(
+            use_worktrees=True,
+            create_prs=False,
+            max_parallel=1,
+            max_retries=1,
+            retry_delay=0,
+            review_mode="skip",
+        )
+        base = KstrlConfig(
+            prompt_file=tmp_path / "scripts" / "kstrl" / "prompt.md",
+            prd_file=tmp_path / "scripts" / "kstrl" / "prd.json",
+            sleep_seconds=0,
+            agent_cmd="echo test",
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
+            ui_mode="plain",
+            no_color=True,
+        )
+
+        fresh_flags: list[bool] = []
+        real_setup = factory_mod._setup_worktree
+
+        def _spy(*args: Any, **kwargs: Any) -> Path:
+            fresh_flags.append(bool(kwargs.get("fresh_from_base", False)))
+            return real_setup(*args, **kwargs)
+
+        monkeypatch.setattr(factory_mod, "_setup_worktree", _spy)
+
+        killed = ComponentResult("a", success=False, error="agent timeout after 30s")
+        with patch("kstrl.factory._run_component", return_value=killed):
+            result = run_factory(manifest, config, base, PlainUI(no_color=True), tmp_path)
+
+        assert "a" in result.failed
+        assert fresh_flags == [False, True], (
+            "the scheduler did not see the pipeline's fresh-base request. "
+            "pipeline.fresh_base_retry_ids and the scheduler's set must be "
+            "the SAME object (#193): a copy anywhere between "
+            "RunState construction and the pipeline property silently "
+            "retries the component on the killed attempt's dirty branch."
+        )

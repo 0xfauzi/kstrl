@@ -68,10 +68,19 @@ EXPECTED_SIGNATURE_CONTAINER_SITES: dict[tuple[str, str], int] = {
     # The recorder itself, and its three callers: fail, retry_or_fail
     # and _fail_pr_flow.
     ("kstrl/pipeline.py", "self._record_failure_signatures"): 3,
-    # The mapping, under all three spellings it is reached by.
-    ("kstrl/pipeline.py", "self.component_failure_signatures"): 9,
-    ("kstrl/pipeline.py", "component_failure_signatures"): 1,
-    ("kstrl/factory.py", "component_failure_signatures"): 5,
+    # The mapping, under every spelling it is reached by. #193 moved it
+    # into RunState: the pipeline's ``self.component_failure_signatures``
+    # is now a read-only property over ``self.run_state...``, which is
+    # why one of its nine occurrences moved to the line below it, and the
+    # factory reads the same mapping through its ``run_state`` local
+    # rather than through a local of its own. The chokepoint itself is
+    # unchanged: a check name still reaches the journal through this one
+    # mapping or it does not reach it at all.
+    ("kstrl/pipeline.py", "self.component_failure_signatures"): 8,
+    ("kstrl/pipeline.py", "self.run_state.component_failure_signatures"): 1,
+    ("kstrl/factory.py", "run_state.component_failure_signatures"): 3,
+    # The declaration, which is where the mapping now lives.
+    ("kstrl/runstate.py", "component_failure_signatures"): 1,
     # The reader: record_run takes the mapping as an argument and writes
     # each component's list into the journal entry.
     ("kstrl/evolution.py", "failure_signatures"): 4,

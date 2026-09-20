@@ -34,6 +34,7 @@ from kstrl.pipeline import ComponentPipeline, FailureAction, PipelineHooks, Veri
 from kstrl.policy import PolicyConfig
 from kstrl.review import ReviewResult
 from kstrl.runenvelope import RunEnvelope
+from kstrl.runstate import RunState
 from kstrl.scope import RunScope
 from kstrl.security import SecurityResult
 from kstrl.ui.plain import PlainUI
@@ -159,15 +160,14 @@ def _pipeline(
         ),
         security_selection=None,
         knowledge_config=KnowledgeConfig(enabled=False),
-        factory_result=FactoryResult(),
         notify=NotifyHooks(NotifyConfig(), run_id="run-test", project="t"),
         hooks=hooks,
         run_scope=RunScope({}),
         run_envelope=run_envelope if run_envelope is not None else RunEnvelope.load(root),
-        worktree_paths={c.id: root for c in comps},
-        component_contexts={},
-        fresh_base_retry_ids=set(),
-        component_failure_signatures={},
+        run_state=RunState(
+            factory_result=FactoryResult(),
+            worktree_paths={c.id: root for c in comps},
+        ),
     )
 
 

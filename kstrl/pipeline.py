@@ -89,6 +89,7 @@ from kstrl.review import (
     setpoint_retry_context,
 )
 from kstrl.runenvelope import RunEnvelope
+from kstrl.runstate import RunState
 from kstrl.scope import RunScope
 from kstrl.security import SecurityConfig, SecurityMode, SecurityResult
 from kstrl.statedir import ControlStateError
@@ -471,11 +472,14 @@ class ComponentPipeline:
     """Drives one component result through the phase chain and owns every
     component state transition (R7.3).
 
-    Shared mutable structures (``worktree_paths``, ``component_contexts``,
-    ``fresh_base_retry_ids``, ``component_failure_signatures``,
-    ``factory_result``) are passed in by the factory and shared with its
-    scheduler; the pipeline is the only writer for transition-related
-    fields, the scheduler for provisioning-related ones.
+    The five mutable structures this pipeline shares with the factory's
+    scheduler arrive in one :class:`kstrl.runstate.RunState` and are
+    exposed here as read-only properties, so no reader of
+    ``pipeline.worktree_paths`` and friends changed on #193. The
+    ownership rule, the per-operation writer split and the measured
+    consequence of copying any of them instead of aliasing it are in
+    ``kstrl/runstate.py``'s module docstring, which is where the rule
+    now lives: this class is only one of the two writers.
     """
 
     def __init__(
@@ -491,22 +495,20 @@ class ComponentPipeline:
         bus: ev.EventBus,
         journal_path: Path | None,
         run_paths: ev.RunPaths | None = None,
-        usage_paths: ev.RunPaths | None = None,
         interaction: InteractionChannel | None = None,
         notify: NotifyHooks,
         review_selection: AdversarialAgentSelection,
         security_selection: AdversarialAgentSelection | None,
         knowledge_config: KnowledgeConfig,
-        factory_result: FactoryResult,
         run_scope: RunScope,
         # #192: required, with no default and no ``or ...load()``
         # fallback - that fallback is the defect the envelope removes.
         run_envelope: RunEnvelope,
         hooks: PipelineHooks,
-        worktree_paths: dict[str, Path],
-        component_contexts: dict[str, str],
-        fresh_base_retry_ids: set[str],
-        component_failure_signatures: dict[str, list[str]],
+        # #193: the five mutable structures the factory and this
+        # pipeline share, in one object. Handed over, never copied - see
+        # kstrl/runstate.py.
+        run_state: RunState,
     ) -> None:
         self.manifest = manifest
         self.manifest_path = manifest_path
@@ -560,12 +562,6 @@ class ComponentPipeline:
         self.bus = bus
         self.journal_path = journal_path
         self.run_paths = run_paths
-        # R8: where engineer-loop usage snapshots live. Deliberately
-        # SEPARATE from run_paths, which is None when progress logging
-        # is off: accounting must survive the observability opt-out
-        # (review finding P2-d). None only for callers that never run
-        # the abort-salvage path (tests, embedded pipelines).
-        self.usage_paths = usage_paths
         # PR A: the interaction seam. Defaults to today's terminal
         # behavior; embedded mode (PR F) injects a QueueInteractionChannel.
         self.interaction: InteractionChannel = (
@@ -580,16 +576,12 @@ class ComponentPipeline:
         self.review_selection = review_selection
         self.security_selection = security_selection
         self.knowledge_config = knowledge_config
-        self.factory_result = factory_result
         # #269: the run's plan-time scope snapshot. The pipeline READS
         # it and never resolves one of its own, which is what stops
         # Phase 1 and the in-loop guard drifting apart.
         self.run_scope = run_scope
         self.hooks = hooks
-        self.worktree_paths = worktree_paths
-        self.component_contexts = component_contexts
-        self.fresh_base_retry_ids = fresh_base_retry_ids
-        self.component_failure_signatures = component_failure_signatures
+        self.run_state = run_state
 
         # R3.1 cost meter: per-component, per-phase usage rollup plus a
         # run-level total. Phases: "engineer" (loop iterations, reported
@@ -668,6 +660,53 @@ class ComponentPipeline:
         # verify + review + security + PR flow), not just the engineer
         # loop, and backstop-timeout failures stop recording 0.0.
         self._attempt_started_monotonic: dict[str, float] = {}
+
+    # ------------------------------------------------------------------
+    # Shared run state (#193)
+    # ------------------------------------------------------------------
+    #
+    # Read-only on purpose. Nothing in kstrl/ or tests/ rebinds any of
+    # these five names; every writer mutates the object in place, and a
+    # setter would be the one way to replace a shared structure with a
+    # private one. Same reason ``usage_paths`` below is derived rather
+    # than stored.
+
+    @property
+    def factory_result(self) -> FactoryResult:
+        return self.run_state.factory_result
+
+    @property
+    def worktree_paths(self) -> dict[str, Path]:
+        return self.run_state.worktree_paths
+
+    @property
+    def component_contexts(self) -> dict[str, str]:
+        return self.run_state.component_contexts
+
+    @property
+    def fresh_base_retry_ids(self) -> set[str]:
+        return self.run_state.fresh_base_retry_ids
+
+    @property
+    def component_failure_signatures(self) -> dict[str, list[str]]:
+        return self.run_state.component_failure_signatures
+
+    @property
+    def usage_paths(self) -> ev.RunPaths:
+        """Where engineer-loop usage snapshots live.
+
+        R8: deliberately SEPARATE from ``run_paths``, which is None when
+        progress logging is off - accounting must survive the
+        observability opt-out (review finding P2-d). Derived rather than
+        passed since #193: the factory computed the identical
+        ``RunPaths.for_run(root_dir, run_id)``, handed it in, and read it
+        straight back off the object at ``factory.py``'s
+        ``_salvage_aborted_usage``. Nothing inside this class ever read
+        the stored attribute. The old parameter was ``RunPaths | None``
+        and the None case existed only for callers that did not pass it,
+        so it is gone with the parameter.
+        """
+        return ev.RunPaths.for_run(self.root_dir, self.run_id)
 
     # ------------------------------------------------------------------
     # Budget + usage accounting
