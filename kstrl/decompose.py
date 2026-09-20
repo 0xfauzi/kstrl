@@ -557,6 +557,40 @@ def _repo_structure_block(block: str) -> str:
     return block
 
 
+def _repo_context_configs(root_dir: Path) -> tuple[KstrlConfig, FeedforwardConfig] | None:
+    """Both configs the repository-context body needs, or None when
+    either is unreadable.
+
+    A CLI caller never reaches the None branch: ``config_preflight``
+    already refuses a malformed ``[paths]``/``[feedforward]`` document
+    as FATAL before ``decompose_spec`` is ever called
+    (``cli._PREFLIGHT_EXEMPT`` excludes both "decompose" and "factory").
+    A caller that bypasses preflight - the TUI, or ``decompose_spec``
+    invoked directly, as
+    ``tests/test_decompose.py::TestSpecConvergenceThroughDecompose::
+    test_malformed_toml_does_not_cost_the_audit_artifact_either``
+    measures - must not have the WHOLE run crash before the architect
+    ever runs and before the halt artifact is written (R1.7): this
+    repository-context block is optional supplementary material for
+    that one call, exactly as ``EvolutionConfig`` already treats its own
+    optional journal config (``EvolutionConfig.load_or_none``, the same
+    three exception types, for the same reason - see its docstring).
+
+    Degrades LOUDLY, never silently: a warning names the file and
+    repeats the parser's own message, so this is not the swallow
+    CLAUDE.md forbids. Nothing here pretends the config was read or
+    substitutes a value for it; the caller gets exactly the same "no
+    repository context" prompt a repository with no map and no Python
+    source produces.
+    """
+    try:
+        with toml_parse_scope():
+            return KstrlConfig.load(root_dir), FeedforwardConfig.load(root_dir)
+    except (ValueError, TypeError, OSError) as exc:
+        logger.warning("Repository context for the architect unreadable, skipping: %s", exc)
+        return None
+
+
 def _repo_context_body(root_dir: Path) -> str:
     """The architect's repository-context body, or "" when there is none.
 
@@ -566,9 +600,10 @@ def _repo_context_body(root_dir: Path) -> str:
     nested per-build delimiter) and the extracted interfaces through
     feedforward. Nothing here re-implements a budget.
     """
-    with toml_parse_scope():
-        config = KstrlConfig.load(root_dir)
-        feedforward_config = FeedforwardConfig.load(root_dir)
+    configs = _repo_context_configs(root_dir)
+    if configs is None:
+        return ""
+    config, feedforward_config = configs
     architect_config = replace(
         feedforward_config,
         dependency_graph=False,

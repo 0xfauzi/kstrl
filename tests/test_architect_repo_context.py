@@ -290,3 +290,65 @@ def test_the_architect_gets_the_interfaces_the_engineers_config_would_evict(
     assert "## Public interfaces" in prompt
     assert "SentinelParser" in prompt
     assert "## Dependency graph" not in prompt
+
+
+# ---------------------------------------------------------------------------
+# Regression found by the full suite, not in the original plan: a
+# malformed kstrl.toml must degrade the repository-context block, not
+# the whole architect call.
+# ---------------------------------------------------------------------------
+
+
+def test_a_malformed_kstrl_toml_degrades_the_repo_context_not_the_run(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Measured regression: before this test existed,
+    ``tests/test_decompose.py::TestSpecConvergenceThroughDecompose::
+    test_malformed_toml_does_not_cost_the_audit_artifact_either`` (a
+    pre-existing test, unrelated to #199 on its face) started failing,
+    because the two new config loads in ``_repo_context_body`` had no
+    guard and raised before the architect ever ran or the halt artifact
+    was written - a regression on the invariant
+    ``test_the_artifact_is_written_before_any_journal_work`` states
+    directly: nothing that can fail belongs upstream of the artifact.
+    ``decompose_spec`` invoked directly (bypassing CLI ``config_
+    preflight``, which would have refused this file before any spend)
+    must still run the architect, with no repository context, and warn
+    loudly rather than crash silently or crash at all.
+    """
+    monkeypatch.setattr(decompose, "generate_data_delimiter", lambda: "KSTRL-DATA-" + "0" * 32)
+    (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
+    (tmp_path / "kstrl.toml").write_text("[feedforward\nenabled = true\n", encoding="utf-8")
+    spec = tmp_path / "spec.md"
+    spec.write_text("# Spec\n\nBuild something.\n", encoding="utf-8")
+
+    # A downstream, pre-existing and unrelated gap (LinearConfig.load has
+    # no guard of its own against a malformed kstrl.toml either, when
+    # decompose_spec is driven directly with no blocker to halt on first)
+    # can raise AFTER the prompt this test cares about was already
+    # captured. That gap is not #199's to fix; tolerate whatever happens
+    # after the agent ran and inspect what it was actually given.
+    agent = Recorder(VALID_DECOMPOSE_OUTPUT)
+    with caplog.at_level("WARNING", logger="kstrl.decompose"):
+        try:
+            decompose_spec(
+                spec_path=spec,
+                project_name="test",
+                base_branch="main",
+                single_pr=False,
+                agent=agent,  # type: ignore[arg-type]
+                ui=PlainUI(no_color=True),
+                root_dir=tmp_path,
+            )
+        except Exception:  # noqa: BLE001 - only the captured prompt is asserted on
+            pass
+    assert agent.prompts, "the architect must still run against a malformed kstrl.toml"
+    prompt = agent.prompts[0]
+
+    expected = decompose.build_decompose_prompt("test", spec.read_text(encoding="utf-8"))
+    assert prompt == expected, (
+        "a malformed kstrl.toml must not change the prompt the architect gets"
+    )
+    assert any(
+        "Repository context for the architect unreadable" in rec.message for rec in caplog.records
+    ), "the degradation must be loud: a warning naming what happened, not a silent skip"
