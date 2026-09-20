@@ -1,0 +1,86 @@
+<?xml version="1.0" ?>
+<testsuites disabled="0" errors="2" failures="2" tests="11" time="0.0">
+	<testsuite disabled="0" errors="2" failures="2" name="mutmut" skipped="0" tests="11" time="0">
+		<testcase name="Mutant #1" file="mod.py" line="2">
+			<system-out>    return a + b</system-out>
+		</testcase>
+		<testcase name="Mutant #2" file="mod.py" line="6">
+			<system-out>    while n &gt; 0:</system-out>
+		</testcase>
+		<testcase name="Mutant #3" file="mod.py" line="6">
+			<system-out>    while n &gt; 0:</system-out>
+		</testcase>
+		<testcase name="Mutant #4" file="mod.py" line="7">
+			<error type="timeout" message="bad_timeout">--- mod.py
++++ mod.py
+@@ -4,7 +4,7 @@
+
+ def countdown(n):
+     while n &gt; 0:
+-        n -= 1
++        n = 1
+     return n
+
+
+</error>
+			<system-out>        n -= 1</system-out>
+		</testcase>
+		<testcase name="Mutant #5" file="mod.py" line="7">
+			<error type="timeout" message="bad_timeout">--- mod.py
++++ mod.py
+@@ -4,7 +4,7 @@
+
+ def countdown(n):
+     while n &gt; 0:
+-        n -= 1
++        n += 1
+     return n
+
+
+</error>
+			<system-out>        n -= 1</system-out>
+		</testcase>
+		<testcase name="Mutant #6" file="mod.py" line="7">
+			<system-out>        n -= 1</system-out>
+		</testcase>
+		<testcase name="Mutant #7" file="mod.py" line="12">
+			<system-out>    return x * 2</system-out>
+		</testcase>
+		<testcase name="Mutant #8" file="mod.py" line="12">
+			<system-out>    return x * 2</system-out>
+		</testcase>
+		<testcase name="Mutant #9" file="mod.py" line="16">
+			<failure type="failure" message="bad_survived">--- mod.py
++++ mod.py
+@@ -13,7 +13,7 @@
+
+
+ def clamp(v):
+-    if v &gt; 10:
++    if v &gt;= 10:
+         return 10
+     return v
+
+</failure>
+			<system-out>    if v &gt; 10:</system-out>
+		</testcase>
+		<testcase name="Mutant #10" file="mod.py" line="16">
+			<failure type="failure" message="bad_survived">--- mod.py
++++ mod.py
+@@ -13,7 +13,7 @@
+
+
+ def clamp(v):
+-    if v &gt; 10:
++    if v &gt; 11:
+         return 10
+     return v
+
+</failure>
+			<system-out>    if v &gt; 10:</system-out>
+		</testcase>
+		<testcase name="Mutant #11" file="mod.py" line="17">
+			<system-out>        return 10</system-out>
+		</testcase>
+	</testsuite>
+</testsuites>

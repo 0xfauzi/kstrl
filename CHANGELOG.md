@@ -580,6 +580,24 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   no key could reach them. And replay-on-mount was unconditional, so a
   panel constructed with real findings rendered the app's nominal state
   instead.
+- `[verify] mutation_testing` no longer reports a correct mutmut run as
+  `command_failed` (#391). It parsed `mutmut results` text that mutmut
+  2.5.1 never emits a killed count in under any flag - the counts existed
+  only in the progress line `--no-progress` suppresses - so a run that
+  worked, and reported survivors with exit code 2, always read as a
+  failure; and it never passed `--tests-dir`, so any project whose tests
+  are not under `tests/` or `test/` failed outright. It now reaches
+  mutmut through the same driver `[adequacy] diff_mutation` already used
+  (`mutmut junitxml`, an empty `--tests-dir`), scoring whole changed
+  files rather than a synthetic patch. A fired `[verify] mutation_timeout`
+  cap is now a `timed_out` sidecar for BOTH checks, never a sampled
+  score: mutmut 2.5.1's junitxml cannot read a truncated cache (measured:
+  `ValueError: Obtained null mutant` under `--untested-policy=error`,
+  the policy this driver always passes, and a false 100.0% under any
+  other policy). `[verify] mutation_testing` now also requires
+  `[verify] test_command` to be a single pytest invocation mutmut's
+  `--runner` can wrap, reporting `tool_missing` otherwise - a behaviour
+  change from before, when this check ignored `test_command` entirely.
 
 ### Security
 

@@ -225,7 +225,7 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     # check_patch_coverage.
     "verify.py: _diff_mutation_score_result: CheckResult": 1,
     "verify.py: check_linter: CheckResult": 2,
-    "verify.py: check_mutation_score: CheckResult": 2,
+    "verify.py: _mutation_score_result: CheckResult": 2,
     # R8.5 Layer 1 (#152): ran the project's own test command a second
     # time under coverage and read back a percentage over the diff's
     # changed lines. One construction site, the passing row - every
@@ -336,7 +336,7 @@ EXPECTED_FAILING_WITH_DEFAULT: dict[str, int] = {
     # Read the diff and applied the configured allowlist to it.
     "verify.py: check_diff_scope: CheckResult": 1,
     # mutmut ran and produced killed/survived counts.
-    "verify.py: check_mutation_score: CheckResult": 1,
+    "verify.py: _mutation_score_result: CheckResult": 1,
     # Evaluated the policy envelope against a diff it read successfully.
     "verify.py: check_policy_envelope: CheckResult": 1,
     # Compared the PRD against the pre-run snapshot, and counted stories that
