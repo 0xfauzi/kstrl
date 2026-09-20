@@ -59,6 +59,7 @@ from kstrl.policy import (
     PolicyViolation,
     classify_license,
     evaluate_policy,
+    parse_added_lines,
 )
 from kstrl.prd import PRD
 from kstrl.procdispose import drain_or_abandon
@@ -1755,6 +1756,64 @@ def check_diff_scope(
     )
 
 
+def _added_line_texts(cwd: Path, base_branch: str) -> set[str]:
+    """Every line this branch ADDED, as a set of line texts (#399).
+
+    Keyed on the TEXT and not on the path ``parse_added_lines`` reports beside
+    it. Measured: ``git diff --name-status -z`` returns ``café.py`` while ``git
+    diff`` writes ``+++ "b/caf\\303\\251.py"``, quoting the non-ASCII path and
+    keeping the ``b/`` inside the quotes, so joining the two by path CLEARS a
+    file that really does add a secret. A gate that clears must be narrow; this
+    one over-matches instead, and only inside files the diff already named.
+    """
+    diff_text = git.get_diff_content(base_branch, cwd)
+    return {line for _path, line in parse_added_lines(diff_text)}
+
+
+def _adds_a_secret(content: str, added_lines: set[str]) -> bool:
+    """Does a line of ``content`` that this branch ADDED match a secret pattern?"""
+    for line in content.splitlines():
+        if line in added_lines and any(pattern.search(line) for pattern in SECRET_PATTERNS):
+            return True
+    return False
+
+
+def _added_lines_or_refusal(cwd: Path, base_branch: str, start: float) -> set[str] | CheckResult:
+    """``_added_line_texts``'s result, or the refusal row if it raised (#399).
+
+    Split out of ``check_bad_patterns`` so the try/except does not count
+    against that function's own complexity ceiling; the caller does
+    ``if isinstance(read, CheckResult): return read``.
+    """
+    try:
+        return _added_line_texts(cwd, base_branch)
+    except Exception as exc:
+        # Exception exactly, and reported as a refusal. get_diff_names is
+        # LENIENT, so the file list can arrive when the diff does not, and
+        # at least two unrelated families reach here, both measured: a
+        # GitDiffError, and a UnicodeDecodeError (a ValueError) from a diff
+        # this process could not decode. Enumerating such a set is how #318
+        # was wrong three times. The row fails CLOSED, so a swallow costs a
+        # visible red gate, never a silent pass.
+        return CheckResult(
+            name="bad_patterns",
+            passed=False,
+            message=(
+                "bad patterns could not read the diff; failing closed "
+                "(infrastructure error, not a scan pass)"
+            ),
+            details=[f"Error: {exc}"],
+            findings=[
+                Finding.infrastructure_error(
+                    "verify",
+                    f"bad patterns could not read the diff: {exc}",
+                )
+            ],
+            duration_seconds=time.monotonic() - start,
+            measured=False,
+        )
+
+
 def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
     """Scan changed files for obvious problems.
 
@@ -1778,6 +1837,16 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
     changed = git.get_diff_names(base_branch, cwd)
     py_files = [f for f in changed if f.endswith(".py")]
 
+    # #399: the secret scan reads the lines this branch ADDED. Read the diff
+    # only when there is a Python file to scan, so a diff with nothing to open
+    # keeps the vacuous pass it has today instead of gaining a new way to fail.
+    added_lines: set[str] = set()
+    if py_files:
+        read = _added_lines_or_refusal(cwd, base_branch, start)
+        if isinstance(read, CheckResult):
+            return read
+        added_lines = read
+
     with tempfile.TemporaryDirectory(prefix="kstrl-bytecode-") as bytecode_dir:
         # One reused destination: the content is never read back, only
         # the compile's success or failure is.
@@ -1790,8 +1859,9 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
             # Empty file check. utf-8 pinned, not left to the locale:
             # PEP 3120 makes utf-8 the default source encoding, so this
             # is the encoding the file is in, and reading it as cp1252
-            # under a non-UTF-8 locale would silently change which
-            # SECRET_PATTERNS matched below.
+            # under a non-UTF-8 locale would silently change which of its
+            # lines match the diff's, and so which SECRET_PATTERNS fire
+            # below.
             content = full_path.read_text(encoding="utf-8")
             scanned += 1
             if not content.strip():
@@ -1805,11 +1875,11 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
                 issues.append(f"{rel_path}: syntax error - {exc}")
                 continue
 
-            # Secret patterns
-            for pattern in SECRET_PATTERNS:
-                if pattern.search(content):
-                    issues.append(f"{rel_path}: possible secret/credential detected")
-                    break
+            # Secret patterns, over the lines this branch ADDED (#399). The
+            # whole-file scan this replaces failed a blocking gate on strings
+            # the branch never wrote, and told the retry agent to fix them.
+            if _adds_a_secret(content, added_lines):
+                issues.append(f"{rel_path}: possible secret/credential detected")
 
     if issues:
         return CheckResult(

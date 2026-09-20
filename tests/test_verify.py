@@ -45,6 +45,7 @@ from kstrl.verify import (
     check_typecheck,
     run_mechanical_verification,
 )
+from tests.helpers import gitrepo
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 from tests.helpers.tool_output import tool_output
 from tests.helpers.verify_phase import CHEAP_GATES, phase_verify_surfaces
@@ -409,35 +410,59 @@ class TestCheckDiffScope:
         assert "and 5 more" in prompt_text
 
 
+def _repo(root: Path) -> Path:
+    """A real repository on ``main``, with an identity, ready for a base commit."""
+    gitrepo.git_in(root, "init", "-q", "-b", "main")
+    gitrepo.set_identity(root)
+    return root
+
+
+def _commit(repo: Path, message: str) -> None:
+    gitrepo.git_in(repo, "add", "-A")
+    gitrepo.git_in(repo, "commit", "-q", "-m", message)
+
+
 class TestCheckBadPatterns:
     def test_clean_files(self, tmp_path: Path) -> None:
-        py_file = tmp_path / "clean.py"
-        py_file.write_text("x = 1\n")
-        with patch("kstrl.verify.git.get_diff_names", return_value=["clean.py"]):
-            result = check_bad_patterns(tmp_path, "main")
+        repo = _repo(tmp_path)
+        (repo / "clean.py").write_text("x = 1\n")
+        _commit(repo, "add clean.py on main")
+
+        result = check_bad_patterns(repo, "main")
         assert result.passed is True
 
     def test_empty_py_file(self, tmp_path: Path) -> None:
-        py_file = tmp_path / "empty.py"
-        py_file.write_text("")
-        with patch("kstrl.verify.git.get_diff_names", return_value=["empty.py"]):
-            result = check_bad_patterns(tmp_path, "main")
+        repo = _repo(tmp_path)
+        gitrepo.git_in(repo, "commit", "-q", "--allow-empty", "-m", "base")
+        gitrepo.git_in(repo, "checkout", "-q", "-b", "work")
+        (repo / "empty.py").write_text("")
+        _commit(repo, "add empty.py")
+
+        # An empty file has no added lines and the empty check does not
+        # consult them, which is the point.
+        result = check_bad_patterns(repo, "main")
         assert result.passed is False
         assert any("empty" in d for d in result.details)
 
     def test_syntax_error(self, tmp_path: Path) -> None:
-        py_file = tmp_path / "bad.py"
-        py_file.write_text("def f(\n")
-        with patch("kstrl.verify.git.get_diff_names", return_value=["bad.py"]):
-            result = check_bad_patterns(tmp_path, "main")
+        repo = _repo(tmp_path)
+        gitrepo.git_in(repo, "commit", "-q", "--allow-empty", "-m", "base")
+        gitrepo.git_in(repo, "checkout", "-q", "-b", "work")
+        (repo / "bad.py").write_text("def f(\n")
+        _commit(repo, "add bad.py")
+
+        result = check_bad_patterns(repo, "main")
         assert result.passed is False
         assert any("syntax" in d.lower() for d in result.details)
 
     def test_secret_detected(self, tmp_path: Path) -> None:
-        py_file = tmp_path / "leak.py"
-        py_file.write_text('API_KEY = "sk-abcdefghijklmnopqrstuvwxyz"\n')
-        with patch("kstrl.verify.git.get_diff_names", return_value=["leak.py"]):
-            result = check_bad_patterns(tmp_path, "main")
+        repo = _repo(tmp_path)
+        gitrepo.git_in(repo, "commit", "-q", "--allow-empty", "-m", "base")
+        gitrepo.git_in(repo, "checkout", "-q", "-b", "work")
+        (repo / "leak.py").write_text('API_KEY = "sk-abcdefghijklmnopqrstuvwxyz"\n')
+        _commit(repo, "add leak.py")
+
+        result = check_bad_patterns(repo, "main")
         assert result.passed is False
         assert any("secret" in d.lower() for d in result.details)
 
@@ -2715,20 +2740,21 @@ class TestReadOnlyVerification:
     ) -> None:
         """``py_compile`` defaults its output to ``__pycache__`` NEXT TO
         the file it compiles; scanning must not leave that behind."""
-        src = tmp_path / "src"
+        repo = _repo(tmp_path)
+        gitrepo.git_in(repo, "commit", "-q", "--allow-empty", "-m", "base")
+        gitrepo.git_in(repo, "checkout", "-q", "-b", "work")
+        src = repo / "src"
         src.mkdir()
         (src / "ok.py").write_text("x = 1\n")
         (src / "broken.py").write_text("def f(\n")
+        _commit(repo, "add src/ok.py and src/broken.py")
 
-        with patch(
-            "kstrl.verify.git.get_diff_names",
-            return_value=["src/ok.py", "src/broken.py"],
-        ):
-            result = check_bad_patterns(tmp_path, "main")
+        result = check_bad_patterns(repo, "main")
 
         # The syntax error is still reported: only the destination moved.
         assert result.passed is False
         assert any("syntax error" in d for d in result.details)
+        # A .git directory under tmp_path does not disturb either rglob.
         assert list(tmp_path.rglob("__pycache__")) == []
         assert list(tmp_path.rglob("*.pyc")) == []
 

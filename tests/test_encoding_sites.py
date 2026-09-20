@@ -36,6 +36,7 @@ from kstrl.calibration import load_baseline
 from kstrl.intake_github import ProcessedLedger
 from kstrl.serve import ServeStateError, SpendLedger
 from kstrl.workqueue import Queue
+from tests.helpers import gitrepo
 
 #: A byte no UTF-8 decoder accepts, inside a document that is otherwise
 #: exactly what each reader expects.
@@ -318,22 +319,29 @@ class TestTheLocalePinnedReads:
         got = load_spec_input(tmp_path)
         assert "café spec" in got and "café plan" in got
 
-    def test_the_bad_patterns_scan_reads_source_as_utf8(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """PEP 3120 makes utf-8 the source encoding, so this is the file's
-        real encoding rather than a preference, and which
-        ``SECRET_PATTERNS`` match depends on getting it right.
+    def test_the_bad_patterns_scan_reads_source_as_utf8(self, tmp_path: Path) -> None:
+        """PEP 3120 makes utf-8 the source encoding, and since #399 the scan
+        intersects the file's lines with the diff's added lines, so BOTH reads
+        have to agree on the bytes. The accent sits on the secret line itself:
+        decode either side by the locale and the two strings differ, the
+        intersection misses, and the secret is not reported.
 
-        The scan is DRIVEN, not simulated: an earlier draft of this test
-        read the file with ``pathlib`` and asserted about the answer,
-        which is a test of the standard library that passes whatever
-        ``kstrl/verify.py`` does.
+        The scan is DRIVEN, not simulated.
         """
-        source = tmp_path / "m.py"
-        source.write_text('# na\u00efve\nKEY = "AKIA' + "A" * 16 + '"\n', encoding="utf-8")
-        monkeypatch.setattr(verify.git, "get_diff_names", lambda base, cwd: ["m.py"])
-        found = verify.check_bad_patterns(tmp_path, "main")
+        repo = tmp_path
+        gitrepo.git_in(repo, "init", "-q", "-b", "main")
+        gitrepo.set_identity(repo)
+        source = repo / "m.py"
+        source.write_text("x = 1\n", encoding="utf-8")
+        gitrepo.git_in(repo, "add", "-A")
+        gitrepo.git_in(repo, "commit", "-q", "-m", "base")
+        gitrepo.git_in(repo, "checkout", "-q", "-b", "work")
+        source.write_text('KEY = "AKIA' + "A" * 16 + '"  # na\u00efve\n', encoding="utf-8")
+        gitrepo.git_in(repo, "add", "-A")
+        gitrepo.git_in(repo, "commit", "-q", "-m", "add a key with an accent on the line")
+
+        found = verify.check_bad_patterns(repo, "main")
+
         assert not found.passed
         assert found.details == ["m.py: possible secret/credential detected"]
 

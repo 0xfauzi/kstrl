@@ -211,6 +211,13 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     "fixtures.py: run_cli_fixture: FixtureResult": 7,
     "fixtures.py: run_file_fixture: FixtureResult": 8,
     "fixtures.py: run_function_fixture: FixtureResult": 9,
+    # #399: the diff-unreadable refusal for check_bad_patterns. Split into
+    # its own helper (_added_lines_or_refusal) rather than left inline,
+    # because check_bad_patterns was already at the cognitive-complexity
+    # ceiling (15) before this row existed; the census attributes a
+    # construction to its innermost scope, so the row lands here and not
+    # on check_bad_patterns itself.
+    "verify.py: _added_lines_or_refusal: CheckResult": 1,
     "verify.py: _failed_gate_result: CheckResult": 1,
     "verify.py: _self_critique_text: CheckResult": 2,
     "verify.py: check_bad_patterns: CheckResult": 2,
@@ -253,6 +260,9 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
 #: evidence about the artifact. A row whose failure is a stable property of the
 #: artifact stays measured, and lives in the third dict below.
 EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
+    # #399: the diff could not be read (or decoded), so bad_patterns never
+    # learned which lines the branch added and scanned nothing.
+    "verify.py: _added_lines_or_refusal: CheckResult: measured=False": 1,
     # A run with no fixtures ran no oracle, so it cannot prove one stopped
     # failing; a run in which any fixture timed out or could not be launched
     # cannot either, and `all` is what makes that the narrow direction.

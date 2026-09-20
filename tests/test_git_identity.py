@@ -78,13 +78,25 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/spine_utils.py": 1,
     "tests/test_adequacy.py": 8,
     "tests/test_autonomy_ladder.py": 1,
+    # #399: `_commit`, a private helper matching the one in
+    # tests/test_verify.py, committing into the repository `_repo` built
+    # through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_bad_patterns_diff_scope.py": 1,
     "tests/test_breaker.py": 2,
-    "tests/test_check_result_measurement_behaviour.py": 5,
+    # #399 added two real-repository tests (a stubbed-git refusal, which
+    # makes no commit, and a latin-1-bytes commit through `_git`/`_repo`,
+    # both already declared here, plus a second real commit in the
+    # latter). Both repositories go through
+    # `tests.helpers.gitrepo.set_identity` via this file's own `_repo`.
+    "tests/test_check_result_measurement_behaviour.py": 7,
     "tests/test_cli.py": 2,
     "tests/test_contract_safety.py": 4,
     # `ready_repo` calls `tests.helpers.gitrepo.set_identity` before it
     # commits (#198), once per scenario that builds its own fixture.
     "tests/test_doctor.py": 7,
+    # #399: the rewritten locale-pinned bad_patterns test commits into a
+    # real repository through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_encoding_sites.py": 2,
     "tests/test_explicit_merge_gate.py": 1,
     "tests/test_feature_verification.py": 1,
     "tests/test_feature_verification_attribution.py": 1,
@@ -139,7 +151,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # call log CONTAINS, plus a docstring paragraph. Nothing here spawns
     # git; the one real commit `run_scrubbed` makes belongs to
     # `kstrl/verify.py`, which is production code and out of this census.
-    "tests/test_verify.py": 5,
+    # #399: TestCheckBadPatterns and the bytecode-destination test now
+    # commit into real repositories, through this file's own `_repo` /
+    # `_commit`, which goes through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_verify.py": 10,
 }
 
 

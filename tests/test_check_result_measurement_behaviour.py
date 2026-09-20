@@ -189,6 +189,58 @@ def test_policy_envelope_that_could_not_read_the_diff_measured_nothing(tmp_path:
     assert_unmeasured(row)
 
 
+def test_bad_patterns_that_could_not_read_the_diff_measured_nothing(
+    tmp_path: Path, only_path: Path
+) -> None:
+    """``get_diff_names`` is LENIENT and ``get_diff_content`` raises, so the
+    two can disagree: the file list arrives and the diff does not. A real
+    executable on PATH rather than a patched function, because what is under
+    test is what the check does when git fails, and git failing is something
+    PATH can say."""
+    _stub(
+        only_path,
+        "git",
+        'for a in "$@"; do\n'
+        '  if [ "$a" = "--name-status" ]; then\n'
+        '    printf "M\\0scanned.py\\0"\n'
+        "    exit 0\n"
+        "  fi\n"
+        "done\n"
+        'echo "git diff exploded" >&2\n'
+        "exit 128",
+    )
+
+    row = check_bad_patterns(tmp_path, "main")
+
+    assert row.passed is False
+    assert "could not read the diff" in row.message
+    assert any("exploded" in detail for detail in row.details)
+    assert [f.is_infrastructure_error for f in row.findings] == [True]
+    assert_unmeasured(row)
+
+
+def test_bad_patterns_that_could_not_decode_the_diff_measured_nothing(tmp_path: Path) -> None:
+    """A diff this process cannot decode raises ``UnicodeDecodeError``, which
+    is a ``ValueError`` and not a ``git.GitDiffError``. This is the test that
+    stops the refusal's ``except Exception`` being narrowed to the one
+    exception family the stub above can raise."""
+    repo = _repo(tmp_path)
+    (repo / "seed.py").write_text("x = 1\n", encoding="utf-8")
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-q", "-m", "seed", cwd=repo)
+    _git("checkout", "-q", "-b", "work", cwd=repo)
+    (repo / "latin.py").write_bytes(b'VALUE = "caf\xe9"\n')
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-q", "-m", "add latin-1 bytes", cwd=repo)
+
+    row = check_bad_patterns(repo, "main")
+
+    assert row.passed is False
+    assert "could not read the diff" in row.message
+    assert [f.is_infrastructure_error for f in row.findings] == [True]
+    assert_unmeasured(row)
+
+
 def test_test_adequacy_that_could_not_read_the_diff_measured_nothing(tmp_path: Path) -> None:
     row = check_test_adequacy(tmp_path, "no-such-base-227", AdequacyConfig(enabled=True))
 
