@@ -2,11 +2,10 @@
 
 No CLI here. These drive :mod:`kstrl.dampener` and
 :mod:`kstrl.dampener_report` directly, so the bucket rules are pinned
-independently of how ``ks sense`` wires them up. Three siblings hold the rest:
+independently of how ``ks sense`` wires them up. Two siblings hold the rest:
 ``tests/test_sense_dampener_baseline.py`` the artifact on disk and every way
-reading it fails, ``tests/test_sense_dampener_cli.py`` the command surface, and
-``tests/test_sense_dampener_workflow.py`` the dogfood workflow. The helpers
-below are shared, and this file is where they live.
+reading it fails, and ``tests/test_sense_dampener_cli.py`` the command surface.
+The helpers below are shared, and this file is where they live.
 """
 
 from __future__ import annotations

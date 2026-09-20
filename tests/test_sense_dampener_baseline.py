@@ -412,9 +412,8 @@ def test_the_identity_reads_still_answer_when_git_is_present(tmp_path: Path) -> 
     # which exists on a developer machine and does not on a GitHub runner: the
     # runner's gecos name is empty, so git refuses with "empty ident name" and
     # this test alone failed on CI while passing everywhere it was written.
-    # The two sibling repositories in this pull request, in
-    # tests/test_check_result_measurement_behaviour.py and
-    # tests/test_sense_dampener_workflow.py, already configure both fields.
+    # The sibling repository in tests/test_check_result_measurement_behaviour.py
+    # configures both fields for the same reason.
     gitrepo.set_identity(repo)
     run_git("commit", "-q", "--allow-empty", "-m", "base", cwd=repo)
 

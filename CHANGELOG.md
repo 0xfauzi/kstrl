@@ -195,6 +195,25 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   `title` is still not refreshed: it is the row's label, and a repeat
   must not relabel a row somebody has already read.
 
+### Removed
+
+- The `sense dampener` pull-request workflow, which ran this repository's own
+  test suite a second time to compare a branch against
+  `scripts/kstrl/sense-baseline.json`. That baseline records no signatures, so
+  the comparison reported what the `test` and `lint` jobs in `ci.yml` already
+  report, and it never had the power to fail the build. Measured over five runs
+  it took 360 to 454 seconds per push; over the last seven pull requests it
+  reported a finding twice, and both times the finding was WRONG: a false
+  positive, the secret-pattern fixture in `tests/test_verify.py` matching
+  itself rather than a real secret, now filed as #399. `ks sense`,
+  `--compare-baseline`, `--fail-on-regression` and the baseline file are
+  unchanged: the dampener is for brownfield repositories and this repository
+  is not one. [`docs/dampener.md`](docs/dampener.md) is rewritten to document
+  the dampener as what a consuming project wires up, with a restored worked
+  example at `docs/examples/sense-dampener.yml`.
+  `tests/test_own_ci_workflows.py` pins that the test suite runs in one
+  workflow only (#394).
+
 ### Fixed
 
 - A `kstrl.toml` section that will not read no longer stops the `ks
