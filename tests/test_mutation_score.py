@@ -473,3 +473,58 @@ def test_layer_twos_own_spend_shrinks_layer_ones_share_of_the_budget(
     only_gap(result, "mutation_testing", "timed_out")
     diff_mutation_row = next(c for c in result.checks if c.name == "diff_mutation")
     assert diff_mutation_row.passed is True
+
+
+def test_a_timed_out_layer_two_still_shrinks_layer_ones_share(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A2's decrement (#391 round-2 fix on PR #392) is not pinned for the
+    one case it exists for: a Layer 2 run that fires its own cap. A
+    ``timed_out`` gap produces no ``diff_mutation`` row, so there is no
+    ``duration_seconds`` to read - and
+    ``mutation_diff_rows[0].duration_seconds if mutation_diff_rows else
+    0.0`` is a plausible-looking wrong implementation that reads as 0.0
+    exactly there, handing Layer 1 the FULL budget again instead of what
+    Layer 2 actually spent. Measured with a throwaway probe (since
+    deleted, worktree clean): at ``mutation_timeout=6.0`` against a fake
+    that sleeps 9s, the shipped code (``time.monotonic()`` around the
+    call) spawns mutmut ONCE and the phase takes 7.2s; the variant above
+    spawns mutmut TWICE and takes 13.3s - the shared budget spent twice,
+    which is the worst case the PR body cites (two back-to-back caps).
+
+    ``sleep=9`` exceeds ``mutation_timeout=6.0``, so Layer 2 - which runs
+    first and gets the full 6.0s cap - times out rather than scoring.
+    Under the correct decrement Layer 1's remaining cap is then at or
+    below its own coverage-run duration, so Layer 1's OWN pre-spend
+    refusal (A1, ``coverage_duration >= cap``) fires and it never spawns
+    mutmut at all; under the bug Layer 1 gets the full 6.0s again,
+    clears that refusal, and spawns mutmut a second time, which the
+    ``--paths-to-mutate=`` count below would show as 2 rather than 1.
+    """
+    _repo(tmp_path)
+    recdir = put_mutmut_on_path(
+        tmp_path,
+        monkeypatch,
+        junit=junit((1, "mod.py", 6, "killed")),
+        sleep=9,
+        mutate="mod.py",
+    )
+    start = time.monotonic()
+    result = run_adequacy(
+        tmp_path,
+        mutation_testing=True,
+        enabled=True,
+        patch_coverage=True,
+        diff_mutation=True,
+        mutation_timeout=6.0,
+    )
+    assert time.monotonic() - start < 40
+    only_gap(result, "diff_mutation", "timed_out")
+    gap = only_gap(result, "mutation_testing", "timed_out")
+    # This refusal's OWN wording (A1), deliberately distinct from
+    # `_mutmut_run_spawn`'s fallback timeout detail ("cap fired, and
+    # mutmut 2.5.1 cannot report a truncated run..."), which never
+    # contains this fragment.
+    assert "already took" in gap.detail
+    argv = (recdir / "argv-run.txt").read_text(encoding="utf-8")
+    assert argv.count("--paths-to-mutate=") == 1
