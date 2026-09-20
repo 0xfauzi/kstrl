@@ -63,7 +63,7 @@ from __future__ import annotations
 import ast
 
 from kstrl import operator_context
-from kstrl.operator_context import OPERATOR_FILES, OperatorFileKind
+from kstrl.operator_context import ARCHITECT_FILES, OPERATOR_FILES, OperatorFileKind
 from tests.helpers.astwalk import (
     KSTRL_PACKAGE,
     Bindings,
@@ -138,9 +138,15 @@ KIND_NAMES: dict[str, str] = {
 #: ``factory.py`` is 3 because two of its three are the calls this guard
 #: is about. A fourth would be a third operator file reaching a prompt,
 #: or the same file reaching one twice.
+#:
+#: ``decompose.py`` is 2 (#199): the import of ``load_operator_file``
+#: plus the one call inside ``_repo_context_body``. The walk counts the
+#: import alias and the callee name alike; a docstring mentioning the
+#: function folds to the whole docstring and does not count.
 EXPECTED_LOADER_SPELLINGS: dict[str, int] = {
     "factory.py": 3,
     "operator_context.py": 1,
+    "decompose.py": 2,
 }
 
 #: Every place in ``kstrl/`` that spells ``context_prefix``: the
@@ -383,8 +389,11 @@ class TestTheWalkStillFires:
     def test_the_kind_table_is_derived_and_covers_every_row(self) -> None:
         """``KIND_NAMES`` is read off the module, so this says what that
         buys: every declared row has a name the walk can match, and the
-        table holds nothing that is not a row."""
-        assert set(KIND_NAMES.values()) == {kind.key for kind in OPERATOR_FILES}
+        table holds nothing that is not a row. Both tuples (#199):
+        ``KIND_NAMES`` is derived from ``vars(operator_context)`` with no
+        filter on which tuple a row sits in, so ``ARCHITECT_FILES``
+        enters it on its own."""
+        assert set(KIND_NAMES.values()) == {kind.key for kind in OPERATOR_FILES + ARCHITECT_FILES}
 
 
 class TestEveryRowReachesAPrompt:
@@ -522,6 +531,56 @@ class TestEveryRowReachesAPrompt:
             f"resolved. Undecided: {list(found.undecided)}"
         )
         assert len(found.seen) == len(OPERATOR_FILES)
+
+
+#: The architect's own module and the scope its repository-context body
+#: is assembled in (#199). Named once, like WORKER/WORKER_SCOPE above.
+ARCHITECT = "decompose.py"
+ARCHITECT_SCOPE = "_repo_context_body"
+
+
+class TestEveryArchitectRowReachesTheArchitectPrompt:
+    """A declared kind reaches exactly one named prompt, the engineer's
+    or the architect's. ``ARCHITECT_FILES`` rows pay none of the six
+    ``factory.py`` edits ``WORKER_EDITS`` lists and must not claim them;
+    what they owe instead is an entry in the literal
+    ``decompose._repo_context_body`` builds ``parts`` from, which IS the
+    architect's prompt order. Because that local is named ``parts``
+    (matching ``ORDER_LOCAL`` above) and ``delivered_kinds`` already
+    takes the scope as a parameter, this class costs no change to the
+    walk itself."""
+
+    def test_every_architect_row_is_loaded_once(self) -> None:
+        counts, unresolved = prompt_sites(
+            parsed(KSTRL_PACKAGE / ARCHITECT), f"kstrl.{ARCHITECT[:-3]}"
+        )
+
+        assert unresolved == (), (
+            f"a load_operator_file call in {ARCHITECT} whose kind this guard could "
+            f"not read back. Rows: {list(unresolved)}"
+        )
+        assert counts == {kind.key: 1 for kind in ARCHITECT_FILES}, (
+            "every ARCHITECT_FILES row must be LOADED exactly once in "
+            f"{ARCHITECT}, and only declared rows may. Found: {counts}"
+        )
+
+    def test_every_architect_row_reaches_the_prompt_order(self) -> None:
+        counts, unresolved = delivered_kinds(
+            parsed(KSTRL_PACKAGE / ARCHITECT),
+            f"kstrl.{ARCHITECT[:-3]}",
+            scope=ARCHITECT_SCOPE,
+        )
+
+        assert unresolved == (), (
+            f"this guard could not read the repository-context order in "
+            f"{ARCHITECT}::{ARCHITECT_SCOPE} back to kinds, so it cannot vouch for "
+            f"any row. Rows: {list(unresolved)}"
+        )
+        assert counts == {kind.key: 1 for kind in ARCHITECT_FILES}, (
+            "every ARCHITECT_FILES row must appear exactly once in the literal "
+            f"{ARCHITECT}::{ARCHITECT_SCOPE} builds `parts` from, which IS the "
+            f"architect's repository-context order. Delivered: {counts}"
+        )
 
 
 class TestTheRemedyIsWrittenWhereAnAuthorReadsIt:

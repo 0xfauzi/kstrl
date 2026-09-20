@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from kstrl.feedforward import (
+    _MAX_PUBLIC_INTERFACE_FILES,
     FeedforwardConfig,
     build_dependency_graph,
     build_feedforward_context,
@@ -201,6 +203,67 @@ class TestBuildFeedforwardContext:
         assert "no Python source root found" in result
         assert "## Module map" not in result
         assert "## Conventions" not in result
+
+
+# ---------------------------------------------------------------------------
+# The budget names what it drops (#199)
+# ---------------------------------------------------------------------------
+
+
+def _headings(text: str) -> set[str]:
+    return {ln[3:] for ln in text.splitlines() if ln.startswith("## ")}
+
+
+def test_a_dropped_feedforward_section_is_named_in_the_rendered_text(tmp_path: Path) -> None:
+    pkg = tmp_path / "testpkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("")
+    (pkg / "core.py").write_text(
+        "class Widget:\n    pass\n\ndef build_widget(name: str) -> Widget:\n    pass\n"
+    )
+    (tmp_path / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.11"\n')
+
+    cfg = FeedforwardConfig(enabled=True)
+    full = build_feedforward_context(tmp_path, replace(cfg, max_context_tokens=100_000))
+    headings_full = _headings(full)
+    assert len(headings_full) >= 2, "the fixture needs at least two sections to mean anything"
+
+    # N is DERIVED by searching for a budget that drops something but not
+    # everything, never typed as a literal: the search stops at the first
+    # token count (ascending) whose render lost at least one heading and
+    # kept at least one.
+    small = None
+    chosen_tokens = None
+    for tokens in range(10, len(full)):
+        candidate = build_feedforward_context(tmp_path, replace(cfg, max_context_tokens=tokens))
+        headings_candidate = _headings(candidate)
+        if headings_candidate and headings_candidate != headings_full:
+            small = candidate
+            chosen_tokens = tokens
+            break
+    assert small is not None, "no budget in range dropped a section without dropping all of them"
+
+    dropped = headings_full - _headings(small)
+    assert dropped, "the budget did not drop anything, so this test proves nothing"
+    assert _headings(small), "everything was dropped; the search range needs to widen"
+    for name in dropped:
+        assert name in small
+    assert str(chosen_tokens * 4) in small
+
+
+def test_the_public_interfaces_section_carries_its_denominator(tmp_path: Path) -> None:
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("_private = True\n")
+    eligible = 35
+    for i in range(eligible):
+        (pkg / f"mod{i:02d}.py").write_text(f"def public_{i:02d}():\n    pass\n")
+
+    body = extract_public_interfaces(tmp_path)
+
+    assert f"{_MAX_PUBLIC_INTERFACE_FILES} of {eligible}" in body
+    assert "no Python source root found" not in body
+    assert "no public classes or functions" not in body
 
 
 # ---------------------------------------------------------------------------

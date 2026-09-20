@@ -827,6 +827,41 @@ SCAFFOLDED_TEMPLATES: tuple[ScaffoldedTemplate, ...] = (
             ("07c55e3e12be359ea12cbe55f1c3296098a24c3468d6e62b66f42b0d2e1ffb83", "2026-09-07b"),
         ),
     ),
+    # #199. The architect reads this file, so an untouched skeleton of
+    # empty checkboxes must not be injected as if an operator had
+    # written it. Four rows because a full-history walk over every
+    # carrier (not only DEFAULT_CODEBASE_MAP in an init*.py) finds four
+    # bodies a ralph/kstrl init path has written, and a census of 42 real
+    # map files on one machine found six untouched scaffolds across 15
+    # real projects, NONE of them the current body: four carry the
+    # ralph_py row and two the src/ralph/templates row. A one-row history
+    # would recognise none of them.
+    ScaffoldedTemplate(
+        filename="codebase_map.md",
+        constant_name="DEFAULT_CODEBASE_MAP",
+        body=DEFAULT_CODEBASE_MAP,
+        history=(
+            # legacy/init.sh heredoc, 2026-01-06 to 2026-05-27, 866 chars.
+            (
+                "5d2cf82658bb999c25b2892a350b0f2403fd058b0dbe5ed9cd5265918c0d0a5d",
+                "pre-1.0.0 (2026-01-06, init.sh)",
+            ),
+            # ralph_py/init_cmd.py, 2026-01-15 to 2026-05-27, 1538 chars.
+            (
+                "382a66611762f9dba9098cad4720fdc4641e36e86b55865e56879aea7e7edea3",
+                "pre-1.0.0 (2026-01-15)",
+            ),
+            # src/ralph/templates/codebase_map.md, 2026-03-31, 1539
+            # chars: the same text with curly quotes and a trailing
+            # blank line.
+            (
+                "2c0e9961908e02afc9e7562140ecb2bdd9e20795f3777ca18fa77927ea7043f4",
+                "pre-1.0.0 (2026-03-31, templates)",
+            ),
+            # kstrl/init_cmd.py, current.
+            ("664063e1929c7a50fef5e95e6d275c6502711ba2bcc249545f84bdc9a7160c51", "2026-08-25"),
+        ),
+    ),
 )
 
 

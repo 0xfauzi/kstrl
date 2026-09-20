@@ -62,6 +62,7 @@ from kstrl.decompose import (
     _parse_spec_issues,
     _select_agent_output,
     build_decompose_prompt,
+    build_repo_context,
 )
 from kstrl.delimiters import generate_data_delimiter
 from kstrl.git import get_diff_stat, pasted_change_source, repo_change_source
@@ -1267,11 +1268,57 @@ def test_reviewer_role_no_false_positive(
 
 
 # ---------------------------------------------------------------------------
+# #199: the repository-context arm.
+#
+# Without this axis, calibration cannot see the change. Measured: both
+# architect tests call build_decompose_prompt(meta["fixture_id"],
+# spec_content) with two positional arguments, and all four spec
+# fixtures render byte-identically under a defaulted-empty repo_context
+# (the issue's own greenfield criterion), so an unchanged re-run
+# compares the OLD prompt under a NEW hash and reports a delta of zero
+# by construction. Two arms, run in one session against one model so
+# the comparison is paired per fixture.
+#
+# WHAT THIS ARM MEASURES AND WHAT IT DOES NOT. The four spec fixtures
+# are standalone specs about a fictional product with no repository
+# attached; the repository block is THIS repository's. So the arm
+# measures whether an unrelated but realistic repository block
+# DEGRADES spec red-teaming (the dilution failure mode the issue
+# names). It does NOT measure whether repository context improves
+# component boundaries or allowedPaths quality - no fixture on disk
+# scores that. State this plainly in the PR body rather than as a
+# footnote.
+#
+# The committed fixture is the repo_body decompose._repo_context_body
+# would produce (BEFORE decompose.build_repo_context wraps it in its
+# own delimiters), generated once against a scratch tree holding a
+# real 20035-character scripts/kstrl/codebase_map.md and no Python
+# source, so the block carries the truncation notice and nothing else
+# varies per run. Generated with:
+#   uv run python -c "from pathlib import Path; from kstrl.decompose \
+#     import _repo_context_body; print(_repo_context_body(Path(...)))"
+# against a scratch tree built for this purpose. Nothing pins its
+# bytes (no digest check reads this file), so the pre-commit whitespace
+# hooks may normalise it freely.
+_REPO_CONTEXT_FIXTURE_PATH = (
+    Path(__file__).parent / "adversarial_fixtures" / "specs" / "_repo_context.txt"
+)
+_REPO_CONTEXT_FIXTURE = _REPO_CONTEXT_FIXTURE_PATH.read_text(encoding="utf-8")
+
+#: (arm suffix for the fixture id, repo_context body to inject).
+_REPO_CONTEXT_ARMS: tuple[tuple[str, str], ...] = (
+    ("", ""),
+    ("+repo", _REPO_CONTEXT_FIXTURE),
+)
+
+
+# ---------------------------------------------------------------------------
 # Architect (PRD red-team) role calibration
 # ---------------------------------------------------------------------------
 
 
 @_skip_unless_calibrating
+@pytest.mark.parametrize("arm_suffix,repo_context_body", _REPO_CONTEXT_ARMS, ids=["", "+repo"])
 @pytest.mark.parametrize(
     "artifact,meta",
     _halting_spec_fixtures(),
@@ -1280,11 +1327,18 @@ def test_reviewer_role_no_false_positive(
 def test_architect_role_flags_vague_spec(
     artifact: Path,
     meta: dict,
+    arm_suffix: str,
+    repo_context_body: str,
     tmp_path: Path,
     report: _DetectionReport,
 ) -> None:
     spec_content = artifact.read_text(encoding="utf-8")
-    prompt = build_decompose_prompt(meta["fixture_id"], spec_content)
+    fixture_id = meta["fixture_id"] + arm_suffix
+    prompt = build_decompose_prompt(
+        fixture_id,
+        spec_content,
+        repo_context=build_repo_context(repo_context_body),
+    )
 
     def run_once() -> tuple[bool, str]:
         agent = _get_calibration_agent()
@@ -1303,7 +1357,7 @@ def test_architect_role_flags_vague_spec(
 
     _gate_on_consistency(
         "architect",
-        meta["fixture_id"],
+        fixture_id,
         report,
         run_once,
         category="spec_issues",
@@ -1329,6 +1383,7 @@ def _allowed_paths_fixtures() -> list[tuple[Path, dict]]:
 
 
 @_skip_unless_calibrating
+@pytest.mark.parametrize("arm_suffix,repo_context_body", _REPO_CONTEXT_ARMS, ids=["", "+repo"])
 @pytest.mark.parametrize(
     "artifact,meta",
     _allowed_paths_fixtures(),
@@ -1337,6 +1392,8 @@ def _allowed_paths_fixtures() -> list[tuple[Path, dict]]:
 def test_architect_emits_sensible_allowed_paths(
     artifact: Path,
     meta: dict,
+    arm_suffix: str,
+    repo_context_body: str,
     tmp_path: Path,
     report: _DetectionReport,
 ) -> None:
@@ -1350,7 +1407,12 @@ def test_architect_emits_sensible_allowed_paths(
     fixture the v1.2.0 prompt's rule #12 is unmeasured.
     """
     spec_content = artifact.read_text(encoding="utf-8")
-    prompt = build_decompose_prompt(meta["fixture_id"], spec_content)
+    fixture_id = meta["fixture_id"] + arm_suffix
+    prompt = build_decompose_prompt(
+        fixture_id,
+        spec_content,
+        repo_context=build_repo_context(repo_context_body),
+    )
 
     def run_once() -> tuple[bool, str]:
         agent = _get_calibration_agent()
@@ -1369,7 +1431,7 @@ def test_architect_emits_sensible_allowed_paths(
 
     _gate_on_consistency(
         "architect_allowed_paths",
-        meta["fixture_id"],
+        fixture_id,
         report,
         run_once,
         category="allowed_paths",

@@ -280,7 +280,12 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # #332 landed while this migration was in flight: the version
     # constant and the body of DECISIONS_CONTEXT_PROMPT, both enrolled.
     "decisions.py": 2,
-    "decompose.py": 2,
+    # #199: 2 pre-existing (DECOMPOSE_PROMPT's declaration and its one
+    # use in build_decompose_prompt) + 2 new (REPO_CONTEXT_PROMPT's
+    # declaration and its one use in build_repo_context) = 4. The
+    # version constants add nothing: the walk keys on names ending in
+    # _PROMPT, not _VERSION.
+    "decompose.py": 4,
     # #303: 0 pre-existing + 7 new fragments x 2 spellings each (the
     # declaration and its one use site) = 14. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.

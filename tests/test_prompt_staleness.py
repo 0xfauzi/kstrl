@@ -260,6 +260,24 @@ _RECORDED_HISTORY: dict[str, tuple[tuple[str, str], ...]] = {
     "memory.md": (
         ("8146096422efcb9b4196b76711fc44c80e2c7b5b920771f8a1eddcb4ba5a81c8", "2026-09-07"),
     ),
+    # #199. Same reader as the two rows above: load_operator_file
+    # suppresses an untouched scaffold instead of injecting it into the
+    # architect's prompt, so a dropped row here costs a silently
+    # re-injected skeleton rather than only a missing staleness notice.
+    "codebase_map.md": (
+        (
+            "5d2cf82658bb999c25b2892a350b0f2403fd058b0dbe5ed9cd5265918c0d0a5d",
+            "pre-1.0.0 (2026-01-06, init.sh)",
+        ),
+        (
+            "382a66611762f9dba9098cad4720fdc4641e36e86b55865e56879aea7e7edea3",
+            "pre-1.0.0 (2026-01-15)",
+        ),
+        (
+            "2c0e9961908e02afc9e7562140ecb2bdd9e20795f3777ca18fa77927ea7043f4",
+            "pre-1.0.0 (2026-03-31, templates)",
+        ),
+    ),
 }
 
 
@@ -321,15 +339,29 @@ _SCAFFOLD_WRITER = "_create_if_missing"
 #: did not move: neither points an operator at this file. The new
 #: ``kstrl/config_keys.py`` contributes nothing, which is why it was the
 #: part of ``config.py`` chosen to move out under the length ratchet.
+#:
+#: #199 enrolled ``codebase_map.md`` (it was previously in
+#: ``_UNLEDGERED_SCAFFOLDS``, so ``_TEMPLATE_SUFFIXES`` did not carry its
+#: filename before), and every module that already named that filename
+#: for another reason (the ``[paths] codebase_map`` default, the
+#: ``ks understand`` writer, the wizard preview, the harness carve-out)
+#: entered the net at once: ``cli.py`` 8 to 11, ``config.py`` 3 to 4,
+#: ``factory.py`` 2 to 3, ``init_cmd.py`` 10 to 12 (the ledger row plus
+#: the pre-existing ``_create_if_missing`` call and doc mentions),
+#: ``init_wizard.py`` 5 to 6. ``launch.py`` did not move: it does not
+#: point an operator at this file. ``operator_context.py`` moved once
+#: more in the same PR, 2 to 3, once ``CODEBASE_MAP = OperatorFileKind(
+#: ..., scaffold="codebase_map.md")`` (step 4) landed and its literal
+#: joined the two existing GOLDEN_PATTERNS/MEMORY scaffold spellings.
 #: Re-derived by RUNNING the walk, never by editing this literal.
 EXPECTED_TEMPLATE_FILENAMES: dict[str, int] = {
-    "cli.py": 8,
-    "config.py": 3,
-    "factory.py": 2,
-    "init_cmd.py": 10,
-    "init_wizard.py": 5,
+    "cli.py": 11,
+    "config.py": 4,
+    "factory.py": 3,
+    "init_cmd.py": 12,
+    "init_wizard.py": 6,
     "launch.py": 1,
-    "operator_context.py": 2,
+    "operator_context.py": 3,
 }
 
 
@@ -404,12 +436,10 @@ _UNLEDGERED_SCAFFOLDS: dict[tuple[str, str], str] = {
         "An append-only log. It is unrecognisable after the first "
         "iteration, so a digest history could say nothing about it."
     ),
-    ("codebase_map.md", "DEFAULT_CODEBASE_MAP"): (
-        "The operator's brownfield notes. Nothing in a run keys on "
-        "whether it is still the skeleton, and #303 records that the "
-        "H3b interaction for the operator-authored files kstrl generates "
-        "needs deciding on its own rather than in passing."
-    ),
+    # #199 closes the #303 question this row used to hold open for
+    # codebase_map.md: a run now DOES key on whether it is still the
+    # skeleton (the architect's repository-context block suppresses an
+    # untouched scaffold), so the file is ledgered instead of exempted.
 }
 
 

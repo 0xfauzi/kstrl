@@ -110,6 +110,31 @@ _FIXED_DELIMITER = "KSTRL-DATA-" + "0" * 32
 
 _SPEC_TEXT = "# Spec\n\nBuild a document parser.\n"
 
+#: Shaped like ``decompose._repo_context_body`` output: the operator-
+#: file loader's own delimited map block, its truncation notice, then a
+#: blank line and the feedforward block. The token is the fixed one
+#: above because ``_pin_delimiters`` pins the nested build too (#199).
+#: Inline rather than a committed file: the whitespace hooks
+#: (trailing-whitespace, end-of-file-fixer, mixed-line-ending) apply to
+#: ``tests/`` and would rewrite a committed fixture's bytes, moving this
+#: digest for no reason anyone could read.
+_REPO_CONTEXT_FIXTURE = (
+    f"=== REPOSITORY MAP (agent-maintained, untrusted) {_FIXED_DELIMITER} ===\n"
+    "# Codebase Map\n"
+    "- src/parser/ holds the document parser\n"
+    "[truncated: 11999 of 20000 characters shown from "
+    "scripts/kstrl/codebase_map.md, keeping the start of the file and "
+    "dropping the end]\n"
+    f"=== END REPOSITORY MAP (agent-maintained, untrusted) {_FIXED_DELIMITER} ===\n"
+    "\n"
+    "=== CODEBASE CONTEXT (auto-generated) ===\n"
+    "\n"
+    "## Public interfaces\n"
+    "src/parser/core.py: class SentinelParser, def sentinel_parse(x)\n"
+    "\n"
+    "=== END CODEBASE CONTEXT ==="
+)
+
 #: Defined once so the PRD built from it (below) and any test that wants
 #: the same story data stay in sync by construction.
 _STORY: dict[str, object] = {
@@ -228,6 +253,25 @@ _ROLES: dict[str, _Role] = {
         frozenset({"DECOMPOSE_PROMPT"}),
         "8bf3cb8b8fa5de5380dcacfd2fb9500cda4d882d6b83c436851ed9a085bac0c1",
         12319,
+    ),
+    # #199. The two-sided pin: this row alone cannot tell "the injection
+    # is correctly inert" from "it was never wired" - the "architect" row
+    # above is what proves inertness (its digest and length are UNMOVED
+    # by this PR). Together they are the pin. What this row does NOT
+    # cover: ``_pin_delimiters`` replaces ``decompose.generate_data_
+    # delimiter``, so both sections carry the SAME token here, and the
+    # two-token property is invisible to this digest -
+    # ``tests/test_architect_repo_context.py`` (E3) and
+    # ``tests/test_prompt_injection_guard.py`` (E9) own that.
+    "architect-with-repo-context": _Role(
+        lambda _p: decompose.build_decompose_prompt(
+            "PROJECT",
+            _SPEC_TEXT,
+            repo_context=decompose.build_repo_context(_REPO_CONTEXT_FIXTURE),
+        ),
+        frozenset({"DECOMPOSE_PROMPT", "REPO_CONTEXT_PROMPT"}),
+        "1c105b4ce5882473e4c70a7a5a156c76acf2579373eb6dc95c0a8fad56708f74",
+        14748,
     ),
     "decisions-context": _Role(
         lambda _p: build_decisions_context(_DECISIONS, "comp-a"),

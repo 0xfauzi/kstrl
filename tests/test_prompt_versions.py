@@ -101,7 +101,12 @@ from kstrl.decisions import (
     SpecDecision,
     build_decisions_context,
 )
-from kstrl.decompose import DECOMPOSE_PROMPT, DECOMPOSE_PROMPT_VERSION
+from kstrl.decompose import (
+    DECOMPOSE_PROMPT,
+    DECOMPOSE_PROMPT_VERSION,
+    REPO_CONTEXT_PROMPT,
+    REPO_CONTEXT_PROMPT_VERSION,
+)
 from kstrl.git import (
     PASTED_CHANGE_SOURCE_PROMPT,
     PASTED_CHANGE_SOURCE_PROMPT_VERSION,
@@ -143,6 +148,7 @@ def _sha256(text: str) -> str:
 
 _PROMPTS: dict[str, str] = {
     "DECOMPOSE_PROMPT": DECOMPOSE_PROMPT,
+    "REPO_CONTEXT_PROMPT": REPO_CONTEXT_PROMPT,
     "REVIEWER_PROMPT": REVIEWER_PROMPT,
     "SECURITY_PROMPT": SECURITY_PROMPT,
     "DISTILL_PROMPT": DISTILL_PROMPT,
@@ -156,6 +162,7 @@ _PROMPTS: dict[str, str] = {
 
 _VERSIONS: dict[str, str] = {
     "DECOMPOSE_PROMPT": DECOMPOSE_PROMPT_VERSION,
+    "REPO_CONTEXT_PROMPT": REPO_CONTEXT_PROMPT_VERSION,
     "REVIEWER_PROMPT": REVIEWER_PROMPT_VERSION,
     "SECURITY_PROMPT": SECURITY_PROMPT_VERSION,
     "DISTILL_PROMPT": DISTILL_PROMPT_VERSION,
@@ -192,9 +199,27 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # shapes validated. The correspondence is now per record: one
     # decision per issue, blocker iff escalated, and an id that names
     # nothing is a rejection.
+    # 3.1.0 (#199): MINOR. The template gains one substitution slot,
+    # {repo_context}, at the very end, for the architect's repository-
+    # context block (REPO_CONTEXT_PROMPT, enrolled below). No existing
+    # wording, output schema or taxonomy moves, and with
+    # repo_context="" the rendered text is byte-identical to 3.0.0 -
+    # which is the issue's own greenfield acceptance criterion.
     "DECOMPOSE_PROMPT": (
-        "3632c88ab7813319ec3ccc76139ecb253c300bbea509b838436b1947bb50f147",
-        "3.0.0",
+        "2113b7abece68c6e48396b3be83bbd873eafd49db2565cf435bfd158d442e465",
+        "3.1.0",
+    ),
+    # 1.0.0 (#199): new. The architect's repository-context block: its
+    # own instruction paragraph plus its own BEGIN/END delimiters,
+    # separate from the spec's so a spec author cannot close this
+    # section by echoing the spec's token. The body is assembled by
+    # decompose.build_repo_context from two builders that already own
+    # their budget (operator_context.load_operator_file for the
+    # codebase map, feedforward.build_feedforward_context for the
+    # extracted interfaces); nothing here re-implements a budget.
+    "REPO_CONTEXT_PROMPT": (
+        "0159fbb563dca8fc194e06b774cffb1bac9864464964540a85cf98bf509740d8",
+        "1.0.0",
     ),
     # 2.0.0 (#266): MAJOR, because the change-acquisition contract and
     # the output schema both broke. Neither prompt carries a diff any
@@ -431,6 +456,7 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
         decompose,
         lambda _p: decompose.build_decompose_prompt("PROJECT", "SPEC"),
     ),
+    "REPO_CONTEXT_PROMPT": (decompose, lambda _p: decompose.build_repo_context("BODY")),
     "REVIEWER_PROMPT": (review, _reviewer_render),
     "SECURITY_PROMPT": (
         security,

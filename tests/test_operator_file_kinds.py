@@ -31,6 +31,7 @@ from kstrl.config_keys import STRING_KEYS
 from kstrl.init_cmd import DEFAULT_GOLDEN_PATTERNS, DEFAULT_MEMORY, SCAFFOLDED_TEMPLATES
 from kstrl.operator_context import (
     _KEPT,
+    ARCHITECT_FILES,
     CUT_FLOOR,
     GOLDEN_PATTERNS,
     MEMORY,
@@ -338,6 +339,13 @@ class TestTheTableTiesToTheOtherTables:
     thing that makes "declared once" true rather than asserted. Without
     the second one a new kind silently loses the unedited-scaffold
     suppression, which is #229's BLOCKER 1 reproduced for the next file.
+
+    #199: these four iterate ``OPERATOR_FILES + ARCHITECT_FILES``, not
+    ``OPERATOR_FILES`` alone. A declared kind is enrolled whether it
+    reaches the engineer or the architect; only the worker-facing tests
+    elsewhere in this module (parametrized over ``KINDS``) stay on
+    ``OPERATOR_FILES``, because they drive ``operator_context._rows``,
+    which loops over that tuple by design.
     """
 
     def test_every_kind_matches_a_paths_row(self) -> None:
@@ -346,7 +354,7 @@ class TestTheTableTiesToTheOtherTables:
             for section, key, _env, field_name, is_path in STRING_KEYS
             if section == "paths"
         }
-        for kind in OPERATOR_FILES:
+        for kind in OPERATOR_FILES + ARCHITECT_FILES:
             assert kind.key in path_rows, f"{kind.key} is not a [paths] key"
             field_name, is_path = path_rows[kind.key]
             assert field_name == kind.field
@@ -354,7 +362,9 @@ class TestTheTableTiesToTheOtherTables:
             assert isinstance(getattr(KstrlConfig(), kind.field), Path)
 
     def test_every_kind_is_enrolled_in_the_ledger(self) -> None:
-        assert {k.scaffold for k in OPERATOR_FILES} <= {t.filename for t in SCAFFOLDED_TEMPLATES}
+        assert {k.scaffold for k in OPERATOR_FILES + ARCHITECT_FILES} <= {
+            t.filename for t in SCAFFOLDED_TEMPLATES
+        }
 
     def test_every_row_is_distinguishable_from_every_other(self) -> None:
         """The parametrized cases above compare a block against the OTHER
@@ -369,17 +379,23 @@ class TestTheTableTiesToTheOtherTables:
         ledger of names to check is closed only over the fields somebody
         remembered; a census of the dataclass is closed over the class.
 
-        Exemptions are by name WITH A REASON, and there is one:
+        Exemptions are by name WITH A REASON, and there are two:
         :attr:`OperatorFileKind.keep` is a two-value enumeration, so with
         three rows two of them must share it. It is not a name and not a
         budget, and nothing distinguishes two files by it.
+        :attr:`OperatorFileKind.anchor_heading` (#199) is an optional
+        feature of the TAIL cut, not an identity field: GOLDEN_PATTERNS
+        and the new CODEBASE_MAP both leave it ``None``, and two rows
+        that both decline an optional feature are not thereby the same
+        file. ``max_chars`` is deliberately NOT exempt: if it collides,
+        the fix is to change the budget, not this test.
         """
-        exempt = {"keep"}
+        exempt = {"keep", "anchor_heading"}
         checked = [f.name for f in dataclasses.fields(OperatorFileKind) if f.name not in exempt]
 
         assert set(checked) | exempt == {f.name for f in dataclasses.fields(OperatorFileKind)}
         for attribute in checked:
-            values = [getattr(kind, attribute) for kind in OPERATOR_FILES]
+            values = [getattr(kind, attribute) for kind in OPERATOR_FILES + ARCHITECT_FILES]
             assert len(set(values)) == len(values), (attribute, values)
 
     def test_every_row_declares_a_direction_the_cut_implements(self) -> None:
@@ -393,7 +409,7 @@ class TestTheTableTiesToTheOtherTables:
         question in the vocabulary the code uses instead of a third copy
         of it (round 2, nit 6).
         """
-        for kind in OPERATOR_FILES:
+        for kind in OPERATOR_FILES + ARCHITECT_FILES:
             assert kind.keep in _KEPT, (kind.key, kind.keep, sorted(_KEPT))
 
     def test_the_memory_row_is_the_one_the_issue_asked_for(self) -> None:

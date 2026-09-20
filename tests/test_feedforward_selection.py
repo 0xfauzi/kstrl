@@ -29,9 +29,18 @@ def _package(root: Path, name: str, count: int) -> Path:
 
 
 def _listed(context: str) -> list[str]:
-    """The file names named in the "Public interfaces" section body."""
+    """The file names named in the "Public interfaces" section body.
+
+    Skips the "(sample: N of M ..." denominator line (#199): it is
+    prepended only when the file cap was hit, carries a colon of its
+    own, and is not a filename.
+    """
     body = section(context, "## Public interfaces")
-    return [line.split(":", 1)[0] for line in body.splitlines() if line.strip()]
+    return [
+        line.split(":", 1)[0]
+        for line in body.splitlines()
+        if line.strip() and not line.startswith("(sample:")
+    ]
 
 
 def _reversed_iterdir_context(tmp_path: Path) -> str:

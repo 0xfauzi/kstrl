@@ -7,7 +7,10 @@ this repository, stated before the run rather than distilled after it;
 and ``scripts/kstrl/memory.md`` (R10.9), the operator's standing
 corrections, read AFTER the retry context so an entry in it changes how
 this attempt's failures are acted on rather than being framed by them.
-The two differ only by their :class:`OperatorFileKind` row.
+A third row, the ARCHITECT's ``codebase_map.md`` (#199), is declared
+separately as :data:`ARCHITECT_FILES`: it pays none of the six
+``factory.py`` edits an :data:`OPERATOR_FILES` row costs. All three
+differ only by their :class:`OperatorFileKind` row.
 
 TRUST. These files are trusted the way ``CLAUDE.md`` is trusted, which
 ``run_loop`` prepends verbatim (``kstrl/loop.py``). They are NOT passed
@@ -286,6 +289,37 @@ MEMORY = OperatorFileKind(
 #: mechanism R10.9 is (the operator's standing correction is read after
 #: the controller's output for this attempt, not before it).
 OPERATOR_FILES: tuple[OperatorFileKind, ...] = (GOLDEN_PATTERNS, MEMORY)
+
+#: #199. Read by the ARCHITECT, not the engineer, so declared beside
+#: OPERATOR_FILES rather than inside it: a row in that tuple reaches
+#: KstrlConfig.validate and the once-per-run notice through _rows, and
+#: costs the six factory.py edits that put a block in front of the
+#: engineer. This kind pays none of those. Guards walking "every
+#: declared kind" walk OPERATOR_FILES + ARCHITECT_FILES.
+#: header says agent-maintained, never operator-authored: ks understand
+#: writes it and the engineer appends (init_cmd.py DEFAULT_PROMPT step
+#: 10), and component_harness_paths carves it out of every component's
+#: allowedPaths, so check_diff_scope passes a write outside scope
+#: (measured, PR body). max_chars=12000, twice golden-patterns' and
+#: distinct from every other row's (test_every_row_is_distinguishable_
+#: from_every_other): this file is machine-accreted, not hand-pruned,
+#: and stays under the architect's own 12236-char instruction body.
+#: keep="head": front matter (Quick Facts, topology) answers "where do
+#: components live", while ks understand APPENDS, so a head cut drops
+#: the newest notes (11.5% of a 104647-char map measured here). Both
+#: max_chars and keep are judgements, flagged as such in the PR; do
+#: not change either without a measurement.
+CODEBASE_MAP = OperatorFileKind(
+    key="codebase_map",
+    field="codebase_map_file",
+    header="REPOSITORY MAP (agent-maintained, untrusted)",
+    subject="Codebase map",
+    max_chars=12000,
+    keep="head",
+    scaffold="codebase_map.md",
+)
+
+ARCHITECT_FILES: tuple[OperatorFileKind, ...] = (CODEBASE_MAP,)
 
 
 @dataclass(frozen=True)

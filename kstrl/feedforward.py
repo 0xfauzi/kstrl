@@ -367,9 +367,11 @@ def extract_public_interfaces(root: Path) -> str:
     candidates = [f for _, files in scanned for f in files if not f.name.startswith(("_", "test"))]
 
     file_symbols: list[tuple[str, list[str]]] = []
+    examined = 0
     for py_file in candidates:
         if len(file_symbols) >= _MAX_PUBLIC_INTERFACE_FILES:
             break
+        examined += 1
         symbols = _extract_symbols_from_file(py_file)
         if symbols:
             file_symbols.append((py_file.relative_to(root).as_posix(), symbols))
@@ -382,7 +384,20 @@ def extract_public_interfaces(root: Path) -> str:
             f"root(s): {names})"
         )
 
-    return "\n".join(f"{filepath}: {', '.join(symbols)}" for filepath, symbols in file_symbols)
+    body = "\n".join(f"{filepath}: {', '.join(symbols)}" for filepath, symbols in file_symbols)
+    if len(file_symbols) >= _MAX_PUBLIC_INTERFACE_FILES:
+        # #199. A planner drawing component boundaries reads a headed
+        # section with no denominator as "this is everything"; state
+        # the sample size so it reads as a sample instead. `examined`
+        # counts files actually read, not `len(file_symbols)`: a file
+        # that was read and had no public symbols is neither shown nor
+        # unread, so it cannot be inferred from the output count.
+        return (
+            f"(sample: {examined} of {len(candidates)} eligible source files were "
+            f"read, and the {len(file_symbols)} listed below are the ones with "
+            f"public symbols; the rest of the repository was not read)\n" + body
+        )
+    return body
 
 
 def build_dependency_graph(root: Path) -> str:
@@ -774,17 +789,39 @@ def build_feedforward_context(
     # Apply token cap by dropping lowest-priority sections first.
     # Priority order in 'sections' is highest first, so we drop from the end.
     max_chars = config.max_context_tokens * 4
-    sections = _truncate_to_budget(sections, max_chars)
+    sections, dropped = _truncate_to_budget(sections, max_chars)
 
     if not sections:
         return ""
 
-    # Assemble final output
+    return _render_context(sections, dropped, max_chars)
+
+
+def _render_context(
+    sections: list[tuple[str, str]],
+    dropped: list[str],
+    max_chars: int,
+) -> str:
+    """Assemble the final header/body/footer string.
+
+    Split out of :func:`build_feedforward_context` (#199) so the
+    dropped-section notice is one more branch in a leaf function rather
+    than one more branch in the entry point the complexity ratchet
+    tracks.
+    """
     parts: list[str] = ["=== CODEBASE CONTEXT (auto-generated) ===", ""]
 
     for heading, content in sections:
         parts.append(f"## {heading}")
         parts.append(content)
+        parts.append("")
+
+    if dropped:
+        # #199. The engineer has been paying for a silent drop since
+        # feedforward shipped (measured: 848 of 60779 characters on
+        # this tree with no notice). Name what was cut instead of
+        # shrinking the context without saying so.
+        parts.append(f"[budget {max_chars} characters: dropped section(s) {', '.join(dropped)}]")
         parts.append("")
 
     parts.append("=== END CODEBASE CONTEXT ===")
@@ -795,12 +832,20 @@ def build_feedforward_context(
 def _truncate_to_budget(
     sections: list[tuple[str, str]],
     max_chars: int,
-) -> list[tuple[str, str]]:
+) -> tuple[list[tuple[str, str]], list[str]]:
     """Truncate sections to fit within a character budget.
 
     Drops lowest-priority sections first (last in list).
     If still over budget after dropping all but one section,
     truncates the remaining section content.
+
+    Returns the kept sections and the headings dropped, in the order
+    they were dropped (#199), so the caller can name the cut instead of
+    applying it silently. The single-surviving-section branch has two
+    paths and only one truncates: when ``available > 100`` the section
+    survives, truncated, and contributes nothing to the dropped list;
+    otherwise it is dropped like any other section and its heading is
+    collected the same way.
     """
     # Calculate overhead per section (heading + blank lines)
     header_footer_overhead = len("=== CODEBASE CONTEXT (auto-generated) ===\n\n") + len(
@@ -813,6 +858,8 @@ def _truncate_to_budget(
             total += len(f"## {heading}\n") + len(content) + len("\n\n")
         return total
 
+    dropped: list[str] = []
+
     # Drop lowest-priority sections (end of list) until under budget
     while sections and _total_chars(sections) > max_chars:
         if len(sections) == 1:
@@ -823,8 +870,10 @@ def _truncate_to_budget(
                 truncated = content[: available - 20] + "\n... (truncated)"
                 sections[0] = (heading, truncated)
             else:
+                dropped.append(heading)
                 sections = []
             break
-        sections.pop()
+        heading, _content = sections.pop()
+        dropped.append(heading)
 
-    return sections
+    return sections, dropped
