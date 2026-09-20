@@ -154,7 +154,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #399: TestCheckBadPatterns and the bytecode-destination test now
     # commit into real repositories, through this file's own `_repo` /
     # `_commit`, which goes through `tests.helpers.gitrepo.set_identity`.
-    "tests/test_verify.py": 10,
+    "tests/test_verify.py": 11,
 }
 
 

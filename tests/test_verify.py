@@ -425,11 +425,14 @@ def _commit(repo: Path, message: str) -> None:
 class TestCheckBadPatterns:
     def test_clean_files(self, tmp_path: Path) -> None:
         repo = _repo(tmp_path)
+        gitrepo.git_in(repo, "commit", "-q", "--allow-empty", "-m", "base")
+        gitrepo.git_in(repo, "checkout", "-q", "-b", "work")
         (repo / "clean.py").write_text("x = 1\n")
-        _commit(repo, "add clean.py on main")
+        _commit(repo, "add clean.py")
 
         result = check_bad_patterns(repo, "main")
         assert result.passed is True
+        assert result.message == "Scanned 1 of 1 changed Python files, no issues"
 
     def test_empty_py_file(self, tmp_path: Path) -> None:
         repo = _repo(tmp_path)
