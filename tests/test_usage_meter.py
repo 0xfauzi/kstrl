@@ -3431,7 +3431,10 @@ class TestFailedSnapshotDeletionInvalidates:
         pipeline.usage_meter = {}
         pipeline.run_usage = UsageTotals()
         pipeline._usage_salvage_unsafe = set()
-        pipeline.usage_paths = RunPaths.for_run(tmp_path, "run-1")
+        # #193: usage_paths is derived from root_dir + run_id rather
+        # than stored, so this pipeline supplies those two instead.
+        pipeline.root_dir = tmp_path
+        pipeline.run_id = "run-1"
         recorded: list[UsageTotals] = []
         pipeline.record_engineer_usage = lambda _c, totals: recorded.append(totals)
 
