@@ -101,7 +101,14 @@ from kstrl.decisions import (
     SpecDecision,
     build_decisions_context,
 )
-from kstrl.decompose import DECOMPOSE_PROMPT, DECOMPOSE_PROMPT_VERSION
+from kstrl.decompose import (
+    ARCHITECT_NO_REPO_SOURCE_PROMPT,
+    ARCHITECT_NO_REPO_SOURCE_PROMPT_VERSION,
+    ARCHITECT_REPO_SOURCE_PROMPT,
+    ARCHITECT_REPO_SOURCE_PROMPT_VERSION,
+    DECOMPOSE_PROMPT,
+    DECOMPOSE_PROMPT_VERSION,
+)
 from kstrl.git import (
     PASTED_CHANGE_SOURCE_PROMPT,
     PASTED_CHANGE_SOURCE_PROMPT_VERSION,
@@ -143,6 +150,8 @@ def _sha256(text: str) -> str:
 
 _PROMPTS: dict[str, str] = {
     "DECOMPOSE_PROMPT": DECOMPOSE_PROMPT,
+    "ARCHITECT_REPO_SOURCE_PROMPT": ARCHITECT_REPO_SOURCE_PROMPT,
+    "ARCHITECT_NO_REPO_SOURCE_PROMPT": ARCHITECT_NO_REPO_SOURCE_PROMPT,
     "REVIEWER_PROMPT": REVIEWER_PROMPT,
     "SECURITY_PROMPT": SECURITY_PROMPT,
     "DISTILL_PROMPT": DISTILL_PROMPT,
@@ -156,6 +165,8 @@ _PROMPTS: dict[str, str] = {
 
 _VERSIONS: dict[str, str] = {
     "DECOMPOSE_PROMPT": DECOMPOSE_PROMPT_VERSION,
+    "ARCHITECT_REPO_SOURCE_PROMPT": ARCHITECT_REPO_SOURCE_PROMPT_VERSION,
+    "ARCHITECT_NO_REPO_SOURCE_PROMPT": ARCHITECT_NO_REPO_SOURCE_PROMPT_VERSION,
     "REVIEWER_PROMPT": REVIEWER_PROMPT_VERSION,
     "SECURITY_PROMPT": SECURITY_PROMPT_VERSION,
     "DISTILL_PROMPT": DISTILL_PROMPT_VERSION,
@@ -192,9 +203,32 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # shapes validated. The correspondence is now per record: one
     # decision per issue, blocker iff escalated, and an id that names
     # nothing is a rejection.
+    # 3.1.0 (#199): MINOR. The output schema, disposition taxonomy and
+    # every validation rule are unchanged. The architect is now told its
+    # cwd IS the repository and given a source of facts the spec alone
+    # did not carry; rule 12's "if the spec is silent on layout" bullet
+    # now points at the repository first. The one SPEC-AS-DATA paragraph
+    # is generalised to DATA / INSTRUCTION SEPARATION, covering
+    # repository content on the same terms as the delimited spec,
+    # without a second injection-refusal paragraph.
     "DECOMPOSE_PROMPT": (
-        "3632c88ab7813319ec3ccc76139ecb253c300bbea509b838436b1947bb50f147",
-        "3.0.0",
+        "0e535ef0ff369641cbb4c1fafbe98148293eac8a8c9bb09a60a43373a6002e37",
+        "3.1.0",
+    ),
+    # 1.0.0 (#199): opens the series. Never shipped before this PR. Same
+    # split, and the same reason, as REPO_CHANGE_SOURCE_PROMPT /
+    # PASTED_CHANGE_SOURCE_PROMPT in kstrl/git.py: the architect runs
+    # with cwd=root_dir, so it is told to read the tree rather than
+    # handed a paste.
+    "ARCHITECT_REPO_SOURCE_PROMPT": (
+        "629c4e5d91f2d14c7c9a7cccf48fe8d48c63418a63e64f9ddd933d46454e6cc3",
+        "1.0.0",
+    ),
+    # 1.0.0 (#199): opens the series. The one line for a caller with no
+    # repository (the calibration fixtures).
+    "ARCHITECT_NO_REPO_SOURCE_PROMPT": (
+        "e3173c2f57452af673c877ec9e7e8f6a79fcace49c79e71d9c6c7ad02cfe1705",
+        "1.0.0",
     ),
     # 2.0.0 (#266): MAJOR, because the change-acquisition contract and
     # the output schema both broke. Neither prompt carries a diff any
@@ -430,6 +464,14 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     "DECOMPOSE_PROMPT": (
         decompose,
         lambda _p: decompose.build_decompose_prompt("PROJECT", "SPEC"),
+    ),
+    "ARCHITECT_REPO_SOURCE_PROMPT": (
+        decompose,
+        lambda _p: decompose.architect_repo_source("scripts/kstrl/codebase_map.md"),
+    ),
+    "ARCHITECT_NO_REPO_SOURCE_PROMPT": (
+        decompose,
+        lambda _p: decompose.architect_no_repo_source(),
     ),
     "REVIEWER_PROMPT": (review, _reviewer_render),
     "SECURITY_PROMPT": (

@@ -827,6 +827,20 @@ SCAFFOLDED_TEMPLATES: tuple[ScaffoldedTemplate, ...] = (
             ("07c55e3e12be359ea12cbe55f1c3296098a24c3468d6e62b66f42b0d2e1ffb83", "2026-09-07b"),
         ),
     ),
+    # #199. `ks init` has always written this file; it never had a ledger
+    # row, so nothing could tell an untouched scaffold from a real map.
+    # The digests were re-derived by parsing the constant out of the
+    # ancestor commits of main, not copied from anywhere. APPEND only.
+    ScaffoldedTemplate(
+        filename="codebase_map.md",
+        constant_name="DEFAULT_CODEBASE_MAP",
+        body=DEFAULT_CODEBASE_MAP,
+        history=(
+            ("48ede9d3d9ce78ebcc0e0b2b7e030cc3be3e58894627a875a4c29420b541126a", "2026-01-14"),
+            ("382a66611762f9dba9098cad4720fdc4641e36e86b55865e56879aea7e7edea3", "2026-01-15"),
+            ("664063e1929c7a50fef5e95e6d275c6502711ba2bcc249545f84bdc9a7160c51", "2026-07-20"),
+        ),
+    ),
 )
 
 
