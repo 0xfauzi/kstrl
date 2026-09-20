@@ -49,6 +49,7 @@ from kstrl.pipeline import (
 from kstrl.pr import PrOutcome
 from kstrl.review import ReviewConcern, ReviewResult
 from kstrl.runenvelope import RunEnvelope
+from kstrl.runstate import RunState
 from kstrl.scope import RunScope
 from kstrl.security import SecurityConfig, SecurityResult
 from kstrl.ui.plain import PlainUI
@@ -217,17 +218,13 @@ def _make_pipeline(
         review_selection=_selection("review"),
         security_selection=security_selection,
         knowledge_config=knowledge or KnowledgeConfig(enabled=False),
-        factory_result=factory_result,
         # #269: the plan-time snapshot the factory resolves before the
         # first engineer call, built here the same way run_factory
         # builds it so the pipeline is judged against a real one.
         run_scope=RunScope.resolve(manifest, tmp_path, _base_config(tmp_path)),
         run_envelope=RunEnvelope.load(tmp_path),
         hooks=_recording_hooks(call_log, **(hooks_overrides or {})),
-        worktree_paths={},
-        component_contexts={},
-        fresh_base_retry_ids=set(),
-        component_failure_signatures={},
+        run_state=RunState(factory_result=factory_result),
     )
     return pipeline, manifest, factory_result, call_log
 
@@ -2770,3 +2767,57 @@ class TestPhaseReadingsRetireSkippableFindings:
         block_a = self._prompt_block(pipeline, "comp-a")
         assert "A-CRITERION-UNMET" not in block_a
         assert "from review passed or were re-measured in attempt 2" in block_a
+
+
+class TestRunStateIsAliasedNotCopied:
+    """#193: every RunState field the pipeline exposes is the SAME object
+    the factory holds.
+
+    The five read-only properties are the only way a reader reaches these
+    structures, so this is the one place a copy could be introduced
+    invisibly. Measured before the change: of five copy plants at the
+    factory's construction site, ``fresh_base_retry_ids=set(...)`` left
+    the focused suite at 187 passed, the control's exact line.
+    """
+
+    def test_every_field_is_the_object_that_was_handed_in(self, tmp_path: Path) -> None:
+        pipeline, _manifest, factory_result, _calls = _make_pipeline(tmp_path)
+        state = pipeline.run_state
+
+        assert isinstance(state, RunState)
+        assert state.factory_result is factory_result
+        assert pipeline.factory_result is state.factory_result
+        assert pipeline.worktree_paths is state.worktree_paths
+        assert pipeline.component_contexts is state.component_contexts
+        assert pipeline.fresh_base_retry_ids is state.fresh_base_retry_ids
+        assert pipeline.component_failure_signatures is state.component_failure_signatures
+
+    def test_the_properties_refuse_a_rebind(self, tmp_path: Path) -> None:
+        """A setter would be the one way to swap a shared structure for a
+        private one, so there is none."""
+        pipeline, _manifest, _fr, _calls = _make_pipeline(tmp_path)
+        for name in (
+            "factory_result",
+            "worktree_paths",
+            "component_contexts",
+            "fresh_base_retry_ids",
+            "component_failure_signatures",
+            "usage_paths",
+        ):
+            with pytest.raises(AttributeError):
+                setattr(pipeline, name, None)
+
+    def test_the_container_is_keyword_only_and_not_frozen(self) -> None:
+        """The two rules in kstrl/runstate.py that nothing else asserts.
+
+        kw_only because three fields are dicts and two of those are
+        ``dict[str, ...]``-shaped, so mypy --strict accepts a positional
+        transposition of same-typed fields. Not frozen because the point
+        of the object is the mutation: a frozen wrapper over mutable
+        fields is a guarantee that is not one, and it would pass every
+        other test in this class.
+        """
+        assert dataclasses.is_dataclass(RunState)
+        assert RunState.__dataclass_params__.frozen is False
+        with pytest.raises(TypeError):
+            RunState(FactoryResult())  # type: ignore[misc]

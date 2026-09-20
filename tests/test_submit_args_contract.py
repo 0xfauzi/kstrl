@@ -44,6 +44,7 @@ from kstrl.config import KstrlConfig
 from kstrl.events import RunPaths
 from kstrl.factory import ComponentResult, FactoryConfig, run_factory
 from kstrl.manifest import Component, Manifest
+from kstrl.runstate import RunState
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 
@@ -325,6 +326,39 @@ class TestTheWholeSubmitTupleIsBound:
             if parameter.default is not inspect.Parameter.empty
         }
         assert BY_KEYWORD - expected <= defaulted
+
+    @pytest.mark.parametrize("max_parallel", [1, 2], ids=["inline", "pool"])
+    def test_no_shared_run_object_crosses_the_worker_boundary(
+        self,
+        tmp_path: Path,
+        max_parallel: int,
+    ) -> None:
+        """#193: the boundary stays primitive.
+
+        ``RunState`` holds the five structures the factory and the
+        pipeline SHARE by reference, and it pickles cleanly (measured:
+        326 bytes). Sent to a pool worker it would arrive as a COPY, the
+        worker's writes would land nowhere, and nothing would say so.
+        The suite cannot discover this by running: instrumenting the
+        executor choice counted 300 ``_InlineExecutor`` constructions
+        against 10 real pool ones, and ``_InlineExecutor.submit`` calls
+        ``fn(*args)`` with no pickling at all. So it is asserted on the
+        bound arguments instead, over both branches.
+        """
+        root = _project(tmp_path)
+
+        bound, kwargs = _positional(root, max_parallel)
+        offenders = [
+            name
+            for name, value in list(bound.items()) + list(kwargs.items())
+            if isinstance(value, RunState)
+        ]
+        assert offenders == [], (
+            f"{offenders} hands a RunState to _run_component. RunState is "
+            "shared-by-reference run state and it pickles, so a pool "
+            "worker would silently mutate a copy. Pass the primitive the "
+            "worker actually needs."
+        )
 
     def test_the_two_run_scoped_directory_slots_are_distinguishable(
         self,

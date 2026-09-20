@@ -120,6 +120,7 @@ from kstrl.review import (
     run_review,
 )
 from kstrl.runenvelope import RunEnvelope
+from kstrl.runstate import RunState
 from kstrl.sandbox import SandboxConfig
 from kstrl.scope import ComponentScope, RunScope
 from kstrl.security import (
@@ -3435,14 +3436,6 @@ def _run_factory_locked(
     # may mint the id (format unchanged - knowledge.current_run_id).
     run_id = run_id_override if run_id_override else current_run_id()
 
-    # R6.1: structured "<check>:<code>" failure signatures per component
-    # (e.g. "linter:E501", "review:scope_creep"), recorded at each
-    # failure site from the parser/finding stream and handed to the
-    # evolution journal at record_run. In-memory only: the manifest
-    # already persists failed_phase/failed_check; the full signature
-    # list is a journal concern.
-    component_failure_signatures: dict[str, list[str]] = {}
-
     # #192: the run's config envelope, resolved ONCE, HERE, and injected
     # into the pipeline, which never resolves one of its own.
     # kstrl/runenvelope.py records the divergence that costs.
@@ -3654,12 +3647,24 @@ def _run_factory_locked(
     # name that was only assigned further down the function (R7.3).
     knowledge_config = KnowledgeConfig.load(root_dir)
 
-    # Scheduling state shared between the scheduler and the pipeline.
-    worktree_paths: dict[str, Path] = {}
-    component_contexts: dict[str, str] = {}  # comp_id -> context JSON
-    # Components whose last failure was a timeout kill: their retry must
-    # not trust the surviving worktree/branch state (R0.1 requirement 5).
-    fresh_base_retry_ids: set[str] = set()
+    # #193: the mutable structures the scheduler below and the
+    # pipeline SHARE. Constructed once, here, and handed to the
+    # pipeline whole at the construction site below. Every field is
+    # an ALIAS and nothing may copy one, so everything from here on
+    # reads through `run_state.<field>`: a surviving local beside the
+    # struct is how one shared object silently becomes two.
+    # kstrl/runstate.py carries the measured evidence per field,
+    # including the one whose copy the whole suite missed.
+    #
+    # `factory_result` is the one field that also keeps a local name.
+    # It is built far above because the pre-flight refusal path
+    # returns it before this line is reached, so it cannot be created
+    # here. The local and `run_state.factory_result` are the same
+    # object and the suite does see them diverge: a fresh
+    # FactoryResult() here gives 11 failed / 176 passed on
+    # test_factory + test_pipeline + test_timeout_enforcement against
+    # a 187-passed control (#193).
+    run_state = RunState(factory_result=factory_result)
     # Components abandoned by the scheduler backstop; their workers may
     # still be alive, so their worktrees are never cleaned up here.
     leaked_component_ids: set[str] = set()
@@ -3695,6 +3700,19 @@ def _run_factory_locked(
     pipeline = ComponentPipeline(
         manifest=manifest,
         manifest_path=manifest_path,
+        # LOAD-BEARING ALIAS, do not copy or freeze this argument.
+        # The autonomy clamp 100 lines below rebinds
+        # `factory_config.pause_before_pr_merge` and
+        # `factory_config.review_mode` on THIS object, and the
+        # pipeline reads both through the alias: the merge gate at
+        # pipeline.py `_phase_checkpoint` and the review gate at
+        # pipeline.py `_phase_review`. Replacing this argument with
+        # a copy disconnects the ladder from both gates and the
+        # whole suite stays green (measured on #193: 326 passed on
+        # test_autonomy_ladder + test_pipeline + test_factory +
+        # test_explicit_merge_gate + test_review_gates with the
+        # copy, 326 passed without it). Whoever groups config into
+        # a RunContext has to move the clamp above this line first.
         factory_config=factory_config,
         base_config=base_config,
         ui=ui,
@@ -3703,13 +3721,11 @@ def _run_factory_locked(
         bus=bus,
         journal_path=journal_path,
         run_paths=run_paths,
-        usage_paths=usage_paths,
         interaction=interaction,
         notify=notify,
         review_selection=review_selection,
         security_selection=security_selection,
         knowledge_config=knowledge_config,
-        factory_result=factory_result,
         run_scope=run_scope,
         run_envelope=run_envelope,
         hooks=PipelineHooks(
@@ -3720,10 +3736,7 @@ def _run_factory_locked(
             measure_fact_utilization=measure_fact_utilization,
             cleanup_worktree=_cleanup_worktree,
         ),
-        worktree_paths=worktree_paths,
-        component_contexts=component_contexts,
-        fresh_base_retry_ids=fresh_base_retry_ids,
-        component_failure_signatures=component_failure_signatures,
+        run_state=run_state,
     )
 
     # #257: the architect's spend, incurred by the caller before this run
@@ -3967,8 +3980,8 @@ def _run_factory_locked(
         """Set up worktree for a component. Returns worktree path or None."""
         try:
             if factory_config.use_worktrees:
-                fresh_from_base = comp.id in fresh_base_retry_ids
-                fresh_base_retry_ids.discard(comp.id)
+                fresh_from_base = comp.id in run_state.fresh_base_retry_ids
+                run_state.fresh_base_retry_ids.discard(comp.id)
                 wt_path = _setup_worktree(
                     comp.id,
                     comp.branch_name,
@@ -3979,7 +3992,7 @@ def _run_factory_locked(
                 )
             else:
                 wt_path = root_dir
-            worktree_paths[comp.id] = wt_path
+            run_state.worktree_paths[comp.id] = wt_path
             return wt_path
         except RuntimeError as exc:
             ui.err(f"  Worktree setup failed for '{comp.id}': {exc}")
@@ -4007,7 +4020,7 @@ def _run_factory_locked(
         }
 
     def _submit_args(comp: Component, wt_path: Path) -> tuple[Any, ...]:
-        ctx_json = component_contexts.get(comp.id)
+        ctx_json = run_state.component_contexts.get(comp.id)
         engineer_usage = pipeline.engineer_usage_totals()
         scope = run_scope.for_component(comp.id)
         knowledge_prefix = ""
@@ -4365,7 +4378,7 @@ def _run_factory_locked(
             return
         ui.section("Factory: Cleanup")
         kept_evidence = False
-        for comp_id in worktree_paths:
+        for comp_id in run_state.worktree_paths:
             if comp_id in leaked_component_ids:
                 # A possibly-live worker still owns this worktree; removing
                 # it under the worker risks corrupting the main repo's
@@ -4378,9 +4391,12 @@ def _run_factory_locked(
                 and comp is not None
                 and comp.status == ComponentStatus.FAILED.value
             ):
-                comp.evidence_worktree = str(worktree_paths[comp_id])
+                comp.evidence_worktree = str(run_state.worktree_paths[comp_id])
                 kept_evidence = True
-                ui.info(f"  Keeping failed worktree for post-mortem: {worktree_paths[comp_id]}")
+                ui.info(
+                    "  Keeping failed worktree for post-mortem: "
+                    f"{run_state.worktree_paths[comp_id]}"
+                )
                 continue
             _cleanup_worktree(comp_id, root_dir, run_id)
         if kept_evidence:
@@ -4501,7 +4517,7 @@ def _run_factory_locked(
                 breaker.retries += 1
                 breaker.status = ComponentStatus.PENDING.value
                 breaker.error = f"Contract test failed at tier {cr.tier}"
-                component_failure_signatures[cr.breaker] = [
+                run_state.component_failure_signatures[cr.breaker] = [
                     f"contract:tier_{cr.tier}",
                 ]
                 # Remove from completed list
@@ -4541,7 +4557,7 @@ def _run_factory_locked(
                     breaker.completed_at = _iso_now()
                     breaker.failed_phase = "contract"
                     breaker.failed_check = f"tier_{cr.tier}"
-                    component_failure_signatures[cr.breaker] = [
+                    run_state.component_failure_signatures[cr.breaker] = [
                         f"contract:tier_{cr.tier}",
                     ]
                 if cr.breaker in factory_result.completed:
@@ -4743,7 +4759,7 @@ def _run_factory_locked(
                     for comp_id, phases in pipeline.usage_meter.items()
                 },
                 run_usage=pipeline.run_usage.to_dict(),
-                failure_signatures=component_failure_signatures,
+                failure_signatures=run_state.component_failure_signatures,
                 fact_utilization={
                     comp_id: util.to_dict() for comp_id, util in pipeline.fact_utilization.items()
                 },
