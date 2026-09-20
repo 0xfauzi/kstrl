@@ -163,6 +163,21 @@ def test_a_completed_run_loads(complete_capture: Path) -> None:
     assert baseline.model == "haiku"
 
 
+def test_a_baseline_whose_run_complete_is_not_exactly_true_is_refused(
+    tmp_path: Path, complete_capture: Path
+) -> None:
+    """Decision 1: run_complete present and not exactly True is partial, so
+    junk in the field fails closed. A truthiness check passes every other
+    test in this file, so this is the only thing pinning the identity test."""
+    data = json.loads(complete_capture.read_text(encoding="utf-8"))
+    data["run_complete"] = 1
+    path = tmp_path / "baseline-20260101-000000.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError, match="partial"):
+        calibration.load_baseline(path)
+    assert calibration.newest_baseline_path(tmp_path) is None
+
+
 def test_newest_baseline_path_skips_the_partial_capture(
     tmp_path: Path,
     killed_capture: Path,
