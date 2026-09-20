@@ -125,7 +125,6 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_scope_launch_gate.py": 1,
     "tests/test_sense_cli.py": 5,
     "tests/test_sense_dampener_baseline.py": 1,
-    "tests/test_sense_dampener_workflow.py": 2,
     "tests/test_spine_contract.py": 4,
     "tests/test_spine_crash_recovery.py": 1,
     "tests/test_spine_engineer_loop.py": 4,
