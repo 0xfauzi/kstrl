@@ -1,10 +1,10 @@
 """This repository's OWN committed baseline, read the way the workflow reads it.
 
 Every other test about the dampener builds a baseline under ``tmp_path``. None
-of them touches ``scripts/kstrl/sense-baseline.json``, which is the one baseline
-that is actually consulted: the dampener job compares every pull request against
-it. Round 2 of review on #357 measured the gap - `grep -rn sense-baseline tests/`
-found only fixtures and a string constant.
+of them touches ``scripts/kstrl/sense-baseline.json``, which is this
+repository's own committed baseline and the worked example
+``docs/dampener.md`` points at. Round 2 of review on #357 measured the gap -
+`grep -rn sense-baseline tests/` found only fixtures and a string constant.
 
 What that costs. The baseline records a digest of the three verify commands and
 the timeout, and ``ks sense --compare-baseline`` refuses a mismatch with exit 2.
@@ -15,9 +15,11 @@ committed file with a green local suite, and the first signal is a red dampener
 job on somebody else's next pull request. Here it is a red test on the commit
 that did it.
 
-The timeout is read from the workflow rather than typed, because the workflow's
-env is where the comparison's timeout actually comes from, and a baseline
-written at a different one is not a comparison.
+The timeout is a constant here. It used to be read out of the dampener
+workflow, which was this repository's only consumer of the baseline until #394
+deleted that job; a baseline compared at a different timeout is not a
+comparison, so the number the file was written at is pinned in one place and
+the regeneration command in the failure message is built from it.
 """
 
 from __future__ import annotations
@@ -46,21 +48,9 @@ _DIGEST_ENV = (
 )
 
 
-def _workflow_timeout() -> float:
-    """``KSTRL_TIMEOUT_VERIFY`` from the dampener workflow, parsed not grepped."""
-    import yaml
-
-    document = yaml.safe_load(
-        (ROOT / ".github/workflows/sense-dampener.yml").read_text(encoding="utf-8")
-    )
-    steps = [
-        step
-        for job in document["jobs"].values()
-        for step in job["steps"]
-        if "KSTRL_TIMEOUT_VERIFY" in step.get("env", {})
-    ]
-    assert len(steps) == 1, [step.get("name") for step in steps]
-    return float(steps[0]["env"]["KSTRL_TIMEOUT_VERIFY"])
+#: The timeout the committed baseline was measured at, and the one the
+#: regeneration command below names. One constant, so the two cannot drift.
+BASELINE_TIMEOUT_SECONDS = 1800.0
 
 
 @pytest.fixture
@@ -82,11 +72,11 @@ def test_the_committed_baseline_matches_this_repository(
     baseline = dampener.read_baseline(BASELINE_PATH)
     commands = resolve_verify_commands(repository_config, ROOT)
 
-    assert baseline.verify_digest == dampener.verify_digest(commands, _workflow_timeout()), (
+    assert baseline.verify_digest == dampener.verify_digest(commands, BASELINE_TIMEOUT_SECONDS), (
         "the committed sense baseline was measured with different verify "
         "commands or a different timeout than this checkout resolves, so "
-        "`ks sense --compare-baseline` exits 2 on every pull request. "
-        "Regenerate it: KSTRL_TIMEOUT_VERIFY=1800 uv run ks sense "
+        "`ks sense --compare-baseline` exits 2 for anyone who runs it. "
+        f"Regenerate it: KSTRL_TIMEOUT_VERIFY={BASELINE_TIMEOUT_SECONDS:.0f} uv run ks sense "
         "--write-baseline --force"
     )
     assert baseline.sense_schema_version == SENSE_SCHEMA_VERSION
