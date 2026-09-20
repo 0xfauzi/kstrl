@@ -9,9 +9,15 @@ build that the dampener step did not have.
 
 The census is over every workflow file in the directory rather than over a
 list of names, so a job that comes back under a new filename is an unexplained
-delta rather than a miss. The equality is what makes the walk self-controlling:
-a walk that stopped matching returns an empty census and fails against the two
-ci.yml runs below, where `assert offenders == []` would have passed.
+delta rather than a miss. For the step census, the equality is what makes the
+walk self-controlling: `EXPECTED_SUITE_STEPS` is non-empty (`{"ci.yml": 2}`),
+so a walk that stopped matching returns an empty census and fails against the
+two ci.yml runs below, where `assert offenders == []` would have passed. That
+guarantee does not extend to the reuse census: `EXPECTED_REUSE_EDGES` is `{}`,
+so the equality above passes both when nothing reuses a workflow and when
+`_reuse_edges` has stopped matching -- an empty pin cannot tell those apart on
+its own. The control test right after the census test below is what holds the
+reuse census up instead.
 
 This guard does two different things, and they are wrong in different
 directions. The TOKEN MATCH flags: it reads the text of `run:` scripts, so a
@@ -133,6 +139,18 @@ def test_this_repository_runs_its_own_test_suite_where_the_census_says() -> None
         "moves this dict in the same diff that adds it, with the reason in "
         "the commit."
     )
+
+
+def test_the_reuse_edge_walk_still_sees_a_reuse_edge() -> None:
+    """Control for the layer whose pin is empty.
+
+    `EXPECTED_REUSE_EDGES` is `{}`, so the equality above passes both when
+    nothing reuses a workflow and when `_reuse_edges` has stopped matching.
+    One synthetic caller, shaped like the A1 plant, is what makes the second
+    case fail.
+    """
+    caller = {"jobs": {"call-ci": {"uses": "./.github/workflows/ci.yml"}}}
+    assert _reuse_edges([("caller.yml", caller)]) == [("caller.yml", "./.github/workflows/ci.yml")]
 
 
 #: Shapes neither `_run_scripts` nor `_reuse_edges` can see today, one line
