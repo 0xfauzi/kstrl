@@ -256,6 +256,40 @@ def test_a_repository_with_nothing_to_say_gets_todays_prompt_byte_for_byte(
     assert prompt == expected
 
 
+def test_a_mixed_block_is_kept_not_suppressed(tmp_path: Path) -> None:
+    """PR #397 fixer round: ``_repo_structure_block`` suppresses only when
+    EVERY body line is an absence sentence (``all(...)``). A tree whose
+    module map is real but whose public-interfaces body is an absence
+    ("(none: no public classes ...)") is a MIXED block, and the whole
+    block must survive. Flipping the guard's quantifier to ``any(...)``
+    drops this block silently, which is the worse direction the
+    docstring names; this test is the coverage that direction was
+    missing. Do not change ``kstrl/decompose.py`` to make this pass -
+    the current ``all(`` is correct and this test must already be
+    green against it."""
+    (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nrequires-python = ">=3.11"\n', encoding="utf-8"
+    )
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "core.py").write_text("_x = 1\n\n\ndef _hidden():\n    pass\n", encoding="utf-8")
+    (pkg / "other.py").write_text("_y = 2\n", encoding="utf-8")
+    spec = tmp_path / "spec.md"
+    spec.write_text("# Spec\n\nBuild something.\n", encoding="utf-8")
+
+    prompt = _capture_architect_prompt(tmp_path, spec)
+
+    assert "## Module map" in prompt
+    assert "## Conventions" in prompt
+    # The third assertion is what stops this test being vacuous: it
+    # proves the surviving block is genuinely MIXED (one real section
+    # plus one absence section), not all-real, so the ``all(`` guard is
+    # actually exercised rather than trivially satisfied.
+    assert "(none: no public classes" in prompt
+
+
 # ---------------------------------------------------------------------------
 # E11
 # ---------------------------------------------------------------------------
