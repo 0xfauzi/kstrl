@@ -82,7 +82,9 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "atomicio.py": 1,
     "autonomy.py": 1,
     "autonomy_replay.py": 1,
-    "calibration.py": 1,
+    # 2 since #398, which added newest_baseline_path's own read so it can
+    # skip a partial capture.
+    "calibration.py": 2,
     "cli.py": 1,
     "commandrun.py": 1,
     "decisions.py": 1,
@@ -195,6 +197,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     # all, and this names utf-8 AND catches ``ValueError`` beside
     # ``OSError``, which is the half a ``UnicodeDecodeError`` escapes.
     "autonomy_replay.py path.read_text(encoding='utf-8')",
+    "calibration.py candidate.read_text(encoding='utf-8')",
     "calibration.py path.read_text(encoding='utf-8')",
     "cli.py open(prd_file, encoding='utf-8')",
     "commandrun.py open(path, 'a', buffering=1, encoding='utf-8')",
