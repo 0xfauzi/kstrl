@@ -255,13 +255,25 @@ def test_the_public_interfaces_section_carries_its_denominator(tmp_path: Path) -
     pkg = tmp_path / "pkg"
     pkg.mkdir()
     (pkg / "__init__.py").write_text("_private = True\n")
+    # Eligible candidates that get READ and contribute no public symbol,
+    # named to sort ahead of the public ones so they are read first.
+    # Without them the count of files read and the count of files listed
+    # are the same number, and the assertion below cannot tell `examined`
+    # from `len(file_symbols)`, which is the distinction this line of
+    # output exists to state.
+    blanks = 5
+    for i in range(blanks):
+        (pkg / f"ablank{i:02d}.py").write_text("_hidden = 1\n\n\ndef _nope():\n    pass\n")
     eligible = 35
     for i in range(eligible):
         (pkg / f"mod{i:02d}.py").write_text(f"def public_{i:02d}():\n    pass\n")
 
     body = extract_public_interfaces(tmp_path)
 
-    assert f"{_MAX_PUBLIC_INTERFACE_FILES} of {eligible}" in body
+    # Read count and listed count asserted as DIFFERENT numbers, both
+    # derived from the fixture rather than written in by hand.
+    assert f"(sample: {blanks + _MAX_PUBLIC_INTERFACE_FILES} of {blanks + eligible} " in body
+    assert f"the {_MAX_PUBLIC_INTERFACE_FILES} listed below" in body
     assert "no Python source root found" not in body
     assert "no public classes or functions" not in body
 
