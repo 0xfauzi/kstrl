@@ -35,7 +35,7 @@ supposed to route through), and four outside it:
 - ``kstrl/verify.py::_restore_mutated_sources`` - ``os.replace(bak, target)``.
   Accompanied by a mode capture and restore: :func:`kstrl.verify._target_modes`
   reads every target's permission bits BEFORE any spawn, in
-  ``_mutation_spawns``, and :func:`kstrl.verify._restore_mutated_sources`
+  ``_mutmut_run_spawn``, and :func:`kstrl.verify._restore_mutated_sources`
   reapplies them UNCONDITIONALLY in the same ``finally`` that performs this
   replace (#152's own defect C). This is the one PROVEN compliant by
   reading the surrounding function, not merely declared so.

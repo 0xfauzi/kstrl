@@ -37,6 +37,17 @@ behaviour is unchanged bit for bit), and Layer 2's tests bind a
 parameter past ``root`` is keyword-only, so the partial's bound keyword
 can never collide with a positional fill the way ``_only_gap``'s
 ``check`` could.
+
+``FEAT_FILES`` and ``EMPTY_CONFTEST_BASE_FILES`` (#391 simplify pass on
+PR #392, B5) are the two commits ``tests/test_mutation_score.py`` and
+``tests/test_diff_mutation.py`` both build byte-for-byte, and
+``FEAT_FILES`` was never caller-specific in the first place -
+``tests/test_patch_coverage.py`` builds the identical dict under its own
+name too. ``EMPTY_CONFTEST_BASE_FILES`` stays out of that third file's
+reach on purpose: its own ``BASE_FILES`` commits a ``conftest.py`` whose
+``pytest_sessionstart`` hook counts invocations and stalls the coverage
+spawn for its own timeout test, which is the one thing that really is
+per-caller (see :func:`repo_builder`'s own docstring).
 """
 
 from __future__ import annotations
@@ -52,7 +63,7 @@ from kstrl.verify import VerifyConfig, run_mechanical_verification
 from tests.conftest import make_review_repo
 
 if TYPE_CHECKING:
-    from kstrl.verify import NotMeasured, VerificationResult
+    from kstrl.verify import CheckResult, NotMeasured, VerificationResult
 
 BASE_MOD = "def covered_before(n):\n    return n + 1\n"
 BASE_TEST = (
@@ -66,6 +77,19 @@ FEAT_TEST = (
     "from mod import added_covered, covered_before\n\n\ndef test_before():\n"
     "    assert covered_before(1) == 2\n\n\ndef test_added():\n    assert added_covered(3) == 6\n"
 )
+
+#: The shared, half-covered feature commit (#391 simplify pass, B5):
+#: never caller-specific - all three of this fixture's callers build the
+#: identical dict, so it moves here rather than staying triplicated.
+FEAT_FILES = {"mod.py": FEAT_MOD, "test_mod.py": FEAT_TEST}
+
+#: The base commit `tests/test_mutation_score.py` and
+#: `tests/test_diff_mutation.py` both build (#391 simplify pass, B5): a
+#: plain, empty `conftest.py` - NOT `tests/test_patch_coverage.py`'s,
+#: whose `pytest_sessionstart` hook counts test-command invocations and
+#: stalls the coverage spawn for its own timeout test. Neither mutation
+#: file needs that, only `mod.py` importable.
+EMPTY_CONFTEST_BASE_FILES = {"conftest.py": "", "mod.py": BASE_MOD, "test_mod.py": BASE_TEST}
 
 
 def repo_builder(base_files: dict[str, str], feat_files: dict[str, str]) -> Callable[..., None]:
@@ -96,6 +120,33 @@ def only_gap(result: VerificationResult, check: str, reason: str) -> NotMeasured
     return gaps[0]
 
 
+def only_row(result: VerificationResult, check: str) -> CheckResult:
+    """The single ``check`` row in ``result``: exactly one, no gap
+    alongside it (#391 simplify pass on PR #392, B3). Collapses roughly
+    ten inline ``[c for c in result.checks if c.name == check]``
+    assertions across the two mutation-driver test files, some checking
+    a count of one and others only non-emptiness - inconsistent ways of
+    saying the identical thing."""
+    rows = [c for c in result.checks if c.name == check]
+    assert len(rows) == 1, rows
+    gaps = [g for g in result.not_measured if g.check == check]
+    assert gaps == [], gaps
+    return rows[0]
+
+
+def no_spawn_gap(
+    result: VerificationResult, recdir: Path, check: str, reason: str, fragment: str
+) -> None:
+    """The pre-spend refusal shape (#152 simplify pass, D4; hoisted here
+    in the #391 simplify pass on PR #392, B4, since a second caller now
+    needs it): a single ``check`` gap carrying ``reason``, whose detail
+    names ``fragment``, and mutmut was never spawned at all - the
+    refusal is BEFORE any spawn, so ``argv-run.txt`` does not exist."""
+    gap = only_gap(result, check, reason)
+    assert fragment in gap.detail
+    assert not (recdir / "argv-run.txt").exists()
+
+
 def run_adequacy(
     root: Path,
     *,
@@ -107,13 +158,22 @@ def run_adequacy(
     patch_coverage: bool = True,
     diff_mutation: bool = False,
     read_only: bool = False,
+    mutation_testing: bool = False,
+    mutation_threshold: float = 50.0,
 ) -> VerificationResult:
     """Drive the real ``run_mechanical_verification`` over ``root`` with
     R8.5's config, every knob either file needs. ``diff_mutation`` and
     ``read_only`` default to the harness's own defaults (``False``), so
     ``tests/test_patch_coverage.py`` uses this directly; Layer 2's tests
     bind ``functools.partial(run_adequacy, diff_mutation=True)`` instead
-    of redefining the body to flip one default."""
+    of redefining the body to flip one default.
+
+    ``mutation_testing`` and ``mutation_threshold`` (#391) are the third
+    caller of this fixture: ``[verify] mutation_testing`` is Layer 1's own
+    gate, and ``tests/test_mutation_score.py`` needs both knobs to drive it
+    through ``run_mechanical_verification`` rather than calling
+    ``check_mutation_score`` directly.
+    """
     return run_mechanical_verification(
         root,
         None,
@@ -127,6 +187,8 @@ def run_adequacy(
             check_bad_patterns=False,
             subprocess_timeout=subprocess_timeout,
             mutation_timeout=mutation_timeout,
+            mutation_testing=mutation_testing,
+            mutation_threshold=mutation_threshold,
         ),
         adequacy_config=AdequacyConfig(
             enabled=enabled, patch_coverage=patch_coverage, diff_mutation=diff_mutation

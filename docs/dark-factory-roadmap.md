@@ -662,12 +662,17 @@ what fraction of them the suite detects a change to. This is a NEW
 advisory check beside the pre-existing file-scoped `[verify]
 mutation_testing` / `check_mutation_score`, not a rework of it: the two
 answer different questions (a threshold-gated score over a whole changed
-FILE versus a floor-free score over changed-and-covered LINES), and
-`check_mutation_score` produces no score at all against real mutmut
-2.5.1 (`--no-progress` suppresses every count line mutmut 2.5.1 prints,
-and `mutmut results`' own format changed under it - measured, and left
-as recorded-not-done rather than fixed here, since repairing an existing
-gate's verdict is a separate decision with its own blast radius).
+FILE versus a floor-free score over changed-and-covered LINES). At the
+time Layer 2 was built, `check_mutation_score` produced no score at all
+against real mutmut 2.5.1 (`--no-progress` suppresses every count line
+mutmut 2.5.1 prints, and `mutmut results` carries no killed count under
+any flag) - left as recorded-not-done then, since repairing an existing
+gate's verdict was a separate decision with its own blast radius. #391
+made that repair: `check_mutation_score` now reaches mutmut through the
+identical driver this section describes, parsing `mutmut junitxml`
+rather than `mutmut results`, so the two checks answer different
+questions through the SAME plumbing rather than through two independently
+correct-or-broken drivers.
 
 The roadmap's four Layer 2 requirements, and how each is met: **mutants
 only on changed AND covered lines** - a synthetic patch file naming
@@ -681,11 +686,19 @@ has no such flag, so this is applied when SCORING: the lowest-id mutant
 with a killed-or-survived status decides the line's verdict, so a
 truncated run's low-id `untested` rows do not win by default. **A hard
 wall-clock cap with sampling recorded in the audit trail** - bounded by
-`[verify] mutation_timeout` (default 600s, the same cap `[verify]
-mutation_testing` uses); a cap that fires reports a SAMPLED score,
-labelled as such, naming how many target lines were planned versus
-actually measured, never a bare percentage that hides the shrink; a run
-that measured zero lines is a `timed_out` sidecar, never a `0.0%` row.
+`[verify] mutation_timeout` (default 600s), ONE phase-level budget
+shared with `[verify] mutation_testing` since the #391 simplify pass on
+PR #392 (A2), not two independent copies of that number: this check
+runs first and gets the full value, and `mutation_testing` gets whatever
+its own wall clock left of it. A cap that fires is ALWAYS a `timed_out`
+sidecar with no row (#391, D4: mutmut 2.5.1's junitxml cannot read a
+truncated cache); `sampled` is reached only through the surviving
+disjunct - fewer target lines reached a definite status than mutmut
+reported a mutant for, on a run that otherwise completed - naming how
+many target lines were planned versus actually measured, never a bare
+percentage that hides the shrink. A run that measured zero lines is a
+`no_mutants` or `command_failed` sidecar (`_no_measured_lines`), never a
+`0.0%` row.
 **Surviving mutants fed back as concrete test targets** - every
 surviving line is recorded as `path:line` in the check's details and in
 its advisory finding (which reaches the PR body and the component's

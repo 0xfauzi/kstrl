@@ -35,6 +35,40 @@ nothing - the two failure-before-anything-runs facts measurements.md 2a
 records. One template now carries both as shell-side `if` gates
 (`{cache}`, `{has_stderr}`) rather than two copies of the case statement
 around them.
+
+#391: the shapes below are now grounded in
+`tests/test_mutmut_format_fidelity.py`'s recorded report as well as
+measurements.md - that file's own docstring names the exact commands
+that produced the recording. The `run` branch's ``--tests-dir`` refusal
+and the ``cache-before-run.txt`` recording are new in that round; see
+their own comments below for what each models and what it only
+observes.
+
+Round 2 of #391: the `junitxml` branch's "no cache on disk" check is
+also an OBSERVATION of real mutmut, like `cache-before-run.txt`, and not
+a shape invented for the fake. With mutmut 2.5.1 in a throwaway venv, on
+a git fixture where `mutmut run` had already written a 36864-byte
+`.mutmut-cache`: `rm -f .mutmut-cache && mutmut junitxml
+--untested-policy=error --suspicious-policy=error` exits 0 and prints
+`mutmut cache is out of date, clearing it...` followed by a testsuites
+report with zero tests. Before this round the fake decided whether to
+print a report by reading the build-time `{cache}` template flag rather
+than by looking at whether `.mutmut-cache` is actually on disk when
+`junitxml` runs, so nothing in the suite could see the ORDER of the two
+`.mutmut-cache` deletes in `kstrl/verify.py::_mutmut_measure` - a delete
+planted between the run spawn and the report spawn passed every test.
+
+#391 simplify pass on PR #392, C2: the `junitxml` branch's SECOND
+`{cache}`-eq-1 check (guarding `cat junit.xml` vs. exiting 0) was
+provably dead once the disk-based check above it existed. Read together:
+`{cache}` is 0 only from `put_failing_mutmut`, whose `run` branch exits
+before the cache/mutate block and so never creates `.mutmut-cache` at
+all - the disk check above always intercepts that case first. `{cache}`
+is 1 only from `put_mutmut_on_path`, whose `run` branch always `touch`es
+the cache, so by the time `junitxml` runs the disk check above always
+falls through and the second check was always true. Verified by
+replacing the whole second conditional with the bare `cat` and running
+every test in this repo that installs a fake mutmut: unchanged.
 """
 
 from __future__ import annotations
@@ -59,6 +93,14 @@ _STATUS_ELEMENT: dict[str, str] = {
     "timeout": '<error type="timeout" message="bad_timeout"/>',
 }
 
+#: A fixed placeholder for the ``<system-out>`` child mutmut 2.5.1
+#: appends to EVERY testcase, killed ones included (measurements 2c and
+#: ``<lane>/c-junit-complete.xml``: all eleven testcases in the recording
+#: carry one). Only the ELEMENT and its position (after the status
+#: element) are copied from the recording; the source-line content is
+#: not - callers that need a specific line write their own testcase.
+_SYSTEM_OUT = "<system-out>    mutated source line</system-out>"
+
 
 def junit(*mutants: tuple[int, str, int, str]) -> str:
     """``(id, file, line, status)`` rows rendered as mutmut 2.5.1 renders
@@ -67,10 +109,15 @@ def junit(*mutants: tuple[int, str, int, str]) -> str:
     ``status`` is one of ``"killed"``, ``"survived"``, ``"untested"``,
     ``"timeout"``. Every test in ``tests/test_diff_mutation.py`` that
     calls this points its docstring at the same section.
+
+    Element order inside a testcase is the status element FIRST, then
+    ``<system-out>`` (:data:`_SYSTEM_OUT`) - measured in
+    ``<lane>/c-junit-complete.xml``, and pinned by
+    ``tests/test_mutmut_format_fidelity.py``.
     """
     cases = [
         f'<testcase name="Mutant #{mutant_id}" file="{path}" line="{line}">'
-        f"{_STATUS_ELEMENT[status]}</testcase>"
+        f"{_STATUS_ELEMENT[status]}{_SYSTEM_OUT}</testcase>"
         for mutant_id, path, line, status in mutants
     ]
     body = "".join(cases)
@@ -103,21 +150,46 @@ def junit(*mutants: tuple[int, str, int, str]) -> str:
 #: escape the embedded double quote real mutmut's own remedy line carries
 #: (``'pip install --force-reinstall mutmut[patch]"'``).
 #:
-#: Two subcommands only, matching what `check_diff_mutation` actually
-#: spawns (``kstrl/verify.py::_mutation_spawns``); anything else exits 97
-#: so an unexpected subcommand is loud rather than silently a no-op.
+#: Two subcommands only, matching what both mutation checks actually
+#: spawn (``kstrl/verify.py::_mutmut_run_spawn`` and
+#: ``_mutmut_report_spawn``); anything else is RECORDED then exits 97, so
+#: a driver that still asks mutmut for a text report (``mutmut results``)
+#: is caught rather than silently a no-op.
+#:
+#: ``{recdir}/cache-before-run.txt`` (#391) is an OBSERVATION, not
+#: invented tool behaviour, unlike every other shape in this module:
+#: it records whether ``.mutmut-cache`` was present when ``run`` started,
+#: so a test can prove kstrl deleted a stale cache before spawning. The
+#: ``--tests-dir`` refusal right after it IS modelled on real mutmut:
+#: without that flag and with neither ``tests/`` nor ``test/`` in the
+#: cwd, mutmut 2.5.1 raises the ``FileNotFoundError`` below verbatim
+#: (measurements.md 1b).
 _FAKE_MUTMUT = """#!/bin/sh
 case "$1" in
   run)
     shift
+    if [ -f .mutmut-cache ]; then
+      printf 'present\\n' >> "{recdir}/cache-before-run.txt"
+    else
+      printf 'absent\\n' >> "{recdir}/cache-before-run.txt"
+    fi
+    has_tests_dir=0
     for a in "$@"; do
       printf '%s\\n' "$a" >> "{recdir}/argv-run.txt"
       case "$a" in
+        --tests-dir=*)
+          has_tests_dir=1
+          ;;
         --use-patch-file=*)
           cp "${{a#--use-patch-file=}}" "{recdir}/patch.diff"
           ;;
       esac
     done
+    if [ $has_tests_dir -eq 0 ] && [ ! -d tests ] && [ ! -d test ]; then
+      echo 'FileNotFoundError: No test folders found in current' \\
+        'folder. Run this where there is a "tests" or "test" folder.' 1>&2
+      exit 1
+    fi
     if [ {has_stderr} -eq 1 ]; then
       echo {stderr} 1>&2
     fi
@@ -141,13 +213,16 @@ case "$1" in
     for a in "$@"; do
       printf '%s\\n' "$a" >> "{recdir}/argv-junitxml.txt"
     done
-    if [ {cache} -eq 1 ]; then
-      cat "{recdir}/junit.xml"
-    else
+    if [ ! -f .mutmut-cache ]; then
+      printf 'mutmut cache is out of date, clearing it...\\n'
+      printf '<?xml version="1.0" ?>\\n'
+      printf '<testsuites disabled="0" errors="0" failures="0" tests="0" time="0.0"/>\\n'
       exit 0
     fi
+    cat "{recdir}/junit.xml"
     ;;
   *)
+    printf '%s\\n' "$1" >> "{recdir}/argv-other.txt"
     exit 97
     ;;
 esac
