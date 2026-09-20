@@ -402,6 +402,31 @@ def test_a_stale_cache_is_deleted_before_the_run(
     assert not (tmp_path / ".mutmut-cache").exists()
 
 
+def test_the_cache_survives_between_the_run_spawn_and_the_report_spawn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The between-the-deletes hazard: ``_mutmut_measure`` deletes
+    ``.mutmut-cache`` before the run and again in a ``finally`` after the
+    report spawn, and never in between, because the report spawn reads
+    that cache. A delete planted between the run and the report is
+    invisible to a fake that decides whether to print a report from a
+    build-time template flag rather than from the real file on disk - see
+    ``tests/helpers/fakemutmut.py``'s round-2 #391 docstring paragraph,
+    which records the real mutmut 2.5.1 behaviour this fake now models:
+    with no cache on disk, ``junitxml`` prints 'mutmut cache is out of
+    date, clearing it...' and a zero-mutant report. A normal run with the
+    cache deleted mid-measure would therefore score zero mutants and land
+    on the ``no_mutants`` gap (``NOT_MEASURED_NO_MUTANTS``) on every real
+    run, forever, with a fully green suite - the simplest visible symptom
+    is that the row below stops being a row."""
+    _repo(tmp_path)
+    put_mutmut_on_path(tmp_path, monkeypatch, junit=junit((1, "mod.py", 6, "killed")))
+    result = _run(tmp_path)
+    row = _row(result)
+    assert row.passed is True
+    assert [g for g in result.not_measured if g.check == "mutation_testing"] == []
+
+
 @pytest.mark.parametrize("read_only", [True, False], ids=["read-only", "writable"])
 def test_read_only_records_a_gap_and_writable_records_a_row(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, read_only: bool

@@ -43,6 +43,20 @@ that produced the recording. The `run` branch's ``--tests-dir`` refusal
 and the ``cache-before-run.txt`` recording are new in that round; see
 their own comments below for what each models and what it only
 observes.
+
+Round 2 of #391: the `junitxml` branch's "no cache on disk" check is
+also an OBSERVATION of real mutmut, like `cache-before-run.txt`, and not
+a shape invented for the fake. With mutmut 2.5.1 in a throwaway venv, on
+a git fixture where `mutmut run` had already written a 36864-byte
+`.mutmut-cache`: `rm -f .mutmut-cache && mutmut junitxml
+--untested-policy=error --suspicious-policy=error` exits 0 and prints
+`mutmut cache is out of date, clearing it...` followed by a testsuites
+report with zero tests. Before this round the fake decided whether to
+print a report by reading the build-time `{cache}` template flag rather
+than by looking at whether `.mutmut-cache` is actually on disk when
+`junitxml` runs, so nothing in the suite could see the ORDER of the two
+`.mutmut-cache` deletes in `kstrl/verify.py::_mutmut_measure` - a delete
+planted between the run spawn and the report spawn passed every test.
 """
 
 from __future__ import annotations
@@ -187,6 +201,12 @@ case "$1" in
     for a in "$@"; do
       printf '%s\\n' "$a" >> "{recdir}/argv-junitxml.txt"
     done
+    if [ ! -f .mutmut-cache ]; then
+      printf 'mutmut cache is out of date, clearing it...\\n'
+      printf '<?xml version="1.0" ?>\\n'
+      printf '<testsuites disabled="0" errors="0" failures="0" tests="0" time="0.0"/>\\n'
+      exit 0
+    fi
     if [ {cache} -eq 1 ]; then
       cat "{recdir}/junit.xml"
     else
