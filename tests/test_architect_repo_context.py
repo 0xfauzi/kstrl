@@ -19,7 +19,12 @@ import pytest
 from kstrl import decompose
 from kstrl.decompose import build_decompose_prompt, decompose_spec
 from kstrl.ui.plain import PlainUI
-from tests.test_decompose import VALID_DECOMPOSE_OUTPUT
+from tests.test_decompose import (
+    BLOCKER_ISSUE,
+    VALID_DECOMPOSE_OUTPUT,
+    _single_component_output,
+    _story,
+)
 from tests.test_prompt_versions import _MARKER_HEAD, _MARKER_TAIL, _ORPHAN_MARKER
 
 
@@ -116,6 +121,83 @@ def test_a_retargeted_codebase_map_is_the_path_the_architect_is_given(
     # passing str(config.codebase_map_file) leaves the absolute tmp path in
     # the prompt, and the first assertion above would still pass.
     assert str(root) not in prompt
+
+
+def test_a_malformed_kstrl_toml_still_reaches_the_architect(tmp_path: Path) -> None:
+    """#199 blocker fix: the config load ahead of the halt path is tolerant.
+
+    `_decompose_spec_impl` loads KstrlConfig BEFORE the halt path that
+    writes scripts/kstrl/spec-issues.json (kstrl/decompose.py:1499's
+    EvolutionConfig.load_or_none is the same shape one call downstream).
+    A malformed kstrl.toml must not raise ConfigError out of that load
+    and abort decompose_spec before the halt path ever runs; it must
+    degrade to the anchored default path instead, exactly the way
+    tests/test_decompose.py::TestSpecConvergenceThroughDecompose::
+    test_malformed_toml_does_not_cost_the_audit_artifact_either proves
+    for the halt path itself.
+
+    This uses an ESCALATED spec_issue (BLOCKER_ISSUE) rather than
+    `_decompose_and_capture`'s normal VALID_DECOMPOSE_OUTPUT, and
+    deliberately so, not as a simplification: a decompose that runs to
+    a clean, non-halting completion proceeds past the halt path into
+    `LinearConfig.load(root_dir)` (kstrl/decompose.py, right before the
+    Linear sync section), which re-parses the SAME malformed
+    kstrl.toml, unguarded, and raises `ConfigError` there instead - a
+    real, separate, pre-existing call site this blocker fix does not
+    touch (only `KstrlConfig.load` at the earlier line was named).
+    `test_malformed_toml_does_not_cost_the_audit_artifact_either`'s own
+    docstring already records that this second failure point exists on
+    the direct in-process call (`ks decompose` itself never reaches it,
+    because `config_preflight` rejects the file at command entry
+    first). Scoping this test to the halt path, the way that sibling
+    test already does, is what isolates the one thing blocker 1 is
+    about: the architect prompt is built and delivered - with the
+    default map path, because the retarget in kstrl.toml could not be
+    read - before ANY config load gets a chance to abort the run.
+    """
+    root, spec = _repo(tmp_path)
+    (root / "kstrl.toml").write_text('[paths\ncodebase_map = "docs/map.md"\n', encoding="utf-8")
+
+    class _HaltingRecordingAgent:
+        """Like RecordingAgent, but yields a caller-chosen output so the
+        run halts via SpecBlockerError before reaching Linear sync."""
+
+        def __init__(self, output: str) -> None:
+            self._lines = output.splitlines()
+            self.prompts: list[str] = []
+            self.cwds: list[Path | None] = []
+
+        @property
+        def name(self) -> str:
+            return "recording-halt"
+
+        def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
+            self.prompts.append(prompt)
+            self.cwds.append(cwd)
+            yield from self._lines
+
+        @property
+        def final_message(self) -> str | None:
+            return self._lines[-1] if self._lines else None
+
+    agent = _HaltingRecordingAgent(
+        _single_component_output([_story()], spec_issues=[BLOCKER_ISSUE])
+    )
+    with pytest.raises(decompose.SpecBlockerError):
+        decompose_spec(
+            spec_path=spec,
+            project_name="test",
+            base_branch="main",
+            single_pr=False,
+            agent=agent,  # type: ignore[arg-type]
+            ui=PlainUI(no_color=True, file=io.StringIO()),
+            root_dir=root,
+        )
+
+    assert agent.prompts, "decompose_spec never called its agent"
+    prompt = agent.prompts[0]
+    assert "Your working directory IS the repository" in prompt
+    assert "scripts/kstrl/codebase_map.md" in prompt
 
 
 def test_a_caller_with_no_repository_is_told_so() -> None:

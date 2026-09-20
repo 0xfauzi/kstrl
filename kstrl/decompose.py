@@ -2385,7 +2385,16 @@ def _decompose_spec_impl(
     # and a prompt naming the default would name a file that is not
     # there. One read, measured at 0.473 ms against a 23 KB kstrl.toml,
     # before the architect call this repo measures at 119 to 210 s.
-    config = KstrlConfig.load(root_dir)
+    #
+    # load_or_anchored, not the strict load: this line runs BEFORE the
+    # halt path below that writes scripts/kstrl/spec-issues.json, so a
+    # malformed kstrl.toml raising here would cost the audit artifact
+    # the halt path exists to produce. EvolutionConfig.load_or_none
+    # (kstrl/evolution.py:339) is the precedent for the same file at the
+    # same kind of call site. Every other command still gets the strict
+    # load through config_preflight at entry; only this one path, ahead
+    # of the halt artifact, is tolerant.
+    config = KstrlConfig.load_or_anchored(root_dir, warn=ui.warn)
     prompt = build_decompose_prompt(
         project_name,
         spec_content,
