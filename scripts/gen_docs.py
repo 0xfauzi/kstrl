@@ -555,14 +555,17 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("verify", "dead_code_cleanup"): "optional dead-code check",
     ("verify", "dead_code_command"): "empty = smart default when dead_code_cleanup is on",
     ("verify", "mutation_testing"): "optional mutation testing",
-    ("verify", "mutation_threshold"): "minimum mutation kill rate (percent)",
+    ("verify", "mutation_threshold"): "minimum percentage of mutable lines in the changed "
+    "files whose first definite mutant was killed",
     (
         "verify",
         "mutation_timeout",
     ): "seconds for the mutation spawn itself ([verify] mutation_testing and "
-    "[adequacy] diff_mutation); the check's own wall-clock ceiling is higher "
-    "(~650s at this default: the spawn's own SIGTERM/SIGKILL grace plus the "
-    "fixed report-spawn timeout and its own grace)",
+    "[adequacy] diff_mutation). On a run that FINISHES the check's own "
+    "wall-clock ceiling is higher (~650s at this default: the spawn's own "
+    "SIGTERM/SIGKILL grace plus the fixed report-spawn timeout and its own "
+    "grace); on a fired cap there is no report spawn, so the ceiling is "
+    "instead this value plus at most two SIGTERM/SIGKILL graces (5s each)",
     ("verify", "subprocess_timeout"): "seconds per verification subprocess",
     (
         "verify",

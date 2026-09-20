@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import inspect
 import json
-import shlex
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -32,7 +31,7 @@ from kstrl.verify import (
     NotMeasured,
     VerificationResult,
     VerifyConfig,
-    _count_before,
+    _mutation_run_command,
     _ruff_count,
     check_bad_patterns,
     check_dead_code,
@@ -831,11 +830,6 @@ def _which_only(*present: str) -> Callable[[str], str | None]:
     return which
 
 
-def _mutmut_completed(stdout: str) -> CompletedProcess[str]:
-    """A finished ``mutmut`` invocation with ``stdout`` to parse."""
-    return _completed("mutmut", 0, stdout)
-
-
 #: ``CHEAP_GATES`` plus the opt-in mutation check, so the only row worth
 #: looking at is the one under test. Reused from ``tests.helpers`` rather
 #: than patching ``check_test_suite`` / ``check_typecheck`` /
@@ -895,223 +889,22 @@ def _result_with_gap() -> VerificationResult:
     )
 
 
-class TestCheckMutationScore:
-    """#306: every path that measures no score returns NotMeasured.
-
-    Each test names its own ``reason`` token AND asserts that the
-    collaborators downstream of the guard it is named for never ran.
-    Both halves are the round-2 fix, and they exist because round 1
-    asserted only ``result is None``: with that assertion, DELETING the
-    missing-binary guard, the no-Python-file guard or the timeout guard
-    left all three of their own tests passing, because a later exit also
-    returned None. Absence had five causes and the tests could not tell
-    them apart, which is the same defect that made the read-only test
-    wrong. A test that cannot fail for its own named reason is not a
-    test.
-    """
-
-    def test_mutmut_not_installed_measures_nothing(self, tmp_path: Path) -> None:
-        """Everything downstream is stubbed to SUCCEED, deliberately: a
-        deleted guard then reaches a 90% pass rather than an exception,
-        so this fails on its own reason and not on a TypeError."""
-        with (
-            patch("shutil.which", return_value=None),
-            patch(
-                "kstrl.verify.git.get_diff_names",
-                return_value=["src/main.py"],
-            ) as diff_names,
-            patch(
-                "kstrl.verify.run_scrubbed",
-                return_value=_mutmut_completed("9 killed\n1 survived\n"),
-            ) as run_scrubbed,
-        ):
-            result = check_mutation_score(tmp_path, "main")
-        assert isinstance(result, NotMeasured)
-        assert result.reason == NOT_MEASURED_TOOL_MISSING
-        # The guard's own observable: nothing downstream of it ran.
-        diff_names.assert_not_called()
-        run_scrubbed.assert_not_called()
-
-    @pytest.mark.parametrize(
-        "changed",
-        [
-            ["readme.md"],
-            ["test_main.py", "tests/test_foo.py"],
-            ["pkg/foo_test.py"],
-        ],
-        ids=["no-python", "only-test-python", "test-suffix-not-prefix"],
-    )
-    def test_no_mutable_file_changed_measures_nothing(
-        self,
-        tmp_path: Path,
-        changed: list[str],
-    ) -> None:
-        """Both halves of the filter: the ``.py`` clause and
-        ``is_test_path`` (#152 simplify pass; was a bare
-        ``not f.startswith("test")``, which missed ``pkg/foo_test.py``
-        entirely - the third case pins that fix)."""
-        with (
-            patch("shutil.which", return_value="/usr/bin/mutmut"),
-            patch("kstrl.verify.git.get_diff_names", return_value=changed),
-            patch(
-                "kstrl.verify.run_scrubbed",
-                return_value=_mutmut_completed("9 killed\n1 survived\n"),
-            ) as run_scrubbed,
-        ):
-            result = check_mutation_score(tmp_path, "main")
-        assert isinstance(result, NotMeasured)
-        assert result.reason == NOT_MEASURED_NO_TARGET
-        # Delete the guard and mutmut is invoked with an EMPTY
-        # --paths-to-mutate and this stub hands back a 90% score, so the
-        # check reports a pass it never measured. That is the shape of
-        # #306 itself.
-        run_scrubbed.assert_not_called()
-
-    def test_timeout_measures_nothing(self, tmp_path: Path) -> None:
-        with (
-            patch("shutil.which", return_value="/usr/bin/mutmut"),
-            patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py"]),
-            patch(
-                "kstrl.verify.run_scrubbed",
-                side_effect=TimeoutExpired("mutmut", 600),
-            ) as run_scrubbed,
-        ):
-            result = check_mutation_score(tmp_path, "main", timeout=600)
-        assert isinstance(result, NotMeasured)
-        assert result.reason == NOT_MEASURED_TIMED_OUT
-        # Exactly the `mutmut run` call and no `mutmut results` after
-        # it: returning on timeout is the point, and falling through
-        # would read counts off a run that never finished.
-        assert run_scrubbed.call_count == 1
-        assert "mutmut run" in str(run_scrubbed.call_args)
-
-    def test_a_failing_mutmut_is_not_an_empty_one(self, tmp_path: Path) -> None:
-        """A broken mutation command and a clean run with nothing to do
-        produce byte-identical empty output; only ``returncode``
-        separates them, and round 1 reported both as the same silence."""
-        broken = CompletedProcess(
-            args="mutmut",
-            returncode=2,
-            stdout="",
-            stderr="error: unrecognised option --paths-to-mutate\n",
-        )
-        with (
-            patch("shutil.which", return_value="/usr/bin/mutmut"),
-            patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py"]),
-            patch("kstrl.verify.run_scrubbed", return_value=broken),
-        ):
-            result = check_mutation_score(tmp_path, "main")
-        assert isinstance(result, NotMeasured)
-        assert result.reason == NOT_MEASURED_COMMAND_FAILED
-        assert "unrecognised option" in result.detail
-
-    def test_no_mutants_generated_measures_nothing(self, tmp_path: Path) -> None:
-        """mutmut exited zero and produced neither count. 0/0 is not a
-        score, and round 1 reported it as ``passed=True``."""
-        with (
-            patch("shutil.which", return_value="/usr/bin/mutmut"),
-            patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py"]),
-            patch(
-                "kstrl.verify.run_scrubbed",
-                return_value=_mutmut_completed("nothing to report\n"),
-            ),
-        ):
-            result = check_mutation_score(tmp_path, "main")
-        assert isinstance(result, NotMeasured)
-        assert result.reason == NOT_MEASURED_NO_MUTANTS
-
-    def test_every_reason_is_a_distinct_token(self) -> None:
-        """Six reasons, six values. A token that duplicated another would
-        make two of them indistinguishable in `ks sense --json` and in
-        `events.jsonl` while every test above still passed."""
-        reasons = [
-            NOT_MEASURED_READ_ONLY,
-            NOT_MEASURED_TOOL_MISSING,
-            NOT_MEASURED_NO_TARGET,
-            NOT_MEASURED_TIMED_OUT,
-            NOT_MEASURED_COMMAND_FAILED,
-            NOT_MEASURED_NO_MUTANTS,
-        ]
-        assert len(set(reasons)) == len(reasons) == 6
-
-    @pytest.mark.parametrize(
-        "stdout, passed, pct",
-        [
-            ("9 killed\n1 survived\n", True, "90.0%"),
-            ("1 killed\n9 survived\n", False, "10.0%"),
-        ],
-        ids=["above-threshold", "below-threshold"],
-    )
-    def test_a_measured_score_is_the_only_thing_that_gets_a_row(
-        self,
-        tmp_path: Path,
-        stdout: str,
-        passed: bool,
-        pct: str,
-    ) -> None:
-        """The other half of the contract: a real score still reports.
-
-        Without these two the class would be satisfied by a function
-        that returns NotMeasured unconditionally.
-        """
-        with (
-            patch("shutil.which", return_value="/usr/bin/mutmut"),
-            patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py"]),
-            patch("kstrl.verify.run_scrubbed", return_value=_mutmut_completed(stdout)),
-        ):
-            result = check_mutation_score(tmp_path, "main", threshold=50.0)
-        assert isinstance(result, CheckResult)
-        assert result.name == "mutation_testing"
-        assert result.passed is passed
-        assert pct in result.message
-
-
-class TestCountBefore:
-    """The mutmut counter, extracted in #306 round 2."""
-
-    @pytest.mark.parametrize(
-        "text, expected",
-        [
-            ("12 killed", 12),
-            ("Killed: nope", 0),
-            ("", 0),
-            ("killed", 0),
-            ("3 killed\n7 killed\n", 7),
-            ("- 5 KILLED mutants", 5),
-        ],
-        ids=[
-            "plain",
-            "non-numeric",
-            "empty",
-            "no-preceding-token",
-            "last-wins",
-            "case-and-prose",
-        ],
-    )
-    def test_counts(self, text: str, expected: int) -> None:
-        assert _count_before("killed", text) == expected
-
-    def test_a_coloured_line_counts_as_zero(self) -> None:
-        """The limit, named rather than left to look robust.
-
-        Every other tool-output parser in this repo reads text that has
-        been through ``parsers.strip_ansi``; this one reads mutmut's
-        stdout raw, so an ANSI-coloured count is invisible to it. That
-        is pre-existing behaviour carried through the #306 extraction,
-        not something it introduced, and stripping here would be a
-        behaviour change with no measurement behind it. What it must not
-        do is go unrecorded: 0 killed and 0 survived is
-        ``no_mutants``, and this is a way to reach that wrongly.
-        """
-        assert _count_before("killed", "\x1b[32m12\x1b[0m killed") == 0
-
-    def test_words_do_not_bleed(self) -> None:
-        """``survived`` must not be read off a ``killed`` line. Two
-        independent loops made that structurally impossible; one shared
-        helper has to keep it true."""
-        text = "9 killed\n1 survived\n"
-        assert _count_before("killed", text) == 9
-        assert _count_before("survived", text) == 1
+def test_every_reason_is_a_distinct_token() -> None:
+    """Six reasons, six values. A token that duplicated another would
+    make two of them indistinguishable in `ks sense --json` and in
+    `events.jsonl`. Moved to module scope (#391): this pins the
+    NOT_MEASURED_* vocabulary itself and has nothing to do with mutmut's
+    output format, unlike every other test `TestCheckMutationScore` held
+    - those are replaced end to end by `tests/test_mutation_score.py`."""
+    reasons = [
+        NOT_MEASURED_READ_ONLY,
+        NOT_MEASURED_TOOL_MISSING,
+        NOT_MEASURED_NO_TARGET,
+        NOT_MEASURED_TIMED_OUT,
+        NOT_MEASURED_COMMAND_FAILED,
+        NOT_MEASURED_NO_MUTANTS,
+    ]
+    assert len(set(reasons)) == len(reasons) == 6
 
 
 class TestMutationRowOnlyExistsWhenMeasured:
@@ -1562,73 +1355,35 @@ class TestCheckDeadCode:
 
         assert calls == [["vulture", "--min-confidence", "80", "--", *hostile]]
 
-    def test_the_mutation_gate_quotes_the_same_names(self, tmp_path: Path) -> None:
-        """`check_mutation_score` builds its command off the same helper
-        and off the same untrusted names.
-
-        A string, because `run_scrubbed` shells out for a string, so the
-        whole comma-joined value is quoted once and the metacharacters
-        are data: `shlex.split` of the built line gives one argument
-        back, which is what /bin/sh would pass.
-        """
-        hostile = ["src/my file.py", "src/$(id).py"]
-        calls: list[str] = []
-
-        def run(cmd: object, **_: object) -> CompletedProcess[str]:
-            calls.append(str(cmd))
-            return _completed(cmd, 0, "1 killed, 1 survived")
-
-        with (
-            patch("shutil.which", side_effect=_which_only("mutmut")),
-            patch("kstrl.verify.git.get_diff_names", return_value=hostile),
-            patch("kstrl.verify.run_scrubbed", side_effect=run),
-        ):
-            check_mutation_score(tmp_path, "main")
-
-        mutmut_run = next(c for c in calls if c.startswith("mutmut run"))
-        assert shlex.split(mutmut_run) == [
-            "mutmut",
-            "run",
-            "--paths-to-mutate=src/my file.py,src/$(id).py",
-            "--no-progress",
-        ]
-
-    def test_three_changed_files_are_one_comma_joined_argument(
-        self,
-        tmp_path: Path,
+    def test_the_mutation_run_command_is_one_argv_list_never_a_shell_string(
+        self, tmp_path: Path
     ) -> None:
-        """mutmut has ONE positional slot, so a space-separated list is
-        an outage rather than a different invocation.
+        """#391: the driver hands mutmut a LIST, never a shell string, so
+        untrusted names out of an agent-authored diff need no quoting at
+        all - there is no shell for a metacharacter to reach.
 
-        Measured on mutmut 2.5.1: `mutmut run --help` prints
-        `Usage: mutmut run [OPTIONS] [ARGUMENT]`, and
-        `mutmut run --paths-to-mutate=a.py b.py c.py --no-progress`
-        exits non-zero with `Error: Got unexpected extra argument
-        (c.py)` having mutated nothing. Two files are accepted only
-        because the second fills that positional slot instead of being a
-        path to mutate. Three is the smallest number that shows it, and
-        three changed non-test Python files is an ordinary diff.
+        mutmut has ONE positional slot, so a space-separated list would be
+        an outage rather than a different invocation, and comma-joining
+        the paths into ONE ``--paths-to-mutate=`` element is still why
+        (measured on mutmut 2.5.1: ``mutmut run --help`` prints
+        ``Usage: mutmut run [OPTIONS] [ARGUMENT]``, and
+        ``mutmut run --paths-to-mutate=a.py b.py c.py`` exits non-zero
+        with ``Error: Got unexpected extra argument (c.py)`` having
+        mutated nothing).
         """
-        changed = ["a.py", "b.py", "c.py"]
-        calls: list[str] = []
-
-        def run(cmd: object, **_: object) -> CompletedProcess[str]:
-            calls.append(str(cmd))
-            return _completed(cmd, 0, "1 killed, 1 survived")
-
-        with (
-            patch("shutil.which", side_effect=_which_only("mutmut")),
-            patch("kstrl.verify.git.get_diff_names", return_value=changed),
-            patch("kstrl.verify.run_scrubbed", side_effect=run),
-        ):
-            check_mutation_score(tmp_path, "main")
-
-        mutmut_run = next(c for c in calls if c.startswith("mutmut run"))
-        assert mutmut_run == "mutmut run --paths-to-mutate=a.py,b.py,c.py --no-progress"
-        assert shlex.split(mutmut_run)[2:] == [
-            "--paths-to-mutate=a.py,b.py,c.py",
-            "--no-progress",
-        ]
+        hostile = ["src/my file.py", "src/$(id).py", "c.py"]
+        command = _mutation_run_command(
+            ["python", "-m", "pytest"], hostile, None, tmp_path / "tests"
+        )
+        paths_args = [c for c in command if c.startswith("--paths-to-mutate=")]
+        assert paths_args == ["--paths-to-mutate=c.py,src/$(id).py,src/my file.py"]
+        assert not any(c.startswith("--use-patch-file=") for c in command)
+        # Nothing here is handed to a shell (run_scrubbed spawns a LIST
+        # directly), so no element carries shell quoting - `$(id).py`
+        # and the space in `my file.py` appear RAW, with no surrounding
+        # quote characters kstrl added of its own.
+        assert "'" not in paths_args[0]
+        assert '"' not in paths_args[0]
 
     def test_a_diff_git_could_not_read_is_a_fault_and_not_an_empty_diff(
         self,
@@ -2946,62 +2701,13 @@ class TestReadOnlyVerification:
     HEAD.
     """
 
-    @pytest.mark.parametrize(
-        "read_only, expect_row",
-        [(True, False), (False, True)],
-        ids=["read-only", "writable"],
-    )
-    def test_read_only_is_the_only_reason_the_mutation_row_is_missing(
-        self,
-        tmp_path: Path,
-        read_only: bool,
-        expect_row: bool,
-    ) -> None:
-        """mutmut rewrites the source it mutates, so read-only cannot run
-        it - and #306: what it leaves behind is NO ROW, not a pass.
-
-        Asserted through ``run_mechanical_verification`` because the row
-        is what every consumer sees, and this is the path the issue was
-        filed from: `ks sense --json` printed ``mutation_testing  True``.
-
-        Both cases, so the flag is provably the only thing that moves:
-        mutmut is on PATH in both, the diff names a non-test Python file
-        in both, and mutmut reports 90% in both. Written first with
-        mutmut ABSENT, and it passed with the read-only gate deleted -
-        the row was missing for the wrong reason. That is the shape of
-        guard this repo keeps shipping, so the writable half is here to
-        make it impossible.
-        """
-        seen: list[str] = []
-
-        def run(cmd: object, **kwargs: object) -> CompletedProcess[str]:
-            seen.append(str(cmd))
-            if "mutmut" in str(cmd):
-                return _mutmut_completed("9 killed\n1 survived\n")
-            return CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
-
-        with (
-            patch("shutil.which", return_value="/usr/bin/mutmut"),
-            patch("kstrl.verify.run_scrubbed", side_effect=run),
-            patch("kstrl.verify.git.get_diff_names", return_value=["src/main.py"]),
-        ):
-            result = run_mechanical_verification(
-                tmp_path,
-                None,
-                "main",
-                None,
-                MUTATION_GATES,
-                read_only=read_only,
-            )
-
-        assert bool(_mutation_rows(result)) is expect_row
-        assert any("mutmut" in c for c in seen) is expect_row
-        # And the round-2 half: the read-only case is not merely
-        # row-less, it says why. Without this, deleting the gate and
-        # letting some later path swallow the run would still show an
-        # absent row.
-        gaps = [g.reason for g in result.not_measured if g.check == "mutation_testing"]
-        assert gaps == ([] if expect_row else [NOT_MEASURED_READ_ONLY])
+    # test_read_only_is_the_only_reason_the_mutation_row_is_missing was
+    # here (#391): replaced by
+    # tests/test_mutation_score.py::test_read_only_records_a_gap_and_writable_records_a_row,
+    # written against the fake mutmut binary instead of a stubbed
+    # run_scrubbed - the row being absent for the wrong reason is
+    # exactly what this test's docstring said it was written to
+    # prevent.
 
     def test_bad_patterns_writes_no_bytecode_beside_the_source(
         self,

@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from kstrl.fixtures import FixturesConfig
 from kstrl.adequacy import (
     AdequacyConfig,
+    Mutant,
     MutationScore,
     PatchCoverage,
     coverage_targets,
@@ -2136,32 +2137,6 @@ def check_test_adequacy(
     )
 
 
-def _count_before(word: str, text: str) -> int:
-    """The integer immediately before the last ``word`` token in ``text``.
-
-    mutmut reports "12 killed" / "3 survived" among prose, and the
-    number is whatever sits in front of the word. Last occurrence wins,
-    because ``mutmut results`` is read after ``mutmut run`` and the
-    later figure is the settled one.
-
-    Extracted from :func:`check_mutation_score` (#306 round 2) because
-    the two copies of this loop, one per word, were most of that
-    function's cyclomatic weight and left no room to tell a FAILED
-    mutmut run apart from an empty one. A missing word yields 0, which
-    is what "no such line" and "the line said zero" both mean here.
-    """
-    count = 0
-    for line in text.splitlines():
-        parts = line.lower().strip().split()
-        for i, part in enumerate(parts):
-            if part == word and i > 0:
-                try:
-                    count = int(parts[i - 1])
-                except ValueError:
-                    pass
-    return count
-
-
 def _changed_non_test_python(
     base_branch: str,
     cwd: Path,
@@ -2234,45 +2209,112 @@ def _mutmut_missing(check: str, config_key: str) -> NotMeasured:
     )
 
 
+def _mutmut_tool_preflight(
+    check: str, config_key: str, test_command: str | None
+) -> list[str] | NotMeasured:
+    """The refusals both mutmut-backed checks make before they look at
+    the tree: the operator's test command must be a single pytest
+    invocation mutmut's ``--runner`` can wrap, and mutmut must be on
+    PATH. One copy, because two copies 300 lines apart disagreed on five
+    learned facts about the same tool (#391)."""
+    tokens = _validated_pytest_tokens(resolve_test_command(test_command))
+    if tokens is None:
+        return NotMeasured(
+            check,
+            NOT_MEASURED_TOOL_MISSING,
+            f"[verify] test_command is not a single pytest invocation mutmut's "
+            f"runner can wrap: {test_command!r}",
+        )
+    if not shutil.which("mutmut"):
+        return _mutmut_missing(check, config_key)
+    return tokens
+
+
+def _mutmut_tree_preflight(cwd: Path, check: str, paths: Sequence[str]) -> NotMeasured | None:
+    """The refusals that read the tree and still cost no spawn: a
+    project-level ``mutmut_config.py`` (its ``pre_mutation`` hook is the
+    only route to mutmut's ``skipped`` status, which renders identically
+    to a killed mutant in the junitxml report), and a ``<path>.bak``
+    already beside a target, which kstrl cannot tell from one mutmut is
+    about to write."""
+    if (cwd / "mutmut_config.py").exists():
+        return NotMeasured(
+            check,
+            NOT_MEASURED_COMMAND_FAILED,
+            "mutmut_config.py is present in this project; its pre_mutation "
+            "hook is the only route to mutmut's `skipped` status, which "
+            "renders identically to a killed mutant in the junitxml report "
+            "this check reads, so the result cannot be trusted",
+        )
+    existing = _preexisting_backups(cwd, paths)
+    if existing:
+        bak_names = ", ".join(f"{path}.bak" for path in existing)
+        return NotMeasured(
+            check,
+            NOT_MEASURED_COMMAND_FAILED,
+            f"a backup file is already beside a target ({bak_names}); "
+            "mutmut writes <file>.bak before it mutates, so kstrl cannot tell "
+            "its backup from this one and refused rather than risk "
+            "overwriting the project's file",
+        )
+    return None
+
+
 def check_mutation_score(
     cwd: Path,
     base_branch: str,
+    test_command: str | None = None,
     threshold: float = 50.0,
     timeout: float = 600.0,
 ) -> CheckResult | NotMeasured:
-    """Run mutation testing on changed files using mutmut.
+    """R8.5 Layer 1 (#152, #391): mutate every non-test Python file this
+    diff changed, and score the report against ``threshold``.
 
-    Only mutates Python files changed relative to base_branch. Returns a
-    :class:`CheckResult` - PASS or FAIL against ``threshold`` - only when
-    a score was actually measured. Every other path returns
+    Returns a :class:`CheckResult` - PASS or FAIL against ``threshold`` -
+    only when a score was actually measured. Every other path returns
     :class:`NotMeasured`, which is a SIDECAR record and never a row in
     ``checks`` (#306).
 
-    Five paths return NotMeasured, and the ``reason`` token separates
+    Six reasons return NotMeasured, and the ``reason`` token separates
     them because they are not the same event:
 
-    - ``tool_missing``: mutmut is not on PATH. The operator asked for a
-      measurement the machine cannot make.
+    - ``tool_missing``: mutmut is not on PATH, OR ``[verify]
+      test_command`` is not a single pytest invocation mutmut's
+      ``--runner`` can wrap (D6, #391) - a behaviour change from before
+      #391, when this check ignored ``test_command`` entirely.
     - ``no_target``: the diff changed no non-test Python file. Nothing
       to mutate; not a fault.
-    - ``timed_out``: ``mutmut run`` exceeded ``timeout``.
-    - ``command_failed``: mutmut ran, exited non-zero and produced no
-      counts. Distinguished from the next by ``returncode`` alone,
-      because a broken mutmut configuration and a clean run with nothing
-      to do produce identical empty output.
-    - ``no_mutants``: mutmut exited zero and generated no mutants.
+    - ``timed_out``: the ``[verify] mutation_timeout`` cap fired.
+      mutmut 2.5.1 cannot report a truncated run (#391 D4: its junitxml
+      raises ``ValueError: Obtained null mutant`` under
+      ``--untested-policy=error``, and under any other policy an un-run
+      mutant renders exactly like a killed one), so the report spawn
+      never follows a fired cap.
+    - ``command_failed``: a pre-existing ``<path>.bak`` beside a target,
+      a project ``mutmut_config.py``, a fatal mutmut exit (bit 1 of its
+      return code), or a report mutmut wrote but kstrl could not parse.
+    - ``no_mutants``: mutmut reported no mutant on any target line.
 
     The sixth, ``read_only``, never reaches this function:
     :func:`_mutation_checks` owns it, because mutmut works by rewriting
     the source files it mutates.
 
-    Every one of those five situations used to return
-    ``CheckResult(passed=True)`` - the last two as a single path, since
-    telling them apart is new here - so a green
-    ``mutation_testing`` row meant "we did not look" as often as it
-    meant "we looked and it was fine" - and
-    :func:`kstrl.review.build_review_prompt` copied that row into the
-    LLM reviewer's prompt as ``mutation_testing: PASS``.
+    #391 replaced this function's own spawn, its ``mutmut results`` text
+    parse and its bespoke cache/``.bak``/mode bookkeeping with the same
+    driver R8.5 Layer 2 (:func:`check_diff_mutation`) already used:
+    :func:`_mutmut_measure`, parameterised on the target selector -
+    ``None`` here for whole-file scope, derived from the report's own
+    rows restricted to the files kstrl asked for (D2), rather than a
+    synthetic ``--use-patch-file`` patch Layer 2 builds. ``mutmut
+    results`` prints a survivor bucket with mutant id ranges and no
+    killed count under any flag; the counts existed only in the
+    progress line ``--no-progress`` suppresses.
+
+    Every one of the situations above used to return
+    ``CheckResult(passed=True)`` - so a green ``mutation_testing`` row
+    meant "we did not look" as often as it meant "we looked and it was
+    fine" - and :func:`kstrl.review.build_review_prompt` copied that row
+    into the LLM reviewer's prompt as ``mutation_testing: PASS``.
 
     NotMeasured rather than a not-measured STATUS on the row, because
     ``passed`` is the only field every consumer reads: a third state
@@ -2296,10 +2338,11 @@ def check_mutation_score(
     is the third option: seen by the operator, gating nothing.
     """
     start = time.monotonic()
-
-    if not shutil.which("mutmut"):
-        return _mutmut_missing(MUTATION_TESTING_CHECK, "[verify] mutation_testing")
-
+    tokens = _mutmut_tool_preflight(
+        MUTATION_TESTING_CHECK, "[verify] mutation_testing", test_command
+    )
+    if isinstance(tokens, NotMeasured):
+        return tokens
     py_files = _changed_non_test_python(base_branch, cwd, MUTATION_TESTING_CHECK)
     if isinstance(py_files, NotMeasured):
         return py_files
@@ -2309,71 +2352,59 @@ def check_mutation_score(
             NOT_MEASURED_NO_TARGET,
             "the diff changed no non-test Python file, so there was nothing to mutate",
         )
+    gap = _mutmut_tree_preflight(cwd, MUTATION_TESTING_CHECK, py_files)
+    if gap is not None:
+        return gap
+    score = _mutmut_measure(cwd, MUTATION_TESTING_CHECK, tokens, py_files, None, timeout)
+    if isinstance(score, NotMeasured):
+        return score
+    return _mutation_score_result(score, threshold, start)
 
-    # One COMMA-separated argument, shell-quoted as a whole. This
-    # command is a STRING, which `run_scrubbed` hands to /bin/sh, and
-    # the names come out of an agent-authored diff: without the quoting
-    # a file called `$(id).py` executes (#335 round 2).
-    #
-    # Comma rather than space, which is what `--paths-to-mutate` is
-    # documented to take and what mutmut's own `split_paths` splits on.
-    # Measured on mutmut 2.5.1: `mutmut run --help` prints
-    # `Usage: mutmut run [OPTIONS] [ARGUMENT]`, one positional slot, so
-    # `--paths-to-mutate=a.py b.py c.py` exits non-zero with
-    # `Error: Got unexpected extra argument (c.py)` and mutates nothing,
-    # and the two-file form is accepted only because `b.py` fills that
-    # positional slot instead of being a path to mutate. Round 2 of #335
-    # shipped the space-separated form on the guess that the shell's
-    # word splitting was load-bearing; it is an outage for three or more
-    # changed files (#335 round 3).
-    paths_arg = shlex.quote(",".join(py_files))
-    try:
-        result = run_scrubbed(
-            f"mutmut run --paths-to-mutate={paths_arg} --no-progress",
-            cwd=cwd,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
+
+def _no_measured_lines(check: str, score: MutationScore) -> NotMeasured:
+    """The gap a zero-measured score is, for either mutation check:
+    ``no_mutants`` when mutmut reported no mutant on any target line,
+    ``command_failed`` when it reported some and none carries a definite
+    status. Zero killed out of zero measured is not a score."""
+    if score.mutable_lines == 0:
         return NotMeasured(
-            MUTATION_TESTING_CHECK,
-            NOT_MEASURED_TIMED_OUT,
-            f"mutmut run exceeded [verify] mutation_timeout of {timeout}s",
+            check,
+            NOT_MEASURED_NO_MUTANTS,
+            "mutmut ran cleanly and generated no mutant on any target line, so there is no score",
         )
+    return NotMeasured(
+        check,
+        NOT_MEASURED_COMMAND_FAILED,
+        f"mutmut reported {score.mutable_lines} mutant(s) on the target "
+        "lines and none carries a killed or survived status",
+    )
 
-    # Parse mutmut results
-    try:
-        results_proc = run_scrubbed("mutmut results", cwd=cwd, timeout=_MUTATION_REPORT_TIMEOUT)
-        output = results_proc.stdout
-    except subprocess.TimeoutExpired:
-        output = result.stdout
 
-    text = result.stdout + result.stderr + output
-    killed = _count_before("killed", text)
-    survived = _count_before("survived", text)
-
-    total = killed + survived
-    if total == 0:
-        return _no_counts(result)
-
-    score = (killed / total) * 100
+def _mutation_score_result(
+    score: MutationScore, threshold: float, start: float
+) -> CheckResult | NotMeasured:
+    """Turn a scored mutmut run into Layer 1's row or a sidecar (#391)."""
+    if score.measured_lines == 0:
+        return _no_measured_lines(MUTATION_TESTING_CHECK, score)
+    percent = 100.0 * score.killed_lines / score.measured_lines
     details = [
-        f"Killed: {killed}, Survived: {survived}, Total: {total}",
-        f"Score: {score:.1f}% (threshold: {threshold}%)",
+        f"Killed: {score.killed_lines}, Survived: {len(score.survivors)}, "
+        f"Measured: {score.measured_lines}",
+        f"Score: {percent:.1f}% (threshold: {threshold}%)",
     ]
-
-    if score < threshold:
+    details.extend(f"survived: {path}:{line}" for path, line in score.survivors)
+    if percent < threshold:
         return CheckResult(
             name=MUTATION_TESTING_CHECK,
             passed=False,
-            message=f"Mutation score {score:.1f}% below threshold {threshold}%",
+            message=f"Mutation score {percent:.1f}% below threshold {threshold}%",
             details=details,
             duration_seconds=time.monotonic() - start,
         )
-
     return CheckResult(
         name=MUTATION_TESTING_CHECK,
         passed=True,
-        message=f"Mutation score {score:.1f}% (threshold: {threshold}%)",
+        message=f"Mutation score {percent:.1f}% (threshold: {threshold}%)",
         details=details,
         duration_seconds=time.monotonic() - start,
     )
@@ -2432,32 +2463,6 @@ def _tool_failure_line(result: subprocess.CompletedProcess[str]) -> str:
     """
     found = _CLAP_ERROR.search(result.stderr)
     return found.group(0).strip()[:500] if found else _last_output_line(result)
-
-
-def _no_counts(result: subprocess.CompletedProcess[str]) -> NotMeasured:
-    """Why mutmut produced no killed or survived count.
-
-    Its own function so :func:`check_mutation_score` does not pay a
-    branch for the distinction. Measured: inlining it takes that
-    function from cognitive 9 to 14 against a gate of 15. The distinction is worth having: a
-    broken ``[verify] mutation_command`` and a clean run over code with
-    nothing mutable produce byte-identical empty output, and only
-    ``returncode`` tells them apart. Reporting both as "no mutants" is
-    how a permanently misconfigured mutation gate reads as a quiet,
-    correct no-op.
-    """
-    if result.returncode != 0:
-        return NotMeasured(
-            MUTATION_TESTING_CHECK,
-            NOT_MEASURED_COMMAND_FAILED,
-            f"mutmut run exited {result.returncode} and reported no counts: "
-            f"{_last_output_line(result)}",
-        )
-    return NotMeasured(
-        MUTATION_TESTING_CHECK,
-        NOT_MEASURED_NO_MUTANTS,
-        "mutmut ran cleanly and generated no mutants, so there is no score",
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -2914,11 +2919,12 @@ _MUTATION_REPORT_TIMEOUT = 30.0
 
 def _mutation_run_command(
     tokens: list[str],
-    targets: Mapping[str, Collection[int]],
-    patch_path: Path,
+    paths: Sequence[str],
+    patch_path: Path | None,
     tests_dir: Path,
 ) -> list[str]:
-    """The ``mutmut run`` argv for R8.5 Layer 2 (#152), as a LIST.
+    """The ``mutmut run`` argv both mutation checks build, as a LIST
+    (#391: one driver for R8.5 Layers 1 and 2).
 
     ``--tests-dir`` points at an EMPTY temp directory, not the project's
     real test directory. Measured (measurements 2i): ``tests_dirs`` feeds
@@ -2948,20 +2954,27 @@ def _mutation_run_command(
     is a wrong NUMBER, not a failure, so nothing would go red (test 20,
     plant 15).
 
+    ``patch_path`` is ``None`` for whole-file scope (R8.5 Layer 1, #391):
+    ``--use-patch-file`` needs the ``mutmut[patch]`` extra that plain
+    mutmut does not ship (measured: ``ImportError: The --use-patch
+    feature requires the whatthepatch library``, exit 1), and whole-file
+    scope has nothing to say that ``--paths-to-mutate`` does not already
+    say.
+
     Returns a LIST so kstrl hands mutmut nothing to a shell of its own;
     the runner value inside it is operator config from ``[verify]
     test_command``, never agent-authored text.
     """
-    return [
+    command = [
         "mutmut",
         "run",
-        "--paths-to-mutate=" + ",".join(sorted(targets)),
+        "--paths-to-mutate=" + ",".join(sorted(paths)),
         f"--tests-dir={tests_dir}",
-        f"--use-patch-file={patch_path}",
-        "--no-progress",
-        "--simple-output",
-        "--runner=" + shlex.join([*tokens, "-x"]),
     ]
+    if patch_path is not None:
+        command.append(f"--use-patch-file={patch_path}")
+    command.extend(["--no-progress", "--simple-output", "--runner=" + shlex.join([*tokens, "-x"])])
+    return command
 
 
 def _preexisting_backups(cwd: Path, paths: Iterable[str]) -> list[str]:
@@ -3077,17 +3090,11 @@ def _restore_mutated_sources(cwd: Path, modes: Mapping[str, int]) -> None:
             target.chmod(mode)
 
 
-def _mutation_spawns(
-    cwd: Path,
-    command: list[str],
-    cap: float,
-    paths: Sequence[str],
-) -> tuple[str, bool] | NotMeasured:
-    """Run mutmut, restore the tree, and return its junitxml report.
-
-    Returns ``(report_stdout, truncated)`` or a :class:`NotMeasured`
-    sidecar. Written in exactly this order; two shapes here are wrong in
-    ways no test in this file would notice on its own.
+def _mutmut_run_spawn(
+    cwd: Path, check: str, command: list[str], cap: float, paths: Sequence[str]
+) -> NotMeasured | None:
+    """Run mutmut and restore the tree. ``None`` means the run left a
+    cache worth reading; anything else is a sidecar (#391).
 
     ``result`` is ``None`` on the timeout path, so the fatal-exit check
     below reads ``result is not None and result.returncode & 1`` rather
@@ -3105,43 +3112,56 @@ def _mutation_spawns(
     The ``.bak`` restore runs in a ``finally`` around the mutation spawn
     ALONE (measurements 2h: the timeout path is the one that leaves a
     mutant on disk; the happy path cleans up after itself and the
-    restore there is then a no-op). ``.mutmut-cache`` must SURVIVE that
-    restore - the report spawn below reads it - and is removed in ITS
-    OWN ``finally``, once that read is done, never before.
+    restore there is then a no-op).
 
     The targets' permission bits are captured here, before any spawn,
     because mutmut has already changed them by the time this function
     could read them again - the happy path leaves no ``.bak`` at all and
     mutmut's own ``shutil.move`` has already dropped the mode by then.
+
+    D4 (#391): a truncated run is ``timed_out``, never a score - mutmut
+    2.5.1's junitxml cannot read a truncated cache (measurements 2d:
+    ``ValueError: Obtained null mutant`` under ``--untested-policy=error``,
+    the policy this driver always passes; under any other policy an
+    un-run mutant renders exactly like a killed one). The caller must not
+    follow a ``timed_out`` (or any other) gap with a report spawn.
     """
-    # ``.mutmut-cache`` has no relocation knob (``cache.init_db``
-    # hard-codes ``os.path.join(os.getcwd(), '.mutmut-cache')``), so a
-    # stale cache from an earlier run - this check's own previous run, or
-    # ``[verify] mutation_testing``'s - would be read as this run's
-    # inventory unless it is gone before mutmut starts.
-    (cwd / ".mutmut-cache").unlink(missing_ok=True)
     modes = _target_modes(cwd, paths)
-    truncated = False
     result: subprocess.CompletedProcess[str] | None = None
+    timed_out = False
     try:
         result = run_scrubbed(command, cwd=cwd, timeout=cap)
     except subprocess.TimeoutExpired:
-        truncated = True
+        timed_out = True
     except OSError as exc:
         return NotMeasured(
-            DIFF_MUTATION_CHECK,
+            check,
             NOT_MEASURED_COMMAND_FAILED,
             f"the mutation command could not be started: {exc}",
         )
     finally:
         _restore_mutated_sources(cwd, modes)
+    if timed_out:
+        return NotMeasured(
+            check,
+            NOT_MEASURED_TIMED_OUT,
+            f"the {cap:.0f}s [verify] mutation_timeout cap fired, and mutmut "
+            "2.5.1 cannot report a truncated run: its junitxml raises "
+            "ValueError: Obtained null mutant under --untested-policy=error, "
+            "and under any other policy an un-run mutant renders exactly like "
+            "a killed one",
+        )
     if result is not None and result.returncode & 1:
         return NotMeasured(
-            DIFF_MUTATION_CHECK,
+            check,
             NOT_MEASURED_COMMAND_FAILED,
             f"mutmut run exited {result.returncode}: {_last_output_line(result)}",
         )
+    return None
 
+
+def _mutmut_report_spawn(cwd: Path, check: str) -> str | NotMeasured:
+    """``mutmut junitxml``'s stdout, or the sidecar naming why not."""
     report: subprocess.CompletedProcess[str] | None = None
     report_error = ""
     try:
@@ -3152,27 +3172,91 @@ def _mutation_spawns(
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
         report_error = str(exc)
-    finally:
-        # AFTER the report spawn, on every exit path from here: a path
-        # that returns without this leaves `.mutmut-cache` for
-        # `[verify] dead_code_cleanup`'s `git add -A` to pick up. Inlined
-        # rather than shared with the BEFORE-the-run delete above (#152
-        # simplify pass, B6): the two must never be fused into one call,
-        # and the ordering constraint is already stated where each fires.
-        (cwd / ".mutmut-cache").unlink(missing_ok=True)
     if report is None:
         return NotMeasured(
-            DIFF_MUTATION_CHECK,
+            check,
             NOT_MEASURED_COMMAND_FAILED,
             f"the mutation report could not be read: {report_error}",
         )
     if report.returncode != 0:
         return NotMeasured(
-            DIFF_MUTATION_CHECK,
+            check,
             NOT_MEASURED_COMMAND_FAILED,
             f"mutmut junitxml exited {report.returncode}: {_last_output_line(report)}",
         )
-    return report.stdout, truncated
+    return report.stdout
+
+
+def _reported_lines(mutants: Iterable[Mutant], paths: Sequence[str]) -> dict[str, set[int]]:
+    """Whole-file scope's target set (#391, D2): every line mutmut
+    reported a mutant on, in the files kstrl named and no others.
+    mutmut's own scoping is still not trusted for WHICH FILES (D2's
+    rule); it is trusted for which lines inside a file it can mutate,
+    which is what whole-file scope means."""
+    allowed = set(paths)
+    targets: dict[str, set[int]] = {}
+    for mutant in mutants:
+        if mutant.path in allowed:
+            targets.setdefault(mutant.path, set()).add(mutant.line)
+    return targets
+
+
+def _mutmut_measure(
+    cwd: Path,
+    check: str,
+    tokens: list[str],
+    paths: Sequence[str],
+    patch_lines: Mapping[str, Collection[int]] | None,
+    cap: float,
+) -> MutationScore | NotMeasured:
+    """One mutmut run, scored (#391). The ONE driver: both mutation
+    checks reach mutmut through here, so the cache lifecycle, the
+    ``.bak`` restore, the mode restore, the exit-code reading and the
+    report parse cannot disagree between them. ``patch_lines`` is the
+    target selector and the only axis they differ on: a line set becomes
+    a synthetic ``--use-patch-file``, and ``None`` means whole-file
+    scope, whose target set is derived from the report's own rows
+    restricted to ``paths``.
+
+    ``.mutmut-cache`` has no relocation knob (``cache.init_db``
+    hard-codes ``os.path.join(os.getcwd(), '.mutmut-cache')``), so a
+    stale cache from an earlier run would be read as this run's
+    inventory unless it is gone before mutmut starts. The delete stays
+    in exactly two places and in this order: BEFORE the run, and in a
+    ``finally`` AFTER the report spawn - never fused, and never removed
+    between them, because the report spawn reads that cache. ``gap is
+    not None`` is what stops the report spawn from following a fired
+    cap (D4): the run's own gap, not a fresh call, becomes ``report``.
+    """
+    with tempfile.TemporaryDirectory(prefix="kstrl-mutation-") as tmp_name:
+        tmp = Path(tmp_name)
+        tests_dir = tmp / "empty-tests"
+        tests_dir.mkdir()
+        patch_path: Path | None = None
+        if patch_lines is not None:
+            patch_path = tmp / "targets.diff"
+            atomic_write_text(patch_path, mutation_patch(patch_lines))
+        command = _mutation_run_command(tokens, paths, patch_path, tests_dir)
+        (cwd / ".mutmut-cache").unlink(missing_ok=True)
+        try:
+            gap = _mutmut_run_spawn(cwd, check, command, cap, paths)
+            report = gap if gap is not None else _mutmut_report_spawn(cwd, check)
+        finally:
+            (cwd / ".mutmut-cache").unlink(missing_ok=True)
+    if isinstance(report, NotMeasured):
+        return report
+    try:
+        mutants = parse_mutant_report(report)
+    except ValueError as exc:
+        return NotMeasured(
+            check,
+            NOT_MEASURED_COMMAND_FAILED,
+            f"the mutation report could not be read: {exc}",
+        )
+    targets: Mapping[str, Collection[int]] = (
+        patch_lines if patch_lines is not None else _reported_lines(mutants, paths)
+    )
+    return score_mutants(targets, mutants)
 
 
 def _diff_mutation_preflight(
@@ -3183,33 +3267,23 @@ def _diff_mutation_preflight(
     not.
 
     In cost order: ``test_command`` must be a single pytest invocation
-    (reachable only if Layer 1's own token check somehow passed and this
-    one did not - config validation already refuses ``diff_mutation =
-    true`` with ``patch_coverage = false``, so both checks tokenise the
-    SAME ``[verify] test_command``; kept rather than assumed unreachable,
-    and given its OWN sentence rather than Layer 1's - #152 simplify
-    pass, B5 - because this check does not "extend" the command the way
-    Layer 1's coverage spawn does, it wraps it whole into a ``--runner=``
-    value); mutmut must be on PATH; ``coverage.covered_lines`` - the
-    changed-and-covered set Layer 1 measured - must be non-empty; no
-    project-level ``mutmut_config.py`` (the only route to mutmut's
-    ``skipped`` status, which renders identically to a killed mutant in
-    the junitxml report - measurements 2g); and finally D7 step 1's
-    pre-existing-``.bak`` refusal, which is the LAST pre-flight and still
-    costs no spawn and no temp dir - kstrl cannot tell a backup already
-    on disk from one mutmut is about to write, and refuses rather than
-    risk overwriting the project's file.
+    and mutmut must be on PATH (:func:`_mutmut_tool_preflight`, shared
+    with Layer 1 since #391 - config validation already refuses
+    ``diff_mutation = true`` with ``patch_coverage = false``, so both
+    checks tokenise the SAME ``[verify] test_command``);
+    ``coverage.covered_lines`` - the changed-and-covered set Layer 1
+    measured - must be non-empty; then :func:`_mutmut_tree_preflight`
+    (also shared): no project-level ``mutmut_config.py`` (the only route
+    to mutmut's ``skipped`` status, which renders identically to a
+    killed mutant in the junitxml report - measurements 2g), and D7 step
+    1's pre-existing-``.bak`` refusal, which is the LAST pre-flight and
+    still costs no spawn and no temp dir - kstrl cannot tell a backup
+    already on disk from one mutmut is about to write, and refuses
+    rather than risk overwriting the project's file.
     """
-    tokens = _validated_pytest_tokens(resolve_test_command(test_command))
-    if tokens is None:
-        return NotMeasured(
-            DIFF_MUTATION_CHECK,
-            NOT_MEASURED_TOOL_MISSING,
-            f"[verify] test_command is not a single pytest invocation mutmut's "
-            f"runner can wrap: {test_command!r}",
-        )
-    if not shutil.which("mutmut"):
-        return _mutmut_missing(DIFF_MUTATION_CHECK, "[adequacy] diff_mutation")
+    tokens = _mutmut_tool_preflight(DIFF_MUTATION_CHECK, "[adequacy] diff_mutation", test_command)
+    if isinstance(tokens, NotMeasured):
+        return tokens
     targets: dict[str, set[int]] = {
         path: set(lines) for path, lines in coverage.covered_lines if lines
     }
@@ -3219,47 +3293,32 @@ def _diff_mutation_preflight(
             NOT_MEASURED_NO_TARGET,
             "the diff added no line that is both changed and covered",
         )
-    if (cwd / "mutmut_config.py").exists():
-        return NotMeasured(
-            DIFF_MUTATION_CHECK,
-            NOT_MEASURED_COMMAND_FAILED,
-            "mutmut_config.py is present in this project; its pre_mutation "
-            "hook is the only route to mutmut's `skipped` status, which "
-            "renders identically to a killed mutant in the junitxml report "
-            "this check reads, so the result cannot be trusted",
-        )
-    existing = _preexisting_backups(cwd, sorted(targets))
-    if existing:
-        bak_names = ", ".join(f"{path}.bak" for path in existing)
-        return NotMeasured(
-            DIFF_MUTATION_CHECK,
-            NOT_MEASURED_COMMAND_FAILED,
-            f"a backup file is already beside a target ({bak_names}); "
-            "mutmut writes <file>.bak before it mutates, so kstrl cannot tell "
-            "its backup from this one and refused rather than risk "
-            "overwriting the project's file",
-        )
+    gap = _mutmut_tree_preflight(cwd, DIFF_MUTATION_CHECK, sorted(targets))
+    if gap is not None:
+        return gap
     return tokens, targets
 
 
-def _diff_mutation_score_result(
-    score: MutationScore, truncated: bool, cap: float, start: float
-) -> CheckResult | NotMeasured:
+def _diff_mutation_score_result(score: MutationScore, start: float) -> CheckResult | NotMeasured:
     """Turn a scored mutmut run into a row or a sidecar.
 
-    ``score.measured_lines == 0`` is never a score (D6) - it is
-    ``timed_out`` when the cap fired, ``no_mutants`` when mutmut reported
-    no mutant on any target line at all, and ``command_failed`` for the
-    remaining case (mutants reported and none with a definite status),
-    unreached by anything measured in this lane but not assumed
-    impossible.
+    ``score.measured_lines == 0`` is never a score - it is
+    :func:`_no_measured_lines` (#391, shared with Layer 1):
+    ``no_mutants`` when mutmut reported no mutant on any target line at
+    all, and ``command_failed`` for the remaining case (mutants reported
+    and none with a definite status). D4 (#391) deleted the ``timed_out``
+    branch that used to live here: a fired cap never reaches this
+    function at all now, because mutmut 2.5.1's junitxml raises
+    ``ValueError: Obtained null mutant`` on a truncated cache under
+    ``--untested-policy=error`` (measurements 2d) - the report spawn does
+    not follow a fired cap, so ``_mutmut_measure`` returns the
+    ``timed_out`` gap directly.
 
-    Otherwise builds the PASSING row: ``sampled`` (D6) is set whenever
-    the cap fired or fewer lines were measured than mutmut reported a
-    mutant for, and both trigger the same ``[sampled: ...]`` suffix on
-    the headline, because a reader needs to know the denominator shrank
-    whichever of the two caused it. D4's selection rule already decided
-    ``score`` before this is called; this only renders it.
+    Otherwise builds the PASSING row: ``sampled`` now has ONE cause
+    (D4) - fewer lines were measured than mutmut reported a mutant for -
+    where it used to have two (the cap firing was the other). D4's
+    selection rule already decided ``score`` before this is called; this
+    only renders it.
 
     ``sampled`` also reaches the finding as a TAG (#152 simplify pass,
     A3), not only as the ``[sampled: ...]`` substring on the headline: a
@@ -3270,29 +3329,10 @@ def _diff_mutation_score_result(
     second, machine-readable place the same fact is true.
     """
     if score.measured_lines == 0:
-        if truncated:
-            return NotMeasured(
-                DIFF_MUTATION_CHECK,
-                NOT_MEASURED_TIMED_OUT,
-                f"the {cap:.0f}s [verify] mutation_timeout cap fired before any "
-                "target line reached a killed or survived status",
-            )
-        if score.mutable_lines == 0:
-            return NotMeasured(
-                DIFF_MUTATION_CHECK,
-                NOT_MEASURED_NO_MUTANTS,
-                "mutmut ran cleanly and generated no mutant on any "
-                "changed+covered line, so there is no score",
-            )
-        return NotMeasured(
-            DIFF_MUTATION_CHECK,
-            NOT_MEASURED_COMMAND_FAILED,
-            f"mutmut reported {score.mutable_lines} mutant(s) on the target "
-            "lines and none carries a killed or survived status",
-        )
+        return _no_measured_lines(DIFF_MUTATION_CHECK, score)
 
     percent = 100.0 * score.killed_lines / score.measured_lines
-    sampled = truncated or score.measured_lines < score.mutable_lines
+    sampled = score.measured_lines < score.mutable_lines
     headline = (
         f"diff-scoped mutation {percent:.1f}% "
         f"({score.killed_lines}/{score.measured_lines} changed+covered lines "
@@ -3301,19 +3341,13 @@ def _diff_mutation_score_result(
     if sampled:
         headline += (
             f" [sampled: {score.measured_lines} of {score.target_lines} "
-            f"changed+covered lines measured within the {cap:.0f}s cap]"
+            "changed+covered lines measured]"
         )
     details = [
         f"{score.target_lines} changed+covered line(s) targeted; "
         f"{score.mutable_lines} produced a mutant; {score.measured_lines} measured"
     ]
     details.extend(f"survived: {path}:{line}" for path, line in score.survivors)
-    if truncated:
-        details.append(
-            f"the {cap:.0f}s [verify] mutation_timeout cap truncated the run; "
-            "mutants run in file and line order, so this is a prefix of the "
-            "target set, not a random sample"
-        )
     suggestion = "Advisory only: nothing blocks."
     if score.survivors:
         suggestion += " Surviving lines are concrete test targets: " + "; ".join(
@@ -3350,52 +3384,35 @@ def check_diff_mutation(
     - Layer 1's own measurement (:func:`_patch_coverage_checks`) - not
     from a second git read.
 
-    Split into three named steps, each responsible for one register:
+    Split into two named steps, each responsible for one register:
     :func:`_diff_mutation_preflight` owns every refusal that costs no
     spawn (``tool_missing``, ``no_target``, and D7's ``command_failed``
-    pre-flights); the mutation run and report parse below own
-    ``command_failed`` for a spawn that failed to start, exited fatally,
-    or could not be parsed; :func:`_diff_mutation_score_result` owns
-    ``timed_out`` and ``no_mutants``. ``read_only`` is owned by
+    pre-flights); :func:`_mutmut_measure` (#391, shared with Layer 1) owns
+    the run, the report spawn and the parse - ``command_failed`` for a
+    spawn that failed to start, exited fatally, or could not be parsed,
+    and ``timed_out`` for a fired cap; :func:`_diff_mutation_score_result`
+    owns ``no_mutants`` and the remaining ``command_failed`` case (mutants
+    reported, none with a definite status). ``read_only`` is owned by
     :func:`_diff_mutation_checks` and never reaches here at all - mutmut
     rewrites the files it mutates.
 
     ADVISORY ALWAYS: there is no floor key, and no autonomy level reads
     this check. The wall clock is bounded by ``cap`` for the mutation run
-    plus at most :data:`_MUTATION_REPORT_TIMEOUT` for the report spawn.
+    plus at most :data:`_MUTATION_REPORT_TIMEOUT` for the report spawn -
+    except on a fired cap, where D4 (#391) means no report spawn follows.
 
     D4's selection rule, in one sentence: each target line's verdict is
-    its LOWEST-id mutant among those with a killed-or-survived status - a
-    truncated run leaves low-id ``untested`` rows at low ids, so
-    bare-lowest would undercount a line whose other mutants did run.
+    its LOWEST-id mutant among those with a killed-or-survived status.
     """
     start = time.monotonic()
     preflight = _diff_mutation_preflight(cwd, coverage, test_command)
     if isinstance(preflight, NotMeasured):
         return preflight
     tokens, targets = preflight
-
-    with tempfile.TemporaryDirectory(prefix="kstrl-mutation-") as tmp_name:
-        tmp = Path(tmp_name)
-        patch_path = tmp / "targets.diff"
-        atomic_write_text(patch_path, mutation_patch(targets))
-        tests_dir = tmp / "empty-tests"
-        tests_dir.mkdir()
-        command = _mutation_run_command(tokens, targets, patch_path, tests_dir)
-        spawned = _mutation_spawns(cwd, command, cap, sorted(targets))
-    if isinstance(spawned, NotMeasured):
-        return spawned
-    report_text, truncated = spawned
-    try:
-        mutants = parse_mutant_report(report_text)
-    except ValueError as exc:
-        return NotMeasured(
-            DIFF_MUTATION_CHECK,
-            NOT_MEASURED_COMMAND_FAILED,
-            f"the mutation report could not be read: {exc}",
-        )
-    score = score_mutants(targets, mutants)
-    return _diff_mutation_score_result(score, truncated, cap, start)
+    score = _mutmut_measure(cwd, DIFF_MUTATION_CHECK, tokens, sorted(targets), targets, cap)
+    if isinstance(score, NotMeasured):
+        return score
+    return _diff_mutation_score_result(score, start)
 
 
 def _diff_mutation_checks(
@@ -3454,7 +3471,7 @@ def _diff_mutation_checks(
       cap this check's mutation run would be bounded by. mutmut always
       pays its baseline test-suite run in full before mutating a single
       line (``_remove_mutation_cache`` - now inlined into
-      :func:`_mutation_spawns` - deletes ``.mutmut-cache`` before every
+      :func:`_mutmut_measure` - deletes ``.mutmut-cache`` before every
       run, so the cache-hit early return ``time_test_suite`` offers is
       unreachable), and that baseline is the SAME suite Layer 1 just
       ran under coverage - so a baseline that takes at least as long as
@@ -4146,8 +4163,9 @@ def _mutation_checks(
     outcome = check_mutation_score(
         cwd,
         base_branch,
-        config.mutation_threshold,
-        config.mutation_timeout,
+        test_command=config.test_command,
+        threshold=config.mutation_threshold,
+        timeout=config.mutation_timeout,
     )
     if isinstance(outcome, NotMeasured):
         return [], [outcome]

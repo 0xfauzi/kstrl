@@ -107,13 +107,22 @@ def run_adequacy(
     patch_coverage: bool = True,
     diff_mutation: bool = False,
     read_only: bool = False,
+    mutation_testing: bool = False,
+    mutation_threshold: float = 50.0,
 ) -> VerificationResult:
     """Drive the real ``run_mechanical_verification`` over ``root`` with
-    R8.5's config, every knob either file needs. ``diff_mutation`` and
-    ``read_only`` default to the harness's own defaults (``False``), so
-    ``tests/test_patch_coverage.py`` uses this directly; Layer 2's tests
-    bind ``functools.partial(run_adequacy, diff_mutation=True)`` instead
-    of redefining the body to flip one default."""
+        R8.5's config, every knob either file needs. ``diff_mutation`` and
+        ``read_only`` default to the harness's own defaults (``False``), so
+        ``tests/test_patch_coverage.py`` uses this directly; Layer 2's tests
+        bind ``functools.partial(run_adequacy, diff_mutation=True)`` instead
+        of redefining the body to flip one default.
+
+    ``mutation_testing`` and ``mutation_threshold`` (#391) are the third
+    caller of this fixture: ``[verify] mutation_testing`` is Layer 1's own
+    gate, and ``tests/test_mutation_score.py`` needs both knobs to drive it
+    through ``run_mechanical_verification`` rather than calling
+    ``check_mutation_score`` directly.
+    """
     return run_mechanical_verification(
         root,
         None,
@@ -127,6 +136,8 @@ def run_adequacy(
             check_bad_patterns=False,
             subprocess_timeout=subprocess_timeout,
             mutation_timeout=mutation_timeout,
+            mutation_testing=mutation_testing,
+            mutation_threshold=mutation_threshold,
         ),
         adequacy_config=AdequacyConfig(
             enabled=enabled, patch_coverage=patch_coverage, diff_mutation=diff_mutation

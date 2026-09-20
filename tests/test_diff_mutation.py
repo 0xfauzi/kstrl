@@ -4,9 +4,9 @@ Every end-to-end test here drives the real :func:`run_mechanical_verification`
 over a real temp git repository built by :func:`tests.conftest.make_review_repo`,
 with a FAKE ``mutmut`` on PATH (:mod:`tests.helpers.fakemutmut`) whose canned
 output is copied from the REAL mutmut 2.5.1 runs recorded in the lane's
-``measurements.md`` section 2e. Four unit tests (17, 18, 20, 21 in the plan
-this file implements) each name the end-to-end test that covers the same
-property, so a unit test is never the only evidence for a claim.
+``measurements.md`` section 2e. Four unit tests each name the end-to-end
+test that covers the same property, so a unit test is never the only
+evidence for a claim.
 
 The shared fixture is `tests/test_patch_coverage.py`'s, in fact rather than
 only in name (#152 simplify pass, D1: both files now import the source
@@ -253,12 +253,14 @@ def test_the_cap_bounds_the_run_and_the_tree_is_restored(
     30s) - it is not a performance assertion; the run_scrubbed timeout path
     costs the cap plus up to two `_SCRUB_TERM_GRACE_SECONDS` (5.0).
 
-    #152 simplify pass, D4: the two ids differ only in line 6's status -
-    ``one-line-measured`` (``killed``) is a sampled 100.0% row; line 9
-    stays ``untested`` either way, so ``nothing-measured``'s two
-    ``untested`` lines are D6's OTHER truncated shape, zero definite
-    verdicts, which is a ``timed_out`` SIDECAR rather than a ``0.0%``
-    row - zero killed out of zero measured is not a score."""
+    D4 (#391): a fired cap is now ALWAYS a ``timed_out`` sidecar, never a
+    row - mutmut 2.5.1 cannot report a truncated run (measurements 2d:
+    ``ValueError: Obtained null mutant`` under ``--untested-policy=error``,
+    the policy this driver always passes), so the report spawn does not
+    follow a fired cap and line 6's status cannot change the outcome. Both
+    parametrised ids are kept to state exactly that: the two scenarios
+    used to diverge on this (#152 simplify pass, D4, superseded) and now
+    do not."""
     _repo(tmp_path)
     recdir = put_mutmut_on_path(
         tmp_path,
@@ -274,18 +276,8 @@ def test_the_cap_bounds_the_run_and_the_tree_is_restored(
     assert (tmp_path / "mod.py").read_text() == FEAT_MOD
     assert not (tmp_path / "mod.py.bak").exists()
     assert not (tmp_path / ".mutmut-cache").exists()
-    if first_status == "killed":
-        row = _row(result)
-        assert "sampled" in row.message
-        assert "100.0%" in row.message
-        details = "\n".join(row.details)
-        assert "3 changed+covered line(s) targeted; 2 produced a mutant; 1 measured" in details
-        assert result.passed is True
-        # The report spawn still runs AFTER the cap fires - what makes a
-        # truncated run scoreable at all.
-        assert (recdir / "argv-junitxml.txt").exists()
-    else:
-        _only_gap(result, "diff_mutation", "timed_out")
+    _only_gap(result, "diff_mutation", "timed_out")
+    assert not (recdir / "argv-junitxml.txt").exists()
 
 
 def test_survivors_are_recorded_as_file_and_line(
@@ -516,39 +508,6 @@ def test_a_backup_file_already_beside_a_target_is_refused_before_the_spend(
     assert (tmp_path / "mod.py").read_text() == FEAT_MOD
 
 
-def test_a_truncated_run_whose_every_mutable_line_was_measured_is_still_sampled(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Requirement 3 of #152, the half no other test separates: the cap
-    fired, and EVERY line mutmut reported a mutant for still reached a
-    definite status, so ``measured_lines < mutable_lines`` is FALSE and
-    ``truncated`` is the only thing that can label this score sampled.
-    The shipped ``test_the_cap_bounds_the_run_and_the_tree_is_restored``
-    cannot make that separation: its report leaves line 9 ``untested``, so
-    the second disjunct holds its ``sampled`` assertion up on its own.
-    1.73 mutants per mutable line (measurements.md) is what makes this
-    shape ordinary rather than exotic - a cap that fires once every target
-    line has one verdict leaves the rest of that line's mutants
-    ``untested`` and off the denominator. Canned junit rows are mutmut
-    2.5.1's own rendering (measurements.md section 2e)."""
-    _repo(tmp_path)
-    put_mutmut_on_path(
-        tmp_path,
-        monkeypatch,
-        junit=junit((1, "mod.py", 6, "killed"), (2, "mod.py", 9, "survived")),
-        sleep=30,
-        mutate="mod.py",
-    )
-    start = time.monotonic()
-    result = _run(tmp_path, mutation_timeout=2.0)
-    assert time.monotonic() - start < 20
-    row = _row(result)
-    details = "\n".join(row.details)
-    assert "3 changed+covered line(s) targeted; 2 produced a mutant; 2 measured" in details
-    assert "50.0%" in row.message
-    assert "[sampled: 2 of 3 changed+covered lines measured" in row.message
-
-
 def test_the_layer_one_gap_reason_is_inherited_not_guessed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -595,7 +554,15 @@ def test_the_mode_of_a_mutated_file_survives_the_run(
     where kstrl's own ``os.replace`` does it. The assertion is robust to
     the developer's umask: a file created by redirection is never
     executable whatever the umask, so it can never accidentally equal
-    0o755."""
+    0o755.
+
+    D4 (#391): the mode restore in ``_mutmut_run_spawn`` runs regardless
+    of what the cap does, but a fired cap is now a ``timed_out`` sidecar
+    with no row - not a plan requirement this file's own critic named,
+    but the direct, unavoidable consequence of the same D4 the sibling
+    test right above this one was rewritten for; this test's final
+    assertion is updated the identical way, on the same reason.
+    """
     _repo(tmp_path)
     (tmp_path / "mod.py").chmod(0o755)
     put_mutmut_on_path(
@@ -610,7 +577,10 @@ def test_the_mode_of_a_mutated_file_survives_the_run(
     assert (tmp_path / "mod.py").read_text() == FEAT_MOD
     assert not (tmp_path / "mod.py.bak").exists()
     assert stat.S_IMODE((tmp_path / "mod.py").stat().st_mode) == 0o755
-    assert [c for c in result.checks if c.name == "diff_mutation"] != []
+    if sleep:
+        _only_gap(result, "diff_mutation", "timed_out")
+    else:
+        assert [c for c in result.checks if c.name == "diff_mutation"] != []
 
 
 def test_a_sampled_score_is_tagged_not_only_worded(
@@ -618,19 +588,21 @@ def test_a_sampled_score_is_tagged_not_only_worded(
 ) -> None:
     """A3: sampled must be readable as DATA, not only a headline
     substring - a floor-setter needs to separate sampled from complete
-    without parsing prose. Reuses the cap-bounded scenario
-    ``test_the_cap_bounds_the_run_and_the_tree_is_restored`` (sampled,
-    100.0%). The prose stays; this adds a second, machine-readable place
-    the same fact is true."""
+    without parsing prose. The prose stays; this adds a second,
+    machine-readable place the same fact is true.
+
+    D4 (#391): ``sampled`` no longer has the cap as a cause - a fired cap
+    is now always ``timed_out``, never a row. Reached instead through the
+    surviving disjunct: line 9 has a mutant (``untested``) and no
+    definite status, so ``measured_lines`` (1) < ``mutable_lines`` (2),
+    with no cap involved at all."""
     _repo(tmp_path)
     put_mutmut_on_path(
         tmp_path,
         monkeypatch,
         junit=junit((1, "mod.py", 6, "killed"), (2, "mod.py", 9, "untested")),
-        sleep=30,
-        mutate="mod.py",
     )
-    result = _run(tmp_path, mutation_timeout=2.0)
+    result = _run(tmp_path)
     row = _row(result)
     finding = _finding(result)
     assert "sampled" in row.message
@@ -788,7 +760,7 @@ def test_the_runner_value_survives_a_test_command_token_with_a_space(tmp_path: P
     in it would be measuring the fixture, not this function."""
     tokens = ["/tmp/a b/python", "-m", "pytest"]
     command = _mutation_run_command(
-        tokens, {"mod.py": {6}}, tmp_path / "targets.diff", tmp_path / "tests"
+        tokens, ["mod.py"], tmp_path / "targets.diff", tmp_path / "tests"
     )
     runner_args = [c for c in command if c.startswith("--runner=")]
     assert len(runner_args) == 1
