@@ -4,15 +4,20 @@ End to end on purpose. A child interpreter drives the REAL capture harness
 (``tests.test_calibration``'s ``_gate_on_consistency``, ``_measure_detection``,
 ``_measure_false_positives`` and ``_DetectionReport``) with a fake agent, so no
 paid call is made and no network is touched. What the tests assert on is the
-file that child left behind and what the real ``python -m kstrl.calibration
-compare`` entry point does with it.
+file that child left behind and what the real ``kstrl.calibration.main``
+compare entry point does with it. The driver itself lives in
+``tests/helpers/calibration_capture.py`` (#398 simplify pass, group B2); see
+its module docstring for why a shared driver belongs there rather than here.
 
-Three child runs, because a run can stop in three ways that the code answers
-differently: it finishes (mode ``complete``), it is SIGKILLed so no teardown of
-any kind runs (mode ``sigkill``), or it raises and teardown DOES run with a
-fixture left dangling (mode ``raise``). The last one is the only test of the
-dangling check, and an implementation whose ``run_complete`` is just "teardown
-was reached" passes every other test in this file.
+Four child runs, because a run can stop in four ways that the code answers
+differently: it finishes (mode ``complete``), it is SIGKILLed mid-fixture so
+no teardown of any kind runs (mode ``sigkill``), it raises and teardown DOES
+run with a fixture left dangling (mode ``raise``), or it is SIGKILLed right
+after the last fixture completes and before teardown (mode
+``kill_after_last``). The last one is the only test of ``complete_fixture``'s
+own flush (#398 A3): every other mode passes whether or not that flush ever
+ran, because either the next fixture's ``begin_fixture`` flush catches up
+(not the last fixture) or ``report.save()`` at teardown does (``complete``).
 
 ``tests.test_calibration.RESULTS_DIR`` is repointed at a temp directory inside
 the child before anything writes, so nothing here can add a file to the
@@ -22,148 +27,60 @@ repository's own ``tests/adversarial_fixtures/_results/``.
 from __future__ import annotations
 
 import json
-import os
 import shutil
-import signal
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
 from kstrl import calibration
+from tests.helpers import calibration_capture as harness
+from tests.helpers.calibration_capture import FX_A, FX_B, FX_C, FX_D
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-
-#: Every fixture the child drives, as ``role/fixture_id`` in run order.
-#: fx-c goes through the false-positive helper, so it is recorded and
-#: completed but never appears in the report's ``fixtures`` list.
-FX_A, FX_B, FX_C, FX_D = "security/fx-a", "reviewer/fx-b", "reviewer/fx-c", "security/fx-d"
-
-#: Runs the real harness against a fake agent. ``KSTRL_TEST_MODE`` decides
-#: how the run ends. All four helpers are driven so that instrumenting only
-#: one of the three gate helpers fails here rather than silently shipping.
-_DRIVER = """
-from __future__ import annotations
-
-import os
-import signal
-from pathlib import Path
-
-import tests.test_calibration as tc
-
-tc.RESULTS_DIR = Path(os.environ["KSTRL_TEST_RESULTS_DIR"])
-MODE = os.environ["KSTRL_TEST_MODE"]
-report = tc._DetectionReport()
-
-
-def run_once_for(fixture_id):
-    def run_once():
-        if fixture_id == "fx-d" and MODE == "sigkill":
-            os.kill(os.getpid(), signal.SIGKILL)
-        if fixture_id == "fx-d" and MODE == "raise":
-            raise RuntimeError("interrupted inside fx-d")
-        return True, "fake result for " + fixture_id
-
-    return run_once
-
-
-try:
-    tc._gate_on_consistency(
-        "security", "fx-a", report, run_once_for("fx-a"), category="injection"
-    )
-    tc._measure_detection(
-        "reviewer", "fx-b", report, run_once_for("fx-b"), category="scope_creep"
-    )
-    tc._measure_false_positives("reviewer", "fx-c", report, run_once_for("fx-c"))
-    tc._gate_on_consistency(
-        "security", "fx-d", report, run_once_for("fx-d"), category="injection"
-    )
-finally:
-    report.save()
-"""
-
-#: What each mode's child exits with. ``sigkill`` cannot be caught, so the
-#: child dies on the signal and ``subprocess`` reports the negated number.
-_EXPECTED_EXIT = {"complete": 0, "sigkill": -signal.SIGKILL, "raise": 1}
-
-
-def _capture(tmp_dir: Path, mode: str) -> Path:
-    """Run one fake capture in a child and return its single baseline file.
-
-    The child spawns nothing itself, so ``subprocess.run(timeout=)`` bounds
-    the only process there is, and a mutation that removes a write shows up
-    as a failed assertion rather than as a hang.
-    """
-    results = tmp_dir / "results"
-    results.mkdir(parents=True, exist_ok=True)
-    driver = tmp_dir / "capture_driver.py"
-    driver.write_text(_DRIVER, encoding="utf-8")
-
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(REPO_ROOT)
-    env["KSTRL_TEST_RESULTS_DIR"] = str(results)
-    env["KSTRL_TEST_MODE"] = mode
-    # Pinned rather than inherited: the report's model label and the run
-    # count both come from the environment, so a developer's exported value
-    # would otherwise change what these tests are looking at.
-    env["KSTRL_CALIBRATION_RUNS"] = "2"
-    env["KSTRL_CALIBRATION_MODEL"] = "haiku"
-    env["KSTRL_CALIBRATION_CHANGE_SOURCE"] = "repo"
-    env["KSTRL_RUN_CALIBRATION"] = "0"
-    env.pop("KSTRL_CALIBRATION_REVIEWER_AGENT_TYPE", None)
-    env.pop("KSTRL_CALIBRATION_REVIEWER_MODEL", None)
-
-    proc = subprocess.run(
-        [sys.executable, str(driver)],
-        cwd=str(REPO_ROOT),
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=False,
-    )
-    assert proc.returncode == _EXPECTED_EXIT[mode], (
-        f"child exit {proc.returncode}, expected {_EXPECTED_EXIT[mode]} for mode "
-        f"{mode}\nstdout={proc.stdout}\nstderr={proc.stderr}"
-    )
-    files = sorted(results.glob("baseline-*.json"))
-    assert len(files) == 1, (
-        f"a run owns exactly one file; found {[p.name for p in files]}\n"
-        f"stdout={proc.stdout}\nstderr={proc.stderr}"
-    )
-    return files[0]
+COMMITTED_RESULTS_DIR = Path(__file__).resolve().parent / "adversarial_fixtures" / "_results"
 
 
 @pytest.fixture(scope="module")
 def killed_capture(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """The artifact a real capture leaves when SIGKILL lands inside fx-d."""
-    return _capture(tmp_path_factory.mktemp("killed"), "sigkill")
+    return harness.capture(tmp_path_factory.mktemp("killed"), "sigkill")
 
 
 @pytest.fixture(scope="module")
 def raised_capture(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """The artifact a capture leaves when it raises inside fx-d and its
     teardown still runs."""
-    return _capture(tmp_path_factory.mktemp("raised"), "raise")
+    return harness.capture(tmp_path_factory.mktemp("raised"), "raise")
 
 
 @pytest.fixture(scope="module")
 def complete_capture(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """The artifact a real capture leaves when it finishes."""
-    return _capture(tmp_path_factory.mktemp("complete"), "complete")
+    return harness.capture(tmp_path_factory.mktemp("complete"), "complete")
+
+
+@pytest.fixture(scope="module")
+def kill_after_last_capture(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The artifact a capture leaves when SIGKILL lands immediately after
+    fx-d's own ``complete_fixture`` call returns, before teardown."""
+    return harness.capture(tmp_path_factory.mktemp("kill_after_last"), "kill_after_last")
 
 
 def test_a_killed_run_keeps_every_completed_fixture(killed_capture: Path) -> None:
+    """fx-a and fx-b finish outright. fx-d is killed on its SECOND (of two)
+    runs, so this is also the proof of #398 A1: the FIRST run already
+    reached disk through ``record``'s own flush before the kill, which is
+    exactly the "RUNS-1 survives" guarantee the issue asked for - it shows
+    up here with ``runs_total=1``, not absent and not zeroed. fx-d still
+    counts as dangling rather than finished: ``complete_fixture`` never ran
+    for it, so it stays out of ``fixtures_completed`` and the whole baseline
+    stays partial."""
     data = json.loads(killed_capture.read_text(encoding="utf-8"))
-    assert [f["fixture_id"] for f in data["fixtures"]] == ["fx-a", "fx-b"]
-    assert [f["runs_detected"] for f in data["fixtures"]] == [2, 2]
+    assert [f["fixture_id"] for f in data["fixtures"]] == ["fx-a", "fx-b", "fx-d"]
+    assert [f["runs_total"] for f in data["fixtures"]] == [2, 2, 1]
+    assert [f["runs_detected"] for f in data["fixtures"]] == [2, 2, 1]
     assert data["fixtures_completed"] == [FX_A, FX_B, FX_C]
     assert data["fixtures_attempted"] == [FX_A, FX_B, FX_C, FX_D]
     assert data["run_complete"] is False
-    # An unmeasured fixture is unmeasured, not a score of 0.0: fx-d is named
-    # in fixtures_attempted and appears nowhere in fixtures.
-    assert "fx-d" not in {f["fixture_id"] for f in data["fixtures"]}
 
 
 def test_all_three_gate_helpers_record_their_fixture(complete_capture: Path) -> None:
@@ -194,6 +111,24 @@ def test_a_run_that_reached_teardown_with_a_dangling_fixture_is_partial(
         calibration.load_baseline(raised_capture)
 
 
+def test_a_kill_right_after_the_last_fixture_completes_still_records_it(
+    kill_after_last_capture: Path,
+) -> None:
+    """#398 A3. ``fx-d``'s runs already reached disk through ``record``'s own
+    flush (A1) before this kill; what is NOT yet guaranteed is that fx-d
+    moved from attempted to completed, which only ``complete_fixture``'s own
+    flush writes - there is no next fixture's ``begin_fixture`` to catch up
+    for it, and teardown never runs. Deleting that flush call turns this
+    genuinely-complete fixture into one wrongly reported as dangling."""
+    data = json.loads(kill_after_last_capture.read_text(encoding="utf-8"))
+    assert data["fixtures_attempted"] == [FX_A, FX_B, FX_C, FX_D]
+    assert data["fixtures_completed"] == [FX_A, FX_B, FX_C, FX_D]
+    # Teardown (report.save(), which sets _finished) never ran: the kill
+    # landed before the `finally` block's report.save() call.
+    assert data["run_complete"] is False
+    assert [f["fixture_id"] for f in data["fixtures"]] == ["fx-a", "fx-b", "fx-d"]
+
+
 def test_load_baseline_refuses_the_partial_capture(killed_capture: Path) -> None:
     with pytest.raises(ValueError) as excinfo:
         calibration.load_baseline(killed_capture)
@@ -205,29 +140,21 @@ def test_load_baseline_refuses_the_partial_capture(killed_capture: Path) -> None
 def test_compare_refuses_the_partial_capture_and_emits_no_delta(
     killed_capture: Path,
     complete_capture: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    proc = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "kstrl.calibration",
-            "compare",
-            str(complete_capture),
-            str(killed_capture),
-        ],
-        cwd=str(REPO_ROOT),
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=False,
-    )
-    assert proc.returncode == 2, f"stdout={proc.stdout}\nstderr={proc.stderr}"
-    assert "partial" in proc.stderr
-    assert FX_D in proc.stderr
+    """#398 B1: in-process through ``calibration.main``, the house pattern
+    used at three sites in ``tests/test_calibration_compare.py`` and 20+
+    times via ``tests/helpers/demotion.py::run_compare`` - no subprocess, no
+    child ~30 ms, for a call this process can make directly."""
+    code = calibration.main(["compare", str(complete_capture), str(killed_capture)])
+    assert code == 2
+    out, err = capsys.readouterr()
+    assert "partial" in err
+    assert FX_D in err
     # No delta of any kind reached stdout.
-    assert "->" not in proc.stdout
-    assert "PASS" not in proc.stdout
-    assert "FAIL" not in proc.stdout
+    assert "->" not in out
+    assert "PASS" not in out
+    assert "FAIL" not in out
 
 
 def test_a_completed_run_loads(complete_capture: Path) -> None:
@@ -301,3 +228,24 @@ def test_save_report_writes_through_atomicio(
     )
     out = calibration.save_report(report, tmp_path)
     assert calls == [out]
+
+
+def test_every_committed_baseline_is_a_complete_capture() -> None:
+    """#398 A2: the guard that catches instance N+1. Before this change a
+    crashed run left no file at all; it can now leave one inside this
+    git-tracked directory. A reviewer planted a partial baseline carrying a
+    WRONG model here and ran the existing model-drift guard over it: it
+    reported ``1 passed, 35 deselected`` because that guard routes through
+    ``newest_baseline_path``, which SKIPS partials rather than refusing them
+    - so the one control that reads this directory never looked at the exact
+    artifact this change introduces. This reads every committed baseline
+    directly and refuses to let any of them be partial."""
+    baselines = sorted(COMMITTED_RESULTS_DIR.glob("baseline-*.json"))
+    assert baselines, f"no committed baselines found under {COMMITTED_RESULTS_DIR}"
+    partial: list[str] = []
+    for path in baselines:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        reason = calibration.partial_capture_reason(data)
+        if reason is not None:
+            partial.append(f"{path.name}: {reason}")
+    assert partial == [], "committed baseline(s) are partial captures:\n" + "\n".join(partial)
