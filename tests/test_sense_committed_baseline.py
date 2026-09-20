@@ -1,4 +1,4 @@
-"""This repository's OWN committed baseline, read the way the workflow reads it.
+"""This repository's OWN committed baseline, read the way `ks sense --compare-baseline` reads it.
 
 Every other test about the dampener builds a baseline under ``tmp_path``. None
 of them touches ``scripts/kstrl/sense-baseline.json``, which is this
@@ -11,9 +11,9 @@ the timeout, and ``ks sense --compare-baseline`` refuses a mismatch with exit 2.
 So a `[verify]` command change in ``kstrl.toml``, a bump to
 ``BASELINE_SCHEMA_VERSION``, or moving ``[tool.mypy] files`` out of
 ``pyproject.toml`` (which flips ``_default_typecheck_command``) invalidates the
-committed file with a green local suite, and the first signal is a red dampener
-job on somebody else's next pull request. Here it is a red test on the commit
-that did it.
+committed file with a green local suite, and the first signal is
+`ks sense --compare-baseline` exiting 2 for anyone who runs it next. Here it
+is a red test on the commit that did it.
 
 The timeout is a constant here. It used to be read out of the dampener
 workflow, which was this repository's only consumer of the baseline until #394
@@ -64,10 +64,10 @@ def repository_config(monkeypatch: pytest.MonkeyPatch) -> VerifyConfig:
 def test_the_committed_baseline_matches_this_repository(
     repository_config: VerifyConfig,
 ) -> None:
-    """The digest, recomputed from this checkout at the workflow's timeout.
+    """The digest, recomputed from this checkout at the pinned timeout.
 
-    This is the equality the dampener job refuses on. It is checkable in under
-    a second and nothing was checking it.
+    This is the equality `ks sense --compare-baseline` exits 2 on. It is
+    checkable in under a second and nothing was checking it.
     """
     baseline = dampener.read_baseline(BASELINE_PATH)
     commands = resolve_verify_commands(repository_config, ROOT)
@@ -90,12 +90,14 @@ def test_a_different_timeout_gives_a_different_digest(
     Without it, a ``verify_digest`` that ignored its inputs and returned a
     constant would pass, and the refusal the committed baseline relies on would
     be gone with nothing failing. The 300 is the default an operator gets by
-    running the command without the workflow's env, which is the exact mistake
-    the digest exists to catch.
+    running the command without setting ``KSTRL_TIMEOUT_VERIFY``, which is the
+    exact mistake the digest exists to catch.
     """
     commands = resolve_verify_commands(repository_config, ROOT)
 
-    assert dampener.verify_digest(commands, 300.0) != dampener.verify_digest(commands, 1800.0)
+    assert dampener.verify_digest(commands, 300.0) != dampener.verify_digest(
+        commands, BASELINE_TIMEOUT_SECONDS
+    )
 
 
 def test_every_check_the_baseline_names_still_exists() -> None:

@@ -203,11 +203,14 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   the comparison reported what the `test` and `lint` jobs in `ci.yml` already
   report, and it never had the power to fail the build. Measured over five runs
   it took 360 to 454 seconds per push; over the last seven pull requests it
-  reported a finding twice, both times the secret-pattern fixture in
-  `tests/test_verify.py` matching itself. `ks sense`, `--compare-baseline`,
-  `--fail-on-regression`, the baseline file and
-  [`docs/dampener.md`](docs/dampener.md) are unchanged: the dampener is for
-  brownfield repositories and this repository is not one.
+  reported a finding twice, and both times the finding was WRONG: a false
+  positive, the secret-pattern fixture in `tests/test_verify.py` matching
+  itself rather than a real secret, now filed as #399. `ks sense`,
+  `--compare-baseline`, `--fail-on-regression` and the baseline file are
+  unchanged: the dampener is for brownfield repositories and this repository
+  is not one. [`docs/dampener.md`](docs/dampener.md) is rewritten to document
+  the dampener as what a consuming project wires up, with a restored worked
+  example at `docs/examples/sense-dampener.yml`.
   `tests/test_own_ci_workflows.py` pins that the test suite runs in one
   workflow only (#394).
 
