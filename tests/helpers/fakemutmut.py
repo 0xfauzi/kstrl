@@ -57,6 +57,18 @@ than by looking at whether `.mutmut-cache` is actually on disk when
 `junitxml` runs, so nothing in the suite could see the ORDER of the two
 `.mutmut-cache` deletes in `kstrl/verify.py::_mutmut_measure` - a delete
 planted between the run spawn and the report spawn passed every test.
+
+#391 simplify pass on PR #392, C2: the `junitxml` branch's SECOND
+`{cache}`-eq-1 check (guarding `cat junit.xml` vs. exiting 0) was
+provably dead once the disk-based check above it existed. Read together:
+`{cache}` is 0 only from `put_failing_mutmut`, whose `run` branch exits
+before the cache/mutate block and so never creates `.mutmut-cache` at
+all - the disk check above always intercepts that case first. `{cache}`
+is 1 only from `put_mutmut_on_path`, whose `run` branch always `touch`es
+the cache, so by the time `junitxml` runs the disk check above always
+falls through and the second check was always true. Verified by
+replacing the whole second conditional with the bare `cat` and running
+every test in this repo that installs a fake mutmut: unchanged.
 """
 
 from __future__ import annotations
@@ -207,11 +219,7 @@ case "$1" in
       printf '<testsuites disabled="0" errors="0" failures="0" tests="0" time="0.0"/>\\n'
       exit 0
     fi
-    if [ {cache} -eq 1 ]; then
-      cat "{recdir}/junit.xml"
-    else
-      exit 0
-    fi
+    cat "{recdir}/junit.xml"
     ;;
   *)
     printf '%s\\n' "$1" >> "{recdir}/argv-other.txt"

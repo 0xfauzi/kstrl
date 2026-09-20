@@ -10,20 +10,16 @@ report, byte for byte where it can be and structurally where it cannot.
         --simple-output --runner="<venv>/python -m pytest -x"   -> exit 2
       mutmut junitxml --untested-policy=error --suspicious-policy=error -> exit 0
 
-Copied exactly: tabs, attribute order, entity escapes (``&gt;``) and the
-diff text inside the ``failure``/``error`` elements are all evidence, not
-formatting to clean up. The constant sits at column zero - the longest
-line is 95 characters, so indenting it would trip ruff's
-``line-length = 100`` - and ends with ONE newline after
-``</testsuites>``; the capture file itself ends with two, and the extra
-blank line is not part of the XML.
-
-A unified diff's blank context lines are one space character, per the
-format, not an empty line. Pre-commit's own ``trailing-whitespace`` hook
-strips a literal trailing space on sight, which would silently turn this
-"copied exactly" claim false, so those twelve lines are spelled ``\x20``
-instead: the same character once Python reads the string, invisible to a
-hook that only looks at the file's raw bytes.
+Read through ``tests/tool_output/``'s own accessor (#258; #391 simplify
+pass on PR #392, B7) rather than a Python string constant in this module:
+that directory is the house convention for captured real tool output,
+with its provenance and normalisation policy written once in
+``tests/helpers/tool_output.py`` rather than re-solved here. Its trailing
+whitespace and blank-line normalisation are already the policy that
+directory's own docstring states - a unified diff's blank context lines
+losing their one-space padding costs nothing here, because nothing in
+this module reads the diff bodies' exact text, only element tags and
+``type``/``message`` attributes.
 """
 
 from __future__ import annotations
@@ -33,95 +29,10 @@ import xml.etree.ElementTree as ET
 import pytest
 
 from kstrl.adequacy import parse_mutant_report
-from tests.helpers.fakemutmut import junit
+from tests.helpers.fakemutmut import _STATUS_ELEMENT, junit
+from tests.helpers.tool_output import tool_output
 
-RECORDED_JUNITXML = """<?xml version="1.0" ?>
-<testsuites disabled="0" errors="2" failures="2" tests="11" time="0.0">
-	<testsuite disabled="0" errors="2" failures="2" name="mutmut" skipped="0" tests="11" time="0">
-		<testcase name="Mutant #1" file="mod.py" line="2">
-			<system-out>    return a + b</system-out>
-		</testcase>
-		<testcase name="Mutant #2" file="mod.py" line="6">
-			<system-out>    while n &gt; 0:</system-out>
-		</testcase>
-		<testcase name="Mutant #3" file="mod.py" line="6">
-			<system-out>    while n &gt; 0:</system-out>
-		</testcase>
-		<testcase name="Mutant #4" file="mod.py" line="7">
-			<error type="timeout" message="bad_timeout">--- mod.py
-+++ mod.py
-@@ -4,7 +4,7 @@
-\x20
- def countdown(n):
-     while n &gt; 0:
--        n -= 1
-+        n = 1
-     return n
-\x20
-\x20
-</error>
-			<system-out>        n -= 1</system-out>
-		</testcase>
-		<testcase name="Mutant #5" file="mod.py" line="7">
-			<error type="timeout" message="bad_timeout">--- mod.py
-+++ mod.py
-@@ -4,7 +4,7 @@
-\x20
- def countdown(n):
-     while n &gt; 0:
--        n -= 1
-+        n += 1
-     return n
-\x20
-\x20
-</error>
-			<system-out>        n -= 1</system-out>
-		</testcase>
-		<testcase name="Mutant #6" file="mod.py" line="7">
-			<system-out>        n -= 1</system-out>
-		</testcase>
-		<testcase name="Mutant #7" file="mod.py" line="12">
-			<system-out>    return x * 2</system-out>
-		</testcase>
-		<testcase name="Mutant #8" file="mod.py" line="12">
-			<system-out>    return x * 2</system-out>
-		</testcase>
-		<testcase name="Mutant #9" file="mod.py" line="16">
-			<failure type="failure" message="bad_survived">--- mod.py
-+++ mod.py
-@@ -13,7 +13,7 @@
-\x20
-\x20
- def clamp(v):
--    if v &gt; 10:
-+    if v &gt;= 10:
-         return 10
-     return v
-\x20
-</failure>
-			<system-out>    if v &gt; 10:</system-out>
-		</testcase>
-		<testcase name="Mutant #10" file="mod.py" line="16">
-			<failure type="failure" message="bad_survived">--- mod.py
-+++ mod.py
-@@ -13,7 +13,7 @@
-\x20
-\x20
- def clamp(v):
--    if v &gt; 10:
-+    if v &gt; 11:
-         return 10
-     return v
-\x20
-</failure>
-			<system-out>    if v &gt; 10:</system-out>
-		</testcase>
-		<testcase name="Mutant #11" file="mod.py" line="17">
-			<system-out>        return 10</system-out>
-		</testcase>
-	</testsuite>
-</testsuites>
-"""
+RECORDED_JUNITXML = tool_output("mutmut-2.5.1-junitxml.txt")
 
 
 #: The PARSER's word for a status (:func:`kstrl.adequacy.parse_mutant_report`
@@ -177,6 +88,21 @@ def test_the_fake_renders_what_real_mutmut_renders() -> None:
     assert recorded == rendered
 
 
+#: Statuses :func:`tests.helpers.fakemutmut.junit` can render that no
+#: real mutmut 2.5.1 recording exists for (#391 simplify pass on PR
+#: #392, A4): ``untested`` - mutmut's junitxml raises ``ValueError:
+#: Obtained null mutant`` on a cache left by a killed run under
+#: ``--untested-policy=error`` (measured twice), and under any other
+#: policy an un-run mutant renders exactly like a killed one, so there is
+#: no untested cache this driver could ever read to record one from. A
+#: DISCLOSED blind spot, not a silent one: the test below is a CENSUS
+#: over :data:`_STATUS_ELEMENT`'s own keys, not a fixed list of three, so
+#: a future FIFTH status the fake grows must be matched against a
+#: recording or added here, or that census goes red rather than silently
+#: passing - the exact shape of #391 itself, recurring one layer in.
+_NO_RECORDING_EXISTS_FOR: frozenset[str] = frozenset({"untested"})
+
+
 def test_the_status_elements_the_fake_writes_are_the_ones_in_the_recording() -> None:
     """Independent of :func:`parse_mutant_report`, and compared as XML
     rather than as bytes: the fake writes a SELF-CLOSING timeout element
@@ -193,6 +119,22 @@ def test_the_status_elements_the_fake_writes_are_the_ones_in_the_recording() -> 
         "survived": ("failure", "failure", "bad_survived"),
         "timeout": ("error", "timeout", "bad_timeout"),
     }
+    # A CENSUS over the fake's own status vocabulary (#391 simplify pass
+    # on PR #392, A4), not a hand-picked list of three: every key
+    # `_STATUS_ELEMENT` defines must appear either in `expected` above
+    # (matched against the recording, below) or in
+    # `_NO_RECORDING_EXISTS_FOR` (an explicit, disclosed blind spot). This
+    # guard CLEARS - it reports the fake's rendering as pinned to the
+    # recording - so where it cannot PROVE that, it must flag rather than
+    # stay silent: a fifth invented status entering the fake with neither
+    # would otherwise leave this assertion green.
+    fake_statuses = set(_STATUS_ELEMENT)
+    covered = set(expected) | _NO_RECORDING_EXISTS_FOR
+    assert fake_statuses == covered, (
+        f"unaccounted fake status(es) {sorted(fake_statuses - covered)}: match against "
+        "the recording above or add to _NO_RECORDING_EXISTS_FOR with a measured reason"
+    )
+
     for status, signature in expected.items():
         rendered_xml = junit((1, "mod.py", 1, status))
         rendered_root = ET.fromstring(rendered_xml)
@@ -211,14 +153,17 @@ def test_the_status_elements_the_fake_writes_are_the_ones_in_the_recording() -> 
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "no real `untested` rendering could be recorded: mutmut 2.5.1's "
-        "junitxml raises ValueError: Obtained null mutant on a cache left "
-        "by a killed run (measured twice), and under any other untested "
+        "no real rendering could be recorded for "
+        + ", ".join(sorted(_NO_RECORDING_EXISTS_FOR))
+        + ": mutmut 2.5.1's junitxml raises ValueError: Obtained null mutant on a "
+        "cache left by a killed run (measured twice), and under any other untested "
         "policy an un-run mutant renders exactly like a killed one"
     ),
 )
 def test_an_untested_rendering_is_recorded() -> None:
     """The DISCLOSED blind spot: the day someone records a real
     ``untested`` rendering, this XPASSes and fails loudly instead of the
-    gap staying invisible."""
-    assert 'message="untested"' in RECORDED_JUNITXML
+    gap staying invisible. Keyed off :data:`_NO_RECORDING_EXISTS_FOR`
+    (#391 simplify pass on PR #392, A4) rather than the bare literal, so
+    the two cannot drift apart."""
+    assert all(f'message="{status}"' in RECORDED_JUNITXML for status in _NO_RECORDING_EXISTS_FOR)

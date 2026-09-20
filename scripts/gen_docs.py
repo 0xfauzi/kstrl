@@ -560,12 +560,10 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     (
         "verify",
         "mutation_timeout",
-    ): "seconds for the mutation spawn itself ([verify] mutation_testing and "
-    "[adequacy] diff_mutation). On a run that FINISHES the check's own "
-    "wall-clock ceiling is higher (~650s at this default: the spawn's own "
-    "SIGTERM/SIGKILL grace plus the fixed report-spawn timeout and its own "
-    "grace); on a fired cap there is no report spawn, so the ceiling is "
-    "instead this value plus at most two SIGTERM/SIGKILL graces (5s each)",
+    ): "seconds in the phase's one shared mutation budget ([verify] "
+    "mutation_testing and [adequacy] diff_mutation both draw from it, #391); "
+    "full ceiling arithmetic in the [adequacy] diff_mutation paragraph "
+    "(docs/env-vars.md)",
     ("verify", "subprocess_timeout"): "seconds per verification subprocess",
     (
         "verify",

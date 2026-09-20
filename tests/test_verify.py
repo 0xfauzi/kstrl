@@ -1403,7 +1403,7 @@ class TestCheckDeadCode:
             patch("kstrl.verify.run_scrubbed") as run,
         ):
             dead_code = check_dead_code(tmp_path, "main")
-            mutation = check_mutation_score(tmp_path, "main")
+            mutation = check_mutation_score(tmp_path, "main", None)
 
         for outcome, name in ((dead_code, "dead_code"), (mutation, "mutation_testing")):
             assert isinstance(outcome, NotMeasured), name
@@ -1478,7 +1478,7 @@ class TestCheckDeadCode:
             patch("kstrl.verify.run_scrubbed"),
         ):
             dead_code = check_dead_code(tmp_path, "main")
-            mutation = check_mutation_score(tmp_path, "main")
+            mutation = check_mutation_score(tmp_path, "main", None)
 
         assert seen == [True, True]
         for outcome, name in ((dead_code, "dead_code"), (mutation, "mutation_testing")):

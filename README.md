@@ -387,7 +387,7 @@ dead_code_cleanup = false      # optional dead-code check
 dead_code_command = ""         # empty = smart default when dead_code_cleanup is on
 mutation_testing = false       # optional mutation testing
 mutation_threshold = 50.0      # minimum percentage of mutable lines in the changed files whose first definite mutant was killed
-mutation_timeout = 600.0       # seconds for the mutation spawn itself ([verify] mutation_testing and [adequacy] diff_mutation). On a run that FINISHES the check's own wall-clock ceiling is higher (~650s at this default: the spawn's own SIGTERM/SIGKILL grace plus the fixed report-spawn timeout and its own grace); on a fired cap there is no report spawn, so the ceiling is instead this value plus at most two SIGTERM/SIGKILL graces (5s each)
+mutation_timeout = 600.0       # seconds in the phase's one shared mutation budget ([verify] mutation_testing and [adequacy] diff_mutation both draw from it, #391); full ceiling arithmetic in the [adequacy] diff_mutation paragraph (docs/env-vars.md)
 subprocess_timeout = 300.0     # seconds per verification subprocess
 require_self_critique = false  # fail Phase 1 if the ## Self-Critique block is missing/sparse
 self_critique_min_bullets = 3  # minimum substantive bullets in the block

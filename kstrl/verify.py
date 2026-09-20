@@ -2217,14 +2217,9 @@ def _mutmut_tool_preflight(
     invocation mutmut's ``--runner`` can wrap, and mutmut must be on
     PATH. One copy, because two copies 300 lines apart disagreed on five
     learned facts about the same tool (#391)."""
-    tokens = _validated_pytest_tokens(resolve_test_command(test_command))
-    if tokens is None:
-        return NotMeasured(
-            check,
-            NOT_MEASURED_TOOL_MISSING,
-            f"[verify] test_command is not a single pytest invocation mutmut's "
-            f"runner can wrap: {test_command!r}",
-        )
+    tokens = _pytest_tokens_or_gap(check, test_command, "mutmut's runner can wrap")
+    if isinstance(tokens, NotMeasured):
+        return tokens
     if not shutil.which("mutmut"):
         return _mutmut_missing(check, config_key)
     return tokens
@@ -2263,12 +2258,20 @@ def _mutmut_tree_preflight(cwd: Path, check: str, paths: Sequence[str]) -> NotMe
 def check_mutation_score(
     cwd: Path,
     base_branch: str,
-    test_command: str | None = None,
+    test_command: str | None,
     threshold: float = 50.0,
     timeout: float = 600.0,
 ) -> CheckResult | NotMeasured:
     """R8.5 Layer 1 (#152, #391): mutate every non-test Python file this
     diff changed, and score the report against ``threshold``.
+
+    ``test_command`` has no default (#391 simplify pass on PR #392, C5):
+    it is load-bearing for this check's own ``tool_missing`` refusal
+    (D6), the same reason :func:`check_diff_mutation`'s identical
+    parameter has never had one, so a caller states its choice rather
+    than inheriting a smart default it never asked for. ``None`` is
+    still a legal value - :func:`resolve_test_command` reads it as the
+    harness default - it is only the silent ``= None`` that is gone.
 
     Returns a :class:`CheckResult` - PASS or FAIL against ``threshold`` -
     only when a score was actually measured. Every other path returns
@@ -2285,11 +2288,8 @@ def check_mutation_score(
     - ``no_target``: the diff changed no non-test Python file. Nothing
       to mutate; not a fault.
     - ``timed_out``: the ``[verify] mutation_timeout`` cap fired.
-      mutmut 2.5.1 cannot report a truncated run (#391 D4: its junitxml
-      raises ``ValueError: Obtained null mutant`` under
-      ``--untested-policy=error``, and under any other policy an un-run
-      mutant renders exactly like a killed one), so the report spawn
-      never follows a fired cap.
+      :data:`_MUTMUT_CANNOT_REPORT_TRUNCATED` (D4, #391), so the report
+      spawn never follows a fired cap.
     - ``command_failed``: a pre-existing ``<path>.bak`` beside a target,
       a project ``mutmut_config.py``, a fatal mutmut exit (bit 1 of its
       return code), or a report mutmut wrote but kstrl could not parse.
@@ -2499,6 +2499,30 @@ def _validated_pytest_tokens(test_command: str) -> list[str] | None:
         return None
     if "pytest" not in tokens:
         return None
+    return tokens
+
+
+def _pytest_tokens_or_gap(
+    check: str, test_command: str | None, clause: str
+) -> list[str] | NotMeasured:
+    """``test_command``, resolved and tokenised as a single pytest
+    invocation the caller can extend - or the ``tool_missing`` sidecar
+    naming why not, in the caller's own words (``clause``).
+
+    One helper (#391 simplify pass, B6) for what used to be three copies
+    - this PR already took it from three to two - differing only in the
+    trailing clause: R8.5 Layer 1's coverage check can EXTEND the
+    command (``"this can extend"``), while the two mutmut-backed checks
+    hand it to mutmut's own ``--runner`` (``"mutmut's runner can
+    wrap"``, D6).
+    """
+    tokens = _validated_pytest_tokens(resolve_test_command(test_command))
+    if tokens is None:
+        return NotMeasured(
+            check,
+            NOT_MEASURED_TOOL_MISSING,
+            f"[verify] test_command is not a single pytest invocation {clause}: {test_command!r}",
+        )
     return tokens
 
 
@@ -2776,14 +2800,9 @@ def check_patch_coverage(
     (SIGTERM, grace, SIGKILL) before raising
     :class:`subprocess.TimeoutExpired`.
     """
-    tokens = _validated_pytest_tokens(resolve_test_command(test_command))
-    if tokens is None:
-        return NotMeasured(
-            PATCH_COVERAGE_CHECK,
-            NOT_MEASURED_TOOL_MISSING,
-            f"[verify] test_command is not a single pytest invocation this "
-            f"can extend: {test_command!r}",
-        )
+    tokens = _pytest_tokens_or_gap(PATCH_COVERAGE_CHECK, test_command, "this can extend")
+    if isinstance(tokens, NotMeasured):
+        return tokens
     try:
         diff_text = git.get_diff_content(base_branch, cwd)
     except git.GitDiffError as exc:
@@ -2981,8 +3000,11 @@ def _preexisting_backups(cwd: Path, paths: Iterable[str]) -> list[str]:
     """The target paths that already have a ``<path>.bak`` beside them,
     sorted.
 
-    Pure, no I/O beyond :meth:`Path.exists`. Called once, in
-    :func:`check_diff_mutation`, BEFORE any spawn (D7 step 1). A
+    Pure, no I/O beyond :meth:`Path.exists`. Called once, from
+    :func:`_mutmut_tree_preflight` (shared by both mutation checks since
+    #391; #391 simplify pass on PR #392, C5 - it used to name only
+    :func:`check_diff_mutation`, which called it directly before the
+    shared pre-flight existed), BEFORE any spawn (D7 step 1). A
     non-empty result is a ``command_failed`` sidecar, not a run: mutmut
     writes ``<file>.bak`` before it mutates a file, so kstrl cannot tell
     a backup already on disk from one mutmut is about to write, and
@@ -3119,12 +3141,10 @@ def _mutmut_run_spawn(
     could read them again - the happy path leaves no ``.bak`` at all and
     mutmut's own ``shutil.move`` has already dropped the mode by then.
 
-    D4 (#391): a truncated run is ``timed_out``, never a score - mutmut
-    2.5.1's junitxml cannot read a truncated cache (measurements 2d:
-    ``ValueError: Obtained null mutant`` under ``--untested-policy=error``,
-    the policy this driver always passes; under any other policy an
-    un-run mutant renders exactly like a killed one). The caller must not
-    follow a ``timed_out`` (or any other) gap with a report spawn.
+    D4 (#391): a truncated run is ``timed_out``, never a score -
+    :data:`_MUTMUT_CANNOT_REPORT_TRUNCATED` (measurements 2d). The caller
+    must not follow a ``timed_out`` (or any other) gap with a report
+    spawn.
     """
     modes = _target_modes(cwd, paths)
     result: subprocess.CompletedProcess[str] | None = None
@@ -3145,11 +3165,8 @@ def _mutmut_run_spawn(
         return NotMeasured(
             check,
             NOT_MEASURED_TIMED_OUT,
-            f"the {cap:.0f}s [verify] mutation_timeout cap fired, and mutmut "
-            "2.5.1 cannot report a truncated run: its junitxml raises "
-            "ValueError: Obtained null mutant under --untested-policy=error, "
-            "and under any other policy an un-run mutant renders exactly like "
-            "a killed one",
+            f"the {cap:.0f}s [verify] mutation_timeout cap fired, and "
+            + _MUTMUT_CANNOT_REPORT_TRUNCATED,
         )
     if result is not None and result.returncode & 1:
         return NotMeasured(
@@ -3160,13 +3177,44 @@ def _mutmut_run_spawn(
     return None
 
 
+#: The entire fail-closed guarantee behind D4 (#391 simplify pass, A3):
+#: with this flag, an un-run mutant makes ``mutmut junitxml`` raise
+#: (measured: ``ValueError: Obtained null mutant``) instead of silently
+#: rendering as a bare ``<testcase>`` - indistinguishable from a killed
+#: one. Under any OTHER untested policy that render is exactly what
+#: happens, which is the 100%-on-8-of-11 defect this PR measured and
+#: fixed. D4's own control flow (:func:`_mutmut_run_spawn`'s ``timed_out``
+#: branch) only ever catches the truncation KSTRL causes, keyed on its
+#: own cap; a truncated cache reaching this spawn by any OTHER route -
+#: an operator's own ``Ctrl-C``, an OOM kill - is caught by this flag
+#: alone. Deleting it leaves the whole suite green (measured; see plant
+#: P1), because no earlier version of this file asserted the report
+#: spawn's own argv.
+_UNTESTED_POLICY_ERROR = "--untested-policy=error"
+
+#: The operator-facing half of D4's rule (#391 simplify pass, C4): why a
+#: fired cap can never be scored. Written once; the docstrings below
+#: that explain the DECISION point at this sentence instead of each
+#: repeating it.
+_MUTMUT_CANNOT_REPORT_TRUNCATED = (
+    "mutmut 2.5.1 cannot report a truncated run: its junitxml raises "
+    "ValueError: Obtained null mutant under --untested-policy=error, and "
+    "under any other policy an un-run mutant renders exactly like a "
+    "killed one"
+)
+
+
 def _mutmut_report_spawn(cwd: Path, check: str) -> str | NotMeasured:
-    """``mutmut junitxml``'s stdout, or the sidecar naming why not."""
+    """``mutmut junitxml``'s stdout, or the sidecar naming why not.
+
+    ``_UNTESTED_POLICY_ERROR`` is the whole fail-closed guarantee - see
+    its own comment.
+    """
     report: subprocess.CompletedProcess[str] | None = None
     report_error = ""
     try:
         report = run_scrubbed(
-            ["mutmut", "junitxml", "--untested-policy=error", "--suspicious-policy=error"],
+            ["mutmut", "junitxml", _UNTESTED_POLICY_ERROR, "--suspicious-policy=error"],
             cwd=cwd,
             timeout=_MUTATION_REPORT_TIMEOUT,
         )
@@ -3308,11 +3356,9 @@ def _diff_mutation_score_result(score: MutationScore, start: float) -> CheckResu
     all, and ``command_failed`` for the remaining case (mutants reported
     and none with a definite status). D4 (#391) deleted the ``timed_out``
     branch that used to live here: a fired cap never reaches this
-    function at all now, because mutmut 2.5.1's junitxml raises
-    ``ValueError: Obtained null mutant`` on a truncated cache under
-    ``--untested-policy=error`` (measurements 2d) - the report spawn does
-    not follow a fired cap, so ``_mutmut_measure`` returns the
-    ``timed_out`` gap directly.
+    function at all now - :data:`_MUTMUT_CANNOT_REPORT_TRUNCATED`
+    (measurements 2d) - the report spawn does not follow a fired cap, so
+    ``_mutmut_measure`` returns the ``timed_out`` gap directly.
 
     Otherwise builds the PASSING row: ``sampled`` now has ONE cause
     (D4) - fewer lines were measured than mutmut reported a mutant for -
@@ -3464,8 +3510,10 @@ def _diff_mutation_checks(
       failing suite runs the suite a THIRD time (once for the test
       check, once under Layer 1's coverage) only to raise "Tests don't
       run cleanly without mutations" and abort - a wasted 457s run on
-      this repo, measured. Layer 1 has the identical pre-existing shape
-      and is NOT fixed in this round; see the PR body for why.
+      this repo, measured. :func:`_mutation_checks` carries the
+      byte-for-byte identical guard since the #391 simplify pass on PR
+      #392: reaching mutmut through one shared driver made the missing
+      guard on that side the only remaining asymmetry.
     - ``coverage_duration >= config.mutation_timeout`` (A1): Layer 1's
       OWN measured coverage-run duration already meets or exceeds the
       cap this check's mutation run would be bounded by. mutmut always
@@ -3479,6 +3527,11 @@ def _diff_mutation_checks(
       a single mutant runs. No invented ratio: this compares the two
       measured durations directly, never a tightened factor guessed
       without a second repository's numbers beside kstrl's own.
+      ``config.mutation_timeout`` is unchanged here: this check runs
+      FIRST in the phase (see :func:`run_mechanical_verification`) and
+      gets the full budget; :func:`_mutation_checks`, running second,
+      gets what THIS check's own run actually left of it (#391 simplify
+      pass on PR #392, A2 - see that function's docstring).
     """
     if adequacy_config is None or not (adequacy_config.enabled and adequacy_config.diff_mutation):
         return [], []
@@ -4112,7 +4165,10 @@ def _mutation_checks(
     cwd: Path,
     base_branch: str,
     config: VerifyConfig,
+    coverage_duration: float,
     *,
+    test_suite_passed: bool,
+    cap: float,
     read_only: bool,
 ) -> tuple[list[CheckResult], list[NotMeasured]]:
     """``(rows, gaps)`` for mutation testing: at most one of each (#306).
@@ -4149,6 +4205,43 @@ def _mutation_checks(
     :func:`run_undiffed_verification`). The other four cannot join it:
     mutmut absent, timed out, failed and no mutants are only knowable
     after the check has run.
+
+    Two more refusals, both BEFORE any mutmut spawn, byte-for-byte the
+    same shape :func:`_diff_mutation_checks` already had (#391 simplify
+    pass on PR #392, group A): this check reaches mutmut through the
+    identical shared driver, and #391 is the change that made the two
+    ONE driver, so the pre-spend guards were the only asymmetry left
+    between them.
+
+    - ``test_suite_passed=False``: ``[verify] test_suite`` already
+      failed, and mutmut's own baseline is "run the suite once before
+      mutating anything" - spawning it here would run the suite a third
+      time only to abort with "Tests don't run cleanly without
+      mutations".
+    - ``coverage_duration >= cap``: Layer 1's own measured coverage-run
+      duration already meets or exceeds ``cap`` - see that parameter's
+      own note for what it is here. mutmut always pays its baseline
+      test-suite run in full before mutating a single line, and that
+      baseline is the SAME suite the coverage run just measured, so a
+      cap already at or below that duration would certainly be
+      exhausted before a single mutant runs.
+
+    ``cap`` is this check's share of ONE phase-level mutation budget
+    (#391 simplify pass on PR #392, A2), not a second copy of ``[verify]
+    mutation_timeout``: :func:`run_mechanical_verification` runs R8.5
+    Layer 2 first and passes it the FULL ``config.mutation_timeout``,
+    then decrements that number by however long Layer 2's own call
+    actually took (its wall clock, not only a scored row's
+    ``duration_seconds`` - a `timed_out` sidecar still spent the wall
+    time) and hands this check what remains. Two independent full-sized
+    caps back to back would let the phase's mutation portion cost, per
+    side, ``mutation_timeout`` plus the mutation spawn's own
+    ``_SCRUB_TERM_GRACE_SECONDS`` wait and post-SIGKILL drain (5s each)
+    plus ``_MUTATION_REPORT_TIMEOUT`` (30s) plus that report spawn's own
+    matching wait and drain (5s each) - at the 600s default, 650s per
+    side, both sides summing to 1300s for a run that scores nothing on
+    either side. See the PR body for the exact arithmetic this repo's
+    own 533s baseline suite length produces against that number.
     """
     if not config.mutation_testing:
         return [], []
@@ -4160,12 +4253,39 @@ def _mutation_checks(
                 _MUTMUT_READ_ONLY_DETAIL,
             )
         ]
+    if not test_suite_passed:
+        return [], [
+            NotMeasured(
+                MUTATION_TESTING_CHECK,
+                NOT_MEASURED_COMMAND_FAILED,
+                "[verify] test_suite already failed; mutmut's own baseline run "
+                "would only run the suite a third time to abort with 'Tests "
+                "don't run cleanly without mutations', so this check refuses "
+                "before spending anything (#391 simplify pass on PR #392: the "
+                "guard R8.5 Layer 2 already had)",
+            )
+        ]
+    if coverage_duration >= cap:
+        return [], [
+            NotMeasured(
+                MUTATION_TESTING_CHECK,
+                NOT_MEASURED_TIMED_OUT,
+                f"R8.5 Layer 1's own coverage run already took "
+                f"{coverage_duration:.0f}s, at or beyond the {cap:.0f}s this "
+                "check has left of the phase's shared [verify] "
+                "mutation_timeout budget (#391 simplify pass on PR #392, A2); "
+                "mutmut always pays that same suite's baseline in full before "
+                "mutating a single line, so it would certainly exhaust what "
+                "remains before measuring anything, and this check refuses "
+                "before spending it",
+            )
+        ]
     outcome = check_mutation_score(
         cwd,
         base_branch,
         test_command=config.test_command,
         threshold=config.mutation_threshold,
-        timeout=config.mutation_timeout,
+        timeout=cap,
     )
     if isinstance(outcome, NotMeasured):
         return [], [outcome]
@@ -4537,16 +4657,33 @@ def run_mechanical_verification(
     if coverage_gap is not None:
         not_measured.append(coverage_gap)
 
+    # One [verify] test_suite reading feeds BOTH mutation checks' A2 guard
+    # below (#391 simplify pass on PR #392): a single generator read,
+    # never re-evaluated between the two calls.
+    test_suite_passed = next(c.passed for c in checks if c.name == GATE_TEST)
+    coverage_duration = coverage_rows[0].duration_seconds if coverage_rows else 0.0
+
+    # ONE phase-level mutation budget (#391 simplify pass on PR #392,
+    # A2), not two independent copies of [verify] mutation_timeout: R8.5
+    # Layer 2 runs first and is bounded by the FULL config value; the
+    # wall clock its own call actually spent - whether it scored, gapped
+    # or refused before spending anything - is subtracted before what
+    # remains reaches R8.5 Layer 1 below. `time.monotonic()` around the
+    # call, not `mutation_diff_rows[0].duration_seconds`, because a
+    # `timed_out` gap still spent the cap's own wall time and produces no
+    # row to read a duration from.
+    mutation_diff_start = time.monotonic()
     mutation_diff_rows, mutation_diff_gaps = _diff_mutation_checks(
         worktree_path,
         config,
         adequacy_config,
         coverage,
         coverage_gap,
-        coverage_rows[0].duration_seconds if coverage_rows else 0.0,
-        test_suite_passed=next(c.passed for c in checks if c.name == GATE_TEST),
+        coverage_duration,
+        test_suite_passed=test_suite_passed,
         read_only=read_only,
     )
+    mutation_diff_elapsed = time.monotonic() - mutation_diff_start
     checks.extend(mutation_diff_rows)
     not_measured.extend(mutation_diff_gaps)
 
@@ -4563,6 +4700,9 @@ def run_mechanical_verification(
         worktree_path,
         base_branch,
         config,
+        coverage_duration,
+        test_suite_passed=test_suite_passed,
+        cap=max(0.0, config.mutation_timeout - mutation_diff_elapsed),
         read_only=read_only,
     )
     checks.extend(mutation_rows)
