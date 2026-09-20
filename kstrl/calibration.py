@@ -43,6 +43,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from kstrl.atomicio import atomic_write_json
+
 # ---------------------------------------------------------------------------
 # Codified thresholds (R5.1) - the single source of truth for what counts as
 # a calibration regression. Documented in docs/adversarial-design.md.
@@ -338,11 +340,35 @@ def build_report(
 
 
 def save_report(report: Mapping[str, Any], results_dir: Path) -> Path:
-    """Write a report to ``baseline-<timestamp>.json`` in ``results_dir``."""
+    """Write a report to ``baseline-<timestamp>.json`` in ``results_dir``.
+
+    Called many times during one run since #398, so the write is the
+    atomic one and no reader sees half a document. Same bytes as before:
+    ``atomic_write_json`` writes the same indent and trailing newline, and
+    it needs the parent to exist, so the ``mkdir`` stays.
+    """
     results_dir.mkdir(parents=True, exist_ok=True)
     out = results_dir / f"baseline-{report['timestamp']}.json"
-    out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    atomic_write_json(out, report)
     return out
+
+
+def partial_capture_reason(data: Mapping[str, Any]) -> str | None:
+    """Why a report is a PARTIAL capture (#398), or None when it is not.
+
+    ``run_complete`` ABSENT means complete: every baseline written before
+    #398 was written once, at the end of a run. Anything present that is
+    not exactly ``True`` is partial, so junk fails closed. One definition,
+    because ``load_baseline`` refuses on it and ``newest_baseline_path``
+    skips on it.
+    """
+    if data.get("run_complete", True) is True:
+        return None
+    attempted = data.get("fixtures_attempted")
+    done = set(data.get("fixtures_completed") or [])
+    names = attempted if isinstance(attempted, list) else []
+    missing = ", ".join(str(x) for x in names if x not in done) or "none recorded"
+    return f"the run did not finish; fixtures attempted but not completed: {missing}"
 
 
 def load_baseline(path: Path) -> Baseline:
@@ -366,6 +392,10 @@ def load_baseline(path: Path) -> Baseline:
         raise ValueError(f"baseline {path} is not valid UTF-8; re-save it as UTF-8: {exc}") from exc
     if not isinstance(data, dict):
         raise ValueError(f"baseline {path} is not a JSON object")
+
+    reason = partial_capture_reason(data)
+    if reason is not None:
+        raise ValueError(f"baseline {path} is a partial capture: {reason}")
 
     format_version = int(data.get("format_version", 1))
     raw_fixtures = data.get("fixtures")
@@ -665,12 +695,26 @@ class CalibrationModelDriftWarning(UserWarning):
 
 
 def newest_baseline_path(results_dir: Path) -> Path | None:
-    """Newest ``baseline-*.json`` by filename (baseline-YYYYMMDD-HHMMSS.json
-    sorts lexicographically = chronologically)."""
+    """Newest COMPLETE ``baseline-*.json`` by filename
+    (baseline-YYYYMMDD-HHMMSS.json sorts lexicographically = chronologically).
+
+    A partial capture (#398) is skipped: returning it would take the drift
+    warning SILENT, because ``load_baseline`` refuses it and
+    ``model_drift_message`` swallows that refusal. A candidate this cannot
+    READ is returned unchanged, so only a file that positively says it is
+    partial is skipped. ``UnicodeDecodeError`` is a ``ValueError``, which
+    is why the clause is spelled ``(OSError, ValueError)``.
+    """
     if not results_dir.is_dir():
         return None
-    candidates = sorted(results_dir.glob("baseline-*.json"))
-    return candidates[-1] if candidates else None
+    for candidate in sorted(results_dir.glob("baseline-*.json"), reverse=True):
+        try:
+            data: Any = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return candidate
+        if not isinstance(data, dict) or partial_capture_reason(data) is None:
+            return candidate
+    return None
 
 
 def model_drift_message(results_dir: Path, configured_model: str) -> str | None:

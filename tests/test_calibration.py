@@ -840,6 +840,13 @@ class _DetectionReport:
     def __init__(self) -> None:
         self.records: list[dict] = []
         self.fp_records: list[dict] = []
+        # #398: one filename per run. The timestamp is taken when the run
+        # STARTS, not when it ends, so every incremental write lands on the
+        # same file and a killed run leaves exactly one artifact.
+        self.timestamp: str = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+        self.attempted: list[str] = []
+        self.completed: list[str] = []
+        self._finished = False
 
     def record(
         self,
@@ -884,36 +891,76 @@ class _DetectionReport:
             }
         )
 
-    def save(self) -> Path | None:
-        if not self.records and not self.fp_records:
-            return None
-        date_str = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-        if self.records:
-            report_data: dict = calibration.build_report(
-                self.records,
-                model=REPORT_MODEL_LABEL,
-                timestamp=date_str,
-                runs_per_fixture=CALIBRATION_RUNS,
-            )
-        else:
-            report_data = {
-                "format_version": calibration.REPORT_FORMAT_VERSION,
-                "model": REPORT_MODEL_LABEL,
-                "timestamp": date_str,
-                "runs_per_fixture": CALIBRATION_RUNS,
-                "summary": {},
-                "fixtures": [],
-            }
+    def begin_fixture(self, role: str, fixture_id: str) -> None:
+        """Record that a fixture's run loop is starting, and write.
+
+        On disk BEFORE the first agent call, so a run killed mid-fixture
+        leaves that fixture named in ``fixtures_attempted`` and absent from
+        ``fixtures_completed``. That difference is what
+        ``calibration.partial_capture_reason`` names in its refusal.
+        """
+        key = f"{role}/{fixture_id}"
+        if key not in self.attempted:
+            self.attempted.append(key)
+        self.flush()
+
+    def complete_fixture(self, role: str, fixture_id: str) -> None:
+        """Record that a fixture's run loop finished, and write its records.
+
+        Called when the loop ends, before the gate assert and before any
+        skip: the fixture's records are complete at that point whatever the
+        gate then decides about them.
+        """
+        key = f"{role}/{fixture_id}"
+        if key not in self.completed:
+            self.completed.append(key)
+        self.flush()
+
+    def _run_complete(self) -> bool:
+        """A run is complete only when teardown was reached AND no fixture is
+        left dangling. SIGKILL never reaches teardown; an exception does, and
+        the dangling check is what stops that run stamping itself complete."""
+        return self._finished and set(self.attempted) == set(self.completed)
+
+    def _build(self) -> dict:
+        report_data: dict = calibration.build_report(
+            self.records,
+            model=REPORT_MODEL_LABEL,
+            timestamp=self.timestamp,
+            runs_per_fixture=CALIBRATION_RUNS,
+        )
+        # #398: the three keys that tell a reader whether this run finished
+        # and, if not, which fixture it was inside. Stamped here rather than
+        # in build_report so kstrl/calibration.py stays under the 800-line
+        # ratchet; kstrl.calibration.partial_capture_reason is the reader.
+        report_data["run_complete"] = self._run_complete()
+        report_data["fixtures_attempted"] = list(self.attempted)
+        report_data["fixtures_completed"] = list(self.completed)
         # R5.2: inject the false-positive analysis test-side. Negative
         # fixtures are an R5.2 addition and kstrl.calibration owns only
-        # the detection format (out of this session's scope), so the FP
-        # block is layered on the returned dict, not baked into build_report.
+        # the detection format, so the FP block is layered on the returned
+        # dict, not baked into build_report.
         if self.fp_records:
-            report_data = dict(report_data)
             report_data["false_positive_analysis"] = build_fp_summary(
                 self.fp_records,
             )
-        return calibration.save_report(report_data, RESULTS_DIR)
+        return report_data
+
+    def flush(self) -> Path | None:
+        """Write what the run has so far to the run's single file (#398).
+
+        Nothing recorded and nothing attempted means no calibration ran, and
+        that must stay a no-op: the module-scoped fixture is torn down on
+        every ordinary ``uv run pytest`` too, and a file written there would
+        become the newest baseline for the model-drift check.
+        """
+        if not self.records and not self.fp_records and not self.attempted:
+            return None
+        return calibration.save_report(self._build(), RESULTS_DIR)
+
+    def save(self) -> Path | None:
+        self._finished = True
+        return self.flush()
 
 
 @pytest.fixture(scope="module")
@@ -953,6 +1000,7 @@ def _gate_on_consistency(
 ) -> None:
     """Run ``run_once`` CALIBRATION_RUNS times, record every run, then
     assert the fixture's consistency meets the codified threshold."""
+    report.begin_fixture(role, fixture_id)
     detected = 0
     errored = 0
     details: list[str] = []
@@ -975,6 +1023,7 @@ def _gate_on_consistency(
             cwe=cwe,
             error=error,
         )
+    report.complete_fixture(role, fixture_id)
     completed = CALIBRATION_RUNS - errored
     if completed == 0:
         pytest.skip(f"agent unavailable for all {CALIBRATION_RUNS} runs")
@@ -1003,6 +1052,7 @@ def _measure_detection(
     signal we want to measure. The per-role ``detection_rate`` in the
     report is the acceptance metric (see the hard-positive test
     docstring). Skips only when every run errored (infrastructure)."""
+    report.begin_fixture(role, fixture_id)
     errored = 0
     for _ in range(CALIBRATION_RUNS):
         try:
@@ -1020,6 +1070,7 @@ def _measure_detection(
             cwe=cwe,
             error=error,
         )
+    report.complete_fixture(role, fixture_id)
     if errored == CALIBRATION_RUNS:
         pytest.skip(f"agent unavailable for all {CALIBRATION_RUNS} runs")
 
@@ -1037,6 +1088,7 @@ def _measure_false_positives(
     aggregate ``fp_rate`` (in the report's ``false_positive_analysis``
     block), not a failure of this harness. Skips only when every run
     errored."""
+    report.begin_fixture(role, fixture_id)
     errored = 0
     for _ in range(CALIBRATION_RUNS):
         try:
@@ -1046,6 +1098,7 @@ def _measure_false_positives(
             is_fp, detail, error = False, f"agent error: {exc}", True
             errored += 1
         report.record_fp(role, fixture_id, is_fp, detail, error=error)
+    report.complete_fixture(role, fixture_id)
     if errored == CALIBRATION_RUNS:
         pytest.skip(f"agent unavailable for all {CALIBRATION_RUNS} runs")
 
