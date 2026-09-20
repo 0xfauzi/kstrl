@@ -5,19 +5,31 @@ scheduler and :class:`kstrl.pipeline.ComponentPipeline` hold the same
 objects, and the writes cross between them in both directions. Freezing
 this dataclass, or rebuilding it at a phase boundary, or handing a
 ``dict(...)`` / ``set(...)`` / ``copy.copy(...)`` of a field to the
-constructor, disconnects the two halves. Measured on #193, focused set
-``tests/test_factory.py tests/test_pipeline.py
-tests/test_timeout_enforcement.py``, control 187 passed:
+constructor, disconnects the two halves. The five plants below at the
+construction site were not all measured in one run: see the
+provenance column, and the paragraph after the table for the exact
+attribution.
 
-====================================  =========================  ========
-plant at the construction site         result                     verdict
-====================================  =========================  ========
-``worktree_paths=dict(...)``           4 failed / 6977 passed     caught
-``component_failure_signatures=``      1 failed / 256 passed      caught
-``component_contexts=dict(...)``       6 failed / 6975 passed     caught
-``factory_result=FactoryResult()``     11 failed / 176 passed     caught
-``fresh_base_retry_ids=set(...)``      187 passed                 SILENT
-====================================  =========================  ========
+==================================  ======================  =======  ========================
+plant at the construction site      result                  verdict  provenance
+==================================  ======================  =======  ========================
+``worktree_paths=dict(...)``        4 failed / 6977 passed  caught   design panel, not re-run
+``component_failure_signatures=``   1 failed / 256 passed   caught   design panel, not re-run
+``component_contexts=dict(...)``    6 failed / 6975 passed  caught   design panel, not re-run
+``factory_result=FactoryResult()``  11 failed / 176 passed  caught   this lane
+``fresh_base_retry_ids=set(...)``   187 passed              SILENT   this lane
+==================================  ======================  =======  ========================
+
+The two rows marked "this lane" (``factory_result`` and
+``fresh_base_retry_ids``) were measured in this lane against the
+187-passed focused-set control of ``tests/test_factory.py``,
+``tests/test_pipeline.py`` and ``tests/test_timeout_enforcement.py``.
+The three rows marked "design panel, not re-run" were not re-run
+here: ``worktree_paths`` (4 failed / 6977 passed) and
+``component_contexts`` (6 failed / 6975 passed) are FULL-SUITE
+numbers from the design panel's lane; ``component_failure_signatures``
+(1 failed / 256 passed) is a separate focused set from that same
+lane. None of the three was re-derived in this lane.
 
 ``fresh_base_retry_ids`` is the one nothing saw. Its writer and its
 reader are 2,400 lines apart - the pipeline ``.add``s a component whose
