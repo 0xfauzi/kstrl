@@ -8,9 +8,9 @@ nothing of autonomy, the inbox or the UI, and folding this module's
 ``Inbox``/``AutonomyState``/``PlainUI`` imports back in would drag all
 three into every importer of a comparison. Measured, and measured the way
 a reader can repeat: after #406 split the baseline reader out into
-``kstrl/calibration_baseline.py``, ``kstrl/calibration.py`` is 551 lines,
-and this module's body below its last import (line 51 of 291) is 240, so
-the fold would land at 791 - under the 800-line growth ratchet today, but
+``kstrl/calibration_baseline.py``, ``kstrl/calibration.py`` is 567 lines,
+and this module's body below its last import (line 57 of 297) is 240, so
+the fold would land at 807, over the 800-line growth ratchet, but
 the control-plane-imports reason above is the one this module's placement
 actually rests on, not the line count.
 
