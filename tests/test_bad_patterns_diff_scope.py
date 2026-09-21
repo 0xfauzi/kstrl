@@ -21,9 +21,12 @@ adds no new row to ``tests/test_git_identity.py``'s per-file census.
 from __future__ import annotations
 
 import inspect
+import subprocess
 from pathlib import Path
 
-from kstrl import policy
+import pytest
+
+from kstrl import policy, verify
 from kstrl.verify import VerifyConfig, check_bad_patterns, run_mechanical_verification
 from tests.conftest import ReviewRepo, make_review_repo
 from tests.helpers import gitrepo
@@ -234,6 +237,23 @@ def test_run_mechanical_verification_passes_the_envelopes_configured_patterns_to
 #: test that asserts it was NOT attributed cannot drift.
 BROKEN = "def f(:\n    pass\n"
 
+#: The compiling counterpart, so a "the branch broke it" test states the
+#: before and the after as one pair rather than two ad hoc literals
+#: (#425 simplify pass F4).
+WORKS = "def f():\n    return 1\n"
+
+#: Padding that keeps git's rename detection (``-M -C``, default 50%
+#: similarity) reporting an ``R`` record rather than a ``D``+``A`` pair once
+#: the destination's content also changes. Measured (#425 simplify pass
+#: S8): without it the rename in
+#: ``test_a_rename_that_also_breaks_the_file_still_blocks`` still scores
+#: R059, nine points clear of the 50% threshold; WITH it the score is R093.
+#: Kept rather than deleted, because R059 is close enough that a future
+#: change to either body could silently flip the diff to D+A, which would
+#: stop exercising the rename path while the test stayed green - the
+#: guard-goes-blind shape CLAUDE.md warns about.
+PAD = "# pad\n" * 20
+
 
 def _commit_rename(repo: ReviewRepo, source: str, destination: str) -> None:
     """``git mv`` on the feature branch, as a second commit.
@@ -310,10 +330,13 @@ def test_two_renamed_broken_files_are_each_read_against_their_own_source(
     """The pairing, which a single rename cannot measure.
 
     ``git.get_diff_name_status`` flattens a rename into two records under one
-    status token, source then destination. Two renames in one branch is the
-    case where pairing them in the wrong order silently reads the wrong base
-    path, and both files here fail the same rule, so only the PATH in the row
-    tells the two apart.
+    status token, source then destination. Measured (#425 simplify pass S9):
+    a ``_rename_sources`` that keeps only the FIRST rename pair it sees is
+    indistinguishable from the correct one on a SINGLE rename's records, and
+    distinguishable on two - it silently drops the second file's own source,
+    reading it against its own destination instead. Two renames is the
+    smallest case that measures that mutant; both files here fail the same
+    rule, so only the PATH in the row tells the two apart.
     """
     repo = make_review_repo(
         tmp_path,
@@ -335,8 +358,8 @@ def test_two_renamed_broken_files_are_each_read_against_their_own_source(
 def test_a_syntax_error_the_branch_writes_still_blocks(tmp_path: Path) -> None:
     repo = make_review_repo(
         tmp_path,
-        base_files={"app.py": "def f():\n    return 1\n"},
-        files={"app.py": "def f(:\n    return 1\n"},
+        base_files={"app.py": WORKS},
+        files={"app.py": BROKEN},
     )
 
     row = check_bad_patterns(repo.path, repo.base_branch)
@@ -379,16 +402,13 @@ def test_a_rename_that_also_breaks_the_file_still_blocks(tmp_path: Path) -> None
     """The issue's own "do not skip renamed files wholesale": the source
     compiled at the base, so the destination not compiling is this branch's
     doing however it got there."""
-    body = "def f():\n    return 1\n" + "# pad\n" * 20
     repo = make_review_repo(
         tmp_path,
-        base_files={"app.py": body, "keep.py": "x = 1\n"},
+        base_files={"app.py": WORKS + PAD, "keep.py": "x = 1\n"},
         files={"keep.py": "x = 2\n"},
     )
     _commit_rename(repo, "app.py", "moved.py")
-    (repo.path / "moved.py").write_text(
-        "def f(:\n    return 1\n" + "# pad\n" * 20, encoding="utf-8"
-    )
+    (repo.path / "moved.py").write_text(BROKEN + PAD, encoding="utf-8")
     gitrepo.git_in(repo.path, "add", "-A")
     gitrepo.git_in(repo.path, "commit", "-qm", "break the renamed file")
 
@@ -406,8 +426,8 @@ def test_a_blocking_finding_and_a_preexisting_one_are_both_reported(
     wrote, and the operator can still see what was not counted and why."""
     repo = make_review_repo(
         tmp_path,
-        base_files={"legacy.py": BROKEN, "app.py": "def f():\n    return 1\n"},
-        files={"legacy.py": f"{BROKEN}# a comment\n", "app.py": "def f(:\n    return 1\n"},
+        base_files={"legacy.py": BROKEN, "app.py": WORKS},
+        files={"legacy.py": f"{BROKEN}# a comment\n", "app.py": BROKEN},
     )
 
     row = check_bad_patterns(repo.path, repo.base_branch)
@@ -497,3 +517,147 @@ def test_emptying_a_file_that_did_not_parse_at_the_base_still_blocks(
 
     assert row.passed is False
     assert row.details == ["legacy.py: empty file"]
+
+
+# ---------------------------------------------------------------------------
+# #425 (simplify pass on PR #425, coordinator addendum group A): the base was
+# read at the base branch's current TIP, while every diff in this same check
+# is taken at the MERGE BASE of the base branch and HEAD. The two differ the
+# moment the base branch moves after the branch was cut, which the factory
+# makes routine (a sibling component's PR merge fetches the base mid-run).
+# ---------------------------------------------------------------------------
+
+
+def _advance_main(repo: ReviewRepo, path: str, content: str, message: str) -> None:
+    """Commit onto ``main`` after the feature branch has already forked,
+    then leave ``HEAD`` back on ``feature`` - the shape a sibling
+    component's merge produces mid-run, and the one the buggy tip-read
+    could not tell apart from the merge base."""
+    gitrepo.git_in(repo.path, "checkout", "-q", "main")
+    (repo.path / path).write_text(content, encoding="utf-8")
+    gitrepo.git_in(repo.path, "add", "-A")
+    gitrepo.git_in(repo.path, "commit", "-qm", message)
+    gitrepo.git_in(repo.path, "checkout", "-q", "feature")
+
+
+def test_a_syntax_error_the_branch_writes_still_blocks_even_after_main_independently_breaks_it(
+    tmp_path: Path,
+) -> None:
+    """Scenario A of the #425 review (finding 1): the branch writes its OWN
+    syntax error into ``app.py``. Independently, someone breaks the same
+    file on ``main`` after the cut. The MERGE BASE still compiles, so this
+    is the branch's own finding and must block. Reading the base at
+    ``main``'s current tip instead wrongly clears it, because the tip
+    carries a finding of the identical KIND (``syntax error``) for a
+    reason that has nothing to do with this branch."""
+    repo = make_review_repo(
+        tmp_path,
+        base_files={"app.py": WORKS},
+        files={"app.py": BROKEN},
+    )
+    _advance_main(repo, "app.py", "def g(:\n    return 2\n", "main independently breaks app.py")
+
+    row = check_bad_patterns(repo.path, repo.base_branch)
+
+    assert row.passed is False
+    assert len(row.details) == 1
+    assert row.details[0].startswith("app.py: syntax error - ")
+
+
+def test_a_renamed_file_broken_at_the_merge_base_is_cleared_even_after_main_fixes_it(
+    tmp_path: Path,
+) -> None:
+    """Scenario B of the #425 review (finding 1) - #414 itself, resurfacing
+    through the wrong ref: the branch renames a file that did NOT parse at
+    the point it forked; ``main`` fixes that file afterward. The check must
+    still read the file at the MERGE BASE (where it was broken), not
+    ``main``'s current tip (where it now compiles), or it wrongly reports
+    the rename as this branch's own new finding."""
+    repo = make_review_repo(
+        tmp_path,
+        base_files={"legacy.py": BROKEN, "keep.py": "x = 1\n"},
+        files={"keep.py": "x = 2\n"},
+    )
+    _commit_rename(repo, "legacy.py", "moved.py")
+    _advance_main(repo, "legacy.py", WORKS, "main fixes legacy.py after the cut")
+
+    row = check_bad_patterns(repo.path, repo.base_branch)
+
+    assert row.passed is True
+    assert row.details == [
+        "moved.py: syntax error was already there at main:legacy.py; not this branch's change"
+    ]
+
+
+def test_an_unresolvable_merge_base_keeps_the_branchs_finding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Group A2 of the #425 review: a merge base git could not resolve is a
+    REFUSAL to clear, never a clear.
+
+    ``git diff base...HEAD`` and ``git merge-base base HEAD`` compute the
+    identical ancestor, so in a real repository the only way to make the
+    merge-base lookup fail while the surrounding diff still succeeds is to
+    fail the ``git merge-base`` spawn itself on purpose - forcing it to
+    exit nonzero, the same failure shape :func:`kstrl.verify._merge_base_ref`
+    already treats as "cannot resolve", rather than any other command in
+    this check. Every other ``git`` spawn (the name-status diff, the diff
+    content, ``git show`` on the base blob) runs for real.
+    """
+    repo = make_review_repo(
+        tmp_path,
+        base_files={"app.py": WORKS},
+        files={"app.py": BROKEN},
+    )
+    real_run = verify.subprocess.run
+
+    def no_merge_base(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        if argv[:2] == ["git", "merge-base"]:
+            return subprocess.CompletedProcess(argv, returncode=1, stdout=b"", stderr=b"")
+        return real_run(argv, **kwargs)  # type: ignore[arg-type,no-any-return]
+
+    monkeypatch.setattr(verify.subprocess, "run", no_merge_base)
+
+    row = check_bad_patterns(repo.path, repo.base_branch)
+
+    assert row.passed is False
+    assert len(row.details) == 1
+    assert row.details[0].startswith("app.py: syntax error - ")
+
+
+def test_a_non_os_error_from_the_base_probe_keeps_the_branchs_finding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Group C1 of the #425 review: ``_base_finding``'s ``except Exception``
+    is not held by any test that exercises something other than an
+    ``OSError``. ``subprocess.TimeoutExpired`` is a
+    ``subprocess.SubprocessError``, not an ``OSError``, so a narrower
+    ``except OSError`` would let it escape ``_base_finding`` - and then
+    ``_scan_changed_python`` and ``check_bad_patterns`` above it, since
+    neither wraps the other in its own try - as a traceback out of a
+    blocking Phase 1 gate, the exact #416 class this diff's own docstring
+    claims to close. Only the ``git show`` spawn inside ``_base_finding``
+    is made to fail; the merge-base lookup and every other git spawn run
+    for real, so this exercises the branch's finding being kept for a
+    reason that has nothing to do with whether the base actually cleared
+    it.
+    """
+    repo = make_review_repo(
+        tmp_path,
+        base_files={"app.py": WORKS},
+        files={"app.py": BROKEN},
+    )
+    real_run = verify.subprocess.run
+
+    def flaky_git_show(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        if argv[:2] == ["git", "show"]:
+            raise subprocess.TimeoutExpired(cmd=argv, timeout=1.0)
+        return real_run(argv, **kwargs)  # type: ignore[arg-type,no-any-return]
+
+    monkeypatch.setattr(verify.subprocess, "run", flaky_git_show)
+
+    row = check_bad_patterns(repo.path, repo.base_branch)
+
+    assert row.passed is False
+    assert len(row.details) == 1
+    assert row.details[0].startswith("app.py: syntax error - ")

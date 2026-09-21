@@ -179,10 +179,10 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "tui/runs.py": 2,
     "tui/session.py": 1,
     "tui/tail.py": 2,
-    # 4 since #414: the bad-patterns scan's `full_path.read_text(...)` is
-    # gone (the scan reads bytes now, so `py_compile` does its own PEP 263
-    # decoding). The three left are CLAUDE.md, the self-critique progress
-    # log, and check_patch_coverage's coverage-report read.
+    # 4 since #414: the bad-patterns scan's read_text is gone (it reads
+    # bytes now, so py_compile does its own PEP 263 decoding). The four
+    # left: CLAUDE.md, the self-critique progress log, check_test_adequacy's
+    # read of a changed test's source, and check_patch_coverage's report.
     "verify.py": 4,
     "workqueue.py": 6,
 }
@@ -334,13 +334,9 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
 #: The rows say "I cannot establish when this callee reads", which is
 #: true, rather than "fine", which was not.
 #:
-#: THE SEVENTH WAS ``verify.py``'s bad-patterns scan, reading a fixture
-#: inside ``with tempfile.TemporaryDirectory(...)`` under a `read_text`
-#: this walk could not prove the `__exit__` did not swallow. #414 removed
-#: the row rather than pinning it: the scan reads BYTES now
-#: (``source.read_bytes()``) and hands the file to ``py_compile``, which
-#: does its own PEP 263 decoding, so there is no `read_text` call left for
-#: the walk to be undecided about.
+#: THE SEVENTH WAS ``verify.py``'s bad-patterns scan; #414 removed the row
+#: rather than pinning it, because the scan reads bytes now, so there is
+#: no `read_text` left to be undecided about (#425 simplify pass F6).
 EXPECTED_UNDECIDED: tuple[str, ...] = (
     "cli.py f (the read is deferred to wherever this value is drained, "
     "which this walk cannot locate, so no handler can be credited with "
@@ -464,9 +460,10 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "timeout.py": 3,
     "tui/screens/home.py": 3,
     "tui/screens/retry.py": 2,
-    # 25 since #414: `_base_finding`'s `git show <base>:<path>` spawn, a
-    # bytes-mode `subprocess.run` reading a flagged file's base content.
-    "verify.py": 25,
+    # 26 since #425: `_base_finding`'s `git show <base>:<path>` spawn and
+    # `_merge_base_ref`'s `git merge-base` spawn, both bytes-mode
+    # `subprocess.run` calls the base probe makes (#414/#425).
+    "verify.py": 26,
 }
 
 
@@ -580,11 +577,10 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     "git.py": 6,
     "observability.py": 1,
     "retry_plan.py": 3,
-    # #414: `_base_finding`'s `git show <base>:<path>` reads a source
-    # file's BYTES (`.stdout`, no `text=`/`encoding=`), because the
-    # content is handed to `py_compile`, which does its own PEP 263
-    # decoding - nothing in `verify.py` decodes it.
-    "verify.py": 1,
+    # #414/#425: `_base_finding`'s `git show` and `_merge_base_ref`'s
+    # `git merge-base` stdout both go straight to `py_compile`/`.strip()`;
+    # neither is decoded in `verify.py`.
+    "verify.py": 2,
 }
 
 

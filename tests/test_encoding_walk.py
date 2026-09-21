@@ -437,10 +437,12 @@ class TestTheReadBytesExclusion:
     """``read_bytes`` then ``bytes.decode`` is deliberately out of scope,
     and the exclusion is pinned so it cannot silently grow.
 
-    All seven sites guard the decode separately today, which is the shape
-    ``config_toml.load_toml_document`` argues for: do the I/O outside the
-    guard so no widening can reach an ``OSError``. An eighth appearing is
-    a reason to look, so this fails rather than absorbing it.
+    Six of the seven sites guard the decode separately today, which is the
+    shape ``config_toml.load_toml_document`` argues for: do the I/O
+    outside the guard so no widening can reach an ``OSError``. The
+    seventh does not decode at all and is here for the opposite reason;
+    see the ``verify.py`` paragraph below. An eighth appearing is a
+    reason to look, so this fails rather than absorbing it.
 
     ``dampener.py`` is the newest and arrived by that argument rather
     than despite it: #357 round 1 measured ``read_text`` plus
@@ -450,10 +452,14 @@ class TestTheReadBytesExclusion:
     ``Exception``, which is only safe once no OSError can reach it.
 
     ``verify.py`` moved from one site to two under #414: the bad-patterns
-    scan's ``_content_finding`` reads a file's bytes so ``py_compile`` can
-    do its own PEP 263 decoding rather than a second, disagreeing one -
-    alongside the pre-existing ``pyproject.read_bytes()`` in
-    ``check_verify_commands``.
+    scan's ``_content_finding`` reads a file's bytes to check emptiness by
+    truthiness - no ``bytes.decode`` follows it anywhere, so ``py_compile``
+    is the only decoder that ever runs on this content - alongside the
+    pre-existing ``pyproject.read_bytes()`` in ``check_verify_commands``.
+    That is the seventh (opposite-reason) site: on the base-probe path it
+    runs through ``_base_finding``, whose own ``except Exception`` wraps
+    it deliberately, because every failure there means "cannot clear",
+    which is the blocking direction (#425 review, finding S4).
     """
 
     EXPECTED_READ_BYTES: dict[str, int] = {

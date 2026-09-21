@@ -78,10 +78,11 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/spine_utils.py": 1,
     "tests/test_adequacy.py": 8,
     "tests/test_autonomy_ladder.py": 1,
-    # #414: two `_commit_rename` call sites (a `git mv` plus a `git commit`),
-    # into a repository `tests.conftest.make_review_repo` already put
-    # through `tests.helpers.gitrepo.set_identity`.
-    "tests/test_bad_patterns_diff_scope.py": 2,
+    # #414/#425: three `git commit` spellings - `_commit_rename`, the
+    # rename-then-break test, and `_advance_main` - all into a repository
+    # `tests.conftest.make_review_repo` already put through
+    # `tests.helpers.gitrepo.set_identity`.
+    "tests/test_bad_patterns_diff_scope.py": 3,
     "tests/test_breaker.py": 2,
     # #399 added two real-repository tests (a stubbed-git refusal, which
     # makes no commit, and a latin-1-bytes commit through `_git`/`_repo`,

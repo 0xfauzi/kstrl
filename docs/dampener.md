@@ -168,10 +168,13 @@ written on the base ref has an empty diff, so neither check has any paths to
 compare with. `diff_scope` is exact: every path it can flag came from the
 diff. `bad_patterns` is exact for its secret rule, which reads added lines.
 Its empty-file and syntax-error rules read the whole file and then read the
-same file at the merge base (#414), following a rename to the path the
-content came from, so a finding either rule REPORTS is one the base did not
-already carry. A finding the base did carry is listed in the row's details
-and counted in its message, and does not fail the check.
+same file at the MERGE BASE of the base branch and HEAD (#414), not the base
+branch's current tip (#425), following a rename to the path the content came
+from, so a finding either rule reports is one the base was not SHOWN to
+already carry. A base read that cannot be done keeps the finding, which is
+the blocking direction, so the two rules can still over-report when git
+could not be asked. A finding the base did carry is counted in the row's
+message and listed in its details for `ks sense --json`.
 
 For a TOOL-DRIVEN check the same rule does over-report: a baseline written
 before `vulture` was installed leaves `dead_code` unmeasured, and the first

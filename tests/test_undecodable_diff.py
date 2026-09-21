@@ -314,11 +314,14 @@ def test_check_bad_patterns_still_passes_vacuously_on_an_empty_diff(tmp_path: Pa
     assert result.measured is False
 
 
-#: A legal Python file whose bytes are not utf-8. PEP 263 declares the codec and
-#: py_compile honours it, so only a SECOND decode outside py_compile can fail on
-#: this - which is what the scan used to do (#414).
-# codespell:ignore-next-line
-LATIN1_SOURCE = b'# -*- coding: latin-1 -*-\nVALUE = "caf\xe9"\n'
+#: A legal Python file whose bytes are not utf-8: `BAD_CONTENT` above with a
+#: PEP 263 declaration in front of it. py_compile honours the declaration,
+#: so only a SECOND decode outside py_compile can fail on this, which is
+#: what the scan used to do (#414). Built from the existing constant rather
+#: than written out again (#425 simplify pass F2), so the file's three
+#: latin-1 fixtures stay one spelling and no codespell suppression is
+#: needed ([tool.codespell] in pyproject.toml).
+LATIN1_SOURCE: bytes = b"# -*- coding: latin-1 -*-\n" + BAD_CONTENT
 
 
 def test_check_bad_patterns_does_not_crash_on_a_renamed_latin_1_source_file(
