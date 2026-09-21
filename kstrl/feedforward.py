@@ -755,6 +755,17 @@ def _append_section(
     this section's body. A builder that cannot be sized without doing the
     work uses it to stop early (#403); the others ignore it.
 
+    A body that came back bigger than *remaining* is replaced by a line
+    saying so, so one oversize section no longer withholds every smaller
+    section behind it (#420). Two things are exempt. The FIRST section,
+    because with *sections* still empty there is nothing behind it to
+    starve and ``_truncate_to_budget`` CUTS a lone section to fit rather
+    than dropping it, so refusing it here would deliver less than before;
+    that is the same ``sections`` test the builders table uses to decide
+    whether the graph gets a budget at all. And a crash record, because it
+    did not fail to FIT, it failed, and rewriting it into a size reason
+    would report a cause that is not the cause.
+
     A crash inside *build* does not take the whole context down; it is
     RECORDED as the section's content instead of dropped (#378: the
     public-interfaces section used to be the only one of the four that
@@ -764,6 +775,12 @@ def _append_section(
         content = build(remaining)
     except Exception as exc:
         content = f"(none: {heading.lower()} failed: {type(exc).__name__}: {exc})"
+    else:
+        if sections and len(content) > remaining:
+            content = (
+                f"(did not fit: {heading.lower()} is {len(content)} characters "
+                f"against the {remaining} left in the context budget.)"
+            )
     if content:
         sections.append((heading, content))
 
@@ -842,9 +859,12 @@ def build_feedforward_context(
     for enabled, heading, build in builders:
         if not enabled:
             continue
-        # The budget is spent: _truncate_to_budget drops from the END of
-        # this list, so anything built from here on can only be dropped
-        # again.
+        # Nothing more can be delivered. _append_section refuses a body
+        # bigger than the room left, so the total is over budget here
+        # only for something it cannot refuse: an exempt first section, a
+        # crash record, or a refusal line longer than the room that was
+        # left. _truncate_to_budget cuts or drops all three, so a section
+        # built from here on could only be dropped again (#420).
         if _total_chars(sections) > max_chars:
             break
         _append_section(sections, heading, build, _remaining_chars(sections, heading, max_chars))

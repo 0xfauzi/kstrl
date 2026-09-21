@@ -517,3 +517,140 @@ def test_the_edge_size_estimate_is_an_exact_sum(
     # instead.
     bounded = build_dependency_graph(tmp_path, max_chars=extend_cost)
     assert "did not fit" in bounded, bounded
+
+
+# ---------------------------------------------------------------------------
+# #420: a section that does not fit is skipped, not a wall
+# ---------------------------------------------------------------------------
+
+
+def _deep_repo_with_conventions(root: Path) -> None:
+    """`_deep_repo` plus the pyproject the conventions section reads.
+
+    At max_context_tokens=450 (1800 characters) the four builders return
+    bodies of 44, 1286, 959 and 24 characters: the module map and the
+    whole dependency graph fit, public interfaces cannot fit in the 337
+    characters left for it and is replaced by a 94-character reason, and
+    conventions is then offered 226 characters for its 24-character body.
+    """
+    _deep_repo(root)
+    (root / "pyproject.toml").write_text(
+        '[project]\nrequires-python = ">=3.11"\n', encoding="utf-8"
+    )
+
+
+def test_a_section_that_does_not_fit_does_not_hide_the_ones_behind_it(
+    tmp_path: Path,
+) -> None:
+    _deep_repo_with_conventions(tmp_path)
+
+    context = build_feedforward_context(tmp_path, FeedforwardConfig(max_context_tokens=450))
+
+    # The section that overflowed says so, in place.
+    interfaces = section(context, "## Public interfaces")
+    assert "did not fit" in interfaces, context
+    # And the smaller section BEHIND it is still delivered, in full.
+    assert section(context, "## Conventions") == "- Python version: >=3.11", context
+
+    # The reason names the body's real size and the room left for THIS
+    # section. A refusal that compared the body against the whole budget
+    # would not fire here at all, and one that reported the whole budget
+    # would tell the engineer 1800 characters were free.
+    fit = re.search(r"is (\d+) characters against the (\d+) left", interfaces)
+    assert fit is not None, context
+    body_chars, room = (int(group) for group in fit.groups())
+    assert body_chars == 959, context
+    assert room < body_chars, context
+    # And the reason itself fits in the room it names, so it does not put
+    # the block over budget and get dropped again.
+    assert len(interfaces) <= room, context
+
+
+def test_priority_order_still_decides_which_sections_win_the_budget(
+    tmp_path: Path,
+) -> None:
+    _deep_repo_with_conventions(tmp_path)
+
+    context = build_feedforward_context(tmp_path, FeedforwardConfig(max_context_tokens=450))
+
+    # Delivered bodies here are 42 (the module map's 44 less the two
+    # spaces section() strips), 1286, 94 and 24 characters, which is
+    # neither ascending nor descending, so this heading order cannot be
+    # produced by sorting the sections by size.
+    headings = re.findall(r"^## (.+)$", context, flags=re.MULTILINE)
+    assert headings == [
+        "Module map",
+        "Dependency graph",
+        "Public interfaces",
+        "Conventions",
+    ], context
+    # The 1286-character dependency graph is delivered whole and the
+    # 959-character public interfaces section behind it is not, so the
+    # budget went to the higher-priority section, not to the smaller one.
+    assert "mod01 -> mod00 (imports: Base00)" in section(context, "## Dependency graph"), context
+    assert "did not fit" in section(context, "## Public interfaces"), context
+
+
+def test_a_builder_that_crashed_is_not_relabelled_as_one_that_did_not_fit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#378 records a builder crash AS the section's content. #420 must
+    not overwrite that record with a size reason: a section that raised
+    did not fail to fit, it failed, and the two must not read the same.
+
+    A crash record longer than the room left is dropped exactly as it was
+    before #420, so the delivered block is the two sections that fit and
+    the words "did not fit" appear nowhere in it.
+    """
+    _deep_repo_with_conventions(tmp_path)
+
+    def _boom(root: Path, *args: Any, **kwargs: Any) -> str:
+        raise RuntimeError("detail " * 70)
+
+    monkeypatch.setattr(feedforward, "extract_public_interfaces", _boom)
+
+    context = build_feedforward_context(tmp_path, FeedforwardConfig(max_context_tokens=400))
+
+    assert "## Dependency graph" in context, context
+    assert "## Public interfaces" not in context, context
+    assert "did not fit: public interfaces" not in context, context
+
+
+def test_a_body_exactly_the_size_of_the_room_left_is_delivered_whole(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`>` and not `>=`: a body that exactly fills the room left FITS.
+
+    `_remaining_chars` returns the body size at which `_total_chars`, the
+    model the budget is spent against, lands exactly on `max_chars` (the
+    assembled string itself lands one character short of it, a
+    pre-existing off-by-one in `_total_chars` this test does not touch). A
+    refusal written `>=` would discard that section and replace it with a
+    line reading "is N characters against the N left", which says a
+    section did not fit while reporting that it exactly did.
+
+    This pins the COMPARISON, not the value: `room` is derived from
+    `_remaining_chars` itself, so a `_remaining_chars` that under-reports
+    by a character moves the test's expectation with it and stays green
+    (measured: the whole suite stays green under that mutation). `>` to
+    `>=` is red.
+    """
+    # Deliberately no pyproject.toml here: this test never reaches
+    # conventions (the exact-fit body consumes all remaining room), so a
+    # pyproject write is inert for it. Measured: the delivered context is
+    # byte-identical with and without one.
+    _deep_repo(tmp_path)
+    # One section in front of public interfaces, so the refusal is not
+    # exempted by the first-section rule, and a room figure that is exact.
+    config = FeedforwardConfig(max_context_tokens=400, dependency_graph=False)
+    room = feedforward._remaining_chars(
+        [("Module map", build_module_map(tmp_path))], "Public interfaces", 400 * 4
+    )
+    assert room > 0
+    body = "y" * room
+    monkeypatch.setattr(feedforward, "extract_public_interfaces", lambda root: body)
+
+    context = build_feedforward_context(tmp_path, config)
+
+    assert section(context, "## Public interfaces") == body, context
+    assert "did not fit: public interfaces" not in context, context
