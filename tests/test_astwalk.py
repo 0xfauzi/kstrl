@@ -347,7 +347,7 @@ class TestTheWalkAgainstTheRealPackage:
         assert found.seen == ("procgroup.py os.getpgid",)
 
     def test_the_spawn_sweep_reproduces_the_timeout_audit_count(self) -> None:
-        """71 spawn sites, plus ten expressions this walk will not pretend
+        """72 spawn sites, plus ten expressions this walk will not pretend
         to have decided. Ten rows is the price of the rule, and it is what
         a guard pins instead of being silently narrower than it sounds.
 
@@ -361,7 +361,9 @@ class TestTheWalkAgainstTheRealPackage:
         ``check_test_root`` and ``git check-ignore -q`` in
         ``check_gitignore``, both carrying ``timeout=git.DEFAULT_TIMEOUT``, which
         is what the sibling audit in ``tests/test_timeout_enforcement.py``
-        checks and which passes unchanged.
+        checks and which passes unchanged. The 72nd is ``verify._base_finding``
+        (#414): a ``git show <base>:<path>`` reading a flagged file's base
+        content, also carrying ``timeout=git.DEFAULT_TIMEOUT``.
         """
         spawns = frozenset(
             {
@@ -373,7 +375,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 71
+        assert len(found.seen) == 72
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [

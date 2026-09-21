@@ -166,10 +166,12 @@ Both `bad_patterns` and `diff_scope` only look at paths the branch put in the
 diff, so a finding from either concerns a file the branch touched. A baseline
 written on the base ref has an empty diff, so neither check has any paths to
 compare with. `diff_scope` is exact: every path it can flag came from the
-diff. `bad_patterns` is exact for its secret rule, which reads added lines;
-its empty-file and syntax-error rules read the whole file, so either of those
-can name content that was already in a file the branch moved or edited, not
-content the branch wrote.
+diff. `bad_patterns` is exact for its secret rule, which reads added lines.
+Its empty-file and syntax-error rules read the whole file and then read the
+same file at the merge base (#414), following a rename to the path the
+content came from, so a finding either rule REPORTS is one the base did not
+already carry. A finding the base did carry is listed in the row's details
+and counted in its message, and does not fail the check.
 
 For a TOOL-DRIVEN check the same rule does over-report: a baseline written
 before `vulture` was installed leaves `dead_code` unmeasured, and the first

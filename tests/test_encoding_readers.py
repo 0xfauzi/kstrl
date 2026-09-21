@@ -179,10 +179,11 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "tui/runs.py": 2,
     "tui/session.py": 1,
     "tui/tail.py": 2,
-    # 5 since #152: check_patch_coverage's coverage-report read
-    # (json_path.read_text(encoding='utf-8')), alongside CLAUDE.md, the
-    # bad-patterns scan and the self-critique progress log.
-    "verify.py": 5,
+    # 4 since #414: the bad-patterns scan's `full_path.read_text(...)` is
+    # gone (the scan reads bytes now, so `py_compile` does its own PEP 263
+    # decoding). The three left are CLAUDE.md, the self-critique progress
+    # log, and check_patch_coverage's coverage-report read.
+    "verify.py": 4,
     "workqueue.py": 6,
 }
 
@@ -311,7 +312,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
 #: newly resolvable receiver would remove a site from the guard in
 #: silence.
 #: Every read the walk can see and CANNOT PROVE anything about, keyed by
-#: module and expression. Seven rows, and the number is the whole point.
+#: module and expression. Six rows, and the number is the whole point.
 #:
 #: #344 took five review rounds, and rounds one to four each ended the
 #: same way: the walk cleared shapes that escaped at run time, a fix
@@ -324,25 +325,22 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
 #: THE COST, measured rather than hoped: 85 cleared with 19 known holes
 #: became 78 cleared with 7 rows a reader can work through.
 #:
-#: SIX OF THE SEVEN ARE THE SAME FACT. A handle handed to a callee is a
-#: read this walk cannot PLACE: ``json.load(f)`` reads eagerly and
-#: ``csv.reader(f)`` reads nothing at all, and no amount of AST tells
-#: them apart. All six were checked by hand and all six are compliant -
-#: three cover the decode, two have no handler so the caller answers, and
-#: ``factory.py`` stores the handle in a dataclass whose own read is
-#: tracked separately. The rows say "I cannot establish when this callee
-#: reads", which is true, rather than "fine", which was not.
+#: ALL SIX ARE THE SAME FACT. A handle handed to a callee is a read this
+#: walk cannot PLACE: ``json.load(f)`` reads eagerly and ``csv.reader(f)``
+#: reads nothing at all, and no amount of AST tells them apart. All six
+#: were checked by hand and all six are compliant - three cover the
+#: decode, two have no handler so the caller answers, and ``factory.py``
+#: stores the handle in a dataclass whose own read is tracked separately.
+#: The rows say "I cannot establish when this callee reads", which is
+#: true, rather than "fine", which was not.
 #:
-#: THE SEVENTH is ``verify.py``'s fixture read inside ``with
-#: tempfile.TemporaryDirectory(...)``, whose ``__exit__`` returns None
-#: and swallows nothing - but the walk does not know that, and #320's own
-#: defect can be written ``contextlib.suppress(OSError)``, which is a
-#: ``with`` that swallows everything. The walk proves ``open`` and reads
-#: ``suppress``; a third context manager is a row here, not a guess there.
-#:
-#: A row ARRIVING is not a failure of the code under test. It means new
-#: code put a read somewhere nobody can say when it happens, or inside a
-#: construct nobody has read the ``__exit__`` of, and somebody should.
+#: THE SEVENTH WAS ``verify.py``'s bad-patterns scan, reading a fixture
+#: inside ``with tempfile.TemporaryDirectory(...)`` under a `read_text`
+#: this walk could not prove the `__exit__` did not swallow. #414 removed
+#: the row rather than pinning it: the scan reads BYTES now
+#: (``source.read_bytes()``) and hands the file to ``py_compile``, which
+#: does its own PEP 263 decoding, so there is no `read_text` call left for
+#: the walk to be undecided about.
 EXPECTED_UNDECIDED: tuple[str, ...] = (
     "cli.py f (the read is deferred to wherever this value is drained, "
     "which this walk cannot locate, so no handler can be credited with "
@@ -362,9 +360,6 @@ EXPECTED_UNDECIDED: tuple[str, ...] = (
     "prd.py f (the read is deferred to wherever this value is drained, "
     "which this walk cannot locate, so no handler can be credited with "
     "covering it)",
-    "verify.py full_path.read_text(encoding='utf-8') (sits inside `with "
-    "tempfile.TemporaryDirectory(prefix='kstr`, whose __exit__ this walk "
-    "cannot prove does not swallow the decode)",
 )
 
 
@@ -469,7 +464,9 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "timeout.py": 3,
     "tui/screens/home.py": 3,
     "tui/screens/retry.py": 2,
-    "verify.py": 24,
+    # 25 since #414: `_base_finding`'s `git show <base>:<path>` spawn, a
+    # bytes-mode `subprocess.run` reading a flagged file's base content.
+    "verify.py": 25,
 }
 
 
@@ -583,6 +580,11 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     "git.py": 6,
     "observability.py": 1,
     "retry_plan.py": 3,
+    # #414: `_base_finding`'s `git show <base>:<path>` reads a source
+    # file's BYTES (`.stdout`, no `text=`/`encoding=`), because the
+    # content is handed to `py_compile`, which does its own PEP 263
+    # decoding - nothing in `verify.py` decodes it.
+    "verify.py": 1,
 }
 
 

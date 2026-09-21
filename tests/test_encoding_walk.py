@@ -437,9 +437,9 @@ class TestTheReadBytesExclusion:
     """``read_bytes`` then ``bytes.decode`` is deliberately out of scope,
     and the exclusion is pinned so it cannot silently grow.
 
-    All six sites guard the decode separately today, which is the shape
+    All seven sites guard the decode separately today, which is the shape
     ``config_toml.load_toml_document`` argues for: do the I/O outside the
-    guard so no widening can reach an ``OSError``. A seventh appearing is
+    guard so no widening can reach an ``OSError``. An eighth appearing is
     a reason to look, so this fails rather than absorbing it.
 
     ``dampener.py`` is the newest and arrived by that argument rather
@@ -448,6 +448,12 @@ class TestTheReadBytesExclusion:
     ``RecursionError`` escape a function documented to exit 2, and the
     fix was to move the I/O out and widen the parse guard to
     ``Exception``, which is only safe once no OSError can reach it.
+
+    ``verify.py`` moved from one site to two under #414: the bad-patterns
+    scan's ``_content_finding`` reads a file's bytes so ``py_compile`` can
+    do its own PEP 263 decoding rather than a second, disagreeing one -
+    alongside the pre-existing ``pyproject.read_bytes()`` in
+    ``check_verify_commands``.
     """
 
     EXPECTED_READ_BYTES: dict[str, int] = {
@@ -456,10 +462,10 @@ class TestTheReadBytesExclusion:
         "dampener.py": 1,
         "inbox.py": 1,
         "safemode.py": 1,
-        "verify.py": 1,
+        "verify.py": 2,
     }
 
-    def test_the_read_bytes_sites_are_the_six_measured(self) -> None:
+    def test_the_read_bytes_sites_are_the_seven_measured(self) -> None:
         assert_census(
             sources=package_sources(),
             sees=spells("read_bytes"),
