@@ -229,7 +229,7 @@ def _match_glob(path: str, patterns: Sequence[str]) -> str | None:
     return None
 
 
-def _unquote_diff_path(path: str) -> str:
+def unquote_diff_path(path: str) -> str:
     """Undo git's C-quoting of a ``+++``/``--- `` diff header path (#399).
 
     ``core.quotepath`` (default true) wraps a path in double quotes and
@@ -245,10 +245,30 @@ def _unquote_diff_path(path: str) -> str:
     re-encoding as Latin-1 and decoding as UTF-8 recovers the real
     characters. Only a path git actually quoted (wrapped in ``"..."``)
     goes through this; an unquoted path is returned unchanged.
+
+    Public because :mod:`kstrl.adequacy` is the second caller (#408).
     """
     if not (path.startswith('"') and path.endswith('"') and len(path) >= 2):
         return path
     return path[1:-1].encode("utf-8").decode("unicode_escape").encode("latin-1").decode("utf-8")
+
+
+def diff_header_path(header: str) -> str:
+    """The path from a whole ``---``/``+++`` diff header line (#408).
+
+    Unquoted BEFORE git's ``a/``/``b/`` prefix is removed. C-quoting
+    wraps the WHOLE ``b/<path>`` token in double quotes, so a quoted
+    header does not start with ``b/`` at all and stripping first would
+    be a no-op, leaving the quotes, the octal escapes and the prefix all
+    in place. ``/dev/null`` is never quoted and never carries a prefix,
+    so it passes through unchanged either way. This is the one place
+    both :func:`parse_added_lines` and :func:`kstrl.adequacy._iter_diff_lines`
+    read a header path, so a header shape fixed here is fixed for both.
+    """
+    path = unquote_diff_path(header[4:].strip())
+    if path.startswith(("a/", "b/")):
+        path = path[2:]
+    return path
 
 
 def parse_added_lines(diff_text: str) -> list[tuple[str, str]]:
@@ -256,9 +276,8 @@ def parse_added_lines(diff_text: str) -> list[tuple[str, str]]:
 
     The destination file is tracked from ``+++ b/<path>`` headers; added
     lines are those starting with a single ``+`` (not the ``+++``
-    header). Content is returned without the leading ``+``. A quoted
-    header path is unquoted (:func:`_unquote_diff_path`) before the
-    ``b/`` prefix is stripped, so the path this returns matches what
+    header). Content is returned without the leading ``+``. The header
+    path is read through :func:`diff_header_path`, so it matches what
     ``git diff --name-status`` reports for the same file.
     """
     added: list[tuple[str, str]] = []
@@ -272,9 +291,7 @@ def parse_added_lines(diff_text: str) -> list[tuple[str, str]]:
             # Gating on the preceding '--- ' means an ADDED content line
             # that happens to render as '+++ ...' is treated as content,
             # not misread as a new file header.
-            target = _unquote_diff_path(line[4:].strip())
-            if target.startswith("b/"):
-                target = target[2:]
+            target = diff_header_path(line)
             current = None if target == "/dev/null" else target
         elif line.startswith("+"):
             if current is not None:
