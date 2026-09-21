@@ -117,7 +117,7 @@ def detect_base_branch(cwd: Path) -> str:
             ],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=_BASE_BRANCH_PROBE_TIMEOUT,
         )
     except (subprocess.TimeoutExpired, OSError):
@@ -235,7 +235,7 @@ def fetch_base_branch(
             ["git", "fetch", "--", "origin", base_branch],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -252,7 +252,7 @@ def is_git_repo(path: Path | None = None, timeout: float = DEFAULT_TIMEOUT) -> b
             ["git", "rev-parse", "--is-inside-work-tree"],
             cwd=path,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
         return result.returncode == 0
@@ -267,7 +267,7 @@ def get_repo_root(path: Path | None = None, timeout: float = DEFAULT_TIMEOUT) ->
             ["git", "rev-parse", "--show-toplevel"],
             cwd=path,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
         if result.returncode == 0:
@@ -316,7 +316,7 @@ def current_branch(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
     except (subprocess.TimeoutExpired, OSError):
@@ -353,7 +353,7 @@ def checkout_branch(
                 ["git", "checkout", branch, "--"],
                 cwd=cwd,
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 timeout=timeout,
             )
         else:
@@ -362,7 +362,7 @@ def checkout_branch(
                 ["git", "checkout", "-b", branch],
                 cwd=cwd,
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 timeout=timeout,
             )
     except subprocess.TimeoutExpired:
@@ -393,7 +393,7 @@ def get_changed_files(
             ["git", "diff", "--name-only"],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
         if result.returncode == 0:
@@ -404,7 +404,7 @@ def get_changed_files(
             ["git", "diff", "--name-only", "--cached"],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
         if result.returncode == 0:
@@ -429,7 +429,7 @@ def get_untracked_files(
             ["git", "ls-files", "--others", "--exclude-standard"],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -473,7 +473,7 @@ def get_head_sha(
             ["git", "rev-parse", "--verify", "--quiet", "HEAD"],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
     except (subprocess.TimeoutExpired, OSError):
@@ -509,7 +509,7 @@ def get_origin_slug(
             ["git", "config", "--get", "remote.origin.url"],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
     except (subprocess.TimeoutExpired, OSError):
@@ -577,7 +577,7 @@ def resolve_ref(
                 ["git", "rev-parse", "--verify", "--quiet", f"{candidate}^{{commit}}"],
                 cwd=cwd,
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 timeout=timeout,
             )
         except subprocess.TimeoutExpired:
@@ -645,7 +645,7 @@ def _committed_since(
             ["git", "diff", "--name-status", "-z", ref, "--"],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -710,7 +710,7 @@ def stage_file(
             ["git", "add", "--", file],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -737,7 +737,7 @@ def ignore_source(
             ["git", "check-ignore", "-v", "--", file],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -901,7 +901,7 @@ def get_diff_name_status(
             ],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
         if result.returncode == 0:
@@ -1081,7 +1081,7 @@ def get_diff_numstat(
             ["git", "diff", "--numstat", f"{base_ref}...HEAD", "--"],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
     except subprocess.TimeoutExpired as exc:
@@ -1411,7 +1411,7 @@ def resolve_base_sha(
                 ["git", "rev-parse", "--verify", "--quiet", f"{candidate}^{{commit}}"],
                 cwd=cwd,
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 timeout=timeout,
             )
         except subprocess.TimeoutExpired as exc:
@@ -1497,7 +1497,7 @@ def merge_branch(
             ["git", "merge", "--no-edit", "--", branch],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
         return result.returncode == 0
@@ -1518,7 +1518,7 @@ def create_branch_from(
             ["git", "checkout", "-b", branch_name, base, "--"],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
         return result.returncode == 0
@@ -1541,7 +1541,7 @@ def delete_branch(
             ["git", "branch", flag, "--", branch_name],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
         return result.returncode == 0
@@ -1563,7 +1563,7 @@ def checkout_existing(
             ["git", "checkout", branch, "--"],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
         return result.returncode == 0

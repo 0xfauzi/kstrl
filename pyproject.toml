@@ -177,7 +177,18 @@ ignore_names = ["cancel_futures"]
 # git-quoted path or a raw latin-1 file actually carries, and codespell then
 # reads one whole word instead of a split-off ASCII prefix that reads as a
 # typo for a young cow. No entry is needed here for it.
-ignore-words-list = "crasher,critcial,excetra,missable,nd,pre-empt,unparseable"
+#
+# #409 cannot use that trick: tests/test_child_output_encoding.py checks for
+# the literal ASCII prefix "caf" inside a real `git diff` header, where
+# core.quotepath has already escaped "café.py" to "caf\303\251.py" - the
+# substring under test IS the truncated ASCII prefix, not a word this code
+# chose to split. tru and candidat are the same class one layer down:
+# tests/test_encoding_readers.py pins the walk's own printed rows, each
+# truncated at exactly 70 characters (`ast.unparse(node)[:70]`) so the pin
+# reads what the walk actually produced. Trimming a row to dodge a spelling
+# hit is exactly what that file's own tests forbid (a pin must be the
+# printer's output, copied, never hand-edited).
+ignore-words-list = "caf,candidat,crasher,critcial,excetra,missable,nd,pre-empt,tru,unparseable"
 # tests/tool_output/ is captured tool output kept as evidence (#258).
 # pytest truncates its short-summary lines to the terminal width, which
 # cuts the exception name off mid-word - the very behaviour those

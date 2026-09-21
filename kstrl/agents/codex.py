@@ -234,7 +234,7 @@ class CodexAgent:
                 check=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                text=True,
+                encoding="utf-8",
                 timeout=15,
             )
             cls._supports_output_last_message = "--output-last-message" in result.stdout

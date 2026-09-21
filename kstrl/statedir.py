@@ -307,7 +307,7 @@ def _origin_url(root_dir: Path) -> str | None:
             ["git", "-C", str(root_dir), "remote", "get-url", "origin"],
             check=False,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=5,
         )
     except (OSError, subprocess.SubprocessError):

@@ -19,7 +19,7 @@ raises=AssertionError)`` on its CALLER, and a helper cannot apply a marker
 to the function that calls it. #328 measured an open hole, a closed hole
 and a resolver raising on entry all passing green without both keywords.
 
-Twenty-one disclosure sites and two ``resolved_calls`` callers today, all
+Twenty-one disclosure sites and three ``resolved_calls`` callers today, all
 of them correct, every one of them hand-written. Correct-by-briefing is
 the structure #324 exists to end.
 """

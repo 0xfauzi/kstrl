@@ -123,7 +123,7 @@ def uv_cache_dir() -> Path | None:
         result = subprocess.run(
             ["uv", "cache", "dir"],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=10.0,
         )
     except (OSError, subprocess.TimeoutExpired):

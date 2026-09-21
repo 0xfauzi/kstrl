@@ -30,18 +30,21 @@ the read, not at the ``open``. ``encodingwalk._through_handles`` is the
 half of the walk that follows the handle, and that site is the only one
 of its shape in the package.
 
-WHAT IS OUTSIDE THIS POPULATION, named so it is not rediscovered as new.
-The declared population is a file's text obtained through ``read_text``
-or ``open``. A CHILD PROCESS's output is the same defect class and is not
-in it: ``subprocess.run(..., text=True)`` with no ``encoding=`` decodes
-with ``locale.getencoding()`` and no error handler, so it is strict.
-Measured at ``0f5bf45``: 62 such calls in 16 modules, ``git.py`` holding
-23 and ``pr.py`` 11, and a child writing one accented character raises
-``UnicodeDecodeError`` under ``LC_ALL=C PYTHONUTF8=0`` while decoding
-cleanly in a utf-8 locale. It is left alone here on the ground that
-#320's rule is about the files KSTRL WRITES, and a commit message is
-written by an operator; the number is recorded so the next sweep starts
-from a measurement rather than an estimate.
+THE SECOND POPULATION, once a prose disclosure and now an executed census.
+A CHILD PROCESS's output is the same defect class as a file kstrl reads,
+and is not the same population: ``subprocess.run(..., text=True)`` with no
+``encoding=`` decodes with ``locale.getencoding()`` and no error handler,
+so it is strict. This module used to record that population as a number in
+a paragraph: "62 such calls in 16 modules, ``git.py`` holding 23". #409
+re-derived it by running the walk and found 51 in 16 modules, ``git.py``
+holding 24. Nothing failed while that number went wrong, which is the
+exact rot this module's closing paragraph warns about. The paragraph is
+gone; ``TestEverySpawnDecodeNamesUtf8`` below is the replacement, and
+every number here is one that census also asserts. Unlike the read rule,
+the spawn rule has one half, not two: a child's stdout is produced by
+git, gh, uv or a model, so a decode fault there is a genuine caller-facing
+failure rather than a file kstrl must be able to read back, and there is
+no handler obligation to check for.
 
 The walk that produces these inventories is
 ``tests/helpers/encodingwalk.py``; what it cannot see is named beside
@@ -51,7 +54,24 @@ than listed here where a disclosure can rot without anything failing.
 
 from __future__ import annotations
 
-from tests.helpers.astwalk import Sites, assert_census, assert_sites, package_sources
+from tests.helpers.astwalk import (
+    Sites,
+    assert_census,
+    assert_sites,
+    package_sources,
+    spells,
+)
+from tests.helpers.encodingspawn import (
+    SPAWN_TARGETS,
+    reported_spawns,
+    text_mode_census,
+)
+from tests.helpers.encodingspawn import (
+    package_scan as spawn_scan,
+)
+from tests.helpers.encodingspawn import (
+    scan_source as scan_spawn_source,
+)
 from tests.helpers.encodingwalk import package_scan, reported_sites, spells_a_token
 
 # --------------------------------------------------------------------------
@@ -403,3 +423,286 @@ class TestEveryReadInThePackageIsAccountedFor:
             "text reader has been decided out and now answers to nothing. "
             f"Found: {list(found.seen)}"
         )
+
+
+# --------------------------------------------------------------------------
+# #409: THE SECOND POPULATION -- child-process spawns, layer 1 and layer 2.
+# --------------------------------------------------------------------------
+
+#: Every expression in ``kstrl/`` that spells one of the seven ``subprocess``
+#: callables that can decode a child's output, per module. Deliberately
+#: generous, the same way ``EXPECTED_READ_SPELLINGS`` is: it counts the word
+#: in prose and in imports too, because a module cannot spawn without naming
+#: ``subprocess`` somewhere, ``import subprocess as sp`` and
+#: ``from subprocess import run as _run`` both spell it, and a net that
+#: decides what to leave out can be wrong about what it left out. Unchanged
+#: by this fix: adding ``encoding="utf-8"`` spells no ``subprocess``.
+EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
+    "agents/codex.py": 4,
+    "agents/proc.py": 7,
+    "breaker.py": 4,
+    "contract.py": 5,
+    "doctor.py": 5,
+    "factory.py": 13,
+    "fixtures.py": 3,
+    "git.py": 59,
+    "intake_github.py": 3,
+    "licensing.py": 3,
+    "observability.py": 5,
+    "pr.py": 22,
+    "procdispose.py": 10,
+    "procgroup.py": 4,
+    "procgroup_listing.py": 6,
+    "retry_plan.py": 5,
+    "serve.py": 8,
+    "statedir.py": 3,
+    "timeout.py": 3,
+    "tui/screens/home.py": 3,
+    "tui/screens/retry.py": 2,
+    "verify.py": 24,
+}
+
+
+#: How many TEXT-MODE spawns each module holds. Unchanged by this fix:
+#: replacing ``text=True,`` with ``encoding="utf-8",`` moves a site between
+#: ``clear`` and ``reported``, never between text mode and bytes mode.
+EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
+    "agents/codex.py": 1,
+    "agents/proc.py": 1,
+    "breaker.py": 1,
+    "doctor.py": 1,
+    "factory.py": 3,
+    "git.py": 24,
+    "intake_github.py": 1,
+    "licensing.py": 1,
+    "pr.py": 11,
+    "procgroup_listing.py": 1,
+    "retry_plan.py": 1,
+    "serve.py": 1,
+    "statedir.py": 1,
+    "timeout.py": 1,
+    "tui/screens/home.py": 1,
+    "verify.py": 1,
+}
+
+
+#: Every text-mode spawn this walk CLEARS, keyed by module and expression.
+#: 46 rows (50 sites, deduplicated), after the fix. Before the fix this held
+#: one row (``kstrl/git.py:1002``, PR #405's own site), which is why this
+#: test is red until the change lands. A row VANISHING is the dangerous
+#: direction: the walk stopped seeing a spawn rather than the spawn being
+#: deleted.
+EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
+    "agents/codex.py subprocess.run(['codex', 'exec', '--help'], check=False, stdout=subpro",
+    "agents/proc.py subprocess.Popen(cmd, shell=shell, stdin=subprocess.PIPE, stdout=subpr",
+    "breaker.py subprocess.run(['git', *args], cwd=cwd, capture_output=True, encoding=",
+    "doctor.py subprocess.run(['git', 'ls-files', '-z'], cwd=root, capture_output=Tru",
+    "factory.py subprocess.run(['git', 'branch', '-D', branch], cwd=root_dir, capture_",
+    "factory.py subprocess.run(['git', 'worktree', 'add', str(worktree_path), '-b', br",
+    "factory.py subprocess.run(['git', 'worktree', 'add', str(worktree_path), branch_n",
+    "git.py subprocess.run(['git', 'add', '--', file], cwd=cwd, capture_output=Tru",
+    "git.py subprocess.run(['git', 'branch', flag, '--', branch_name], cwd=cwd, ca",
+    "git.py subprocess.run(['git', 'check-ignore', '-v', '--', file], cwd=cwd, cap",
+    "git.py subprocess.run(['git', 'checkout', '-b', branch], cwd=cwd, capture_out",
+    "git.py subprocess.run(['git', 'checkout', '-b', branch_name, base, '--'], cwd",
+    "git.py subprocess.run(['git', 'checkout', branch, '--'], cwd=cwd, capture_out",
+    "git.py subprocess.run(['git', 'config', '--get', 'remote.origin.url'], cwd=cw",
+    "git.py subprocess.run(['git', 'diff', '--name-only', '--cached'], cwd=cwd, ca",
+    "git.py subprocess.run(['git', 'diff', '--name-only'], cwd=cwd, capture_output",
+    "git.py subprocess.run(['git', 'diff', '--name-status', '-z', '-M', '-C', f'{b",
+    "git.py subprocess.run(['git', 'diff', '--name-status', '-z', ref, '--'], cwd=",
+    "git.py subprocess.run(['git', 'diff', '--numstat', f'{base_ref}...HEAD', '--'",
+    "git.py subprocess.run(['git', 'diff', f'{base_ref}...HEAD', '--'], cwd=cwd, c",
+    "git.py subprocess.run(['git', 'fetch', '--', 'origin', base_branch], cwd=cwd,",
+    "git.py subprocess.run(['git', 'for-each-ref', '--format=%(refname)%09%(symref",
+    "git.py subprocess.run(['git', 'ls-files', '--others', '--exclude-standard'],",
+    "git.py subprocess.run(['git', 'merge', '--no-edit', '--', branch], cwd=cwd, c",
+    "git.py subprocess.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=cwd,",
+    "git.py subprocess.run(['git', 'rev-parse', '--is-inside-work-tree'], cwd=path",
+    "git.py subprocess.run(['git', 'rev-parse', '--show-toplevel'], cwd=path, capt",
+    "git.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', 'HEAD'], cw",
+    "git.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'{candidat",
+    "intake_github.py subprocess.run(['gh', *args], cwd=str(cwd) if cwd else None, capture_o",
+    "licensing.py subprocess.run(['uv', 'cache', 'dir'], capture_output=True, encoding='",
+    "pr.py subprocess.run(['gh', 'auth', 'status'], capture_output=True, encoding",
+    "pr.py subprocess.run(['gh', 'pr', 'close', str(pr_number), '--comment', 'Sup",
+    "pr.py subprocess.run(['gh', 'pr', 'create', '--title', title, '--body', body",
+    "pr.py subprocess.run(['gh', 'pr', 'merge', str(pr_number), f'--{method}', '-",
+    "pr.py subprocess.run(['gh', 'pr', 'merge', str(pr_number), f'--{method}'], c",
+    "pr.py subprocess.run(['gh', 'pr', 'view', str(pr_number), '--json', 'mergeab",
+    "pr.py subprocess.run(['gh', 'pr', 'view', str(pr_number), '--json', 'state']",
+    "pr.py subprocess.run(['git', 'push', '--delete', '--', 'origin', branch], cw",
+    "pr.py subprocess.run(['git', 'push', '-u', '--', 'origin', branch], cwd=cwd,",
+    "retry_plan.py subprocess.run(['git', 'branch', '-D', failed_branch], cwd=root_dir, c",
+    "serve.py subprocess.Popen(command, cwd=str(cwd), env=env, stdout=subprocess.PIP",
+    "statedir.py subprocess.run(['git', '-C', str(root_dir), 'remote', 'get-url', 'orig",
+    "timeout.py subprocess.run(cmd, cwd=cwd, shell=shell, input=input_text, capture_ou",
+    "tui/screens/home.py subprocess.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=root_",
+    "verify.py subprocess.Popen(cmd, shell=isinstance(cmd, str), cwd=cwd, stdout=subp",
+)
+
+
+#: Every text-mode spawn that names utf-8 and decodes LENIENTLY. Exactly one
+#: row, kept out of the cleared set on purpose (decision D3):
+#: ``procgroup_listing.py`` reads ``ps`` output for a daemon diagnostic, and
+#: a decode error there is a ``ValueError`` that would escape a fail-closed
+#: ``except OSError`` and take the daemon down over a diagnostic. It is the
+#: one lenient decode in the package. A SECOND row arriving here is the
+#: dangerous direction: it means ``errors=`` was used to quiet a site rather
+#: than to name a considered exception.
+EXPECTED_LENIENT_SPAWNS: tuple[str, ...] = (
+    "procgroup_listing.py subprocess.Popen(PS_ARGV, stdout=subprocess.PIPE, stderr=subprocess.PI",
+)
+
+
+#: Every spawn that decodes nothing: no ``text=``, no ``universal_newlines=``,
+#: no ``encoding=``, no ``errors=``. 19 rows (20 sites, deduplicated).
+#: Unchanged by this fix, which touches only text-mode sites. A row ARRIVING
+#: means a site that used to decode now does not, a behaviour change nobody
+#: declared; adding an encoding to one of these would flip it to text mode
+#: and change its ``.stdout`` from ``bytes`` to ``str``.
+EXPECTED_BYTES_MODE_SPAWNS: tuple[str, ...] = (
+    "doctor.py subprocess.run(['git', 'check-ignore', '-q', '--', probe], cwd=root, c",
+    "factory.py subprocess.run(['git', 'branch', '-D', branch_name], cwd=root_dir, cap",
+    "factory.py subprocess.run(['git', 'merge-base', '--is-ancestor', branch, base_ref",
+    "factory.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'refs/head",
+    "factory.py subprocess.run(['git', 'worktree', 'prune'], cwd=root_dir, capture_out",
+    "factory.py subprocess.run(['git', 'worktree', 'remove', '--force', str(entry)], c",
+    "factory.py subprocess.run(['git', 'worktree', 'remove', '--force', str(worktree_p",
+    "factory.py subprocess.run(['git', 'worktree', 'remove', '--force', str(wt)], cwd=",
+    "factory.py subprocess.run(scaffold_cmd, shell=True, cwd=worktree_path, capture_ou",
+    "git.py subprocess.run(['git', 'ls-files', '--error-unmatch', '--', file], cwd",
+    "git.py subprocess.run(['git', 'restore', '--staged', '--worktree', '--', file",
+    "git.py subprocess.run(['git', 'restore', f'--source={ref}', '--staged', '--wo",
+    "git.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'refs/remo",
+    "git.py subprocess.run(['git', 'rm', '--cached', '--ignore-unmatch', '-q', '--",
+    "git.py subprocess.run(['git', 'show-ref', '--verify', '--quiet', f'refs/heads",
+    "observability.py subprocess.run(command, shell=True, env=env, stdin=subprocess.DEVNULL,",
+    "retry_plan.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'refs/head",
+    "retry_plan.py subprocess.run(['git', 'worktree', 'prune'], cwd=root_dir, capture_out",
+    "retry_plan.py subprocess.run(['git', 'worktree', 'remove', '--force', evidence_workt",
+)
+
+
+#: The one call this walk cannot resolve: both of ``kstrl/cli.py``'s two
+#: ``app.run()`` calls, deduplicated to one row. The resolver cannot type
+#: ``app``, and the leaf ``run`` is a target leaf, so the call is a candidate
+#: it cannot decide either way. Checked by hand: both sites are the Textual
+#: application's own ``run``, not a ``subprocess`` spawn.
+EXPECTED_UNDECIDED_SPAWNS: tuple[str, ...] = ("cli.py app.run",)
+
+
+class TestEverySpawnDecodeNamesUtf8:
+    """#409, layer 1 and layer 2 over the second population: child-process
+    spawns rather than files kstrl reads.
+
+    THREE PINS AND NO FOURTH BUCKET, the same shape as the read walk above:
+    every text-mode spawn is in exactly one of ``EXPECTED_CLEARED_SPAWNS``,
+    ``EXPECTED_LENIENT_SPAWNS``, ``EXPECTED_UNDECIDED_SPAWNS`` and the
+    reported set, and every spawn that decodes nothing is in
+    ``EXPECTED_BYTES_MODE_SPAWNS``.
+    """
+
+    def test_the_subprocess_spellings_are_the_ones_pinned(self) -> None:
+        assert_census(
+            sources=package_sources(),
+            sees=spells("subprocess"),
+            expected=EXPECTED_SUBPROCESS_SPELLINGS,
+            # One control, because `spells` is one predicate with one
+            # disjunct, unlike the read walk's `read_text or open`.
+            control="import subprocess",
+            message="a module's subprocess spellings moved.",
+        )
+
+    def test_nothing_is_reported_and_the_undecided_row_is_the_pinned_one(self) -> None:
+        """``seen=()`` on its own is the shape CLAUDE.md guard rule 2
+        forbids: it passes when the walk is right AND when the walk has
+        been switched off. Its controls are the three planted-shape probes
+        below, which run ``scan_spawn_source`` directly and assert it DOES
+        report, plus ``undecided=EXPECTED_UNDECIDED_SPAWNS`` itself, a
+        non-empty claim that a gutted walk also fails.
+        """
+        assert_sites(
+            reported_spawns(spawn_scan()).without_line_numbers(),
+            seen=(),
+            undecided=EXPECTED_UNDECIDED_SPAWNS,
+            message=(
+                "a text-mode subprocess spawn in kstrl/ does not name utf-8 "
+                "strictly. See this module's docstring for the rule."
+            ),
+        )
+
+    def test_the_cleared_spawns_are_the_ones_pinned(self) -> None:
+        found = Sites(spawn_scan().clear).without_line_numbers()
+        assert found.seen == EXPECTED_CLEARED_SPAWNS, (
+            "the set of text-mode spawns this walk clears moved. A row that "
+            "VANISHED is the dangerous direction: the walk stopped seeing a "
+            f"spawn rather than the spawn being deleted. Found: {list(found.seen)}"
+        )
+
+    def test_the_text_mode_spawn_counts_are_the_ones_pinned(self) -> None:
+        assert text_mode_census(spawn_scan()) == EXPECTED_TEXT_MODE_SPAWNS
+
+    def test_the_lenient_spawn_is_the_one_pinned(self) -> None:
+        found = Sites(spawn_scan().lenient).without_line_numbers()
+        assert found.seen == EXPECTED_LENIENT_SPAWNS, (
+            "the set of lenient-decode spawns moved. A row ARRIVING is the "
+            f"dangerous direction: errors= quieted a site. Found: {list(found.seen)}"
+        )
+
+    def test_the_bytes_mode_spawns_are_the_ones_pinned(self) -> None:
+        found = Sites(spawn_scan().bytes_mode).without_line_numbers()
+        assert found.seen == EXPECTED_BYTES_MODE_SPAWNS, (
+            "the set of bytes-mode spawns moved. A row ARRIVING means a "
+            "site that used to decode now does not, a behaviour change "
+            f"nobody declared. Found: {list(found.seen)}"
+        )
+
+    def test_the_spawn_targets_are_the_seven_subprocess_can_decode_with(self) -> None:
+        """Derived from ``inspect.signature`` over every public ``subprocess``
+        callable, not a hand-written list: #340 and #324 merged a
+        hand-written ``SPAWN_FUNCS`` into a tree at zero readers with
+        ``getoutput`` ungated, so a CPython release adding or dropping one
+        of these seven must be loud rather than silent.
+        """
+        assert SPAWN_TARGETS == frozenset(
+            {
+                "subprocess.Popen",
+                "subprocess.call",
+                "subprocess.check_call",
+                "subprocess.check_output",
+                "subprocess.getoutput",
+                "subprocess.getstatusoutput",
+                "subprocess.run",
+            }
+        )
+
+    def test_the_spawn_targets_agree_with_the_timeout_audits_set(self) -> None:
+        """Two lists naming one concept is what #340 and #324 merged into a
+        tree with ``SPAWN_FUNCS`` at zero readers and ``getoutput`` ungated,
+        with both branches independently green and no conflict on either
+        constant. Importing another test module is an established
+        convention in this suite (``tests/test_steering.py`` and
+        ``tests/test_event_name_shapes.py`` do it).
+        """
+        from tests.test_timeout_enforcement import POPEN_TARGET, TestSubprocessTimeoutAudit
+
+        assert SPAWN_TARGETS == TestSubprocessTimeoutAudit.SPAWN_TARGETS | {POPEN_TARGET}
+
+    def test_a_spawn_that_names_no_encoding_is_reported(self) -> None:
+        scan = scan_spawn_source('import subprocess\nsubprocess.run(["x"], text=True)\n')
+        assert scan.clear == ()
+        assert len(scan.reported) == 1
+        assert "names no encoding" in scan.reported[0]
+
+    def test_a_spawn_that_decodes_leniently_is_not_cleared(self) -> None:
+        scan = scan_spawn_source(
+            'import subprocess\nsubprocess.run(["x"], encoding="utf-8", errors="replace")\n'
+        )
+        assert scan.clear == ()
+        assert len(scan.lenient) == 1
+
+    def test_a_spawn_whose_text_flag_does_not_fold_is_reported(self) -> None:
+        scan = scan_spawn_source('import subprocess\nsubprocess.run(["x"], text=flag)\n')
+        assert len(scan.reported) == 1
+        assert "does not fold" in scan.reported[0]

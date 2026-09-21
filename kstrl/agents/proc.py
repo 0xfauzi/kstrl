@@ -98,7 +98,7 @@ class DeadlineStreamer:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
+            encoding="utf-8",
             cwd=cwd,
             start_new_session=True,
         )

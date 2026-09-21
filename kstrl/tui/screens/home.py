@@ -70,7 +70,7 @@ def _git_branch(root_dir: Path) -> str:
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=root_dir,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=5,
         )
     except (OSError, subprocess.TimeoutExpired):

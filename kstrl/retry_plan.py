@@ -116,7 +116,7 @@ def prepare_retry(
                 ["git", "branch", "-D", failed_branch],
                 cwd=root_dir,
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 timeout=30,
             )
             if deleted.returncode == 0:
