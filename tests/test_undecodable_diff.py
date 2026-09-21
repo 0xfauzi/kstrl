@@ -10,36 +10,29 @@ git subprocess against a real temporary repository, through the real reader
 functions in ``kstrl/git.py`` and the real gates in ``kstrl/verify.py``, and
 proves the failure is now a fail-closed ``CheckResult``/``GitDiffError``
 rather than an escaped exception.
+
+The static-analysis guard over every strict reader in ``kstrl/git.py``
+lives in ``tests/test_undecodable_diff_guard.py`` (#423): it was split out
+of this file to keep this one under the repo's 800-line ratchet. Nothing
+about the guard's behaviour changed in the split.
 """
 
 from __future__ import annotations
 
-import ast
+import io
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
-from typing import TypeGuard
 
 import pytest
 
-import kstrl
-from kstrl import git, verify
+from kstrl import doctor, git, guards, loop, verify
 from kstrl.adequacy import AdequacyConfig
+from kstrl.breaker import compute_diff_hash
+from kstrl.config import KstrlConfig
 from kstrl.policy import PolicyConfig
+from kstrl.ui import PlainUI
 from tests.helpers import gitrepo
-from tests.helpers.astwalk import (
-    all_nodes,
-    bindings,
-    calls_to,
-    guarded_by,
-    label,
-    module_name,
-    package_sources,
-    parse,
-    parsed,
-    resolved_calls,
-)
-from tests.helpers.astwalk.scope import own_nodes
-from tests.helpers.encodingspawn import SPAWN_TARGETS, text_mode
 
 #: The one bad byte, as a whole word rather than a split-off fragment, so
 #: codespell reads a French noun instead of a typo for a young cow. See
@@ -140,6 +133,26 @@ def _commit_undecodable_path(repo: Path) -> None:
     )
 
 
+def _guard_config(repo: Path) -> KstrlConfig:
+    """A config with ALLOWED_PATHS set, and the two files KstrlConfig needs on
+    disk. Written under `scripts/`, which is inside allowed_paths, so the
+    fixture's own files are never the violation under test."""
+    kstrl_dir = repo / "scripts" / "kstrl"
+    kstrl_dir.mkdir(parents=True, exist_ok=True)
+    (kstrl_dir / "prompt.md").write_text("p", encoding="utf-8")
+    (kstrl_dir / "prd.json").write_text('{"branchName": "t", "userStories": []}', encoding="utf-8")
+    return KstrlConfig(
+        max_iterations=1,
+        prompt_file=kstrl_dir / "prompt.md",
+        prd_file=kstrl_dir / "prd.json",
+        sleep_seconds=0,
+        interactive=False,
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
+        allowed_paths=["src/", "scripts/"],
+    )
+
+
 # --- 1: get_diff_content -----------------------------------------------
 
 
@@ -190,12 +203,12 @@ def test_get_diff_names_refuses_a_path_it_cannot_decode(tmp_path: Path) -> None:
 
 
 def test_get_diff_numstat_refuses_a_path_it_cannot_decode(tmp_path: Path) -> None:
-    """``--numstat`` C-quotes a non-ASCII path to pure ASCII unless
-    ``core.quotepath`` is off, while ``--name-status -z`` always emits the
-    raw bytes (measured). So this fixture, unlike
-    ``test_get_diff_name_status_refuses_a_path_it_cannot_decode``'s, must
-    turn quoting off to reach the same decode failure."""
-    repo = _repo(tmp_path, quotepath="false")
+    """``--numstat`` used to C-quote a non-ASCII path to pure ASCII unless
+    ``core.quotepath`` was off, so this fixture had to turn quoting off to
+    reach the decode at all. #423 put ``-z`` on the reader, which emits the
+    raw bytes whatever ``core.quotepath`` says, so the plain fixture now
+    reaches it and the explicit ``quotepath="false"`` is gone."""
+    repo = _repo(tmp_path)
     _commit_undecodable_path(repo)
 
     with pytest.raises(git.GitDiffError):
@@ -204,23 +217,18 @@ def test_get_diff_numstat_refuses_a_path_it_cannot_decode(tmp_path: Path) -> Non
         git.get_diff_numstat("main", repo)
 
 
-#: What git writes for BAD_NAME while core.quotepath is on: the ASCII
-#: prefix of the word, then the one byte as backslash-octal, quoted.
-QUOTED_NAME = '"{}\\{:o}.py"'.format("café"[:3], 0xE9)
-
-
-def test_the_numstat_reader_is_reached_only_with_quotepath_off(tmp_path: Path) -> None:
-    """The control for
-    ``test_get_diff_numstat_refuses_a_path_it_cannot_decode``'s fixture
-    choice: with quotepath at its default (on), the same undecodable path
-    is C-quoted to pure ASCII before it ever reaches the decode, so the
-    strict reader RETURNS a row instead of raising."""
-    repo = _repo(tmp_path)
+def test_quotepath_off_does_not_change_the_numstat_reader(tmp_path: Path) -> None:
+    """The pair to the test above, and the row that records what #423
+    changed. Before it, quotepath at its default C-quoted the undecodable
+    path to pure ASCII and the strict reader RETURNED a mangled row; only
+    with quoting off did it refuse. With ``-z`` the setting is inert, so
+    both fixtures now refuse and the reader fails closed on the config an
+    operator actually has."""
+    repo = _repo(tmp_path, quotepath="false")
     _commit_undecodable_path(repo)
 
-    rows = git.get_diff_numstat("main", repo, strict=True)
-
-    assert [path for _, _, path in rows] == [QUOTED_NAME]
+    with pytest.raises(git.GitDiffError):
+        git.get_diff_numstat("main", repo, strict=True)
 
 
 # --- 6/7: the two gates that read the diff directly -----------------------
@@ -314,405 +322,127 @@ def test_the_mechanical_verifier_returns_a_verdict_on_a_diff_it_cannot_decode(
     assert adequacy_rows[0].measured is False
 
 
-# --- 10: Guard 1 ------------------------------------------------------------
-
-#: The exact spelling only. The round-two review of #416 measured that the
-#: CPython-derived set (``BaseException``, ``Exception``, ``UnicodeDecodeError``,
-#: ``UnicodeError``, ``ValueError``) and this one narrow name give byte-identical
-#: censuses on the real ``kstrl/git.py`` (``{"get_diff_content": 1,
-#: "get_diff_name_status": 1, "get_diff_numstat": 1, "resolve_base_sha": 1}``,
-#: ``reported == []`` either way), so the wider set bought nothing but a
-#: clearing hole: ``except Exception: return []`` cleared under the derived
-#: set - a diff known to carry changes reported as carrying none, the
-#: vacuous pass this fix exists to prevent, verbatim. A guard that CLEARS
-#: must be narrow (CLAUDE.md).
-_ACCEPTED_NAMES = frozenset({"UnicodeDecodeError"})
+# --- 11: the readers -z reaches (#423) ------------------------------------
 
 
-def _raises_git_diff_error(fn: ast.AST) -> bool:
-    return any(
-        isinstance(n, ast.Raise)
-        and isinstance(n.exc, ast.Call)
-        and getattr(n.exc.func, "id", None) == "GitDiffError"
-        for n in own_nodes(fn)
-    )
+def test_get_changed_files_refuses_a_path_it_cannot_decode(tmp_path: Path) -> None:
+    """#423 put ``-z`` on this reader, so git no longer C-quotes the bad
+    byte into pure ASCII before kstrl sees it. Returning a set with the
+    path silently missing would be a vacuous pass on the scope gate, so
+    the reader refuses, exactly as the four #416 readers do."""
+    repo = _repo(tmp_path)
+    _commit_undecodable_path(repo)
+
+    with pytest.raises(git.GitDiffError) as excinfo:
+        git.get_changed_files(repo)
+
+    assert "not valid utf-8" in str(excinfo.value)
 
 
-def _handler_raises_git_diff_error(handler: ast.ExceptHandler) -> bool:
-    """Does this handler's own body raise ``GitDiffError``?
+def test_the_allowed_paths_guard_fails_closed_on_a_path_it_cannot_decode(
+    tmp_path: Path,
+) -> None:
+    """The real entry point: the refusal is a verdict, not a traceback."""
+    repo = _repo(tmp_path)
+    config = _guard_config(repo)
+    _commit_undecodable_path(repo)
+    out = io.StringIO()
 
-    ``guarded_by`` alone proves only that a clause NAMES
-    ``UnicodeDecodeError``; a clause that swallows it (``pass``), returns
-    something unrelated, or bare re-raises it clears there but converts
-    nothing - a diff known to carry changes handled as though it were
-    empty, exactly the vacuous pass ``check_diff_scope``'s fail-closed
-    handling exists to prevent (measured by #416's round-two review: all
-    three shapes cleared before this predicate was added). This is the
-    stronger question ``guarded_by``'s ``handler_converts`` hook exists
-    for: the handler that names the decode must itself raise the
-    converted error.
-    """
-    return any(
-        isinstance(n, ast.Raise)
-        and isinstance(n.exc, ast.Call)
-        and getattr(n.exc.func, "id", None) == "GitDiffError"
-        for n in own_nodes(handler)
-    )
+    ok, violations = guards.enforce_allowed_paths(config, PlainUI(no_color=True, file=out), repo)
+
+    assert (ok, violations) == (False, [])
+    assert "not valid utf-8" in out.getvalue()
 
 
-def _fn_spawns(
-    fn: ast.FunctionDef | ast.AsyncFunctionDef,
-    spawns: list[tuple[ast.Call, str]],
-) -> list[ast.Call]:
-    """The text-mode spawns from ``spawns`` that belong to ``fn``'s own
-    scope, extracted so :func:`scan_git_source` stays under the repo's
-    cognitive-complexity ratchet (measured: this loop, inlined, was the
-    difference between a passing and a refused commit)."""
-    owned_ids = {id(n) for n in own_nodes(fn)}
-    return [node for node, _origin in spawns if id(node) in owned_ids and text_mode(node) is True]
+def test_the_breaker_cannot_measure_a_path_it_cannot_decode(tmp_path: Path) -> None:
+    """The breaker fails OPEN by contract: None means "cannot measure",
+    and the caller skips the stall count for that iteration."""
+    repo = _repo(tmp_path)
+    _commit_undecodable_path(repo)
+
+    assert compute_diff_hash(repo) is None
 
 
-def scan_git_source(source: str) -> tuple[dict[str, int], list[str]]:
-    """``(census, reported)`` for one module's source text.
-
-    TEXT rather than a path so the planted shapes below exercise the same
-    code the real sweep runs.
-    """
-    tree = parse(source)
-    table = bindings(tree, module="kstrl.git")
-    census: dict[str, int] = {}
-    reported: list[str] = []
-    spawns = list(resolved_calls(tree, SPAWN_TARGETS, module="kstrl.git"))
-    for fn in all_nodes(tree):
-        if not isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
-            continue
-        if not _raises_git_diff_error(fn):
-            continue
-        for node in _fn_spawns(fn, spawns):
-            census[fn.name] = census.get(fn.name, 0) + 1
-            if not guarded_by(
-                tree, node, _ACCEPTED_NAMES, table, handler_converts=_handler_raises_git_diff_error
-            ):
-                reported.append(f"{fn.name}:{node.lineno}")
-    return census, reported
-
-
-_PLANTED_WITHOUT_HANDLER = """
-import subprocess
-
-
-class GitDiffError(RuntimeError):
-    pass
-
-
-def get_diff_authors(base_ref, cwd=None, timeout=30.0):
-    try:
-        result = subprocess.run(
-            ["git", "log", "--format=%an", f"{base_ref}...HEAD"],
-            cwd=cwd,
-            capture_output=True,
-            encoding="utf-8",
-            timeout=timeout,
+def test_the_allowed_paths_guard_fails_closed_with_a_baseline_it_cannot_read(
+    tmp_path: Path,
+) -> None:
+    """The baseline branch of the same guard, which goes through
+    ``get_changed_files_since`` -> ``_committed_since`` and not through
+    ``get_changed_files`` at all. ``run_loop`` always captures a baseline
+    when ALLOWED_PATHS is set, so this is the path a real run takes. The
+    baseline head is the commit that CARRIES the undecodable path: a head
+    from before it never puts that name in the diff and the test would
+    pass vacuously."""
+    repo = _repo(tmp_path)
+    config = _guard_config(repo)
+    _commit_undecodable_path(repo)
+    head = (
+        subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, check=True, timeout=30
         )
-    except subprocess.TimeoutExpired as exc:
-        raise GitDiffError("timed out") from exc
-    return result.stdout.splitlines()
-"""
-
-_PLANTED_WITH_HANDLER = _PLANTED_WITHOUT_HANDLER.replace(
-    "    except subprocess.TimeoutExpired as exc:\n"
-    '        raise GitDiffError("timed out") from exc\n',
-    "    except subprocess.TimeoutExpired as exc:\n"
-    '        raise GitDiffError("timed out") from exc\n'
-    "    except UnicodeDecodeError as exc:\n"
-    '        raise GitDiffError("not valid utf-8") from exc\n',
-)
-
-_PLANTED_HANDLER_ON_ANOTHER_TRY = (
-    _PLANTED_WITHOUT_HANDLER
-    + """
-
-def unrelated():
-    try:
-        pass
-    except UnicodeDecodeError:
-        pass
-"""
-)
-
-#: The ``clause.decided`` conjunct's own mutation test. The other planted
-#: sources all have fully resolvable clauses, so ``decided`` is True
-#: everywhere and the conjunct never fires; none of them can tell
-#: ``clause.decided and clause.names & names`` apart from
-#: ``clause.names & names`` alone. This one can: its clause's decidable
-#: half (``UnicodeDecodeError`` itself, the exact accepted name - #416's
-#: round-two review narrowed this from ``ValueError``, which the narrowed
-#: accepted set no longer contains) overlaps ``names``, but its other half
-#: (``shim.Whatever``) cannot be named because the module never binds
-#: ``shim``, so the clause as a whole is undecided. With the conjunct the
-#: site is still reported; drop the conjunct and it clears, because a
-#: bare name-overlap check does not require the WHOLE clause to be known.
-_PLANTED_UNDECIDABLE_HANDLER = _PLANTED_WITHOUT_HANDLER.replace(
-    "    except subprocess.TimeoutExpired as exc:\n"
-    '        raise GitDiffError("timed out") from exc\n',
-    "    except subprocess.TimeoutExpired as exc:\n"
-    '        raise GitDiffError("timed out") from exc\n'
-    "    except (UnicodeDecodeError, shim.Whatever) as exc:\n"
-    '        raise GitDiffError("not valid utf-8") from exc\n',
-)
-
-#: A clause that NAMES the target and then does something other than
-#: convert it. Each clears under a guard that only asks what a clause
-#: CATCHES; #416's round-two review measured all three clearing before
-#: ``handler_converts`` was added.
-_PLANTED_CLEARS_TO_EMPTY = _PLANTED_WITHOUT_HANDLER.replace(
-    "    except subprocess.TimeoutExpired as exc:\n"
-    '        raise GitDiffError("timed out") from exc\n',
-    "    except subprocess.TimeoutExpired as exc:\n"
-    '        raise GitDiffError("timed out") from exc\n'
-    "    except UnicodeDecodeError:\n"
-    "        return []\n",
-)
-
-_PLANTED_SWALLOWS = _PLANTED_WITHOUT_HANDLER.replace(
-    "    except subprocess.TimeoutExpired as exc:\n"
-    '        raise GitDiffError("timed out") from exc\n',
-    "    except subprocess.TimeoutExpired as exc:\n"
-    '        raise GitDiffError("timed out") from exc\n'
-    "    except UnicodeDecodeError:\n"
-    "        pass\n",
-)
-
-_PLANTED_BARE_RERAISE = _PLANTED_WITHOUT_HANDLER.replace(
-    "    except subprocess.TimeoutExpired as exc:\n"
-    '        raise GitDiffError("timed out") from exc\n',
-    "    except subprocess.TimeoutExpired as exc:\n"
-    '        raise GitDiffError("timed out") from exc\n'
-    "    except UnicodeDecodeError:\n"
-    "        raise\n",
-)
-
-#: The exact shape #416's round-two review measured clearing under the
-#: CPython-derived accepted set: a clause naming ``Exception``, not the
-#: exact target, that returns ``[]``. This clause is reported by the
-#: ``handler_converts`` check regardless of the accepted set: it returns
-#: ``[]`` instead of raising ``GitDiffError``, so it never converts, and
-#: that stays true even when ``_ACCEPTED_NAMES`` is widened to include
-#: ``Exception`` (measured). It is therefore not evidence that the
-#: exact-spelling accepted set (``_ACCEPTED_NAMES``) is load-bearing on its
-#: own; ``_PLANTED_WIDE_BUT_CONVERTING`` below is the source that only the
-#: narrowing can report.
-_PLANTED_UNRELATED_EXCEPTION = _PLANTED_WITHOUT_HANDLER.replace(
-    "    except subprocess.TimeoutExpired as exc:\n"
-    '        raise GitDiffError("timed out") from exc\n',
-    "    except subprocess.TimeoutExpired as exc:\n"
-    '        raise GitDiffError("timed out") from exc\n'
-    "    except Exception:\n"
-    "        return []\n",
-)
-
-#: The missing sole-killer for the exact-spelling accepted set
-#: (``_ACCEPTED_NAMES``). This clause names ``ValueError``, a WIDER name
-#: that at runtime really does catch every ``UnicodeDecodeError``
-#: (``UnicodeDecodeError`` is a ``ValueError`` subclass), and it converts:
-#: it raises ``GitDiffError`` exactly like the compliant handler does, so
-#: the ``handler_converts`` check says yes. Only the exact-spelling
-#: accepted set can still report this site, because ``clause.names`` is
-#: ``{"ValueError"}``, which does not overlap ``{"UnicodeDecodeError"}``.
-#: Widen ``_ACCEPTED_NAMES`` to include ``ValueError`` and this is the one
-#: test in the file that fails (measured, #416 round three).
-_PLANTED_WIDE_BUT_CONVERTING = _PLANTED_WITHOUT_HANDLER.replace(
-    "    except subprocess.TimeoutExpired as exc:\n"
-    '        raise GitDiffError("timed out") from exc\n',
-    "    except subprocess.TimeoutExpired as exc:\n"
-    '        raise GitDiffError("timed out") from exc\n'
-    "    except ValueError as exc:\n"
-    '        raise GitDiffError("not valid utf-8") from exc\n',
-)
-
-
-class TestEveryStrictReaderConvertsADecodeFailure:
-    """Closed by construction over the property that DEFINES a strict
-    reader: a function in ``kstrl/git.py`` whose own body raises
-    ``GitDiffError``. Measured today: exactly four, one text-mode spawn
-    each. A new reader is in the subject the moment it raises, so there is
-    no ledger to go stale."""
-
-    def test_the_walk_reports_what_it_could_not_decide(self) -> None:
-        """The census above is over every spawn in the file rather than
-        over the ones the resolver happened to place."""
-        path = Path(kstrl.__file__).parent / "git.py"
-        tree = parsed(path)
-
-        found = calls_to(tree, SPAWN_TARGETS, where=label(path), module=module_name(path))
-
-        assert found.undecided == ()
-
-    def test_the_subject_census_is_pinned(self) -> None:
-        path = Path(kstrl.__file__).parent / "git.py"
-        census, _reported = scan_git_source(path.read_text(encoding="utf-8"))
-
-        assert census == {
-            "get_diff_content": 1,
-            "get_diff_name_status": 1,
-            "get_diff_numstat": 1,
-            "resolve_base_sha": 1,
-        }
-
-    def test_every_subject_spawn_converts_a_decode_failure(self) -> None:
-        path = Path(kstrl.__file__).parent / "git.py"
-        _census, reported = scan_git_source(path.read_text(encoding="utf-8"))
-
-        assert reported == []
-
-    def test_a_new_reader_without_the_handler_is_reported(self) -> None:
-        _census, reported = scan_git_source(_PLANTED_WITHOUT_HANDLER)
-
-        assert reported == ["get_diff_authors:11"]
-
-    def test_a_reader_whose_handler_is_on_another_try_is_reported(self) -> None:
-        """The pair: a handler on a SIBLING try does not count, and the
-        identical handler on the RIGHT try clears - proving the guard is
-        narrow rather than merely present."""
-        with_census, with_reported = scan_git_source(_PLANTED_WITH_HANDLER)
-        _sibling_census, sibling_reported = scan_git_source(_PLANTED_HANDLER_ON_ANOTHER_TRY)
-
-        assert with_census == {"get_diff_authors": 1}
-        assert with_reported == []
-        assert sibling_reported == ["get_diff_authors:11"]
-
-    def test_a_partially_undecidable_handler_is_reported(self) -> None:
-        """``clause.decided`` is what stops the skip direction. Without it,
-        a clause whose decidable half overlaps the target names is treated
-        as guarding the site even though its other half (``shim.Whatever``,
-        which the module never binds) could not be named - the exact "half
-        of a promise" a fail-closed reader must not accept."""
-        _census, reported = scan_git_source(_PLANTED_UNDECIDABLE_HANDLER)
-
-        assert reported == ["get_diff_authors:11"]
-
-    @pytest.mark.parametrize(
-        "source",
-        [
-            pytest.param(_PLANTED_CLEARS_TO_EMPTY, id="returns-empty-list"),
-            pytest.param(_PLANTED_SWALLOWS, id="swallows"),
-            pytest.param(_PLANTED_BARE_RERAISE, id="bare-reraise"),
-        ],
+        .stdout.decode("ascii")
+        .strip()
     )
-    def test_a_clause_that_names_the_target_and_does_not_convert_it_is_reported(
-        self, source: str
-    ) -> None:
-        """Naming ``UnicodeDecodeError`` is not conversion. A clause that
-        returns ``[]`` (a diff known to carry changes reported as carrying
-        none, the vacuous pass verbatim), one that swallows the decode,
-        and one that bare re-raises it all NAME the target and all three
-        cleared under a guard that asked only that question (#416's
-        round-two review, measured). ``handler_converts`` requiring an
-        actual ``raise GitDiffError(...)`` is what reports them."""
-        _census, reported = scan_git_source(source)
+    out = io.StringIO()
 
-        assert reported == ["get_diff_authors:11"]
+    ok, violations = guards.enforce_allowed_paths(
+        config,
+        PlainUI(no_color=True, file=out),
+        repo,
+        baseline=git.WorkspaceBaseline(head=head, dirty=frozenset()),
+    )
 
-    def test_a_clause_naming_an_unrelated_broad_exception_is_reported(self) -> None:
-        """The exact shape #416's round-two review measured clearing under
-        the CPython-derived accepted set: ``except Exception: return []``.
-        This clause is reported by the ``handler_converts`` check
-        regardless of the accepted set: it returns ``[]`` instead of
-        raising ``GitDiffError``, so it never converts, and widening
-        ``_ACCEPTED_NAMES`` to include ``Exception`` does not clear it
-        (measured). See
-        ``test_a_wider_name_that_still_converts_is_reported_only_by_the_narrowing``
-        for the source that only the exact-spelling accepted set can
-        report."""
-        _census, reported = scan_git_source(_PLANTED_UNRELATED_EXCEPTION)
-
-        assert reported == ["get_diff_authors:11"]
-
-    def test_a_wider_name_that_still_converts_is_reported_only_by_the_narrowing(
-        self,
-    ) -> None:
-        """A clause naming ``ValueError`` catches every decode failure
-        (``UnicodeDecodeError`` is a ``ValueError``) and converts it
-        exactly like the compliant handler does - the ``handler_converts``
-        check says yes. Only the exact-spelling accepted set
-        (``_ACCEPTED_NAMES``) reports this site, because ``clause.names``
-        (``{"ValueError"}``) does not overlap ``{"UnicodeDecodeError"}``.
-        This is the test that fails when the narrowing is reverted
-        (measured, #416 round three): none of the other planted-source
-        tests in this class do."""
-        _census, reported = scan_git_source(_PLANTED_WIDE_BUT_CONVERTING)
-
-        assert reported == ["get_diff_authors:11"]
+    assert (ok, violations) == (False, [])
+    assert "not valid utf-8" in out.getvalue()
 
 
-def _names_git_diff_error(node: ast.Raise) -> bool:
-    if not isinstance(node.exc, ast.Call):
-        return False
-    func = node.exc.func
-    if isinstance(func, ast.Name):
-        return func.id == "GitDiffError"
-    return isinstance(func, ast.Attribute) and func.attr == "GitDiffError"
+def test_doctor_reports_a_working_tree_it_cannot_read(tmp_path: Path) -> None:
+    """``ks doctor`` must report a verdict, not traceback. Without the try in
+    check_git_clean this raises once get_changed_files carries ``-z``."""
+    repo = _repo(tmp_path)
+    _commit_undecodable_path(repo)
+
+    status, message, _remedy = doctor.check_git_clean(repo)
+
+    assert status == doctor.STATUS_WARN
+    assert "not valid utf-8" in message
 
 
-def _binds_git_diff_error(node: ast.AST) -> TypeGuard[ast.ImportFrom]:
-    if not isinstance(node, ast.ImportFrom):
-        return False
-    return any((alias.asname or alias.name) == "GitDiffError" for alias in node.names)
+def test_the_loop_refuses_before_paying_for_an_iteration(tmp_path: Path) -> None:
+    """The guard baseline is taken before iteration 1. A baseline that cannot
+    be read is a refusal there, where nothing has been spent, and not a
+    traceback after an agent has run."""
 
+    class NeverRuns:
+        def __init__(self) -> None:
+            self.runs = 0
 
-class TestGitDiffErrorHasOneHome:
-    """Guard 1's closure is over ``kstrl/git.py`` and its subject predicate
-    keys on a bare ``ast.Name`` ``GitDiffError``. Neither fact was pinned
-    before #416's round-two review: a raise elsewhere spelled
-    ``git.GitDiffError(...)``, through an aliased import, or in another
-    module entirely dropped its whole function out of every census above
-    with nothing failing, which is the mirror of
-    ``test_the_error_name_has_one_home`` in
-    ``tests/test_undecodable_child_output.py`` for this file's error."""
+        @property
+        def name(self) -> str:
+            return "never"
 
-    def test_every_raise_of_the_name_is_in_git_py(self) -> None:
-        census: dict[str, int] = {}
-        for source_file in package_sources():
-            where = label(source_file)
-            tree = parse(source_file.read_text(encoding="utf-8"))
-            for node in all_nodes(tree):
-                if isinstance(node, ast.Raise) and _names_git_diff_error(node):
-                    census[where] = census.get(where, 0) + 1
+        def run(
+            self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+        ) -> Iterator[str]:
+            self.runs += 1
+            yield "line"
 
-        assert census == {"git.py": 14}
+        @property
+        def final_message(self) -> str | None:
+            return None
 
-    def test_no_importfrom_outside_git_py_binds_the_name(self) -> None:
-        offenders = [
-            f"{label(source_file)}:{node.lineno}"
-            for source_file in package_sources()
-            if label(source_file) != "git.py"
-            for node in all_nodes(parse(source_file.read_text(encoding="utf-8")))
-            if _binds_git_diff_error(node)
-        ]
+        @property
+        def usage_records(self) -> list[object]:
+            return []
 
-        assert offenders == []
+    repo = _repo(tmp_path)
+    config = _guard_config(repo)
+    _commit_undecodable_path(repo)
+    agent = NeverRuns()
+    out = io.StringIO()
 
-    def test_the_class_is_defined_only_in_git_py(self) -> None:
-        homes = [
-            label(source_file)
-            for source_file in package_sources()
-            if any(
-                isinstance(node, ast.ClassDef) and node.name == "GitDiffError"
-                for node in all_nodes(parse(source_file.read_text(encoding="utf-8")))
-            )
-        ]
+    result = loop.run_loop(config, PlainUI(no_color=True, file=out), agent, repo)
 
-        assert homes == ["git.py"]
-
-    def test_a_raise_of_the_name_in_another_module_is_reported(self) -> None:
-        """The mutation: plant ``raise git.GitDiffError("x")`` in a source
-        text and confirm the census sees it as a new file, rather than the
-        walk silently ignoring it because it is not the bare ``Name``
-        spelling ``kstrl/git.py`` happens to use everywhere today."""
-        tree = parse('raise git.GitDiffError("x")\n')
-        census: dict[str, int] = {}
-        for node in all_nodes(tree):
-            if isinstance(node, ast.Raise) and _names_git_diff_error(node):
-                census["planted.py"] = census.get("planted.py", 0) + 1
-
-        assert census == {"planted.py": 1}
+    assert agent.runs == 0
+    assert (result.completed, result.exit_code) == (False, 1)
+    assert "not valid utf-8" in out.getvalue()

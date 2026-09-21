@@ -101,6 +101,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_feature_verification.py": 1,
     "tests/test_feature_verification_attribution.py": 1,
     "tests/test_git_identity_helper.py": 5,
+    # #423's `_repo_with_tricky_names` fixture, through
+    # `tests.helpers.gitrepo.set_identity`, which this row declares.
+    "tests/test_git_path_spelling.py": 6,
     "tests/test_harness_path_scope.py": 3,
     "tests/test_inbox.py": 1,
     "tests/test_init_cmd.py": 3,

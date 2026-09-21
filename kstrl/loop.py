@@ -491,7 +491,7 @@ def build_project_context(
     return "\n\n".join(sections)
 
 
-def run_loop(
+def run_loop(  # noqa: C901 # complexipy: ignore - grandfathered; #423 adds one guarded branch
     config: KstrlConfig,
     ui: UI,
     agent: Agent,
@@ -678,10 +678,14 @@ def run_loop(
         # already dirty now belongs to the operator or the harness, and
         # everything the agent does from here - committed or not - is
         # attributable to the agent.
-        guard_baseline = git.capture_workspace_baseline(
-            cwd,
-            base_ref=guard_base_ref,
-        )
+        try:
+            guard_baseline = git.capture_workspace_baseline(
+                cwd,
+                base_ref=guard_base_ref,
+            )
+        except git.GitDiffError as exc:
+            ui.err(f"Guard baseline could not be taken: {exc}")
+            return LoopResult(completed=False, iterations=0, exit_code=1)
         if guard_baseline.dirty:
             ui.info(
                 f"Guard baseline: HEAD {guard_baseline.head or '<unborn>'}, "
