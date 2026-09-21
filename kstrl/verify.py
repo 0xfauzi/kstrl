@@ -1832,6 +1832,248 @@ def check_diff_scope(
     )
 
 
+#: The two whole-file rules `check_bad_patterns` applies, spelled once. One
+#: function, `_content_finding`, decides what a file's content carries for
+#: BOTH the worktree scan and the base probe; these are the kind tokens it
+#: returns, compared with `==` (never truthiness) by its one caller, so the
+#: rule cannot become two definitions of itself with the weaker one
+#: deciding the gate (#425 simplify pass S7: crediting the mechanism to
+#: these constants rather than to the function that reads them survives a
+#: refactor that removes the real mechanism).
+EMPTY_FILE = "empty file"
+SYNTAX_ERROR = "syntax error"
+
+
+def _content_finding(source: Path, cfile: str) -> tuple[str, str] | None:
+    """``(kind, detail)`` for the whole-file rules, or None when clean.
+
+    BYTES, not text. The file is handed to ``py_compile``, which does its own
+    PEP 263 decoding, so decoding it here first would be a second decode that
+    can only disagree: a file declaring ``# -*- coding: latin-1 -*-`` is legal
+    Python and used to crash this check with a ``UnicodeDecodeError`` before
+    the compile it would have passed. Emptiness needs no codec either.
+    """
+    if not source.read_bytes().strip():
+        return (EMPTY_FILE, EMPTY_FILE)
+    try:
+        py_compile.compile(str(source), cfile=cfile, doraise=True)
+    except py_compile.PyCompileError as exc:
+        return (SYNTAX_ERROR, f"{SYNTAX_ERROR} - {exc}")
+    return None
+
+
+def _rename_sources(records: Sequence[tuple[str, str]]) -> dict[str, str]:
+    """Destination path -> the base path its content came from.
+
+    ``git.get_diff_name_status`` flattens one rename or copy into TWO
+    consecutive records carrying the SAME status token, source first, then
+    destination, because ``git diff --name-status -z`` writes
+    ``R<score>``, old, new. Everything else is a single record and
+    contributes nothing.
+
+    That helper is LENIENT: when git cannot produce a name-status it returns
+    ``[]``, so this map comes back empty, a renamed file is probed at its
+    DESTINATION path, ``git show`` finds nothing there and the finding is
+    kept. That is the blocking direction, which is why ``strict=True`` is not
+    used here.
+
+    Not a pairwise ``zip``: measured (#425 simplify pass S9), two adjacent
+    renames stepped in pairs by ``zip`` associate the SECOND rename's
+    destination with the FIRST rename's source - a silently wrong entry,
+    not a raised error. The index-stepping loop below is what keeps each
+    pair matched to its own two records.
+    """
+    sources: dict[str, str] = {}
+    index = 0
+    while index < len(records):
+        status, path = records[index]
+        following = records[index + 1] if index + 1 < len(records) else None
+        if status[:1] in ("R", "C") and following is not None and following[0] == status:
+            sources[following[1]] = path
+            index += 2
+        else:
+            index += 1
+    return sources
+
+
+def _merge_base_ref(base_label: str, cwd: Path) -> str:
+    """The commit ``{base_label}...HEAD`` actually diffs against, or ``""``.
+
+    ``git.get_diff_name_status`` and ``git.get_diff_content`` both spell
+    their diff ``{base_ref}...HEAD`` (three dots: git's own shorthand for
+    ``git merge-base base_ref HEAD``), so the set of changed paths this
+    check scans is "what this branch changed since it forked". Reading the
+    base CONTENT at ``base_label``'s current tip instead is a different
+    revision the moment the base branch moves after the cut - which the
+    factory makes routine (``pipeline.py`` fetches ``origin/<base>`` on
+    every sibling component's PR merge, while a component's worktree was
+    cut once at plan time) - and a blocking gate that reads the tip can
+    then CLEAR a finding the branch wrote itself, because the tip
+    independently carries a finding of the same KIND (#425 review, finding
+    1).
+
+    ``""`` whenever the merge base cannot be found: an absent ref,
+    unrelated histories, a timeout, or a spawn that could not run at all.
+    ``""`` is a REFUSAL to clear, never a clear - ``_base_finding``'s first
+    line keeps the branch's finding on it - so every uncertainty here is
+    the blocking direction, the same rule ``_base_finding`` itself follows.
+    """
+    try:
+        found = subprocess.run(
+            ["git", "merge-base", base_label, "HEAD"],
+            cwd=cwd,
+            capture_output=True,
+            timeout=git.DEFAULT_TIMEOUT,
+        )
+        if found.returncode != 0:
+            return ""
+        return found.stdout.decode("utf-8").strip()
+    except Exception:
+        return ""
+
+
+def _base_finding(
+    base_commit: str,
+    path: str,
+    cwd: Path,
+    blob: Path,
+    cfile: str,
+) -> str | None:
+    """The finding KIND ``path`` already carried at ``base_commit``, or None.
+
+    None whenever that cannot be established: ``base_commit`` itself could
+    not be resolved (``""``, see :func:`_merge_base_ref`), the path was
+    absent there, git could not be asked, the blob could not be written, or
+    the base content carries no finding. This is a CLEARING mechanism, so
+    every uncertainty it has keeps the branch's finding (CLAUDE.md
+    guard-design rule 3: a guard that clears must be narrow, and one that
+    cannot PROVE must flag).
+
+    ``base_commit`` is the MERGE BASE of the base branch and ``HEAD``
+    (:func:`_merge_base_ref`), never the base branch's current tip: every
+    diff this check reads is taken at that same revision, and reading the
+    base CONTENT anywhere else is a different commit the moment the base
+    branch moves (#425 review, finding 1).
+
+    ``Exception`` exactly, and EVERYTHING inside it, unlike
+    ``config_toml.load_toml_document`` which deliberately keeps its I/O
+    outside the guard. The reason the rules differ: there, a widened guard
+    could swallow an ``OSError`` that has to be reported. Here every failure
+    means "cannot clear", which is the blocking direction and is reported as
+    the branch's finding, so there is nothing a widening can hide. Measured:
+    ``py_compile.compile`` escapes with a bare ``OSError`` when it cannot
+    write ``cfile``, and ``Path.write_bytes`` and ``Path.read_bytes`` raise
+    ``OSError`` too; ``subprocess.run`` raises ``subprocess.TimeoutExpired``,
+    a ``SubprocessError`` and NOT an ``OSError``, on the git spawn itself
+    (#425 review finding C1: narrowing this clause to ``except OSError`` is
+    green on every census pin, and red on nothing, until a test drives a
+    non-OSError failure through this exact function -
+    ``tests/test_bad_patterns_diff_scope.py::test_a_non_os_error_from_the_base_probe_keeps_the_branchs_finding``
+    is that test). Any of these outside the guard is a traceback out of a
+    blocking Phase 1 gate, which is the defect #416 closed everywhere else.
+
+    NOT :func:`run_scrubbed`, which every other child this module spawns
+    goes through. That wrapper decodes as utf-8 and raises
+    ``ChildOutputDecodeError`` on bytes it cannot decode, which is the
+    second decode this function exists to avoid: the blob is a source file
+    handed straight to ``py_compile``, which does its own PEP 263 decoding.
+    Bare ``subprocess.run`` with an explicit ``timeout`` is the spelling
+    ``kstrl/git.py`` uses for all of its own git spawns.
+    """
+    if not base_commit:
+        return None
+    try:
+        shown = subprocess.run(
+            ["git", "show", f"{base_commit}:{path}"],
+            cwd=cwd,
+            capture_output=True,
+            timeout=git.DEFAULT_TIMEOUT,
+        )
+        if shown.returncode != 0:
+            return None
+        blob.write_bytes(shown.stdout)
+        finding = _content_finding(blob, cfile)
+    except Exception:
+        return None
+    return None if finding is None else finding[0]
+
+
+def _scan_changed_python(
+    cwd: Path,
+    py_files: Sequence[str],
+    base_branch: str,
+    rename_sources: Mapping[str, str],
+    secret_hit_paths: frozenset[str],
+) -> tuple[list[str], list[str], int]:
+    """``(issues, preexisting, scanned)`` for the changed Python files.
+
+    ``scanned`` counts the files this check actually OPENED, which is the
+    number that says what it measured. ``len(py_files)`` is the number the
+    diff NAMED: round 2 of review on #357 ran it on a deletion-only commit
+    and got "Scanned 3 Python files, no issues" with measured=True, having
+    opened none of them. A deleted file cannot be shown to be free of
+    secrets.
+
+    ``preexisting`` is the findings this branch did not write: counted in
+    the row's ``message`` and listed in its ``details`` for
+    ``ks sense --json``, though ``VerificationResult.report_lines`` and
+    ``as_context`` skip a PASSING check's details, so the terminal report
+    an operator reads shows only the count (#425 review, finding 4).
+
+    ``base_branch`` is resolved to a base ref, then to the merge-base
+    commit that ref and ``HEAD`` actually share, LAZILY on the first file a
+    rule flags, and cached in ``base`` for the rest of the scan (#425
+    review, findings 1 and 2): both cost a real process spawn, so the
+    common case - nothing flagged - pays neither, which restores this
+    check's spawn count on that path to what it was before #414.
+    """
+    issues: list[str] = []
+    preexisting: list[str] = []
+    scanned = 0
+    base: list[tuple[str, str]] = []
+    with tempfile.TemporaryDirectory(prefix="kstrl-bytecode-") as bytecode_dir:
+        # One reused destination for the bytecode: the content is never read
+        # back, only the compile's success or failure is. `base_blob` holds
+        # the base content for the same reason, and the scan still writes
+        # nothing into the tree it is reading.
+        scratch = Path(bytecode_dir)
+        cfile = os.path.join(bytecode_dir, "scan.pyc")
+        base_blob = scratch / "base_blob.py"
+        for rel_path in py_files:
+            full_path = cwd / rel_path
+            if not full_path.exists():
+                continue
+            finding = _content_finding(full_path, cfile)
+            scanned += 1
+            if finding is not None:
+                # A finding that was already true at the base is not the
+                # branch's. Read the SAME rule at the base, through the path
+                # the content came from, which for a rename is its source.
+                # `== kind`, not a truthiness test: a file EMPTY at the base
+                # that holds a syntax error now carries a different kind at
+                # each end, and the branch wrote the syntax error.
+                kind, detail = finding
+                base_path = rename_sources.get(rel_path, rel_path)
+                if not base:
+                    base_label = git.resolve_base_ref(base_branch, cwd)
+                    base.append((base_label, _merge_base_ref(base_label, cwd)))
+                base_label, base_commit = base[0]
+                if _base_finding(base_commit, base_path, cwd, base_blob, cfile) == kind:
+                    preexisting.append(
+                        f"{rel_path}: {kind} was already there at "
+                        f"{base_label}:{base_path}; not this branch's change"
+                    )
+                else:
+                    issues.append(f"{rel_path}: {detail}")
+                continue
+            # Secret patterns: did THIS file add one of the lines the scan
+            # above matched? Keyed on path, not on re-reading the file's own
+            # lines - which added lines match is a property of the diff.
+            if rel_path in secret_hit_paths:
+                issues.append(f"{rel_path}: possible secret/credential detected")
+    return issues, preexisting, scanned
+
+
 def check_bad_patterns(
     cwd: Path,
     base_branch: str,
@@ -1860,113 +2102,105 @@ def check_bad_patterns(
     reads that field unconditionally, whether or not ``[policy] enabled``
     is true, so a stock install (no config at all) keeps this default,
     which is that same list.
+
+    The empty-file and syntax-error rules judge the file as it sits in the
+    worktree AND as it sat at the MERGE BASE of the base branch and ``HEAD``
+    (#414), because a finding that was already true there is not this
+    branch's. The merge base, not the base branch's current tip: every diff
+    this check reads is taken at that same revision, and reading the base
+    CONTENT at the tip is a different commit the moment the base branch
+    moves, which the factory makes routine (#425 review, finding 1). For a
+    rename the base is read through the SOURCE path from ``--name-status``,
+    since that is where the content came from. A base read that cannot be
+    done keeps the finding: this is a clearing mechanism, and one that
+    cannot prove must flag. A dropped finding is counted in the row's
+    ``message`` and listed in its ``details`` for ``ks sense --json``;
+    ``VerificationResult.report_lines`` and ``as_context`` skip a passing
+    check's details, so the terminal report an operator reads shows only
+    the count (#425 review, finding 4).
     """
     start = time.monotonic()
-    issues: list[str] = []
-    # Files this check actually OPENED, which is the number that says what it
-    # measured. `len(py_files)` is the number the diff NAMED: round 2 of review
-    # on #357 ran it on a deletion-only commit and got "Scanned 3 Python files,
-    # no issues" with measured=True, having opened none of them. A deleted file
-    # cannot be shown to be free of secrets.
-    scanned = 0
-
-    changed = git.get_diff_names(base_branch, cwd)
-    py_files = [f for f in changed if f.endswith(".py")]
 
     # #399: which changed files add a secret. Read and scan the diff only
     # when there is a Python file to check, so a diff with nothing to open
     # keeps the vacuous pass it has today instead of gaining a new way to
-    # fail.
+    # fail. One name-status call rather than two (#425 review, findings 1
+    # and 2): `get_diff_names` IS `get_diff_name_status` projected and
+    # deduped through `git._unique_paths`, private to `kstrl/git.py` (the
+    # #423 lane owns that file this cycle) - the comprehension below is
+    # that same dedupe written out, not a second copy of a public name.
+    # `get_diff_name_status` is inside the try as of #414: it is lenient
+    # about a diff git could not produce but raises on one it could not
+    # DECODE, and outside the try that left this blocking gate as a
+    # traceback (PR #419 handoff 1).
     secret_hit_paths: frozenset[str] = frozenset()
-    if py_files:
-        try:
+    rename_sources: dict[str, str] = {}
+    try:
+        records = git.get_diff_name_status(base_branch, cwd)
+        changed = list(dict.fromkeys(path for _, path in records if path))
+        py_files = [f for f in changed if f.endswith(".py")]
+        if py_files:
             diff_text = git.get_diff_content(base_branch, cwd)
             secret_hit_paths = frozenset(
                 _scan_secrets(parse_added_lines(diff_text), secret_patterns)
             )
-        except Exception as exc:
-            # Exception exactly, broad clause last (#318). get_diff_names is
-            # LENIENT, so the file list can arrive when the diff does not; at
-            # least two unrelated families are measured reaching here: a
-            # GitDiffError, and a UnicodeDecodeError (a ValueError) from a
-            # diff this process could not decode. A misconfigured secret
-            # pattern (PolicyConfigError, also a ValueError, raised inside
-            # `_scan_secrets`) reaches the same clause for the same reason:
-            # this check runs by default, so a bad regex must fail this row
-            # closed rather than crash the whole verification run. The row
-            # fails CLOSED, so a swallow costs a visible red gate, never a
-            # silent pass.
-            return CheckResult(
-                name="bad_patterns",
-                passed=False,
-                message=(
-                    "bad patterns could not read the diff; failing closed "
-                    "(infrastructure error, not a scan pass)"
-                ),
-                details=[f"Error: {exc}"],
-                findings=[
-                    Finding.infrastructure_error(
-                        "verify",
-                        f"bad patterns could not read the diff: {exc}",
-                    )
-                ],
-                duration_seconds=time.monotonic() - start,
-                measured=False,
-            )
+            rename_sources = _rename_sources(records)
+    except Exception as exc:
+        # Exception exactly, broad clause last (#318). get_diff_name_status
+        # is LENIENT, so the file list can arrive when the diff does not; at
+        # least two unrelated families are measured reaching here: a
+        # GitDiffError, and a UnicodeDecodeError (a ValueError) from a
+        # diff this process could not decode. A misconfigured secret
+        # pattern (PolicyConfigError, also a ValueError, raised inside
+        # `_scan_secrets`) reaches the same clause for the same reason:
+        # this check runs by default, so a bad regex must fail this row
+        # closed rather than crash the whole verification run. The row
+        # fails CLOSED, so a swallow costs a visible red gate, never a
+        # silent pass.
+        return CheckResult(
+            name="bad_patterns",
+            passed=False,
+            message=(
+                "bad patterns could not read the diff; failing closed "
+                "(infrastructure error, not a scan pass)"
+            ),
+            details=[f"Error: {exc}"],
+            findings=[
+                Finding.infrastructure_error(
+                    "verify",
+                    f"bad patterns could not read the diff: {exc}",
+                )
+            ],
+            duration_seconds=time.monotonic() - start,
+            measured=False,
+        )
 
-    with tempfile.TemporaryDirectory(prefix="kstrl-bytecode-") as bytecode_dir:
-        # One reused destination: the content is never read back, only
-        # the compile's success or failure is.
-        cfile = os.path.join(bytecode_dir, "scan.pyc")
-        for rel_path in py_files:
-            full_path = cwd / rel_path
-            if not full_path.exists():
-                continue
-
-            # Empty file check. utf-8 pinned, not left to the locale:
-            # PEP 3120 makes utf-8 the default source encoding, so this is
-            # the encoding the file is actually in, and reading it under a
-            # different locale risks a spurious decode failure or a wrong
-            # answer to "is this file empty".
-            content = full_path.read_text(encoding="utf-8")
-            scanned += 1
-            if not content.strip():
-                issues.append(f"{rel_path}: empty file")
-                continue
-
-            # Syntax check
-            try:
-                py_compile.compile(str(full_path), cfile=cfile, doraise=True)
-            except py_compile.PyCompileError as exc:
-                issues.append(f"{rel_path}: syntax error - {exc}")
-                continue
-
-            # Secret patterns: did THIS file add one of the lines the scan
-            # above matched? Keyed on path, not on re-reading the file's own
-            # lines - which added lines match is a property of the diff.
-            if rel_path in secret_hit_paths:
-                issues.append(f"{rel_path}: possible secret/credential detected")
+    issues, preexisting, scanned = _scan_changed_python(
+        cwd, py_files, base_branch, rename_sources, secret_hit_paths
+    )
 
     if issues:
         return CheckResult(
             name="bad_patterns",
             passed=False,
             message=f"{len(issues)} issues found in changed files",
-            details=issues,
+            details=[*issues, *preexisting],
             duration_seconds=time.monotonic() - start,
         )
 
+    # The same sentence as check_diff_scope when the cause is the same, so an
+    # operator reading two unmeasured rows in one report does not have to
+    # work out whether two spellings mean one fact.
+    message = NO_FILES_IN_THE_DIFF
+    if changed:
+        message = f"Scanned {scanned} of {len(py_files)} changed Python files, no issues"
+    if preexisting:
+        message = f"{message} ({len(preexisting)} already at the base, not this branch's)"
     return CheckResult(
         name="bad_patterns",
         passed=True,
-        # The same sentence as check_diff_scope when the cause is the same, so
-        # an operator reading two unmeasured rows in one report does not have
-        # to work out whether two spellings mean one fact.
-        message=(
-            NO_FILES_IN_THE_DIFF
-            if not changed
-            else f"Scanned {scanned} of {len(py_files)} changed Python files, no issues"
-        ),
+        message=message,
+        details=preexisting,
         duration_seconds=time.monotonic() - start,
         # #227: a scan that opened nothing is a vacuous pass. It cannot prove a
         # secret or a syntax error went away.

@@ -283,6 +283,71 @@ def test_check_diff_scope_still_passes_vacuously_on_an_empty_diff(tmp_path: Path
     assert result.measured is False
 
 
+# --- 10: check_bad_patterns (#414, the call site #416 left uncovered) ------
+
+
+def test_check_bad_patterns_fails_closed_on_a_path_it_cannot_decode(tmp_path: Path) -> None:
+    """The last uncovered reader call site in ``kstrl/``: ``check_bad_patterns``
+    called the lenient ``get_diff_names`` OUTSIDE its try, so a path git
+    cannot decode left this blocking gate as a traceback rather than a
+    verdict. Measured as a handoff on PR #419."""
+    repo = _repo(tmp_path, quotepath="false")
+    _commit_undecodable_path(repo)
+
+    result = verify.check_bad_patterns(repo, "main")
+
+    assert result.passed is False
+    assert result.measured is False
+    assert "failing closed" in result.message
+    assert len(result.findings) == 1
+    assert "not valid utf-8" in result.findings[0].explanation
+
+
+def test_check_bad_patterns_still_passes_vacuously_on_an_empty_diff(tmp_path: Path) -> None:
+    """The control for the test above: an ordinary empty diff still passes
+    vacuously and measures nothing, so the widened try did not swallow it."""
+    repo = _repo(tmp_path)
+
+    result = verify.check_bad_patterns(repo, "main")
+
+    assert result.passed is True
+    assert result.measured is False
+
+
+#: A legal Python file whose bytes are not utf-8: `BAD_CONTENT` above with a
+#: PEP 263 declaration in front of it. py_compile honours the declaration,
+#: so only a SECOND decode outside py_compile can fail on this, which is
+#: what the scan used to do (#414). Built from the existing constant rather
+#: than written out again (#425 simplify pass F2), so the file's three
+#: latin-1 fixtures stay one spelling and no codespell suppression is
+#: needed ([tool.codespell] in pyproject.toml).
+LATIN1_SOURCE: bytes = b"# -*- coding: latin-1 -*-\n" + BAD_CONTENT
+
+
+def test_check_bad_patterns_does_not_crash_on_a_renamed_latin_1_source_file(
+    tmp_path: Path,
+) -> None:
+    """A rename-only diff decodes fine, so the scan reaches the file itself, and
+    the old ``read_text(encoding='utf-8')`` raised ``UnicodeDecodeError`` out of a
+    blocking Phase 1 gate. Measured on main at 6a354cc."""
+    repo = _repo(tmp_path)
+    gitrepo.git_in(repo, "checkout", "-q", "main")
+    (repo / "legacy.py").write_bytes(LATIN1_SOURCE)
+    gitrepo.git_in(repo, "add", "-A")
+    gitrepo.git_in(repo, "commit", "-qm", "a latin-1 source file on main")
+    gitrepo.git_in(repo, "checkout", "-qB", "work")
+    (repo / "base.py").write_text("x = 2\n", encoding="utf-8")
+    gitrepo.git_in(repo, "add", "-A")
+    gitrepo.git_in(repo, "mv", "legacy.py", "moved.py")
+    gitrepo.git_in(repo, "commit", "-qm", "rename the latin-1 file")
+
+    result = verify.check_bad_patterns(repo, "main")
+
+    assert result.passed is True
+    assert result.measured is True
+    assert result.details == []
+
+
 # --- 9b: the altitude the issue actually complains about -------------------
 
 
