@@ -65,8 +65,17 @@ Two things to get right when you write one:
 kstrl's own baseline names two: `diff_scope`, because `ks sense` with no
 `--allowed-path` applies no scope rule at all, and `bad_patterns`, because the
 diff against the base on `main` is empty so it opened no files. Both are
-vacuous passes. A sensor that stops measuring between the baseline and a branch
-is a REGRESSION (see below), so the holes are visible rather than quiet.
+vacuous passes.
+
+These two holes do NOT surface as `stopped measuring`. That bucket is a set
+difference taken from the baseline's own `measured_checks`, so a check that is
+not in that list cannot enter it, whatever a later run does. They surface as
+`new` instead: see [Comparing a branch](#comparing-a-branch).
+
+| check | why the baseline never measured it | a branch's finding is reported as |
+|---|---|---|
+| `bad_patterns` | no files in the diff | `new` |
+| `diff_scope` | No scope constraints (allowed_paths not set) | `new` |
 
 The timeout is the other usual cause. kstrl's own test suite takes about 327
 seconds and the default verify timeout is 300, so its own baseline is generated
@@ -150,10 +159,23 @@ and `bad_patterns` apply their rule to nothing and report the same reason, `no
 files in the diff`; and `bad_patterns` counts the files it OPENED, so a
 deletion-only commit measures nothing however many files it names.
 
-The reverse case is deliberately noisy: a signature from a check the BASELINE
-never measured is reported as `new`. That over-reports when a toolchain gains a
-binary rather than the tree getting worse. Over-reporting costs a comment
-somebody reads; under-reporting costs the mechanism.
+A signature from a check the BASELINE never measured is reported as `new`.
+There are two ways to arrive there and they are not the same case.
+
+Both `bad_patterns` and `diff_scope` only look at paths the branch put in the
+diff, so a finding from either concerns a file the branch touched. A baseline
+written on the base ref has an empty diff, so neither check has any paths to
+compare with. `diff_scope` is exact: every path it can flag came from the
+diff. `bad_patterns` is exact for its secret rule, which reads added lines;
+its empty-file and syntax-error rules read the whole file, so either of those
+can name content that was already in a file the branch moved or edited, not
+content the branch wrote.
+
+For a TOOL-DRIVEN check the same rule does over-report: a baseline written
+before `vulture` was installed leaves `dead_code` unmeasured, and the first
+comparison after it is installed reports the tree's existing dead code as new.
+Over-reporting costs a comment somebody reads; under-reporting costs the
+mechanism.
 
 ### Formats and exit codes
 
