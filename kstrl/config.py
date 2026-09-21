@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -361,6 +362,74 @@ class KstrlConfig:
             _apply_toml_overrides(config, toml_path, root_dir)
         _apply_env_overrides(config, root_dir)
         return config
+
+    @classmethod
+    def load_or_anchored(
+        cls,
+        root_dir: Path,
+        warn: Callable[[str], None],
+    ) -> KstrlConfig:
+        """:meth:`load`, but a config that will not parse returns the
+        anchored defaults instead of raising.
+
+        Which exceptions that means is stated here rather than at a call
+        site, because it is a fact about :meth:`load`, the same way
+        :meth:`EvolutionConfig.load_or_none` states its own taxonomy
+        rather than its caller's. ``ConfigError`` (``kstrl.config_toml``,
+        a ``ValueError`` subclass) is the operator-input case:
+        malformed TOML, non-UTF-8 bytes, or anything else
+        ``load_toml_document``'s parse raises, all funnelled through one
+        type precisely so a reader here does not have to enumerate the
+        underlying parser's exception family itself (see that function's
+        own docstring for why enumerating it directly has failed twice).
+        Plain ``TypeError`` is the same operator-input case one layer
+        up: ``_apply_toml_overrides`` calls ``int(run["max_iterations"])``
+        on whatever TOML handed it, and a table or array there raises
+        ``TypeError``, not ``ConfigError``, because the parse succeeded
+        and the coercion is what failed.
+
+        ``OSError`` from an unreadable ``kstrl.toml`` is included too,
+        chosen rather than left implicit. ``load_toml_document`` hoists
+        every read outside its parse guard (`path.read_bytes()` before
+        the ``try``), so a file `kstrl.toml.exists()` sees but cannot
+        open - wrong permissions, a race with a concurrent write, a
+        path that resolves to a directory - raises ``OSError`` raw past
+        :meth:`load`. That failure is exactly as much an operator
+        problem as a syntax error: this call site's only reason to
+        exist is to keep one degraded knob (the path named in the
+        architect prompt) from aborting the whole run over a file nobody
+        can currently read. Excluding ``OSError`` would leave that same
+        run aborting on a locked-down file the way it aborts on a
+        mistyped bracket, which is the exact asymmetry this method
+        exists to remove. ``EvolutionConfig.load_or_none`` reached the
+        same conclusion for the same file.
+
+        Deliberately NOT covering anything else: a ``TypeError`` or
+        ``ValueError`` from a defect INSIDE :meth:`load` unrelated to
+        parsing config - a ``None`` where a path belongs, a signature
+        that stopped matching - would also be caught by this taxonomy
+        and misreported as "config unreadable" rather than surfacing.
+        That is the same cost ``EvolutionConfig.load_or_none`` accepts
+        and names for the identical reason: narrowing further would
+        require inspecting the message, which is guessing, not
+        deciding.
+
+        Every other command still goes through the strict
+        :meth:`load` at ``config_preflight``, which validates
+        ``kstrl.toml`` once at entry and turns the same exception into
+        an ``error:`` line and a non-zero exit. This method exists only
+        for a call site that must not abort ahead of its own halt path;
+        it is not a second, quieter way to accept a broken config for
+        the run as a whole.
+
+        Degrades loudly: ``warn`` is called with the path and the parse
+        failure before the anchored defaults are returned.
+        """
+        try:
+            return cls.load(root_dir)
+        except (ValueError, TypeError, OSError) as exc:
+            warn(f"{root_dir / 'kstrl.toml'} unreadable, using defaults: {exc}")
+            return cls.anchored(root_dir)
 
     def component_progress_file(
         self,

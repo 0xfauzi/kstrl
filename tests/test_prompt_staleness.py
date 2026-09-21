@@ -260,6 +260,14 @@ _RECORDED_HISTORY: dict[str, tuple[tuple[str, str], ...]] = {
     "memory.md": (
         ("8146096422efcb9b4196b76711fc44c80e2c7b5b920771f8a1eddcb4ba5a81c8", "2026-09-07"),
     ),
+    # #199. Ledgered for the first time: the same three digests as the
+    # row this mirrors in kstrl/init_cmd.py, re-derived from the
+    # ancestor commits of main.
+    "codebase_map.md": (
+        ("48ede9d3d9ce78ebcc0e0b2b7e030cc3be3e58894627a875a4c29420b541126a", "2026-01-14"),
+        ("382a66611762f9dba9098cad4720fdc4641e36e86b55865e56879aea7e7edea3", "2026-01-15"),
+        ("664063e1929c7a50fef5e95e6d275c6502711ba2bcc249545f84bdc9a7160c51", "2026-07-20"),
+    ),
 }
 
 
@@ -322,12 +330,19 @@ _SCAFFOLD_WRITER = "_create_if_missing"
 #: ``kstrl/config_keys.py`` contributes nothing, which is why it was the
 #: part of ``config.py`` chosen to move out under the length ratchet.
 #: Re-derived by RUNNING the walk, never by editing this literal.
+#:
+#: #199 enrolled ``codebase_map.md`` and the net widened to its filename
+#: in the same commit: ``cli.py`` 8 to 11, ``config.py`` 3 to 4,
+#: ``factory.py`` 2 to 3, ``init_cmd.py`` 10 to 12 (the ledger row and
+#: the ``_create_if_missing`` call), ``init_wizard.py`` 5 to 6.
+#: ``launch.py`` and ``operator_context.py`` did not move: neither
+#: points an operator at this file.
 EXPECTED_TEMPLATE_FILENAMES: dict[str, int] = {
-    "cli.py": 8,
-    "config.py": 3,
-    "factory.py": 2,
-    "init_cmd.py": 10,
-    "init_wizard.py": 5,
+    "cli.py": 11,
+    "config.py": 4,
+    "factory.py": 3,
+    "init_cmd.py": 12,
+    "init_wizard.py": 6,
     "launch.py": 1,
     "operator_context.py": 2,
 }
@@ -404,12 +419,9 @@ _UNLEDGERED_SCAFFOLDS: dict[tuple[str, str], str] = {
         "An append-only log. It is unrecognisable after the first "
         "iteration, so a digest history could say nothing about it."
     ),
-    ("codebase_map.md", "DEFAULT_CODEBASE_MAP"): (
-        "The operator's brownfield notes. Nothing in a run keys on "
-        "whether it is still the skeleton, and #303 records that the "
-        "H3b interaction for the operator-authored files kstrl generates "
-        "needs deciding on its own rather than in passing."
-    ),
+    # #199 ledgered codebase_map.md (see SCAFFOLDED_TEMPLATES and
+    # _RECORDED_HISTORY above); this exemption is removed, reversing the
+    # #303 deferral the reason above used to cite.
 }
 
 

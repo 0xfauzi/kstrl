@@ -225,9 +225,19 @@ class _Role:
 _ROLES: dict[str, _Role] = {
     "architect": _Role(
         lambda _p: decompose.build_decompose_prompt("PROJECT", _SPEC_TEXT),
-        frozenset({"DECOMPOSE_PROMPT"}),
-        "8bf3cb8b8fa5de5380dcacfd2fb9500cda4d882d6b83c436851ed9a085bac0c1",
-        12319,
+        frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_NO_REPO_SOURCE_PROMPT"}),
+        "91a61a3dd236dbfd52bd8aeedf8180325bc46674b864c5e8bd3978f9ee34b45c",
+        12803,
+    ),
+    "architect-with-repo": _Role(
+        lambda _p: decompose.build_decompose_prompt(
+            "PROJECT",
+            _SPEC_TEXT,
+            codebase_map_path="scripts/kstrl/codebase_map.md",
+        ),
+        frozenset({"DECOMPOSE_PROMPT", "ARCHITECT_REPO_SOURCE_PROMPT"}),
+        "0b30cf903de5fe12df2d50fc8dda96915c21438a565a8ffcfc3da1b435eccf12",
+        14244,
     ),
     "decisions-context": _Role(
         lambda _p: build_decisions_context(_DECISIONS, "comp-a"),
