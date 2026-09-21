@@ -197,7 +197,7 @@ def test_a_crash_in_extraction_is_recorded_and_does_not_take_the_context_down(
     not go silent either: the assembly block records what it swallowed
     instead of dropping the section (#378)."""
 
-    def boom(root: Path) -> str:
+    def boom(root: Path, max_chars: int | None = None) -> str:
         raise RuntimeError("boom")
 
     monkeypatch.setattr("kstrl.feedforward.extract_public_interfaces", boom)

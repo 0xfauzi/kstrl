@@ -527,11 +527,13 @@ def test_the_edge_size_estimate_is_an_exact_sum(
 def _deep_repo_with_conventions(root: Path) -> None:
     """`_deep_repo` plus the pyproject the conventions section reads.
 
-    At max_context_tokens=450 (1800 characters) the four builders return
-    bodies of 44, 1286, 959 and 24 characters: the module map and the
-    whole dependency graph fit, public interfaces cannot fit in the 337
-    characters left for it and is replaced by a 94-character reason, and
-    conventions is then offered 226 characters for its 24-character body.
+    At max_context_tokens=450 (1800 characters) the delivered bodies are
+    42, 1286, 132 and 24 characters: the module map and the whole
+    dependency graph fit; the public interfaces builder is handed the 337
+    characters left for it, stops when it has spent them, and returns a
+    132-character reason instead of the 959-character body it used to
+    build and throw away (#428); and conventions is then offered 188
+    characters for its 24-character body.
     """
     _deep_repo(root)
     (root / "pyproject.toml").write_text(
@@ -556,11 +558,15 @@ def test_a_section_that_does_not_fit_does_not_hide_the_ones_behind_it(
     # section. A refusal that compared the body against the whole budget
     # would not fire here at all, and one that reported the whole budget
     # would tell the engineer 1800 characters were free.
-    fit = re.search(r"is (\d+) characters against the (\d+) left", interfaces)
+    fit = re.search(
+        r"passed the (\d+) characters left in the context budget "
+        r"after (\d+) of (\d+) files",
+        interfaces,
+    )
     assert fit is not None, context
-    body_chars, room = (int(group) for group in fit.groups())
-    assert body_chars == 959, context
-    assert room < body_chars, context
+    room, read, total = (int(group) for group in fit.groups())
+    assert room == 337, context
+    assert 0 < read < total, context
     # And the reason itself fits in the room it names, so it does not put
     # the block over budget and get dropped again.
     assert len(interfaces) <= room, context
@@ -648,7 +654,7 @@ def test_a_body_exactly_the_size_of_the_room_left_is_delivered_whole(
     )
     assert room > 0
     body = "y" * room
-    monkeypatch.setattr(feedforward, "extract_public_interfaces", lambda root: body)
+    monkeypatch.setattr(feedforward, "extract_public_interfaces", lambda root, max_chars=None: body)
 
     context = build_feedforward_context(tmp_path, config)
 

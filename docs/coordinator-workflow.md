@@ -105,18 +105,44 @@ Rules that came from getting these wrong:
 
 ## The simplify pass
 
-Once a pull request is verified, four independent reviewers read the finished
-diff, one angle each: reuse, simplification, efficiency, altitude. They do not
-hunt for correctness bugs.
+Four independent reviewers read the diff, one angle each: reuse, simplification,
+efficiency, altitude. They do not hunt for correctness bugs. They start when the
+pull request opens, on a detached copy of its head, so they run alongside the
+verifier and not after it.
 
 Their findings are deduplicated into a coordinator addendum appended to the
 lane's plan, grouped so the fix lane works them in order, with the groups that
 change behaviour first. The addendum also states what the reviewers measured as
 clean, so the fix lane does not re-litigate it, and what is explicitly deferred.
 
+Not every finding earns a fix round. A second fix-and-verify cycle costs about
+as much as the first (49 to 155 minutes, measured over one batch), so:
+
+- `P0` and `P1` issues get the full cycle for every finding the addendum keeps.
+- `P2` and `P3` issues get a fix round only for a finding that changes
+  behaviour: a wrong result, a fail-open, a guard that clears what it should
+  flag, or a control switched off. Everything else is written into the pull
+  request's handoff list as a one-line follow-up.
+- Corrections to the pull request body are made by the coordinator by hand. They
+  never go through a fix lane.
+
 The altitude reviewer has repeatedly been the most valuable, because it is the
 only one asked whether the change is at the right depth at all. It has caused a
 pull request to be closed and redesigned.
+
+## Pull request bodies
+
+Short and to the point: about 40 lines. One paragraph on what was wrong and what
+changed, `Closes #N`, the tests added by name, the plants as one line each with
+the outcome and the failing count on the final tree, the full-suite summary
+line, at most five one-line handoffs, and the H1 line. Measurement tables,
+reproduction transcripts, design rationale, commands that name scratch scripts
+and the history of fix rounds stay in the lane directory. One batch measured
+bodies of 300 to 540 lines, and a large share of every review addendum was
+corrections to claims inside them, each paid for with a fix and a verify.
+
+Verifiers run the full suite in parallel only. The merge gate runs it again on
+the merged tree, so a serial run inside the lane buys nothing.
 
 ## Merging
 

@@ -66,6 +66,50 @@ _HEADER_FOOTER_OVERHEAD = len("=== CODEBASE CONTEXT (auto-generated) ===\n\n") +
 )
 
 
+# --- Engineer-facing notices (H3) ------------------------------------------
+#
+# Everything this module returns is pasted into the engineer prompt, so a
+# notice below is read by a model as part of its instructions. PR #417
+# removed "Raise feedforward.max_context_tokens to see it." from the
+# dependency graph's notice by hand and left no guard behind; #428 enrols
+# the bodies so a reword has to move a hash and a version with it.
+#
+# One version constant for the six, as the #303 builder fragments do: the
+# unit is the notice vocabulary one module delivers to one role.
+FEEDFORWARD_NOTICE_PROMPT_VERSION = "1.0.0"
+
+NO_SOURCE_ROOT_PROMPT = (
+    "(none: no Python source root found under {root}; searched "
+    "{depth} levels for a package or a directory "
+    "of .py files, excluding tests)"
+)
+
+NO_PUBLIC_SYMBOLS_PROMPT = (
+    "(none: no public classes or functions in the first "
+    "{max_files} files of {roots} source "
+    "root(s): {names})"
+)
+
+INTERFACES_DID_NOT_FIT_PROMPT = (
+    "(did not fit: the public interfaces passed the {max_chars} characters "
+    "left in the context budget after {read} of {total} files, "
+    "so it was not built.)"
+)
+
+GRAPH_DID_NOT_FIT_PROMPT = (
+    "(did not fit: the dependency graph passed the {max_chars} characters "
+    "left in the context budget after {parsed} of {total} files, "
+    "so it was not built.)"
+)
+
+SECTION_FAILED_PROMPT = "(none: {heading} failed: {error_type}: {error})"
+
+SECTION_DID_NOT_FIT_PROMPT = (
+    "(did not fit: {heading} is {size} characters "
+    "against the {remaining} left in the context budget.)"
+)
+
+
 @dataclass
 class FeedforwardConfig:
     """Configuration for feedforward context generation."""
@@ -350,7 +394,7 @@ def _format_function_signature(node: ast.FunctionDef | ast.AsyncFunctionDef) -> 
     return sig
 
 
-def extract_public_interfaces(root: Path) -> str:
+def extract_public_interfaces(root: Path, max_chars: int | None = None) -> str:
     """Body of the "Public interfaces" section: public classes and functions.
 
     Skips files starting with '_' or 'test'. Reads at most
@@ -363,32 +407,35 @@ def extract_public_interfaces(root: Path) -> str:
     """
     scanned = _ordered_source_roots(root)
     if not scanned:
-        return (
-            f"(none: no Python source root found under {root}; searched "
-            f"{_MAX_SOURCE_ROOT_DEPTH} levels for a package or a directory "
-            f"of .py files, excluding tests)"
-        )
+        return NO_SOURCE_ROOT_PROMPT.format(root=root, depth=_MAX_SOURCE_ROOT_DEPTH)
 
     # Private and test files are dropped before the budget is spent on them.
     candidates = [f for _, files in scanned for f in files if not f.name.startswith(("_", "test"))]
 
-    file_symbols: list[tuple[str, list[str]]] = []
+    lines: list[str] = []
+    rendered_chars = 0
+    read = 0
     for py_file in candidates:
-        if len(file_symbols) >= _MAX_PUBLIC_INTERFACE_FILES:
+        if len(lines) >= _MAX_PUBLIC_INTERFACE_FILES:
             break
+        if max_chars is not None and rendered_chars > max_chars:
+            return INTERFACES_DID_NOT_FIT_PROMPT.format(
+                max_chars=max_chars, read=read, total=len(candidates)
+            )
+        read += 1
         symbols = _extract_symbols_from_file(py_file)
         if symbols:
-            file_symbols.append((py_file.relative_to(root).as_posix(), symbols))
+            line = f"{py_file.relative_to(root).as_posix()}: {', '.join(symbols)}"
+            rendered_chars += len(line) + (1 if lines else 0)
+            lines.append(line)
 
-    if not file_symbols:
+    if not lines:
         names = ", ".join(sorted(d.relative_to(root).as_posix() for d, _ in scanned)[:5])
-        return (
-            f"(none: no public classes or functions in the first "
-            f"{_MAX_PUBLIC_INTERFACE_FILES} files of {len(scanned)} source "
-            f"root(s): {names})"
+        return NO_PUBLIC_SYMBOLS_PROMPT.format(
+            max_files=_MAX_PUBLIC_INTERFACE_FILES, roots=len(scanned), names=names
         )
 
-    return "\n".join(f"{filepath}: {', '.join(symbols)}" for filepath, symbols in file_symbols)
+    return "\n".join(lines)
 
 
 def _render_edge(source_module: str, target_module: str, names: Iterable[str]) -> str:
@@ -475,10 +522,8 @@ def build_dependency_graph(root: Path, max_chars: int | None = None) -> str:
 
     for py_file, src_dir in all_py_files:
         if max_chars is not None and rendered_chars > max_chars:
-            return (
-                f"(did not fit: the dependency graph passed the {max_chars} characters "
-                f"left in the context budget after {parsed} of {len(all_py_files)} files, "
-                f"so it was not built.)"
+            return GRAPH_DID_NOT_FIT_PROMPT.format(
+                max_chars=max_chars, parsed=parsed, total=len(all_py_files)
             )
         parsed += 1
         try:
@@ -775,12 +820,13 @@ def _append_section(
     try:
         content = build(remaining)
     except Exception as exc:
-        content = f"(none: {heading.lower()} failed: {type(exc).__name__}: {exc})"
+        content = SECTION_FAILED_PROMPT.format(
+            heading=heading.lower(), error_type=type(exc).__name__, error=exc
+        )
     else:
         if sections and len(content) > remaining:
-            content = (
-                f"(did not fit: {heading.lower()} is {len(content)} characters "
-                f"against the {remaining} left in the context budget.)"
+            content = SECTION_DID_NOT_FIT_PROMPT.format(
+                heading=heading.lower(), size=len(content), remaining=remaining
             )
     if content:
         sections.append((heading, content))
@@ -852,7 +898,7 @@ def build_feedforward_context(
         (
             config.public_interfaces,
             "Public interfaces",
-            lambda _left: extract_public_interfaces(worktree_path),
+            lambda left: extract_public_interfaces(worktree_path, left if sections else None),
         ),
         (config.conventions, "Conventions", lambda _left: extract_conventions(worktree_path)),
     ]
