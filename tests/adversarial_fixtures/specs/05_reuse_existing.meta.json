@@ -1,0 +1,27 @@
+{
+  "fixture_id": "spec-05-reuse-existing",
+  "role": "architect_reuse",
+  "repo_dir": "05_reuse_existing_repo",
+  "codebase_map_path": "scripts/kstrl/codebase_map.md",
+  "arms": [
+    {
+      "arm": "repo_present",
+      "fixture_id": "spec-05-reuse-existing-with-repo",
+      "expect_module_named": true
+    },
+    {
+      "arm": "repo_absent",
+      "fixture_id": "spec-05-reuse-existing-without-repo",
+      "expect_module_named": false
+    }
+  ],
+  "must_reuse": {
+    "existing_module": "src/pulsekit/throttle/token_bucket.py",
+    "existing_symbol": "TokenBucket",
+    "module_markers": [
+      "pulsekit/throttle/token_bucket.py",
+      "pulsekit.throttle.token_bucket"
+    ]
+  },
+  "description": "PulseKit already rate-limits its admin replay route with src/pulsekit/throttle/token_bucket.py (TokenBucket + BucketRegistry, per-key, with a Retry-After computation). The spec asks for per-API-key limits on the ingest route, which is that primitive applied to a second surface. Graded on whether the decomposition names the existing module: with the repository present, naming it is reuse; with no repository at all, naming it would be fabrication, so the same observable is graded with the opposite sign. The arm delta is what a change to the architect's repository-reading instructions moves."
+}
