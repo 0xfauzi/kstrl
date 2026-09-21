@@ -272,6 +272,11 @@ def test_a_halted_run_is_labelled_as_a_halt(fixture: RepoSpecFixture) -> None:
         assert caught is (not arm.expect_module_named)
         assert "halted (no components); " in detail, detail
 
+    live = {"components": [{"id": "ingest-limits", "description": "Add a limiter"}]}
+    for arm in fixture.arms:
+        _caught, detail = reuse_caught(live, arm, must)
+        assert "halted" not in detail, detail
+
 
 def test_the_paid_arm_test_records_under_these_ids() -> None:
     """The ids the calibration run writes into a baseline come from
