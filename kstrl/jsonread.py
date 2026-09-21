@@ -31,11 +31,17 @@ The ``JSONDecodeError`` clause is a PASS-THROUGH, not an enumeration:
 it re-raises the parser's own exception unchanged so that the 28 sites
 whose error strings carry ``{exc}`` keep saying exactly what they said.
 It is above the catch-all, which is where a specific clause has to be
-or it can never run. Measured: an owner that wrapped a syntax error
-instead of passing it through turned four tests red, among them
-``tests/test_observability.py::TestReadProgressEvents::
-test_skips_malformed_tail_line`` and
-``tests/test_manifest.py::TestManifest::test_load_invalid_json``.
+or it can never run. Measured, not assumed: deleting it changes both
+the TYPE (``json.JSONDecodeError`` becomes :class:`JsonDocumentError`)
+and the MESSAGE (prefixed with ``"JSONDecodeError: "``) of a plain
+syntax error, which
+``tests/test_json_readers.py::TestTheOwnerNormalisesWhatTheParserRaises::
+test_a_plain_syntax_error_comes_out_unchanged`` pins directly. It does
+NOT turn ``tests/test_observability.py`` or ``tests/test_manifest.py``
+red: both catch via ``pytest.raises(json.JSONDecodeError)``, which also
+matches the :class:`JsonDocumentError` subclass, and neither asserts the
+parser's exact message. The clause earns its place on the type and
+message guarantee alone, not on those two suites.
 
 ``tests/test_json_readers.py`` is the guard: this is the only module in
 ``kstrl/`` that may call ``json.load`` or ``json.loads``.
