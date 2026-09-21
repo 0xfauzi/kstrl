@@ -221,7 +221,7 @@ def compute_test_signature(cwd: Path, config: BreakerConfig) -> str:
     """
     if not config.test_command:
         return NO_TEST_COMMAND_SIGNATURE
-    from kstrl.verify import run_scrubbed
+    from kstrl.verify import ChildOutputDecodeError, run_scrubbed
 
     try:
         result = run_scrubbed(
@@ -231,7 +231,7 @@ def compute_test_signature(cwd: Path, config: BreakerConfig) -> str:
         )
     except subprocess.TimeoutExpired:
         return "timeout"
-    except OSError as exc:
+    except (OSError, ChildOutputDecodeError) as exc:
         return f"probe-error:{type(exc).__name__}"
     failure_lines = [
         _normalize_test_line(line)

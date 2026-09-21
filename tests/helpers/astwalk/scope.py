@@ -7,6 +7,7 @@ it, and :class:`Clause` says when it could not name what is caught."""
 from __future__ import annotations
 
 import ast
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from tests.helpers.astwalk.corpus import all_nodes
@@ -58,6 +59,49 @@ def try_body_nodes(node: ast.Try | ast.TryStar) -> list[ast.AST]:
         if not isinstance(statement, ast.FunctionDef | ast.AsyncFunctionDef):
             found.extend(own_nodes(statement))
     return found
+
+
+def guarded_by(
+    tree: ast.Module,
+    node: ast.AST,
+    names: frozenset[str],
+    table: Bindings,
+    *,
+    handler_converts: Callable[[ast.ExceptHandler], bool] | None = None,
+) -> bool:
+    """Is ``node`` in the BODY of a try whose clauses catch one of ``names``?
+
+    One owner for a question two guards asked with two private copies
+    (#416's round-two review, and #364's own lesson: "two guards, two
+    private answers to one question"). ``try_body_nodes`` is the
+    boundary, so a handler cannot be credited with guarding a call that
+    lives in a function defined in its body. ``clause.decided`` is
+    required: a clause this walk cannot name reads as "catches nothing",
+    and clearing on it would be the skip direction.
+
+    ``handler_converts``, when given, must also be true of the SAME
+    handler whose clause names ``names`` - not of some other handler on
+    the same try - so a guard whose claim is "the clause that catches
+    this also DOES something with it" cannot be satisfied by an
+    unrelated sibling clause doing the work instead. Without it, naming
+    the target is treated as sufficient, which is the shape that let a
+    swallowing or bare-re-raising handler clear a site in #416's own
+    guards: naming a clause is not the same question as what its body
+    does.
+    """
+    for candidate in all_nodes(tree):
+        if not isinstance(candidate, ast.Try | ast.TryStar):
+            continue
+        if not any(body is node for body in try_body_nodes(candidate)):
+            continue
+        for handler, clause in zip(
+            candidate.handlers, handler_clauses(candidate, table), strict=True
+        ):
+            if not (clause.decided and clause.names & names):
+                continue
+            if handler_converts is None or handler_converts(handler):
+                return True
+    return False
 
 
 def scopes(tree: ast.Module) -> list[tuple[ast.AST, str]]:

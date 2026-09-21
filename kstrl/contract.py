@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING
 
 from kstrl import git
 from kstrl.manifest import Manifest
-from kstrl.verify import DEFAULT_TEST_COMMAND, run_scrubbed
+from kstrl.verify import DEFAULT_TEST_COMMAND, ChildOutputDecodeError, run_scrubbed
 
 if TYPE_CHECKING:
     from kstrl.ui.base import UI
@@ -163,6 +163,8 @@ def _create_temp_worktree(
         )
     except subprocess.TimeoutExpired:
         return None, f"git worktree add timed out after {timeout}s"
+    except ChildOutputDecodeError as exc:
+        return None, f"git worktree add output could not be decoded: {exc}"
     if result.returncode != 0:
         return None, result.stderr.strip() or result.stdout.strip()
     return worktree_path, ""
@@ -181,8 +183,10 @@ def _abort_merge(worktree_path: Path, timeout: float = 30.0) -> None:
             cwd=worktree_path,
             timeout=timeout,
         )
-    except subprocess.TimeoutExpired:
-        pass  # removal below is forced; a hung abort must not block it
+    except (subprocess.TimeoutExpired, ChildOutputDecodeError):
+        # removal below is forced; neither a hung abort nor one
+        # whose output cannot be decoded may block it
+        pass
 
 
 def _remove_temp_worktree(
@@ -208,6 +212,12 @@ def _remove_temp_worktree(
             f"{worktree_path}; remove it manually with "
             f"'git worktree remove --force {worktree_path}'"
         ) from exc
+    except ChildOutputDecodeError as exc:
+        raise ContractCleanupError(
+            f"git worktree remove output could not be decoded for "
+            f"{worktree_path} ({exc}); check it and remove it manually with "
+            f"'git worktree remove --force {worktree_path}'"
+        ) from exc
     if worktree_path.exists():
         raise ContractCleanupError(
             f"Contract temp worktree {worktree_path} survived removal "
@@ -217,11 +227,18 @@ def _remove_temp_worktree(
         )
     if result.returncode != 0:
         # Directory is gone but git may still track it; prune metadata.
-        run_scrubbed(
-            ["git", "worktree", "prune"],
-            cwd=root_dir,
-            timeout=timeout,
-        )
+        try:
+            run_scrubbed(
+                ["git", "worktree", "prune"],
+                cwd=root_dir,
+                timeout=timeout,
+            )
+        except ChildOutputDecodeError:
+            # This spawn's result was never read: the directory is already
+            # gone and the prune is best-effort metadata tidying. A decode
+            # failure carries nothing the caller acts on, for the same reason
+            # _abort_merge's timeout does not block removal.
+            pass
 
 
 def _run_tests(
@@ -236,6 +253,8 @@ def _run_tests(
         return result.returncode == 0, output
     except subprocess.TimeoutExpired:
         return False, f"Test suite timed out after {timeout}s"
+    except ChildOutputDecodeError as exc:
+        return False, f"Test suite output could not be decoded: {exc}"
 
 
 def bisect_breaker(

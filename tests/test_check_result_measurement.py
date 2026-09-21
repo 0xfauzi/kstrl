@@ -210,7 +210,9 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     "fixtures.py: check_fixtures_from_prd: CheckResult": 2,
     "fixtures.py: run_cli_fixture: FixtureResult": 7,
     "fixtures.py: run_file_fixture: FixtureResult": 8,
-    "fixtures.py: run_function_fixture: FixtureResult": 9,
+    # #416: one new row, the ChildOutputDecodeError clause added after the
+    # existing OSError one.
+    "fixtures.py: run_function_fixture: FixtureResult": 10,
     "verify.py: _failed_gate_result: CheckResult": 1,
     "verify.py: _self_critique_text: CheckResult": 2,
     # #399 simplify pass on #405: the passing row, the issues-found row and
@@ -225,7 +227,9 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     "verify.py: check_bad_patterns: CheckResult": 3,
     "verify.py: check_dead_code: CheckResult": 2,
     "verify.py: check_dead_code_ruff: CheckResult": 1,
-    "verify.py: check_diff_scope: CheckResult": 4,
+    # #416: one new row, the diff-scope try/except around the lenient
+    # git.get_diff_names call, failing closed on a diff it cannot decode.
+    "verify.py: check_diff_scope: CheckResult": 5,
     # R8.5 Layer 2 (#152): the one PASSING row, built by
     # _diff_mutation_score_result on behalf of check_diff_mutation (the
     # complexity ratchet forced a three-way split - see
@@ -233,7 +237,9 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     # returns NotMeasured instead (#306), same convention as
     # check_patch_coverage.
     "verify.py: _diff_mutation_score_result: CheckResult": 1,
-    "verify.py: check_linter: CheckResult": 2,
+    # #416: one new row, the ChildOutputDecodeError clause after run_scrubbed's
+    # existing timeout clause.
+    "verify.py: check_linter: CheckResult": 3,
     "verify.py: _mutation_score_result: CheckResult": 2,
     # R8.5 Layer 1 (#152): ran the project's own test command a second
     # time under coverage and read back a percentage over the diff's
@@ -254,8 +260,10 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     "verify.py: check_scope_unreadable: CheckResult": 1,
     "verify.py: check_self_critique: CheckResult": 3,
     "verify.py: check_test_adequacy: CheckResult": 3,
-    "verify.py: check_test_suite: CheckResult": 2,
-    "verify.py: check_typecheck: CheckResult": 2,
+    # #416: one new row each, the ChildOutputDecodeError clause after
+    # run_scrubbed's existing timeout clause.
+    "verify.py: check_test_suite: CheckResult": 3,
+    "verify.py: check_typecheck: CheckResult": 3,
 }
 
 #: Every construction that states its measurement, with the argument verbatim.
@@ -287,9 +295,10 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     # The command fixture's two environment failures: the process was killed on
     # the timeout, or could not be launched at all.
     "fixtures.py: run_cli_fixture: FixtureResult: measured=False": 2,
-    # The function fixture's own two, which are separate sites and separate
-    # branches from the command fixture's.
-    "fixtures.py: run_function_fixture: FixtureResult: measured=False": 2,
+    # The function fixture's own three, which are separate sites and separate
+    # branches from the command fixture's. #416 adds the third: the child's
+    # output could not be decoded as utf-8.
+    "fixtures.py: run_function_fixture: FixtureResult: measured=False": 3,
     # The three gates' shared failing row, and the only place a gate's
     # measurement is decided. `recognised` is the parser saying it saw its own
     # tool report a failure; EXPECTED_GATE_HELPER_CALLS below is what stops a
@@ -301,14 +310,16 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     # Nothing was opened: an empty diff, or changed Python files that are all
     # gone from the worktree.
     "verify.py: check_bad_patterns: CheckResult: measured=bool(scanned)": 1,
-    # No allowed paths configured, and an empty diff: the check applies no rule
-    # or applies it to nothing.
-    "verify.py: check_diff_scope: CheckResult: measured=False": 2,
-    # The three gate timeouts. The tool started and was killed, so its findings
-    # are unknown rather than zero.
-    "verify.py: check_linter: CheckResult: measured=False": 1,
-    "verify.py: check_test_suite: CheckResult: measured=False": 1,
-    "verify.py: check_typecheck: CheckResult: measured=False": 1,
+    # No allowed paths configured, an empty diff, or (#416) a diff it could
+    # not decode: the check applies no rule, applies it to nothing, or could
+    # not read what to apply it to.
+    "verify.py: check_diff_scope: CheckResult: measured=False": 3,
+    # The three gates' two failure modes each: a timeout (the tool started and
+    # was killed, so its findings are unknown rather than zero) and (#416) the
+    # tool's output could not be decoded as utf-8.
+    "verify.py: check_linter: CheckResult: measured=False": 2,
+    "verify.py: check_test_suite: CheckResult: measured=False": 2,
+    "verify.py: check_typecheck: CheckResult: measured=False": 2,
     # The diff could not be read, the policy could not be parsed, or
     # evaluate_policy raised something that is neither of those two (#399
     # blocker 1b: a UnicodeDecodeError from a diff header path that is not

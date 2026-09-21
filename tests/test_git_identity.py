@@ -167,6 +167,18 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # `_repo`/`_commit` from this file entirely - back to 5, this file's
     # value before #399 touched it.
     "tests/test_verify.py": 5,
+    # #416: two `git commit` argv spellings, both into a repository built by
+    # this file's own `_repo`, which calls `tests.helpers.gitrepo.set_identity`
+    # right after `git init` - the base commit and the undecodable-CONTENT
+    # commit. The undecodable-PATH fixture's commit is made by way of `git
+    # commit-tree` / `git update-ref` (built through the index rather than
+    # the working tree, since APFS cannot hold that filename) and this
+    # census's own predicate does not see it: it tokenises to `commit-tree`,
+    # not the bare `commit` this file requires (#416's simplify review; an
+    # earlier version of this comment credited that call as the third row,
+    # which was a docstring mention of "this commit" that has since been
+    # reworded away).
+    "tests/test_undecodable_diff.py": 2,
 }
 
 
