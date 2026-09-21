@@ -141,6 +141,12 @@ from tests.helpers.builder_prompts import (
     BUILDER_VERSIONS,
 )
 from tests.helpers.component_prd import write_component_prd
+from tests.helpers.feedforward_prompts import (
+    NOTICE_PROMPTS,
+    NOTICE_RENDERERS,
+    NOTICE_SNAPSHOTS,
+    NOTICE_VERSIONS,
+)
 from tests.test_review_payload import RecordingAgent
 
 
@@ -161,6 +167,7 @@ _PROMPTS: dict[str, str] = {
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT,
     "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT,
     **BUILDER_PROMPTS,
+    **NOTICE_PROMPTS,
 }
 
 _VERSIONS: dict[str, str] = {
@@ -176,6 +183,7 @@ _VERSIONS: dict[str, str] = {
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT_VERSION,
     "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT_VERSION,
     **BUILDER_VERSIONS,
+    **NOTICE_VERSIONS,
 }
 
 # Joint snapshot: (sha256_hash, semver_version). Both must move together
@@ -306,6 +314,7 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "1.0.0",
     ),
     **BUILDER_SNAPSHOTS,
+    **NOTICE_SNAPSHOTS,
 }
 
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
@@ -483,6 +492,7 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     "REPO_CHANGE_SOURCE_PROMPT": (git, lambda _p: repo_change_source("BASE_SHA")),
     "PASTED_CHANGE_SOURCE_PROMPT": (git, lambda _p: pasted_change_source("DIFF")[0]),
     "DECISIONS_CONTEXT_PROMPT": (decisions, _decisions_context_render),
+    **NOTICE_RENDERERS,
 }
 
 #: Enrolled prompts with no renderer, and why. DEFAULT_PROMPT is written

@@ -86,6 +86,7 @@ from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers.builder_prompts import BUILDER_RENDER_EXEMPT
 from tests.helpers.component_prd import write_component_prd
+from tests.helpers.feedforward_prompts import NOTICE_PROMPTS
 from tests.test_prompt_versions import (
     _MARKER_HEAD,
     _MARKER_TAIL,
@@ -363,7 +364,13 @@ def test_every_enrolled_prompt_is_delivered_somewhere() -> None:
     # builder, so no one role's delivered text carries all of them. Their
     # delivered-output digests and orphan guards live in
     # tests/test_builder_prompts.py, not here.
-    missing = sorted(set(_PROMPTS) - union - BUILDER_RENDER_EXEMPT)
+    # The six #428 feedforward notices are each returned VERBATIM by one
+    # production path, and tests/test_prompt_versions.py proves it by
+    # exact equality against a marker. Their delivered text therefore IS
+    # the enrolled constant plus the integers and path named in the
+    # template, so the constant's own hash is the delivered digest and a
+    # second one here would pin the same bytes twice.
+    missing = sorted(set(_PROMPTS) - union - BUILDER_RENDER_EXEMPT - set(NOTICE_PROMPTS))
     assert not missing, (
         f"enrolled prompts with no delivered digest: {missing}. Add each "
         "to the covers set of the role that carries it, and add a row to "

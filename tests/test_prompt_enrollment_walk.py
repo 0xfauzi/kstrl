@@ -291,6 +291,10 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # declaration and its one use site) = 2. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
     "factory.py": 2,
+    # #428: 0 pre-existing + 6 notice constants x 2 spellings each (the
+    # declaration and its one use site) = 12. The version constant adds
+    # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
+    "feedforward.py": 12,
     "git.py": 4,
     # #303: 12 pre-existing + 16 new fragments x 2 spellings each (the
     # declaration and its one use site) = 44. The version constant adds
