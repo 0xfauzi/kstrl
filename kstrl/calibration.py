@@ -38,6 +38,22 @@ from typing import Any
 
 from kstrl.atomicio import atomic_write_json
 from kstrl.calibration_baseline import (
+    KEY_CATEGORY,
+    KEY_CAUGHT,
+    KEY_CWE,
+    KEY_FIXTURE_ID,
+    KEY_FIXTURES,
+    KEY_FIXTURES_ATTEMPTED,
+    KEY_FIXTURES_COMPLETED,
+    KEY_FORMAT_VERSION,
+    KEY_MODEL,
+    KEY_ROLE,
+    KEY_RUN_COMPLETE,
+    KEY_RUNS_DETECTED,
+    KEY_RUNS_ERRORED,
+    KEY_RUNS_PER_FIXTURE,
+    KEY_RUNS_TOTAL,
+    KEY_TIMESTAMP,
     Baseline,
     FixtureStats,
     load_baseline,
@@ -166,7 +182,7 @@ def build_report(
     grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
     order: list[tuple[str, str]] = []
     for record in records:
-        key = (str(record["role"]), str(record["fixture_id"]))
+        key = (str(record[KEY_ROLE]), str(record[KEY_FIXTURE_ID]))
         if key not in grouped:
             order.append(key)
         grouped.setdefault(key, []).append(record)
@@ -176,13 +192,13 @@ def build_report(
     for role, fixture_id in order:
         runs = grouped[(role, fixture_id)]
         errored = sum(1 for r in runs if bool(r.get("error")))
-        detected = sum(1 for r in runs if bool(r.get("caught")) and not bool(r.get("error")))
+        detected = sum(1 for r in runs if bool(r.get(KEY_CAUGHT)) and not bool(r.get("error")))
         first = runs[0]
         fixture = FixtureStats(
             role=role,
             fixture_id=fixture_id,
-            category=(str(first["category"]) if first.get("category") is not None else None),
-            cwe=str(first["cwe"]) if first.get("cwe") is not None else None,
+            category=(str(first[KEY_CATEGORY]) if first.get(KEY_CATEGORY) is not None else None),
+            cwe=str(first[KEY_CWE]) if first.get(KEY_CWE) is not None else None,
             runs_total=len(runs),
             runs_errored=errored,
             runs_detected=detected,
@@ -190,18 +206,18 @@ def build_report(
         stats.append(fixture)
         fixtures_json.append(
             {
-                "role": fixture.role,
-                "fixture_id": fixture.fixture_id,
-                "category": fixture.category,
-                "cwe": fixture.cwe,
-                "runs_total": fixture.runs_total,
-                "runs_errored": fixture.runs_errored,
-                "runs_detected": fixture.runs_detected,
+                KEY_ROLE: fixture.role,
+                KEY_FIXTURE_ID: fixture.fixture_id,
+                KEY_CATEGORY: fixture.category,
+                KEY_CWE: fixture.cwe,
+                KEY_RUNS_TOTAL: fixture.runs_total,
+                KEY_RUNS_ERRORED: fixture.runs_errored,
+                KEY_RUNS_DETECTED: fixture.runs_detected,
                 "consistency": fixture.consistency,
                 "detected": fixture.detected,
                 "runs": [
                     {
-                        "caught": bool(r.get("caught")),
+                        KEY_CAUGHT: bool(r.get(KEY_CAUGHT)),
                         "error": bool(r.get("error")),
                         "detail": str(r.get("detail", "")),
                     }
@@ -246,15 +262,15 @@ def build_report(
         summary[role] = role_summary
 
     return {
-        "format_version": REPORT_FORMAT_VERSION,
-        "model": model,
-        "timestamp": timestamp,
-        "runs_per_fixture": runs_per_fixture,
-        "run_complete": run_complete,
-        "fixtures_attempted": list(fixtures_attempted),
-        "fixtures_completed": list(fixtures_completed),
+        KEY_FORMAT_VERSION: REPORT_FORMAT_VERSION,
+        KEY_MODEL: model,
+        KEY_TIMESTAMP: timestamp,
+        KEY_RUNS_PER_FIXTURE: runs_per_fixture,
+        KEY_RUN_COMPLETE: run_complete,
+        KEY_FIXTURES_ATTEMPTED: list(fixtures_attempted),
+        KEY_FIXTURES_COMPLETED: list(fixtures_completed),
         "summary": summary,
-        "fixtures": fixtures_json,
+        KEY_FIXTURES: fixtures_json,
     }
 
 
@@ -267,7 +283,7 @@ def save_report(report: Mapping[str, Any], results_dir: Path) -> Path:
     it needs the parent to exist, so the ``mkdir`` stays.
     """
     results_dir.mkdir(parents=True, exist_ok=True)
-    out = results_dir / f"baseline-{report['timestamp']}.json"
+    out = results_dir / f"baseline-{report[KEY_TIMESTAMP]}.json"
     atomic_write_json(out, report)
     return out
 

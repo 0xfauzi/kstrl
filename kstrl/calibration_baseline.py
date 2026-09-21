@@ -14,7 +14,9 @@ This module holds:
   arithmetic that both the report builder and the baseline reader need.
 - **Baseline report: load**: ``Baseline``, ``partial_capture_reason`` and
   ``load_baseline`` parse a baseline file (v1 or v2) back into
-  ``FixtureStats``, refusing a partial capture (#398) by name.
+  ``FixtureStats``, refusing a partial capture (#398) by name and
+  refusing a v2 entry whose run counts are absent or are not integers
+  (#421).
 - **Model drift (R5.5, H2-extended)**: ``newest_baseline_path`` and
   ``model_drift_message`` find the newest complete baseline and compare its
   recorded model against the one configured now, so the always-run
@@ -43,6 +45,32 @@ from typing import Any
 #: recognise it and key on something else. Named here rather than
 #: spelled twice, so the reader and the recogniser cannot disagree.
 UNKNOWN_TIMESTAMP = "unknown"
+
+# The report keys BOTH halves of the v2 format spell, owned here because
+# this module is the one the writer already imports. Measured at 5db5cee:
+# sixteen keys were spelled independently in kstrl/calibration.py and in
+# this file, so a rename in one half left the other reading a key that is
+# no longer written, which #421 showed reads as zero rather than failing.
+# Writer-only keys (consistency, detected, runs, error, detail, summary,
+# fixtures_total, fixtures_detected, detection_rate, by_category, by_cwe)
+# have one spelling already and stay literals.
+KEY_FORMAT_VERSION = "format_version"
+KEY_MODEL = "model"
+KEY_TIMESTAMP = "timestamp"
+KEY_RUNS_PER_FIXTURE = "runs_per_fixture"
+KEY_RUN_COMPLETE = "run_complete"
+KEY_FIXTURES_ATTEMPTED = "fixtures_attempted"
+KEY_FIXTURES_COMPLETED = "fixtures_completed"
+KEY_FIXTURES = "fixtures"
+KEY_ROLE = "role"
+KEY_FIXTURE_ID = "fixture_id"
+KEY_CATEGORY = "category"
+KEY_CWE = "cwe"
+KEY_RUNS_TOTAL = "runs_total"
+KEY_RUNS_ERRORED = "runs_errored"
+KEY_RUNS_DETECTED = "runs_detected"
+KEY_CAUGHT = "caught"
+
 # FIXTURE_DETECTION_THRESHOLD = 0.5: a fixture counts as detected when a
 # majority of its completed runs caught the planted issue (2 of 3 at the
 # default run count). One flaky miss does not fail the suite; a fixture
@@ -150,10 +178,10 @@ def partial_capture_reason(data: Mapping[str, Any]) -> str | None:
     because ``load_baseline`` refuses on it and ``newest_baseline_path``
     skips on it.
     """
-    if data.get("run_complete", True) is True:
+    if data.get(KEY_RUN_COMPLETE, True) is True:
         return None
-    attempted = data.get("fixtures_attempted")
-    done = set(data.get("fixtures_completed") or [])
+    attempted = data.get(KEY_FIXTURES_ATTEMPTED)
+    done = set(data.get(KEY_FIXTURES_COMPLETED) or [])
     names = attempted if isinstance(attempted, list) else []
     missing = ", ".join(str(x) for x in names if x not in done) or "none recorded"
     return f"the run did not finish; fixtures attempted but not completed: {missing}"
@@ -188,6 +216,31 @@ def _read_document(path: Path) -> dict[str, Any]:
     return data
 
 
+def _required_count(path: Path, fixture_id: str, entry: Mapping[str, Any], key: str) -> int:
+    """One v2 run count, refusing absence and refusing a non-integer.
+
+    An absent count used to read as zero (#421), and zero is the
+    fail-open direction: ``compare_baselines`` reports ``newly_missed``
+    only for a fixture the OLD baseline detected, so an old baseline that
+    detected nothing passes the comparison having compared against
+    nothing. Zero is a legal VALUE; an absent key is not a value.
+
+    ``bool`` is refused although it is an ``int``: JSON ``true`` in a run
+    count is a writer that lost the count, not a count of one. ``None``
+    used to raise ``TypeError`` out of ``int()``, which the compare CLI's
+    ``except ValueError`` does not catch, so it reached the terminal as a
+    traceback instead of exit 2.
+    """
+    if key not in entry:
+        raise ValueError(f"baseline {path}: fixture {fixture_id!r} has no {key!r}")
+    value = entry[key]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(
+            f"baseline {path}: fixture {fixture_id!r} has a non-integer {key!r}: {value!r}"
+        )
+    return value
+
+
 def load_baseline(path: Path) -> Baseline:
     """Load and normalize a baseline file (v1 or v2).
 
@@ -203,17 +256,17 @@ def load_baseline(path: Path) -> Baseline:
     if reason is not None:
         raise ValueError(f"baseline {path} is a partial capture: {reason}")
 
-    format_version = int(data.get("format_version", 1))
-    raw_fixtures = data.get("fixtures")
+    format_version = int(data.get(KEY_FORMAT_VERSION, 1))
+    raw_fixtures = data.get(KEY_FIXTURES)
     if not isinstance(raw_fixtures, list):
-        raise ValueError(f"baseline {path} has no 'fixtures' list")
+        raise ValueError(f"baseline {path} has no {KEY_FIXTURES!r} list")
 
     fixtures: list[FixtureStats] = []
     for entry in raw_fixtures:
         if not isinstance(entry, dict):
             raise ValueError(f"baseline {path}: fixture entry is not an object")
-        role = str(entry.get("role", ""))
-        fixture_id = str(entry.get("fixture_id", ""))
+        role = str(entry.get(KEY_ROLE, ""))
+        fixture_id = str(entry.get(KEY_FIXTURE_ID, ""))
         if not role or not fixture_id:
             raise ValueError(f"baseline {path}: fixture entry missing role/fixture_id")
         if format_version >= 2:
@@ -222,12 +275,12 @@ def load_baseline(path: Path) -> Baseline:
                     role=role,
                     fixture_id=fixture_id,
                     category=(
-                        str(entry["category"]) if entry.get("category") is not None else None
+                        str(entry[KEY_CATEGORY]) if entry.get(KEY_CATEGORY) is not None else None
                     ),
-                    cwe=str(entry["cwe"]) if entry.get("cwe") is not None else None,
-                    runs_total=int(entry.get("runs_total", 0)),
-                    runs_errored=int(entry.get("runs_errored", 0)),
-                    runs_detected=int(entry.get("runs_detected", 0)),
+                    cwe=str(entry[KEY_CWE]) if entry.get(KEY_CWE) is not None else None,
+                    runs_total=_required_count(path, fixture_id, entry, KEY_RUNS_TOTAL),
+                    runs_errored=_required_count(path, fixture_id, entry, KEY_RUNS_ERRORED),
+                    runs_detected=_required_count(path, fixture_id, entry, KEY_RUNS_DETECTED),
                 )
             )
         else:
@@ -239,16 +292,16 @@ def load_baseline(path: Path) -> Baseline:
                     cwe=None,
                     runs_total=1,
                     runs_errored=0,
-                    runs_detected=1 if bool(entry.get("caught")) else 0,
+                    runs_detected=1 if bool(entry.get(KEY_CAUGHT)) else 0,
                 )
             )
 
     return Baseline(
         path=path,
-        model=str(data.get("model", "unknown")),
-        timestamp=str(data.get("timestamp", UNKNOWN_TIMESTAMP)),
+        model=str(data.get(KEY_MODEL, "unknown")),
+        timestamp=str(data.get(KEY_TIMESTAMP, UNKNOWN_TIMESTAMP)),
         format_version=format_version,
-        runs_per_fixture=int(data.get("runs_per_fixture", 1)),
+        runs_per_fixture=int(data.get(KEY_RUNS_PER_FIXTURE, 1)),
         fixtures=tuple(fixtures),
     )
 
