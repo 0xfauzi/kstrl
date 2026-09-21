@@ -38,6 +38,7 @@ from tests.helpers.astwalk import (
     folds_to,
     package_sources,
     parse,
+    spells,
 )
 
 #: The one test command every check in this file spawns. `"pytest -q"`
@@ -124,6 +125,8 @@ def test_check_patch_coverage_treats_an_awkward_name_like_its_ascii_twin(
             ),
         },
     )
+    gitrepo.git_in(accent.path, "config", "core.quotepath", "true")
+    gitrepo.git_in(plain.path, "config", "core.quotepath", "true")
 
     accent_result = verify.check_patch_coverage(
         accent.path, accent.base_branch, _TEST_COMMAND, 120.0
@@ -295,6 +298,31 @@ def test_the_diff_header_literals_in_the_package_are_pinned() -> None:
             "a diff file-header literal moved. A new reader of a diff header "
             "must take its path through policy.diff_header_path (#408); git "
             "quotes that path and `git diff --name-status` does not."
+        ),
+    )
+
+
+#: Every place in `kstrl/` that writes the name `diff_header_path`
+#: (#408). Counts the definition and every call, so a caller that stops
+#: delegating and inlines the unquote-then-strip logic again shows up
+#: here as a census delta even though it adds no new header literal.
+#: Re-derived by running the walk: adequacy.py's three are the import
+#: and the two calls in _iter_diff_lines; policy.py's two are the def
+#: and the one call in parse_added_lines.
+EXPECTED_DIFF_HEADER_PATH_CALLERS = {"adequacy.py": 3, "policy.py": 2}
+
+
+def test_every_header_path_reader_still_delegates() -> None:
+    assert_census(
+        sources=package_sources(),
+        sees=spells("diff_header_path"),
+        expected=EXPECTED_DIFF_HEADER_PATH_CALLERS,
+        control="diff_header_path(line)",
+        message=(
+            "a caller stopped delegating to policy.diff_header_path, or a "
+            "new one appeared (#408). Unquote-then-strip lives in exactly "
+            "one function; an inlined copy adds no header literal, so the "
+            "literal census above cannot see it."
         ),
     )
 
