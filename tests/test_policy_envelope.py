@@ -191,7 +191,7 @@ class TestDiffParsing:
         """#399 blocker 1: a path holding BOTH a double quote (which makes
         git quote the header at all) and a non-ASCII character (which the
         octal-escape trigger tests exercise separately) used to raise
-        ``UnicodeEncodeError`` out of ``_unquote_diff_path``, because the
+        ``UnicodeEncodeError`` out of ``unquote_diff_path``, because the
         round trip started with ``.encode("ascii")`` on text that
         ``unicode_escape``-decoding had already turned back into real
         (non-ASCII) characters for the unescaped run of bytes.

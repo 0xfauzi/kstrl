@@ -87,6 +87,11 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_check_result_measurement_behaviour.py": 7,
     "tests/test_cli.py": 2,
     "tests/test_contract_safety.py": 4,
+    # #408: four repository builders (_init_repo, _repo_with_awkward_names,
+    # _repo_with_one_module, _repo_with_a_silent_test), each committing
+    # into a repository built through tests.helpers.gitrepo.set_identity
+    # via its own _init_repo call.
+    "tests/test_diff_path_quoting.py": 8,
     # `ready_repo` calls `tests.helpers.gitrepo.set_identity` before it
     # commits (#198), once per scenario that builds its own fixture.
     "tests/test_doctor.py": 7,

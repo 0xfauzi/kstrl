@@ -229,7 +229,7 @@ def _match_glob(path: str, patterns: Sequence[str]) -> str | None:
     return None
 
 
-def _unquote_diff_path(path: str) -> str:
+def unquote_diff_path(path: str) -> str:
     """Undo git's C-quoting of a ``+++``/``--- `` diff header path (#399).
 
     ``core.quotepath`` (default true) wraps a path in double quotes and
@@ -245,6 +245,10 @@ def _unquote_diff_path(path: str) -> str:
     re-encoding as Latin-1 and decoding as UTF-8 recovers the real
     characters. Only a path git actually quoted (wrapped in ``"..."``)
     goes through this; an unquoted path is returned unchanged.
+
+    Public because :func:`kstrl.adequacy._diff_path` is the second caller
+    (#408): adequacy's own header reader used to skip this step, and
+    ``coverage_targets`` then dropped the file for not ending in ``.py``.
     """
     if not (path.startswith('"') and path.endswith('"') and len(path) >= 2):
         return path
@@ -257,7 +261,7 @@ def parse_added_lines(diff_text: str) -> list[tuple[str, str]]:
     The destination file is tracked from ``+++ b/<path>`` headers; added
     lines are those starting with a single ``+`` (not the ``+++``
     header). Content is returned without the leading ``+``. A quoted
-    header path is unquoted (:func:`_unquote_diff_path`) before the
+    header path is unquoted (:func:`unquote_diff_path`) before the
     ``b/`` prefix is stripped, so the path this returns matches what
     ``git diff --name-status`` reports for the same file.
     """
@@ -272,7 +276,7 @@ def parse_added_lines(diff_text: str) -> list[tuple[str, str]]:
             # Gating on the preceding '--- ' means an ADDED content line
             # that happens to render as '+++ ...' is treated as content,
             # not misread as a new file header.
-            target = _unquote_diff_path(line[4:].strip())
+            target = unquote_diff_path(line[4:].strip())
             if target.startswith("b/"):
                 target = target[2:]
             current = None if target == "/dev/null" else target
