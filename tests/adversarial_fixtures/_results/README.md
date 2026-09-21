@@ -14,7 +14,10 @@ Defined by `kstrl/calibration.py` (`build_report` / `load_baseline`).
 
 - Header: `model` (calibration model id - R5.5 warns when it drifts from
   the configured model), `timestamp`, `runs_per_fixture`
-  (`KSTRL_CALIBRATION_RUNS`, default 3).
+  (`KSTRL_CALIBRATION_RUNS`, default 3), `run_complete` (#398 - absent
+  means complete, true for every baseline written before #398),
+  `fixtures_attempted` and `fixtures_completed` (#398 - `role/fixture_id`,
+  in run order).
 - `fixtures[]`: one entry per fixture with `runs_total`, `runs_errored`
   (agent-infrastructure failures, excluded from the consistency
   denominator), `runs_detected`, `consistency` (= detected/completed),
@@ -23,6 +26,12 @@ Defined by `kstrl/calibration.py` (`build_report` / `load_baseline`).
 - `summary`: per role - `fixtures_total`, `fixtures_detected`,
   `detection_rate` (mean per-fixture consistency), `by_category`, and
   `by_cwe` for security.
+
+Since #398, a capture writes itself as each fixture's loop begins and
+ends, so a killed run leaves one file holding the fixtures that
+finished. `load_baseline` and the `compare` CLI REFUSE such a file,
+naming the fixtures the run did not complete, and `newest_baseline_path`
+skips it.
 
 ## Format v1 (pre-R5.1, no `format_version` key)
 

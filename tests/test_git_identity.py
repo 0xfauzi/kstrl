@@ -79,12 +79,20 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_adequacy.py": 8,
     "tests/test_autonomy_ladder.py": 1,
     "tests/test_breaker.py": 2,
-    "tests/test_check_result_measurement_behaviour.py": 5,
+    # #399 added two real-repository tests (a stubbed-git refusal, which
+    # makes no commit, and a latin-1-bytes commit through `_git`/`_repo`,
+    # both already declared here, plus a second real commit in the
+    # latter). Both repositories go through
+    # `tests.helpers.gitrepo.set_identity` via this file's own `_repo`.
+    "tests/test_check_result_measurement_behaviour.py": 7,
     "tests/test_cli.py": 2,
     "tests/test_contract_safety.py": 4,
     # `ready_repo` calls `tests.helpers.gitrepo.set_identity` before it
     # commits (#198), once per scenario that builds its own fixture.
     "tests/test_doctor.py": 7,
+    # #399: the rewritten locale-pinned bad_patterns test commits into a
+    # real repository through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_encoding_sites.py": 2,
     "tests/test_explicit_merge_gate.py": 1,
     "tests/test_feature_verification.py": 1,
     "tests/test_feature_verification_attribution.py": 1,
@@ -106,7 +114,12 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # separate exact tokens in the same folded string, the identical
     # shape gitrepo.py's own row above is declared for.
     "tests/test_patch_coverage.py": 1,
-    "tests/test_policy_envelope.py": 4,
+    # #399 addendum A1: the real end-to-end unquote-round-trip test adds two
+    # commits (a base commit, then the four tricky filenames) through
+    # tests.helpers.gitrepo, which this file already imports and whose
+    # set_identity it calls first. #399 blocker 1 adds two more of the same
+    # shape, for the quote-and-accent-on-one-path regression test.
+    "tests/test_policy_envelope.py": 8,
     "tests/test_pr_outcomes.py": 3,
     "tests/test_progress_scope.py": 9,
     "tests/test_prompt_upgrade.py": 1,
@@ -138,6 +151,13 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # call log CONTAINS, plus a docstring paragraph. Nothing here spawns
     # git; the one real commit `run_scrubbed` makes belongs to
     # `kstrl/verify.py`, which is production code and out of this census.
+    # #399 added TestCheckBadPatterns and the bytecode-destination test as
+    # real-repository tests, briefly raising this row to 11 through this
+    # file's own `_repo`/`_commit`. #399's simplify pass on #405 (C1) moved
+    # both classes onto `tests.conftest.make_review_repo`, already counted
+    # at its own call site (the `tests/conftest.py` row above), and dropped
+    # `_repo`/`_commit` from this file entirely - back to 5, this file's
+    # value before #399 touched it.
     "tests/test_verify.py": 5,
 }
 
