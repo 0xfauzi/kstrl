@@ -83,6 +83,60 @@ def _decompose_and_capture(root: Path, spec: Path) -> tuple[str, Path | None]:
     return agent.prompts[0], agent.cwds[0]
 
 
+class _HaltingRecordingAgent:
+    """Like RecordingAgent, but yields a caller-chosen output so the
+    run halts via SpecBlockerError before reaching Linear sync."""
+
+    def __init__(self, output: str) -> None:
+        self._lines = output.splitlines()
+        self.prompts: list[str] = []
+        self.cwds: list[Path | None] = []
+
+    @property
+    def name(self) -> str:
+        return "recording-halt"
+
+    def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
+        self.prompts.append(prompt)
+        self.cwds.append(cwd)
+        yield from self._lines
+
+    @property
+    def final_message(self) -> str | None:
+        return self._lines[-1] if self._lines else None
+
+
+def _decompose_halting_and_capture(root: Path, spec: Path) -> str:
+    """Drive decompose_spec to a SpecBlockerError halt; return the prompt.
+
+    Uses an ESCALATED spec_issue (BLOCKER_ISSUE) rather than
+    VALID_DECOMPOSE_OUTPUT, and deliberately so, not as a
+    simplification: a decompose that runs to a clean, non-halting
+    completion proceeds past the halt path into LinearConfig.load(
+    root_dir), which re-parses the same broken kstrl.toml, unguarded,
+    and raises ConfigError there instead - a real, separate,
+    pre-existing call site the blocker-1 fix does not touch. Halting
+    via SpecBlockerError is what isolates the one thing the fix is
+    about: the architect prompt is built and delivered before any
+    config load downstream gets a chance to abort the run.
+    """
+    agent = _HaltingRecordingAgent(
+        _single_component_output([_story()], spec_issues=[BLOCKER_ISSUE])
+    )
+    with pytest.raises(decompose.SpecBlockerError):
+        decompose_spec(
+            spec_path=spec,
+            project_name="test",
+            base_branch="main",
+            single_pr=False,
+            agent=agent,  # type: ignore[arg-type]
+            ui=PlainUI(no_color=True, file=io.StringIO()),
+            root_dir=root,
+        )
+    assert agent.prompts, "decompose_spec never called its agent"
+    return agent.prompts[0]
+
+
 def test_the_architect_is_told_its_cwd_is_the_repository(tmp_path: Path) -> None:
     root, spec = _repo(tmp_path)
     prompt, cwd = _decompose_and_capture(root, spec)
@@ -157,45 +211,39 @@ def test_a_malformed_kstrl_toml_still_reaches_the_architect(tmp_path: Path) -> N
     """
     root, spec = _repo(tmp_path)
     (root / "kstrl.toml").write_text('[paths\ncodebase_map = "docs/map.md"\n', encoding="utf-8")
+    prompt = _decompose_halting_and_capture(root, spec)
+    assert "Your working directory IS the repository" in prompt
+    assert "scripts/kstrl/codebase_map.md" in prompt
 
-    class _HaltingRecordingAgent:
-        """Like RecordingAgent, but yields a caller-chosen output so the
-        run halts via SpecBlockerError before reaching Linear sync."""
 
-        def __init__(self, output: str) -> None:
-            self._lines = output.splitlines()
-            self.prompts: list[str] = []
-            self.cwds: list[Path | None] = []
+def test_a_type_error_from_kstrl_toml_still_reaches_the_architect(tmp_path: Path) -> None:
+    """Pins the TypeError arm: int() coercion one layer above the parse.
 
-        @property
-        def name(self) -> str:
-            return "recording-halt"
+    `[run] max_iterations = [1, 2]` parses as valid TOML; the failure is
+    `_apply_toml_overrides`'s `int(run["max_iterations"])` raising
+    TypeError on the array, which `load_or_anchored`'s except clause
+    must still catch so the architect prompt is built and delivered
+    before this aborts decompose_spec.
+    """
+    root, spec = _repo(tmp_path)
+    (root / "kstrl.toml").write_text("[run]\nmax_iterations = [1, 2]\n", encoding="utf-8")
+    prompt = _decompose_halting_and_capture(root, spec)
+    assert "Your working directory IS the repository" in prompt
+    assert "scripts/kstrl/codebase_map.md" in prompt
 
-        def run(self, prompt: str, cwd: Path | None = None) -> Iterator[str]:
-            self.prompts.append(prompt)
-            self.cwds.append(cwd)
-            yield from self._lines
 
-        @property
-        def final_message(self) -> str | None:
-            return self._lines[-1] if self._lines else None
+def test_an_unreadable_kstrl_toml_still_reaches_the_architect(tmp_path: Path) -> None:
+    """Pins the OSError arm: a kstrl.toml that exists but cannot be read.
 
-    agent = _HaltingRecordingAgent(
-        _single_component_output([_story()], spec_issues=[BLOCKER_ISSUE])
-    )
-    with pytest.raises(decompose.SpecBlockerError):
-        decompose_spec(
-            spec_path=spec,
-            project_name="test",
-            base_branch="main",
-            single_pr=False,
-            agent=agent,  # type: ignore[arg-type]
-            ui=PlainUI(no_color=True, file=io.StringIO()),
-            root_dir=root,
-        )
-
-    assert agent.prompts, "decompose_spec never called its agent"
-    prompt = agent.prompts[0]
+    A kstrl.toml created as a directory raises IsADirectoryError (an
+    OSError) out of load_toml_document's read, which is hoisted outside
+    its parse guard. load_or_anchored's except clause must still catch
+    it so the architect prompt is built and delivered before this
+    aborts decompose_spec.
+    """
+    root, spec = _repo(tmp_path)
+    (root / "kstrl.toml").mkdir()
+    prompt = _decompose_halting_and_capture(root, spec)
     assert "Your working directory IS the repository" in prompt
     assert "scripts/kstrl/codebase_map.md" in prompt
 
