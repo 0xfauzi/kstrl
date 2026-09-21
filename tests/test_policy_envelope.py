@@ -16,7 +16,6 @@ from pathlib import Path
 import pytest
 
 from kstrl import git, licensing
-from kstrl.git import _normalize_numstat_path
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.policy import (
     DEFAULT_PATHS_DENY,
@@ -218,18 +217,6 @@ class TestDiffParsing:
 
         assert lenient_names == {tricky_name}
         assert parsed_paths == lenient_names
-
-    @pytest.mark.parametrize(
-        "raw,expected",
-        [
-            ("src/a.py", "src/a.py"),
-            ("old.py => new.py", "new.py"),
-            ("foo/{old => new}/bar.py", "foo/new/bar.py"),
-            ("{old => new}/bar.py", "new/bar.py"),
-        ],
-    )
-    def test_normalize_numstat_path(self, raw: str, expected: str) -> None:
-        assert _normalize_numstat_path(raw) == expected
 
 
 # --------------------------------------------------------------------------

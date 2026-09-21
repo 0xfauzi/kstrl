@@ -109,7 +109,13 @@ class BreakerConfig:
 
 
 def _git(args: list[str], cwd: Path) -> str | None:
-    """Run a git command; None on any failure (breaker fails open)."""
+    """Run a git command; None on any failure (breaker fails open).
+
+    ``UnicodeDecodeError`` joins the tuple because ``-z`` (#423) makes raw,
+    possibly non-utf-8 bytes reachable on the status spawn; None is the
+    breaker's documented "cannot measure", which the caller turns into a
+    skipped stall count rather than a raised error.
+    """
     try:
         result = subprocess.run(
             ["git", *args],
@@ -118,11 +124,36 @@ def _git(args: list[str], cwd: Path) -> str | None:
             encoding="utf-8",
             timeout=_GIT_TIMEOUT,
         )
-    except (subprocess.TimeoutExpired, OSError):
+    except (subprocess.TimeoutExpired, OSError, UnicodeDecodeError):
         return None
     if result.returncode != 0:
         return None
     return result.stdout
+
+
+def _untracked_from_status_z(status: str) -> list[str]:
+    """Untracked paths from ``git status --porcelain -uall -z``.
+
+    Records are NUL-separated. Each is ``XY <path>``; a rename or copy
+    (X in "RC") carries its SOURCE as one extra NUL-separated field with
+    no XY code of its own, so a walk that treats every token as a record
+    can read a source file literally named ``?? x`` as untracked.
+    Measured on git 2.47.1: ``R  new.py\0old.py\0``.
+    """
+    paths: list[str] = []
+    tokens = status.split("\0")
+    i = 0
+    while i < len(tokens):
+        record = tokens[i]
+        i += 1
+        if len(record) < 4:
+            continue
+        code, path = record[:2], record[3:]
+        if code[0] in ("R", "C"):
+            i += 1
+        if code == "??":
+            paths.append(path)
+    return paths
 
 
 def compute_diff_hash(cwd: Path) -> str | None:
@@ -139,7 +170,7 @@ def compute_diff_hash(cwd: Path) -> str | None:
     stall count for that iteration (fail open, never fail the
     component on the breaker's own infrastructure).
     """
-    status = _git(["status", "--porcelain", "-uall"], cwd)
+    status = _git(["status", "--porcelain", "-uall", "-z"], cwd)
     if status is None:
         return None
 
@@ -162,7 +193,7 @@ def compute_diff_hash(cwd: Path) -> str | None:
     hasher.update(b"\x00")
     hasher.update(diff.encode())
 
-    untracked = [line[3:] for line in status.splitlines() if line.startswith("?? ")]
+    untracked = _untracked_from_status_z(status)
     hashed_bytes = 0
     for index, rel in enumerate(sorted(untracked)):
         hasher.update(b"\x00")
