@@ -38,6 +38,7 @@ kstrl's factory uses eight distinct roles. Three are LLM-driven adversarial pass
 - **A `DEFAULT_PROMPT` bump also appends a scaffold-ledger row.** `ks init` never overwrites `scripts/kstrl/prompt.md`, so a version bump alone reaches no already-initialised project. `SCAFFOLDED_TEMPLATES` in `kstrl/init_cmd.py` records the SHA-256 of every body each scaffolded template has ever shipped; append the new row, never edit or drop an older one, because an old row is the only thing that can recognise a copy already on someone's disk (H3b).
 - **Be explicit about what was tested vs assumed.** "Smoke passed" without listing what was checked is presence-testing, not behavior-testing (H4).
 - **All adversarial-roadmap policies are tracked in `docs/adversarial-roadmap.md`**. Read it before changing the role architecture.
+- **The issue-to-merge process is written down in [docs/coordinator-workflow.md](docs/coordinator-workflow.md)**. It covers triage and priority labels, how to write an issue a weaker model can build, the lane shapes and which model runs each stage, planted mutations and their four outcomes, the simplify pass, the merge gate, and the rules that cost something to learn. Read it before running or changing the process.
 
 ## Coding standards
 
