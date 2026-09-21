@@ -115,7 +115,7 @@ def _git(args: list[str], cwd: Path) -> str | None:
             ["git", *args],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=_GIT_TIMEOUT,
         )
     except (subprocess.TimeoutExpired, OSError):

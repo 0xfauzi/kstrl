@@ -78,7 +78,7 @@ def is_gh_available() -> bool:
         result = subprocess.run(
             ["gh", "auth", "status"],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=GH_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
@@ -98,7 +98,7 @@ def push_branch(branch: str, cwd: Path) -> str | None:
             ["git", "push", "-u", "--", "origin", branch],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=PUSH_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
@@ -142,7 +142,7 @@ def merge_pr(pr_number: int, cwd: Path, method: str = "squash") -> str | None:
             ],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=GH_TIMEOUT,
         )
         # If --auto fails (no required checks), try direct merge
@@ -157,7 +157,7 @@ def merge_pr(pr_number: int, cwd: Path, method: str = "squash") -> str | None:
                 ],
                 cwd=cwd,
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 timeout=GH_TIMEOUT,
             )
     except subprocess.TimeoutExpired:
@@ -176,7 +176,7 @@ def _pr_state(pr_number: int, cwd: Path) -> str | None:
             ["gh", "pr", "view", str(pr_number), "--json", "state"],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=GH_POLL_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
@@ -201,7 +201,7 @@ def _pr_mergeable(pr_number: int, cwd: Path) -> str | None:
             ["gh", "pr", "view", str(pr_number), "--json", "mergeable"],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=GH_POLL_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
@@ -240,7 +240,7 @@ def close_pr_for_rerun(pr_number: int, branch: str, cwd: Path) -> str | None:
             ],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=GH_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
@@ -252,7 +252,7 @@ def close_pr_for_rerun(pr_number: int, branch: str, cwd: Path) -> str | None:
             ["git", "push", "--delete", "--", "origin", branch],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=PUSH_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
@@ -302,7 +302,7 @@ def _delete_remote_branch(branch: str, cwd: Path) -> str | None:
             ["git", "push", "--delete", "--", "origin", branch],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=PUSH_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
@@ -640,7 +640,7 @@ def create_component_pr(
             ],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=GH_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
@@ -778,7 +778,7 @@ def create_single_pr(
             ],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=GH_TIMEOUT,
         )
     except subprocess.TimeoutExpired:

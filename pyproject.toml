@@ -177,6 +177,12 @@ ignore_names = ["cancel_futures"]
 # git-quoted path or a raw latin-1 file actually carries, and codespell then
 # reads one whole word instead of a split-off ASCII prefix that reads as a
 # typo for a young cow. No entry is needed here for it.
+# Do not add a short ASCII fragment here to quiet one truncated pinned row: a
+# repo-wide ignore for a fragment silences the real typo it is a fragment of
+# everywhere. Use a trailing '# codespell:ignore' or a
+# '# codespell:ignore-next-line' beside the row instead
+# (tests/test_encoding_readers.py), or compute the word's full spelling
+# (tests/test_child_output_encoding.py).
 ignore-words-list = "crasher,critcial,excetra,missable,nd,pre-empt,unparseable"
 # tests/tool_output/ is captured tool output kept as evidence (#258).
 # pytest truncates its short-summary lines to the terminal width, which

@@ -97,7 +97,7 @@ def run_with_timeout(
         shell=shell,
         input=input_text,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         timeout=timeout,
         **kwargs,
     )

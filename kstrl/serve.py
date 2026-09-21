@@ -1822,7 +1822,7 @@ def run_supervised(
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
+            encoding="utf-8",
             # The whole point: an own session/group so descendants are
             # signallable together.
             start_new_session=True,

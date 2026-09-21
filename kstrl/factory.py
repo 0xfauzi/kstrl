@@ -1367,7 +1367,7 @@ def _setup_worktree(
             ["git", "worktree", "add", str(worktree_path), "-b", branch_name, base_ref],
             cwd=root_dir,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=30,
         )
 
@@ -1383,7 +1383,7 @@ def _setup_worktree(
                 ["git", "worktree", "add", str(worktree_path), branch_name],
                 cwd=root_dir,
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 timeout=30,
             )
 
@@ -1576,7 +1576,7 @@ def _preflight_component_branches(
                 ["git", "branch", "-D", branch],
                 cwd=root_dir,
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 timeout=30,
             )
             if deleted.returncode == 0:

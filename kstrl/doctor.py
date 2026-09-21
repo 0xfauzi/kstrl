@@ -413,7 +413,7 @@ def check_test_root(root: Path) -> _CheckResult:
             ["git", "ls-files", "-z"],
             cwd=root,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=git.DEFAULT_TIMEOUT,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:

@@ -193,7 +193,7 @@ def run_scrubbed(
         cwd=cwd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
+        encoding="utf-8",
         env=env,
         start_new_session=True,
     )
