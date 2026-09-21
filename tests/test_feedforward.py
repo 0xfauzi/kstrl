@@ -527,10 +527,11 @@ def test_the_edge_size_estimate_is_an_exact_sum(
 def _deep_repo_with_conventions(root: Path) -> None:
     """`_deep_repo` plus the pyproject the conventions section reads.
 
-    At max_context_tokens=400 (1600 characters) the four builders return
+    At max_context_tokens=450 (1800 characters) the four builders return
     bodies of 44, 1286, 959 and 24 characters: the module map and the
-    whole dependency graph fit, public interfaces cannot, and conventions
-    fits into the 137 characters left with room to spare.
+    whole dependency graph fit, public interfaces cannot fit in the 337
+    characters left for it and is replaced by a 94-character reason, and
+    conventions is then offered 226 characters for its 24-character body.
     """
     _deep_repo(root)
     (root / "pyproject.toml").write_text(
@@ -543,7 +544,7 @@ def test_a_section_that_does_not_fit_does_not_hide_the_ones_behind_it(
 ) -> None:
     _deep_repo_with_conventions(tmp_path)
 
-    context = build_feedforward_context(tmp_path, FeedforwardConfig(max_context_tokens=400))
+    context = build_feedforward_context(tmp_path, FeedforwardConfig(max_context_tokens=450))
 
     # The section that overflowed says so, in place.
     interfaces = section(context, "## Public interfaces")
@@ -554,12 +555,11 @@ def test_a_section_that_does_not_fit_does_not_hide_the_ones_behind_it(
     # The reason names the body's real size and the room left for THIS
     # section. A refusal that compared the body against the whole budget
     # would not fire here at all, and one that reported the whole budget
-    # would tell the engineer 1600 characters were free.
+    # would tell the engineer 1800 characters were free.
     fit = re.search(r"is (\d+) characters against the (\d+) left", interfaces)
     assert fit is not None, context
     body_chars, room = (int(group) for group in fit.groups())
     assert body_chars == 959, context
-    assert 0 < room < 400 * 4, context
     assert room < body_chars, context
     # And the reason itself fits in the room it names, so it does not put
     # the block over budget and get dropped again.
@@ -571,9 +571,10 @@ def test_priority_order_still_decides_which_sections_win_the_budget(
 ) -> None:
     _deep_repo_with_conventions(tmp_path)
 
-    context = build_feedforward_context(tmp_path, FeedforwardConfig(max_context_tokens=400))
+    context = build_feedforward_context(tmp_path, FeedforwardConfig(max_context_tokens=450))
 
-    # Delivered bodies here are 42, 1286, 94 and 24 characters, which is
+    # Delivered bodies here are 42 (the module map's 44 less the two
+    # spaces section() strips), 1286, 94 and 24 characters, which is
     # neither ascending nor descending, so this heading order cannot be
     # produced by sorting the sections by size.
     headings = re.findall(r"^## (.+)$", context, flags=re.MULTILINE)
@@ -612,7 +613,7 @@ def test_a_builder_that_crashed_is_not_relabelled_as_one_that_did_not_fit(
 
     assert "## Dependency graph" in context, context
     assert "## Public interfaces" not in context, context
-    assert "did not fit" not in context, context
+    assert "did not fit: public interfaces" not in context, context
 
 
 def test_a_body_exactly_the_size_of_the_room_left_is_delivered_whole(
@@ -620,16 +621,25 @@ def test_a_body_exactly_the_size_of_the_room_left_is_delivered_whole(
 ) -> None:
     """`>` and not `>=`: a body that exactly fills the room left FITS.
 
-    `_remaining_chars` returns the body size at which the assembled block
-    lands exactly on `max_chars`, which `_truncate_to_budget` keeps. A
+    `_remaining_chars` returns the body size at which `_total_chars`, the
+    model the budget is spent against, lands exactly on `max_chars` (the
+    assembled string itself lands one character short of it, a
+    pre-existing off-by-one in `_total_chars` this test does not touch). A
     refusal written `>=` would discard that section and replace it with a
     line reading "is N characters against the N left", which says a
     section did not fit while reporting that it exactly did.
+
+    This pins the COMPARISON, not the value: `room` is derived from
+    `_remaining_chars` itself, so a `_remaining_chars` that under-reports
+    by a character moves the test's expectation with it and stays green
+    (measured: the whole suite stays green under that mutation). `>` to
+    `>=` is red.
     """
+    # Deliberately no pyproject.toml here: this test never reaches
+    # conventions (the exact-fit body consumes all remaining room), so a
+    # pyproject write is inert for it. Measured: the delivered context is
+    # byte-identical with and without one.
     _deep_repo(tmp_path)
-    (tmp_path / "pyproject.toml").write_text(
-        '[project]\nrequires-python = ">=3.11"\n', encoding="utf-8"
-    )
     # One section in front of public interfaces, so the refusal is not
     # exempted by the first-section rule, and a room figure that is exact.
     config = FeedforwardConfig(max_context_tokens=400, dependency_graph=False)

@@ -859,13 +859,12 @@ def build_feedforward_context(
     for enabled, heading, build in builders:
         if not enabled:
             continue
-        # Nothing more can be delivered. After the refusal in
-        # _append_section the running total is over the budget here in
-        # only two ways: an oversize FIRST section, which is exempt from
-        # the refusal and which _truncate_to_budget cuts to fit, or a
-        # did-not-fit line longer than the room that was left, which
-        # _truncate_to_budget drops. In both, a section built from here on
-        # could only be dropped again (#420).
+        # Nothing more can be delivered. _append_section refuses a body
+        # bigger than the room left, so the total is over budget here
+        # only for something it cannot refuse: an exempt first section, a
+        # crash record, or a refusal line longer than the room that was
+        # left. _truncate_to_budget cuts or drops all three, so a section
+        # built from here on could only be dropped again (#420).
         if _total_chars(sections) > max_chars:
             break
         _append_section(sections, heading, build, _remaining_chars(sections, heading, max_chars))
