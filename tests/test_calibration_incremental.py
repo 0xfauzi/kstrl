@@ -277,6 +277,11 @@ def test_every_committed_baseline_is_a_complete_capture() -> None:
 #: them back.
 PROGRESS_KEYS = ("run_complete", "fixtures_attempted", "fixtures_completed")
 
+#: One detected fixture record, the minimal input ``build_report`` needs.
+#: Spelled once and reused, so the two tests below build_report the same
+#: fixture list and differ only in the progress-bookkeeping arguments.
+ONE_DETECTED_FIXTURE = [{"role": "security", "fixture_id": "sec-a", "caught": True}]
+
 
 def test_a_partial_capture_the_builder_stamped_is_refused_and_skipped(
     tmp_path: Path,
@@ -286,7 +291,7 @@ def test_a_partial_capture_the_builder_stamped_is_refused_and_skipped(
     finish, ``load_baseline`` refuses it by name and ``newest_baseline_path``
     skips it."""
     report = calibration.build_report(
-        [{"role": "security", "fixture_id": "sec-a", "caught": True}],
+        ONE_DETECTED_FIXTURE,
         model="haiku",
         timestamp="20260921-120000",
         runs_per_fixture=1,
@@ -328,7 +333,7 @@ def test_a_build_with_no_progress_bookkeeping_is_a_complete_capture(
     file loads, and it is the newest baseline rather than a skipped one."""
     saved = calibration.save_report(
         calibration.build_report(
-            [{"role": "security", "fixture_id": "sec-a", "caught": True}],
+            ONE_DETECTED_FIXTURE,
             model="haiku",
             timestamp="20260921-130000",
             runs_per_fixture=1,
@@ -374,16 +379,17 @@ def test_the_capture_harness_names_each_progress_key_once() -> None:
     assertion can see it. This counts mentions instead.
 
     Two assertions, because either alone is satisfied by the defect. The
-    first is a census that enumerates no node type: every node in the
-    harness whose folded value is exactly one of the keys is counted, so a
-    stamp written as a subscript, a dict literal or an ``update`` call all
-    move the number. The second says those three mentions are KEYWORD
-    ARGUMENTS, which is what the harness looked like after #406 and what it
-    did not look like before: three subscript stamps also count three.
+    first is a census that enumerates no node type and no field name:
+    every node that spells one of the keys anywhere the AST can hold a
+    string is counted, which is a keyword-argument name today and would
+    equally be a subscript key, a dict literal key or an ``update`` call.
+    The second says those three mentions are KEYWORD ARGUMENTS, which is
+    what the harness looked like after #406 and what it did not look like
+    before: three subscript stamps also count three.
 
     WHAT THIS DOES NOT COVER: only the capture harness is walked, because
     that is the file the writer had drifted into. A census over all of
-    ``tests/`` would pin 25 further hits in this module alone, which
+    ``tests/`` would also pin further hits in this module alone, which
     deliberately fabricates malformed documents for the reader to refuse.
     ``kstrl/observability.py`` also spells ``run_complete`` as an unrelated
     notify-event name, which is a second reason the walk is one file wide.

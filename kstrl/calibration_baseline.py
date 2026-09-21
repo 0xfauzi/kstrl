@@ -1,24 +1,11 @@
 """Reading a calibration baseline back off disk (R5.1/R5.5).
 
-Split out of ``kstrl/calibration.py`` when that file crossed the 800-line
-growth ratchet (#406): the split itself is the ratchet, the way
-``tests/helpers/demotion.py``, ``kstrl/fixtures_snapshot.py`` and
+Split out of ``kstrl/calibration.py`` when that file would have crossed
+the 800-line growth ratchet (#406): the split itself is the ratchet, the
+way ``tests/helpers/demotion.py``, ``kstrl/fixtures_snapshot.py`` and
 ``kstrl/operator_guidance.py`` each say of themselves. ``kstrl.calibration``
-imports this module for ``Baseline``, ``FixtureStats``, ``load_baseline``,
-``mean`` and ``role_detection_rate``; the dependency runs one way and must
-stay that way - nothing here imports ``kstrl.calibration``, so there is no
-cycle.
-
-Two seams were measured and refused before this one. ``scripts/precommit/
-cyclomatic_ratchet.py`` keys its census on ``(relative path, name)``, so a
-function MOVED to a new file is a new function to it: ``build_report`` is
-cyclomatic 11 against a limit of 10, and moving it would have required
-splitting it too, which is a separate change #406 does not make.
-``compare_baselines`` is cyclomatic 11 for the same reason. So this module
-holds the reader and the value types - ``Baseline``, ``FixtureStats``, the
-consistency math, ``load_baseline``, and the model-drift check that reads
-the newest one - while ``kstrl/calibration.py`` keeps the writer, the
-comparison and the CLI.
+imports this module; the dependency runs one way and must stay that way -
+nothing here imports ``kstrl.calibration``, so there is no cycle.
 
 This module holds:
 
@@ -105,6 +92,7 @@ class FixtureStats:
 
 
 def mean(values: Sequence[float]) -> float:
+    """Arithmetic mean, or 0.0 for an empty sequence (``statistics.mean`` raises)."""
     return sum(values) / len(values) if values else 0.0
 
 
@@ -174,10 +162,16 @@ def partial_capture_reason(data: Mapping[str, Any]) -> str | None:
 def _read_document(path: Path) -> dict[str, Any]:
     """Read one baseline file and return its top-level JSON object.
 
-    One reader for ``load_baseline`` and ``newest_baseline_path``: the
-    newest baseline used to be opened and parsed twice on every drift
-    check. Raises ``ValueError`` on anything that is not a readable JSON
-    object, which is the type both callers already handle.
+    One reader for ``load_baseline`` and ``newest_baseline_path``, so
+    there is one SOURCE copy of the read/parse/is-a-dict prologue instead
+    of two. The newest baseline is still read and parsed TWICE on every
+    drift check: ``newest_baseline_path`` finds it, then
+    ``model_drift_message`` calls ``load_baseline`` on that same path.
+    That second read costs 0.04 ms and its only caller is one ungated
+    test per session, and removing it would widen
+    ``newest_baseline_path``'s return type, so it stays. Raises
+    ``ValueError`` on anything that is not a readable JSON object, which
+    is the type both callers already handle.
     """
     try:
         data: Any = json.loads(path.read_text(encoding="utf-8"))

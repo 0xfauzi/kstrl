@@ -6,13 +6,7 @@ than inside it so the measurement half stays free of control-plane
 imports: ``kstrl.calibration`` and ``kstrl.calibration_baseline`` know
 nothing of autonomy, the inbox or the UI, and folding this module's
 ``Inbox``/``AutonomyState``/``PlainUI`` imports back in would drag all
-three into every importer of a comparison. Measured, and measured the way
-a reader can repeat: after #406 split the baseline reader out into
-``kstrl/calibration_baseline.py``, ``kstrl/calibration.py`` is 567 lines,
-and this module's body below its last import (line 57 of 297) is 240, so
-the fold would land at 807, over the 800-line growth ratchet, but
-the control-plane-imports reason above is the one this module's placement
-actually rests on, not the line count.
+three into every importer of a comparison.
 
 Advisory first, in two tiers. A regression always opens a
 ``calibration_drift`` inbox item when the ladder is enabled; it demotes

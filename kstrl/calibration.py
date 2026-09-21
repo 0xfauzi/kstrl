@@ -21,14 +21,10 @@ that loop:
   the spec-issue taxonomy (see ``KIND_SYNONYM_GROUPS``) so a planted issue
   reported under a sibling label is a hit, not a miss.
 
-Detection-rate semantics: a fixture's *consistency* is
-``runs_detected / runs_completed`` (agent-infrastructure errors are excluded
-from the denominator; unparseable model output counts as a completed miss).
-A fixture is *detected* when its consistency reaches
-``FIXTURE_DETECTION_THRESHOLD`` (majority of completed runs, the constant now
-lives in ``kstrl.calibration_baseline``). A role's *detection_rate* is the
-mean consistency across its fixtures - the expected single-run detection
-probability, which is what the thresholds gate on.
+Detection-rate semantics (what *consistency*, *detected* and
+*detection_rate* mean, and ``FIXTURE_DETECTION_THRESHOLD``) live in
+``kstrl.calibration_baseline``'s docstring, beside the arithmetic that
+defines them.
 """
 
 from __future__ import annotations
