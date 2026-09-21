@@ -1,6 +1,6 @@
 # Codebase Map (Brownfield Notes)
 
-PulseKit is a telemetry ingest service. One package, `src/pulsekit/`, four
+PulseKit is a telemetry ingest service. One package, `src/pulsekit/`, six
 source modules and one test module. Everything below was read off the
 source; where a claim is about behaviour, the test that pins it is named.
 
@@ -19,6 +19,7 @@ source; where a claim is about behaviour, the test that pins it is named.
 - `src/pulsekit/__init__.py` holds `VERSION` and nothing else.
 - `src/pulsekit/envelope.py` is the wire format.
 - `src/pulsekit/storage.py` is the log.
+- `src/pulsekit/throttle/__init__.py` is empty (a docstring only).
 - `src/pulsekit/throttle/token_bucket.py` is the rate-limiting primitive.
 - `src/pulsekit/api.py` wires the three together into two routes.
 - `tests/test_token_bucket.py` is the only test module.

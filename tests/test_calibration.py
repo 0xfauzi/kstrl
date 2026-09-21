@@ -45,7 +45,6 @@ how often they cry wolf on clean code.
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import warnings
 from collections.abc import Callable, Iterator
@@ -86,10 +85,12 @@ from kstrl.security import (
 )
 from tests.conftest import make_review_repo
 from tests.helpers.calibration_repo_fixture import (
+    FIXTURES_DIR,
     REUSE_ROLE,
     arm_cwd,
     arm_params,
     arm_prompt,
+    load_fixtures,
     reuse_caught,
 )
 
@@ -144,7 +145,6 @@ if CHANGE_SOURCE_MODE not in {"repo", "paste"}:
         f"KSTRL_CALIBRATION_CHANGE_SOURCE={CHANGE_SOURCE_MODE!r}; expected 'repo' or 'paste'"
     )
 
-FIXTURES_DIR = Path(__file__).parent / "adversarial_fixtures"
 RESULTS_DIR = FIXTURES_DIR / "_results"
 
 # False-positive ceiling (R5.2). A negative role's fp_rate must be at or
@@ -338,20 +338,10 @@ _skip_unless_calibrating = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 
 
-def _load_fixtures(subdir: str, suffix: str) -> list[tuple[Path, dict]]:
-    """Return list of (artifact_path, meta_dict) for each fixture."""
-    base = FIXTURES_DIR / subdir
-    fixtures: list[tuple[Path, dict]] = []
-    for artifact in sorted(base.glob(f"*{suffix}")):
-        meta_path = artifact.with_suffix(".meta.json")
-        if not meta_path.exists():
-            # Try alternate: <stem>.meta.json regardless of artifact suffix
-            meta_path = artifact.parent / f"{artifact.stem}.meta.json"
-        if not meta_path.exists():
-            continue
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        fixtures.append((artifact, meta))
-    return fixtures
+# (#401 addendum B2) The body lives in tests/helpers/calibration_repo_fixture
+# .load_fixtures, which the reuse fixture's loader also uses; kept under this
+# name here so its five call sites below do not move.
+_load_fixtures = load_fixtures
 
 
 def _security_fixtures() -> list[tuple[Path, dict]]:
@@ -1491,15 +1481,15 @@ def test_architect_reuses_what_the_repository_already_has(
     repository, and with no repository at all. RECORDED, not gated -
     no baseline has ever carried these ids, so there is no measured rate
     to gate on yet and inventing one would be the number this fixture
-    exists to replace.
+    exists to replace. No entry exists in MIN_ROLE_DETECTION_RATE for
+    this role, so once a baseline does carry it, compare_baselines
+    applies the 0.50 default floor and the role-drop check to it like
+    any other role (#401 addendum A5).
     """
     prompt = arm_prompt(fixture, arm)
 
     def run_once() -> tuple[bool, str]:
-        # A FRESH directory per run. This helper is called
-        # CALIBRATION_RUNS times against one function-scoped tmp_path,
-        # and one shared directory would hand run 2 whatever the agent
-        # wrote during run 1.
+        # A fresh directory per run (see arm_cwd's docstring).
         cwd = arm_cwd(fixture, arm, tmp_path)
         agent = _get_calibration_agent()
         try:
@@ -1517,7 +1507,7 @@ def test_architect_reuses_what_the_repository_already_has(
         arm.fixture_id,
         report,
         run_once,
-        category=arm.arm,
+        category=arm.name,
     )
 
 
