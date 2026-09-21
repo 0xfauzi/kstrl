@@ -185,6 +185,40 @@ class TestDiffParsing:
         assert lenient_names == tricky_names
         assert parsed_paths == tricky_names
 
+    def test_the_unquote_round_trip_survives_a_quote_and_an_accent_on_one_path(
+        self, tmp_path: Path
+    ) -> None:
+        """#399 blocker 1: a path holding BOTH a double quote (which makes
+        git quote the header at all) and a non-ASCII character (which the
+        octal-escape trigger tests exercise separately) used to raise
+        ``UnicodeEncodeError`` out of ``_unquote_diff_path``, because the
+        round trip started with ``.encode("ascii")`` on text that
+        ``unicode_escape``-decoding had already turned back into real
+        (non-ASCII) characters for the unescaped run of bytes.
+        ``core.quotepath=false`` is set explicitly: it does not change
+        whether this path is quoted (a double quote alone forces quoting
+        regardless), but it is the configuration the blocker report
+        measured against, so this test matches it rather than the default.
+        """
+        gitrepo.git_in(tmp_path, "init", "-q", "-b", "main")
+        gitrepo.set_identity(tmp_path)
+        gitrepo.git_in(tmp_path, "config", "core.quotepath", "false")
+        (tmp_path / "seed.py").write_text("x = 1\n", encoding="utf-8")
+        gitrepo.git_in(tmp_path, "add", "-A")
+        gitrepo.git_in(tmp_path, "commit", "-q", "-m", "base")
+        gitrepo.git_in(tmp_path, "checkout", "-q", "-b", "work")
+        tricky_name = 'we"ird-café.py'
+        (tmp_path / tricky_name).write_text("x = 1\n", encoding="utf-8")
+        gitrepo.git_in(tmp_path, "add", "-A")
+        gitrepo.git_in(tmp_path, "commit", "-q", "-m", "add a quoted, accented file")
+
+        lenient_names = set(git.get_diff_names("main", tmp_path))
+        diff_text = git.get_diff_content("main", tmp_path)
+        parsed_paths = {path for path, _line in parse_added_lines(diff_text)}
+
+        assert lenient_names == {tricky_name}
+        assert parsed_paths == lenient_names
+
     @pytest.mark.parametrize(
         "raw,expected",
         [

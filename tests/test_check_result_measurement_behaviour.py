@@ -189,6 +189,48 @@ def test_policy_envelope_that_could_not_read_the_diff_measured_nothing(tmp_path:
     assert_unmeasured(row)
 
 
+def test_policy_envelope_that_could_not_decode_the_diff_measured_nothing(
+    tmp_path: Path, only_path: Path
+) -> None:
+    """#399 blocker 1b: ``get_diff_content`` succeeds (the header is ASCII
+    text, backslash-octal and all) but ``evaluate_policy`` calls
+    ``policy.parse_added_lines`` on that text, which unquotes the header
+    path and can raise ``UnicodeDecodeError`` on bytes that are not valid
+    utf-8 - a ``ValueError``, not a ``GitDiffError`` and not a
+    ``PolicyConfigError``, so neither existing except clause caught it.
+    A real executable on PATH stands in for git: what is under test is
+    what the check does with a diff git itself could produce, and a
+    stubbed diff is how that diff is built without a non-utf-8 file on
+    disk (APFS refuses one; see the blocker report)."""
+    _stub(
+        only_path,
+        "git",
+        'if [ "$1" = "rev-parse" ]; then\n'
+        "  exit 1\n"
+        "fi\n"
+        'for a in "$@"; do\n'
+        '  if [ "$a" = "--name-status" ]; then\n'
+        '    printf "M\\0scanned.py\\0"\n'
+        "    exit 0\n"
+        "  fi\n"
+        '  if [ "$a" = "--numstat" ]; then\n'
+        '    printf "1\\t1\\tscanned.py\\n"\n'
+        "    exit 0\n"
+        "  fi\n"
+        "done\n"
+        "printf '%s\\n' '--- a/scanned.py' '+++ \"b/x\\351.py\"' "
+        "'@@ -0,0 +1 @@' '+x = 1'\n"
+        "exit 0\n",
+    )
+
+    row = check_policy_envelope(tmp_path, "main", PolicyConfig(enabled=True))
+
+    assert row.passed is False
+    assert any("codec can't decode" in detail for detail in row.details)
+    assert [f.is_infrastructure_error for f in row.findings] == [True]
+    assert_unmeasured(row)
+
+
 def test_bad_patterns_that_could_not_read_the_diff_measured_nothing(
     tmp_path: Path, only_path: Path
 ) -> None:

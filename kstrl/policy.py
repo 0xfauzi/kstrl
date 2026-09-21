@@ -248,7 +248,7 @@ def _unquote_diff_path(path: str) -> str:
     """
     if not (path.startswith('"') and path.endswith('"') and len(path) >= 2):
         return path
-    return path[1:-1].encode("ascii").decode("unicode_escape").encode("latin-1").decode("utf-8")
+    return path[1:-1].encode("utf-8").decode("unicode_escape").encode("latin-1").decode("utf-8")
 
 
 def parse_added_lines(diff_text: str) -> list[tuple[str, str]]:

@@ -24,7 +24,7 @@ import inspect
 from pathlib import Path
 
 from kstrl import policy
-from kstrl.verify import check_bad_patterns
+from kstrl.verify import VerifyConfig, check_bad_patterns, run_mechanical_verification
 from tests.conftest import make_review_repo
 
 #: The ``sk-`` fixture string this suite already carries, reused verbatim.
@@ -166,3 +166,50 @@ def test_the_default_secret_patterns_are_the_envelopes_own_list() -> None:
     """
     default = inspect.signature(check_bad_patterns).parameters["secret_patterns"].default
     assert default is policy.DEFAULT_SECRET_PATTERNS
+
+
+def test_run_mechanical_verification_passes_the_envelopes_configured_patterns_to_bad_patterns(
+    tmp_path: Path,
+) -> None:
+    """#399 blocker 2: the previous test only pins the DEFAULT by identity,
+    which is a mechanism-free claim about the CONFIGURED case - a plant
+    that hardcodes ``bad_patterns_secret_patterns = DEFAULT_SECRET_PATTERNS``
+    at the ``run_mechanical_verification`` call site satisfies it while
+    silently dropping a configured ``[policy] secret_patterns`` on the
+    floor. Driven end to end through ``run_mechanical_verification``, not
+    ``check_bad_patterns`` directly, because the call site is what the
+    plant targets.
+
+    ``policy_config.enabled=False`` is load-bearing: the envelope gate
+    itself never runs (only ``[policy] secret_patterns`` is read, which
+    ``PolicyConfig.load`` does unconditionally), so a pass here proves the
+    patterns reach ``check_bad_patterns`` separately from the envelope's
+    own on/off switch.
+    """
+    repo = make_review_repo(
+        tmp_path,
+        base_files={"app.py": "VALUE = 1\n"},
+        files={"app.py": 'VALUE = 1\nTOKEN = "zzplant-123456"\n'},
+    )
+    config = VerifyConfig(
+        test_command="true",
+        typecheck_command="true",
+        lint_command="true",
+        subprocess_timeout=30.0,
+    )
+    policy_config = policy.PolicyConfig(enabled=False, secret_patterns=["zzplant-[0-9]{6}"])
+
+    result = run_mechanical_verification(
+        repo.path,
+        prd_path=None,
+        base_branch=repo.base_branch,
+        allowed_paths=None,
+        config=config,
+        policy_config=policy_config,
+    )
+
+    bad_patterns_rows = [c for c in result.checks if c.name == "bad_patterns"]
+    assert len(bad_patterns_rows) == 1
+    row = bad_patterns_rows[0]
+    assert row.passed is False
+    assert row.details == ["app.py: possible secret/credential detected"]

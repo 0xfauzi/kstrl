@@ -1962,6 +1962,31 @@ def check_policy_envelope(
             duration_seconds=time.monotonic() - start,
             measured=False,
         )
+    except Exception as exc:
+        # Exception exactly, broad clause last (#318). evaluate_policy calls
+        # policy.parse_added_lines on the diff text this function already
+        # read, and a diff header path holding bytes that are not valid
+        # utf-8 makes that raise UnicodeDecodeError - a ValueError, and
+        # neither a GitDiffError (the diff itself DID read) nor a
+        # PolicyConfigError (the config is fine). The row fails CLOSED
+        # rather than let the exception escape the check (#399 blocker 1b).
+        return CheckResult(
+            name="policy_envelope",
+            passed=False,
+            message=(
+                "policy envelope could not evaluate the diff; failing closed "
+                "(infrastructure error, not a policy pass)"
+            ),
+            details=[f"Error: {exc}"],
+            findings=[
+                Finding.infrastructure_error(
+                    "policy",
+                    f"policy envelope could not evaluate the diff: {exc}",
+                )
+            ],
+            duration_seconds=time.monotonic() - start,
+            measured=False,
+        )
 
     # License gate (R8.1): resolve each newly-added uv.lock dependency's
     # license and classify it. Runs only when configured (license_allow

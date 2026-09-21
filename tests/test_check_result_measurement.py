@@ -243,7 +243,13 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     # (which now returns the measurement alone) into _patch_coverage_row,
     # called by _patch_coverage_checks.
     "verify.py: _patch_coverage_row: CheckResult": 1,
-    "verify.py: check_policy_envelope: CheckResult": 4,
+    # #399 blocker 1b: a fifth site, the fail-closed row for the broad
+    # "Exception" clause that now sits after "except PolicyConfigError" -
+    # evaluate_policy calls policy.parse_added_lines, which can raise
+    # UnicodeDecodeError on a diff header path with bytes that are not
+    # valid utf-8, and that is neither a GitDiffError nor a
+    # PolicyConfigError.
+    "verify.py: check_policy_envelope: CheckResult": 5,
     "verify.py: check_prd_stories: CheckResult": 4,
     "verify.py: check_scope_unreadable: CheckResult": 1,
     "verify.py: check_self_critique: CheckResult": 3,
@@ -303,9 +309,12 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     "verify.py: check_linter: CheckResult: measured=False": 1,
     "verify.py: check_test_suite: CheckResult: measured=False": 1,
     "verify.py: check_typecheck: CheckResult: measured=False": 1,
-    # The diff could not be read, and the policy could not be parsed. Both are
-    # the harness failing to establish its own input.
-    "verify.py: check_policy_envelope: CheckResult: measured=False": 2,
+    # The diff could not be read, the policy could not be parsed, or
+    # evaluate_policy raised something that is neither of those two (#399
+    # blocker 1b: a UnicodeDecodeError from a diff header path that is not
+    # valid utf-8). All three are the harness failing to establish its own
+    # input.
+    "verify.py: check_policy_envelope: CheckResult: measured=False": 3,
     # The PRD could not be loaded at all.
     "verify.py: check_prd_stories: CheckResult: measured=False": 1,
     # This check name exists ONLY in the unreadable state, so it never appears

@@ -117,8 +117,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #399 addendum A1: the real end-to-end unquote-round-trip test adds two
     # commits (a base commit, then the four tricky filenames) through
     # tests.helpers.gitrepo, which this file already imports and whose
-    # set_identity it calls first.
-    "tests/test_policy_envelope.py": 6,
+    # set_identity it calls first. #399 blocker 1 adds two more of the same
+    # shape, for the quote-and-accent-on-one-path regression test.
+    "tests/test_policy_envelope.py": 8,
     "tests/test_pr_outcomes.py": 3,
     "tests/test_progress_scope.py": 9,
     "tests/test_prompt_upgrade.py": 1,
