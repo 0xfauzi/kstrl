@@ -26,12 +26,13 @@ network nor a real uv cache.
 from __future__ import annotations
 
 import glob
-import json
 import os
 import subprocess
 from collections.abc import Callable
 from email.parser import Parser
 from pathlib import Path
+
+from kstrl.jsonread import read_json
 
 # The default network fetcher's timeout (seconds). PyPI is a fallback, so
 # keep it short: a slow/unreachable index must not stall the verifier.
@@ -173,7 +174,7 @@ def resolve_from_pypi(
     url = f"https://pypi.org/pypi/{name}/{version}/json"
     try:
         raw = fetch(url, _PYPI_TIMEOUT)
-        info = json.loads(raw).get("info", {})
+        info = read_json(raw).get("info", {})
     except Exception:  # noqa: BLE001 - network/parse failure degrades to unresolved
         return None
     expr = info.get("license_expression")

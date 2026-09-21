@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import time
 from collections import deque
 from collections.abc import Callable
@@ -13,6 +12,7 @@ from typing import Any
 
 from kstrl.atomicio import atomic_write_json
 from kstrl.findings import Finding
+from kstrl.jsonread import read_json_file
 from kstrl.names import validate_branch_name, validate_component_id
 
 #: ``Component.failed_check`` for a component a hard-mode adversarial
@@ -248,7 +248,7 @@ class Manifest:
         ``UnicodeDecodeError: 'ascii' codec can't decode byte 0xe2``.
         """
         with open(path, encoding="utf-8") as f:
-            data = json.load(f)
+            data = read_json_file(f)
 
         errors = cls.validate_schema(data)
         if errors:

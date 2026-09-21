@@ -52,6 +52,7 @@ from typing import Any, NoReturn
 
 from kstrl.atomicio import atomic_write_json
 from kstrl.evolution import signature_counts_from_verification, split_signature
+from kstrl.jsonread import read_json
 from kstrl.verify import CheckResult, ResolvedVerifyCommands, VerificationResult
 
 #: Version of the BASELINE document, which is not the version of the
@@ -416,7 +417,7 @@ def read_baseline(path: Path) -> Baseline:
     except OSError as exc:
         raise BaselineError(f"cannot read the baseline at {path}: {exc}") from exc
     try:
-        document = json.loads(raw_bytes.decode("utf-8"))
+        document = read_json(raw_bytes.decode("utf-8"))
     except UnicodeDecodeError as exc:
         raise BaselineError(f"cannot read the baseline at {path}: {exc}") from exc
     except Exception as exc:

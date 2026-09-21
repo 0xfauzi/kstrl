@@ -61,6 +61,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl.atomicio import atomic_write_json
+from kstrl.jsonread import read_json
 from kstrl.statedir import (
     CONTROL_AUTONOMY,
     ControlStateError,
@@ -393,7 +394,7 @@ class AutonomyState:
         if not path.exists():
             return cls()
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = read_json(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             return cls(
                 degraded_reason=_warn_rejected_state(

@@ -93,6 +93,7 @@ from kstrl.interaction import (
     PromptRequest,
     UiInteractionChannel,
 )
+from kstrl.jsonread import read_json_file
 from kstrl.launch import assemble_factory_configs
 from kstrl.loop import run_loop
 from kstrl.manifest import COMPONENT_STATUS_VALUES, Manifest
@@ -366,7 +367,7 @@ def _check_prd_preflight(prd_file: Path, ui_impl: UI) -> None:
 
     try:
         with open(prd_file, encoding="utf-8") as f:
-            data = json.load(f)
+            data = read_json_file(f)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         ui_impl.err(f"Invalid JSON in {prd_file}: {exc}")
         sys.exit(1)

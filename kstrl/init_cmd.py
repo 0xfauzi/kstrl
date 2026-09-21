@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Literal, NamedTuple
 from kstrl import git
 from kstrl.appendio import append_records
 from kstrl.atomicio import atomic_write_text
+from kstrl.jsonread import read_json, read_json_file
 from kstrl.operator_context import GUIDANCE_HEADING
 from kstrl.prd import PRD
 
@@ -1289,7 +1290,7 @@ def run_init(directory: Path, ui: UI, *, upgrade_prompts: bool = False) -> int:
 
     try:
         with open(prd_file, encoding="utf-8") as f:
-            data = json.load(f)
+            data = read_json_file(f)
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
         ui.err(f"Invalid JSON in prd.json: {e}")
         return 1
@@ -1700,7 +1701,7 @@ def _detect_project_context(root: Path) -> dict[str, str]:
     if pkg_json.exists():
         ctx["language"] = "TypeScript"
         try:
-            pkg = json.loads(_read_text_or_none(pkg_json) or "{}")
+            pkg = read_json(_read_text_or_none(pkg_json) or "{}")
             ctx["name"] = pkg.get("name", root.name)
             deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
             if "next" in deps:

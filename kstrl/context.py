@@ -20,6 +20,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from kstrl.jsonread import read_json
+
 # The phases run in this fixed order inside one attempt. The rank is
 # what lets the renderer tell "this sensor ran again in the latest
 # attempt, so the older reading is stale" from "this sensor never ran in
@@ -552,7 +554,7 @@ class IterationContext:
         pre-R10.2 shape (three undated string lists)."""
         if not data or data == "{}":
             return cls()
-        parsed = json.loads(data)
+        parsed = read_json(data)
         ctx = cls()
         for rec_data in parsed.get("records", []):
             ctx.records.append(

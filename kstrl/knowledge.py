@@ -38,6 +38,7 @@ from kstrl.decompose import (
     collect_agent_output,
 )
 from kstrl.delimiters import generate_data_delimiter
+from kstrl.jsonread import read_json
 from kstrl.prd import prd_text_for_prompt
 
 if TYPE_CHECKING:
@@ -266,7 +267,7 @@ def _parse_fact_md(content: str) -> Fact:
 
     meta_json = "\n".join(lines[1:closing_idx])
     try:
-        meta = json.loads(meta_json)
+        meta = read_json(meta_json)
     except json.JSONDecodeError as exc:
         raise ValueError(f"frontmatter is not valid JSON: {exc}") from exc
 
@@ -860,7 +861,7 @@ def read_dependency_scope_telemetry(knowledge_root: Path) -> list[dict[str, Any]
             if not line:
                 continue
             try:
-                out.append(json.loads(line))
+                out.append(read_json(line))
             except json.JSONDecodeError:
                 continue
     except (OSError, UnicodeDecodeError):

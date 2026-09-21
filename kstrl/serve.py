@@ -71,6 +71,7 @@ from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.atomicio import atomic_write_json
+from kstrl.jsonread import read_json
 from kstrl.manifest import ADVERSARIAL_BUDGET_CHECK, Component, Manifest
 from kstrl.pr import GH_TIMEOUT, PR_FOOTER_MARKER
 from kstrl.procdispose import drain_or_abandon
@@ -588,7 +589,7 @@ class SpendLedger:
                 "as UTF-8 or move it aside to start a fresh day."
             ) from exc
         try:
-            data = json.loads(raw)
+            data = read_json(raw)
         except json.JSONDecodeError as exc:
             raise ServeStateError(
                 f"the daemon spend ledger {self.path} is malformed ({exc}). "
@@ -2415,7 +2416,7 @@ def count_open_kstrl_prs(cwd: Path, *, limit: int = 100) -> OpenPrCount:
     if not result.ok:
         raise RuntimeError(result.error)
     try:
-        rows = json.loads(result.stdout)
+        rows = read_json(result.stdout)
     except ValueError as exc:
         raise RuntimeError(f"gh pr list returned unparseable JSON: {exc}") from exc
     if not isinstance(rows, list):
@@ -2573,7 +2574,7 @@ class OpenPrCountStreak:
             # handler written to fail closed (#291).
             return cls._damaged(path, f"unreadable: {exc}")
         try:
-            data = json.loads(raw)
+            data = read_json(raw)
         except ValueError as exc:
             return cls._damaged(path, f"malformed JSON: {exc}")
         return cls._from_payload(path, data)
@@ -3405,7 +3406,7 @@ def _read_manifest_json(path: Path) -> dict[str, Any] | None:
     narrower tuple ``classify_run`` uses on the pre-verdict path.
     """
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path.read_text(encoding="utf-8"))
     except Exception:
         return None
     return data if isinstance(data, dict) else None

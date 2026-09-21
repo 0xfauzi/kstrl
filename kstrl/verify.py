@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import py_compile
 import re
@@ -48,6 +47,7 @@ from kstrl.gateparse import (
     validate_tool,
 )
 from kstrl.guards import path_is_allowed
+from kstrl.jsonread import read_json
 from kstrl.parsers import (
     ParsedOutput,
     add_source_context,
@@ -3109,7 +3109,7 @@ def _coverage_report(
             f"coverage json exited {json_result.returncode}: {_last_output_line(json_result)}",
         )
     try:
-        parsed: object = json.loads(json_path.read_text(encoding="utf-8"))
+        parsed: object = read_json(json_path.read_text(encoding="utf-8"))
         if not isinstance(parsed, dict):
             raise ValueError("the coverage report was not a JSON object")
     except (OSError, ValueError) as exc:

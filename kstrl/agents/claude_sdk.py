@@ -39,6 +39,7 @@ from typing import Any
 
 from kstrl.agents.base import UsageRecord
 from kstrl.agents.proc import DeadlineStreamer, timeout_message
+from kstrl.jsonread import read_json
 from kstrl.sandbox import (
     SandboxConfig,
     claude_review_sandbox_settings,
@@ -223,7 +224,7 @@ def _parse_contract_line(
     """Parse a prefixed contract line; malformed payloads degrade to
     None (the meter must never gate correctness - R3.1)."""
     try:
-        payload = json.loads(line[len(prefix) :])
+        payload = read_json(line[len(prefix) :])
     except (json.JSONDecodeError, ValueError):
         logger.warning("Malformed sdk-runner contract line: %.120s", line)
         return None

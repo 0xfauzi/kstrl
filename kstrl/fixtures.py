@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.fixtures_snapshot import check_snapshot_regression, save_snapshot
+from kstrl.jsonread import read_json, read_json_file
 from kstrl.prd import PRD
 from kstrl.verify import CheckResult, ChildOutputDecodeError, run_scrubbed
 
@@ -319,7 +320,7 @@ def _parse_runner_result(stdout: str) -> dict[str, Any] | None:
     for line in reversed(stdout.splitlines()):
         if line.startswith(_RESULT_MARKER):
             try:
-                payload = json.loads(line[len(_RESULT_MARKER) :])
+                payload = read_json(line[len(_RESULT_MARKER) :])
             except json.JSONDecodeError:
                 return None
             if isinstance(payload, dict):
@@ -703,7 +704,7 @@ def check_fixtures_from_prd(
     start = time.monotonic()
     try:
         with open(prd_path, encoding="utf-8") as f:
-            data = json.load(f)
+            data = read_json_file(f)
     except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         return CheckResult(
             name="fixtures",

@@ -7,12 +7,13 @@ to prepend to the agent prompt before each component runs.
 from __future__ import annotations
 
 import ast
-import json
 import os
 import tomllib
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
+
+from kstrl.jsonread import read_json
 
 # Directories to always skip during tree walks
 _SKIP_DIRS = frozenset(
@@ -755,7 +756,7 @@ def _extract_tsconfig_conventions(root: Path, bullets: list[str]) -> None:
         return
 
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path.read_text(encoding="utf-8"))
     except Exception:
         return
 
@@ -776,7 +777,7 @@ def _extract_package_json_conventions(root: Path, bullets: list[str]) -> None:
         return
 
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path.read_text(encoding="utf-8"))
     except Exception:
         return
 

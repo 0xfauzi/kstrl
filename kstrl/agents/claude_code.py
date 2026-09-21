@@ -12,6 +12,7 @@ from typing import Any
 
 from kstrl.agents.base import UsageRecord
 from kstrl.agents.proc import DeadlineStreamer, timeout_message
+from kstrl.jsonread import read_json
 from kstrl.sandbox import (
     SandboxConfig,
     claude_review_sandbox_args,
@@ -222,7 +223,7 @@ def _usage_from_result_event(
         # non-stream-json fake in tests): calls + wall time only.
         return UsageRecord(duration_seconds=duration, source="unavailable")
     try:
-        evt = json.loads(raw_line)
+        evt = read_json(raw_line)
         duration_ms = evt.get("duration_ms")
         if (
             isinstance(duration_ms, (int, float))
@@ -287,7 +288,7 @@ def _extract_result_text(raw_line: str) -> str | None:
     session and signals that the process is about to exit.
     """
     try:
-        evt = json.loads(raw_line)
+        evt = read_json(raw_line)
     except (json.JSONDecodeError, ValueError):
         return None
     if evt.get("type") == "result":
@@ -303,7 +304,7 @@ def _parse_stream_event(raw_line: str) -> Iterator[str]:
     event stream so the kstrl UI can display agent progress in real-time.
     """
     try:
-        evt = json.loads(raw_line)
+        evt = read_json(raw_line)
     except json.JSONDecodeError:
         # Not JSON - yield as-is (shouldn't happen with stream-json)
         yield raw_line

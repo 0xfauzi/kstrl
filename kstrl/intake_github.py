@@ -66,6 +66,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl.config import _parse_paths
+from kstrl.jsonread import read_json
 from kstrl.statedir import (
     CONTROL_GITHUB_PROCESSED,
     control_file,
@@ -377,7 +378,7 @@ def parse_issue_list(payload: str) -> tuple[list[RemoteIssue], str]:
     empty poll and no cron or launchd wrapper could alert on it.
     """
     try:
-        data = json.loads(payload or "[]")
+        data = read_json(payload or "[]")
     except json.JSONDecodeError as exc:
         return [], f"could not parse `gh issue list` output: {exc}"
     if not isinstance(data, list):
@@ -426,7 +427,7 @@ def resolve_repo(config: GitHubIntakeConfig, root_dir: Path) -> tuple[str, str]:
     if not result.ok:
         return "", f"could not resolve the repo from the checkout: {result.error}"
     try:
-        data = json.loads(result.stdout or "{}")
+        data = read_json(result.stdout or "{}")
     except json.JSONDecodeError as exc:
         return "", f"could not parse `gh repo view` output: {exc}"
     name = data.get("nameWithOwner") if isinstance(data, dict) else None
@@ -542,7 +543,7 @@ class ProcessedLedger:
             self._watermarks = {}
             return self
         try:
-            data = json.loads(raw)
+            data = read_json(raw)
         except json.JSONDecodeError:
             self._entries = {}
             self._watermarks = {}
@@ -697,7 +698,7 @@ def verify_authorization(
             reason=f"could not read the authorization timeline: {result.error}",
         )
     try:
-        payload = json.loads(result.stdout or "{}")
+        payload = read_json(result.stdout or "{}")
     except json.JSONDecodeError as exc:
         return Authorization(
             ok=False,
@@ -936,7 +937,7 @@ def checkout_repo(config: GitHubIntakeConfig, root_dir: Path) -> tuple[str, str]
     if not result.ok:
         return "", f"could not resolve the checkout's repo: {result.error}"
     try:
-        data = json.loads(result.stdout or "{}")
+        data = read_json(result.stdout or "{}")
     except json.JSONDecodeError as exc:
         return "", f"could not parse the checkout's repo: {exc}"
     name = data.get("nameWithOwner") if isinstance(data, dict) else None
@@ -1580,7 +1581,7 @@ def _pr_steering_commands(
     if not result.ok:
         return [], (), f"could not read comments on PR #{number}: {result.error}"
     try:
-        rows = json.loads(result.stdout or "[]")
+        rows = read_json(result.stdout or "[]")
     except Exception as exc:  # noqa: BLE001 - the parser's taxonomy is the parser's
         return [], (), f"comments on PR #{number} were unparseable: {exc}"
     if not isinstance(rows, list):

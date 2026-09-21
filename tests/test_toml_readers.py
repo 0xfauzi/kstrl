@@ -235,21 +235,28 @@ def handler_verdict(clauses: Sequence[Clause]) -> str | None:
     return None
 
 
-def _is_parse_call(node: ast.AST, table: Bindings) -> bool:
-    """Is this node a call that RESOLVES to a tomllib parse function?
+def _is_parse_call(
+    node: ast.AST, table: Bindings, targets: frozenset[str] = TOML_PARSE_TARGETS
+) -> bool:
+    """Is this node a call that RESOLVES to a parse function in ``targets``?
 
     The whole of the resolution lives in ``table``: module aliases,
     module rebinds through a plain or an annotated assignment, direct
     function imports, a rebind of a rebind, a relative import that only
     looks like the stdlib, and ``getattr`` with a foldable name.
+
+    ``targets`` defaults to :data:`TOML_PARSE_TARGETS` so every existing
+    caller in this module is unchanged; a sibling guard for a different
+    parser passes its own set (#427 GROUP A).
     """
-    return isinstance(node, ast.Call) and table.resolve(node.func) in TOML_PARSE_TARGETS
+    return isinstance(node, ast.Call) and table.resolve(node.func) in targets
 
 
-def _guarded_parses(
-    tree: ast.Module, table: Bindings
+def guarded_parses(
+    tree: ast.Module, table: Bindings, targets: frozenset[str] = TOML_PARSE_TARGETS
 ) -> tuple[list[tuple[int, tuple[Clause, ...]]], set[int]]:
-    """``(entries, covered ids)`` for every ``try`` holding a parse.
+    """``(entries, covered ids)`` for every ``try`` holding a parse resolving
+    to ``targets``.
 
     An entry is ``(try line, one clause per handler, in source order)`` -
     a sequence and not a union, because :func:`handler_verdict` has to
@@ -259,13 +266,25 @@ def _guarded_parses(
     Identity, not ``lineno``, for the covered set: two parses can share a
     physical line, and a covered-set keyed on the line number would then
     hide one of them.
+
+    Exported (no leading underscore) and parameterised by ``targets`` so
+    a sibling guard can judge EVERY ``try`` around ITS parser's calls
+    rather than re-implementing this walk more weakly. #427's own guard
+    did exactly that: it looked at the first matching ``try`` and
+    stopped, which let a mutant owner that wrapped a resolved parse in
+    an inner ``try: ... except (ValueError, RecursionError)`` inside an
+    outer ``except Exception: raise`` clear the check on the outer
+    clause while the inner one enumerated. ``targets`` defaults to
+    :data:`TOML_PARSE_TARGETS` so :func:`scan_source` below is unchanged.
     """
     entries: list[tuple[int, tuple[Clause, ...]]] = []
     covered: set[int] = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.Try):
             continue
-        found = {id(child) for child in try_body_nodes(node) if _is_parse_call(child, table)}
+        found = {
+            id(child) for child in try_body_nodes(node) if _is_parse_call(child, table, targets)
+        }
         if not found:
             continue
         covered |= found
@@ -293,7 +312,7 @@ def scan_source(text: str, *, where: str = "", module: str = "") -> Scan:
         return Scan()
     tree = parse(text)
     table = bindings(tree, module=module)
-    guarded, covered = _guarded_parses(tree, table)
+    guarded, covered = guarded_parses(tree, table)
     every = [node for node in ast.walk(tree) if _is_parse_call(node, table)]
     return Scan(
         guarded=tuple(guarded),

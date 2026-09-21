@@ -46,6 +46,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from kstrl.jsonread import read_json
+
 #: What ``load_baseline`` puts in ``Baseline.timestamp`` when the file
 #: carries no ``timestamp`` key. A FILL-IN, not an identity: every such
 #: baseline shares it, so anything that keys on a baseline has to
@@ -206,7 +208,7 @@ def _read_document(path: Path) -> dict[str, Any]:
     is the type both callers already handle.
     """
     try:
-        data: Any = json.loads(path.read_text(encoding="utf-8"))
+        data: Any = read_json(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"cannot read baseline {path}: {exc}") from exc
     except UnicodeDecodeError as exc:

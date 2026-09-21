@@ -44,6 +44,7 @@ from kstrl.appendio import (
     append_terminated,
     open_for_append,
 )
+from kstrl.jsonread import read_json
 from kstrl.observability import ProgressLog
 
 SCHEMA_VERSION: Final = 2
@@ -815,7 +816,7 @@ def parse_event_line(line: str) -> Event | None:
     if not stripped:
         return None
     try:
-        obj = json.loads(stripped)
+        obj = read_json(stripped)
     except ValueError:
         return None
     if not isinstance(obj, dict):
