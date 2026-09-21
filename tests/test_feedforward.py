@@ -389,6 +389,7 @@ def test_a_dependency_graph_that_did_not_fit_says_so(tmp_path: Path) -> None:
     # And it stopped when what it had built outgrew that room, rather
     # than parsing every file and reporting the overflow afterwards.
     assert total == files_in_deep_repo, body
+    assert 0 < parsed, body
     assert parsed < total, body
     # And it stopped AT the room it was given, not at some multiple of it.
     # Every edge in this fixture renders as "modNN -> modMM (imports: BaseMM)"
@@ -463,7 +464,16 @@ def test_the_edge_size_estimate_is_an_exact_sum(
         "class Base:\n    pass\n\n\nclass Extra:\n    pass\n", encoding="utf-8"
     )
     (pkg / "mid.py").write_text(
-        "from edge_pkg.base import Base, Extra\n\n\nclass Mid:\n    pass\n", encoding="utf-8"
+        # The plain `import edge_pkg.base` comes first, so it is the call
+        # that CREATES the mid -> base edge (ast.Import branch, an empty
+        # names set); the ImportFrom right after it only EXTENDS an edge
+        # that already exists. Both `_record_edge` shapes the exactness
+        # invariant depends on (a brand new edge with no names, and an
+        # edge grown by a second call) are exercised this way, where the
+        # old fixture (ImportFrom only, always with names) exercised
+        # neither.
+        "import edge_pkg.base\nfrom edge_pkg.base import Base, Extra\n\n\nclass Mid:\n    pass\n",
+        encoding="utf-8",
     )
     (pkg / "top.py").write_text(
         "from edge_pkg.mid import Mid\nfrom edge_pkg.base import Base\n\n\nclass Top:\n    pass\n",
@@ -482,6 +492,28 @@ def test_the_edge_size_estimate_is_an_exact_sum(
 
     body = build_dependency_graph(tmp_path)
 
-    # mid -> base (2 names), top -> mid (1 name), top -> base (1 name).
-    assert len(returned) == 3, returned
+    # mid -> base created with no names (the plain import, ast.Import),
+    # mid -> base extended with Base and Extra (ImportFrom), top -> mid
+    # created with Mid (ImportFrom), top -> base created with Base
+    # (ImportFrom). Four calls, in source order.
+    assert len(returned) == 4, returned
+    _create_cost, extend_cost, _top_mid_cost, _top_base_cost = returned
     assert sum(returned) == len(body)
+
+    # The exact-sum assertion above cannot by itself catch a caller that
+    # forgets to accumulate the ast.Import branch's return into
+    # rendered_chars: it inspects `_record_edge`'s return values directly
+    # and never looks at rendered_chars, which is otherwise unused here
+    # (`build_dependency_graph(tmp_path)` above passes no budget). So
+    # bound the budget at exactly `extend_cost`, the ImportFrom call's own
+    # return value: files are parsed alphabetically (__init__.py, base.py,
+    # mid.py, top.py), and by the time top.py's turn comes, correct code
+    # has charged BOTH of mid.py's calls (the plain import that creates
+    # the edge, then the ImportFrom that extends it), which together
+    # exceed `extend_cost` alone and must bail before top.py is parsed at
+    # all. Code that drops the ast.Import branch's charge has only
+    # `extend_cost` banked at that point, does not exceed its own budget,
+    # parses top.py anyway, and returns the complete, un-bailed graph
+    # instead.
+    bounded = build_dependency_graph(tmp_path, max_chars=extend_cost)
+    assert "did not fit" in bounded, bounded
