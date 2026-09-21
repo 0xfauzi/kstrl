@@ -709,6 +709,14 @@ class TestEverySpawnDecodeNamesUtf8:
         assert scan.clear == ()
         assert len(scan.lenient) == 1
 
+    def test_a_spawn_with_errors_and_no_encoding_is_reported(self) -> None:
+        """CPython's second disjunct: an ``errors=`` alone is TEXT mode with
+        the LOCALE encoding, so filing it as bytes mode is a false clear."""
+        scan = scan_spawn_source('import subprocess\nsubprocess.run(["x"], errors="replace")\n')
+        assert scan.bytes_mode == ()
+        assert scan.clear == ()
+        assert len(scan.reported) == 1
+
     def test_a_spawn_whose_text_flag_does_not_fold_is_reported(self) -> None:
         scan = scan_spawn_source('import subprocess\nsubprocess.run(["x"], text=flag)\n')
         assert len(scan.reported) == 1
