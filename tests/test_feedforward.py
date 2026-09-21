@@ -415,3 +415,21 @@ def test_a_component_filtered_graph_is_built_even_when_the_whole_graph_is_over_b
     body = section(context, "## Dependency graph")
 
     assert body == "mod05 -> mod04 (imports: Base04)\nmod06 -> mod05 (imports: Base05)"
+
+
+def test_the_graph_as_the_only_section_is_truncated_not_refused(tmp_path: Path) -> None:
+    # module_map is a documented config key (kstrl/init_cmd.py:631,
+    # docs/spec-harness-engineering.md:148). With it off the graph is the only
+    # section, and _truncate_to_budget CUTS the last section to fit rather than
+    # dropping it, so a bail that cannot see that shrink refuses a graph that
+    # would in fact have been delivered.
+    _deep_repo(tmp_path)
+
+    context = build_feedforward_context(
+        tmp_path, FeedforwardConfig(module_map=False, max_context_tokens=100)
+    )
+
+    assert "## Dependency graph" in context
+    assert "did not fit" not in context
+    assert "->" in context
+    assert "... (truncated)" in context

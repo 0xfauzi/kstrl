@@ -753,7 +753,7 @@ def _append_section(
 
 
 def _dependency_graph_section(
-    root: Path, component_id: str, component_deps: list[str] | None, max_chars: int
+    root: Path, component_id: str, component_deps: list[str] | None, max_chars: int | None
 ) -> str:
     """The "Dependency graph" body, filtered to *component_id* and its
     direct dependencies when component context is available.
@@ -814,7 +814,7 @@ def build_feedforward_context(
             config.dependency_graph,
             "Dependency graph",
             lambda left: _dependency_graph_section(
-                worktree_path, component_id, component_deps, left
+                worktree_path, component_id, component_deps, left if sections else None
             ),
         ),
         (
