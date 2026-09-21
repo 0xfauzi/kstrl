@@ -68,7 +68,7 @@ from collections.abc import Collection, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from kstrl.policy import unquote_diff_path
+from kstrl.policy import diff_header_path
 
 #: Test-file path fragments. Deliberately broad: a file that looks like a
 #: test to a human should be judged as one, and a false positive here
@@ -641,28 +641,6 @@ class DiffDiscipline:
 _DEV_NULL = "/dev/null"
 
 
-def _diff_path(header: str) -> str:
-    """The path from a ``---``/``+++`` header, minus git's a//b/ prefix.
-
-    Unquoted BEFORE the prefix is stripped (#408). git's C-quoting wraps
-    the whole ``b/<path>`` token in double quotes, so a quoted header
-    does not start with ``b/`` at all and the strip below would be a
-    no-op on it: the path kept its quotes, its octal escapes and its
-    ``b/``, and ``coverage_targets`` then dropped the file for not
-    ending in ``.py``, measuring nothing for it and reporting clean.
-    Reversing the two steps does not work either: the strip is the
-    no-op, so the unquote then hands back ``b/<path>`` with the prefix
-    still on it.
-    :func:`kstrl.policy.unquote_diff_path` is the one implementation of
-    that undo; ``git diff --name-status``, which every consumer compares
-    against, never quotes the same path.
-    """
-    path = unquote_diff_path(header[4:].strip())
-    if path.startswith(("a/", "b/")):
-        path = path[2:]
-    return path
-
-
 def _iter_diff_lines(diff_text: str) -> Iterator[tuple[str, str, str]]:
     """Walk a unified diff, yielding ``(source, target, line)``.
 
@@ -685,8 +663,8 @@ def _iter_diff_lines(diff_text: str) -> Iterator[tuple[str, str, str]]:
         if line.startswith("diff --git"):
             source, target = "", ""
         elif line.startswith("+++ ") and prev.startswith("--- "):
-            target = _diff_path(line)
-            source = _diff_path(prev)
+            target = diff_header_path(line)
+            source = diff_header_path(prev)
         yield source, target, line
         prev = line
 
