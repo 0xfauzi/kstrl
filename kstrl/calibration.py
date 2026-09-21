@@ -38,24 +38,14 @@ from typing import Any
 
 from kstrl.atomicio import atomic_write_json
 from kstrl.calibration_baseline import (
-    KEY_CATEGORY,
-    KEY_CAUGHT,
-    KEY_CWE,
-    KEY_FIXTURE_ID,
-    KEY_FIXTURES,
-    KEY_FIXTURES_ATTEMPTED,
-    KEY_FIXTURES_COMPLETED,
-    KEY_FORMAT_VERSION,
-    KEY_MODEL,
-    KEY_ROLE,
-    KEY_RUN_COMPLETE,
-    KEY_RUNS_DETECTED,
-    KEY_RUNS_ERRORED,
-    KEY_RUNS_PER_FIXTURE,
-    KEY_RUNS_TOTAL,
-    KEY_TIMESTAMP,
+    REPORT_FORMAT_VERSION as REPORT_FORMAT_VERSION,
+)
+from kstrl.calibration_baseline import (
     Baseline,
     FixtureStats,
+    baseline_document,
+    document_timestamp,
+    fixture_entry,
     load_baseline,
     mean,
     role_detection_rate,
@@ -94,7 +84,12 @@ MIN_ROLE_DETECTION_RATE: dict[str, float] = {
 }
 DEFAULT_MIN_ROLE_DETECTION_RATE = 0.50
 
-REPORT_FORMAT_VERSION = 2
+# REPORT_FORMAT_VERSION lives in kstrl.calibration_baseline (#421 Group B3):
+# it is both what this module writes and the threshold
+# kstrl.calibration_baseline.load_baseline compares a document's
+# format_version against, so it has one owner rather than two numbers that
+# happen to agree. Imported above and re-exported here because
+# tests/test_calibration_compare.py reads it as ``calibration.REPORT_FORMAT_VERSION``.
 
 # ---------------------------------------------------------------------------
 # Spec-issue kind synonyms (R5.1 matcher fix).
@@ -167,22 +162,26 @@ def build_report(
     ``{"role", "fixture_id", "category", "cwe", "caught", "error", "detail"}``
     where ``error=True`` marks an agent-infrastructure failure (excluded
     from the consistency denominator; a parse failure of model output is
-    NOT an error - it is a completed miss).
+    NOT an error - it is a completed miss). This is the RECORD contract,
+    a separate thing from the on-disk document: this function computes
+    every value from the records and hands them to
+    ``kstrl.calibration_baseline.fixture_entry`` and ``baseline_document``,
+    which are the only places a document KEY is spelled (#421 Group B).
 
     ``run_complete``, ``fixtures_attempted`` and ``fixtures_completed``
     (#398) are the progress bookkeeping a capture HARNESS keeps about its
     own begin/complete calls, which this function never sees - it only
     receives the finished per-run records. The harness knows the VALUES
     (whether teardown was reached, which fixture names it began and
-    finished); this function owns the KEYS, so the v2 format has one
-    writer. The defaults describe a single-shot build that finished.
+    finished); ``baseline_document`` owns the KEYS, so the v2 format has
+    one writer. The defaults describe a single-shot build that finished.
     ``kstrl.calibration_baseline.partial_capture_reason`` is the reader on
     the other side of this seam.
     """
     grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
     order: list[tuple[str, str]] = []
     for record in records:
-        key = (str(record[KEY_ROLE]), str(record[KEY_FIXTURE_ID]))
+        key = (str(record["role"]), str(record["fixture_id"]))
         if key not in grouped:
             order.append(key)
         grouped.setdefault(key, []).append(record)
@@ -192,39 +191,19 @@ def build_report(
     for role, fixture_id in order:
         runs = grouped[(role, fixture_id)]
         errored = sum(1 for r in runs if bool(r.get("error")))
-        detected = sum(1 for r in runs if bool(r.get(KEY_CAUGHT)) and not bool(r.get("error")))
+        detected = sum(1 for r in runs if bool(r.get("caught")) and not bool(r.get("error")))
         first = runs[0]
         fixture = FixtureStats(
             role=role,
             fixture_id=fixture_id,
-            category=(str(first[KEY_CATEGORY]) if first.get(KEY_CATEGORY) is not None else None),
-            cwe=str(first[KEY_CWE]) if first.get(KEY_CWE) is not None else None,
+            category=(str(first["category"]) if first.get("category") is not None else None),
+            cwe=str(first["cwe"]) if first.get("cwe") is not None else None,
             runs_total=len(runs),
             runs_errored=errored,
             runs_detected=detected,
         )
         stats.append(fixture)
-        fixtures_json.append(
-            {
-                KEY_ROLE: fixture.role,
-                KEY_FIXTURE_ID: fixture.fixture_id,
-                KEY_CATEGORY: fixture.category,
-                KEY_CWE: fixture.cwe,
-                KEY_RUNS_TOTAL: fixture.runs_total,
-                KEY_RUNS_ERRORED: fixture.runs_errored,
-                KEY_RUNS_DETECTED: fixture.runs_detected,
-                "consistency": fixture.consistency,
-                "detected": fixture.detected,
-                "runs": [
-                    {
-                        KEY_CAUGHT: bool(r.get(KEY_CAUGHT)),
-                        "error": bool(r.get("error")),
-                        "detail": str(r.get("detail", "")),
-                    }
-                    for r in runs
-                ],
-            }
-        )
+        fixtures_json.append(fixture_entry(fixture, runs))
 
     summary: dict[str, Any] = {}
     by_role: dict[str, list[FixtureStats]] = {}
@@ -261,17 +240,16 @@ def build_report(
             }
         summary[role] = role_summary
 
-    return {
-        KEY_FORMAT_VERSION: REPORT_FORMAT_VERSION,
-        KEY_MODEL: model,
-        KEY_TIMESTAMP: timestamp,
-        KEY_RUNS_PER_FIXTURE: runs_per_fixture,
-        KEY_RUN_COMPLETE: run_complete,
-        KEY_FIXTURES_ATTEMPTED: list(fixtures_attempted),
-        KEY_FIXTURES_COMPLETED: list(fixtures_completed),
-        "summary": summary,
-        KEY_FIXTURES: fixtures_json,
-    }
+    return baseline_document(
+        model=model,
+        timestamp=timestamp,
+        runs_per_fixture=runs_per_fixture,
+        run_complete=run_complete,
+        fixtures_attempted=fixtures_attempted,
+        fixtures_completed=fixtures_completed,
+        summary=summary,
+        fixtures=fixtures_json,
+    )
 
 
 def save_report(report: Mapping[str, Any], results_dir: Path) -> Path:
@@ -283,7 +261,7 @@ def save_report(report: Mapping[str, Any], results_dir: Path) -> Path:
     it needs the parent to exist, so the ``mkdir`` stays.
     """
     results_dir.mkdir(parents=True, exist_ok=True)
-    out = results_dir / f"baseline-{report[KEY_TIMESTAMP]}.json"
+    out = results_dir / f"baseline-{document_timestamp(report)}.json"
     atomic_write_json(out, report)
     return out
 
@@ -558,6 +536,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             old = load_baseline(args.old)
             new = load_baseline(args.new)
+            if not any(f.detected for f in old.fixtures):
+                # #421 Group A4: the fail-open the issue is about lives
+                # here, not in the reader. An OLD baseline with no
+                # detected fixture bounds nothing - compare_baselines
+                # reports newly_missed only for a fixture the OLD
+                # baseline detected, and a role/category drop only
+                # against an old_rate that exists, so a baseline that
+                # detected nothing passes having compared against
+                # nothing. Raised inside this try, not in load_baseline
+                # (newest_baseline_path/model_drift_message have no
+                # comparison to bound) and not in compare_baselines (the
+                # Comparison dataclass keeps its current meaning), so it
+                # reaches the same "error: ..." / exit 2 path as a
+                # malformed document.
+                raise ValueError(
+                    f"old baseline {old.path} has no detected fixture, so it bounds "
+                    "nothing: a comparison against it reports newly_missed for no "
+                    "fixture and a drop for no role. Re-capture the old baseline (#421)"
+                )
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
