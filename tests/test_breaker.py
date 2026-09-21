@@ -132,6 +132,42 @@ class TestComputeDiffHash:
     def test_none_outside_git_repo(self, tmp_path: Path) -> None:
         assert compute_diff_hash(tmp_path) is None
 
+    def test_a_renamed_sources_status_code_does_not_fold_in_an_unrelated_file(
+        self, tmp_path: Path
+    ) -> None:
+        """``git status --porcelain -uall -z`` prints a rename as
+        ``R  <destination>\\0<source>\\0``, and the source field carries
+        no XY code of its own. Without the two-line skip in
+        ``_untracked_from_status_z``, a source path literally named
+        ``?? x`` is read as a second record: code ``??``, path ``x``.
+
+        ``x`` here is a gitignored file, never listed by ``git status``
+        on its own account, so the ONLY way its content can reach the
+        fingerprint is through that misread. With the skip in place,
+        ``x`` never enters ``untracked`` and its content is never
+        touched; edited or not, the fingerprint is identical. Measured
+        red-first: with the two lines deleted, the phantom entry is
+        added, ``compute_diff_hash`` reads and hashes the real file at
+        ``cwd / "x"``, and this assertion fails.
+        """
+        (tmp_path / "README.md").write_text("seed\n")
+        (tmp_path / ".gitignore").write_text("x\n", encoding="utf-8")
+        (tmp_path / "?? x").write_text("renamed source\n", encoding="utf-8")
+        _git(["init", "-q"], tmp_path)
+        gitrepo.set_identity(tmp_path)
+        _git(["add", "-A"], tmp_path)
+        _git(["commit", "-q", "-m", "seed"], tmp_path)
+        _git(["mv", "?? x", "renamed.py"], tmp_path)
+        _git(["add", "-A"], tmp_path)
+
+        (tmp_path / "x").write_text("original\n", encoding="utf-8")
+        before = compute_diff_hash(tmp_path)
+
+        (tmp_path / "x").write_text("a completely different length of content\n", encoding="utf-8")
+        after = compute_diff_hash(tmp_path)
+
+        assert before == after
+
 
 class TestComputeTestSignature:
     def test_no_command_is_constant(self, tmp_path: Path) -> None:

@@ -266,11 +266,15 @@ def enforce_allowed_paths(
         return True, []
 
     # Get changed files
-    changed = (
-        git.get_changed_files_since(baseline, cwd)
-        if baseline is not None
-        else git.get_changed_files(cwd)
-    )
+    try:
+        changed = (
+            git.get_changed_files_since(baseline, cwd)
+            if baseline is not None
+            else git.get_changed_files(cwd)
+        )
+    except git.GitDiffError as exc:
+        ui.err(f"Allowed-paths enforcement could not read the changed files: {exc}")
+        return False, []
     violations = check_violations(
         changed,
         config.allowed_paths,

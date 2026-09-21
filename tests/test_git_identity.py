@@ -83,12 +83,16 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # `tests.conftest.make_review_repo` already put through
     # `tests.helpers.gitrepo.set_identity`.
     "tests/test_bad_patterns_diff_scope.py": 3,
-    "tests/test_breaker.py": 2,
+    "tests/test_breaker.py": 3,
     # #399 added two real-repository tests (a stubbed-git refusal, which
     # makes no commit, and a latin-1-bytes commit through `_git`/`_repo`,
     # both already declared here, plus a second real commit in the
     # latter). Both repositories go through
     # `tests.helpers.gitrepo.set_identity` via this file's own `_repo`.
+    # #423's fixer pass added a third: a rename-source misparse regression
+    # test that commits its own repo through `_git`/`gitrepo.set_identity`
+    # directly (not through `_init_repo`, so it is a second call site in
+    # this file, each committing once).
     "tests/test_check_result_measurement_behaviour.py": 7,
     # tests/test_child_output_encoding.py (#409) has no row here: it builds its
     # repository through tests.conftest.make_review_repo, already declared and
@@ -106,6 +110,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_feature_verification.py": 1,
     "tests/test_feature_verification_attribution.py": 1,
     "tests/test_git_identity_helper.py": 5,
+    # #423's `_repo_with_tricky_names` fixture, through
+    # `tests.helpers.gitrepo.set_identity`, which this row declares.
+    "tests/test_git_path_spelling.py": 6,
     "tests/test_harness_path_scope.py": 3,
     "tests/test_inbox.py": 1,
     "tests/test_init_cmd.py": 3,

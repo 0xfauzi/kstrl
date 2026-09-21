@@ -135,7 +135,6 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "doctor.py now.isoformat().replace",
     "gateparse.py TOOL_PARSERS[chosen]",
     "gateparse.py TOOL_PARSERS[name]",
-    "git.py (pre + new.strip() + post).replace",
     "inbox.py datetime.now(UTC).replace",
     "inbox.py parsed.replace",
     "init_cmd.py text.replace",
