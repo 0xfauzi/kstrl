@@ -45,7 +45,6 @@ how often they cry wolf on clean code.
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import warnings
 from collections.abc import Callable, Iterator
@@ -85,6 +84,15 @@ from kstrl.security import (
     parse_security_output,
 )
 from tests.conftest import make_review_repo
+from tests.helpers.calibration_repo_fixture import (
+    FIXTURES_DIR,
+    REUSE_ROLE,
+    arm_cwd,
+    arm_params,
+    arm_prompt,
+    load_fixtures,
+    reuse_caught,
+)
 
 CALIBRATION_ENABLED = "1" in (
     os.environ.get("KSTRL_RUN_CALIBRATION"),
@@ -137,7 +145,6 @@ if CHANGE_SOURCE_MODE not in {"repo", "paste"}:
         f"KSTRL_CALIBRATION_CHANGE_SOURCE={CHANGE_SOURCE_MODE!r}; expected 'repo' or 'paste'"
     )
 
-FIXTURES_DIR = Path(__file__).parent / "adversarial_fixtures"
 RESULTS_DIR = FIXTURES_DIR / "_results"
 
 # False-positive ceiling (R5.2). A negative role's fp_rate must be at or
@@ -331,20 +338,10 @@ _skip_unless_calibrating = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 
 
-def _load_fixtures(subdir: str, suffix: str) -> list[tuple[Path, dict]]:
-    """Return list of (artifact_path, meta_dict) for each fixture."""
-    base = FIXTURES_DIR / subdir
-    fixtures: list[tuple[Path, dict]] = []
-    for artifact in sorted(base.glob(f"*{suffix}")):
-        meta_path = artifact.with_suffix(".meta.json")
-        if not meta_path.exists():
-            # Try alternate: <stem>.meta.json regardless of artifact suffix
-            meta_path = artifact.parent / f"{artifact.stem}.meta.json"
-        if not meta_path.exists():
-            continue
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        fixtures.append((artifact, meta))
-    return fixtures
+# (#401 addendum B2) The body lives in tests/helpers/calibration_repo_fixture
+# .load_fixtures, which the reuse fixture's loader also uses; kept under this
+# name here so its five call sites below do not move.
+_load_fixtures = load_fixtures
 
 
 def _security_fixtures() -> list[tuple[Path, dict]]:
@@ -1461,6 +1458,60 @@ def test_architect_emits_sensible_allowed_paths(
 
 
 # ---------------------------------------------------------------------------
+# Architect -- reuse of what the repository already has (#401)
+# ---------------------------------------------------------------------------
+
+#: The (fixture, arm) pairs the reuse fixture is run for, and the ids each
+#: arm records under. Built here so the pytest id and the recorded
+#: fixture_id are the same string;
+#: tests/test_calibration_repo_fixture.py pins that they are.
+REUSE_ARM_PARAMS = [pytest.param(fixture, arm, id=arm.fixture_id) for fixture, arm in arm_params()]
+
+
+@_skip_unless_calibrating
+@pytest.mark.parametrize("fixture,arm", REUSE_ARM_PARAMS)
+def test_architect_reuses_what_the_repository_already_has(
+    fixture,
+    arm,
+    tmp_path: Path,
+    report: _DetectionReport,
+) -> None:
+    """Measure whether the architect names the module the repository
+    already has (#401). Two arms over one spec: standing in the
+    repository, and with no repository at all. RECORDED, not gated -
+    no baseline has ever carried these ids, so there is no measured rate
+    to gate on yet and inventing one would be the number this fixture
+    exists to replace. No entry exists in MIN_ROLE_DETECTION_RATE for
+    this role, so once a baseline does carry it, compare_baselines
+    applies the 0.50 default floor and the role-drop check to it like
+    any other role (#401 addendum A5).
+    """
+    prompt = arm_prompt(fixture, arm)
+
+    def run_once() -> tuple[bool, str]:
+        # A fresh directory per run (see arm_cwd's docstring).
+        cwd = arm_cwd(fixture, arm, tmp_path)
+        agent = _get_calibration_agent()
+        try:
+            output = _collect(agent, prompt, cwd)
+        except Exception as exc:  # noqa: BLE001
+            raise _AgentUnavailable(str(exc)) from exc
+        try:
+            data = _extract_agent_json(agent, output)
+        except ValueError as exc:
+            return False, f"json parse: {exc}"
+        return reuse_caught(data, arm, fixture.must_reuse)
+
+    _measure_detection(
+        REUSE_ROLE,
+        arm.fixture_id,
+        report,
+        run_once,
+        category=arm.name,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Static sanity (always runs, even without calibration env var)
 # ---------------------------------------------------------------------------
 
@@ -1558,7 +1609,8 @@ class TestFixtureStructure:
     def test_spec_fixtures_count(self) -> None:
         fixtures = list((FIXTURES_DIR / "specs").glob("*.md"))
         # 3 original halting fixtures + 1 non-halting allowedPaths fixture
-        assert len(fixtures) == 4, "Expected 4 spec fixtures"
+        # + 1 reuse fixture with a repository beside it (#401)
+        assert len(fixtures) == 5, "Expected 5 spec fixtures"
 
     def test_security_meta_has_required_keys(self) -> None:
         for artifact, meta in _security_fixtures():
@@ -1623,11 +1675,16 @@ class TestFixtureStructure:
         for _artifact, meta in _spec_fixtures():
             assert "fixture_id" in meta
             # A spec fixture must carry exactly one grading schema:
-            # either ``must_detect`` (halting fixtures that grade
-            # spec-issue detection) or ``must_emit_allowed_paths``
-            # (non-halting fixtures that grade allowedPaths quality).
-            assert "must_detect" in meta or "must_emit_allowed_paths" in meta, (
-                f"{meta['fixture_id']} has neither must_detect nor must_emit_allowed_paths grading"
+            # ``must_detect`` (halting fixtures that grade spec-issue
+            # detection), ``must_emit_allowed_paths`` (non-halting
+            # fixtures that grade allowedPaths quality), or
+            # ``must_reuse`` (#401, fixtures that carry a repository and
+            # grade reuse of what it already has).
+            assert (
+                "must_detect" in meta or "must_emit_allowed_paths" in meta or "must_reuse" in meta
+            ), (
+                f"{meta['fixture_id']} has none of must_detect, "
+                f"must_emit_allowed_paths or must_reuse grading"
             )
             if "must_detect" in meta:
                 assert "spec_issues_min" in meta["must_detect"]
@@ -1636,6 +1693,13 @@ class TestFixtureStructure:
                 # Required keys for the new schema.
                 assert "non_halting" in req
                 assert "every_component_has_allowed_paths" in req
+            if "must_reuse" in meta:
+                req = meta["must_reuse"]
+                assert req.get("module_markers"), "must_reuse needs module_markers"
+                assert "existing_module" in req
+                assert "existing_symbol" in req
+                assert meta.get("repo_dir"), "a reuse fixture needs a repo_dir"
+                assert meta.get("arms"), "a reuse fixture needs both arms"
 
     def test_warns_when_calibration_model_differs_from_newest_baseline(
         self,
