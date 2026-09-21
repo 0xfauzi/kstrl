@@ -37,7 +37,6 @@ import pytest
 
 from kstrl import git, guards, verify
 from kstrl.breaker import BreakerConfig, NoProgressBreaker
-from kstrl.config import KstrlConfig
 from kstrl.policy import PolicyConfig, count_diff_size
 from kstrl.ui import PlainUI
 from tests.helpers import gitrepo
@@ -54,6 +53,7 @@ from tests.helpers.astwalk import (
     parse,
     parsed,
 )
+from tests.test_undecodable_diff import _guard_config
 
 PATH_PRINTING: frozenset[str] = frozenset(
     {
@@ -69,6 +69,11 @@ PATH_PRINTING: frozenset[str] = frozenset(
         "diff-index",
         "diff-files",
         "check-ignore",
+        # A bare "diff" prints a unified-diff header carrying the path,
+        # which is why get_diff_content's ? -- row belongs in this set
+        # too. Measured (#426 simplify pass): adding it changes neither
+        # with_z nor undecided, and adds exactly two rows to without_z.
+        "diff",
     }
 )
 
@@ -190,6 +195,9 @@ EXPECTED_WITH_Z: tuple[str, ...] = (
 )
 
 EXPECTED_WITHOUT_Z: tuple[str, ...] = (
+    # breaker.compute_diff_hash: the diff text is hashed whole, never
+    # parsed for a path (kstrl/breaker.py).
+    "breaker.py git diff HEAD",
     # -q means git prints nothing at all, so there is no path in the
     # output to spell. Measured: `git check-ignore -q -- foo.py` exits
     # with nothing on stdout.
@@ -199,6 +207,12 @@ EXPECTED_WITHOUT_Z: tuple[str, ...] = (
     # also refused here: measured, `git check-ignore -z -v -- foo.py`
     # exits 128 with "fatal: -z only makes sense with --stdin".
     "git.py git check-ignore -v -- ?",
+    # get_diff_content: a unified diff cannot be NUL-separated. Measured,
+    # `git diff -z HEAD` still C-quotes a non-ASCII header path (café.py
+    # renders as a quoted octal escape); the headers are unquoted
+    # downstream by policy.unquote_diff_path, pinned by
+    # tests/test_diff_path_quoting.py.
+    "git.py git diff ? --",
     # git.is_file_tracked names no encoding= on this spawn, so it runs in
     # BYTES mode and reads only result.returncode == 0. No path decoded.
     "git.py git ls-files --error-unmatch -- ?",
@@ -269,6 +283,14 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "statedir.py git -C ? remote get-url origin": 1,
     "tui/screens/home.py git rev-parse --abbrev-ref HEAD": 1,
     "verify.py git add -A -- . ?": 1,
+    # #425 (PR #425, merged into this branch as 982f726). Neither is
+    # path-printing, so layer 2 correctly leaves both out of
+    # EXPECTED_WITH_Z / EXPECTED_WITHOUT_Z / EXPECTED_UNDECIDED: `git
+    # merge-base <ref> HEAD` prints a commit sha, not a path, and `git
+    # show <rev>:<path>` prints the blob's CONTENT, with the path an
+    # argument to the command, never something git prints back.
+    "verify.py git merge-base ? HEAD": 1,
+    "verify.py git show ?": 1,
 }
 
 
@@ -361,10 +383,15 @@ def test_a_runtime_marker_is_a_known_miss() -> None:
     Layer 1 still sees it as a row, which is what keeps this from being a
     hole with nothing behind it. Under `strict=True` so that teaching
     `classify` to treat an unfoldable element as undecided XPASSes here and
-    forces this disclosure to be edited in the same diff."""
-    blind_spot(
-        _classifies_in_source, 'import subprocess\nsubprocess.run(["git", "diff", marker])\n'
-    )
+    forces this disclosure to be edited in the same diff.
+
+    ``"log"`` and not ``"diff"``: ``"diff"`` joined ``PATH_PRINTING`` in
+    this PR (#426 simplify pass, group B), so ``["git", "diff", marker]``
+    would now be classified by the literal ``"diff"`` alone regardless of
+    ``marker``, which would test nothing. ``"log"`` carries no marker of
+    its own, so this fixture's blindness comes from ``marker`` and nothing
+    else."""
+    blind_spot(_classifies_in_source, 'import subprocess\nsubprocess.run(["git", "log", marker])\n')
 
 
 def _written(tmp_path: Path, source: str) -> Path:
@@ -503,20 +530,3 @@ class TestTheGuardsThatConsumeThem:
         assert breaker.enabled is True
         assert breaker.record_iteration() is False
         assert breaker.stall_count == 0
-
-
-def _guard_config(root: Path) -> KstrlConfig:
-    kstrl_dir = root / "scripts" / "kstrl"
-    kstrl_dir.mkdir(parents=True, exist_ok=True)
-    (kstrl_dir / "prompt.md").write_text("p", encoding="utf-8")
-    (kstrl_dir / "prd.json").write_text('{"branchName": "t", "userStories": []}', encoding="utf-8")
-    return KstrlConfig(
-        max_iterations=1,
-        prompt_file=kstrl_dir / "prompt.md",
-        prd_file=kstrl_dir / "prd.json",
-        sleep_seconds=0,
-        interactive=False,
-        kstrl_branch="",
-        kstrl_branch_explicit=True,
-        allowed_paths=["src/", "scripts/"],
-    )

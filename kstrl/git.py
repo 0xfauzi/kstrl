@@ -638,6 +638,10 @@ def get_changed_files_since(
     Fails OPEN like the rest of this module: an unborn HEAD (nothing to
     diff against) or a diff that cannot be produced falls back to the
     working-tree view, which is today's behavior, rather than raising.
+    A path this process cannot decode as utf-8 is different: it is a diff
+    that WAS produced and that a reader cannot read, so it raises
+    ``GitDiffError`` (#416's contract) rather than silently reporting no
+    change (#423).
     """
     if baseline.head is None:
         changed = get_changed_files(cwd, timeout)
@@ -1132,7 +1136,7 @@ def _parse_numstat_rows(output: str) -> list[tuple[int | None, int | None, str]]
     rows: list[tuple[int | None, int | None, str]] = []
     i = 0
     while i < len(tokens):
-        record = _numstat_record(tokens, i) if tokens[i] else None
+        record = _numstat_record(tokens, i)
         if record is None:
             i += 1
             continue
