@@ -88,9 +88,10 @@ audit trail that H3 requires. `frontier_type="objective"` stops a reviewer gain
 from silently regressing the security reviewer.
 
 kstrl already owns the part most adopters lack: an objective metric.
-`kstrl/calibration.py` provides `role_detection_rate`, `Baseline`,
-`compare_baselines`, and `min_role_rate`. That is a scored metric with a
-pass/fail gate already written.
+`kstrl/calibration_baseline.py` provides `role_detection_rate` and
+`Baseline`; `kstrl/calibration.py` provides `compare_baselines` and
+`min_role_rate`. That is a scored metric with a pass/fail gate already
+written.
 
 ### 2.3 Why port ACE rather than depend on it
 

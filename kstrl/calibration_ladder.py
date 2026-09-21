@@ -3,10 +3,10 @@
 ``python -m kstrl.calibration compare`` measures the regression; this
 module is the consequence. It sits beside ``kstrl.calibration`` rather
 than inside it so the measurement half stays free of control-plane
-imports, and because folding it back in would not fit. Measured, and
-measured the way a reader can repeat: ``kstrl/calibration.py`` is 752
-lines, and this module's body below its last import (line 51 of 291) is
-240, so the fold is at least 992 against the 800-line growth ratchet.
+imports: ``kstrl.calibration`` and ``kstrl.calibration_baseline`` know
+nothing of autonomy, the inbox or the UI, and folding this module's
+``Inbox``/``AutonomyState``/``PlainUI`` imports back in would drag all
+three into every importer of a comparison.
 
 Advisory first, in two tiers. A regression always opens a
 ``calibration_drift`` inbox item when the ladder is enabled; it demotes
@@ -40,7 +40,7 @@ from kstrl.autonomy import (
     DemotionTrigger,
     apply_demotion,
 )
-from kstrl.calibration import UNKNOWN_TIMESTAMP
+from kstrl.calibration_baseline import UNKNOWN_TIMESTAMP
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.statedir import ControlStateError
 from kstrl.ui.plain import PlainUI

@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import calibration
+from kstrl import calibration, calibration_baseline
 from kstrl.config import KstrlConfig
 from kstrl.factory import (
     AdversarialAgentSelection,
@@ -761,14 +761,14 @@ class TestCalibrationReviewerOverride:
         against a cross-family one warns (deltas measure the family
         change) instead of silently pretending both measured the same
         configuration."""
-        old = calibration.Baseline(
+        old = calibration_baseline.Baseline(
             path=None,
             model="haiku",
             timestamp="t1",
             format_version=2,
             runs_per_fixture=3,
             fixtures=(
-                calibration.FixtureStats(
+                calibration_baseline.FixtureStats(
                     role="security",
                     fixture_id="sec-01",
                     category="injection",
@@ -779,7 +779,7 @@ class TestCalibrationReviewerOverride:
                 ),
             ),
         )
-        new = calibration.Baseline(
+        new = calibration_baseline.Baseline(
             path=None,
             model=calibration.reviewer_override_label(
                 "haiku",
