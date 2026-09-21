@@ -31,7 +31,7 @@ import pytest
 from kstrl import fixtures as fixtures_mod
 from kstrl import knowledge, verify
 from kstrl.autonomy import AutonomyState
-from kstrl.calibration import load_baseline
+from kstrl.calibration_baseline import load_baseline
 from kstrl.intake_github import ProcessedLedger
 from kstrl.serve import ServeStateError, SpendLedger
 from kstrl.workqueue import Queue

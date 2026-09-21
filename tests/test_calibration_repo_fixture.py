@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import calibration
+from kstrl import calibration, calibration_baseline
 from kstrl.decompose import ARCHITECT_REPO_SOURCE_PROMPT
 from kstrl.feedforward import extract_public_interfaces
 from tests.helpers.astwalk import REPO_ROOT, TESTS_DIR, parsed
@@ -467,8 +467,8 @@ def test_compare_baselines_pairs_the_arms_across_two_runs(
         tmp_path,
     )
     comparison = calibration.compare_baselines(
-        calibration.load_baseline(old),
-        calibration.load_baseline(new),
+        calibration_baseline.load_baseline(old),
+        calibration_baseline.load_baseline(new),
     )
     present = next(a for a in fixture.arms if a.expect_module_named)
     assert f"{REUSE_ROLE}/{present.fixture_id}" in comparison.newly_missed
