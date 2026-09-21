@@ -119,6 +119,7 @@ def test_calibration_compare_refuses_an_unreadable_baseline_with_exit_2(tmp_path
         text=True,
         timeout=120,
         cwd=REPO_ROOT,
+        start_new_session=True,
     )
 
     assert result.returncode == 2, result.stderr

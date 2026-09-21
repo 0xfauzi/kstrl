@@ -27,9 +27,21 @@ undecided rows below, which the gate would make invisible rather than
 reported. The saving is not worth the blind spot it buys, so this walk
 carries no substring gate at all.
 
-``handler_verdict`` is IMPORTED from ``tests/test_toml_readers``, not
-re-implemented: the rule about what a parse handler may catch has one
-definition in this repo and this guard consults that one.
+``handler_verdict`` and ``guarded_parses`` are IMPORTED from
+``tests/test_toml_readers``, not re-implemented: the rule about what a
+parse handler may catch, and the walk that finds every ``try`` around a
+resolved parse, each has one definition in this repo and this guard
+consults those. An earlier version of this file re-walked for the FIRST
+matching ``try`` and stopped there, which let a mutant owner enumerate
+its exceptions in an inner ``try`` under an outer bare ``except
+Exception: raise`` and clear the check on the outer clause alone (#427
+simplify pass, group A).
+
+Disclosed blind spot, not covered by either layer: a ``json.loads`` call
+that lives inside a Python source string built for a subprocess, such as
+``kstrl/fixtures.py``'s embedded function-fixture runner, is invisible
+to a walk of ``kstrl/``'s own AST, because the walk sees a string
+constant there, not a call.
 """
 
 from __future__ import annotations
@@ -46,16 +58,14 @@ from tests.helpers.astwalk import (
     bindings,
     blind_spot,
     calls_to,
-    handler_clauses,
     label,
     module_name,
     package_sources,
     parse,
     parsed,
     spells,
-    try_body_nodes,
 )
-from tests.test_toml_readers import handler_verdict
+from tests.test_toml_readers import guarded_parses, handler_verdict
 
 JSON_MODULE = "json"
 JSON_PARSE_TARGETS = frozenset({"json.load", "json.loads"})
@@ -191,7 +201,7 @@ class TestTheWalkSeesWhatItClaimsTo:
             tree, JSON_PARSE_TARGETS, where=label(owner_source), module="kstrl.jsonread"
         )
 
-        assert len(sites.seen) == 1
+        assert len(sites.seen) == 1, "the owner's own parse is the single-parse pin"
 
 
 class TestNoJsonReaderEnumeratesItsExceptions:
@@ -232,30 +242,34 @@ class TestNoJsonReaderEnumeratesItsExceptions:
         )
 
     def test_the_owner_ends_on_a_bare_exception_clause(self) -> None:
+        """Judges EVERY ``try`` around a resolved parse in the owner, not
+        just the first one found.
+
+        An earlier version of this test walked for the first matching
+        ``try`` and stopped, which a mutant owner cleared by wrapping its
+        enumeration in an INNER ``try: ... except (ValueError,
+        RecursionError)`` under an OUTER bare ``except Exception: raise``:
+        the outer clause is what a first-match walk sees, and it judges
+        compliant. ``guarded_parses`` (shared with the tomllib guard,
+        parameterised by target set) collects every ``try`` holding a
+        resolved parse, so the inner one is judged too.
+        """
         owner_source = next(s for s in package_sources() if label(s) == OWNER)
         tree = parsed(owner_source)
         table = bindings(tree, module="kstrl.jsonread")
 
-        found = None
-        for node in __import__("ast").walk(tree):
-            if not isinstance(node, __import__("ast").Try):
-                continue
-            targets = {
-                child
-                for child in try_body_nodes(node)
-                if isinstance(child, __import__("ast").Call)
-                and table.resolve(child.func) in JSON_PARSE_TARGETS
-            }
-            if targets:
-                found = node
-                break
-
-        assert found is not None, "no try in the owner holds a resolved json parse"
-        verdict = handler_verdict(tuple(handler_clauses(found, table)))
-        assert verdict is None, (
-            f"{verdict}. The owner must end on a bare `except Exception`, above which sits a "
-            "pass-through `except json.JSONDecodeError: raise`, the way "
-            "kstrl.config_toml.load_toml_document does."
+        guarded, _ = guarded_parses(tree, table, JSON_PARSE_TARGETS)
+        assert guarded, "no try in the owner holds a resolved json parse"
+        offenders = [
+            f"line {lineno}: {verdict}"
+            for lineno, clauses in guarded
+            if (verdict := handler_verdict(clauses)) is not None
+        ]
+        assert not offenders, (
+            f"{offenders[0]}. The owner must end on a bare `except Exception`, above which "
+            "sits a pass-through `except json.JSONDecodeError: raise`, the way "
+            "kstrl.config_toml.load_toml_document does, and EVERY try around a resolved "
+            "parse must satisfy this, not just the first one found."
         )
 
 
@@ -344,11 +358,20 @@ class TestTheOwnerNormalisesWhatTheParserRaises:
 
 
 class TestTheDisclosedLimits:
-    """One strict xfail, matching the toml guard."""
+    """Two strict xfails, matching the toml guard's pattern."""
 
     @pytest.mark.xfail(strict=True, raises=AssertionError, reason="layer 1 folds, it does not run")
     def test_a_module_name_the_interpreter_has_to_build_is_missed(self) -> None:
         blind_spot(
             _spellings,
             'import importlib\nimportlib.import_module("".join(("js", "on"))).loads(s)\n',
+        )
+
+    @pytest.mark.xfail(
+        strict=True, raises=AssertionError, reason="a call inside a string constant is not a call"
+    )
+    def test_a_parse_inside_a_subprocess_source_string_is_missed(self) -> None:
+        blind_spot(
+            _spellings,
+            '_RUNNER = "import json\\ndef f(s):\\n    return json.loads(s)\\n"\n',
         )
