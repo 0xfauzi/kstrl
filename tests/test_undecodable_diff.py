@@ -494,11 +494,14 @@ _PLANTED_BARE_RERAISE = _PLANTED_WITHOUT_HANDLER.replace(
 
 #: The exact shape #416's round-two review measured clearing under the
 #: CPython-derived accepted set: a clause naming ``Exception``, not the
-#: exact target, that returns ``[]``. Under the narrowed exact-spelling
-#: set (``_ACCEPTED_NAMES``) this clause's ``clause.names`` (``{"Exception"}``)
-#: does not overlap the accepted names at all, so it is reported without
-#: ever reaching ``handler_converts`` - proof that A2's narrowing, not only
-#: A4's conversion check, is load-bearing here.
+#: exact target, that returns ``[]``. This clause is reported by the
+#: ``handler_converts`` check regardless of the accepted set: it returns
+#: ``[]`` instead of raising ``GitDiffError``, so it never converts, and
+#: that stays true even when ``_ACCEPTED_NAMES`` is widened to include
+#: ``Exception`` (measured). It is therefore not evidence that the
+#: exact-spelling accepted set (``_ACCEPTED_NAMES``) is load-bearing on its
+#: own; ``_PLANTED_WIDE_BUT_CONVERTING`` below is the source that only the
+#: narrowing can report.
 _PLANTED_UNRELATED_EXCEPTION = _PLANTED_WITHOUT_HANDLER.replace(
     "    except subprocess.TimeoutExpired as exc:\n"
     '        raise GitDiffError("timed out") from exc\n',
@@ -506,6 +509,25 @@ _PLANTED_UNRELATED_EXCEPTION = _PLANTED_WITHOUT_HANDLER.replace(
     '        raise GitDiffError("timed out") from exc\n'
     "    except Exception:\n"
     "        return []\n",
+)
+
+#: The missing sole-killer for the exact-spelling accepted set
+#: (``_ACCEPTED_NAMES``). This clause names ``ValueError``, a WIDER name
+#: that at runtime really does catch every ``UnicodeDecodeError``
+#: (``UnicodeDecodeError`` is a ``ValueError`` subclass), and it converts:
+#: it raises ``GitDiffError`` exactly like the compliant handler does, so
+#: the ``handler_converts`` check says yes. Only the exact-spelling
+#: accepted set can still report this site, because ``clause.names`` is
+#: ``{"ValueError"}``, which does not overlap ``{"UnicodeDecodeError"}``.
+#: Widen ``_ACCEPTED_NAMES`` to include ``ValueError`` and this is the one
+#: test in the file that fails (measured, #416 round three).
+_PLANTED_WIDE_BUT_CONVERTING = _PLANTED_WITHOUT_HANDLER.replace(
+    "    except subprocess.TimeoutExpired as exc:\n"
+    '        raise GitDiffError("timed out") from exc\n',
+    "    except subprocess.TimeoutExpired as exc:\n"
+    '        raise GitDiffError("timed out") from exc\n'
+    "    except ValueError as exc:\n"
+    '        raise GitDiffError("not valid utf-8") from exc\n',
 )
 
 
@@ -594,11 +616,31 @@ class TestEveryStrictReaderConvertsADecodeFailure:
     def test_a_clause_naming_an_unrelated_broad_exception_is_reported(self) -> None:
         """The exact shape #416's round-two review measured clearing under
         the CPython-derived accepted set: ``except Exception: return []``.
-        This one is caught by A2's narrowing alone - ``clause.names`` is
-        ``{"Exception"}``, which does not overlap ``_ACCEPTED_NAMES`` at
-        all, so the site is reported without ever reaching
-        ``handler_converts``."""
+        This clause is reported by the ``handler_converts`` check
+        regardless of the accepted set: it returns ``[]`` instead of
+        raising ``GitDiffError``, so it never converts, and widening
+        ``_ACCEPTED_NAMES`` to include ``Exception`` does not clear it
+        (measured). See
+        ``test_a_wider_name_that_still_converts_is_reported_only_by_the_narrowing``
+        for the source that only the exact-spelling accepted set can
+        report."""
         _census, reported = scan_git_source(_PLANTED_UNRELATED_EXCEPTION)
+
+        assert reported == ["get_diff_authors:11"]
+
+    def test_a_wider_name_that_still_converts_is_reported_only_by_the_narrowing(
+        self,
+    ) -> None:
+        """A clause naming ``ValueError`` catches every decode failure
+        (``UnicodeDecodeError`` is a ``ValueError``) and converts it
+        exactly like the compliant handler does - the ``handler_converts``
+        check says yes. Only the exact-spelling accepted set
+        (``_ACCEPTED_NAMES``) reports this site, because ``clause.names``
+        (``{"ValueError"}``) does not overlap ``{"UnicodeDecodeError"}``.
+        This is the test that fails when the narrowing is reverted
+        (measured, #416 round three): none of the other planted-source
+        tests in this class do."""
+        _census, reported = scan_git_source(_PLANTED_WIDE_BUT_CONVERTING)
 
         assert reported == ["get_diff_authors:11"]
 

@@ -317,8 +317,9 @@ def helper(cmd, cwd):
 #: 1's ``handler_converts`` (which independently forbids a swallow no
 #: matter what the clause names), guard 2's ``_not_a_bare_reraise`` does
 #: NOT forbid a swallow - it only forbids a bare re-raise - so this
-#: specific vacuous clear is caught by A2's exact-spelling narrowing
-#: alone, not by ``handler_converts``.
+#: specific vacuous clear is caught by the exact-spelling accepted set
+#: (``_ACCEPTED_NAMES`` / ``_ACCEPTED``) alone, not by
+#: ``handler_converts``.
 _PLANTED_UNRELATED_EXCEPTION = """
 def helper(cmd, cwd):
     try:
@@ -410,8 +411,9 @@ def test_a_clause_naming_an_unrelated_broad_exception_is_reported() -> None:
     """The exact shape #416's round-two review measured clearing under the
     CPython-derived accepted set: ``except Exception: pass``. Guard 2's
     ``_not_a_bare_reraise`` does not forbid a swallow on its own, so this
-    site is caught by A2's exact-spelling narrowing alone: ``clause.names``
-    is ``{"Exception"}``, which does not overlap ``_ACCEPTED`` at all."""
+    site is caught by the exact-spelling accepted set (``_ACCEPTED``)
+    alone: ``clause.names`` is ``{"Exception"}``, which does not overlap
+    ``_ACCEPTED`` at all."""
     tree = parse(_PLANTED_UNRELATED_EXCEPTION)
 
     _census, reported = scan_verify_source("planted.py", "planted", tree)
