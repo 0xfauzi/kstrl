@@ -368,6 +368,18 @@ class TestV1CaughtIsRequired:
                 assert isinstance(entry.get("caught"), bool), (path, entry)
         assert v1_checked >= 18
 
+    def test_a_v2_shaped_entry_that_lost_format_version_is_refused(self, tmp_path: Path) -> None:
+        """reuse.md F2: a v2 document that lost `format_version` used to be
+        read as v1 and score every role 0.00. Its entries carry run counts
+        and no `caught`, so the v1 branch now refuses it."""
+        document = _v2_document()
+        del document["format_version"]
+        path = _write(tmp_path / "baseline-20260901-000000.json", document)
+        with pytest.raises(ValueError) as caught:
+            load_baseline(path)
+        assert "caught" in str(caught.value)
+        assert "sec-a" in str(caught.value)
+
 
 class TestRoleAndFixtureIdAreRequiredStrings:
     """#421 Group A3: `str(...)` used to coerce first, so `{"role": null}`
