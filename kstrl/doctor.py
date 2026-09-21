@@ -187,7 +187,10 @@ def check_git_clean(root: Path) -> _CheckResult:
             "not a git repository, so the working tree could not be read",
             "Fix git_repo first.",
         )
-    changed = sorted(git.get_changed_files(root))
+    try:
+        changed = sorted(git.get_changed_files(root))
+    except git.GitDiffError as exc:
+        return (STATUS_WARN, f"the working tree could not be read: {exc}", "")
     if changed:
         listed = ", ".join(changed[:5])
         return (
@@ -416,7 +419,7 @@ def check_test_root(root: Path) -> _CheckResult:
             encoding="utf-8",
             timeout=git.DEFAULT_TIMEOUT,
         )
-    except (subprocess.TimeoutExpired, OSError) as exc:
+    except (subprocess.TimeoutExpired, OSError, UnicodeDecodeError) as exc:
         return (STATUS_WARN, f"git could not list tracked files: {exc}", "")
     if result.returncode != 0:
         return (

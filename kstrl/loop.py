@@ -491,6 +491,27 @@ def build_project_context(
     return "\n\n".join(sections)
 
 
+def _guard_baseline(
+    cwd: Path | None,
+    base_ref: str | None,
+    ui: UI,
+) -> git.WorkspaceBaseline | None:
+    """The before-picture the allowed-paths guard compares against, or None
+    when it could not be read (the caller refuses before any spend)."""
+    try:
+        baseline = git.capture_workspace_baseline(cwd, base_ref=base_ref)
+    except git.GitDiffError as exc:
+        ui.err(f"Guard baseline could not be taken: {exc}")
+        return None
+    if baseline.dirty:
+        ui.info(
+            f"Guard baseline: HEAD {baseline.head or '<unborn>'}, "
+            f"{len(baseline.dirty)} pre-existing uncommitted "
+            "file(s) excluded from enforcement"
+        )
+    return baseline
+
+
 def run_loop(
     config: KstrlConfig,
     ui: UI,
@@ -678,16 +699,9 @@ def run_loop(
         # already dirty now belongs to the operator or the harness, and
         # everything the agent does from here - committed or not - is
         # attributable to the agent.
-        guard_baseline = git.capture_workspace_baseline(
-            cwd,
-            base_ref=guard_base_ref,
-        )
-        if guard_baseline.dirty:
-            ui.info(
-                f"Guard baseline: HEAD {guard_baseline.head or '<unborn>'}, "
-                f"{len(guard_baseline.dirty)} pre-existing uncommitted "
-                "file(s) excluded from enforcement"
-            )
+        guard_baseline = _guard_baseline(cwd, guard_base_ref, ui)
+        if guard_baseline is None:
+            return LoopResult(completed=False, iterations=0, exit_code=1)
     else:
         ui.info("ALLOWED_PATHS is empty; enforcement disabled")
 

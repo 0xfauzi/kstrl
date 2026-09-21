@@ -377,41 +377,54 @@ def checkout_branch(
     return result.returncode == 0
 
 
+def _nul_paths(output: str) -> set[str]:
+    """Paths from a git command run with ``-z``: NUL-separated, never
+    quoted, and never stripped."""
+    return {path for path in output.split("\0") if path}
+
+
 def get_changed_files(
     cwd: Path | None = None,
     timeout: float = DEFAULT_TIMEOUT,
 ) -> set[str]:
     """Get all changed files (staged, unstaged, and untracked).
 
-    Returns paths relative to repo root.
+    Returns paths relative to repo root, exactly as git spells them: both
+    spawns run with ``-z`` so a path holding a non-ASCII byte, a tab, a
+    double quote or a backslash arrives NUL-separated and unquoted rather
+    than as git's C-quoted rendering of it (#423). A path this process
+    cannot decode as utf-8 is a diff it could not obtain, so it raises
+    ``GitDiffError`` (#416's contract) rather than silently omitting it.
     """
     files: set[str] = set()
 
     try:
         # Unstaged changes
         result = subprocess.run(
-            ["git", "diff", "--name-only"],
+            ["git", "diff", "--name-only", "-z"],
             cwd=cwd,
             capture_output=True,
             encoding="utf-8",
             timeout=timeout,
         )
         if result.returncode == 0:
-            files.update(line.strip() for line in result.stdout.splitlines() if line.strip())
+            files.update(_nul_paths(result.stdout))
 
         # Staged changes
         result = subprocess.run(
-            ["git", "diff", "--name-only", "--cached"],
+            ["git", "diff", "--name-only", "--cached", "-z"],
             cwd=cwd,
             capture_output=True,
             encoding="utf-8",
             timeout=timeout,
         )
         if result.returncode == 0:
-            files.update(line.strip() for line in result.stdout.splitlines() if line.strip())
+            files.update(_nul_paths(result.stdout))
 
     except subprocess.TimeoutExpired:
         pass
+    except UnicodeDecodeError as exc:
+        raise GitDiffError(_undecodable_message("git diff --name-only", exc)) from exc
 
     files.update(get_untracked_files(cwd, timeout))
     return files
@@ -423,10 +436,15 @@ def get_untracked_files(
 ) -> set[str]:
     """Untracked, non-ignored files. Separate from ``get_changed_files``
     because a baseline comparison needs them WITHOUT the index/HEAD
-    deltas that function also folds in (see get_changed_files_since)."""
+    deltas that function also folds in (see get_changed_files_since).
+
+    Runs with ``-z`` so a tricky name arrives as the file's own spelling,
+    not git's C-quoted rendering of it (#423); a path this process cannot
+    decode as utf-8 raises ``GitDiffError`` rather than being dropped.
+    """
     try:
         result = subprocess.run(
-            ["git", "ls-files", "--others", "--exclude-standard"],
+            ["git", "ls-files", "--others", "--exclude-standard", "-z"],
             cwd=cwd,
             capture_output=True,
             encoding="utf-8",
@@ -434,9 +452,11 @@ def get_untracked_files(
         )
     except subprocess.TimeoutExpired:
         return set()
+    except UnicodeDecodeError as exc:
+        raise GitDiffError(_undecodable_message("git ls-files --others", exc)) from exc
     if result.returncode != 0:
         return set()
-    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+    return _nul_paths(result.stdout)
 
 
 @dataclass(frozen=True)
@@ -618,6 +638,10 @@ def get_changed_files_since(
     Fails OPEN like the rest of this module: an unborn HEAD (nothing to
     diff against) or a diff that cannot be produced falls back to the
     working-tree view, which is today's behavior, rather than raising.
+    A path this process cannot decode as utf-8 is different: it is a diff
+    that WAS produced and that a reader cannot read, so it raises
+    ``GitDiffError`` (#416's contract) rather than silently reporting no
+    change (#423).
     """
     if baseline.head is None:
         changed = get_changed_files(cwd, timeout)
@@ -639,6 +663,13 @@ def _committed_since(
     rev-list. Rename/copy records contribute both paths, exactly as
     ``get_diff_names`` does, because for scope purposes content left the
     source too.
+
+    Fails OPEN on a diff that cannot be produced (timeout, non-zero
+    exit): returning ``[]`` there falls back to the working-tree view,
+    which is today's behaviour. A path this process cannot decode as
+    utf-8 is different: it is a diff that WAS produced and that this
+    reader cannot read, so it raises ``GitDiffError`` (#416's contract)
+    rather than silently reporting no change (#423).
     """
     try:
         result = subprocess.run(
@@ -650,6 +681,8 @@ def _committed_since(
         )
     except subprocess.TimeoutExpired:
         return []
+    except UnicodeDecodeError as exc:
+        raise GitDiffError(_undecodable_message("git diff --name-status", exc)) from exc
     if result.returncode != 0:
         return []
     return _unique_paths(path for _, path in _parse_name_status_records(result.stdout))
@@ -1054,24 +1087,6 @@ def get_diff_content(
     return result.stdout
 
 
-def _normalize_numstat_path(path: str) -> str:
-    """Resolve a ``git diff --numstat`` rename path to its destination.
-
-    Renames render as ``old => new`` or, when a common prefix/suffix
-    exists, ``pre{old => new}post``. Both collapse to the new path so the
-    policy size caps count one file per change, not two.
-    """
-    if "=>" not in path:
-        return path
-    if "{" in path and "}" in path:
-        pre, rest = path.split("{", 1)
-        mid, post = rest.split("}", 1)
-        _old, _sep, new = mid.partition("=>")
-        return (pre + new.strip() + post).replace("//", "/")
-    _old, _sep, new = path.partition("=>")
-    return new.strip()
-
-
 def _diff_base(
     base_branch: str,
     cwd: Path | None,
@@ -1089,8 +1104,26 @@ def _diff_base(
     return resolve_base_ref(base_branch, cwd, timeout)
 
 
+def _numstat_record(tokens: list[str], i: int) -> tuple[str, str, str, int] | None:
+    """One ``git diff --numstat -z`` record starting at ``tokens[i]``.
+
+    Returns ``(added, removed, path, next_index)``, or None when the
+    token is not a record. Measured on git 2.47.1: an ordinary row is
+    ``added\tremoved\tpath\0`` and a rename or copy is
+    ``added\tremoved\t\0old\0new\0``, i.e. an EMPTY third field
+    followed by two more NUL-separated fields.
+    """
+    parts = tokens[i].split("\t", 2)
+    if len(parts) != 3:
+        return None
+    added, removed, path = parts
+    if path:
+        return added, removed, path, i + 1
+    return added, removed, tokens[i + 2] if i + 2 < len(tokens) else "", i + 3
+
+
 def _parse_numstat_rows(output: str) -> list[tuple[int | None, int | None, str]]:
-    """Parse ``git diff --numstat`` stdout into ``(added, removed, path)``.
+    """Parse ``git diff --numstat -z`` stdout into ``(added, removed, path)``.
 
     A function rather than a loop inside :func:`get_diff_numstat` for the
     reason :func:`_diff_base` already gives: that function sits at the
@@ -1099,17 +1132,18 @@ def _parse_numstat_rows(output: str) -> list[tuple[int | None, int | None, str]]
     15 -> 16 with the clause and the loop together (the gate refuses it),
     7 with the loop lifted out; cyclomatic 8 -> 6.
     """
+    tokens = output.split("\0")
     rows: list[tuple[int | None, int | None, str]] = []
-    for line in output.splitlines():
-        if not line.strip():
+    i = 0
+    while i < len(tokens):
+        record = _numstat_record(tokens, i)
+        if record is None:
+            i += 1
             continue
-        parts = line.split("\t", 2)
-        if len(parts) != 3:
-            continue
-        added_raw, removed_raw, path = parts
+        added_raw, removed_raw, path, i = record
         added = None if added_raw == "-" else int(added_raw)
         removed = None if removed_raw == "-" else int(removed_raw)
-        rows.append((added, removed, _normalize_numstat_path(path)))
+        rows.append((added, removed, path))
     return rows
 
 
@@ -1123,9 +1157,10 @@ def get_diff_numstat(
     """Per-file ``(added, removed, path)`` counts vs a base branch.
 
     ``added``/``removed`` are None for binary files (git prints ``-``).
-    Rename paths are normalized to the destination. Base resolution
-    mirrors :func:`get_diff_names` (``origin/<base>`` when a remote
-    exists).
+    Runs with ``-z``, which reports one path per rename (the
+    destination), not two joined by ``=>``, and never quotes a name
+    (#423). Base resolution mirrors :func:`get_diff_names`
+    (``origin/<base>`` when a remote exists).
 
     ``strict=True`` raises :class:`GitDiffError` on timeout or nonzero
     exit instead of returning ``[]``. This is load-bearing for the R8.1
@@ -1142,7 +1177,7 @@ def get_diff_numstat(
     base_ref = _diff_base(base_branch, cwd, timeout, resolved)
     try:
         result = subprocess.run(
-            ["git", "diff", "--numstat", f"{base_ref}...HEAD", "--"],
+            ["git", "diff", "--numstat", "-z", f"{base_ref}...HEAD", "--"],
             cwd=cwd,
             capture_output=True,
             encoding="utf-8",
