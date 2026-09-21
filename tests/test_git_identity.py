@@ -85,9 +85,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # latter). Both repositories go through
     # `tests.helpers.gitrepo.set_identity` via this file's own `_repo`.
     "tests/test_check_result_measurement_behaviour.py": 7,
-    # #409: one repository, two commits (`seed` then `accented`), built
-    # through this file's `_repo` via `tests.helpers.gitrepo.set_identity`.
-    "tests/test_child_output_encoding.py": 2,
+    # #409's simplify pass (C2): the repository moved onto
+    # tests.conftest.make_review_repo, so this file's own commits are gone
+    # and its two are counted at conftest.py's row above, the same shape
+    # test_patch_coverage.py's row above already argues for.
     "tests/test_cli.py": 2,
     "tests/test_contract_safety.py": 4,
     # `ready_repo` calls `tests.helpers.gitrepo.set_identity` before it

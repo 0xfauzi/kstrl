@@ -178,17 +178,15 @@ ignore_names = ["cancel_futures"]
 # reads one whole word instead of a split-off ASCII prefix that reads as a
 # typo for a young cow. No entry is needed here for it.
 #
-# #409 cannot use that trick: tests/test_child_output_encoding.py checks for
-# the literal ASCII prefix "caf" inside a real `git diff` header, where
-# core.quotepath has already escaped "café.py" to "caf\303\251.py" - the
-# substring under test IS the truncated ASCII prefix, not a word this code
-# chose to split. tru and candidat are the same class one layer down:
-# tests/test_encoding_readers.py pins the walk's own printed rows, each
-# truncated at exactly 70 characters (`ast.unparse(node)[:70]`) so the pin
-# reads what the walk actually produced. Trimming a row to dodge a spelling
-# hit is exactly what that file's own tests forbid (a pin must be the
-# printer's output, copied, never hand-edited).
-ignore-words-list = "caf,candidat,crasher,critcial,excetra,missable,nd,pre-empt,tru,unparseable"
+# #409's simplify pass (D1) removed three entries this list used to carry for
+# split-off ASCII prefixes of a longer word. A repo-wide ignore for a short
+# fragment like that stops codespell catching the real typo it is a fragment
+# of, anywhere in the tree, not only at the one truncated pin it was added
+# for. The site that split a real word now computes its full spelling instead
+# (tests/test_child_output_encoding.py); the sites that truncate a printed
+# row at a fixed column by construction (`ast.unparse(node)[:70]`) each carry
+# a trailing `# codespell:ignore` instead (tests/test_encoding_readers.py).
+ignore-words-list = "crasher,critcial,excetra,missable,nd,pre-empt,unparseable"
 # tests/tool_output/ is captured tool output kept as evidence (#258).
 # pytest truncates its short-summary lines to the terminal width, which
 # cuts the exception name off mid-word - the very behaviour those

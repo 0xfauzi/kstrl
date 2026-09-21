@@ -34,13 +34,38 @@ cannot drift apart in silence.
 
 CLEARING IS THE DANGEROUS DIRECTION. CLAUDE.md guard rule 3: a guard that
 CLEARS must be narrow. Every step that cannot reach an answer here reports
-rather than clears:
+or defers rather than clears:
 
-    a ``text=`` that does not fold      -> reported
-    an ``encoding=`` that does not fold -> reported (cannot prove utf-8)
-    an ``errors=`` that does not fold   -> treated as strict, then lenient
-                                           only if it folds to a lenient value
-    a callee the resolver cannot decide -> ``undecided``, a pinned row
+    a ``text=`` that does not fold        -> reported
+    an ``encoding=`` that does not fold   -> reported (cannot prove utf-8)
+    an ``errors=`` that does not fold     -> reported (cannot prove strictness)
+    a call carrying a ``**something``     -> undecided; the caller's dict is
+                                              not readable, so no explicit
+                                              keyword on the same call can be
+                                              trusted either
+    a callee the resolver cannot decide   -> undecided, a pinned row
+
+The ``errors=`` row above is deliberately NOT the same rule
+``encodingrules.is_strict`` answers for #320's READ rule, and this module
+must not change that function to make the two agree. The read rule treats
+an unfoldable ``errors=`` as strict (compliant), on the reasoning that a
+read whose handler this walk cannot name is still answered for by
+whatever code wrote it. The spawn rule has no such reasoning available: an
+unfoldable ``errors=`` here means a VARIABLE could hold ``"replace"`` at
+run time, and clearing the site on nothing but the absence of proof is
+exactly the over-match CLAUDE.md guard rule 3 forbids. So this file asks
+its own question about ``errors=`` before it asks ``is_strict`` anything.
+
+THE ``**kwargs`` ROW is here because a walk that clears
+``subprocess.run(cmd, **kwargs)`` as bytes mode is answering a question it
+was never handed enough information to answer: the dict merged in at the
+call site can hold ``encoding=``, ``errors=`` or ``text=`` this walk never
+sees, so no explicit keyword on the same call describes the site's real
+behaviour either. ``kstrl/timeout.py``'s ``run_with_timeout`` is the live
+instance: it names ``encoding="utf-8"`` explicitly and ALSO forwards
+``**kwargs`` to the same call, so a caller passing ``errors="replace"``
+through those kwargs would silently un-strict a site this walk would
+otherwise have called clear.
 """
 
 from __future__ import annotations
@@ -54,6 +79,7 @@ from dataclasses import dataclass
 from tests.helpers.astwalk import (
     Sites,
     calls_to,
+    folded_str,
     label,
     module_name,
     package_sources,
@@ -92,6 +118,41 @@ def _spawn_entry_points() -> frozenset[str]:
 #: The seven, derived once. Pinned in ``tests/test_encoding_readers.py`` so a
 #: CPython release that drops one is loud rather than silent.
 SPAWN_TARGETS = _spawn_entry_points()
+
+
+def forwards_unknown_keywords(node: ast.Call) -> bool:
+    """Does this call carry a ``**something`` keyword?
+
+    ``ast.keyword.arg`` is ``None`` exactly for a ``**`` spread; every
+    named keyword has a string there. A dict merged in this way is opaque
+    to this walk, so a call carrying one is UNDECIDED regardless of what
+    its other, explicit keywords say (A1, #409's simplify pass): an
+    explicit ``encoding="utf-8"`` sitting beside ``**kwargs`` does not
+    prove the call is strict, because the forwarded dict can still carry
+    an ``errors=`` this walk will never see.
+    """
+    return any(keyword.arg is None for keyword in node.keywords)
+
+
+def errors_unproven_fault(node: ast.Call) -> str | None:
+    """Why an ``errors=`` keyword's strictness cannot be proven, or None.
+
+    ``encodingrules.is_strict`` treats an unfoldable ``errors=`` as
+    strict, which is the correct, REPORTING direction for #320's READ
+    rule and the wrong, CLEARING direction for this SPAWN rule (A2). A
+    read whose handler this walk cannot name is still answered for by
+    whatever code wrote it; a spawn whose ``errors=`` is a variable could
+    hold ``"replace"`` at run time, and clearing it would be exactly the
+    over-match CLAUDE.md guard rule 3 forbids. So this question is asked
+    here, once, and ``is_strict`` itself is left unchanged: the read rule
+    still uses it and must keep its own answer.
+    """
+    named = keyword_of(node, "errors")
+    if named is None:
+        return None
+    if folded_str(named) is None:
+        return "errors= cannot be folded, so strictness is unproven"
+    return None
 
 
 def text_mode(node: ast.Call) -> bool | None:
@@ -148,6 +209,23 @@ class SpawnScan:
         )
 
 
+def _classify_text_mode_spawn(node: ast.Call) -> tuple[str, str | None]:
+    """Which bucket a spawn ALREADY DECIDED to be text mode belongs in.
+
+    Returns ``(bucket, reason)`` where ``bucket`` is ``"reported"``,
+    ``"lenient"`` or ``"clear"``, and ``reason`` is the message to attach
+    when it is ``"reported"``. Split out of :func:`scan_source` so that
+    function's loop reads as one dispatch over the modes a spawn can be
+    in, rather than this decision nested inside it too.
+    """
+    fault = encoding_fault(node) or errors_unproven_fault(node)
+    if fault is not None:
+        return "reported", fault
+    if not is_strict(node):
+        return "lenient", None
+    return "clear", None
+
+
 def scan_source(text: str, *, where: str = "", module: str = "") -> SpawnScan:
     """Every ``subprocess`` spawn in one module's source, partitioned.
 
@@ -162,10 +240,15 @@ def scan_source(text: str, *, where: str = "", module: str = "") -> SpawnScan:
     tree = parse(text)
     clear: list[str] = []
     reported: list[str] = []
+    undecided_kwargs: list[str] = []
     lenient: list[str] = []
     bytes_mode: list[str] = []
     text_sites: list[str] = []
     for node, _origin in resolved_calls(tree, SPAWN_TARGETS, module=module):
+        if forwards_unknown_keywords(node):
+            site = f"{where}:{node.lineno}" if where else str(node.lineno)
+            undecided_kwargs.append(f"{site} {ast.unparse(node.func)}")
+            continue
         row = f"{where}:{node.lineno} {ast.unparse(node)[:70]}"
         mode = text_mode(node)
         if mode is None:
@@ -175,14 +258,15 @@ def scan_source(text: str, *, where: str = "", module: str = "") -> SpawnScan:
             bytes_mode.append(row)
             continue
         text_sites.append(where)
-        fault = encoding_fault(node)
-        if fault is not None:
-            reported.append(f"{row} {fault}")
-        elif not is_strict(node):
+        bucket, reason = _classify_text_mode_spawn(node)
+        if bucket == "reported":
+            reported.append(f"{row} {reason}")
+        elif bucket == "lenient":
             lenient.append(row)
         else:
             clear.append(row)
     undecided = calls_to(tree, SPAWN_TARGETS, where=where, module=module).undecided
+    undecided = undecided + tuple(undecided_kwargs)
     return SpawnScan(
         tuple(clear),
         tuple(reported),
@@ -195,7 +279,7 @@ def scan_source(text: str, *, where: str = "", module: str = "") -> SpawnScan:
 
 @functools.cache
 def package_scan() -> SpawnScan:
-    """One sweep of ``kstrl/``, cached because six tests ask for it."""
+    """One sweep of ``kstrl/``, cached because several tests ask for it."""
     total = SpawnScan()
     for source in package_sources():
         total = total + scan_source(
@@ -221,5 +305,25 @@ def text_mode_census(scan: SpawnScan) -> dict[str, int]:
     """
     built: dict[str, int] = {}
     for where in scan.text_sites:
+        built[where] = built.get(where, 0) + 1
+    return built
+
+
+def bytes_mode_census(scan: SpawnScan) -> dict[str, int]:
+    """How many BYTES-MODE spawns each module holds.
+
+    Derived from ``scan.bytes_mode`` itself rather than a second parallel
+    list (D2, #409's simplify pass): each row there already carries a
+    ``module:lineno`` prefix, one row per site with its own line number, so
+    splitting on the first ``:`` recovers the module without deduplicating
+    anything. Counting rather than pinning the 19 (of 20 sites) deduplicated
+    rows directly is what makes a site MISFILED into this bucket (A1: a
+    ``**kwargs`` call wrongly cleared as bytes mode) show up as a moved
+    number here, which a row inventory alone would not have caught it
+    doing before A1 existed.
+    """
+    built: dict[str, int] = {}
+    for row in scan.bytes_mode:
+        where, _, _rest = row.partition(":")
         built[where] = built.get(where, 0) + 1
     return built

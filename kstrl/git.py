@@ -1003,7 +1003,6 @@ def get_diff_content(
             ["git", "diff", f"{base_ref}...HEAD", "--"],
             cwd=cwd,
             capture_output=True,
-            text=True,
             encoding="utf-8",
             timeout=timeout,
         )
