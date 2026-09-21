@@ -390,6 +390,12 @@ def test_a_dependency_graph_that_did_not_fit_says_so(tmp_path: Path) -> None:
     # than parsing every file and reporting the overflow afterwards.
     assert total == files_in_deep_repo, body
     assert parsed < total, body
+    # And it stopped AT the room it was given, not at some multiple of it.
+    # Every edge in this fixture renders as "modNN -> modMM (imports: BaseMM)"
+    # plus the newline that joins it, so the graph cannot have grown much past
+    # `room` before the bail fired.
+    shortest_edge = len("mod01 -> mod00 (imports: Base00)") + len("\n")
+    assert parsed * shortest_edge < 2 * room, body
 
 
 def test_a_graph_with_nothing_to_say_is_not_a_graph_that_did_not_fit(tmp_path: Path) -> None:
