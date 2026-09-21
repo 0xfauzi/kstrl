@@ -106,8 +106,12 @@ class _HaltingRecordingAgent:
         return self._lines[-1] if self._lines else None
 
 
-def _decompose_halting_and_capture(root: Path, spec: Path) -> str:
-    """Drive decompose_spec to a SpecBlockerError halt; return the prompt.
+def _decompose_halting_and_capture(root: Path, spec: Path) -> tuple[str, str]:
+    """Drive decompose_spec to a SpecBlockerError halt; return prompt and UI output.
+
+    The UI output is returned, not discarded, because the warning in
+    KstrlConfig.load_or_anchored is the ONLY mitigation for that
+    fail-open path, and deleting it left the whole suite byte-identical.
 
     Uses an ESCALATED spec_issue (BLOCKER_ISSUE) rather than
     VALID_DECOMPOSE_OUTPUT, and deliberately so, not as a
@@ -123,6 +127,7 @@ def _decompose_halting_and_capture(root: Path, spec: Path) -> str:
     agent = _HaltingRecordingAgent(
         _single_component_output([_story()], spec_issues=[BLOCKER_ISSUE])
     )
+    buffer = io.StringIO()
     with pytest.raises(decompose.SpecBlockerError):
         decompose_spec(
             spec_path=spec,
@@ -130,11 +135,11 @@ def _decompose_halting_and_capture(root: Path, spec: Path) -> str:
             base_branch="main",
             single_pr=False,
             agent=agent,  # type: ignore[arg-type]
-            ui=PlainUI(no_color=True, file=io.StringIO()),
+            ui=PlainUI(no_color=True, file=buffer),
             root_dir=root,
         )
     assert agent.prompts, "decompose_spec never called its agent"
-    return agent.prompts[0]
+    return agent.prompts[0], buffer.getvalue()
 
 
 def test_the_architect_is_told_its_cwd_is_the_repository(tmp_path: Path) -> None:
@@ -211,9 +216,10 @@ def test_a_malformed_kstrl_toml_still_reaches_the_architect(tmp_path: Path) -> N
     """
     root, spec = _repo(tmp_path)
     (root / "kstrl.toml").write_text('[paths\ncodebase_map = "docs/map.md"\n', encoding="utf-8")
-    prompt = _decompose_halting_and_capture(root, spec)
+    prompt, output = _decompose_halting_and_capture(root, spec)
     assert "Your working directory IS the repository" in prompt
     assert "scripts/kstrl/codebase_map.md" in prompt
+    assert "unreadable, using defaults" in output
 
 
 def test_a_type_error_from_kstrl_toml_still_reaches_the_architect(tmp_path: Path) -> None:
@@ -227,9 +233,10 @@ def test_a_type_error_from_kstrl_toml_still_reaches_the_architect(tmp_path: Path
     """
     root, spec = _repo(tmp_path)
     (root / "kstrl.toml").write_text("[run]\nmax_iterations = [1, 2]\n", encoding="utf-8")
-    prompt = _decompose_halting_and_capture(root, spec)
+    prompt, output = _decompose_halting_and_capture(root, spec)
     assert "Your working directory IS the repository" in prompt
     assert "scripts/kstrl/codebase_map.md" in prompt
+    assert "unreadable, using defaults" in output
 
 
 def test_an_unreadable_kstrl_toml_still_reaches_the_architect(tmp_path: Path) -> None:
@@ -243,9 +250,10 @@ def test_an_unreadable_kstrl_toml_still_reaches_the_architect(tmp_path: Path) ->
     """
     root, spec = _repo(tmp_path)
     (root / "kstrl.toml").mkdir()
-    prompt = _decompose_halting_and_capture(root, spec)
+    prompt, output = _decompose_halting_and_capture(root, spec)
     assert "Your working directory IS the repository" in prompt
     assert "scripts/kstrl/codebase_map.md" in prompt
+    assert "unreadable, using defaults" in output
 
 
 def test_a_caller_with_no_repository_is_told_so() -> None:
