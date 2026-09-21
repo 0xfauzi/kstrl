@@ -78,12 +78,16 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/spine_utils.py": 1,
     "tests/test_adequacy.py": 8,
     "tests/test_autonomy_ladder.py": 1,
-    "tests/test_breaker.py": 2,
+    "tests/test_breaker.py": 3,
     # #399 added two real-repository tests (a stubbed-git refusal, which
     # makes no commit, and a latin-1-bytes commit through `_git`/`_repo`,
     # both already declared here, plus a second real commit in the
     # latter). Both repositories go through
     # `tests.helpers.gitrepo.set_identity` via this file's own `_repo`.
+    # #423's fixer pass added a third: a rename-source misparse regression
+    # test that commits its own repo through `_git`/`gitrepo.set_identity`
+    # directly (not through `_init_repo`, so it is a second call site in
+    # this file, each committing once).
     "tests/test_check_result_measurement_behaviour.py": 7,
     # tests/test_child_output_encoding.py (#409) has no row here: it builds its
     # repository through tests.conftest.make_review_repo, already declared and
