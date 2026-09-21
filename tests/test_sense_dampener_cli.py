@@ -20,10 +20,9 @@ from kstrl import dampener_report
 from kstrl.cli import SENSE_SCHEMA_VERSION, cli
 from tests.spine_utils import git
 from tests.test_sense_cli import _LINT_FAIL_COMMAND, _kstrl_toml, _make_repo
+from tests.test_sense_dampener import DAMPENER_DOC
 
 DEFAULT_RELATIVE = "scripts/kstrl/sense-baseline.json"
-
-DAMPENER_DOC = Path(__file__).resolve().parents[1] / "docs" / "dampener.md"
 
 #: A lint command whose findings come from a FILE in the repository, so a test
 #: can turn one on and off without touching the command itself.
@@ -65,18 +64,18 @@ def _baseline_document(root: Path) -> dict[str, Any]:
     return document
 
 
-def _documented_row(check: str, reason: str) -> str:
-    """The `docs/dampener.md` row a diff-driven check's hole must carry.
+def _assert_documented_row(check: str, reason: str) -> None:
+    """`docs/dampener.md` must carry this diff-driven check's hole as a row.
 
-    Built from the reason the REAL run put in the baseline, never from a
-    literal typed here, so a reworded sensor message moves the doc or fails
-    this test rather than quietly parting company with it (#400).
+    The row is built from the reason the REAL run put in the baseline, never
+    from a literal typed here, so a reworded sensor message moves the doc or
+    fails this test rather than silently diverging from it (#400).
     """
-    return " ".join(f"| `{check}` | {reason} | `new` |".split())
-
-
-def _flat_dampener_doc() -> str:
-    return " ".join(DAMPENER_DOC.read_text(encoding="utf-8").split())
+    row = " ".join(f"| `{check}` | {reason} | `new` |".split())
+    flattened = " ".join(DAMPENER_DOC.read_text(encoding="utf-8").split())
+    assert row in flattened, (
+        f"docs/dampener.md does not carry the row {row!r}. The doc and this test move together."
+    )
 
 
 # --- writing ------------------------------------------------------------
@@ -553,15 +552,15 @@ def test_base_ref_is_null_outside_a_repository(tmp_path: Path) -> None:
 
 
 def test_a_bad_patterns_finding_is_new_and_never_a_stopped_sensor(tmp_path: Path) -> None:
-    """#400: a clean-tree baseline gives `bad_patterns` nothing to scan.
+    """#400: a baseline written on the base ref gives `bad_patterns` nothing to scan.
 
     `docs/dampener.md` tells every adopter to write the baseline from a clean
-    tree, and a clean tree has an empty diff, so this check measures nothing on
-    EVERY baseline. It said the resulting hole was visible as `stopped
-    measuring`. It is not: that bucket is a set difference taken from
-    `baseline.measured_checks`, which this check is not in. The finding lands in
-    `new`, which for a diff-driven check is exact rather than an over-flag -
-    every line it can flag is a line the branch added.
+    tree, and a baseline written on the base ref has an empty diff, so this
+    check measures nothing on EVERY baseline. It said the resulting hole was
+    visible as `stopped measuring`. It is not: that bucket is a set difference
+    taken from `baseline.measured_checks`, which this check is not in. The
+    finding lands in `new` instead, because the check only looks at files the
+    branch's diff named and the baseline had none to compare with.
     """
     root = _make_repo(tmp_path)
     assert _write(root).exit_code == 0
@@ -581,12 +580,7 @@ def test_a_bad_patterns_finding_is_new_and_never_a_stopped_sensor(tmp_path: Path
     assert block["new"] == {"bad_patterns:issues-found-in-changed-files": 1}
     assert block["stopped_measuring"] == {}
     assert block["regressed"] is True
-    row = _documented_row("bad_patterns", document["unmeasured_reasons"]["bad_patterns"])
-    assert row in _flat_dampener_doc(), (
-        f"docs/dampener.md does not carry the row {row!r}. The doc and this "
-        "test move together, or the doc goes back to claiming this hole shows "
-        "up as `stopped measuring`."
-    )
+    _assert_documented_row("bad_patterns", document["unmeasured_reasons"]["bad_patterns"])
 
 
 def test_a_diff_scope_finding_is_new_and_never_a_stopped_sensor(tmp_path: Path) -> None:
@@ -618,7 +612,4 @@ def test_a_diff_scope_finding_is_new_and_never_a_stopped_sensor(tmp_path: Path) 
     assert block["new"] == {"diff_scope:files-outside-allowed-scope-diff-vs-base-branch": 1}
     assert block["stopped_measuring"] == {}
     assert block["regressed"] is True
-    row = _documented_row("diff_scope", document["unmeasured_reasons"]["diff_scope"])
-    assert row in _flat_dampener_doc(), (
-        f"docs/dampener.md does not carry the row {row!r}. The doc and this test move together."
-    )
+    _assert_documented_row("diff_scope", document["unmeasured_reasons"]["diff_scope"])

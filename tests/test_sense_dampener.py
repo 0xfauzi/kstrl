@@ -29,6 +29,10 @@ DIGEST = "0" * 16
 #: The project both sides carry unless a test is about the mismatch note.
 PROJECT = "0xfauzi/kstrl"
 
+#: `docs/dampener.md`, shared with `tests/test_sense_dampener_cli.py`, which
+#: imports this constant rather than defining its own (#400).
+DAMPENER_DOC = Path(__file__).resolve().parents[1] / "docs" / "dampener.md"
+
 
 def _baseline(
     signatures: dict[str, int] | None = None,
@@ -573,13 +577,14 @@ def test_the_json_block_carries_the_stopped_sensors() -> None:
 
 
 def test_a_check_the_baseline_never_measured_can_never_be_a_stopped_sensor() -> None:
-    """The structural rule `docs/dampener.md` got wrong for two years (#400).
+    """The structural rule `docs/dampener.md` got wrong (#400).
 
     `stopped_measuring` is a set difference taken from
     `baseline.measured_checks`. A name that is not in that list cannot enter it,
-    whatever this run did - measured and found something, measured and found
-    nothing, or went dark again. All three are checked, because a rule stated
-    over one arrangement is a rule that has been tested in one direction.
+    whatever this run did - measured and found something, or measured and found
+    nothing. The third arrangement, still dark, is
+    `test_a_sensor_the_baseline_never_measured_does_not_flag_when_it_is_still_off`
+    above.
     """
     base = _baseline({}, measured=("linter",), unmeasured=("bad_patterns",))
     currents = (
@@ -588,7 +593,6 @@ def test_a_check_the_baseline_never_measured_can_never_be_a_stopped_sensor() -> 
             measured=("bad_patterns", "linter"),
         ),
         _baseline({}, measured=("bad_patterns", "linter")),
-        _baseline({}, measured=("linter",), unmeasured=("bad_patterns",)),
     )
 
     for current in currents:
@@ -615,6 +619,22 @@ def test_the_doc_no_longer_claims_those_holes_show_up_as_stopped_measuring() -> 
     way, that one passes on a doc that adds the table and keeps the false
     sentence beside it.
     """
-    doc = (Path(__file__).resolve().parents[1] / "docs" / "dampener.md").read_text(encoding="utf-8")
+    doc = DAMPENER_DOC.read_text(encoding="utf-8")
 
     assert " ".join(RETIRED_STOPPED_MEASURING_CLAIM.split()) not in " ".join(doc.split())
+
+
+def test_neither_the_doc_nor_the_docstring_claims_every_line_was_added() -> None:
+    """#400 addendum: `new` is not exact for `bad_patterns` as a whole.
+
+    `check_bad_patterns` has an empty-file rule and a syntax-error rule that
+    read the whole worktree file rather than the diff, so a branch that adds no
+    line at all can still trip either one. Both the doc and the `compare()`
+    docstring are checked, because each is a separate place the claim could
+    come back.
+    """
+    flat_doc = " ".join(DAMPENER_DOC.read_text(encoding="utf-8").split()).lower()
+    flat_docstring = " ".join((dampener.compare.__doc__ or "").split()).lower()
+
+    assert "line the branch added" not in flat_doc
+    assert "line the branch added" not in flat_docstring

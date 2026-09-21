@@ -70,9 +70,7 @@ vacuous passes.
 These two holes do NOT surface as `stopped measuring`. That bucket is a set
 difference taken from the baseline's own `measured_checks`, so a check that is
 not in that list cannot enter it, whatever a later run does. They surface as
-`new`, and for these two that is exact rather than a compromise: both are
-diff-driven, so every signature either can produce is about a line the branch
-added. See [Comparing a branch](#comparing-a-branch).
+`new` instead: see [Comparing a branch](#comparing-a-branch).
 
 | check | why the baseline never measured it | a branch's finding is reported as |
 |---|---|---|
@@ -164,20 +162,20 @@ deletion-only commit measures nothing however many files it names.
 A signature from a check the BASELINE never measured is reported as `new`.
 There are two ways to arrive there and they are not the same case.
 
-For a DIFF-DRIVEN check, `new` is exact. `bad_patterns` opens the files the
-diff names and `diff_scope` tests the diff against the allowed paths, so a
-baseline written from a clean tree, which is what this page tells you to write,
-gives both of them an empty diff and neither measures anything on ANY baseline.
-On a branch, every signature either one produces is about a line the branch
-added. So 100 percent of their findings land in `new`, on every comparison, for
-every adopter, by construction. That is what the bucket means here, not an
-over-report.
+Both `bad_patterns` and `diff_scope` only look at paths the branch put in the
+diff, so a finding from either concerns a file the branch touched. A baseline
+written on the base ref has an empty diff, so neither check has any paths to
+compare with. `diff_scope` is exact: every path it can flag came from the
+diff. `bad_patterns` is exact for its secret rule, which reads added lines;
+its empty-file and syntax-error rules read the whole file, so either of those
+can name content that was already in a file the branch moved or edited, not
+content the branch wrote.
 
 For a TOOL-DRIVEN check the same rule does over-report: a baseline written
 before `vulture` was installed leaves `dead_code` unmeasured, and the first
 comparison after it is installed reports the tree's existing dead code as new.
-That one is the deliberate over-flag. Over-reporting costs a comment somebody
-reads; under-reporting costs the mechanism.
+Over-reporting costs a comment somebody reads; under-reporting costs the
+mechanism.
 
 ### Formats and exit codes
 

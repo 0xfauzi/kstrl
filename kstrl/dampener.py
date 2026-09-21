@@ -532,26 +532,24 @@ def compare(baseline: Baseline, current: Baseline) -> Comparison:
     A signature whose check the BASELINE never measured lands in ``new`` when it
     appears now, and the two ways that happens are not the same case. For a
     DIFF-DRIVEN check - ``bad_patterns``, which opens the files the diff names,
-    and ``diff_scope``, which tests the diff against the allowed paths - it is
-    exact rather than a compromise: a baseline is written from a clean tree, a
-    clean tree has an empty diff, so neither measures on ANY baseline, and on a
-    branch every signature either one produces is about a line the branch
-    ADDED. 100 percent of their findings land here, on every comparison, for
-    every adopter, by construction (#400). For a TOOL-DRIVEN check it does
-    over-flag - a baseline written before ``vulture`` was installed reports the
-    tree's existing dead code as new the first time it runs - which is the safe
+    and ``diff_scope``, which tests the diff against the allowed paths - a
+    baseline written on the base ref has an empty diff, so neither measures on
+    ANY baseline. ``diff_scope`` is exact: every path it can flag came from the
+    diff. ``bad_patterns`` is exact for its secret rule, which reads added
+    lines; its empty-file and syntax-error rules read the whole file, so either
+    can name content that was already in a file the branch moved or edited, not
+    content the branch wrote (#400). For a TOOL-DRIVEN check it does over-flag -
+    a baseline written before ``vulture`` was installed reports the tree's
+    existing dead code as new the first time it runs - which is the safe
     direction for a flagging guard and costs an advisory comment.
-
-    Neither shows up in ``stopped_measuring``. That bucket is a set difference
-    taken from ``baseline.measured_checks``, so a check absent from that list
-    cannot enter it, whatever this run did. ``docs/dampener.md`` claimed the
-    opposite for those two checks by name until #400.
 
     The reverse - a check the baseline measured and this run did not - is
     ``stopped_measuring``, and it is a REGRESSION rather than a note. A sensor
     that went dark produces no signature to put in any of the other four
     buckets, so before it existed the report for a branch whose test suite
-    stopped finishing was "no regression".
+    stopped finishing was "no regression". It is a set difference taken from
+    ``baseline.measured_checks``, so a check absent from that list can never
+    enter it; see docs/dampener.md, "Comparing a branch".
 
     A differing ``sense_schema_version`` is a NOTE rather than exit 2, and this
     is the one place the house fail-closed rule is deliberately not applied. The
