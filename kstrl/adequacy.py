@@ -68,6 +68,8 @@ from collections.abc import Collection, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from kstrl.policy import diff_header_path
+
 #: Test-file path fragments. Deliberately broad: a file that looks like a
 #: test to a human should be judged as one, and a false positive here
 #: costs a note, while a false negative silently exempts a file.
@@ -639,14 +641,6 @@ class DiffDiscipline:
 _DEV_NULL = "/dev/null"
 
 
-def _diff_path(header: str) -> str:
-    """The path from a ``---``/``+++`` header, minus git's a//b/ prefix."""
-    path = header[4:].strip()
-    if path.startswith(("a/", "b/")):
-        path = path[2:]
-    return path
-
-
 def _iter_diff_lines(diff_text: str) -> Iterator[tuple[str, str, str]]:
     """Walk a unified diff, yielding ``(source, target, line)``.
 
@@ -669,8 +663,8 @@ def _iter_diff_lines(diff_text: str) -> Iterator[tuple[str, str, str]]:
         if line.startswith("diff --git"):
             source, target = "", ""
         elif line.startswith("+++ ") and prev.startswith("--- "):
-            target = _diff_path(line)
-            source = _diff_path(prev)
+            target = diff_header_path(line)
+            source = diff_header_path(prev)
         yield source, target, line
         prev = line
 
