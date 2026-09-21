@@ -38,8 +38,6 @@ from tests.helpers import calibration_capture as harness
 from tests.helpers.astwalk import REPO_ROOT, assert_census, spells
 from tests.helpers.calibration_capture import FX_A, FX_B, FX_C, FX_D
 
-COMMITTED_RESULTS_DIR = Path(__file__).resolve().parent / "adversarial_fixtures" / "_results"
-
 
 @pytest.fixture(scope="module")
 def killed_capture(tmp_path_factory: pytest.TempPathFactory) -> Path:
@@ -247,26 +245,17 @@ def test_save_report_writes_through_atomicio(
     assert calls == [out]
 
 
-def test_every_committed_baseline_is_a_complete_capture() -> None:
-    """#398 A2: the guard that catches instance N+1. Before this change a
-    crashed run left no file at all; it can now leave one inside this
-    git-tracked directory. A reviewer planted a partial baseline carrying a
-    WRONG model here and ran the existing model-drift guard over it: it
-    reported ``1 passed, 35 deselected`` because that guard routes through
-    ``newest_baseline_path``, which SKIPS partials rather than refusing them
-    - so the one control that reads this directory never looked at the exact
-    artifact this change introduces. This reads every committed baseline
-    directly and refuses to let any of them be partial."""
-    baselines = sorted(COMMITTED_RESULTS_DIR.glob("baseline-*.json"))
-    assert baselines, f"no committed baselines found under {COMMITTED_RESULTS_DIR}"
-    partial: list[str] = []
-    for path in baselines:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        reason = calibration_baseline.partial_capture_reason(data)
-        if reason is not None:
-            partial.append(f"{path.name}: {reason}")
-    assert partial == [], "committed baseline(s) are partial captures:\n" + "\n".join(partial)
-
+# `test_every_committed_baseline_is_a_complete_capture`, which used to live
+# here, is subsumed by
+# `tests.test_calibration_report_format.TestV2RunCountsAreRequired
+# .test_every_checked_in_baseline_still_loads` (#421 Group C1):
+# `load_baseline` calls `partial_capture_reason` and raises on it
+# (`kstrl/calibration_baseline.py`), so the newer sweep fails on every
+# document this one failed on, plus more. Confirmed by planting a partial
+# capture into a real checked-in baseline, restoring it from a saved copy
+# afterwards: the newer test went red on its own, naming the same file and
+# the same reason this one did, with no dependency on this file at all.
+# Removed rather than kept as a second copy of the same sweep.
 
 # --------------------------------------------------------------------------
 # #406: the three progress keys are the report builder's, not the harness's.
