@@ -20,8 +20,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from kstrl import calibration
-from kstrl.calibration import Baseline, FixtureStats
+from kstrl import calibration, calibration_baseline
+from kstrl.calibration_baseline import Baseline, FixtureStats
 
 REPO_RESULTS_DIR = Path(__file__).parent / "adversarial_fixtures" / "_results"
 
@@ -65,12 +65,12 @@ def _baseline(*fixtures: FixtureStats, model: str = "haiku") -> Baseline:
 
 class TestConsistencyMath:
     def test_consistency_is_detected_over_completed(self) -> None:
-        assert calibration.consistency(2, 3) == 2 / 3
-        assert calibration.consistency(0, 3) == 0.0
-        assert calibration.consistency(3, 3) == 1.0
+        assert calibration_baseline.consistency(2, 3) == 2 / 3
+        assert calibration_baseline.consistency(0, 3) == 0.0
+        assert calibration_baseline.consistency(3, 3) == 1.0
 
     def test_zero_completed_runs_yield_zero(self) -> None:
-        assert calibration.consistency(0, 0) == 0.0
+        assert calibration_baseline.consistency(0, 0) == 0.0
 
     def test_errored_runs_excluded_from_denominator(self) -> None:
         """1 caught + 1 missed + 1 agent error = consistency 1/2, and
@@ -96,7 +96,7 @@ class TestConsistencyMath:
         assert not fixture.detected
 
     def test_role_detection_rate_is_mean_consistency(self) -> None:
-        rate = calibration.role_detection_rate(
+        rate = calibration_baseline.role_detection_rate(
             [
                 _fixture("architect", "a", 3),  # 1.0
                 _fixture("architect", "b", 1),  # 1/3
@@ -105,7 +105,7 @@ class TestConsistencyMath:
         assert rate == (1.0 + 1 / 3) / 2
 
     def test_role_detection_rate_empty_is_zero(self) -> None:
-        assert calibration.role_detection_rate([]) == 0.0
+        assert calibration_baseline.role_detection_rate([]) == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +200,7 @@ class TestBuildReport:
         report = self._report()
         saved = calibration.save_report(report, tmp_path)
         assert saved.name == "baseline-20260718-120000.json"
-        loaded = calibration.load_baseline(saved)
+        loaded = calibration_baseline.load_baseline(saved)
         assert loaded.format_version == 2
         assert loaded.model == "haiku"
         assert loaded.runs_per_fixture == 3
@@ -222,7 +222,7 @@ class TestLoadV1Baseline:
         }
         path = tmp_path / "baseline-20260527-161822.json"
         path.write_text(json.dumps(v1))
-        baseline = calibration.load_baseline(path)
+        baseline = calibration_baseline.load_baseline(path)
         assert baseline.format_version == 1
         assert baseline.runs_per_fixture == 1
         assert baseline.role_rates() == {"architect": 0.5}
@@ -233,7 +233,7 @@ class TestLoadV1Baseline:
         """The three recorded 20260527 baselines must stay loadable so
         the first new-format capture can be compared against them."""
         path = REPO_RESULTS_DIR / "baseline-20260527-161822.json"
-        baseline = calibration.load_baseline(path)
+        baseline = calibration_baseline.load_baseline(path)
         assert baseline.model == "haiku"
         rates = baseline.role_rates()
         assert rates["security"] == 1.0
@@ -244,7 +244,7 @@ class TestLoadV1Baseline:
         bad = tmp_path / "baseline-x.json"
         bad.write_text("{not json")
         try:
-            calibration.load_baseline(bad)
+            calibration_baseline.load_baseline(bad)
         except ValueError:
             pass
         else:
@@ -354,7 +354,7 @@ class TestCompareBaselines:
     def test_v1_to_v2_comparison_works(self, tmp_path: Path) -> None:
         """The first new-format capture will be compared against a
         checked-in v1 baseline; that path must work end to end."""
-        old = calibration.load_baseline(
+        old = calibration_baseline.load_baseline(
             REPO_RESULTS_DIR / "baseline-20260527-161822.json",
         )
         new = _baseline(
@@ -460,7 +460,7 @@ class TestModelDrift:
 
     def test_no_results_dir_is_silent(self, tmp_path: Path) -> None:
         assert (
-            calibration.model_drift_message(
+            calibration_baseline.model_drift_message(
                 tmp_path / "missing",
                 "haiku",
             )
@@ -468,15 +468,15 @@ class TestModelDrift:
         )
 
     def test_no_baselines_is_silent(self, tmp_path: Path) -> None:
-        assert calibration.model_drift_message(tmp_path, "haiku") is None
+        assert calibration_baseline.model_drift_message(tmp_path, "haiku") is None
 
     def test_matching_model_is_silent(self, tmp_path: Path) -> None:
         self._write_baseline(tmp_path, "20260718-000000", "haiku")
-        assert calibration.model_drift_message(tmp_path, "haiku") is None
+        assert calibration_baseline.model_drift_message(tmp_path, "haiku") is None
 
     def test_differing_model_warns_citing_h2(self, tmp_path: Path) -> None:
         self._write_baseline(tmp_path, "20260718-000000", "haiku")
-        message = calibration.model_drift_message(tmp_path, "sonnet")
+        message = calibration_baseline.model_drift_message(tmp_path, "sonnet")
         assert message is not None
         assert "H2-extended" in message
         assert "haiku" in message and "sonnet" in message
@@ -486,21 +486,21 @@ class TestModelDrift:
         baseline's model matters."""
         self._write_baseline(tmp_path, "20260101-000000", "sonnet")
         self._write_baseline(tmp_path, "20260718-000000", "haiku")
-        assert calibration.model_drift_message(tmp_path, "haiku") is None
-        assert calibration.model_drift_message(tmp_path, "sonnet") is not None
+        assert calibration_baseline.model_drift_message(tmp_path, "haiku") is None
+        assert calibration_baseline.model_drift_message(tmp_path, "sonnet") is not None
 
     def test_malformed_newest_baseline_is_silent(self, tmp_path: Path) -> None:
         """The always-run structural test must never fail on a corrupt
         results file: warn-path only, silence on unreadable input."""
         (tmp_path / "baseline-99999999-999999.json").write_text("{not json")
-        assert calibration.model_drift_message(tmp_path, "haiku") is None
+        assert calibration_baseline.model_drift_message(tmp_path, "haiku") is None
 
     def test_repo_baselines_match_default_model(self) -> None:
         """The checked-in baselines were captured with the default
         calibration model; if this fails, someone changed the default
         without re-calibrating (H2-extended)."""
         assert (
-            calibration.model_drift_message(
+            calibration_baseline.model_drift_message(
                 REPO_RESULTS_DIR,
                 "haiku",
             )
