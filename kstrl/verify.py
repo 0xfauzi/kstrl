@@ -144,9 +144,13 @@ class ChildOutputDecodeError(RuntimeError):
     that can name this fault; every caller would otherwise meet a bare
     ``UnicodeDecodeError`` (a ``ValueError``) that no handler here was written
     for, and the mechanical verifier would die with a traceback instead of
-    returning a verdict (#416). Callers treat it exactly as they treat a
-    timeout: the check ran, measured nothing, and fails closed. kstrl does not
-    weaken the decode with ``errors=`` to make it go away (#409).
+    returning a verdict (#416). Every caller answers for it in its own result
+    type, as it answers for a timeout: the check ran, measured nothing, and
+    fails closed. The two exceptions, measured rather than asserted away
+    (#416's simplify review): ``contract._abort_merge`` and the prune call in
+    ``contract._remove_temp_worktree``, whose results were never read and
+    which swallow it so cleanup is not blocked. kstrl does not weaken the
+    decode with ``errors=`` to make it go away (#409).
     """
 
 
@@ -180,7 +184,10 @@ def run_scrubbed(
     for the alternative (``--cov-config``) this rejects and why.
 
     Raises :class:`subprocess.TimeoutExpired` after the group is dead so
-    existing callers' timeout handling keeps working unchanged.
+    existing callers' timeout handling keeps working unchanged, and
+    :class:`ChildOutputDecodeError` when the child's bytes are not valid
+    utf-8 - every one of this function's 18 call sites answers for it
+    exactly as it answers for a timeout (#416).
 
     THE TIMEOUT PATH LETS GO THROUGH ``procdispose`` (#326). It used to
     drain the pipes itself and, when that drain expired, set
@@ -230,10 +237,16 @@ def run_scrubbed(
             stderr=stderr,
         ) from None
     except UnicodeDecodeError as exc:
-        # The child ran; its bytes are not utf-8. Disposal first, for the
-        # reason the broad clause below gives - every exit that is not a
-        # completed read leaves a child behind (#326) - and then the named
-        # error, so 18 call sites can answer for it (#416).
+        # The child ran and has already been waited on: CPython's own
+        # `_communicate` waits before it decodes, so `proc` is reaped and
+        # both pipes are at EOF here (measured, #416's altitude review -
+        # instrumented run: `poll() == 0` on entry, `drain_or_abandon`
+        # returns ("", "")). The call stays anyway, because this module's
+        # disposal rule is uniform across every non-completed-read exit
+        # (#326) rather than reasoned per site, and re-deriving "this one
+        # needs no disposal" per exit is exactly the per-site reasoning
+        # that rule exists to remove. Then the named error, so 18 call
+        # sites can answer for it (#416).
         drain_or_abandon(proc, term_grace)
         raise ChildOutputDecodeError(
             f"the command produced bytes that are not valid utf-8, so its "

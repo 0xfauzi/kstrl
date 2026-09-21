@@ -989,17 +989,22 @@ def _parse_name_status_z(output: str) -> list[str]:
 def _undecodable_message(what: str, exc: UnicodeDecodeError) -> str:
     """Why a reader could not read output git DID produce.
 
-    One sentence for all four readers, so four copies cannot drift. ``exc``
-    renders the codec, the offending byte and its offset, which is the part an
-    operator can act on: it is how they find the file. kstrl neither guesses
-    another encoding nor replaces the byte (#409, and CLAUDE.md's encoding
-    learning): a diff this process cannot decode is a diff it could not obtain,
-    which is what :class:`GitDiffError` already means.
+    One sentence for all four readers, so four copies cannot drift, and
+    written to hold at all four call sites: one of them, in
+    ``resolve_base_sha``, runs ``git rev-parse`` and reads no diff, so the
+    sentence says "its output" rather than "the diff" (#416's simplify
+    review measured the earlier wording making a false claim there).
+    ``exc`` renders the codec, the offending byte and its offset, which is
+    the part an operator can act on: it is how they find the file. kstrl
+    neither guesses another encoding nor replaces the byte (#409, and
+    CLAUDE.md's encoding learning): output this process cannot decode is
+    output it could not obtain, which is what :class:`GitDiffError`
+    already means.
     """
     return (
-        f"{what} produced bytes that are not valid utf-8, so the diff could not "
-        f"be read: {exc}. kstrl decodes git output as utf-8 and neither guesses "
-        f"another encoding nor replaces the byte."
+        f"{what} produced bytes that are not valid utf-8, so its output could "
+        f"not be read: {exc}. kstrl decodes git output as utf-8 and neither "
+        f"guesses another encoding nor replaces the byte."
     )
 
 

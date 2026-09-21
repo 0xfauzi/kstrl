@@ -476,3 +476,85 @@ class TestEveryDisclosedLimitCanFail:
         assert not _planted_disclosure(
             tmp_path, "@pytest.mark.xfail(strict=True, raises=AssertionError)"
         )
+
+
+# --- guarded_by -------------------------------------------------------------
+
+
+class TestGuardedByIsOneOwner:
+    """Sole-killer controls for :func:`astwalk.guarded_by`, added when
+    #416's two decode guards were found each carrying a private copy of
+    the same question - "is this node inside a try whose clause catches
+    one of these names?" - which is #364's own lesson recurring: two
+    guards, two private answers to one question. Homed here rather than
+    beside the feature they guard, in the style of this file's other two
+    controls, because it holds a MECHANISM'S own mutation coverage rather
+    than testing what either guard computes over ``kstrl/``.
+    """
+
+    @staticmethod
+    def _call(source: str, name: str = "risky") -> tuple[ast.Module, ast.Call, astwalk.Bindings]:
+        tree = astwalk.parse(source)
+        call = next(
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == name
+        )
+        return tree, call, astwalk.bindings(tree)
+
+    def test_a_call_under_a_matching_clause_is_guarded(self) -> None:
+        tree, call, table = self._call("try:\n    risky()\nexcept ValueError:\n    pass\n")
+        assert astwalk.guarded_by(tree, call, frozenset({"ValueError"}), table)
+
+    def test_a_call_under_a_non_matching_clause_is_not_guarded(self) -> None:
+        tree, call, table = self._call("try:\n    risky()\nexcept OSError:\n    pass\n")
+        assert not astwalk.guarded_by(tree, call, frozenset({"ValueError"}), table)
+
+    def test_a_handler_on_a_sibling_try_does_not_guard(self) -> None:
+        """The pair with the test below: a handler elsewhere does not
+        count, and the identical handler on the RIGHT try does - proving
+        the walk is narrow rather than merely present."""
+        source = (
+            "try:\n    risky()\nexcept OSError:\n    pass\n"
+            "try:\n    pass\nexcept ValueError:\n    pass\n"
+        )
+        tree, call, table = self._call(source)
+        assert not astwalk.guarded_by(tree, call, frozenset({"ValueError"}), table)
+
+    def test_the_decided_conjunct_is_the_sole_killer_of_the_skip_direction(self) -> None:
+        """Without ``clause.decided`` a clause whose decidable half
+        overlaps ``names`` clears the site even though its other half
+        (``shim.Whatever``, which the module never binds) could not be
+        named - the exact "half of a promise" a fail-closed reader must
+        not accept. Mutation: replace ``clause.decided and clause.names &
+        names`` with ``clause.names & names`` alone and this goes green
+        instead of red."""
+        tree, call, table = self._call(
+            "try:\n    risky()\nexcept (ValueError, shim.Whatever):\n    pass\n"
+        )
+        assert not astwalk.guarded_by(tree, call, frozenset({"ValueError"}), table)
+
+    def test_handler_converts_is_asked_of_the_matching_handler_only(self) -> None:
+        """``handler_converts`` must be true of the SAME handler that
+        names the target, not of an unrelated sibling clause on the same
+        try - the mutation is a second clause that converts something
+        else while the matching one does nothing."""
+        source = "try:\n    risky()\nexcept ValueError:\n    pass\nexcept OSError:\n    return 1\n"
+        tree, call, table = self._call(source)
+        assert not astwalk.guarded_by(
+            tree,
+            call,
+            frozenset({"ValueError"}),
+            table,
+            handler_converts=lambda h: any(isinstance(n, ast.Return) for n in h.body),
+        )
+
+    def test_handler_converts_true_on_the_matching_handler_clears(self) -> None:
+        tree, call, table = self._call("try:\n    risky()\nexcept ValueError:\n    return 1\n")
+        assert astwalk.guarded_by(
+            tree,
+            call,
+            frozenset({"ValueError"}),
+            table,
+            handler_converts=lambda h: any(isinstance(n, ast.Return) for n in h.body),
+        )
