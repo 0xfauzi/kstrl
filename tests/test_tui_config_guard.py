@@ -96,6 +96,8 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # raise_if_defect still treats them as operator input, and the walk
     # below follows them by subclass rather than by spelling.
     "statedir.py": 1,
+    # ChildOutputDecodeError, added by #416.
+    "verify.py": 1,
     "workqueue.py": 1,
 }
 

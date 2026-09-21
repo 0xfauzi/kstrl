@@ -167,6 +167,13 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # `_repo`/`_commit` from this file entirely - back to 5, this file's
     # value before #399 touched it.
     "tests/test_verify.py": 5,
+    # #416: three commits into a real repository through this file's own
+    # `_repo`, which calls `tests.helpers.gitrepo.set_identity` right after
+    # `git init` - the base commit, the undecodable-CONTENT commit, and a
+    # third commit made by way of `git commit-tree` / `git update-ref` for
+    # the undecodable-PATH fixture (built through the index rather than the
+    # working tree, since APFS cannot hold that filename).
+    "tests/test_undecodable_diff.py": 3,
 }
 
 

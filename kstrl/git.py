@@ -849,7 +849,9 @@ def get_diff_names(
     fail-OPEN - an empty list is indistinguishable from "no files
     changed" - which silently turns a policy check into a vacuous pass.
     Enforcement callers must pass ``strict=True``; the pre-existing
-    callers keep the lenient contract they were written against.
+    callers keep the lenient contract they were written against. A
+    decode failure raises :class:`GitDiffError` in BOTH modes; see
+    :func:`_undecodable_message`.
     """
     return _unique_paths(
         path
@@ -884,7 +886,9 @@ def get_diff_name_status(
 
     ``strict`` carries the identical contract to :func:`get_diff_names`:
     lenient returns ``[]`` on failure (fail-OPEN, indistinguishable from
-    a clean diff), strict raises :class:`GitDiffError`.
+    a clean diff), strict raises :class:`GitDiffError`. A decode failure
+    raises :class:`GitDiffError` in BOTH modes; see
+    :func:`_undecodable_message`.
     """
     base_ref = resolve_base_ref(base_branch, cwd, timeout)
     try:
@@ -923,6 +927,16 @@ def get_diff_name_status(
                 f"git diff --name-status against {base_ref} could not run: {exc}"
             ) from exc
         return []
+    except UnicodeDecodeError as exc:
+        # NOT gated on `strict`, unlike the two clauses above, and that is the
+        # whole point. The lenient contract's [] means "git could not produce a
+        # diff, so proceed as if nothing changed". Git PRODUCED this one:
+        # returning [] would assert that a diff known to carry changes carries
+        # none, and check_diff_scope's `if not changed` turns that assertion
+        # into a vacuous PASS on a blocking gate (#416, measured).
+        raise GitDiffError(
+            _undecodable_message(f"git diff --name-status against {base_ref}", exc)
+        ) from exc
     if strict:
         raise GitDiffError(
             f"git diff --name-status against {base_ref} exited "
@@ -972,9 +986,27 @@ def _parse_name_status_z(output: str) -> list[str]:
     return _unique_paths(path for _, path in _parse_name_status_records(output))
 
 
+def _undecodable_message(what: str, exc: UnicodeDecodeError) -> str:
+    """Why a reader could not read output git DID produce.
+
+    One sentence for all four readers, so four copies cannot drift. ``exc``
+    renders the codec, the offending byte and its offset, which is the part an
+    operator can act on: it is how they find the file. kstrl neither guesses
+    another encoding nor replaces the byte (#409, and CLAUDE.md's encoding
+    learning): a diff this process cannot decode is a diff it could not obtain,
+    which is what :class:`GitDiffError` already means.
+    """
+    return (
+        f"{what} produced bytes that are not valid utf-8, so the diff could not "
+        f"be read: {exc}. kstrl decodes git output as utf-8 and neither guesses "
+        f"another encoding nor replaces the byte."
+    )
+
+
 class GitDiffError(RuntimeError):
     """Raised when ``git diff`` cannot produce a diff (nonzero exit,
-    e.g. bad ref or not a repository, or a timeout). Callers must treat
+    e.g. bad ref or not a repository, or a timeout, or output this process
+    could not decode as utf-8 (#416)). Callers must treat
     this as an infrastructure failure: before R1.3 (H-14) these errors
     returned an empty string, and review/security/knowledge silently
     "reviewed" a diff of nothing and passed."""
@@ -1008,6 +1040,8 @@ def get_diff_content(
         )
     except subprocess.TimeoutExpired as exc:
         raise GitDiffError(f"git diff against {base_ref} timed out after {timeout}s") from exc
+    except UnicodeDecodeError as exc:
+        raise GitDiffError(_undecodable_message(f"git diff against {base_ref}", exc)) from exc
     if result.returncode != 0:
         raise GitDiffError(
             f"git diff against {base_ref} exited {result.returncode}: {result.stderr.strip()[:500]}"
@@ -1050,6 +1084,30 @@ def _diff_base(
     return resolve_base_ref(base_branch, cwd, timeout)
 
 
+def _parse_numstat_rows(output: str) -> list[tuple[int | None, int | None, str]]:
+    """Parse ``git diff --numstat`` stdout into ``(added, removed, path)``.
+
+    A function rather than a loop inside :func:`get_diff_numstat` for the
+    reason :func:`_diff_base` already gives: that function sits at the
+    cognitive-complexity ceiling this repo ratchets on, and #416's decode
+    clause is one branch more than it has room for. Measured: cognitive
+    15 -> 16 with the clause and the loop together (the gate refuses it),
+    7 with the loop lifted out; cyclomatic 8 -> 6.
+    """
+    rows: list[tuple[int | None, int | None, str]] = []
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split("\t", 2)
+        if len(parts) != 3:
+            continue
+        added_raw, removed_raw, path = parts
+        added = None if added_raw == "-" else int(added_raw)
+        removed = None if removed_raw == "-" else int(removed_raw)
+        rows.append((added, removed, _normalize_numstat_path(path)))
+    return rows
+
+
 def get_diff_numstat(
     base_branch: str,
     cwd: Path | None = None,
@@ -1072,7 +1130,9 @@ def get_diff_numstat(
     subprocess succeeded, so enforcement callers must ask for strict.
 
     ``resolved=True`` skips base resolution for a caller that already
-    holds a commit-ish; see :func:`get_diff_stat`.
+    holds a commit-ish; see :func:`get_diff_stat`. A decode failure
+    raises :class:`GitDiffError` in BOTH modes; see
+    :func:`_undecodable_message`.
     """
     base_ref = _diff_base(base_branch, cwd, timeout, resolved)
     try:
@@ -1089,6 +1149,11 @@ def get_diff_numstat(
                 f"git diff --numstat against {base_ref} timed out after {timeout}s"
             ) from exc
         return []
+    except UnicodeDecodeError as exc:
+        # Ungated, for the reason get_diff_name_status states.
+        raise GitDiffError(
+            _undecodable_message(f"git diff --numstat against {base_ref}", exc)
+        ) from exc
     if result.returncode != 0:
         if strict:
             raise GitDiffError(
@@ -1096,18 +1161,7 @@ def get_diff_numstat(
                 f"{result.returncode}: {result.stderr.strip()[:500]}"
             )
         return []
-    rows: list[tuple[int | None, int | None, str]] = []
-    for line in result.stdout.splitlines():
-        if not line.strip():
-            continue
-        parts = line.split("\t", 2)
-        if len(parts) != 3:
-            continue
-        added_raw, removed_raw, path = parts
-        added = None if added_raw == "-" else int(added_raw)
-        removed = None if removed_raw == "-" else int(removed_raw)
-        rows.append((added, removed, _normalize_numstat_path(path)))
-    return rows
+    return _parse_numstat_rows(result.stdout)
 
 
 @dataclass(frozen=True)
@@ -1420,6 +1474,14 @@ def resolve_base_sha(
             # alongside TimeoutExpired: a missing git binary must arrive
             # as the GitDiffError this function documents, not raw.
             raise GitDiffError(f"git rev-parse {candidate} could not run: {exc}") from exc
+        except UnicodeDecodeError as exc:
+            # No fixture reaches this branch today and that is disclosed rather
+            # than hidden: `rev-parse --verify --quiet` prints a sha on success
+            # and nothing at all on failure (measured, #416). It is converted
+            # anyway because the guard's subject is every function here that
+            # raises GitDiffError, and an exemption row is the ledger shape
+            # CLAUDE.md warns about. Its cover is the static guard.
+            raise GitDiffError(_undecodable_message(f"git rev-parse {candidate}", exc)) from exc
         sha = result.stdout.strip()
         if result.returncode == 0 and sha:
             return sha

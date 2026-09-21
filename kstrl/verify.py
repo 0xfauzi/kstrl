@@ -137,6 +137,19 @@ def _signal_process_group(proc: subprocess.Popen[str], sig: signal.Signals) -> N
     signal_process_tree(proc, sig)
 
 
+class ChildOutputDecodeError(RuntimeError):
+    """A verification child produced bytes that are not valid utf-8.
+
+    :func:`run_scrubbed` chose ``encoding="utf-8"``, so it is the one place
+    that can name this fault; every caller would otherwise meet a bare
+    ``UnicodeDecodeError`` (a ``ValueError``) that no handler here was written
+    for, and the mechanical verifier would die with a traceback instead of
+    returning a verdict (#416). Callers treat it exactly as they treat a
+    timeout: the check ran, measured nothing, and fails closed. kstrl does not
+    weaken the decode with ``errors=`` to make it go away (#409).
+    """
+
+
 def run_scrubbed(
     cmd: str | list[str],
     *,
@@ -216,6 +229,16 @@ def run_scrubbed(
             output=stdout,
             stderr=stderr,
         ) from None
+    except UnicodeDecodeError as exc:
+        # The child ran; its bytes are not utf-8. Disposal first, for the
+        # reason the broad clause below gives - every exit that is not a
+        # completed read leaves a child behind (#326) - and then the named
+        # error, so 18 call sites can answer for it (#416).
+        drain_or_abandon(proc, term_grace)
+        raise ChildOutputDecodeError(
+            f"the command produced bytes that are not valid utf-8, so its "
+            f"output could not be read: {exc}"
+        ) from exc
     except BaseException:
         # The rule `procgroup._read_ps` already states and this module
         # did not: every exit that is not a completed read leaves a
@@ -1271,6 +1294,14 @@ def check_test_suite(
             duration_seconds=time.monotonic() - start,
             measured=False,
         )
+    except ChildOutputDecodeError as exc:
+        return CheckResult(
+            name=GATE_TEST,
+            passed=False,
+            message=f"Test suite output could not be decoded: {exc}",
+            duration_seconds=time.monotonic() - start,
+            measured=False,
+        )
 
     if result.returncode != 0:
         output = (result.stdout + result.stderr).strip()
@@ -1311,6 +1342,14 @@ def check_typecheck(
             duration_seconds=time.monotonic() - start,
             measured=False,
         )
+    except ChildOutputDecodeError as exc:
+        return CheckResult(
+            name=GATE_TYPECHECK,
+            passed=False,
+            message=f"Typecheck output could not be decoded: {exc}",
+            duration_seconds=time.monotonic() - start,
+            measured=False,
+        )
 
     if result.returncode != 0:
         output = (result.stdout + result.stderr).strip()
@@ -1348,6 +1387,14 @@ def check_linter(
             name=GATE_LINT,
             passed=False,
             message=f"Linter timed out after {timeout}s",
+            duration_seconds=time.monotonic() - start,
+            measured=False,
+        )
+    except ChildOutputDecodeError as exc:
+        return CheckResult(
+            name=GATE_LINT,
+            passed=False,
+            message=f"Linter output could not be decoded: {exc}",
             duration_seconds=time.monotonic() - start,
             measured=False,
         )
@@ -1691,7 +1738,31 @@ def check_diff_scope(
             measured=False,
         )
 
-    changed = git.get_diff_names(base_branch, cwd)
+    try:
+        changed = git.get_diff_names(base_branch, cwd)
+    except git.GitDiffError as exc:
+        # The lenient reader raises for exactly one family: a diff git
+        # produced and this process cannot decode (#416). Everything else it
+        # still answers with [], which the vacuous-pass branch below handles.
+        # Failing closed here rather than falling into that branch is the
+        # point: an undecodable diff is not an empty one.
+        return CheckResult(
+            name="diff_scope",
+            passed=False,
+            message=(
+                "diff scope could not read the diff; failing closed "
+                "(infrastructure error, not a scope pass)"
+            ),
+            details=[f"Error: {exc}"],
+            findings=[
+                Finding.infrastructure_error(
+                    "verify",
+                    f"diff scope could not read the diff: {exc}",
+                )
+            ],
+            duration_seconds=time.monotonic() - start,
+            measured=False,
+        )
     if not changed:
         # The other vacuous pass, and the one round 1 of #357 missed: the rule
         # exists but there is nothing to apply it to. Round 2 of review
@@ -2687,6 +2758,12 @@ def _run_coverage_step(
             NOT_MEASURED_COMMAND_FAILED,
             f"the coverage command could not be started: {exc}",
         )
+    except ChildOutputDecodeError as exc:
+        return NotMeasured(
+            PATCH_COVERAGE_CHECK,
+            NOT_MEASURED_COMMAND_FAILED,
+            f"the coverage run's output could not be decoded: {exc}",
+        )
 
 
 def _coverage_report(
@@ -3236,6 +3313,12 @@ def _mutmut_run_spawn(
             NOT_MEASURED_COMMAND_FAILED,
             f"the mutation command could not be started: {exc}",
         )
+    except ChildOutputDecodeError as exc:
+        return NotMeasured(
+            check,
+            NOT_MEASURED_COMMAND_FAILED,
+            f"the mutation run's output could not be decoded: {exc}",
+        )
     finally:
         _restore_mutated_sources(cwd, modes)
     if timed_out:
@@ -3295,7 +3378,7 @@ def _mutmut_report_spawn(cwd: Path, check: str) -> str | NotMeasured:
             cwd=cwd,
             timeout=_MUTATION_REPORT_TIMEOUT,
         )
-    except (subprocess.TimeoutExpired, OSError) as exc:
+    except (subprocess.TimeoutExpired, OSError, ChildOutputDecodeError) as exc:
         report_error = str(exc)
     if report is None:
         return NotMeasured(
@@ -3865,6 +3948,8 @@ def _commit_ruff_fixes(cwd: Path) -> str | None:
             return f"git commit exited {committed.returncode}: {_last_output_line(committed)}"
     except subprocess.TimeoutExpired:
         return "git add or git commit exceeded 30s"
+    except ChildOutputDecodeError as exc:
+        return f"git add or git commit output could not be decoded: {exc}"
     return None
 
 
@@ -3961,6 +4046,12 @@ def check_dead_code_ruff(
             DEAD_CODE_RUFF_CHECK,
             NOT_MEASURED_TIMED_OUT,
             f"ruff exceeded [verify] subprocess_timeout of {timeout}s",
+        )
+    except ChildOutputDecodeError as exc:
+        return NotMeasured(
+            DEAD_CODE_RUFF_CHECK,
+            NOT_MEASURED_COMMAND_FAILED,
+            f"ruff's output could not be decoded: {exc}",
         )
 
     if result.returncode not in (0, 1):
@@ -4102,6 +4193,12 @@ def check_dead_code(
             DEAD_CODE_CHECK,
             NOT_MEASURED_TIMED_OUT,
             f"the dead code scan exceeded [verify] subprocess_timeout of {timeout}s",
+        )
+    except ChildOutputDecodeError as exc:
+        return NotMeasured(
+            DEAD_CODE_CHECK,
+            NOT_MEASURED_COMMAND_FAILED,
+            f"the dead code scan's output could not be decoded: {exc}",
         )
 
     output = (result.stdout + result.stderr).strip()

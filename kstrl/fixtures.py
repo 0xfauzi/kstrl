@@ -31,7 +31,7 @@ from typing import Any
 
 from kstrl.fixtures_snapshot import check_snapshot_regression, save_snapshot
 from kstrl.prd import PRD
-from kstrl.verify import CheckResult, run_scrubbed
+from kstrl.verify import CheckResult, ChildOutputDecodeError, run_scrubbed
 
 
 @dataclass
@@ -179,7 +179,12 @@ def run_cli_fixture(
             message=f"Command timed out after {timeout}s",
             measured=False,
         )
-    except OSError as exc:
+    # ChildOutputDecodeError shares OSError's clause rather than getting its
+    # own: this function is at cyclomatic 13 and cognitive 16, and one more
+    # branch fails both pre-commit ratchets (#416, measured). A wider tuple
+    # is not a branch. The row already says measured=False, and the
+    # exception's own text names the codec, the byte and the offset.
+    except (OSError, ChildOutputDecodeError) as exc:
         return FixtureResult(
             fixture=fixture,
             passed=False,
@@ -415,6 +420,13 @@ def run_function_fixture(
             fixture=fixture,
             passed=False,
             message=f"Failed to launch fixture subprocess: {exc}",
+            measured=False,
+        )
+    except ChildOutputDecodeError as exc:
+        return FixtureResult(
+            fixture=fixture,
+            passed=False,
+            message=f"Fixture subprocess output could not be decoded: {exc}",
             measured=False,
         )
 
