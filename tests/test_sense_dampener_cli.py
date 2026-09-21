@@ -20,6 +20,7 @@ from kstrl import dampener_report
 from kstrl.cli import SENSE_SCHEMA_VERSION, cli
 from tests.spine_utils import git
 from tests.test_sense_cli import _LINT_FAIL_COMMAND, _kstrl_toml, _make_repo
+from tests.test_sense_dampener import DAMPENER_DOC
 
 DEFAULT_RELATIVE = "scripts/kstrl/sense-baseline.json"
 
@@ -61,6 +62,20 @@ def _baseline_document(root: Path) -> dict[str, Any]:
     text = (root / DEFAULT_RELATIVE).read_text(encoding="utf-8")
     document: dict[str, Any] = json.loads(text)
     return document
+
+
+def _assert_documented_row(check: str, reason: str) -> None:
+    """`docs/dampener.md` must carry this diff-driven check's hole as a row.
+
+    The row is built from the reason the REAL run put in the baseline, never
+    from a literal typed here, so a reworded sensor message moves the doc or
+    fails this test rather than silently diverging from it (#400).
+    """
+    row = " ".join(f"| `{check}` | {reason} | `new` |".split())
+    flattened = " ".join(DAMPENER_DOC.read_text(encoding="utf-8").split())
+    assert row in flattened, (
+        f"docs/dampener.md does not carry the row {row!r}. The doc and this test move together."
+    )
 
 
 # --- writing ------------------------------------------------------------
@@ -531,3 +546,70 @@ def test_base_ref_is_null_outside_a_repository(tmp_path: Path) -> None:
     report = _invoke(root, "--compare-baseline")
     assert report.exit_code == 0, report.output
     assert report.output.splitlines()[0].endswith("(unknown)")
+
+
+# --- a diff-driven check has no baseline to be compared to (#400) --------
+
+
+def test_a_bad_patterns_finding_is_new_and_never_a_stopped_sensor(tmp_path: Path) -> None:
+    """#400: a baseline written on the base ref gives `bad_patterns` nothing to scan.
+
+    `docs/dampener.md` tells every adopter to write the baseline from a clean
+    tree, and a baseline written on the base ref has an empty diff, so this
+    check measures nothing on EVERY baseline. It said the resulting hole was
+    visible as `stopped measuring`. It is not: that bucket is a set difference
+    taken from `baseline.measured_checks`, which this check is not in. The
+    finding lands in `new` instead, because the check only looks at files the
+    branch's diff named and the baseline had none to compare with.
+    """
+    root = _make_repo(tmp_path)
+    assert _write(root).exit_code == 0
+    document = _baseline_document(root)
+    assert "bad_patterns" in document["unmeasured_checks"]
+    assert "bad_patterns" not in document["measured_checks"]
+
+    git("checkout", "-q", "-b", "feature", cwd=root)
+    (root / "src" / "empty.py").write_text("", encoding="utf-8")
+    git("add", "-A", cwd=root)
+    git("commit", "-q", "-m", "add an empty module", cwd=root)
+
+    result = _invoke(root, "--compare-baseline", "--base", "main", "--json")
+
+    assert result.exit_code == 0, result.output
+    block = json.loads(result.stdout)["dampener"]
+    assert block["new"] == {"bad_patterns:issues-found-in-changed-files": 1}
+    assert block["stopped_measuring"] == {}
+    assert block["regressed"] is True
+    _assert_documented_row("bad_patterns", document["unmeasured_reasons"]["bad_patterns"])
+
+
+def test_a_diff_scope_finding_is_new_and_never_a_stopped_sensor(tmp_path: Path) -> None:
+    """The same fact for the other diff-driven check (#400).
+
+    The baseline is written with no `--allowed-path`, so `diff_scope` applies no
+    rule and measures nothing; the comparison passes one, so it measures and
+    flags the file outside it. `--allowed-path` is not part of `verify_digest`,
+    which covers the three verify commands and the timeout, so the comparison is
+    not refused as foreign.
+    """
+    root = _make_repo(tmp_path)
+    assert _write(root).exit_code == 0
+    document = _baseline_document(root)
+    assert "diff_scope" in document["unmeasured_checks"]
+    assert "diff_scope" not in document["measured_checks"]
+
+    git("checkout", "-q", "-b", "feature", cwd=root)
+    (root / "outside.py").write_text("x = 1\n", encoding="utf-8")
+    git("add", "-A", cwd=root)
+    git("commit", "-q", "-m", "touch a file outside src", cwd=root)
+
+    result = _invoke(
+        root, "--compare-baseline", "--base", "main", "--allowed-path", "src/*", "--json"
+    )
+
+    assert result.exit_code == 0, result.output
+    block = json.loads(result.stdout)["dampener"]
+    assert block["new"] == {"diff_scope:files-outside-allowed-scope-diff-vs-base-branch": 1}
+    assert block["stopped_measuring"] == {}
+    assert block["regressed"] is True
+    _assert_documented_row("diff_scope", document["unmeasured_reasons"]["diff_scope"])
