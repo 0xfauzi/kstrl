@@ -613,3 +613,34 @@ def test_a_builder_that_crashed_is_not_relabelled_as_one_that_did_not_fit(
     assert "## Dependency graph" in context, context
     assert "## Public interfaces" not in context, context
     assert "did not fit" not in context, context
+
+
+def test_a_body_exactly_the_size_of_the_room_left_is_delivered_whole(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`>` and not `>=`: a body that exactly fills the room left FITS.
+
+    `_remaining_chars` returns the body size at which the assembled block
+    lands exactly on `max_chars`, which `_truncate_to_budget` keeps. A
+    refusal written `>=` would discard that section and replace it with a
+    line reading "is N characters against the N left", which says a
+    section did not fit while reporting that it exactly did.
+    """
+    _deep_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nrequires-python = ">=3.11"\n', encoding="utf-8"
+    )
+    # One section in front of public interfaces, so the refusal is not
+    # exempted by the first-section rule, and a room figure that is exact.
+    config = FeedforwardConfig(max_context_tokens=400, dependency_graph=False)
+    room = feedforward._remaining_chars(
+        [("Module map", build_module_map(tmp_path))], "Public interfaces", 400 * 4
+    )
+    assert room > 0
+    body = "y" * room
+    monkeypatch.setattr(feedforward, "extract_public_interfaces", lambda root: body)
+
+    context = build_feedforward_context(tmp_path, config)
+
+    assert section(context, "## Public interfaces") == body, context
+    assert "did not fit: public interfaces" not in context, context
