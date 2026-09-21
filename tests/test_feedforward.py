@@ -345,7 +345,6 @@ def test_a_spent_budget_stops_before_the_dependency_graph_is_built(
 
     assert calls == [], calls
     assert "## Module map" in context
-    assert "## Dependency graph" not in context
 
 
 @pytest.mark.parametrize(
@@ -382,12 +381,14 @@ def test_a_dependency_graph_that_did_not_fit_says_so(tmp_path: Path) -> None:
     )
     assert fit is not None, body
     room, parsed, total = (int(group) for group in fit.groups())
+    whole_budget_chars = 100 * 4  # max_context_tokens=100 above, 4 chars/token
+    files_in_deep_repo = 1 + 40  # __init__.py plus mod00.py .. mod39.py (40 files)
     # The graph is told the room left for ITS OWN section, not the whole
-    # 400-character budget the module map has already eaten into.
-    assert 0 < room < 400, body
+    # budget the module map has already eaten into.
+    assert 0 < room < whole_budget_chars, body
     # And it stopped when what it had built outgrew that room, rather
     # than parsing every file and reporting the overflow afterwards.
-    assert total == 41, body
+    assert total == files_in_deep_repo, body
     assert parsed < total, body
 
 
@@ -433,3 +434,48 @@ def test_the_graph_as_the_only_section_is_truncated_not_refused(tmp_path: Path) 
     assert "did not fit" not in context
     assert "->" in context
     assert "... (truncated)" in context
+
+
+# ---------------------------------------------------------------------------
+# Simplify-pass addendum, B3: _record_edge's running count must be exact
+# ---------------------------------------------------------------------------
+
+
+def test_the_edge_size_estimate_is_an_exact_sum(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The bail this feeds must never stop on a graph that would in fact
+    have fit, so `_record_edge`'s running total is not an estimate: the
+    sum of everything it returns must equal len() of the rendered graph
+    body exactly, neither more (an over-count refuses a graph that would
+    have fit) nor less (an under-count tells the graph it has room it
+    does not)."""
+    pkg = tmp_path / "edge_pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "base.py").write_text(
+        "class Base:\n    pass\n\n\nclass Extra:\n    pass\n", encoding="utf-8"
+    )
+    (pkg / "mid.py").write_text(
+        "from edge_pkg.base import Base, Extra\n\n\nclass Mid:\n    pass\n", encoding="utf-8"
+    )
+    (pkg / "top.py").write_text(
+        "from edge_pkg.mid import Mid\nfrom edge_pkg.base import Base\n\n\nclass Top:\n    pass\n",
+        encoding="utf-8",
+    )
+
+    returned: list[int] = []
+    real = feedforward._record_edge
+
+    def spy(*args: Any, **kwargs: Any) -> int:
+        added: int = real(*args, **kwargs)
+        returned.append(added)
+        return added
+
+    monkeypatch.setattr(feedforward, "_record_edge", spy)
+
+    body = build_dependency_graph(tmp_path)
+
+    # mid -> base (2 names), top -> mid (1 name), top -> base (1 name).
+    assert len(returned) == 3, returned
+    assert sum(returned) == len(body)

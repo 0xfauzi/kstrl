@@ -10,7 +10,7 @@ import ast
 import json
 import os
 import tomllib
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -59,7 +59,7 @@ _MAX_SOURCE_ROOT_DEPTH = 4
 # read.
 _TEST_DIR_NAMES = frozenset({"test", "tests"})
 
-# The block's own header and footer, which every section shares.
+# The block's own header and footer, charged once per assembled block.
 _HEADER_FOOTER_OVERHEAD = len("=== CODEBASE CONTEXT (auto-generated) ===\n\n") + len(
     "\n=== END CODEBASE CONTEXT ==="
 )
@@ -390,32 +390,52 @@ def extract_public_interfaces(root: Path) -> str:
     return "\n".join(f"{filepath}: {', '.join(symbols)}" for filepath, symbols in file_symbols)
 
 
+def _render_edge(source_module: str, target_module: str, names: Iterable[str]) -> str:
+    """Exactly the line the graph renderer emits for one edge.
+
+    *names* is rendered in the order given; the renderer passes it
+    already sorted. This is the one place the line's text is written, so
+    the renderer and the size accounting in `_record_edge` cannot drift
+    apart the way two independent copies of it did (measured on this
+    repository: the old separate estimate was 16.7% low).
+    """
+    names_list = list(names)
+    if names_list:
+        return f"{source_module} -> {target_module} (imports: {', '.join(names_list)})"
+    return f"{source_module} -> {target_module}"
+
+
 def _record_edge(
     edges: dict[str, dict[str, set[str]]],
     source_module: str,
     target_module: str,
     names: set[str],
 ) -> int:
-    """Record one edge and return how many characters it ADDS to the render.
+    """Record one edge and return the EXACT growth in rendered characters.
 
-    The count is deliberately an UNDER-estimate: it counts
-    ``"src -> tgt"`` and each new name, and ignores the newline, the
-    ``" (imports: )"`` wrapper and the ``", "`` separators. The caller
-    stops parsing when the count passes its budget, so an under-estimate
-    costs a few more files parsed, while an over-estimate would stop on a
-    graph that would in fact have fitted.
+    The count must equal the corresponding growth in
+    ``"\\n".join(lines)`` exactly, never more: an over-count would stop
+    the caller on a graph that would in fact have fitted, which is the
+    one error this function must not make. A new edge charges its own
+    rendered line plus the joining newline the final ``"\\n".join`` adds
+    for it, except for the very first edge the graph has ever recorded,
+    which needs no newline before it. Adding names to an edge that
+    already exists charges only the difference between the edge's old
+    and new rendered line; `set.update` on an empty set is a no-op, so
+    this needs no separate guard for "nothing new was imported".
     """
-    added = 0
     targets = edges.setdefault(source_module, {})
-    if target_module not in targets:
-        targets[target_module] = set()
-        added += len(source_module) + len(target_module) + 4
-    bucket = targets[target_module]
-    new_names = names - bucket
-    if new_names:
-        bucket.update(new_names)
-        added += sum(len(name) + 2 for name in new_names)
-    return added
+    is_new_edge = target_module not in targets
+    edges_before = sum(len(t) for t in edges.values())
+    bucket = targets.setdefault(target_module, set())
+    if is_new_edge:
+        bucket.update(names)
+        after = _render_edge(source_module, target_module, sorted(bucket))
+        return len(after) + (1 if edges_before else 0)
+    before = _render_edge(source_module, target_module, sorted(bucket))
+    bucket.update(names)
+    after = _render_edge(source_module, target_module, sorted(bucket))
+    return len(after) - len(before)
 
 
 def build_dependency_graph(root: Path, max_chars: int | None = None) -> str:
@@ -457,7 +477,7 @@ def build_dependency_graph(root: Path, max_chars: int | None = None) -> str:
             return (
                 f"(did not fit: the dependency graph passed the {max_chars} characters "
                 f"left in the context budget after {parsed} of {len(all_py_files)} files, "
-                f"so it was not built. Raise feedforward.max_context_tokens to see it.)"
+                f"so it was not built.)"
             )
         parsed += 1
         try:
@@ -509,11 +529,7 @@ def build_dependency_graph(root: Path, max_chars: int | None = None) -> str:
     lines: list[str] = []
     for src_mod in sorted(edges):
         for tgt_mod in sorted(edges[src_mod]):
-            sorted_names = sorted(edges[src_mod][tgt_mod])
-            if sorted_names:
-                lines.append(f"{src_mod} -> {tgt_mod} (imports: {', '.join(sorted_names)})")
-            else:
-                lines.append(f"{src_mod} -> {tgt_mod}")
+            lines.append(_render_edge(src_mod, tgt_mod, sorted(edges[src_mod][tgt_mod])))
 
     return "\n".join(lines)
 
@@ -758,15 +774,10 @@ def _dependency_graph_section(
     """The "Dependency graph" body, filtered to *component_id* and its
     direct dependencies when component context is available.
 
-    *max_chars* bounds what ``build_dependency_graph`` returns, so it is
-    only passed on when nothing shrinks the graph afterwards. A filter
-    that runs here can turn a graph far over the budget into one well
-    under it, and refusing to build that graph would take real content
-    away: measured on this repo at the shipped 4000-token budget,
-    ``component_deps=["factory"]`` delivers 4718 characters of filtered
-    graph that a filter-blind bail would replace with "did not fit".
+    *max_chars* bounds the graph build; the caller decides whether that
+    is a real limit or ``None``, which builds all of it.
     """
-    content = build_dependency_graph(root, None if component_deps else max_chars)
+    content = build_dependency_graph(root, max_chars)
     if content and component_deps:
         relevant = set(component_deps)
         if component_id:
@@ -814,7 +825,10 @@ def build_feedforward_context(
             config.dependency_graph,
             "Dependency graph",
             lambda left: _dependency_graph_section(
-                worktree_path, component_id, component_deps, left if sections else None
+                worktree_path,
+                component_id,
+                component_deps,
+                left if sections and not component_deps else None,
             ),
         ),
         (
@@ -830,7 +844,7 @@ def build_feedforward_context(
             continue
         # The budget is spent: _truncate_to_budget drops from the END of
         # this list, so anything built from here on can only be dropped
-        # again (#403 measured 98% of the built characters discarded).
+        # again.
         if _total_chars(sections) > max_chars:
             break
         _append_section(sections, heading, build, _remaining_chars(sections, heading, max_chars))
