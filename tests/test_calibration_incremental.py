@@ -291,16 +291,23 @@ def test_a_partial_capture_the_builder_stamped_is_refused_and_skipped(
         timestamp="20260921-120000",
         runs_per_fixture=1,
         run_complete=False,
-        fixtures_attempted=["security/sec-a", "security/sec-b"],
-        fixtures_completed=["security/sec-a"],
+        fixtures_attempted=("security/sec-a", "security/sec-b"),
+        fixtures_completed=("security/sec-a",),
     )
-    # A list in the returned dict, not the tuple default: json.dumps
-    # serialises a tuple as an array, so the file on disk cannot tell the
-    # two apart, and partial_capture_reason's isinstance(attempted, list)
-    # check silently falls back to "none recorded" for a tuple.
+    # Tuples in, so the isinstance(..., list) check below can actually fail
+    # for the reason it names: json.dumps serialises a tuple as an array,
+    # so the file on disk cannot tell the two apart, and
+    # partial_capture_reason's isinstance(attempted, list) check silently
+    # falls back to "none recorded" for a tuple. A build_report that
+    # skipped the list(...) coercion would leave a tuple in this dict and
+    # fail these two assertions plus the partial_capture_reason call below.
     assert report["fixtures_attempted"] == ["security/sec-a", "security/sec-b"]
     assert isinstance(report["fixtures_attempted"], list)
     assert isinstance(report["fixtures_completed"], list)
+    assert (
+        calibration_baseline.partial_capture_reason(report)
+        == "the run did not finish; fixtures attempted but not completed: security/sec-b"
+    )
 
     saved = calibration.save_report(report, tmp_path)
     on_disk = json.loads(saved.read_text(encoding="utf-8"))
