@@ -320,11 +320,14 @@ class TestTheLocalePinnedReads:
         assert "café spec" in got and "café plan" in got
 
     def test_the_bad_patterns_scan_reads_source_as_utf8(self, tmp_path: Path) -> None:
-        """PEP 3120 makes utf-8 the source encoding, and since #399 the scan
-        intersects the file's lines with the diff's added lines, so BOTH reads
-        have to agree on the bytes. The accent sits on the secret line itself:
-        decode either side by the locale and the two strings differ, the
-        intersection misses, and the secret is not reported.
+        """The secret scan reads the DIFF (``policy._scan_secrets`` over
+        ``policy.parse_added_lines``), not the file's own content, so what
+        has to decode correctly is the diff: the accent sits on the secret's
+        own added line, one byte inside the single ``subprocess.run()``
+        capture ``git.get_diff_content`` decodes as a whole. Decode it under
+        a locale that is not utf-8 and the WHOLE call raises before the scan
+        sees anything, so ``check_bad_patterns`` fails closed instead of
+        quietly missing the secret.
 
         The scan is DRIVEN, not simulated.
         """

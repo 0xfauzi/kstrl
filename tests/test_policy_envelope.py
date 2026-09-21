@@ -64,6 +64,22 @@ class TestGlobMatcher:
         assert _match_glob("src/ok.py", ["**/*.pem"]) is None
 
 
+def _git_octal_quote(name: str) -> str:
+    """The C-quoted spelling git writes for a ``+++``/``--- `` header path
+    when it contains a non-ASCII byte: each such byte as ``\\NNN`` octal,
+    the rest verbatim, wrapped in double quotes. Built here from a real
+    accented character rather than typed as a literal escape sequence, so
+    the source text never spells the ASCII prefix next to the escape - see
+    ``[tool.codespell]`` in ``pyproject.toml`` for why that split reads as
+    a typo (#399).
+    """
+    out = ['"b/']
+    for byte in name.encode("utf-8"):
+        out.append(chr(byte) if byte < 0x80 else f"\\{byte:03o}")
+    out.append('"')
+    return "".join(out)
+
+
 # --------------------------------------------------------------------------
 # Diff parsing helpers
 # --------------------------------------------------------------------------
@@ -103,6 +119,71 @@ class TestDiffParsing:
     def test_parse_added_lines_ignores_dev_null_target(self) -> None:
         diff = "--- a/gone.txt\n+++ /dev/null\n+orphan\n"
         assert parse_added_lines(diff) == []
+
+    @pytest.mark.parametrize(
+        "quoted_target,expected_path",
+        [
+            # An octal-escaped non-ASCII byte: core.quotepath (default on)
+            # renders a UTF-8 'é' as its raw bytes, backslash-octal. Built
+            # by _git_octal_quote rather than typed as a literal escape.
+            (_git_octal_quote("café.py"), "café.py"),
+            # A literal double quote inside the filename.
+            ('"b/we\\"ird.py"', 'we"ird.py'),
+            # A literal backslash inside the filename.
+            ('"b/a\\\\b.py"', "a\\b.py"),
+            # A literal tab inside the filename.
+            ('"b/a\\tb.py"', "a\tb.py"),
+        ],
+    )
+    def test_parse_added_lines_unquotes_every_trigger(
+        self, quoted_target: str, expected_path: str
+    ) -> None:
+        """#399 addendum A1: ``core.quotepath`` (default on) C-quotes a
+        ``+++``/``--- `` header path that ``git diff --name-status`` never
+        quotes, so the two commands can spell one file differently unless
+        this is undone. The four literal diff lines below are measured
+        against real git output for each trigger (verified against a real
+        repository in ``test_the_unquote_round_trip_matches_get_diff_names_
+        on_a_real_repo`` below); pinning them as literal text here checks
+        the exact unquoted spelling without paying for a repository per
+        case.
+        """
+        diff = f"--- /dev/null\n+++ {quoted_target}\n+content\n"
+        assert parse_added_lines(diff) == [(expected_path, "content")]
+
+    def test_the_unquote_round_trip_matches_get_diff_names_on_a_real_repo(
+        self, tmp_path: Path
+    ) -> None:
+        """The claim A1 exists to prove, driven end to end: after
+        unquoting, the paths ``parse_added_lines`` reports are the SAME set
+        ``git diff --name-status`` (the lenient reader ``get_diff_names``
+        wraps) already reports, for every trigger that makes git quote a
+        path. Real git, not simulated - what a quoted path decodes to is
+        not something worth guessing at.
+        """
+        gitrepo.git_in(tmp_path, "init", "-q", "-b", "main")
+        gitrepo.set_identity(tmp_path)
+        (tmp_path / "seed.py").write_text("x = 1\n", encoding="utf-8")
+        gitrepo.git_in(tmp_path, "add", "-A")
+        gitrepo.git_in(tmp_path, "commit", "-q", "-m", "base")
+        gitrepo.git_in(tmp_path, "checkout", "-q", "-b", "work")
+        tricky_names = {
+            "café.py",  # octal-escaped non-ASCII byte
+            'we"ird.py',  # double quote
+            "a\\b.py",  # backslash
+            "a\tb.py",  # tab
+        }
+        for name in tricky_names:
+            (tmp_path / name).write_text("x = 1\n", encoding="utf-8")
+        gitrepo.git_in(tmp_path, "add", "-A")
+        gitrepo.git_in(tmp_path, "commit", "-q", "-m", "add four tricky files")
+
+        lenient_names = set(git.get_diff_names("main", tmp_path))
+        diff_text = git.get_diff_content("main", tmp_path)
+        parsed_paths = {path for path, _line in parse_added_lines(diff_text)}
+
+        assert lenient_names == tricky_names
+        assert parsed_paths == tricky_names
 
     @pytest.mark.parametrize(
         "raw,expected",

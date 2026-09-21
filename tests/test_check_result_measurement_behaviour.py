@@ -229,7 +229,11 @@ def test_bad_patterns_that_could_not_decode_the_diff_measured_nothing(tmp_path: 
     _git("add", "-A", cwd=repo)
     _git("commit", "-q", "-m", "seed", cwd=repo)
     _git("checkout", "-q", "-b", "work", cwd=repo)
-    (repo / "latin.py").write_bytes(b'VALUE = "caf\xe9"\n')
+    # A latin-1 encode of a real word, not a hand-split ASCII+escape
+    # literal: byte-identical to the quoted-octal spelling git itself would
+    # write for this character, and codespell reads a whole word rather than
+    # a fragment that happens to look like a typo for "calf" (#399).
+    (repo / "latin.py").write_bytes('VALUE = "café"\n'.encode("latin-1"))
     _git("add", "-A", cwd=repo)
     _git("commit", "-q", "-m", "add latin-1 bytes", cwd=repo)
 

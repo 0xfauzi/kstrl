@@ -169,11 +169,15 @@ ignore_names = ["cancel_futures"]
 [tool.codespell]
 # All verified false positives, not typos. critcial is a deliberately invalid
 # env value in a test asserting ValueError. Excetra is a project name.
-# unparseable and pre-empt are accepted spellings codespell dislikes. caf is
-# the ASCII half of "café" wherever an escaped non-ASCII byte (\303\251 in a
-# quoted git diff path, \xe9 in a latin-1 fixture) splits the word in the
-# source text (#399); codespell reads the fragment as a typo for "calf".
-ignore-words-list = "caf,crasher,critcial,excetra,missable,nd,pre-empt,unparseable"
+# unparseable and pre-empt are accepted spellings codespell dislikes.
+#
+# #399 fixtures that need a non-ASCII byte spell it as a Latin-1 encode of the
+# real word ("café".encode("latin-1")) rather than a hand-split ASCII-plus-
+# escape literal, on purpose: the two are byte-identical to what a
+# git-quoted path or a raw latin-1 file actually carries, and codespell then
+# reads one whole word instead of a split-off ASCII prefix that reads as a
+# typo for a young cow. No entry is needed here for it.
+ignore-words-list = "crasher,critcial,excetra,missable,nd,pre-empt,unparseable"
 # tests/tool_output/ is captured tool output kept as evidence (#258).
 # pytest truncates its short-summary lines to the terminal width, which
 # cuts the exception name off mid-word - the very behaviour those

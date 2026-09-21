@@ -45,7 +45,7 @@ from kstrl.verify import (
     check_typecheck,
     run_mechanical_verification,
 )
-from tests.helpers import gitrepo
+from tests.conftest import make_review_repo
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 from tests.helpers.tool_output import tool_output
 from tests.helpers.verify_phase import CHEAP_GATES, phase_verify_surfaces
@@ -410,62 +410,44 @@ class TestCheckDiffScope:
         assert "and 5 more" in prompt_text
 
 
-def _repo(root: Path) -> Path:
-    """A real repository on ``main``, with an identity, ready for a base commit."""
-    gitrepo.git_in(root, "init", "-q", "-b", "main")
-    gitrepo.set_identity(root)
-    return root
-
-
-def _commit(repo: Path, message: str) -> None:
-    gitrepo.git_in(repo, "add", "-A")
-    gitrepo.git_in(repo, "commit", "-q", "-m", message)
-
-
 class TestCheckBadPatterns:
-    def test_clean_files(self, tmp_path: Path) -> None:
-        repo = _repo(tmp_path)
-        gitrepo.git_in(repo, "commit", "-q", "--allow-empty", "-m", "base")
-        gitrepo.git_in(repo, "checkout", "-q", "-b", "work")
-        (repo / "clean.py").write_text("x = 1\n")
-        _commit(repo, "add clean.py")
+    """Built on ``make_review_repo`` (#399 simplify pass on #405, C1) rather
+    than a local ``_repo``/``_commit`` pair: that helper already builds a
+    base-then-branch repository under a real identity and is imported by
+    eight other modules, so this class adds no row of its own to
+    ``tests/test_git_identity.py``'s per-file census.
+    """
 
-        result = check_bad_patterns(repo, "main")
+    def test_clean_files(self, tmp_path: Path) -> None:
+        repo = make_review_repo(tmp_path, files={"clean.py": "x = 1\n"})
+
+        result = check_bad_patterns(repo.path, repo.base_branch)
         assert result.passed is True
         assert result.message == "Scanned 1 of 1 changed Python files, no issues"
 
     def test_empty_py_file(self, tmp_path: Path) -> None:
-        repo = _repo(tmp_path)
-        gitrepo.git_in(repo, "commit", "-q", "--allow-empty", "-m", "base")
-        gitrepo.git_in(repo, "checkout", "-q", "-b", "work")
-        (repo / "empty.py").write_text("")
-        _commit(repo, "add empty.py")
+        repo = make_review_repo(tmp_path, files={"empty.py": ""})
 
         # An empty file has no added lines and the empty check does not
         # consult them, which is the point.
-        result = check_bad_patterns(repo, "main")
+        result = check_bad_patterns(repo.path, repo.base_branch)
         assert result.passed is False
         assert any("empty" in d for d in result.details)
 
     def test_syntax_error(self, tmp_path: Path) -> None:
-        repo = _repo(tmp_path)
-        gitrepo.git_in(repo, "commit", "-q", "--allow-empty", "-m", "base")
-        gitrepo.git_in(repo, "checkout", "-q", "-b", "work")
-        (repo / "bad.py").write_text("def f(\n")
-        _commit(repo, "add bad.py")
+        repo = make_review_repo(tmp_path, files={"bad.py": "def f(\n"})
 
-        result = check_bad_patterns(repo, "main")
+        result = check_bad_patterns(repo.path, repo.base_branch)
         assert result.passed is False
         assert any("syntax" in d.lower() for d in result.details)
 
     def test_secret_detected(self, tmp_path: Path) -> None:
-        repo = _repo(tmp_path)
-        gitrepo.git_in(repo, "commit", "-q", "--allow-empty", "-m", "base")
-        gitrepo.git_in(repo, "checkout", "-q", "-b", "work")
-        (repo / "leak.py").write_text('API_KEY = "sk-abcdefghijklmnopqrstuvwxyz"\n')
-        _commit(repo, "add leak.py")
+        repo = make_review_repo(
+            tmp_path,
+            files={"leak.py": 'API_KEY = "sk-abcdefghijklmnopqrstuvwxyz"\n'},
+        )
 
-        result = check_bad_patterns(repo, "main")
+        result = check_bad_patterns(repo.path, repo.base_branch)
         assert result.passed is False
         assert any("secret" in d.lower() for d in result.details)
 
@@ -2743,16 +2725,12 @@ class TestReadOnlyVerification:
     ) -> None:
         """``py_compile`` defaults its output to ``__pycache__`` NEXT TO
         the file it compiles; scanning must not leave that behind."""
-        repo = _repo(tmp_path)
-        gitrepo.git_in(repo, "commit", "-q", "--allow-empty", "-m", "base")
-        gitrepo.git_in(repo, "checkout", "-q", "-b", "work")
-        src = repo / "src"
-        src.mkdir()
-        (src / "ok.py").write_text("x = 1\n")
-        (src / "broken.py").write_text("def f(\n")
-        _commit(repo, "add src/ok.py and src/broken.py")
+        repo = make_review_repo(
+            tmp_path,
+            files={"src/ok.py": "x = 1\n", "src/broken.py": "def f(\n"},
+        )
 
-        result = check_bad_patterns(repo, "main")
+        result = check_bad_patterns(repo.path, repo.base_branch)
 
         # The syntax error is still reported: only the destination moved.
         assert result.passed is False

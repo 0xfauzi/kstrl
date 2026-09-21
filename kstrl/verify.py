@@ -54,9 +54,11 @@ from kstrl.parsers import (
     generate_fix_hint,
 )
 from kstrl.policy import (
+    DEFAULT_SECRET_PATTERNS,
     PolicyConfig,
     PolicyConfigError,
     PolicyViolation,
+    _scan_secrets,
     classify_license,
     evaluate_policy,
     parse_added_lines,
@@ -558,16 +560,6 @@ class VerifyConfig:
             if env_var in os.environ:
                 setattr(config, field_name, getattr(env, field_name))
         return config
-
-
-# Patterns that suggest secrets in source code
-SECRET_PATTERNS = [
-    re.compile(r"AKIA[0-9A-Z]{16}"),  # AWS access key
-    re.compile(r"sk-[a-zA-Z0-9]{20,}"),  # OpenAI/Stripe key
-    re.compile(r"ghp_[a-zA-Z0-9]{36}"),  # GitHub PAT
-    re.compile(r"-----BEGIN (RSA |EC )?PRIVATE KEY-----"),  # Private keys
-    re.compile(r"xox[bpoas]-[a-zA-Z0-9-]+"),  # Slack tokens
-]
 
 
 # Engineer prompt mandates the EXACT heading `## Self-Critique`.
@@ -1756,65 +1748,11 @@ def check_diff_scope(
     )
 
 
-def _added_line_texts(cwd: Path, base_branch: str) -> set[str]:
-    """Every line this branch ADDED, as a set of line texts (#399).
-
-    Keyed on the TEXT and not on the path ``parse_added_lines`` reports beside
-    it. Measured: ``git diff --name-status -z`` returns ``café.py`` while ``git
-    diff`` writes ``+++ "b/caf\\303\\251.py"``, quoting the non-ASCII path and
-    keeping the ``b/`` inside the quotes, so joining the two by path CLEARS a
-    file that really does add a secret. A gate that clears must be narrow; this
-    one over-matches instead, and only inside files the diff already named.
-    """
-    diff_text = git.get_diff_content(base_branch, cwd)
-    return {line for _path, line in parse_added_lines(diff_text)}
-
-
-def _adds_a_secret(content: str, added_lines: set[str]) -> bool:
-    """Does a line of ``content`` that this branch ADDED match a secret pattern?"""
-    for line in content.splitlines():
-        if line in added_lines and any(pattern.search(line) for pattern in SECRET_PATTERNS):
-            return True
-    return False
-
-
-def _added_lines_or_refusal(cwd: Path, base_branch: str, start: float) -> set[str] | CheckResult:
-    """``_added_line_texts``'s result, or the refusal row if it raised (#399).
-
-    Split out of ``check_bad_patterns`` so the try/except does not count
-    against that function's own complexity ceiling; the caller does
-    ``if isinstance(read, CheckResult): return read``.
-    """
-    try:
-        return _added_line_texts(cwd, base_branch)
-    except Exception as exc:
-        # Exception exactly, and reported as a refusal. get_diff_names is
-        # LENIENT, so the file list can arrive when the diff does not, and
-        # at least two unrelated families reach here, both measured: a
-        # GitDiffError, and a UnicodeDecodeError (a ValueError) from a diff
-        # this process could not decode. Enumerating such a set is how #318
-        # was wrong three times. The row fails CLOSED, so a swallow costs a
-        # visible red gate, never a silent pass.
-        return CheckResult(
-            name="bad_patterns",
-            passed=False,
-            message=(
-                "bad patterns could not read the diff; failing closed "
-                "(infrastructure error, not a scan pass)"
-            ),
-            details=[f"Error: {exc}"],
-            findings=[
-                Finding.infrastructure_error(
-                    "verify",
-                    f"bad patterns could not read the diff: {exc}",
-                )
-            ],
-            duration_seconds=time.monotonic() - start,
-            measured=False,
-        )
-
-
-def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
+def check_bad_patterns(
+    cwd: Path,
+    base_branch: str,
+    secret_patterns: Sequence[str] = DEFAULT_SECRET_PATTERNS,
+) -> CheckResult:
     """Scan changed files for obvious problems.
 
     The scan reads the tree and writes nothing into it. The syntax
@@ -1824,6 +1762,20 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
     and a write ``ks sense`` (R10.1) promises never to make. Directing
     ``cfile`` at a throwaway directory keeps the ``PyCompileError``
     type and message byte-identical; only the destination moves.
+
+    Which files add a secret is a property of the DIFF, not of a file
+    (#399 simplify pass): it is computed once, by intersecting the lines
+    this branch ADDED with ``secret_patterns`` via ``policy._scan_secrets``
+    - the same function ``check_policy_envelope`` evaluates its own
+    ``[policy] secret_patterns`` through - one rule, not two copies of it.
+    The result is keyed by PATH, which is safe again now that
+    ``policy.parse_added_lines`` (#399 addendum) unquotes a git-quoted path
+    before comparing it to ``git diff --name-status``'s own, unquoted
+    spelling of the same file. The caller passes the envelope's own
+    ``PolicyConfig.secret_patterns`` when it has one; ``PolicyConfig.load``
+    reads that field unconditionally, whether or not ``[policy] enabled``
+    is true, so a stock install (no config at all) keeps this default,
+    which is that same list.
     """
     start = time.monotonic()
     issues: list[str] = []
@@ -1837,15 +1789,46 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
     changed = git.get_diff_names(base_branch, cwd)
     py_files = [f for f in changed if f.endswith(".py")]
 
-    # #399: the secret scan reads the lines this branch ADDED. Read the diff
-    # only when there is a Python file to scan, so a diff with nothing to open
-    # keeps the vacuous pass it has today instead of gaining a new way to fail.
-    added_lines: set[str] = set()
+    # #399: which changed files add a secret. Read and scan the diff only
+    # when there is a Python file to check, so a diff with nothing to open
+    # keeps the vacuous pass it has today instead of gaining a new way to
+    # fail.
+    secret_hit_paths: frozenset[str] = frozenset()
     if py_files:
-        read = _added_lines_or_refusal(cwd, base_branch, start)
-        if isinstance(read, CheckResult):
-            return read
-        added_lines = read
+        try:
+            diff_text = git.get_diff_content(base_branch, cwd)
+            secret_hit_paths = frozenset(
+                _scan_secrets(parse_added_lines(diff_text), secret_patterns)
+            )
+        except Exception as exc:
+            # Exception exactly, broad clause last (#318). get_diff_names is
+            # LENIENT, so the file list can arrive when the diff does not; at
+            # least two unrelated families are measured reaching here: a
+            # GitDiffError, and a UnicodeDecodeError (a ValueError) from a
+            # diff this process could not decode. A misconfigured secret
+            # pattern (PolicyConfigError, also a ValueError, raised inside
+            # `_scan_secrets`) reaches the same clause for the same reason:
+            # this check runs by default, so a bad regex must fail this row
+            # closed rather than crash the whole verification run. The row
+            # fails CLOSED, so a swallow costs a visible red gate, never a
+            # silent pass.
+            return CheckResult(
+                name="bad_patterns",
+                passed=False,
+                message=(
+                    "bad patterns could not read the diff; failing closed "
+                    "(infrastructure error, not a scan pass)"
+                ),
+                details=[f"Error: {exc}"],
+                findings=[
+                    Finding.infrastructure_error(
+                        "verify",
+                        f"bad patterns could not read the diff: {exc}",
+                    )
+                ],
+                duration_seconds=time.monotonic() - start,
+                measured=False,
+            )
 
     with tempfile.TemporaryDirectory(prefix="kstrl-bytecode-") as bytecode_dir:
         # One reused destination: the content is never read back, only
@@ -1857,11 +1840,10 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
                 continue
 
             # Empty file check. utf-8 pinned, not left to the locale:
-            # PEP 3120 makes utf-8 the default source encoding, so this
-            # is the encoding the file is in, and reading it as cp1252
-            # under a non-UTF-8 locale would silently change which of its
-            # lines match the diff's, and so which SECRET_PATTERNS fire
-            # below.
+            # PEP 3120 makes utf-8 the default source encoding, so this is
+            # the encoding the file is actually in, and reading it under a
+            # different locale risks a spurious decode failure or a wrong
+            # answer to "is this file empty".
             content = full_path.read_text(encoding="utf-8")
             scanned += 1
             if not content.strip():
@@ -1875,10 +1857,10 @@ def check_bad_patterns(cwd: Path, base_branch: str) -> CheckResult:
                 issues.append(f"{rel_path}: syntax error - {exc}")
                 continue
 
-            # Secret patterns, over the lines this branch ADDED (#399). The
-            # whole-file scan this replaces failed a blocking gate on strings
-            # the branch never wrote, and told the retry agent to fix them.
-            if _adds_a_secret(content, added_lines):
+            # Secret patterns: did THIS file add one of the lines the scan
+            # above matched? Keyed on path, not on re-reading the file's own
+            # lines - which added lines match is a property of the diff.
+            if rel_path in secret_hit_paths:
                 issues.append(f"{rel_path}: possible secret/credential detected")
 
     if issues:
@@ -4651,6 +4633,13 @@ def run_mechanical_verification(
     """
     checks: list[CheckResult] = []
     not_measured: list[NotMeasured] = []
+    # #399 addendum: the envelope's own secret_patterns, read whether or not
+    # [policy] enabled is true (PolicyConfig.load populates the field
+    # unconditionally), so check_bad_patterns and check_policy_envelope
+    # enforce one rule.
+    bad_patterns_secret_patterns = (
+        policy_config.secret_patterns if policy_config is not None else DEFAULT_SECRET_PATTERNS
+    )
 
     if prd_path is not None:
         checks.append(check_prd_stories(prd_path, pre_run_prd_path))
@@ -4694,7 +4683,7 @@ def run_mechanical_verification(
     )
 
     if config.check_bad_patterns:
-        checks.append(check_bad_patterns(worktree_path, base_branch))
+        checks.append(check_bad_patterns(worktree_path, base_branch, bad_patterns_secret_patterns))
 
     # R8.1 policy envelope: opt-in ([policy] enabled). When disabled the
     # check is not appended, so existing runs are unchanged.

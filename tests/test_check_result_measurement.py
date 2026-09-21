@@ -211,16 +211,18 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     "fixtures.py: run_cli_fixture: FixtureResult": 7,
     "fixtures.py: run_file_fixture: FixtureResult": 8,
     "fixtures.py: run_function_fixture: FixtureResult": 9,
-    # #399: the diff-unreadable refusal for check_bad_patterns. Split into
-    # its own helper (_added_lines_or_refusal) rather than left inline,
-    # because check_bad_patterns was already at the cognitive-complexity
-    # ceiling (15) before this row existed; the census attributes a
-    # construction to its innermost scope, so the row lands here and not
-    # on check_bad_patterns itself.
-    "verify.py: _added_lines_or_refusal: CheckResult": 1,
     "verify.py: _failed_gate_result: CheckResult": 1,
     "verify.py: _self_critique_text: CheckResult": 2,
-    "verify.py: check_bad_patterns: CheckResult": 2,
+    # #399 simplify pass on #405: the passing row, the issues-found row and
+    # the diff-unreadable refusal, all three now built inside
+    # check_bad_patterns itself. The refusal used to be split into its own
+    # helper (_added_lines_or_refusal) on the theory that the try/except
+    # would push check_bad_patterns over the cognitive-complexity ceiling;
+    # measured directly, every variant (as shipped, and the try/except fully
+    # inlined) came out at cognitive 15 / cyclomatic 8-9, so the split
+    # bought nothing and was undone. This row absorbs the one
+    # _added_lines_or_refusal used to hold.
+    "verify.py: check_bad_patterns: CheckResult": 3,
     "verify.py: check_dead_code: CheckResult": 2,
     "verify.py: check_dead_code_ruff: CheckResult": 1,
     "verify.py: check_diff_scope: CheckResult": 4,
@@ -261,8 +263,10 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
 #: artifact stays measured, and lives in the third dict below.
 EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     # #399: the diff could not be read (or decoded), so bad_patterns never
-    # learned which lines the branch added and scanned nothing.
-    "verify.py: _added_lines_or_refusal: CheckResult: measured=False": 1,
+    # learned which lines the branch added and scanned nothing. #399 simplify
+    # pass on #405: this row moved here from _added_lines_or_refusal, which
+    # was inlined into check_bad_patterns (see EXPECTED_RESULT_SITES above).
+    "verify.py: check_bad_patterns: CheckResult: measured=False": 1,
     # A run with no fixtures ran no oracle, so it cannot prove one stopped
     # failing; a run in which any fixture timed out or could not be launched
     # cannot either, and `all` is what makes that the narrow direction.

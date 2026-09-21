@@ -78,10 +78,6 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/spine_utils.py": 1,
     "tests/test_adequacy.py": 8,
     "tests/test_autonomy_ladder.py": 1,
-    # #399: `_commit`, a private helper matching the one in
-    # tests/test_verify.py, committing into the repository `_repo` built
-    # through `tests.helpers.gitrepo.set_identity`.
-    "tests/test_bad_patterns_diff_scope.py": 1,
     "tests/test_breaker.py": 2,
     # #399 added two real-repository tests (a stubbed-git refusal, which
     # makes no commit, and a latin-1-bytes commit through `_git`/`_repo`,
@@ -118,7 +114,11 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # separate exact tokens in the same folded string, the identical
     # shape gitrepo.py's own row above is declared for.
     "tests/test_patch_coverage.py": 1,
-    "tests/test_policy_envelope.py": 4,
+    # #399 addendum A1: the real end-to-end unquote-round-trip test adds two
+    # commits (a base commit, then the four tricky filenames) through
+    # tests.helpers.gitrepo, which this file already imports and whose
+    # set_identity it calls first.
+    "tests/test_policy_envelope.py": 6,
     "tests/test_pr_outcomes.py": 3,
     "tests/test_progress_scope.py": 9,
     "tests/test_prompt_upgrade.py": 1,
@@ -150,10 +150,14 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # call log CONTAINS, plus a docstring paragraph. Nothing here spawns
     # git; the one real commit `run_scrubbed` makes belongs to
     # `kstrl/verify.py`, which is production code and out of this census.
-    # #399: TestCheckBadPatterns and the bytecode-destination test now
-    # commit into real repositories, through this file's own `_repo` /
-    # `_commit`, which goes through `tests.helpers.gitrepo.set_identity`.
-    "tests/test_verify.py": 11,
+    # #399 added TestCheckBadPatterns and the bytecode-destination test as
+    # real-repository tests, briefly raising this row to 11 through this
+    # file's own `_repo`/`_commit`. #399's simplify pass on #405 (C1) moved
+    # both classes onto `tests.conftest.make_review_repo`, already counted
+    # at its own call site (the `tests/conftest.py` row above), and dropped
+    # `_repo`/`_commit` from this file entirely - back to 5, this file's
+    # value before #399 touched it.
+    "tests/test_verify.py": 5,
 }
 
 
