@@ -52,6 +52,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from kstrl.jsonread import read_json
+
 # File-tool allow rules for the claude no-network mode: without
 # --dangerously-skip-permissions these tools are permission-gated in
 # headless mode (measured), and an engineer that cannot edit files is
@@ -293,7 +295,7 @@ def claude_review_sandbox_settings(config: SandboxConfig | None = None) -> str:
     adapter is NOT passing ``--dangerously-skip-permissions``.
     """
     base = claude_sandbox_settings(config)
-    settings: dict[str, object] = json.loads(base) if base else {}
+    settings: dict[str, object] = read_json(base) if base else {}
     # The operator's SANDBOX object is kept (that is the OS-level
     # enforcement, and the reviewer wants it); the operator's
     # PERMISSIONS are REPLACED, never merged.

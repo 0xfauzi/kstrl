@@ -16,12 +16,12 @@ that shrank (truncated/replaced) resets to offset zero and reports
 
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from kstrl.events import Event, event_from_dict
+from kstrl.jsonread import read_json
 
 
 @dataclass
@@ -68,7 +68,7 @@ class JsonlTailer:
             if not raw.strip():
                 continue
             try:
-                obj = json.loads(raw)
+                obj = read_json(raw)
             except ValueError:
                 continue
             if isinstance(obj, dict):

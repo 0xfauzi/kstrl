@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl.atomicio import atomic_write_json
+from kstrl.jsonread import read_json
 
 if TYPE_CHECKING:
     # Only for the annotations. `kstrl.fixtures` imports this module at run
@@ -77,7 +78,7 @@ def check_snapshot_regression(
         return []
 
     try:
-        snapshot_data = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        snapshot_data = read_json(snapshot_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError, OSError):
         return ["Failed to read snapshot file - cannot check for regressions"]
 

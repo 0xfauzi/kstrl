@@ -16,12 +16,12 @@ other kinds rely on the mtime window (heartbeats keep it fresh).
 from __future__ import annotations
 
 import errno
-import json
 import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from kstrl.jsonread import read_json
 from kstrl.runid import run_kind, run_sort_key
 
 LIVE_MTIME_WINDOW_SECONDS = 60.0
@@ -70,7 +70,7 @@ def _run_completed(events_path: Path) -> bool:
     lines = tail.split(b"\n")
     for raw in lines:
         try:
-            obj = json.loads(raw)
+            obj = read_json(raw)
         except (UnicodeDecodeError, ValueError):
             continue
         if isinstance(obj, dict) and obj.get("event") == "factory_completed":

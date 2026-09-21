@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.agents.claude_sdk import RESULT_PREFIX, USAGE_PREFIX
+from kstrl.jsonread import read_json
 
 # Runner exit codes (informational; the adapter keys on output lines).
 _EXIT_OK = 0
@@ -60,7 +61,7 @@ def _emit_result(payload: dict[str, Any]) -> None:
 
 def _read_config() -> dict[str, Any]:
     raw = sys.stdin.read()
-    config = json.loads(raw)
+    config = read_json(raw)
     if not isinstance(config, dict) or "prompt" not in config:
         raise ValueError("runner config must be a JSON object with 'prompt'")
     return config

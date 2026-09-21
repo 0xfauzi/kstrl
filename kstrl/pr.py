@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
 import time
@@ -16,6 +15,7 @@ from kstrl.findings import (
     render_findings_markdown,
 )
 from kstrl.git import fetch_base_branch
+from kstrl.jsonread import read_json
 
 if TYPE_CHECKING:
     from kstrl.manifest import Component, Manifest
@@ -184,7 +184,7 @@ def _pr_state(pr_number: int, cwd: Path) -> str | None:
     if result.returncode != 0:
         return None
     try:
-        data = json.loads(result.stdout)
+        data = read_json(result.stdout)
     except ValueError:
         return None
     state = data.get("state", "") if isinstance(data, dict) else ""
@@ -209,7 +209,7 @@ def _pr_mergeable(pr_number: int, cwd: Path) -> str | None:
     if result.returncode != 0:
         return None
     try:
-        data = json.loads(result.stdout)
+        data = read_json(result.stdout)
     except ValueError:
         return None
     mergeable = data.get("mergeable", "") if isinstance(data, dict) else ""

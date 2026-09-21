@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from kstrl.appendio import JOURNAL_REPAIR_EVENT, REPAIR_DETAIL, append_records
+from kstrl.jsonread import read_json
 
 
 class ProgressSink(Protocol):
@@ -479,11 +480,10 @@ def read_progress_events(path: Path) -> list[dict[str, Any]]:
     try:
         with open(path, encoding="utf-8") as f:
             for line in f:
-                line = line.strip()
-                if not line:
+                if not (line := line.strip()):
                     continue
                 try:
-                    parsed = json.loads(line)
+                    parsed = read_json(line)
                 except json.JSONDecodeError:
                     continue
                 if isinstance(parsed, dict):

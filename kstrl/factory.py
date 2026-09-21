@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import functools
 import importlib
-import json
 import os
 import shutil
 import signal
@@ -84,6 +83,7 @@ from kstrl.git import fetch_base_branch, resolve_base_ref
 from kstrl.guards import ScopeHazard, scope_entry_hazard
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.interaction import InteractionChannel
+from kstrl.jsonread import read_json
 from kstrl.knowledge import (
     KnowledgeConfig,
     build_knowledge_context,
@@ -1936,7 +1936,7 @@ def _read_partial_usage(path: Path) -> UsageTotals | None:
     file, never a long-lived record.
     """
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = read_json(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     if not isinstance(data, dict):

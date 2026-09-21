@@ -76,6 +76,7 @@ from typing import IO, Any
 
 from kstrl.appendio import JOURNAL_REPAIR_EVENT, append_records
 from kstrl.atomicio import atomic_write_text
+from kstrl.jsonread import read_json
 from kstrl.statedir import (
     CONTROL_PAUSE,
     control_file,
@@ -772,7 +773,7 @@ class Queue:
             _warn_rejected(item_path, f"{META_FILENAME} is not valid UTF-8: {exc}")
             return None
         try:
-            data = json.loads(raw)
+            data = read_json(raw)
         except json.JSONDecodeError as exc:
             _warn_rejected(item_path, f"malformed {META_FILENAME}: {exc}")
             return None
@@ -954,7 +955,7 @@ class Queue:
             if not line.strip():
                 continue
             try:
-                data = json.loads(line)
+                data = read_json(line)
             except json.JSONDecodeError:
                 continue
             if not isinstance(data, dict):
@@ -1400,7 +1401,7 @@ class Queue:
                 reason=f"pause marker is not valid UTF-8: {exc}",
             )
         try:
-            data = json.loads(raw)
+            data = read_json(raw)
         except json.JSONDecodeError:
             # An unreadable pause marker means PAUSED. Failing open here
             # would resume unattended spending on the strength of a

@@ -57,6 +57,7 @@ from kstrl.evolution import (
     entry_str,
 )
 from kstrl.guards import ScopeHazard, scope_entry_hazard
+from kstrl.jsonread import read_json
 from kstrl.linear import (
     LinearClient,
     LinearConfig,
@@ -577,7 +578,7 @@ def _extract_json(text: str) -> Any:
     # Try direct parse first
     stripped = text.strip()
     try:
-        return json.loads(stripped)
+        return read_json(stripped)
     except json.JSONDecodeError:
         pass
 
@@ -586,7 +587,7 @@ def _extract_json(text: str) -> Any:
     matches = re.findall(fence_pattern, stripped, re.DOTALL)
     for match in matches:
         try:
-            return json.loads(match.strip())
+            return read_json(match.strip())
         except json.JSONDecodeError:
             continue
 
@@ -601,7 +602,7 @@ def _extract_json(text: str) -> Any:
                 depth -= 1
                 if depth == 0:
                     try:
-                        return json.loads(stripped[brace_start : i + 1])
+                        return read_json(stripped[brace_start : i + 1])
                     except json.JSONDecodeError:
                         break
 

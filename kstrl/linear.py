@@ -50,6 +50,7 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl.config import _parse_bool, load_toml_section, resolve_config_file
 from kstrl.events import budget_halt_kind
+from kstrl.jsonread import read_json
 
 if TYPE_CHECKING:
     from kstrl.decompose import SpecIssue
@@ -345,7 +346,7 @@ class LinearClient:
     @staticmethod
     def _parse_body(raw: bytes) -> dict[str, Any] | None:
         try:
-            parsed = json.loads(raw.decode("utf-8", errors="replace"))
+            parsed = read_json(raw.decode("utf-8", errors="replace"))
         except (json.JSONDecodeError, ValueError):
             return None
         return parsed if isinstance(parsed, dict) else None

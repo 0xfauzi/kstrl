@@ -38,7 +38,6 @@ template.
 
 from __future__ import annotations
 
-import json
 import time
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
@@ -46,6 +45,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.atomicio import atomic_write_json
+from kstrl.jsonread import read_json
 
 # Relative location of the persisted register. Next to manifest.json and
 # spec-issues.json so one directory holds every decompose output.
@@ -433,7 +433,7 @@ def read_decisions(root_dir: Path) -> DecisionRegister:
     except (OSError, ValueError) as exc:
         return DecisionRegister(status=REGISTER_UNREADABLE, detail=f"{path}: {exc}")
     try:
-        raw = json.loads(text)
+        raw = read_json(text)
     except ValueError as exc:
         return DecisionRegister(status=REGISTER_UNREADABLE, detail=f"{path}: {exc}")
     # No separate non-dict branch: ``decisions_payload_errors`` already

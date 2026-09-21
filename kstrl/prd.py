@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.atomicio import atomic_write_json
+from kstrl.jsonread import read_json, read_json_file
 
 
 @dataclass
@@ -113,7 +114,7 @@ def prd_text_for_prompt(text: str) -> str:
     the component before either role runs.
     """
     try:
-        data = json.loads(text)
+        data = read_json(text)
     except ValueError:
         return text
     if not isinstance(data, dict):
@@ -356,7 +357,7 @@ class PRD:
         in the locale that happened to write it.
         """
         with open(path, encoding="utf-8") as f:
-            data = json.load(f)
+            data = read_json_file(f)
 
         errors = cls.validate_schema(data)
         if errors:

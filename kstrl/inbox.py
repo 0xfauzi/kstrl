@@ -45,6 +45,7 @@ from typing import Any
 
 from kstrl.appendio import append_records
 from kstrl.atomicio import atomic_write_text
+from kstrl.jsonread import read_json
 from kstrl.statedir import CONTROL_INBOX, control_file, control_lock, ensure_control_state
 
 INBOX_SCHEMA_VERSION = 1
@@ -411,7 +412,7 @@ class Inbox:
             if not line:
                 continue
             try:
-                record = json.loads(line)
+                record = read_json(line)
             except json.JSONDecodeError:
                 skipped += 1  # tolerate a torn tail; skip, never raise
                 continue

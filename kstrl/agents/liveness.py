@@ -62,6 +62,7 @@ from typing import Any
 
 from kstrl.agents.proc import DeadlineStreamer
 from kstrl.config import _parse_bool
+from kstrl.jsonread import read_json
 
 #: Default ON; ``KSTRL_AGENT_PROBE=0`` restores the pre-#262 behaviour of
 #: trusting PATH. Read straight from the environment rather than from a
@@ -302,7 +303,7 @@ def _json_events(lines: list[str]) -> Iterator[dict[str, Any]]:
     """
     for line in lines:
         try:
-            event = json.loads(line)
+            event = read_json(line)
         except (json.JSONDecodeError, ValueError):
             continue
         if isinstance(event, dict):
