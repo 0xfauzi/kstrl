@@ -482,9 +482,10 @@ class TestEveryStrictReaderConvertsADecodeFailure:
         """The pair: a handler on a SIBLING try does not count, and the
         identical handler on the RIGHT try clears - proving the guard is
         narrow rather than merely present."""
-        _with_census, with_reported = scan_git_source(_PLANTED_WITH_HANDLER)
+        with_census, with_reported = scan_git_source(_PLANTED_WITH_HANDLER)
         _sibling_census, sibling_reported = scan_git_source(_PLANTED_HANDLER_ON_ANOTHER_TRY)
 
+        assert with_census == {"get_diff_authors": 1}
         assert with_reported == []
         assert sibling_reported == ["get_diff_authors:11"]
 
