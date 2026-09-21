@@ -189,6 +189,104 @@ def test_policy_envelope_that_could_not_read_the_diff_measured_nothing(tmp_path:
     assert_unmeasured(row)
 
 
+def test_policy_envelope_that_could_not_decode_the_diff_measured_nothing(
+    tmp_path: Path, only_path: Path
+) -> None:
+    """#399 blocker 1b: ``get_diff_content`` succeeds (the header is ASCII
+    text, backslash-octal and all) but ``evaluate_policy`` calls
+    ``policy.parse_added_lines`` on that text, which unquotes the header
+    path and can raise ``UnicodeDecodeError`` on bytes that are not valid
+    utf-8 - a ``ValueError``, not a ``GitDiffError`` and not a
+    ``PolicyConfigError``, so neither existing except clause caught it.
+    A real executable on PATH stands in for git: what is under test is
+    what the check does with a diff git itself could produce, and a
+    stubbed diff is how that diff is built without a non-utf-8 file on
+    disk (APFS refuses one; see the blocker report)."""
+    _stub(
+        only_path,
+        "git",
+        'if [ "$1" = "rev-parse" ]; then\n'
+        "  exit 1\n"
+        "fi\n"
+        'for a in "$@"; do\n'
+        '  if [ "$a" = "--name-status" ]; then\n'
+        '    printf "M\\0scanned.py\\0"\n'
+        "    exit 0\n"
+        "  fi\n"
+        '  if [ "$a" = "--numstat" ]; then\n'
+        '    printf "1\\t1\\tscanned.py\\n"\n'
+        "    exit 0\n"
+        "  fi\n"
+        "done\n"
+        "printf '%s\\n' '--- a/scanned.py' '+++ \"b/x\\351.py\"' "
+        "'@@ -0,0 +1 @@' '+x = 1'\n"
+        "exit 0\n",
+    )
+
+    row = check_policy_envelope(tmp_path, "main", PolicyConfig(enabled=True))
+
+    assert row.passed is False
+    assert any("codec can't decode" in detail for detail in row.details)
+    assert [f.is_infrastructure_error for f in row.findings] == [True]
+    assert_unmeasured(row)
+
+
+def test_bad_patterns_that_could_not_read_the_diff_measured_nothing(
+    tmp_path: Path, only_path: Path
+) -> None:
+    """``get_diff_names`` is LENIENT and ``get_diff_content`` raises, so the
+    two can disagree: the file list arrives and the diff does not. A real
+    executable on PATH rather than a patched function, because what is under
+    test is what the check does when git fails, and git failing is something
+    PATH can say."""
+    _stub(
+        only_path,
+        "git",
+        'for a in "$@"; do\n'
+        '  if [ "$a" = "--name-status" ]; then\n'
+        '    printf "M\\0scanned.py\\0"\n'
+        "    exit 0\n"
+        "  fi\n"
+        "done\n"
+        'echo "git diff exploded" >&2\n'
+        "exit 128",
+    )
+
+    row = check_bad_patterns(tmp_path, "main")
+
+    assert row.passed is False
+    assert "could not read the diff" in row.message
+    assert any("exploded" in detail for detail in row.details)
+    assert [f.is_infrastructure_error for f in row.findings] == [True]
+    assert_unmeasured(row)
+
+
+def test_bad_patterns_that_could_not_decode_the_diff_measured_nothing(tmp_path: Path) -> None:
+    """A diff this process cannot decode raises ``UnicodeDecodeError``, which
+    is a ``ValueError`` and not a ``git.GitDiffError``. This is the test that
+    stops the refusal's ``except Exception`` being narrowed to the one
+    exception family the stub above can raise."""
+    repo = _repo(tmp_path)
+    (repo / "seed.py").write_text("x = 1\n", encoding="utf-8")
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-q", "-m", "seed", cwd=repo)
+    _git("checkout", "-q", "-b", "work", cwd=repo)
+    # A latin-1 encode of a real word, not a hand-split ASCII+escape
+    # literal: byte-identical to the quoted-octal spelling git itself would
+    # write for this character, and codespell reads a whole word rather than
+    # a fragment that happens to look like a typo for "calf" (#399).
+    (repo / "latin.py").write_bytes('VALUE = "café"\n'.encode("latin-1"))
+    _git("add", "-A", cwd=repo)
+    _git("commit", "-q", "-m", "add latin-1 bytes", cwd=repo)
+
+    row = check_bad_patterns(repo, "main")
+
+    assert row.passed is False
+    assert "could not read the diff" in row.message
+    assert [f.is_infrastructure_error for f in row.findings] == [True]
+    assert_unmeasured(row)
+
+
 def test_test_adequacy_that_could_not_read_the_diff_measured_nothing(tmp_path: Path) -> None:
     row = check_test_adequacy(tmp_path, "no-such-base-227", AdequacyConfig(enabled=True))
 

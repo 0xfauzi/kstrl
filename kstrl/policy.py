@@ -229,12 +229,37 @@ def _match_glob(path: str, patterns: Sequence[str]) -> str | None:
     return None
 
 
+def _unquote_diff_path(path: str) -> str:
+    """Undo git's C-quoting of a ``+++``/``--- `` diff header path (#399).
+
+    ``core.quotepath`` (default true) wraps a path in double quotes and
+    escapes anything unusual: a non-ASCII byte as a backslash-octal escape,
+    and a literal backslash, double quote or control character (a tab
+    included) with its own single-character escape. ``git diff
+    --name-status`` never quotes the SAME path, so the two commands can
+    spell one file differently unless this is undone wherever a diff
+    header path is read.
+
+    ``bytes.decode("unicode_escape")`` decodes both escape forms to code
+    points below 256 - a Latin-1 view of the original UTF-8 bytes -
+    re-encoding as Latin-1 and decoding as UTF-8 recovers the real
+    characters. Only a path git actually quoted (wrapped in ``"..."``)
+    goes through this; an unquoted path is returned unchanged.
+    """
+    if not (path.startswith('"') and path.endswith('"') and len(path) >= 2):
+        return path
+    return path[1:-1].encode("utf-8").decode("unicode_escape").encode("latin-1").decode("utf-8")
+
+
 def parse_added_lines(diff_text: str) -> list[tuple[str, str]]:
     """Extract ``(path, added_line)`` pairs from unified-diff text.
 
     The destination file is tracked from ``+++ b/<path>`` headers; added
     lines are those starting with a single ``+`` (not the ``+++``
-    header). Content is returned without the leading ``+``.
+    header). Content is returned without the leading ``+``. A quoted
+    header path is unquoted (:func:`_unquote_diff_path`) before the
+    ``b/`` prefix is stripped, so the path this returns matches what
+    ``git diff --name-status`` reports for the same file.
     """
     added: list[tuple[str, str]] = []
     current: str | None = None
@@ -247,7 +272,7 @@ def parse_added_lines(diff_text: str) -> list[tuple[str, str]]:
             # Gating on the preceding '--- ' means an ADDED content line
             # that happens to render as '+++ ...' is treated as content,
             # not misread as a new file header.
-            target = line[4:].strip()
+            target = _unquote_diff_path(line[4:].strip())
             if target.startswith("b/"):
                 target = target[2:]
             current = None if target == "/dev/null" else target

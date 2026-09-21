@@ -45,6 +45,7 @@ from kstrl.verify import (
     check_typecheck,
     run_mechanical_verification,
 )
+from tests.conftest import make_review_repo
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
 from tests.helpers.tool_output import tool_output
 from tests.helpers.verify_phase import CHEAP_GATES, phase_verify_surfaces
@@ -410,34 +411,43 @@ class TestCheckDiffScope:
 
 
 class TestCheckBadPatterns:
+    """Built on ``make_review_repo`` (#399 simplify pass on #405, C1) rather
+    than a local ``_repo``/``_commit`` pair: that helper already builds a
+    base-then-branch repository under a real identity and is imported by
+    eight other modules, so this class adds no row of its own to
+    ``tests/test_git_identity.py``'s per-file census.
+    """
+
     def test_clean_files(self, tmp_path: Path) -> None:
-        py_file = tmp_path / "clean.py"
-        py_file.write_text("x = 1\n")
-        with patch("kstrl.verify.git.get_diff_names", return_value=["clean.py"]):
-            result = check_bad_patterns(tmp_path, "main")
+        repo = make_review_repo(tmp_path, files={"clean.py": "x = 1\n"})
+
+        result = check_bad_patterns(repo.path, repo.base_branch)
         assert result.passed is True
+        assert result.message == "Scanned 1 of 1 changed Python files, no issues"
 
     def test_empty_py_file(self, tmp_path: Path) -> None:
-        py_file = tmp_path / "empty.py"
-        py_file.write_text("")
-        with patch("kstrl.verify.git.get_diff_names", return_value=["empty.py"]):
-            result = check_bad_patterns(tmp_path, "main")
+        repo = make_review_repo(tmp_path, files={"empty.py": ""})
+
+        # An empty file has no added lines and the empty check does not
+        # consult them, which is the point.
+        result = check_bad_patterns(repo.path, repo.base_branch)
         assert result.passed is False
         assert any("empty" in d for d in result.details)
 
     def test_syntax_error(self, tmp_path: Path) -> None:
-        py_file = tmp_path / "bad.py"
-        py_file.write_text("def f(\n")
-        with patch("kstrl.verify.git.get_diff_names", return_value=["bad.py"]):
-            result = check_bad_patterns(tmp_path, "main")
+        repo = make_review_repo(tmp_path, files={"bad.py": "def f(\n"})
+
+        result = check_bad_patterns(repo.path, repo.base_branch)
         assert result.passed is False
         assert any("syntax" in d.lower() for d in result.details)
 
     def test_secret_detected(self, tmp_path: Path) -> None:
-        py_file = tmp_path / "leak.py"
-        py_file.write_text('API_KEY = "sk-abcdefghijklmnopqrstuvwxyz"\n')
-        with patch("kstrl.verify.git.get_diff_names", return_value=["leak.py"]):
-            result = check_bad_patterns(tmp_path, "main")
+        repo = make_review_repo(
+            tmp_path,
+            files={"leak.py": 'API_KEY = "sk-abcdefghijklmnopqrstuvwxyz"\n'},
+        )
+
+        result = check_bad_patterns(repo.path, repo.base_branch)
         assert result.passed is False
         assert any("secret" in d.lower() for d in result.details)
 
@@ -2715,20 +2725,17 @@ class TestReadOnlyVerification:
     ) -> None:
         """``py_compile`` defaults its output to ``__pycache__`` NEXT TO
         the file it compiles; scanning must not leave that behind."""
-        src = tmp_path / "src"
-        src.mkdir()
-        (src / "ok.py").write_text("x = 1\n")
-        (src / "broken.py").write_text("def f(\n")
+        repo = make_review_repo(
+            tmp_path,
+            files={"src/ok.py": "x = 1\n", "src/broken.py": "def f(\n"},
+        )
 
-        with patch(
-            "kstrl.verify.git.get_diff_names",
-            return_value=["src/ok.py", "src/broken.py"],
-        ):
-            result = check_bad_patterns(tmp_path, "main")
+        result = check_bad_patterns(repo.path, repo.base_branch)
 
         # The syntax error is still reported: only the destination moved.
         assert result.passed is False
         assert any("syntax error" in d for d in result.details)
+        # A .git directory under tmp_path does not disturb either rglob.
         assert list(tmp_path.rglob("__pycache__")) == []
         assert list(tmp_path.rglob("*.pyc")) == []
 

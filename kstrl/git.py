@@ -993,6 +993,9 @@ def get_diff_content(
     Raises :class:`GitDiffError` on git failure or timeout (R1.3). An
     empty return string therefore always means a genuinely empty diff,
     never a swallowed error.
+
+    The decode is pinned to utf-8, not left to the process locale, so the
+    answer does not depend on the caller's environment.
     """
     base_ref = resolve_base_ref(base_branch, cwd, timeout)
     try:
@@ -1001,6 +1004,7 @@ def get_diff_content(
             cwd=cwd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=timeout,
         )
     except subprocess.TimeoutExpired as exc:

@@ -213,7 +213,16 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     "fixtures.py: run_function_fixture: FixtureResult": 9,
     "verify.py: _failed_gate_result: CheckResult": 1,
     "verify.py: _self_critique_text: CheckResult": 2,
-    "verify.py: check_bad_patterns: CheckResult": 2,
+    # #399 simplify pass on #405: the passing row, the issues-found row and
+    # the diff-unreadable refusal, all three now built inside
+    # check_bad_patterns itself. The refusal used to be split into its own
+    # helper (_added_lines_or_refusal) on the theory that the try/except
+    # would push check_bad_patterns over the cognitive-complexity ceiling;
+    # measured directly, every variant (as shipped, and the try/except fully
+    # inlined) came out at cognitive 15 / cyclomatic 8-9, so the split
+    # bought nothing and was undone. This row absorbs the one
+    # _added_lines_or_refusal used to hold.
+    "verify.py: check_bad_patterns: CheckResult": 3,
     "verify.py: check_dead_code: CheckResult": 2,
     "verify.py: check_dead_code_ruff: CheckResult": 1,
     "verify.py: check_diff_scope: CheckResult": 4,
@@ -234,7 +243,13 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     # (which now returns the measurement alone) into _patch_coverage_row,
     # called by _patch_coverage_checks.
     "verify.py: _patch_coverage_row: CheckResult": 1,
-    "verify.py: check_policy_envelope: CheckResult": 4,
+    # #399 blocker 1b: a fifth site, the fail-closed row for the broad
+    # "Exception" clause that now sits after "except PolicyConfigError" -
+    # evaluate_policy calls policy.parse_added_lines, which can raise
+    # UnicodeDecodeError on a diff header path with bytes that are not
+    # valid utf-8, and that is neither a GitDiffError nor a
+    # PolicyConfigError.
+    "verify.py: check_policy_envelope: CheckResult": 5,
     "verify.py: check_prd_stories: CheckResult": 4,
     "verify.py: check_scope_unreadable: CheckResult": 1,
     "verify.py: check_self_critique: CheckResult": 3,
@@ -253,6 +268,11 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
 #: evidence about the artifact. A row whose failure is a stable property of the
 #: artifact stays measured, and lives in the third dict below.
 EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
+    # #399: the diff could not be read (or decoded), so bad_patterns never
+    # learned which lines the branch added and scanned nothing. #399 simplify
+    # pass on #405: this row moved here from _added_lines_or_refusal, which
+    # was inlined into check_bad_patterns (see EXPECTED_RESULT_SITES above).
+    "verify.py: check_bad_patterns: CheckResult: measured=False": 1,
     # A run with no fixtures ran no oracle, so it cannot prove one stopped
     # failing; a run in which any fixture timed out or could not be launched
     # cannot either, and `all` is what makes that the narrow direction.
@@ -289,9 +309,12 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     "verify.py: check_linter: CheckResult: measured=False": 1,
     "verify.py: check_test_suite: CheckResult: measured=False": 1,
     "verify.py: check_typecheck: CheckResult: measured=False": 1,
-    # The diff could not be read, and the policy could not be parsed. Both are
-    # the harness failing to establish its own input.
-    "verify.py: check_policy_envelope: CheckResult: measured=False": 2,
+    # The diff could not be read, the policy could not be parsed, or
+    # evaluate_policy raised something that is neither of those two (#399
+    # blocker 1b: a UnicodeDecodeError from a diff header path that is not
+    # valid utf-8). All three are the harness failing to establish its own
+    # input.
+    "verify.py: check_policy_envelope: CheckResult: measured=False": 3,
     # The PRD could not be loaded at all.
     "verify.py: check_prd_stories: CheckResult: measured=False": 1,
     # This check name exists ONLY in the unreadable state, so it never appears
