@@ -65,8 +65,19 @@ Two things to get right when you write one:
 kstrl's own baseline names two: `diff_scope`, because `ks sense` with no
 `--allowed-path` applies no scope rule at all, and `bad_patterns`, because the
 diff against the base on `main` is empty so it opened no files. Both are
-vacuous passes. A sensor that stops measuring between the baseline and a branch
-is a REGRESSION (see below), so the holes are visible rather than quiet.
+vacuous passes.
+
+These two holes do NOT surface as `stopped measuring`. That bucket is a set
+difference taken from the baseline's own `measured_checks`, so a check that is
+not in that list cannot enter it, whatever a later run does. They surface as
+`new`, and for these two that is exact rather than a compromise: both are
+diff-driven, so every signature either can produce is about a line the branch
+added. See [Comparing a branch](#comparing-a-branch).
+
+| check | why the baseline never measured it | a branch's finding is reported as |
+|---|---|---|
+| `bad_patterns` | no files in the diff | `new` |
+| `diff_scope` | No scope constraints (allowed_paths not set) | `new` |
 
 The timeout is the other usual cause. kstrl's own test suite takes about 327
 seconds and the default verify timeout is 300, so its own baseline is generated
@@ -150,10 +161,23 @@ and `bad_patterns` apply their rule to nothing and report the same reason, `no
 files in the diff`; and `bad_patterns` counts the files it OPENED, so a
 deletion-only commit measures nothing however many files it names.
 
-The reverse case is deliberately noisy: a signature from a check the BASELINE
-never measured is reported as `new`. That over-reports when a toolchain gains a
-binary rather than the tree getting worse. Over-reporting costs a comment
-somebody reads; under-reporting costs the mechanism.
+A signature from a check the BASELINE never measured is reported as `new`.
+There are two ways to arrive there and they are not the same case.
+
+For a DIFF-DRIVEN check, `new` is exact. `bad_patterns` opens the files the
+diff names and `diff_scope` tests the diff against the allowed paths, so a
+baseline written from a clean tree, which is what this page tells you to write,
+gives both of them an empty diff and neither measures anything on ANY baseline.
+On a branch, every signature either one produces is about a line the branch
+added. So 100 percent of their findings land in `new`, on every comparison, for
+every adopter, by construction. That is what the bucket means here, not an
+over-report.
+
+For a TOOL-DRIVEN check the same rule does over-report: a baseline written
+before `vulture` was installed leaves `dead_code` unmeasured, and the first
+comparison after it is installed reports the tree's existing dead code as new.
+That one is the deliberate over-flag. Over-reporting costs a comment somebody
+reads; under-reporting costs the mechanism.
 
 ### Formats and exit codes
 

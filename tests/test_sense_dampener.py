@@ -570,3 +570,51 @@ def test_the_json_block_carries_the_stopped_sensors() -> None:
 
     assert document["stopped_measuring"] == {"linter": "Linter failed (exit code 127)"}
     assert document["regressed"] is True
+
+
+def test_a_check_the_baseline_never_measured_can_never_be_a_stopped_sensor() -> None:
+    """The structural rule `docs/dampener.md` got wrong for two years (#400).
+
+    `stopped_measuring` is a set difference taken from
+    `baseline.measured_checks`. A name that is not in that list cannot enter it,
+    whatever this run did - measured and found something, measured and found
+    nothing, or went dark again. All three are checked, because a rule stated
+    over one arrangement is a rule that has been tested in one direction.
+    """
+    base = _baseline({}, measured=("linter",), unmeasured=("bad_patterns",))
+    currents = (
+        _baseline(
+            {"bad_patterns:issues-found-in-changed-files": 1},
+            measured=("bad_patterns", "linter"),
+        ),
+        _baseline({}, measured=("bad_patterns", "linter")),
+        _baseline({}, measured=("linter",), unmeasured=("bad_patterns",)),
+    )
+
+    for current in currents:
+        comparison = dampener.compare(base, current)
+
+        assert "bad_patterns" not in comparison.stopped_measuring
+
+
+#: The sentence `docs/dampener.md` carried until #400, quoted so the fix cannot
+#: be reverted silently. It claimed the two holes in kstrl's own baseline were
+#: visible as `stopped measuring`, which the test above shows is impossible.
+RETIRED_STOPPED_MEASURING_CLAIM = (
+    "A sensor that stops measuring between the baseline and a branch is a "
+    "REGRESSION (see below), so the holes are visible rather than quiet."
+)
+
+
+def test_the_doc_no_longer_claims_those_holes_show_up_as_stopped_measuring() -> None:
+    """A negative pin on one exact retired sentence, and only that.
+
+    The positive half lives in `tests/test_sense_dampener_cli.py`, which
+    requires the doc to carry a row built from the reason a real run produced.
+    Neither is enough alone: this one passes on a doc rewritten any other wrong
+    way, that one passes on a doc that adds the table and keeps the false
+    sentence beside it.
+    """
+    doc = (Path(__file__).resolve().parents[1] / "docs" / "dampener.md").read_text(encoding="utf-8")
+
+    assert " ".join(RETIRED_STOPPED_MEASURING_CLAIM.split()) not in " ".join(doc.split())

@@ -529,10 +529,23 @@ class Comparison:
 def compare(baseline: Baseline, current: Baseline) -> Comparison:
     """Bucket every signature on either side.
 
-    A signature whose check the BASELINE never measured still lands in ``new``
-    when it appears now. That over-flags when a toolchain gains a binary rather
-    than the tree getting worse, which is the safe direction for a flagging
-    guard and costs an advisory comment.
+    A signature whose check the BASELINE never measured lands in ``new`` when it
+    appears now, and the two ways that happens are not the same case. For a
+    DIFF-DRIVEN check - ``bad_patterns``, which opens the files the diff names,
+    and ``diff_scope``, which tests the diff against the allowed paths - it is
+    exact rather than a compromise: a baseline is written from a clean tree, a
+    clean tree has an empty diff, so neither measures on ANY baseline, and on a
+    branch every signature either one produces is about a line the branch
+    ADDED. 100 percent of their findings land here, on every comparison, for
+    every adopter, by construction (#400). For a TOOL-DRIVEN check it does
+    over-flag - a baseline written before ``vulture`` was installed reports the
+    tree's existing dead code as new the first time it runs - which is the safe
+    direction for a flagging guard and costs an advisory comment.
+
+    Neither shows up in ``stopped_measuring``. That bucket is a set difference
+    taken from ``baseline.measured_checks``, so a check absent from that list
+    cannot enter it, whatever this run did. ``docs/dampener.md`` claimed the
+    opposite for those two checks by name until #400.
 
     The reverse - a check the baseline measured and this run did not - is
     ``stopped_measuring``, and it is a REGRESSION rather than a note. A sensor
