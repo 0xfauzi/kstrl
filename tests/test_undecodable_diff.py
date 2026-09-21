@@ -262,6 +262,7 @@ def test_check_diff_scope_fails_closed_on_a_path_it_cannot_decode(tmp_path: Path
     result = verify.check_diff_scope(repo, "main", ["base.py"])
 
     assert result.passed is False
+    assert result.measured is False
     assert "failing closed" in result.message
 
 
@@ -422,6 +423,21 @@ def unrelated():
 """
 )
 
+#: The ``clause.decided`` conjunct's own mutation test. The other three
+#: planted sources all have fully resolvable clauses, so ``decided`` is
+#: True everywhere and the conjunct never fires; none of them can tell
+#: ``clause.decided and clause.names & names`` apart from
+#: ``clause.names & names`` alone. This one can: its clause's decidable
+#: half (``ValueError``) overlaps ``names``, but its other half
+#: (``shim.Whatever``) cannot be named because the module never binds
+#: ``shim``, so the clause as a whole is undecided. With the conjunct the
+#: site is still reported; drop the conjunct and it clears, because a
+#: bare name-overlap check does not require the WHOLE clause to be known.
+_PLANTED_UNDECIDABLE_HANDLER = _PLANTED_WITHOUT_HANDLER.replace(
+    "    except subprocess.TimeoutExpired as exc:",
+    "    except (ValueError, shim.Whatever) as exc:",
+)
+
 
 class TestEveryStrictReaderConvertsADecodeFailure:
     """Closed by construction over the property that DEFINES a strict
@@ -471,3 +487,13 @@ class TestEveryStrictReaderConvertsADecodeFailure:
 
         assert with_reported == []
         assert sibling_reported == ["get_diff_authors:11"]
+
+    def test_a_partially_undecidable_handler_is_reported(self) -> None:
+        """``clause.decided`` is what stops the skip direction. Without it,
+        a clause whose decidable half overlaps the target names is treated
+        as guarding the site even though its other half (``shim.Whatever``,
+        which the module never binds) could not be named - the exact "half
+        of a promise" a fail-closed reader must not accept."""
+        _census, reported = scan_git_source(_PLANTED_UNDECIDABLE_HANDLER)
+
+        assert reported == ["get_diff_authors:11"]

@@ -225,6 +225,22 @@ def helper(cmd, cwd):
     return result.returncode
 """
 
+#: The ``clause.decided`` conjunct's own mutation test (see file 1's copy of
+#: this rationale). ``ChildOutputDecodeError`` subclasses ``RuntimeError``,
+#: so the clause's decidable half (``RuntimeError``) overlaps ``_ACCEPTED``,
+#: but its other half (``shim.Whatever``) cannot be named because this
+#: module never binds ``shim``, so the whole clause is undecided. With the
+#: conjunct the site is still reported; drop it and the bare name-overlap
+#: clears the site on half a promise.
+_PLANTED_UNDECIDABLE_HANDLER = """
+def helper(cmd, cwd):
+    try:
+        result = run_scrubbed(cmd, cwd=cwd, timeout=30.0)
+    except (RuntimeError, shim.Whatever) as exc:
+        raise RuntimeError("unclear") from exc
+    return result.returncode
+"""
+
 
 def test_the_walk_reports_what_it_could_not_decide() -> None:
     """The undecided half owed by ``resolved_calls``, filtered to the
@@ -273,6 +289,18 @@ def test_a_new_call_site_without_a_handler_is_reported() -> None:
     _census, reported = scan_verify_source("planted.py", "planted", tree)
 
     assert reported == ["planted.py:3"]
+
+
+def test_a_partially_undecidable_handler_is_reported() -> None:
+    """``clause.decided`` is what stops the skip direction: a clause whose
+    decidable half (``RuntimeError``) overlaps ``_ACCEPTED`` still must not
+    clear the site while its other half (``shim.Whatever``) cannot be
+    named."""
+    tree = parse(_PLANTED_UNDECIDABLE_HANDLER)
+
+    _census, reported = scan_verify_source("planted.py", "planted", tree)
+
+    assert reported == ["planted.py:4"]
 
 
 def _offending_class(where: str, node: ast.AST) -> tuple[int, str] | None:
