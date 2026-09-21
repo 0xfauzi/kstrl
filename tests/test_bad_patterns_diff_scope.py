@@ -661,3 +661,42 @@ def test_a_non_os_error_from_the_base_probe_keeps_the_branchs_finding(
     assert row.passed is False
     assert len(row.details) == 1
     assert row.details[0].startswith("app.py: syntax error - ")
+
+
+def test_a_non_os_error_from_the_merge_base_lookup_keeps_the_branchs_finding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sibling of
+    ``test_a_non_os_error_from_the_base_probe_keeps_the_branchs_finding``, for
+    ``_merge_base_ref`` rather than ``_base_finding``. ``_merge_base_ref``
+    wraps its own ``git merge-base`` spawn in the identical bare ``except
+    Exception``, and nothing held that breadth: narrowing it to ``except
+    OSError`` left the whole lane suite green. ``subprocess.TimeoutExpired``
+    is a ``subprocess.SubprocessError``, not an ``OSError``, so a narrower
+    clause would let it escape ``_merge_base_ref`` - and then
+    ``_scan_changed_python`` and ``check_bad_patterns`` above it, since
+    neither wraps the other in its own try - as a traceback out of a
+    blocking Phase 1 gate, the same #416 class this diff's own docstrings
+    claim to close. Only the ``git merge-base`` spawn inside
+    ``_merge_base_ref`` is made to fail; every other git spawn, including the
+    ``git show`` inside ``_base_finding``, runs for real.
+    """
+    repo = make_review_repo(
+        tmp_path,
+        base_files={"app.py": WORKS},
+        files={"app.py": BROKEN},
+    )
+    real_run = verify.subprocess.run
+
+    def flaky_merge_base(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        if argv[:2] == ["git", "merge-base"]:
+            raise subprocess.TimeoutExpired(cmd=argv, timeout=1.0)
+        return real_run(argv, **kwargs)  # type: ignore[arg-type,no-any-return]
+
+    monkeypatch.setattr(verify.subprocess, "run", flaky_merge_base)
+
+    row = check_bad_patterns(repo.path, repo.base_branch)
+
+    assert row.passed is False
+    assert len(row.details) == 1
+    assert row.details[0].startswith("app.py: syntax error - ")
