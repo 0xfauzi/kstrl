@@ -20,7 +20,8 @@ from typing import Any
 import pytest
 
 from kstrl.autonomy import AutonomyLevel, AutonomyState
-from kstrl.calibration import compare_baselines, load_baseline
+from kstrl.calibration import compare_baselines
+from kstrl.calibration_baseline import load_baseline
 from kstrl.calibration_ladder import LADDER_DISABLED_LINE
 from kstrl.inbox import Inbox, ItemKind
 from kstrl.statedir import ControlUnavailableError

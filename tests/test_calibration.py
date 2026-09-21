@@ -12,7 +12,7 @@ fixture's diff or spec to the corresponding role prompt against a
 fast model (Haiku-class), and gates on detection over
 ``KSTRL_CALIBRATION_RUNS`` runs per fixture (default 3, R5.1): a
 fixture passes when a majority of its completed runs catch the
-planted issue (``calibration.FIXTURE_DETECTION_THRESHOLD``), so
+planted issue (``calibration_baseline.FIXTURE_DETECTION_THRESHOLD``), so
 single-run LLM variance is reported as consistency instead of
 failing the suite, while a fixture that misses most runs is a
 regression and fails. Results (per-fixture consistency, per-role and
@@ -54,7 +54,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import calibration
+from kstrl import calibration, calibration_baseline
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.decompose import (
     SpecIssue,
@@ -771,7 +771,7 @@ def build_fp_summary(
 
     Mirrors the detection side: a fixture is a false positive when a
     majority of its completed runs flag a forbidden category
-    (``fixture_threshold``, default ``calibration.FIXTURE_DETECTION_THRESHOLD``);
+    (``fixture_threshold``, default ``calibration_baseline.FIXTURE_DETECTION_THRESHOLD``);
     a role's ``fp_rate`` is the fraction of its fixtures that are false
     positives. Infrastructure errors are excluded from the per-fixture
     denominator. Pure (no I/O) so the math is unit-testable without a
@@ -779,7 +779,9 @@ def build_fp_summary(
     ``{"role","fixture_id","false_positive","error","detail"}``.
     """
     threshold = (
-        calibration.FIXTURE_DETECTION_THRESHOLD if fixture_threshold is None else fixture_threshold
+        calibration_baseline.FIXTURE_DETECTION_THRESHOLD
+        if fixture_threshold is None
+        else fixture_threshold
     )
     grouped: dict[tuple[str, str], list[dict]] = {}
     order: list[tuple[str, str]] = []
@@ -795,7 +797,7 @@ def build_fp_summary(
         errored = sum(1 for r in runs if bool(r.get("error")))
         flagged = sum(1 for r in runs if bool(r.get("false_positive")) and not bool(r.get("error")))
         completed = len(runs) - errored
-        fp_consistency = calibration.consistency(flagged, completed)
+        fp_consistency = calibration_baseline.consistency(flagged, completed)
         is_fp = completed > 0 and fp_consistency >= threshold
         block = roles.setdefault(
             role,
@@ -907,7 +909,7 @@ class _DetectionReport:
         On disk BEFORE the first agent call, so a run killed mid-fixture
         leaves that fixture named in ``fixtures_attempted`` and absent from
         ``fixtures_completed``. That difference is what
-        ``calibration.partial_capture_reason`` names in its refusal.
+        ``calibration_baseline.partial_capture_reason`` names in its refusal.
         """
         self.attempted.append(f"{role}/{fixture_id}")
         self.flush()
@@ -951,22 +953,20 @@ class _DetectionReport:
         return self._finished and set(self.attempted) == set(self.completed)
 
     def _build(self) -> dict:
+        # #406: the harness owns the VALUES for the three #398 progress
+        # keys, because only it knows whether teardown was reached and
+        # which fixture names it began and finished (``self.attempted`` /
+        # ``self.completed``); ``build_report`` owns the KEYS, so the v2
+        # format has one writer.
         report_data: dict = calibration.build_report(
             self.records,
             model=REPORT_MODEL_LABEL,
             timestamp=self.timestamp,
             runs_per_fixture=CALIBRATION_RUNS,
+            run_complete=self._run_complete(),
+            fixtures_attempted=list(self.attempted),
+            fixtures_completed=list(self.completed),
         )
-        # #398: the three keys that tell a reader whether this run finished
-        # and, if not, which fixture it was inside. Stamped here, not in
-        # build_report, because they describe THIS CAPTURE HARNESS's own
-        # begin/complete bookkeeping (``self.attempted``/``self.completed``),
-        # which build_report never sees - it only receives the finished
-        # per-run records. kstrl.calibration.partial_capture_reason is the
-        # reader on the other side of this seam.
-        report_data["run_complete"] = self._run_complete()
-        report_data["fixtures_attempted"] = list(self.attempted)
-        report_data["fixtures_completed"] = list(self.completed)
         # R5.2: inject the false-positive analysis test-side. Negative
         # fixtures are an R5.2 addition and kstrl.calibration owns only
         # the detection format, so the FP block is layered on the returned
@@ -1057,11 +1057,11 @@ def _gate_on_consistency(
     completed = CALIBRATION_RUNS - errored
     if completed == 0:
         pytest.skip(f"agent unavailable for all {CALIBRATION_RUNS} runs")
-    observed = calibration.consistency(detected, completed)
-    assert observed >= calibration.FIXTURE_DETECTION_THRESHOLD, (
+    observed = calibration_baseline.consistency(detected, completed)
+    assert observed >= calibration_baseline.FIXTURE_DETECTION_THRESHOLD, (
         f"{role} missed planted issue {fixture_id} in most runs: "
         f"consistency {detected}/{completed} = {observed:.2f} < "
-        f"{calibration.FIXTURE_DETECTION_THRESHOLD}\n" + "\n".join(details)
+        f"{calibration_baseline.FIXTURE_DETECTION_THRESHOLD}\n" + "\n".join(details)
     )
 
 
@@ -1712,14 +1712,14 @@ class TestFixtureStructure:
         not transfer. Compares the full R7.1 label (base model plus any
         reviewer-family override) so a standing override does not warn
         against its own baselines - and a dropped override does."""
-        message = calibration.model_drift_message(
+        message = calibration_baseline.model_drift_message(
             RESULTS_DIR,
             REPORT_MODEL_LABEL,
         )
         if message is not None:
             warnings.warn(
                 message,
-                calibration.CalibrationModelDriftWarning,
+                calibration_baseline.CalibrationModelDriftWarning,
                 stacklevel=1,
             )
 

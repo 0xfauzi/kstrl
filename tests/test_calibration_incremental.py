@@ -26,14 +26,16 @@ repository's own ``tests/adversarial_fixtures/_results/``.
 
 from __future__ import annotations
 
+import ast
 import json
 import shutil
 from pathlib import Path
 
 import pytest
 
-from kstrl import calibration
+from kstrl import calibration, calibration_baseline
 from tests.helpers import calibration_capture as harness
+from tests.helpers.astwalk import REPO_ROOT, assert_census, spells
 from tests.helpers.calibration_capture import FX_A, FX_B, FX_C, FX_D
 
 COMMITTED_RESULTS_DIR = Path(__file__).resolve().parent / "adversarial_fixtures" / "_results"
@@ -108,7 +110,7 @@ def test_a_run_that_reached_teardown_with_a_dangling_fixture_is_partial(
     assert data["fixtures_attempted"] == [FX_A, FX_B, FX_C, FX_D]
     assert data["fixtures_completed"] == [FX_A, FX_B, FX_C]
     with pytest.raises(ValueError, match="partial"):
-        calibration.load_baseline(raised_capture)
+        calibration_baseline.load_baseline(raised_capture)
 
 
 def test_a_kill_right_after_the_last_fixture_completes_still_records_it(
@@ -131,7 +133,7 @@ def test_a_kill_right_after_the_last_fixture_completes_still_records_it(
 
 def test_load_baseline_refuses_the_partial_capture(killed_capture: Path) -> None:
     with pytest.raises(ValueError) as excinfo:
-        calibration.load_baseline(killed_capture)
+        calibration_baseline.load_baseline(killed_capture)
     message = str(excinfo.value)
     assert "partial" in message
     assert FX_D in message
@@ -158,7 +160,7 @@ def test_compare_refuses_the_partial_capture_and_emits_no_delta(
 
 
 def test_a_completed_run_loads(complete_capture: Path) -> None:
-    baseline = calibration.load_baseline(complete_capture)
+    baseline = calibration_baseline.load_baseline(complete_capture)
     assert [f.fixture_id for f in baseline.fixtures] == ["fx-a", "fx-b", "fx-d"]
     assert baseline.model == "haiku"
 
@@ -174,8 +176,8 @@ def test_a_baseline_whose_run_complete_is_not_exactly_true_is_refused(
     path = tmp_path / "baseline-20260101-000000.json"
     path.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(ValueError, match="partial"):
-        calibration.load_baseline(path)
-    assert calibration.newest_baseline_path(tmp_path) is None
+        calibration_baseline.load_baseline(path)
+    assert calibration_baseline.newest_baseline_path(tmp_path) is None
 
 
 def test_newest_baseline_path_skips_the_partial_capture(
@@ -190,9 +192,9 @@ def test_newest_baseline_path_skips_the_partial_capture(
     newer = tmp_path / "baseline-20991231-235959.json"
     shutil.copy(complete_capture, older)
     shutil.copy(killed_capture, newer)
-    assert calibration.newest_baseline_path(tmp_path) == older
-    assert calibration.model_drift_message(tmp_path, "haiku") is None
-    assert calibration.model_drift_message(tmp_path, "sonnet") is not None
+    assert calibration_baseline.newest_baseline_path(tmp_path) == older
+    assert calibration_baseline.model_drift_message(tmp_path, "haiku") is None
+    assert calibration_baseline.model_drift_message(tmp_path, "sonnet") is not None
 
 
 def test_a_newest_baseline_that_is_not_json_is_returned_not_skipped(tmp_path: Path) -> None:
@@ -201,8 +203,8 @@ def test_a_newest_baseline_that_is_not_json_is_returned_not_skipped(tmp_path: Pa
     corrupt newest file keeps its existing behaviour."""
     corrupt = tmp_path / "baseline-99999999-999999.json"
     corrupt.write_text("{not json", encoding="utf-8")
-    assert calibration.newest_baseline_path(tmp_path) == corrupt
-    assert calibration.model_drift_message(tmp_path, "haiku") is None
+    assert calibration_baseline.newest_baseline_path(tmp_path) == corrupt
+    assert calibration_baseline.model_drift_message(tmp_path, "haiku") is None
 
 
 def test_a_newest_baseline_that_will_not_decode_is_returned_not_raised(
@@ -215,8 +217,8 @@ def test_a_newest_baseline_that_will_not_decode_is_returned_not_raised(
     check instead of warning."""
     bad = tmp_path / "baseline-99999999-999999.json"
     bad.write_bytes(b'{"model": "\xe9\xe9", "fixtures": []}')
-    assert calibration.newest_baseline_path(tmp_path) == bad
-    assert calibration.model_drift_message(tmp_path, "haiku") is None
+    assert calibration_baseline.newest_baseline_path(tmp_path) == bad
+    assert calibration_baseline.model_drift_message(tmp_path, "haiku") is None
 
 
 def test_save_report_writes_through_atomicio(
@@ -260,7 +262,144 @@ def test_every_committed_baseline_is_a_complete_capture() -> None:
     partial: list[str] = []
     for path in baselines:
         data = json.loads(path.read_text(encoding="utf-8"))
-        reason = calibration.partial_capture_reason(data)
+        reason = calibration_baseline.partial_capture_reason(data)
         if reason is not None:
             partial.append(f"{path.name}: {reason}")
     assert partial == [], "committed baseline(s) are partial captures:\n" + "\n".join(partial)
+
+
+# --------------------------------------------------------------------------
+# #406: the three progress keys are the report builder's, not the harness's.
+# --------------------------------------------------------------------------
+
+#: The keys #398 added to the v2 report. ``kstrl.calibration.build_report``
+#: writes them; ``kstrl.calibration_baseline.partial_capture_reason`` reads
+#: them back.
+PROGRESS_KEYS = ("run_complete", "fixtures_attempted", "fixtures_completed")
+
+
+def test_a_partial_capture_the_builder_stamped_is_refused_and_skipped(
+    tmp_path: Path,
+) -> None:
+    """End to end over the real writer and the real reader: the builder is
+    handed the progress bookkeeping, the file it writes says the run did not
+    finish, ``load_baseline`` refuses it by name and ``newest_baseline_path``
+    skips it."""
+    report = calibration.build_report(
+        [{"role": "security", "fixture_id": "sec-a", "caught": True}],
+        model="haiku",
+        timestamp="20260921-120000",
+        runs_per_fixture=1,
+        run_complete=False,
+        fixtures_attempted=["security/sec-a", "security/sec-b"],
+        fixtures_completed=["security/sec-a"],
+    )
+    # A list in the returned dict, not the tuple default: json.dumps
+    # serialises a tuple as an array, so the file on disk cannot tell the
+    # two apart, and partial_capture_reason's isinstance(attempted, list)
+    # check silently falls back to "none recorded" for a tuple.
+    assert report["fixtures_attempted"] == ["security/sec-a", "security/sec-b"]
+    assert isinstance(report["fixtures_attempted"], list)
+    assert isinstance(report["fixtures_completed"], list)
+
+    saved = calibration.save_report(report, tmp_path)
+    on_disk = json.loads(saved.read_text(encoding="utf-8"))
+    assert on_disk["run_complete"] is False
+    assert on_disk["fixtures_attempted"] == ["security/sec-a", "security/sec-b"]
+    assert on_disk["fixtures_completed"] == ["security/sec-a"]
+
+    with pytest.raises(ValueError) as excinfo:
+        calibration_baseline.load_baseline(saved)
+    assert "security/sec-b" in str(excinfo.value)
+    assert calibration_baseline.newest_baseline_path(tmp_path) is None
+
+
+def test_a_build_with_no_progress_bookkeeping_is_a_complete_capture(
+    tmp_path: Path,
+) -> None:
+    """The defaults describe a single-shot build: the keys are present, the
+    file loads, and it is the newest baseline rather than a skipped one."""
+    saved = calibration.save_report(
+        calibration.build_report(
+            [{"role": "security", "fixture_id": "sec-a", "caught": True}],
+            model="haiku",
+            timestamp="20260921-130000",
+            runs_per_fixture=1,
+        ),
+        tmp_path,
+    )
+    on_disk = json.loads(saved.read_text(encoding="utf-8"))
+    assert on_disk["run_complete"] is True
+    assert on_disk["fixtures_attempted"] == []
+    assert on_disk["fixtures_completed"] == []
+    assert calibration_baseline.partial_capture_reason(on_disk) is None
+    assert calibration_baseline.newest_baseline_path(tmp_path) == saved
+
+
+def test_a_newest_baseline_that_is_json_but_not_an_object_is_returned(
+    tmp_path: Path,
+) -> None:
+    """The case the shared ``_read_document`` is easiest to get wrong.
+
+    ``newest_baseline_path`` used to test ``not isinstance(data, dict)``
+    itself. Once the isinstance check moves into ``_read_document``, the
+    only thing that keeps this file from reaching ``partial_capture_reason``
+    - which would call ``.get`` on a list and raise ``AttributeError`` out
+    of the drift check - is that ``_read_document`` RAISES ``ValueError``
+    for a non-object document and the caller returns on it. A
+    ``_read_document`` that returns the parsed value unchecked passes every
+    other test in this file. Measured at HEAD: both assertions already hold,
+    so this is a behaviour-preservation pin, not a new requirement.
+    """
+    array = tmp_path / "baseline-99999999-999999.json"
+    array.write_text("[1, 2, 3]", encoding="utf-8")
+    assert calibration_baseline.newest_baseline_path(tmp_path) == array
+    assert calibration_baseline.model_drift_message(tmp_path, "haiku") is None
+    with pytest.raises(ValueError, match="not a JSON object"):
+        calibration_baseline.load_baseline(array)
+
+
+def test_the_capture_harness_names_each_progress_key_once() -> None:
+    """A STATIC CENSUS, not a behaviour test, and it says so deliberately.
+
+    A harness that re-stamps the three keys writes the same values the
+    builder already wrote, so no file on disk differs and no behavioural
+    assertion can see it. This counts mentions instead.
+
+    Two assertions, because either alone is satisfied by the defect. The
+    first is a census that enumerates no node type: every node in the
+    harness whose folded value is exactly one of the keys is counted, so a
+    stamp written as a subscript, a dict literal or an ``update`` call all
+    move the number. The second says those three mentions are KEYWORD
+    ARGUMENTS, which is what the harness looked like after #406 and what it
+    did not look like before: three subscript stamps also count three.
+
+    WHAT THIS DOES NOT COVER: only the capture harness is walked, because
+    that is the file the writer had drifted into. A census over all of
+    ``tests/`` would pin 25 further hits in this module alone, which
+    deliberately fabricates malformed documents for the reader to refuse.
+    ``kstrl/observability.py`` also spells ``run_complete`` as an unrelated
+    notify-event name, which is a second reason the walk is one file wide.
+    """
+    harness_source = [REPO_ROOT / "tests" / "test_calibration.py"]
+    assert_census(
+        sources=harness_source,
+        sees=lambda node: any(spells(key)(node) for key in PROGRESS_KEYS),
+        expected={"tests/test_calibration.py": 3},
+        control=tuple(f"build_report(records, {key}=value)" for key in PROGRESS_KEYS),
+        message=(
+            "the capture harness's mentions of the progress keys moved. "
+            "build_report owns the format (#406); the harness passes the "
+            "values and stamps nothing."
+        ),
+    )
+    assert_census(
+        sources=harness_source,
+        sees=lambda node: isinstance(node, ast.keyword) and node.arg in PROGRESS_KEYS,
+        expected={"tests/test_calibration.py": 3},
+        control=tuple(f"build_report(records, {key}=value)" for key in PROGRESS_KEYS),
+        message=(
+            "the capture harness stopped handing the progress keys to "
+            "build_report as keyword arguments (#406)."
+        ),
+    )

@@ -10,7 +10,9 @@ uv run python -m kstrl.calibration compare <old.json> <new.json>
 
 ## Format v2 (R5.1, `"format_version": 2`)
 
-Defined by `kstrl/calibration.py` (`build_report` / `load_baseline`).
+Written by `build_report` in `kstrl/calibration.py`, which writes the
+header and the fixture entries. Read back by `load_baseline` and
+`partial_capture_reason` in `kstrl/calibration_baseline.py` (#406).
 
 - Header: `model` (calibration model id - R5.5 warns when it drifts from
   the configured model), `timestamp`, `runs_per_fixture`

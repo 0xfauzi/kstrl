@@ -113,7 +113,7 @@ uv run python -m kstrl.calibration compare \
   tests/adversarial_fixtures/_results/baseline-<new>.json
 ```
 
-Exit code 0 = no regression, 1 = regression, 2 = usage/load error. Both v1 (pre-R5.1 single-run) and v2 files load. The codified thresholds live in one constants block at the top of `kstrl/calibration.py` with sizing rationale inline:
+Exit code 0 = no regression, 1 = regression, 2 = usage/load error. Both v1 (pre-R5.1 single-run) and v2 files load. The codified thresholds live in one constants block at the top of `kstrl/calibration.py` with sizing rationale inline, except `FIXTURE_DETECTION_THRESHOLD`, which moved to `kstrl/calibration_baseline.py` (#406) beside the `FixtureStats.detected` property that reads it:
 
 | Constant | Value | Meaning |
 |---|---|---|
