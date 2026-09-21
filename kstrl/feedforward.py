@@ -59,6 +59,11 @@ _MAX_SOURCE_ROOT_DEPTH = 4
 # read.
 _TEST_DIR_NAMES = frozenset({"test", "tests"})
 
+# The block's own header and footer, which every section shares.
+_HEADER_FOOTER_OVERHEAD = len("=== CODEBASE CONTEXT (auto-generated) ===\n\n") + len(
+    "\n=== END CODEBASE CONTEXT ==="
+)
+
 
 @dataclass
 class FeedforwardConfig:
@@ -385,7 +390,35 @@ def extract_public_interfaces(root: Path) -> str:
     return "\n".join(f"{filepath}: {', '.join(symbols)}" for filepath, symbols in file_symbols)
 
 
-def build_dependency_graph(root: Path) -> str:
+def _record_edge(
+    edges: dict[str, dict[str, set[str]]],
+    source_module: str,
+    target_module: str,
+    names: set[str],
+) -> int:
+    """Record one edge and return how many characters it ADDS to the render.
+
+    The count is deliberately an UNDER-estimate: it counts
+    ``"src -> tgt"`` and each new name, and ignores the newline, the
+    ``" (imports: )"`` wrapper and the ``", "`` separators. The caller
+    stops parsing when the count passes its budget, so an under-estimate
+    costs a few more files parsed, while an over-estimate would stop on a
+    graph that would in fact have fitted.
+    """
+    added = 0
+    targets = edges.setdefault(source_module, {})
+    if target_module not in targets:
+        targets[target_module] = set()
+        added += len(source_module) + len(target_module) + 4
+    bucket = targets[target_module]
+    new_names = names - bucket
+    if new_names:
+        bucket.update(new_names)
+        added += sum(len(name) + 2 for name in new_names)
+    return added
+
+
+def build_dependency_graph(root: Path, max_chars: int | None = None) -> str:
     """Build a module-level dependency graph from Python imports.
 
     Only tracks internal imports (within the project). Parses all .py
@@ -394,6 +427,12 @@ def build_dependency_graph(root: Path) -> str:
     replaced is silently empty on a ``packages/<name>/src/<pkg>``
     monorepo, the same defect the interface extractor had, in the same
     module).
+
+    *max_chars* is the room left for this section in the caller's context
+    budget. Parsing stops as soon as the graph built so far is already
+    bigger than that, and the return value says so instead of being a
+    graph nobody will be shown (#403). ``None`` means no budget: parse
+    everything.
     """
     roots = _find_top_source_dirs(root)
     if not roots:
@@ -410,8 +449,17 @@ def build_dependency_graph(root: Path) -> str:
     # Parse imports from each file
     # edges: dict of (source_module -> dict of target_module -> set of imported names)
     edges: dict[str, dict[str, set[str]]] = {}
+    rendered_chars = 0
+    parsed = 0
 
     for py_file, src_dir in all_py_files:
+        if max_chars is not None and rendered_chars > max_chars:
+            return (
+                f"(did not fit: the dependency graph passed the {max_chars} characters "
+                f"left in the context budget after {parsed} of {len(all_py_files)} files, "
+                f"so it was not built. Raise feedforward.max_context_tokens to see it.)"
+            )
+        parsed += 1
         try:
             source = py_file.read_text(encoding="utf-8", errors="replace")
             tree = ast.parse(source, filename=str(py_file))
@@ -442,11 +490,7 @@ def build_dependency_graph(root: Path) -> str:
                     if alias.name != "*":
                         names.add(alias.name)
 
-                if source_module not in edges:
-                    edges[source_module] = {}
-                if target_module not in edges[source_module]:
-                    edges[source_module][target_module] = set()
-                edges[source_module][target_module].update(names)
+                rendered_chars += _record_edge(edges, source_module, target_module, names)
 
             elif isinstance(node, ast.Import):
                 for alias in node.names:
@@ -457,10 +501,7 @@ def build_dependency_graph(root: Path) -> str:
                     if target_module == source_module:
                         continue
 
-                    if source_module not in edges:
-                        edges[source_module] = {}
-                    if target_module not in edges[source_module]:
-                        edges[source_module][target_module] = set()
+                    rendered_chars += _record_edge(edges, source_module, target_module, set())
 
     if not edges:
         return ""
@@ -687,9 +728,16 @@ def _extract_package_json_conventions(root: Path, bullets: list[str]) -> None:
 
 
 def _append_section(
-    sections: list[tuple[str, str]], heading: str, build: Callable[[], str]
+    sections: list[tuple[str, str]],
+    heading: str,
+    build: Callable[[int], str],
+    remaining: int,
 ) -> None:
     """Run *build* and append its result under *heading*, unless empty.
+
+    *remaining* is how many characters of the context budget are left for
+    this section's body. A builder that cannot be sized without doing the
+    work uses it to stop early (#403); the others ignore it.
 
     A crash inside *build* does not take the whole context down; it is
     RECORDED as the section's content instead of dropped (#378: the
@@ -697,7 +745,7 @@ def _append_section(
     said what it swallowed).
     """
     try:
-        content = build()
+        content = build(remaining)
     except Exception as exc:
         content = f"(none: {heading.lower()} failed: {type(exc).__name__}: {exc})"
     if content:
@@ -705,11 +753,20 @@ def _append_section(
 
 
 def _dependency_graph_section(
-    root: Path, component_id: str, component_deps: list[str] | None
+    root: Path, component_id: str, component_deps: list[str] | None, max_chars: int
 ) -> str:
     """The "Dependency graph" body, filtered to *component_id* and its
-    direct dependencies when component context is available."""
-    content = build_dependency_graph(root)
+    direct dependencies when component context is available.
+
+    *max_chars* bounds what ``build_dependency_graph`` returns, so it is
+    only passed on when nothing shrinks the graph afterwards. A filter
+    that runs here can turn a graph far over the budget into one well
+    under it, and refusing to build that graph would take real content
+    away: measured on this repo at the shipped 4000-token budget,
+    ``component_deps=["factory"]`` delivers 4718 characters of filtered
+    graph that a filter-blind bail would replace with "did not fit".
+    """
+    content = build_dependency_graph(root, None if component_deps else max_chars)
     if content and component_deps:
         relevant = set(component_deps)
         if component_id:
@@ -746,34 +803,43 @@ def build_feedforward_context(
     if not config.enabled:
         return ""
 
+    max_chars = config.max_context_tokens * 4
+
     # Build sections in priority order (highest priority first - last to be dropped)
     # Priority: module_map > dependency_graph > public_interfaces > conventions
     sections: list[tuple[str, str]] = []
-
-    if config.module_map:
-        _append_section(sections, "Module map", lambda: build_module_map(worktree_path))
-
-    if config.dependency_graph:
-        _append_section(
-            sections,
+    builders: list[tuple[bool, str, Callable[[int], str]]] = [
+        (config.module_map, "Module map", lambda _left: build_module_map(worktree_path)),
+        (
+            config.dependency_graph,
             "Dependency graph",
-            lambda: _dependency_graph_section(worktree_path, component_id, component_deps),
-        )
+            lambda left: _dependency_graph_section(
+                worktree_path, component_id, component_deps, left
+            ),
+        ),
+        (
+            config.public_interfaces,
+            "Public interfaces",
+            lambda _left: extract_public_interfaces(worktree_path),
+        ),
+        (config.conventions, "Conventions", lambda _left: extract_conventions(worktree_path)),
+    ]
 
-    if config.public_interfaces:
-        _append_section(
-            sections, "Public interfaces", lambda: extract_public_interfaces(worktree_path)
-        )
-
-    if config.conventions:
-        _append_section(sections, "Conventions", lambda: extract_conventions(worktree_path))
+    for enabled, heading, build in builders:
+        if not enabled:
+            continue
+        # The budget is spent: _truncate_to_budget drops from the END of
+        # this list, so anything built from here on can only be dropped
+        # again (#403 measured 98% of the built characters discarded).
+        if _total_chars(sections) > max_chars:
+            break
+        _append_section(sections, heading, build, _remaining_chars(sections, heading, max_chars))
 
     if not sections:
         return ""
 
     # Apply token cap by dropping lowest-priority sections first.
     # Priority order in 'sections' is highest first, so we drop from the end.
-    max_chars = config.max_context_tokens * 4
     sections = _truncate_to_budget(sections, max_chars)
 
     if not sections:
@@ -792,6 +858,19 @@ def build_feedforward_context(
     return "\n".join(parts)
 
 
+def _total_chars(sections: list[tuple[str, str]]) -> int:
+    """Characters the assembled context block would occupy."""
+    total = _HEADER_FOOTER_OVERHEAD
+    for heading, content in sections:
+        total += len(f"## {heading}\n") + len(content) + len("\n\n")
+    return total
+
+
+def _remaining_chars(sections: list[tuple[str, str]], heading: str, max_chars: int) -> int:
+    """Budget left for the BODY of a section called *heading*, never below 0."""
+    return max(0, max_chars - _total_chars(sections) - len(f"## {heading}\n") - len("\n\n"))
+
+
 def _truncate_to_budget(
     sections: list[tuple[str, str]],
     max_chars: int,
@@ -802,23 +881,12 @@ def _truncate_to_budget(
     If still over budget after dropping all but one section,
     truncates the remaining section content.
     """
-    # Calculate overhead per section (heading + blank lines)
-    header_footer_overhead = len("=== CODEBASE CONTEXT (auto-generated) ===\n\n") + len(
-        "\n=== END CODEBASE CONTEXT ==="
-    )
-
-    def _total_chars(secs: list[tuple[str, str]]) -> int:
-        total = header_footer_overhead
-        for heading, content in secs:
-            total += len(f"## {heading}\n") + len(content) + len("\n\n")
-        return total
-
     # Drop lowest-priority sections (end of list) until under budget
     while sections and _total_chars(sections) > max_chars:
         if len(sections) == 1:
             # Last section - truncate content instead of dropping it
             heading, content = sections[0]
-            available = max_chars - header_footer_overhead - len(f"## {heading}\n") - len("\n\n")
+            available = max_chars - _HEADER_FOOTER_OVERHEAD - len(f"## {heading}\n") - len("\n\n")
             if available > 100:
                 truncated = content[: available - 20] + "\n... (truncated)"
                 sections[0] = (heading, truncated)

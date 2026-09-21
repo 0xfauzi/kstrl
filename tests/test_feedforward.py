@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
+from typing import Any
 
+import pytest
+
+from kstrl import feedforward
 from kstrl.feedforward import (
     FeedforwardConfig,
     build_dependency_graph,
@@ -12,6 +17,7 @@ from kstrl.feedforward import (
     extract_conventions,
     extract_public_interfaces,
 )
+from tests.test_context import section
 
 # ---------------------------------------------------------------------------
 # build_module_map
@@ -217,3 +223,195 @@ class TestFeedforwardConfigDefaults:
         assert config.dependency_graph is True
         assert config.conventions is True
         assert config.max_context_tokens == 4000
+
+
+# ---------------------------------------------------------------------------
+# #403: the budget is consulted before the work is done
+# ---------------------------------------------------------------------------
+
+
+def _tiny_repo(root: Path) -> None:
+    """One package, two modules, one internal import, one pyproject."""
+    pkg = root / "demo_pkg"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "models.py").write_text("class Thing:\n    pass\n", encoding="utf-8")
+    (pkg / "api.py").write_text(
+        "from demo_pkg.models import Thing\n\n\ndef get(t: Thing) -> Thing:\n    return t\n",
+        encoding="utf-8",
+    )
+    (root / "pyproject.toml").write_text(
+        '[project]\nrequires-python = ">=3.11"\n', encoding="utf-8"
+    )
+
+
+def _wide_repo(root: Path) -> None:
+    """Twelve packages, one module each: a module map that alone is over budget."""
+    for i in range(12):
+        pkg = root / f"package_number_{i:02d}"
+        pkg.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+        (pkg / "core.py").write_text(f"class Core{i:02d}:\n    pass\n", encoding="utf-8")
+
+
+def _deep_repo(root: Path) -> None:
+    """One package, forty modules, each importing the one before it."""
+    pkg = root / "demo_pkg"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "mod00.py").write_text("class Base00:\n    pass\n", encoding="utf-8")
+    for i in range(1, 40):
+        (pkg / f"mod{i:02d}.py").write_text(
+            f"from demo_pkg.mod{i - 1:02d} import Base{i - 1:02d}\n\n\n"
+            f"class Base{i:02d}:\n    pass\n",
+            encoding="utf-8",
+        )
+
+
+def _no_import_repo(root: Path) -> None:
+    """A package whose modules import nothing internal."""
+    pkg = root / "demo_pkg"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "alpha.py").write_text("import os\n\n\nclass Alpha:\n    pass\n", encoding="utf-8")
+    (pkg / "beta.py").write_text("class Beta:\n    pass\n", encoding="utf-8")
+
+
+_TINY_MODULE_MAP_ONLY = (
+    "=== CODEBASE CONTEXT (auto-generated) ===\n"
+    "\n"
+    "## Module map\n"
+    "  demo_pkg/            # 3 files, 7 lines\n"
+    "\n"
+    "=== END CODEBASE CONTEXT ==="
+)
+
+_TINY_TWO_SECTIONS = (
+    "=== CODEBASE CONTEXT (auto-generated) ===\n"
+    "\n"
+    "## Module map\n"
+    "  demo_pkg/            # 3 files, 7 lines\n"
+    "\n"
+    "## Dependency graph\n"
+    "api -> models (imports: Thing)\n"
+    "\n"
+    "=== END CODEBASE CONTEXT ==="
+)
+
+_TINY_EVERYTHING = (
+    "=== CODEBASE CONTEXT (auto-generated) ===\n"
+    "\n"
+    "## Module map\n"
+    "  demo_pkg/            # 3 files, 7 lines\n"
+    "\n"
+    "## Dependency graph\n"
+    "api -> models (imports: Thing)\n"
+    "\n"
+    "## Public interfaces\n"
+    "demo_pkg/api.py: def get(t: Thing) -> Thing\n"
+    "demo_pkg/models.py: class Thing\n"
+    "\n"
+    "## Conventions\n"
+    "- Python version: >=3.11\n"
+    "\n"
+    "=== END CODEBASE CONTEXT ==="
+)
+
+
+def test_a_spent_budget_stops_before_the_dependency_graph_is_built(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _wide_repo(tmp_path)
+    calls: list[str] = []
+
+    def _spy(name: str) -> None:
+        real = getattr(feedforward, name)
+
+        def spy(root: Path, *args: Any, **kwargs: Any) -> str:
+            calls.append(name)
+            result: str = real(root, *args, **kwargs)
+            return result
+
+        monkeypatch.setattr(feedforward, name, spy)
+
+    # Every builder after the module map, not just the expensive one: a
+    # stop that special-cases the dependency graph still does the other
+    # two pieces of work the budget has already spent.
+    _spy("build_dependency_graph")
+    _spy("extract_public_interfaces")
+    _spy("extract_conventions")
+
+    context = build_feedforward_context(tmp_path, FeedforwardConfig(max_context_tokens=100))
+
+    assert calls == [], calls
+    assert "## Module map" in context
+    assert "## Dependency graph" not in context
+
+
+@pytest.mark.parametrize(
+    ("tokens", "expected"),
+    [
+        (24, ""),
+        (35, _TINY_MODULE_MAP_ONLY),
+        (50, _TINY_TWO_SECTIONS),
+        (100, _TINY_EVERYTHING),
+    ],
+)
+def test_the_delivered_context_is_byte_for_byte_what_it_was(
+    tmp_path: Path, tokens: int, expected: str
+) -> None:
+    _tiny_repo(tmp_path)
+    assert build_feedforward_context(tmp_path, FeedforwardConfig(max_context_tokens=tokens)) == (
+        expected
+    )
+
+
+def test_a_dependency_graph_that_did_not_fit_says_so(tmp_path: Path) -> None:
+    _deep_repo(tmp_path)
+
+    context = build_feedforward_context(tmp_path, FeedforwardConfig(max_context_tokens=100))
+    body = section(context, "## Dependency graph")
+
+    assert "## Dependency graph" in context
+    assert "did not fit" in body
+    assert "->" not in body
+
+    fit = re.search(
+        r"passed the (\d+) characters left in the context budget after (\d+) of (\d+) files",
+        body,
+    )
+    assert fit is not None, body
+    room, parsed, total = (int(group) for group in fit.groups())
+    # The graph is told the room left for ITS OWN section, not the whole
+    # 400-character budget the module map has already eaten into.
+    assert 0 < room < 400, body
+    # And it stopped when what it had built outgrew that room, rather
+    # than parsing every file and reporting the overflow afterwards.
+    assert total == 41, body
+    assert parsed < total, body
+
+
+def test_a_graph_with_nothing_to_say_is_not_a_graph_that_did_not_fit(tmp_path: Path) -> None:
+    _no_import_repo(tmp_path)
+
+    context = build_feedforward_context(tmp_path, FeedforwardConfig(max_context_tokens=1000))
+
+    assert "## Public interfaces" in context
+    assert "## Dependency graph" not in context
+    assert "did not fit" not in context
+
+
+def test_a_component_filtered_graph_is_built_even_when_the_whole_graph_is_over_budget(
+    tmp_path: Path,
+) -> None:
+    _deep_repo(tmp_path)
+
+    context = build_feedforward_context(
+        tmp_path,
+        FeedforwardConfig(max_context_tokens=100),
+        component_id="mod05",
+        component_deps=["mod05"],
+    )
+    body = section(context, "## Dependency graph")
+
+    assert body == "mod05 -> mod04 (imports: Base04)\nmod06 -> mod05 (imports: Base05)"
