@@ -348,10 +348,28 @@ def _category_keyword_is_arm_name(call: ast.Call) -> bool:
     )
 
 
+def _records_under_the_arm_id(call: ast.Call) -> bool:
+    """The first two positional arguments are the (role, fixture_id) key a
+    baseline carries. ``fixture.fixture_id`` collapses both arms onto one
+    key and ``compare_baselines`` then reports no ``newly_missed`` at all.
+    """
+    if len(call.args) < 2:
+        return False
+    role, fixture_id = call.args[0], call.args[1]
+    return (
+        isinstance(role, ast.Name)
+        and role.id == "REUSE_ROLE"
+        and isinstance(fixture_id, ast.Attribute)
+        and isinstance(fixture_id.value, ast.Name)
+        and fixture_id.value.id == "arm"
+        and fixture_id.attr == "fixture_id"
+    )
+
+
 def test_the_paid_arm_test_takes_its_directory_per_run() -> None:
     """``arm_cwd`` is called INSIDE ``run_once``, never above it, and the
     ``_measure_detection`` call pins ``category`` to the per-arm field
-    (#401 addendum A4).
+    (#401 addendum A4) and the (role, fixture_id) key it records under.
 
     Hoisted above the closure it is called once per arm, every run of
     that arm shares one directory, and the fresh-directory rule above
@@ -392,6 +410,11 @@ def test_the_paid_arm_test_takes_its_directory_per_run() -> None:
     assert _category_keyword_is_arm_name(call), (
         "_measure_detection must be called with category=arm.name (the "
         "per-arm attribute), not a hard-coded or missing category"
+    )
+    assert _records_under_the_arm_id(call), (
+        "_measure_detection must record under (REUSE_ROLE, arm.fixture_id): "
+        "fixture.fixture_id collapses both arms onto one baseline key and "
+        "newly_missed then reports nothing"
     )
 
 
