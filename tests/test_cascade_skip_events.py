@@ -41,6 +41,14 @@ from tests.test_scope_snapshot import _run, _Seams
 
 DEPENDENT_ID = "after-format"
 TRANSITIVE_ID = "after-after-format"
+# A component completed by an earlier run. It depends on the same
+# failing component, so ``manifest.cascade_skip`` never touches it
+# (it is not pending), but a loop that emitted ``ComponentSkipped`` for
+# every transitive dependent of the FAILED id, rather than only the
+# ids ``cascade_skip`` returned, would skip it too. That is the same
+# defect class this issue fixes, one call site over: the board would
+# show it skipped while ``ks status`` still says completed.
+DONE_ID = "done-after-format"
 
 
 class TestACascadeSkipIsRecordedOnTheStream:
@@ -54,6 +62,10 @@ class TestACascadeSkipIsRecordedOnTheStream:
         )
         _write_prd(
             tmp_path / "scripts" / "kstrl" / "feature" / TRANSITIVE_ID / "prd.json",
+            AUTHORED,
+        )
+        _write_prd(
+            tmp_path / "scripts" / "kstrl" / "feature" / DONE_ID / "prd.json",
             AUTHORED,
         )
         dependent = Component(
@@ -72,7 +84,16 @@ class TestACascadeSkipIsRecordedOnTheStream:
             f"scripts/kstrl/feature/{TRANSITIVE_ID}/prd.json",
             f"kstrl/factory/{TRANSITIVE_ID}",
         )
-        manifest = _manifest([_component(), dependent, transitive])
+        done = Component(
+            DONE_ID,
+            DONE_ID,
+            "completed by an earlier run, depends on document-format",
+            [COMPONENT_ID],
+            f"scripts/kstrl/feature/{DONE_ID}/prd.json",
+            f"kstrl/factory/{DONE_ID}",
+        )
+        done.status = "completed"
+        manifest = _manifest([_component(), dependent, transitive, done])
         manifest.save(tmp_path / "scripts" / "kstrl" / "manifest.json")
 
         seams = _Seams()
@@ -105,6 +126,8 @@ class TestACascadeSkipIsRecordedOnTheStream:
         assert not state.components[DEPENDENT_ID].carried
         assert state.components[TRANSITIVE_ID].status == "skipped"
         assert not state.components[TRANSITIVE_ID].carried
+        assert state.components[DONE_ID].status == "completed"
+        assert state.components[DEPENDENT_ID].error == f"dependency '{COMPONENT_ID}' failed"
 
         proc = subprocess.run(
             [sys.executable, "-m", "kstrl", "status", "--no-tui", "--root", str(tmp_path)],
@@ -118,6 +141,7 @@ class TestACascadeSkipIsRecordedOnTheStream:
         assert f"{COMPONENT_ID}: failed" in combined
         assert f"{DEPENDENT_ID}: skipped" in combined
         assert f"{TRANSITIVE_ID}: skipped" in combined
+        assert f"{DONE_ID}: completed" in combined
 
 
 def _parent_map(tree: ast.Module) -> dict[ast.AST, ast.AST]:
