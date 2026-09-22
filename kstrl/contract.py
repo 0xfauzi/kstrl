@@ -151,13 +151,23 @@ def _create_temp_worktree(
     Returns ``(path, "")`` on success or ``(None, error)`` on failure.
     Detached HEAD means merges move only the temp worktree's HEAD; no
     branch is created and the user's checkout is never touched.
+
+    The base is resolved through :func:`git.resolve_base_ref`, here
+    rather than at the three call sites, so every contract checkout
+    (bisection, the tier check, the integrated check) asks one question.
+    A bare base name cuts from the operator's local branch, which a
+    squash merge on GitHub leaves behind; #435 recorded a tier-1 contract
+    check failing in 0.75s with ``Installed 28 packages in 23ms`` as the
+    whole of its evidence, because the tree it checked out had no tests
+    in it at all.
     """
     contract_base = root_dir / ".kstrl" / "contract"
     contract_base.mkdir(parents=True, exist_ok=True)
     worktree_path = contract_base / f"{label}-{secrets.token_hex(4)}"
+    base_ref = git.resolve_base_ref(base, root_dir, timeout)
     try:
         result = run_scrubbed(
-            ["git", "worktree", "add", "--detach", str(worktree_path), base],
+            ["git", "worktree", "add", "--detach", str(worktree_path), base_ref],
             cwd=root_dir,
             timeout=timeout,
         )
@@ -250,6 +260,16 @@ def _run_tests(
     try:
         result = run_scrubbed(test_command, cwd=cwd, timeout=timeout)
         output = (result.stdout + result.stderr).strip()
+        if result.returncode == 5:
+            # pytest's EXIT_NOTESTSCOLLECTED. Nothing failed; nothing ran.
+            # #435 recorded one of these as "contract tests failed" with
+            # an install line as the evidence, which is the wrong
+            # sentence about the wrong event.
+            output = (
+                "The test command exited 5, which is pytest's code for "
+                f"'no tests were collected': nothing failed and nothing ran. "
+                f"Command: {test_command}\n{output}"
+            )
         return result.returncode == 0, output
     except subprocess.TimeoutExpired:
         return False, f"Test suite timed out after {timeout}s"

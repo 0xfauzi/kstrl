@@ -2470,6 +2470,12 @@ def _run_component(
             usage_path,
         )
 
+    # #435: the guard's baseline and the message it writes name the SAME
+    # ref the diff is judged on. A squash merge advances origin/<base>
+    # and leaves local <base> where it was, so the bare name measures
+    # against a tree the previous tier never reached.
+    guard_base_ref = resolve_base_ref(base_branch, root_dir)
+
     try:
         result = run_loop(
             config,
@@ -2483,7 +2489,7 @@ def _run_component(
             stop_check=stop_check,
             budget=token_budget,
             on_iteration_usage=on_iteration_usage,
-            guard_base_ref=base_branch,
+            guard_base_ref=guard_base_ref,
             guard_ignored_paths=harness_paths,
             # #274: the project root, NOT worktree_path. The two are the
             # same directory only under use_worktrees=False, which is
@@ -2531,7 +2537,7 @@ def _run_component(
                 count=len(result.guard_violations),
                 iterations=result.iterations,
                 listed=listed,
-                base_branch=base_branch,
+                base_branch=guard_base_ref,
                 allowed_paths=", ".join(authored_paths),
                 harness_paths=", ".join(harness_paths),
             )

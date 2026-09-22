@@ -222,6 +222,7 @@ def config_sections() -> list[ConfigSection]:
     from kstrl.sandbox import SandboxConfig
     from kstrl.security import SecurityConfig
     from kstrl.serve import ServeConfig
+    from kstrl.signals import SignalsConfig
     from kstrl.timeout import TimeoutConfig
     from kstrl.verify import VerifyConfig
     from kstrl.workqueue import QueueConfig
@@ -250,6 +251,7 @@ def config_sections() -> list[ConfigSection]:
         ConfigSection(("linear",), LinearConfig.load),
         ConfigSection(("evolution",), EvolutionConfig.load, fatal=False),
         ConfigSection(("release",), ReleaseConfig.load),
+        ConfigSection(("signals",), SignalsConfig.load),
     ]
 
 

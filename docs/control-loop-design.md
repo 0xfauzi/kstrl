@@ -1029,7 +1029,7 @@ Cycle: R10, milestone [R10: Control Loop](https://github.com/0xfauzi/kstrl/miles
 | 9 | 5.7 memory file | [#230](https://github.com/0xfauzi/kstrl/issues/230) | `[x]` |
 | 10 | 5.8 polled steering | [#231](https://github.com/0xfauzi/kstrl/issues/231) | `[x]` |
 | 11 | 5.11 wire the dead demotion triggers | [#232](https://github.com/0xfauzi/kstrl/issues/232) | `[x]` merged in #350 |
-| 12 | 5.10 iterate faster (blocked on entry criterion) | [#233](https://github.com/0xfauzi/kstrl/issues/233) | `[ ]` |
+| 12 | 5.10 iterate faster (blocked on entry criterion) | [#233](https://github.com/0xfauzi/kstrl/issues/233) | `[x]` (this PR: the instrument; Parts A and B recorded as not done) |
 | 13 | section 4, reframe ARCHITECTURE.md | [#234](https://github.com/0xfauzi/kstrl/issues/234) | `[ ]` |
 
 Follow-up from R10.4, now closed: safe mode had no dashboard surface, so the default interactive `ks status` never showed it. A masthead chip plus an `m` panel closed that gap over the same predicate, with no second evaluation and no second wording.

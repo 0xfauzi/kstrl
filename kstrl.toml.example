@@ -408,3 +408,19 @@ api_url = "https://api.linear.app/graphql"
 dry_run = false                    # log mutations instead of sending them
 timeout_seconds = 30.0
 min_request_interval = 0.5         # client-side throttle (shared rate pool)
+
+# Runtime signal poller (R8.8 slice 1). Off by default. `ks signals poll`
+# fetches one Bugsink project's issue list and classifies each issue
+# against its own append-only ledger in the XDG control directory:
+# new_issue / repeat / recurrence, each carrying a would_enqueue /
+# would_watch / would_notify label that nothing acts on yet. The token
+# is read from the env var named by token_env and never stored here.
+[signals]
+enabled = false
+product = ""                       # the product name recorded on every row
+base_url = "http://127.0.0.1:8000" # the tracker's root, no trailing slash needed
+project_id = ""                    # Bugsink's numeric project id, as a string
+token_env = "KSTRL_SIGNALS_TOKEN"  # env var holding the tracker's bearer token
+http_timeout = 10.0
+new_issue_events = 3               # advisory only: labels, gates nothing
+repeat_growth_events = 10          # advisory only: labels, gates nothing

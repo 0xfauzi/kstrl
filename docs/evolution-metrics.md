@@ -20,7 +20,7 @@ migrations are detectable.
 | `event_type` | Written by | When |
 |---|---|---|
 | `component_result` | `EvolutionJournal.record_run` | Once per component at the end of every factory run |
-| `findings_superseded` | pipeline `AttemptRecorder.journal_superseded_findings` | When a retry supersedes an attempt's findings (R3.3) |
+| `findings_superseded` | pipeline `ComponentPipeline.journal_superseded_findings` | When a retry supersedes an attempt (R3.3); written for every superseded attempt, whether or not it produced findings (#233) |
 | `contract_result` | factory `_record_contract_event` | After every contract-test tier, pass or fail (R0.3) |
 | `role_usage` | `EvolutionJournal.record_run` | Once per role that spent tokens outside any manifest component (#257) |
 | `autonomy_transition` | `autonomy.commit_transition` | Every promotion or demotion of the autonomy ladder |
@@ -77,6 +77,16 @@ did. Reading one of these rows:
   no-exclusion path on any mount whose `flock` raises `OSError`, such as
   an NFS export without a lock daemon, which returns `ENOLCK`.
 
+### `findings_superseded` fields
+
+| Field | Definition |
+|---|---|
+| `schema_version` / `timestamp` / `run_id` / `project` / `component_id` | As on `component_result`. |
+| `attempt` | The 1-based number of the attempt this row ends, `comp.retries + 1` at the moment the row is written, which is the same expression `PhaseStarted` uses. |
+| `iteration_count` | Engineer-loop iterations of THIS attempt, not a running total (#233). |
+| `failure_signatures` | The attempt's structured `"<check>:<code>"` signatures. |
+| `findings` | The attempt's typed Finding stream. Empty when the attempt produced none; the row is written either way (#233), so the attempt series is complete. |
+
 ### `component_result` fields
 
 | Field | Definition |
@@ -93,7 +103,7 @@ did. Reading one of these rows:
 | `check_name` / `error_signature` | Convenience split of the FIRST signature (`check_name:error_signature`). Kept for v1-shaped readers; new consumers should read `failure_signatures`. |
 | `failed_phase` / `failed_check` | R3.3 post-mortem pointers: which phase and gate fired last. |
 | `duration_seconds` | Wall-clock of the component's LAST attempt, measured from the PENDING->RUNNING transition to the terminal transition (completed / failed / merge-pending / retry scheduled / scheduler backstop). Includes the engineer loop, mechanical verification, review, security review, and PR flow. It is NOT the sum across retries, and 0.0 appears only for components that never started an attempt in this process (e.g. skipped, or state inherited from a crashed run). |
-| `iteration_count` | Engineer-loop iterations of the last attempt. |
+| `iteration_count` | Engineer-loop iterations of the last attempt. Earlier attempts' counts are on that run's `findings_superseded` rows, one per superseded attempt. |
 | `findings` | Full typed Finding stream of the last attempt (E3), attempt-tagged. |
 | `findings_summary` | Aggregates of `findings`: `total`, `by_phase`, `by_severity`, `by_category`, `by_owasp`, `infrastructure_errors`. |
 | `usage` | R3.1 per-phase token/cost self-reports (lower bounds when `unreported_calls` > 0). |
@@ -110,7 +120,7 @@ One row per factory run, appended by `record_run`. Columns:
 | `project` | Manifest project name. |
 | `components_total` | Number of components in the manifest. |
 | `completed` / `failed` / `skipped` | Counts from the run's FactoryResult (skipped = cascade-skipped dependents of failures). |
-| `avg_iterations` | Mean engineer-loop iterations over components with `iteration_count` > 0. 0.00 when no component ran. |
+| `avg_iterations` | Mean engineer-loop iterations over components with `iteration_count` > 0, where `iteration_count` is the LAST attempt's count (see above): a lower bound on the iterations a retried component actually ran. 0.00 when no component ran. The per-attempt series is in the evolution journal, on the `component_result` and `findings_superseded` rows; `ks evolve --status` reads it. |
 | `avg_duration_s` | Mean `duration_seconds` (last-attempt wall clock, see above) over components with a duration > 0. |
 | `retry_rate` | Total retries across ALL components divided by `components_total`: the average number of retries per component, NOT the fraction of components that were retried. A run of 4 components where one burned 3 retries records 0.75. Can exceed 1.0. |
 | `common_failure` | The most frequent full `"<check>:<code>"` failure signature among FAILED components this run; `""` when nothing failed. |

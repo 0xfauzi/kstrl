@@ -535,6 +535,7 @@ SEAM_COMMANDS: list[tuple[list[str], int]] = [
     (["retry", "comp-a"], 1),
     (["run", "--agent-cmd", "true"], 1),
     (["serve", "--print-plist", "--no-color"], 2),
+    (["signals", "poll"], 1),
     (["status"], 1),
     (["understand", "--agent-cmd", "true"], 1),
 ]

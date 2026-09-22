@@ -270,7 +270,7 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "git.py git rev-parse --abbrev-ref HEAD": 1,
     "git.py git rev-parse --is-inside-work-tree": 1,
     "git.py git rev-parse --show-toplevel": 1,
-    "git.py git rev-parse --verify --quiet ?": 3,
+    "git.py git rev-parse --verify --quiet ?": 2,
     "git.py git rev-parse --verify --quiet HEAD": 1,
     "git.py git rm --cached --ignore-unmatch -q -- ?": 1,
     "git.py git show-ref --verify --quiet ?": 1,
@@ -289,7 +289,10 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     # merge-base <ref> HEAD` prints a commit sha, not a path, and `git
     # show <rev>:<path>` prints the blob's CONTENT, with the path an
     # argument to the command, never something git prints back.
-    "verify.py git merge-base ? HEAD": 1,
+    # #435 fix-round (A0) hoisted the merge-base spawn from `verify.py`
+    # into `kstrl/git.py` as the one owner of the merge-base anchor: the
+    # row moves module, count unchanged.
+    "git.py git merge-base ? HEAD": 1,
     "verify.py git show ?": 1,
 }
 

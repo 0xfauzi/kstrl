@@ -161,6 +161,7 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.sandbox import SandboxConfig
     from kstrl.security import SecurityConfig
     from kstrl.serve import ServeConfig
+    from kstrl.signals import SignalsConfig
     from kstrl.timeout import TimeoutConfig
     from kstrl.verify import VerifyConfig
     from kstrl.workqueue import QueueConfig
@@ -449,6 +450,14 @@ def _section_specs() -> list[SectionSpec]:
             LinearConfig(),
             probe_undocumented_fields=True,
         ),
+        SectionSpec(
+            "signals",
+            "Runtime signal poller (R8.8 slice 1)",
+            identity_keys(SignalsConfig, _all_field_names(SignalsConfig)),
+            lambda root: SignalsConfig.load(root_dir=root),
+            SignalsConfig(),
+            probe_undocumented_fields=True,
+        ),
     ]
     return specs
 
@@ -731,6 +740,14 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("linear", "dry_run"): "record mutations instead of sending them",
     ("linear", "timeout_seconds"): "per-request timeout",
     ("linear", "min_request_interval"): "client-side throttle between requests (seconds)",
+    ("signals", "enabled"): "poll the configured tracker",
+    ("signals", "product"): "the product name recorded on every ledger row",
+    ("signals", "base_url"): "the tracker's root URL, no trailing slash needed",
+    ("signals", "project_id"): "Bugsink's numeric project id, as a string",
+    ("signals", "token_env"): "NAME of the env var holding the tracker's bearer token",
+    ("signals", "http_timeout"): "per-request timeout",
+    ("signals", "new_issue_events"): "advisory threshold; labels a new issue, gates nothing",
+    ("signals", "repeat_growth_events"): "advisory threshold; labels a repeat, gates nothing",
 }
 
 # Sentinel values for keys whose loader validates the value (enum

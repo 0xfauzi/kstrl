@@ -759,6 +759,29 @@ def _echo_journal_repairs(journal: EvolutionJournal, ui_impl: UI) -> None:
         ui_impl.warn(f"  {summary}")
 
 
+def _echo_iteration_criterion(
+    journal: EvolutionJournal,
+    trends: list[dict[str, Any]],
+    ui_impl: UI,
+) -> None:
+    """`ks evolve --status`'s verdict on #233's entry criterion.
+
+    A module-level helper rather than nine more lines inside ``evolve``,
+    and the reason is measured rather than stylistic: ``evolve`` sits at
+    cyclomatic 15 against ``cyclomatic_ratchet.py``'s limit of 10 and at
+    cognitive 23 against ``complexipy``'s 15. Both hooks fail a function
+    this commit makes worse, so a single added branch there fails the
+    commit. This helper adds no branch to ``evolve``.
+
+    The lines themselves are built by ``EvolutionJournal`` and not here,
+    so the journal path never reaches this module; see
+    ``iteration_criterion_lines``.
+    """
+    ui_impl.section("Iteration criterion (#233)")
+    for line in journal.iteration_criterion_lines(trends):
+        ui_impl.info(line)
+
+
 def _preflight_root(ctx: click.Context) -> Path:
     """The root the command is about to use, derived before it runs.
 
@@ -4446,12 +4469,18 @@ def evolve(
             sys.exit(0)
 
         for entry in trends:
+            failure = str(entry.get("common_failure", ""))[:40]
             ui_impl.info(
                 f"  {entry.get('run_id', '?')} | "
+                f"project={entry.get('project', '?')} "
                 f"completed={entry.get('completed', '?')} "
                 f"failed={entry.get('failed', '?')} "
-                f"retry_rate={entry.get('retry_rate', '?')}"
+                f"retry_rate={entry.get('retry_rate', '?')} "
+                f"avg_iterations={entry.get('avg_iterations', '?')} "
+                f"common_failure={failure}"
             )
+
+        _echo_iteration_criterion(journal, trends, ui_impl)
         sys.exit(0)
 
     if apply_id:
@@ -5756,6 +5785,116 @@ def queue_sync(
     # Nonzero on error so a cron/launchd wrapper notices. Partial success
     # is real: items already enqueued stay enqueued.
     sys.exit(1 if result.errors else 0)
+
+
+@cli.group(name="signals")
+def signals_group() -> None:
+    """Observe a tracker's runtime issues and record a verdict (R8.8 slice 1).
+
+    Fetches one page of issues, classifies each against the ledger this
+    group writes, and prints what it saw. Nothing here enqueues, notifies
+    or spends: every disposition is a "would", never a "did" - the queue
+    routing question (roadmap user decision 8) is still open.
+    """
+
+
+_signals_root_option = click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    help="Project root path (defaults to current directory)",
+)
+_signals_ui_option = click.option(
+    "--ui",
+    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    default="auto",
+    help="UI mode",
+)
+_signals_no_color_option = click.option(
+    "--no-color",
+    is_flag=True,
+    help="Disable colors",
+)
+
+
+@signals_group.command(name="poll")
+@click.option(
+    "--from-file",
+    type=click.Path(exists=True, path_type=Path),
+    default=None,
+    help="Replay a captured tracker page instead of fetching one",
+)
+@click.option(
+    "--capture",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the fetched or replayed page's raw text here",
+)
+@_signals_root_option
+@_signals_ui_option
+@_signals_no_color_option
+def signals_poll(
+    from_file: Path | None,
+    capture: Path | None,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
+) -> None:
+    """Fetch one tracker page, classify it against the ledger, print the tally."""
+    from kstrl.signals import SignalsConfig, SignalsError, poll
+
+    root_dir = (root or Path.cwd()).resolve()
+    config = SignalsConfig.load(root_dir)
+    ui_impl = _autonomy_ui(ui, no_color)
+    if not config.enabled:
+        ui_impl.err(
+            "signals polling is off. Set [signals] enabled = true in "
+            "kstrl.toml (or KSTRL_SIGNALS_ENABLED=1)."
+        )
+        sys.exit(1)
+    try:
+        report = poll(root_dir, config, from_file=from_file, capture=capture)
+    except SignalsError as exc:
+        ui_impl.err(str(exc))
+        sys.exit(1)
+
+    ui_impl.section("Signals")
+    ui_impl.info(f"{len(report.signals)} signals (dropped {report.dropped_rows})")
+    tally: dict[str, int] = {}
+    for row in report.signals:
+        tally[str(row.disposition)] = tally.get(str(row.disposition), 0) + 1
+    for disposition in sorted(tally):
+        ui_impl.kv(disposition, str(tally[disposition]))
+    ui_impl.kv("poll_new_issues", str(report.poll_new_issues))
+    ui_impl.kv("poll_max_events_on_a_new_issue", str(report.poll_max_events_on_a_new_issue))
+    sys.exit(0)
+
+
+@signals_group.command(name="ls")
+@_signals_root_option
+@_signals_ui_option
+@_signals_no_color_option
+def signals_ls(root: Path | None, ui: str, no_color: bool) -> None:
+    """Print the signal ledger, oldest first."""
+    from kstrl.signals import read_ledger
+    from kstrl.statedir import CONTROL_SIGNALS, control_file
+
+    root_dir = (root or Path.cwd()).resolve()
+    ui_impl = _autonomy_ui(ui, no_color)
+    ledger = read_ledger(control_file(root_dir, CONTROL_SIGNALS))
+    if not ledger.signals:
+        if ledger.dropped:
+            ui_impl.err(f"{ledger.dropped} ledger row(s) could not be read")
+        ui_impl.ok("No signals recorded yet.")
+        sys.exit(0)
+    ui_impl.section("Signals")
+    for row in ledger.signals:
+        ui_impl.info(
+            f"  {row.observed_at}  {row.friendly_id:<20}{str(row.kind):<12}"
+            f"{str(row.disposition):<16}events={row.event_count}"
+        )
+    if ledger.dropped:
+        ui_impl.kv("dropped", str(ledger.dropped))
+    sys.exit(0)
 
 
 @cli.command()

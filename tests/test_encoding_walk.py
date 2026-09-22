@@ -437,19 +437,19 @@ class TestTheReadBytesExclusion:
     """``read_bytes`` then ``bytes.decode`` is deliberately out of scope,
     and the exclusion is pinned so it cannot silently grow.
 
-    Six of the seven sites guard the decode separately today, which is the
-    shape ``config_toml.load_toml_document`` argues for: do the I/O
+    Six of the original seven sites guard the decode separately, which is
+    the shape ``config_toml.load_toml_document`` argues for: do the I/O
     outside the guard so no widening can reach an ``OSError``. The
     seventh does not decode at all and is here for the opposite reason;
-    see the ``verify.py`` paragraph below. An eighth appearing is a
+    see the ``verify.py`` paragraph below. A tenth site appearing is a
     reason to look, so this fails rather than absorbing it.
 
-    ``dampener.py`` is the newest and arrived by that argument rather
-    than despite it: #357 round 1 measured ``read_text`` plus
-    ``except ValueError`` around ``json.loads`` letting a
-    ``RecursionError`` escape a function documented to exit 2, and the
-    fix was to move the I/O out and widen the parse guard to
-    ``Exception``, which is only safe once no OSError can reach it.
+    ``dampener.py`` arrived by that argument rather than despite it:
+    #357 round 1 measured ``read_text`` plus ``except ValueError`` around
+    ``json.loads`` letting a ``RecursionError`` escape a function
+    documented to exit 2, and the fix was to move the I/O out and widen
+    the parse guard to ``Exception``, which is only safe once no
+    ``OSError`` can reach it.
 
     ``verify.py`` moved from one site to two under #414: the bad-patterns
     scan's ``_content_finding`` reads a file's bytes to check emptiness by
@@ -460,6 +460,15 @@ class TestTheReadBytesExclusion:
     runs through ``_base_finding``, whose own ``except Exception`` wraps
     it deliberately, because every failure there means "cannot clear",
     which is the blocking direction (#425 review, finding S4).
+
+    ``signals.py`` (R8.8 slice 1 / #155) adds a THIRD reason, neither of
+    the two above: ``read_ledger`` and ``read_page_text`` both put
+    ``read_bytes()`` and ``.decode("utf-8")`` outside ANY ``try`` at all,
+    which is stronger than guarding the decode separately - no widening
+    of any handler can reach either failure, because there is no handler
+    to widen. Two sites, one module: the ledger read and the
+    ``--from-file``/``--capture`` replay read are distinct call sites
+    doing the same idiom for the same reason.
     """
 
     EXPECTED_READ_BYTES: dict[str, int] = {
@@ -468,10 +477,11 @@ class TestTheReadBytesExclusion:
         "dampener.py": 1,
         "inbox.py": 1,
         "safemode.py": 1,
+        "signals.py": 2,
         "verify.py": 2,
     }
 
-    def test_the_read_bytes_sites_are_the_seven_measured(self) -> None:
+    def test_the_read_bytes_sites_are_the_nine_measured(self) -> None:
         assert_census(
             sources=package_sources(),
             sees=spells("read_bytes"),
