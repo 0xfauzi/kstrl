@@ -362,6 +362,47 @@ class TestStrictReader:
         assert reading.measured is False
         assert "attempts [1] have no reading (expected 1..3)" in reading.reason
 
+    def test_a_component_that_ran_no_iterations_is_not_in_the_average_denominator(
+        self,
+    ) -> None:
+        """A cascade-skipped component still gets a ``component_result`` row,
+        with ``iteration_count`` 0 (``record_run``, ``kstrl/evolution.py``,
+        writes one row per ``manifest.components``, skipped ones included).
+        ``avg_all_attempts`` is the mean over components that RAN, not over
+        every row in the run: the denominator is ``components_ran``, never
+        ``len(results)``. Without this test the denominator can be switched
+        to ``len(results)`` with nothing failing, because every other
+        fixture in this module has the two numbers equal.
+        """
+        entries = [
+            {
+                "event_type": "component_result",
+                "run_id": "r1",
+                "component_id": "ran",
+                "retries": 0,
+                "iteration_count": 2,
+            },
+            {
+                "event_type": "component_result",
+                "run_id": "r1",
+                "component_id": "skip-a",
+                "retries": 0,
+                "iteration_count": 0,
+            },
+            {
+                "event_type": "component_result",
+                "run_id": "r1",
+                "component_id": "skip-b",
+                "retries": 0,
+                "iteration_count": 0,
+            },
+        ]
+        reading = read_attempt_iterations(entries, "r1", 3)
+        assert reading.measured is True
+        assert reading.iterations_total == 2
+        assert reading.components_ran == 1
+        assert reading.avg_all_attempts == 2.0
+
 
 class TestVerdict:
     def test_a_refused_reading_never_yields_a_met_or_not_met_clause_one(self) -> None:
@@ -567,22 +608,28 @@ def _block_containing(func: ast.AST, node: ast.stmt) -> tuple[list[ast.stmt], in
 
 
 def _preceding_journal_call(block: list[ast.stmt], index: int, obj: str) -> bool:
-    """Does any statement before ``index`` call
-    ``journal_superseded_findings(obj)``?"""
-    calls = (
-        call
-        for statement in block[:index]
-        for call in ast.walk(statement)
-        if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
-    )
-    return any(
-        call.func.attr == "journal_superseded_findings"
-        and call.args
-        and isinstance(call.args[0], ast.Name)
-        and call.args[0].id == obj
-        for call in calls
-        if isinstance(call.func, ast.Attribute)
-    )
+    """Does a statement OF this block, before ``index``, call
+    ``journal_superseded_findings(obj)``?
+
+    The call has to be the statement, not a call reachable from it: a walk
+    into a preceding ``if`` clears ``if comp.findings:
+    journal(...)``, which is the very skip this PR removed, moved from the
+    callee to the call site.
+    """
+    for statement in block[:index]:
+        if not isinstance(statement, ast.Expr):
+            continue
+        call = statement.value
+        if (
+            isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and call.func.attr == "journal_superseded_findings"
+            and call.args
+            and isinstance(call.args[0], ast.Name)
+            and call.args[0].id == obj
+        ):
+            return True
+    return False
 
 
 def _in_run_retry_sites(
@@ -630,6 +677,8 @@ class TestAttemptSiteCensus:
                 "retries: int = 0\n",  # AnnAssign, name target
                 "retries = 0\n",  # Assign, name target
                 "retries, reason = f()\n",  # Assign, tuple-unpacked name target
+                "[retries] = f()\n",  # Assign, list-unpacked name target
+                "*retries, rest = f()\n",  # Assign, star-packed name target
             ),
             message=(
                 "The set of places that bind a `retries` target changed. If this is "
