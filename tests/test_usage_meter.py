@@ -4102,6 +4102,8 @@ class TestCeilingsAreCheckedBeforeAnythingSpends:
             "[factory]\nmax_cost_usd = 5.0\nmax_total_tokens = 1000\n"
         )
         (tmp_path / "s.md").write_text("# spec\nbuild a thing\n")
+        # #434: a repository with no build manifest is refused before the architect.
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "p"\n')
         result = CliRunner().invoke(
             cli,
             ["factory", "--spec", "s.md", "--project-name", "p", "--agent-cmd", str(script)],
@@ -5448,6 +5450,8 @@ def _invoke_factory_cli(
 
     root = Path.cwd()
     (root / "s.md").write_text("# spec\n")
+    # #434: without a build manifest `--spec` is refused before the architect.
+    (root / "pyproject.toml").write_text('[project]\nname = "p"\n')
     _make_manifest([_component("comp-a")]).save(root / "m.json")
     if setup is not None:
         setup(root)

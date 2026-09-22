@@ -8,7 +8,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 from kstrl import git
 from kstrl.appendio import append_records
@@ -16,6 +16,7 @@ from kstrl.atomicio import atomic_write_text
 from kstrl.jsonread import read_json, read_json_file
 from kstrl.operator_context import GUIDANCE_HEADING
 from kstrl.prd import PRD
+from kstrl.verify import VerifyConfig
 
 if TYPE_CHECKING:
     from kstrl.ui.base import UI
@@ -1316,6 +1317,8 @@ def run_init(directory: Path, ui: UI, *, upgrade_prompts: bool = False) -> int:
         ui.kv("Passing", str(passing))
         ui.kv("Failing", str(failing))
 
+    _report_build_manifest(root, ui)
+
     # Next steps
     ui.section("Next steps")
     for line in NEXT_STEPS.splitlines():
@@ -1649,6 +1652,18 @@ def _track_lockfile(root: Path, name: str, ui: UI) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _json_object(value: object) -> dict[str, Any]:
+    """``value`` when it is a JSON object, else an empty one (#434).
+
+    package.json is operator-written: a top-level list or a null
+    ``dependencies`` is valid JSON. Before #434 only `ks init` read it;
+    now the `ks doctor` check and the `ks decompose` preflight do too,
+    through :func:`_detect_project_context`, and a shape it did not
+    expect must not become a traceback in all of them.
+    """
+    return value if isinstance(value, dict) else {}
+
+
 def _detect_project_context(root: Path) -> dict[str, str]:
     """Detect project name, language and framework from config files.
 
@@ -1701,9 +1716,12 @@ def _detect_project_context(root: Path) -> dict[str, str]:
     if pkg_json.exists():
         ctx["language"] = "TypeScript"
         try:
-            pkg = read_json(_read_text_or_none(pkg_json) or "{}")
+            pkg = _json_object(read_json(_read_text_or_none(pkg_json) or "{}"))
             ctx["name"] = pkg.get("name", root.name)
-            deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+            deps = {
+                **_json_object(pkg.get("dependencies")),
+                **_json_object(pkg.get("devDependencies")),
+            }
             if "next" in deps:
                 ctx["framework"] = "Next.js"
             elif "react" in deps:
@@ -1738,6 +1756,72 @@ def _detect_project_context(root: Path) -> dict[str, str]:
         return ctx
 
     return ctx
+
+
+#: #434: what `ks doctor`, `ks init` and the `ks decompose` / `ks factory
+#: --spec` preflight say about a repository with no build manifest. One
+#: sentence for the finding and one for the fix, so the three surfaces
+#: cannot word it three ways.
+BUILD_MANIFEST_MISSING = (
+    "no build manifest at the repository root that kstrl recognises, so `ks init` "
+    "reports the language as unknown, and kstrl will not create one: no component "
+    "may list a root build manifest in its allowedPaths, so `ks decompose` would pay "
+    "for an architect call that can only halt and ask who writes it"
+)
+#: The commands, measured with uv 0.11.29 on a repository holding only a
+#: spec: `uv init --package .` writes pyproject.toml, .python-version,
+#: README.md and src/<name>/__init__.py; `uv add --dev` writes the dev
+#: group the default verify commands run from, and uv.lock.
+BUILD_MANIFEST_FIX = (
+    "kstrl will not create the build manifest, so create and commit it before "
+    "`ks decompose`. For a Python project: `uv init --package .`, then "
+    "`uv add --dev pytest mypy ruff`, then "
+    "`git add pyproject.toml uv.lock .python-version README.md src` and "
+    '`git commit -m "Add the build manifest"`. For another language, commit the '
+    "manifest its own toolchain creates. If the project builds with a tool kstrl "
+    "does not recognise, set [verify] test_command, typecheck_command or "
+    "lint_command in kstrl.toml instead."
+)
+
+
+def build_manifest_blocker(root: Path, *, read_verify: bool = True) -> str | None:
+    """Why kstrl cannot plan work in ``root`` yet, or None when it can (#434).
+
+    A build manifest is whatever :func:`_detect_project_context` reads a
+    language from, so this and the `Detected language` line `ks init`
+    prints cannot disagree. That set holds every manifest in
+    ``decompose.ROOT_BUILD_MANIFESTS`` and more (go.mod, setup.py,
+    pom.xml, build.gradle), so a Go repository with its go.mod is not
+    refused although go.mod is not on the exclusion list.
+
+    A repository kstrl reads no language from is still let through when
+    ``[verify]`` names any command: the operator has told kstrl how the
+    project builds, which is the answer for a toolchain kstrl does not
+    recognise (a Gemfile, a Makefile).
+
+    ``read_verify=False`` is for `ks init`, which must not read
+    kstrl.toml at all: it runs beside a file that does not load
+    (tests/test_config_preflight.py). Otherwise a kstrl.toml that does
+    not load raises the ``OSError`` or ``ValueError`` of
+    ``VerifyConfig.load``, and the caller decides what that means.
+    """
+    if _detect_project_context(root)["language"] != "unknown":
+        return None
+    if read_verify:
+        config = VerifyConfig.load(root)
+        if config.test_command or config.typecheck_command or config.lint_command:
+            return None
+    return BUILD_MANIFEST_MISSING
+
+
+def _report_build_manifest(root: Path, ui: UI) -> None:
+    """Print the #434 notice in a Fix first section, or nothing."""
+    blocker = build_manifest_blocker(root, read_verify=False)
+    if blocker is None:
+        return
+    ui.section("Fix first")
+    ui.warn(blocker)
+    ui.info(BUILD_MANIFEST_FIX)
 
 
 #: H3 (#303): the per-language bodies looked up by _LANGUAGE_STANDARDS and
