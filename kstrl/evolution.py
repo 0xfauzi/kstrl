@@ -61,6 +61,14 @@ JOURNAL_SCHEMA_VERSION = 2
 # HERE reaches for the nearest spelling, which was the literal.
 SPEC_ISSUES_EVENT = "spec_issues"
 
+# #233: the event_type of the journal row recording an attempt that a
+# retry superseded. Declared here for the reason SPEC_ISSUES_EVENT
+# gives one comment up: the pipeline writes these rows and this module
+# now READS them (read_attempt_iterations), and a reader added here
+# reaches for the nearest spelling. There is one writer and one reader
+# and they share this name.
+FINDINGS_SUPERSEDED_EVENT = "findings_superseded"
+
 
 class ExperimentsDialect(csv.Dialect):
     """The ON-DISK shape of experiments.tsv, in one place (#352 round 2).
@@ -252,6 +260,220 @@ def experiment_rows(text: str) -> list[dict[str, Any]]:
         for fields in rows
         if fields and len(fields) in widths
     ]
+
+
+# ---------------------------------------------------------------------------
+# #233: per-attempt iteration readings
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class IterationReading:
+    """One run's engineer-loop iterations summed across ALL attempts.
+
+    ``measured`` is the point of the type. #233's entry criterion is read
+    off ``avg_iterations``, which is the LAST attempt's count per
+    component and therefore a lower bound; a verdict derived from a lower
+    bound reads "the loop does not iterate" on a run where it did. So a
+    reading this module cannot prove is REFUSED with a reason, never
+    returned as a smaller number.
+    """
+
+    run_id: str
+    iterations_total: int
+    attempts_total: int
+    components_ran: int
+    avg_all_attempts: float
+    measured: bool
+    reason: str
+
+
+def _refused(run_id: str, reason: str) -> IterationReading:
+    """The one shape a refusal takes, so the seven-field constructor is
+    spelled once."""
+    return IterationReading(run_id, 0, 0, 0, 0.0, False, reason)
+
+
+def _int_field(entry: dict[str, Any], key: str, where: str) -> tuple[int | None, str]:
+    """The non-negative integer at ``key``, or ``(None, reason)``.
+
+    ``bool`` is rejected explicitly: ``isinstance(True, int)`` is ``True`` in
+    Python, so a JSON ``true`` in ``iteration_count`` would silently count as 1.
+    """
+    if key not in entry:
+        return None, f"{where} carries no {key}"
+    value = entry[key]
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None, f"{where}: {key} is not a non-negative integer"
+    return value, ""
+
+
+def _component_attempt_readings(
+    result: dict[str, Any],
+    superseded: list[dict[str, Any]],
+) -> tuple[dict[int, int] | None, str]:
+    """One component's ``{attempt: iterations}``, or ``(None, reason)``."""
+    cid = str(result.get("component_id", ""))
+    retries, reason = _int_field(result, "retries", f"{cid}: component_result")
+    if retries is None:
+        return None, reason
+    final, reason = _int_field(result, "iteration_count", f"{cid}: component_result")
+    if final is None:
+        return None, reason
+    seen: dict[int, int] = {retries + 1: final}
+    for entry in superseded:
+        attempt, reason = _int_field(entry, "attempt", f"{cid}: findings_superseded")
+        if attempt is None:
+            return None, reason
+        count, reason = _int_field(entry, "iteration_count", f"{cid}: attempt {attempt}")
+        if count is None:
+            return None, reason
+        if attempt in seen:
+            return None, f"{cid}: attempt {attempt} recorded twice"
+        seen[attempt] = count
+    expected = set(range(1, retries + 2))
+    if set(seen) != expected:
+        missing = sorted(expected - set(seen))
+        if missing:
+            return None, (f"{cid}: attempts {missing} have no reading (expected 1..{retries + 1})")
+        extra = sorted(set(seen) - expected)
+        return None, (f"{cid}: unexpected attempts {extra} (expected 1..{retries + 1})")
+    return seen, ""
+
+
+def read_attempt_iterations(
+    entries: list[dict[str, Any]],
+    run_id: str,
+    components_total: int,
+) -> IterationReading:
+    """Sum every attempt's iterations for ``run_id``, refusing rather than
+    guessing when the journal cannot support the sum.
+
+    ``results`` selects on the module's own existing idiom for "this row
+    predates the ``event_type`` column, so it is a component result"
+    (``kstrl/evolution.py:1396``, ``:1418``, ``:1789``, ``:1843``), never a
+    stricter one invented here (CLAUDE.md: two definitions of a valid
+    record means the weaker one is the one the gate consults).
+
+    The join against ``components_total`` is what makes the tolerant
+    reader safe: ``_read_all_entries`` skips torn and blank lines
+    silently, so a torn ``component_result`` line is otherwise a silently
+    missing row rather than a refusal. ``components_total`` comes from
+    the same ``manifest.components`` list ``record_run`` writes rows
+    from, so the two counts are the same quantity read twice.
+    """
+    results = [
+        e
+        for e in entries
+        if e.get("event_type", "component_result") == "component_result"
+        and e.get("run_id") == run_id
+    ]
+    if len(results) != components_total:
+        return _refused(
+            run_id,
+            f"{len(results)} component_result entries for {components_total} "
+            "component(s) in the run",
+        )
+    superseded_by_component: dict[str, list[dict[str, Any]]] = {}
+    for entry in entries:
+        if entry.get("event_type") != FINDINGS_SUPERSEDED_EVENT:
+            continue
+        if entry.get("run_id") != run_id:
+            continue
+        cid = str(entry.get("component_id", ""))
+        superseded_by_component.setdefault(cid, []).append(entry)
+
+    iterations_total = 0
+    attempts_total = 0
+    components_ran = 0
+    for result in results:
+        cid = str(result.get("component_id", ""))
+        seen, reason = _component_attempt_readings(result, superseded_by_component.get(cid, []))
+        if seen is None:
+            return _refused(run_id, reason)
+        total = sum(seen.values())
+        iterations_total += total
+        attempts_total += len(seen)
+        if total > 0:
+            components_ran += 1
+
+    avg = iterations_total / components_ran if components_ran else 0.0
+    return IterationReading(
+        run_id=run_id,
+        iterations_total=iterations_total,
+        attempts_total=attempts_total,
+        components_ran=components_ran,
+        avg_all_attempts=avg,
+        measured=True,
+        reason=(
+            f"{components_ran} component(s) ran, {iterations_total} iteration(s) "
+            f"across {attempts_total} attempt(s)"
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class CriterionVerdict:
+    window: int
+    clause1: str  # "MET" | "NOT MET" | "REFUSED"
+    clause1_detail: str
+    clause2: str  # "MET" | "REFUSED"
+    clause2_detail: str
+
+
+def iteration_criterion_verdict(
+    rows: list[dict[str, Any]],
+    readings: list[IterationReading],
+) -> CriterionVerdict:
+    """#233's entry criterion, computed from the journal's per-attempt
+    readings rather than from ``avg_iterations`` (a lower bound).
+
+    No ``measured_runs`` and no ``runs_above_one`` field: nothing reads
+    them, the detail strings already carry both numbers, and an unread
+    field is weight the next reader has to check.
+    """
+    window = len(rows)
+    if window == 0:
+        return CriterionVerdict(
+            window=0,
+            clause1="REFUSED",
+            clause1_detail="no runs in the window",
+            clause2="REFUSED",
+            clause2_detail="no runs in the window",
+        )
+
+    measured = [r for r in readings if r.measured]
+    if len(measured) != window:
+        clause1 = "REFUSED"
+        clause1_detail = (
+            f"{len(measured)} of {window} run(s) measured; a verdict is not "
+            "derived from a lower bound"
+        )
+    else:
+        above = sum(1 for r in measured if r.avg_all_attempts > 1.00)
+        needed = window // 2 + 1
+        clause1 = "MET" if above >= needed else "NOT MET"
+        clause1_detail = f"{above} of {window} run(s) above 1.00; a majority needs {needed}"
+
+    projects = sorted({str(r.get("project", "")).strip() for r in rows} - {""})
+    if len(projects) >= 2:
+        clause2 = "MET"
+        clause2_detail = f"{len(projects)} distinct project value(s): {', '.join(projects)}"
+    else:
+        clause2 = "REFUSED"
+        clause2_detail = (
+            f"{len(projects)} distinct project value(s) in this ledger "
+            f"({', '.join(projects) or 'none'}); this surface reads one project "
+            "root and the criterion spans projects"
+        )
+
+    return CriterionVerdict(
+        window=window,
+        clause1=clause1,
+        clause1_detail=clause1_detail,
+        clause2=clause2,
+        clause2_detail=clause2_detail,
+    )
 
 
 # #191: what a component_result entry records when no fact-utilization
@@ -1913,6 +2135,73 @@ class EvolutionJournal:
                 exc,
             )
             return []
+
+    # ------------------------------------------------------------------
+    # #233: per-attempt iteration readings
+    # ------------------------------------------------------------------
+
+    def read_iteration_readings(self, rows: list[dict[str, Any]]) -> list[IterationReading]:
+        """One reading per experiments.tsv row, in the rows' order."""
+        entries = self._read_all_entries()
+        readings: list[IterationReading] = []
+        for row in rows:
+            run_id = str(row.get("run_id", ""))
+            raw = str(row.get("components_total", "")).strip()
+            try:
+                total = int(raw)
+            except ValueError:
+                readings.append(_refused(run_id, f"components_total is not an integer: {raw!r}"))
+                continue
+            readings.append(read_attempt_iterations(entries, run_id, total))
+        return readings
+
+    def iteration_criterion_lines(self, rows: list[dict[str, Any]]) -> list[str]:
+        """The operator-facing #233 block, rendered where the path lives.
+
+        ONE HOME, for the reason :meth:`repair_summary` gives: #352 round 2
+        moved the repair sentence here so the journal path stopped escaping
+        into the click module and the TUI, and ``EXPECTED_JOURNAL_PATH_SITES``
+        in ``tests/test_journal_one_writer.py`` pins that. A display line in
+        ``cli.py`` that reads ``config.journal_path`` would put the row back.
+        """
+        readings = self.read_iteration_readings(rows)
+        verdict = iteration_criterion_verdict(rows, readings)
+        lines = [
+            f"  journal: {self.config.journal_path}",
+            f"  window: last {verdict.window} run(s)",
+        ]
+        for reading in readings:
+            if reading.measured:
+                lines.append(
+                    f"  {reading.run_id} | "
+                    f"iterations_all_attempts={reading.avg_all_attempts:.2f} "
+                    f"({reading.reason})"
+                )
+            else:
+                lines.append(
+                    f"  {reading.run_id} | iterations_all_attempts=REFUSED: {reading.reason}"
+                )
+        lines.append(
+            "  clause 1 (journal per-attempt iterations > 1.00 in a majority "
+            f"of the window): {verdict.clause1} - {verdict.clause1_detail}"
+        )
+        lines.append(
+            "  clause 2 (at least two distinct project values): "
+            f"{verdict.clause2} - {verdict.clause2_detail}"
+        )
+        lines.append(
+            "  note: the avg_iterations column above is the LAST attempt's "
+            "count per component, a lower bound, and it is the ruler #233's "
+            "own text names. The clause 1 verdict here is computed from the "
+            "journal's per-attempt readings instead, which is a larger number, "
+            "and it never reads that column."
+        )
+        lines.append(
+            "  note: this reads one project root, and it cannot tell a smoke "
+            "run from a real project. The criterion excludes smoke runs and "
+            "spans projects, so run it per root and pool the rows."
+        )
+        return lines
 
     # ------------------------------------------------------------------
     # get_repair_count

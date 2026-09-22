@@ -315,7 +315,11 @@ EXPECTED_JOURNAL_PATH_SITES: dict[str, int] = {
     # ``evolution.py`` one more time and stops escaping into the click
     # module and the TUI at all. Two modules fewer that get hold of it
     # is the direction this guard exists to push.
-    "evolution.py: self.config.journal_path": 4,
+    #
+    # Five, not four, since #233: ``iteration_criterion_lines`` renders
+    # the operator-facing #233 block, following this same precedent, so
+    # the path is read here rather than escaping into ``cli.py``.
+    "evolution.py: self.config.journal_path": 5,
     "cli.py: config.journal_path": 2,
     "health.py: config.journal_path": 2,
     "pipeline.py: self.journal_path": 4,
