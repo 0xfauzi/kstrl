@@ -617,6 +617,13 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   `[verify] test_command` to be a single pytest invocation mutmut's
   `--runner` can wrap, reporting `tool_missing` otherwise - a behaviour
   change from before, when this check ignored `test_command` entirely.
+- The evolution journal records every engineer-loop attempt's iteration count,
+  not only the last one. A superseded attempt now always writes a
+  `findings_superseded` row, whether or not it produced findings, and that row
+  carries `iteration_count`. `ks evolve --status` prints `project`,
+  `avg_iterations` and a verdict on #233's entry criterion computed from the
+  per-attempt readings, refusing rather than guessing when a run's readings are
+  incomplete. (#233)
 
 ### Security
 

@@ -75,7 +75,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from kstrl.appendio import JOURNAL_REPAIR_EVENT
-from kstrl.evolution import SPEC_ISSUES_EVENT
+from kstrl.evolution import FINDINGS_SUPERSEDED_EVENT, SPEC_ISSUES_EVENT
 
 # Reached through the module for readability rather than for safety:
 # ``test_sources`` carries ``__test__ = False``, so a from-import of it
@@ -107,15 +107,15 @@ from tests.helpers.astwalk import (
 #: WIRE value, where the literal is the assertion rather than a second
 #: spelling of it. There is exactly one, in ``test_decompose.py``, and
 #: it is written against the bytes on disk so that layer 2 does not see
-#: it. Five more names are still bare literals (``component_result`` nine times in
+#: it. Four more names are still bare literals (``component_result`` nine times in
 #: ``evolution.py`` alone, which is exactly what layer 2 counts there,
-#: plus ``role_usage``, ``contract_result``, ``autonomy_transition`` and
-#: ``findings_superseded``); converting them is a follow-up, and
-#: enrolling each one here is what makes that follow-up enforceable
-#: rather than merely intended.
+#: plus ``role_usage``, ``contract_result`` and ``autonomy_transition``);
+#: converting them is a follow-up, and enrolling each one here is what
+#: makes that follow-up enforceable rather than merely intended.
 ENROLLED_EVENT_CONSTANTS = {
     "SPEC_ISSUES_EVENT": SPEC_ISSUES_EVENT,
     "JOURNAL_REPAIR_EVENT": JOURNAL_REPAIR_EVENT,
+    "FINDINGS_SUPERSEDED_EVENT": FINDINGS_SUPERSEDED_EVENT,
 }
 
 #: The journal column every row is written under and selected on. A bare
@@ -187,11 +187,13 @@ EXPECTED_EVENT_NAME_SPELLINGS: dict[str, int] = {
     # The architect's own JSON key, twice (validation and _parse_spec_issues),
     # plus the TUI artifact label emitted with ArtifactWritten.
     "decompose.py": 3,
-    # The SPEC_ISSUES_EVENT declaration. Was 2 until #331 moved
+    # The SPEC_ISSUES_EVENT declaration, plus the FINDINGS_SUPERSEDED_EVENT
+    # declaration #233 added (kstrl/pipeline.py's own write now imports
+    # the constant, so it folds to nothing here). Was 2 until #331 moved
     # JOURNAL_REPAIR_EVENT to appendio.py; evolution.py imports it now,
     # and an imported Name folds to nothing, which is why the count
     # dropped rather than staying put.
-    "evolution.py": 1,
+    "evolution.py": 2,
     # The TUI reading that artifact label back.
     "tui/screens/decompose.py": 1,
 }
