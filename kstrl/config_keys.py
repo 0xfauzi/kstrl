@@ -43,3 +43,26 @@ STRING_KEYS: tuple[tuple[str, str, str, str, bool], ...] = (
     ("agent", "model", "MODEL", "model", False),
     ("agent", "reasoning_effort", "MODEL_REASONING_EFFORT", "model_reasoning_effort", False),
 )
+
+#: kstrl.toml sections renamed by #395. Consulted once at command entry;
+#: a retired name REFUSES rather than being silently ignored the way an
+#: unknown one is (tests/test_config_toml.py::test_from_toml_ignores_unknown_keys
+#: pins that silence for names we never used). No alias layer: two
+#: spellings live forever and the old one never dies.
+RETIRED_SECTIONS: dict[str, str] = {"feedforward": "codebase_scan"}
+
+#: (section, key) renamed by #395, mapped to the new KEY name.
+RETIRED_KEYS: dict[tuple[str, str], str] = {
+    ("factory", "setpoint_agreement"): "claim_agreement",
+}
+
+#: Environment variables renamed by #395.
+RETIRED_ENV_VARS: dict[str, str] = {
+    "KSTRL_FACTORY_SETPOINT_AGREEMENT": "KSTRL_FACTORY_CLAIM_AGREEMENT",
+    "KSTRL_FEEDFORWARD_ENABLED": "KSTRL_CODEBASE_SCAN_ENABLED",
+    "KSTRL_FEEDFORWARD_MODULE_MAP": "KSTRL_CODEBASE_SCAN_MODULE_MAP",
+    "KSTRL_FEEDFORWARD_PUBLIC_INTERFACES": "KSTRL_CODEBASE_SCAN_PUBLIC_INTERFACES",
+    "KSTRL_FEEDFORWARD_DEPENDENCY_GRAPH": "KSTRL_CODEBASE_SCAN_DEPENDENCY_GRAPH",
+    "KSTRL_FEEDFORWARD_CONVENTIONS": "KSTRL_CODEBASE_SCAN_CONVENTIONS",
+    "KSTRL_FEEDFORWARD_MAX_TOKENS": "KSTRL_CODEBASE_SCAN_MAX_TOKENS",
+}

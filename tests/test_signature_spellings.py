@@ -171,7 +171,7 @@ class TestTheSignatureSpellingsAreInventoried:
     def test_the_net_sees_the_producers_the_other_layer_names(self) -> None:
         """Anti-vacuity, and the specific claim this layer makes: it
         finds the fourth producer without knowing that an assignment is
-        a producer, and the conditional in ``_setpoint_failure`` without
+        a producer, and the conditional in ``_claim_failure`` without
         knowing what an ``IfExp`` is.
 
         This guards the EXPECTATION, not the net: the equality above
@@ -208,7 +208,7 @@ class TestTheSignatureSpellingsAreInventoried:
         125 concatenations, none of them a signature - so it is measured
         here or it is not measured at all. A concatenation is exactly
         what somebody writes to get past a string search (#327 F9)."""
-        node = ast.parse('"review" + ":setpoint_disagreement"', mode="eval").body
+        node = ast.parse('"review" + ":claim_disagreement"', mode="eval").body
         folded = fold(node, {})
         assert folded is not None
         assert signature_head(folded) == "review"

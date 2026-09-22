@@ -2250,7 +2250,7 @@ class _PhaseRanUnexpectedly(BaseException):
     ``_phase_review`` and ``_phase_security`` wrap the agent call in
     ``except Exception`` and turn whatever they catch into a CRASHED
     result: ``passed = mode != HARD`` with ``infrastructure_error=True``.
-    A crashed sensor records no reading and retires nothing, which is
+    A crashed check records no reading and retires nothing, which is
     the same OUTCOME as the skip the tests below pin, so an exhausted
     ``next(queue)`` raising ``StopIteration`` would leave those
     assertions passing while the mechanism they exist for was gone.
@@ -2345,8 +2345,8 @@ class TestPhaseReadingsRetireSkippableFindings:
         ``ReviewResult(passed=False, mode="advisory")`` is unreachable in
         production. Where a test below queues one it stands in for the
         two ways an advisory run really does accumulate a review-rank
-        entry - an earlier hard-mode attempt, or ``_setpoint_failure``
-        under ``setpoint_agreement = "block"`` - and what is under test
+        entry - an earlier hard-mode attempt, or ``_claim_failure``
+        under ``claim_agreement = "block"`` - and what is under test
         is the attempt AFTER it.
         """
         review_queue = iter(reviews or [])
@@ -2608,8 +2608,8 @@ class TestPhaseReadingsRetireSkippableFindings:
         and nothing switches it mid-retry. What the switch buys is the
         STATE the test then asserts directly: an advisory attempt
         holding a review-rank entry from an earlier one. The production
-        route to that state is ``_setpoint_failure`` under
-        ``setpoint_agreement = "block"``, which the sibling
+        route to that state is ``_claim_failure`` under
+        ``claim_agreement = "block"``, which the sibling
         ``_pipeline`` docstring names for the same reason - both
         docstrings describe the same shortcut and now say so the same
         way.
@@ -2664,7 +2664,7 @@ class TestPhaseReadingsRetireSkippableFindings:
         refused by the #266 wall either, because ``coverage_refused``
         needs ``not passed``. #266's words for the state are "the
         verdict was reached without the whole change in hand", which is
-        the same class as a crashed sensor: it must not retire attempt
+        the same class as a crashed check: it must not retire attempt
         1's finding.
         """
         block = self._blind_review_scenario(

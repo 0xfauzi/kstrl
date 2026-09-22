@@ -370,8 +370,8 @@ every flag must do what it says or fail loudly.
     default. Click flags get `default=None` sentinels so "not passed" is
     distinguishable from "passed the default value".
   - `ks factory` and `ks run` construct every phase config via `.load()`
-    (Factory/Verify/Security/Contract/Feedforward/Evolution/Timeout); add
-    `from_env` where missing (Feedforward/Evolution/Knowledge).
+    (Factory/Verify/Security/Contract/CodebaseScan/Evolution/Timeout); add
+    `from_env` where missing (Codebase scan/Evolution/Knowledge).
   - `ks init` scaffolds a commented `kstrl.toml`.
   - Failure mode: changed effective defaults for existing setups (e.g. a toml
     `review_mode` now taking effect). Mitigation: `ks config show` (R2.4)
@@ -384,7 +384,7 @@ every flag must do what it says or fail loudly.
     `_submit_args` into `_run_component`; delete the hardcoded 30.
   - `--no-verify` actually skips Phase 1 (explicit `skip` sentinel instead of
     `None`-means-default).
-  - Wire feedforward config in the `factory` command path.
+  - Wire codebase scan config in the `factory` command path.
   - Fix the PRD-path contract: the scaffolded prompt gains an explicit
     `$prd_path` placeholder; `loop.py` substitutes the per-component PRD path;
     add a test that the rendered prompt names the same file
@@ -407,7 +407,7 @@ every flag must do what it says or fail loudly.
   - Fix remaining doc drift: distiller is pre-PR (or move it post-merge and
     keep the doc: decide in R7.3 refactor; until then fix the doc), runbook
     worktree note aligned with keep-worktree-on-failure (R3.3), test count,
-    `[sensors]`/`[fixtures]` sections removed or implemented, `ks evolve
+    `[checks]`/`[fixtures]` sections removed or implemented, `ks evolve
     --apply` promise aligned with R6.3.
 - [x] R2.6 (S) **HITL semantics + subprocess env hygiene** [MED hitl-abort, MED env-leak, MED process-group]
   - E6 "Reject" marks the component FAILED immediately (no retry loop, no
@@ -949,9 +949,9 @@ clone-install is documented truthfully as the interim.
   R1.2; prd-validate-late -> R1.8; knowledge-trust -> R1.6. LOW adversarial:
   vacuous-prd -> R1.8; nonce-order -> R1.6; anchor -> R5.3; proposal-clobber ->
   R6.2; raw-output-truncation -> R1.2 (keep full dumps like knowledge does).
-- MED verification: self-critique -> R5.4; feedforward-python-only /
+- MED verification: self-critique -> R5.4; codebase scan-python-only /
   dep-graph-bounds -> P2 honesty note in R2.5 README + bounds fix folded into
-  R2.3 feedforward wiring. LOW verification: committed-vs-working-tree,
+  R2.3 codebase scan wiring. LOW verification: committed-vs-working-tree,
   bad-patterns scope, dead-code add -A, parser blind spots, substring filter ->
   batched as a single "verification polish" PR inside R1 (non-gating,
   documented) .

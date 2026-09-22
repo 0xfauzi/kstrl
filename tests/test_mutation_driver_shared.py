@@ -151,7 +151,7 @@ def test_read_only_is_a_sidecar_because_mutmut_rewrites_source(
     run: _Run,
 ) -> None:
     """mutmut REWRITES the file it mutates, so neither check can run
-    under ``ks sense`` (``read_only=True``) at all - the byte-identical
+    under ``ks check`` (``read_only=True``) at all - the byte-identical
     ``_MUTMUT_READ_ONLY_DETAIL`` both checks return
     (``kstrl/verify.py``)."""
     _repo(tmp_path)

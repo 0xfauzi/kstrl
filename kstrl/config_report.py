@@ -265,7 +265,7 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
         ),
         ("contract", ["mode", "test_command", "timeout"]),
         (
-            "feedforward",
+            "codebase_scan",
             [
                 "enabled",
                 "module_map",

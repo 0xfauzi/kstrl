@@ -39,7 +39,7 @@ What this does NOT cover, and why ``PRD.tamper_changes`` stays: scope is
 only one of the things Phase 1 reads out of the component PRD. The
 stories reach ``verify.check_prd_stories``, the fixtures reach
 ``fixtures.check_fixtures_from_prd``, the criteria reach the reviewer
-and the R10.3 set-point sensor. Those readers need the LIVE file,
+and the R10.3 claim check. Those readers need the LIVE file,
 because the agent setting ``passes`` is the whole job, so they cannot be
 served from a snapshot and the comparison is still the only answer
 available for them.

@@ -70,7 +70,7 @@ REGISTER_MISSING = "missing"
 REGISTER_UNREADABLE = "unreadable"
 
 #: Token budget for the OTHER-component tier of the engineer block, in
-#: the 4-chars-per-token convention the feedforward and knowledge layers
+#: the 4-chars-per-token convention the codebase scan and knowledge layers
 #: already use.
 #:
 #: It bounds that tier ALONE, and the name says so. Round 1 called it
@@ -92,7 +92,7 @@ REGISTER_UNREADABLE = "unreadable"
 #: with a cap.
 MAX_OTHER_DECISION_TOKENS = 2000
 
-#: The harness-wide estimate feedforward and knowledge also use.
+#: The harness-wide estimate codebase scan and knowledge also use.
 _CHARS_PER_TOKEN = 4
 
 DECISIONS_CONTEXT_PROMPT_VERSION = "1.0.0"

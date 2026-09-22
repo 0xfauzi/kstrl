@@ -15,7 +15,7 @@ Companion docs:
 
 ## The loops
 
-kstrl is a software factory built as a control loop, and it is easier to read
+kstrl is a software factory built as a loop, and it is easier to read
 as several loops nested inside each other than as one pipeline. Each loop has
 a target it steers toward, something that acts, something that measures the
 result independently of the thing that acted, and a clock. The phase chain in
@@ -42,7 +42,7 @@ nothing.
 
 Which loops are closed today, which wind up, and which are open, with the
 code cited line by line, is in
-[docs/control-loop-design.md](docs/control-loop-design.md). The plan that
+[docs/loop-design.md](docs/loop-design.md). The plan that
 closes the rest is the R10 milestone.
 
 ## The pipeline: one tick of the accept and integrate loops
@@ -54,12 +54,12 @@ Phase 0 also includes an architect/PRD-red-team pass at decompose time
 that halts on blocker-severity spec issues; its findings persist to
 `scripts/kstrl/spec-issues.json`.
 
-Phase numbering is sticky by convention: Phase 0 feedforward, Phase 1
+Phase numbering is sticky by convention: Phase 0 codebase scan, Phase 1
 mechanical verification, Phase 2 code review, Phase 2.5 security review,
 Phase 3 contract testing. New phases get fractional numbers so ordering
 semantics never change.
 
-### Phase 0: Feedforward
+### Phase 0: Codebase scan
 
 Computed fresh each iteration - no LLM calls, no token cost:
 
@@ -70,7 +70,7 @@ Computed fresh each iteration - no LLM calls, no token cost:
 - **Active conventions** - line length, quote style, type-checking mode
   from pyproject.toml, ruff.toml, .editorconfig
 
-Feedforward is distinct from the knowledge prefix: feedforward is
+Codebase scan is distinct from the knowledge prefix: codebase scan is
 *computed* from the current tree; knowledge facts are *distilled* by an
 LLM from prior components' verified work and re-validated on read.
 
@@ -79,7 +79,7 @@ order is one literal tuple in `factory._run_component` rather than a
 sequence of appends: distilled knowledge, the operator's golden patterns
 (`scripts/kstrl/golden-patterns.md`, written by hand and read verbatim
 from the repo root, never from the component's worktree), the architect's
-decisions, the feedforward context, the previous attempt's retry context,
+decisions, the codebase scan context, the previous attempt's retry context,
 then the operator's memory file (`scripts/kstrl/memory.md`, read the same
 way). Memory is last on purpose: the retry context is the controller's
 output for this attempt, and memory is the operator's standing correction
@@ -122,12 +122,12 @@ prompt is assembled once, before the `for` loop (`kstrl/loop.py`), and the
 same string is sent on every iteration. Information crosses an iteration
 boundary only through the files the agent itself writes (the PRD, the
 progress log, the codebase map). Nothing measures the tree between
-iterations; every sensor sits one loop up, in the phase chain above. Adding a
-fast sensor here is R10.12, gated on evidence that the loop actually iterates
+iterations; every check sits one loop up, in the phase chain above. Adding a
+fast check here is R10.12, gated on evidence that the loop actually iterates
 (in the recorded runs so far it completes on iteration one).
 
 What reaches `EngineerLoop` is the next failing story, the stall verdict,
-the scope verdict, and last attempt's failures. No sensor feeds the inner
+the scope verdict, and last attempt's failures. No check feeds the inner
 loop directly. The two measuring components that do feed anything, the
 findings store and the contract tester, feed the
 pipeline and the scheduler, never the loop.
@@ -307,12 +307,11 @@ each maps to.
 |---|---|
 | plant | the thing being changed: the target repository, and after release, the running service |
 | set point | the state a loop steers toward: acceptance criteria, the policy envelope, the adequacy floor |
-| sensor | anything that measures the plant independently of the agent that changed it |
-| measurement versus claim | a claim is what the agent says about its work (the `passes` flag, the completion marker); a measurement is what a sensor reads from the diff. Claims are rendered; measurements gate |
-| finding | the typed record every sensor emits when the work misses the set point; the error signal |
+| check | anything that measures the plant independently of the agent that changed it |
+| measurement versus claim | a claim is what the agent says about its work (the `passes` flag, the completion marker); a measurement is what a check reads from the diff. Claims are rendered; measurements gate |
+| finding | the typed record every check emits when the work misses the set point; the error signal |
 | controller | the code that turns findings into the next action: retry, halt, merge, demote |
-| actuator | the engineer agent; later, the release driver |
-| feedforward | context computed from the tree and given to the agent before it acts (Phase 0) |
+| codebase scan | context computed from the tree and given to the agent before it acts (Phase 0) |
 | disturbance | change the loop did not command: model non-determinism, transport failures, a moving base branch |
 | retry context | the parsed failures handed to the next attempt |
 | breaker | the stall detector: halts a component after N iterations with an unchanged diff and test signature |

@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from kstrl.policy import PolicyConfig
 
     # Annotation only, and the cheapest available: with
-    # `from __future__ import annotations` above, _sense_document's
+    # `from __future__ import annotations` above, _check_document's
     # signature is a string at run time and this block never executes.
     # Not a deferral - line 104 already imports kstrl.verify at module
     # scope, so it is on `ks --help`'s import path either way (measured
@@ -32,7 +32,7 @@ from dataclasses import replace
 import click
 from click.core import ParameterSource
 
-from kstrl import __version__, dampener, dampener_report
+from kstrl import __version__, baseline, baseline_report
 from kstrl.agents import (
     AGENT_TYPE_ALIASES,
     ClaudeCodeAgent,
@@ -545,7 +545,7 @@ def _collect_evolution_notes(
     loader here that can raise. Measured on this tree, `ks factory`
     exits 1 with a raw ValueError traceback under
     ``KSTRL_MUTATION_THRESHOLD=many`` and ``KSTRL_SECURITY_TIMEOUT=many``
-    too, and the toml paths of verify, security, contract, feedforward
+    too, and the toml paths of verify, security, contract, codebase scan
     and timeout raise the same way. Five sibling loads in this command
     are still unguarded.
 
@@ -634,7 +634,7 @@ def _timestamp() -> str:
 #   with its key and value. That guarantee is what makes universal
 #   fatality defensible without an escape flag: the way out of a bad
 #   config is a command, not a way to skip the check.
-# - `ks sense` reports a config failure through a documented MACHINE
+# - `ks check` reports a config failure through a documented MACHINE
 #   contract that the seam would destroy: exit 2 (not 1) and a JSON
 #   error document on stdout for `--json`. It calls the preflight
 #   itself, under that contract.
@@ -649,7 +649,7 @@ def _timestamp() -> str:
 #
 # The last four are exempt from the SEAM, never from the check: each
 # still resolves every section in its own body, under its own
-# contract, but not all of them the same way. `sense` and `serve` call
+# contract, but not all of them the same way. `check` and `serve` call
 # `preflight_config` and turn a rejection into their own documented
 # refusal; `config show` and `doctor` REPORT instead, through the
 # reporting half of the same traversal (`collect_config_problems` /
@@ -664,7 +664,7 @@ def _timestamp() -> str:
 # Keyed by the TOP-LEVEL command name (see `_KstrlCommand._top_level_name`),
 # so `ks config show` is covered by "config" while a later `ks queue init`
 # is not exempted by its leaf name.
-_PREFLIGHT_EXEMPT = frozenset({"init", "config", "sense", "doctor"})
+_PREFLIGHT_EXEMPT = frozenset({"init", "config", "check", "doctor"})
 
 # Sections a command is ABOUT, promoted from degrading to fatal for that
 # command only. `[evolution]` degrades everywhere because the journal is
@@ -696,7 +696,7 @@ _ROOT_FROM_PROMPT = frozenset({"run", "understand", "feature"})
 def _preflight_warn(message: str) -> None:
     """A degrading section's warning, on STDERR.
 
-    Stdout belongs to the command's output, and `ks sense --json` puts a
+    Stdout belongs to the command's output, and `ks check --json` puts a
     single JSON document there that a script parses.
     """
     click.echo(f"warning: {message}", err=True)
@@ -1137,7 +1137,7 @@ def run(
 
     # Single-component factory invocation
     from kstrl.config import load_toml_section
-    from kstrl.feedforward import FeedforwardConfig
+    from kstrl.feedforward import CodebaseScanConfig
     from kstrl.manifest import Manifest
     from kstrl.security import SecurityConfig
     from kstrl.verify import VerifyConfig
@@ -1171,7 +1171,7 @@ def run(
     # definition a local, single-component, no-PR invocation.
     # R2.3: --no-verify sets the explicit skip sentinel; passing
     # verify_config=None meant "use defaults" in run_factory and Phase 1
-    # ran anyway. Feedforward is independent of --no-verify (it builds
+    # ran anyway. Codebase scan is independent of --no-verify (it builds
     # context, not checks).
     factory_cfg = FactoryConfig.load(root_dir)
     # Issue #207: say which configured knobs the forcing below overrides,
@@ -1188,7 +1188,7 @@ def run(
     factory_cfg.skip_verification = no_verify
     factory_cfg.security_config = SecurityConfig.load(root_dir)
     factory_cfg.contract_config = None
-    factory_cfg.feedforward_config = FeedforwardConfig.load(root_dir)
+    factory_cfg.codebase_scan_config = CodebaseScanConfig.load(root_dir)
     factory_cfg.timeout_config = TimeoutConfig.load(root_dir)
     factory_cfg.force_lock = force_lock
     # `ks run` reviews in advisory mode unless the project's
@@ -2173,7 +2173,7 @@ def decompose(
 
     # decompose_spec takes a `str` base and runs it through
     # validate_branch_name, so the flag's None is resolved here rather
-    # than deeper, the way `ks sense` already resolves --base (#259).
+    # than deeper, the way `ks check` already resolves --base (#259).
     effective_base = resolve_base_branch(base_branch, root_dir)
 
     def _decompose_core(core_ui: UI, command_run: CommandRun) -> int:
@@ -2710,7 +2710,7 @@ def factory(
     # sentinels so "not passed" is distinguishable from "passed the
     # default value", and an explicitly-passed flag is applied on top.
     from kstrl.contract import ContractConfig
-    from kstrl.feedforward import FeedforwardConfig
+    from kstrl.feedforward import CodebaseScanConfig
     from kstrl.security import SecurityConfig
     from kstrl.verify import VerifyConfig
 
@@ -2873,12 +2873,12 @@ def factory(
         contract_resolved if contract_resolved.mode != "skip" else None
     )
 
-    ff_config = FeedforwardConfig.load(root_dir)
+    ff_config = CodebaseScanConfig.load(root_dir)
     _collect_toml_notes(
         toml_notes,
-        "feedforward",
+        "codebase_scan",
         ff_config,
-        FeedforwardConfig.from_env(),
+        CodebaseScanConfig.from_env(),
         flag_overridden=set(),
     )
 
@@ -2912,7 +2912,7 @@ def factory(
     factory_config.verify_config = v_config
     factory_config.security_config = s_config
     factory_config.contract_config = c_config
-    factory_config.feedforward_config = ff_config
+    factory_config.codebase_scan_config = ff_config
     factory_config.timeout_config = timeout_config
 
     # Display summary and confirm (resolved values, not raw flags)
@@ -3670,32 +3670,38 @@ def status(
 #: on #306; a reader must not read an empty array as "everything
 #: enabled was measured".
 #:
-#: #227 added a ``dampener`` key and did NOT bump this again, on the rule
+#: #227 added a ``baseline`` key and did NOT bump this again, on the rule
 #: the v2 and v3 bumps were made under: a bump is for an addition that
 #: changes what an EXISTING key means. That key is absent exactly when
 #: ``--compare-baseline`` was not asked for, it restates nothing, and a
 #: reader that does not know it ignores it.
-SENSE_SCHEMA_VERSION = 3
+#:
+#: v4 (#395): the ``baseline`` key was called ``dampener`` through v3.
+#: Renaming an EXISTING key is strictly louder than the additions that
+#: earned v2 and v3, so this bumps. A v3 reader looking for ``dampener``
+#: finds nothing under v4; there is no alias, because this document's
+#: keys retire by rename the same way a retired kstrl.toml name does.
+CHECK_SCHEMA_VERSION = 4
 
 
-def _sense_document(
+def _check_document(
     path: Path,
     base: str,
     result: VerificationResult,
-    dampener_block: dict[str, Any] | None = None,
+    baseline_block: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """The ``ks sense --json`` document, at :data:`SENSE_SCHEMA_VERSION`.
+    """The ``ks check --json`` document, at :data:`CHECK_SCHEMA_VERSION`.
 
-    Its own function because it is a published contract and ``sense``
+    Its own function because it is a published contract and ``check``
     is a 200-line command: a reader checking what the current schema
     promises should not have to find it among the preflight, the base
     resolution and the terminal rendering.
 
-    ``dampener_block`` is the #227 comparison, present only when
+    ``baseline_block`` is the #227 comparison, present only when
     ``--compare-baseline`` was given and omitted entirely otherwise.
     """
     document: dict[str, Any] = {
-        "schema_version": SENSE_SCHEMA_VERSION,
+        "schema_version": CHECK_SCHEMA_VERSION,
         "path": str(path),
         "base_branch": base,
         "passed": result.passed,
@@ -3716,66 +3722,66 @@ def _sense_document(
         # Empty for a tree where every enabled check measured something.
         "not_measured": [gap.to_dict() for gap in result.not_measured],
     }
-    if dampener_block is not None:
-        document["dampener"] = dampener_block
+    if baseline_block is not None:
+        document["baseline"] = baseline_block
     return document
 
 
-def _sense_verify_digest(
+def _check_verify_digest(
     verify_cfg: VerifyConfig,
     path: Path,
     *,
-    mode: dampener.Mode | None,
+    mode: baseline.Mode | None,
     as_json: bool,
 ) -> str:
     """The digest of HOW this run measures, and the refusal of a foreign baseline.
 
     Its own function for two reasons. It is the one place a comparison is
     refused for having been measured differently, so a reader looking for that
-    rule finds it whole. And ``sense`` is held at its cognitive number by a
+    rule finds it whole. And ``check`` is held at its cognitive number by a
     gate that fails rather than advises: inlined, this cost three points.
 
     Placed after the config load, because the digest is a function of the
-    RESOLVED commands and the timeout, and still before the sensors: a
+    RESOLVED commands and the timeout, and still before the checks: a
     comparison that cannot be trusted is refused in a tenth of a second rather
     than after five minutes of measurement.
     """
     from kstrl.verify import resolve_verify_commands
 
-    digest = dampener.verify_digest(
+    digest = baseline.verify_digest(
         resolve_verify_commands(verify_cfg, path),
         verify_cfg.subprocess_timeout,
     )
-    if isinstance(mode, dampener.CompareMode):
+    if isinstance(mode, baseline.CompareMode):
         try:
-            dampener.refuse_foreign_baseline(mode.baseline, digest)
-        except dampener.BaselineError as exc:
-            _sense_error(str(exc), as_json)
+            baseline.refuse_foreign_baseline(mode.baseline, digest)
+        except baseline.BaselineError as exc:
+            _check_error(str(exc), as_json)
     return digest
 
 
-def _sense_dampener_report(
+def _check_baseline_report(
     path: Path,
     base: str,
     result: VerificationResult,
     *,
-    mode: dampener.Mode,
+    mode: baseline.Mode,
     as_json: bool,
     digest: str,
 ) -> NoReturn:
-    """The #227 dampener's own output, printed instead of the check table.
+    """The #227 baseline's own output, printed instead of the check table.
 
-    ``--write-baseline`` exits on the SENSOR's verdict, because writing a
+    ``--write-baseline`` exits on the CHECK's verdict, because writing a
     baseline is a measurement of the tree. ``--compare-baseline`` exits on the
     COMPARISON and never on ``result.passed``: a red tree is the normal state
     for the brownfield repository this exists for, and the issue's own
     acceptance requires exit 0 on a tree carrying a fresh E501.
 
     ``mode`` already carries the baseline on the compare side, read before the
-    sensors ran, so there is nothing here to fetch and nothing to assert about
+    checks ran, so there is nothing here to fetch and nothing to assert about
     two functions having agreed offstage.
     """
-    current = dampener.baseline_from_result(
+    current = baseline.baseline_from_result(
         result,
         base_ref=get_head_sha(path),
         # `owner/repo` from origin, never the directory name: every kstrl lane
@@ -3784,24 +3790,24 @@ def _sense_dampener_report(
         # comparison in a normal checkout report a mismatch that means nothing.
         project=get_origin_slug(path) or path.name,
         generated_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        sense_schema_version=SENSE_SCHEMA_VERSION,
+        check_schema_version=CHECK_SCHEMA_VERSION,
         digest=digest,
     )
-    if isinstance(mode, dampener.WriteMode):
+    if isinstance(mode, baseline.WriteMode):
         try:
-            dampener.write_baseline(mode.path, current, force=mode.force)
-        except (OSError, dampener.BaselineError) as exc:
-            _sense_error(str(exc), as_json)
-        click.echo(dampener.write_summary_line(mode.path, current))
+            baseline.write_baseline(mode.path, current, force=mode.force)
+        except (OSError, baseline.BaselineError) as exc:
+            _check_error(str(exc), as_json)
+        click.echo(baseline.write_summary_line(mode.path, current))
         sys.exit(0 if result.passed else 1)
 
-    comparison = dampener.compare(mode.baseline, current)
+    comparison = baseline.compare(mode.baseline, current)
     if as_json:
-        block = dampener_report.comparison_document(comparison, mode.baseline, current, mode.path)
-        click.echo(json.dumps(_sense_document(path, base, result, block), indent=2))
-    elif mode.output_format == dampener.FORMAT_MARKDOWN:
+        block = baseline_report.comparison_document(comparison, mode.baseline, current, mode.path)
+        click.echo(json.dumps(_check_document(path, base, result, block), indent=2))
+    elif mode.output_format == baseline.FORMAT_MARKDOWN:
         click.echo(
-            dampener_report.render_markdown(
+            baseline_report.render_markdown(
                 comparison,
                 mode.baseline,
                 mode.path,
@@ -3809,17 +3815,17 @@ def _sense_dampener_report(
             )
         )
     else:
-        for line in dampener_report.render_human(comparison, mode.baseline, mode.path):
+        for line in baseline_report.render_human(comparison, mode.baseline, mode.path):
             click.echo(line)
-    sys.exit(dampener.exit_code_for(comparison, fail_on_regression=mode.fail_on_regression))
+    sys.exit(baseline.exit_code_for(comparison, fail_on_regression=mode.fail_on_regression))
 
 
-def _sense_report(
+def _check_report(
     path: Path,
     base: str,
     result: VerificationResult,
     *,
-    mode: dampener.Mode | None,
+    mode: baseline.Mode | None,
     as_json: bool,
     ui: str,
     no_color: bool,
@@ -3827,23 +3833,23 @@ def _sense_report(
 ) -> NoReturn:
     """Print the measurement and exit: 0 when every check passed, 1 otherwise.
 
-    Its own function because ``sense`` is a 200-line command that was at
+    Its own function because ``check`` is a 200-line command that was at
     cyclomatic 9 against a gate of 10, and the rendering is the half of it
     that has nothing to do with deciding WHAT to measure. Lifting it out is
-    what left room for the dampener branch in the command body: measured
-    against the ratchet's pinned ruff, ``sense`` is at 7 with this extracted
+    what left room for the baseline branch in the command body: measured
+    against the ratchet's pinned ruff, ``check`` is at 7 with this extracted
     and the branch added.
     """
     if mode is not None:
-        _sense_dampener_report(path, base, result, mode=mode, as_json=as_json, digest=digest)
+        _check_baseline_report(path, base, result, mode=mode, as_json=as_json, digest=digest)
 
     if as_json:
-        click.echo(json.dumps(_sense_document(path, base, result), indent=2))
+        click.echo(json.dumps(_check_document(path, base, result), indent=2))
         sys.exit(0 if result.passed else 1)
 
     force_rich = os.environ.get("GUM_FORCE") == "1"
     ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
-    ui_impl.section("ks sense")
+    ui_impl.section("ks check")
     ui_impl.kv("Path", str(path))
     ui_impl.kv("Base branch", base)
     ui_impl.info("")
@@ -3855,17 +3861,17 @@ def _sense_report(
     ui_impl.info("")
     failed = sum(1 for c in result.checks if not c.passed)
     if result.passed:
-        ui_impl.ok("sense: PASS")
+        ui_impl.ok("check: PASS")
         sys.exit(0)
-    ui_impl.err(f"sense: FAIL ({failed} of {len(result.checks)} checks failed)")
+    ui_impl.err(f"check: FAIL ({failed} of {len(result.checks)} checks failed)")
     sys.exit(1)
 
 
-def _sense_error(
+def _check_error(
     message: str,
     as_json: bool,
     *,
-    schema_version: int = SENSE_SCHEMA_VERSION,
+    schema_version: int = CHECK_SCHEMA_VERSION,
 ) -> NoReturn:
     """Exit 2: the measurement itself could not run.
 
@@ -3877,7 +3883,7 @@ def _sense_error(
     contract in the PR body without going through it: printing the
     JSON error document is what ``--json`` on a refusal means, and a
     caller with its own schema names it with ``schema_version`` rather
-    than getting sense's.
+    than getting check's.
     """
     click.echo(f"error: {message}", err=True)
     if as_json:
@@ -3889,18 +3895,18 @@ def _sense_error(
     sys.exit(2)
 
 
-def _sense_needs_diff(
+def _check_needs_diff(
     verify_cfg: VerifyConfig,
     policy_cfg: PolicyConfig,
     adequacy_cfg: AdequacyConfig,
 ) -> bool:
-    """Whether a check `ks sense` is about to run reads ``git diff``.
+    """Whether a check `ks check` is about to run reads ``git diff``.
 
     ``diff_scope`` and ``bad_patterns`` consume the diff through the
     LENIENT git helpers, which map a bad ref, a missing base or a
     non-repository onto an EMPTY file list, indistinguishable from
     "nothing changed". diff_scope then reports "0 files, all within
-    scope", bad_patterns "scanned 0 Python files", and ``ks sense`` exits
+    scope", bad_patterns "scanned 0 Python files", and ``ks check`` exits
     0 having measured nothing. So the answer here gates one strict read
     up front, and cannot-measure becomes exit 2.
 
@@ -3912,7 +3918,7 @@ def _sense_needs_diff(
     gap they have to read the JSON to find, not because it is the only
     thing standing between them and a false pass.
 
-    ``mutation_testing`` is deliberately absent: sense skips that check
+    ``mutation_testing`` is deliberately absent: check skips that check
     outright (read-only), so its diff read never happens and demanding a
     base for it would be a false exit 2.
 
@@ -3924,7 +3930,7 @@ def _sense_needs_diff(
     stopped implying a diff is needed, and demanding one there is the
     same false exit 2 mutation_testing is excluded for.
 
-    Its own function because ``sense`` is grandfathered at the cognitive
+    Its own function because ``check`` is grandfathered at the cognitive
     ratchet, so the extra clause is a refusal at commit time if it stays
     inline - and because "does anything here need a base" now has an
     answer worth stating once.
@@ -3980,24 +3986,24 @@ def _sense_needs_diff(
     # 8.4.2: `--write-baseline --force` does not swallow `--force` as the
     # value, and the sentinel does not appear in `--help`.
     is_flag=False,
-    flag_value=dampener.OPTIONAL_VALUE_SENTINEL,
+    flag_value=baseline.OPTIONAL_VALUE_SENTINEL,
     default=None,
     type=str,
     metavar="[PATH]",
     help="Record the current signature counts as a baseline "
-    "(default: scripts/kstrl/sense-baseline.json; a relative PATH is "
+    "(default: scripts/kstrl/baseline.json; a relative PATH is "
     "resolved under --root)",
 )
 @click.option(
     "--compare-baseline",
     "compare_baseline",
     is_flag=False,
-    flag_value=dampener.OPTIONAL_VALUE_SENTINEL,
+    flag_value=baseline.OPTIONAL_VALUE_SENTINEL,
     default=None,
     type=str,
     metavar="[PATH]",
     help="Report what this tree added to a recorded baseline "
-    "(default: scripts/kstrl/sense-baseline.json; a relative PATH is "
+    "(default: scripts/kstrl/baseline.json; a relative PATH is "
     "resolved under --root)",
 )
 @click.option(
@@ -4014,7 +4020,7 @@ def _sense_needs_diff(
 @click.option(
     "--format",
     "output_format",
-    type=click.Choice([dampener.FORMAT_HUMAN, dampener.FORMAT_MARKDOWN]),
+    type=click.Choice([baseline.FORMAT_HUMAN, baseline.FORMAT_MARKDOWN]),
     # None, not "human", so an explicit --format human can be told apart from
     # the default and refused alongside the other flags that would do nothing.
     default=None,
@@ -4037,7 +4043,7 @@ def _sense_needs_diff(
     is_flag=True,
     help="Disable colors",
 )
-def sense(
+def check(
     root: Path | None,
     tree_path: Path | None,
     base_branch: str | None,
@@ -4052,7 +4058,7 @@ def sense(
     ui: str,
     no_color: bool,
 ) -> None:
-    """Run the mechanical sensors against a tree and print the measurement.
+    """Run the mechanical checks against a tree and print the measurement.
 
     R10.1: the same checks Phase 1 runs inside the factory (test suite,
     typecheck, linter, diff scope, bad patterns, plus any opt-in
@@ -4088,21 +4094,21 @@ def sense(
     one. The comparison is ADVISORY - it exits 0 whether or not it found a
     regression - until --fail-on-regression is passed. Its exit code never
     follows result.passed, because a red tree is the normal state for the
-    brownfield repositories the dampener exists for.
+    brownfield repositories the baseline exists for.
     """
     root_dir = root.resolve() if root else Path.cwd()
     path = tree_path.resolve() if tree_path else root_dir
 
     if not root_dir.is_dir():
-        _sense_error(f"root is not a directory: {root_dir}", as_json)
+        _check_error(f"root is not a directory: {root_dir}", as_json)
     if not path.is_dir():
-        _sense_error(f"path is not a directory: {path}", as_json)
+        _check_error(f"path is not a directory: {path}", as_json)
 
-    # Before the sensors, not after: a full run here costs minutes, so a
+    # Before the checks, not after: a full run here costs minutes, so a
     # refused flag combination or an unreadable baseline is reported in a
     # tenth of a second rather than after the test suite.
     try:
-        mode = dampener.resolve_mode(
+        mode = baseline.resolve_mode(
             write_baseline=write_baseline,
             compare_baseline=compare_baseline,
             force=force,
@@ -4111,8 +4117,8 @@ def sense(
             as_json=as_json,
             root_dir=root_dir,
         )
-    except (dampener.DampenerUsage, dampener.BaselineError) as exc:
-        _sense_error(str(exc), as_json)
+    except (baseline.BaselineUsage, baseline.BaselineError) as exc:
+        _check_error(str(exc), as_json)
 
     from kstrl.adequacy import AdequacyConfig
     from kstrl.config_preflight import preflight_config
@@ -4122,7 +4128,7 @@ def sense(
 
     try:
         # The WHOLE configuration, not only the four sections this
-        # command reads. `sense` is exempt from the entry seam because
+        # command reads. `check` is exempt from the entry seam because
         # its contract is exit 2 plus a JSON error document rather than
         # the seam's exit 1, and an exemption is only honest if the
         # command does the same check: checking four of twenty-two
@@ -4137,13 +4143,13 @@ def sense(
         # ValueError covers malformed TOML (load_toml_section), the
         # preflight's ConfigError, and the loaders' own validation
         # errors (PolicyConfigError is one).
-        _sense_error(f"could not load kstrl.toml from {root_dir}: {exc}", as_json)
+        _check_error(f"could not load kstrl.toml from {root_dir}: {exc}", as_json)
 
-    digest = _sense_verify_digest(verify_cfg, path, mode=mode, as_json=as_json)
+    digest = _check_verify_digest(verify_cfg, path, mode=mode, as_json=as_json)
 
     base = resolve_base_branch(base_branch, path)
 
-    if _sense_needs_diff(verify_cfg, policy_cfg, adequacy_cfg):
+    if _check_needs_diff(verify_cfg, policy_cfg, adequacy_cfg):
         # Ask git the same question once, strictly, before any check
         # runs. Cannot-measure is exit 2; it is never a pass.
         from kstrl import git as _git
@@ -4154,7 +4160,7 @@ def sense(
             origin = (
                 "from --base" if base_branch else "auto-detected; name the right one with --base"
             )
-            _sense_error(
+            _check_error(
                 f"git cannot measure the diff against {base!r} ({origin}): {exc}",
                 as_json,
             )
@@ -4173,7 +4179,7 @@ def sense(
         read_only=True,
     )
 
-    _sense_report(
+    _check_report(
         path,
         base,
         result,
@@ -4210,13 +4216,13 @@ def doctor(root: Path | None, as_json: bool, measure: bool) -> None:
     from kstrl import doctor as doctor_mod
 
     if measure:
-        _sense_error(
+        _check_error(
             doctor_mod.MEASURE_NOT_BUILT, as_json, schema_version=doctor_mod.DOCTOR_SCHEMA_VERSION
         )
 
     root_dir = (root or Path.cwd()).resolve()
     if not root_dir.is_dir():
-        _sense_error(
+        _check_error(
             f"root is not a directory: {root_dir}",
             as_json,
             schema_version=doctor_mod.DOCTOR_SCHEMA_VERSION,

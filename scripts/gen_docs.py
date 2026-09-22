@@ -149,7 +149,7 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.divergence import DivergenceConfig
     from kstrl.evolution import EvolutionConfig
     from kstrl.factory import FactoryConfig
-    from kstrl.feedforward import FeedforwardConfig
+    from kstrl.feedforward import CodebaseScanConfig
     from kstrl.fixtures import FixturesConfig
     from kstrl.inbox import InboxConfig
     from kstrl.intake_github import GitHubIntakeConfig
@@ -259,7 +259,7 @@ def _section_specs() -> list[SectionSpec]:
                     "single_pr",
                     "create_prs",
                     "review_mode",
-                    "setpoint_agreement",
+                    "claim_agreement",
                     "merge_timeout",
                     "max_adversarial_calls",
                     "max_total_tokens",
@@ -386,14 +386,14 @@ def _section_specs() -> list[SectionSpec]:
             probe_undocumented_fields=True,
         ),
         SectionSpec(
-            "feedforward",
-            "Phase 0 feedforward (computational, no LLM)",
+            "codebase_scan",
+            "Phase 0 codebase scan (computational, no LLM)",
             identity_keys(
-                FeedforwardConfig,
-                _all_field_names(FeedforwardConfig),
+                CodebaseScanConfig,
+                _all_field_names(CodebaseScanConfig),
             ),
-            lambda root: FeedforwardConfig.load(root_dir=root),
-            FeedforwardConfig(),
+            lambda root: CodebaseScanConfig.load(root_dir=root),
+            CodebaseScanConfig(),
             probe_undocumented_fields=True,
         ),
         SectionSpec(
@@ -496,7 +496,7 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("factory", "single_pr"): "one PR for the whole run instead of per-component",
     ("factory", "create_prs"): "push + merge PRs via gh",
     ("factory", "review_mode"): "hard | advisory | skip (Phase 2)",
-    ("factory", "setpoint_agreement"): (
+    ("factory", "claim_agreement"): (
         "advisory | block: what to do when the reviewer does not confirm a "
         "story the engineer marked passes=true (R10.3)"
     ),
@@ -687,12 +687,12 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("contract", "mode"): "tier | final | skip",
     ("contract", "test_command"): "integration test command on merged tiers",
     ("contract", "timeout"): "seconds per contract test run",
-    ("feedforward", "enabled"): "inject structural context into the prompt",
-    ("feedforward", "module_map"): "directory tree with LOC counts",
-    ("feedforward", "public_interfaces"): "public symbols via Python ast",
-    ("feedforward", "dependency_graph"): "internal import analysis (Python only)",
-    ("feedforward", "conventions"): "extract from pyproject.toml, ruff.toml, ...",
-    ("feedforward", "max_context_tokens"): "cap to avoid prompt bloat",
+    ("codebase_scan", "enabled"): "inject structural context into the prompt",
+    ("codebase_scan", "module_map"): "directory tree with LOC counts",
+    ("codebase_scan", "public_interfaces"): "public symbols via Python ast",
+    ("codebase_scan", "dependency_graph"): "internal import analysis (Python only)",
+    ("codebase_scan", "conventions"): "extract from pyproject.toml, ruff.toml, ...",
+    ("codebase_scan", "max_context_tokens"): "cap to avoid prompt bloat",
     ("knowledge", "enabled"): "distill + inject durable facts",
     ("knowledge", "max_core_tokens"): "current component's facts (full text)",
     ("knowledge", "max_dependency_tokens"): "dependency facts (full text)",
@@ -730,7 +730,7 @@ ENUM_SENTINELS: dict[tuple[str, str], str | float] = {
     ("agent", "budget_usd"): 123.5,
     ("agent", "reasoning_effort"): "high",
     ("factory", "review_mode"): "advisory",
-    ("factory", "setpoint_agreement"): "block",
+    ("factory", "claim_agreement"): "block",
     ("security", "mode"): "hard",
     ("security", "fail_threshold"): "low",
     ("policy", "license_unresolved"): "advisory",

@@ -116,13 +116,13 @@ _BUILDERS: tuple[tuple[ModuleType, str, tuple[str, ...]], ...] = (
     ),
     (
         review,
-        "SETPOINT_RETRY_PROMPT_VERSION",
+        "CLAIM_RETRY_PROMPT_VERSION",
         (
-            "SETPOINT_RETRY_PROMPT",
-            "SETPOINT_REVERTED_PROMPT",
-            "SETPOINT_NOT_REVERTED_PROMPT",
-            "SETPOINT_PARTIALLY_JUDGED_PROMPT",
-            "SETPOINT_NO_VERDICT_PROMPT",
+            "CLAIM_RETRY_PROMPT",
+            "CLAIM_REVERTED_PROMPT",
+            "CLAIM_NOT_REVERTED_PROMPT",
+            "CLAIM_PARTIALLY_JUDGED_PROMPT",
+            "CLAIM_NO_VERDICT_PROMPT",
         ),
     ),
     (
@@ -340,23 +340,23 @@ BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "7cc370f16b5c5dcf54c778a8d62b22f8fcfe812cb589ccc0dd950786e7e4c442",
         "1.0.0",
     ),
-    "SETPOINT_NOT_REVERTED_PROMPT": (
+    "CLAIM_NOT_REVERTED_PROMPT": (
         "d6b43489cf6f89f23f5996f8b992c859305a3bb851a4ed5376d05235e251bb9c",
         "1.0.0",
     ),
-    "SETPOINT_NO_VERDICT_PROMPT": (
+    "CLAIM_NO_VERDICT_PROMPT": (
         "9777274411a0cb3ecdf80709632e0e94834bf20807babe069d4733846dd8506a",
         "1.0.0",
     ),
-    "SETPOINT_PARTIALLY_JUDGED_PROMPT": (
+    "CLAIM_PARTIALLY_JUDGED_PROMPT": (
         "abff54828bf5edc6c16ede627ac48aecc8dbffd796b512e8949ca51d3d405009",
         "1.0.0",
     ),
-    "SETPOINT_RETRY_PROMPT": (
+    "CLAIM_RETRY_PROMPT": (
         "98312c3db2e6c5ec153d19b7340701841ea078e51475a9ac3f5d3a376d0194cd",
         "1.0.0",
     ),
-    "SETPOINT_REVERTED_PROMPT": (
+    "CLAIM_REVERTED_PROMPT": (
         "e8950e5273a446cc2c6fc3445300c620e97e81410ef4dd7cc9fae8fdf3e0be40",
         "1.0.0",
     ),

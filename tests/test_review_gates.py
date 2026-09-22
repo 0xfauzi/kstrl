@@ -801,13 +801,13 @@ class TestFactorySkipTraces:
         tmp_path: Path,
     ) -> None:
         """In advisory mode the exhausted budget degrades to a recorded
-        skip and, with ``setpoint_agreement`` at its default, the
+        skip and, with ``claim_agreement`` at its default, the
         component completes.
 
         Both halves of that sentence are configuration, not a rule about
-        advisory mode: under ``setpoint_agreement = "block"`` the R10.3
+        advisory mode: under ``claim_agreement = "block"`` the R10.3
         gate in ``_review_did_not_run`` fails this same component, which
-        ``tests/test_setpoint_agreement.py`` covers.
+        ``tests/test_claim_agreement.py`` covers.
         """
         run = _run_with_budget(
             tmp_path,
@@ -890,7 +890,7 @@ class TestFactorySkipTraces:
         tmp_path: Path,
     ) -> None:
         """The halt is legible to the evolution journal, which is what a
-        later run reads to see which sensor stopped the component."""
+        later run reads to see which check stopped the component."""
         run = _run_with_budget(
             tmp_path,
             ["comp-a", "comp-b"],

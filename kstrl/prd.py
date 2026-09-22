@@ -485,7 +485,7 @@ class PRD:
         rewrite: setting ``passes`` is the whole job, ``notes`` is where
         it records what it did, and they are also the only fields
         ``review.revert_unconfirmed_stories`` touches, so the harness's
-        own set-point write cannot look like tampering.
+        own claim write cannot look like tampering.
 
         Blanking them and comparing whole stories through
         ``UserStory``'s generated ``__eq__`` means a field added to the
@@ -597,7 +597,7 @@ class PRD:
         # (#291; manifest.save, knowledge.write_facts, decompose's PRD
         # writer go through the same one). Until R10.3 nothing in kstrl called
         # this method: the PRD was written once by the architect and
-        # then edited only by the agent. The set-point check made the
+        # then edited only by the agent. The claim check made the
         # harness a writer of a file the next attempt reads, and a torn
         # write there costs the run. The bytes are unchanged - two-space
         # indent, one trailing newline - so a save of an unmodified PRD

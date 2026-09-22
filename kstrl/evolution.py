@@ -443,7 +443,7 @@ class HarnessProposal:
     title: str
     description: str
     proposal_type: str  # "computational" or "inferential"
-    target: str  # what to change: "claude_md", "typecheck_config", "feedforward_config"
+    target: str  # what to change: "claude_md", "typecheck_config", "codebase_scan_config"
     suggested_change: str  # the actual proposed content/config change
     source_patterns: list[str]  # pattern descriptions that led to this proposal
 
@@ -595,8 +595,8 @@ _DIGIT_RUN_RE = re.compile(r"\d+")
 #   - `scope_unreadable:` depends on which producer fired - the Phase 1
 #     gate attaches a finding, the pre-launch refusal in factory does
 #     not;
-#   - `adversarial_budget:setpoint` is the seventh, added by #226 round
-#     2 and of the first kind: the R10.3 set-point gate refuses a
+#   - `adversarial_budget:claim` is the seventh, added by #226 round
+#     2 and of the first kind: the R10.3 claim gate refuses a
 #     component whose reviewer never ran, the only finding on it is the
 #     phase_skipped trace, so the replay calls it plumbing and the live
 #     side calls it judgement. Its two siblings do NOT diverge -
@@ -605,9 +605,9 @@ _DIGIT_RUN_RE = re.compile(r"\d+")
 #     infrastructure_error finding, so both consumers read the same
 #     answer. Enrolling the check is what fixed those two and what
 #     exposed this one: before the sweep it was spelled
-#     `review:setpoint-budget-exhausted` and both consumers agreed by
-#     both being wrong. tests/test_setpoint_agreement.py::
-#     test_the_setpoint_refusal_is_a_disclosed_divergence asserts both
+#     `review:claim-budget-exhausted` and both consumers agreed by
+#     both being wrong. tests/test_claim_agreement.py::
+#     test_the_claim_refusal_is_a_disclosed_divergence asserts both
 #     halves, so this row fails if it stops being true.
 #
 # Reconciling those is not this table's job (#332 holds factory.py), but
@@ -806,10 +806,10 @@ def signature_counts_from_verification(
     """How many times each structured signature occurred in failed checks.
 
     OCCURRENCES, not presence: twelve E501 failures count twelve. That is
-    what :mod:`kstrl.dampener`'s baseline needs and what
+    what :mod:`kstrl.baseline`'s baseline needs and what
     :func:`signatures_from_verification` cannot give, because it ends in a
     dedupe - every count built from its return value would be 1 and a
-    dampener's "this got worse" bucket could never fire (#227).
+    baseline's "this got worse" bucket could never fire (#227).
 
     ``limit`` caps the DISTINCT codes one check contributes, in first-seen
     order, before anything is counted. ``None`` means no cap. The default is
@@ -820,9 +820,9 @@ def signature_counts_from_verification(
     functions that have to agree: this one composes it through
     :func:`_check_signatures`, :func:`signature_for_error` writes the
     ``"<check>:<slug>"`` fallback for a check with no parsed codes - which is
-    most real signatures, including every one the dampener falls back to - and
+    most real signatures, including every one the baseline falls back to - and
     :func:`split_signature` takes it apart again, which is how
-    :func:`kstrl.dampener.compare` recovers a check name before deciding
+    :func:`kstrl.baseline.compare` recovers a check name before deciding
     ``fixed``. "One place" was the earlier claim and it was wrong; one module
     is what the guard against a format changed in one place only actually is.
     """
@@ -859,7 +859,7 @@ def signatures_from_verification(
     ``limit`` is keyword-only with the journal's cap as its default: the one
     production caller passes neither, so its expression text does not move,
     and a defaulted call still records exactly what it recorded before.
-    ``limit=None`` is the uncapped read the dampener baseline asks for -
+    ``limit=None`` is the uncapped read the baseline asks for -
     a baseline that dropped a check's sixth signature would report it as new
     on the very next run.
     """
@@ -1457,7 +1457,7 @@ class EvolutionJournal:
         Computational proposals only (no LLM calls):
         - Recurring linter errors - suggest CLAUDE.md convention entry
         - Recurring typecheck patterns - suggest config change
-        - Recurring test failures on same module - suggest feedforward focus
+        - Recurring test failures on same module - suggest codebase scan focus
         - Recurring review/security finding categories - suggest CLAUDE.md
           guidance derived from the finding taxonomy
 
@@ -1535,18 +1535,20 @@ class EvolutionJournal:
                 proposals.append(
                     HarnessProposal(
                         id=proposal_id,
-                        title=f"Add feedforward focus for test pattern '{pattern.error_signature}'",
+                        title=(
+                            f"Add codebase scan focus for test pattern '{pattern.error_signature}'"
+                        ),
                         description=(
                             f"Test failure '{pattern.error_signature}' hit "
                             f"{pattern.frequency} components: "
                             f"{', '.join(pattern.affected_components[:5])}. "
-                            f"Focusing feedforward context on this pattern may help the agent "
+                            f"Focusing codebase scan context on this pattern may help the agent "
                             f"fix the root cause earlier in the iteration loop."
                         ),
                         proposal_type="computational",
-                        target="feedforward_config",
+                        target="codebase_scan_config",
                         suggested_change=(
-                            f"Add to feedforward config or CLAUDE.md:\n"
+                            f"Add to codebase scan config or CLAUDE.md:\n"
                             f"> Known recurring test issue: '{pattern.error_signature}'. "
                             f"When tests fail with this pattern, check the affected modules "
                             f"before re-running."

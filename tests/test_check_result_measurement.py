@@ -1,9 +1,9 @@
 """Every result row in ``kstrl/`` says whether it MEASURED anything.
 
-``CheckResult.measured`` (#227) is what stops a sensor's silence reading as a
+``CheckResult.measured`` (#227) is what stops a check's silence reading as a
 fix: a row that timed out, whose tool is missing, or that passed vacuously
-contributes no signature to a sense baseline, and its absence from a later run
-lands in the dampener's ``unmeasured`` bucket instead of ``fixed``.
+contributes no signature to a baseline, and its absence from a later run
+lands in the baseline's ``unmeasured`` bucket instead of ``fixed``.
 
 The field defaults to True, which means the failure mode is a NEW row that
 should have been False and nobody noticing. Round 1 of review on #357 measured
@@ -331,7 +331,7 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     # This check name exists ONLY in the unreadable state, so it never appears
     # on a healthy run. Marked rather than exempted: exempting it would put the
     # name in `measured_checks` on the one run that produces it, and its
-    # absence from the next would then read as a sensor that stopped.
+    # absence from the next would then read as a check that stopped.
     "verify.py: check_scope_unreadable: CheckResult: measured=False": 1,
     # The diff could not be read.
     "verify.py: check_test_adequacy: CheckResult: measured=False": 1,
@@ -364,7 +364,7 @@ EXPECTED_FAILING_WITH_DEFAULT: dict[str, int] = {
     "verify.py: check_bad_patterns: CheckResult": 1,
     # vulture ran over the changed files and reported dead code. Every way that
     # phase can measure NOTHING returns a NotMeasured gap instead of a row
-    # (#335), so it needs no measured argument at all: the dampener reads a gap
+    # (#335), so it needs no measured argument at all: the baseline reads a gap
     # and a measured=False row through the same code path.
     "verify.py: check_dead_code: CheckResult": 1,
     # Read the diff and applied the configured allowlist to it.
@@ -474,7 +474,7 @@ class TestEveryResultRowIsAccountedFor:
             ),
             message=(
                 "A result row's measured argument moved. Deleting one makes a row "
-                "that measured nothing contribute signatures to a sense baseline, "
+                "that measured nothing contribute signatures to a baseline, "
                 "whose later absence reads as fixed (#227). If a check genuinely "
                 "started measuring, move its row and say so in the diff."
             ),
@@ -538,7 +538,7 @@ class TestEveryResultRowIsAccountedFor:
 #:
 #: The other direction of the same field. The three censuses above pin where
 #: the value is WRITTEN; this one pins who is allowed to act on it, and the
-#: answer is the dampener and nobody else. ``measured`` says whether a row is
+#: answer is the baseline and nobody else. ``measured`` says whether a row is
 #: evidence about the ARTIFACT, which is a question about comparing two runs.
 #: It is not a question about whether this run passed, and the moment the
 #: mechanical verdict starts consulting it, a gate whose tool is missing stops
@@ -554,8 +554,8 @@ class TestEveryResultRowIsAccountedFor:
 #: somebody enumerated is how a guard goes blind on the module nobody thought
 #: of.
 EXPECTED_MEASUREMENT_READS: dict[str, int] = {
-    # The dampener: which checks may have a missing signature read as fixed.
-    "dampener.py: _measured_and_unmeasured: check.measured": 2,
+    # The baseline: which checks may have a missing signature read as fixed.
+    "baseline.py: _measured_and_unmeasured: check.measured": 2,
     # The fixtures row folds its per-fixture measurements with `all`.
     "fixtures.py: check_fixtures: r.measured": 1,
     # Not CheckResult.measured. FactUtilization's own field, R8.
@@ -580,7 +580,7 @@ def reads_the_measurement(node: ast.AST) -> bool:
 
 
 def read_row(source_file: Path, node: ast.AST) -> str:
-    """``dampener.py: _measured_and_unmeasured: check.measured``."""
+    """``baseline.py: _measured_and_unmeasured: check.measured``."""
     return f"{_site(source_file, node)}: {ast.unparse(node)}"
 
 

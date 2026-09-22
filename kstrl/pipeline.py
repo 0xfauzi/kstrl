@@ -56,8 +56,8 @@ from kstrl.divergence import (
 )
 from kstrl.findings import (
     ADEQUACY_CATEGORY_PREFIX,
+    CLAIM_DISAGREEMENT_CATEGORY,
     POLICY_CATEGORY_PREFIX,
-    SETPOINT_DISAGREEMENT_CATEGORY,
     Finding,
     finding_model,
     tag_finding_with_attempt,
@@ -83,10 +83,10 @@ from kstrl.prd import PRD
 from kstrl.review import (
     ReviewMode,
     ReviewResult,
+    claim_blocks,
+    claim_disagreements,
+    claim_retry_context,
     revert_unconfirmed_stories,
-    setpoint_blocks,
-    setpoint_disagreements,
-    setpoint_retry_context,
 )
 from kstrl.runenvelope import RunEnvelope
 from kstrl.runstate import RunState
@@ -3214,7 +3214,7 @@ class ComponentPipeline:
         budget_downgraded: bool,
     ) -> ReviewPhaseResult:
         """Phase 2's tail for a review that was not executed: record the
-        skip, then let the R10.3 set-point gate decide whether the
+        skip, then let the R10.3 claim gate decide whether the
         component may proceed without one.
 
         Lifted out of ``_phase_review`` unchanged by #226, which added a
@@ -3227,7 +3227,7 @@ class ComponentPipeline:
             "review",
             skip_reason or "review skipped",
         )
-        # R10.3: this return is BEFORE the set-point gate, so a
+        # R10.3: this return is BEFORE the claim gate, so a
         # component whose reviewer never ran would otherwise
         # complete with a story still claiming done and nothing
         # having checked it - the gate failing open, silently, at
@@ -3248,11 +3248,11 @@ class ComponentPipeline:
         # statement about this branch, whatever else it may describe.
         if (
             budget_downgraded
-            and self._setpoint_blocking()[0]
+            and self._claim_blocking()[0]
             and self._has_unconfirmed_claim(comp, wt_path)
         ):
             error = (
-                "Set-point agreement cannot be confirmed: the "
+                "Claim agreement cannot be confirmed: the "
                 "reviewer never ran (adversarial LLM budget "
                 f"({self.factory_config.max_adversarial_calls}) "
                 "exhausted) and a story is still marked passes=true"
@@ -3265,15 +3265,15 @@ class ComponentPipeline:
                     action=FailureAction.FAIL,
                     error=error,
                     phase="review",
-                    check="setpoint",
+                    check="claim",
                     # Same class as _budget_refusal's signature and swept
                     # with it (#226 round 2): the reviewer did not run, so
                     # a ``review:`` prefix would tell the replay this run
                     # produced a verdict about the factory's judgement.
-                    # ``check`` stays "setpoint" - the field ``ks serve``
+                    # ``check`` stays "claim" - the field ``ks serve``
                     # reads is Component.failed_check, and this refusal is
-                    # the set-point gate's, not the budget branch's.
-                    signatures=[f"{ADVERSARIAL_BUDGET_CHECK}:setpoint"],
+                    # the claim gate's, not the budget branch's.
+                    signatures=[f"{ADVERSARIAL_BUDGET_CHECK}:claim"],
                 ),
             )
         return ReviewPhaseResult(ran=False, skip_reason=skip_reason)
@@ -3418,7 +3418,7 @@ class ComponentPipeline:
         review_mode = ReviewMode(self.factory_config.review_mode)
         review_skip_reason: str | None = None
         # R10.3: "the operator turned the reviewer off" and "the
-        # reviewer ran out of budget" are both SKIP, and the set-point
+        # reviewer ran out of budget" are both SKIP, and the claim
         # gate has to tell them apart. The first is a choice, warned
         # about at startup and then honoured. The second is the reviewer
         # failing to run, which in blocking mode must not be spent as a
@@ -3428,7 +3428,7 @@ class ComponentPipeline:
             review_skip_reason = "review disabled (mode=skip)"
         elif not self.adversarial_budget_ok():
             # R10.5 (#226): hard mode refuses to merge unreviewed. The
-            # reviewer is the sensor doing most of the catching, so an
+            # reviewer is the check doing most of the catching, so an
             # exhausted budget must not shed it and let the component
             # through on mechanical checks alone. Nothing is skipped
             # and no event is invented for it (doctrine 6): the
@@ -3459,7 +3459,7 @@ class ComponentPipeline:
                 )
             # Advisory downgrades to a recorded skip instead (R1.2
             # trace). That is not the same as "advisory cannot fail the
-            # component": under setpoint_agreement = "block" the R10.3
+            # component": under claim_agreement = "block" the R10.3
             # gate in _review_did_not_run fails it a few lines below,
             # because a reviewer that never ran cannot confirm a story
             # the engineer marked passes=true.
@@ -3579,7 +3579,7 @@ class ComponentPipeline:
             )
         )
 
-        # R10.3 set-point agreement. The engineer agent is the only
+        # R10.3 claim agreement. The engineer agent is the only
         # writer of the PRD's `passes` flag, so a story marked done is a
         # claim by the thing that did the work, not a measurement of it.
         # The reviewer's per-story verdicts are a second and independent
@@ -3587,21 +3587,21 @@ class ComponentPipeline:
         #
         # Ordering, which a reviewer will want to check: this block runs
         # BEFORE the hard-mode failure return below, so a criterion
-        # failure and a set-point disagreement in the same attempt both
+        # failure and a claim disagreement in the same attempt both
         # reach the findings stream. The existing failure path then
         # returns exactly as it always did, carrying its own criterion
         # text in the retry context. The new failure path further down
         # fires only when the review PASSED and a story it did not
         # confirm is still marked done.
-        blocking, severity = self._setpoint_blocking()
+        blocking, severity = self._claim_blocking()
         prd_path = wt_path / comp.prd_path
-        setpoint_prd: PRD | None = None
+        claim_prd: PRD | None = None
         disagreements: list[Finding] = []
         try:
-            setpoint_prd = PRD.load(prd_path)
+            claim_prd = PRD.load(prd_path)
         except (OSError, ValueError) as exc:
-            # The sensor could not run. E9/E3-infra: record that, so
-            # len(findings) == 0 keeps meaning "every sensor ran and
+            # The check could not run. E9/E3-infra: record that, so
+            # len(findings) == 0 keeps meaning "every check ran and
             # found nothing" rather than "one of them was silent".
             #
             # Recorded, but never blocking, even in blocking mode. An
@@ -3617,15 +3617,15 @@ class ComponentPipeline:
                     Finding.infrastructure_error(
                         phase="review",
                         explanation=(
-                            "Set-point agreement not measured: the PRD at "
+                            "Claim agreement not measured: the PRD at "
                             f"{comp.prd_path} could not be read: {exc}"
                         ),
                     )
                 ],
             )
         else:
-            disagreements = setpoint_disagreements(
-                setpoint_prd,
+            disagreements = claim_disagreements(
+                claim_prd,
                 review_result,
                 severity=severity,
             )
@@ -3640,17 +3640,17 @@ class ComponentPipeline:
         if (
             blocking
             and review_result.infrastructure_error
-            and setpoint_prd is not None
-            and any(st.passes for st in setpoint_prd.user_stories)
+            and claim_prd is not None
+            and any(st.passes for st in claim_prd.user_stories)
         ):
             # Halt over heroics. In ADVISORY review mode a crashed or
             # unparseable reviewer yields passed=True with
             # infrastructure_error=True (the crash handler above sets
             # `passed=review_mode != HARD`), so the failure path above
-            # does not fire. setpoint_disagreements correctly returns
+            # does not fire. claim_disagreements correctly returns
             # nothing - absence of a reading is not disagreement - but
-            # in BLOCKING mode "the second sensor never reported" must
-            # not be spent as "the second sensor confirmed". A story
+            # in BLOCKING mode "the second check never reported" must
+            # not be spent as "the second check confirmed". A story
             # still claims done and nothing independent has checked it.
             #
             # Nothing is reverted here: no evidence points at any
@@ -3658,15 +3658,15 @@ class ComponentPipeline:
             # calls for. The outage itself is already in the findings
             # via ReviewResult.as_findings.
             self.ui.warn(
-                f"  Phase 2 FAILED for {comp.id}: set-point agreement "
+                f"  Phase 2 FAILED for {comp.id}: claim agreement "
                 "cannot be confirmed, the reviewer did not report"
             )
-            return self._setpoint_failure(
+            return self._claim_failure(
                 comp,
                 comp_result,
                 review_result,
                 error=(
-                    "Set-point disagreement: the reviewer produced no "
+                    "Claim disagreement: the reviewer produced no "
                     "usable verdict, so no story claimed done is confirmed"
                 ),
                 retry_text=(
@@ -3677,16 +3677,16 @@ class ComponentPipeline:
                     "on its own evidence."
                 ),
             )
-        if blocking and disagreements and setpoint_prd is not None:
+        if blocking and disagreements and claim_prd is not None:
             reverted = revert_unconfirmed_stories(
-                setpoint_prd,
+                claim_prd,
                 review_result,
                 disagreements,
                 attempt=comp.retries + 1,
             )
             saved = True
             try:
-                setpoint_prd.save(prd_path)
+                claim_prd.save(prd_path)
             except OSError as exc:
                 # process_result is not wrapped by its caller
                 # (factory.py, the scheduler loop), so an exception
@@ -3704,25 +3704,25 @@ class ComponentPipeline:
                         Finding.infrastructure_error(
                             phase="review",
                             explanation=(
-                                f"Set-point revert could not be written to {comp.prd_path}: {exc}"
+                                f"Claim revert could not be written to {comp.prd_path}: {exc}"
                             ),
                         )
                     ],
                 )
             self.ui.warn(
-                f"  Phase 2 FAILED for {comp.id}: set-point disagreement "
+                f"  Phase 2 FAILED for {comp.id}: claim disagreement "
                 f"on {len(reverted)} story(ies)"
                 + ("; passes reverted in the PRD" if saved else "; PRD could not be rewritten")
             )
-            return self._setpoint_failure(
+            return self._claim_failure(
                 comp,
                 comp_result,
                 review_result,
                 error=(
-                    f"Set-point disagreement: {len(reverted)} story(ies) "
+                    f"Claim disagreement: {len(reverted)} story(ies) "
                     "claimed done but not confirmed by review"
                 ),
-                retry_text=setpoint_retry_context(
+                retry_text=claim_retry_context(
                     disagreements,
                     review_result,
                     reverted=saved,
@@ -3748,8 +3748,8 @@ class ComponentPipeline:
             return False
         return any(story.passes for story in prd.user_stories)
 
-    def _setpoint_blocking(self) -> tuple[bool, str]:
-        """R10.3: whether a set-point disagreement fails the component,
+    def _claim_blocking(self) -> tuple[bool, str]:
+        """R10.3: whether a claim disagreement fails the component,
         and the severity its findings carry.
 
         The autonomy level is the one ``_phase_verify`` uses for the
@@ -3758,10 +3758,10 @@ class ComponentPipeline:
         run's envelope, resolved once at run start.
         """
         level = self.run_envelope.autonomy_level
-        blocking = setpoint_blocks(self.factory_config, level)
+        blocking = claim_blocks(self.factory_config, level)
         return blocking, "fail" if blocking else "advisory"
 
-    def _setpoint_failure(
+    def _claim_failure(
         self,
         comp: Component,
         comp_result: ComponentResult,
@@ -3770,7 +3770,7 @@ class ComponentPipeline:
         error: str,
         retry_text: str,
     ) -> ReviewPhaseResult:
-        """R10.3: the typed failure a blocked set-point check returns.
+        """R10.3: the typed failure a blocked claim check returns.
 
         Note for anyone tracing the retry context: this is the first
         site that builds an ``IterationContext`` on a review that
@@ -3785,9 +3785,9 @@ class ComponentPipeline:
         reviewer ran, reported, and declined to confirm the claim. An
         OUTAGE is the absence of one. R10.2 draws that line explicitly
         (``FailureEntry.infrastructure``): only a measured entry retires
-        its own phase, because a crashed sensor that retired a real
+        its own phase, because a crashed check that retired a real
         earlier finding would silently drop it. Journalling an outage as
-        ``review:setpoint_disagreement`` would also tell the evolution
+        ``review:claim_disagreement`` would also tell the evolution
         data that a reviewer disagreed when none reported.
         """
         infrastructure = review_result.infrastructure_error
@@ -3805,7 +3805,7 @@ class ComponentPipeline:
                 action=FailureAction.RETRY_OR_FAIL,
                 error=error,
                 phase="review",
-                check="infrastructure" if infrastructure else "setpoint",
+                check="infrastructure" if infrastructure else "claim",
                 context_json=ctx.to_json(),
                 # R6.1: the journal signature. Not derived via
                 # signatures_from_findings, which only emits for
@@ -3814,7 +3814,7 @@ class ComponentPipeline:
                 signatures=[
                     "review:infrastructure"
                     if infrastructure
-                    else f"review:{SETPOINT_DISAGREEMENT_CATEGORY}"
+                    else f"review:{CLAIM_DISAGREEMENT_CATEGORY}"
                 ],
             ),
         )

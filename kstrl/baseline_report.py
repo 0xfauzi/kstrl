@@ -1,6 +1,6 @@
-"""How a dampener comparison is rendered: terminal, pull-request comment, JSON.
+"""How a baseline comparison is rendered: terminal, pull-request comment, JSON.
 
-Split out of :mod:`kstrl.dampener` in review round 1 of #227, when the module
+Split out of :mod:`kstrl.baseline` in review round 1 of #227, when the module
 crossed the repository's 800-line ratchet. The split is where the two jobs
 already were: that module decides WHAT a branch changed about a measurement,
 this one decides how a person or a workflow reads the answer. It imports one
@@ -17,7 +17,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from kstrl.dampener import Baseline, Comparison
+from kstrl.baseline import Baseline, Comparison
 
 #: First line of the markdown report. A workflow finds its own earlier comment
 #: by this string, so it is a constant here and never retyped in the YAML: the
@@ -30,7 +30,7 @@ MARKDOWN_MARKER = "<!-- kstrl-sense-dampener -->"
 UNMEASURED_NOTE = "a check that did not run cannot prove a fix"
 
 #: The fifth bucket's title, for the same reason.
-STOPPED_MEASURING_NOTE = "these sensors measured on the baseline and not here"
+STOPPED_MEASURING_NOTE = "these checks measured on the baseline and not here"
 
 #: The footer, in the two states the flag puts the job in. Both spellings live
 #: here because the renderer is the only thing that says them and the workflow
@@ -46,11 +46,11 @@ def short_ref(base_ref: str | None) -> str:
 
 def _notes(comparison: Comparison, baseline: Baseline) -> list[str]:
     notes: list[str] = []
-    if comparison.sense_schema_changed is not None:
-        was, now = comparison.sense_schema_changed
+    if comparison.check_schema_changed is not None:
+        was, now = comparison.check_schema_changed
         notes.append(
-            f"note: the sense schema moved from {was} to {now} since this baseline "
-            "was written; refresh it with ks sense --write-baseline --force"
+            f"note: the check schema moved from {was} to {now} since this baseline "
+            "was written; refresh it with ks check --write-baseline --force"
         )
     if comparison.project_changed is not None:
         was_name, now_name = comparison.project_changed
@@ -81,7 +81,7 @@ def _human_bucket(title: str, rows: Iterable[str]) -> list[str]:
 
 def render_human(comparison: Comparison, baseline: Baseline, path: Path) -> list[str]:
     """The terminal report. Printed INSTEAD of the check table."""
-    lines = [f"sense regression report vs {path} ({short_ref(baseline.base_ref)})"]
+    lines = [f"check regression report vs {path} ({short_ref(baseline.base_ref)})"]
     lines.extend(_notes(comparison, baseline))
     lines.append("")
     lines.extend(_human_bucket("new", (f"{s}  {n}" for s, n in comparison.new.items())))
@@ -154,13 +154,13 @@ def render_markdown(
 
     ``fail_on_regression`` is the mode actually in force, and the footer is
     rendered from it. It used to say "advisory: it never fails the job"
-    unconditionally, while ``docs/dampener.md`` says adding the flag is the
+    unconditionally, while ``docs/baseline.md`` says adding the flag is the
     whole of graduating to blocking - so the comment sitting on a pull request
     that had just been failed by this report denied that it could.
     """
     lines = [
         MARKDOWN_MARKER,
-        "## sense dampener",
+        "## check baseline",
         "",
         f"Baseline: `{path}` at `{short_ref(baseline.base_ref)}`.",
         "",
@@ -214,16 +214,16 @@ def comparison_document(
     current: Baseline,
     path: Path,
 ) -> dict[str, Any]:
-    """The ``dampener`` block of ``ks sense --json``.
+    """The ``baseline`` block of ``ks check --json``.
 
     One nested key rather than the six flat ones the issue sketched: a flat
-    ``new`` or ``current`` at the top of the sense document could collide with a
+    ``new`` or ``current`` at the top of the check document could collide with a
     future check name, and this has room for ``unmeasured`` and the schema note
     without another round of top-level keys.
     """
     schema_changed: dict[str, int] | None = None
-    if comparison.sense_schema_changed is not None:
-        was, now = comparison.sense_schema_changed
+    if comparison.check_schema_changed is not None:
+        was, now = comparison.check_schema_changed
         schema_changed = {"baseline": was, "current": now}
     project_changed: dict[str, str] | None = None
     if comparison.project_changed is not None:
@@ -247,6 +247,6 @@ def comparison_document(
         "unmeasured": dict(comparison.unmeasured),
         "stopped_measuring": dict(comparison.stopped_measuring),
         "regressed": comparison.regressed,
-        "sense_schema_changed": schema_changed,
+        "check_schema_changed": schema_changed,
         "project_changed": project_changed,
     }

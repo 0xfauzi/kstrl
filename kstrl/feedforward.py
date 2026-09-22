@@ -1,4 +1,4 @@
-"""Phase 0: Feedforward controls - structural analysis and convention extraction.
+"""Phase 0: Codebase scan controls - structural analysis and convention extraction.
 
 All analysis is computational (no LLM calls). Builds a context string
 to prepend to the agent prompt before each component runs.
@@ -70,13 +70,13 @@ _HEADER_FOOTER_OVERHEAD = len("=== CODEBASE CONTEXT (auto-generated) ===\n\n") +
 #
 # Everything this module returns is pasted into the engineer prompt, so a
 # notice below is read by a model as part of its instructions. PR #417
-# removed "Raise feedforward.max_context_tokens to see it." from the
+# removed "Raise codebase_scan.max_context_tokens to see it." from the
 # dependency graph's notice by hand and left no guard behind; #428 enrols
 # the bodies so a reword has to move a hash and a version with it.
 #
 # One version constant for the six, as the #303 builder fragments do: the
 # unit is the notice vocabulary one module delivers to one role.
-FEEDFORWARD_NOTICE_PROMPT_VERSION = "1.0.0"
+CODEBASE_SCAN_NOTICE_PROMPT_VERSION = "1.0.0"
 
 NO_SOURCE_ROOT_PROMPT = (
     "(none: no Python source root found under {root}; searched "
@@ -111,8 +111,8 @@ SECTION_DID_NOT_FIT_PROMPT = (
 
 
 @dataclass
-class FeedforwardConfig:
-    """Configuration for feedforward context generation."""
+class CodebaseScanConfig:
+    """Configuration for codebase scan context generation."""
 
     enabled: bool = True
     module_map: bool = True  # directory tree with LOC counts
@@ -122,21 +122,21 @@ class FeedforwardConfig:
     max_context_tokens: int = 4000  # rough cap (estimate 4 chars per token)
 
     @classmethod
-    def from_env(cls) -> FeedforwardConfig:
-        """Load feedforward config from environment variables only."""
+    def from_env(cls) -> CodebaseScanConfig:
+        """Load codebase scan config from environment variables only."""
         config = cls()
         _apply_env_overrides(config)
         return config
 
     @classmethod
-    def load(cls, root_dir: Path | None = None) -> FeedforwardConfig:
-        """Load feedforward config with precedence: env > toml > defaults."""
+    def load(cls, root_dir: Path | None = None) -> CodebaseScanConfig:
+        """Load codebase scan config with precedence: env > toml > defaults."""
         from kstrl.config import load_toml_section, resolve_config_file
 
         if root_dir is None:
             root_dir = Path.cwd()
         config = cls()
-        section = load_toml_section(resolve_config_file(root_dir), "feedforward")
+        section = load_toml_section(resolve_config_file(root_dir), "codebase_scan")
         for key in (
             "enabled",
             "module_map",
@@ -153,16 +153,16 @@ class FeedforwardConfig:
 
 
 _ENV_MAP: dict[str, tuple[str, type]] = {
-    "KSTRL_FEEDFORWARD_ENABLED": ("enabled", bool),
-    "KSTRL_FEEDFORWARD_MODULE_MAP": ("module_map", bool),
-    "KSTRL_FEEDFORWARD_PUBLIC_INTERFACES": ("public_interfaces", bool),
-    "KSTRL_FEEDFORWARD_DEPENDENCY_GRAPH": ("dependency_graph", bool),
-    "KSTRL_FEEDFORWARD_CONVENTIONS": ("conventions", bool),
-    "KSTRL_FEEDFORWARD_MAX_TOKENS": ("max_context_tokens", int),
+    "KSTRL_CODEBASE_SCAN_ENABLED": ("enabled", bool),
+    "KSTRL_CODEBASE_SCAN_MODULE_MAP": ("module_map", bool),
+    "KSTRL_CODEBASE_SCAN_PUBLIC_INTERFACES": ("public_interfaces", bool),
+    "KSTRL_CODEBASE_SCAN_DEPENDENCY_GRAPH": ("dependency_graph", bool),
+    "KSTRL_CODEBASE_SCAN_CONVENTIONS": ("conventions", bool),
+    "KSTRL_CODEBASE_SCAN_MAX_TOKENS": ("max_context_tokens", int),
 }
 
 
-def _apply_env_overrides(config: FeedforwardConfig) -> None:
+def _apply_env_overrides(config: CodebaseScanConfig) -> None:
     """Overlay env vars that are explicitly set; unset vars leave the
     existing value untouched (so toml values survive the overlay)."""
 
@@ -854,13 +854,13 @@ def _dependency_graph_section(
     return content
 
 
-def build_feedforward_context(
+def build_codebase_scan_context(
     worktree_path: Path,
-    config: FeedforwardConfig | None = None,
+    config: CodebaseScanConfig | None = None,
     component_id: str = "",
     component_deps: list[str] | None = None,
 ) -> str:
-    """Build the full feedforward context string for agent prompt injection.
+    """Build the full codebase scan context string for agent prompt injection.
 
     Main entry point. Calls each sub-function if enabled, assembles into
     a formatted string with header/footer markers.
@@ -873,7 +873,7 @@ def build_feedforward_context(
     sections in order of priority (conventions first to drop, module map last).
     """
     if config is None:
-        config = FeedforwardConfig()
+        config = CodebaseScanConfig()
 
     if not config.enabled:
         return ""

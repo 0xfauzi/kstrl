@@ -244,7 +244,7 @@ bypass rather than a style note:
    finding stream), as #148 requires, so a machine-made gate decision
    reaches the PR body and journal. Inbox ROUTING still lands with R8.3.
 
-**One resolution per run (#192, 2026-09-05).** The hash was computed once at run start while Phase 1 re-read `[policy]`, `[adequacy]` and `[autonomy]` from `kstrl.toml` for every component, so a mid-run edit changed what later components were held to without changing the record of it. Measured on a two-component run with `[autonomy] enabled = false`, which is the default: component B was enforced at `max_files_changed=500`, `deps_allow_new=true` against a manifest recording the hash of `5` and `false`, and the adequacy posture flipped with nothing recording either posture. The run now resolves one `RunEnvelope` before the pipeline is built, the ladder clamps THAT, and `manifest.policy_hash` is read back off the object the pipeline enforces. Editing `kstrl.toml` mid-run has no effect on the running factory. Phase 1 also used the raw stored autonomy level rather than the clamped one `resolve_runtime_level` produced three lines above the hash (measured: stored L4, resolved L1, Phase 1 judging at L4); it now uses the clamped level. No verdict changes at either level today, because `adequacy.layer0_blocks` and `review.setpoint_blocks` both test only `>= 1`. Round 2 widened the envelope to `[sandbox]`, `[fixtures]`, `[inbox]` and `[divergence]`, which were being resolved inside `ComponentPipeline.__init__` where a malformed one raised with nothing above it to report it: a bad section is now a refusal with exit code 2 naming the section and the key, taken before the run directory exists so no run is recorded as having cost nothing (#257).
+**One resolution per run (#192, 2026-09-05).** The hash was computed once at run start while Phase 1 re-read `[policy]`, `[adequacy]` and `[autonomy]` from `kstrl.toml` for every component, so a mid-run edit changed what later components were held to without changing the record of it. Measured on a two-component run with `[autonomy] enabled = false`, which is the default: component B was enforced at `max_files_changed=500`, `deps_allow_new=true` against a manifest recording the hash of `5` and `false`, and the adequacy posture flipped with nothing recording either posture. The run now resolves one `RunEnvelope` before the pipeline is built, the ladder clamps THAT, and `manifest.policy_hash` is read back off the object the pipeline enforces. Editing `kstrl.toml` mid-run has no effect on the running factory. Phase 1 also used the raw stored autonomy level rather than the clamped one `resolve_runtime_level` produced three lines above the hash (measured: stored L4, resolved L1, Phase 1 judging at L4); it now uses the clamped level. No verdict changes at either level today, because `adequacy.layer0_blocks` and `review.claim_blocks` both test only `>= 1`. Round 2 widened the envelope to `[sandbox]`, `[fixtures]`, `[inbox]` and `[divergence]`, which were being resolved inside `ComponentPipeline.__init__` where a malformed one raised with nothing above it to report it: a bad section is now a refusal with exit code 2 naming the section and the key, taken before the run directory exists so no run is recorded as having cost nothing (#257).
 
 **Measured correction to the license verdict (H4).** The plan assumed
 `pip-licenses` / installed dist metadata. Measured against this repo's
@@ -1356,8 +1356,8 @@ stream).
 
 Rollback doctrine: restore service first (`rollback_command`), then repo
 truth: `revert-and-requeue` (git revert via PR, re-queue with failure
-evidence as feedforward - the revert must be in the re-queued story's
-feedforward or the engineer will reintroduce the reverted code) or
+evidence as codebase scan - the revert must be in the re-queued story's
+codebase scan or the engineer will reintroduce the reverted code) or
 `fix-forward` per config. Halt-over-heroics for migrations: a failing release
 whose diff touched DB migrations halts for a human; the factory does not
 auto-undo migrations.
@@ -1371,7 +1371,7 @@ worktrees; production-named environments require approval unconditionally.
 **Failure modes.** Resume-mid-RELEASING double-deploy (write-ahead intent +
 status re-query, tested explicitly); health false positives (SHA-stamped
 health); rollback restoring the image but not the database (migration halt
-rule); revert-requeue skew (revert in feedforward); consumers of terminal
+rule); revert-requeue skew (revert in codebase scan); consumers of terminal
 `COMPLETED` (TUI, Linear sync, evolution, resume) all learn the split -
 audit them in one PR.
 
@@ -1494,7 +1494,7 @@ the same doctrine at repo granularity.
 
 **Design.** Mechanical only (no LLM), advisory-first, two tiers. Tier A
 (static, instant): git/gh state, config validity, verification commands
-configured or inferable, source-root detection (the feedforward stage
+configured or inferable, source-root detection (the codebase scan stage
 emits nothing when `_find_top_source_dirs` finds no root, as on deckgen;
 warn on that, not on language, see #378), source/test roots, `.gitignore`
 coverage, protected-path candidates suggested for `[policy] paths_deny`.

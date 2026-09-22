@@ -54,7 +54,7 @@ untouched: this module is a caller of it, not a replacement for it.
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -67,6 +67,7 @@ from kstrl.config import (
     resolve_config_file,
     toml_parse_scope,
 )
+from kstrl.config_keys import RETIRED_ENV_VARS, RETIRED_KEYS, RETIRED_SECTIONS
 from kstrl.config_report import environ_lock, scrubbed_environ
 
 #: Exceptions a loader raises for input the operator has to fix, and the
@@ -141,7 +142,7 @@ def raise_if_defect(exc: BaseException) -> None:
     ``EXPECTED_TOMLLIB_SPELLINGS``, resolves nothing and so cannot miss
     a reader that spells ``tomllib`` at all. ``load_toml_document``
     re-raises ``ConfigError`` naming the path, and the pyproject.toml
-    and ruff.toml readers in ``verify`` and ``feedforward`` fall back to
+    and ruff.toml readers in ``verify`` and ``kstrl.feedforward`` fall back to
     a default or to no conventions at all. So a ``RecursionError`` that
     does reach this function is a cycle in kstrl's own code, and the
     traceback this re-raise keeps is what locates it. The closure is
@@ -210,7 +211,7 @@ def config_sections() -> list[ConfigSection]:
     from kstrl.divergence import DivergenceConfig
     from kstrl.evolution import EvolutionConfig
     from kstrl.factory import FactoryConfig
-    from kstrl.feedforward import FeedforwardConfig
+    from kstrl.feedforward import CodebaseScanConfig
     from kstrl.fixtures import FixturesConfig
     from kstrl.inbox import InboxConfig
     from kstrl.intake_github import GitHubIntakeConfig
@@ -238,7 +239,7 @@ def config_sections() -> list[ConfigSection]:
         ConfigSection(("breaker",), BreakerConfig.load),
         ConfigSection(("sandbox",), SandboxConfig.load),
         ConfigSection(("timeout",), TimeoutConfig.load),
-        ConfigSection(("feedforward",), FeedforwardConfig.load),
+        ConfigSection(("codebase_scan",), CodebaseScanConfig.load),
         ConfigSection(("knowledge",), KnowledgeConfig.load),
         ConfigSection(("fixtures",), FixturesConfig.load),
         ConfigSection(("queue",), QueueConfig.load),
@@ -313,9 +314,12 @@ def collect_config_problems(
             # carries a line and column. Both arrive as ``ConfigError``
             # and pass straight through this ``except`` on purpose.
             try:
-                load_toml_document(toml_path)
+                document = load_toml_document(toml_path)
             except OSError as exc:
                 raise ConfigError(f"{toml_path} could not be read: {exc}") from exc
+            problems.extend(retired_name_problems(document, toml_path))
+        else:
+            problems.extend(retired_name_problems({}, toml_path))
 
         for section in config_sections():
             try:
@@ -333,6 +337,40 @@ def collect_config_problems(
                     problems.append(detail)
                 else:
                     warn(f"{detail} - continuing without it")
+    return problems
+
+
+def retired_name_problems(document: Mapping[str, Any], toml_path: Path) -> list[str]:
+    """Every retired kstrl.toml name and environment variable in play.
+
+    #395 renamed a set of configuration names. An unknown TOML name is
+    silently ignored by design, so a straight rename would leave an
+    operator's existing file parsing, doing nothing, and a blocking gate
+    reverting to advisory with no message. That is a silent semantic
+    substitution, so a retired name is REFUSED by name instead, and the
+    message says what to rename it to. No alias layer: two spellings
+    live forever and the old one never dies.
+    """
+    problems: list[str] = []
+    for old, new in RETIRED_SECTIONS.items():
+        if old in document:
+            problems.append(
+                f"{toml_path} names [{old}], which was renamed to [{new}]. "
+                "Rename the section; kstrl will not guess."
+            )
+    for (section, key), new in RETIRED_KEYS.items():
+        table = document.get(section)
+        if isinstance(table, Mapping) and key in table:
+            problems.append(
+                f"{toml_path} names [{section}] {key}, which was renamed to {new}. "
+                "Rename the key; kstrl will not guess."
+            )
+    for old, new in sorted(RETIRED_ENV_VARS.items()):
+        if old in os.environ:
+            problems.append(
+                f"the environment sets {old}, which was renamed to {new}. "
+                "Rename the variable; kstrl will not guess."
+            )
     return problems
 
 

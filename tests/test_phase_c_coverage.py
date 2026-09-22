@@ -43,7 +43,7 @@ from kstrl.factory import (
     FactoryResult,
     run_factory,
 )
-from kstrl.feedforward import FeedforwardConfig
+from kstrl.feedforward import CodebaseScanConfig
 from kstrl.knowledge import KnowledgeConfig
 from kstrl.manifest import Component, Manifest
 from kstrl.review import ReviewResult
@@ -539,7 +539,7 @@ class TestC6ConcurrentFactory:
         lambda: FactoryConfig(),
         lambda: VerifyConfig(),
         lambda: ContractConfig(),
-        lambda: FeedforwardConfig(),
+        lambda: CodebaseScanConfig(),
         lambda: EvolutionConfig(),
         lambda: KnowledgeConfig(),
         lambda: SecurityConfig(),

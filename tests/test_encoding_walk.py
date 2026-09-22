@@ -444,7 +444,7 @@ class TestTheReadBytesExclusion:
     see the ``verify.py`` paragraph below. An eighth appearing is a
     reason to look, so this fails rather than absorbing it.
 
-    ``dampener.py`` is the newest and arrived by that argument rather
+    ``baseline.py`` is the newest and arrived by that argument rather
     than despite it: #357 round 1 measured ``read_text`` plus
     ``except ValueError`` around ``json.loads`` letting a
     ``RecursionError`` escape a function documented to exit 2, and the
@@ -465,7 +465,7 @@ class TestTheReadBytesExclusion:
     EXPECTED_READ_BYTES: dict[str, int] = {
         "breaker.py": 1,
         "config_toml.py": 1,
-        "dampener.py": 1,
+        "baseline.py": 1,
         "inbox.py": 1,
         "safemode.py": 1,
         "verify.py": 2,

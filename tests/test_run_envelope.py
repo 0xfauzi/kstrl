@@ -485,7 +485,7 @@ class TestTheFactoryHandsThePipelineWhatItRecords:
 
         ``resolve_runtime_level`` clamps by ``[autonomy] max_level``, by
         the policy envelope ceiling and by control-state location.
-        Phase 1 and the set-point gate both read the RAW stored level.
+        Phase 1 and the claim gate both read the RAW stored level.
         Measured at 414d662: stored L4, factory resolved L1, Phase 1
         used L4. No verdict changed at either level today, because both
         consumers test only ``>= 1``; it goes live the moment either
@@ -502,19 +502,19 @@ class TestTheFactoryHandsThePipelineWhatItRecords:
         assert AutonomyState.load(tmp_path).level == 4
         assert pipeline.run_envelope.autonomy_level == 1
 
-    def test_the_setpoint_gate_gets_the_same_clamped_level(
+    def test_the_claim_gate_gets_the_same_clamped_level(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """The other half of the expression, measured separately.
 
-        ``_phase_verify`` and ``_setpoint_blocking`` held two copies of
+        ``_phase_verify`` and ``_claim_blocking`` held two copies of
         the level expression, and mutating both at once is caught by
         the parse count through the ``_phase_verify`` copy alone. Split
-        into two mutations, the set-point copy was measured STILL GREEN
-        against ``test_setpoint_agreement.py`` and ``test_review.py``:
+        into two mutations, the claim copy was measured STILL GREEN
+        against ``test_claim_agreement.py`` and ``test_review.py``:
         nothing drove it with a stored level that differed from the
         run's. The verdict cannot tell them apart either, because
-        ``setpoint_blocks`` tests only ``>= 1``, so this records the
+        ``claim_blocks`` tests only ``>= 1``, so this records the
         level the gate is HANDED rather than what it decided.
         """
         (tmp_path / "kstrl.toml").write_text(
@@ -533,11 +533,11 @@ class TestTheFactoryHandsThePipelineWhatItRecords:
             seen.append(level)
             return False
 
-        monkeypatch.setattr(pipeline_module, "setpoint_blocks", recording)
-        pipeline._setpoint_blocking()
+        monkeypatch.setattr(pipeline_module, "claim_blocks", recording)
+        pipeline._claim_blocking()
 
         assert seen == [1], (
-            "the set-point gate was handed the raw stored level rather "
+            "the claim gate was handed the raw stored level rather "
             f"than the clamped one the run operates at. Got {seen}, "
             "expected [1] with kstrl.toml clamping L4 to L1."
         )

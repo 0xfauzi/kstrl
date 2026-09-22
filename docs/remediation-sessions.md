@@ -415,9 +415,9 @@ Branch: `fix/r2-1-control-plane`
 Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md, then items R2.1 and R2.2 in docs/remediation-roadmap.md. You own cli.py for this wave; no other session touches it.
 
 Defects:
-- The CLI never calls VerifyConfig.load, SecurityConfig.load, ContractConfig.load, FactoryConfig.load, FeedforwardConfig.load, or EvolutionConfig.load (all exist, all tested, zero product call sites). `ks factory` constructs phase configs directly from click flags (cli.py:1415-1456), so click defaults always win and six of nine kstrl.toml sections are silently ignored (CRIT-7).
+- The CLI never calls VerifyConfig.load, SecurityConfig.load, ContractConfig.load, FactoryConfig.load, CodebaseScanConfig.load, or EvolutionConfig.load (all exist, all tested, zero product call sites). `ks factory` constructs phase configs directly from click flags (cli.py:1415-1456), so click defaults always win and six of nine kstrl.toml sections are silently ignored (CRIT-7).
 - max_adversarial_calls and pause_before_pr_merge are unreachable: FactoryConfig.load reads only 7 keys (factory.py:91-105), no env var, no flag.
-- FeedforwardConfig/EvolutionConfig/KnowledgeConfig lack from_env.
+- CodebaseScanConfig/EvolutionConfig/KnowledgeConfig lack from_env.
 - ks init does not scaffold kstrl.toml, so a fresh project has no discoverable config surface.
 
 Scope: kstrl/cli.py, kstrl/config.py, kstrl/factory.py (FactoryConfig.load keys), kstrl/verify.py, kstrl/security.py, kstrl/contract.py, kstrl/feedforward.py, kstrl/evolution.py, kstrl/knowledge.py (loaders/from_env only), kstrl/init_cmd.py (scaffold), tests.
@@ -457,7 +457,7 @@ Finish per Shared rules: green checks, rebase, PR with Tested/Assumed referencin
 
 # Wave 5 (after wave 4 merges)
 
-## Session 5A: `ks run` honesty + feedforward wiring + prd_path contract
+## Session 5A: `ks run` honesty + codebase scan wiring + prd_path contract
 Branch: `fix/r2-3-run-honesty`
 
 ```text
@@ -468,7 +468,7 @@ PROMPT EXCEPTION: this session MAY edit init_cmd.DEFAULT_PROMPT (the engineer pr
 Defects:
 - factory.py:328-344 hardcodes max_iterations=30 and interactive=False and never receives allowed_paths; _submit_args (factory.py:954-975) does not forward them. `ks run 5` runs 30 iterations per attempt; -i and --allowed-paths are no-ops (CRIT-8).
 - --no-verify does not skip verification: factory.py:532 does `factory_config.verify_config or VerifyConfig()`, substituting defaults; on a non-Python repo this burns full retries against checks that cannot pass.
-- Feedforward never runs under `ks factory`: cli builds FactoryConfig without feedforward_config, so ff_config_dict stays None (H-10).
+- Codebase scan never runs under `ks factory`: cli builds FactoryConfig without codebase_scan_config, so ff_config_dict stays None (H-10).
 - The prd-path contract is broken: a comment (factory.py:259-261) claims the prompt template uses $prd_path substituted by loop.py, but NO shipped template contains $prd_path; decomposed component PRDs live at scripts/kstrl/feature/<id>/prd.json while the default prompt points at scripts/kstrl/prd.json, so the agent reads the wrong file while check_prd_stories reads the right one (H-11).
 
 Scope: kstrl/factory.py, kstrl/cli.py, kstrl/loop.py, kstrl/init_cmd.py (DEFAULT_PROMPT + scaffold), tests/test_prompt_versions.py (snapshot only, per the exception), tests.
@@ -476,11 +476,11 @@ Scope: kstrl/factory.py, kstrl/cli.py, kstrl/loop.py, kstrl/init_cmd.py (DEFAULT
 Requirements:
 1. Forward max_iterations, interactive, allowed_paths through _submit_args into _run_component; delete the hardcoded 30.
 2. --no-verify uses an explicit skip sentinel that run_factory honors (Phase 1 genuinely skipped, stated in output).
-3. Wire feedforward config through the factory command path (it should honor the wave-4 control plane: toml/env/flags).
+3. Wire codebase scan config through the factory command path (it should honor the wave-4 control plane: toml/env/flags).
 4. DEFAULT_PROMPT gains an explicit $prd_path (and $progress_path if applicable) placeholder; loop.py substitutes the per-component paths; add a test asserting the rendered prompt names the same PRD file that check_prd_stories reads for a decomposed component.
 5. H3 compliance for the DEFAULT_PROMPT edit as described above.
 
-Tests: fake-agent run with N=3 executes at most 3 iterations; --no-verify runs zero checks; factory run builds feedforward context (assert marker string in the built prompt); the prd-path consistency test.
+Tests: fake-agent run with N=3 executes at most 3 iterations; --no-verify runs zero checks; factory run builds codebase scan context (assert marker string in the built prompt); the prd-path consistency test.
 
 Finish per Shared rules: green checks, rebase, PR with Tested/Assumed referencing R2.3, flip the R2.3 checkbox.
 ```
@@ -614,7 +614,7 @@ Branch: `fix/r2-5-docs`
 Read CLAUDE.md, then the "Shared rules" section of docs/remediation-sessions.md, then item R2.5 in docs/remediation-roadmap.md.
 
 Defects (docs vs reality):
-- README quick start step 1 (`uv tool install kstrl-cli`) installs an UNRELATED PyPI package; step 3 (`kstrl prd create`) does not exist; a third of the CLI table is fiction (TUI, prd group, config show/status existed only as of wave 6, --legacy). "362 tests" is stale. README documents [sensors]/[fixtures] toml sections that do not exist in code and omits [knowledge]/[factory]/[verify]/[security]/[contract].
+- README quick start step 1 (`uv tool install kstrl-cli`) installs an UNRELATED PyPI package; step 3 (`kstrl prd create`) does not exist; a third of the CLI table is fiction (TUI, prd group, config show/status existed only as of wave 6, --legacy). "362 tests" is stale. README documents [checks]/[fixtures] toml sections that do not exist in code and omits [knowledge]/[factory]/[verify]/[security]/[contract].
 - pyproject.toml still depends on textual (dead since the TUI purge).
 - examples/uv-python predates the engineer contract: no Self-Critique block in its prompt.md, prd_prompt.txt forbids allowedPaths.
 - adversarial-design.md says the distiller runs "post-merge"; it runs pre-PR. runbook.md tells the operator to inspect a failed component's worktree, but cleanup deletes worktrees (align with the --keep-worktrees-on-failure flag landing in Session 7C: coordinate by documenting the flag as the recovery path).
@@ -626,7 +626,7 @@ Requirements:
 2. Install story: unless the user has decided on publishing (check the roadmap "User decisions" section: if undecided), document clone-install (`uv tool install -e .` from a clone) as the ONLY path and remove the PyPI command.
 3. Remove textual from dependencies; verify nothing imports it.
 4. Refresh examples/uv-python to the current engineer contract (Self-Critique block, allowedPaths-aware prd_prompt, current progress format).
-5. Fix the drift list: distiller timing wording, runbook worktree guidance, test count (state the measured number), [sensors]/[fixtures] removed, missing sections added from kstrl.toml.example.
+5. Fix the drift list: distiller timing wording, runbook worktree guidance, test count (state the measured number), [checks]/[fixtures] removed, missing sections added from kstrl.toml.example.
 
 Tests: the CI doc-drift check itself; a test that scripts/gen_docs.py output matches the committed README sections.
 

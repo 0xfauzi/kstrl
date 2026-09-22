@@ -1,7 +1,7 @@
 """The engineer is shown the repo's own source, in an order the repo
 decides, and is told when it is shown nothing (#378).
 
-These drive `build_feedforward_context`, which is the function
+These drive `build_codebase_scan_context`, which is the function
 `factory._run_component` calls to build the block the engineer
 receives, rather than `extract_public_interfaces` alone.
 """
@@ -12,7 +12,11 @@ from pathlib import Path
 
 import pytest
 
-from kstrl.feedforward import _MAX_SOURCE_ROOT_DEPTH, FeedforwardConfig, build_feedforward_context
+from kstrl.feedforward import (
+    _MAX_SOURCE_ROOT_DEPTH,
+    CodebaseScanConfig,
+    build_codebase_scan_context,
+)
 from tests.test_context import section
 
 
@@ -35,7 +39,7 @@ def _listed(context: str) -> list[str]:
 
 
 def _reversed_iterdir_context(tmp_path: Path) -> str:
-    """`build_feedforward_context(tmp_path)` with `Path.iterdir` reversed,
+    """`build_codebase_scan_context(tmp_path)` with `Path.iterdir` reversed,
     the patch undone before this returns. `Path.rglob` does not go
     through `Path.iterdir`, so the only thing perturbed is which
     candidate root the walk visits first."""
@@ -46,7 +50,7 @@ def _reversed_iterdir_context(tmp_path: Path) -> str:
 
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(Path, "iterdir", reversed_iterdir)
-        return build_feedforward_context(tmp_path, FeedforwardConfig())
+        return build_codebase_scan_context(tmp_path, CodebaseScanConfig())
 
 
 def test_a_packages_src_monorepo_reaches_the_engineer(tmp_path: Path) -> None:
@@ -62,7 +66,9 @@ def test_a_packages_src_monorepo_reaches_the_engineer(tmp_path: Path) -> None:
     )
     (pkg / "service.py").write_text("class Renderer:\n    pass\n", encoding="utf-8")
 
-    body = section(build_feedforward_context(tmp_path, FeedforwardConfig()), "## Public interfaces")
+    body = section(
+        build_codebase_scan_context(tmp_path, CodebaseScanConfig()), "## Public interfaces"
+    )
 
     assert "packages/demo/src/demo_pkg/models.py" in body
     assert "class Deck" in body
@@ -84,7 +90,9 @@ def test_a_packages_src_monorepo_dependency_graph_reaches_the_engineer(tmp_path:
         encoding="utf-8",
     )
 
-    body = section(build_feedforward_context(tmp_path, FeedforwardConfig()), "## Dependency graph")
+    body = section(
+        build_codebase_scan_context(tmp_path, CodebaseScanConfig()), "## Dependency graph"
+    )
 
     assert "api" in body
     assert "models" in body
@@ -106,7 +114,7 @@ def test_the_file_budget_is_spent_on_source_and_not_on_directory_order(
     _package(tmp_path, "aaa_extras", 2)
     _package(tmp_path, "tests", 40)
 
-    forward = build_feedforward_context(tmp_path, FeedforwardConfig())
+    forward = build_codebase_scan_context(tmp_path, CodebaseScanConfig())
     listed = _listed(forward)
 
     assert listed, forward
@@ -119,7 +127,7 @@ def test_an_empty_section_records_why_it_is_empty(tmp_path: Path) -> None:
     and nothing recorded that the stage had tried."""
     (tmp_path / "README.md").write_text("no python here\n", encoding="utf-8")
 
-    context = build_feedforward_context(tmp_path, FeedforwardConfig())
+    context = build_codebase_scan_context(tmp_path, CodebaseScanConfig())
     body = section(context, "## Public interfaces")
 
     assert "## Public interfaces" in context
@@ -135,7 +143,7 @@ def test_two_roots_of_the_same_size_are_ordered_by_path(tmp_path: Path) -> None:
     _package(tmp_path, "alpha_pkg", 20)
     _package(tmp_path, "beta_pkg", 20)
 
-    forward = build_feedforward_context(tmp_path, FeedforwardConfig())
+    forward = build_codebase_scan_context(tmp_path, CodebaseScanConfig())
     listed = _listed(forward)
 
     assert len(listed) == 30, listed
@@ -154,7 +162,9 @@ def test_a_package_whose_name_starts_with_test_is_still_source(tmp_path: Path) -
     (pkg / "__init__.py").write_text("", encoding="utf-8")
     (pkg / "core.py").write_text("class Widget:\n    pass\n", encoding="utf-8")
 
-    body = section(build_feedforward_context(tmp_path, FeedforwardConfig()), "## Public interfaces")
+    body = section(
+        build_codebase_scan_context(tmp_path, CodebaseScanConfig()), "## Public interfaces"
+    )
 
     assert "testpkg/core.py" in body
     assert "class Widget" in body
@@ -168,7 +178,9 @@ def test_a_directory_of_py_files_with_no_init_is_the_loose_tier(tmp_path: Path) 
     scripts.mkdir()
     (scripts / "build.py").write_text("def release() -> None:\n    pass\n", encoding="utf-8")
 
-    body = section(build_feedforward_context(tmp_path, FeedforwardConfig()), "## Public interfaces")
+    body = section(
+        build_codebase_scan_context(tmp_path, CodebaseScanConfig()), "## Public interfaces"
+    )
 
     assert "scripts/build.py" in body
     assert "def release()" in body
@@ -185,7 +197,9 @@ def test_a_package_past_the_depth_bound_is_invisible(tmp_path: Path) -> None:
     (pkg / "__init__.py").write_text("", encoding="utf-8")
     (pkg / "core.py").write_text("class Widget:\n    pass\n", encoding="utf-8")
 
-    body = section(build_feedforward_context(tmp_path, FeedforwardConfig()), "## Public interfaces")
+    body = section(
+        build_codebase_scan_context(tmp_path, CodebaseScanConfig()), "## Public interfaces"
+    )
 
     assert "no Python source root found" in body
 
@@ -202,7 +216,7 @@ def test_a_crash_in_extraction_is_recorded_and_does_not_take_the_context_down(
 
     monkeypatch.setattr("kstrl.feedforward.extract_public_interfaces", boom)
 
-    context = build_feedforward_context(tmp_path, FeedforwardConfig())
+    context = build_codebase_scan_context(tmp_path, CodebaseScanConfig())
     body = section(context, "## Public interfaces")
 
     assert "## Public interfaces" in context

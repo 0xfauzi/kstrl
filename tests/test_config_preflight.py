@@ -660,12 +660,12 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
         assert "Created prompt.md" in result.output
 
     @pytest.mark.parametrize(("toml", "fragment"), TOML_PARSE_FAULTS)
-    def test_sense_keeps_its_exit_2_and_its_json_envelope(
+    def test_check_keeps_its_exit_2_and_its_json_envelope(
         self,
         toml: bytes,
         fragment: str,
     ) -> None:
-        result = _invoke(["sense", "--json"], toml=toml)
+        result = _invoke(["check", "--json"], toml=toml)
 
         assert result.exit_code == 2
         assert fragment in json.loads(result.stdout)["error"]
@@ -686,12 +686,12 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
         assert "[ok] git_repo" not in result.output  # the tmp_path cwd is not a repo
         assert fragment in result.output
 
-    def test_sense_checks_sections_it_does_not_itself_read(self) -> None:
-        """`sense` loads four sections of its own. An exemption that
+    def test_check_checks_sections_it_does_not_itself_read(self) -> None:
+        """`check` loads four sections of its own. An exemption that
         checked only those would keep the "depends which section you
         typo'd" property inside itself, so it runs the whole preflight
         under its own contract."""
-        result = _invoke(["sense", "--json"], toml='[linear]\ntimeout_seconds = "soon"\n')
+        result = _invoke(["check", "--json"], toml='[linear]\ntimeout_seconds = "soon"\n')
 
         assert result.exit_code == 2
         assert "[linear]" in json.loads(result.stdout)["error"]

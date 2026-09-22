@@ -398,7 +398,7 @@ def run_function_fixture(
 
     # -B: the runner imports the project's module, and CPython would
     # write a __pycache__ beside it. A fixture is a measurement, and
-    # `ks sense` (R10.1) promises to leave the tree it measures alone;
+    # `ks check` (R10.1) promises to leave the tree it measures alone;
     # the cache would never be reused anyway, since the process exits.
     argv = [
         sys.executable,
@@ -680,7 +680,7 @@ def check_fixtures(
         duration_seconds=time.monotonic() - start,
         # #227: one fixture that measured nothing makes the whole row
         # unmeasured. `all` and not `any`, because this field gates the
-        # CLEARING side of the dampener and that side has to be the narrow
+        # CLEARING side of the baseline and that side has to be the narrow
         # one: a run in which one fixture timed out cannot prove that another
         # baseline signature went away.
         measured=all(r.measured for r in results),

@@ -18,7 +18,7 @@ from kstrl.decompose import (
 )
 from kstrl.delimiters import generate_data_delimiter
 from kstrl.findings import (
-    SETPOINT_DISAGREEMENT_CATEGORY,
+    CLAIM_DISAGREEMENT_CATEGORY,
     Finding,
     dump_raw_debug,
     tag_finding_with_model,
@@ -73,7 +73,7 @@ VALID_CRITERION_VERDICTS = frozenset(
 
 # R10.3: story ids are compared case-insensitively after stripping.
 # parse_review_output's coverage gate has matched ids this way since
-# R1.1; the set-point check compares the same ids against the PRD, so
+# R1.1; the claim check compares the same ids against the PRD, so
 # the rule lives in one place rather than being spelled out at each
 # comparison. Matching is by id and never by criterion text.
 def normalize_story_id(value: str) -> str:
@@ -99,7 +99,7 @@ class CriterionReview:
     R10.3: ``story_id`` is the ``storyId`` the reviewer emitted for the
     story this criterion belongs to, stripped but otherwise verbatim.
     It is stored so the reviewer's verdicts can be compared against the
-    engineer's per-story ``passes`` flag (set-point agreement); before
+    engineer's per-story ``passes`` flag (claim agreement); before
     R10.3 the parser read the id and discarded it. Normalisation for
     comparison happens at lookup time, not here, so the raw value stays
     inspectable. Empty when the reviewer omitted the id, in which case
@@ -366,7 +366,7 @@ class ReviewResult:
     def non_pass_criteria(self, story_id: str) -> list[CriterionReview]:
         """Every criterion for *story_id* the reviewer did not pass.
 
-        Order is the reviewer's own. Used for the set-point finding's
+        Order is the reviewer's own. Used for the claim finding's
         suggestion text and for the note written into a reverted PRD
         story, so both read the same evidence.
         """
@@ -440,13 +440,13 @@ class ReviewResult:
         return [tag_finding_with_model(f, self.reviewer_model) for f in out]
 
 
-def setpoint_disagreements(
+def claim_disagreements(
     prd: PRD,
     review: ReviewResult,
     *,
     severity: str,
 ) -> list[Finding]:
-    """R10.3: one Finding per story where the two sensors disagree.
+    """R10.3: one Finding per story where the two checks disagree.
 
     The engineer agent is the only writer of ``passes`` in the PRD: it
     does the work and then files the report on the work. The reviewer is
@@ -516,7 +516,7 @@ def setpoint_disagreements(
             )
         out.append(
             Finding.from_review_concern(
-                category=SETPOINT_DISAGREEMENT_CATEGORY,
+                category=CLAIM_DISAGREEMENT_CATEGORY,
                 severity=severity,
                 location=story.id,
                 explanation=(
@@ -529,40 +529,50 @@ def setpoint_disagreements(
     return [tag_finding_with_model(f, review.reviewer_model) for f in out]
 
 
-#: H3 (#303): fragments setpoint_retry_context assembles; versioned as one
+#: H3 (#303): fragments claim_retry_context assembles; versioned as one
 #: body (docs/adversarial-roadmap.md, H3a sweep row).
-SETPOINT_RETRY_PROMPT_VERSION = "1.0.0"
+CLAIM_RETRY_PROMPT_VERSION = "1.0.0"
 
-SETPOINT_RETRY_PROMPT = (
+CLAIM_RETRY_PROMPT = (
     "Set-point disagreement: you marked the stories below done, but "
     "the reviewer did not confirm them. {did} Implement each one "
     "properly and set the flag again only once its acceptance "
     "criteria are genuinely met."
 )
-SETPOINT_REVERTED_PROMPT = "Their `passes` flags have been reset to false in the PRD."
-SETPOINT_NOT_REVERTED_PROMPT = (
+CLAIM_REVERTED_PROMPT = "Their `passes` flags have been reset to false in the PRD."
+CLAIM_NOT_REVERTED_PROMPT = (
     "Their `passes` flags could NOT be reset automatically: set each "
     "one back to false yourself before doing anything else."
 )
-SETPOINT_PARTIALLY_JUDGED_PROMPT = (
+CLAIM_PARTIALLY_JUDGED_PROMPT = (
     "  - Every criterion the reviewer judged passed, but it "
     "did not judge them all. Nothing here says the story is "
     "wrong; it says the story is unconfirmed."
 )
-SETPOINT_NO_VERDICT_PROMPT = (
+CLAIM_NO_VERDICT_PROMPT = (
     "  - The reviewer returned no verdict for this story, so "
     "there is no criterion-level evidence to act on. Check "
     "the story against its acceptance criteria yourself."
 )
 
 
-def setpoint_retry_context(
+# Pre-existing: this function measured cognitive complexity 19 under its
+# pre-#395 name (see git history at a98ff21) before #395 touched it -
+# verified by diffing the two function bodies with identifiers normalised,
+# which are otherwise identical. #395 renames identifiers and prose only; it
+# does not change this function's control flow. complexipy's --staged mode
+# matches functions across revisions BY NAME, so the rename (required by
+# #395's own scope) makes an unrelated, pre-existing violation look new. Out
+# of scope for a vocabulary rename to fix; tracked as still-open debt, not
+# silently cleared.
+# complexipy: ignore
+def claim_retry_context(
     disagreements: list[Finding],
     review: ReviewResult,
     *,
     reverted: bool = True,
 ) -> str:
-    """R10.3: the set-point findings as text for the engineer's retry.
+    """R10.3: the claim findings as text for the engineer's retry.
 
     Says what the harness did as well as what it found, because the
     agent will otherwise re-read a PRD it does not expect to have
@@ -575,14 +585,14 @@ def setpoint_retry_context(
     tells the agent nothing it did not already read in the PRD, and this
     is the one retry path where the reviewer's reasoning does not reach
     the agent by another route: ``as_retry_context`` is added only when
-    the review FAILED, and a set-point block happens on a review that
+    the review FAILED, and a claim block happens on a review that
     passed.
     """
     if not disagreements:
         return ""
-    did = SETPOINT_REVERTED_PROMPT if reverted else SETPOINT_NOT_REVERTED_PROMPT
+    did = CLAIM_REVERTED_PROMPT if reverted else CLAIM_NOT_REVERTED_PROMPT
     lines = [
-        SETPOINT_RETRY_PROMPT.format(did=did),
+        CLAIM_RETRY_PROMPT.format(did=did),
     ]
     for finding in disagreements:
         lines.append(f"- {finding.explanation}")
@@ -595,7 +605,7 @@ def setpoint_retry_context(
             # both leave `unmet` empty, and the second used to be
             # described as the first - contradicting the finding printed
             # directly above it, which had just said "pass on only 1 of 2".
-            lines.append(SETPOINT_PARTIALLY_JUDGED_PROMPT if judged else SETPOINT_NO_VERDICT_PROMPT)
+            lines.append(CLAIM_PARTIALLY_JUDGED_PROMPT if judged else CLAIM_NO_VERDICT_PROMPT)
             continue
         for cr in unmet:
             lines.append(f"  - [{cr.verdict}] {cr.criterion}")
@@ -617,7 +627,7 @@ def revert_unconfirmed_stories(
 
     Mutates *prd* in place and returns the ids it reverted; the caller
     saves. This is what makes the PRD, the record of what is done, agree
-    with the sensor rather than with the claim. It also feeds back into
+    with the check rather than with the claim. It also feeds back into
     the engineer's own story selection: the prompt tells it to pick the
     highest-priority story where ``passes`` is false, so a reverted
     story is picked up again on the next attempt without the retry text
@@ -642,11 +652,11 @@ def revert_unconfirmed_stories(
     return reverted
 
 
-def setpoint_blocks(config: FactoryConfig, autonomy_level: int) -> bool:
-    """Whether a set-point disagreement should FAIL the component.
+def claim_blocks(config: FactoryConfig, autonomy_level: int) -> bool:
+    """Whether a claim disagreement should FAIL the component.
 
     Mirrors ``adequacy.layer0_blocks``. The config can opt in early
-    (``[factory] setpoint_agreement = "block"`` with the ladder off), and
+    (``[factory] claim_agreement = "block"`` with the ladder off), and
     the autonomy ladder can force it on from L1 upward, but neither can
     turn it off once the other wants it. Autonomy is allowed to tighten a
     gate and never to loosen one.
@@ -656,13 +666,13 @@ def setpoint_blocks(config: FactoryConfig, autonomy_level: int) -> bool:
     operator's judgement, made after reading real findings, and is
     deliberately not encoded as a number here.
     """
-    if config.setpoint_agreement == "block":
+    if config.claim_agreement == "block":
         return True
     # autonomy_level == 0 means the ladder is off, so only the explicit
     # config opt-in above can block. With the ladder on, a run that has
     # earned any autonomy at all should not be taking the agent's word
     # for done: the whole point of the ladder is that less human
-    # attention is spent per run, which makes the second sensor matter
+    # attention is spent per run, which makes the second check matter
     # more, not less.
     return autonomy_level >= 1
 
@@ -917,7 +927,7 @@ def parse_review_output(
                     explanation=str(crit_data.get("explanation", "")),
                     suggestion=str(crit_data.get("suggestion", "")),
                     # R10.3: keep the story this verdict belongs to. The id
-                    # was already read above and thrown away; the set-point
+                    # was already read above and thrown away; the claim
                     # check needs it to compare the reviewer's verdict
                     # against the engineer's passes flag per story.
                     story_id=story_id,

@@ -532,7 +532,7 @@ DEFAULT_KSTRL_TOML = """\
 # max_adversarial_calls = 0        # 0 = unbounded; caps review+security+distill LLM calls per run
 # At the cap, hard-mode review and security HALT the component.
 # The halt records failed_check=adversarial_budget and does not retry.
-# Advisory skips instead, and can still fail at the set-point gate.
+# Advisory skips instead, and can still fail at the claim gate.
 # Budget 3 calls per component (docs/runbook.md).
 # pause_before_pr_merge = false    # opt-in HITL checkpoint before each PR push+merge
 
@@ -626,8 +626,8 @@ DEFAULT_KSTRL_TOML = """\
 # test_command = "uv run pytest"
 # timeout = 600.0
 
-# Phase 0 feedforward (computational structural scan; no LLM).
-[feedforward]
+# Phase 0 codebase scan (computational structural scan; no LLM).
+[codebase_scan]
 # enabled = true
 # module_map = true
 # public_interfaces = true
@@ -1211,8 +1211,8 @@ Other modes:
   ks feature [iterations] --prd scripts/kstrl/feature/<name>/prd.json
 
 Measure before you spend (no agent, no cost):
-  ks sense
-  ks sense --allowed-path '<glob>'                     # preflight the guard
+  ks check
+  ks check --allowed-path '<glob>'                     # preflight the guard
 """
 
 

@@ -2,7 +2,7 @@
 
 ``tests/test_check_result_measurement.py`` pins the inventory. This file
 answers the other question: for every site that now says ``measured=False``,
-does the real function actually take that branch, and does the dampener then
+does the real function actually take that branch, and does the baseline then
 put the baseline's signature in ``unmeasured`` rather than ``fixed``?
 
 Nothing here builds a ``CheckResult`` by hand. Every row comes out of the
@@ -32,7 +32,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import dampener
+from kstrl import baseline
 from kstrl.adequacy import AdequacyConfig
 from kstrl.fixtures import Fixture, FixturesConfig, check_fixtures, check_fixtures_from_prd
 from kstrl.policy import PolicyConfig
@@ -104,7 +104,7 @@ def _repo(root: Path) -> Path:
 
 
 def test_diff_scope_with_no_allowed_paths_measured_nothing(tmp_path: Path) -> None:
-    """``ks sense`` with no --allowed-path takes this branch every time, and
+    """``ks check`` with no --allowed-path takes this branch every time, and
     ``diff_scope`` was in this repository's own committed baseline."""
     row = check_diff_scope(tmp_path, "main", allowed_paths=None)
 
@@ -123,7 +123,7 @@ def test_the_two_diff_driven_checks_agree_on_an_empty_diff(tmp_path: Path) -> No
     sets --allowed-path had every ``diff_scope`` baseline signature CLEARED by
     a pull request whose diff touched none of the allowed globs.
 
-    The MESSAGES are asserted equal too, not only the flag: the dampener turns
+    The MESSAGES are asserted equal too, not only the flag: the baseline turns
     a row's message into the reason a check is unmeasured, so two spellings of
     one fact reach the operator as two different holes.
     """
@@ -300,7 +300,7 @@ def test_a_scope_that_could_not_be_read_measured_nothing() -> None:
 
     Its check name exists ONLY in this state, so exempting it would put the
     name in ``measured_checks`` on the one run that produces it, and its
-    absence from the next run would then read as a sensor that went dark on a
+    absence from the next run would then read as a check that went dark on a
     harness somebody had just repaired.
     """
     assert_unmeasured(check_scope_unreadable("the pre-run PRD could not be parsed"))
@@ -546,7 +546,7 @@ def test_a_not_measured_gap_lands_where_an_unmeasured_row_does(
 
     #335 split the dead-code check so that every way it can measure nothing
     returns a :class:`NotMeasured` gap rather than a passing row, which is why
-    nothing in that function carries ``measured=`` at all. The dampener has to
+    nothing in that function carries ``measured=`` at all. The baseline has to
     read both through one path, or half the mechanism is missing depending on
     which check produced it.
 
@@ -559,20 +559,20 @@ def test_a_not_measured_gap_lands_where_an_unmeasured_row_does(
     assert outcome.reason == "tool_missing"
 
     signature = f"{outcome.check}:an-earlier-finding"
-    current = dampener.baseline_from_result(
+    current = baseline.baseline_from_result(
         VerificationResult(passed=True, checks=[], not_measured=[outcome]),
         base_ref="0" * 40,
         project="owner/repo",
         generated_at="2026-09-07T00:00:00Z",
-        sense_schema_version=3,
+        check_schema_version=3,
         digest="d" * 16,
     )
-    baseline = dampener.Baseline(
+    stored = baseline.Baseline(
         generated_at="2026-09-06T00:00:00Z",
         base_ref="1" * 40,
         project="owner/repo",
         passed=False,
-        sense_schema_version=3,
+        check_schema_version=3,
         verify_digest="d" * 16,
         measured_checks=(outcome.check,),
         unmeasured_checks=(),
@@ -580,7 +580,7 @@ def test_a_not_measured_gap_lands_where_an_unmeasured_row_does(
         signatures={signature: 2},
     )
 
-    comparison = dampener.compare(baseline, current)
+    comparison = baseline.compare(stored, current)
 
     assert comparison.fixed == {}
     assert comparison.unmeasured == {signature: 2}

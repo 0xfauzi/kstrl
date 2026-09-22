@@ -109,7 +109,7 @@ use_worktrees = true               # branch each component into .kstrl/worktrees
 single_pr = false                  # one PR for the whole factory vs per-component
 create_prs = true                  # call `gh` to push + merge per component
 review_mode = "hard"               # hard | advisory | skip
-setpoint_agreement = "advisory"    # advisory | block
+claim_agreement = "advisory"    # advisory | block
 # A story is "done" when the engineer sets passes=true in the PRD - the
 #   agent that did the work reporting on the work. This checks that claim
 #   against the reviewer's per-story verdicts. "advisory" records a finding
@@ -121,7 +121,7 @@ max_adversarial_calls = 0          # 0 = unbounded; otherwise cap review+securit
 # At the cap a hard-mode review or security phase HALTS the component
 #   (failed_check = adversarial_budget) rather than merging it on
 #   mechanical checks alone; an advisory one skips, and can still fail
-#   the component at the set-point gate. Budget 3 calls per component
+#   the component at the claim gate. Budget 3 calls per component
 #   for hard review + hard security + knowledge (docs/runbook.md).
 max_total_tokens = 0               # run-level token budget; 0 = unbounded (R3.1/R8)
 max_cost_usd = 0.0                 # run-level USD budget; 0 = unbounded (R8)
@@ -349,8 +349,8 @@ mode = "tier"                      # tier | final | skip
 test_command = "uv run pytest"
 timeout = 600.0
 
-# Phase 0 feedforward (computational structural scan; no LLM).
-[feedforward]
+# Phase 0 codebase scan (computational structural scan; no LLM).
+[codebase_scan]
 enabled = true
 module_map = true
 public_interfaces = true
