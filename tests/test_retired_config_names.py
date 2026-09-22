@@ -164,21 +164,6 @@ FEEDFORWARD_ALLOWED = (
     "test_feedforward",
 )
 
-# kstrl/feedforward.py and its four named siblings (the module's own tests
-# and prompt fixtures) are exactly the files Decision 1 keeps at this path;
-# every "feedforward" in them is the module identifier itself
-# (``from kstrl import feedforward``, ``feedforward.extract_...(...)``),
-# which FEEDFORWARD_ALLOWED's path-shaped substrings do not match on a bare
-# reference. Exempt the five files from the feedforward line-check by name
-# rather than allowlisting ~26 individual lines of the same one fact.
-FEEDFORWARD_EXEMPT_FILES = {
-    "kstrl/feedforward.py",
-    "tests/test_feedforward.py",
-    "tests/test_feedforward_selection.py",
-    "tests/test_feedforward_notices.py",
-    "tests/helpers/feedforward_prompts.py",
-}
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 WALK_EXTENSIONS = {".py", ".md", ".toml", ".yml", ".yaml", ".json", ".html", ".example"}
@@ -262,6 +247,12 @@ ALLOWED: dict[tuple[str, str], int] = {
     ("kstrl/review.py", "set-point"): 1,
     ("tests/test_builder_prompts.py", "set-point"): 1,
     ("tests/test_claim_agreement_pipeline.py", "set-point"): 1,
+    # Bare references to the ``kstrl.feedforward`` module Decision 1 keeps
+    # at its path: attribute access and monkeypatch targets that
+    # FEEDFORWARD_ALLOWED's path-shaped substrings do not match.
+    ("tests/helpers/feedforward_prompts.py", "feedforward"): 14,
+    ("tests/test_feedforward.py", "feedforward"): 8,
+    ("tests/test_feedforward_notices.py", "feedforward"): 3,
 }
 
 
@@ -285,19 +276,19 @@ def _source_files() -> list[Path]:
     return found
 
 
-def _feedforward_hit(low_line: str, ff_exempt: bool) -> bool:
-    if ff_exempt or "feedforward" not in low_line:
+def _feedforward_hit(low_line: str) -> bool:
+    if "feedforward" not in low_line:
         return False
     return not any(allowed in low_line for allowed in FEEDFORWARD_ALLOWED)
 
 
-def _words_in_line(line: str, ff_exempt: bool) -> list[str]:
+def _words_in_line(line: str) -> list[str]:
     """Every retired word this one line matches, by name."""
     low = line.lower()
     words = [w for w in SET_A if w in low]
     if SENSE_PATTERN.search(line):
         words.append("sense")
-    if _feedforward_hit(low, ff_exempt):
+    if _feedforward_hit(low):
         words.append("feedforward")
     return words
 
@@ -309,10 +300,9 @@ def test_no_retired_name_survives_in_the_source() -> None:
 
     for rel in files:
         relstr = rel.as_posix()
-        ff_exempt = relstr in FEEDFORWARD_EXEMPT_FILES
         text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="replace")
         for lineno, line in enumerate(text.splitlines(), start=1):
-            for word in _words_in_line(line, ff_exempt):
+            for word in _words_in_line(line):
                 key = (relstr, word)
                 counts[key] = counts.get(key, 0) + 1
                 if counts[key] <= ALLOWED.get(key, 0):
@@ -324,7 +314,10 @@ def test_no_retired_name_survives_in_the_source() -> None:
     # sides of the census so a walk that quietly stopped walking, or an
     # ALLOWED row nobody re-derived, fails loudly instead of agreeing with
     # itself: files_walked is a floor (the repo only grows), the sum is
-    # exact (every allowed line is accounted for, not just capped).
+    # exact (every allowed line is accounted for, not just capped), and the
+    # SKIP_FILES count is exact too (a fifth carve-out must be a deliberate
+    # edit here, not a silent addition).
     assert len(files) >= 500, f"walked only {len(files)} files - the walk is not running"
     assert sum(counts.get(k, 0) for k in ALLOWED) == sum(ALLOWED.values())
-    assert sum(ALLOWED.values()) == 28
+    assert len(SKIP_FILES) == 4
+    assert sum(ALLOWED.values()) == 53

@@ -556,16 +556,47 @@ CLAIM_NO_VERDICT_PROMPT = (
 )
 
 
-# Pre-existing: this function measured cognitive complexity 19 under its
-# pre-#395 name (see git history at a98ff21) before #395 touched it -
-# verified by diffing the two function bodies with identifiers normalised,
-# which are otherwise identical. #395 renames identifiers and prose only; it
-# does not change this function's control flow. complexipy's --staged mode
-# matches functions across revisions BY NAME, so the rename (required by
-# #395's own scope) makes an unrelated, pre-existing violation look new. Out
-# of scope for a vocabulary rename to fix; tracked as still-open debt, not
-# silently cleared.
-# complexipy: ignore
+def _claim_lines_for_finding(finding: Finding, review: ReviewResult) -> list[str]:
+    """The detail lines for one disagreement, for :func:`_claim_disagreement_lines`.
+
+    Two different situations reach the "no unmet criteria" branch and
+    the agent must not be handed the wrong one. "Nothing was judged" and
+    "everything judged passed, but not everything was judged" both leave
+    ``unmet`` empty, and the second used to be described as the first -
+    contradicting the finding printed directly above it, which had just
+    said "pass on only 1 of 2".
+    """
+    lines = [f"- {finding.explanation}"]
+    judged = review.criteria_for(finding.location)
+    unmet = [cr for cr in judged if cr.verdict != ReviewVerdict.PASS.value]
+    if not unmet:
+        lines.append(CLAIM_PARTIALLY_JUDGED_PROMPT if judged else CLAIM_NO_VERDICT_PROMPT)
+        return lines
+    for cr in unmet:
+        lines.append(f"  - [{cr.verdict}] {cr.criterion}")
+        if cr.explanation:
+            lines.append(f"    - Reviewer: {cr.explanation}")
+        if cr.suggestion:
+            lines.append(f"    - Suggestion: {cr.suggestion}")
+    return lines
+
+
+def _claim_disagreement_lines(
+    disagreements: list[Finding],
+    review: ReviewResult,
+) -> list[str]:
+    """The per-finding detail lines for :func:`claim_retry_context`.
+
+    Extracted out of that function so its branching is not counted
+    against the caller's complexity; the caller still owns the header
+    line and the empty-disagreements short circuit.
+    """
+    lines: list[str] = []
+    for finding in disagreements:
+        lines.extend(_claim_lines_for_finding(finding, review))
+    return lines
+
+
 def claim_retry_context(
     disagreements: list[Finding],
     review: ReviewResult,
@@ -594,25 +625,7 @@ def claim_retry_context(
     lines = [
         CLAIM_RETRY_PROMPT.format(did=did),
     ]
-    for finding in disagreements:
-        lines.append(f"- {finding.explanation}")
-        judged = review.criteria_for(finding.location)
-        unmet = [cr for cr in judged if cr.verdict != ReviewVerdict.PASS.value]
-        if not unmet:
-            # Two different situations reach here and the agent must not
-            # be handed the wrong one. "Nothing was judged" and
-            # "everything judged passed, but not everything was judged"
-            # both leave `unmet` empty, and the second used to be
-            # described as the first - contradicting the finding printed
-            # directly above it, which had just said "pass on only 1 of 2".
-            lines.append(CLAIM_PARTIALLY_JUDGED_PROMPT if judged else CLAIM_NO_VERDICT_PROMPT)
-            continue
-        for cr in unmet:
-            lines.append(f"  - [{cr.verdict}] {cr.criterion}")
-            if cr.explanation:
-                lines.append(f"    - Reviewer: {cr.explanation}")
-            if cr.suggestion:
-                lines.append(f"    - Suggestion: {cr.suggestion}")
+    lines.extend(_claim_disagreement_lines(disagreements, review))
     return "\n".join(lines)
 
 

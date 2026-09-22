@@ -172,7 +172,7 @@ class TestExtractConventions:
 # ---------------------------------------------------------------------------
 
 
-class TestBuildFeedforwardContext:
+class TestBuildCodebaseScanContext:
     def test_build_codebase_scan_context_disabled(self, tmp_path: Path) -> None:
         config = CodebaseScanConfig(enabled=False)
         result = build_codebase_scan_context(tmp_path, config)
