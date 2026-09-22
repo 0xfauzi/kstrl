@@ -136,6 +136,18 @@ class TestReleaseRefFrom:
         assert release.release_ref_from([]) == ""
         assert release.release_ref_from([components[0]]) == ""
 
+    def test_the_release_ref_is_chosen_by_completed_at_not_manifest_order(self) -> None:
+        """The component that merged last sits FIRST in manifest order,
+        so a rule that took the last manifest entry would answer 'c'.
+        """
+        components = [
+            _component("late-but-early", merge_sha="d" * 40, completed_at="2026-01-05T00:00:00Z"),
+            _component("first", merge_sha="a" * 40, completed_at="2026-01-01T00:00:00Z"),
+            _component("tie-earlier", merge_sha="b" * 40, completed_at="2026-01-02T00:00:00Z"),
+            _component("tie-later", merge_sha="c" * 40, completed_at="2026-01-02T00:00:00Z"),
+        ]
+        assert release.release_ref_from(components) == "d" * 40
+
 
 class TestReleaseModuleContainment:
     def test_the_release_module_spells_no_process_primitive(self) -> None:

@@ -189,13 +189,18 @@ def write_stub_gh(bin_dir: Path) -> Path:
               fi
               exit 0 ;;
             view)
-              if [ -n "${{GH_SPINE_MERGE_SHA:-}}" ]; then
-                commit=$(printf '{{"oid": "%s"}}' "$GH_SPINE_MERGE_SHA")
-              else
-                commit=null
-              fi
-              printf '{{"state": "%s", "mergeCommit": %s}}\\n' \\
-                "${{GH_SPINE_VIEW_STATE:-MERGED}}" "$commit"
+              case "$5" in
+                *mergeCommit*)
+                  if [ -n "${{GH_SPINE_MERGE_SHA:-}}" ]; then
+                    commit=$(printf '{{"oid": "%s"}}' "$GH_SPINE_MERGE_SHA")
+                  else
+                    commit=null
+                  fi
+                  printf '{{"state": "%s", "mergeCommit": %s}}\\n' \\
+                    "${{GH_SPINE_VIEW_STATE:-MERGED}}" "$commit" ;;
+                *)
+                  printf '{{"state": "%s"}}\\n' "${{GH_SPINE_VIEW_STATE:-MERGED}}" ;;
+              esac
               exit 0 ;;
           esac
         fi
