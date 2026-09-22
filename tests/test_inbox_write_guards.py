@@ -63,14 +63,14 @@ EXPECTED_CONSTRUCTIONS = (
 
 #: The same census BY COUNT. ``without_line_numbers`` deduplicates, so
 #: the tuple above cannot see a second construction in a module that
-#: already has one: ``pipeline`` and ``serve`` have two each. A pin whose
+#: already has one: ``pipeline`` has three and ``serve`` two. A pin whose
 #: subject is "how many" needs its own row.
 EXPECTED_CONSTRUCTION_COUNTS = {
     "autonomy.py": 1,
     "calibration_ladder.py": 1,
     "cli.py": 1,
     "factory.py": 1,
-    "pipeline.py": 2,
+    "pipeline.py": 3,
     "serve.py": 2,
     "tui/screens/inbox.py": 1,
 }
@@ -113,6 +113,7 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
     "factory.py::_open_health_breach_items::add": _GUARDED,
     "pipeline.py::ComponentPipeline._inbox_add::add": _GUARDED,
     "pipeline.py::ComponentPipeline._inbox_resolve::resolve": _GUARDED,
+    "pipeline.py::ComponentPipeline._inbox_resolve_component::resolve": _GUARDED,
     "serve.py::_file_inbox_item::add": _GUARDED,
     "tui/screens/inbox.py::InboxScreen._decide::approve": _GUARDED,
     "tui/screens/inbox.py::InboxScreen._decide::reject": _GUARDED,

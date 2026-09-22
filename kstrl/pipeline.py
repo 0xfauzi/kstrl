@@ -62,7 +62,7 @@ from kstrl.findings import (
     finding_model,
     tag_finding_with_attempt,
 )
-from kstrl.inbox import Inbox, InboxError, ItemKind, notifiable
+from kstrl.inbox import Inbox, InboxError, ItemKind, ItemStatus, notifiable
 from kstrl.interaction import (
     CheckpointContext,
     InteractionChannel,
@@ -1851,6 +1851,9 @@ class ComponentPipeline:
         )
         self.ui.ok(f"  COMPLETED: {comp.id} ({iterations} iterations, {duration_seconds:.0f}s)")
         self.manifest.save(self.manifest_path)
+        # #438: after the save, so an item is never resolved for a
+        # completion the manifest does not yet hold.
+        self._inbox_resolve_component(comp.id)
         return Transition.COMPLETED
 
     def _inbox_resolve(self, dedupe_key: str, reason: str) -> None:
@@ -1873,6 +1876,50 @@ class ComponentPipeline:
             # because this function's contract is that closing a stale
             # item cannot fail the run that answered it.
             self.ui.warn(f"  Inbox resolve failed (non-fatal): {exc}")
+
+    def _inbox_resolve_component(self, comp_id: str, detail: str = "") -> None:
+        """Resolve every undecided item naming a component that COMPLETED (#438).
+
+        Resolved on the fact, not on the command. ``ks retry`` never
+        touched the inbox and ``ks inbox retry`` resolves only the item
+        it was given, so a component completed either way could leave an
+        item open, and ``ks inbox ls`` then disagreed with ``ks status``.
+        Every place a component becomes COMPLETED calls this;
+        ``tests/test_inbox_resolves_on_completion.py`` counts those places
+        and fails a new one that does not.
+
+        Undecided means OPEN or SNOOZED. A snoozed item comes back when
+        its TTL lapses, and it would come back asking about a component
+        that has already completed. APPROVED, REJECTED and RESOLVED are
+        decisions already made and are left as they are.
+
+        Never fatal and never silent. The component's work is done and
+        saved, so a broken inbox must not fail the run. The items stay
+        open, which is the state the operator already saw, and the
+        warning names the component and the error in the run's output.
+        """
+        comment = f"{comp_id} completed in run {self.run_id}"
+        if detail:
+            comment = f"{comment}: {detail}"
+        try:
+            if self._inbox is None:
+                if not self.inbox_config.enabled:
+                    return
+                self._inbox = Inbox(self.root_dir, self.inbox_config)
+            undecided = [
+                item
+                for item in self._inbox.items()
+                if item.component == comp_id
+                and item.status in (ItemStatus.OPEN, ItemStatus.SNOOZED)
+            ]
+            for item in undecided:
+                self._inbox.resolve(item.id, comment=comment)
+                self.ui.info(f"  Inbox: resolved {item.id[:8]} ({item.kind}): {comment}")
+        except (OSError, TypeError, ValueError, InboxError, ControlStateError) as exc:
+            # The tuple _inbox_resolve catches, for the reasons it gives.
+            self.ui.warn(
+                f"  Inbox resolve for {comp_id} failed (non-fatal; its items stay open): {exc}"
+            )
 
     def _inbox_suppress_generic(self, comp_id: str) -> None:
         """Mark that a typed item already covers this component's halt.
@@ -2209,11 +2256,8 @@ class ComponentPipeline:
                     # The gate that parked this component is answered by
                     # reality; leaving it open would hold a cap slot
                     # forever and ask a human to decide something already
-                    # decided.
-                    self._inbox_resolve(
-                        f"merge:{comp.id}",
-                        f"PR #{pr_number} merged",
-                    )
+                    # decided. So is every other item naming it (#438).
+                    self._inbox_resolve_component(comp.id, f"PR #{pr_number} merged")
                 elif merge_state.state == "closed":
                     comp.status = ComponentStatus.FAILED.value
                     comp.error = f"PR #{pr_number} closed without merge"

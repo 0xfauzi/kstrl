@@ -115,6 +115,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_git_path_spelling.py": 6,
     "tests/test_harness_path_scope.py": 3,
     "tests/test_inbox.py": 1,
+    "tests/test_inbox_resolves_on_completion.py": 1,
     "tests/test_init_cmd.py": 3,
     "tests/test_input_hygiene.py": 4,
     "tests/test_instance_safety.py": 2,
