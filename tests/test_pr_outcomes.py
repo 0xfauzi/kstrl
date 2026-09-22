@@ -774,11 +774,11 @@ class TestPrOutcomeDataclass:
     ) -> None:
         root = _make_repo(tmp_path, ["alpha"])
         monkeypatch.setenv("GH_STUB_VIEW_STATE", "CLOSED")
-        assert wait_for_merge(7, root, timeout=1.0) == "closed"
+        assert wait_for_merge(7, root, timeout=1.0).state == "closed"
         monkeypatch.setenv("GH_STUB_VIEW_STATE", "OPEN")
-        assert wait_for_merge(7, root, timeout=1.0) == "pending"
+        assert wait_for_merge(7, root, timeout=1.0).state == "pending"
         monkeypatch.setenv("GH_STUB_VIEW_STATE", "MERGED")
-        assert wait_for_merge(7, root, timeout=1.0) == "merged"
+        assert wait_for_merge(7, root, timeout=1.0).state == "merged"
 
 
 class TestFetchNeverPull:

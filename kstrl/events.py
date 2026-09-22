@@ -361,6 +361,13 @@ class RunCompleted(Event):
     failed: int = 0
     skipped: int = 0
     duration_seconds: float = 0.0
+    #: R8.7 slice 1. The commit this run's merges produced, the rule
+    #: that chose it, and the reason no release followed. Recorded on
+    #: EVERY run: ``release_withheld`` is never "" for a run the
+    #: factory drove, so a reader can always tell why.
+    release_ref: str = ""
+    release_ref_rule: str = ""
+    release_withheld: str = ""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -534,6 +541,7 @@ class PrMerged(Event):
     type: ClassVar[str] = "pr_merged"
     pr_number: int = 0
     pr_url: str = ""
+    merge_sha: str = ""
 
 
 @dataclass(frozen=True, kw_only=True)

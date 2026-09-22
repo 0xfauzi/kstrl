@@ -115,6 +115,7 @@ from kstrl.operator_context import (
 from kstrl.pipeline import ComponentPipeline, PipelineHooks, _iso_now
 from kstrl.policy import PolicyConfig
 from kstrl.pr import create_prs_in_order, create_single_pr
+from kstrl.release import RELEASE_REF_RULE, ReleaseInputs, release_ref_from, release_withheld
 from kstrl.review import (
     ReviewMode,
     run_review,
@@ -4603,6 +4604,34 @@ def _run_factory_locked(
                 factory_result.pr_urls.extend(url for _, url in pr_results)
                 manifest.save(manifest_path)
 
+    # R8.7 slice 1 (#154): the run's release ref and the reason no
+    # release followed it. Nothing here starts anything; see
+    # kstrl/release.py for why the last rung cannot be configured open.
+    #
+    # run_clean reads the MANIFEST, not factory_result.merge_pending:
+    # that list is rebuilt from the manifest seventeen lines BELOW this
+    # emit, so reading it here would read a permanent empty list and the
+    # gate would call every merge-pending run clean.
+    release_ref = release_ref_from(manifest.components)
+    run_clean = (
+        not factory_result.failed
+        and not factory_result.contract_failures
+        and all(c.status != ComponentStatus.MERGE_PENDING.value for c in manifest.components)
+    )
+    release_withheld_reason = release_withheld(
+        ReleaseInputs(
+            release_enabled=run_envelope.release.enabled,
+            environment=run_envelope.release.environment,
+            run_clean=run_clean,
+            release_ref=release_ref,
+            policy_enabled=run_envelope.policy.enabled,
+            policy_deploy=run_envelope.policy.deploy,
+            ladder_deploy_permitted=(
+                ladder.bundle.deploy_permitted if ladder is not None else None
+            ),
+        )
+    )
+
     # Summary
     factory_duration = time.monotonic() - factory_start
     bus.emit(
@@ -4611,6 +4640,9 @@ def _run_factory_locked(
             failed=len(factory_result.failed),
             skipped=len(factory_result.skipped),
             duration_seconds=round(factory_duration, 2),
+            release_ref=release_ref,
+            release_ref_rule=RELEASE_REF_RULE,
+            release_withheld=release_withheld_reason,
         )
     )
     # Detach (not close) the console bus: post-run cli narration must

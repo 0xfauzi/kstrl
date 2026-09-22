@@ -157,6 +157,7 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.linear import LinearConfig
     from kstrl.observability import NotifyConfig
     from kstrl.policy import PolicyConfig
+    from kstrl.release import ReleaseConfig
     from kstrl.sandbox import SandboxConfig
     from kstrl.security import SecurityConfig
     from kstrl.serve import ServeConfig
@@ -383,6 +384,14 @@ def _section_specs() -> list[SectionSpec]:
             identity_keys(ContractConfig, _all_field_names(ContractConfig)),
             lambda root: ContractConfig.load(root_dir=root),
             ContractConfig(),
+            probe_undocumented_fields=True,
+        ),
+        SectionSpec(
+            "release",
+            "Phase 4 release (R8.7 slice 1: records the release ref; deploys nothing)",
+            identity_keys(ReleaseConfig, _all_field_names(ReleaseConfig)),
+            lambda root: ReleaseConfig.load(root_dir=root),
+            ReleaseConfig(),
             probe_undocumented_fields=True,
         ),
         SectionSpec(
@@ -687,6 +696,8 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("contract", "mode"): "tier | final | skip",
     ("contract", "test_command"): "integration test command on merged tiers",
     ("contract", "timeout"): "seconds per contract test run",
+    ("release", "enabled"): "record a release ref; still deploys nothing (R8.7 slice 1)",
+    ("release", "environment"): "deploy environment name, e.g. staging or prod",
     ("feedforward", "enabled"): "inject structural context into the prompt",
     ("feedforward", "module_map"): "directory tree with LOC counts",
     ("feedforward", "public_interfaces"): "public symbols via Python ast",

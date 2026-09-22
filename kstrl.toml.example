@@ -349,6 +349,11 @@ mode = "tier"                      # tier | final | skip
 test_command = "uv run pytest"
 timeout = 600.0
 
+# Phase 4 release (R8.7 slice 1: records the release ref; deploys nothing).
+[release]
+enabled = false
+environment = ""
+
 # Phase 0 feedforward (computational structural scan; no LLM).
 [feedforward]
 enabled = true

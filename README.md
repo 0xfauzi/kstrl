@@ -487,6 +487,11 @@ mode = "tier"                   # tier | final | skip
 test_command = "uv run pytest"  # integration test command on merged tiers
 timeout = 600.0                 # seconds per contract test run
 
+# Phase 4 release (R8.7 slice 1: records the release ref; deploys nothing)
+[release]
+enabled = false   # record a release ref; still deploys nothing (R8.7 slice 1)
+environment = ""  # deploy environment name, e.g. staging or prod
+
 # Phase 0 feedforward (computational, no LLM)
 [feedforward]
 enabled = true             # inject structural context into the prompt

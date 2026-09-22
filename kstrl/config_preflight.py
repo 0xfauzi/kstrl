@@ -194,7 +194,7 @@ def config_sections() -> list[ConfigSection]:
     Imports are deferred the way ``config_report._phase_sections`` defers
     them, and the reason is ordering, not latency: this module is
     imported by ``kstrl.cli``, which several of these import from.
-    Measured on this tree, only four of the twenty-two are new work
+    Measured on this tree, only four of the twenty-three are new work
     (evolution, intake_github with workqueue, and serve; the rest arrive
     with ``kstrl.cli``), costing about 7 ms warm on a 151 ms process.
 
@@ -218,6 +218,7 @@ def config_sections() -> list[ConfigSection]:
     from kstrl.linear import LinearConfig
     from kstrl.observability import NotifyConfig
     from kstrl.policy import PolicyConfig
+    from kstrl.release import ReleaseConfig
     from kstrl.sandbox import SandboxConfig
     from kstrl.security import SecurityConfig
     from kstrl.serve import ServeConfig
@@ -248,6 +249,7 @@ def config_sections() -> list[ConfigSection]:
         ConfigSection(("notify",), NotifyConfig.load),
         ConfigSection(("linear",), LinearConfig.load),
         ConfigSection(("evolution",), EvolutionConfig.load, fatal=False),
+        ConfigSection(("release",), ReleaseConfig.load),
     ]
 
 

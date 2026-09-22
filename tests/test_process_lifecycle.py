@@ -216,6 +216,9 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     "licensing.py": ("subprocess",),
     "observability.py": ("subprocess",),
     "pr.py": ("subprocess",),
+    # The `gh pr view` reads moved here from `pr.py` for the 800-line
+    # ratchet (#154); `pr.py` still pushes, creates and merges.
+    "pr_state.py": ("subprocess",),
     "retry_plan.py": ("subprocess",),
     "statedir.py": ("subprocess",),
     "timeout.py": ("subprocess",),

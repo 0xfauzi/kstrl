@@ -76,7 +76,15 @@ def _sample_events() -> list[ev.Event]:
             detail="cost coverage is PARTIAL",
         ),
         ev.ContractResult(tier=1, passed=False, breaker="comp-a", duration_seconds=9.9),
-        ev.RunCompleted(completed=2, failed=1, skipped=0, duration_seconds=100.0),
+        ev.RunCompleted(
+            completed=2,
+            failed=1,
+            skipped=0,
+            duration_seconds=100.0,
+            release_ref="a1b2c3d4" * 5,
+            release_ref_rule="last_merge_by_completed_at",
+            release_withheld="no_driver",
+        ),
         ev.MergePendingV1(component="comp-a", pr_url="http://pr/1", error="not confirmed"),
         ev.PhaseSkipped(component="comp-a", phase="security", reason="budget"),
         ev.DiffFetchFailed(component="comp-a", error="git failed"),
@@ -122,7 +130,7 @@ def _sample_events() -> list[ev.Event]:
             component="comp-a", kind="checkpoint", decision="approved", decided_by="operator"
         ),
         ev.PrCreated(component="comp-a", pr_number=7, pr_url="http://pr/7"),
-        ev.PrMerged(component="comp-a", pr_number=7, pr_url="http://pr/7"),
+        ev.PrMerged(component="comp-a", pr_number=7, pr_url="http://pr/7", merge_sha="a" * 40),
         ev.PrMergePending(component="comp-a", pr_url="http://pr/7", error="pending"),
         ev.DistillResult(component="comp-a", facts_written=3, duration_seconds=12.0),
         ev.FactUtilizationMeasured(
