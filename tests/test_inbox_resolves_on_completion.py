@@ -260,6 +260,18 @@ class TestACompletedComponentClosesItsItems:
         assert _status(tmp_path, other.id) is ItemStatus.OPEN
         assert _status(tmp_path, run_level.id) is ItemStatus.OPEN
 
+    def test_a_disabled_inbox_is_left_alone(self, tmp_path: Path) -> None:
+        """An operator who turned the inbox off gets no writes to it: the
+        component completes and the item it opened earlier is untouched."""
+        manifest_path = _project(tmp_path)
+        item = _halted(tmp_path, manifest_path)
+        (tmp_path / "kstrl.toml").write_text(
+            "[autonomy]\nenabled = false\n[inbox]\nenabled = false\n", encoding="utf-8"
+        )
+        _ks_retry(tmp_path, manifest_path)
+        assert _completed(manifest_path)
+        assert _status(tmp_path, item.id) is ItemStatus.OPEN
+
     def test_a_failed_resolve_warns_and_the_run_still_completes(self, tmp_path: Path) -> None:
         """Decided: never fatal, never silent. The component's work is done
         and saved, so the run completes; the item stays open, which is the
