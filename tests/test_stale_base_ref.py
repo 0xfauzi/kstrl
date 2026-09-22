@@ -215,10 +215,18 @@ def test_a_real_failure_is_not_called_an_empty_collection(tmp_path: Path) -> Non
     """Exit 5 is the only code that means nothing ran. A condition
     widened to `!= 0` staples pytest's no-collection sentence onto
     every genuine failure and pushes 200 characters of the real
-    evidence past the 2000-character store."""
+    evidence past the 2000-character store. 5 is the only code that
+    means nothing ran, so the condition is wrong widened in either
+    direction: too narrow misses real no-collection exits, too wide
+    (`>= 5`) staples the no-collection sentence onto an unrelated
+    failure such as exit 7."""
     passed, output = contract._run_tests(tmp_path, "exit 1", 30.0)
     assert passed is False
     assert "no tests were collected" not in output
+
+    passed_high, output_high = contract._run_tests(tmp_path, "exit 7", 30.0)
+    assert passed_high is False
+    assert "no tests were collected" not in output_high
 
 
 def test_the_in_loop_scope_message_names_the_ref_it_judged(fx: StaleBase) -> None:
