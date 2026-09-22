@@ -458,6 +458,64 @@ class TestAnOperatorDecisionSurvivesTheCompletionRace:
             "operator",
         ), final
 
+    def test_an_approve_after_the_selection_is_not_overwritten(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The other race: an approve landing after the ``items()`` snapshot
+        and before ``resolve`` takes the lock.
+
+        ``_inbox_resolve_component`` builds ``undecided`` from a snapshot
+        (``self._inbox.items()``) taken with no lock held. This drives
+        that gap directly and synchronously - no thread needed, because
+        nothing holds the lock during ``items()`` - by calling the real
+        ``approve()`` as soon as the snapshot shows the gate OPEN, then
+        handing ``_inbox_resolve_component`` that now-stale snapshot.
+        ``resolve(..., only_from=UNDECIDED)`` re-folds the fresh row
+        inside the lock before writing, and the fresh row is already
+        APPROVED, so the write is skipped and the operator's decision
+        survives.
+        """
+        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr(
+            "kstrl.pr.wait_for_merge", lambda *a, **k: MergeConfirmation(state="merged")
+        )
+        monkeypatch.setattr("kstrl.git.fetch_base_branch", lambda *a, **k: None)
+        pipeline, manifest, _result, _calls = _make_pipeline(
+            tmp_path, config=_factory_config(create_prs=True)
+        )
+        comp = manifest.get_component(COMP)
+        assert comp is not None
+        comp.status = ComponentStatus.MERGE_PENDING.value
+        comp.pr_number = 7
+        comp.pr_url = "https://x/pull/7"
+        box = Inbox(tmp_path, InboxConfig())
+        gate = box.add(
+            ItemKind.MERGE_GATE, "merge unconfirmed", component=COMP, dedupe_key=f"merge:{COMP}"
+        )
+        real_items = Inbox.items
+        landed = False
+
+        def items_with_operator_race(self: Inbox) -> list[InboxItem]:
+            nonlocal landed
+            rows = real_items(self)
+            if not landed and any(
+                item.id == gate.id and item.status is ItemStatus.OPEN for item in rows
+            ):
+                landed = True
+                Inbox(tmp_path, InboxConfig()).approve(gate.id, actor="operator", comment="ship it")
+            return rows
+
+        with patch.object(Inbox, "items", items_with_operator_race):
+            pipeline.repoll_merge_pending()
+
+        final = Inbox(tmp_path, InboxConfig()).get(gate.id)
+        assert final is not None
+        assert (final.status, final.decided_by) == (
+            ItemStatus.APPROVED,
+            "operator",
+        ), final
+        assert final.decision_comment == "ship it"
+
 
 # --- layer 2: the census ----------------------------------------------------
 
