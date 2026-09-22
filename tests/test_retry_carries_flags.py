@@ -190,6 +190,7 @@ class TestRetryReplaysTheRunsFlags:
         assert retried.returncode == 1, out
         assert f"Resuming with the flags of run {run_id}:" in out
         assert "--max-cost-usd 5.0" in out
+        assert "--no-prs" in out, out
         header = _execution_header(out)
         assert re.search(r"Max parallel:\s*1\n", header), header
         assert re.search(r"Max retries:\s*0\n", header), header
@@ -316,6 +317,21 @@ class TestTheRecordIsTheRunsOwn:
         assert retried.returncode == 2, out
         assert REFUSAL in out
         assert "cannot be read" in out
+        assert _status(root, "storage") == ComponentStatus.FAILED.value
+
+    def test_a_flag_value_that_is_not_a_scalar_is_refused(self, tmp_path: Path) -> None:
+        root = _repo(tmp_path)
+        run_id = _failed_run(root, "--max-cost-usd", "5", *RUN_FLAGS)
+        path = root / ".kstrl" / "runs" / run_id / "launch.json"
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record["flags"]["max_parallel"] = [1]
+        path.write_text(json.dumps(record), encoding="utf-8")
+
+        retried = _ks(root, "retry", "storage", "--max-cost-usd", "5")
+        out = retried.stdout + retried.stderr
+        assert retried.returncode == 2, out
+        assert REFUSAL in out
+        assert "not a string, number or boolean" in out
         assert _status(root, "storage") == ComponentStatus.FAILED.value
 
     def test_the_record_names_its_run_and_manifest(self, tmp_path: Path) -> None:
