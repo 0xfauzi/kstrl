@@ -1900,42 +1900,6 @@ def _rename_sources(records: Sequence[tuple[str, str]]) -> dict[str, str]:
     return sources
 
 
-def _merge_base_ref(base_label: str, cwd: Path) -> str:
-    """The commit ``{base_label}...HEAD`` actually diffs against, or ``""``.
-
-    ``git.get_diff_name_status`` and ``git.get_diff_content`` both spell
-    their diff ``{base_ref}...HEAD`` (three dots: git's own shorthand for
-    ``git merge-base base_ref HEAD``), so the set of changed paths this
-    check scans is "what this branch changed since it forked". Reading the
-    base CONTENT at ``base_label``'s current tip instead is a different
-    revision the moment the base branch moves after the cut - which the
-    factory makes routine (``pipeline.py`` fetches ``origin/<base>`` on
-    every sibling component's PR merge, while a component's worktree was
-    cut once at plan time) - and a blocking gate that reads the tip can
-    then CLEAR a finding the branch wrote itself, because the tip
-    independently carries a finding of the same KIND (#425 review, finding
-    1).
-
-    ``""`` whenever the merge base cannot be found: an absent ref,
-    unrelated histories, a timeout, or a spawn that could not run at all.
-    ``""`` is a REFUSAL to clear, never a clear - ``_base_finding``'s first
-    line keeps the branch's finding on it - so every uncertainty here is
-    the blocking direction, the same rule ``_base_finding`` itself follows.
-    """
-    try:
-        found = subprocess.run(
-            ["git", "merge-base", base_label, "HEAD"],
-            cwd=cwd,
-            capture_output=True,
-            timeout=git.DEFAULT_TIMEOUT,
-        )
-        if found.returncode != 0:
-            return ""
-        return found.stdout.decode("utf-8").strip()
-    except Exception:
-        return ""
-
-
 def _base_finding(
     base_commit: str,
     path: str,
@@ -1946,7 +1910,7 @@ def _base_finding(
     """The finding KIND ``path`` already carried at ``base_commit``, or None.
 
     None whenever that cannot be established: ``base_commit`` itself could
-    not be resolved (``""``, see :func:`_merge_base_ref`), the path was
+    not be resolved (``""``, see :func:`git.merge_base_ref`), the path was
     absent there, git could not be asked, the blob could not be written, or
     the base content carries no finding. This is a CLEARING mechanism, so
     every uncertainty it has keeps the branch's finding (CLAUDE.md
@@ -1954,7 +1918,7 @@ def _base_finding(
     cannot PROVE must flag).
 
     ``base_commit`` is the MERGE BASE of the base branch and ``HEAD``
-    (:func:`_merge_base_ref`), never the base branch's current tip: every
+    (:func:`git.merge_base_ref`), never the base branch's current tip: every
     diff this check reads is taken at that same revision, and reading the
     base CONTENT anywhere else is a different commit the moment the base
     branch moves (#425 review, finding 1).
@@ -2060,7 +2024,7 @@ def _scan_changed_python(
                 base_path = rename_sources.get(rel_path, rel_path)
                 if not base:
                     base_label = git.resolve_base_ref(base_branch, cwd)
-                    base.append((base_label, _merge_base_ref(base_label, cwd)))
+                    base.append((base_label, git.merge_base_ref(base_label, cwd)))
                 base_label, base_commit = base[0]
                 if _base_finding(base_commit, base_path, cwd, base_blob, cfile) == kind:
                     preexisting.append(

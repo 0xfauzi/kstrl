@@ -289,7 +289,10 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     # merge-base <ref> HEAD` prints a commit sha, not a path, and `git
     # show <rev>:<path>` prints the blob's CONTENT, with the path an
     # argument to the command, never something git prints back.
-    "verify.py git merge-base ? HEAD": 1,
+    # #435 fix-round (A0) hoisted the merge-base spawn from `verify.py`
+    # into `kstrl/git.py` as the one owner of the merge-base anchor: the
+    # row moves module, count unchanged.
+    "git.py git merge-base ? HEAD": 1,
     "verify.py git show ?": 1,
 }
 

@@ -116,9 +116,26 @@ def test_the_guard_baseline_is_the_advanced_remote(fx: StaleBase) -> None:
     assert baseline.head == fx.origin_main
 
 
-def test_the_baseline_agrees_with_the_one_precedence_rule(fx: StaleBase) -> None:
+def test_the_baseline_agrees_with_the_merge_base(fx: StaleBase) -> None:
+    """The baseline is the MERGE BASE of the resolved ref and HEAD, not
+    that ref's current tip. In this fixture the worktree is cut right
+    after the fetch and carries no commits of its own yet, so the merge
+    base and the tip happen to be the identical commit - which is why a
+    test cutting the worktree BEFORE a sibling's merge is needed too
+    (below): it is the only shape where the two anchors can disagree,
+    and asserting equality with the tip here would still pass after a
+    regression that anchored on the tip again."""
     baseline = git.capture_workspace_baseline(fx.worktree, base_ref="main")
-    assert baseline.head == git.resolve_base_sha("main", fx.worktree)
+    base_label = git.resolve_base_ref("main", fx.worktree)
+    expected = subprocess.run(
+        ["git", "merge-base", base_label, "HEAD"],
+        cwd=fx.worktree,
+        capture_output=True,
+        encoding="utf-8",
+        check=True,
+        timeout=30,
+    ).stdout.strip()
+    assert baseline.head == expected
 
 
 def test_there_is_one_resolver() -> None:
@@ -154,10 +171,16 @@ def test_the_in_loop_guard_blames_no_file_from_the_previous_tier(fx: StaleBase) 
 def test_a_programming_error_is_not_a_silent_fallback(
     fx: StaleBase, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """``capture_workspace_baseline`` wraps neither ``resolve_base_ref``
+    nor ``merge_base_ref`` in a try/except of its own: both of those
+    refuse by RETURNING a fallback value on an ordinary git failure, so
+    a genuine programming error - the wrong arity here - is not a
+    candidate for the HEAD fallback and must propagate instead."""
+
     def boom(*_args: object, **_kwargs: object) -> str:
         raise TypeError("wrong arity")
 
-    monkeypatch.setattr(git, "resolve_base_sha", boom)
+    monkeypatch.setattr(git, "merge_base_ref", boom)
     with pytest.raises(TypeError):
         git.capture_workspace_baseline(fx.worktree, base_ref="main")
 
@@ -209,6 +232,18 @@ def test_the_no_tests_sentence_lives_in_the_shared_helper(fx: StaleBase) -> None
     assert passed is False
     assert "exited 5" in output
     assert "no tests were collected" in output
+
+
+def test_the_no_tests_sentence_survives_the_2000_character_store(tmp_path: Path) -> None:
+    """All three contract callers store output[:2000], so the sentence
+    goes first or a long install log pushes it out of the record
+    entirely."""
+    passed, output = contract._run_tests(
+        tmp_path, 'python3 -c "print(chr(120)*2500)"; exit 5', 60.0
+    )
+    assert passed is False
+    assert len(output) > 2000
+    assert "no tests were collected" in output[:2000]
 
 
 def test_a_real_failure_is_not_called_an_empty_collection(tmp_path: Path) -> None:
@@ -305,3 +340,103 @@ def test_a_local_only_repository_still_names_the_bare_branch(tmp_path: Path) -> 
     details = "\n".join(result.details)
     assert "Base branch: main" in details
     assert "origin/" not in details
+
+
+def _build_sibling_merges_mid_run(root: Path) -> StaleBase:
+    """Case B (#435 review, finding A0): a SIBLING component's PR
+    squash-merges on the remote AFTER this worktree is cut, not before.
+
+    Every fixture above cuts the worktree AFTER the merge that advances
+    ``origin/main`` (:func:`_build_stale_base`, lines above), so the base
+    branch's current TIP and its MERGE BASE with this worktree's HEAD are
+    the same commit there - nothing in this file so far can tell a
+    tip-anchored guard from a merge-base-anchored one apart. This
+    fixture cuts the worktree FIRST and merges the sibling second, which
+    is the shape a factory run at ``max_parallel > 1`` produces routinely:
+    ``refs/remotes/origin/*`` is fetched into every worktree that shares
+    the repository, so the tip moves under a component that is still
+    mid-loop.
+    """
+    remote = root / "remote.git"
+    repo = root / "repo"
+    git_in(root, "init", "--bare", "-b", "main", str(remote))
+
+    git_in(root, "init", "-b", "main", str(repo))
+    set_identity(repo)
+    (repo / "README.md").write_text("hello\n", encoding="utf-8")
+    git_in(repo, "add", "-A")
+    git_in(repo, "commit", "-q", "-m", "init")
+    git_in(repo, "remote", "add", "origin", str(remote))
+    git_in(repo, "push", "-u", "origin", "main")
+
+    # This engineer's worktree is cut FIRST, before any sibling merges.
+    wt = root / "wt"
+    git_in(repo, "worktree", "add", str(wt), "-b", "comp/storage", "origin/main")
+
+    # The sibling tier merges on the remote WHILE this worktree is
+    # running - a squash merge directly on the bare remote, exactly as a
+    # GitHub squash merge does.
+    sibling = root / "sibling-clone"
+    git_in(root, "clone", str(remote), str(sibling))
+    set_identity(sibling)
+    (sibling / "src").mkdir(parents=True)
+    (sibling / "src" / "rules.py").write_text("RULES = []\n", encoding="utf-8")
+    git_in(sibling, "add", "-A")
+    git_in(sibling, "commit", "-q", "-m", "squash: link-rules")
+    git_in(sibling, "push", "origin", "main")
+
+    # What the factory does after every sibling's PR merge: update the
+    # remote-tracking ref, touch nothing else. `wt` is a linked worktree
+    # of `repo` and shares `refs/remotes/*`, so its own view of
+    # `origin/main` has now moved without `wt` doing anything.
+    error = git.fetch_base_branch("main", repo)
+    assert error is None, error
+
+    local_main = _sha(repo, "main")
+    origin_main = _sha(repo, "origin/main")
+    assert local_main != origin_main, (
+        "fixture stopped reproducing the situation: local main and "
+        "origin/main must differ, or every test below is vacuous"
+    )
+    return StaleBase(
+        root=root,
+        repo=repo,
+        worktree=wt,
+        local_main=local_main,
+        origin_main=origin_main,
+    )
+
+
+def test_the_in_loop_guard_blames_no_file_from_a_sibling_that_merges_mid_run(
+    tmp_path: Path,
+) -> None:
+    """The direction #435's own fixture (above) cannot cover: the base
+    branch's tip moving AHEAD of this worktree's own fork point, not
+    behind it. A tip-anchored baseline sees the sibling's ``src/rules.py``
+    as something this worktree removed (it is present at the new tip and
+    absent in this worktree's history) and blames it on this engineer
+    alongside the real change. Only the merge base - the commit this
+    worktree actually forked from - excludes it."""
+    fx = _build_sibling_merges_mid_run(tmp_path)
+    baseline = git.capture_workspace_baseline(fx.worktree, base_ref="main")
+
+    (fx.worktree / "src").mkdir(parents=True, exist_ok=True)
+    (fx.worktree / "src" / "storage.py").write_text("STORAGE = {}\n", encoding="utf-8")
+    git_in(fx.worktree, "add", "-A")
+    git_in(fx.worktree, "commit", "-q", "-m", "add storage")
+
+    config = KstrlConfig(
+        max_iterations=1,
+        prompt_file=fx.worktree / "scripts" / "kstrl" / "prompt.md",
+        prd_file=fx.worktree / "scripts" / "kstrl" / "prd.json",
+        sleep_seconds=0,
+        interactive=False,
+        kstrl_branch="",
+        kstrl_branch_explicit=True,
+        allowed_paths=["src/storage.py"],
+    )
+    ok, violations = guards.enforce_allowed_paths(
+        config, PlainUI(no_color=True, file=io.StringIO()), fx.worktree, baseline=baseline
+    )
+    assert violations == []
+    assert ok is True
