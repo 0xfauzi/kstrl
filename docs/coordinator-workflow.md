@@ -152,8 +152,21 @@ Two scripts, in order, and both must pass.
 suite, the type checker, the linter, every commit hook, and the documentation
 freshness check on the merged tree, and checks the pull request's shape.
 
-`merge-chain.sh` pushes, waits for remote checks, squash merges, deletes the
-branch and reports the issue state.
+`merge-chain.sh` pushes, waits for remote checks, squash merges with the pull
+request body as the squash message, deletes the branch and reports the issue
+state. The body is passed explicitly because `gh` otherwise builds the squash
+message from the branch's commits, and a commit message that says `Closes #N`
+closes the issue even when the body deliberately says `Part of #N`. For the
+same reason `premerge.sh` prints every closing keyword in the body, in any
+case, before the merge.
+
+Merge main from main's side when the lane is old. The complexity hook runs
+`--staged`, which diffs the index against HEAD, so merging a moving main INTO
+a long-lived lane fails on every function that grew on main and that the lane
+never touched, and skipping the hook is forbidden. Check out `origin/main`
+detached, merge the lane, resolve, commit with HEAD on main so the hook
+measures only the lane's contribution, then point the lane branch at that
+commit. The resulting tree is byte-identical to the other direction.
 
 Merging into a moving main is where defects hide. Two have been caught only by
 running the full suite on the merged tree, neither present in either branch and
