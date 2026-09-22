@@ -257,6 +257,23 @@ def test_evolve_readiness_on_the_432_journal_counts_no_carried_row(tmp_path: Pat
     assert "fact utilization: measured 4, unmeasured 5" in out
 
 
+def test_evolve_readiness_drops_a_copy_whose_previous_row_is_outside_the_lookback_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The carried-row filter must run over the whole file before the
+    lookback window is applied. Run the filter after the window instead,
+    and a copy loses the earlier row that marks it a copy the moment that
+    earlier row falls outside the window: with the window narrowed to 2
+    runs, run 3's copy of link-rules and run 4's copies of link-rules and
+    storage would count as fresh results, changing both readings below."""
+    monkeypatch.setenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", "2")
+
+    out = _evolve(_copy_fixture(tmp_path))
+
+    assert "concern hit rate: 2 of 2 components" in out
+    assert "fact utilization: measured 2, unmeasured 0" in out
+
+
 def test_health_infra_rate_on_the_432_journal_reads_no_carried_row(tmp_path: Path) -> None:
     root = _copy_fixture(tmp_path)
     config = EvolutionConfig.load(root)
