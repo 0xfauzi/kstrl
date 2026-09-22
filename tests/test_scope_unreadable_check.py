@@ -246,10 +246,10 @@ class TestTheConsumersOfTheCheckName:
 
     def test_ks_evolve_proposes_an_operator_fix_not_agent_advice(self) -> None:
         """The other place that dispatches on the check name. Without a
-        branch, a recurring scope failure falls into the generic arm and
-        ``ks evolve`` writes "Add to CLAUDE.md: take extra care with
-        this pattern" - advice to the agent, for a state the agent
-        cannot influence."""
+        branch, a recurring scope failure has no arm at all (#217
+        deleted the generic one) and ``propose_improvements`` raises -
+        advice to the agent was never the right answer for a state the
+        agent cannot influence."""
         pattern = FailurePattern(
             description="d",
             frequency=3,
