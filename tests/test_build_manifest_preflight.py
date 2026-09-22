@@ -312,17 +312,29 @@ def test_each_verify_command_lets_an_unrecognised_toolchain_reach_the_architect(
     assert calls.exists(), proc.stdout
 
 
+@pytest.mark.parametrize(
+    ("key", "command"),
+    [
+        ("test_command", "uv run pytest -q tests"),
+        ("lint_command", "uv run ruff check src"),
+    ],
+)
 def test_a_verify_command_that_runs_through_uv_does_not_satisfy_the_escape(
-    tmp_path: Path,
+    tmp_path: Path, key: str, command: str
 ) -> None:
-    """A greenfield Python repository (#434 B1). Setting [verify]
-    test_command to the same `uv run pytest` the default already names
-    does not describe a toolchain kstrl does not recognise: `uv run`
-    itself needs the pyproject.toml this repository does not have, so
-    the command cannot run any more than the refusal it is supposed to
-    avoid. It must not satisfy the escape."""
+    """A greenfield Python repository (#434 B1). Setting a [verify]
+    command to a `uv run ...` invocation, even one that is not any of
+    the three literal defaults, does not describe a toolchain kstrl
+    does not recognise: `uv run` itself needs the pyproject.toml this
+    repository does not have, so the command cannot run any more than
+    the refusal it is supposed to avoid. It must not satisfy the
+    escape. Parametrized over more than one [verify] key and over
+    commands distinct from `verify.DEFAULT_TEST_COMMAND` /
+    `DEFAULT_TYPECHECK_COMMAND` / `DEFAULT_LINT_COMMAND`, so a check
+    that compares against those three literal strings instead of the
+    `uv run` prefix cannot pass this test."""
     root = greenfield(tmp_path)
-    (root / "kstrl.toml").write_text('[verify]\ntest_command = "uv run pytest"\n', encoding="utf-8")
+    (root / "kstrl.toml").write_text(f'[verify]\n{key} = "{command}"\n', encoding="utf-8")
     agent, calls = recording_agent(root)
 
     proc = spec_command(root, "decompose", agent)
@@ -330,6 +342,30 @@ def test_a_verify_command_that_runs_through_uv_does_not_satisfy_the_escape(
     assert proc.returncode == 2, proc.stdout
     assert REFUSAL in proc.stdout
     assert not calls.exists(), proc.stdout
+
+
+def test_doctor_ok_detail_names_which_of_the_two_conditions_applied(tmp_path: Path) -> None:
+    """B1: `check_build_manifest`'s `[ok]` line must say which of the
+    two conditions in `build_manifest_ok_reason` let the repository
+    through, not one sentence that reads the same either way."""
+    with_manifest = greenfield(tmp_path, extra={"pyproject.toml": MANIFESTS["pyproject.toml"]})
+    proc = run_ks(with_manifest, "doctor", "--root", str(with_manifest))
+    assert (
+        "[ok] build_manifest: a build manifest kstrl recognises is at the "
+        "repository root" in proc.stdout
+    ), proc.stdout
+
+    second_tmp = tmp_path / "b"
+    second_tmp.mkdir()
+    root = greenfield(second_tmp, extra={"Gemfile": 'source "https://rubygems.org"\n'})
+    (root / "kstrl.toml").write_text(
+        '[verify]\ntest_command = "bundle exec rspec"\n', encoding="utf-8"
+    )
+    proc = run_ks(root, "doctor", "--root", str(root))
+    assert (
+        "[ok] build_manifest: no build manifest kstrl recognises is at the "
+        "repository root, but [verify] names a command" in proc.stdout
+    ), proc.stdout
 
 
 def test_the_home_shell_decompose_launch_honours_the_verify_escape(tmp_path: Path) -> None:

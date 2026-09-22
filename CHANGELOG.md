@@ -123,7 +123,8 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   manifest in its allowedPaths. A manifest is anything `ks init` reads a
   language from (pyproject.toml, setup.py, Cargo.toml, package.json,
   go.mod, pom.xml, build.gradle); a repository with none is still let
-  through when `[verify]` names a command. A package.json that is valid
+  through when `[verify]` names a command that does not run through
+  `uv run`. A package.json that is valid
   JSON but not an object, or has a null `dependencies`, no longer crashes
   `ks init`, and cannot crash the new check or refusal.
 - The control-engineering vocabulary is replaced with plain names (#395).
