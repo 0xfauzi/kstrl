@@ -304,6 +304,20 @@ class TestTheRecordIsTheRunsOwn:
         assert "cannot be read" in out
         assert _status(root, "storage") == ComponentStatus.FAILED.value
 
+    def test_a_record_that_cannot_be_opened_is_refused(self, tmp_path: Path) -> None:
+        root = _repo(tmp_path)
+        run_id = _failed_run(root, "--max-cost-usd", "5", *RUN_FLAGS)
+        path = root / ".kstrl" / "runs" / run_id / "launch.json"
+        path.unlink()
+        path.mkdir()
+
+        retried = _ks(root, "retry", "storage", "--max-cost-usd", "5")
+        out = retried.stdout + retried.stderr
+        assert retried.returncode == 2, out
+        assert REFUSAL in out
+        assert "cannot be read" in out
+        assert _status(root, "storage") == ComponentStatus.FAILED.value
+
     def test_the_record_names_its_run_and_manifest(self, tmp_path: Path) -> None:
         root = _repo(tmp_path)
         run_id = _failed_run(root, "--max-cost-usd", "5", *RUN_FLAGS)
