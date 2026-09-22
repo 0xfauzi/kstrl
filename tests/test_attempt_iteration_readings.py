@@ -242,6 +242,41 @@ class TestStrictReader:
         assert reading.measured is False
         assert "attempt 1 recorded twice" in reading.reason
 
+    def test_a_second_run_in_the_same_journal_does_not_pollute_the_reading(self) -> None:
+        """``.kstrl/evolution.jsonl`` is append-only across runs, so a second
+        run of the same component leaves the first run's rows on disk. The
+        two lines in ``read_attempt_iterations`` that skip an entry whose
+        ``run_id`` does not match the run under read are what keep the
+        second run's reading from seeing the first run's rows too; without
+        them the reader would see attempt 1 recorded twice for every run
+        after the first and refuse every one of them.
+        """
+        entries = []
+        for run in ("r1", "r2"):
+            entries.append(
+                {
+                    "event_type": FINDINGS_SUPERSEDED_EVENT,
+                    "run_id": run,
+                    "component_id": "comp-a",
+                    "attempt": 1,
+                    "iteration_count": 3,
+                }
+            )
+            entries.append(
+                {
+                    "event_type": "component_result",
+                    "run_id": run,
+                    "component_id": "comp-a",
+                    "retries": 1,
+                    "iteration_count": 3,
+                }
+            )
+        for run in ("r1", "r2"):
+            reading = read_attempt_iterations(entries, run, 1)
+            assert reading.measured is True
+            assert reading.iterations_total == 6
+            assert reading.attempts_total == 2
+
     def test_a_boolean_iteration_count_is_refused(self) -> None:
         entries = [
             {
