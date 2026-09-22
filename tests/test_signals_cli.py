@@ -291,6 +291,27 @@ class TestPollRefusesLoudly:
         assert "kstrl.toml" in result.output
         assert not isinstance(result.exception, ValueError)
 
+    def test_a_non_positive_http_timeout_is_refused_before_anything_runs(
+        self, tmp_path: Path
+    ) -> None:
+        """PR #441 review: ``SignalsConfig.__post_init__`` refuses a
+        non-positive ``http_timeout``, but nothing exercised that refusal
+        through the CLI, so an edit could delete it with nothing going
+        red. 0.0 is used rather than a negative number because it also
+        catches the off-by-one ``<= 0`` -> ``< 0``."""
+        root = tmp_path / "project"
+        root.mkdir()
+        (root / "kstrl.toml").write_text(
+            '[signals]\nenabled = true\nproduct = "demo-product"\nhttp_timeout = 0.0\n',
+            encoding="utf-8",
+        )
+
+        result = _invoke_poll(root, FIXTURE)
+
+        assert result.exit_code == 1, result.output
+        assert "http_timeout" in result.output
+        assert not control_file(root, CONTROL_SIGNALS).exists()
+
 
 class TestAnIncompleteLedgerLineIsARefusalWithACountNeverATraceback:
     """#155 fix round A2c, driven through the real CLI. The old
