@@ -159,6 +159,7 @@ def test_a_resumed_run_journals_only_the_component_it_ran(tmp_path: Path) -> Non
     (row,) = _tsv_rows(root)
     assert row["components_total"] == "1"
     assert row["avg_iterations"] == "1.00"
+    assert float(row["avg_duration_s"]) < 6.25
 
 
 def _two_runs_retrying_one(tmp_path: Path) -> Path:
@@ -195,6 +196,9 @@ def test_evolve_status_measures_a_run_that_retried_one_component(tmp_path: Path)
     """Plant 2: run 2's reading is measured, not REFUSED on comp-a's carried retries."""
     root = _two_runs_retrying_one(tmp_path)
     first, second = (row["run_id"] for row in _tsv_rows(root))
+    second_row = _tsv_rows(root)[1]
+    assert second_row["retry_rate"] == "0.00"
+    assert second_row["common_failure"] == ""
 
     out = _evolve(root, "--status")
 
