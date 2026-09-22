@@ -446,6 +446,19 @@ item R8.2 promised). Verified end-to-end: a run with a planted policy
 violation produces a policy_exception, a halted_run, AND a
 demotion_notice while the ladder drops L3 -> L2.
 
+**A collision this cap does not have yet, recorded before it happens.**
+`[inbox] open_item_cap` (50, `kstrl/inbox.py:272`) gates queue admission at
+`kstrl/serve.py:3329`: every open inbox item, whatever raised it, counts
+against the same fifty-item ceiling. R8.8 slice 1 (`ks signals poll`,
+`kstrl/signals.py`) does not write to the inbox and so does not trip this
+today - its ledger is a separate append-only file in the XDG control
+directory. The moment a later R8.8 slice routes a runtime signal into the
+inbox, the factory's own exceptions and every built product's runtime
+defects start competing for the same fifty open items, and the cap's
+meaning changes from "how much of the factory's own backlog fits" to "how
+much of the factory's backlog plus every product's" without anyone having
+decided that trade.
+
 `pause_before_pr_merge` on an unattended run no longer proceeds. It
 returns `CheckpointDecision.PARKED`: the merge is withheld, the
 component fails at `phase=pr / check=merge_gate`, and the decision goes
@@ -1385,6 +1398,24 @@ consumers updated.
 ## R8.8 Runtime feedback (L) - [#155](https://github.com/0xfauzi/kstrl/issues/155)
 
 Status: `[ ]` - Depends on: R8.6 (queue), R8.7 (release identity)
+
+**Slice 1 shipped: observe and record, nothing more.** `ks signals poll`
+fetches one Bugsink project's issue list and classifies each issue against
+its own append-only ledger in the XDG control directory - `new_issue` /
+`repeat` / `recurrence`, each carrying a `would_enqueue` / `would_watch` /
+`would_notify` label. Nothing acts on the label: `SignalsConfig` has no
+`enqueue` field, `kstrl/signals.py` imports nothing from `kstrl.workqueue`
+(checked both directions, `tests/test_state_dir_scope.py::TestSignalsCannotReachTheQueue`),
+and no code path writes to the inbox or to `events.jsonl`. Deliberately left out: any release identity or
+distinct-user count (the polled endpoint carries neither - recovering
+either costs one event-detail request per event per issue per poll), a
+GlitchTip adapter, the storm and lineage breakers, and any threshold that
+gates a queue admission. **No threshold gates anything until the ladder
+below is replayed against the ledger this slice writes, and the
+would-have-fired count is recorded here** - the R8 rule at lines 48-52
+applied to this issue rather than restated. User decision 8 (queue
+directly, or human triage first) is still open; the ledger is the artifact
+either answer reads.
 
 **Why.** Nothing observes built products at runtime; the learning loop sees
 only build-time signals. A factory closes the loop: production behavior flows

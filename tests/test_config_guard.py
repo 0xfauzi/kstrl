@@ -65,6 +65,7 @@ EXPECTED_SURFACE_CLASSES: dict[str, frozenset[str]] = {
         "SandboxConfig",
         "SecurityConfig",
         "ServeConfig",
+        "SignalsConfig",
         "TimeoutConfig",
         "VerifyConfig",
     )

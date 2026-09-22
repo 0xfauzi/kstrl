@@ -5661,6 +5661,106 @@ def queue_sync(
     sys.exit(1 if result.errors else 0)
 
 
+@cli.group(name="signals")
+def signals_group() -> None:
+    """Observe a tracker's runtime issues and record a verdict (R8.8 slice 1).
+
+    Fetches one page of issues, classifies each against the ledger this
+    group writes, and prints what it saw. Nothing here enqueues, notifies
+    or spends: every disposition is a "would", never a "did" - the queue
+    routing question (roadmap user decision 8) is still open.
+    """
+
+
+_signals_root_option = click.option(
+    "--root",
+    type=click.Path(path_type=Path),
+    help="Project root path (defaults to current directory)",
+)
+_signals_ui_option = click.option(
+    "--ui",
+    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    default="auto",
+    help="UI mode",
+)
+_signals_no_color_option = click.option(
+    "--no-color",
+    is_flag=True,
+    help="Disable colors",
+)
+
+
+@signals_group.command(name="poll")
+@click.option(
+    "--from-file",
+    type=click.Path(exists=True, path_type=Path),
+    default=None,
+    help="Replay a captured tracker page instead of fetching one",
+)
+@click.option(
+    "--capture",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the fetched or replayed page's raw text here",
+)
+@_signals_root_option
+@_signals_ui_option
+@_signals_no_color_option
+def signals_poll(
+    from_file: Path | None,
+    capture: Path | None,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
+) -> None:
+    """Fetch one tracker page, classify it against the ledger, print the tally."""
+    from kstrl.signals import SignalsConfig, SignalsError, poll
+
+    root_dir = (root or Path.cwd()).resolve()
+    config = SignalsConfig.load(root_dir)
+    ui_impl = _autonomy_ui(ui, no_color)
+    try:
+        report = poll(root_dir, config, from_file=from_file, capture=capture)
+    except SignalsError as exc:
+        ui_impl.err(str(exc))
+        sys.exit(1)
+
+    ui_impl.section("Signals")
+    ui_impl.info(f"{len(report.signals)} signals (dropped {report.dropped_rows})")
+    tally: dict[str, int] = {}
+    for row in report.signals:
+        tally[str(row.disposition)] = tally.get(str(row.disposition), 0) + 1
+    for disposition in sorted(tally):
+        ui_impl.kv(disposition, str(tally[disposition]))
+    ui_impl.kv("poll_new_issues", str(report.poll_new_issues))
+    ui_impl.kv("poll_max_events_on_a_new_issue", str(report.poll_max_events_on_a_new_issue))
+    sys.exit(0)
+
+
+@signals_group.command(name="ls")
+@_signals_root_option
+@_signals_ui_option
+@_signals_no_color_option
+def signals_ls(root: Path | None, ui: str, no_color: bool) -> None:
+    """Print the signal ledger, oldest first."""
+    from kstrl.signals import read_ledger
+    from kstrl.statedir import CONTROL_SIGNALS, control_file
+
+    root_dir = (root or Path.cwd()).resolve()
+    ui_impl = _autonomy_ui(ui, no_color)
+    records = read_ledger(control_file(root_dir, CONTROL_SIGNALS))
+    if not records:
+        ui_impl.ok("No signals recorded yet.")
+        sys.exit(0)
+    ui_impl.section("Signals")
+    for row in records:
+        ui_impl.info(
+            f"  {row.observed_at}  {row.friendly_id:<20}{str(row.kind):<12}"
+            f"{str(row.disposition):<16}events={row.event_count}"
+        )
+    sys.exit(0)
+
+
 @cli.command()
 @click.option(
     "--once",

@@ -602,6 +602,29 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
         assert _import_closure("kstrl.serve") & self.WRITERS
 
 
+class TestSignalsCannotReachTheQueue:
+    """R8.8 slice 1 (#155) observes and does not spend. An import edge
+    between the signal poller and the work queue is the mechanism that
+    keeps that true, checked in both directions with the same
+    ``_import_closure`` this file already controls above."""
+
+    def test_signals_does_not_import_the_queue(self) -> None:
+        assert "kstrl.workqueue" not in _import_closure("kstrl.signals"), (
+            "slice 1 of R8.8 observes and does not spend. An import edge here "
+            "is how that stops being true. If the enqueue slice is landing, "
+            "delete this class in the same diff that adds the ladder replay to "
+            "docs/dark-factory-roadmap.md."
+        )
+
+    def test_the_queue_does_not_import_signals(self) -> None:
+        assert "kstrl.signals" not in _import_closure("kstrl.workqueue"), (
+            "slice 1 of R8.8 observes and does not spend. An import edge here "
+            "is how that stops being true. If the enqueue slice is landing, "
+            "delete this class in the same diff that adds the ladder replay to "
+            "docs/dark-factory-roadmap.md."
+        )
+
+
 # ---------------------------------------------------------------------------
 # A real repository with no .gitignore: the case #273 cannot reach
 # ---------------------------------------------------------------------------
