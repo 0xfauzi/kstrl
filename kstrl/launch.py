@@ -73,7 +73,7 @@ def assemble_factory_configs(
     through the caller's console/bridge, never a nested rich UI.
     """
     from kstrl.contract import ContractConfig
-    from kstrl.feedforward import FeedforwardConfig
+    from kstrl.feedforward import CodebaseScanConfig
     from kstrl.security import SecurityConfig
     from kstrl.verify import VerifyConfig
 
@@ -92,7 +92,7 @@ def assemble_factory_configs(
     factory_config.security_config = SecurityConfig.load(root_dir)
     contract_resolved = ContractConfig.load(root_dir)
     factory_config.contract_config = contract_resolved if contract_resolved.mode != "skip" else None
-    factory_config.feedforward_config = FeedforwardConfig.load(root_dir)
+    factory_config.codebase_scan_config = CodebaseScanConfig.load(root_dir)
     factory_config.timeout_config = TimeoutConfig.load(root_dir)
     factory_config.progress_log_path = progress_log_path
     factory_config.force_lock = force_lock

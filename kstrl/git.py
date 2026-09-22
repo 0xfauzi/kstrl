@@ -51,7 +51,7 @@ def detect_base_branch(cwd: Path) -> str:
     """Base branch of the repo at ``cwd``, asked of the repo itself (#259).
 
     Used by ``ks run`` (manifest base), ``ks decompose`` and
-    ``ks factory`` (worktree base), ``ks sense`` (diff base) and the TUI
+    ``ks factory`` (worktree base), ``ks check`` (diff base) and the TUI
     launch forms.
 
     The ladder, and what each rung fails on:
@@ -91,7 +91,7 @@ def detect_base_branch(cwd: Path) -> str:
     so it would end the ladder every time, and diffing a branch against
     itself is empty - which the diff-scope and bad-pattern checks read
     as "nothing changed, all within scope". That converts a loud
-    cannot-measure (`ks sense` exit 2, naming ``--base``) into a silent
+    cannot-measure (`ks check` exit 2, naming ``--base``) into a silent
     green on a tree nobody measured, and cannot-measure is never a pass.
     A guess the caller reports as a guess beats a wrong answer delivered
     as a measurement.
@@ -159,7 +159,7 @@ def resolve_base_branch(base_branch: str | None, cwd: Path) -> str:
 
     One spelling for the "the flag wins, otherwise ask the repo" rule
     every entry point needs: the two CLI commands that take
-    ``--base-branch``, ``ks sense``'s ``--base``, and the TUI launch
+    ``--base-branch``, ``ks check``'s ``--base``, and the TUI launch
     form's branch field (#259).
     """
     return base_branch or detect_base_branch(cwd)
@@ -435,7 +435,7 @@ def get_untracked_files(
     timeout: float = DEFAULT_TIMEOUT,
 ) -> set[str]:
     """Untracked, non-ignored files. Separate from ``get_changed_files``
-    because a baseline comparison needs them WITHOUT the index/HEAD
+    because a baseline needs them WITHOUT the index/HEAD
     deltas that function also folds in (see get_changed_files_since).
 
     Runs with ``-z`` so a tricky name arrives as the file's own spelling,
@@ -498,7 +498,7 @@ def get_head_sha(
         )
     except (subprocess.TimeoutExpired, OSError):
         # "not a repo" and "no git" are one answer to this question, and
-        # the dampener asks it on the same line as get_origin_slug.
+        # the baseline asks it on the same line as get_origin_slug.
         return None
     if result.returncode != 0:
         return None
@@ -536,7 +536,7 @@ def get_origin_slug(
         # OSError beside the timeout, the same breadth as resolve_base_ref
         # and _resolve_candidate: this function documents None for "no
         # remote", and a machine with no git at all is the same answer
-        # from the caller's side. Without it, `ks sense --compare-baseline`
+        # from the caller's side. Without it, `ks check --compare-baseline`
         # raised FileNotFoundError out of the top of the run, AFTER paying
         # for the whole measurement, where it documents exit 2.
         return None
@@ -986,7 +986,7 @@ def get_diff_name_status(
         return []
     except OSError as exc:
         # The strict contract is that a diff this function could not
-        # produce arrives as GitDiffError, and `ks sense` turns that into
+        # produce arrives as GitDiffError, and `ks check` turns that into
         # exit 2 with a message naming the base. A missing git binary was
         # the one way out of here that was neither: FileNotFoundError,
         # exit 1, and a traceback where the command documents a refusal.

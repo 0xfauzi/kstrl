@@ -1,15 +1,15 @@
-"""The dampener: a sense measurement in version control, and what a branch added to it.
+"""The baseline: a check measurement in version control, and what a branch added to it.
 
 R10.6 (#227). The mechanism is three parts and no LLM: record the current
 structured failure signatures of a tree in a file the repository tracks, run the
-same sensors on a branch, and report what the branch ADDED. It is advisory by
+same checks on a branch, and report what the branch ADDED. It is advisory by
 default - it prints the report and exits 0 whether or not it found a regression -
-because a dampener that fails a teammate's pull request on its first day is a
-dampener somebody turns off.
+because a baseline that fails a teammate's pull request on its first day is a
+baseline somebody turns off.
 
 The vocabulary is deliberately the evolution journal's. A signature here is
 ``"<check>:<code>"`` produced by
-:func:`kstrl.evolution.signature_counts_from_verification`, so the dampener and
+:func:`kstrl.evolution.signature_counts_from_verification`, so the baseline and
 the journal cannot disagree about what a failure is called, and the spelling
 lives in exactly one module.
 
@@ -30,7 +30,7 @@ own committed baseline records ``"signatures": {}``, so on a branch whose test
 suite stops finishing there is no signature anywhere to bucket, and without this
 the report read ``no regression`` and exited 0 under ``--fail-on-regression``.
 
-That is why :attr:`Baseline.unmeasured_checks` exists on both sides. A sensor
+That is why :attr:`Baseline.unmeasured_checks` exists on both sides. A check
 that timed out, whose tool is missing, or that recorded a
 :class:`kstrl.verify.NotMeasured` gap contributes NO signatures to a baseline and
 is named in ``unmeasured_checks`` instead. Without that rule this repository's
@@ -56,21 +56,27 @@ from kstrl.jsonread import read_json
 from kstrl.verify import CheckResult, ResolvedVerifyCommands, VerificationResult
 
 #: Version of the BASELINE document, which is not the version of the
-#: ``ks sense --json`` document. They move independently: the baseline records
-#: the sensor's schema version in ``sense_schema_version`` so a reader can tell
-#: that the sensor changed under a baseline nobody refreshed.
-BASELINE_SCHEMA_VERSION = 1
+#: ``ks check --json`` document. They move independently: the baseline records
+#: the check's schema version in ``check_schema_version`` so a reader can tell
+#: that the check changed under a baseline nobody refreshed.
+#:
+#: v2 (#395): the field (and JSON key) was renamed from
+#: ``sense_schema_version`` to ``check_schema_version``. A v1 document is
+#: read strictly (``_int_field`` raises when the key is absent), so a v1
+#: baseline is refused by :meth:`Baseline.from_document`'s existing
+#: schema-version check rather than silently misreading the old key name.
+BASELINE_SCHEMA_VERSION = 2
 
 #: Relative to ``--root``. ``scripts/kstrl/`` is the versioned per-project kstrl
 #: config home, beside ``prompt.md`` and ``prd.json``.
-DEFAULT_BASELINE_PATH = Path("scripts/kstrl/sense-baseline.json")
+DEFAULT_BASELINE_PATH = Path("scripts/kstrl/baseline.json")
 
 FORMAT_HUMAN = "human"
 FORMAT_MARKDOWN = "markdown"
 
 #: What :attr:`Comparison.stopped_measuring` records when the current run has
 #: no reason for a check at all: the check produced neither a row nor a gap,
-#: so it was not asked for. That is still a sensor that stopped.
+#: so it was not asked for. That is still a check that stopped.
 NO_REASON_RECORDED = "the check produced no row at all in this run"
 
 #: ``--write-baseline`` and ``--compare-baseline`` take an OPTIONAL path. Click
@@ -92,7 +98,7 @@ class BaselineError(ValueError):
     """
 
 
-class DampenerUsage(ValueError):
+class BaselineUsage(ValueError):
     """A flag combination in which one of the flags would silently do nothing."""
 
 
@@ -184,7 +190,7 @@ def _signatures_field(document: Mapping[str, Any], key: str) -> dict[str, int]:
 def verify_digest(commands: ResolvedVerifyCommands, timeout: float) -> str:
     """A digest of HOW a tree was measured: the three gate commands and the timeout.
 
-    ``docs/dampener.md`` states that a baseline and a comparison measured at
+    ``docs/baseline.md`` states that a baseline and a comparison measured at
     different timeouts are not a comparison, and before this the only mechanism
     behind that sentence was a literal ``1800`` typed into the workflow YAML.
     An operator who ran the comparison at the default 300s got a report in
@@ -213,7 +219,7 @@ def verify_digest(commands: ResolvedVerifyCommands, timeout: float) -> str:
 
 @dataclass(frozen=True)
 class Baseline:
-    """One sense measurement, reduced to what a later run can be compared to.
+    """One check measurement, reduced to what a later run can be compared to.
 
     Both sides of a comparison are one of these: the committed document and the
     run that just happened. Same type on purpose, so nothing can compare a
@@ -230,7 +236,7 @@ class Baseline:
     #: and only a person can tell those apart.
     project: str
     passed: bool
-    sense_schema_version: int
+    check_schema_version: int
     #: :func:`verify_digest` of the commands and timeout this was measured
     #: with. A mismatch IS a refusal: see :func:`refuse_foreign_baseline`.
     verify_digest: str
@@ -266,7 +272,7 @@ class Baseline:
             "base_ref": self.base_ref,
             "project": self.project,
             "passed": self.passed,
-            "sense_schema_version": self.sense_schema_version,
+            "check_schema_version": self.check_schema_version,
             "verify_digest": self.verify_digest,
             "measured_checks": sorted(self.measured_checks),
             "unmeasured_checks": sorted(self.unmeasured_checks),
@@ -289,7 +295,7 @@ class Baseline:
         if version != BASELINE_SCHEMA_VERSION:
             raise BaselineError(
                 f"baseline schema_version is {version}, expected {BASELINE_SCHEMA_VERSION}; "
-                "run ks sense --write-baseline --force to regenerate it"
+                "run ks check --write-baseline --force to regenerate it"
             )
         unmeasured = _str_tuple_field(raw, "unmeasured_checks")
         reasons = _str_map_field(raw, "unmeasured_reasons")
@@ -298,7 +304,7 @@ class Baseline:
                 "baseline 'unmeasured_reasons' names "
                 f"{sorted(reasons)} but 'unmeasured_checks' names {sorted(unmeasured)}; "
                 "every hole in a baseline carries the reason it is there. "
-                "Regenerate it with ks sense --write-baseline --force"
+                "Regenerate it with ks check --write-baseline --force"
             )
         return cls(
             # Provenance, like ``base_ref``: nothing gates on it, so null is
@@ -309,7 +315,7 @@ class Baseline:
             base_ref=_optional_str_field(raw, "base_ref"),
             project=_str_field(raw, "project"),
             passed=_bool_field(raw, "passed"),
-            sense_schema_version=_int_field(raw, "sense_schema_version"),
+            check_schema_version=_int_field(raw, "check_schema_version"),
             verify_digest=_str_field(raw, "verify_digest"),
             measured_checks=_str_tuple_field(raw, "measured_checks"),
             unmeasured_checks=unmeasured,
@@ -353,15 +359,15 @@ def baseline_from_result(
     base_ref: str | None,
     project: str,
     generated_at: str,
-    sense_schema_version: int,
+    check_schema_version: int,
     digest: str,
 ) -> Baseline:
-    """Reduce a sense run to a :class:`Baseline`.
+    """Reduce a check run to a :class:`Baseline`.
 
     ``generated_at``, ``base_ref``, ``project`` and ``digest`` are injected
     rather than read here so the document is a pure function of the run for
-    tests. ``sense_schema_version`` is passed in from
-    :data:`kstrl.cli.SENSE_SCHEMA_VERSION` rather than imported, because the
+    tests. ``check_schema_version`` is passed in from
+    :data:`kstrl.cli.CHECK_SCHEMA_VERSION` rather than imported, because the
     CLI imports this module.
 
     ``limit=None``: the journal caps a check at five distinct signatures so one
@@ -375,7 +381,7 @@ def baseline_from_result(
         base_ref=base_ref,
         project=project,
         passed=result.passed,
-        sense_schema_version=sense_schema_version,
+        check_schema_version=check_schema_version,
         verify_digest=digest,
         measured_checks=tuple(sorted({check.name for check in measured})),
         unmeasured_checks=tuple(sorted(reasons)),
@@ -413,7 +419,7 @@ def read_baseline(path: Path) -> Baseline:
     try:
         raw_bytes = path.read_bytes()
     except FileNotFoundError:
-        raise BaselineError(f"no baseline at {path}; run ks sense --write-baseline first") from None
+        raise BaselineError(f"no baseline at {path}; run ks check --write-baseline first") from None
     except OSError as exc:
         raise BaselineError(f"cannot read the baseline at {path}: {exc}") from exc
     try:
@@ -432,7 +438,7 @@ def refuse_foreign_baseline(baseline: Baseline, digest: str) -> None:
     not match the manifest about to be scheduled, and the reason is the same
     one: an artifact one phase writes and another READS has to carry the
     identity of the thing it belongs to, and the reader has to check it.
-    ``docs/dampener.md`` already said a baseline and a comparison measured at
+    ``docs/baseline.md`` already said a baseline and a comparison measured at
     different timeouts are not a comparison; this is the mechanism behind that
     sentence, in place of a literal timeout typed into a workflow file.
 
@@ -446,14 +452,14 @@ def refuse_foreign_baseline(baseline: Baseline, digest: str) -> None:
             "The digest covers the test, typecheck and lint commands and the "
             "subprocess timeout; a comparison across two of those is not a "
             "comparison. Restore the configuration it was written under, or "
-            "regenerate it with ks sense --write-baseline --force"
+            "regenerate it with ks check --write-baseline --force"
         )
 
 
 def refuse_existing_baseline(path: Path, *, force: bool) -> None:
     """Raise unless ``path`` may be written.
 
-    Called twice: once before the sensors run, so an operator who forgot
+    Called twice: once before the checks run, so an operator who forgot
     ``--force`` is told in a tenth of a second rather than after a full test
     suite, and once immediately before the write, which is the authoritative
     refusal. The window between them is microseconds and there is no security
@@ -474,7 +480,7 @@ def write_baseline(path: Path, baseline: Baseline, *, force: bool) -> None:
 def write_summary_line(path: Path, baseline: Baseline) -> str:
     """The one line ``--write-baseline`` prints.
 
-    The unmeasured sensors are named on it, always, ``none`` included: a
+    The unmeasured checks are named on it, always, ``none`` included: a
     baseline written while the test suite timed out is a baseline with a hole in
     it, and the operator has to be able to see that at the moment they commit
     the file rather than infer it from the JSON later.
@@ -501,14 +507,14 @@ class Comparison:
     #: In the baseline, absent now, and its check measured nothing now.
     unmeasured: dict[str, int]
     #: Check name -> why it measured nothing now, for every check the BASELINE
-    #: measured and this run did not. Flags: a sensor going dark is the thing
+    #: measured and this run did not. Flags: a check going dark is the thing
     #: this whole mechanism exists to notice, and the ``unmeasured`` bucket
     #: cannot cover it, because that bucket holds baseline SIGNATURES and a
     #: green baseline has none.
     stopped_measuring: dict[str, str]
-    #: ``(baseline, current)`` when the sensor's own schema version moved under
+    #: ``(baseline, current)`` when the check's own schema version moved under
     #: the baseline, else None. A note, not a refusal: see :func:`compare`.
-    sense_schema_changed: tuple[int, int] | None
+    check_schema_changed: tuple[int, int] | None
     #: ``(baseline, current)`` when the project is not the one the baseline
     #: records, else None. A note, for the reason on :attr:`Baseline.project`.
     project_changed: tuple[str, str] | None
@@ -545,19 +551,19 @@ def compare(baseline: Baseline, current: Baseline) -> Comparison:
     direction for a flagging guard and costs an advisory comment.
 
     The reverse - a check the baseline measured and this run did not - is
-    ``stopped_measuring``, and it is a REGRESSION rather than a note. A sensor
+    ``stopped_measuring``, and it is a REGRESSION rather than a note. A check
     that went dark produces no signature to put in any of the other four
     buckets, so before it existed the report for a branch whose test suite
     stopped finishing was "no regression". It is a set difference taken from
     ``baseline.measured_checks``, so a check absent from that list can never
-    enter it; see docs/dampener.md, "Comparing a branch".
+    enter it; see docs/baseline.md, "Comparing a branch".
 
-    A differing ``sense_schema_version`` is a NOTE rather than exit 2, and this
+    A differing ``check_schema_version`` is a NOTE rather than exit 2, and this
     is the one place the house fail-closed rule is deliberately not applied. The
     document parses, the baseline schema is v1 either way, and the dangerous
     half of the ambiguity - a renamed check reading as fixed - is already closed
     by the ``unmeasured`` bucket. Failing closed instead would break every
-    consumer's pull-request check the moment the sensor version moved.
+    consumer's pull-request check the moment the check version moved.
     """
     new: dict[str, int] = {}
     increased: dict[str, tuple[int, int]] = {}
@@ -582,7 +588,7 @@ def compare(baseline: Baseline, current: Baseline) -> Comparison:
 
     # The FIFTH bucket, and the only one keyed on a check rather than on a
     # signature. Set difference over the two `measured_checks` lists, so it
-    # covers both ways a sensor goes dark: a row that measured nothing now, and
+    # covers both ways a check goes dark: a row that measured nothing now, and
     # a check that produced no row at all because somebody turned it off.
     stopped: dict[str, str] = {
         check: current.unmeasured_reasons.get(check, NO_REASON_RECORDED)
@@ -590,8 +596,8 @@ def compare(baseline: Baseline, current: Baseline) -> Comparison:
     }
 
     changed: tuple[int, int] | None = None
-    if baseline.sense_schema_version != current.sense_schema_version:
-        changed = (baseline.sense_schema_version, current.sense_schema_version)
+    if baseline.check_schema_version != current.check_schema_version:
+        changed = (baseline.check_schema_version, current.check_schema_version)
     renamed: tuple[str, str] | None = None
     if baseline.project != current.project:
         renamed = (baseline.project, current.project)
@@ -601,7 +607,7 @@ def compare(baseline: Baseline, current: Baseline) -> Comparison:
         fixed=fixed,
         unmeasured=unmeasured,
         stopped_measuring=stopped,
-        sense_schema_changed=changed,
+        check_schema_changed=changed,
         project_changed=renamed,
     )
 
@@ -630,7 +636,7 @@ class CompareMode:
     """``--compare-baseline``: the baseline already read, and how to report it.
 
     The baseline is a FIELD rather than something a later phase fetches,
-    because it is read before the sensors run (see :func:`resolve_mode`) and
+    because it is read before the checks run (see :func:`resolve_mode`) and
     carrying it here is what makes "resolved" mean the command has everything
     it needs.
     """
@@ -679,20 +685,20 @@ def _refuse_dead_flags(
     lets an operator see which of the two they meant.
     """
     if write_baseline is not None and compare_baseline is not None:
-        raise DampenerUsage("--write-baseline and --compare-baseline cannot be used together")
+        raise BaselineUsage("--write-baseline and --compare-baseline cannot be used together")
     if force and write_baseline is None:
-        raise DampenerUsage("--force does nothing without --write-baseline")
+        raise BaselineUsage("--force does nothing without --write-baseline")
     if fail_on_regression and compare_baseline is None:
-        raise DampenerUsage("--fail-on-regression does nothing without --compare-baseline")
+        raise BaselineUsage("--fail-on-regression does nothing without --compare-baseline")
     if output_format is not None and compare_baseline is None:
-        raise DampenerUsage("--format does nothing without --compare-baseline")
+        raise BaselineUsage("--format does nothing without --compare-baseline")
     if as_json and output_format is not None:
-        raise DampenerUsage(f"--json and --format {output_format} cannot be used together")
+        raise BaselineUsage(f"--json and --format {output_format} cannot be used together")
     if as_json and write_baseline is not None:
         # --write-baseline prints one line and writes a file. There is no JSON
         # document for it to produce, so --json would silently do nothing,
         # which is the same defect as the four above rather than a lesser one.
-        raise DampenerUsage("--json does nothing with --write-baseline")
+        raise BaselineUsage("--json does nothing with --write-baseline")
 
 
 def resolve_mode(
@@ -705,16 +711,16 @@ def resolve_mode(
     as_json: bool,
     root_dir: Path,
 ) -> Mode | None:
-    """The dampener mode, or None when no dampener flag was given.
+    """The baseline mode, or None when no baseline flag was given.
 
-    ``None`` is the whole of the "plain ``ks sense`` is unchanged" promise: the
+    ``None`` is the whole of the "plain ``ks check`` is unchanged" promise: the
     command takes exactly the same path it took before this feature existed.
 
-    THE BASELINE IS SETTLED HERE, BEFORE THE SENSORS RUN, and that is a product
-    attribute rather than tidiness: a full sense run on this repository costs
+    THE BASELINE IS SETTLED HERE, BEFORE THE CHECKS RUN, and that is a product
+    attribute rather than tidiness: a full check run on this repository costs
     327 measured seconds, so telling an operator who forgot ``--force`` after
     five minutes instead of a tenth of a second is latency they feel. Both ways
-    this can refuse - :class:`DampenerUsage` for a flag that would do nothing,
+    this can refuse - :class:`BaselineUsage` for a flag that would do nothing,
     :class:`BaselineError` for a baseline that cannot be read - reach the CLI's
     one fail-closed handler and exit 2. The ``--force`` refusal is made again
     inside :func:`write_baseline`, and that second one is authoritative.

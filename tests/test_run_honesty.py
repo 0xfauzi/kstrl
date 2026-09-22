@@ -6,7 +6,7 @@
 - --no-verify: ``FactoryConfig.skip_verification`` is an explicit skip
   sentinel that ``run_factory`` honors - Phase 1 runs ZERO checks, states
   the skip in output, and records a phase_skipped finding.
-- H-10: both ``ks run`` and ``ks factory`` wire FeedforwardConfig
+- H-10: both ``ks run`` and ``ks factory`` wire CodebaseScanConfig
   (via the toml/env control plane), and the built Phase 0 context reaches
   the engineer prompt.
 - H-11: the rendered engineer prompt names the SAME per-component PRD
@@ -42,9 +42,9 @@ from tests.helpers import gitrepo
 
 COMPLETE_LINE = "echo '<promise>COMPLETE</promise>'"
 COMP_PRD_PATH = "scripts/kstrl/feature/comp-a/prd.json"
-# Header emitted by feedforward.build_feedforward_context; asserting on it
+# Header emitted by kstrl.feedforward.build_codebase_scan_context; asserting on it
 # proves Phase 0 context reached the engineer prompt.
-FEEDFORWARD_HEADER = "=== CODEBASE CONTEXT (auto-generated) ==="
+CODEBASE_SCAN_HEADER = "=== CODEBASE CONTEXT (auto-generated) ==="
 
 
 def _git(*args: str, cwd: Path) -> None:
@@ -59,7 +59,7 @@ def _git(*args: str, cwd: Path) -> None:
 
 def _init_repo(root: Path) -> None:
     """Real git repo with a decomposed component PRD (passes=true) and a
-    small Python source file so feedforward has content to summarize."""
+    small Python source file so codebase scan has content to summarize."""
     root.mkdir(parents=True, exist_ok=True)
     _git("init", "-q", "-b", "main", cwd=root)
     gitrepo.set_identity(root)
@@ -298,7 +298,7 @@ class TestNoVerifySkipSentinel:
 
 
 class TestCliWiring:
-    """The CLI passes the sentinel + feedforward config into run_factory."""
+    """The CLI passes the sentinel + codebase scan config into run_factory."""
 
     def _capture_run_factory(
         self,
@@ -346,7 +346,7 @@ class TestCliWiring:
         cfg = captured["factory_config"]
         assert cfg.skip_verification is True
         assert cfg.verify_config is None
-        assert cfg.feedforward_config is not None
+        assert cfg.codebase_scan_config is not None
         assert captured["base_config"].max_iterations == 2
 
     def test_run_default_does_not_skip(
@@ -367,20 +367,20 @@ class TestCliWiring:
         cfg = captured["factory_config"]
         assert cfg.skip_verification is False
         assert isinstance(cfg.verify_config, VerifyConfig)
-        assert cfg.feedforward_config is not None
+        assert cfg.codebase_scan_config is not None
 
     def _write_manifest(self, root: Path) -> Path:
         manifest_path = root / "m.json"
         _manifest().save(manifest_path)
         return manifest_path
 
-    def test_factory_wires_feedforward_from_control_plane(
+    def test_factory_wires_codebase_scan_from_control_plane(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """H-10: `ks factory` passes a FeedforwardConfig loaded from
-        toml/env; previously feedforward_config was never set and Phase 0
+        """H-10: `ks factory` passes a CodebaseScanConfig loaded from
+        toml/env; previously codebase_scan_config was never set and Phase 0
         silently never ran."""
         captured = self._capture_run_factory(monkeypatch)
         monkeypatch.setenv("AGENT_CMD", "echo hi")
@@ -397,21 +397,21 @@ class TestCliWiring:
         # Default: enabled.
         result = CliRunner().invoke(cli_mod.cli, args)
         assert result.exit_code == 0, result.output
-        ff = captured["factory_config"].feedforward_config
+        ff = captured["factory_config"].codebase_scan_config
         assert ff is not None and ff.enabled is True
 
         # toml disables it.
-        (tmp_path / "kstrl.toml").write_text("[feedforward]\nenabled = false\n")
+        (tmp_path / "kstrl.toml").write_text("[codebase_scan]\nenabled = false\n")
         result = CliRunner().invoke(cli_mod.cli, args)
         assert result.exit_code == 0, result.output
-        ff = captured["factory_config"].feedforward_config
+        ff = captured["factory_config"].codebase_scan_config
         assert ff is not None and ff.enabled is False
 
         # Env overrides toml.
-        monkeypatch.setenv("KSTRL_FEEDFORWARD_ENABLED", "1")
+        monkeypatch.setenv("KSTRL_CODEBASE_SCAN_ENABLED", "1")
         result = CliRunner().invoke(cli_mod.cli, args)
         assert result.exit_code == 0, result.output
-        ff = captured["factory_config"].feedforward_config
+        ff = captured["factory_config"].codebase_scan_config
         assert ff is not None and ff.enabled is True
 
     def test_factory_no_verify_sets_skip_sentinel(
@@ -442,11 +442,11 @@ class TestCliWiring:
         assert cfg.verify_config is None
 
 
-class TestFeedforwardAndPrdPathEndToEnd:
+class TestCodebaseScanAndPrdPathEndToEnd:
     """Real `ks factory` CLI run: Phase 0 context and the per-component
     PRD path both land in the prompt the engineer receives."""
 
-    def test_factory_run_builds_feedforward_and_names_component_prd(
+    def test_factory_run_builds_codebase_scan_and_names_component_prd(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
@@ -487,8 +487,8 @@ class TestFeedforwardAndPrdPathEndToEnd:
         assert result.exit_code == 0, result.output
         prompt = dump.read_text()
 
-        # H-10: Phase 0 feedforward context reached the built prompt.
-        assert FEEDFORWARD_HEADER in prompt
+        # H-10: Phase 0 codebase scan context reached the built prompt.
+        assert CODEBASE_SCAN_HEADER in prompt
 
         # H-11: the prompt names the decomposed component's PRD - the
         # exact path check_prd_stories reads (wt_path / comp.prd_path;

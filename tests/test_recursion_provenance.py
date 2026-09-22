@@ -13,7 +13,7 @@ series rather than in competition:
   Exception``, so no document's ``RecursionError`` escapes the parse
   that raised it: ``load_toml_document`` converts it to
   ``ConfigError``, and the pyproject.toml and ruff.toml readers in
-  ``verify`` and ``feedforward`` swallow it. Not every guarded block
+  ``verify`` and ``kstrl.feedforward`` swallow it. Not every guarded block
   goes through ``load_toml_document`` - ``init_wizard._detected_text``
   reaches ``verify._default_typecheck_command`` - which is why the
   closure is over the PARSES and not over the call graph.

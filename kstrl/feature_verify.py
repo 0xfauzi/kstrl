@@ -152,7 +152,7 @@ def baseline_skip_reason(run_config: KstrlConfig, root_dir: Path) -> str | None:
 #: embedded TUI each printed line is one Log event on the run bus, up to
 #: ``2 + repair_max_runs`` times a run. Twelve shows a couple of
 #: failures in full and then says how many were dropped; the complete
-#: output is in the command's own log, and `ks sense` prints all of it.
+#: output is in the command's own log, and `ks check` prints all of it.
 _MAX_DETAIL_LINES = 12
 
 
@@ -210,7 +210,7 @@ def _announce_verification(
     ui.info(
         "  also not measured: dead_code_ruff. It reads no diff, but one toggle "
         "([verify] dead_code_cleanup) owns both dead-code phases and this flow "
-        "turns it off. Use `ks sense` for it."
+        "turns it off. Use `ks check` for it."
     )
     ui.info(f"  running: {commands.test}")
     ui.info(f"  running: {commands.typecheck}")
@@ -330,7 +330,7 @@ def report_verification(
     cancellation inside the shared checker, which is not this flow's to
     add.
 
-    ``read_only=True`` is the mode ``ks sense`` already uses to point
+    ``read_only=True`` is the mode ``ks check`` already uses to point
     this same function at a live checkout (R10.1): the two checks that
     would rewrite the tree they measure are forbidden there.
 

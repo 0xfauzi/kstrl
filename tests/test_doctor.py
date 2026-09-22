@@ -63,7 +63,7 @@ def ready_repo(tmp_path: Path, name: str = "demo") -> Path:
 
     Committed, so the tree is clean; `pyproject.toml` so the `uv run`
     defaults have a project; a package with a public symbol so the
-    feedforward stage has something to summarise; a test file so
+    codebase scan stage has something to summarise; a test file so
     `adequacy.is_test_path` matches; `.kstrl/` ignored; an origin
     remote so `git.get_origin_slug` answers.
     """
@@ -146,7 +146,7 @@ def test_an_unauthenticated_gh_is_a_warning_not_a_failure(
     assert "[fail]" not in result.output
 
 
-def test_a_repo_with_no_python_source_warns_and_names_the_feedforward_stage(
+def test_a_repo_with_no_python_source_warns_and_names_the_codebase_scan_stage(
     tmp_path: Path,
 ) -> None:
     """Deliberately a repo with no Python at all, and NOT a
@@ -331,11 +331,11 @@ def test_verify_commands_warn_when_there_is_no_project_for_uv_run(tmp_path: Path
     assert "uv run pytest" in result.output
 
 
-def test_measure_points_at_ks_sense_and_refuses(tmp_path: Path) -> None:
+def test_measure_points_at_ks_check_and_refuses(tmp_path: Path) -> None:
     root = ready_repo(tmp_path)
     result = run_doctor(root, "--measure")
     assert result.exit_code == 2, result.output
-    assert "ks sense" in result.output
+    assert "ks check" in result.output
     assert "not built" in result.output
     assert not (root / ".kstrl").exists()  # it refused before measuring anything
 
@@ -368,11 +368,11 @@ def test_a_root_that_is_not_a_directory_is_refused_before_anything_is_written(
     assert "ks doctor:" not in result.output
 
 
-def test_the_refusals_carry_the_same_json_envelope_as_sense(tmp_path: Path) -> None:
+def test_the_refusals_carry_the_same_json_envelope_as_check(tmp_path: Path) -> None:
     """`ks doctor`'s two refusals (a bad `--root` and `--measure`) route
-    through the same `_sense_error` helper `ks sense` uses, so `--json`
+    through the same `_check_error` helper `ks check` uses, so `--json`
     prints the same one-key document on both commands, naming the
-    doctor's own schema version rather than sense's.
+    doctor's own schema version rather than check's.
     """
     missing = tmp_path / "nope"
     bad_root = run_doctor(missing, "--json")
@@ -388,5 +388,5 @@ def test_the_refusals_carry_the_same_json_envelope_as_sense(tmp_path: Path) -> N
     assert "error:" in measured.output
     measured_document = json.loads(measured.stdout)
     assert measured_document["schema_version"] == doctor.DOCTOR_SCHEMA_VERSION
-    assert "ks sense" in measured_document["error"]
+    assert "ks check" in measured_document["error"]
     assert not (root / ".kstrl").exists()  # it refused before measuring anything

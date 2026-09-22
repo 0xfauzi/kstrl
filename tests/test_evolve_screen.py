@@ -26,9 +26,9 @@ Suggested change:
 > Pin every dependency version in pyproject.toml.
 """
 
-MANUAL_PROP = """# PROP-002: Bump feedforward budget
+MANUAL_PROP = """# PROP-002: Bump codebase scan budget
 **Type**: inferential
-**Target**: feedforward_config
+**Target**: codebase_scan_config
 
 Suggested change:
 

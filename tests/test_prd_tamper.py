@@ -4,8 +4,8 @@ The harness carve-out puts the component PRD inside every component's
 effective scope BY DESIGN - the engineer has to write it to set
 ``passes``. Phase 1 is not its only reader: ``check_prd_stories``
 re-reads the stories, ``check_fixtures_from_prd`` re-reads the fixtures,
-the reviewer is handed the acceptance criteria and the R10.3 set-point
-sensor re-reads the claims. Without a refusal an agent could delete a
+the reviewer is handed the acceptance criteria and the R10.3 claim
+check re-reads the claims. Without a refusal an agent could delete a
 story's acceptance criteria, neuter an executable fixture, and pass
 gates it authored.
 
@@ -118,7 +118,7 @@ class TestPrdTamper:
         """The two mutable fields. Setting ``passes`` is the whole job,
         and they are also the only fields
         review.revert_unconfirmed_stories touches, so the harness's own
-        set-point write cannot trip this check."""
+        claim write cannot trip this check."""
         wt = tmp_path / "wt"
         _write_prd(tmp_path / PRD_REL, AUTHORED, stories=[{**STORY, "passes": False}])
         _write_prd(

@@ -1,6 +1,6 @@
 """Tests for the per-config TOML loaders added in Phase B.
 
-Each section of kstrl.toml ([factory], [verify], [contract], [feedforward],
+Each section of kstrl.toml ([factory], [verify], [contract], [codebase_scan],
 [evolution], [security]) now has an observable runtime effect via the
 corresponding ``Config.load(root_dir)`` classmethod.
 """
@@ -14,7 +14,7 @@ import pytest
 from kstrl.contract import ContractConfig, ContractMode
 from kstrl.evolution import EvolutionConfig
 from kstrl.factory import FactoryConfig
-from kstrl.feedforward import FeedforwardConfig
+from kstrl.feedforward import CodebaseScanConfig
 from kstrl.security import SecurityConfig, SecurityMode
 from kstrl.verify import VerifyConfig
 
@@ -198,31 +198,31 @@ test_command = "pytest tests/"
 
 
 # ---------------------------------------------------------------------------
-# FeedforwardConfig
+# CodebaseScanConfig
 # ---------------------------------------------------------------------------
 
 
-class TestFeedforwardConfigLoad:
-    def test_reads_feedforward_section(
+class TestCodebaseScanConfigLoad:
+    def test_reads_codebase_scan_section(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _clear_env(
             monkeypatch,
-            "KSTRL_FEEDFORWARD_ENABLED",
-            "KSTRL_FEEDFORWARD_MAX_TOKENS",
+            "KSTRL_CODEBASE_SCAN_ENABLED",
+            "KSTRL_CODEBASE_SCAN_MAX_TOKENS",
         )
         _write(
             tmp_path / "kstrl.toml",
             """
-[feedforward]
+[codebase_scan]
 enabled = false
 module_map = false
 max_context_tokens = 8000
 """,
         )
-        config = FeedforwardConfig.load(tmp_path)
+        config = CodebaseScanConfig.load(tmp_path)
         assert config.enabled is False
         assert config.module_map is False
         assert config.max_context_tokens == 8000
@@ -232,9 +232,9 @@ max_context_tokens = 8000
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        _write(tmp_path / "kstrl.toml", "[feedforward]\nenabled = false\n")
-        monkeypatch.setenv("KSTRL_FEEDFORWARD_ENABLED", "true")
-        config = FeedforwardConfig.load(tmp_path)
+        _write(tmp_path / "kstrl.toml", "[codebase_scan]\nenabled = false\n")
+        monkeypatch.setenv("KSTRL_CODEBASE_SCAN_ENABLED", "true")
+        config = CodebaseScanConfig.load(tmp_path)
         assert config.enabled is True
 
 
@@ -343,7 +343,7 @@ fail_threshold = "critical"
         FactoryConfig.load,
         VerifyConfig.load,
         ContractConfig.load,
-        FeedforwardConfig.load,
+        CodebaseScanConfig.load,
         EvolutionConfig.load,
         SecurityConfig.load,
     ],

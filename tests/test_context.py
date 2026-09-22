@@ -348,7 +348,7 @@ class TestIterationContext:
 
     def test_engineer_only_attempt_retires_nothing(self) -> None:
         """An attempt that never got past the engineer loop records an
-        IterationRecord and no entry. No sensor ran, so nothing earlier
+        IterationRecord and no entry. No check ran, so nothing earlier
         may be retired, and nothing earlier may be shown as current."""
         ctx = IterationContext()
         ctx.add_verification_failure("linter: E501", attempt=1)
@@ -369,7 +369,7 @@ class TestIterationContext:
         assert "agent stalled" in section(text, HISTORY)
 
     def test_diff_failure_is_not_superseded_by_verification(self) -> None:
-        """The diff fetch is its own sensor. Verification failing in
+        """The diff fetch is its own check. Verification failing in
         attempt 2 means the diff was never fetched again, so the old diff
         failure is un-re-measured rather than superseded."""
         ctx = IterationContext()
@@ -491,7 +491,7 @@ class TestIterationContext:
             "in attempt 2 and are omitted."
         )
 
-    def test_derived_views_group_by_sensor_phase(self) -> None:
+    def test_derived_views_group_by_check_phase(self) -> None:
         """The two texts that moved view when they were re-ranked."""
         ctx = IterationContext()
         ctx.add_engineer_failure("diff_scope: FAIL - evil.txt", attempt=1)
@@ -506,7 +506,7 @@ class TestIterationContext:
         assert ctx.review_findings == ["diff_scope: FAIL - evil.txt"]
         assert ctx.verification_failures == ["The diff is too large to review"]
 
-    def test_crashed_sensor_does_not_supersede_a_real_finding(self) -> None:
+    def test_crashed_check_does_not_supersede_a_real_finding(self) -> None:
         """A security review that CRASHED in attempt 2 is not a reading of
         attempt 2, so attempt 1's high finding survives.
 
@@ -528,7 +528,7 @@ class TestIterationContext:
         assert "sql injection in /users" in section(text, NOT_REMEASURED)
         assert section(text, RESOLVED) == ""
 
-    def test_crashed_sensor_still_retires_lower_ranked_phases(self) -> None:
+    def test_crashed_check_still_retires_lower_ranked_phases(self) -> None:
         """Reaching the security phase at all proves verification ran and
         passed, crash or no crash, so a verification finding is retired."""
         ctx = IterationContext()

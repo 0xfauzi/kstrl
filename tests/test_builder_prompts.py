@@ -120,17 +120,17 @@ def _ctx_all(_tmp: Path) -> str:
 def _finding(location: str) -> Finding:
     return Finding(
         phase="review",
-        category="setpoint_disagreement",
+        category="claim_disagreement",
         severity="major",
         location=location,
         explanation=f"{location}: marked done, pass on only 1 of 2 criteria",
     )
 
 
-def _setpoint(reverted: bool, criteria: list[CriterionReview]) -> Callable[[Path], str]:
+def _claim(reverted: bool, criteria: list[CriterionReview]) -> Callable[[Path], str]:
     def render(_tmp: Path) -> str:
         result = ReviewResult(passed=True, mode="advisory", criteria=criteria)
-        return review.setpoint_retry_context([_finding("US-001")], result, reverted=reverted)
+        return review.claim_retry_context([_finding("US-001")], result, reverted=reverted)
 
     return render
 
@@ -154,8 +154,8 @@ _ALL_PASSED = [
 ]
 
 
-def _setpoint_empty(_tmp: Path) -> str:
-    return review.setpoint_retry_context([], ReviewResult(passed=True, mode="advisory"))
+def _claim_empty(_tmp: Path) -> str:
+    return review.claim_retry_context([], ReviewResult(passed=True, mode="advisory"))
 
 
 def _diff_scope_plain(_tmp: Path) -> str:
@@ -372,11 +372,11 @@ SCENARIOS: dict[str, Callable[[Path], str]] = {
     "ctx_resolved": _ctx_resolved,
     "ctx_history": _ctx_history,
     "ctx_all": _ctx_all,
-    "setpoint_reverted": _setpoint(True, _UNMET),
-    "setpoint_not_reverted": _setpoint(False, _UNMET),
-    "setpoint_all_judged_passed": _setpoint(True, _ALL_PASSED),
-    "setpoint_no_verdict": _setpoint(True, []),
-    "setpoint_empty": _setpoint_empty,
+    "claim_reverted": _claim(True, _UNMET),
+    "claim_not_reverted": _claim(False, _UNMET),
+    "claim_all_judged_passed": _claim(True, _ALL_PASSED),
+    "claim_no_verdict": _claim(True, []),
+    "claim_empty": _claim_empty,
     "diff_scope_plain": _diff_scope_plain,
     "diff_scope_harness": _diff_scope_harness,
     "diff_scope_truncated": _diff_scope_truncated,
@@ -400,7 +400,7 @@ SCENARIOS: dict[str, Callable[[Path], str]] = {
 NEEDLES: dict[str, str] = {
     "context.format_for_prompt closing": "do not assume they still apply.",
     "context.format_for_prompt heading": "## Current failures (measured in attempt ",
-    "review.setpoint_retry_context": "Set-point disagreement: you marked the stories below done",
+    "review.claim_retry_context": "Set-point disagreement: you marked the stories below done",
     "verify._diff_scope_details": "do NOT `git checkout ",
     "verify.check_prd_stories tamper": "permission to change what the component is measured",
     "verify.check_scope_unreadable": "The allowedPaths this component must be judged against",
@@ -454,13 +454,11 @@ DIGESTS: dict[str, str] = {
     "prd_tamper": "1a210bdd7077628703f6e5bfa2893be949ebcf0636102cd4d7507a7b7af41a97",
     "scope_unreadable_cause": "599979f4317abead4ddb248f85e3b2a5b73bf6d37bcf66951694959acc3b9ace",
     "scope_unreadable_no_cause": "954eb333903b94d0c4dd36c9b03a9605ea16355f7311274d69d0232a67796d9e",
-    "setpoint_all_judged_passed": (
-        "3a0b75c6884a0334b36a0bd91640a9f2a4c8833c0382c70afdd01315b1d85a68"
-    ),
-    "setpoint_empty": _EMPTY_DIGEST,
-    "setpoint_no_verdict": "532c99dd2f7248673a850475e17950a4587b842cb4ad97666d6001df10b1efb4",
-    "setpoint_not_reverted": "306a5c0154871b603ff5f76c405c57a0a06f8be5e4fb3914994b2827f3b24411",
-    "setpoint_reverted": "631e395ab1166d21de851904853c4abaf6b5251324ffa97b1631db33b9685088",
+    "claim_all_judged_passed": ("3a0b75c6884a0334b36a0bd91640a9f2a4c8833c0382c70afdd01315b1d85a68"),
+    "claim_empty": _EMPTY_DIGEST,
+    "claim_no_verdict": "532c99dd2f7248673a850475e17950a4587b842cb4ad97666d6001df10b1efb4",
+    "claim_not_reverted": "306a5c0154871b603ff5f76c405c57a0a06f8be5e4fb3914994b2827f3b24411",
+    "claim_reverted": "631e395ab1166d21de851904853c4abaf6b5251324ffa97b1631db33b9685088",
 }
 
 
@@ -503,11 +501,11 @@ CALL_TIME_GUARDS: dict[str, tuple[ModuleType, str]] = {
     "ITERATION_CONTEXT_RESOLVED_PROMPT": (context, "ctx_resolved"),
     "ITERATION_CONTEXT_HISTORY_PROMPT": (context, "ctx_history"),
     "ITERATION_CONTEXT_CLOSING_PROMPT": (context, "ctx_empty"),
-    "SETPOINT_RETRY_PROMPT": (review, "setpoint_reverted"),
-    "SETPOINT_REVERTED_PROMPT": (review, "setpoint_reverted"),
-    "SETPOINT_NOT_REVERTED_PROMPT": (review, "setpoint_not_reverted"),
-    "SETPOINT_PARTIALLY_JUDGED_PROMPT": (review, "setpoint_all_judged_passed"),
-    "SETPOINT_NO_VERDICT_PROMPT": (review, "setpoint_no_verdict"),
+    "CLAIM_RETRY_PROMPT": (review, "claim_reverted"),
+    "CLAIM_REVERTED_PROMPT": (review, "claim_reverted"),
+    "CLAIM_NOT_REVERTED_PROMPT": (review, "claim_not_reverted"),
+    "CLAIM_PARTIALLY_JUDGED_PROMPT": (review, "claim_all_judged_passed"),
+    "CLAIM_NO_VERDICT_PROMPT": (review, "claim_no_verdict"),
     "DIFF_SCOPE_BASE_BRANCH_PROMPT": (verify, "diff_scope_plain"),
     "DIFF_SCOPE_ALLOWED_PATHS_PROMPT": (verify, "diff_scope_plain"),
     "DIFF_SCOPE_HARNESS_PATHS_PROMPT": (verify, "diff_scope_harness"),

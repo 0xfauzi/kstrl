@@ -511,7 +511,7 @@ def test_the_helper_set_is_qualified_rather_than_a_bag_of_bare_names() -> None:
     config load. Keys carry their module now, and an unresolvable name
     from an unrelated module resolves to an origin nothing matches."""
     helpers = config_loading_helpers()
-    collisions = {"run", "serve", "evolve", "factory", "feature", "sense", "__init__"}
+    collisions = {"run", "serve", "evolve", "factory", "feature", "check", "__init__"}
     assert collisions & {helper.rsplit(".", 1)[-1] for helper in helpers}, (
         "the generic names review measured are gone from kstrl entirely; "
         "this test no longer measures anything"

@@ -52,7 +52,7 @@ EXPECTED_SURFACE_CLASSES: dict[str, frozenset[str]] = {
         "ContractConfig",
         "DivergenceConfig",
         "EvolutionConfig",
-        "FeedforwardConfig",
+        "CodebaseScanConfig",
         "FixturesConfig",
         "GitHubIntakeConfig",
         "InboxConfig",

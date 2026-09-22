@@ -42,7 +42,15 @@ DIVERGENCE_CATEGORY = "review_divergence"
 # evidence is an LLM's verdict, so unlike the policy and adequacy
 # families these findings DO carry a model tag: which reviewer
 # disagreed is the fact worth attributing.
-SETPOINT_DISAGREEMENT_CATEGORY = "setpoint_disagreement"
+CLAIM_DISAGREEMENT_CATEGORY = "claim_disagreement"
+
+#: The name this category shipped under before #395. Records already on
+#: disk and in merged pull requests carry it, so a reader still resolves
+#: it; new code writes only the new name. Same shape as
+#: ``knowledge._CONFIDENCE_ALIASES`` ("verified" -> "review_passed").
+_CATEGORY_ALIASES: dict[str, str] = {
+    "setpoint_disagreement": CLAIM_DISAGREEMENT_CATEGORY,
+}
 
 # R3.3: every finding the factory records is tagged with the attempt
 # that produced it, so the journal can distinguish superseded findings
@@ -114,9 +122,10 @@ class Finding:
         tags_raw = data.get("tags", []) or []
         if not isinstance(tags_raw, (list, tuple)):
             tags_raw = []
+        category = str(data.get("category", ""))
         return cls(
             phase=str(data.get("phase", "")),
-            category=str(data.get("category", "")),
+            category=_CATEGORY_ALIASES.get(category, category),
             severity=str(data.get("severity", "")),
             location=str(data.get("location", "")),
             explanation=str(data.get("explanation", "")),

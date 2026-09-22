@@ -76,7 +76,7 @@ from kstrl.events import (
 from kstrl.events import (
     ContractResult as ContractResultEvent,
 )
-from kstrl.feedforward import FeedforwardConfig, build_feedforward_context
+from kstrl.feedforward import CodebaseScanConfig, build_codebase_scan_context
 from kstrl.findings import POLICY_CATEGORY_PREFIX
 from kstrl.fixtures import FixturesConfig
 from kstrl.git import fetch_base_branch, resolve_base_ref
@@ -227,12 +227,12 @@ def validate_token_ceiling(value: int, source: str) -> int:
     return value
 
 
-#: R10.3: the two settings [factory] setpoint_agreement accepts.
-VALID_SETPOINT_AGREEMENT = ("advisory", "block")
+#: R10.3: the two settings [factory] claim_agreement accepts.
+VALID_CLAIM_AGREEMENT = ("advisory", "block")
 
 
-def _validate_setpoint_agreement(value: str, source: str) -> str:
-    """Reject an unrecognised set-point mode at load time.
+def _validate_claim_agreement(value: str, source: str) -> str:
+    """Reject an unrecognised claim mode at load time.
 
     ``review_mode`` next door is validated only when the pipeline builds
     a ``ReviewMode`` from it, deep inside Phase 2, which turns a typo in
@@ -242,10 +242,10 @@ def _validate_setpoint_agreement(value: str, source: str) -> str:
     unrecognised value as "advisory" would be worse than either: the
     operator would believe a gate was blocking when it was not.
     """
-    if value not in VALID_SETPOINT_AGREEMENT:
+    if value not in VALID_CLAIM_AGREEMENT:
         raise ValueError(
             f"invalid {source} {value!r}; expected "
-            + " or ".join(repr(v) for v in VALID_SETPOINT_AGREEMENT)
+            + " or ".join(repr(v) for v in VALID_CLAIM_AGREEMENT)
         )
     return value
 
@@ -271,14 +271,14 @@ class FactoryConfig:
     skip_verification: bool = False
     # Phase 2: reviewer agent
     review_mode: str = ReviewMode.HARD.value
-    # R10.3 set-point agreement: what to do when the engineer marked a
+    # R10.3 claim agreement: what to do when the engineer marked a
     # story passes=true and the reviewer did not independently confirm
     # it. "advisory" records a finding and lets the component proceed;
     # "block" also reverts the flag in the PRD and retries the story.
     # Ships advisory so the gate's first output is a measurement rather
     # than a wall. The autonomy ladder can force blocking on from L1
-    # upward (see review.setpoint_blocks); it can never turn it off.
-    setpoint_agreement: str = "advisory"
+    # upward (see review.claim_blocks); it can never turn it off.
+    claim_agreement: str = "advisory"
     review_agent_cmd: str | None = None
     review_agent_type: str | None = None
     review_model: str | None = None
@@ -286,8 +286,8 @@ class FactoryConfig:
     security_config: SecurityConfig | None = None
     # Phase 3: contract testing
     contract_config: ContractConfig | None = None
-    # Phase 0: feedforward
-    feedforward_config: FeedforwardConfig | None = None
+    # Phase 0: codebase scan
+    codebase_scan_config: CodebaseScanConfig | None = None
     # Observability. R3.2: the progress log defaults ON so a walk-away
     # run always leaves a consumable event trail; progress_log_enabled
     # = false (toml/env) turns it off. progress_log_path=None means the
@@ -434,12 +434,12 @@ class FactoryConfig:
         return None if self.skip_verification else self.resolved_verify_config()
 
     def __post_init__(self) -> None:
-        # R10.3: catch a bad set-point mode wherever the config is
+        # R10.3: catch a bad claim mode wherever the config is
         # built, not only in load(). A FactoryConfig assembled from CLI
         # flags or in a test goes through here too.
-        _validate_setpoint_agreement(
-            self.setpoint_agreement,
-            "[factory] setpoint_agreement",
+        _validate_claim_agreement(
+            self.claim_agreement,
+            "[factory] claim_agreement",
         )
 
     @classmethod
@@ -482,9 +482,9 @@ class FactoryConfig:
             # operator as "from kstrl.toml" when it came from the
             # environment - a false provenance claim in the one place
             # they look to find out where a setting came from.
-            setpoint_agreement=_validate_setpoint_agreement(
-                os.environ.get("KSTRL_FACTORY_SETPOINT_AGREEMENT", "advisory"),
-                "KSTRL_FACTORY_SETPOINT_AGREEMENT",
+            claim_agreement=_validate_claim_agreement(
+                os.environ.get("KSTRL_FACTORY_CLAIM_AGREEMENT", "advisory"),
+                "KSTRL_FACTORY_CLAIM_AGREEMENT",
             ),
         )
 
@@ -515,10 +515,10 @@ class FactoryConfig:
             config.create_prs = bool(section["create_prs"])
         if "review_mode" in section:
             config.review_mode = str(section["review_mode"])
-        if "setpoint_agreement" in section:
-            config.setpoint_agreement = _validate_setpoint_agreement(
-                str(section["setpoint_agreement"]),
-                "[factory] setpoint_agreement",
+        if "claim_agreement" in section:
+            config.claim_agreement = _validate_claim_agreement(
+                str(section["claim_agreement"]),
+                "[factory] claim_agreement",
             )
         if "merge_timeout" in section:
             config.merge_timeout = float(section["merge_timeout"])
@@ -583,10 +583,10 @@ class FactoryConfig:
             config.keep_worktrees_on_failure = _parse_bool(
                 os.environ["KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE"]
             )
-        if "KSTRL_FACTORY_SETPOINT_AGREEMENT" in os.environ:
-            config.setpoint_agreement = _validate_setpoint_agreement(
-                os.environ["KSTRL_FACTORY_SETPOINT_AGREEMENT"],
-                "KSTRL_FACTORY_SETPOINT_AGREEMENT",
+        if "KSTRL_FACTORY_CLAIM_AGREEMENT" in os.environ:
+            config.claim_agreement = _validate_claim_agreement(
+                os.environ["KSTRL_FACTORY_CLAIM_AGREEMENT"],
+                "KSTRL_FACTORY_CLAIM_AGREEMENT",
             )
         return config
 
@@ -643,13 +643,13 @@ def security_enabled(config: FactoryConfig) -> bool:
     )
 
 
-def setpoint_gate_unreachable_warning(config: FactoryConfig) -> str | None:
-    """Warning when the set-point gate is on but can never run, else None.
+def claim_gate_unreachable_warning(config: FactoryConfig) -> str | None:
+    """Warning when the claim gate is on but can never run, else None.
 
-    ``setpoint_agreement = "block"`` asks the harness to fail a component
+    ``claim_agreement = "block"`` asks the harness to fail a component
     whose story the reviewer did not confirm, and `review_mode = "skip"`
     means no reviewer runs, so there is never a verdict to confirm with.
-    `_phase_review` returns before the set-point check on that path, so
+    `_phase_review` returns before the claim check on that path, so
     the gate is not merely lenient, it is absent. Same shape and same
     reason as ``merge_gate_unreachable_warning``: a governance control
     silently failing open is worse than one that was never configured,
@@ -659,13 +659,13 @@ def setpoint_gate_unreachable_warning(config: FactoryConfig) -> str | None:
     L1/L2 bundle forces ``review_mode`` to hard and can therefore make a
     config that looked unreachable reachable.
     """
-    if config.setpoint_agreement != "block":
+    if config.claim_agreement != "block":
         return None
     if not review_enabled(config):
         return (
-            "setpoint_agreement is 'block' but review_mode is 'skip': no "
+            "claim_agreement is 'block' but review_mode is 'skip': no "
             "reviewer runs, so no story can be confirmed and the "
-            "set-point gate never fires. Set review_mode to 'advisory' "
+            "claim gate never fires. Set review_mode to 'advisory' "
             "or 'hard' to honour it."
         )
     return None
@@ -2118,7 +2118,7 @@ def _run_component(
     agent_type: str | None,
     sleep_seconds: float,
     previous_context_json: str | None = None,
-    feedforward_config_dict: dict[str, Any] | None = None,
+    codebase_scan_config_dict: dict[str, Any] | None = None,
     scaffold_cmd: str | None = None,
     component_deps: list[str] | None = None,
     knowledge_prefix: str = "",
@@ -2314,19 +2314,19 @@ def _run_component(
         except Exception:
             pass  # scaffold failure is non-fatal
 
-    # Build feedforward context (Phase 0)
-    feedforward_prefix: str = ""
-    if feedforward_config_dict:
+    # Build codebase scan context (Phase 0)
+    codebase_scan_prefix: str = ""
+    if codebase_scan_config_dict:
         try:
-            ff_config = FeedforwardConfig(**feedforward_config_dict)
-            feedforward_prefix = build_feedforward_context(
+            ff_config = CodebaseScanConfig(**codebase_scan_config_dict)
+            codebase_scan_prefix = build_codebase_scan_context(
                 worktree_path,
                 ff_config,
                 component_id=component_id,
                 component_deps=component_deps,
             )
         except Exception:
-            pass  # feedforward failure is non-fatal
+            pass  # codebase scan failure is non-fatal
 
     # R10.8 and R10.9: the operator's own files, one call each through
     # the one resolver. Resolved by `operator_file_spec` against the REPO
@@ -2353,7 +2353,7 @@ def _run_component(
     #
     # Repo-standing first (knowledge, then the operator's patterns), then
     # run-level (the architect's decisions), then tree-computed
-    # (feedforward), then attempt-level (the retry context), then MEMORY.
+    # (codebase scan), then attempt-level (the retry context), then MEMORY.
     # Memory is last on purpose: the retry context is the controller's
     # output for this attempt, and memory is the operator's standing
     # correction to how that output should be acted on, so it is read
@@ -2366,7 +2366,7 @@ def _run_component(
             knowledge_prefix,
             golden_patterns,
             decisions_prefix,
-            feedforward_prefix,
+            codebase_scan_prefix,
             _retry_block(previous_context_json),
             memory,
         )
@@ -3406,7 +3406,7 @@ def _resolve_ladder(
         policy_enabled=run_envelope.policy.enabled,
         root_dir=root_dir,
     )
-    # #192: the level the run OPERATES at. Phase 1 and the set-point
+    # #192: the level the run OPERATES at. Phase 1 and the claim
     # gate re-read the RAW stored level: measured, a run clamped to L1
     # had Phase 1 judging at the stored L4. No verdict changes at either
     # level today (both consumers test only >= 1); it goes live the
@@ -3884,11 +3884,11 @@ def _run_factory_locked(
     if gate_warning is not None:
         ui.warn(gate_warning)
     # R10.3: same timing, same reason - the L1/L2 bundle forces
-    # review_mode to hard above, so a set-point gate that looked
+    # review_mode to hard above, so a claim gate that looked
     # unreachable before autonomy resolved may be reachable now.
-    setpoint_warning = setpoint_gate_unreachable_warning(factory_config)
-    if setpoint_warning is not None:
-        ui.warn(setpoint_warning)
+    claim_warning = claim_gate_unreachable_warning(factory_config)
+    if claim_warning is not None:
+        ui.warn(claim_warning)
 
     # R8.1: the manifest is a self-contained audit record of what merge
     # guardrails were in force for this run. #192: read back off the
@@ -3908,7 +3908,7 @@ def _run_factory_locked(
     # component wall-clock limits. Enforcement layers: the adapters kill
     # their subprocess group, run_loop aborts on the component wall clock,
     # and the scheduler backstop below catches a worker that hangs outside
-    # both (e.g. a stuck scaffold or feedforward step).
+    # both (e.g. a stuck scaffold or codebase scan step).
     timeout_cfg = factory_config.timeout_config or TimeoutConfig.load(root_dir)
     backstop_seconds = (
         timeout_cfg.component_total + timeout_cfg.scheduler_backstop_margin
@@ -4058,10 +4058,10 @@ def _run_factory_locked(
             )
             return None
 
-    # Build feedforward config dict for serialization to worker processes
+    # Build codebase scan config dict for serialization to worker processes
     ff_config_dict: dict[str, Any] | None = None
-    if factory_config.feedforward_config and factory_config.feedforward_config.enabled:
-        fc = factory_config.feedforward_config
+    if factory_config.codebase_scan_config and factory_config.codebase_scan_config.enabled:
+        fc = factory_config.codebase_scan_config
         ff_config_dict = {
             "enabled": fc.enabled,
             "module_map": fc.module_map,

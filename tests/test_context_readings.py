@@ -3,7 +3,7 @@ rule lives in.
 
 ``tests/test_context.py`` holds the one case the issue names. This file
 holds the cases that decide whether the record is SAFE: that a stale
-record retires nothing, that a crashed sensor still beats it, that it
+record retires nothing, that a crashed check still beats it, that it
 survives the process boundary it is built to cross, and that a context
 written before it existed reads back as the old rule rather than as
 nonsense. It is a separate file because ``tests/test_context.py`` is at
@@ -53,7 +53,7 @@ class TestReadingsRetireOnlyWhatTheyMeasured:
         assert "criterion X" in section(text, NOT_REMEASURED)
         assert section(text, RESOLVED) == ""
 
-    def test_a_reading_never_beats_the_crashed_sensor_rule(self) -> None:
+    def test_a_reading_never_beats_the_crashed_check_rule(self) -> None:
         """Branch ORDER in ``_buckets``, pinned.
 
         Attempt 2's review entry is an infrastructure failure, so the
@@ -94,7 +94,7 @@ class TestReadingsRetireOnlyWhatTheyMeasured:
         attempt 2 had cleared.
 
         The engineer-loop failure is the same shape with the opposite
-        answer, and the second half asserts it: no sensor ran, so there
+        answer, and the second half asserts it: no check ran, so there
         is no reading and the finding is still shown.
         """
         ctx = IterationContext()
@@ -115,9 +115,9 @@ class TestReadingsRetireOnlyWhatTheyMeasured:
         assert "from review passed or were re-measured in attempt 2" in section(text, RESOLVED)
         assert section(text, NOT_REMEASURED) == ""
 
-        no_sensor_ran = IterationContext()
-        no_sensor_ran.add_review_finding("criterion X", attempt=1, phase="review")
-        no_sensor_ran.add_iteration(
+        no_check_ran = IterationContext()
+        no_check_ran.add_review_finding("criterion X", attempt=1, phase="review")
+        no_check_ran.add_iteration(
             IterationRecord(
                 iteration=3,
                 success=False,
@@ -126,7 +126,7 @@ class TestReadingsRetireOnlyWhatTheyMeasured:
             )
         )
 
-        text = no_sensor_ran.format_for_prompt()
+        text = no_check_ran.format_for_prompt()
         assert "criterion X" in section(text, NOT_REMEASURED)
         assert section(text, RESOLVED) == ""
 
@@ -301,7 +301,7 @@ class TestBucketRuleSweepWithReadings:
             # branch retires them by observation, including the ones
             # ranked ABOVE q that no inference could reach. The dated
             # survivors are the other phases ranked above q, which
-            # nothing in attempt n ran past. The crashed-sensor rule
+            # nothing in attempt n ran past. The crashed-check rule
             # holds nothing back here: this sweep records no
             # infrastructure entries.
             assert e.attempt == 0 or (
@@ -338,7 +338,7 @@ class TestBucketRuleSweepWithReadings:
             assert entry.phase in SKIPPABLE_PHASES
             # Not AT q: an entry at the failing gate's own rank is
             # decided by the branch above the readings one, so a record
-            # can never move it. That is the crashed-sensor rule, and
+            # can never move it. That is the crashed-check rule, and
             # this inequality is what fails if the two branches are
             # reordered.
             assert PHASE_RANK[entry.phase] != q

@@ -112,7 +112,7 @@ CALIBRATION_RUNS = int(
 # same-family vs cross-family baselines with the same tooling. Applies
 # to the reviewer and security roles only; the architect keeps the base
 # calibration agent. The report's model label carries the override so
-# baseline comparisons surface the family change as a cross-model
+# baselines surface the family change as a cross-model
 # warning instead of hiding it.
 REVIEWER_AGENT_TYPE, REVIEWER_MODEL = calibration.reviewer_override_from_env(
     os.environ,
@@ -411,7 +411,7 @@ def _get_reviewer_calibration_agent():
     """Agent for the reviewer and security roles: the base calibration
     agent unless the R7.1 reviewer-family override
     (KSTRL_CALIBRATION_REVIEWER_AGENT_TYPE / _MODEL) selects another
-    family for the same-family vs cross-family baseline comparison.
+    family for the same-family vs cross-family baseline.
 
     #266: read-only, like production. It matters here for the same
     reason it matters there - the reviewer runs inside the fixture repo

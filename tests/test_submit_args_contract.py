@@ -238,7 +238,7 @@ class TestTheWholeSubmitTupleIsBound:
             "agent_type": None,
             "sleep_seconds": 0,
             "previous_context_json": None,
-            "feedforward_config_dict": None,
+            "codebase_scan_config_dict": None,
             "scaffold_cmd": None,
             "component_deps": None,
             "knowledge_prefix": "",

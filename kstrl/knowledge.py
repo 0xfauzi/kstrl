@@ -466,7 +466,7 @@ def write_facts(
 
 
 def _estimate_tokens(text: str) -> int:
-    """Rough token count - 4 chars per token, matching feedforward convention."""
+    """Rough token count - 4 chars per token, matching codebase scan convention."""
     return max(1, len(text) // 4)
 
 

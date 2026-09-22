@@ -1,15 +1,15 @@
-# The dampener
+# The baseline
 
-A dampener stops the thing you are measuring from getting worse while you
-improve it. kstrl's disturbances are ordinary and named: a teammate's commit, a
+A baseline comparison stops the thing you are measuring from getting worse
+while you improve it. kstrl's disturbances are ordinary and named: a teammate's commit, a
 dependency bump, a base branch that moves under a component. Nothing in the
 factory notices when one of those undoes progress the loop already made.
 
 The mechanism is three parts and no LLM:
 
-1. Run the mechanical sensors on a known-good tree and record the structured
+1. Run the mechanical checks on a known-good tree and record the structured
    failure signatures in a file the repository tracks.
-2. Run the same sensors on a branch.
+2. Run the same checks on a branch.
 3. Report what the branch ADDED.
 
 It ships advisory. It prints the report, it exits 0, and it never fails a pull
@@ -20,7 +20,7 @@ request until somebody chooses that.
 A signature is `"<check>:<code>"`: `linter:E501`, `typecheck:arg-type`,
 `test_suite:assertion-error`. It comes from
 `kstrl.evolution.signature_counts_from_verification`, the same function the
-evolution journal records failures with, so the dampener and the journal cannot
+evolution journal records failures with, so the baseline and the journal cannot
 disagree about what a failure is called.
 
 The baseline counts OCCURRENCES, not distinct signatures. Twelve `E501`s are
@@ -30,17 +30,17 @@ no-change.
 ## Writing a baseline
 
 ```
-uv run ks sense --write-baseline
+uv run ks check --write-baseline
 ```
 
-Writes `scripts/kstrl/sense-baseline.json` under `--root`, and prints one line:
+Writes `scripts/kstrl/baseline.json` under `--root`, and prints one line:
 
 ```
-baseline written: scripts/kstrl/sense-baseline.json (12 signatures, 47 total findings); unmeasured: none
+baseline written: scripts/kstrl/baseline.json (12 signatures, 47 total findings); unmeasured: none
 ```
 
-Exit code follows the sensors: 0 when the tree is green, 1 when it is not. A
-RED baseline is expected and fine. The dampener exists for brownfield
+Exit code follows the checks: 0 when the tree is green, 1 when it is not. A
+RED baseline is expected and fine. The baseline exists for brownfield
 repositories; recording what is wrong today is the point.
 
 It refuses to overwrite an existing baseline. Pass `--force` when you mean to
@@ -54,15 +54,15 @@ Two things to get right when you write one:
 - **Write from a clean tree.** `base_ref` records the commit HEAD points at,
   not the working tree. A baseline written from a dirty tree names a commit
   that is not what was measured.
-- **Read the `unmeasured:` list.** It names every sensor that was asked for and
+- **Read the `unmeasured:` list.** It names every check that was asked for and
   measured nothing: it timed out, its tool is not installed, or it applied no
-  rule because none was configured. Those sensors contribute NO signatures to
+  rule because none was configured. Those checks contribute NO signatures to
   the baseline, so a baseline with names on that line has holes in it, and the
   holes are wherever those names are. The file records the reason for each one
   in `unmeasured_reasons`. Fix the cause and regenerate, or accept the holes
   deliberately.
 
-kstrl's own baseline names two: `diff_scope`, because `ks sense` with no
+kstrl's own baseline names two: `diff_scope`, because `ks check` with no
 `--allowed-path` applies no scope rule at all, and `bad_patterns`, because the
 diff against the base on `main` is empty so it opened no files. Both are
 vacuous passes.
@@ -80,7 +80,7 @@ not in that list cannot enter it, whatever a later run does. They surface as
 The timeout is the other usual cause. kstrl's own test suite takes about 327
 seconds and the default verify timeout is 300, so its own baseline is generated
 with `KSTRL_TIMEOUT_VERIFY=1800`, pinned as `BASELINE_TIMEOUT_SECONDS` in
-`tests/test_sense_committed_baseline.py`; your workflow must set the same
+`tests/test_check_committed_baseline.py`; your workflow must set the same
 value. A baseline and a comparison measured at different timeouts are not a
 comparison, and that is enforced rather than asked for: the baseline records
 a digest of the three verify commands and the timeout, and
@@ -89,7 +89,7 @@ a digest of the three verify commands and the timeout, and
 ## Comparing a branch
 
 ```
-uv run ks sense --compare-baseline
+uv run ks check --compare-baseline
 ```
 
 Five buckets:
@@ -111,11 +111,11 @@ is not a duplicate of `unmeasured`. That bucket holds baseline SIGNATURES, and
 a baseline can be green: kstrl's own records `"signatures": {}`. So on a branch
 where the test suite stops finishing there is no signature anywhere for the
 other four buckets to hold, and without this the report read `no regression`
-and exited 0 even under `--fail-on-regression`. A sensor going dark is the most
+and exited 0 even under `--fail-on-regression`. A check going dark is the most
 important thing a pull-request check can catch.
 
 The split between `fixed` and `unmeasured` is the part worth understanding. A
-signature going away can mean two things: somebody fixed it, or the sensor
+signature going away can mean two things: somebody fixed it, or the check
 stopped running. Those look identical from the outside. `fixed` is a CLAIM that
 the problem is gone, so it is only made when the check that produced the
 signature measured something in this run; otherwise the signature lands in
@@ -174,7 +174,7 @@ from, so a finding either rule reports is one the base was not SHOWN to
 already carry. A base read that cannot be done keeps the finding, which is
 the blocking direction, so the two rules can still over-report when git
 could not be asked. A finding the base did carry is counted in the row's
-message and listed in its details for `ks sense --json`.
+message and listed in its details for `ks check --json`.
 
 For a TOOL-DRIVEN check the same rule does over-report: a baseline written
 before `vulture` was installed leaves `dead_code` unmeasured, and the first
@@ -188,7 +188,7 @@ mechanism.
 - `--format markdown`: the same content as GitHub-flavoured markdown, first
   line `<!-- kstrl-sense-dampener -->` so a workflow can find and edit its own
   earlier comment
-- `--json`: the whole `ks sense` document with a `dampener` block added
+- `--json`: the whole `ks check` document with a `baseline` block added
 
 `--compare-baseline` and `--write-baseline` both take an optional path, and a
 RELATIVE one resolves under `--root`, exactly as the bare flag's default does.
@@ -200,7 +200,7 @@ together with `--root`, used to read a different file.
 | no regression | 0 |
 | regression, no `--fail-on-regression` | 0 |
 | regression, with `--fail-on-regression` | 1 |
-| a sensor that measured on the baseline and not here | 0, or 1 with `--fail-on-regression` |
+| a check that measured on the baseline and not here | 0, or 1 with `--fail-on-regression` |
 | baseline missing, unreadable, malformed, or the wrong schema version | 2 |
 | baseline measured with different verify commands or a different timeout | 2 |
 | bad `kstrl.toml`, a path that is not a directory, git cannot diff | 2 |
@@ -211,16 +211,16 @@ is the normal state for the repository this exists for.
 A baseline the tool cannot read is exit 2, never an empty baseline. Reading a
 malformed file as `{}` would make every current signature `new`, or make every
 baseline signature vanish, with nothing failing anywhere. The one thing that is
-a note rather than a refusal is a `sense_schema_version` that has moved since
+a note rather than a refusal is a `check_schema_version` that has moved since
 the baseline was written: the document still parses, and refusing would break
-every consumer's pull-request check the moment the sensor version bumped.
+every consumer's pull-request check the moment the check version bumped.
 
 ## kstrl does not run this on itself
 
 `main` is green here, so the set of failures a branch ADDS and the set it HAS
-are the same set, and `scripts/kstrl/sense-baseline.json` records no signatures
+are the same set, and `scripts/kstrl/baseline.json` records no signatures
 at all. The second set is what the `test` and `lint` jobs in
-`.github/workflows/ci.yml` already report, and unlike a dampener comment those
+`.github/workflows/ci.yml` already report, and unlike a baseline comment those
 can fail the build. Measured over five runs before it was deleted, the job took
 360 to 454 seconds per push to repeat them; over the last seven pull requests it
 reported one finding twice, and both times the finding was WRONG: a false
@@ -230,29 +230,29 @@ job went in #394, and `tests/test_own_ci_workflows.py` pins that this
 repository's test suite runs in one workflow only.
 
 The baseline file stays: it is the worked example this page points at, and
-`tests/test_sense_committed_baseline.py` checks it still matches this checkout.
-The dampener is for brownfield repositories, which is what the rest of this
-page is about.
+`tests/test_check_committed_baseline.py` checks it still matches this checkout.
+The baseline comparison is for brownfield repositories, which is what the
+rest of this page is about.
 
 ## Adding it to a repository
 
 1. Write and commit a baseline:
 
    ```
-   uv run ks sense --write-baseline
-   git add scripts/kstrl/sense-baseline.json
-   git commit -m "chore: record the sense baseline"
+   uv run ks check --write-baseline
+   git add scripts/kstrl/baseline.json
+   git commit -m "chore: record the check baseline"
    ```
 
 2. Add a `pull_request` workflow that checks the branch out, runs `uv run ks
-   sense --compare-baseline <the baseline from the base ref> --format
+   check --compare-baseline <the baseline from the base ref> --format
    markdown`, and posts the report as one pull-request comment.
-   [`docs/examples/sense-dampener.yml`](examples/sense-dampener.yml) is a
+   [`docs/examples/check-baseline.yml`](examples/check-baseline.yml) is a
    complete worked example; copy it and adjust `KSTRL_TIMEOUT_VERIFY` to what
    your own baseline was written at. Six things in it are load-bearing and
    easy to lose:
 
-   - `fetch-depth: 0` on the checkout. `ks sense` asks git for the diff
+   - `fetch-depth: 0` on the checkout. `ks check` asks git for the diff
      against the base strictly; a shallow clone cannot reach the base and the
      command exits 2 on every pull request. It is also what puts every head in
      `refs/remotes/origin/*`, which the next point needs.
@@ -264,7 +264,7 @@ page is about.
      signatures, and reports no regression. The step names the file after the
      base commit, so the report says which ref supplied the yardstick.
    - `timeout-minutes` above the WORST case, which is not one timeout. Six
-     subprocesses in a sense run are each handed `KSTRL_TIMEOUT_VERIFY` in
+     subprocesses in a check run are each handed `KSTRL_TIMEOUT_VERIFY` in
      full - the three gates, the two halves of the dead-code phase, and R8.5
      Layer 1's patch coverage run - so at 1800 seconds the job needs 180
      minutes plus install. This number has been wrong before; re-derive it
@@ -295,8 +295,8 @@ page is about.
      unconditionally, which a fork author can read. Do NOT reach for
      `pull_request_target` to fix this: it runs the pull request's own test
      suite with a write token.
-   - the last step, which fails on ANY nonzero exit from `ks sense`. Without
-     `--fail-on-regression` that is only the sensor failing, because a
+   - the last step, which fails on ANY nonzero exit from `ks check`. Without
+     `--fail-on-regression` that is only the check failing, because a
      regression exits 0. It is also the half of
      graduating to blocking that is easy to lose: see below.
 
@@ -310,22 +310,23 @@ In this order, and do not skip the middle step:
 1. **Advisory.** Start without `--fail-on-regression`. Read the comments it
    posts.
 2. **Blocking.** Once the comments have been right on several real pull
-   requests, add `--fail-on-regression` to the `ks sense` invocation in the
+   requests, add `--fail-on-regression` to the `ks check` invocation in the
    workflow. That is the whole change, and it is only the whole change because
-   the last step keys on `steps.sense.outputs.rc != '0'`.
+   the last step keys on `steps.check.outputs.rc != '0'`.
 
-   That detail is load-bearing, so do not simplify it away. The sense step runs
+   That detail is load-bearing, so do not simplify it away. The check step runs
    under `set +e` and restores `set -e` afterwards, so its OWN exit status is
    always 0 and the exit code reaches the job only through `GITHUB_OUTPUT`. The
    first version of this workflow failed on `rc == '2'` alone: adding the flag
-   produced `ks sense` exiting 1, `rc=1` recorded, and a green job. The
+   produced `ks check` exiting 1, `rc=1` recorded, and a green job. The
    documented graduation did not block. `bash -e -c 'set +e; false; echo
    "rc=$?"; set -e'` prints `rc=1` and exits 0, which is the whole mechanism.
 3. **Refresh deliberately.** After an intentional change to the measured
-   property, regenerate with `ks sense --write-baseline --force` in its own
+   property, regenerate with `ks check --write-baseline --force` in its own
    commit, with nothing else in it, so the diff shows exactly which signatures
    moved and by how much.
 
-The middle step is not ceremony. A dampener that fails a teammate's pull
-request before anyone has checked its output is a dampener somebody turns off,
-and a turned-off dampener is worse than none: it looks like a control.
+The middle step is not ceremony. A baseline comparison that fails a
+teammate's pull request before anyone has checked its output is a baseline
+comparison somebody turns off, and a turned-off baseline comparison is worse
+than none: it looks like a control.

@@ -99,7 +99,7 @@ def refusal_text(tmp_path_factory: pytest.TempPathFactory) -> str:
     ``PhaseFailure.context_json`` on that path, so no attempt 2 exists
     and ``IterationContext`` is never rendered for this failure. The
     surviving readers are the operator, through the PR body, the
-    HALTED_RUN inbox item and ``ks sense``, and whoever reads the
+    HALTED_RUN inbox item and ``ks check``, and whoever reads the
     journal later. An earlier version of this file asserted the same
     substrings against a retry prompt that production can no longer
     produce.
@@ -281,7 +281,7 @@ class TestTheConsumersOfTheCheckName:
 
 class TestItIsAWallNotAGate:
     """#294 made the state identifiable; that is only useful if the
-    control loop then acts on it."""
+    loop then acts on it."""
 
     def test_phase_1_fails_the_component_instead_of_retrying(self, tmp_path: Path) -> None:
         """Every other Phase 1 check measures the engineer's work, so a
@@ -323,7 +323,7 @@ class TestTheAuditTrail:
         assert SCOPE_ERROR in finding.explanation
 
     def test_the_duration_is_measured_not_asserted(self) -> None:
-        """``ks sense`` prints this per check and emits it into its JSON
+        """``ks check`` prints this per check and emits it into its JSON
         document, so a hardcoded 0.0 would be an unmeasured value
         published as a measurement.
 

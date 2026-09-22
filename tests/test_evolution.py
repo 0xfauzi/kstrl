@@ -400,7 +400,7 @@ class TestProposeImprovements:
         assert proposals[0].id == "PROP-001"
         assert "S608" in proposals[0].title
         assert proposals[0].target == "claude_md"
-        assert proposals[1].target == "feedforward_config"
+        assert proposals[1].target == "codebase_scan_config"
 
     # Every branch of propose_improvements, not just the two that named
     # a toolchain. `check_name` is the GATE, which carries no toolchain
@@ -412,7 +412,7 @@ class TestProposeImprovements:
         [
             ("linter", "no-unused-vars", "claude_md"),
             ("typecheck", "TS2322", "typecheck_config"),
-            ("test_suite", "assertion-error", "feedforward_config"),
+            ("test_suite", "assertion-error", "codebase_scan_config"),
             ("review", "scope_creep", "claude_md"),
             ("security", "injection", "claude_md"),
         ],
@@ -1230,7 +1230,7 @@ class TestSpecAudits:
 
 
 # ---------------------------------------------------------------------------
-# R10.6 (#227): the signature counter the dampener baseline is built from
+# R10.6 (#227): the signature counter the baseline is built from
 # ---------------------------------------------------------------------------
 
 
@@ -1256,7 +1256,7 @@ class TestSignatureCounts:
 
     The journal caps a check at five distinct signatures so one catastrophic
     run cannot flood a journal entry. A baseline that dropped the sixth would
-    report it as new on the very next run, so the dampener asks for no cap -
+    report it as new on the very next run, so the baseline asks for no cap -
     and these tests are the control that asking did not move the default the
     journal still gets.
     """
@@ -1291,7 +1291,7 @@ class TestSignatureCounts:
         """12 E501s are 12, not 1.
 
         ``signatures_from_verification`` ends in ``dict.fromkeys``, so every
-        count built from its return value would be 1 and the dampener's
+        count built from its return value would be 1 and the baseline's
         ``increased`` bucket could never fire. That is why the counter is a
         sibling rather than a wrapper over it.
         """

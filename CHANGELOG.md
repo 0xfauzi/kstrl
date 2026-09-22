@@ -114,6 +114,15 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Changed
 
+- The control-engineering vocabulary is replaced with plain names (#395).
+  `ks sense` is now `ks check`. The `[feedforward]` TOML section is now
+  `[codebase_scan]`, and its six `KSTRL_FEEDFORWARD_*` environment
+  variables are now `KSTRL_CODEBASE_SCAN_*`. `[factory]
+  setpoint_agreement` is now `[factory] claim_agreement`. A retired TOML
+  section, key or environment variable is now refused by name at the
+  configuration preflight (exit 1) instead of being silently ignored.
+  Two schema versions moved with the rename: `ks check --json` output is
+  schema 4, and the baseline document is schema 2.
 - An explicit `pause_before_pr_merge = true` now survives every autonomy
   level. The R8.2 flag bundle may withhold autonomy the operator did not
   earn; it may not remove a human merge gate the operator asked for. At

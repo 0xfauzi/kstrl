@@ -229,7 +229,7 @@ def _report_for_run(run_dir: Path) -> tuple[list[SafeModeReason], bool]:
             # phase_skipped line followed by a valid factory_completed
             # reads as a clean finished run. A torn LAST line is normal
             # for a run being appended to right now; anything earlier is
-            # damage, and damage is not a clean sensor.
+            # damage, and damage is not a clean check.
             if line.strip() and index < len(lines) - 1:
                 torn += 1
             continue

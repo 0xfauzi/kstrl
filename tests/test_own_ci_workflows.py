@@ -1,11 +1,11 @@
 """What this repository's own CI is allowed to run, counted rather than listed.
 
-#394: the `sense dampener` workflow ran the project's full test suite a second
+#394: the `check baseline` workflow ran the project's full test suite a second
 time on every pull request, to compare a branch against a committed baseline
 whose `signatures` are empty. An empty baseline makes "what the branch added"
 and "what the branch has" the same set, and the second set is what the `test`,
 `spine`, `lint` and `coverage` jobs already report, with the power to fail the
-build that the dampener step did not have.
+build that the baseline step did not have.
 
 The census is over every workflow file in the directory rather than over a
 list of names, so a job that comes back under a new filename is an unexplained
@@ -21,7 +21,7 @@ reuse census up instead.
 
 This guard does two different things, and they are wrong in different
 directions. The TOKEN MATCH flags: it reads the text of `run:` scripts, so a
-step that merely mentions `ks sense` in a diagnostic counts as one, and the
+step that merely mentions `ks check` in a diagnostic counts as one, and the
 deleted workflow contributed 2 rather than 1 for exactly that reason. The cost
 of that is a false positive somebody reads. The CENSUS EQUALITY clears: pinning
 `EXPECTED_SUITE_STEPS` and `EXPECTED_REUSE_EDGES` is what licenses the
@@ -46,9 +46,9 @@ import pytest
 
 WORKFLOWS = Path(__file__).resolve().parents[1] / ".github/workflows"
 
-#: Tokens that mean "this step runs the project's test suite". `ks sense` is
+#: Tokens that mean "this step runs the project's test suite". `ks check` is
 #: here because it runs the same mechanical checks, the test suite among them.
-SUITE_TOKENS = ("pytest", "ks sense")
+SUITE_TOKENS = ("pytest", "ks check")
 
 #: Workflow file -> number of steps in it that run the project's test suite.
 #: ci.yml runs it twice, once per tier: the fast tier (`-m "not spine"`) and

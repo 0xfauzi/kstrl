@@ -56,14 +56,14 @@ content it wraps: measured in review round 1, a file containing the line
 with two closing delimiters and content sitting outside the first one,
 where the engineer reads it as harness-level text. That happens whether
 the operator is malicious or merely documenting the format in their own
-notes. The neighbouring fixed markers (feedforward, retry context,
+notes. The neighbouring fixed markers (codebase scan, retry context,
 CLAUDE.md) wrap harness-COMPUTED text; this one wraps a file.
 
 H3a. The delimiters and the truncation FACT in this module are label
 glue, not instruction text: they name a block so the engineer can tell
 where the operator's words start and stop, and they address no role.
 Issue #303 records label glue as outside the enrolled-prompt set, with
-the same treatment already given to the feedforward markers
+the same treatment already given to the codebase scan markers
 (``=== CODEBASE CONTEXT (auto-generated) ===``), the retry-context
 markers (``=== PREVIOUS ATTEMPT CONTEXT ===``) and the CLAUDE.md heading
 in ``loop.py``. Nothing here is bound to a name ending in the enrolled
@@ -216,9 +216,9 @@ class OperatorFileKind:
     header: str
     #: What the operator's terminal calls the file.
     subject: str
-    #: Character budget. The feedforward convention is tokens times four
-    #: (``FeedforwardConfig.max_context_tokens`` is spent as ``* 4`` in
-    #: ``build_feedforward_context``).
+    #: Character budget. The codebase scan convention is tokens times four
+    #: (``CodebaseScanConfig.max_context_tokens`` is spent as ``* 4`` in
+    #: ``build_codebase_scan_context``).
     max_chars: int
     #: Which END of an over-budget file survives the cut. On the ROW
     #: because the two files grow at opposite ends, and review round 1

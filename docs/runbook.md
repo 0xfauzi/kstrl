@@ -13,7 +13,7 @@ a worktree from), `git_clean` (uncommitted work does not reach the
 engineer), `github_cli` (`gh` authenticated and an `origin` remote, for
 pushing branches and opening PRs), `kstrl_config` (`kstrl.toml` resolves
 in full), `verify_commands` (the test, typecheck and lint commands
-Phase 1 will run), `source_root` (whether `feedforward.extract_public_interfaces`
+Phase 1 will run), `source_root` (whether `kstrl.feedforward.extract_public_interfaces`
 gives the engineer anything to read), `test_root` (tracked paths that
 read as tests to `adequacy.is_test_path`), `gitignore` (whether
 `.kstrl/` is ignored, so the in-loop scope guard does not count kstrl's
@@ -28,7 +28,7 @@ written as JSON under `.kstrl/doctor/report-<UTC stamp>.json`.
 
 `ks doctor --measure` (Tier B: a flakiness smoke and a cost projection)
 is not built and exits 2 naming the command that already runs the
-measurement it would wrap: `ks sense`, which runs the mechanical sensors
+measurement it would wrap: `ks check`, which runs the mechanical checks
 against a tree with no PRD, branch, worktree or agent spend.
 
 A green verdict from `ks doctor` is not the same as a spec being ready
@@ -46,7 +46,7 @@ this is a small print an operator should have to find on their own:
   nothing to grade.
 - Tier A reads the repository and runs none of your commands, so it
   cannot tell you whether your suite is green, fast or flaky. Run
-  `ks sense` for that.
+  `ks check` for that.
 
 ## Phase 1: mechanical verification failed
 
@@ -62,7 +62,7 @@ this is a small print an operator should have to find on their own:
   Where you see it depends on how far the component got. The scheduler checks the component's scope immediately before launching an engineer and fails it there (#294), so the normal case costs no agent call at all and never reaches Phase 1; the `phase` on the failure record is `scope`, not `verify`. `_preflight_component_scope` catches the common case earlier still, refusing the whole run before the first component starts. The Phase 1 check of the same name is the backstop for a worktree that already had an engineer in it, and is ungated: `[verify] check_diff_scope = false` switches off the diff COMPARISON, not the report that there was nothing to compare against. Because the launch gate sits outside Phase 1, turning verification off entirely does not turn this refusal off. Either way the component is failed immediately rather than retried, so you will not see three attempts burn on it, and the failure signature is `scope_unreadable:...`, which `ks autonomy` counts as an infrastructure abort rather than a decisive run.
 - `bad_patterns`: a secret-like pattern landed in the diff.
 - `policy_envelope`: the change broke a `[policy]` rule - a denied path, a size cap, a new dependency the ladder does not permit, a secret pattern, or a denied license. The envelope this run enforces is the one it resolved before the first component started; it is recorded as `policyHash` in the manifest and every component is held to that same object, so the hash and the enforcement cannot disagree (#192). Editing `kstrl.toml` while a run is in flight changes neither and takes effect at the next run. The adequacy posture and the autonomy level the Phase 1 gates use are resolved with it, so they do not move mid-run either; the level enforced is the CLAMPED one `ks factory` printed at run start, not the raw stored level. `[sandbox]`, `[fixtures]`, `[inbox]` and `[divergence]` are resolved in the same pass, and a section that will not resolve refuses the run with exit code 2, naming the section and the key, before the run directory exists - the entry preflight has already checked all of them, so the only way to reach that refusal is an edit made while the architect was running.
-- `dead_code` / `mutation`: the optional advanced checks failed. `dead_code` is the vulture scan, or your own `[verify] dead_code_command` when you set one; the ruff F401/F811/F841 phase beside it reports as `dead_code_ruff` and can never fail a component, because auto-removing an unused import is not a verdict. A phase that could not run at all - no vulture on PATH, nothing non-test in the diff, a timeout, a detector that exited non-zero and reported no finding the check could read - gets NO row and is reported under `not measured` with the reason (#335), so a gate that never ran is never counted as a pass. It is also never a failure, since installing a binary is not something the engineer's next diff can do. The ruff phase needs **ruff 0.2.0 or newer** (January 2024): it pins `--output-format=concise` so a project's own `[tool.ruff] output-format` cannot remove the line it parses, and that flag value does not exist before 0.2.0. An older ruff on PATH exits 2 and the phase records `command_failed` carrying ruff's own `error:` line, so it is a visible refusal rather than a wrong number. A project's pinned ruff is far past this; the case to watch for is `ks sense` against a live checkout with a system-wide old ruff first on PATH.
+- `dead_code` / `mutation`: the optional advanced checks failed. `dead_code` is the vulture scan, or your own `[verify] dead_code_command` when you set one; the ruff F401/F811/F841 phase beside it reports as `dead_code_ruff` and can never fail a component, because auto-removing an unused import is not a verdict. A phase that could not run at all - no vulture on PATH, nothing non-test in the diff, a timeout, a detector that exited non-zero and reported no finding the check could read - gets NO row and is reported under `not measured` with the reason (#335), so a gate that never ran is never counted as a pass. It is also never a failure, since installing a binary is not something the engineer's next diff can do. The ruff phase needs **ruff 0.2.0 or newer** (January 2024): it pins `--output-format=concise` so a project's own `[tool.ruff] output-format` cannot remove the line it parses, and that flag value does not exist before 0.2.0. An older ruff on PATH exits 2 and the phase records `command_failed` carrying ruff's own `error:` line, so it is a visible refusal rather than a wrong number. A project's pinned ruff is far past this; the case to watch for is `ks check` against a live checkout with a system-wide old ruff first on PATH.
 - `self_critique`: the engineer prompt's self-critique block is missing, too short, or filled with placeholder content.
 
 **Resolve**: the agent retries automatically up to `FactoryConfig.max_retries` (default 3). After that the component is marked FAILED and cascade-skips dependents.
@@ -79,7 +79,7 @@ Manual options:
 
 **Symptom**: `verification: FAIL (N of M checks failed)` after the baseline, the implement phase or a repair attempt, with the command's exit code unchanged.
 
-**What it is**: `ks feature` runs the same mechanical checker `ks factory` and `ks sense` run, in the read-only mode `ks sense` uses, against your live checkout: once immediately before the implement loop, and again after every engineer loop that actually called the agent (#288). It REPORTS. It does not gate: the flow's control flow and exit codes are exactly what they were, and a failure is not routed into the repair loop. Each verdict also lands in the run's `events.jsonl` as a `verification_result` event carrying `phase` (`baseline`, `implement`, `repair-2`) and `advisory: true` - the copy that matters under `--implementation-auto-run`, where nobody is reading the terminal.
+**What it is**: `ks feature` runs the same mechanical checker `ks factory` and `ks check` run, in the read-only mode `ks check` uses, against your live checkout: once immediately before the implement loop, and again after every engineer loop that actually called the agent (#288). It REPORTS. It does not gate: the flow's control flow and exit codes are exactly what they were, and a failure is not routed into the repair loop. Each verdict also lands in the run's `events.jsonl` as a `verification_result` event carrying `phase` (`baseline`, `implement`, `repair-2`) and `advisory: true` - the copy that matters under `--implementation-auto-run`, where nobody is reading the terminal.
 
 **Was it the agent, or was your tree already broken?** That is what the `baseline` row is for. This report measures the WHOLE checkout, not the diff, so a checkout whose lint was already red before the agent started would otherwise read as the agent having broken lint. On the terminal, a failure that was already failing at baseline is called out under the verdict. In `events.jsonl`, diff the `phase: "baseline"` event's `failures` against the later one: anything in both was not this loop's doing. Only the baseline is ever the before-picture: a repair report is attributed against the baseline, never against the implement report that preceded it, so a failure the implement loop caused is never excused by the repair report that follows.
 
@@ -93,7 +93,7 @@ Manual options:
 
 The three commands are resolved ONCE per run and pinned, so the baseline, every later report, and the `VERIFY_COMMANDS_PROMPT` block the engineer is given all name the same three strings. Without that pin, `typecheck` is a function of your `pyproject.toml` - `uv run mypy` when `[tool.mypy] files` is set and `uv run mypy .` when it is not - so an agent adding a mypy scope mid-run would make the baseline and the later reports run different commands.
 
-Every check that answers its question by reading `git diff <base>...HEAD` is deliberately skipped and named in the report (`verify.DIFF_DEPENDENT_CHECKS`: `diff_scope`, `bad_patterns`, `policy_envelope`, `test_adequacy`, `dead_code`, `mutation_testing`, `patch_coverage`, `diff_mutation`). Nothing in this flow commits, and the branch it works on comes from the PRD's `branchName`, which may be the base branch itself, so that diff is empty whenever the agent left its work uncommitted or worked on the base branch - and an empty diff is indistinguishable from nothing changed. Those checks would report a pass having measured nothing, which is worse than not running. Use `ks sense` when you want them, on a checkout where the diff is real. `dead_code_ruff` is not in that list and does not need to be, since ruff scans `.` and has an honest answer with no base to diff against - but it is suppressed here all the same, because one toggle (`[verify] dead_code_cleanup`) owns both dead-code phases and the narrowing turns it off. The report names it on a line of its own, with that reason rather than the diff one, so nothing is suppressed here without being named.
+Every check that answers its question by reading `git diff <base>...HEAD` is deliberately skipped and named in the report (`verify.DIFF_DEPENDENT_CHECKS`: `diff_scope`, `bad_patterns`, `policy_envelope`, `test_adequacy`, `dead_code`, `mutation_testing`, `patch_coverage`, `diff_mutation`). Nothing in this flow commits, and the branch it works on comes from the PRD's `branchName`, which may be the base branch itself, so that diff is empty whenever the agent left its work uncommitted or worked on the base branch - and an empty diff is indistinguishable from nothing changed. Those checks would report a pass having measured nothing, which is worse than not running. Use `ks check` when you want them, on a checkout where the diff is real. `dead_code_ruff` is not in that list and does not need to be, since ruff scans `.` and has an honest answer with no base to diff against - but it is suppressed here all the same, because one toggle (`[verify] dead_code_cleanup`) owns both dead-code phases and the narrowing turns it off. The report names it on a line of its own, with that reason rather than the diff one, so nothing is suppressed here without being named.
 
 **When it does not run**: any exit before the implement loop (understand incomplete, review gate declined, review gate unavailable in a non-TTY, a PRD with no user stories), an engineer loop that never called the agent, and a loop you stopped. The last one is deliberate: stopping should not make you wait out a test suite. A stop pressed while a report is already running cannot be honoured - each command is killed at its own `[verify] subprocess_timeout` (300s default), so that window is bounded by three of them.
 
@@ -121,31 +121,31 @@ Pass `--no-verify` to run none of them, the same flag `ks run` and `ks factory` 
 
 If `ReviewResult.infrastructure_error=True`, the reviewer agent itself failed (timeout, API outage, parse error). Same retry path, but check API health.
 
-## Phase 2: set-point disagreement
+## Phase 2: claim disagreement
 
-**Symptom**: `Phase 2 FAILED for <comp_id>: set-point disagreement on N story(ies); passes reverted in the PRD`, with `failed_check = setpoint`.
+**Symptom**: `Phase 2 FAILED for <comp_id>: claim disagreement on N story(ies); passes reverted in the PRD`, with `failed_check = claim`.
 
 A story is marked done when the engineer agent sets `passes: true` in the PRD. That is the agent that did the work reporting on the work, so it is a claim rather than a measurement. R10.3 checks the claim against the reviewer's per-story verdicts, which are an independent reading. This fires when the engineer said done and the reviewer did not confirm it - because it judged a criterion unmet, raised an advisory on one, or never covered the story at all.
 
 **Diagnose**:
 
-- Look for `setpoint_disagreement` findings in the PR body, under the callouts block. Each names the story in `location`, the reviewer's verdict in the explanation, and the criteria it would not pass in the suggestion.
+- Look for `claim_disagreement` findings in the PR body, under the callouts block. Each names the story in `location`, the reviewer's verdict in the explanation, and the criteria it would not pass in the suggestion.
 - The PRD itself carries the audit trail: each reverted story gains a `reverted by reviewer (attempt N): <criterion>` note.
 - The explanation says how the claim failed to be confirmed, and the three readings mean different things. A verdict of `fail` or `advisory` means the reviewer looked and was not satisfied. "not covered" means it returned no verdict for that story at all, usually a story the diff did not touch. "pass on only N of M acceptance criteria" means it passed everything it judged but did not judge everything: the story is unconfirmed rather than judged unmet, and the reviewer's coverage is what to look at first.
 
-**Symptom, second form**: `Phase 2 FAILED for <comp_id>: set-point agreement cannot be confirmed, the reviewer did not report`.
+**Symptom, second form**: `Phase 2 FAILED for <comp_id>: claim agreement cannot be confirmed, the reviewer did not report`.
 
-In advisory review mode a crashed or unparseable reviewer still passes the review (`passed = review_mode != hard`), so with `setpoint_agreement = "block"` a story claiming done would otherwise sail through with nothing having checked it. Nothing is reverted in this case: no evidence points at any story. The failure is recorded as `failed_check = infrastructure` and journalled as `review:infrastructure`, not as a disagreement, because no reviewer disagreed with anything. Check reviewer API health, as for any `infrastructure_error`, and re-run.
+In advisory review mode a crashed or unparseable reviewer still passes the review (`passed = review_mode != hard`), so with `claim_agreement = "block"` a story claiming done would otherwise sail through with nothing having checked it. Nothing is reverted in this case: no evidence points at any story. The failure is recorded as `failed_check = infrastructure` and journalled as `review:infrastructure`, not as a disagreement, because no reviewer disagreed with anything. Check reviewer API health, as for any `infrastructure_error`, and re-run.
 
-**Symptom, third form**: `Phase 2 FAILED for <comp_id>: Set-point agreement cannot be confirmed: the reviewer never ran (adversarial LLM budget (N) exhausted) and a story is still marked passes=true`.
+**Symptom, third form**: `Phase 2 FAILED for <comp_id>: Claim agreement cannot be confirmed: the reviewer never ran (adversarial LLM budget (N) exhausted) and a story is still marked passes=true`.
 
 The adversarial budget covers review, security and knowledge distillation together. When it runs out, an **advisory** Phase 2 downgrades to a skip, and in blocking mode a skipped reviewer cannot confirm anything. A **hard-mode** Phase 2 does not reach this form at all since R10.5: it halts the component, which is the symptom below rather than this one. This does not retry, because retrying cannot recover budget: raise `max_adversarial_calls`, or accept the components already done and re-run the rest.
 
 **Resolve**: the retry resets `passes` to false on each unconfirmed story and puts the disagreement in the agent's context. The engineer's own story selection then picks the story up again, because it takes the highest-priority story where `passes` is false. Nothing needs doing by hand.
 
-If `setpoint_agreement = "block"` is set together with `review_mode = "skip"`, the run warns at startup that the gate can never fire: with no reviewer there is no verdict to confirm with.
+If `claim_agreement = "block"` is set together with `review_mode = "skip"`, the run warns at startup that the gate can never fire: with no reviewer there is no verdict to confirm with.
 
-If the reviewer is the one that is wrong, set `[factory] setpoint_agreement = "advisory"` (the default). Disagreements are then recorded on the PR and in the journal without failing anything. Note the gate also blocks whenever the autonomy ladder is at L1 or above, regardless of this setting: autonomy tightens a gate and never loosens one, so turning it off there means turning the ladder down.
+If the reviewer is the one that is wrong, set `[factory] claim_agreement = "advisory"` (the default). Disagreements are then recorded on the PR and in the journal without failing anything. Note the gate also blocks whenever the autonomy ladder is at L1 or above, regardless of this setting: autonomy tightens a gate and never loosens one, so turning it off there means turning the ladder down.
 
 ## Phase 2: the retry loop is diverging (#265)
 

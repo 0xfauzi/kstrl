@@ -1,23 +1,23 @@
-name: sense dampener
+name: check baseline
 
-# R10.6 (#227). The dampener: run the same mechanical sensors `ks sense` runs,
+# R10.6 (#227). The baseline: run the same mechanical checks `ks check` runs,
 # compare the structured failure signatures against the baseline this
-# repository tracks in scripts/kstrl/sense-baseline.json, and post what the
+# repository tracks in scripts/kstrl/baseline.json, and post what the
 # branch ADDED as one pull-request comment.
 #
 # It is ADVISORY as shipped: `--fail-on-regression` is deliberately absent, so
-# `ks sense` exits 0 on a regression and the job stays green.
+# `ks check` exits 0 on a regression and the job stays green.
 #
-# The job fails on ANY nonzero exit from the sense step, which is three
-# different things and all three are worth failing on. Exit 2 means the sensor
+# The job fails on ANY nonzero exit from the check step, which is three
+# different things and all three are worth failing on. Exit 2 means the check
 # could not run at all. Exit 1 means either the command itself died, or - once
 # somebody adds `--fail-on-regression` - that the branch regressed and this
 # repository has chosen to block on that. Anything else is the runner killing
 # the step. A report nobody can trust is worse than no report.
 #
 # Round 1 of review on #227 measured the earlier arrangement, which failed only
-# on `rc == '2'`: adding `--fail-on-regression` exactly as docs/dampener.md
-# instructs produced `ks sense` exiting 1, `rc=1` recorded, and a GREEN job. The
+# on `rc == '2'`: adding `--fail-on-regression` exactly as docs/baseline.md
+# instructs produced `ks check` exiting 1, `rc=1` recorded, and a GREEN job. The
 # documented graduation to blocking did not block.
 
 on:
@@ -31,22 +31,22 @@ permissions:
   pull-requests: write
 
 # One run per pull request. A push that supersedes an earlier commit cancels
-# its report rather than paying for a second full sensor run: the measurement
+# its report rather than paying for a second full check run: the measurement
 # is dominated by the project's own test suite, so a duplicate is expensive.
 concurrency:
-  group: sense-dampener-${{ github.event.pull_request.number }}
+  group: check-baseline-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  dampener:
+  baseline:
     runs-on: ubuntu-latest
-    # This has to sit ABOVE the sensor's own budget, or the sensor's timeout can
+    # This has to sit ABOVE the check's own budget, or the check's timeout can
     # never fire: GitHub cancels the job first, and a cancelled job produces no
-    # sense.md, no sense.err, no comment and no step summary - so the
+    # check.md, no check.err, no comment and no step summary - so the
     # measured=False mechanism this whole feature rests on would be unreachable
     # in the only place the workflow exercises it.
     #
-    # The worst case is not one timeout. SIX call sites in one sense run are
+    # The worst case is not one timeout. SIX call sites in one check run are
     # each handed a KSTRL_TIMEOUT_VERIFY-sized budget: the three gates, the
     # two halves of the dead-code phase when it is on, and R8.5 Layer 1's
     # patch coverage run (#152) when [adequacy] patch_coverage is on. Patch
@@ -68,7 +68,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # `ks sense` asks git for the diff against the base STRICTLY, and
+          # `ks check` asks git for the diff against the base STRICTLY, and
           # exits 2 when it cannot get one. A shallow clone cannot reach the
           # base, so without this the job fails on every pull request.
           fetch-depth: 0
@@ -90,7 +90,7 @@ jobs:
         run: uv sync --frozen --all-extras --dev
 
       - name: Measure against the baseline on the base ref
-        id: sense
+        id: check
         env:
           # The committed baseline was generated at this timeout, and the
           # comparison has to be measured the same way or it is not a
@@ -100,7 +100,7 @@ jobs:
           # carrying it reads as FIXED the moment the suite fits.
           #
           # The baseline records a digest of the three verify commands and this
-          # timeout, and `ks sense --compare-baseline` refuses a mismatch with
+          # timeout, and `ks check --compare-baseline` refuses a mismatch with
           # exit 2, so changing this number without regenerating the baseline
           # is a red job rather than a wrong report.
           KSTRL_TIMEOUT_VERIFY: "1800"
@@ -110,12 +110,12 @@ jobs:
         run: |
           # The yardstick comes from the BASE ref, never from this checkout.
           # `--compare-baseline` with no value resolves to the working tree's
-          # own scripts/kstrl/sense-baseline.json, and on a pull_request event
+          # own scripts/kstrl/baseline.json, and on a pull_request event
           # that tree is refs/pull/N/merge - which carries the pull request's
-          # copy of the file. A branch that runs `ks sense --write-baseline
+          # copy of the file. A branch that runs `ks check --write-baseline
           # --force` and commits the result was therefore compared against its
           # own signatures: no regression, and green even under the documented
-          # graduation to blocking. Step 3 of docs/dampener.md said to
+          # graduation to blocking. Step 3 of docs/baseline.md said to
           # regenerate the baseline in its own commit, and that was a
           # convention with no mechanism behind it.
           #
@@ -130,10 +130,10 @@ jobs:
           # The report prints the path it was given, so naming the file after
           # the commit is how the comment says which ref supplied the baseline.
           baseline="baseline-from-$base_sha.json"
-          if git show "$base_sha:scripts/kstrl/sense-baseline.json" > "$baseline"; then
+          if git show "$base_sha:scripts/kstrl/baseline.json" > "$baseline"; then
             set +e
-            uv run ks sense --compare-baseline "$baseline" --format markdown \
-              --base "$BASE_REF" > sense.md 2> sense.err
+            uv run ks check --compare-baseline "$baseline" --format markdown \
+              --base "$BASE_REF" > check.md 2> check.err
             echo "rc=$?" >> "$GITHUB_OUTPUT"
             set -e
           else
@@ -144,13 +144,13 @@ jobs:
             rm -f "$baseline"
             {
               echo '<!-- kstrl-sense-dampener -->'
-              echo '## sense dampener'
+              echo '## check baseline'
               echo ''
               echo "No baseline on \`$BASE_REF\` at \`$base_sha\`, so there is"
               echo 'nothing to compare this branch against. Write one on the'
-              echo "base branch with \`ks sense --write-baseline\`."
-            } > sense.md
-            : > sense.err
+              echo "base branch with \`ks check --write-baseline\`."
+            } > check.md
+            : > check.err
             echo "rc=0" >> "$GITHUB_OUTPUT"
           fi
 
@@ -162,17 +162,17 @@ jobs:
         # alternative, pull_request_target, would run the pull request's own
         # test suite with a write token, and is refused outright.
         run: |
-          if [ -s sense.md ]; then
-            cat sense.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -s check.md ]; then
+            cat check.md >> "$GITHUB_STEP_SUMMARY"
           else
             # One block redirect rather than four appends: shellcheck SC2129,
             # and actionlint reports it. origin/main lints clean under
             # actionlint 1.7.7 with shellcheck 0.10.0, so this is the only
             # finding this workflow would have added.
             {
-              echo '## sense dampener: the sensor could not run'
+              echo '## check baseline: the check could not run'
               echo '```'
-              cat sense.err
+              cat check.err
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -186,12 +186,12 @@ jobs:
           NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -o pipefail
-          # The file, not the exit code, is the gate. `gh api -F body=@sense.md`
+          # The file, not the exit code, is the gate. `gh api -F body=@check.md`
           # on an empty file sends {"body": ""}, which GitHub rejects with 422,
           # so the job would go red on the COMMENT step while the real
-          # diagnostic sat unread in sense.err. Anything that produced no
+          # diagnostic sat unread in check.err. Anything that produced no
           # report is the next step's business.
-          if [ ! -s sense.md ]; then
+          if [ ! -s check.md ]; then
             echo "no report to post; the failure step below explains why" >&2
             exit 0
           fi
@@ -218,25 +218,25 @@ jobs:
           fi
           id="$(head -n 1 comment-ids.txt)"
           if [ -n "$id" ]; then
-            gh api --method PATCH "repos/$REPO/issues/comments/$id" -F body=@sense.md
+            gh api --method PATCH "repos/$REPO/issues/comments/$id" -F body=@check.md
           else
-            gh api --method POST "repos/$REPO/issues/$NUMBER/comments" -F body=@sense.md
+            gh api --method POST "repos/$REPO/issues/$NUMBER/comments" -F body=@check.md
           fi
 
       - name: Fail unless the measurement produced a trustworthy report
         # Every nonzero exit, not just 2. See the header for the three cases.
         # This is also the half of "graduating to blocking" that is easy to
-        # lose: adding --fail-on-regression above makes ks sense exit 1, and
+        # lose: adding --fail-on-regression above makes ks check exit 1, and
         # without a step that keys on it the job stays green.
-        if: steps.sense.outputs.rc != '0'
+        if: steps.check.outputs.rc != '0'
         env:
-          RC: ${{ steps.sense.outputs.rc }}
+          RC: ${{ steps.check.outputs.rc }}
         run: |
-          cat sense.err >&2
-          echo "ks sense exited $RC." >&2
+          cat check.err >&2
+          echo "ks check exited $RC." >&2
           echo "2: the measurement could not run (missing or malformed baseline," >&2
           echo "   a baseline measured with a different verify configuration, bad" >&2
           echo "   kstrl.toml, or git could not produce the diff)." >&2
           echo "1: the command itself failed, or the branch regressed and this" >&2
-          echo "   workflow has been graduated to blocking (see docs/dampener.md)." >&2
+          echo "   workflow has been graduated to blocking (see docs/baseline.md)." >&2
           exit 1

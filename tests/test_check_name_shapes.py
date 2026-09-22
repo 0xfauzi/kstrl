@@ -104,7 +104,7 @@ class TestEveryShapeThatGivesACheckName:
         assert names('component_failure_signatures[c] = [f"contract:tier_{n}"]\n') == ["contract"]
 
     def test_a_conditional_gives_both_arms(self) -> None:
-        """``_setpoint_failure`` picks its signature with an ``IfExp``.
+        """``_claim_failure`` picks its signature with an ``IfExp``.
         Both arms are read, because the walk descends the SUBTREE rather
         than enumerating expression types."""
         source = 'self.fail(c, e, signatures=["review:a" if x else "security:b"])\n'

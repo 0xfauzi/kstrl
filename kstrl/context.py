@@ -23,13 +23,13 @@ from typing import Any
 from kstrl.jsonread import read_json
 
 # The phases run in this fixed order inside one attempt. The rank is
-# what lets the renderer tell "this sensor ran again in the latest
-# attempt, so the older reading is stale" from "this sensor never ran in
+# what lets the renderer tell "this check ran again in the latest
+# attempt, so the older reading is stale" from "this check never ran in
 # the latest attempt, so its older reading still stands".
 #
 # "engineer" covers what the engineer loop raises before Phase 1
 # measures anything: guard violations that abort the loop, breaker trips,
-# and the loop's own failures. "pr" is the far end, after every sensor
+# and the loop's own failures. "pr" is the far end, after every check
 # has passed: a human asking for changes at the E6 checkpoint. It ranks
 # above contract because reaching the checkpoint proves every gate
 # passed, and because an operator's direction must not be retired by an
@@ -85,9 +85,9 @@ LEGACY_ATTEMPT = 0
 
 #: Which phases feed each backward-compatible string view.
 #:
-#: The views group by sensor phase, which is close to but not identical
+#: The views group by check phase, which is close to but not identical
 #: to the list each text landed in before R10.2. Two texts moved,
-#: because ranking them by which sensor ran mattered more than the
+#: because ranking them by which check ran mattered more than the
 #: grouping of a shim: the in-loop diff-scope guard (verification ->
 #: engineer, so review_findings) and the unsplittable diff (review ->
 #: diff, so verification_failures). Nothing in kstrl reads these; the
@@ -142,10 +142,10 @@ class IterationRecord:
 
 @dataclass(frozen=True)
 class FailureEntry:
-    """One sensor reading: a failure, the attempt it was measured in, and
+    """One check reading: a failure, the attempt it was measured in, and
     the phase that measured it.
 
-    ``infrastructure`` marks an entry that records the sensor FAILING TO
+    ``infrastructure`` marks an entry that records the check FAILING TO
     RUN rather than a measurement: a crashed reviewer, a git diff that
     could not be fetched, a diff that could not be split for review. The
     codebase already draws this line with ``Finding.infrastructure_error``
@@ -177,7 +177,7 @@ class PhaseReading:
     - a phase that was SKIPPED produces no reading, so an entry it
       cleared in an earlier attempt is still shown. That is the whole
       reason ``SKIPPABLE_PHASES`` exists and it must not regress.
-    - a phase whose sensor CRASHED produces no reading either. An
+    - a phase whose check CRASHED produces no reading either. An
       advisory-mode reviewer that raises is reported as passing, and
       treating that as evidence would retire a live finding on the
       strength of an exception.
@@ -284,7 +284,7 @@ class IterationContext:
         self._add(failure, attempt, "engineer")
 
     def add_checkpoint_request(self, request: str, *, attempt: int) -> None:
-        """A human asking for changes at the E6 checkpoint. Not a sensor
+        """A human asking for changes at the E6 checkpoint. Not a check
         reading: it is retired only by another checkpoint decision."""
         self._add(request, attempt, "pr")
 
@@ -299,7 +299,7 @@ class IterationContext:
         """``phase`` is "diff" at the one site where the diff fetch
         fails: that failure used to land in ``verification_failures``,
         and the derived view keeps it there, but it must rank as its own
-        sensor or a later verification failure would retire it as though
+        check or a later verification failure would retire it as though
         the diff had been fetched again. Pass ``infrastructure=True``
         when the phase could not run at all."""
         self._add(failure, attempt, phase, infrastructure)
@@ -364,13 +364,13 @@ class IterationContext:
         the gate that fired; the max is the safe general form).
 
         - attempt ``N``: current, rendered in full.
-        - rank equal to ``Q``: the same sensor produced a fresh reading
+        - rank equal to ``Q``: the same check produced a fresh reading
           that supersedes the old one. Observed, so it holds even for a
           skippable phase - but only when attempt ``N``'s entry at that
-          rank is a measurement. A sensor that crashed produced no
+          rank is a measurement. A check that crashed produced no
           reading, so it retires nothing. Tested FIRST, above the
           readings branch, so a record written for a phase that crashed
-          could still not talk its way past the crashed-sensor rule.
+          could still not talk its way past the crashed-check rule.
         - a ``SKIPPABLE_PHASES`` entry at any other rank: retired only
           when that phase recorded a ``PhaseReading`` for attempt ``N``,
           which is an OBSERVATION that it ran and returned a verdict.
@@ -382,7 +382,7 @@ class IterationContext:
           ``N`` and passed, or ``Q`` would be lower. That is the
           inference, and it is sound for a phase that always runs once
           its predecessor passes.
-        - rank above ``Q``, every other phase: that sensor never ran in
+        - rank above ``Q``, every other phase: that check never ran in
           attempt ``N``, so its reading is un-re-measured, not stale.
           Rendered in full.
 
@@ -395,7 +395,7 @@ class IterationContext:
         Until the readings branch moved above the rank comparison those
         records existed, were discarded, and the finding the attempt had
         just cleared was shown again. A plain engineer-loop failure also
-        records no entry, and there no sensor ran, so there is no
+        records no entry, and there no check ran, so there is no
         reading and nothing moves.
         """
         current: list[FailureEntry] = []
@@ -406,7 +406,7 @@ class IterationContext:
         latest = [e for e in self.entries if e.attempt == n]
         ranks = [PHASE_RANK[e.phase] for e in latest]
         q = max(ranks) if ranks else -1
-        # A crashed sensor proves the phases BEFORE it ran (the attempt
+        # A crashed check proves the phases BEFORE it ran (the attempt
         # got that far), but it is not a reading of its own phase, so it
         # cannot supersede an earlier real finding there.
         measured_ranks = {PHASE_RANK[e.phase] for e in latest if not e.infrastructure}

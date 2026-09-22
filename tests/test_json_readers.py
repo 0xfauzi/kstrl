@@ -87,7 +87,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "calibration_baseline.py": 2,
     "cli.py": 7,
     "context.py": 2,
-    "dampener.py": 2,
+    "baseline.py": 2,
     "decompose.py": 4,
     "events.py": 2,
     "evolution.py": 2,

@@ -10,7 +10,7 @@ trustworthy, so they are requirements, not suggestions.
 - **Ask a question** or **float an idea** in
   [Discussions](https://github.com/0xfauzi/kstrl/discussions).
 - **Pick up roadmap work**: three cycles are open. The current one is the
-  control-loop cycle ([`docs/control-loop-design.md`](docs/control-loop-design.md),
+  loop cycle ([`docs/loop-design.md`](docs/loop-design.md),
   tracking issue [#235](https://github.com/0xfauzi/kstrl/issues/235)), whose
   issues are written to be picked up cold: each states the change, the tests
   to write by name, and the acceptance conditions. The Dark Factory cycle

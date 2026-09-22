@@ -101,7 +101,7 @@ class TestGeneratePrBody:
         coverage, or Layer 0's test-diff discipline) is invisible
         everywhere but the manifest, the journal and events.jsonl unless
         the callouts predicate admits it - the same trap R10.3 closed
-        for set-point disagreements."""
+        for claim disagreements."""
         manifest = _test_manifest()
         manifest.components[0].findings = [
             Finding.adequacy_finding(

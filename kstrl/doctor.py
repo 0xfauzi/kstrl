@@ -7,7 +7,7 @@ on this repository (three runs: 387, 403 and 493 ms), of which one
 gh auth status network round trip is about 250 ms (bounded by
 pr.GH_TIMEOUT when offline); the eight local checks together are
 the rest. `ks doctor --measure` (Tier B) is not
-built; `ks sense` already runs the measurement it would wrap.
+built; `ks check` already runs the measurement it would wrap.
 
 The anti-chimera rule from the issue: doctor checks ONLY what kstrl
 consumes, and every check's ``detail`` names the kstrl component
@@ -44,7 +44,7 @@ from kstrl.statedir import STATE_DIR_NAME, state_dir
 from kstrl.verify import VerifyConfig, resolve_verify_commands
 
 #: Version of the `ks doctor --json` document. Its own number, not
-#: `SENSE_SCHEMA_VERSION`: the two documents answer different
+#: `CHECK_SCHEMA_VERSION`: the two documents answer different
 #: questions and a reader of one must not infer the other's shape.
 DOCTOR_SCHEMA_VERSION = 1
 
@@ -57,7 +57,7 @@ VERDICT_READY_WITH_WARNINGS = "ready-with-warnings"
 VERDICT_NOT_READY = "not-ready"
 
 #: Exit code for every refusal this command makes: a not-ready
-#: verdict, an unusable --root, and --measure. 2 is what `ks sense`
+#: verdict, an unusable --root, and --measure. 2 is what `ks check`
 #: and `ks serve` already document for "cannot run".
 EXIT_REFUSED = 2
 
@@ -69,12 +69,12 @@ DOCTOR_DIR_NAME = "doctor"
 _STAMP_FORMAT = "%Y%m%d-%H%M%S"
 
 #: What `--measure` says instead of measuring. Tier B is not built;
-#: the measurement it would wrap already ships as `ks sense` (#222).
+#: the measurement it would wrap already ships as `ks check` (#222).
 MEASURE_NOT_BUILT = (
     "ks doctor --measure (Tier B) is not built. The measurement it would "
-    "run already ships as `ks sense`, which runs the mechanical sensors "
+    "run already ships as `ks check`, which runs the mechanical checks "
     "against a tree with no PRD, branch, worktree or agent spend: try "
-    "`ks sense --root <path> --json`. Tier B adds a flakiness smoke and a "
+    "`ks check --root <path> --json`. Tier B adds a flakiness smoke and a "
     "cost projection on top of that and is tracked on issue #198."
 )
 
@@ -93,7 +93,7 @@ FIT_BOUNDARIES: tuple[str, ...] = (
     "has nothing to grade.",
     "Tier A reads the repository and runs none of your commands, so it "
     "cannot tell you whether your suite is green, fast or flaky. Run "
-    "`ks sense` for that.",
+    "`ks check` for that.",
 )
 
 #: Paths worth protecting that kstrl does not protect by default.
@@ -164,7 +164,7 @@ def check_git_repo(root: Path) -> _CheckResult:
             f"measure a diff against it ({exc}); the diff-scope, "
             f"bad-patterns, policy and adequacy checks all read that diff",
             f"Create or fetch {base}, or name the long-lived branch with "
-            f"`ks sense --base` and `ks run --base-branch`.",
+            f"`ks check --base` and `ks run --base-branch`.",
         )
     return (
         STATUS_OK,
@@ -339,7 +339,7 @@ def check_verify_commands(root: Path) -> _CheckResult:
     return (
         STATUS_OK,
         f"Phase 1 will run {stated} (verify.resolve_verify_commands); "
-        f"Tier A does not run them, `ks sense` does",
+        f"Tier A does not run them, `ks check` does",
         "",
     )
 
@@ -367,7 +367,7 @@ def _interface_file_count(text: str) -> int:
 def check_source_root(root: Path) -> _CheckResult:
     """What the engineer is actually shown of this repository.
 
-    Consumed by `feedforward.extract_public_interfaces`, the Phase 0
+    Consumed by `kstrl.feedforward.extract_public_interfaces`, the Phase 0
     stage that writes the "Public interfaces" section of the
     engineer's context block. Keyed on the source-root result and
     the file-budget outcome rather than on language (#198 comment of
@@ -387,7 +387,7 @@ def check_source_root(root: Path) -> _CheckResult:
     if count == 0:
         return (
             STATUS_WARN,
-            f"feedforward.extract_public_interfaces summarises 0 files "
+            f"kstrl.feedforward.extract_public_interfaces summarises 0 files "
             f"for the engineer; source roots found: {listed}",
             "Nothing is broken in your repository; kstrl's interface "
             "extraction does not reach this layout, so the engineer works "
@@ -395,7 +395,7 @@ def check_source_root(root: Path) -> _CheckResult:
         )
     return (
         STATUS_OK,
-        f"feedforward.extract_public_interfaces summarises {count} file(s) "
+        f"kstrl.feedforward.extract_public_interfaces summarises {count} file(s) "
         f"of a {_MAX_PUBLIC_INTERFACE_FILES}-file budget from source "
         f"root(s): {listed}",
         "",
@@ -459,7 +459,7 @@ def check_gitignore(root: Path) -> _CheckResult:
 
     Deliberately NOT about `scripts/kstrl/`: that directory is the
     versioned per-project kstrl home (prompt.md, decisions.json,
-    sense-baseline.json), the three harness files the engineer writes
+    baseline.json), the three harness files the engineer writes
     are carved out of both scope guards by exact path
     (`config.component_harness_files`), and ignoring it would hide
     files kstrl expects to be committed.
