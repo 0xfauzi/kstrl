@@ -298,3 +298,32 @@ def test_every_manifest_kstrl_will_not_write_is_one_the_refusal_recognises(
         repo.mkdir()
         (repo / name).write_text(MANIFESTS.get(name, ""), encoding="utf-8")
         assert build_manifest_blocker(repo) is None, name
+
+
+@pytest.mark.parametrize("key", ["test_command", "typecheck_command", "lint_command"])
+def test_each_verify_command_lets_an_unrecognised_toolchain_reach_the_architect(
+    tmp_path: Path, key: str
+) -> None:
+    root = greenfield(tmp_path, extra={"Gemfile": 'source "https://rubygems.org"\n'})
+    (root / "kstrl.toml").write_text(f'[verify]\n{key} = "bundle exec x"\n', encoding="utf-8")
+    agent, calls = recording_agent(root)
+    proc = spec_command(root, "decompose", agent)
+    assert REFUSAL not in proc.stdout
+    assert calls.exists(), proc.stdout
+
+
+def test_the_home_shell_decompose_launch_honours_the_verify_escape(tmp_path: Path) -> None:
+    root = greenfield(tmp_path, extra={"Gemfile": 'source "https://rubygems.org"\n'})
+    (root / "kstrl.toml").write_text(
+        '[agent]\ncommand = "fake-agent"\n[verify]\ntest_command = "bundle exec rspec"\n',
+        encoding="utf-8",
+    )
+    with patch(
+        "kstrl.agents.get_agent", side_effect=RuntimeError("reached get_agent")
+    ) as get_agent:
+        with pytest.raises(BaseException) as raised:
+            start_run_session(
+                DecomposeLaunch(spec_path=root / "spec.md", project_name="demo"), root
+            )
+    assert "kstrl will not create the build manifest" not in str(raised.value)
+    assert get_agent.call_count == 1
