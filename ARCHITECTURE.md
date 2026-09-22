@@ -306,10 +306,10 @@ each maps to.
 | Word | Meaning here |
 |---|---|
 | plant | the thing being changed: the target repository, and after release, the running service |
-| set point | the state a loop steers toward: acceptance criteria, the policy envelope, the adequacy floor |
+| claim | the state a loop steers toward: acceptance criteria, the policy envelope, the adequacy floor |
 | check | anything that measures the plant independently of the agent that changed it |
 | measurement versus claim | a claim is what the agent says about its work (the `passes` flag, the completion marker); a measurement is what a check reads from the diff. Claims are rendered; measurements gate |
-| finding | the typed record every check emits when the work misses the set point; the error signal |
+| finding | the typed record every check emits when the work misses its acceptance criteria; the error signal |
 | controller | the code that turns findings into the next action: retry, halt, merge, demote |
 | codebase scan | context computed from the tree and given to the agent before it acts (Phase 0) |
 | disturbance | change the loop did not command: model non-determinism, transport failures, a moving base branch |

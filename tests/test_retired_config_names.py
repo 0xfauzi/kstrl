@@ -137,7 +137,16 @@ def test_an_old_finding_record_still_resolves() -> None:
 # the six retired words. It gets its own, narrower check: a line naming it
 # must spell it as a module path or a test/prompt-fixture name, not as the
 # bare noun the issue retires everywhere else.
-SET_A = ("sensor", "actuator", "setpoint", "dampener", "control loop", "control-loop")
+SET_A = (
+    "sensor",
+    "actuator",
+    "setpoint",
+    "set-point",
+    "set point",
+    "dampener",
+    "control loop",
+    "control-loop",
+)
 
 SENSE_PATTERN = re.compile(
     r"""(?ix)
@@ -244,6 +253,15 @@ ALLOWED: dict[tuple[str, str], int] = {
     ("kstrl/cli.py", "dampener"): 2,
     # A historical description of a past `grep` command's own output.
     ("tests/test_check_committed_baseline.py", "sense"): 1,
+    # "Set-point disagreement" is a live user-facing string inside
+    # REVIEWER_PROMPT-adjacent code (claim_retry_context). The prompt BODY
+    # is kept byte-identical under Decision 3, so rewording this string
+    # would change what ships without moving the version constant or the
+    # snapshot hash it is pinned by (H3): the string stays, and its two
+    # test mirrors quote it verbatim.
+    ("kstrl/review.py", "set-point"): 1,
+    ("tests/test_builder_prompts.py", "set-point"): 1,
+    ("tests/test_claim_agreement_pipeline.py", "set-point"): 1,
 }
 
 
@@ -309,4 +327,4 @@ def test_no_retired_name_survives_in_the_source() -> None:
     # exact (every allowed line is accounted for, not just capped).
     assert len(files) >= 500, f"walked only {len(files)} files - the walk is not running"
     assert sum(counts.get(k, 0) for k in ALLOWED) == sum(ALLOWED.values())
-    assert sum(ALLOWED.values()) == 25
+    assert sum(ALLOWED.values()) == 28

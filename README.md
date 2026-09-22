@@ -565,7 +565,7 @@ The PRD (`prd.json`) is a list of user stories with testable acceptance criteria
 }
 ```
 
-The agent updates `passes` and `notes` as it works, and kstrl reads them between iterations to decide whether to continue. Treat `passes` as the agent's claim, not the verdict: mechanical verification checks the flag is set, and the reviewer independently judges every criterion. Acceptance criteria should be concrete and testable - commands the agent can run, behavior it can verify - because they are the set point every check measures against.
+The agent updates `passes` and `notes` as it works, and kstrl reads them between iterations to decide whether to continue. Treat `passes` as the agent's claim, not the verdict: mechanical verification checks the flag is set, and the reviewer independently judges every criterion. Acceptance criteria should be concrete and testable - commands the agent can run, behavior it can verify - because they are the claim every check measures against.
 
 `allowedPaths` is optional for a hand-written PRD (it feeds the Phase 1 diff-scope check); the architect is required to emit it for every decomposed component.
 
