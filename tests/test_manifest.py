@@ -609,6 +609,7 @@ class TestManifestLoadSave:
                     retries=1,
                     pr_number=42,
                     pr_url="https://github.com/test/pr/42",
+                    merge_sha="a" * 40,
                 ),
             ],
         )
@@ -624,6 +625,7 @@ class TestManifestLoadSave:
         assert loaded.components[0].status == "completed"
         assert loaded.components[0].retries == 1
         assert loaded.components[0].pr_number == 42
+        assert loaded.components[0].merge_sha == "a" * 40
 
     def test_load_invalid_json(self, tmp_path: Path) -> None:
         path = tmp_path / "manifest.json"

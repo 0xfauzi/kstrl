@@ -46,7 +46,7 @@ from kstrl.pipeline import (
     PrDisposition,
     Transition,
 )
-from kstrl.pr import PrOutcome
+from kstrl.pr import MergeConfirmation, PrOutcome
 from kstrl.review import ReviewConcern, ReviewResult
 from kstrl.runenvelope import RunEnvelope
 from kstrl.runstate import RunState
@@ -1362,7 +1362,7 @@ class TestMergePendingRepoll:
         monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
             "kstrl.pr.wait_for_merge",
-            lambda *a, **k: "merged",
+            lambda *a, **k: MergeConfirmation(state="merged"),
         )
         monkeypatch.setattr(
             "kstrl.git.fetch_base_branch",
@@ -1387,7 +1387,7 @@ class TestMergePendingRepoll:
         monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
             "kstrl.pr.wait_for_merge",
-            lambda *a, **k: "closed",
+            lambda *a, **k: MergeConfirmation(state="closed"),
         )
         pipeline, manifest, result = self._parked(tmp_path)
         box = self._seed_merge_gate(tmp_path)
@@ -1412,7 +1412,7 @@ class TestMergePendingRepoll:
         monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
         monkeypatch.setattr(
             "kstrl.pr.wait_for_merge",
-            lambda *a, **k: "unknown",
+            lambda *a, **k: MergeConfirmation(state="pending"),
         )
         pipeline, manifest, result = self._parked(tmp_path)
         pipeline.repoll_merge_pending()

@@ -20,8 +20,10 @@ Wave-2 semantics asserted per failure shape:
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -51,13 +53,71 @@ def stub_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     bin_dir.mkdir()
     write_stub_gh(bin_dir)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
-    for var in ("GH_SPINE_CREATE", "GH_SPINE_MERGE", "GH_SPINE_VIEW_STATE"):
+    for var in (
+        "GH_SPINE_CREATE",
+        "GH_SPINE_MERGE",
+        "GH_SPINE_VIEW_STATE",
+        "GH_SPINE_MERGE_SHA",
+    ):
         monkeypatch.delenv(var, raising=False)
     return bin_dir
 
 
 def _alpha_beta_manifest() -> Manifest:
     return make_manifest([component("alpha"), component("beta", ["alpha"])])
+
+
+#: A 40-character sha the stub publishes as the merge commit. Not a real
+#: commit in any test repo: the point is that the factory records what
+#: GitHub said, never something it derived from the local tree.
+STUB_MERGE_SHA = "a1b2c3d4" * 5
+
+#: The inert [release] section, so the run reaches the run-state rungs of
+#: the gate. Nothing else is set, so every other section stays default -
+#: in particular [policy] stays disabled, which is what keeps this file's
+#: runs free of Phase 1 policy enforcement.
+RELEASE_TOML = '[release]\nenabled = true\nenvironment = "staging"\n'
+
+
+def _enable_release(root: Path) -> None:
+    """Write and COMMIT the inert [release] section."""
+    (root / "kstrl.toml").write_text(RELEASE_TOML, encoding="utf-8")
+    git("add", "kstrl.toml", cwd=root)
+    git("commit", "-m", "enable the inert release section", cwd=root)
+
+
+def _release_row(root: Path) -> dict[str, Any]:
+    """The single factory_completed row this run wrote."""
+    runs = sorted((root / ".kstrl" / "runs").iterdir())
+    assert runs, "no run dir written"
+    rows = [
+        json.loads(line)
+        for line in (runs[-1] / "events.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    completed = [r for r in rows if r["event"] == "factory_completed"]
+    assert len(completed) == 1, f"expected one factory_completed row, got {len(completed)}"
+    data = completed[0]["data"]
+    assert isinstance(data, dict)
+    return data
+
+
+def _pr_merged_rows(root: Path) -> list[dict[str, Any]]:
+    """The data of every pr_merged row this run emitted.
+
+    The field on the EVENT is the audit trail the roadmap asked for;
+    the manifest copy alone would let the emit drop it with nothing red.
+    """
+    runs = sorted((root / ".kstrl" / "runs").iterdir())
+    assert runs, "no run dir written"
+    rows = [
+        json.loads(line)
+        for line in (runs[-1] / "events.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    merged = [r["data"] for r in rows if r["event"] == "pr_merged"]
+    assert all(isinstance(d, dict) for d in merged)
+    return merged
 
 
 def _run_real(
@@ -253,3 +313,144 @@ class TestSpinePrFailurePaths:
         assert "alpha" in result.completed
         assert result.merge_pending == []
         assert result.exit_code == 0
+
+
+class TestSpineReleaseRef:
+    """R8.7 slice 1 (#154): the release ref, recorded end to end."""
+
+    def test_a_merged_run_records_the_commit_gh_published(
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("GH_SPINE_MERGE_SHA", STUB_MERGE_SHA)
+        root = tmp_path / "repo"
+        init_kstrl_repo(root, ("alpha", "beta"), with_origin=True)
+        manifest = _alpha_beta_manifest()
+        _enable_release(root)
+
+        _run_real(root, tmp_path, monkeypatch, manifest)
+
+        alpha = manifest.get_component("alpha")
+        beta = manifest.get_component("beta")
+        assert alpha is not None and beta is not None
+        assert alpha.merge_sha == STUB_MERGE_SHA
+        assert beta.merge_sha == STUB_MERGE_SHA
+        row = _release_row(root)
+        assert row["release_ref"] == STUB_MERGE_SHA
+        assert row["release_ref_rule"] == "last_merge_by_completed_at"
+        assert row["release_withheld"] == "policy_disabled"
+        # The in-memory object is the one the run mutated; re-read the
+        # saved manifest too, so this proves the field reached disk and
+        # not only the object the test already holds a reference to.
+        on_disk = json.loads(
+            (root / "scripts" / "kstrl" / "manifest.json").read_text(encoding="utf-8")
+        )
+        disk_shas = {c["id"]: c["mergeSha"] for c in on_disk["components"]}
+        assert disk_shas == {"alpha": STUB_MERGE_SHA, "beta": STUB_MERGE_SHA}
+        merged_rows = _pr_merged_rows(root)
+        assert merged_rows and all(r["merge_sha"] == STUB_MERGE_SHA for r in merged_rows)
+
+    def test_a_merge_with_no_published_commit_is_still_merged_and_records_nothing(
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        root = tmp_path / "repo"
+        init_kstrl_repo(root, ("alpha", "beta"), with_origin=True)
+        manifest = _alpha_beta_manifest()
+        _enable_release(root)
+
+        result, _ = _run_real(root, tmp_path, monkeypatch, manifest)
+
+        alpha = manifest.get_component("alpha")
+        beta = manifest.get_component("beta")
+        assert alpha is not None and beta is not None
+        assert alpha.status == ComponentStatus.COMPLETED.value
+        assert beta.status == ComponentStatus.COMPLETED.value
+        assert alpha.merge_sha == ""
+        assert beta.merge_sha == ""
+        assert result.exit_code == 0
+        row = _release_row(root)
+        assert row["release_ref"] == ""
+        assert row["release_withheld"] == "release_ref_unrecorded"
+
+    def test_a_repolled_merge_pending_component_records_the_ref(
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("GH_SPINE_MERGE_SHA", STUB_MERGE_SHA)
+        root = tmp_path / "repo"
+        init_kstrl_repo(root, ("alpha", "beta"), with_origin=True)
+        manifest = _alpha_beta_manifest()
+        alpha = manifest.get_component("alpha")
+        assert alpha is not None
+        alpha.status = ComponentStatus.MERGE_PENDING.value
+        alpha.pr_number = STUB_PR_NUMBER
+        alpha.pr_url = STUB_PR_URL
+        _enable_release(root)
+        # Stub default view state is MERGED: the PR landed while the
+        # factory was down.
+
+        _, ran = _run_real(root, tmp_path, monkeypatch, manifest)
+
+        beta = manifest.get_component("beta")
+        assert beta is not None
+        assert alpha.status == ComponentStatus.COMPLETED.value
+        assert alpha.merge_sha == STUB_MERGE_SHA
+        assert ran == ["beta"]  # alpha was re-polled, never re-run
+        row = _release_row(root)
+        assert row["release_ref"] == STUB_MERGE_SHA
+
+    def test_a_merge_pending_run_is_not_clean(
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("GH_SPINE_VIEW_STATE", "OPEN")
+        root = tmp_path / "repo"
+        init_kstrl_repo(root, ("alpha", "beta"), with_origin=True)
+        manifest = _alpha_beta_manifest()
+        _enable_release(root)
+
+        result, _ = _run_real(root, tmp_path, monkeypatch, manifest)
+
+        assert result.merge_pending == ["alpha"]
+        row = _release_row(root)
+        assert row["release_withheld"] == "run_not_clean"
+
+    def test_an_idempotent_rerun_does_not_replay_a_previous_runs_merge(
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """#154 fix round, A1b: ``merge_sha`` persists on the manifest,
+        so a second run that merges nothing must not report the first
+        run's merge as its own release ref. Both components are already
+        COMPLETED with an old merge_sha/completed_at (as a real earlier
+        run would leave them); the scheduler launches neither, so
+        nothing this run does could produce a fresh merge."""
+        root = tmp_path / "repo"
+        init_kstrl_repo(root, ("alpha", "beta"), with_origin=True)
+        manifest = _alpha_beta_manifest()
+        for comp_id in ("alpha", "beta"):
+            comp = manifest.get_component(comp_id)
+            assert comp is not None
+            comp.status = ComponentStatus.COMPLETED.value
+            comp.merge_sha = STUB_MERGE_SHA
+            comp.completed_at = "2020-01-01T00:00:00Z"
+        _enable_release(root)
+
+        result, ran = _run_real(root, tmp_path, monkeypatch, manifest)
+
+        assert ran == []  # nothing scheduled: both already COMPLETED
+        assert result.exit_code == 0
+        row = _release_row(root)
+        assert row["release_ref"] == ""
+        assert row["release_withheld"] == "release_ref_unrecorded"

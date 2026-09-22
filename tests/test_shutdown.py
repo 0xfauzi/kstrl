@@ -11,6 +11,7 @@ worktree cleanup running, exit code 130.
 from __future__ import annotations
 
 import io
+import json
 import os
 import signal
 import subprocess
@@ -253,6 +254,53 @@ class TestFactoryShutdown:
         assert launched == []  # nothing started after the stop
         assert result.exit_code == 130
         assert manifest.completed_at  # terminal state stamped
+
+    def test_pre_set_stop_names_itself_in_the_release_row(self, tmp_path: Path) -> None:
+        """The A1 fix guards the PREDICATE (run_is_clean reads `stopped`),
+        but nothing else in the suite drove a real pre-set stop through the
+        release block that reads `stopped` off the wiring at the call site
+        (kstrl/factory.py: `stopped = stop is not None and stop.is_set()`).
+        If that line stops reading the real stop (for example, hardcoded to
+        False), run_is_clean never sees the stop, and the recorded reason
+        silently changes from "run_stopped" to whatever the unfinished
+        components would otherwise produce."""
+        root = _setup_project(tmp_path, ["comp-a"])
+        (root / "kstrl.toml").write_text(
+            '[release]\nenabled = true\nenvironment = "staging"\n', encoding="utf-8"
+        )
+        manifest = _make_manifest([_component("comp-a")])
+        stop = StopController()
+        stop.request("pre-set")
+
+        def fake_component(comp_id: str, *a: Any, **k: Any) -> ComponentResult:
+            return ComponentResult(comp_id, success=True, iterations=1)
+
+        with (
+            patch(
+                "kstrl.factory._run_component",
+                side_effect=fake_component,
+            ),
+            patch("kstrl.git.get_diff_content", return_value=""),
+        ):
+            run_factory(
+                manifest,
+                _factory_config(root),
+                _make_base_config(root),
+                PlainUI(no_color=True, file=io.StringIO()),
+                root,
+                stop=stop,
+            )
+
+        runs = sorted((root / ".kstrl" / "runs").iterdir())
+        assert runs, "no run dir written"
+        rows = [
+            json.loads(line)
+            for line in (runs[-1] / "events.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        completed = [r for r in rows if r["event"] == "factory_completed"]
+        assert len(completed) == 1, f"expected one factory_completed row, got {len(completed)}"
+        assert completed[0]["data"]["release_withheld"] == "run_stopped"
 
     def test_stop_mid_run_aborts_inflight_and_records(
         self,

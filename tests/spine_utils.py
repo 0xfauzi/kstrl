@@ -167,6 +167,9 @@ def write_stub_gh(bin_dir: Path) -> Path:
 
     GH_SPINE_CREATE / GH_SPINE_MERGE: "ok" (default) or "fail".
     GH_SPINE_VIEW_STATE: "MERGED" (default), "OPEN", or "CLOSED".
+    GH_SPINE_MERGE_SHA: the commit ``mergeCommit.oid`` publishes; unset
+    (the default) publishes ``null``, the same as GitHub does for a
+    merge whose commit has not been published yet.
     """
     gh = bin_dir / "gh"
     gh.write_text(
@@ -186,7 +189,18 @@ def write_stub_gh(bin_dir: Path) -> Path:
               fi
               exit 0 ;;
             view)
-              printf '{{"state": "%s"}}\\n' "${{GH_SPINE_VIEW_STATE:-MERGED}}"
+              case "$5" in
+                *mergeCommit*)
+                  if [ -n "${{GH_SPINE_MERGE_SHA:-}}" ]; then
+                    commit=$(printf '{{"oid": "%s"}}' "$GH_SPINE_MERGE_SHA")
+                  else
+                    commit=null
+                  fi
+                  printf '{{"state": "%s", "mergeCommit": %s}}\\n' \\
+                    "${{GH_SPINE_VIEW_STATE:-MERGED}}" "$commit" ;;
+                *)
+                  printf '{{"state": "%s"}}\\n' "${{GH_SPINE_VIEW_STATE:-MERGED}}" ;;
+              esac
               exit 0 ;;
           esac
         fi

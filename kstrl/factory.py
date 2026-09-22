@@ -115,6 +115,7 @@ from kstrl.operator_context import (
 from kstrl.pipeline import ComponentPipeline, PipelineHooks, _iso_now
 from kstrl.policy import PolicyConfig
 from kstrl.pr import create_prs_in_order, create_single_pr
+from kstrl.release import RELEASE_REF_RULE, ReleaseInputs, release_ref_from, release_withheld
 from kstrl.review import (
     ReviewMode,
     run_review,
@@ -1072,6 +1073,47 @@ class FactoryResult:
     exit_code: int = 0
 
 
+def run_is_clean(
+    result: FactoryResult,
+    manifest: Manifest,
+    *,
+    stopped: bool,
+) -> bool:
+    """Whether a finished run counts as clean. One predicate, two callers
+    (#154 fix round, A1).
+
+    Before this, the R8.7 release gate computed its own `run_clean` from
+    three of these five terms and missed `stopped` and the #263
+    unfinished-components term, so an operator-stopped run with one
+    component merged and the rest PENDING recorded
+    `release_withheld="no_driver"` (fully permitted) while
+    `resolve_exit_code` on the identical run returned 130 - the #260
+    class: two definitions of one verdict, and the weaker one is the one
+    a gate consults. `resolve_exit_code` and the release block in
+    `_run_factory_locked` both call this now, so they cannot diverge
+    again. Pure: no UI side effect, so the nothing-scheduled diagnostic
+    stays in `resolve_exit_code`, the one caller that reports it.
+    """
+    if stopped:
+        return False
+    if result.failed or result.contract_failures:
+        return False
+    if result.merge_pending:
+        # Incomplete, not failed: unconfirmed merges blocked their
+        # dependents.
+        return False
+    if result.skipped and not result.completed:
+        return False
+    # #263: components the manifest ends the run short of COMPLETED. Read
+    # from the manifest rather than the run counters, because the counters
+    # are equally empty whether the scheduler found nothing it COULD do or
+    # nothing it NEEDED to do, and only the first of those is a failure.
+    # Same reasoning the merge_pending list above is rebuilt from the
+    # manifest rather than accumulated during the run.
+    unfinished = [c.id for c in manifest.components if c.status != ComponentStatus.COMPLETED.value]
+    return not (not result.scheduled and unfinished)
+
+
 def resolve_exit_code(
     factory_result: FactoryResult,
     manifest: Manifest,
@@ -1095,23 +1137,21 @@ def resolve_exit_code(
     if factory_result.skipped and not factory_result.completed:
         return 1
 
-    # #263: components the manifest ends the run short of COMPLETED. Read
-    # from the manifest rather than the run counters, because the counters
-    # are equally empty whether the scheduler found nothing it COULD do or
-    # nothing it NEEDED to do, and only the first of those is a failure.
-    # Same reasoning the merge_pending list above is rebuilt from the
-    # manifest rather than accumulated during the run.
+    # Delegates to run_is_clean for the verdict; at this point stopped,
+    # failed/contract_failures, merge_pending and skipped-only are all
+    # already known False, so this reduces to the #263 unfinished check
+    # below, but goes through the one shared predicate rather than a
+    # second copy of it.
+    if run_is_clean(factory_result, manifest, stopped=False):
+        return 0
+
+    # An off-enum status, a component left FAILED or SKIPPED by an
+    # earlier run, or a future scheduling bug: the manifest held work and
+    # the scheduler launched none of it. Reported as a failure so
+    # `ks factory && deploy` cannot deploy a run that built nothing.
     unfinished = [c.id for c in manifest.components if c.status != ComponentStatus.COMPLETED.value]
-    if not factory_result.scheduled and unfinished:
-        # The manifest held work and the scheduler launched none of it:
-        # an off-enum status, a component left FAILED or SKIPPED by an
-        # earlier run, or a future scheduling bug. Reported as a failure
-        # so `ks factory && deploy` cannot deploy a run that built
-        # nothing. An empty manifest and a fully COMPLETED one both leave
-        # `unfinished` empty and stay at 0.
-        _report_nothing_scheduled(manifest, unfinished, ui)
-        return 1
-    return 0
+    _report_nothing_scheduled(manifest, unfinished, ui)
+    return 1
 
 
 def _report_nothing_scheduled(
@@ -3431,6 +3471,12 @@ def _run_factory_locked(
     """run_factory body; runs with the run-level lock resolved (held, or
     explicitly degraded via --force-lock / no-fcntl platforms)."""
     factory_start = time.monotonic()
+    # #154 fix round, A1b: this run's own start, wall-clock and in the
+    # same format as Component.completed_at, so release_ref_from can
+    # tell a merge THIS run produced from one a previous run left on
+    # the manifest. Captured before any component runs, so a merge
+    # this run confirms always has completed_at >= run_started_at.
+    run_started_at = _iso_now()
     factory_result = FactoryResult()
     # Stable run id shared by evolution journal and knowledge layer.
     # current_run_id() carries microseconds plus a random nonce, so two
@@ -4609,6 +4655,48 @@ def _run_factory_locked(
                 factory_result.pr_urls.extend(url for _, url in pr_results)
                 manifest.save(manifest_path)
 
+    # R0.2: collect components parked awaiting merge confirmation. Built
+    # from the manifest (not accumulated during the run) so it reflects
+    # the final state after any crash-recovery re-poll. Moved here, AHEAD
+    # of the release block below, so run_is_clean reads a populated
+    # factory_result.merge_pending rather than the permanent empty list
+    # it was rebuilt into seventeen lines below the release computation
+    # before #154's fix round (B11): nothing between this line and the
+    # old site mutates a component's status, so the move changes nothing
+    # else this function reports.
+    factory_result.merge_pending = [
+        c.id for c in manifest.components if c.status == ComponentStatus.MERGE_PENDING.value
+    ]
+
+    # R8.7 slice 1 (#154): the run's release ref and the reason no
+    # release followed it. Nothing here starts anything; see
+    # kstrl/release.py for why the last rung cannot be configured open.
+    #
+    # run_is_clean is the SAME predicate resolve_exit_code's exit code
+    # is built from (#154 fix round, A1): before this, run_clean was a
+    # second, independent expression that missed the `stopped` and the
+    # #263 unfinished-components terms, so an operator-stopped run with
+    # one component merged and the rest PENDING recorded
+    # release_withheld="no_driver" (fully permitted) while
+    # resolve_exit_code returned 130 for the identical run.
+    stopped = stop is not None and stop.is_set()
+    release_ref = release_ref_from(manifest.components, since=run_started_at)
+    run_clean = run_is_clean(factory_result, manifest, stopped=stopped)
+    release_withheld_reason = release_withheld(
+        ReleaseInputs(
+            release_enabled=run_envelope.release.enabled,
+            environment=run_envelope.release.environment,
+            run_clean=run_clean,
+            stopped=stopped,
+            release_ref=release_ref,
+            policy_enabled=run_envelope.policy.enabled,
+            policy_deploy=run_envelope.policy.deploy,
+            ladder_deploy_permitted=(
+                ladder.bundle.deploy_permitted if ladder is not None else None
+            ),
+        )
+    )
+
     # Summary
     factory_duration = time.monotonic() - factory_start
     bus.emit(
@@ -4617,6 +4705,9 @@ def _run_factory_locked(
             failed=len(factory_result.failed),
             skipped=len(factory_result.skipped),
             duration_seconds=round(factory_duration, 2),
+            release_ref=release_ref,
+            release_ref_rule=RELEASE_REF_RULE,
+            release_withheld=release_withheld_reason,
         )
     )
     # Detach (not close) the console bus: post-run cli narration must
@@ -4624,13 +4715,6 @@ def _run_factory_locked(
     for _sink in run_file_sinks:
         bus.remove_sink(_sink)
         _sink.close()
-
-    # R0.2: collect components parked awaiting merge confirmation. Built
-    # from the manifest (not accumulated during the run) so it reflects
-    # the final state after any crash-recovery re-poll.
-    factory_result.merge_pending = [
-        c.id for c in manifest.components if c.status == ComponentStatus.MERGE_PENDING.value
-    ]
 
     ui.section("Factory: Summary")
     ui.kv("Completed", str(len(factory_result.completed)))

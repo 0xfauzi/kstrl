@@ -69,6 +69,7 @@ from kstrl.divergence import DivergenceConfig
 from kstrl.fixtures import FixturesConfig
 from kstrl.inbox import InboxConfig
 from kstrl.policy import PolicyConfig
+from kstrl.release import ReleaseConfig
 from kstrl.sandbox import SandboxConfig
 
 T = TypeVar("T")
@@ -114,6 +115,7 @@ class RunEnvelope:
     fixtures: FixturesConfig
     inbox: InboxConfig
     divergence: DivergenceConfig
+    release: ReleaseConfig
 
     @classmethod
     def resolve(
@@ -156,6 +158,7 @@ class RunEnvelope:
             fixtures = fixtures_override or _resolved(FixturesConfig.load, root_dir, problems)
             inbox = _resolved(InboxConfig.load, root_dir, problems)
             divergence = _resolved(DivergenceConfig.load, root_dir, problems)
+            release = _resolved(ReleaseConfig.load, root_dir, problems)
         if (
             policy is None
             or adequacy is None
@@ -164,6 +167,7 @@ class RunEnvelope:
             or fixtures is None
             or inbox is None
             or divergence is None
+            or release is None
         ):
             # ``problems`` is never empty here: ``_resolved`` writes a
             # line for every section that came back None, including the
@@ -198,6 +202,7 @@ class RunEnvelope:
                 fixtures=fixtures,
                 inbox=inbox,
                 divergence=divergence,
+                release=release,
             ),
             (),
         )

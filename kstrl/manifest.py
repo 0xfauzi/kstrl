@@ -118,6 +118,12 @@ class Component:
     retries: int = 0
     pr_number: int | None = None
     pr_url: str = ""
+    # R8.7 slice 1: the commit this component's merge produced, read off
+    # ``gh pr view --json mergeCommit``. "" means "not recorded", which
+    # is the honest reading for a component merged before this landed
+    # and for a merge GitHub published no commit for. Never a fallback
+    # to a branch tip.
+    merge_sha: str = ""
     # R7.4: Linear issue mapping stamped by the decompose hook. The
     # UUID is the mutation target for the sink; the human identifier
     # (e.g. EXC-42) rides branch names and the PR "Fixes" trailer so
@@ -267,6 +273,7 @@ class Manifest:
                 retries=c.get("retries", 0),
                 pr_number=c.get("prNumber"),
                 pr_url=c.get("prUrl", ""),
+                merge_sha=c.get("mergeSha", ""),
                 linear_issue_id=c.get("linearIssueId", ""),
                 linear_issue_identifier=c.get("linearIssueIdentifier", ""),
                 started_at=c.get("startedAt", ""),
@@ -330,6 +337,7 @@ class Manifest:
                     "retries": c.retries,
                     "prNumber": c.pr_number,
                     "prUrl": c.pr_url,
+                    "mergeSha": c.merge_sha,
                     "linearIssueId": c.linear_issue_id,
                     "linearIssueIdentifier": c.linear_issue_identifier,
                     "startedAt": c.started_at,
@@ -416,6 +424,7 @@ class Manifest:
             "retries",
             "prNumber",
             "prUrl",
+            "mergeSha",
             "linearIssueId",
             "linearIssueIdentifier",
             "startedAt",

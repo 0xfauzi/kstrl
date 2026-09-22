@@ -62,6 +62,7 @@ EXPECTED_SURFACE_CLASSES: dict[str, frozenset[str]] = {
         "NotifyConfig",
         "PolicyConfig",
         "QueueConfig",
+        "ReleaseConfig",
         "SandboxConfig",
         "SecurityConfig",
         "ServeConfig",
@@ -168,6 +169,7 @@ EXPECTED_ENVELOPE_SECTIONS = frozenset(
         "FixturesConfig.load",
         "InboxConfig.load",
         "PolicyConfig.load",
+        "ReleaseConfig.load",
         "SandboxConfig.load",
     }
 )

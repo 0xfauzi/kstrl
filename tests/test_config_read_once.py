@@ -160,12 +160,13 @@ class TestTheParseCountDoesNotGrowWithComponents:
             f"1 component cost {one} (calls, parses) and 8 cost {eight}, "
             "so the config cost still grows with the component count."
         )
-        # Stated rather than left as "equal". 7 calls, all seven inside
-        # ``RunEnvelope.load``; 1 parse, because they share one
-        # ``toml_parse_scope``, which is the whole point of the block.
-        # It was (7, 2) while ``ComponentPipeline.__init__`` still
-        # resolved four of them in a scope of its own.
-        assert one == (7, 1)
+        # Stated rather than left as "equal". 8 calls, all eight inside
+        # ``RunEnvelope.load`` (the eighth is ``[release]``, #154); 1
+        # parse, because they share one ``toml_parse_scope``, which is
+        # the whole point of the block. It was (7, 2) while
+        # ``ComponentPipeline.__init__`` still resolved four of them in
+        # a scope of its own.
+        assert one == (8, 1)
 
 
 class TestRunEnvelope:

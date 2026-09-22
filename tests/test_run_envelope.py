@@ -252,7 +252,7 @@ class TestTheFactorySideParseCountIsPinned:
             FactoryConfig(use_worktrees=False, create_prs=False, review_mode="skip"),
         )
 
-        assert (counts.calls, counts.parses) == (13, 7), (
+        assert (counts.calls, counts.parses) == (14, 7), (
             "the cost of a run's config resolution moved. This is a "
             "census pin, not a performance budget: a number that grew "
             "means a section is being resolved twice, and the fix is to "
@@ -262,10 +262,12 @@ class TestTheFactorySideParseCountIsPinned:
             "value and with the run completing; (14, 9) after the second "
             "[autonomy] read went; (13, 7) once the four the pipeline "
             "used to resolve joined the envelope's single scope and the "
-            "second [sandbox] read went with them. The CALLS rise, 10 to "
-            "13, because seven sections are resolved at run start "
-            "whatever the component count; only the PARSES fall, 10 to "
-            "7, because those seven share one document (#192)."
+            "second [sandbox] read went with them; (14, 7) once "
+            "[release] joined the envelope's single scope (#154). The "
+            "CALLS rise, 13 to 14, because eight sections are now "
+            "resolved at run start whatever the component count; the "
+            "PARSES stay at 7 because all eight still share one "
+            "document (#192)."
         )
 
 

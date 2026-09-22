@@ -2187,13 +2187,14 @@ class ComponentPipeline:
                     self.root_dir,
                     timeout=self.factory_config.merge_timeout,
                 )
-                if merge_state == "merged":
+                if merge_state.state == "merged":
                     git.fetch_base_branch(
                         self.manifest.base_branch,
                         self.root_dir,
                     )
                     comp.status = ComponentStatus.COMPLETED.value
                     comp.error = ""
+                    comp.merge_sha = merge_state.merge_sha or comp.merge_sha
                     self.component_failure_signatures.pop(comp.id, None)
                     comp.completed_at = _iso_now()
                     self.factory_result.completed.append(comp.id)
@@ -2213,7 +2214,7 @@ class ComponentPipeline:
                         f"merge:{comp.id}",
                         f"PR #{pr_number} merged",
                     )
-                elif merge_state == "closed":
+                elif merge_state.state == "closed":
                     comp.status = ComponentStatus.FAILED.value
                     comp.error = f"PR #{pr_number} closed without merge"
                     comp.completed_at = _iso_now()
@@ -4447,6 +4448,8 @@ class ComponentPipeline:
                     pr_url=outcome.pr_url,
                 )
             )
+        if outcome.merge_sha:
+            comp.merge_sha = outcome.merge_sha
         self.manifest.save(self.manifest_path)
 
         # R0.2 (CRIT-2): COMPLETED requires a CONFIRMED merge.
@@ -4476,6 +4479,7 @@ class ComponentPipeline:
                 component=comp.id,
                 pr_number=comp.pr_number or 0,
                 pr_url=outcome.pr_url,
+                merge_sha=outcome.merge_sha,
             )
         )
         return PrPhaseResult(

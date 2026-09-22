@@ -240,6 +240,22 @@ class TestDualWrite:
             assert comp.usage_calls == comp_activity.usage_calls, cid
             assert comp.total_tokens == comp_activity.total_tokens, cid
 
+    def test_a_default_run_records_an_empty_ref_and_release_disabled(self, tmp_path: Path) -> None:
+        """R8.7 slice 1 (#154). No kstrl.toml, so [release] is off: the
+        common path, and the one rung reachable in the fast tier too."""
+        root = _run_stub_factory(tmp_path, ["comp-a"])
+        rows = [
+            json.loads(line)
+            for line in _events_file(root).read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        completed = [r for r in rows if r["event"] == "factory_completed"]
+        assert len(completed) == 1
+        data = completed[0]["data"]
+        assert data["release_ref"] == ""
+        assert data["release_ref_rule"] == "last_merge_by_completed_at"
+        assert data["release_withheld"] == "release_disabled"
+
     def test_failure_path_events_match(self, tmp_path: Path) -> None:
         root = _run_stub_factory(tmp_path, ["comp-a"], success=False)
         v1_names = [e["event"] for e in read_progress_events(root / "progress.jsonl")]

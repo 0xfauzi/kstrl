@@ -162,6 +162,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_spine_crash_recovery.py": 1,
     "tests/test_spine_engineer_loop.py": 4,
     "tests/test_spine_golden_patterns_e2e.py": 1,
+    # #154: TestSpineReleaseRef's `_enable_release` commits the inert
+    # `[release]` kstrl.toml onto the repo `init_kstrl_repo` already put
+    # through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_spine_pr_failures.py": 1,
     "tests/test_spine_retry_context.py": 5,
     "tests/test_spine_worktree.py": 5,
     # #435: seven commits, all through tests.helpers.gitrepo.set_identity,
