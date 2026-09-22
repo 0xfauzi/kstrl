@@ -24,7 +24,7 @@ ALL_SECTIONS = [
     "[verify]",
     "[security]",
     "[contract]",
-    "[feedforward]",
+    "[codebase_scan]",
     "[knowledge]",
     "[evolution]",
     "[timeout]",

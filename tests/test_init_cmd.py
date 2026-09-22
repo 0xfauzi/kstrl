@@ -308,7 +308,7 @@ class TestNextSteps:
     def test_names_the_free_measurement(self, tmp_path: Path) -> None:
         _, output = run_init_capturing(tmp_path)
 
-        assert "ks sense" in output
+        assert "ks check" in output
         assert "ks understand [iterations]" in output
         assert "ks feature [iterations]" in output
 

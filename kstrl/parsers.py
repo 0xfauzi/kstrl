@@ -77,7 +77,7 @@ class ParsedOutput:
     # tool ran and reported findings" from "the launcher printed an
     # error and the tool never started". A gate reads this to decide
     # whether its failing row MEASURED anything, and `measured` decides
-    # what a dampener comparison may call fixed - the clearing side, the
+    # what a baseline comparison may call fixed - the clearing side, the
     # one that has to be proved rather than assumed.
     #
     # Deliberately not set by a PASSING footer. "5 passed in 0.1s" is

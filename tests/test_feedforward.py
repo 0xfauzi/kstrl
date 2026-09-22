@@ -1,4 +1,4 @@
-"""Tests for feedforward module."""
+"""Tests for codebase scan module."""
 
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ import pytest
 
 from kstrl import feedforward
 from kstrl.feedforward import (
-    FeedforwardConfig,
+    CodebaseScanConfig,
+    build_codebase_scan_context,
     build_dependency_graph,
-    build_feedforward_context,
     build_module_map,
     extract_conventions,
     extract_public_interfaces,
@@ -168,17 +168,17 @@ class TestExtractConventions:
 
 
 # ---------------------------------------------------------------------------
-# build_feedforward_context
+# build_codebase_scan_context
 # ---------------------------------------------------------------------------
 
 
-class TestBuildFeedforwardContext:
-    def test_build_feedforward_context_disabled(self, tmp_path: Path) -> None:
-        config = FeedforwardConfig(enabled=False)
-        result = build_feedforward_context(tmp_path, config)
+class TestBuildCodebaseScanContext:
+    def test_build_codebase_scan_context_disabled(self, tmp_path: Path) -> None:
+        config = CodebaseScanConfig(enabled=False)
+        result = build_codebase_scan_context(tmp_path, config)
         assert result == ""
 
-    def test_build_feedforward_context_full(self, tmp_path: Path) -> None:
+    def test_build_codebase_scan_context_full(self, tmp_path: Path) -> None:
         # Set up a minimal project so some sections produce output.
         pkg = tmp_path / "testpkg"
         pkg.mkdir()
@@ -190,19 +190,19 @@ class TestBuildFeedforwardContext:
         pyproject = tmp_path / "pyproject.toml"
         pyproject.write_text('[project]\nrequires-python = ">=3.11"\n')
 
-        config = FeedforwardConfig(enabled=True)
-        result = build_feedforward_context(tmp_path, config)
+        config = CodebaseScanConfig(enabled=True)
+        result = build_codebase_scan_context(tmp_path, config)
         assert "CODEBASE CONTEXT" in result
         assert "END CODEBASE CONTEXT" in result
         # Should contain at least one section header
         assert "##" in result
 
-    def test_build_feedforward_context_empty_project(self, tmp_path: Path) -> None:
+    def test_build_codebase_scan_context_empty_project(self, tmp_path: Path) -> None:
         # #378: no source files and no config files is now a context block
         # carrying one section that says the stage looked and found nothing.
         # An absent block was indistinguishable from the stage never running.
-        config = FeedforwardConfig(enabled=True)
-        result = build_feedforward_context(tmp_path, config)
+        config = CodebaseScanConfig(enabled=True)
+        result = build_codebase_scan_context(tmp_path, config)
         assert "## Public interfaces" in result
         assert "no Python source root found" in result
         assert "## Module map" not in result
@@ -210,13 +210,13 @@ class TestBuildFeedforwardContext:
 
 
 # ---------------------------------------------------------------------------
-# FeedforwardConfig defaults
+# CodebaseScanConfig defaults
 # ---------------------------------------------------------------------------
 
 
-class TestFeedforwardConfigDefaults:
-    def test_feedforward_config_defaults(self) -> None:
-        config = FeedforwardConfig()
+class TestCodebaseScanConfigDefaults:
+    def test_codebase_scan_config_defaults(self) -> None:
+        config = CodebaseScanConfig()
         assert config.enabled is True
         assert config.module_map is True
         assert config.public_interfaces is True
@@ -341,7 +341,7 @@ def test_a_spent_budget_stops_before_the_dependency_graph_is_built(
     _spy("extract_public_interfaces")
     _spy("extract_conventions")
 
-    context = build_feedforward_context(tmp_path, FeedforwardConfig(max_context_tokens=100))
+    context = build_codebase_scan_context(tmp_path, CodebaseScanConfig(max_context_tokens=100))
 
     assert calls == [], calls
     assert "## Module map" in context
@@ -360,7 +360,7 @@ def test_the_delivered_context_is_byte_for_byte_what_it_was(
     tmp_path: Path, tokens: int, expected: str
 ) -> None:
     _tiny_repo(tmp_path)
-    assert build_feedforward_context(tmp_path, FeedforwardConfig(max_context_tokens=tokens)) == (
+    assert build_codebase_scan_context(tmp_path, CodebaseScanConfig(max_context_tokens=tokens)) == (
         expected
     )
 
@@ -368,7 +368,7 @@ def test_the_delivered_context_is_byte_for_byte_what_it_was(
 def test_a_dependency_graph_that_did_not_fit_says_so(tmp_path: Path) -> None:
     _deep_repo(tmp_path)
 
-    context = build_feedforward_context(tmp_path, FeedforwardConfig(max_context_tokens=100))
+    context = build_codebase_scan_context(tmp_path, CodebaseScanConfig(max_context_tokens=100))
     body = section(context, "## Dependency graph")
 
     assert "## Dependency graph" in context
@@ -402,7 +402,7 @@ def test_a_dependency_graph_that_did_not_fit_says_so(tmp_path: Path) -> None:
 def test_a_graph_with_nothing_to_say_is_not_a_graph_that_did_not_fit(tmp_path: Path) -> None:
     _no_import_repo(tmp_path)
 
-    context = build_feedforward_context(tmp_path, FeedforwardConfig(max_context_tokens=1000))
+    context = build_codebase_scan_context(tmp_path, CodebaseScanConfig(max_context_tokens=1000))
 
     assert "## Public interfaces" in context
     assert "## Dependency graph" not in context
@@ -414,9 +414,9 @@ def test_a_component_filtered_graph_is_built_even_when_the_whole_graph_is_over_b
 ) -> None:
     _deep_repo(tmp_path)
 
-    context = build_feedforward_context(
+    context = build_codebase_scan_context(
         tmp_path,
-        FeedforwardConfig(max_context_tokens=100),
+        CodebaseScanConfig(max_context_tokens=100),
         component_id="mod05",
         component_deps=["mod05"],
     )
@@ -433,8 +433,8 @@ def test_the_graph_as_the_only_section_is_truncated_not_refused(tmp_path: Path) 
     # would in fact have been delivered.
     _deep_repo(tmp_path)
 
-    context = build_feedforward_context(
-        tmp_path, FeedforwardConfig(module_map=False, max_context_tokens=100)
+    context = build_codebase_scan_context(
+        tmp_path, CodebaseScanConfig(module_map=False, max_context_tokens=100)
     )
 
     assert "## Dependency graph" in context
@@ -546,7 +546,7 @@ def test_a_section_that_does_not_fit_does_not_hide_the_ones_behind_it(
 ) -> None:
     _deep_repo_with_conventions(tmp_path)
 
-    context = build_feedforward_context(tmp_path, FeedforwardConfig(max_context_tokens=450))
+    context = build_codebase_scan_context(tmp_path, CodebaseScanConfig(max_context_tokens=450))
 
     # The section that overflowed says so, in place.
     interfaces = section(context, "## Public interfaces")
@@ -577,7 +577,7 @@ def test_priority_order_still_decides_which_sections_win_the_budget(
 ) -> None:
     _deep_repo_with_conventions(tmp_path)
 
-    context = build_feedforward_context(tmp_path, FeedforwardConfig(max_context_tokens=450))
+    context = build_codebase_scan_context(tmp_path, CodebaseScanConfig(max_context_tokens=450))
 
     # Delivered bodies here are 42 (the module map's 44 less the two
     # spaces section() strips), 1286, 94 and 24 characters, which is
@@ -615,7 +615,7 @@ def test_a_builder_that_crashed_is_not_relabelled_as_one_that_did_not_fit(
 
     monkeypatch.setattr(feedforward, "extract_public_interfaces", _boom)
 
-    context = build_feedforward_context(tmp_path, FeedforwardConfig(max_context_tokens=400))
+    context = build_codebase_scan_context(tmp_path, CodebaseScanConfig(max_context_tokens=400))
 
     assert "## Dependency graph" in context, context
     assert "## Public interfaces" not in context, context
@@ -648,7 +648,7 @@ def test_a_body_exactly_the_size_of_the_room_left_is_delivered_whole(
     _deep_repo(tmp_path)
     # One section in front of public interfaces, so the refusal is not
     # exempted by the first-section rule, and a room figure that is exact.
-    config = FeedforwardConfig(max_context_tokens=400, dependency_graph=False)
+    config = CodebaseScanConfig(max_context_tokens=400, dependency_graph=False)
     room = feedforward._remaining_chars(
         [("Module map", build_module_map(tmp_path))], "Public interfaces", 400 * 4
     )
@@ -656,7 +656,7 @@ def test_a_body_exactly_the_size_of_the_room_left_is_delivered_whole(
     body = "y" * room
     monkeypatch.setattr(feedforward, "extract_public_interfaces", lambda root, max_chars=None: body)
 
-    context = build_feedforward_context(tmp_path, config)
+    context = build_codebase_scan_context(tmp_path, config)
 
     assert section(context, "## Public interfaces") == body, context
     assert "did not fit: public interfaces" not in context, context

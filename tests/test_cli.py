@@ -471,7 +471,7 @@ class TestDetectBaseBranch:
 
     def test_unknown_branch_name_falls_back_to_main(self, tmp_path: Path) -> None:
         # No candidate resolves, so the answer stays the guess the
-        # callers report as a guess: `ks sense` exits 2 naming --base
+        # callers report as a guess: `ks check` exits 2 naming --base
         # rather than measuring an empty diff and calling it clean.
         assert detect_base_branch(_repo_on(tmp_path, "release-2.0")) == "main"
 

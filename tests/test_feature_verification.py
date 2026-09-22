@@ -754,10 +754,10 @@ class TestTheReportDoesNotDistortTheRunRecord:
         capped = result.report_lines(durations=False, max_detail_lines=12)
         assert len(capped) == 14  # verdict + 12 details + the count
         assert capped[-1].strip() == "... 188 more line(s) not shown"
-        # ks sense is uncapped: there the measurement IS the whole output.
+        # ks check is uncapped: there the measurement IS the whole output.
         assert len(result.report_lines()) == 201
 
-    def test_the_feature_report_caps_but_ks_sense_does_not(self, tmp_path: Path) -> None:
+    def test_the_feature_report_caps_but_ks_check_does_not(self, tmp_path: Path) -> None:
         """End to end on a REAL parsed lint failure, so the cap is wired
         and not merely available.
 

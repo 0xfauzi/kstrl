@@ -243,7 +243,7 @@ class TestTheCheckDoesNotRunOnThePollTimer:
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
 
         def boom(root: Path) -> list[SafeModeReason]:
-            raise RuntimeError("sensor exploded")
+            raise RuntimeError("check exploded")
 
         monkeypatch.setattr("kstrl.safemode.safe_mode_reasons", boom)
         app = _app(tmp_path, run_dir)

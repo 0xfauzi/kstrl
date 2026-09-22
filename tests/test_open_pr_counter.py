@@ -297,7 +297,7 @@ class TestFooterMarker:
         the marker, counted per module, whatever it does with the string
         afterwards. Package-wide rather than scoped to ``pr.py``, because
         the modules that will grow a second spelling are the READERS -
-        this bound, the dampener, the polled steering channel (#231) -
+        this bound, the baseline, the polled steering channel (#231) -
         and a guard that only reads ``pr.py`` cannot see them."""
         assert_census(
             sources=package_sources(),

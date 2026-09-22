@@ -2,7 +2,7 @@
 tiny Python project.  No agent needed -- just the harness machinery.
 
 Creates a temp project with real Python files, then runs:
-  1. Feedforward  - structural analysis produces useful context
+  1. Codebase scan  - structural analysis produces useful context
   2. Parsers      - real pytest/mypy/ruff output gets structured
   3. Verification - mechanical checks run and report structured failures
   4. Fixtures     - cli/file/function fixtures pass and fail correctly
@@ -100,11 +100,11 @@ def _create_project(root: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 1. Feedforward
+# 1. Codebase scan
 # ---------------------------------------------------------------------------
 
 
-class TestFeedforward:
+class TestCodebaseScan:
     def test_module_map(self, tmp_path: Path) -> None:
         _create_project(tmp_path)
         from kstrl.feedforward import build_module_map
@@ -141,18 +141,18 @@ class TestFeedforward:
 
     def test_full_context(self, tmp_path: Path) -> None:
         _create_project(tmp_path)
-        from kstrl.feedforward import FeedforwardConfig, build_feedforward_context
+        from kstrl.feedforward import CodebaseScanConfig, build_codebase_scan_context
 
-        ctx = build_feedforward_context(tmp_path, FeedforwardConfig())
+        ctx = build_codebase_scan_context(tmp_path, CodebaseScanConfig())
         assert "=== CODEBASE CONTEXT" in ctx
         assert "END CODEBASE CONTEXT" in ctx
         # Should have at least two sections
         assert "## " in ctx
 
     def test_disabled(self, tmp_path: Path) -> None:
-        from kstrl.feedforward import FeedforwardConfig, build_feedforward_context
+        from kstrl.feedforward import CodebaseScanConfig, build_codebase_scan_context
 
-        ctx = build_feedforward_context(tmp_path, FeedforwardConfig(enabled=False))
+        ctx = build_codebase_scan_context(tmp_path, CodebaseScanConfig(enabled=False))
         assert ctx == ""
 
 

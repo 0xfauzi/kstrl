@@ -2,7 +2,7 @@
 
 ``health_breaches`` is the contract ``kstrl/factory.py:2888`` reads
 through ``importlib`` (#232). Advisory only, per the owner's 2026-08-25
-comment on #151 and ``docs/control-loop-design.md`` 5.11: this module
+comment on #151 and ``docs/loop-design.md`` 5.11: this module
 never mutates or demotes anything, and the seam demotes only when
 ``[autonomy] demote_on_health_breach`` is on (default false).
 

@@ -901,7 +901,7 @@ def _result_with_gap() -> VerificationResult:
 
 def test_every_reason_is_a_distinct_token() -> None:
     """Six reasons, six values. A token that duplicated another would
-    make two of them indistinguishable in `ks sense --json` and in
+    make two of them indistinguishable in `ks check --json` and in
     `events.jsonl`. Moved to module scope (#391): this pins the
     NOT_MEASURED_* vocabulary itself and has nothing to do with mutmut's
     output format, unlike every other test `TestCheckMutationScore` held
@@ -988,7 +988,7 @@ class TestNotMeasuredIsReportedButNeverGates:
     def test_a_gap_is_never_a_check_row(self) -> None:
         """The #306 invariant: nothing in the sidecar can be read as a
         pass by ``all(c.passed ...)``, ``report_lines``' verdict column,
-        the reviewer prompt or ``ks sense --json``'s ``checks`` array,
+        the reviewer prompt or ``ks check --json``'s ``checks`` array,
         because it is not in ``checks``."""
         assert [c.name for c in _result_with_gap().checks] == ["test_suite"]
 
@@ -2023,7 +2023,7 @@ class TestCheckDeadCodeRuff:
         assert not any("git" in c for c in calls)
 
     def test_read_only_reports_instead_of_removing(self, tmp_path: Path) -> None:
-        """R10.1: ``ks sense`` runs against the operator's live checkout,
+        """R10.1: ``ks check`` runs against the operator's live checkout,
         where ``ruff --fix`` rewrites their files, ``git add -A`` sweeps
         in every unrelated untracked file and the commit moves their
         HEAD. Read-only runs the SAME rule set and reports what the
@@ -2054,7 +2054,7 @@ class TestCheckDeadCodeRuff:
         assert outcome.passed is True
         # 2, not the 3 on the `Found` line: the fixing run on this exact
         # output removes 2, and the word in the message is "removable".
-        # Reading `Found` made `ks sense` and the factory report
+        # Reading `Found` made `ks check` and the factory report
         # different numbers for the same tree.
         assert outcome.message == "ruff reports 2 auto-removable, not removed"
 
@@ -2264,7 +2264,7 @@ def _dead_code_verification(
     the real tool never prints tests the parser against fiction.
 
     ``read_only`` is forwarded to ``run_mechanical_verification`` rather
-    than to a check, because that is how ``ks sense`` reaches it.
+    than to a check, because that is how ``ks check`` reaches it.
     """
     recorded = [] if seen is None else seen
 
@@ -2452,7 +2452,7 @@ class TestDeadCodeRowsOnlyExistWhenMeasured:
         and every one of them printed ``dead_code  pass``. Nine are the
         detector not running while ruff did (``vulture-missing`` is the
         path the issue was filed from, and ``vulture-missing-read-only``
-        is the same path under ``ks sense``); five are ruff not running
+        is the same path under ``ks check``); five are ruff not running
         while the detector did, which the fused row hid completely
         because it only ever reported the vulture verdict.
 
@@ -2705,7 +2705,7 @@ class TestReadOnlyVerification:
     """R10.1 review (P1): ``read_only=True`` measures without changing.
 
     The factory owns the worktree it verifies, so editing and committing
-    there is free. ``ks sense`` runs against the operator's live
+    there is free. ``ks check`` runs against the operator's live
     checkout, where ``ruff --fix`` rewrites their files, ``git add -A``
     sweeps in every unrelated untracked file, and the commit moves their
     HEAD.

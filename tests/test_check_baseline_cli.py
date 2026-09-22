@@ -1,8 +1,8 @@
-"""R10.6 (#227): the dampener flags on ``ks sense``.
+"""R10.6 (#227): the baseline flags on ``ks check``.
 
 Real git repositories under ``tmp_path`` whose ``[verify]`` commands are fast
 no-op Python one-liners, driven through ``CliRunner``. The arithmetic and the
-document format are pinned in ``tests/test_sense_dampener.py``; this file is
+document format are pinned in ``tests/test_check_baseline.py``; this file is
 about exit codes, flag refusals, order of operations and output surfaces.
 """
 
@@ -16,13 +16,13 @@ from typing import Any
 import pytest
 from click.testing import CliRunner, Result
 
-from kstrl import dampener_report
-from kstrl.cli import SENSE_SCHEMA_VERSION, cli
+from kstrl import baseline_report
+from kstrl.cli import CHECK_SCHEMA_VERSION, cli
 from tests.spine_utils import git
-from tests.test_sense_cli import _LINT_FAIL_COMMAND, _kstrl_toml, _make_repo
-from tests.test_sense_dampener import DAMPENER_DOC
+from tests.test_check_baseline import BASELINE_DOC
+from tests.test_check_cli import _LINT_FAIL_COMMAND, _kstrl_toml, _make_repo
 
-DEFAULT_RELATIVE = "scripts/kstrl/sense-baseline.json"
+DEFAULT_RELATIVE = "scripts/kstrl/baseline.json"
 
 #: A lint command whose findings come from a FILE in the repository, so a test
 #: can turn one on and off without touching the command itself.
@@ -46,7 +46,7 @@ def _set_lint_findings(root: Path, text: str) -> None:
 
 
 def _invoke(root: Path, *args: str) -> Result:
-    return CliRunner().invoke(cli, ["sense", "--root", str(root), *args])
+    return CliRunner().invoke(cli, ["check", "--root", str(root), *args])
 
 
 def _make_lint_fail(root: Path) -> None:
@@ -65,16 +65,16 @@ def _baseline_document(root: Path) -> dict[str, Any]:
 
 
 def _assert_documented_row(check: str, reason: str) -> None:
-    """`docs/dampener.md` must carry this diff-driven check's hole as a row.
+    """`docs/baseline.md` must carry this diff-driven check's hole as a row.
 
     The row is built from the reason the REAL run put in the baseline, never
-    from a literal typed here, so a reworded sensor message moves the doc or
+    from a literal typed here, so a reworded check message moves the doc or
     fails this test rather than silently diverging from it (#400).
     """
     row = " ".join(f"| `{check}` | {reason} | `new` |".split())
-    flattened = " ".join(DAMPENER_DOC.read_text(encoding="utf-8").split())
+    flattened = " ".join(BASELINE_DOC.read_text(encoding="utf-8").split())
     assert row in flattened, (
-        f"docs/dampener.md does not carry the row {row!r}. The doc and this test move together."
+        f"docs/baseline.md does not carry the row {row!r}. The doc and this test move together."
     )
 
 
@@ -88,22 +88,22 @@ def test_write_baseline_lands_at_the_default_path_under_root(tmp_path: Path) -> 
 
     assert result.exit_code == 0, result.output
     document = _baseline_document(root)
-    assert document["schema_version"] == 1
+    assert document["schema_version"] == 2
     assert document["signatures"] == {}
     assert document["passed"] is True
     assert document["base_ref"] == git("rev-parse", "HEAD", cwd=root).strip()
-    # Read from the constant, never a literal 2 or 3: PR #353 takes the sense
+    # Read from the constant, never a literal 2 or 3: PR #353 takes the check
     # schema to 3, and this PR must pin nothing about which number that is.
-    assert document["sense_schema_version"] == SENSE_SCHEMA_VERSION
+    assert document["check_schema_version"] == CHECK_SCHEMA_VERSION
 
 
-def test_the_write_line_reports_counts_and_the_unmeasured_sensors(tmp_path: Path) -> None:
+def test_the_write_line_reports_counts_and_the_unmeasured_checks(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
     _make_lint_fail(root)
 
     result = _write(root)
 
-    # Exit follows the SENSOR here: writing a baseline is a measurement of the
+    # Exit follows the CHECK here: writing a baseline is a measurement of the
     # tree, and this tree is red.
     assert result.exit_code == 1, result.output
     assert result.output.startswith(f"baseline written: {root / DEFAULT_RELATIVE}")
@@ -175,17 +175,17 @@ def test_write_baseline_accepts_an_explicit_path(tmp_path: Path) -> None:
     target = tmp_path / "elsewhere" / "b.json"
 
     assert _write(root, str(target)).exit_code == 0
-    assert json.loads(target.read_text(encoding="utf-8"))["schema_version"] == 1
+    assert json.loads(target.read_text(encoding="utf-8"))["schema_version"] == 2
     assert not (root / DEFAULT_RELATIVE).exists()
 
 
 # --- order of operations ------------------------------------------------
 
 
-class _SensorSpy:
+class _CheckSpy:
     """Records that it was called, and refuses to be a measurement.
 
-    The point of this test is that the sensors NEVER run, so returning
+    The point of this test is that the checks NEVER run, so returning
     something plausible would hide the defect it exists to catch.
     """
 
@@ -194,7 +194,7 @@ class _SensorSpy:
 
     def __call__(self, **kwargs: Any) -> Any:
         self.calls += 1
-        raise AssertionError("the sensors ran before the baseline was validated")
+        raise AssertionError("the checks ran before the baseline was validated")
 
 
 @pytest.mark.parametrize(
@@ -204,23 +204,23 @@ class _SensorSpy:
         (("--write-baseline",), "--force"),
     ],
 )
-def test_the_baseline_is_settled_before_the_sensors_run(
+def test_the_baseline_is_settled_before_the_checks_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     args: tuple[str, ...],
     expected_in_output: str,
 ) -> None:
-    """A full sense run on kstrl itself costs 327 measured seconds.
+    """A full check run on kstrl itself costs 327 measured seconds.
 
     Telling an operator who forgot ``--force`` after five minutes rather than
-    a tenth of a second is a latency they feel. ``sense`` imports
+    a tenth of a second is a latency they feel. ``check`` imports
     ``run_mechanical_verification`` inside the function body, so the patch
     goes on the module it resolves from.
     """
     root = _make_repo(tmp_path)
     if args == ("--write-baseline",):
         assert _write(root).exit_code == 0
-    spy = _SensorSpy()
+    spy = _CheckSpy()
     monkeypatch.setattr("kstrl.verify.run_mechanical_verification", spy)
 
     result = _invoke(root, *args)
@@ -230,7 +230,7 @@ def test_the_baseline_is_settled_before_the_sensors_run(
     assert spy.calls == 0
 
 
-def test_a_baseline_measured_differently_is_refused_before_the_sensors_run(
+def test_a_baseline_measured_differently_is_refused_before_the_checks_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -240,14 +240,14 @@ def test_a_baseline_measured_differently_is_refused_before_the_sensors_run(
     to below it left the whole suite green, so the placement was a sentence in
     a docstring and nothing else. It is the case where the wait is most
     obviously wasted, because the answer cannot be used: a comparison measured
-    with different commands is refused whatever the sensors then find.
+    with different commands is refused whatever the checks then find.
     """
     root = _make_repo(tmp_path)
     assert _write(root).exit_code == 0
     document = _baseline_document(root)
     document["verify_digest"] = "0" * 16
     (root / DEFAULT_RELATIVE).write_text(json.dumps(document), encoding="utf-8")
-    spy = _SensorSpy()
+    spy = _CheckSpy()
     monkeypatch.setattr("kstrl.verify.run_mechanical_verification", spy)
 
     result = _invoke(root, "--compare-baseline")
@@ -267,7 +267,7 @@ def test_compare_missing_baseline_exits_2_and_names_the_remedy(tmp_path: Path) -
 
     assert result.exit_code == 2
     assert (
-        f"error: no baseline at {root / DEFAULT_RELATIVE}; run ks sense --write-baseline first"
+        f"error: no baseline at {root / DEFAULT_RELATIVE}; run ks check --write-baseline first"
         in result.output
     )
 
@@ -280,7 +280,7 @@ def test_compare_on_an_unchanged_tree_says_no_regression(tmp_path: Path) -> None
 
     assert result.exit_code == 0, result.output
     assert "no regression" in result.output
-    assert result.output.startswith("sense regression report vs ")
+    assert result.output.startswith("check regression report vs ")
 
 
 def test_compare_detects_a_new_signature_and_stays_advisory(tmp_path: Path) -> None:
@@ -324,13 +324,13 @@ def test_markdown_format_starts_with_the_marker(tmp_path: Path) -> None:
     result = _invoke(root, "--compare-baseline", "--format", "markdown")
 
     assert result.exit_code == 0, result.output
-    assert result.output.splitlines()[0] == dampener_report.MARKDOWN_MARKER
+    assert result.output.splitlines()[0] == baseline_report.MARKDOWN_MARKER
 
 
 def test_the_posted_comment_says_which_mode_failed_the_job(tmp_path: Path) -> None:
     """The renderer is handed the mode, and this is the wire that carries it.
 
-    The unit test in ``tests/test_sense_dampener.py`` proves the two footers
+    The unit test in ``tests/test_check_baseline.py`` proves the two footers
     render; this proves the CLI passes the flag it was given rather than the
     default. Both directions, on one repository with one regression: the
     advisory run exits 0 and says so, the blocking run exits 1 and says so.
@@ -343,18 +343,18 @@ def test_the_posted_comment_says_which_mode_failed_the_job(tmp_path: Path) -> No
     blocking = _invoke(root, "--compare-baseline", "--format", "markdown", "--fail-on-regression")
 
     assert advisory.exit_code == 0
-    assert dampener_report.ADVISORY_FOOTER in advisory.output
+    assert baseline_report.ADVISORY_FOOTER in advisory.output
     assert blocking.exit_code == 1
-    assert dampener_report.BLOCKING_FOOTER in blocking.output
-    assert dampener_report.ADVISORY_FOOTER not in blocking.output
+    assert baseline_report.BLOCKING_FOOTER in blocking.output
+    assert baseline_report.ADVISORY_FOOTER not in blocking.output
 
 
-def test_a_sense_schema_change_is_reported_not_refused(tmp_path: Path) -> None:
+def test_a_check_schema_change_is_reported_not_refused(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
     assert _write(root).exit_code == 0
     path = root / DEFAULT_RELATIVE
     document = json.loads(path.read_text(encoding="utf-8"))
-    document["sense_schema_version"] = SENSE_SCHEMA_VERSION - 1
+    document["check_schema_version"] = CHECK_SCHEMA_VERSION - 1
     path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
 
     human = _invoke(root, "--compare-baseline")
@@ -362,20 +362,20 @@ def test_a_sense_schema_change_is_reported_not_refused(tmp_path: Path) -> None:
     as_json = _invoke(root, "--compare-baseline", "--json")
 
     assert (human.exit_code, markdown.exit_code, as_json.exit_code) == (0, 0, 0)
-    note = f"from {SENSE_SCHEMA_VERSION - 1} to {SENSE_SCHEMA_VERSION}"
+    note = f"from {CHECK_SCHEMA_VERSION - 1} to {CHECK_SCHEMA_VERSION}"
     assert note in human.output
     assert note in markdown.output
-    block = json.loads(as_json.stdout)["dampener"]
-    assert block["sense_schema_changed"] == {
-        "baseline": SENSE_SCHEMA_VERSION - 1,
-        "current": SENSE_SCHEMA_VERSION,
+    block = json.loads(as_json.stdout)["baseline"]
+    assert block["check_schema_changed"] == {
+        "baseline": CHECK_SCHEMA_VERSION - 1,
+        "current": CHECK_SCHEMA_VERSION,
     }
 
 
 # --- the JSON surface ---------------------------------------------------
 
 
-def test_the_json_document_carries_the_dampener_block(tmp_path: Path) -> None:
+def test_the_json_document_carries_the_baseline_block(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
     assert _write(root).exit_code == 0
 
@@ -383,8 +383,8 @@ def test_the_json_document_carries_the_dampener_block(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     document = json.loads(result.stdout)
-    assert document["schema_version"] == SENSE_SCHEMA_VERSION
-    assert set(document["dampener"]) == {
+    assert document["schema_version"] == CHECK_SCHEMA_VERSION
+    assert set(document["baseline"]) == {
         "baseline_path",
         "baseline",
         "current",
@@ -394,14 +394,14 @@ def test_the_json_document_carries_the_dampener_block(tmp_path: Path) -> None:
         "unmeasured",
         "stopped_measuring",
         "regressed",
-        "sense_schema_changed",
+        "check_schema_changed",
         "project_changed",
     }
-    assert document["dampener"]["regressed"] is False
+    assert document["baseline"]["regressed"] is False
 
 
-def test_plain_sense_json_is_unchanged(tmp_path: Path) -> None:
-    """No dampener flag, no new key, and no bump.
+def test_plain_check_json_is_unchanged(tmp_path: Path) -> None:
+    """No baseline flag, no new key, and no bump.
 
     The R10.1 contract is that a v2 reader can index this document. This PR
     adds a key that is ABSENT unless asked for, which is why it is not a
@@ -483,7 +483,7 @@ def test_a_refusal_is_a_json_error_document_under_json(tmp_path: Path) -> None:
 
     assert result.exit_code == 2
     document = json.loads(result.stdout)
-    assert document["schema_version"] == SENSE_SCHEMA_VERSION
+    assert document["schema_version"] == CHECK_SCHEMA_VERSION
     assert "--force" in document["error"]
 
 
@@ -509,7 +509,7 @@ def test_the_bare_flag_does_not_swallow_the_next_option(tmp_path: Path) -> None:
     [
         ("{not json", "not JSON"),
         ("[1, 2]", "JSON object"),
-        ('{"schema_version": 99}', "expected 1"),
+        ('{"schema_version": 99}', "expected 2"),
         ('{"generated_at": "x"}', "schema_version"),
     ],
 )
@@ -530,7 +530,7 @@ def test_a_malformed_baseline_exits_2_through_the_command(
 
 
 def test_base_ref_is_null_outside_a_repository(tmp_path: Path) -> None:
-    """``ks sense`` runs happily outside a repository when no check reads the
+    """``ks check`` runs happily outside a repository when no check reads the
     diff, so provenance the tool cannot get is recorded as null rather than
     refused: nothing gates on it."""
     root = tmp_path / "loose"
@@ -551,10 +551,10 @@ def test_base_ref_is_null_outside_a_repository(tmp_path: Path) -> None:
 # --- a diff-driven check has no baseline to be compared to (#400) --------
 
 
-def test_a_bad_patterns_finding_is_new_and_never_a_stopped_sensor(tmp_path: Path) -> None:
+def test_a_bad_patterns_finding_is_new_and_never_a_stopped_check(tmp_path: Path) -> None:
     """#400: a baseline written on the base ref gives `bad_patterns` nothing to scan.
 
-    `docs/dampener.md` tells every adopter to write the baseline from a clean
+    `docs/baseline.md` tells every adopter to write the baseline from a clean
     tree, and a baseline written on the base ref has an empty diff, so this
     check measures nothing on EVERY baseline. It said the resulting hole was
     visible as `stopped measuring`. It is not: that bucket is a set difference
@@ -576,14 +576,14 @@ def test_a_bad_patterns_finding_is_new_and_never_a_stopped_sensor(tmp_path: Path
     result = _invoke(root, "--compare-baseline", "--base", "main", "--json")
 
     assert result.exit_code == 0, result.output
-    block = json.loads(result.stdout)["dampener"]
+    block = json.loads(result.stdout)["baseline"]
     assert block["new"] == {"bad_patterns:issues-found-in-changed-files": 1}
     assert block["stopped_measuring"] == {}
     assert block["regressed"] is True
     _assert_documented_row("bad_patterns", document["unmeasured_reasons"]["bad_patterns"])
 
 
-def test_a_diff_scope_finding_is_new_and_never_a_stopped_sensor(tmp_path: Path) -> None:
+def test_a_diff_scope_finding_is_new_and_never_a_stopped_check(tmp_path: Path) -> None:
     """The same fact for the other diff-driven check (#400).
 
     The baseline is written with no `--allowed-path`, so `diff_scope` applies no
@@ -608,7 +608,7 @@ def test_a_diff_scope_finding_is_new_and_never_a_stopped_sensor(tmp_path: Path) 
     )
 
     assert result.exit_code == 0, result.output
-    block = json.loads(result.stdout)["dampener"]
+    block = json.loads(result.stdout)["baseline"]
     assert block["new"] == {"diff_scope:files-outside-allowed-scope-diff-vs-base-branch": 1}
     assert block["stopped_measuring"] == {}
     assert block["regressed"] is True

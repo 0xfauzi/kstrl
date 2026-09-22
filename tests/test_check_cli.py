@@ -1,4 +1,4 @@
-"""Tests for ``ks sense`` (R10.1): the mechanical sensors run standalone.
+"""Tests for ``ks check`` (R10.1): the mechanical checks run standalone.
 
 Each test builds a real git repository under ``tmp_path`` whose
 ``[verify]`` commands are fast no-op Python one-liners, then drives the
@@ -65,10 +65,10 @@ def _make_repo(tmp_path: Path, lint_command: str = _OK_COMMAND) -> Path:
 
 
 def _invoke(*args: str) -> Result:
-    return CliRunner().invoke(cli, ["sense", *args])
+    return CliRunner().invoke(cli, ["check", *args])
 
 
-def _sense_json(root: Path, *extra: str) -> tuple[Result, dict[str, Any]]:
+def _check_json(root: Path, *extra: str) -> tuple[Result, dict[str, Any]]:
     result = _invoke("--root", str(root), "--json", *extra)
     document: dict[str, Any] = json.loads(result.stdout)
     return result, document
@@ -80,10 +80,10 @@ def _check(document: dict[str, Any], name: str) -> dict[str, Any]:
     return matches[0]
 
 
-def test_sense_passes_on_clean_tree(tmp_path: Path) -> None:
+def test_check_passes_on_clean_tree(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
 
-    result, document = _sense_json(root)
+    result, document = _check_json(root)
 
     assert result.exit_code == 0, result.output
     # 3, not 2 (#335); 2, not 1, was #306. The literal is pinned
@@ -93,7 +93,7 @@ def test_sense_passes_on_clean_tree(tmp_path: Path) -> None:
     # "asked for, measured nothing", which `not_measured` below
     # disambiguates. #335 extended that to the dead-code gate and added
     # a new row name, `dead_code_ruff`, to `checks`.
-    assert document["schema_version"] == 3
+    assert document["schema_version"] == 4
     assert document["path"] == str(root)
     assert document["passed"] is True
     # Present and empty on a tree where every enabled check measured
@@ -115,25 +115,25 @@ def test_sense_passes_on_clean_tree(tmp_path: Path) -> None:
         assert isinstance(check["duration_seconds"], float)
 
 
-def test_sense_reports_failure_and_exits_1(tmp_path: Path) -> None:
+def test_check_reports_failure_and_exits_1(tmp_path: Path) -> None:
     root = _make_repo(tmp_path, lint_command=_LINT_FAIL_COMMAND)
 
-    result, document = _sense_json(root)
+    result, document = _check_json(root)
 
     assert result.exit_code == 1
     assert document["passed"] is False
     linter = _check(document, "linter")
     assert linter["passed"] is False
     assert linter["message"]
-    # The other sensors still ran and still pass: no short-circuit.
+    # The other checks still ran and still pass: no short-circuit.
     assert _check(document, "test_suite")["passed"] is True
     assert _check(document, "typecheck")["passed"] is True
 
 
-def test_sense_skips_prd_checks_without_prd(tmp_path: Path) -> None:
+def test_check_skips_prd_checks_without_prd(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
 
-    result, document = _sense_json(root)
+    result, document = _check_json(root)
 
     assert result.exit_code == 0, result.output
     names = {c["name"] for c in document["checks"]}
@@ -141,7 +141,7 @@ def test_sense_skips_prd_checks_without_prd(tmp_path: Path) -> None:
     assert "fixtures" not in names
 
 
-def test_sense_runs_prd_checks_with_prd(tmp_path: Path) -> None:
+def test_check_runs_prd_checks_with_prd(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
     prd = tmp_path / "prd.json"
     prd.write_text(
@@ -162,7 +162,7 @@ def test_sense_runs_prd_checks_with_prd(tmp_path: Path) -> None:
         )
     )
 
-    result, document = _sense_json(root, "--prd", str(prd))
+    result, document = _check_json(root, "--prd", str(prd))
 
     assert result.exit_code == 1
     stories = _check(document, "prd_stories")
@@ -170,10 +170,10 @@ def test_sense_runs_prd_checks_with_prd(tmp_path: Path) -> None:
     assert "US-001" in "".join(stories["details"])
 
 
-def test_sense_no_scope_constraints_without_allowed_path(tmp_path: Path) -> None:
+def test_check_no_scope_constraints_without_allowed_path(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
 
-    result, document = _sense_json(root)
+    result, document = _check_json(root)
 
     assert result.exit_code == 0, result.output
     scope = _check(document, "diff_scope")
@@ -181,13 +181,13 @@ def test_sense_no_scope_constraints_without_allowed_path(tmp_path: Path) -> None
     assert "No scope constraints" in scope["message"]
 
 
-def test_sense_enforces_allowed_path(tmp_path: Path) -> None:
+def test_check_enforces_allowed_path(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
     git("checkout", "-q", "-b", "feature", cwd=root)
     (root / "src" / "a.py").write_text("def a() -> int:\n    return 2\n")
     git("commit", "-q", "-am", "change a", cwd=root)
 
-    result, document = _sense_json(root, "--allowed-path", "docs/**")
+    result, document = _check_json(root, "--allowed-path", "docs/**")
 
     assert result.exit_code == 1
     # No origin in this repo, so detection reaches the candidate rung
@@ -198,7 +198,7 @@ def test_sense_enforces_allowed_path(tmp_path: Path) -> None:
     assert "src/a.py" in "".join(scope["details"])
 
 
-def test_sense_exit_2_on_missing_path(tmp_path: Path) -> None:
+def test_check_exit_2_on_missing_path(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
     missing = str(tmp_path / "nonexistent")
 
@@ -211,12 +211,12 @@ def test_sense_exit_2_on_missing_path(tmp_path: Path) -> None:
     assert result.exit_code == 2
     assert result.stderr.startswith("error:")
     document = json.loads(result.stdout)
-    assert document["schema_version"] == 3
+    assert document["schema_version"] == 4
     assert "error" in document
     assert missing in document["error"]
 
 
-def test_sense_exit_2_on_malformed_kstrl_toml(tmp_path: Path) -> None:
+def test_check_exit_2_on_malformed_kstrl_toml(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
     (root / "kstrl.toml").write_text("[verify\nthis is not toml\n")
 
@@ -227,14 +227,14 @@ def test_sense_exit_2_on_malformed_kstrl_toml(tmp_path: Path) -> None:
     assert "error" in json.loads(result.stdout)
 
 
-def test_sense_writes_nothing(tmp_path: Path) -> None:
+def test_check_writes_nothing(tmp_path: Path) -> None:
     root = _make_repo(tmp_path)
     kstrl_dir = root / ".kstrl"
     assert not kstrl_dir.exists()
     before = snapshot_kstrl_dir(kstrl_dir)
     tracked_before = git("status", "--porcelain", cwd=root)
 
-    result, _document = _sense_json(root)
+    result, _document = _check_json(root)
 
     assert result.exit_code == 0, result.output
     assert snapshot_kstrl_dir(kstrl_dir) == before
@@ -243,8 +243,8 @@ def test_sense_writes_nothing(tmp_path: Path) -> None:
     assert git("status", "--porcelain", cwd=root) == tracked_before
 
 
-def test_sense_help_lists_every_option() -> None:
-    result = CliRunner().invoke(cli, ["sense", "--help"])
+def test_check_help_lists_every_option() -> None:
+    result = CliRunner().invoke(cli, ["check", "--help"])
 
     assert result.exit_code == 0
     for option in (
@@ -253,7 +253,7 @@ def test_sense_help_lists_every_option() -> None:
         "--base",
         "--prd",
         "--allowed-path",
-        # R10.6 (#227): the dampener group.
+        # R10.6 (#227): the baseline group.
         "--write-baseline",
         "--compare-baseline",
         "--force",
@@ -273,7 +273,7 @@ def test_sense_help_lists_every_option() -> None:
 
 # --- Read-only contract (R10.1 review, P1) ------------------------------
 #
-# `ks sense` measures the operator's LIVE checkout, not a worktree kstrl
+# `ks check` measures the operator's LIVE checkout, not a worktree kstrl
 # owns. Before the fix, `[verify] dead_code_cleanup = true` made it run
 # `ruff --fix`, `git add -A` and `git commit`: HEAD moved and an
 # unrelated untracked file was swept into a commit nobody asked for.
@@ -300,7 +300,7 @@ def _dead_code_repo(tmp_path: Path) -> Path:
 def _without_vulture() -> Callable[..., str | None]:
     """``shutil.which`` with vulture hidden and everything else real.
 
-    Patched for that ONE name and delegating the rest: `ks sense` runs
+    Patched for that ONE name and delegating the rest: `ks check` runs
     in-process under ``CliRunner``, so a blanket patch would take ruff
     and the operator's own commands down with it.
     """
@@ -410,8 +410,8 @@ def test_every_ruff_gated_test_here_is_gated_on_the_capability() -> None:
                 gated[name] = reason
 
     assert sorted(gated) == [
-        "test_sense_reports_the_dead_code_phases_separately",
-        "test_sense_table_names_the_dead_code_scan_it_did_not_run",
+        "test_check_reports_the_dead_code_phases_separately",
+        "test_check_table_names_the_dead_code_scan_it_did_not_run",
     ]
     assert set(gated.values()) == {_CONCISE_REASON}
 
@@ -444,14 +444,14 @@ def test_the_capability_gate_reads_the_probe_and_not_the_binary() -> None:
     assert "_ruff_can_do_concise" in called
 
 
-def test_sense_never_edits_stages_or_commits(tmp_path: Path) -> None:
+def test_check_never_edits_stages_or_commits(tmp_path: Path) -> None:
     root = _dead_code_repo(tmp_path)
     head_before = git("rev-parse", "HEAD", cwd=root)
     log_before = git("log", "--oneline", cwd=root)
     status_before = git("status", "--porcelain", cwd=root)
     b_before = (root / "src" / "b.py").read_text()
 
-    result, document = _sense_json(root)
+    result, document = _check_json(root)
 
     assert result.exit_code in (0, 1), result.output
     assert git("rev-parse", "HEAD", cwd=root) == head_before
@@ -461,7 +461,7 @@ def test_sense_never_edits_stages_or_commits(tmp_path: Path) -> None:
     assert "unrelated.txt" in status_before
     assert (root / "src" / "b.py").read_text() == b_before
     # The full account of what the two phases REPORTED is asserted in
-    # test_sense_reports_the_dead_code_phases_separately below, which
+    # test_check_reports_the_dead_code_phases_separately below, which
     # needs ruff on PATH to have a measurement to read. What this test
     # keeps unconditionally is the read-only contract itself, stated
     # about the document rather than only about the tree: `assert
@@ -484,12 +484,12 @@ def test_sense_never_edits_stages_or_commits(tmp_path: Path) -> None:
 
 
 @_NEEDS_CONCISE_RUFF
-def test_sense_reports_the_dead_code_phases_separately(tmp_path: Path) -> None:
+def test_check_reports_the_dead_code_phases_separately(tmp_path: Path) -> None:
     """#335 end to end, on a command where one phase can measure and the
     other cannot.
 
     ``check_dead_code`` fused the ruff auto-fix and the vulture scan
-    into one row, so with vulture absent ``ks sense`` printed
+    into one row, so with vulture absent ``ks check`` printed
     ``dead_code  pass  ruff reports 1 auto-removable, not removed;
     vulture not installed`` - and ``build_review_prompt`` handed the
     same row to an adversarial reviewer as ``dead_code: PASS``. Omitting
@@ -501,7 +501,7 @@ def test_sense_reports_the_dead_code_phases_separately(tmp_path: Path) -> None:
     root = _dead_code_repo(tmp_path)
 
     with patch("shutil.which", side_effect=_without_vulture()):
-        result, document = _sense_json(root)
+        result, document = _check_json(root)
 
     assert result.exit_code == 0, result.output
     ruff_phase = _check(document, "dead_code_ruff")
@@ -524,7 +524,7 @@ def test_sense_reports_the_dead_code_phases_separately(tmp_path: Path) -> None:
 
 
 @_NEEDS_CONCISE_RUFF
-def test_sense_table_names_the_dead_code_scan_it_did_not_run(tmp_path: Path) -> None:
+def test_check_table_names_the_dead_code_scan_it_did_not_run(tmp_path: Path) -> None:
     """The terminal half. Most operators read the table, not the JSON."""
     root = _dead_code_repo(tmp_path)
 
@@ -534,13 +534,13 @@ def test_sense_table_names_the_dead_code_scan_it_did_not_run(tmp_path: Path) -> 
     assert result.exit_code == 0, result.output
     assert "dead_code  not measured" in result.output
     assert "vulture is not on PATH" in result.output
-    assert "sense: PASS" in result.output
+    assert "check: PASS" in result.output
 
 
-def test_sense_leaves_no_bytecode_or_lint_cache(tmp_path: Path) -> None:
+def test_check_leaves_no_bytecode_or_lint_cache(tmp_path: Path) -> None:
     root = _dead_code_repo(tmp_path)
 
-    result, _document = _sense_json(root)
+    result, _document = _check_json(root)
 
     assert result.exit_code in (0, 1), result.output
     assert list(root.rglob("__pycache__")) == []
@@ -566,7 +566,7 @@ def _diverged_repo(tmp_path: Path, base: str = "main") -> Path:
     return root
 
 
-def test_sense_exit_2_when_explicit_base_is_unreachable(tmp_path: Path) -> None:
+def test_check_exit_2_when_explicit_base_is_unreachable(tmp_path: Path) -> None:
     root = _diverged_repo(tmp_path)
 
     result = _invoke("--root", str(root), "--json", "--base", "no-such-branch")
@@ -581,7 +581,7 @@ def test_sense_exit_2_when_explicit_base_is_unreachable(tmp_path: Path) -> None:
     assert "checks" not in document
 
 
-def test_sense_does_not_demand_a_diff_no_dead_code_phase_reads(tmp_path: Path) -> None:
+def test_check_does_not_demand_a_diff_no_dead_code_phase_reads(tmp_path: Path) -> None:
     """The preflight asks for a base on behalf of the checks that read
     one, and `[verify] dead_code_cleanup` stopped being that question.
 
@@ -602,13 +602,13 @@ def test_sense_does_not_demand_a_diff_no_dead_code_phase_reads(tmp_path: Path) -
         + 'dead_code_command = "true"\n'
     )
 
-    result, document = _sense_json(root, "--base", "no-such-branch")
+    result, document = _check_json(root, "--base", "no-such-branch")
 
     assert result.exit_code != 2, result.output
     assert [c["name"] for c in document["checks"] if c["name"].startswith("dead_code")]
 
 
-def test_sense_detects_the_base_branch_that_exists(tmp_path: Path) -> None:
+def test_check_detects_the_base_branch_that_exists(tmp_path: Path) -> None:
     """No origin, and the base is `trunk` rather than `main` (#259).
 
     This repo used to be the exit-2 fixture below: detection returned
@@ -618,7 +618,7 @@ def test_sense_detects_the_base_branch_that_exists(tmp_path: Path) -> None:
     """
     root = _diverged_repo(tmp_path, base="trunk")
 
-    result, document = _sense_json(root, "--allowed-path", "docs/**")
+    result, document = _check_json(root, "--allowed-path", "docs/**")
 
     assert document["base_branch"] == "trunk"
     # A real diff was read against trunk: the out-of-scope file is
@@ -629,7 +629,7 @@ def test_sense_detects_the_base_branch_that_exists(tmp_path: Path) -> None:
     assert result.exit_code == 1
 
 
-def test_sense_exit_2_when_detected_base_is_missing(tmp_path: Path) -> None:
+def test_check_exit_2_when_detected_base_is_missing(tmp_path: Path) -> None:
     """No origin and no branch the ladder knows: detection falls back to
     a branch that does not exist, and the fallback must not read as a
     clean diff.
@@ -649,7 +649,7 @@ def test_sense_exit_2_when_detected_base_is_missing(tmp_path: Path) -> None:
     assert "--base" in document["error"]
 
 
-def test_sense_exit_2_outside_a_git_repository(tmp_path: Path) -> None:
+def test_check_exit_2_outside_a_git_repository(tmp_path: Path) -> None:
     root = tmp_path / "plain"
     root.mkdir()
     (root / "kstrl.toml").write_text(_kstrl_toml())
@@ -660,7 +660,7 @@ def test_sense_exit_2_outside_a_git_repository(tmp_path: Path) -> None:
     assert "cannot measure the diff" in json.loads(result.stdout)["error"]
 
 
-def test_sense_runs_without_git_when_no_check_reads_the_diff(
+def test_check_runs_without_git_when_no_check_reads_the_diff(
     tmp_path: Path,
 ) -> None:
     """The preflight guards the diff-based checks, not the command: turn
@@ -671,7 +671,7 @@ def test_sense_runs_without_git_when_no_check_reads_the_diff(
         _kstrl_toml() + "check_diff_scope = false\ncheck_bad_patterns = false\n"
     )
 
-    result, document = _sense_json(root)
+    result, document = _check_json(root)
 
     assert result.exit_code == 0, result.output
     assert document["passed"] is True
@@ -679,10 +679,10 @@ def test_sense_runs_without_git_when_no_check_reads_the_diff(
     assert names == {"test_suite", "typecheck", "linter"}
 
 
-def test_sense_reports_mutation_as_not_measured_not_as_a_pass(tmp_path: Path) -> None:
+def test_check_reports_mutation_as_not_measured_not_as_a_pass(tmp_path: Path) -> None:
     """#306 end to end, on a command that can NEVER measure this check.
 
-    `ks sense` is read-only and mutmut works by rewriting the files it
+    `ks check` is read-only and mutmut works by rewriting the files it
     mutates, so an operator who turns mutation testing on gets no score
     here, ever. Before #306 that produced a green ``mutation_testing``
     row carrying a "skipped" message, which ``all(passed)`` and the LLM
@@ -693,7 +693,7 @@ def test_sense_reports_mutation_as_not_measured_not_as_a_pass(tmp_path: Path) ->
     root = _make_repo(tmp_path)
     (root / "kstrl.toml").write_text(_kstrl_toml() + "mutation_testing = true\n")
 
-    result, document = _sense_json(root)
+    result, document = _check_json(root)
 
     assert result.exit_code == 0, result.output
     assert [c for c in document["checks"] if c["name"] == "mutation_testing"] == []
@@ -709,7 +709,7 @@ def test_sense_reports_mutation_as_not_measured_not_as_a_pass(tmp_path: Path) ->
     assert document["passed"] is True
 
 
-def test_sense_table_names_what_it_did_not_measure(tmp_path: Path) -> None:
+def test_check_table_names_what_it_did_not_measure(tmp_path: Path) -> None:
     """The terminal half of the same fix.
 
     Most operators read the table, not the JSON. If the gap reached only
@@ -726,4 +726,4 @@ def test_sense_table_names_what_it_did_not_measure(tmp_path: Path) -> None:
     assert "cannot run read-only" in result.output
     # The verdict line is unchanged: it counts checks, and a gap is not
     # a check.
-    assert "sense: PASS" in result.output
+    assert "check: PASS" in result.output

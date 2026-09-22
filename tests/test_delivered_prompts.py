@@ -364,7 +364,7 @@ def test_every_enrolled_prompt_is_delivered_somewhere() -> None:
     # builder, so no one role's delivered text carries all of them. Their
     # delivered-output digests and orphan guards live in
     # tests/test_builder_prompts.py, not here.
-    # The six #428 feedforward notices are each returned VERBATIM by one
+    # The six #428 codebase scan notices are each returned VERBATIM by one
     # production path, and tests/test_prompt_versions.py proves it by
     # exact equality against a marker. Their delivered text therefore IS
     # the enrolled constant plus the integers and path named in the

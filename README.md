@@ -30,11 +30,11 @@ kstrl is designed as a loop that closes on evidence instead. The parts are delib
 - **What stops it running away?** Bounds on everything: iterations, time, tokens, cost, work in flight, and a written envelope of what a merge may touch. When a bound trips, the run stops loudly and tells you why.
 - **Where do you stand?** On the loop, not in it. Boundary conditions route to you: a spec the architect cannot decompose, a merge you asked to approve, a budget that ran out. Everything else flows, and everything is recorded.
 
-kstrl is those loops, nested, innermost fastest. The innermost is the only one with no sensor of its own; every loop around it acts on what the one inside produced and measures it with something the agent did not write. The loops, their clock rates and what measures each are the table at the top of [ARCHITECTURE.md](ARCHITECTURE.md).
+kstrl is those loops, nested, innermost fastest. The innermost is the only one with no check of its own; every loop around it acts on what the one inside produced and measures it with something the agent did not write. The loops, their clock rates and what measures each are the table at the top of [ARCHITECTURE.md](ARCHITECTURE.md).
 
-The reviewers are the point: independent, adversarial, and expected to distrust the implementing agent. The harness distrusts the reviewers in turn: an empty, partial or oversized review fails closed, and a reviewer's own claim to have searched thoroughly is shown as a hint and never used as a gate. The only thing that proves a reviewer works is calibration: planting known bugs and measuring how often each role catches them. The full phase-by-phase pipeline lives in [ARCHITECTURE.md](ARCHITECTURE.md), and the reasoning behind the loop is in [docs/control-loop-design.md](docs/control-loop-design.md).
+The reviewers are the point: independent, adversarial, and expected to distrust the implementing agent. The harness distrusts the reviewers in turn: an empty, partial or oversized review fails closed, and a reviewer's own claim to have searched thoroughly is shown as a hint and never used as a gate. The only thing that proves a reviewer works is calibration: planting known bugs and measuring how often each role catches them. The full phase-by-phase pipeline lives in [ARCHITECTURE.md](ARCHITECTURE.md), and the reasoning behind the loop is in [docs/loop-design.md](docs/loop-design.md).
 
-**Documentation**: [ARCHITECTURE.md](ARCHITECTURE.md) is the detailed system tour (pipeline, iteration loop, factory scheduling, state layout), [docs/adversarial-design.md](docs/adversarial-design.md) covers the full 8-role taxonomy, [docs/env-vars.md](docs/env-vars.md) every environment variable, [docs/runbook.md](docs/runbook.md) operator failure recovery, [docs/dampener.md](docs/dampener.md) the sense baseline and the pull-request regression report, and [docs/linear-integration.md](docs/linear-integration.md) the optional Linear mirror. [examples/](examples/) has a scaffolded uv project and two sample feature specs.
+**Documentation**: [ARCHITECTURE.md](ARCHITECTURE.md) is the detailed system tour (pipeline, iteration loop, factory scheduling, state layout), [docs/adversarial-design.md](docs/adversarial-design.md) covers the full 8-role taxonomy, [docs/env-vars.md](docs/env-vars.md) every environment variable, [docs/runbook.md](docs/runbook.md) operator failure recovery, [docs/baseline.md](docs/baseline.md) the check baseline and the pull-request regression report, and [docs/linear-integration.md](docs/linear-integration.md) the optional Linear mirror. [examples/](examples/) has a scaffolded uv project and two sample feature specs.
 
 ## Quick start
 
@@ -55,10 +55,10 @@ spec, `ks decompose --spec <spec.md> --project-name <name>` plans it into
 components and `ks factory --spec ...` plans and builds it; `ks init` prints
 both paths when it finishes.
 
-`ks sense` runs the mechanical sensors (tests, typecheck, lint, diff scope, bad patterns) against any tree by hand, with no PRD, branch, worktree or agent spend; `ks sense --json` prints the same measurement as one JSON document for scripts.
+`ks check` runs the mechanical checks (tests, typecheck, lint, diff scope, bad patterns) against any tree by hand, with no PRD, branch, worktree or agent spend; `ks check --json` prints the same measurement as one JSON document for scripts.
 It is the standalone entry point to the checks the factory runs in Phase 1, so a threshold can be measured before it is automated.
 The measurement is read-only: it runs against your live checkout, so it never edits, stages, commits or leaves bytecode behind, and it exits 2 rather than reporting a pass when git cannot produce the diff against `--base`.
-`ks sense --write-baseline` records those measurements to `scripts/kstrl/sense-baseline.json` and `ks sense --compare-baseline` reports what a branch added to it - new failure signatures, signatures whose count rose, signatures the branch fixed, and any sensor that measured on the baseline and has stopped measuring here. That is the dampener: it stops concurrent work undoing the loop's progress while the loop runs. It is advisory (exit 0 either way) until you pass `--fail-on-regression`. How to adopt it and how to graduate to blocking: [docs/dampener.md](docs/dampener.md).
+`ks check --write-baseline` records those measurements to `scripts/kstrl/baseline.json` and `ks check --compare-baseline` reports what a branch added to it - new failure signatures, signatures whose count rose, signatures the branch fixed, and any check that measured on the baseline and has stopped measuring here. That is the baseline: it stops concurrent work undoing the loop's progress while the loop runs. It is advisory (exit 0 either way) until you pass `--fail-on-regression`. How to adopt it and how to graduate to blocking: [docs/baseline.md](docs/baseline.md).
 
 Every long-running command opens its live dashboard on a terminal automatically (`--no-tui` opts out), and bare `ks` opens a home shell with a run browser and command launcher; `ks dash` attaches a read-only view to any run - in flight or finished - from another terminal, and `ks status` prints the same state for scripts and CI (and opens the dashboard when you run it interactively).
 
@@ -76,7 +76,7 @@ kstrl does not validate model names: `[agent].model` is passed straight through 
 
 There is also an opt-in in-process adapter, `[agent] type = "claude-sdk"`, that drives Claude through the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview) instead of a CLI subprocess and supports an in-loop USD budget ceiling (`[agent].budget_usd`). It requires the `sdk` extra (`uv sync --extra sdk`) and is never chosen by auto-detect. `[agent].budget_usd` is adapter-internal and bounds a single turn; it is not `[factory].max_cost_usd`, which is the run-level spend ceiling across every phase and component ([details](docs/env-vars.md#the-two-run-level-ceilings-max_total_tokens-and-max_cost_usd-r8)).
 
-**Python-first**: kstrl works best on Python projects managed with uv. The feedforward interface and dependency analysis parse Python (`ast` and import statements), and the default verification commands are `uv run pytest` / `uv run mypy` / `uv run ruff check`. Other stacks work by overriding the `[verify]` commands in kstrl.toml, but they get a reduced feedforward context (module map and conventions only).
+**Python-first**: kstrl works best on Python projects managed with uv. The codebase scan interface and dependency analysis parse Python (`ast` and import statements), and the default verification commands are `uv run pytest` / `uv run mypy` / `uv run ruff check`. Other stacks work by overriding the `[verify]` commands in kstrl.toml, but they get a reduced codebase scan context (module map and conventions only).
 
 ## How it works
 
@@ -239,7 +239,7 @@ You can, and for small tasks you should. kstrl is for when you want to:
 - **Define success criteria before starting** - acceptance criteria, path restrictions - not just "make it work"
 - **Walk away** - kstrl runs unattended with structured verification, not just a completion marker
 - **Watch it without babysitting it** - a live dashboard over a replayable event log; attach, detach, or inspect after the fact
-- **Give the agent context** - feedforward injection means fewer wasted iterations discovering the codebase
+- **Give the agent context** - codebase scan injection means fewer wasted iterations discovering the codebase
 - **Get structured retries** - parsed failures with source context and fix hints, not raw stderr
 - **Build multiple components in parallel** - factory mode with worktree isolation and contract testing
 - **Carry knowledge forward** - facts distilled from each component reach the next one, and the journal records every failure signature for the learning work that follows
@@ -256,6 +256,7 @@ ks autonomy history             Show every recorded level transition.
 ks autonomy promote             Raise the autonomy level by one.
 ks autonomy replay              Replay the ladder's thresholds over recorded run history.
 ks autonomy status              Show the current level, its flag bundle, and what promotion needs.
+ks check                        Run the mechanical checks against a tree and print the measurement.
 ks config show                  Print the fully resolved config with the source of each value.
 ks dash                         Live dashboard over a factory run (observe-only).
 ks decompose                    Decompose a spec into components and generate PRDs.
@@ -281,7 +282,6 @@ ks queue show ITEM_ID           Show one item in full, with its transition histo
 ks queue sync                   Pull labelled GitHub issues into the queue (R8.6).
 ks retry COMPONENT_ID           Retry a FAILED component from the factory manifest (R3.3).
 ks run [MAX_ITERATIONS]         Run the agentic loop as a single-component factory invocation.
-ks sense                        Run the mechanical sensors against a tree and print the measurement.
 ks serve                        Drain the continuous-intake queue (R8.6).
 ks signals ls                   Print the signal ledger, oldest first.
 ks signals poll                 Fetch one tracker page, classify it against the ledger, print the tally.
@@ -355,7 +355,7 @@ use_worktrees = true               # isolate each component in .kstrl/worktrees/
 single_pr = false                  # one PR for the whole run instead of per-component
 create_prs = true                  # push + merge PRs via gh
 review_mode = "hard"               # hard | advisory | skip (Phase 2)
-setpoint_agreement = "advisory"    # advisory | block: what to do when the reviewer does not confirm a story the engineer marked passes=true (R10.3)
+claim_agreement = "advisory"       # advisory | block: what to do when the reviewer does not confirm a story the engineer marked passes=true (R10.3)
 merge_timeout = 300.0              # seconds to wait for PR merge confirmation
 max_adversarial_calls = 0          # cap on review+security+distill LLM calls; 0 = unbounded. At the cap a hard-mode review or security phase HALTS the component rather than merging it unreviewed; an advisory one skips. Budget 3 calls per component for hard review + hard security + knowledge (R10.5, docs/runbook.md)
 max_total_tokens = 0               # run-level token budget; 0 = unbounded. Counts cache reads at par, so it is a poor proxy for cost - prefer max_cost_usd. Halts before the next engineer iteration or phase, never mid-call (docs/env-vars.md)
@@ -494,8 +494,8 @@ timeout = 600.0                 # seconds per contract test run
 enabled = false   # record a release ref; still deploys nothing (R8.7 slice 1)
 environment = ""  # deploy environment name, e.g. staging or prod
 
-# Phase 0 feedforward (computational, no LLM)
-[feedforward]
+# Phase 0 codebase scan (computational, no LLM)
+[codebase_scan]
 enabled = true             # inject structural context into the prompt
 module_map = true          # directory tree with LOC counts
 public_interfaces = true   # public symbols via Python ast
@@ -583,7 +583,7 @@ The PRD (`prd.json`) is a list of user stories with testable acceptance criteria
 }
 ```
 
-The agent updates `passes` and `notes` as it works, and kstrl reads them between iterations to decide whether to continue. Treat `passes` as the agent's claim, not the verdict: mechanical verification checks the flag is set, and the reviewer independently judges every criterion. Acceptance criteria should be concrete and testable - commands the agent can run, behavior it can verify - because they are the set point every check measures against.
+The agent updates `passes` and `notes` as it works, and kstrl reads them between iterations to decide whether to continue. Treat `passes` as the agent's claim, not the verdict: mechanical verification checks the flag is set, and the reviewer independently judges every criterion. Acceptance criteria should be concrete and testable - commands the agent can run, behavior it can verify - because they are the claim every check measures against.
 
 `allowedPaths` is optional for a hand-written PRD (it feeds the Phase 1 diff-scope check); the architect is required to emit it for every decomposed component.
 

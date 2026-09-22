@@ -14,8 +14,8 @@ import pytest
 
 from kstrl import feedforward
 from kstrl.feedforward import (
-    FeedforwardConfig,
-    build_feedforward_context,
+    CodebaseScanConfig,
+    build_codebase_scan_context,
     extract_public_interfaces,
 )
 from tests.helpers import astwalk
@@ -93,7 +93,7 @@ EXPECTED_NOTICES: dict[str, int] = {
 def test_every_notice_the_engineer_reads_is_enrolled() -> None:
     """The block this module builds is pasted into the engineer prompt.
 
-    PR #417 removed "Raise feedforward.max_context_tokens to see it." from
+    PR #417 removed "Raise codebase_scan.max_context_tokens to see it." from
     the dependency graph's notice by hand and left no guard behind.
     Measured on 6a354cc: putting a short imperative back into the #420
     notice leaves the whole suite green (7203 passed, 0 failed). This is
@@ -116,7 +116,7 @@ def test_every_notice_the_engineer_reads_is_enrolled() -> None:
             "front of the engineer changed. Every one of them is prompt text: "
             "hoist it to a *_PROMPT constant, enrol it in "
             "tests/helpers/feedforward_prompts.py (body, snapshot, renderer) "
-            "and bump FEEDFORWARD_NOTICE_PROMPT_VERSION, or, if it is not a "
+            "and bump CODEBASE_SCAN_NOTICE_PROMPT_VERSION, or, if it is not a "
             "notice, add the row to _NOT_A_NOTICE with the reason."
         ),
     )
@@ -178,9 +178,9 @@ def test_the_interfaces_builder_stops_when_the_room_left_is_spent(
 
     monkeypatch.setattr(feedforward, "_extract_symbols_from_file", spy)
 
-    context = build_feedforward_context(
+    context = build_codebase_scan_context(
         tmp_path,
-        FeedforwardConfig(max_context_tokens=450),
+        CodebaseScanConfig(max_context_tokens=450),
         component_id="demo_pkg",
         component_deps=component_deps,
     )
@@ -242,11 +242,11 @@ def test_the_interfaces_section_as_the_only_section_is_cut_not_refused(
     `left` unconditionally and this goes red.
     """
     _deep_repo(tmp_path)
-    config = FeedforwardConfig(
+    config = CodebaseScanConfig(
         module_map=False, dependency_graph=False, conventions=False, max_context_tokens=100
     )
 
-    context = build_feedforward_context(tmp_path, config)
+    context = build_codebase_scan_context(tmp_path, config)
 
     interfaces = section(context, "## Public interfaces")
     assert interfaces.endswith("... (truncated)"), context
@@ -267,7 +267,7 @@ def test_a_section_the_assembler_refuses_reads_exactly_as_it_did_on_main(
     """
     _deep_repo_with_conventions(tmp_path)
 
-    context = build_feedforward_context(tmp_path, FeedforwardConfig(max_context_tokens=600))
+    context = build_codebase_scan_context(tmp_path, CodebaseScanConfig(max_context_tokens=600))
 
     assert section(context, "## Public interfaces") == (
         "(did not fit: public interfaces is 959 characters "

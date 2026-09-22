@@ -262,7 +262,7 @@ def delivered_kinds(
     ``load_operator_file(operator_file_spec(<KIND>, ...))`` call in the
     same scope bound, or when it is that call itself written inline.
     Elements naming anything else are not operator files and are not
-    counted: the knowledge prefix, the decisions prefix, the feedforward
+    counted: the knowledge prefix, the decisions prefix, the codebase scan
     prefix and the retry block are the four that are there today.
     """
     table = bindings(tree, module=module)

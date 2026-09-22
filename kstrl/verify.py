@@ -288,18 +288,18 @@ class CheckResult:
     # carry them: the sidecar is for checks that produce NO row, and turning
     # one of these into a gap would make `result.passed` true on a timeout.
     #
-    # Read by :mod:`kstrl.dampener` and nothing else today. It changes no
+    # Read by :mod:`kstrl.baseline` and nothing else today. It changes no
     # existing behaviour and no published surface: `passed` still decides the
-    # verdict, the report table and the `ks sense --json` check objects are
+    # verdict, the report table and the `ks check --json` check objects are
     # untouched. What it buys is that a signature's disappearance can be told
-    # apart from the sensor's, which a fallback signature cannot say for
+    # apart from the check's, which a fallback signature cannot say for
     # itself: `signature_slug` strips digits, so "timed out after 300.0s" and
     # "timed out after 1800.0s" are the same string.
     measured: bool = True
 
 
 #: Why a check that was ASKED FOR produced no measurement. Stable
-#: tokens: they reach `ks sense --json` and `events.jsonl`, so a reader
+#: tokens: they reach `ks check --json` and `events.jsonl`, so a reader
 #: keys on these and not on the prose beside them.
 #:
 #: A check the operator did not ask for - ``[verify] mutation_testing``
@@ -321,7 +321,7 @@ class NotMeasured:
 
     The SIDECAR. Deliberately not a :class:`CheckResult`: it never
     reaches ``checks``, so ``all(c.passed ...)``, ``report_lines``'
-    verdict column, ``ks sense --json``'s ``checks`` array and
+    verdict column, ``ks check --json``'s ``checks`` array and
     :func:`kstrl.review.build_review_prompt` cannot read it as a pass -
     which is the whole of #306. Equally it never reaches
     :meth:`VerificationResult.as_context`, so it is not retry context:
@@ -367,7 +367,7 @@ class NotMeasured:
         return f"{self.check}:{self.reason}"
 
     def to_dict(self) -> dict[str, str]:
-        """The ``ks sense --json`` rendering."""
+        """The ``ks check --json`` rendering."""
         return {"check": self.check, "reason": self.reason, "detail": self.detail}
 
 
@@ -413,7 +413,7 @@ class VerificationResult:
     ) -> list[str]:
         """One line per check, then the indented details of each failure.
 
-        The TERMINAL rendering of this object, in one place: ``ks sense``
+        The TERMINAL rendering of this object, in one place: ``ks check``
         and ``ks feature``'s #288 report print the same table, and before
         this existed they printed it from two copies of the same
         f-string.
@@ -435,7 +435,7 @@ class VerificationResult:
         per report, up to ``2 + repair_max_runs`` times a run, which is
         the event-stream flood ``commandrun._StreamFilterSink`` exists to
         prevent. ``as_context`` already truncates at 10 for the same
-        reason. None (the default, and ``ks sense``) prints everything:
+        reason. None (the default, and ``ks check``) prints everything:
         there the measurement IS the whole output.
         """
         width = max((len(check.name) for check in self.checks), default=0)
@@ -449,7 +449,7 @@ class VerificationResult:
             lines.extend(_capped_detail_lines(check, max_detail_lines))
         # The sidecar, below the table and outside it (#306). Rendered
         # here rather than by each caller for the reason the table is:
-        # `ks sense` and `ks feature` must not be able to disagree about
+        # `ks check` and `ks feature` must not be able to disagree about
         # whether they mention what was not measured. No verdict column
         # and no duration - there is no verdict, and nothing was timed.
         lines.extend(gap.as_line() for gap in self.not_measured)
@@ -821,7 +821,7 @@ def _tamper_changes(prd: PRD, pre_run_prd_path: Path | None) -> list[str]:
     What the snapshot does NOT cover is everything else that reads this
     file, and a lot does: ``check_prd_stories`` below, the approved
     fixtures oracle, the acceptance criteria handed to the reviewer, the
-    R10.3 set-point sensor. None can be served from a snapshot, because
+    R10.3 claim check. None can be served from a snapshot, because
     the agent setting ``passes`` is the whole job, so the live file has
     to be trusted and a comparison is the only answer available for it.
     Drop this and an agent can delete an acceptance criterion or neuter
@@ -834,7 +834,7 @@ def _tamper_changes(prd: PRD, pre_run_prd_path: Path | None) -> list[str]:
     waving something through:
 
     - ``pre_run_prd_path`` is None. The caller has no trustworthy copy
-      to offer: ``ks sense`` judges an operator's own working tree.
+      to offer: ``ks check`` judges an operator's own working tree.
     - The pre-run copy will not load. A harness or operator condition,
       not something an agent can arrange from inside its worktree.
     - It is the SAME file, which is ``use_worktrees=False``: both reads
@@ -1433,7 +1433,7 @@ def check_linter(
 
 #: What the two diff-driven checks report when the diff handed them nothing.
 #:
-#: One constant because the dampener turns a row's message into the REASON a
+#: One constant because the baseline turns a row's message into the REASON a
 #: check is unmeasured, and round 2 of review on #357 found the two checks
 #: disagreeing about the same empty diff - one measured, one did not. They sit
 #: on the same `git diff`, so they answer this question together or the
@@ -1677,7 +1677,7 @@ def check_scope_unreadable(allowed_paths_error: str) -> CheckResult:
         # gate still fails closed; what `measured=False` buys is that the
         # signature never enters a baseline, so repairing the harness is not
         # reported as a fix and the check leaving `measured_checks` is not
-        # reported as a sensor that stopped.
+        # reported as a check that stopped.
         passed=False,
         measured=False,
         message="Scope could not be read at plan time; failing closed",
@@ -1738,7 +1738,7 @@ def check_diff_scope(
 
     if not allowed_paths:
         # #227: a VACUOUS pass. It reads no diff and applies no rule, so it
-        # proves nothing about scope. `ks sense` with no --allowed-path takes
+        # proves nothing about scope. `ks check` with no --allowed-path takes
         # this branch every time, and with measured=True it cleared: measured
         # on the head of #357, a baseline carrying
         # `diff_scope:files-outside-allowed-scope-diff-vs-base-branch` was
@@ -1984,7 +1984,7 @@ def _scan_changed_python(
 
     ``preexisting`` is the findings this branch did not write: counted in
     the row's ``message`` and listed in its ``details`` for
-    ``ks sense --json``, though ``VerificationResult.report_lines`` and
+    ``ks check --json``, though ``VerificationResult.report_lines`` and
     ``as_context`` skip a PASSING check's details, so the terminal report
     an operator reads shows only the count (#425 review, finding 4).
 
@@ -2053,7 +2053,7 @@ def check_bad_patterns(
     check earns that: ``py_compile.compile`` defaults its output to
     ``<dir>/__pycache__/<name>.pyc`` NEXT TO the source, so scanning
     used to leave bytecode behind - noise in the factory's own diff,
-    and a write ``ks sense`` (R10.1) promises never to make. Directing
+    and a write ``ks check`` (R10.1) promises never to make. Directing
     ``cfile`` at a throwaway directory keeps the ``PyCompileError``
     type and message byte-identical; only the destination moves.
 
@@ -2082,7 +2082,7 @@ def check_bad_patterns(
     since that is where the content came from. A base read that cannot be
     done keeps the finding: this is a clearing mechanism, and one that
     cannot prove must flag. A dropped finding is counted in the row's
-    ``message`` and listed in its ``details`` for ``ks sense --json``;
+    ``message`` and listed in its ``details`` for ``ks check --json``;
     ``VerificationResult.report_lines`` and ``as_context`` skip a passing
     check's details, so the terminal report an operator reads shows only
     the count (#425 review, finding 4).
@@ -2548,7 +2548,7 @@ def _changed_non_test_python(
 
 #: The ``read_only`` detail both mutmut-backed checks (#152 simplify
 #: pass, B4) return, byte-identical: mutmut REWRITES the file it
-#: mutates, so neither can run under ``ks sense``. One string rather
+#: mutates, so neither can run under ``ks check``. One string rather
 #: than two copies 300 lines apart drifting on the next edit.
 _MUTMUT_READ_ONLY_DETAIL = "mutmut rewrites the files it mutates and cannot run read-only"
 
@@ -2682,7 +2682,7 @@ def check_mutation_score(
     NotMeasured rather than a not-measured STATUS on the row, because
     ``passed`` is the only field every consumer reads: a third state
     there still reads as a pass through ``all(c.passed ...)``,
-    ``report_lines``, ``ks sense --json`` and that reviewer prompt, for
+    ``report_lines``, ``ks check --json`` and that reviewer prompt, for
     every reader not yet taught the new field. Absence from ``checks``
     is also the convention this repo already wrote down - see
     :func:`kstrl.feature_verify` on its own suppressed checks, "the
@@ -2790,7 +2790,7 @@ def _last_output_line(result: subprocess.CompletedProcess[str]) -> str:
     caller for that case.
 
     Capped for the reason git.py caps its stderr at 500: this reaches
-    ``ks sense --json`` and the terminal, and one unbroken line of tool
+    ``ks check --json`` and the terminal, and one unbroken line of tool
     output has no bound.
 
     Each side is stripped BEFORE the choice, not after: ``stderr or
@@ -3275,7 +3275,7 @@ def _patch_coverage_checks(
     :func:`_mutation_checks`. mutmut skips under ``read_only`` because it
     REWRITES the files it mutates; the coverage run has no such property
     (D3's ``COVERAGE_FILE`` redirect writes nothing into the tree), so
-    ``ks sense`` measures this check too - the cheap way to collect the
+    ``ks check`` measures this check too - the cheap way to collect the
     distribution a future floor will be set from, across repositories,
     without factory spend.
 
@@ -3852,10 +3852,10 @@ def _diff_mutation_checks(
     BOTH switches are read, for the reason :func:`_patch_coverage_checks`
     gives: a check nobody asked for records nothing at all.
 
-    ``read_only=True`` (``ks sense``) is a gap here, the OPPOSITE of
+    ``read_only=True`` (``ks check``) is a gap here, the OPPOSITE of
     Layer 1's D8: mutmut REWRITES the file it mutates, so this cannot run
     read-only at all, while Layer 1's coverage run writes nothing into
-    the tree and does run under ``ks sense``.
+    the tree and does run under ``ks check``.
 
     ``coverage is None`` means Layer 1 either was never asked to run or
     ran and produced no measurement; config validation
@@ -4063,7 +4063,7 @@ def _ruff_count(output: str, *, read_only: bool, returncode: int) -> int | None:
     The read-only number is the ``[*]`` count, not the ``Found`` count.
     They differ by the unsafe fixes: on one measured tree ``Found 3
     errors.`` sat above ``[*] 2 fixable``, and the fixing run on the
-    same tree removed 2. Reading ``Found`` there made ``ks sense`` and
+    same tree removed 2. Reading ``Found`` there made ``ks check`` and
     the factory report different numbers for the same tree while the
     message called them "auto-removable" (#335 round 2).
 
@@ -4227,14 +4227,14 @@ def check_dead_code_ruff(
     :func:`_tool_failure_line` reads the first ``error:`` line and not
     the last one, which is ``For more information, try '--help'.``
     A project's own pinned ruff is far past 0.2.0; the reachable case is
-    ``ks sense`` against a live checkout with a system-wide old ruff
+    ``ks check`` against a live checkout with a system-wide old ruff
     first on PATH (#335 round 3).
 
-    ``read_only=True`` (``ks sense``, R10.1) runs the SAME rule set with
+    ``read_only=True`` (``ks check``, R10.1) runs the SAME rule set with
     ``--no-fix`` and reports what the factory WOULD have removed instead
     of removing it. Nothing is edited, staged or committed. The factory
     owns the worktree it verifies, so editing and committing there is
-    free; ``ks sense`` runs against the operator's live checkout, where
+    free; ``ks check`` runs against the operator's live checkout, where
     a ``git add -A`` sweeps in every unrelated untracked file and the
     commit moves their HEAD.
 
@@ -4763,7 +4763,7 @@ def run_undiffed_verification(
     This owns all of them. There is no parameter here for anything that
     consumes a diff, so the four suppressed by config and the four
     suppressed by argument are suppressed the same way: by not being
-    reachable. ``read_only=True`` for the same reason ``ks sense`` uses
+    reachable. ``read_only=True`` for the same reason ``ks check`` uses
     it (R10.1) - the two checks that would rewrite the tree they measure
     are forbidden.
 
@@ -4902,7 +4902,7 @@ def run_mechanical_verification(
     which covers the half that keyword-only does not). Cost: none. No
     caller passed any of them positionally.
 
-    ``prd_path=None`` (R10.1, ``ks sense``) skips the PRD-dependent
+    ``prd_path=None`` (R10.1, ``ks check``) skips the PRD-dependent
     checks: ``prd_stories``, the approved-fixtures oracle (fixtures are
     declared in the PRD), and ``self_critique`` unless
     ``config.progress_file_path`` names the log explicitly (with no PRD
@@ -4912,7 +4912,7 @@ def run_mechanical_verification(
     ``harness_paths`` (#264) is the per-component carve-out for kstrl's
     OWN files, forwarded to ``check_diff_scope``. It reaches the factory
     from the run's plan-time scope snapshot (``scope.RunScope``), which
-    is also where ``allowed_paths`` comes from; ``ks sense`` leaves both
+    is also where ``allowed_paths`` comes from; ``ks check`` leaves both
     None because it judges an operator's diff, not a factory
     component's.
 
@@ -4920,13 +4920,13 @@ def run_mechanical_verification(
     could not read the component's scope at all. It replaces the
     ``diff_scope`` comparison with ``scope_unreadable``, an ungated
     fail-closed refusal named for its own cause (#294) - see
-    ``_scope_checks``. Any non-None value refuses, empty included. ``ks sense`` never sets it: it
+    ``_scope_checks``. Any non-None value refuses, empty included. ``ks check`` never sets it: it
     has no plan-time snapshot, so its scope is whatever
     ``--allowed-paths`` gave it.
 
     ``pre_run_prd_path`` (#269) is the copy of ``prd_path`` the run
     started with, forwarded to ``check_prd_stories``, which fails closed
-    on a PRD the component rewrote. Also None for ``ks sense``: there is
+    on a PRD the component rewrote. Also None for ``ks check``: there is
     no pre-run copy to compare an operator's working tree against.
 
     ``fixtures_config`` (R7.2): when provided AND ``.enabled`` is true,
@@ -4935,7 +4935,7 @@ def run_mechanical_verification(
     ``kstrl.fixtures``. ``component_id`` keys the fixture snapshot
     used for regression detection; None disables snapshotting only.
 
-    ``read_only=True`` (``ks sense``, R10.1) forbids the two checks that
+    ``read_only=True`` (``ks check``, R10.1) forbids the two checks that
     change the tree they measure: ``dead_code_ruff`` drops its auto-fix
     and the ``git add -A`` / ``git commit`` that followed it, and
     ``mutation_testing`` and ``diff_mutation`` (#152) are not run at all -

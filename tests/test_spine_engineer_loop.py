@@ -167,7 +167,7 @@ class TestEngineerLoopPlumbing:
 
 KNOWLEDGE_MARKER = "=== KNOWLEDGE (spine) ==="
 DECISIONS_MARKER = "## Architect Decisions"
-FEEDFORWARD_MARKER = "=== CODEBASE CONTEXT (auto-generated) ==="
+CODEBASE_SCAN_MARKER = "=== CODEBASE CONTEXT (auto-generated) ==="
 #: The delimiter carries a per-build random token (S4), so the spine
 #: matches its fixed prefix and the unit tests check the token's shape.
 GOLDEN_MARKER = "=== GOLDEN PATTERNS (operator-authored) KSTRL-DATA-"
@@ -179,7 +179,7 @@ MEMORY_MARKER = f"=== {MEMORY.header} KSTRL-DATA-"
 MEMORY_END_MARKER = f"=== END {MEMORY.header} KSTRL-DATA-"
 MEMORY_REL = "scripts/kstrl/memory.md"
 
-FEEDFORWARD_CONFIG: dict[str, object] = {
+CODEBASE_SCAN_CONFIG: dict[str, object] = {
     "enabled": True,
     "module_map": True,
     "public_interfaces": False,
@@ -196,11 +196,11 @@ FEEDFORWARD_CONFIG: dict[str, object] = {
 #: is a second path to one fixture and cost a wrapper method that nothing
 #: called. One definition, called by name.
 def _repo_with_source(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
-    """A spine repo whose worktree has a module for feedforward to see.
+    """A spine repo whose worktree has a module for codebase scan to see.
 
-    Committed on main BEFORE the worktree is cut, because feedforward
+    Committed on main BEFORE the worktree is cut, because codebase scan
     reads the worktree, and an empty module map would make the
-    feedforward block "" and the ordering assertion vacuous.
+    codebase scan block "" and the ordering assertion vacuous.
     """
     tmp_path.mkdir(parents=True, exist_ok=True)
     root = tmp_path / "repo"
@@ -240,7 +240,7 @@ def _run(
         0.0,  # sleep_seconds
         previous_context_json=previous_context_json,
         max_iterations=max_iterations,
-        feedforward_config_dict=FEEDFORWARD_CONFIG,
+        codebase_scan_config_dict=CODEBASE_SCAN_CONFIG,
         knowledge_prefix=KNOWLEDGE_MARKER,
         decisions_prefix=f"{DECISIONS_MARKER}\n\n- encoding: utf-8, named at every read",
     )
@@ -316,7 +316,7 @@ class TestGoldenPatternsReachTheEngineer:
         assert GOLDEN_MARKER in prompt
         assert "- atomic writes: see `kstrl/atomicio.py`" in prompt
 
-    def test_golden_block_between_knowledge_and_feedforward(self, tmp_path: Path) -> None:
+    def test_golden_block_between_knowledge_and_codebase_scan(self, tmp_path: Path) -> None:
         prompt = _prompt_after_run(
             tmp_path,
             lambda root, wt: _write(
@@ -331,7 +331,7 @@ class TestGoldenPatternsReachTheEngineer:
             prompt.index(KNOWLEDGE_MARKER)
             < prompt.index(GOLDEN_MARKER)
             < prompt.index(DECISIONS_MARKER)
-            < prompt.index(FEEDFORWARD_MARKER)
+            < prompt.index(CODEBASE_SCAN_MARKER)
         )
 
     def test_the_root_copy_is_read(self, tmp_path: Path) -> None:
@@ -415,7 +415,7 @@ class TestMemoryIsReadAfterTheRetryContext:
             prompt.index(KNOWLEDGE_MARKER)
             < prompt.index(GOLDEN_MARKER)
             < prompt.index(DECISIONS_MARKER)
-            < prompt.index(FEEDFORWARD_MARKER)
+            < prompt.index(CODEBASE_SCAN_MARKER)
             < prompt.index(RETRY_END_MARKER)
             < prompt.index(MEMORY_MARKER)
             < prompt.index(MEMORY_END_MARKER)

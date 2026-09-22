@@ -332,7 +332,10 @@ class TestAssertCensusWillNotPinAnEmptyNet:
                 sources=astwalk.package_sources(),
                 sees=half_dead,
                 expected={"feedforward.py": 2},
-                control=("import os\nos.getpgid(1)\n", 'import feedforward\nroot.rglob("*.py")\n'),
+                control=(
+                    "import os\nos.getpgid(1)\n",
+                    'import kstrl.feedforward\nroot.rglob("*.py")\n',
+                ),
                 message="unused",
             )
 
@@ -343,7 +346,10 @@ class TestAssertCensusWillNotPinAnEmptyNet:
             sources=astwalk.package_sources(),
             sees=lambda node: astwalk.spells("getpgid")(node) or astwalk.spells("rglob")(node),
             expected={"procgroup.py": 2, "feedforward.py": 2},
-            control=("import os\nos.getpgid(1)\n", 'import feedforward\nroot.rglob("*.py")\n'),
+            control=(
+                "import os\nos.getpgid(1)\n",
+                'import kstrl.feedforward\nroot.rglob("*.py")\n',
+            ),
             message="unused",
         )
 

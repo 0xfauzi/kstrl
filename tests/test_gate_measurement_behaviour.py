@@ -123,7 +123,7 @@ def test_a_gate_whose_tool_is_not_installed_measured_nothing(
     returned ``measured=True`` and the comparison reported
     ``fixed={'linter:E501': 12, 'linter:F401': 3}`` - uninstalling a linter read
     as fixing every one of its findings, which is precisely what
-    ``docs/dampener.md`` claimed the rule prevented.
+    ``docs/baseline.md`` claimed the rule prevented.
 
     Round 1 fixed that by refusing exit 126 and 127, and round 2 of review
     measured what that is worth on the commands this repository ships: `uv run
@@ -202,7 +202,7 @@ def test_a_failing_gate_that_printed_only_a_passing_footer_measured_nothing(
 
     What that weakening costs, once: on ``uv run pytest && npm test`` with
     pytest green and npm red, the gate would call itself measured on the
-    strength of the half that worked, and the dampener would then read every
+    strength of the half that worked, and the baseline would then read every
     signature the failed half used to report as FIXED.
 
     The second assertion is the control that stops this passing for the wrong
@@ -272,7 +272,7 @@ def test_a_gate_whose_secondary_parser_understood_the_output_measured(
     carries the raw tail. Recognition cannot travel that way: a footer the
     secondary understood would be dropped with the rest of its result, and a
     polyglot repository whose lint command runs eslint would have every clean
-    linter row read as a sensor that stopped measuring.
+    linter row read as a check that stopped measuring.
     """
     row = check_linter(tmp_path, command=ESLINT_FOOTER_COMMAND, timeout=30)
 
@@ -288,7 +288,7 @@ def test_a_gate_that_passed_did_measure(tmp_path: Path) -> None:
     passing case, while on a nonzero exit it settles nothing and the tool's own
     report is what says the gate measured. Recognition cannot serve here: it is
     a failure report by construction, so requiring it would mark every clean
-    run unmeasured and put every sensor permanently in the dark.
+    run unmeasured and put every check permanently in the dark.
     """
     assert_measured(check_linter(tmp_path, command=PASSING_COMMAND, timeout=30))
 
@@ -362,7 +362,7 @@ def test_a_run_whose_gates_all_passed_still_passes(tmp_path: Path) -> None:
 
 
 def test_the_documented_missing_tool_rows_are_the_ones_measured() -> None:
-    """``docs/dampener.md`` prints the two rows this file drives.
+    """``docs/baseline.md`` prints the two rows this file drives.
 
     The doc has been wrong about this rule for two review rounds running: it
     stated the design when the code did something else, and then stated the
@@ -371,13 +371,13 @@ def test_the_documented_missing_tool_rows_are_the_ones_measured() -> None:
     exit codes included. Whitespace is collapsed because the doc aligns its
     columns and the alignment is not the claim.
     """
-    doc = (Path(__file__).resolve().parents[1] / "docs" / "dampener.md").read_text(encoding="utf-8")
+    doc = (Path(__file__).resolve().parents[1] / "docs" / "baseline.md").read_text(encoding="utf-8")
     flattened = " ".join(doc.split())
 
     for command, code in MISSING_COMMANDS.values():
         row = f"{command.replace(MISSING_TOOL, '<missing>')} -> exit {code}, measured=False"
         assert " ".join(row.split()) in flattened, (
-            f"docs/dampener.md does not carry the measured row {row!r}. The doc "
+            f"docs/baseline.md does not carry the measured row {row!r}. The doc "
             "and this test have to move together, or the doc goes back to "
             "stating a rule the code does not implement."
         )

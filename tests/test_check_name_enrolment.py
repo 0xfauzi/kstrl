@@ -292,7 +292,7 @@ EXPECTED_CATEGORIES = {
 #: :func:`_from_the_callers`.
 BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
     (
-        "kstrl/dampener.py",
+        "kstrl/baseline.py",
         "Baseline.from_document",
         "_signatures_field(raw, 'signatures')",
         "pass-through of a validated baseline FILE (#227): the names in it "
@@ -301,7 +301,7 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
         "it refuses a document whose keys are not non-empty strings",
     ),
     (
-        "kstrl/dampener.py",
+        "kstrl/baseline.py",
         "baseline_from_result",
         "dict(sorted(counts.items()))",
         "runtime composer over signature_counts_from_verification's output "

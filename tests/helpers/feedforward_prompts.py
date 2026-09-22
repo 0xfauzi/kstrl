@@ -1,8 +1,8 @@
 """Tables for the six #428 engineer-facing notices in ``kstrl/feedforward.py``.
 
-Everything ``build_feedforward_context`` returns is pasted into the engineer
+Everything ``build_codebase_scan_context`` returns is pasted into the engineer
 prompt, so each of these sentences is read by a model as part of its
-instructions. PR #417 removed "Raise feedforward.max_context_tokens to see
+instructions. PR #417 removed "Raise codebase_scan.max_context_tokens to see
 it." from the dependency graph's notice by hand and left no guard behind;
 measured on 6a354cc, putting a short imperative back into the #420 notice
 leaves the whole suite green (7203 passed, 0 failed). Enrolling the bodies is
@@ -14,12 +14,12 @@ They live here rather than in ``tests/test_prompt_versions.py`` for the reason
 
 ONE VERSION FOR THE SIX, as the #303 builder fragments do. The unit is the
 notice vocabulary one module delivers to one role, so a reword of any of them
-bumps ``FEEDFORWARD_NOTICE_PROMPT_VERSION``.
+bumps ``CODEBASE_SCAN_NOTICE_PROMPT_VERSION``.
 
 H2/H3 SCOPE. These are engineer-facing CONTEXT, like ``DECISIONS_CONTEXT_PROMPT``
 and the 53 #303 builder fragments: the calibration suite scores the architect,
 reviewer, security and distiller roles against planted-bug fixtures and has no
-fixture that scores a feedforward notice. They carry the H3 obligation (body,
+fixture that scores a codebase scan notice. They carry the H3 obligation (body,
 version and snapshot move together) and no H2 obligation the suite can
 discharge.
 
@@ -42,7 +42,7 @@ from kstrl import feedforward
 _NOTICES: tuple[tuple[ModuleType, str, tuple[str, ...]], ...] = (
     (
         feedforward,
-        "FEEDFORWARD_NOTICE_PROMPT_VERSION",
+        "CODEBASE_SCAN_NOTICE_PROMPT_VERSION",
         (
             "NO_SOURCE_ROOT_PROMPT",
             "NO_PUBLIC_SYMBOLS_PROMPT",

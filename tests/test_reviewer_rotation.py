@@ -8,7 +8,7 @@ Covers the three test surfaces the roadmap item names:
 - the homogeneity warning firing (resolver-level and through a real
   ``run_factory`` invocation),
 plus the calibration reviewer-override helpers that make the
-same-family vs cross-family baseline comparison capturable.
+same-family vs cross-family baseline capturable.
 """
 
 from __future__ import annotations

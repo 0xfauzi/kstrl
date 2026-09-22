@@ -12,7 +12,7 @@ Nine config surfaces map to kstrl.toml sections:
 KstrlConfig (agent/run/paths/git/ui), TimeoutConfig ([timeout]),
 KnowledgeConfig ([knowledge]), FactoryConfig ([factory]), VerifyConfig
 ([verify]), SecurityConfig ([security]), ContractConfig ([contract]),
-FeedforwardConfig ([feedforward]), EvolutionConfig ([evolution]).
+CodebaseScanConfig ([codebase_scan]), EvolutionConfig ([evolution]).
 KnowledgeConfig is consumed inside run_factory (factory.py calls
 ``KnowledgeConfig.load(root_dir)``), so its CLI-path coverage here is
 the loader round-trip plus the new ``from_env``.
@@ -32,7 +32,7 @@ import kstrl.cli as cli_mod
 import kstrl.evolution as evolution_mod
 from kstrl.evolution import EvolutionConfig
 from kstrl.factory import FactoryConfig
-from kstrl.feedforward import FeedforwardConfig
+from kstrl.feedforward import CodebaseScanConfig
 from kstrl.init_cmd import DEFAULT_KSTRL_TOML
 from kstrl.knowledge import KnowledgeConfig
 from kstrl.verify import VerifyConfig
@@ -152,13 +152,13 @@ class TestFactoryCommandTomlRoundTrip:
         assert result.exit_code == 0, result.output
         assert captured["factory_config"].contract_config is None
 
-    def test_feedforward_section(self, tmp_path: Path, captured: dict[str, Any]) -> None:
+    def test_codebase_scan_section(self, tmp_path: Path, captured: dict[str, Any]) -> None:
         (tmp_path / "kstrl.toml").write_text(
-            "[feedforward]\nmodule_map = false\nmax_context_tokens = 1234\n"
+            "[codebase_scan]\nmodule_map = false\nmax_context_tokens = 1234\n"
         )
         result = _invoke_factory(tmp_path)
         assert result.exit_code == 0, result.output
-        ff = captured["factory_config"].feedforward_config
+        ff = captured["factory_config"].codebase_scan_config
         assert ff is not None
         assert ff.module_map is False
         assert ff.max_context_tokens == 1234
@@ -208,11 +208,11 @@ class TestRunCommandTomlRoundTrip:
         assert sc is not None
         assert sc.mode == "advisory"
 
-    def test_feedforward_section(self, tmp_path: Path, captured: dict[str, Any]) -> None:
-        (tmp_path / "kstrl.toml").write_text("[feedforward]\nmax_context_tokens = 555\n")
+    def test_codebase_scan_section(self, tmp_path: Path, captured: dict[str, Any]) -> None:
+        (tmp_path / "kstrl.toml").write_text("[codebase_scan]\nmax_context_tokens = 555\n")
         result = _invoke_run(tmp_path)
         assert result.exit_code == 0, result.output
-        ff = captured["factory_config"].feedforward_config
+        ff = captured["factory_config"].codebase_scan_config
         assert ff is not None
         assert ff.max_context_tokens == 555
 
@@ -485,10 +485,10 @@ class TestTomlNotes:
 
 
 class TestNewFromEnv:
-    def test_feedforward_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("KSTRL_FEEDFORWARD_MAX_TOKENS", "123")
-        monkeypatch.setenv("KSTRL_FEEDFORWARD_MODULE_MAP", "false")
-        config = FeedforwardConfig.from_env()
+    def test_codebase_scan_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("KSTRL_CODEBASE_SCAN_MAX_TOKENS", "123")
+        monkeypatch.setenv("KSTRL_CODEBASE_SCAN_MODULE_MAP", "false")
+        config = CodebaseScanConfig.from_env()
         assert config.max_context_tokens == 123
         assert config.module_map is False
 
@@ -559,7 +559,7 @@ EXPECTED_SCAFFOLD_SECTIONS = {
     "inbox",
     "security",
     "contract",
-    "feedforward",
+    "codebase_scan",
     "knowledge",
     "evolution",
     "timeout",
@@ -641,7 +641,7 @@ EXPECTED_SCAFFOLD_KEYS = {
         "model",
     },
     "contract": {"mode", "test_command", "timeout"},
-    "feedforward": {
+    "codebase_scan": {
         "enabled",
         "module_map",
         "public_interfaces",
@@ -737,7 +737,7 @@ class TestInitScaffold:
         VerifyConfig.load(tmp_path)
         SecurityConfig.load(tmp_path)
         ContractConfig.load(tmp_path)
-        FeedforwardConfig.load(tmp_path)
+        CodebaseScanConfig.load(tmp_path)
         EvolutionConfig.load(tmp_path)
         KnowledgeConfig.load(tmp_path)
         TimeoutConfig.load(tmp_path)

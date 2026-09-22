@@ -354,7 +354,7 @@ class TestTheWalkAgainstTheRealPackage:
         68 was the number the private resolver in
         ``tests/test_timeout_enforcement.py`` found before it was migrated.
         The 69th is ``git.get_origin_slug`` (#227), which reads
-        ``remote.origin.url`` so a sense baseline can record which project
+        ``remote.origin.url`` so a baseline can record which project
         it is OF; it takes the module's ``DEFAULT_TIMEOUT`` like every
         other git helper, which is what the sibling guard checks. 70 and
         71 are ``kstrl/doctor.py`` (#198): ``git ls-files -z`` in

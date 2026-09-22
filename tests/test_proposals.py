@@ -22,9 +22,9 @@ Suggested change:
 > Pin every dependency version in pyproject.toml.
 """
 
-MANUAL_PROP = """# PROP-002: Bump feedforward budget
+MANUAL_PROP = """# PROP-002: Bump codebase scan budget
 **Type**: inferential
-**Target**: feedforward_config
+**Target**: codebase_scan_config
 
 Suggested change:
 
@@ -80,7 +80,7 @@ class TestParsing:
         assert [p.id for p in proposals] == ["PROP-001", "PROP-002", "PROP-003"]
         assert existing_proposal_titles(proposals_dir) == {
             "Always pin versions",
-            "Bump feedforward budget",
+            "Bump codebase scan budget",
         }
         assert list_proposals(tmp_path / "nope") == []
 
