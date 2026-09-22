@@ -7,18 +7,30 @@ required the reducer to decide what that event means.
 
 This census closes the set. ``kstrl.events._REGISTRY`` is every event
 type the stream can carry. The reducer's handled set is read from its
-source: every ``isinstance(event, <alias>.<Class>)`` in ``kstrl/reducer.py``,
-where ``<alias>`` is the name ``kstrl.events`` is imported as. A type in
-neither set fails, so a new event is a decision somebody writes down
-rather than a silent drop.
+source: every ``isinstance(event, <alias>.<Class>)`` in the module-level
+``apply()`` function of ``kstrl/reducer.py``, where ``<alias>`` is the
+name ``kstrl.events`` is imported as. A type in neither set fails, so a
+new event is a decision somebody writes down rather than a silent drop.
 
 "Folded" means named in an ``isinstance`` check in the test of an ``if``
-or ``elif`` anywhere in the module, including ``_infer_phase``, which only
-infers a phase. The census proves a type was DECIDED about, not that
-the decision reads its status field.
+or ``elif`` inside ``apply()``. The census proves a type was DECIDED
+about there, not that the decision reads its status field.
 
-It fails red, not blind. If the walk stops seeing handled types (the
-import is renamed, or the checks change shape), the handled set shrinks,
+Why only ``apply()`` and not the whole module: ``_infer_phase`` also
+names ``ComponentStarted``, ``ComponentCompleted`` and ``ComponentFailed``
+(it only infers ``comp.phase``, a display field, never ``comp.status``).
+Walking the whole module let it stand in for apply()'s real dispatch, so
+deleting apply()'s ``ComponentCompleted`` branch (or ``ComponentFailed``,
+or ``ComponentStarted``) left this census green: the type read as
+"folded" through a branch that never touched status (measured with a
+scratch mutation runner: all three STILL GREEN with their real branch
+gone). A clearing guard that can be satisfied by a branch other than the
+one it exists to prove is not narrow enough to clear anything.
+
+It fails red, not blind. If the walk stops seeing a module-level
+``apply`` (renamed, or no longer defined once, at module scope), it
+raises rather than silently finding zero branches. If the ``events``
+import is renamed or the checks change shape, the handled set shrinks,
 the registered types it no longer sees are in neither set, and the
 equality fails.
 """
@@ -45,6 +57,10 @@ DELIBERATELY_IGNORED: dict[str, str] = {
     "log": "operator narration, rendered by the activity feed, not the reducer",
     "phase_skipped": "recorded in the findings stream; the component's status is unchanged",
     "review_divergence": "a blocking divergence fails the component, which is folded",
+    "review_result": "phase only: _infer_phase maps it to a phase string; status is not folded",
+    "verification_result": (
+        "phase only: _infer_phase maps it to a phase string; status is not folded"
+    ),
 }
 
 
@@ -58,7 +74,20 @@ def _events_alias(tree: ast.Module) -> str:
     raise AssertionError("kstrl/reducer.py no longer imports kstrl.events as a module")
 
 
-def _isinstance_calls_in_if_tests(tree: ast.Module) -> list[ast.Call]:
+def _apply_function(tree: ast.Module) -> ast.FunctionDef:
+    """The one module-level ``apply`` function.
+
+    ``len(fns) != 1`` raises rather than returning nothing, so a rename
+    (or a split into two functions) fails this census red instead of
+    silently walking zero branches and reading as "nothing to fold".
+    """
+    fns = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "apply"]
+    if len(fns) != 1:
+        raise AssertionError("kstrl/reducer.py no longer defines exactly one module-level apply()")
+    return fns[0]
+
+
+def _isinstance_calls_in_if_tests(tree: ast.AST) -> list[ast.Call]:
     """Every ``isinstance(...)`` call inside the test of an ``if`` or ``elif``.
 
     Only branch tests count. ``apply`` also has the line
@@ -82,11 +111,12 @@ def _isinstance_calls_in_if_tests(tree: ast.Module) -> list[ast.Call]:
 
 
 def _handled_types() -> set[str]:
-    """Event types the reducer names in an ``isinstance`` branch test."""
+    """Event types ``apply()`` names in an ``isinstance`` branch test."""
     tree = ast.parse(Path(reducer.__file__).read_text(encoding="utf-8"))
     alias = _events_alias(tree)
+    apply_fn = _apply_function(tree)
     handled: set[str] = set()
-    for node in _isinstance_calls_in_if_tests(tree):
+    for node in _isinstance_calls_in_if_tests(apply_fn):
         if not (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Name)
