@@ -759,6 +759,29 @@ def _echo_journal_repairs(journal: EvolutionJournal, ui_impl: UI) -> None:
         ui_impl.warn(f"  {summary}")
 
 
+def _echo_iteration_criterion(
+    journal: EvolutionJournal,
+    trends: list[dict[str, Any]],
+    ui_impl: UI,
+) -> None:
+    """`ks evolve --status`'s verdict on #233's entry criterion.
+
+    A module-level helper rather than nine more lines inside ``evolve``,
+    and the reason is measured rather than stylistic: ``evolve`` sits at
+    cyclomatic 15 against ``cyclomatic_ratchet.py``'s limit of 10 and at
+    cognitive 23 against ``complexipy``'s 15. Both hooks fail a function
+    this commit makes worse, so a single added branch there fails the
+    commit. This helper adds no branch to ``evolve``.
+
+    The lines themselves are built by ``EvolutionJournal`` and not here,
+    so the journal path never reaches this module; see
+    ``iteration_criterion_lines``.
+    """
+    ui_impl.section("Iteration criterion (#233)")
+    for line in journal.iteration_criterion_lines(trends):
+        ui_impl.info(line)
+
+
 def _preflight_root(ctx: click.Context) -> Path:
     """The root the command is about to use, derived before it runs.
 
@@ -4452,12 +4475,18 @@ def evolve(
             sys.exit(0)
 
         for entry in trends:
+            failure = str(entry.get("common_failure", ""))[:40]
             ui_impl.info(
                 f"  {entry.get('run_id', '?')} | "
+                f"project={entry.get('project', '?')} "
                 f"completed={entry.get('completed', '?')} "
                 f"failed={entry.get('failed', '?')} "
-                f"retry_rate={entry.get('retry_rate', '?')}"
+                f"retry_rate={entry.get('retry_rate', '?')} "
+                f"avg_iterations={entry.get('avg_iterations', '?')} "
+                f"common_failure={failure}"
             )
+
+        _echo_iteration_criterion(journal, trends, ui_impl)
         sys.exit(0)
 
     if apply_id:

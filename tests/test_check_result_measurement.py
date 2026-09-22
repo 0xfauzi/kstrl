@@ -556,6 +556,11 @@ class TestEveryResultRowIsAccountedFor:
 EXPECTED_MEASUREMENT_READS: dict[str, int] = {
     # The baseline: which checks may have a missing signature read as fixed.
     "baseline.py: _measured_and_unmeasured: check.measured": 2,
+    # Not CheckResult.measured. IterationReading's own field, #233: whether
+    # a run's per-attempt iteration count could be proven from the journal,
+    # never a verdict on whether the run passed.
+    "evolution.py: iteration_criterion_verdict: r.measured": 1,
+    "evolution.py: EvolutionJournal.iteration_criterion_lines: reading.measured": 1,
     # The fixtures row folds its per-fixture measurements with `all`.
     "fixtures.py: check_fixtures: r.measured": 1,
     # Not CheckResult.measured. FactUtilization's own field, R8.
