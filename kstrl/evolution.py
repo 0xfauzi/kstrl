@@ -916,6 +916,28 @@ INFRASTRUCTURE_CHECKS: frozenset[str] = frozenset(
     name for name, category in _CATEGORY_BY_CHECK.items() if category == "infrastructure"
 )
 
+#: Check names ``EvolutionJournal.propose_improvements`` has a typed arm
+#: for. Hand-written because it is the arm list, not a slice of
+#: ``_CATEGORY_BY_CHECK``, and tied to the arms by an AST guard:
+#: ``tests/test_evolve_routing.py::TestRoutingIsClosedOverTheTable::
+#: test_the_arms_in_the_source_are_exactly_PROPOSAL_CHECKS`` parses the
+#: function and fails if the two disagree in EITHER direction. One
+#: vocabulary, because two definitions of the same judgement means the
+#: weaker one is the one the gate consults (#260).
+#:
+#: Disjoint from INFRASTRUCTURE_CHECKS by test, not by convention, so
+#: "which wins" is a question the router never has to answer.
+PROPOSAL_CHECKS: frozenset[str] = frozenset(
+    {
+        "linter",
+        "typecheck",
+        "test_suite",
+        "review",
+        "security",
+        SCOPE_UNREADABLE_CHECK,
+    }
+)
+
 # Cap on distinct per-check signatures so one catastrophic run (e.g. 40
 # distinct ruff rules) cannot flood the journal entry.
 _MAX_SIGNATURES_PER_CHECK = 5
@@ -998,6 +1020,70 @@ def category_for_check(check_name: str) -> str:
     patterns table; the ``ks evolve`` CLI prints the check name.
     """
     return _CATEGORY_BY_CHECK.get(check_name, "iteration")
+
+
+@dataclass(frozen=True)
+class PatternRouting:
+    """Where each cross-run pattern goes. Three buckets, one census.
+
+    The three tuples partition the input: their lengths sum to the
+    number of patterns routed, and ``tests/test_evolve_routing.py``
+    asserts that over every name in ``_CATEGORY_BY_CHECK``. A census
+    rather than a ledger of exceptions, because a ledger is closed only
+    over the shapes someone already enumerated (CLAUDE.md).
+
+    - ``mechanical``: something is broken, not a lesson. The pipeline
+      already opens a deduped ``ItemKind.HALTED_RUN`` inbox item for
+      this traffic (``kstrl/pipeline.py:2058``), so it has a
+      destination; what it must not have is a proposal telling an agent
+      to take extra care about a failed git push.
+    - ``lessons``: a check name ``propose_improvements`` has an arm for.
+    - ``unrouted``: everything else. This bucket exists because
+      ``category_for_check`` defaults an unenrolled name to
+      ``"iteration"``, a LEARNABLE category, so a two-way filter would
+      keep an unenrolled name and then silently produce nothing for it
+      once the generic arm is gone. Measured:
+      ``category_for_check("zzz-never-enrolled") == "iteration"``.
+      Anything that later feeds a store crossing repositories must
+      invert that default to "not a lesson" before it writes.
+    """
+
+    mechanical: tuple[FailurePattern, ...]
+    lessons: tuple[FailurePattern, ...]
+    unrouted: tuple[FailurePattern, ...]
+
+
+def route_patterns(patterns: list[FailurePattern]) -> PatternRouting:
+    """Split patterns into mechanical, lessons and unrouted.
+
+    Keyed on ``check_name`` through ``category_for_check``, never on the
+    stamped ``FailurePattern.category``. ``propose_improvements``
+    dispatches on ``check_name``, so routing on the other field would be
+    a second definition of the same judgement, and a record whose two
+    fields disagree would route one way and dispatch the other. The
+    stamped field stays what it has always been: what the evolve screen
+    displays.
+
+    Infrastructure is tested first. ``PROPOSAL_CHECKS`` and
+    ``INFRASTRUCTURE_CHECKS`` are asserted disjoint, so the order is
+    unobservable; it is written this way so a future overlap fails
+    closed rather than turning transport noise into agent advice.
+    """
+    mechanical: list[FailurePattern] = []
+    lessons: list[FailurePattern] = []
+    unrouted: list[FailurePattern] = []
+    for pattern in patterns:
+        if category_for_check(pattern.check_name) == "infrastructure":
+            mechanical.append(pattern)
+        elif pattern.check_name in PROPOSAL_CHECKS:
+            lessons.append(pattern)
+        else:
+            unrouted.append(pattern)
+    return PatternRouting(
+        mechanical=tuple(mechanical),
+        lessons=tuple(lessons),
+        unrouted=tuple(unrouted),
+    )
 
 
 def _check_signatures(check: CheckResult, limit: int | None) -> Counter[str]:
@@ -1868,25 +1954,25 @@ class EvolutionJournal:
                 )
 
             else:
-                # Generic proposal for unknown/iteration category patterns.
-                proposals.append(
-                    HarnessProposal(
-                        id=proposal_id,
-                        title=f"Investigate recurring failure: {pattern.error_signature}",
-                        description=(
-                            f"Pattern '{pattern.error_signature}' ({pattern.check_name}) "
-                            f"occurred {pattern.frequency} times. Manual investigation "
-                            f"recommended."
-                        ),
-                        proposal_type="computational",
-                        target="claude_md",
-                        suggested_change=(
-                            f"Add to CLAUDE.md:\n"
-                            f"> Known issue: '{pattern.error_signature}'. "
-                            f"Take extra care with this pattern."
-                        ),
-                        source_patterns=[pattern.description],
-                    )
+                # #217: the arm that wrote "Take extra care with this
+                # pattern" for every check name without a typed arm,
+                # including the three git-transport flakes that became
+                # prop-001..003.md. Deleted rather than narrowed: a
+                # proposal with no content is worse than no proposal.
+                #
+                # A raise, not a silent skip, because "produced nothing,
+                # quietly" is the failure direction this whole change
+                # exists to close: a caller that has not routed would
+                # get an empty list back and no way to tell it from a
+                # corpus with nothing in it. route_patterns() is what
+                # callers use to avoid this, and PROPOSAL_CHECKS and the
+                # arms above are held equal by an AST guard, so a caller
+                # that routed first cannot reach this line.
+                raise ValueError(
+                    f"propose_improvements has no arm for check name "
+                    f"{pattern.check_name!r}; route_patterns() puts it in "
+                    f"`unrouted` or `mechanical`. Call route_patterns() "
+                    f"first and pass only routing.lessons."
                 )
 
         return proposals
