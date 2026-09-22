@@ -114,6 +114,19 @@ class TestFetchRefuses:
         with pytest.raises(SignalsError, match="boom"):
             fetch_bugsink(_config())
 
+    def test_a_read_timeout_is_a_signals_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("KSTRL_SIGNALS_TOKEN", "tok-" + "0" * 36)
+
+        def _raise_timeout(*args: object, **kwargs: object) -> None:
+            raise TimeoutError("timed out")
+
+        import kstrl.signals as signals_mod
+
+        monkeypatch.setattr(signals_mod.urllib.request, "urlopen", _raise_timeout)
+
+        with pytest.raises(SignalsError, match="timed out"):
+            fetch_bugsink(_config())
+
 
 class TestTheTokenIsNeverInAMessage:
     def test_a_401_names_the_status_and_not_the_token(
