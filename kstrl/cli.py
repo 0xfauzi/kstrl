@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 if TYPE_CHECKING:
     from kstrl.adequacy import AdequacyConfig
     from kstrl.autonomy_replay import RunRecord
-    from kstrl.evolution import EvolutionConfig, EvolutionJournal
+    from kstrl.evolution import EvolutionConfig, EvolutionJournal, FailurePattern, PatternRouting
     from kstrl.interaction import InteractionChannel
     from kstrl.policy import PolicyConfig
 
@@ -4420,7 +4420,7 @@ def evolve(
     Agent Learnings section after confirmation; every other target
     prints manual instructions.
     """
-    from kstrl.evolution import EvolutionConfig, EvolutionJournal
+    from kstrl.evolution import EvolutionConfig, EvolutionJournal, route_patterns
 
     root_dir = root.resolve() if root else Path.cwd()
     force_rich = os.environ.get("GUM_FORCE") == "1"
@@ -4477,18 +4477,11 @@ def evolve(
     # Default: analyze and propose
     ui_impl.section("Evolution: Analyzing Runs")
     patterns = journal.get_cross_run_patterns(lookback_runs=evo_config.lookback_runs)
+    routing = route_patterns(patterns)
+    _report_patterns_and_readiness(journal, evo_config, patterns, routing, ui_impl)
 
     if not patterns:
-        ui_impl.info("No recurring failure patterns found across recent runs.")
-        ui_impl.info("Run more factory sessions to accumulate data.")
         sys.exit(0)
-
-    ui_impl.ok(f"Found {len(patterns)} recurring patterns")
-    for pattern in patterns:
-        ui_impl.info(
-            f"  [{pattern.check_name}] {pattern.description} "
-            f"(seen in {pattern.frequency} components)"
-        )
 
     # R6.3: honor [evolution] auto_propose - when disabled, evolve only
     # reports patterns and never writes proposal files.
@@ -4500,7 +4493,7 @@ def evolve(
         sys.exit(0)
 
     proposals_dir = root_dir / ".kstrl" / "proposals"
-    proposals = journal.propose_improvements(patterns)
+    proposals = journal.propose_improvements(list(routing.lessons))
     # Idempotence across repeated `ks evolve` runs: a proposal whose
     # title already exists on disk is the same pattern re-detected, not
     # new signal - skip it rather than duplicating files.
@@ -4530,6 +4523,110 @@ def evolve(
         ui_impl.info("No actionable proposals generated from current patterns.")
 
     sys.exit(0)
+
+
+def _report_patterns_and_readiness(
+    journal: EvolutionJournal,
+    evo_config: EvolutionConfig,
+    patterns: list[FailurePattern],
+    routing: PatternRouting,
+    ui_impl: UI,
+) -> None:
+    """Print the patterns found, the routing disclosure and the
+    readiness numbers, in that order, whether or not any pattern
+    recurred and whether or not proposals will follow.
+
+    Extracted out of ``evolve`` on its own (#217 added no new branch
+    here that the plan did not already ask for; this split keeps
+    ``evolve``'s own complexity from growing past the repo's ratchet).
+    """
+    if patterns:
+        ui_impl.ok(f"Found {len(patterns)} recurring patterns")
+        for pattern in patterns:
+            ui_impl.info(
+                f"  [{pattern.check_name}] {pattern.description} "
+                f"(seen in {pattern.frequency} components)"
+            )
+    else:
+        ui_impl.info("No recurring failure patterns found across recent runs.")
+        ui_impl.info("Run more factory sessions to accumulate data.")
+
+    _echo_pattern_routing(routing, ui_impl)
+    _echo_learning_readiness(journal, evo_config, patterns, ui_impl)
+
+
+def _echo_pattern_routing(routing: PatternRouting, ui_impl: UI) -> None:
+    """Name every pattern that will NOT become a proposal, and why.
+
+    This is a guard in the clearing direction: it drops traffic. The
+    repo's rule is that a guard which clears must be able to prove a
+    site compliant, and this one cannot prove an operator agrees with a
+    row of _CATEGORY_BY_CHECK. So it never drops anything silently: each
+    dropped pattern is printed under a heading naming its destination,
+    and the first time a row of that table is wrong the operator sees it
+    in this output.
+    """
+    from kstrl.evolution import category_for_check
+
+    if routing.mechanical:
+        ui_impl.section("Routed to the inbox (mechanical, not a lesson)")
+        for pattern in routing.mechanical:
+            ui_impl.info(
+                f"  [{pattern.check_name}] {pattern.error_signature} "
+                f"(infrastructure; the run already opened an inbox item, "
+                f"see `ks inbox`)"
+            )
+    if routing.unrouted:
+        ui_impl.section("Not routed (no proposal arm for this check name)")
+        for pattern in routing.unrouted:
+            ui_impl.info(
+                f"  [{pattern.check_name}] {pattern.error_signature} "
+                f"(category {category_for_check(pattern.check_name)}; no "
+                f"proposal is written for this check name)"
+            )
+        ui_impl.info(
+            "  A check name not in evolution._CATEGORY_BY_CHECK lands here "
+            "too, because its category falls back to 'iteration'."
+        )
+
+
+def _echo_learning_readiness(
+    journal: EvolutionJournal,
+    evo_config: EvolutionConfig,
+    patterns: list[FailurePattern],
+    ui_impl: UI,
+) -> None:
+    """Print the three numbers that gate the unbuilt phases of #217.
+
+    Sections 5.2 and 7 of docs/continuous-learning-design.md both say
+    the attribution thresholds must be measured before they are chosen,
+    and nothing reported the input to that measurement. These are reads
+    of aggregates that already existed. A command that says zero is
+    doing its job; that is what the instrument is for.
+
+    ``patterns`` is passed in rather than re-read. The caller has
+    already computed it from the same journal, and a second read is a
+    second answer to one question.
+    """
+    util = journal.get_fact_utilization(lookback_runs=evo_config.lookback_runs)
+    concern = journal.get_concern_hit_rate(lookback_runs=evo_config.lookback_runs)
+    ui_impl.section("Learning readiness")
+    ui_impl.info(
+        f"  recurring signatures (>= {evo_config.min_pattern_frequency} runs): {len(patterns)}"
+    )
+    ui_impl.info(
+        f"  fact utilization: measured {util['measured']}, unmeasured "
+        f"{util['unmeasured']}, referenced {util['referenced']}, "
+        f"runs_with_referenced {util['runs_with_referenced']}"
+    )
+    by_category = ", ".join(
+        f"{name} {count}" for name, count in sorted(concern["by_category"].items())
+    )
+    ui_impl.info(
+        f"  concern hit rate: {concern['with_concern']} of "
+        f"{concern['components']} components"
+        + (f", by category: {by_category}" if by_category else "")
+    )
 
 
 def _evolve_apply(
