@@ -390,6 +390,35 @@ def test_ks_evolve_a_row_missing_a_carried_field_breaks_the_copy_chain(tmp_path:
     assert "concern hit rate: 0 of 3 components" in out
 
 
+def test_ks_evolve_drops_a_copy_in_a_row_with_no_event_type(tmp_path: Path) -> None:
+    """A row written before #30 (2026-04-09) has neither ``event_type`` nor
+    ``schema_version``. ``carried_result_indices`` selects a component_result
+    row through the module idiom
+    ``entry.get("event_type", "component_result") != "component_result"``,
+    so a row with no ``event_type`` key at all is still a component_result
+    row and r2, a copy of r1, must still be dropped."""
+    kstrl_dir = tmp_path / ".kstrl"
+    kstrl_dir.mkdir()
+    rows = [
+        {
+            "run_id": r,
+            "component_id": "comp-a",
+            "status": "completed",
+            "retries": 0,
+            "iteration_count": 3,
+            "duration_seconds": 10.5,
+        }
+        for r in ("r1", "r2")
+    ]
+    (kstrl_dir / "evolution.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+    )
+
+    out = _evolve(tmp_path)
+
+    assert "concern hit rate: 0 of 1 components" in out
+
+
 # --- a component that ends MERGE_PENDING is journaled in the run that parked it
 
 
