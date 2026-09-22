@@ -18,7 +18,7 @@ from click.testing import CliRunner
 
 from kstrl.cli import cli
 from kstrl.config import KstrlConfig
-from kstrl.evolution import EvolutionConfig
+from kstrl.evolution import FINDINGS_SUPERSEDED_EVENT, EvolutionConfig
 from kstrl.factory import (
     ComponentResult,
     FactoryConfig,
@@ -473,7 +473,7 @@ class TestPerAttemptFindings:
 
         # Journal: superseded findings retained, tagged attempt:1.
         events = _journal_events(root)
-        superseded = [e for e in events if e["event_type"] == "findings_superseded"]
+        superseded = [e for e in events if e["event_type"] == FINDINGS_SUPERSEDED_EVENT]
         assert len(superseded) == 1
         assert superseded[0]["component_id"] == "comp-a"
         assert superseded[0]["attempt"] == 1

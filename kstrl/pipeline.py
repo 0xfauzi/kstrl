@@ -1408,15 +1408,34 @@ class ComponentPipeline:
             comp.evidence_debug_dir = str(debug_dir)
 
     def journal_superseded_findings(self, comp: Component) -> None:
-        """A scheduled retry supersedes the current attempt's findings.
-        Record them in the evolution journal (attempt-tagged) before the
-        next attempt clears the manifest stream, so superseded and
-        shipped findings stay distinguishable (R3.3). The final
-        attempt's findings reach the journal via record_run instead.
-        Non-fatal on I/O errors, matching _record_contract_event."""
-        if not comp.findings:
-            return
-        from kstrl.evolution import JOURNAL_SCHEMA_VERSION, EvolutionJournal
+        """A scheduled retry supersedes the current attempt. Record the
+        attempt's findings and iteration count in the evolution journal
+        (attempt-tagged) before the next attempt clears the manifest
+        stream, so superseded and shipped findings stay distinguishable
+        (R3.3). The final attempt's findings reach the journal via
+        record_run instead. Non-fatal on I/O errors, matching
+        _record_contract_event.
+
+        Writes the row whether or not the attempt produced any
+        ``Finding``: an attempt boundary is worth recording either way,
+        and a guard here used to drop the row entirely on a clean
+        attempt, which is the row #233's reader depends on
+        (``read_attempt_iterations``) to see every attempt.
+
+        ``iteration_count`` is the ENDING attempt's own count, not a
+        running total. ``process_result`` assigns it at
+        ``pipeline.py:2276`` before routing into any transition, and both
+        callers of this method run BEFORE the matching ``retries``
+        increment (``pipeline.py:1558``, ``factory.py:4517``), so
+        ``comp.retries + 1`` names the attempt the count belongs to. That
+        is the same expression ``PhaseStarted`` uses at
+        ``factory.py:4225``: one definition of the attempt number.
+        """
+        from kstrl.evolution import (
+            FINDINGS_SUPERSEDED_EVENT,
+            JOURNAL_SCHEMA_VERSION,
+            EvolutionJournal,
+        )
 
         journal = EvolutionJournal.open(self.root_dir, warn=self.ui.warn)
         if journal is None:
@@ -1427,8 +1446,9 @@ class ComponentPipeline:
             "run_id": self.run_id,
             "project": self.manifest.project_name,
             "component_id": comp.id,
-            "event_type": "findings_superseded",
+            "event_type": FINDINGS_SUPERSEDED_EVENT,
             "attempt": comp.retries + 1,
+            "iteration_count": comp.iteration_count,
             "failure_signatures": self.component_failure_signatures.get(
                 comp.id,
                 [],

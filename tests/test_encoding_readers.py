@@ -446,7 +446,9 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "doctor.py": 5,
     "factory.py": 13,
     "fixtures.py": 3,
-    "git.py": 59,
+    # 58: 57 since #435 (see git blame), +1 for `merge_base_ref`, hoisted
+    # here from `verify.py` by the #435 fix-round's A0.
+    "git.py": 58,
     "intake_github.py": 3,
     "licensing.py": 3,
     "observability.py": 5,
@@ -460,10 +462,9 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "timeout.py": 3,
     "tui/screens/home.py": 3,
     "tui/screens/retry.py": 2,
-    # 26 since #425: `_base_finding`'s `git show <base>:<path>` spawn and
-    # `_merge_base_ref`'s `git merge-base` spawn, both bytes-mode
-    # `subprocess.run` calls the base probe makes (#414/#425).
-    "verify.py": 26,
+    # 25: `_base_finding`'s `git show` spawn (#414/#425); the sibling
+    # `git merge-base` spawn moved to `git.py` with the #435 fix-round.
+    "verify.py": 25,
 }
 
 
@@ -479,7 +480,8 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     "breaker.py": 1,
     "doctor.py": 1,
     "factory.py": 3,
-    "git.py": 24,
+    # 23 since #435: `resolve_ref`'s deleted body held one text-mode spawn.
+    "git.py": 23,
     "intake_github.py": 1,
     "licensing.py": 1,
     "pr.py": 11,
@@ -574,13 +576,13 @@ EXPECTED_LENIENT_SPAWNS: tuple[str, ...] = (
 EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     "doctor.py": 1,
     "factory.py": 9,
-    "git.py": 6,
+    # 7: `merge_base_ref`'s `git merge-base` stdout, hoisted here from
+    # `verify.py` by the #435 fix-round, still decoded by hand.
+    "git.py": 7,
     "observability.py": 1,
     "retry_plan.py": 3,
-    # #414/#425: `_base_finding`'s `git show` and `_merge_base_ref`'s
-    # `git merge-base` stdout both go straight to `py_compile`/`.strip()`;
-    # neither is decoded in `verify.py`.
-    "verify.py": 2,
+    # 1: `_base_finding`'s `git show` (#414/#425); its sibling moved above.
+    "verify.py": 1,
 }
 
 

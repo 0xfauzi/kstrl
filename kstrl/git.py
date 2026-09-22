@@ -552,6 +552,43 @@ def get_origin_slug(
     return "/".join(parts[-2:]) if len(parts) >= 2 else (parts[-1] if parts else None)
 
 
+def merge_base_ref(
+    base_label: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> str:
+    """The commit ``{base_label}...HEAD`` actually diffs against, or ``""``.
+
+    Hoisted from ``verify._merge_base_ref`` (#425) to ``kstrl/git.py`` so
+    it has the one owner every consumer that measures ``{ref}...HEAD``
+    can share (#435 review, finding A0): both
+    :func:`get_diff_name_status` and :func:`get_diff_content` spell their
+    diff ``{base_ref}...HEAD`` (three dots: git's own shorthand for
+    ``git merge-base base_ref HEAD``), and :func:`capture_workspace_baseline`
+    now anchors on the identical commit, so the in-loop guard and the
+    Phase 1 gate can no longer disagree about WHICH REVISION the base
+    names.
+
+    ``""`` whenever the merge base cannot be found: an absent ref,
+    unrelated histories, a timeout, or a spawn that could not run at all.
+    Every caller of this function treats ``""`` as a REFUSAL - never a
+    clear, never a "nothing changed" - so an uncertainty here is always
+    the side that keeps looking rather than the side that stands down.
+    """
+    try:
+        found = subprocess.run(
+            ["git", "merge-base", base_label, "HEAD"],
+            cwd=cwd,
+            capture_output=True,
+            timeout=timeout,
+        )
+        if found.returncode != 0:
+            return ""
+        return found.stdout.decode("utf-8").strip()
+    except Exception:
+        return ""
+
+
 def capture_workspace_baseline(
     cwd: Path | None = None,
     timeout: float = DEFAULT_TIMEOUT,
@@ -571,40 +608,38 @@ def capture_workspace_baseline(
 
     Falls back to HEAD when no ref is given or it cannot be resolved
     (``ks run`` outside a factory has no base branch), which is the
-    pre-existing behavior. Cheap: two plumbing calls, taken once per
-    loop rather than once per iteration.
+    pre-existing behavior. Cheap: a small, fixed number of plumbing
+    calls, taken once per loop rather than once per iteration.
+
+    The base is resolved through :func:`resolve_base_ref` (``origin/<base>``
+    preferred, R0.2) and then through :func:`merge_base_ref`, which anchors
+    on the MERGE BASE of that ref and HEAD, never the base branch's current
+    TIP (#435 review, finding A0). A tip anchor fixed #435's own shape -
+    a previous tier merged before the worktree was cut - but stayed wrong
+    the moment the base branch moves AFTER the cut, which the factory
+    makes routine: a sibling component's PR can squash-merge while this
+    component is still mid-loop, since ``refs/remotes/origin/*`` is
+    fetched into every worktree that shares the repository. A tip anchor
+    then blames the sibling's files on this engineer; the merge base does
+    not move, because it is the commit this worktree actually forked
+    from. This is the identical anchor :func:`get_diff_name_status` and
+    :func:`get_diff_content` already use via their three-dot diffs, so
+    the in-loop guard and the Phase 1 gate now measure the same
+    revision - which is the whole of #435's original complaint, restated
+    one layer down. Neither :func:`resolve_base_ref` nor
+    :func:`merge_base_ref` raises: both refuse by returning a fallback
+    value, so this function adds no try/except of its own, and a
+    genuine programming error in either one is not a candidate for the
+    HEAD fallback below - it propagates.
     """
-    head = resolve_ref(base_ref, cwd, timeout) if base_ref else None
+    head: str | None = None
+    if base_ref:
+        base_label = resolve_base_ref(base_ref, cwd, timeout)
+        head = merge_base_ref(base_label, cwd, timeout) or None
     return WorkspaceBaseline(
         head=head or get_head_sha(cwd, timeout),
         dirty=frozenset(get_changed_files(cwd, timeout)),
     )
-
-
-def resolve_ref(
-    ref: str,
-    cwd: Path | None = None,
-    timeout: float = DEFAULT_TIMEOUT,
-) -> str | None:
-    """The sha ``ref`` names, or None when it does not resolve.
-
-    Tries the local ref first, then ``origin/<ref>``: a fresh worktree
-    may carry the remote-tracking ref only.
-    """
-    for candidate in (ref, f"origin/{ref}"):
-        try:
-            result = subprocess.run(
-                ["git", "rev-parse", "--verify", "--quiet", f"{candidate}^{{commit}}"],
-                cwd=cwd,
-                capture_output=True,
-                encoding="utf-8",
-                timeout=timeout,
-            )
-        except subprocess.TimeoutExpired:
-            return None
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
-    return None
 
 
 def get_changed_files_since(
