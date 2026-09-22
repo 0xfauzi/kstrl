@@ -37,6 +37,7 @@ from __future__ import annotations
 import ast
 import contextlib
 import io
+import threading
 from pathlib import Path
 from unittest.mock import patch
 
@@ -380,51 +381,81 @@ class TestAnOperatorDecisionSurvivesTheCompletionRace:
     with ``get()`` outside any lock and then unconditionally overwrote its
     status. An operator's ``approve``/``reject``/``snooze`` landing after
     ``_inbox_resolve_component``'s ``items()`` selection and before that
-    write was silently lost - the lane's ``race.py`` demonstrated it
-    ending ``resolved by system``. The fix moves the precondition to the
+    write was silently lost. The fix moves the precondition to the
     writer: ``resolve(..., only_from=UNDECIDED)`` re-folds the FRESH row
     and the write itself and its check inside one ``control_lock`` hold,
     so a decision that has already landed by then survives.
 
-    The race is injected at ``Inbox.get`` - the fresh fold ``_decide``'s
-    ``only_from`` branch performs - rather than by spinning up a second
-    ``Inbox`` and calling ``approve()`` on it: that fold runs inside the
-    lock ``resolve()`` already holds, and ``flock`` is not reentrant
-    across a second open of the same lock file even in one process (a
-    second acquire would self-deadlock). Writing the operator's decision
-    with ``_append_unlocked`` instead is the same effect on the log a
-    genuinely concurrent writer would have produced by the time this
-    process's lock-protected fold runs.
+    This drives the real entry point, ``pipeline.repoll_merge_pending()``,
+    not the helper ``_inbox_resolve_component`` directly, and the race is
+    a genuinely concurrent second thread and a second ``Inbox`` instance,
+    not a write injected ahead of the fold it is meant to race. ``Inbox.get``
+    is patched so that on the first call for the gate's id (the fresh fold
+    ``_decide``'s ``only_from`` branch performs, itself already inside
+    ``control_lock``) it starts a thread that opens a fresh ``Inbox`` and
+    calls ``approve()``. That thread's own write goes through ``_append``,
+    which takes the SAME lock file - ``flock`` conflicts between two opens
+    even in one process - so with the fix the thread blocks until the
+    resolve's write completes and releases the lock, and the operator's
+    approve lands last in the log. ``thread.join(timeout=1.0)`` inside the
+    patched ``get`` is expected to time out while the outer lock is held;
+    the row returned is the one read before the race, exactly as a
+    genuinely concurrent reader would see it.
     """
 
-    def test_an_approve_landing_between_selection_and_write_survives(self, tmp_path: Path) -> None:
-        pipeline, _manifest, _result, _calls = _make_pipeline(tmp_path)
+    def test_an_approve_landing_during_the_repoll_resolve_survives(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("kstrl.pr.is_gh_available", lambda: True)
+        monkeypatch.setattr(
+            "kstrl.pr.wait_for_merge", lambda *a, **k: MergeConfirmation(state="merged")
+        )
+        monkeypatch.setattr("kstrl.git.fetch_base_branch", lambda *a, **k: None)
+        pipeline, manifest, _result, _calls = _make_pipeline(
+            tmp_path, config=_factory_config(create_prs=True)
+        )
+        comp = manifest.get_component(COMP)
+        assert comp is not None
+        comp.status = ComponentStatus.MERGE_PENDING.value
+        comp.pr_number = 7
+        comp.pr_url = "https://x/pull/7"
         box = Inbox(tmp_path, InboxConfig())
-        gate = box.add(ItemKind.MERGE_GATE, "merge unconfirmed", component=COMP)
+        gate = box.add(
+            ItemKind.MERGE_GATE, "merge unconfirmed", component=COMP, dedupe_key=f"merge:{COMP}"
+        )
         real_get = Inbox.get
         landed = False
+        holder: dict[str, threading.Thread] = {}
 
         def get_with_operator_race(self: Inbox, item_id: str) -> InboxItem | None:
             nonlocal landed
+            row = real_get(self, item_id)
             if item_id == gate.id and not landed:
                 landed = True
-                operator_copy = real_get(self, item_id)
-                assert operator_copy is not None
-                operator_copy.status = ItemStatus.APPROVED
-                operator_copy.decided_by = "operator"
-                operator_copy.decision_comment = "ship it"
-                self._append_unlocked(operator_copy)
-            return real_get(self, item_id)
+
+                def _approve() -> None:
+                    Inbox(tmp_path, InboxConfig()).approve(
+                        gate.id, actor="operator", comment="ship it"
+                    )
+
+                thread = threading.Thread(target=_approve)
+                holder["thread"] = thread
+                thread.start()
+                thread.join(timeout=1.0)
+            return row
 
         with patch.object(Inbox, "get", get_with_operator_race):
-            pipeline._inbox_resolve_component(COMP)
+            pipeline.repoll_merge_pending()
+
+        thread = holder["thread"]
+        thread.join(timeout=10)
+        assert not thread.is_alive(), "operator approve never finished"
 
         final = Inbox(tmp_path, InboxConfig()).get(gate.id)
         assert final is not None
-        assert (final.status, final.decided_by, final.decision_comment) == (
+        assert (final.status, final.decided_by) == (
             ItemStatus.APPROVED,
             "operator",
-            "ship it",
         ), final
 
 
