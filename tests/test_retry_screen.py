@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
 from kstrl.launch import FactoryLaunch
 from kstrl.launch_record import write_launch_record
 from kstrl.manifest import Component, ComponentStatus, Manifest
@@ -213,6 +215,87 @@ class TestRetryScreen:
                 assert specs == []
                 assert _notified(app, RESUME_REFUSAL)
                 assert _notified(app, "ks retry")
+            mock_prepare.assert_not_called()
+
+        persisted = Manifest.load(manifest_file).get_component("comp-a")
+        assert persisted is not None
+        assert persisted.status == ComponentStatus.FAILED.value
+
+    async def test_launches_under_a_ceiling_from_kstrl_toml(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """B1: a kstrl.toml ceiling is not a recorded flag - the TUI's own
+
+        launch path (session.py -> launch.py -> FactoryConfig.load) loads
+        it the same way plan_resume did, so FactoryLaunch(manifest_path=...)
+        alone still runs under it and the TUI must not refuse.
+        """
+        monkeypatch.delenv("KSTRL_FACTORY_MAX_COST_USD", raising=False)
+        (tmp_path / "kstrl.toml").write_text("[factory]\nmax_cost_usd = 5\n", encoding="utf-8")
+        run_id = "factory-20260101-000000.000000-toml"
+        manifest_file = self._failed_manifest(tmp_path, run_id=run_id)
+        assert write_launch_record(tmp_path, run_id, manifest_file, (), 5.0) == []
+        app = _home_app(tmp_path)
+        specs: list[Any] = []
+        app.start_session = lambda spec: specs.append(spec) or FakeSession(tmp_path)
+        async with app.run_test(size=(130, 40)) as pilot:
+            app.push_screen(RetryScreen())
+            await mounted(pilot, lambda: app.screen, "#retry-table")
+            await drained(pilot, app.screen, what="on_mount to run")
+            await pilot.press("r")
+            await settled(
+                pilot,
+                lambda: not isinstance(app.screen, RetryScreen),
+                what="r to open the retry confirmation",
+            )
+            assert isinstance(app.screen, OptionsModal)
+            await pilot.press("1")  # Start retry
+            await settled(
+                pilot,
+                lambda: specs or _notified(app, RESUME_REFUSAL),
+                what="the confirmation to launch under the toml ceiling",
+            )
+            assert len(specs) == 1
+            assert isinstance(specs[0], FactoryLaunch)
+
+    async def test_refuses_a_retry_with_recorded_flags(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """B1: a recorded flag (not just a ceiling) has no FactoryLaunch field.
+
+        The run carried --max-parallel 1 with no cost ceiling; FactoryLaunch
+        cannot replay that flag, so the TUI must refuse.
+        """
+        run_id = "factory-20260101-000000.000000-flags"
+        manifest_file = self._failed_manifest(tmp_path, run_id=run_id)
+        flags = (("max_parallel", 1),)
+        assert write_launch_record(tmp_path, run_id, manifest_file, flags, 0.0) == []
+        app = _home_app(tmp_path)
+        specs: list[Any] = []
+        app.start_session = lambda spec: specs.append(spec) or FakeSession(tmp_path)
+        with patch("kstrl.tui.screens.retry.prepare_retry") as mock_prepare:
+            async with app.run_test(size=(130, 40)) as pilot:
+                app.push_screen(RetryScreen())
+                await mounted(pilot, lambda: app.screen, "#retry-table")
+                await drained(pilot, app.screen, what="on_mount to run")
+                await pilot.press("r")
+                await settled(
+                    pilot,
+                    lambda: not isinstance(app.screen, RetryScreen),
+                    what="r to open the retry confirmation",
+                )
+                assert isinstance(app.screen, OptionsModal)
+                await pilot.press("1")  # Start retry
+                await settled(
+                    pilot,
+                    lambda: _notified(app, RESUME_REFUSAL) or specs,
+                    what="the confirmation to refuse the uncarryable flags",
+                )
+                assert specs == []
+                assert _notified(app, RESUME_REFUSAL)
             mock_prepare.assert_not_called()
 
         persisted = Manifest.load(manifest_file).get_component("comp-a")

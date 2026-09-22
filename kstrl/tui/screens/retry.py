@@ -59,18 +59,19 @@ def _failed_components(manifest: Manifest) -> list[Component]:
 def _carry_problem(plan: ResumePlan | None, problems: list[str]) -> str | None:
     """Why the TUI cannot carry the retry's own resume plan, or None when it can.
 
-    FactoryLaunch carries only a manifest path, max_parallel and
-    review_mode - no cost ceiling and no arbitrary replayed flag. `ks
-    retry` re-enters through the CLI itself and can carry both (#436);
-    the TUI must refuse rather than launder either one away.
+    FactoryLaunch carries no cost ceiling as a field, but the TUI launch
+    path (kstrl/tui/session.py -> kstrl/launch.py::assemble_factory_configs
+    -> FactoryConfig.load) loads the same env/kstrl.toml ceiling
+    plan_resume resolved, so a ceiling above 0 is not laundered away and
+    needs no refusal here. `ks factory` recorded flags are a different
+    story: FactoryLaunch has no field for them, and re-entering through
+    the CLI is the only path that can replay them (#436), so the TUI
+    must refuse when the record carries any.
     """
     if plan is None:
         return "; ".join(problems)
-    if plan.argv or plan.max_cost_usd > 0:
-        return (
-            f"the recorded run's flags or its ${plan.max_cost_usd} cost "
-            "ceiling cannot be carried through the TUI"
-        )
+    if plan.argv:
+        return "the recorded run's flags cannot be carried through the TUI"
     return None
 
 
