@@ -286,7 +286,7 @@ class TestACompletedComponentClosesItsItems:
         still = Inbox(tmp_path, InboxConfig()).get(item.id)
         assert still is not None and still.status is ItemStatus.OPEN
         text = out.getvalue()
-        assert f"Inbox resolve for {COMP} failed" in text, text
+        assert f"WARN:   Inbox resolve for {COMP} failed" in text, text
         assert "disk full" in text, text
 
     def test_every_kind_is_resolved_and_a_decision_is_kept(self, tmp_path: Path) -> None:
