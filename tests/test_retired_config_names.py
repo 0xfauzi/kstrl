@@ -180,8 +180,8 @@ MIN_FILES_BY_EXTENSION: dict[str, int] = {
     ".example": 1,
     ".html": 1,
     ".json": 40,
-    ".md": 51,
-    ".py": 466,
+    ".md": 47,
+    ".py": 469,
     ".toml": 2,
     ".yaml": 1,
     ".yml": 6,
@@ -300,16 +300,29 @@ def _is_skipped_dir(rel: Path) -> bool:
 
 
 def _source_files() -> list[Path]:
-    """Every file this walk reads, as paths relative to REPO_ROOT."""
+    """Every file this walk reads, as paths relative to REPO_ROOT.
+
+    The corpus is what git TRACKS, not what is on disk: a filesystem
+    walk counts gitignored files such as ``.complexipy_cache/README.md``
+    (four of them on a developer machine, none in CI), and a floor
+    derived from that count fails on the checkout that lacks them.
+    """
+    listing = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=True,
+    ).stdout
     found: list[Path] = []
-    for path in sorted(REPO_ROOT.rglob("*")):
-        if not path.is_file():
+    for entry in sorted(listing.decode("utf-8").split("\0")):
+        if not entry:
             continue
-        rel = path.relative_to(REPO_ROOT)
+        rel = Path(entry)
         if _is_skipped_dir(rel):
             continue
-        relstr = rel.as_posix()
-        if relstr in SKIP_FILES or path.suffix not in WALK_EXTENSIONS:
+        if entry in SKIP_FILES or rel.suffix not in WALK_EXTENSIONS:
+            continue
+        if not (REPO_ROOT / rel).is_file():
             continue
         found.append(rel)
     return found
