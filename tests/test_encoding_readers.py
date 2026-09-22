@@ -451,8 +451,6 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "licensing.py": 3,
     "observability.py": 5,
     "pr.py": 18,
-    # The `gh pr view` reads moved here from `pr.py` for the 800-line
-    # ratchet (#154).
     "pr_state.py": 5,
     "procdispose.py": 10,
     "procgroup.py": 4,
