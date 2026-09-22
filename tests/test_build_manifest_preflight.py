@@ -19,7 +19,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from click.testing import CliRunner
 
+from kstrl.cli import cli
 from kstrl.launch import DecomposeLaunch
 from kstrl.tui.session import LaunchError, start_run_session
 from tests.helpers.gitrepo import git_in, set_identity
@@ -383,3 +385,17 @@ def test_the_home_shell_decompose_launch_honours_the_verify_escape(tmp_path: Pat
             )
     assert "kstrl will not create the build manifest" not in str(raised.value)
     assert get_agent.call_count == 1
+
+
+def test_a_defect_inside_the_build_manifest_check_is_a_traceback_not_a_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only a kstrl.toml that does not load (OSError, ValueError) is 'not evaluated'. A defect
+    inside the check must propagate, so a widened catch cannot hide it."""
+
+    def defect(root: Path, *, read_verify: bool = True) -> str | None:
+        raise TypeError("planted defect")
+
+    monkeypatch.setattr("kstrl.doctor.build_manifest_blocker", defect)
+    result = CliRunner().invoke(cli, ["doctor", "--root", str(tmp_path)])
+    assert isinstance(result.exception, TypeError), result.output
