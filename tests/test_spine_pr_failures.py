@@ -102,6 +102,24 @@ def _release_row(root: Path) -> dict[str, Any]:
     return data
 
 
+def _pr_merged_rows(root: Path) -> list[dict[str, Any]]:
+    """The data of every pr_merged row this run emitted.
+
+    The field on the EVENT is the audit trail the roadmap asked for;
+    the manifest copy alone would let the emit drop it with nothing red.
+    """
+    runs = sorted((root / ".kstrl" / "runs").iterdir())
+    assert runs, "no run dir written"
+    rows = [
+        json.loads(line)
+        for line in (runs[-1] / "events.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    merged = [r["data"] for r in rows if r["event"] == "pr_merged"]
+    assert all(isinstance(d, dict) for d in merged)
+    return merged
+
+
 def _run_real(
     root: Path,
     tmp_path: Path,
@@ -331,6 +349,8 @@ class TestSpineReleaseRef:
         )
         disk_shas = {c["id"]: c["mergeSha"] for c in on_disk["components"]}
         assert disk_shas == {"alpha": STUB_MERGE_SHA, "beta": STUB_MERGE_SHA}
+        merged_rows = _pr_merged_rows(root)
+        assert merged_rows and all(r["merge_sha"] == STUB_MERGE_SHA for r in merged_rows)
 
     def test_a_merge_with_no_published_commit_is_still_merged_and_records_nothing(
         self,
