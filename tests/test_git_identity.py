@@ -164,6 +164,11 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_spine_golden_patterns_e2e.py": 1,
     "tests/test_spine_retry_context.py": 5,
     "tests/test_spine_worktree.py": 5,
+    # #435: seven commits, all through tests.helpers.gitrepo.set_identity,
+    # into the fixture's own repo/wt1/merger repositories (the builder)
+    # and the fx.worktree / a plain local repo the individual tests
+    # commit into directly.
+    "tests/test_stale_base_ref.py": 7,
     "tests/test_state_dir_scope.py": 2,
     "tests/test_timeout_enforcement.py": 3,
     # Prose, not commits: assertion strings checking what

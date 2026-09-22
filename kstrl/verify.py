@@ -1807,8 +1807,12 @@ def check_diff_scope(
     violations = [f for f in changed if not path_is_allowed(f, effective)]
 
     if violations:
+        # #435: name the ref the diff was actually judged against.
+        # get_diff_names resolved it; saying "main" while measuring
+        # origin/main sends the engineer to revert against the wrong tree.
+        base_label = git.resolve_base_ref(base_branch, cwd)
         details = _diff_scope_details(
-            base_branch,
+            base_label,
             allowed_paths,
             harness_paths,
             violations,
@@ -1818,7 +1822,7 @@ def check_diff_scope(
             passed=False,
             message=(
                 f"{len(violations)} files outside allowed scope "
-                f"(diff vs base branch '{base_branch}')"
+                f"(diff vs base branch '{base_label}')"
             ),
             details=details,
             duration_seconds=time.monotonic() - start,

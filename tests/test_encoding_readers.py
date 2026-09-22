@@ -446,7 +446,10 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "doctor.py": 5,
     "factory.py": 13,
     "fixtures.py": 3,
-    "git.py": 59,
+    # 57 since #435: the deleted `resolve_ref` named `subprocess` twice
+    # (`subprocess.run` and `subprocess.TimeoutExpired`), so removing its
+    # body drops the count by two.
+    "git.py": 57,
     "intake_github.py": 3,
     "licensing.py": 3,
     "observability.py": 5,
@@ -479,7 +482,8 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     "breaker.py": 1,
     "doctor.py": 1,
     "factory.py": 3,
-    "git.py": 24,
+    # 23 since #435: `resolve_ref`'s deleted body held one text-mode spawn.
+    "git.py": 23,
     "intake_github.py": 1,
     "licensing.py": 1,
     "pr.py": 11,

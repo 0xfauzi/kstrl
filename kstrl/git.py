@@ -573,38 +573,39 @@ def capture_workspace_baseline(
     (``ks run`` outside a factory has no base branch), which is the
     pre-existing behavior. Cheap: two plumbing calls, taken once per
     loop rather than once per iteration.
+
+    The base is resolved through :func:`resolve_base_sha`, which walks
+    :func:`base_ref_candidates` and so prefers ``origin/<base>``. Local
+    first was the defect: after a squash merge lands on GitHub,
+    ``origin/<base>`` carries the previous tier and local ``<base>`` does
+    not, so the guard judged this engineer's diff against a tree missing
+    the work it was told to build on, and blamed the previous tier's
+    files on it (#435). The ``GitDiffError`` is caught rather than
+    propagated because the fallback to HEAD is this function's existing
+    documented contract for a base it cannot resolve; the resolver this
+    replaced signalled that with None and :func:`resolve_base_sha`
+    signals it by raising.
+
+    One behaviour does widen, stated rather than left to be found later:
+    the resolver this replaced caught ``subprocess.TimeoutExpired`` and
+    let ``OSError`` out, while :func:`resolve_base_sha` converts
+    ``OSError`` into ``GitDiffError``, so a machine with no git now
+    reaches the HEAD fallback instead of raising out of this function.
+    That is the answer the rest of this function already gives:
+    :func:`get_head_sha` catches ``(subprocess.TimeoutExpired, OSError)``
+    and returns None, so a no-git machine produced ``head=None`` from
+    this function either way.
     """
-    head = resolve_ref(base_ref, cwd, timeout) if base_ref else None
+    head: str | None = None
+    if base_ref:
+        try:
+            head = resolve_base_sha(base_ref, cwd, timeout)
+        except GitDiffError:
+            head = None
     return WorkspaceBaseline(
         head=head or get_head_sha(cwd, timeout),
         dirty=frozenset(get_changed_files(cwd, timeout)),
     )
-
-
-def resolve_ref(
-    ref: str,
-    cwd: Path | None = None,
-    timeout: float = DEFAULT_TIMEOUT,
-) -> str | None:
-    """The sha ``ref`` names, or None when it does not resolve.
-
-    Tries the local ref first, then ``origin/<ref>``: a fresh worktree
-    may carry the remote-tracking ref only.
-    """
-    for candidate in (ref, f"origin/{ref}"):
-        try:
-            result = subprocess.run(
-                ["git", "rev-parse", "--verify", "--quiet", f"{candidate}^{{commit}}"],
-                cwd=cwd,
-                capture_output=True,
-                encoding="utf-8",
-                timeout=timeout,
-            )
-        except subprocess.TimeoutExpired:
-            return None
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
-    return None
 
 
 def get_changed_files_since(
