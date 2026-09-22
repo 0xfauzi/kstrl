@@ -18,9 +18,11 @@ from kstrl.factory import (
     merge_gate_unreachable_warning,
     resolve_exit_code,
     run_factory,
+    run_is_clean,
 )
 from kstrl.knowledge import Fact, write_facts
 from kstrl.manifest import Component, ComponentStatus, Manifest
+from kstrl.release import ReleaseInputs, release_withheld
 from kstrl.review import ReviewMode, ReviewResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
@@ -1006,6 +1008,119 @@ class TestResolveExitCode:
         code, out = self._resolve(manifest, FactoryResult(failed=["a"]))
         assert code == 1
         assert out == ""
+
+
+class TestRunIsClean:
+    """#154 fix round, A1: one predicate, shared by resolve_exit_code and
+    the R8.7 release gate.
+
+    Before this, the release gate's own `run_clean` expression
+    (kstrl/factory.py) was a second, independent definition covering
+    only failed/contract_failures/merge_pending, missing `stopped` and
+    the #263 unfinished-components term - the #260 class: two
+    definitions of one verdict, and the gate consulting the weaker one.
+    Every case here asserts `run_is_clean` AGREES with
+    `resolve_exit_code`'s own exit-0-vs-nonzero verdict, which is the
+    property that makes divergence structurally impossible rather than
+    merely absent today.
+    """
+
+    @staticmethod
+    def _agrees(manifest: Manifest, result: FactoryResult, *, stopped: bool) -> bool:
+        buf = io.StringIO()
+        ui = PlainUI(no_color=True, file=buf)
+        code = resolve_exit_code(result, manifest, ui, stopped=stopped)
+        clean = run_is_clean(result, manifest, stopped=stopped)
+        return (code == 0) == clean
+
+    def test_a_stopped_run_is_not_clean_even_with_no_other_failure_term(self) -> None:
+        # The exact gap A1 found: a run resolve_exit_code marks 130
+        # (stopped) that the old run_clean expression, which never read
+        # `stopped`, would have called clean.
+        manifest = _make_manifest(
+            [Component("a", "A", "", [], "a.json", "b/a", status="completed")]
+        )
+        result = FactoryResult(completed=["a"], scheduled=["a"])
+        assert run_is_clean(result, manifest, stopped=True) is False
+        assert self._agrees(manifest, result, stopped=True)
+
+    def test_263_nothing_scheduled_is_not_clean(self) -> None:
+        manifest = _make_manifest([Component("a", "A", "", [], "a.json", "b/a", status="failed")])
+        result = FactoryResult()
+        assert run_is_clean(result, manifest, stopped=False) is False
+        assert self._agrees(manifest, result, stopped=False)
+
+    def test_a_component_left_short_by_an_earlier_run_is_not_clean(self) -> None:
+        manifest = _make_manifest([Component("a", "A", "", [], "a.json", "b/a", status="PENDING")])
+        result = FactoryResult()
+        assert run_is_clean(result, manifest, stopped=False) is False
+        assert self._agrees(manifest, result, stopped=False)
+
+    def test_skipped_only_nothing_completed_is_not_clean(self) -> None:
+        manifest = _make_manifest([Component("a", "A", "", [], "a.json", "b/a", status="skipped")])
+        result = FactoryResult(skipped=["a"], scheduled=["a"])
+        assert run_is_clean(result, manifest, stopped=False) is False
+        assert self._agrees(manifest, result, stopped=False)
+
+    def test_merge_pending_is_not_clean(self) -> None:
+        manifest = _make_manifest(
+            [Component("a", "A", "", [], "a.json", "b/a", status="merge_pending")]
+        )
+        result = FactoryResult(merge_pending=["a"], scheduled=["a"])
+        assert run_is_clean(result, manifest, stopped=False) is False
+        assert self._agrees(manifest, result, stopped=False)
+
+    def test_a_completed_scheduled_run_is_clean(self) -> None:
+        manifest = _make_manifest(
+            [Component("a", "A", "", [], "a.json", "b/a", status="completed")]
+        )
+        result = FactoryResult(completed=["a"], scheduled=["a"])
+        assert run_is_clean(result, manifest, stopped=False) is True
+        assert self._agrees(manifest, result, stopped=False)
+
+    def test_stopped_run_one_merged_rest_pending_names_the_stop_end_to_end(self) -> None:
+        """The A1 blocker's own reproduction: an operator-stopped run
+        with one component merged and the rest PENDING must record a
+        release reason that NAMES the stop, and resolve_exit_code must
+        still return 130 for the identical run."""
+        manifest = _make_manifest(
+            [
+                Component(
+                    "a",
+                    "A",
+                    "",
+                    [],
+                    "a.json",
+                    "b/a",
+                    status="completed",
+                    merge_sha="a" * 40,
+                    completed_at="2026-01-01T00:00:00Z",
+                ),
+                Component("b", "B", "", [], "b.json", "b/b", status="PENDING"),
+            ]
+        )
+        result = FactoryResult(completed=["a"], scheduled=["a"])
+
+        clean = run_is_clean(result, manifest, stopped=True)
+        assert clean is False
+
+        reason = release_withheld(
+            ReleaseInputs(
+                release_enabled=True,
+                environment="prod",
+                run_clean=clean,
+                stopped=True,
+                release_ref="a" * 40,
+                policy_enabled=True,
+                policy_deploy=True,
+                ladder_deploy_permitted=None,
+            )
+        )
+        assert reason == "run_stopped"
+
+        ui = PlainUI(no_color=True, file=io.StringIO())
+        code = resolve_exit_code(result, manifest, ui, stopped=True)
+        assert code == 130
 
 
 class TestRunFactorySchedulesNothing:

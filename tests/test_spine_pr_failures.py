@@ -403,3 +403,34 @@ class TestSpineReleaseRef:
         assert result.merge_pending == ["alpha"]
         row = _release_row(root)
         assert row["release_withheld"] == "run_not_clean"
+
+    def test_an_idempotent_rerun_does_not_replay_a_previous_runs_merge(
+        self,
+        tmp_path: Path,
+        stub_gh: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """#154 fix round, A1b: ``merge_sha`` persists on the manifest,
+        so a second run that merges nothing must not report the first
+        run's merge as its own release ref. Both components are already
+        COMPLETED with an old merge_sha/completed_at (as a real earlier
+        run would leave them); the scheduler launches neither, so
+        nothing this run does could produce a fresh merge."""
+        root = tmp_path / "repo"
+        init_kstrl_repo(root, ("alpha", "beta"), with_origin=True)
+        manifest = _alpha_beta_manifest()
+        for comp_id in ("alpha", "beta"):
+            comp = manifest.get_component(comp_id)
+            assert comp is not None
+            comp.status = ComponentStatus.COMPLETED.value
+            comp.merge_sha = STUB_MERGE_SHA
+            comp.completed_at = "2020-01-01T00:00:00Z"
+        _enable_release(root)
+
+        result, ran = _run_real(root, tmp_path, monkeypatch, manifest)
+
+        assert ran == []  # nothing scheduled: both already COMPLETED
+        assert result.exit_code == 0
+        row = _release_row(root)
+        assert row["release_ref"] == ""
+        assert row["release_withheld"] == "release_ref_unrecorded"
