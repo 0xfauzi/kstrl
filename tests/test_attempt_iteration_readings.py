@@ -277,6 +277,47 @@ class TestStrictReader:
             assert reading.iterations_total == 6
             assert reading.attempts_total == 2
 
+    def test_two_components_in_one_run_do_not_share_superseded_rows(self) -> None:
+        """The ``findings_superseded`` rows are grouped by ``component_id``
+        before ``_component_attempt_readings`` sees them, which is what
+        keeps one component's superseded rows out of another's attempt
+        set. Every existing test above exercises exactly one component per
+        run, so none of them observes the grouping: with a single
+        component there is only one component's rows to hand out, grouped
+        or not. Without the grouping, every multi-component run with a
+        retry reads both components' ``attempt: 1`` rows into the SAME
+        attempt set, ``attempt 1`` is then seen twice, and the run is
+        refused as "attempt 1 recorded twice" even though each component
+        retried exactly once. This test is the minimal shape (two
+        components, one retry each) that would fail that way if the
+        grouping were removed.
+        """
+        entries = []
+        for cid in ("comp-a", "comp-b"):
+            entries.append(
+                {
+                    "event_type": FINDINGS_SUPERSEDED_EVENT,
+                    "run_id": "r1",
+                    "component_id": cid,
+                    "attempt": 1,
+                    "iteration_count": 3,
+                }
+            )
+            entries.append(
+                {
+                    "event_type": "component_result",
+                    "run_id": "r1",
+                    "component_id": cid,
+                    "retries": 1,
+                    "iteration_count": 3,
+                }
+            )
+        reading = read_attempt_iterations(entries, "r1", 2)
+        assert reading.measured is True
+        assert reading.iterations_total == 12
+        assert reading.attempts_total == 4
+        assert reading.components_ran == 2
+
     def test_a_boolean_iteration_count_is_refused(self) -> None:
         entries = [
             {
