@@ -211,6 +211,16 @@ def test_the_no_tests_sentence_lives_in_the_shared_helper(fx: StaleBase) -> None
     assert "no tests were collected" in output
 
 
+def test_a_real_failure_is_not_called_an_empty_collection(tmp_path: Path) -> None:
+    """Exit 5 is the only code that means nothing ran. A condition
+    widened to `!= 0` staples pytest's no-collection sentence onto
+    every genuine failure and pushes 200 characters of the real
+    evidence past the 2000-character store."""
+    passed, output = contract._run_tests(tmp_path, "exit 1", 30.0)
+    assert passed is False
+    assert "no tests were collected" not in output
+
+
 def test_the_in_loop_scope_message_names_the_ref_it_judged(fx: StaleBase) -> None:
     rel = "components/storage/prd.json"
     (fx.worktree / "scripts" / "kstrl").mkdir(parents=True)
