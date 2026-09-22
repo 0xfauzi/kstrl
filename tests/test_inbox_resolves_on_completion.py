@@ -373,6 +373,61 @@ class TestAConfirmedMergeClosesEveryItemForTheComponent:
             assert "PR #7 merged" in decided.decision_comment, decided.decision_comment
 
 
+class TestAnOperatorDecisionSurvivesTheCompletionRace:
+    """#438 B1: the pipeline's ``undecided`` list is a snapshot, the write is not.
+
+    Before the fix, ``Inbox.resolve`` (via ``_decide``) re-read the item
+    with ``get()`` outside any lock and then unconditionally overwrote its
+    status. An operator's ``approve``/``reject``/``snooze`` landing after
+    ``_inbox_resolve_component``'s ``items()`` selection and before that
+    write was silently lost - the lane's ``race.py`` demonstrated it
+    ending ``resolved by system``. The fix moves the precondition to the
+    writer: ``resolve(..., only_from=UNDECIDED)`` re-folds the FRESH row
+    and the write itself and its check inside one ``control_lock`` hold,
+    so a decision that has already landed by then survives.
+
+    The race is injected at ``Inbox.get`` - the fresh fold ``_decide``'s
+    ``only_from`` branch performs - rather than by spinning up a second
+    ``Inbox`` and calling ``approve()`` on it: that fold runs inside the
+    lock ``resolve()`` already holds, and ``flock`` is not reentrant
+    across a second open of the same lock file even in one process (a
+    second acquire would self-deadlock). Writing the operator's decision
+    with ``_append_unlocked`` instead is the same effect on the log a
+    genuinely concurrent writer would have produced by the time this
+    process's lock-protected fold runs.
+    """
+
+    def test_an_approve_landing_between_selection_and_write_survives(self, tmp_path: Path) -> None:
+        pipeline, _manifest, _result, _calls = _make_pipeline(tmp_path)
+        box = Inbox(tmp_path, InboxConfig())
+        gate = box.add(ItemKind.MERGE_GATE, "merge unconfirmed", component=COMP)
+        real_get = Inbox.get
+        landed = False
+
+        def get_with_operator_race(self: Inbox, item_id: str) -> InboxItem | None:
+            nonlocal landed
+            if item_id == gate.id and not landed:
+                landed = True
+                operator_copy = real_get(self, item_id)
+                assert operator_copy is not None
+                operator_copy.status = ItemStatus.APPROVED
+                operator_copy.decided_by = "operator"
+                operator_copy.decision_comment = "ship it"
+                self._append_unlocked(operator_copy)
+            return real_get(self, item_id)
+
+        with patch.object(Inbox, "get", get_with_operator_race):
+            pipeline._inbox_resolve_component(COMP)
+
+        final = Inbox(tmp_path, InboxConfig()).get(gate.id)
+        assert final is not None
+        assert (final.status, final.decided_by, final.decision_comment) == (
+            ItemStatus.APPROVED,
+            "operator",
+            "ship it",
+        ), final
+
+
 # --- layer 2: the census ----------------------------------------------------
 
 #: The identifier and the value of the COMPLETED status. The identifier

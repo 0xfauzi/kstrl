@@ -62,7 +62,7 @@ from kstrl.findings import (
     finding_model,
     tag_finding_with_attempt,
 )
-from kstrl.inbox import Inbox, InboxError, ItemKind, ItemStatus, notifiable
+from kstrl.inbox import UNDECIDED, Inbox, InboxError, ItemKind, notifiable
 from kstrl.interaction import (
     CheckpointContext,
     InteractionChannel,
@@ -1888,10 +1888,17 @@ class ComponentPipeline:
         ``tests/test_inbox_resolves_on_completion.py`` counts those places
         and fails a new one that does not.
 
-        Undecided means OPEN or SNOOZED. A snoozed item comes back when
-        its TTL lapses, and it would come back asking about a component
-        that has already completed. APPROVED, REJECTED and RESOLVED are
-        decisions already made and are left as they are.
+        Undecided means OPEN or SNOOZED (``inbox.UNDECIDED``). A snoozed
+        item comes back when its TTL lapses, and it would come back
+        asking about a component that has already completed. APPROVED,
+        REJECTED and RESOLVED are decisions already made and are left as
+        they are - guaranteed at the WRITE, not by this list. The
+        ``undecided`` list below is a pre-filter built from a snapshot,
+        so an operator's ``approve``/``reject``/``snooze`` can land after
+        it and before ``resolve`` appends; ``only_from=UNDECIDED`` makes
+        ``resolve`` re-check the fresh status inside the same lock as its
+        write and, when the decision won, skip the append and hand back
+        ``None`` instead of overwriting it.
 
         Never fatal and never silent. The component's work is done and
         saved, so a broken inbox must not fail the run. The items stay
@@ -1909,12 +1916,12 @@ class ComponentPipeline:
             undecided = [
                 item
                 for item in self._inbox.items()
-                if item.component == comp_id
-                and item.status in (ItemStatus.OPEN, ItemStatus.SNOOZED)
+                if item.component == comp_id and item.status in UNDECIDED
             ]
             for item in undecided:
-                self._inbox.resolve(item.id, comment=comment)
-                self.ui.info(f"  Inbox: resolved {item.id[:8]} ({item.kind}): {comment}")
+                resolved = self._inbox.resolve(item.id, comment=comment, only_from=UNDECIDED)
+                if resolved is not None:
+                    self.ui.info(f"  Inbox: resolved {item.id[:8]} ({item.kind}): {comment}")
         except (OSError, TypeError, ValueError, InboxError, ControlStateError) as exc:
             # The tuple _inbox_resolve catches, for the reasons it gives.
             self.ui.warn(

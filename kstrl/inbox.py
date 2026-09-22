@@ -142,6 +142,15 @@ def _parse_iso(value: str) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
+#: The statuses ``InboxItem.is_open`` (below) treats as not yet decided:
+#: never actioned (OPEN), or actioned with a deferral that has not yet
+#: lapsed (SNOOZED, whatever its TTL). This is the vocabulary a WRITE must
+#: check the fresh row against before overwriting it - see ``Inbox._decide``
+#: ``only_from`` - not just the READ-time filter a caller builds a
+#: candidate list from, which can go stale before the write lands.
+UNDECIDED = frozenset({ItemStatus.OPEN, ItemStatus.SNOOZED})
+
+
 @dataclass
 class InboxItem:
     """One decision awaiting (or having received) a human.
@@ -498,8 +507,17 @@ class Inbox:
         return matches[-1]
 
     # -- writing -----------------------------------------------------------
-    def _append(self, item: InboxItem) -> None:
-        """Append one line, creating the file atomically on first write.
+    def _append_unlocked(self, item: InboxItem) -> None:
+        """Append one line. Caller already holds ``control_lock``.
+
+        Split out of :meth:`_append` so a caller that must fold (``get``)
+        and append under the SAME lock hold - the ``only_from`` precondition
+        in :meth:`_decide` - can call this instead of re-entering the lock.
+        ``fcntl.flock`` is not reentrant across two separate opens of the
+        lock file in one process: a second ``with control_lock(...):``
+        nested inside the first would deadlock a blocking acquire (or,
+        non-blocking, raise as if a different process held it), so the
+        locked body calls this bare method rather than :meth:`_append`.
 
         #331: through ``appendio``, which repairs an unterminated tail
         before appending onto it. Without that, a crash mid-write cost
@@ -517,10 +535,6 @@ class Inbox:
         one crashed. The tear is still surfaced by that same count,
         which is the point of the cap counting unreadable lines at all.
 
-        The ``control_lock`` is unchanged and still wraps the whole
-        probe and append, so #330's lock argument does not apply here:
-        this file already has the exclusion.
-
         The ``"a+b"`` open widens what can fail - an inbox this process
         can write but not read is refused rather than appended to
         blind - and this is the LOUDEST of the three sites that widened,
@@ -535,8 +549,17 @@ class Inbox:
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"schema_version": INBOX_SCHEMA_VERSION, **item.to_dict()}
         line = json.dumps(payload, separators=(",", ":"), default=str) + "\n"
+        append_records(path, line, repair="")
+
+    def _append(self, item: InboxItem) -> None:
+        """Append one line, creating the file atomically on first write.
+
+        The ``control_lock`` wraps the whole probe and append (via
+        :meth:`_append_unlocked`), so #330's lock argument does not apply
+        here: this file already has the exclusion.
+        """
         with control_lock(self.root_dir):
-            append_records(path, line, repair="")
+            self._append_unlocked(item)
 
     def add(
         self,
@@ -604,44 +627,81 @@ class Inbox:
         actor: str,
         comment: str = "",
         snooze_until: datetime | None = None,
-    ) -> InboxItem:
-        item = self.get(item_id)
-        if item is None:
-            raise InboxError(f"no inbox item matching {item_id!r}")
-        item.status = status
-        item.decided_at = _iso(_utc_now())
-        item.decided_by = actor
-        item.decision_comment = comment
-        item.snooze_until = _iso(snooze_until) if snooze_until else ""
-        self._append(item)
+        only_from: frozenset[ItemStatus] | None = None,
+    ) -> InboxItem | None:
+        """Fold ``item_id`` to ``status`` and append the decision.
+
+        With ``only_from`` given, the precondition lives at the WRITER,
+        not the caller's snapshot: the fold (``get``) and the append run
+        inside one ``control_lock`` hold, so nothing can land between
+        "read the current status" and "write the decision". If the
+        FRESH status (read inside that lock, not whatever the caller
+        filtered on) is not in ``only_from``, nothing is appended and
+        this returns ``None`` - the row an operator already decided
+        keeps that decision. Without ``only_from`` (the default), this
+        is the plain fold-and-append every hand-typed ``ks inbox``
+        command uses, where the caller IS the only writer that matters.
+        """
+
+        def _mutate(item: InboxItem) -> None:
+            item.status = status
+            item.decided_at = _iso(_utc_now())
+            item.decided_by = actor
+            item.decision_comment = comment
+            item.snooze_until = _iso(snooze_until) if snooze_until else ""
+
+        if only_from is None:
+            item = self.get(item_id)
+            if item is None:
+                raise InboxError(f"no inbox item matching {item_id!r}")
+            _mutate(item)
+            self._append(item)
+            return item
+
+        with control_lock(self.root_dir):
+            item = self.get(item_id)
+            if item is None:
+                raise InboxError(f"no inbox item matching {item_id!r}")
+            if item.status not in only_from:
+                return None
+            _mutate(item)
+            self._append_unlocked(item)
         return item
 
     def approve(self, item_id: str, *, actor: str, comment: str = "") -> InboxItem:
-        return self._decide(
-            item_id,
-            ItemStatus.APPROVED,
-            actor=actor,
-            comment=comment,
-        )
+        item = self._decide(item_id, ItemStatus.APPROVED, actor=actor, comment=comment)
+        assert item is not None  # only_from unset here; _decide always returns a row
+        return item
 
     def reject(self, item_id: str, *, actor: str, comment: str) -> InboxItem:
         """Reject. A comment is required: a bare "no" is not a decision
         anyone can act on later, least of all the person who made it."""
         if not comment.strip():
             raise InboxError("rejection requires a comment explaining why")
-        return self._decide(
-            item_id,
-            ItemStatus.REJECTED,
-            actor=actor,
-            comment=comment,
-        )
+        item = self._decide(item_id, ItemStatus.REJECTED, actor=actor, comment=comment)
+        assert item is not None  # only_from unset here; _decide always returns a row
+        return item
 
-    def resolve(self, item_id: str, *, actor: str = "system", comment: str = "") -> InboxItem:
+    def resolve(
+        self,
+        item_id: str,
+        *,
+        actor: str = "system",
+        comment: str = "",
+        only_from: frozenset[ItemStatus] | None = None,
+    ) -> InboxItem | None:
+        """Close an item as RESOLVED.
+
+        ``only_from``, when given, is the precondition on the FRESH row -
+        see ``Inbox._decide``. ``None`` back means the row was not in
+        ``only_from`` at write time and was left exactly as it was.
+        """
         return self._decide(
             item_id,
             ItemStatus.RESOLVED,
             actor=actor,
             comment=comment,
+            only_from=only_from,
         )
 
     def snooze(
@@ -654,13 +714,15 @@ class Inbox:
         ttl = self.config.snooze_hours if hours is None else hours
         if ttl <= 0:
             raise InboxError("snooze needs a positive TTL; use approve/reject to close")
-        return self._decide(
+        item = self._decide(
             item_id,
             ItemStatus.SNOOZED,
             actor=actor,
             comment=f"snoozed {ttl}h",
             snooze_until=_utc_now() + timedelta(hours=ttl),
         )
+        assert item is not None  # only_from unset here; _decide always returns a row
+        return item
 
     # -- capacity ----------------------------------------------------------
     def over_cap(self) -> bool:
