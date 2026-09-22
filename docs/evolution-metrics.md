@@ -103,13 +103,13 @@ did. Reading one of these rows:
 | `project` | `manifest.project_name`. |
 | `component_id` | Manifest component id. |
 | `status` | Terminal manifest status (`completed`, `failed`, `pending`, ...). `pending` with a non-empty `error` means the component was retried and the run ended before another attempt. |
-| `retries` | Retry counter at end of run. |
+| `retries` | Retry counter at end of run; 0 for a component the run failed or cascade-skipped without launching it (#447). |
 | `error` | Flattened human-readable error of the last failure, `""` on success. Display only: metrics must use `failure_signatures`. |
 | `failure_signatures` | R6.1: list of structured `"<check>:<code>"` signatures for the last failed attempt, e.g. `linter:E501`, `typecheck:arg-type`, `test_suite:assertion-error`, `review:scope_creep`, `security:injection`, `diff_scope:files-outside-allowed-scope`, `scope_unreadable:scope-could-not-be-read-at-plan-time-failing-closed`, `contract:tier_1`, `engineer:component-timeout`, `token_budget:exceeded`, `pr:closed-without-merge`. Codes come from the tool parser (ruff rule, mypy error code, pytest exception type) or the finding taxonomy; sites without parser codes record a stable slug of the error text (paths, line numbers, and counts stripped). Empty on success. |
 | `check_name` / `error_signature` | Convenience split of the FIRST signature (`check_name:error_signature`). Kept for v1-shaped readers; new consumers should read `failure_signatures`. |
 | `failed_phase` / `failed_check` | R3.3 post-mortem pointers: which phase and gate fired last. |
-| `duration_seconds` | Wall-clock of the component's LAST attempt, measured from the PENDING->RUNNING transition to the terminal transition (completed / failed / merge-pending / retry scheduled / scheduler backstop). Includes the engineer loop, mechanical verification, review, security review, and PR flow. It is NOT the sum across retries, and 0.0 appears only for components that never started an attempt in this process (e.g. skipped, or state inherited from a crashed run). |
-| `iteration_count` | Engineer-loop iterations of the last attempt. Earlier attempts' counts are on that run's `findings_superseded` rows, one per superseded attempt. |
+| `duration_seconds` | Wall-clock of the component's LAST attempt, measured from the PENDING->RUNNING transition to the terminal transition (completed / failed / merge-pending / retry scheduled / scheduler backstop). Includes the engineer loop, mechanical verification, review, security review, and PR flow. It is NOT the sum across retries, and 0.0 appears only for components that never started an attempt in this process (e.g. skipped, or state inherited from a crashed run, or moved to failed/skipped by this run without a launch). |
+| `iteration_count` | Engineer-loop iterations of the last attempt. Earlier attempts' counts are on that run's `findings_superseded` rows, one per superseded attempt. 0 for a component the run failed or cascade-skipped without launching it (#447). |
 | `findings` | Full typed Finding stream of the last attempt (E3), attempt-tagged. |
 | `findings_summary` | Aggregates of `findings`: `total`, `by_phase`, `by_severity`, `by_category`, `by_owasp`, `infrastructure_errors`. |
 | `usage` | R3.1 per-phase token/cost self-reports (lower bounds when `unreported_calls` > 0). |

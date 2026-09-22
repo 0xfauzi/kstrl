@@ -507,6 +507,8 @@ def test_a_repoll_that_finds_the_pr_closed_journals_no_carried_numbers(
     assert parked["iteration_count"] > 0
     assert parked["duration_seconds"] > 0.0
 
+    # A component parked after a retried attempt carries retries 1.
+    manifest.components[0].retries = 1
     monkeypatch.setenv("GH_SPINE_VIEW_STATE", "CLOSED")
     second = run_factory(
         manifest,
@@ -527,6 +529,11 @@ def test_a_repoll_that_finds_the_pr_closed_journals_no_carried_numbers(
     assert alpha_run2["iteration_count"] == 0
     assert alpha_run2["duration_seconds"] == 0.0
     assert alpha_run2["error"] and "closed" in alpha_run2["error"]
+
+    run2_tsv = _tsv_rows(root)[1]
+    assert run2_tsv["avg_iterations"] == "0.00"
+    assert run2_tsv["avg_duration_s"] == "0.0"
+    assert run2_tsv["retry_rate"] == "0.00"
 
     out = _line_for(_evolve(root, "--status"), run_2)
     assert "REFUSED" not in out
