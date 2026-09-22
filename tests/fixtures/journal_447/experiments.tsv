@@ -1,0 +1,5 @@
+run_id	timestamp	project	components_total	completed	failed	skipped	avg_iterations	avg_duration_s	retry_rate	common_failure	total_tokens	total_cost_usd	unreported_calls
+factory-20260921-232408.530160-5a3203	2026-09-22T00:04:29Z	linkshort	4	1	1	2	2.50	668.1	0.75	verify:mechanical-verification-failed	8654276	23.627654	0
+factory-20260922-000653.510728-e2ebc1	2026-09-22T01:02:59Z	linkshort	4	1	2	0	3.25	1019.2	0.50	token_budget:exceeded	11046794	34.26497	0
+factory-20260922-060733.849007-9f3722	2026-09-22T06:36:16Z	linkshort	4	1	0	0	3.50	1244.0	0.25	unknown:cost-budget-exceeded-recorded-max-cost-usd-halting-instead-o	5537998	17.527146	0
+factory-20260922-063652.559123-d658d2	2026-09-22T07:00:14Z	linkshort	4	1	0	0	4.25	1526.7	0.00		4596910	14.074966	0

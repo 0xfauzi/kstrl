@@ -37,7 +37,10 @@ logger = logging.getLogger("kstrl.evolution")
 # signatures (R6.1). Entries without the field are version 1 (the
 # pre-R6 shape); wave 1 (R4.1) archived the polluted v1 journals to
 # .kstrl/archive/, so fresh journals contain v2 entries only.
-JOURNAL_SCHEMA_VERSION = 2
+# Version 3 (#447): record_run writes a component_result row only for a
+# component this run touched. A v1 or v2 component_result row may be a
+# copy of an earlier run's result; carried_result_indices finds those.
+JOURNAL_SCHEMA_VERSION = 3
 
 # #312 declared JOURNAL_REPAIR_EVENT here: the event_type of the row an
 # append writes when it finds the file not newline-terminated. Its own
@@ -113,6 +116,10 @@ class ExperimentsDialect(csv.Dialect):
 # that a test can assert against the columns the writer actually emits
 # rather than a shorter hand-typed row a lenient reader happens to
 # tolerate. Files written before R3.1 keep their shorter header.
+# Since #447 every per-component column (components_total, avg_iterations,
+# avg_duration_s, retry_rate, common_failure) is computed over the
+# components the run touched, the same set its journal rows describe;
+# before #447 it was every manifest component, carried ones included.
 EXPERIMENTS_HEADER = ExperimentsDialect.delimiter.join(
     (
         "run_id",
@@ -341,6 +348,79 @@ def _component_attempt_readings(
     return seen, ""
 
 
+# #447: the fields a manifest carries unchanged from one run to the next
+# for a component that did not run again. The journal writer before #447
+# copied them onto a new run_id, so a row whose four values equal its
+# component's previous row is that copy.
+# duration_seconds is a wall-clock float, so a component that really ran
+# again does not reproduce it.
+_CARRIED_FIELDS = ("status", "retries", "iteration_count", "duration_seconds")
+
+
+def _written_before_447(entry: dict[str, Any]) -> bool:
+    """Whether ``entry`` came from a writer that copied carried results.
+
+    An absent version is v1 (the comment on JOURNAL_SCHEMA_VERSION). Any
+    other non-integer, a ``bool`` included, is not provably old, and a row
+    that is not provably old is never dropped.
+    """
+    version = entry.get("schema_version", 1)
+    return isinstance(version, int) and not isinstance(version, bool) and version < 3
+
+
+def carried_result_indices(entries: list[dict[str, Any]]) -> set[int]:
+    """Indices of ``component_result`` rows that repeat their component's
+    previous row: a result from an earlier run, copied under a later id.
+
+    Only a row written before #447 (schema_version below 3) can be a copy:
+    the writer since then journals no carried component, so a v3 row is
+    never dropped. A row missing any of :data:`_CARRIED_FIELDS` is never a
+    copy either. Both break the chain for their component, so rows cannot
+    match by a shared absence.
+    """
+    carried: set[int] = set()
+    previous: dict[str, tuple[object, ...]] = {}
+    for index, entry in enumerate(entries):
+        if entry.get("event_type", "component_result") != "component_result":
+            continue
+        cid = str(entry.get("component_id", ""))
+        if not _written_before_447(entry) or not all(key in entry for key in _CARRIED_FIELDS):
+            previous.pop(cid, None)
+            continue
+        state = tuple(entry[key] for key in _CARRIED_FIELDS)
+        if previous.get(cid) == state:
+            carried.add(index)
+        previous[cid] = state
+    return carried
+
+
+def without_carried_results(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """``entries`` minus the rows :func:`carried_result_indices` names."""
+    carried = carried_result_indices(entries)
+    return [entry for index, entry in enumerate(entries) if index not in carried]
+
+
+def _run_results(
+    entries: list[dict[str, Any]],
+    run_id: str,
+) -> tuple[int, list[dict[str, Any]]]:
+    """How many ``component_result`` rows ``run_id`` wrote, and those of
+    them that are not carried copies (#447).
+
+    The count keeps the copies because ``components_total`` in a pre-#447
+    experiments.tsv row counted them too: the torn-line join compares two
+    counts of the same rows. Only the second value is summed.
+    """
+    carried = carried_result_indices(entries)
+    indexed = [
+        (index, e)
+        for index, e in enumerate(entries)
+        if e.get("event_type", "component_result") == "component_result"
+        and e.get("run_id") == run_id
+    ]
+    return len(indexed), [e for index, e in indexed if index not in carried]
+
+
 def read_attempt_iterations(
     entries: list[dict[str, Any]],
     run_id: str,
@@ -359,20 +439,17 @@ def read_attempt_iterations(
     reader safe: ``_read_all_entries`` skips torn and blank lines
     silently, so a torn ``component_result`` line is otherwise a silently
     missing row rather than a refusal. ``components_total`` comes from
-    the same ``manifest.components`` list ``record_run`` writes rows
-    from, so the two counts are the same quantity read twice.
+    the same list ``record_run`` writes rows from, so the two counts are
+    the same quantity read twice. Since #447 that list is the components
+    the run touched; before it, every manifest component, carried copies
+    included, which is why the count keeps the copies and the sum drops
+    them (:func:`_run_results`).
     """
-    results = [
-        e
-        for e in entries
-        if e.get("event_type", "component_result") == "component_result"
-        and e.get("run_id") == run_id
-    ]
-    if len(results) != components_total:
+    written, results = _run_results(entries, run_id)
+    if written != components_total:
         return _refused(
             run_id,
-            f"{len(results)} component_result entries for {components_total} "
-            "component(s) in the run",
+            f"{written} component_result entries for {components_total} component(s) in the run",
         )
     superseded_by_component: dict[str, list[dict[str, Any]]] = {}
     for entry in entries:
@@ -1290,6 +1367,27 @@ def _summarize_findings(findings: list[Finding]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _components_this_run(manifest: Manifest, factory_result: FactoryResult) -> list[Component]:
+    """The manifest components this run touched, in manifest order (#447).
+
+    ``scheduled`` is every component handed to the executor, which covers
+    one that ended MERGE_PENDING or was stopped mid-attempt; ``failed`` and
+    ``skipped`` add the failures and cascade skips made without a launch
+    (a merge re-poll that finds the PR closed, a contract breaker, a
+    cascade skip). ``completed`` is left out on purpose: every completion
+    this run launched is already in ``scheduled``, and the only other one
+    is a merge the re-poll confirms, whose iterations, duration and
+    findings belong to the earlier run that did the work. A component in
+    none of the three carried its state from an earlier run and gets no row.
+    """
+    touched = {
+        *factory_result.scheduled,
+        *factory_result.failed,
+        *factory_result.skipped,
+    }
+    return [comp for comp in manifest.components if comp.id in touched]
+
+
 def _role_usage_entries(
     usage_by_component: dict[str, dict[str, dict[str, Any]]],
     *,
@@ -1385,6 +1483,11 @@ class EvolutionJournal:
         Writes individual component outcomes as JSONL entries.
         Also appends a summary line to experiments.tsv.
 
+        #447: both describe only the components this run touched
+        (:func:`_components_this_run`). A component that carried its state
+        from an earlier run gets no row: the row would repeat that run's
+        result under this run's id, and every reader would count it again.
+
         R3.1: ``usage_by_component`` maps component id -> phase ->
         UsageTotals.to_dict() and lands on each component's journal
         entry; ``run_usage`` is the run-level UsageTotals.to_dict() and
@@ -1416,8 +1519,9 @@ class EvolutionJournal:
         fact_utilization = fact_utilization or {}
 
         # --- JSONL entries per component ---
+        ran = _components_this_run(manifest, factory_result)
         entries: list[dict[str, Any]] = []
-        for comp in manifest.components:
+        for comp in ran:
             has_error = bool(comp.error) and comp.status in (
                 ComponentStatus.FAILED.value,
                 ComponentStatus.PENDING.value,  # retried components reset to pending
@@ -1491,23 +1595,23 @@ class EvolutionJournal:
             )
 
         # --- Experiments TSV summary line ---
-        total = len(manifest.components)
+        total = len(ran)
         completed = len(factory_result.completed)
         failed = len(factory_result.failed)
         skipped = len(factory_result.skipped)
 
-        iteration_counts = [c.iteration_count for c in manifest.components if c.iteration_count > 0]
+        iteration_counts = [c.iteration_count for c in ran if c.iteration_count > 0]
         avg_iterations = sum(iteration_counts) / len(iteration_counts) if iteration_counts else 0.0
 
-        durations = [c.duration_seconds for c in manifest.components if c.duration_seconds > 0]
+        durations = [c.duration_seconds for c in ran if c.duration_seconds > 0]
         avg_duration = sum(durations) / len(durations) if durations else 0.0
 
-        retry_total = sum(c.retries for c in manifest.components)
+        retry_total = sum(c.retries for c in ran)
         retry_rate = retry_total / total if total > 0 else 0.0
 
         # Most common failure signature (full "<check>:<code>" form).
         failure_sigs: dict[str, int] = {}
-        for comp in manifest.components:
+        for comp in ran:
             if comp.status != ComponentStatus.FAILED.value or not comp.error:
                 continue
             sigs = list(failure_signatures.get(comp.id) or [])
@@ -2585,7 +2689,7 @@ class EvolutionJournal:
         defined in terms of runs. Spec audits are exactly that case;
         :meth:`get_spec_audits` reads those instead.
         """
-        entries = self._read_all_entries()
+        entries = without_carried_results(self._read_all_entries())
         if not entries:
             return []
 

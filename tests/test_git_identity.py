@@ -211,6 +211,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # repository this file's own `two_attempt_run` builds through
     # `tests.helpers.gitrepo.git_in` / `set_identity`.
     "tests/test_attempt_iteration_readings.py": 1,
+    # #447: one base commit per factory-run project, into a repository
+    # `_git_project` builds through `tests.helpers.gitrepo.git_in` /
+    # `set_identity`.
+    "tests/test_retry_journal_rows.py": 1,
 }
 
 
