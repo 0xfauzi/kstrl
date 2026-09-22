@@ -1,27 +1,52 @@
 # Continuous learning: audit and redesign
 
 Status: proposed. Supersedes the `ks evolve` proposal generator described in
-[spec-harness-engineering.md](spec-harness-engineering.md) section 3.4.
+[spec-harness-engineering.md](spec-harness-engineering.md) section 3.4. #217
+shipped the router and the disclosure described in this document's section 3;
+the generator's six typed proposal arms stay as they were, and only its
+generic arm (the one that wrote "Take extra care with this pattern" for any
+check name without a typed arm) is gone.
+
+## Status, 2026-09-22
+
+What #217 shipped: the three-bucket router (`route_patterns`), the disclosure
+of what it drops (mechanical routed to the inbox, unrouted printed and named),
+and the three readiness numbers (recurring signatures, fact utilization,
+concern hit rate) printed on every `ks evolve` run.
+
+What it did not ship, each gated on a number measured that day and recorded in
+this PR: the global playbook store (gated on a signature recurring across two
+distinct projects; measured 0 recurrences across the one project this repo
+is); injection and attribution (gated on `get_fact_utilization()
+["runs_with_referenced"] >= 2`; measured 0, 8 of 8 components unmeasured);
+demotion and retirement (gated on a measured pre-injection base rate; none
+exists because nothing recurs); GEPA over the adversarial prompts (gated on
+owner authorisation for a paid calibration capture; not authorised for this
+change). The full table is in "Unlocks, with the number measured on
+2026-09-22" below.
 
 ## 1. Audit of the current claim
 
-`README.md:98` states "the harness improves itself". The code does not support
-the claim. Three defects, each verified against this repository.
+`README.md` used to state "the harness improves itself". It no longer does:
+the sentence there now reads "Until it lands, this README does not claim the
+harness improves itself", so the claim this section audits was retracted
+before #217 shipped anything. The code did not support the claim. Three
+defects, each verified against this repository.
 
 ### 1.1 Learning is siloed per repository
 
 `EvolutionConfig.journal_path` defaults to `.kstrl/evolution.jsonl` and resolves
-against `root_dir` (`kstrl/evolution.py:67`). `KnowledgeConfig.knowledge_root`
-resolves to `root_dir/.kstrl/knowledge` (`kstrl/knowledge.py:59`). The R8.9 XDG
+against `root_dir` (`kstrl/evolution.py:288`). `KnowledgeConfig.knowledge_root`
+resolves to `root_dir/.kstrl/knowledge` (`kstrl/knowledge.py:62`). The R8.9 XDG
 relocation keys the control directory by `repo_id(root_dir)`
-(`kstrl/statedir.py:176`), so it moved the silo without removing it.
+(`kstrl/statedir.py:329`), so it moved the silo without removing it.
 
 Nothing kstrl learns in one project can reach another project. This is the
 capability the product claims and the capability that does not exist.
 
 ### 1.2 Proposals are string templates, not learning
 
-`EvolutionJournal.propose_improvements` (`kstrl/evolution.py:752`) is f-string
+`EvolutionJournal.propose_improvements` (`kstrl/evolution.py:1536`) is f-string
 formatting. It makes no LLM call and consults no evidence. The output in this
 repository shows the result. `.kstrl/proposals/prop-003.md` reads:
 
@@ -37,7 +62,7 @@ engineering lessons.
 ### 1.3 The loop is open
 
 No code path reads a proposal back into a run. `auto_apply_computational`
-defaults to `False` (`kstrl/evolution.py:72`). `kstrl/proposals.py` applies only
+defaults to `False` (`kstrl/evolution.py:293`). `kstrl/proposals.py` applies only
 convention proposals, and only behind a prompt. `get_experiment_trends` records
 retry rate per run, but no code attributes a change in retry rate to an applied
 proposal. There is no acceptance number and no attribution.
@@ -105,7 +130,7 @@ roughly 150 lines of kstrl code. Take the idea, not the dependency.
 
 The defect in section 1.2 is not that the reflection is weak. It is that every
 signal shares one destination. `append_to_agent_learnings`
-(`kstrl/proposals.py:119`) appends every pattern to the CLAUDE.md "Agent
+(`kstrl/proposals.py:124`) appends every pattern to the CLAUDE.md "Agent
 Learnings" section, whatever the pattern is. A git transport failure has no
 useful expression as an instruction to an agent. That is how `prop-003.md`
 happened.
@@ -136,7 +161,7 @@ that traffic is the majority of what `ks evolve` reads and all of what it
 "learns" from.
 
 The `Finding` taxonomy already carries the discriminator.
-`kstrl/evolution.py:1039` treats `infrastructure_error` and `phase_skipped` as
+`kstrl/evolution.py:1888` treats `infrastructure_error` and `phase_skipped` as
 non-signal when computing hit rates. The router extends that same judgment to
 the proposal path, which is where it was missing.
 
@@ -148,7 +173,7 @@ radii. This design commits to rungs 1 through 4 and excludes rung 5.
 | Rung | What changes | Reversal | Human gate |
 |---|---|---|---|
 | 1. Memory | Facts, playbook bullets, journal rows accumulate | Delete the row | No |
-| 2. Context | The assembled prompt, at `kstrl/factory.py:1440` | Delete the store | No |
+| 2. Context | The assembled prompt, at `kstrl/factory.py:4029` | Delete the store | No |
 | 3. Project instructions | `CLAUDE.md`, `kstrl.toml` | `git revert` | Yes |
 | 4. Role instructions | `*_PROMPT` constants in kstrl's source | `git revert` plus version bump | Yes, plus calibration |
 | 5. Harness logic | `kstrl/*.py` | n/a | Out of scope |
@@ -350,3 +375,19 @@ router stops feeding it kind 4 signals.
 
 Delete `propose_improvements` and its template branches at phase 4, not before.
 The old path stays until the new one demonstrates attribution.
+
+## 9. Unlocks, with the number measured on 2026-09-22
+
+Each row is a measured fact, not work still to do.
+
+| Not built | Unlocks when | Measured today | Shape it must have |
+|---|---|---|---|
+| Global playbook store | a kind-2 signature recurs across >= 2 runs in >= 2 distinct projects | 0 recurrences across 1 project (`get_cross_run_patterns` at `min_pattern_frequency=2` returns `[]`) | An append-only op ledger through `appendio.append_records`, never a document rewritten per op. Measured 2026-09-22 by the planning lane, command in `measurements.md` M11, not re-run here: 6 concurrent writers, 150 contributions, three sessions. The document arm recovered 62/66/61/66/65, and in two earlier sessions 60/73/80/50/66 and 64/61/62/59/54, all with no error raised; the append arm recovered 150 of 150 in every run of every session, with and without `flock`. The loss FRACTION is load-dependent and is not a property of the mechanism; the silent majority loss is. |
+| | | | The store is an argument, not a subsystem: `read_facts(knowledge_root, ...)` and `write_facts(..., knowledge_root, ...)` already take the root as a parameter (`kstrl/knowledge.py:380`, `:431`); the silo is only the default on `KnowledgeConfig.knowledge_root` (`:62`). |
+| | | | Before anything writes to a store shared across repositories, invert `category_for_check`'s default: an unenrolled check name must be "not a lesson", not `"iteration"`. Measured: `category_for_check("zzz-never-enrolled") == "iteration"`. |
+| Injection and attribution | `get_fact_utilization()["runs_with_referenced"] >= 2` on real runs | 0, with 8 of 8 components unmeasured | Each run pins the revision it read: the byte offset and SHA-256 of the store prefix, plus the ids it injected, into that run's own record, so attribution joins on an id in the record rather than on the store as it now stands. This is the #260 join-by-id rule applied across repositories instead of across phases. |
+| | | | Open question the owner must answer, which no later measurement can settle: `knowledge_prefix` is FIRST in the `parts` literal at `kstrl/factory.py:2323-2334`, so a cross-project bullet would land before the operator's own standing corrections. That order was chosen for component facts ("memory is last on purpose", #230), not for cross-project rules. |
+| | | | A recurrence count alone is still not a measurement. `recurrence_after_injection` is computed only over runs where the bullet WAS injected and has no counterfactual, so a bullet whose target signature is rare reads as healthy forever. A withheld-control design would fix that; no power calculation exists for it and the corpus (5 runs, 0 recurrences) cannot supply one. |
+| Demotion and retirement | a measured pre-injection base rate exists for at least one signature | undefined; no signature recurs | |
+| GEPA over the prompts | owner authorises a calibration capture (H2), and section 7's two open numbers are measured | not authorised | |
+| Cross-project trust boundary | only needed once something crosses repositories; nothing in this PR does | n/a | `_validate_fact_content` re-runs on read, but its injection check `_is_injection_attempt` (`kstrl/knowledge.py:1100`) is a regex blocklist, which clears by default. One allowlist-shaped floor already exists: `_evidence_cites_existing_path` (`kstrl/knowledge.py:1189`) requires a cited path to exist in the worktree, which a cross-project lesson cannot satisfy by construction, so such a lesson is capped at `confidence="asserted"` and can never carry `review_passed` or `test_verified`. That derives the design's "reject a lesson whose evidence contains a literal source line" from a rule already in the tree. |
