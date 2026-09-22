@@ -12,13 +12,26 @@ the failure without the process dying.
 from __future__ import annotations
 
 import copy
+import shlex
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kstrl.factory import FactoryConfig, validate_cost_ceiling
+from kstrl.launch_record import (
+    FlagValue,
+    LaunchRecord,
+    LaunchRecordError,
+    flags_argv,
+    launch_record_path,
+    read_launch_record,
+)
+
 if TYPE_CHECKING:
+    import click
+
     from kstrl.manifest import Manifest
     from kstrl.ui.base import UI
 
@@ -147,3 +160,123 @@ def prepare_retry(
         failed_branch=failed_branch,
         single_pr=manifest.single_pr,
     )
+
+
+def retry_confirm_header(preview: RetryPreview) -> str:
+    """The confirmation question, naming every component the retry re-enters (#436)."""
+    if not preview.reset_dependents:
+        return f"Re-enter the factory to retry '{preview.component_id}'?"
+    dependents = ", ".join(f"'{cid}'" for cid in preview.reset_dependents)
+    return (
+        f"Re-enter the factory to retry '{preview.component_id}' "
+        f"and the dependents it reset: {dependents}?"
+    )
+
+
+#: The headline every refusal from :func:`plan_resume` prints under.
+RESUME_REFUSAL = "the retry cannot carry over the configuration of the run it resumes"
+
+_CEILING_REMEDY = "pass --max-cost-usd N to cap this retry, or --max-cost-usd 0 to run it uncapped"
+
+
+@dataclass(frozen=True)
+class ResumePlan:
+    """What a retry re-enters `ks factory` with (#436)."""
+
+    #: The run the manifest names, "" when it names none.
+    run_id: str
+    #: Whether that run left a launch record whose flags are replayed.
+    carried: bool
+    #: The replayed flags plus the retry's own, as `ks factory` options.
+    argv: tuple[str, ...]
+    max_cost_usd: float
+    max_parallel: int
+
+
+def _ceiling_problems(
+    run_id: str,
+    record: LaunchRecord | None,
+    ceiling: float,
+    stated_on_retry: bool,
+) -> list[str]:
+    """Why the retry must refuse over its cost ceiling, or [] when it may run."""
+    if stated_on_retry or ceiling > 0:
+        return []
+    if record is None:
+        return [
+            f"run {run_id or '(none)'} left no launch record, so the cost ceiling "
+            "it ran under is unknown, and the environment and kstrl.toml set none",
+            _CEILING_REMEDY,
+        ]
+    if record.max_cost_usd == 0:
+        return []
+    return [
+        f"run {run_id} ran under a cost ceiling of ${record.max_cost_usd}, and this "
+        "retry resolves none: the ceiling came from the environment or kstrl.toml, "
+        "which no longer set it",
+        _CEILING_REMEDY,
+    ]
+
+
+def plan_resume(
+    root_dir: Path,
+    manifest: Manifest,
+    manifest_file: Path,
+    command: click.Command,
+    *,
+    max_cost_usd: float | None,
+    max_parallel: int | None,
+    keep_worktrees_on_failure: bool,
+) -> tuple[ResumePlan | None, list[str]]:
+    """The flags a retry replays and the ceiling it runs under, or why it refuses.
+
+    Changes nothing, so a refusal leaves the manifest, branch and worktree
+    exactly as the failed run left them. The retry's own options win over
+    the recorded ones, the same way a flag wins over env and kstrl.toml.
+    """
+    overrides: dict[str, FlagValue] = {
+        name: value
+        for name, value in (
+            ("max_cost_usd", max_cost_usd),
+            ("max_parallel", max_parallel),
+            ("keep_worktrees_on_failure", keep_worktrees_on_failure or None),
+        )
+        if value is not None
+    }
+    try:
+        record = read_launch_record(root_dir, manifest, manifest_file)
+        flags = dict(record.flags) if record is not None else {}
+        flags.update(overrides)
+        argv = flags_argv(command, flags)
+    except LaunchRecordError as exc:
+        path = launch_record_path(root_dir, manifest.run_id)
+        return None, [str(exc), f"delete {path} to retry without the recorded flags"]
+    loaded = FactoryConfig.load(root_dir)
+    ceiling = validate_cost_ceiling(
+        float(flags.get("max_cost_usd", loaded.max_cost_usd)), "--max-cost-usd"
+    )
+    problems = _ceiling_problems(manifest.run_id, record, ceiling, max_cost_usd is not None)
+    if problems:
+        return None, problems
+    plan = ResumePlan(
+        run_id=manifest.run_id,
+        carried=record is not None,
+        argv=tuple(argv),
+        max_cost_usd=ceiling,
+        max_parallel=int(flags.get("max_parallel", loaded.max_parallel)),
+    )
+    return plan, []
+
+
+def print_resume_plan(ui: UI, plan: ResumePlan) -> None:
+    """Say, before the confirmation and before any spend, what the retry runs under."""
+    if plan.carried:
+        shown = shlex.join(plan.argv) if plan.argv else "(none were passed)"
+        ui.info(f"Resuming with the flags of run {plan.run_id}: {shown}")
+    else:
+        ui.warn(
+            f"No launch record for run {plan.run_id or '(none)'}: "
+            "the flags of the run being resumed are not carried over"
+        )
+    ui.kv("Cost ceiling", f"${plan.max_cost_usd}" if plan.max_cost_usd > 0 else "disabled")
+    ui.kv("Max parallel", str(plan.max_parallel))
