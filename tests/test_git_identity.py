@@ -203,6 +203,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # `tests.helpers.gitrepo.set_identity` right after `git init` - the
     # latin-1 source file on main, and the rename onto `work`.
     "tests/test_undecodable_diff.py": 4,
+    # #233: one base commit for the two-attempt factory-run fixture, into a
+    # repository this file's own `two_attempt_run` builds through
+    # `tests.helpers.gitrepo.git_in` / `set_identity`.
+    "tests/test_attempt_iteration_readings.py": 1,
 }
 
 
