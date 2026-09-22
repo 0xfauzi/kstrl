@@ -182,7 +182,7 @@ def _failed_run(root: Path, *flags: str, env: dict[str, str] | None = None) -> s
 class TestRetryReplaysTheRunsFlags:
     def test_retry_runs_under_the_original_ceiling_and_parallelism(self, tmp_path: Path) -> None:
         root = _repo(tmp_path)
-        run_id = _failed_run(root, "--max-cost-usd", "5", *RUN_FLAGS)
+        run_id = _failed_run(root, "--max-cost-usd", "5", "--keep-worktrees-on-failure", *RUN_FLAGS)
 
         retried = _ks(root, "retry", "storage")
         out = retried.stdout + retried.stderr
@@ -191,6 +191,8 @@ class TestRetryReplaysTheRunsFlags:
         assert f"Resuming with the flags of run {run_id}:" in out
         assert "--max-cost-usd 5.0" in out
         assert "--no-prs" in out, out
+        resuming = next(ln for ln in out.splitlines() if "Resuming with the flags" in ln)
+        assert "--keep-worktrees-on-failure" in resuming, resuming
         header = _execution_header(out)
         assert re.search(r"Max parallel:\s*1\n", header), header
         assert re.search(r"Max retries:\s*0\n", header), header
