@@ -454,7 +454,7 @@ frame it is written in.
 
 **Name the new surfaces for what they are.** Where section 5 adds code it takes
 control-loop names, because new names are free and existing ones are not:
-`ks sense` for the standalone sensor command, a safe-mode predicate, a dampener
+`ks check` for the standalone sensor command, a safe-mode predicate, a dampener
 baseline, and `kstrl/health.py` for R8.4, which the roadmap already calls that.
 
 **Rename nothing that exists.** If a rename later proves worth it, the
@@ -555,7 +555,7 @@ that makes the others cheap, and it goes first.
 Add commands that run each loop component by hand against a working tree, with
 no PRD, no branch, no worktree, and no agent spend:
 
-- **`ks sense`** runs the mechanical sensors against the current tree and prints
+- **`ks check`** runs the mechanical sensors against the current tree and prints
   the measurement: which checks pass, which fail, and the structured findings.
   `run_mechanical_verification` (`verify.py:1375`) already takes a path and
   returns a `VerificationResult`. This was written up as a command wrapper over
@@ -568,10 +568,10 @@ no PRD, no branch, no worktree, and no agent spend:
   lenient git helpers map an unresolvable base onto an empty file list, which
   reads as a clean tree, so a standalone sensor must preflight the diff and
   report could-not-measure rather than pass.
-- **`ks sense --review`** runs the adversarial sensors over a diff. This one
+- **`ks check --review`** runs the adversarial sensors over a diff. This one
   costs an LLM call, so it is opt-in and reports its cost, but it makes the
   reviewer inspectable without a factory run.
-- **`ks sense --json`** emits the measurement in machine form, which is what
+- **`ks check --json`** emits the measurement in machine form, which is what
   makes every threshold in this document measurable by piping rather than by
   instrumenting.
 
@@ -625,7 +625,7 @@ failure is happening now"). `controller-runtime` withholds the event type from
 `Reconcile()` on purpose, "because a controller should not care why it was
 triggered, only what the current state of the world looks like".
 
-`ks sense` from 5.1 is what makes the re-derivation cheap, which is the second
+`ks check` from 5.1 is what makes the re-derivation cheap, which is the second
 time local-first pays for itself.
 
 **Acceptance:** for a component reaching attempt 3, the rendered retry context
@@ -666,7 +666,7 @@ property regressing while the factory improves it. The closest existing thing is
 fixture snapshot regression (`fixtures.py:582-597`), which covers approved
 fixtures only and only inside a factory run.
 
-**Adopt:** `ks sense` writes a baseline to version control. A check on pull
+**Adopt:** `ks check` writes a baseline to version control. A check on pull
 requests compares the branch's measurement against that baseline and reports
 newly introduced findings. **Advisory first**, with a documented path to
 blocking.
@@ -786,7 +786,7 @@ run more cycles per invocation. That is the right home for the two items the
 earlier draft could not justify, and it is a better frame than "measure first",
 because it says what has to be true rather than what has to be counted.
 
-**A sensor on the fast loop** (gap 3.2). Run a cheap subset of `ks sense`
+**A sensor on the fast loop** (gap 3.2). Run a cheap subset of `ks check`
 between engineer iterations and feed the result forward, making the cascade
 well-formed. Turn this on when the loop is otherwise tuned and components are
 taking more than one iteration. Today `avg_iterations` is 1.00 across all five
@@ -900,7 +900,7 @@ substitution, and it is worth stating what each one becomes.
 | how often the reviewer disagrees with the done flag | 5.2 running advisory | no |
 | how much stale text attempt 3 carries | 5.3, asserted in a test | no |
 | review throughput, to set the WIP bound | 5.6 shipped at 1 | no |
-| live-finding distribution per attempt | 5.1 `ks sense --json`, piped | no |
+| live-finding distribution per attempt | 5.1 `ks check --json`, piped | no |
 | control-chart false-alarm rate | 5.11 replay, advisory | no |
 | iterations per component | `experiments.tsv`, already written | gates only 5.10 |
 | latency cost of an inner-loop sensor | measured when 5.10 turns it on | gates only 5.10 |
@@ -930,7 +930,7 @@ starts, and every gate ships advisory unless it is mechanical and exact.
 
 | Order | Item | Method phase | Advisory first? | Touches a prompt? |
 |---|---|---|---|---|
-| 1 | 5.1 `ks sense` standalone | D, run locally first | n/a | no |
+| 1 | 5.1 `ks check` standalone | D, run locally first | n/a | no |
 | 2 | 5.3 level-triggered controller | B, controller | n/a, exact | no |
 | 3 | 5.2 set-point agreement | B, set point | yes | **no** |
 | 4 | 5.9 safe mode, priority inversion | kstrl-specific | n/a | no |
@@ -1018,7 +1018,7 @@ Cycle: R10, milestone [R10: Control Loop](https://github.com/0xfauzi/kstrl/miles
 
 | Order | Item | Issue | Status |
 |---|---|---|---|
-| 1 | 5.1 `ks sense` standalone sensor command | [#222](https://github.com/0xfauzi/kstrl/issues/222) | `[x]` merged in #237 |
+| 1 | 5.1 `ks check` standalone sensor command | [#222](https://github.com/0xfauzi/kstrl/issues/222) | `[x]` merged in #237 |
 | 2 | 5.3 level-triggered retry context | [#223](https://github.com/0xfauzi/kstrl/issues/223) | `[x]` |
 | 3 | 5.2 set-point agreement | [#224](https://github.com/0xfauzi/kstrl/issues/224) | `[x]` |
 | 4 | 5.9 name safe mode | [#225](https://github.com/0xfauzi/kstrl/issues/225) | `[x]` |

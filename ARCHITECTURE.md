@@ -311,6 +311,7 @@ each maps to.
 | measurement versus claim | a claim is what the agent says about its work (the `passes` flag, the completion marker); a measurement is what a check reads from the diff. Claims are rendered; measurements gate |
 | finding | the typed record every check emits when the work misses its acceptance criteria; the error signal |
 | controller | the code that turns findings into the next action: retry, halt, merge, demote |
+| engineer agent | the agent that changes the plant; later, the release driver |
 | codebase scan | context computed from the tree and given to the agent before it acts (Phase 0) |
 | disturbance | change the loop did not command: model non-determinism, transport failures, a moving base branch |
 | retry context | the parsed failures handed to the next attempt |

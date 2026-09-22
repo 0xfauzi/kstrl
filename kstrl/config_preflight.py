@@ -306,20 +306,23 @@ def collect_config_problems(
     # measured on the shipped 21 KB kstrl.toml.example, this check costs
     # 9.4 ms without it and 0.6 ms with it.
     with toml_parse_scope():
+        # The document first: a file that will not parse breaks every
+        # section, and one line naming the fault beats 22 saying so.
+        # TWO faults reach here, not one - a syntax error and a
+        # non-utf-8 byte (#318) - and only the first carries a line
+        # and column. Both arrive as ``ConfigError`` and pass straight
+        # through this ``except`` on purpose. No file at all is not a
+        # fault: the retired-name check still has to run (the
+        # environment-variable half does not depend on a document),
+        # so an absent file reads as the empty document.
         if toml_path.exists():
-            # The document first: a file that will not parse breaks
-            # every section, and one line naming the fault beats 22
-            # saying so. TWO faults reach here, not one - a syntax
-            # error and a non-utf-8 byte (#318) - and only the first
-            # carries a line and column. Both arrive as ``ConfigError``
-            # and pass straight through this ``except`` on purpose.
             try:
                 document = load_toml_document(toml_path)
             except OSError as exc:
                 raise ConfigError(f"{toml_path} could not be read: {exc}") from exc
-            problems.extend(retired_name_problems(document, toml_path))
         else:
-            problems.extend(retired_name_problems({}, toml_path))
+            document = {}
+        problems.extend(retired_name_problems(document, toml_path))
 
         for section in config_sections():
             try:

@@ -106,12 +106,12 @@ _PINNED_ARMS: list[tuple[str, str, str, str, str, list[str], str]] = [
     ),
     (
         "test_suite",
-        "Add feedforward focus for test pattern 'SIG'",
+        "Add codebase scan focus for test pattern 'SIG'",
         "Test failure 'SIG' hit 3 components: comp-a, comp-b. Focusing "
-        "feedforward context on this pattern may help the agent fix the "
+        "codebase scan context on this pattern may help the agent fix the "
         "root cause earlier in the iteration loop.",
-        "feedforward_config",
-        "Add to feedforward config or CLAUDE.md:\n> Known recurring test "
+        "codebase_scan_config",
+        "Add to codebase scan config or CLAUDE.md:\n> Known recurring test "
         "issue: 'SIG'. When tests fail with this pattern, check the "
         "affected modules before re-running.",
         ["d"],
@@ -279,7 +279,7 @@ class TestSurvivingArmsRenderUnchanged:
         expected_titles = [
             "Add linter convention for S608 to CLAUDE.md",
             "Adjust type-checking config for 'TS2322'",
-            "Add feedforward focus for test pattern 'assertion-error'",
+            "Add codebase scan focus for test pattern 'assertion-error'",
             "Add review guidance for 'prd_criterion'",
             "Add security guidance for 'injection'",
             "Repair the component scopes that would not resolve (2 runs)",

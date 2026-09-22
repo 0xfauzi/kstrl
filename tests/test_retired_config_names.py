@@ -16,10 +16,12 @@ import os
 import re
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
 
+from kstrl.config_keys import RETIRED_ENV_VARS as _PRODUCTION_RETIRED_ENV_VARS
 from kstrl.config_preflight import collect_config_problems
 from kstrl.factory import FactoryConfig
 from kstrl.findings import CLAIM_DISAGREEMENT_CATEGORY, Finding
@@ -63,18 +65,14 @@ def test_a_retired_env_var_is_refused_by_name(
     assert "will not guess" in problems[0]
 
 
-RETIRED_ENV_VARS = (
-    "KSTRL_FEEDFORWARD_ENABLED",
-    "KSTRL_FEEDFORWARD_MODULE_MAP",
-    "KSTRL_FEEDFORWARD_PUBLIC_INTERFACES",
-    "KSTRL_FEEDFORWARD_DEPENDENCY_GRAPH",
-    "KSTRL_FEEDFORWARD_CONVENTIONS",
-    "KSTRL_FEEDFORWARD_MAX_TOKENS",
-    "KSTRL_FACTORY_SETPOINT_AGREEMENT",
-)
-
-
-@pytest.mark.parametrize("name", RETIRED_ENV_VARS)
+# Parametrized off the production table itself (kstrl/config_keys.py),
+# not a hand-typed copy of it: a hand-typed tuple stops growing the day
+# someone forgets to update it alongside a new retired row, which is
+# exactly the guard-goes-blind shape CLAUDE.md names. A new row in
+# RETIRED_ENV_VARS gets a test for free; P-B3 (plant.md) is the proof: a
+# row added there with no matching change here still fails, because this
+# list is read from the same dict the row was added to.
+@pytest.mark.parametrize("name", sorted(_PRODUCTION_RETIRED_ENV_VARS))
 def test_every_retired_env_var_is_refused_by_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str
 ) -> None:
@@ -158,7 +156,10 @@ SENSE_PATTERN = re.compile(
 
 FEEDFORWARD_ALLOWED = (
     "kstrl.feedforward",
-    "kstrl/feedforward.py",
+    # "kstrl/feedforward.py" is deliberately not a separate entry here: it
+    # is a strict superset-match of "feedforward.py" below (any line
+    # containing the former also contains the latter), so it was dead -
+    # measured by removing it and finding zero lines it alone allowed.
     "feedforward.py",
     "feedforward_prompts",
     "test_feedforward",
@@ -168,21 +169,32 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 WALK_EXTENSIONS = {".py", ".md", ".toml", ".yml", ".yaml", ".json", ".html", ".example"}
 
+# A per-extension floor, not just a floor on the total. A single floor on
+# `len(files)` cannot tell "an extension was dropped from WALK_EXTENSIONS"
+# from "the repo grew elsewhere": dropping ".json" (40 files at the time
+# this was measured) still clears a >=500 total floor on a repo this
+# size, so the walk would go quietly blind to
+# scripts/kstrl/baseline.json's renamed key. Re-derive by RUNNING the
+# walk, never by editing a number here.
+MIN_FILES_BY_EXTENSION: dict[str, int] = {
+    ".example": 1,
+    ".html": 1,
+    ".json": 40,
+    ".md": 51,
+    ".py": 466,
+    ".toml": 2,
+    ".yaml": 1,
+    ".yml": 6,
+}
+
 SKIP_DIRS = {".git", ".venv", ".pytest_cache", "__pycache__", "lessons"}
 
 # Whole files this walk does not read at all, each for a reason recorded
-# here rather than left to be rediscovered:
+# here rather than left to be rediscovered. This is deliberately down to
+# two entries: a whole-file skip is a ledger of give-ups (CLAUDE.md), so
+# every other retired-word survivor is a counted ALLOWED line instead.
 #   - CHANGELOG.md and docs/lessons/ are the project's own pre-existing
 #     historical record; docs/lessons/ is a directory (SKIP_DIRS above).
-#   - docs/loop-design.md is a dated design analysis whose SUBJECT is
-#     control-theory vocabulary: it proposes (as a rejected alternative)
-#     renaming kstrl modules TOWARD "sensor"/"dampener" and states, as a
-#     measured fact about the repository at the time it was written, which
-#     control-theory words had zero occurrences. Rewriting its prose would
-#     make those sentences false rather than retire a name.
-#   - docs/spec-harness-engineering.md is a dated draft spec that quotes an
-#     external article's own terminology ("feedback controls", "feedforward
-#     controls") as a citation. Rewriting the quote misattributes it.
 #   - This file is the guard's own implementation and test fixtures: T1-T5
 #     above write literal old TOML/env spellings to prove they are refused,
 #     and the constants below (SET_A, SENSE_PATTERN, ALLOWED, ...) name the
@@ -191,10 +203,13 @@ SKIP_DIRS = {".git", ".venv", ".pytest_cache", "__pycache__", "lessons"}
 #     is not spam; skip it rather than allowlisting every comment line one
 #     at a time, since T1-T5's assertions already prove they say the old
 #     names.
+# docs/loop-design.md (a dated design analysis whose SUBJECT is
+# control-theory vocabulary) and docs/spec-harness-engineering.md (a dated
+# draft spec quoting an external article's own terminology) used to be
+# skipped whole here. Both are now walked like any other file, and the
+# lines each still needs to keep are counted in ALLOWED below instead.
 SKIP_FILES = {
     "CHANGELOG.md",
-    "docs/loop-design.md",
-    "docs/spec-harness-engineering.md",
     "tests/test_retired_config_names.py",
 }
 
@@ -253,6 +268,30 @@ ALLOWED: dict[tuple[str, str], int] = {
     ("tests/helpers/feedforward_prompts.py", "feedforward"): 14,
     ("tests/test_feedforward.py", "feedforward"): 8,
     ("tests/test_feedforward_notices.py", "feedforward"): 3,
+    # docs/loop-design.md is a dated design analysis whose SUBJECT is
+    # control-theory vocabulary: it explains the metaphor kstrl retired
+    # (as a rejected alternative, "sensor"/"dampener"/etc. were once
+    # considered as kstrl's own names) and states, as a measured fact
+    # about the repository at the time it was written, which
+    # control-theory words had which occurrence counts. Rewriting its
+    # prose would make those sentences false rather than retire a name.
+    # Every literal `ks sense` in it was updated to `ks check` (the one
+    # thing in the file that was a live command name, not prose about the
+    # metaphor); the rest is counted here instead of skipped whole.
+    ("docs/loop-design.md", "control loop"): 4,
+    ("docs/loop-design.md", "control-loop"): 1,
+    ("docs/loop-design.md", "actuator"): 24,
+    ("docs/loop-design.md", "dampener"): 9,
+    ("docs/loop-design.md", "feedforward"): 5,
+    ("docs/loop-design.md", "sensor"): 46,
+    ("docs/loop-design.md", "set point"): 13,
+    ("docs/loop-design.md", "set-point"): 4,
+    # docs/spec-harness-engineering.md is a dated draft spec that quotes
+    # an external article's own terminology ("feedback controls",
+    # "feedforward controls") as a citation. Rewriting the quote
+    # misattributes it to kstrl rather than to the article.
+    ("docs/spec-harness-engineering.md", "feedforward"): 21,
+    ("docs/spec-harness-engineering.md", "sensor"): 8,
 }
 
 
@@ -318,6 +357,14 @@ def test_no_retired_name_survives_in_the_source() -> None:
     # SKIP_FILES count is exact too (a fifth carve-out must be a deliberate
     # edit here, not a silent addition).
     assert len(files) >= 500, f"walked only {len(files)} files - the walk is not running"
+    files_by_ext = Counter(f.suffix for f in files)
+    for ext, floor in MIN_FILES_BY_EXTENSION.items():
+        found = files_by_ext.get(ext, 0)
+        assert found >= floor, (
+            f"walked only {found} {ext!r} files, expected at least {floor} - "
+            "an extension dropped from WALK_EXTENSIONS clears a total floor "
+            "on a repo this size without this per-extension one"
+        )
     assert sum(counts.get(k, 0) for k in ALLOWED) == sum(ALLOWED.values())
-    assert len(SKIP_FILES) == 4
-    assert sum(ALLOWED.values()) == 53
+    assert len(SKIP_FILES) == 2
+    assert sum(ALLOWED.values()) == 188

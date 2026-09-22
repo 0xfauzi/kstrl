@@ -1,7 +1,7 @@
 # The baseline
 
-A baseline stops the thing you are measuring from getting worse while you
-improve it. kstrl's disturbances are ordinary and named: a teammate's commit, a
+A baseline comparison stops the thing you are measuring from getting worse
+while you improve it. kstrl's disturbances are ordinary and named: a teammate's commit, a
 dependency bump, a base branch that moves under a component. Nothing in the
 factory notices when one of those undoes progress the loop already made.
 
@@ -231,8 +231,8 @@ repository's test suite runs in one workflow only.
 
 The baseline file stays: it is the worked example this page points at, and
 `tests/test_check_committed_baseline.py` checks it still matches this checkout.
-The baseline is for brownfield repositories, which is what the rest of this
-page is about.
+The baseline comparison is for brownfield repositories, which is what the
+rest of this page is about.
 
 ## Adding it to a repository
 
@@ -326,6 +326,7 @@ In this order, and do not skip the middle step:
    commit, with nothing else in it, so the diff shows exactly which signatures
    moved and by how much.
 
-The middle step is not ceremony. A baseline that fails a teammate's pull
-request before anyone has checked its output is a baseline somebody turns off,
-and a turned-off baseline is worse than none: it looks like a control.
+The middle step is not ceremony. A baseline comparison that fails a
+teammate's pull request before anyone has checked its output is a baseline
+comparison somebody turns off, and a turned-off baseline comparison is worse
+than none: it looks like a control.
