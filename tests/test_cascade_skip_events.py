@@ -40,6 +40,7 @@ from tests.test_harness_path_scope import (
 from tests.test_scope_snapshot import _run, _Seams
 
 DEPENDENT_ID = "after-format"
+TRANSITIVE_ID = "after-after-format"
 
 
 class TestACascadeSkipIsRecordedOnTheStream:
@@ -51,6 +52,10 @@ class TestACascadeSkipIsRecordedOnTheStream:
             tmp_path / "scripts" / "kstrl" / "feature" / DEPENDENT_ID / "prd.json",
             AUTHORED,
         )
+        _write_prd(
+            tmp_path / "scripts" / "kstrl" / "feature" / TRANSITIVE_ID / "prd.json",
+            AUTHORED,
+        )
         dependent = Component(
             DEPENDENT_ID,
             DEPENDENT_ID,
@@ -59,7 +64,15 @@ class TestACascadeSkipIsRecordedOnTheStream:
             f"scripts/kstrl/feature/{DEPENDENT_ID}/prd.json",
             f"kstrl/factory/{DEPENDENT_ID}",
         )
-        manifest = _manifest([_component(), dependent])
+        transitive = Component(
+            TRANSITIVE_ID,
+            TRANSITIVE_ID,
+            "depends on after-format",
+            [DEPENDENT_ID],
+            f"scripts/kstrl/feature/{TRANSITIVE_ID}/prd.json",
+            f"kstrl/factory/{TRANSITIVE_ID}",
+        )
+        manifest = _manifest([_component(), dependent, transitive])
         manifest.save(tmp_path / "scripts" / "kstrl" / "manifest.json")
 
         seams = _Seams()
@@ -83,13 +96,15 @@ class TestACascadeSkipIsRecordedOnTheStream:
             scope_snapshot.LoopResult = orig_loop_result
 
         assert result.failed == [COMPONENT_ID]
-        assert result.skipped == [DEPENDENT_ID]
+        assert result.skipped == [DEPENDENT_ID, TRANSITIVE_ID]
 
         state, source = load_run_state(tmp_path)
         assert source is not None
         assert state.components[COMPONENT_ID].status == "failed"
         assert state.components[DEPENDENT_ID].status == "skipped"
         assert not state.components[DEPENDENT_ID].carried
+        assert state.components[TRANSITIVE_ID].status == "skipped"
+        assert not state.components[TRANSITIVE_ID].carried
 
         proc = subprocess.run(
             [sys.executable, "-m", "kstrl", "status", "--no-tui", "--root", str(tmp_path)],
@@ -102,6 +117,7 @@ class TestACascadeSkipIsRecordedOnTheStream:
         combined = proc.stdout + proc.stderr
         assert f"{COMPONENT_ID}: failed" in combined
         assert f"{DEPENDENT_ID}: skipped" in combined
+        assert f"{TRANSITIVE_ID}: skipped" in combined
 
 
 def _parent_map(tree: ast.Module) -> dict[ast.AST, ast.AST]:
