@@ -11,6 +11,7 @@ every ``KSTRL_*`` variable, and points ``XDG_STATE_HOME`` at a sibling of
 from __future__ import annotations
 
 import json
+import socket
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -64,7 +65,7 @@ def _invoke_poll(root: Path, from_file: Path, *, capture: Path | None = None) ->
 
 
 def _ledger_records(root: Path) -> list[Any]:
-    return read_ledger(control_file(root, CONTROL_SIGNALS))
+    return list(read_ledger(control_file(root, CONTROL_SIGNALS)).signals)
 
 
 class TestPollEndToEnd:
@@ -227,7 +228,55 @@ class TestPollEndToEnd:
         assert row.error_value == curly_quote
 
 
+def _dead_port() -> int:
+    """A TCP port nothing is listening on: bind, read the assigned port,
+    close. A connection attempt to it fails immediately with a real
+    ``ConnectionRefusedError`` rather than a network timeout."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    return port
+
+
 class TestPollRefusesLoudly:
+    def test_disabled_refuses_before_opening_a_socket(self, tmp_path: Path) -> None:
+        """#155 fix round A1: `[signals] enabled` was documented as the off
+        switch and gated nothing - with enabled=false, poll still opened
+        the socket (a dead port proves the attempt: Connection refused)
+        and wrote ledger rows. The refusal must land before either."""
+        root = tmp_path / "project"
+        root.mkdir()
+        (root / "kstrl.toml").write_text(
+            '[signals]\nenabled = false\nproduct = "demo-product"\n'
+            f'base_url = "http://127.0.0.1:{_dead_port()}"\n',
+            encoding="utf-8",
+        )
+
+        result = CliRunner().invoke(
+            cli, ["signals", "poll", "--root", str(root)], catch_exceptions=True
+        )
+
+        assert result.exit_code == 1, result.output
+        assert "enabled" in result.output
+        assert not control_file(root, CONTROL_SIGNALS).exists()
+
+    def test_disabled_refuses_a_from_file_replay_too(self, tmp_path: Path) -> None:
+        """The bug measured: `--from-file` wrote 8 ledger rows and exited 0
+        with enabled=false, because the replay path never checked the
+        key either."""
+        root = tmp_path / "project"
+        root.mkdir()
+        (root / "kstrl.toml").write_text(
+            '[signals]\nenabled = false\nproduct = "demo-product"\n', encoding="utf-8"
+        )
+
+        result = _invoke_poll(root, FIXTURE)
+
+        assert result.exit_code == 1, result.output
+        assert "enabled" in result.output
+        assert not control_file(root, CONTROL_SIGNALS).exists()
+
     def test_an_unparseable_kstrl_toml_is_exit_1_not_a_traceback(self, tmp_path: Path) -> None:
         root = tmp_path / "project"
         root.mkdir()
@@ -241,3 +290,66 @@ class TestPollRefusesLoudly:
         assert "error:" in result.output
         assert "kstrl.toml" in result.output
         assert not isinstance(result.exception, ValueError)
+
+
+class TestAnIncompleteLedgerLineIsARefusalWithACountNeverATraceback:
+    """#155 fix round A2c, driven through the real CLI. The old
+    ``Signal.from_dict`` subscripted every field, so a valid-JSON-but-
+    incomplete line raised ``KeyError`` and the ledger is append-only -
+    the bad line bricked both ``poll`` and ``ls`` permanently."""
+
+    def _seed_incomplete_ledger_line(self, root: Path) -> None:
+        from kstrl.statedir import ensure_control_state
+
+        ensure_control_state(root)
+        path = control_file(root, CONTROL_SIGNALS)
+        path.write_text(
+            json.dumps({"schema_version": 1, "issue_id": "old"}) + "\n", encoding="utf-8"
+        )
+
+    def test_poll_exits_0_and_reports_the_drop(self, tmp_path: Path) -> None:
+        root = tmp_path / "project"
+        root.mkdir()
+        _write_toml(root)
+        self._seed_incomplete_ledger_line(root)
+
+        result = _invoke_poll(root, FIXTURE)
+
+        assert result.exit_code == 0, result.output
+        assert "dropped 1" in result.output
+        # The incomplete line is dropped, not stored: 8 new rows only.
+        records = _ledger_records(root)
+        assert len(records) == 8
+        assert all(str(r.kind) == "new_issue" for r in records)
+
+    def test_ls_exits_0_and_reports_the_drop(self, tmp_path: Path) -> None:
+        root = tmp_path / "project"
+        root.mkdir()
+        _write_toml(root)
+        self._seed_incomplete_ledger_line(root)
+
+        result = CliRunner().invoke(
+            cli, ["signals", "ls", "--root", str(root)], catch_exceptions=True
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "1 ledger row(s) could not be read" in result.output
+        assert "No signals recorded yet." in result.output
+
+    def test_ls_reports_the_drop_alongside_the_readable_rows(self, tmp_path: Path) -> None:
+        root = tmp_path / "project"
+        root.mkdir()
+        _write_toml(root)
+        poll_result = _invoke_poll(root, FIXTURE)
+        assert poll_result.exit_code == 0, poll_result.output
+        path = control_file(root, CONTROL_SIGNALS)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"schema_version": 1, "issue_id": "old"}) + "\n")
+
+        result = CliRunner().invoke(
+            cli, ["signals", "ls", "--root", str(root)], catch_exceptions=True
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "dropped" in result.output
+        assert "1" in result.output

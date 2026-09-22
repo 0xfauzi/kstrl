@@ -76,6 +76,80 @@ class TestNormaliseBugsink:
         assert normalise_bugsink(row, product="p") is None
 
 
+def _full_signal_dict() -> dict[str, Any]:
+    signal = normalise_bugsink(_rows()[0], product="p")
+    assert signal is not None
+    data = signal.to_dict()
+    data["kind"] = str(SignalKind.NEW_ISSUE)
+    data["disposition"] = str(Disposition.WOULD_ENQUEUE)
+    return data
+
+
+class TestSignalFromDict:
+    """#155 fix round A2c. ``Signal.from_dict`` used to subscript every
+    field and raise ``KeyError`` on the first one a line was missing,
+    which bricked the (append-only) ledger permanently on one bad line.
+    It is now tolerant like ``InboxItem.from_dict``: ``issue_id``,
+    ``kind`` and ``disposition`` are required and everything else
+    defaults."""
+
+    def test_a_complete_dict_round_trips(self) -> None:
+        data = _full_signal_dict()
+
+        signal = Signal.from_dict(data)
+
+        assert signal is not None
+        assert signal.to_dict() == data
+
+    def test_missing_issue_id_is_none(self) -> None:
+        data = _full_signal_dict()
+        del data["issue_id"]
+
+        assert Signal.from_dict(data) is None
+
+    def test_an_empty_issue_id_is_none(self) -> None:
+        data = _full_signal_dict()
+        data["issue_id"] = ""
+
+        assert Signal.from_dict(data) is None
+
+    def test_missing_kind_is_none(self) -> None:
+        data = _full_signal_dict()
+        del data["kind"]
+
+        assert Signal.from_dict(data) is None
+
+    def test_an_invalid_kind_is_none(self) -> None:
+        data = _full_signal_dict()
+        data["kind"] = "not_a_real_kind"
+
+        assert Signal.from_dict(data) is None
+
+    def test_missing_disposition_is_none(self) -> None:
+        data = _full_signal_dict()
+        del data["disposition"]
+
+        assert Signal.from_dict(data) is None
+
+    def test_optional_fields_default_rather_than_raise(self) -> None:
+        """The KeyError this whole fix is about: the field the reproduced
+        traceback named first."""
+        data = {
+            "issue_id": "x",
+            "kind": str(SignalKind.NEW_ISSUE),
+            "disposition": str(Disposition.WOULD_WATCH),
+        }
+
+        signal = Signal.from_dict(data)
+
+        assert signal is not None
+        assert signal.release is None
+        assert signal.event_count == 0
+        assert signal.schema_version == 1
+        assert signal.poll_id == ""
+        assert signal.resolved is False
+
+
 class TestFetchRefuses:
     def test_a_non_list_results_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("KSTRL_SIGNALS_TOKEN", "tok-" + "0" * 36)
@@ -162,9 +236,11 @@ class TestTheLedgerRefuses:
             read_ledger(path)
 
     def test_a_missing_ledger_reads_empty(self, tmp_path: Path) -> None:
-        assert read_ledger(tmp_path / "signals.jsonl") == []
+        ledger = read_ledger(tmp_path / "signals.jsonl")
+        assert ledger.signals == ()
+        assert ledger.dropped == 0
 
-    def test_a_torn_tail_line_is_skipped(self, tmp_path: Path) -> None:
+    def test_a_torn_tail_line_is_skipped_and_counted(self, tmp_path: Path) -> None:
         path = tmp_path / "signals.jsonl"
         signal = normalise_bugsink(_rows()[0], product="p")
         assert signal is not None
@@ -172,9 +248,56 @@ class TestTheLedgerRefuses:
         torn = '{"schema_version": 1, "issue_id"'  # truncated: valid utf-8, invalid JSON
         path.write_text(good_line + "\n" + good_line + "\n" + torn, encoding="utf-8")
 
-        records = read_ledger(path)
+        ledger = read_ledger(path)
 
-        assert len(records) == 2
+        assert len(ledger.signals) == 2
+        assert ledger.dropped == 1
+
+    def test_a_valid_json_line_missing_a_required_field_is_dropped_and_counted(
+        self, tmp_path: Path
+    ) -> None:
+        """#155 fix round A2c: the regression this guards against.
+        ``Signal.from_dict`` used to subscript every field, so a
+        valid-JSON-but-incomplete line raised ``KeyError`` here and the
+        ledger is append-only - the bad line bricks every later poll and
+        ls permanently. Now it is dropped and counted, like a torn line."""
+        path = tmp_path / "signals.jsonl"
+        signal = normalise_bugsink(_rows()[0], product="p")
+        assert signal is not None
+        good_line = json.dumps(signal.to_dict())
+        incomplete = json.dumps({"schema_version": 1, "issue_id": "some-id"})
+        path.write_text(good_line + "\n" + incomplete + "\n" + good_line + "\n", encoding="utf-8")
+
+        ledger = read_ledger(path)
+
+        assert len(ledger.signals) == 2
+        assert ledger.dropped == 1
+
+    def test_a_line_missing_issue_id_is_dropped(self, tmp_path: Path) -> None:
+        path = tmp_path / "signals.jsonl"
+        signal = normalise_bugsink(_rows()[0], product="p")
+        assert signal is not None
+        data = signal.to_dict()
+        del data["issue_id"]
+        path.write_text(json.dumps(data) + "\n", encoding="utf-8")
+
+        ledger = read_ledger(path)
+
+        assert ledger.signals == ()
+        assert ledger.dropped == 1
+
+    def test_a_line_with_an_invalid_kind_is_dropped(self, tmp_path: Path) -> None:
+        path = tmp_path / "signals.jsonl"
+        signal = normalise_bugsink(_rows()[0], product="p")
+        assert signal is not None
+        data = signal.to_dict()
+        data["kind"] = "not_a_real_kind"
+        path.write_text(json.dumps(data) + "\n", encoding="utf-8")
+
+        ledger = read_ledger(path)
+
+        assert ledger.signals == ()
+        assert ledger.dropped == 1
 
 
 class TestTheStormCountIsEvents:

@@ -5816,6 +5816,12 @@ def signals_poll(
     root_dir = (root or Path.cwd()).resolve()
     config = SignalsConfig.load(root_dir)
     ui_impl = _autonomy_ui(ui, no_color)
+    if not config.enabled:
+        ui_impl.err(
+            "signals polling is off. Set [signals] enabled = true in "
+            "kstrl.toml (or KSTRL_SIGNALS_ENABLED=1)."
+        )
+        sys.exit(1)
     try:
         report = poll(root_dir, config, from_file=from_file, capture=capture)
     except SignalsError as exc:
@@ -5845,16 +5851,20 @@ def signals_ls(root: Path | None, ui: str, no_color: bool) -> None:
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
-    records = read_ledger(control_file(root_dir, CONTROL_SIGNALS))
-    if not records:
+    ledger = read_ledger(control_file(root_dir, CONTROL_SIGNALS))
+    if not ledger.signals:
+        if ledger.dropped:
+            ui_impl.err(f"{ledger.dropped} ledger row(s) could not be read")
         ui_impl.ok("No signals recorded yet.")
         sys.exit(0)
     ui_impl.section("Signals")
-    for row in records:
+    for row in ledger.signals:
         ui_impl.info(
             f"  {row.observed_at}  {row.friendly_id:<20}{str(row.kind):<12}"
             f"{str(row.disposition):<16}events={row.event_count}"
         )
+    if ledger.dropped:
+        ui_impl.kv("dropped", str(ledger.dropped))
     sys.exit(0)
 
 

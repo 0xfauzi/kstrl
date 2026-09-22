@@ -100,6 +100,10 @@ class Disposition(StrEnum):
 class SignalsConfig:
     """``[signals]`` section. Off by default, one tracker, no secrets.
 
+    ``enabled`` is checked by the ``ks signals poll`` CLI callback before
+    it opens a socket or replays a ``--from-file`` page, refusing with
+    exit 1 when it is false (#155 fix round A1).
+
     ``token_env`` is the NAME of the environment variable holding the
     tracker's bearer token, read at call time by ``fetch_bugsink`` - the
     same shape ``LinearConfig.token_env`` uses and for the same reason:
@@ -247,28 +251,67 @@ class Signal:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Signal:
-        release = data["release"]
+    def from_dict(cls, data: dict[str, Any]) -> Signal | None:
+        """Rebuild one ledger row, or ``None`` for a line this reader
+        cannot use.
+
+        Tolerant by design, matching ``InboxItem.from_dict`` and
+        ``QueueItem.from_dict`` (#155 fix round A2c): every field this
+        module itself ever writes is present, but the ledger is
+        append-only, so a line from an older schema or a manual edit can
+        still be missing one. The old form subscripted every field and
+        raised ``KeyError`` on the first one absent, which bricked both
+        ``ks signals poll`` and ``ks signals ls`` permanently, because
+        there was no way to write a corrected line over a bad one.
+
+        ``issue_id`` is the identity key and ``kind``/``disposition`` are
+        the row's whole reason for existing, so all three are required
+        and an invalid or absent one drops the row. Every other field
+        defaults the way an absent optional field always has.
+        """
+        issue_id = data.get("issue_id")
+        if not isinstance(issue_id, str) or not issue_id:
+            return None
+        try:
+            kind = SignalKind(str(data["kind"]))
+            disposition = Disposition(str(data["disposition"]))
+        except (KeyError, ValueError):
+            return None
+        schema_version = data.get("schema_version", 1)
+        if not isinstance(schema_version, int) or isinstance(schema_version, bool):
+            schema_version = 1
+        event_count = data.get("event_count", 0)
+        if not isinstance(event_count, int) or isinstance(event_count, bool):
+            event_count = 0
+        poll_new_issues = data.get("poll_new_issues", 0)
+        if not isinstance(poll_new_issues, int) or isinstance(poll_new_issues, bool):
+            poll_new_issues = 0
+        poll_max_events_on_a_new_issue = data.get("poll_max_events_on_a_new_issue", 0)
+        if not isinstance(poll_max_events_on_a_new_issue, int) or isinstance(
+            poll_max_events_on_a_new_issue, bool
+        ):
+            poll_max_events_on_a_new_issue = 0
+        release = data.get("release")
         return cls(
-            schema_version=int(data["schema_version"]),
-            poll_id=str(data["poll_id"]),
-            observed_at=str(data["observed_at"]),
-            product=str(data["product"]),
-            tracker=str(data["tracker"]),
-            issue_id=str(data["issue_id"]),
-            friendly_id=str(data["friendly_id"]),
-            event_count=int(data["event_count"]),
-            resolved=bool(data["resolved"]),
-            first_seen=str(data["first_seen"]),
-            last_seen=str(data["last_seen"]),
-            error_type=str(data["error_type"]),
-            error_value=str(data["error_value"]),
-            transaction=str(data["transaction"]),
+            schema_version=schema_version,
+            poll_id=str(data.get("poll_id", "")),
+            observed_at=str(data.get("observed_at", "")),
+            product=str(data.get("product", "")),
+            tracker=str(data.get("tracker", "")),
+            issue_id=issue_id,
+            friendly_id=str(data.get("friendly_id", "")),
+            event_count=event_count,
+            resolved=bool(data.get("resolved", False)),
+            first_seen=str(data.get("first_seen", "")),
+            last_seen=str(data.get("last_seen", "")),
+            error_type=str(data.get("error_type", "")),
+            error_value=str(data.get("error_value", "")),
+            transaction=str(data.get("transaction", "")),
             release=None if release is None else str(release),
-            kind=SignalKind(str(data["kind"])),
-            disposition=Disposition(str(data["disposition"])),
-            poll_new_issues=int(data["poll_new_issues"]),
-            poll_max_events_on_a_new_issue=int(data["poll_max_events_on_a_new_issue"]),
+            kind=kind,
+            disposition=disposition,
+            poll_new_issues=poll_new_issues,
+            poll_max_events_on_a_new_issue=poll_max_events_on_a_new_issue,
         )
 
 
@@ -387,25 +430,47 @@ def classify(
 # --- the ledger half: read, index, append -------------------------------
 
 
-def read_ledger(path: Path) -> list[Signal]:
-    """The whole ledger, oldest first. Raises rather than reading empty.
+@dataclass(frozen=True)
+class LedgerRead:
+    """One pass over the signal ledger: the readable rows, and a count
+    of the ones this reader could not use (#155 fix round A2c).
 
-    A missing file is the one legitimate empty read, checked with
-    ``path.exists()``. Everything else - ``OSError`` from
-    ``read_bytes()``, ``UnicodeDecodeError`` (a ``ValueError``) from
-    ``decode`` - reaches the caller: a read failure that returned ``[]``
-    would make every known key look new again and inflate the very
-    counts this slice exists to collect. Both calls are OUTSIDE any
-    ``try``, which is stronger than catching them and re-raising: no
-    later widening of a guard here can swallow either. Per-line
-    ``json.JSONDecodeError`` is skipped, matching ``Inbox.scan``, because
-    a torn tail is a known shape rather than an unreadable file.
+    The count, not just the tolerance, is the fix: a torn tail or a
+    valid-JSON-but-incomplete line is a known shape, same as
+    ``Inbox.scan``'s ``skipped_lines``, and a caller that silently
+    dropped it would report a ledger shorter than what was actually
+    written with nothing to show for the difference.
+    """
+
+    signals: tuple[Signal, ...] = ()
+    dropped: int = 0
+
+
+def read_ledger(path: Path) -> LedgerRead:
+    """The whole ledger, oldest first, plus how many lines were unusable.
+
+    Raises rather than reading empty. A missing file is the one
+    legitimate empty read, checked with ``path.exists()``. Everything
+    else - ``OSError`` from ``read_bytes()``, ``UnicodeDecodeError`` (a
+    ``ValueError``) from ``decode`` - reaches the caller: a read failure
+    that returned an empty ledger would make every known key look new
+    again and inflate the very counts this slice exists to collect. Both
+    calls are OUTSIDE any ``try``, which is stronger than catching them
+    and re-raising: no later widening of a guard here can swallow
+    either.
+
+    Two DIFFERENT unusable shapes are both counted in ``dropped``: a
+    torn tail line (``json.JSONDecodeError``, matching ``Inbox.scan``)
+    and valid JSON that ``Signal.from_dict`` cannot use - missing or
+    unusable required fields. Neither raises; a torn or incomplete
+    ledger line is a known, countable shape, not an unreadable file.
     """
     if not path.exists():
-        return []
+        return LedgerRead()
     raw = path.read_bytes()
     text = raw.decode("utf-8")
     records: list[Signal] = []
+    dropped = 0
     for line in text.splitlines():
         line = line.strip()
         if not line:
@@ -413,10 +478,17 @@ def read_ledger(path: Path) -> list[Signal]:
         try:
             record = read_json(line)
         except json.JSONDecodeError:
+            dropped += 1
             continue
-        if isinstance(record, dict):
-            records.append(Signal.from_dict(record))
-    return records
+        if not isinstance(record, dict):
+            dropped += 1
+            continue
+        signal = Signal.from_dict(record)
+        if signal is None:
+            dropped += 1
+            continue
+        records.append(signal)
+    return LedgerRead(signals=tuple(records), dropped=dropped)
 
 
 def append_signals(path: Path, signals: Sequence[Signal]) -> None:
@@ -503,16 +575,10 @@ def fetch_bugsink(config: SignalsConfig) -> list[dict[str, Any]]:
 def _rows_for_poll(
     config: SignalsConfig,
     *,
-    fetch: Callable[[SignalsConfig], list[dict[str, Any]]] | None,
     from_file: Path | None,
     capture: Path | None,
 ) -> list[dict[str, Any]]:
-    if from_file is not None:
-        text = read_page_text(from_file)
-    elif fetch is None:
-        text = _fetch_bugsink_text(config)
-    else:
-        return fetch(config)
+    text = _fetch_bugsink_text(config) if from_file is None else read_page_text(from_file)
     if capture is not None:
         write_capture(capture, text)
     return _rows_from_document(read_json(text))
@@ -594,28 +660,21 @@ def poll(
     root_dir: Path,
     config: SignalsConfig,
     *,
-    fetch: Callable[[SignalsConfig], list[dict[str, Any]]] | None = None,
     now: Callable[[], datetime] | None = None,
     from_file: Path | None = None,
     capture: Path | None = None,
 ) -> PollReport:
-    """Fetch, classify against the ledger, append, report. Never queues.
-
-    ``fetch`` is the injection point for tests: ``fetch_bugsink`` if
-    ``fetch`` is ``None``, else the caller's replacement, chosen with a
-    ternary rather than ``(fetch or fetch_bugsink)(config)`` - the latter
-    is undecidable to the static guards this package's other modules are
-    pinned against, measured at nine assertions across eight files.
-    """
+    """Fetch, classify against the ledger, append, report. Never queues."""
     clock = _utc_now if now is None else now
     moment = clock()
-    rows = _rows_for_poll(config, fetch=fetch, from_file=from_file, capture=capture)
+    rows = _rows_for_poll(config, from_file=from_file, capture=capture)
 
     ensure_control_state(root_dir)
     ledger_path = control_file(root_dir, CONTROL_SIGNALS)
-    previous_by_id = _index_ledger(read_ledger(ledger_path))
+    ledger = read_ledger(ledger_path)
+    previous_by_id = _index_ledger(ledger.signals)
 
-    classified, dropped_rows = _classify_rows(rows, previous_by_id, config)
+    classified, page_dropped = _classify_rows(rows, previous_by_id, config)
     poll_new_issues, poll_max_events_on_a_new_issue = _storm_figures(classified)
     poll_id = uuid.uuid4().hex
     observed_at = _iso(moment)
@@ -633,7 +692,7 @@ def poll(
         poll_id=poll_id,
         observed_at=observed_at,
         signals=finalized,
-        dropped_rows=dropped_rows,
+        dropped_rows=page_dropped + ledger.dropped,
         poll_new_issues=poll_new_issues,
         poll_max_events_on_a_new_issue=poll_max_events_on_a_new_issue,
     )
