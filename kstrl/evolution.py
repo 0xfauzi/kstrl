@@ -1379,6 +1379,16 @@ def _components_this_run(manifest: Manifest, factory_result: FactoryResult) -> l
     is a merge the re-poll confirms, whose iterations, duration and
     findings belong to the earlier run that did the work. A component in
     none of the three carried its state from an earlier run and gets no row.
+
+    A component can also be in ``failed`` or ``skipped`` without ever
+    being in ``scheduled``: a merge re-poll that finds the parked PR
+    closed moves it straight to FAILED (kstrl/pipeline.py
+    ``repoll_merge_pending``), and its cascade skips follow the same way.
+    That component is admitted here (its FAILED transition is real and
+    must be recorded), but it never ran in THIS run, so its row's
+    iteration_count, duration_seconds and retries must not be its
+    earlier run's numbers under a new run id - :func:`record_run` zeroes
+    those three fields for it via :func:`_effective_result_fields`.
     """
     touched = {
         *factory_result.scheduled,
@@ -1386,6 +1396,27 @@ def _components_this_run(manifest: Manifest, factory_result: FactoryResult) -> l
         *factory_result.skipped,
     }
     return [comp for comp in manifest.components if comp.id in touched]
+
+
+def _effective_result_fields(comp: Component, launched: set[str]) -> tuple[int, int, float]:
+    """(retries, iteration_count, duration_seconds) for ``comp``'s row this run.
+
+    A component this run moved to FAILED or skipped without launching it
+    (a merge re-poll that finds the parked PR closed, and the cascade
+    skips that follow) keeps whatever iteration_count, duration_seconds
+    and retries an EARLIER run left on the manifest. Reporting those
+    under this run's id would double-count that earlier run's work
+    (#447, one path over: the same phantom-copy defect the writer fix
+    above removes, reachable through ``failed``/``skipped`` instead of a
+    carried manifest state). Only a component this run actually launched
+    reports its own numbers; a component admitted without a launch
+    reports zero for all three. ``status``, ``error`` and
+    ``failure_signatures`` are untouched: the FAILED transition and its
+    ``pr:closed-without-merge`` signature are real.
+    """
+    if comp.id not in launched:
+        return 0, 0, 0.0
+    return comp.retries, comp.iteration_count, comp.duration_seconds
 
 
 def _role_usage_entries(
@@ -1520,8 +1551,14 @@ class EvolutionJournal:
 
         # --- JSONL entries per component ---
         ran = _components_this_run(manifest, factory_result)
+        launched = set(factory_result.scheduled)
+        effective_by_comp: dict[str, tuple[int, int, float]] = {}
         entries: list[dict[str, Any]] = []
         for comp in ran:
+            eff_retries, eff_iteration_count, eff_duration = _effective_result_fields(
+                comp, launched
+            )
+            effective_by_comp[comp.id] = (eff_retries, eff_iteration_count, eff_duration)
             has_error = bool(comp.error) and comp.status in (
                 ComponentStatus.FAILED.value,
                 ComponentStatus.PENDING.value,  # retried components reset to pending
@@ -1554,15 +1591,15 @@ class EvolutionJournal:
                 "component_id": comp.id,
                 "event_type": "component_result",
                 "status": comp.status,
-                "retries": comp.retries,
+                "retries": eff_retries,
                 "error": comp.error,
                 "check_name": check_name,
                 "error_signature": error_sig,
                 "failure_signatures": comp_signatures,
                 "failed_phase": comp.failed_phase,
                 "failed_check": comp.failed_check,
-                "duration_seconds": comp.duration_seconds,
-                "iteration_count": comp.iteration_count,
+                "duration_seconds": eff_duration,
+                "iteration_count": eff_iteration_count,
                 "findings": findings_serialized,
                 "findings_summary": findings_summary,
                 "usage": usage_by_component.get(comp.id, {}),
@@ -1600,13 +1637,20 @@ class EvolutionJournal:
         failed = len(factory_result.failed)
         skipped = len(factory_result.skipped)
 
-        iteration_counts = [c.iteration_count for c in ran if c.iteration_count > 0]
+        # #447: a component admitted here without a launch (a merge
+        # re-poll that finds the PR closed, and its cascade skips) has
+        # its iteration_count, duration_seconds and retries zeroed in
+        # ``effective_by_comp``, so its earlier run's numbers are not
+        # averaged into THIS run's row under this run's id.
+        iteration_counts = [
+            effective_by_comp[c.id][1] for c in ran if effective_by_comp[c.id][1] > 0
+        ]
         avg_iterations = sum(iteration_counts) / len(iteration_counts) if iteration_counts else 0.0
 
-        durations = [c.duration_seconds for c in ran if c.duration_seconds > 0]
+        durations = [effective_by_comp[c.id][2] for c in ran if effective_by_comp[c.id][2] > 0]
         avg_duration = sum(durations) / len(durations) if durations else 0.0
 
-        retry_total = sum(c.retries for c in ran)
+        retry_total = sum(effective_by_comp[c.id][0] for c in ran)
         retry_rate = retry_total / total if total > 0 else 0.0
 
         # Most common failure signature (full "<check>:<code>" form).

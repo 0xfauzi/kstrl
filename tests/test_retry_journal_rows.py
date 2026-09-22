@@ -328,9 +328,8 @@ def test_the_carried_rows_of_the_432_journal_are_the_seven_copies() -> None:
     assert [sum(1 for r in kept if r["run_id"] == run) for run in runs] == touched
 
 
-def _legacy_row(run_id: str, duration: float, version: int) -> dict[str, Any]:
-    return {
-        "schema_version": version,
+def _legacy_row(run_id: str, duration: float, version: int | None) -> dict[str, Any]:
+    row: dict[str, Any] = {
         "run_id": run_id,
         "component_id": "comp-a",
         "event_type": "component_result",
@@ -339,11 +338,15 @@ def _legacy_row(run_id: str, duration: float, version: int) -> dict[str, Any]:
         "iteration_count": 3,
         "duration_seconds": duration,
     }
+    if version is not None:
+        row["schema_version"] = version
+    return row
 
 
 @pytest.mark.parametrize(
     ("version", "second_duration", "components"),
     [
+        (None, 10.5, 1),  # no schema_version is v1: a repeat is a copy
         (2, 10.5, 1),  # pre-#447 row repeating status, retries, iterations AND duration: a copy
         (2, 11.25, 2),  # same three fields, new duration: the component ran again
         (3, 10.5, 2),  # a v3 row is never a copy, even when all four fields repeat
@@ -351,7 +354,7 @@ def _legacy_row(run_id: str, duration: float, version: int) -> dict[str, Any]:
     ],
 )
 def test_ks_evolve_drops_a_row_only_when_it_is_pre_447_and_repeats_the_previous_duration(
-    tmp_path: Path, version: int, second_duration: float, components: int
+    tmp_path: Path, version: int | None, second_duration: float, components: int
 ) -> None:
     kstrl_dir = tmp_path / ".kstrl"
     kstrl_dir.mkdir()
@@ -363,6 +366,28 @@ def test_ks_evolve_drops_a_row_only_when_it_is_pre_447_and_repeats_the_previous_
     out = _evolve(tmp_path)
 
     assert f"concern hit rate: 0 of {components} components" in out
+
+
+def test_ks_evolve_a_row_missing_a_carried_field_breaks_the_copy_chain(tmp_path: Path) -> None:
+    """B3: r2 is missing ``duration_seconds`` (one of :data:`_CARRIED_FIELDS`
+    on kstrl/evolution.py), so it is never itself a copy, AND it must break
+    the chain for r3: ``carried_result_indices`` pops the component's stored
+    state on a row with a missing field, the same as it does for a v3 row.
+    Without that pop, r3 would repeat r1's state through the stale entry
+    and be read as a copy, leaving only 2 of 3 components measured."""
+    kstrl_dir = tmp_path / ".kstrl"
+    kstrl_dir.mkdir()
+    r1 = _legacy_row("r1", 10.5, 2)
+    r2 = _legacy_row("r2", 10.5, 2)
+    del r2["duration_seconds"]
+    r3 = _legacy_row("r3", 10.5, 2)
+    (kstrl_dir / "evolution.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in (r1, r2, r3)), encoding="utf-8"
+    )
+
+    out = _evolve(tmp_path)
+
+    assert "concern hit rate: 0 of 3 components" in out
 
 
 # --- a component that ends MERGE_PENDING is journaled in the run that parked it
@@ -444,4 +469,68 @@ def test_a_component_parked_merge_pending_is_journaled_in_its_run(
     assert [r["components_total"] for r in _tsv_rows(root)] == ["1", "0", "1"]
     assert "(1 component(s) ran, 1 iteration(s) across 1 attempt(s))" in _line_for(
         _evolve(root, "--status"), run_3
+    )
+
+
+@pytest.mark.spine
+def test_a_repoll_that_finds_the_pr_closed_journals_no_carried_numbers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """B1: a merge re-poll that finds the parked PR closed moves alpha
+    straight to FAILED without launching it (kstrl/pipeline.py
+    ``repoll_merge_pending``): it lands in ``factory_result.failed``, so
+    ``_components_this_run`` admits it, but alpha did no work in this run.
+    Its row must not carry run 1's iteration_count, duration_seconds or
+    retries under run 2's id, and ``ks evolve --status`` must measure run
+    2 rather than refuse it."""
+    bin_dir = tmp_path / "spine-bin"
+    bin_dir.mkdir()
+    spine_utils.write_stub_gh(bin_dir)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    for var in ("GH_SPINE_CREATE", "GH_SPINE_MERGE", "GH_SPINE_MERGE_SHA"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("GH_SPINE_VIEW_STATE", "OPEN")
+    monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
+    root = tmp_path / "repo"
+    spine_utils.init_kstrl_repo(root, ("alpha", "beta"), with_origin=True)
+    manifest = spine_utils.make_manifest(
+        [spine_utils.component("alpha"), spine_utils.component("beta", ["alpha"])]
+    )
+    run_factory(
+        manifest,
+        spine_utils.factory_config(create_prs=True),
+        spine_utils.base_config(root),
+        PlainUI(no_color=True),
+        root,
+    )
+    (parked,) = _results(root)
+    assert parked["iteration_count"] > 0
+    assert parked["duration_seconds"] > 0.0
+
+    monkeypatch.setenv("GH_SPINE_VIEW_STATE", "CLOSED")
+    second = run_factory(
+        manifest,
+        spine_utils.factory_config(create_prs=True),
+        spine_utils.base_config(root),
+        PlainUI(no_color=True),
+        root,
+    )
+
+    assert second.scheduled == []
+    assert second.failed == ["alpha"]
+    run_2 = _tsv_rows(root)[1]["run_id"]
+    (alpha_run2,) = [
+        e for e in _results(root) if e["run_id"] == run_2 and e["component_id"] == "alpha"
+    ]
+    assert alpha_run2["status"] == "failed"
+    assert alpha_run2["retries"] == 0
+    assert alpha_run2["iteration_count"] == 0
+    assert alpha_run2["duration_seconds"] == 0.0
+    assert alpha_run2["error"] and "closed" in alpha_run2["error"]
+
+    out = _line_for(_evolve(root, "--status"), run_2)
+    assert "REFUSED" not in out
+    assert (
+        "iterations_all_attempts=0.00 (0 component(s) ran, 0 iteration(s) across 2 attempt(s))"
+        in out
     )
