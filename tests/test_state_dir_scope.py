@@ -602,6 +602,47 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
         assert _import_closure("kstrl.serve") & self.WRITERS
 
 
+class TestSignalsCannotReachTheQueue:
+    """R8.8 slice 1 (#155) observes and does not spend. An import edge
+    between the signal poller and the work queue is the mechanism that
+    keeps that true, checked in both directions with the same
+    ``_import_closure`` this file already controls above."""
+
+    def test_signals_does_not_import_the_queue(self) -> None:
+        """#155 fix round A2: without the control below, this assertion
+        passes vacuously if ``kstrl.signals`` ever stops resolving to a
+        real file - a rename, or a stale name typed here - because
+        ``_import_closure`` on a name with no file behind it returns just
+        that one-element set, and ``"kstrl.workqueue" not in {itself}``
+        is trivially true whatever the renamed module actually imports."""
+        closure = _import_closure("kstrl.signals")
+        assert "kstrl.statedir" in closure, (
+            "kstrl.signals's import closure holds only itself, which means "
+            "the name below resolved to no file. This assertion would then "
+            "pass on any import kstrl.signals actually has."
+        )
+        assert "kstrl.workqueue" not in closure, (
+            "slice 1 of R8.8 observes and does not spend. An import edge here "
+            "is how that stops being true. If the enqueue slice is landing, "
+            "delete this class in the same diff that adds the ladder replay to "
+            "docs/dark-factory-roadmap.md."
+        )
+
+    def test_the_queue_does_not_import_signals(self) -> None:
+        closure = _import_closure("kstrl.workqueue")
+        assert "kstrl.statedir" in closure, (
+            "kstrl.workqueue's import closure holds only itself, which means "
+            "the name below resolved to no file. This assertion would then "
+            "pass on any import kstrl.workqueue actually has."
+        )
+        assert "kstrl.signals" not in closure, (
+            "slice 1 of R8.8 observes and does not spend. An import edge here "
+            "is how that stops being true. If the enqueue slice is landing, "
+            "delete this class in the same diff that adds the ladder replay to "
+            "docs/dark-factory-roadmap.md."
+        )
+
+
 # ---------------------------------------------------------------------------
 # A real repository with no .gitignore: the case #273 cannot reach
 # ---------------------------------------------------------------------------

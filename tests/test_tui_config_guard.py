@@ -90,6 +90,8 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # The transport failures belong to run_gh, counted against
     # intake_github.py rather than here.
     "serve.py": 5,
+    # SignalsError, R8.8 slice 1 / #155.
+    "signals.py": 1,
     # One since #232: ControlLockedError and ControlUnavailableError now
     # derive from a shared ControlStateError, which is the only class in
     # the module that spells RuntimeError. They are still kstrl's, so

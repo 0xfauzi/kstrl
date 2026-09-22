@@ -283,6 +283,8 @@ ks retry COMPONENT_ID           Retry a FAILED component from the factory manife
 ks run [MAX_ITERATIONS]         Run the agentic loop as a single-component factory invocation.
 ks sense                        Run the mechanical sensors against a tree and print the measurement.
 ks serve                        Drain the continuous-intake queue (R8.6).
+ks signals ls                   Print the signal ledger, oldest first.
+ks signals poll                 Fetch one tracker page, classify it against the ledger, print the tally.
 ks status                       Show per-component status from the manifest + progress log.
 ks understand [MAX_ITERATIONS]  Run codebase understanding loop (read-only mode).
 ```
@@ -534,6 +536,17 @@ api_url = "https://api.linear.app/graphql"  # GraphQL endpoint
 dry_run = false                             # record mutations instead of sending them
 timeout_seconds = 30.0                      # per-request timeout
 min_request_interval = 0.5                  # client-side throttle between requests (seconds)
+
+# Runtime signal poller (R8.8 slice 1)
+[signals]
+enabled = false                     # poll the configured tracker
+product = ""                        # the product name recorded on every ledger row
+base_url = "http://127.0.0.1:8000"  # the tracker's root URL, no trailing slash needed
+project_id = ""                     # Bugsink's numeric project id, as a string
+token_env = "KSTRL_SIGNALS_TOKEN"   # NAME of the env var holding the tracker's bearer token
+http_timeout = 10.0                 # per-request timeout
+new_issue_events = 3                # advisory threshold; labels a new issue, gates nothing
+repeat_growth_events = 10           # advisory threshold; labels a repeat, gates nothing
 ```
 
 Environment variables override kstrl.toml, and CLI flags override both.

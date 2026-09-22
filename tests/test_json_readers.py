@@ -106,6 +106,7 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "prd.py": 2,
     "sandbox.py": 3,
     "serve.py": 5,
+    "signals.py": 3,
     "statedir.py": 2,
     "verify.py": 1,
     "workqueue.py": 9,

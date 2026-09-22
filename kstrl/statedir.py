@@ -51,6 +51,13 @@ CONTROL_GITHUB_PROCESSED = "github_processed.json"
 #: a counter that lived only in the process could never reach its
 #: threshold there. Post-R8.9, so it has no legacy in-tree location.
 CONTROL_PR_COUNT_STREAK = "pr_count_streak.json"
+#: R8.8 slice 1 / #155. The runtime-signal poll ledger: one append-only
+#: line per (issue, poll). Control state rather than an in-tree artifact
+#: for the same reason the streak counter above is - it will decide
+#: whether the factory spends, so it must not be a file the engineer
+#: agent under test can author. Post-R8.9, so it has no legacy in-tree
+#: location; see ``legacy_control_paths`` below.
+CONTROL_SIGNALS = "signals.jsonl"
 
 #: Every file kstrl keeps in the XDG control directory. Wider than
 #: :func:`legacy_control_paths`, whose keys are the subset that also
@@ -62,6 +69,7 @@ CONTROL_FILENAMES: tuple[str, ...] = (
     CONTROL_PAUSE,
     CONTROL_GITHUB_PROCESSED,
     CONTROL_PR_COUNT_STREAK,
+    CONTROL_SIGNALS,
 )
 
 #: Directories kstrl creates directly under ``.kstrl/``. A statement of

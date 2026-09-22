@@ -452,8 +452,11 @@ def routed_append_census() -> dict[str, int]:
 
 
 #: Layer 3's pin: every call into ``appendio`` and the exclusion it asks
-#: for. Exactly one site passes ``lock=True``, the evolution journal,
-#: and the reason each of the others does not is at its own call site:
+#: for. Two sites pass ``lock=True`` - the evolution journal, and the
+#: R8.8 slice-1 signal ledger, whose reason is at its own call site: a
+#: cron-driven ``ks signals poll`` and an operator's can interleave, and
+#: the whole product of that slice is a count that must not be short.
+#: The reason each of the others does not is at its own call site too:
 #: ``inbox`` is under ``control_lock``, ``workqueue`` under the caller's
 #: ``queue_lock``, and the rest have one writer process per file.
 #: ``appendio``'s own two rows are the helper passing the caller's
@@ -468,6 +471,7 @@ EXPECTED_ROUTED_APPENDS: dict[str, int] = {
     "events.py: open_for_append(lock=default (False))": 1,
     "evolution.py: append_records(lock=True)": 1,
     "evolution.py: append_records(lock=default (False))": 1,
+    "signals.py: append_records(lock=True)": 1,
     "inbox.py: append_records(lock=default (False))": 1,
     "init_cmd.py: append_records(lock=default (False))": 1,
     "knowledge.py: append_records(lock=default (False))": 1,
