@@ -202,8 +202,17 @@ class TestClassify:
             (False, 1, 0, False, False, (SignalKind.NEW_ISSUE, Disposition.WOULD_WATCH)),
             (True, 5, 5, True, True, (SignalKind.RECURRENCE, Disposition.WOULD_ENQUEUE)),
             (True, 20, 1, False, False, (SignalKind.REPEAT, Disposition.WOULD_NOTIFY)),
+            (False, 3, 0, False, False, (SignalKind.NEW_ISSUE, Disposition.WOULD_ENQUEUE)),
+            (True, 11, 1, False, False, (SignalKind.REPEAT, Disposition.WOULD_NOTIFY)),
         ],
-        ids=["new-enqueue", "new-watch", "recurrence", "repeat-notify"],
+        ids=[
+            "new-enqueue",
+            "new-watch",
+            "recurrence",
+            "repeat-notify",
+            "new-at-the-threshold",
+            "repeat-growth-at-the-threshold",
+        ],
     )
     def test_each_ladder_branch(
         self,

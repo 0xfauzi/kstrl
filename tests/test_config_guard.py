@@ -65,6 +65,13 @@ EXPECTED_SURFACE_CLASSES: dict[str, frozenset[str]] = {
         "SandboxConfig",
         "SecurityConfig",
         "ServeConfig",
+        # SignalsConfig is deliberately NOT in RunEnvelope. RunEnvelope is
+        # one factory run's resolved configuration and
+        # RunEnvelope.policy_hash is the hash manifest.policy_hash
+        # records; a signals poll starts no run, writes no run directory
+        # and contributes to no policy hash, so adding [signals] to the
+        # envelope would change that hash for every existing project for
+        # no behavioural reason.
         "SignalsConfig",
         "TimeoutConfig",
         "VerifyConfig",

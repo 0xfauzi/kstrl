@@ -82,6 +82,13 @@ class TestPollEndToEnd:
         assert all(r.schema_version == 1 for r in records)
         assert "8 signals" in result.output
         assert "would_enqueue" in result.output
+        # The committed fixture has 8 issues, all new on the first poll,
+        # and its largest digested_event_count is 8: both storm figures
+        # equal 8 on every row, and the CLI prints both key names.
+        assert all(r.poll_new_issues == 8 for r in records)
+        assert all(r.poll_max_events_on_a_new_issue == 8 for r in records)
+        assert "poll_new_issues" in result.output
+        assert "poll_max_events_on_a_new_issue" in result.output
 
     def test_a_second_poll_of_the_same_page_records_repeats_not_new_issues(
         self, tmp_path: Path
