@@ -1784,6 +1784,37 @@ BUILD_MANIFEST_FIX = (
 )
 
 
+def _verify_command_runs_through_uv(command: str) -> bool:
+    """Whether ``command`` resolves through ``uv run``, which needs a
+    pyproject.toml to find a project to run in (#434 B1).
+
+    This is the same fact `doctor.check_verify_commands` already warns
+    on when a command is left UNSET and falls back to one of the ``uv
+    run`` defaults with no pyproject.toml at the root. A command the
+    operator set EXPLICITLY to that same shape has the identical
+    problem, so it must not count as the operator having told kstrl
+    how the project builds: it still depends on the manifest kstrl
+    refuses the repository over.
+    """
+    return command.split()[:2] == ["uv", "run"]
+
+
+def _verify_escape_satisfied(config: VerifyConfig, root: Path) -> bool:
+    """Whether ``config``'s ``[verify]`` commands describe a toolchain
+    that does not depend on the build manifest this repository lacks.
+
+    A set command counts unless it runs through ``uv run`` with no
+    pyproject.toml at ``root`` - the same condition
+    `doctor.check_verify_commands` uses for the identical fact, reused
+    here rather than a second rule.
+    """
+    has_pyproject = (root / "pyproject.toml").exists()
+    return any(
+        command is not None and (has_pyproject or not _verify_command_runs_through_uv(command))
+        for command in (config.test_command, config.typecheck_command, config.lint_command)
+    )
+
+
 def build_manifest_blocker(root: Path, *, read_verify: bool = True) -> str | None:
     """Why kstrl cannot plan work in ``root`` yet, or None when it can (#434).
 
@@ -1795,9 +1826,12 @@ def build_manifest_blocker(root: Path, *, read_verify: bool = True) -> str | Non
     refused although go.mod is not on the exclusion list.
 
     A repository kstrl reads no language from is still let through when
-    ``[verify]`` names any command: the operator has told kstrl how the
-    project builds, which is the answer for a toolchain kstrl does not
-    recognise (a Gemfile, a Makefile).
+    ``[verify]`` names a command that does not itself depend on that
+    manifest (:func:`_verify_escape_satisfied`): the operator has told
+    kstrl how the project builds, which is the answer for a toolchain
+    kstrl does not recognise (a Gemfile, a Makefile). A ``uv run``
+    command with no pyproject.toml is not such an answer: it is the
+    same missing manifest, restated.
 
     ``read_verify=False`` is for `ks init`, which must not read
     kstrl.toml at all: it runs beside a file that does not load
@@ -1809,9 +1843,36 @@ def build_manifest_blocker(root: Path, *, read_verify: bool = True) -> str | Non
         return None
     if read_verify:
         config = VerifyConfig.load(root)
-        if config.test_command or config.typecheck_command or config.lint_command:
+        if _verify_escape_satisfied(config, root):
             return None
     return BUILD_MANIFEST_MISSING
+
+
+def build_manifest_ok_reason(root: Path) -> str:
+    """Which of #434's two conditions let ``root`` through, for
+    `doctor.check_build_manifest`'s ``[ok]`` detail.
+
+    Only meaningful after `build_manifest_blocker(root)` has already
+    returned ``None``: it repeats the same two reads rather than
+    threading a reason back through that function's ``str | None``
+    return, which every other caller only tests for truthiness. The
+    two reasons were folded into one sentence before #434 B1
+    ("a build manifest ... is at the root, or [verify] names ..."),
+    which is how a `[verify] test_command = "uv run pytest"` escape
+    that itself needed the missing manifest read as `[ok]` without
+    saying which half applied.
+    """
+    if _detect_project_context(root)["language"] != "unknown":
+        return (
+            "a build manifest kstrl recognises is at the repository root, so the "
+            "`ks decompose` preflight (init_cmd.build_manifest_blocker) lets the "
+            "architect run"
+        )
+    return (
+        "no build manifest kstrl recognises is at the repository root, but [verify] "
+        "names a command that does not depend on one, so the `ks decompose` "
+        "preflight (init_cmd.build_manifest_blocker) lets the architect run"
+    )
 
 
 def _report_build_manifest(root: Path, ui: UI) -> None:

@@ -312,6 +312,26 @@ def test_each_verify_command_lets_an_unrecognised_toolchain_reach_the_architect(
     assert calls.exists(), proc.stdout
 
 
+def test_a_verify_command_that_runs_through_uv_does_not_satisfy_the_escape(
+    tmp_path: Path,
+) -> None:
+    """A greenfield Python repository (#434 B1). Setting [verify]
+    test_command to the same `uv run pytest` the default already names
+    does not describe a toolchain kstrl does not recognise: `uv run`
+    itself needs the pyproject.toml this repository does not have, so
+    the command cannot run any more than the refusal it is supposed to
+    avoid. It must not satisfy the escape."""
+    root = greenfield(tmp_path)
+    (root / "kstrl.toml").write_text('[verify]\ntest_command = "uv run pytest"\n', encoding="utf-8")
+    agent, calls = recording_agent(root)
+
+    proc = spec_command(root, "decompose", agent)
+
+    assert proc.returncode == 2, proc.stdout
+    assert REFUSAL in proc.stdout
+    assert not calls.exists(), proc.stdout
+
+
 def test_the_home_shell_decompose_launch_honours_the_verify_escape(tmp_path: Path) -> None:
     root = greenfield(tmp_path, extra={"Gemfile": 'source "https://rubygems.org"\n'})
     (root / "kstrl.toml").write_text(

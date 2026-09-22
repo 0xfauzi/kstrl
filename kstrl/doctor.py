@@ -39,7 +39,11 @@ from kstrl.feedforward import (
     _find_top_source_dirs,
     extract_public_interfaces,
 )
-from kstrl.init_cmd import BUILD_MANIFEST_FIX, build_manifest_blocker
+from kstrl.init_cmd import (
+    BUILD_MANIFEST_FIX,
+    build_manifest_blocker,
+    build_manifest_ok_reason,
+)
 from kstrl.policy import ENFORCEMENT_MACHINERY_PATHS, PolicyConfig, _match_glob
 from kstrl.statedir import STATE_DIR_NAME, state_dir
 from kstrl.verify import VerifyConfig, resolve_verify_commands
@@ -318,13 +322,7 @@ def check_build_manifest(root: Path) -> _CheckResult:
         return _not_evaluated("build_manifest")
     if blocker is not None:
         return (STATUS_FAIL, blocker, BUILD_MANIFEST_FIX)
-    return (
-        STATUS_OK,
-        "a build manifest kstrl recognises is at the root, or [verify] names "
-        "the commands this project builds with, so the `ks decompose` "
-        "preflight (init_cmd.build_manifest_blocker) lets the architect run",
-        "",
-    )
+    return (STATUS_OK, build_manifest_ok_reason(root), "")
 
 
 def check_verify_commands(root: Path) -> _CheckResult:
