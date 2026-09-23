@@ -25,6 +25,7 @@ from kstrl.config import KstrlConfig
 from kstrl.config_preflight import SURFACE_REJECTIONS, raise_if_defect
 from kstrl.events import CallbackSink, EventBus, RunPaths
 from kstrl.git import resolve_base_branch
+from kstrl.init_cmd import BUILD_MANIFEST_FIX, build_manifest_blocker
 from kstrl.interaction import QueueInteractionChannel
 from kstrl.launch import (
     DecomposeLaunch,
@@ -254,12 +255,15 @@ def _prepare_decompose(
 
     try:
         config = KstrlConfig.load(root_dir)
+        blocker = build_manifest_blocker(root_dir)
     except SURFACE_REJECTIONS as exc:
         # The same widening as _prepare_factory, for the same reason,
         # and the same guard against it hiding one of our own defects.
         raise_if_defect(exc)
         raise LaunchError(f"failed to load configuration: {exc}") from exc
     _preflight_agent(config)
+    if blocker is not None:
+        raise LaunchError(f"{blocker}. {BUILD_MANIFEST_FIX}")
     agent = get_agent(
         config.agent_cmd,
         config.model,

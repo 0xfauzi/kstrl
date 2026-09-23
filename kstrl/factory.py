@@ -1766,7 +1766,13 @@ def _preflight_component_scope(
     return errors
 
 
-def _record_run_scope(run_scope: RunScope, bus: EventBus, ui: UI) -> None:
+def _record_run_scope(
+    run_scope: RunScope,
+    bus: EventBus,
+    ui: UI,
+    *,
+    manifest: Manifest,
+) -> None:
     """Write down what each component may change, and why (#269).
 
     A scope resolved once has to be RECORDED once, or the only way to
@@ -1794,6 +1800,10 @@ def _record_run_scope(run_scope: RunScope, bus: EventBus, ui: UI) -> None:
     resolved = run_scope.by_component
     if not resolved:
         return
+    # #448: the run's only record of a component it will not schedule.
+    # Indexed, not .get(): the snapshot is resolved from this manifest,
+    # so a missing id is a broken invariant and must raise.
+    statuses = {comp.id: comp.status for comp in manifest.components}
     for comp_id, scope in resolved.items():
         bus.emit(
             ComponentScopeResolved(
@@ -1803,6 +1813,7 @@ def _record_run_scope(run_scope: RunScope, bus: EventBus, ui: UI) -> None:
                 allowed_paths=tuple(scope.allowed_paths or ()),
                 harness_paths=tuple(scope.harness_paths),
                 error=scope.error or "",
+                manifest_status=statuses[comp_id],
             )
         )
     counts = Counter(scope.source for scope in resolved.values())
@@ -3757,7 +3768,7 @@ def _run_factory_locked(
     # launch anything, which is what makes the value one the agent never
     # had access to, with or without worktrees.
     run_scope = RunScope.resolve(manifest, root_dir, base_config)
-    _record_run_scope(run_scope, bus, ui)
+    _record_run_scope(run_scope, bus, ui, manifest=manifest)
 
     # R7.3: the per-component phase chain and every component state
     # transition live in ComponentPipeline. Hooks are resolved from this

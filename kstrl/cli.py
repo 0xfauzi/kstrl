@@ -88,7 +88,13 @@ from kstrl.git import (
     get_origin_slug,
     resolve_base_branch,
 )
-from kstrl.init_cmd import DEFAULT_FEATURE_UNDERSTAND, run_init, staleness_notice
+from kstrl.init_cmd import (
+    BUILD_MANIFEST_FIX,
+    DEFAULT_FEATURE_UNDERSTAND,
+    build_manifest_blocker,
+    run_init,
+    staleness_notice,
+)
 from kstrl.interaction import (
     PromptKind,
     PromptRequest,
@@ -649,7 +655,7 @@ def _timestamp() -> str:
 #   itself, under that contract.
 # - `ks serve` has the same documented exit 2, and also calls the
 #   preflight itself, before `--print-plist` returns.
-# - `ks doctor` REPORTS a rejected configuration as one of its nine
+# - `ks doctor` REPORTS a rejected configuration as one of its ten
 #   checks, with the not-ready verdict and the exit 2 that go with
 #   it, and calls `config_preflight.config_problem_lines` itself to
 #   do so. Under the seam, the command an operator diagnoses WITH
@@ -700,6 +706,22 @@ _PREFLIGHT_EXIT: dict[str, int] = {"serve": 2}
 # for why this is a list of commands and not "whichever command declares
 # the option".
 _ROOT_FROM_PROMPT = frozenset({"run", "understand", "feature"})
+
+
+def _refuse_without_build_manifest(root_dir: Path, ui_impl: UI) -> None:
+    """Exit 2 before the architect is paid when kstrl cannot build here (#434).
+
+    Shared by `ks decompose` and `ks factory --spec`, the two commands
+    that pay for an architect call. Both run after the config preflight
+    seam, so the [verify] section this reads has already loaded once.
+    """
+    blocker = build_manifest_blocker(root_dir)
+    if _report_preflight(
+        ui_impl,
+        "this repository has no build manifest kstrl can use",
+        [blocker, BUILD_MANIFEST_FIX] if blocker else [],
+    ):
+        sys.exit(2)
 
 
 def _preflight_warn(message: str) -> None:
@@ -2200,6 +2222,7 @@ def decompose(
             ui_impl.info(type_hint)
         sys.exit(1)
     effective_type = canonical_type or effective_type
+    _refuse_without_build_manifest(root_dir, ui_impl)
 
     agent = get_agent(effective_cmd, effective_model, effective_reasoning, effective_type)
 
@@ -2702,6 +2725,7 @@ def factory(
         if not project_name:
             ui_impl.err("--project-name is required with --spec")
             sys.exit(2)
+        _refuse_without_build_manifest(root_dir, ui_impl)
 
         # Read BEFORE the work, and sliced from there afterwards, the
         # same way `decompose_spec` reports it - so the two derivations
