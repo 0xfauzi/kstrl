@@ -641,7 +641,7 @@ class TestEvolutionRecording:
         assert comp_entries, f"no component_result entry in {entries}"
         entry = comp_entries[-1]
         # R6.4: journal format is versioned.
-        assert entry["schema_version"] == 2
+        assert entry["schema_version"] == 3
         # R6.1: the structured signature from the failing check, not a
         # slug of "Mechanical verification failed".
         assert entry["failure_signatures"] == [

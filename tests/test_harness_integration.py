@@ -491,6 +491,7 @@ class TestEvolutionIntegration:
             completed=["api"],
             failed=["auth", "db"],
             skipped=[],
+            scheduled=["api", "auth", "db"],
         )
 
         config = EvolutionConfig(
@@ -555,7 +556,9 @@ class TestEvolutionIntegration:
                     ),
                 ],
             )
-            journal.record_run(f"run-{i:03d}", m, FactoryResult(completed=[f"comp-{i}"]))
+            journal.record_run(
+                f"run-{i:03d}", m, FactoryResult(completed=[f"comp-{i}"], scheduled=[f"comp-{i}"])
+            )
 
         trends = journal.get_experiment_trends(last_n=10)
         assert len(trends) == 3
