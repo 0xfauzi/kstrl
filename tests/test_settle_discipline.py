@@ -194,6 +194,10 @@ def await_sites(tree: ast.Module) -> int:
 EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/helpers/settle.py": 3,
     "tests/helpers/tui_screens.py": 5,
+    # One ``async with app.run_test`` and three settle-helper awaits
+    # (mounted, settled, drained), added by #448. Every read after them
+    # is a table cell the drained wait has already painted.
+    "tests/test_carried_component_state.py": 4,
     "tests/test_config_guard_survey.py": 4,
     "tests/test_config_screen.py": 36,
     "tests/test_decompose_screens.py": 32,

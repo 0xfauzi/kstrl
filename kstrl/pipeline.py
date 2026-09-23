@@ -1407,6 +1407,27 @@ class ComponentPipeline:
         if debug_dir.exists():
             comp.evidence_debug_dir = str(debug_dir)
 
+    def _cascade_skip(self, failed_id: str) -> list[str]:
+        """Skip every transitive dependent of ``failed_id`` and say so on
+        the run's own stream (#448/#457).
+
+        ``manifest.cascade_skip`` only marks the manifest. Before this,
+        the run wrote no event for a dependent it skipped, so the board
+        (which folds only this run's events) showed it as pending while
+        ``ks status --no-tui`` (which reads the manifest) said skipped.
+        This is the one place in ``kstrl/`` that may call
+        ``manifest.cascade_skip`` directly; a census in
+        ``tests/test_cascade_skip_events.py`` requires that every other
+        caller route through here instead of the manifest method.
+        """
+        skipped = self.manifest.cascade_skip(failed_id)
+        self.factory_result.skipped.extend(skipped)
+        for sid in skipped:
+            self.bus.emit(
+                ev.ComponentSkipped(component=sid, reason=f"dependency '{failed_id}' failed")
+            )
+        return skipped
+
     def journal_superseded_findings(self, comp: Component) -> None:
         """A scheduled retry supersedes the current attempt. Record the
         attempt's findings and iteration count in the evolution journal
@@ -1643,9 +1664,8 @@ class ComponentPipeline:
         comp.failed_phase = phase
         comp.failed_check = check
         self._end_attempt(comp)
-        skipped = self.manifest.cascade_skip(comp.id)
+        self._cascade_skip(comp.id)
         self.factory_result.failed.append(comp.id)
-        self.factory_result.skipped.extend(skipped)
         self.bus.emit(ev.ComponentFailed(component=comp.id, error=error))
         self.notify.fire_first_failure(comp.id, error)
         if comp.id in self._inbox_typed:
@@ -2069,9 +2089,8 @@ class ComponentPipeline:
             signatures=None,
         )
         self._end_attempt(comp)
-        skipped = self.manifest.cascade_skip(comp.id)
+        self._cascade_skip(comp.id)
         self.factory_result.failed.append(comp.id)
-        self.factory_result.skipped.extend(skipped)
         self.bus.emit(ev.ComponentFailed(component=comp.id, error=comp.error))
         self.notify.fire_first_failure(comp.id, comp.error)
         self._inbox_add(
@@ -2110,9 +2129,8 @@ class ComponentPipeline:
             # point the evidence at it (R3.3).
             if comp_id in self.worktree_paths:
                 timed_out_comp.evidence_worktree = str(self.worktree_paths[comp_id])
-            skipped = self.manifest.cascade_skip(comp_id)
+            self._cascade_skip(comp_id)
             self.factory_result.failed.append(comp_id)
-            self.factory_result.skipped.extend(skipped)
             started = self._attempt_started_monotonic.get(comp_id)
             duration = time.monotonic() - started if started is not None else 0.0
             self.bus.emit(
@@ -2236,9 +2254,8 @@ class ComponentPipeline:
                     self.component_failure_signatures[comp.id] = [
                         "pr:closed-without-merge",
                     ]
-                    skipped = self.manifest.cascade_skip(comp.id)
+                    self._cascade_skip(comp.id)
                     self.factory_result.failed.append(comp.id)
-                    self.factory_result.skipped.extend(skipped)
                     self.bus.emit(
                         ev.ComponentFailed(
                             component=comp.id,
