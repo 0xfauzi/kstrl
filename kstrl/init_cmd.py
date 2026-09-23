@@ -1810,7 +1810,9 @@ def _verify_escape_satisfied(config: VerifyConfig, root: Path) -> bool:
     """
     has_pyproject = (root / "pyproject.toml").exists()
     return any(
-        command is not None and (has_pyproject or not _verify_command_runs_through_uv(command))
+        command is not None
+        and command.strip() != ""
+        and (has_pyproject or not _verify_command_runs_through_uv(command))
         for command in (config.test_command, config.typecheck_command, config.lint_command)
     )
 

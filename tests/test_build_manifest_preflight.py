@@ -176,6 +176,21 @@ def test_an_unrecognised_toolchain_reaches_the_architect_once_verify_names_it(
     assert calls.exists(), proceeded.stdout
 
 
+@pytest.mark.parametrize("value", ["", "   "], ids=["empty", "blank"])
+def test_an_empty_verify_command_does_not_satisfy_the_escape(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    """Phase 1 resolves an empty command to the uv default, which needs the
+    pyproject.toml this repository lacks, so it names no toolchain."""
+    root = greenfield(tmp_path)
+    monkeypatch.setenv("KSTRL_VERIFY_TEST_CMD", value)
+    agent, calls = recording_agent(root)
+    proc = spec_command(root, "decompose", agent)
+    assert proc.returncode == 2, proc.stdout
+    assert REFUSAL in proc.stdout
+    assert not calls.exists()
+
+
 @pytest.mark.parametrize(
     "body", ["[]\n", '{"dependencies": null}\n'], ids=["top-level-list", "null-dependencies"]
 )
