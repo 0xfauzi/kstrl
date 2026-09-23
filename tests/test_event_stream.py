@@ -265,7 +265,11 @@ class TestDualWrite:
 
     def test_progress_log_disabled_suppresses_both(self, tmp_path: Path) -> None:
         """Symmetric opt-out: progress_log_enabled=false writes NEITHER
-        progress.jsonl NOR events.jsonl."""
+        progress.jsonl NOR events.jsonl.
+
+        The run directory still holds the launch record (#436): it is not
+        narration, `ks retry` reads it to replay the run's flags, so the
+        opt-out does not remove it, the same rule as the usage meter."""
         root = _setup_project(tmp_path, ["comp-a"])
         manifest = _make_manifest([_component("comp-a")])
         config = _factory_config(root, progress_log_enabled=False)
@@ -290,7 +294,8 @@ class TestDualWrite:
                 root,
             )
         assert not (root / "progress.jsonl").exists()
-        assert not (root / ".kstrl" / "runs").exists()
+        runs = root / ".kstrl" / "runs"
+        assert [p.name for p in runs.rglob("*") if p.is_file()] == ["launch.json"]
 
     def test_journal_offsets_still_bracket_v1_file(self, tmp_path: Path) -> None:
         """Manifest journal_offset_start/end stay pegged to the v1 file."""

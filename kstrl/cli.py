@@ -101,7 +101,7 @@ from kstrl.interaction import (
     UiInteractionChannel,
 )
 from kstrl.jsonread import read_json_file
-from kstrl.launch import assemble_factory_configs
+from kstrl.launch_record import option_argv, replayable_flags
 from kstrl.loop import run_loop
 from kstrl.manifest import COMPONENT_STATUS_VALUES, Manifest
 from kstrl.observability import (
@@ -116,7 +116,15 @@ from kstrl.proposals import append_to_agent_learnings as _append_to_agent_learni
 from kstrl.proposals import existing_proposal_titles as _existing_proposal_titles
 from kstrl.proposals import mark_applied, parse_proposal_file
 from kstrl.reducer import ComponentState, RunState, fold, load_run_state, upconvert_v1
-from kstrl.retry_plan import RetryError, prepare_retry
+from kstrl.retry_plan import (
+    RESUME_REFUSAL,
+    RetryError,
+    plan_resume,
+    prepare_retry,
+    preview_retry,
+    print_resume_plan,
+    retry_confirm_header,
+)
 from kstrl.sandbox import SandboxConfig
 from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.timeout import TimeoutConfig
@@ -2826,6 +2834,8 @@ def factory(
         # over a toml/env progress_log_enabled = false.
         factory_config.progress_log_enabled = True
     factory_config.force_lock = force_lock
+    # #436: what `ks retry` replays; see kstrl/launch_record.py.
+    factory_config.launch_flags = replayable_flags(ctx)
     # R2.3: --no-verify is an explicit skip sentinel that run_factory
     # honors; verify_config=None alone would substitute default checks.
     factory_config.skip_verification = no_verify
@@ -4320,6 +4330,20 @@ def doctor(root: Path | None, as_json: bool, measure: bool) -> None:
     ".kstrl/factory.lock (may corrupt the other run's state)",
 )
 @click.option(
+    "--max-cost-usd",
+    type=float,
+    default=None,
+    help="Run-level USD budget for the retry; overrides the value the run "
+    "being resumed was launched with. 0 = unbounded.",
+)
+@click.option(
+    "--max-parallel",
+    type=int,
+    default=None,
+    help="Maximum parallel components for the retry; overrides the value "
+    "the run being resumed was launched with.",
+)
+@click.option(
     "--yes",
     "-y",
     is_flag=True,
@@ -4343,6 +4367,8 @@ def retry(
     progress_log: Path | None,
     keep_worktrees_on_failure: bool,
     force_lock: bool,
+    max_cost_usd: float | None,
+    max_parallel: int | None,
     yes: bool,
     ui: str,
     no_color: bool,
@@ -4352,10 +4378,12 @@ def retry(
     Resets COMPONENT_ID and its cascade-skipped dependents to PENDING,
     removes the failed attempt's kept worktree and branch (a retry
     starts fresh from the base branch; the failed attempt's findings
-    stay in the evolution journal), then re-enters the factory with the
-    same manifest. Phase configs resolve env > kstrl.toml > defaults,
-    exactly like `ks factory` invoked without flags. The run-level
-    factory lock applies as usual.
+    stay in the evolution journal), then re-enters `ks factory` with the
+    same manifest and the options the run being resumed was launched
+    with, read from its launch record (#436). --max-cost-usd,
+    --max-parallel and --keep-worktrees-on-failure given here win over
+    the recorded ones. A retry that would run with no cost ceiling
+    because none carried over is refused before anything is changed.
     """
     root_dir = root.resolve() if root else Path.cwd()
     force_rich = os.environ.get("GUM_FORCE") == "1"
@@ -4373,19 +4401,38 @@ def retry(
     manifest = _load_manifest_or_exit(manifest_file, ui_impl)
 
     try:
-        prepare_retry(manifest, component_id, manifest_file, root_dir, ui_impl)
+        preview_retry(manifest, component_id)
+    except ValueError as exc:
+        ui_impl.err(str(exc))
+        sys.exit(2)
+    plan, problems = plan_resume(
+        root_dir,
+        manifest,
+        manifest_file,
+        factory,
+        max_cost_usd=max_cost_usd,
+        max_parallel=max_parallel,
+        keep_worktrees_on_failure=keep_worktrees_on_failure,
+    )
+    if plan is None:
+        _report_preflight(ui_impl, RESUME_REFUSAL, problems)
+        sys.exit(2)
+
+    try:
+        preview = prepare_retry(manifest, component_id, manifest_file, root_dir, ui_impl)
     except ValueError as exc:
         ui_impl.err(str(exc))
         sys.exit(2)
     except RetryError:
         sys.exit(1)
+    print_resume_plan(ui_impl, plan)
 
     _retry_channel = UiInteractionChannel(ui_impl)
     if not yes and _retry_channel.can_prompt():
         response = _retry_channel.request(
             PromptRequest(
                 kind=PromptKind.CONFIRM,
-                header=f"Re-enter the factory to retry '{component_id}'?",
+                header=retry_confirm_header(preview),
                 options=("Start", "Quit"),
                 default=0,
             )
@@ -4393,33 +4440,26 @@ def retry(
         if response.answered and response.choice != 0:
             sys.exit(0)
 
-    # Config assembly mirrors `ks factory` with no flags: every phase
-    # config resolves env > kstrl.toml > defaults (R2.1 control plane).
-    factory_config, base_config = assemble_factory_configs(
-        root_dir,
-        single_pr=manifest.single_pr,
-        progress_log_path=progress_log,
-        force_lock=force_lock,
-        keep_worktrees_on_failure=keep_worktrees_on_failure,
+    # Re-enter through `ks factory` itself, so config assembly, preflights
+    # and the Execution header are the factory's own and cannot drift.
+    argv = option_argv(
+        factory,
+        {
+            "manifest_path": str(manifest_file),
+            "root": str(root_dir),
+            "yes": True,
+            "tui": False,
+            "ui": ui,
+            "no_color": no_color,
+            "progress_log": str(progress_log) if progress_log is not None else None,
+            "force_lock": force_lock,
+        },
     )
-    _check_agent_preflight(base_config, ui_impl)
-    _check_prompt_preflight(base_config.prompt_file, ui_impl)
-
-    stop = StopController()
-    uninstall = install_signal_handlers(stop)
-    try:
-        result = run_factory(
-            manifest,
-            factory_config,
-            base_config,
-            ui_impl,
-            root_dir,
-            manifest_path=manifest_file,
-            stop=stop,
-        )
-    finally:
-        uninstall()
-    sys.exit(result.exit_code)
+    factory_ctx = factory.make_context(
+        "factory", [*argv, *plan.argv], parent=click.get_current_context()
+    )
+    with factory_ctx:
+        factory.invoke(factory_ctx)
 
 
 @cli.command()
