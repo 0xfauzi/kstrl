@@ -274,7 +274,10 @@ class TestLockfileTracking:
         assert "uv.lock" not in output
 
     def test_non_python_repo_skips_the_lockfile_step(self, python_repo: Path) -> None:
+        # A Rust manifest rather than none: with no manifest at all, #434's
+        # Fix-first notice prints the uv commands, uv.lock among them.
         (python_repo / "pyproject.toml").unlink()
+        (python_repo / "Cargo.toml").write_text('[package]\nname = "demo"\n')
 
         _, output = run_init_capturing(python_repo)
 

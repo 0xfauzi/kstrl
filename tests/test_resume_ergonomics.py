@@ -673,6 +673,9 @@ class TestRetryCli:
             "kstrl.cli._check_agent_preflight",
             lambda *a, **k: None,
         )
+        # `ks retry` re-enters through `ks factory`, whose agent preflight
+        # reads AGENT_CMD (#436).
+        monkeypatch.setenv("AGENT_CMD", "echo hi")
         runner = CliRunner()
         result = runner.invoke(
             cli,
@@ -682,6 +685,10 @@ class TestRetryCli:
                 "--root",
                 str(tmp_path),
                 "--yes",
+                # This manifest predates launch records, so the retry
+                # refuses to run uncapped unless told to (#436).
+                "--max-cost-usd",
+                "0",
             ],
         )
         assert result.exit_code == 0, result.output

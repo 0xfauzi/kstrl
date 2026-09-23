@@ -84,6 +84,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # `tests.helpers.gitrepo.set_identity`.
     "tests/test_bad_patterns_diff_scope.py": 3,
     "tests/test_breaker.py": 3,
+    "tests/test_build_manifest_preflight.py": 1,
     # #399 added two real-repository tests (a stubbed-git refusal, which
     # makes no commit, and a latin-1-bytes commit through `_git`/`_repo`,
     # both already declared here, plus a second real commit in the
@@ -141,6 +142,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_prompt_upgrade.py": 1,
     "tests/test_provisioning.py": 2,
     "tests/test_resume_ergonomics.py": 2,
+    "tests/test_retry_carries_flags.py": 1,
     "tests/test_review_coverage.py": 2,
     "tests/test_review_gates.py": 1,
     "tests/test_review_payload.py": 2,

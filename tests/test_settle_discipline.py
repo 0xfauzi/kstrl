@@ -194,6 +194,10 @@ def await_sites(tree: ast.Module) -> int:
 EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/helpers/settle.py": 3,
     "tests/helpers/tui_screens.py": 5,
+    # One ``async with app.run_test`` and three settle-helper awaits
+    # (mounted, settled, drained), added by #448. Every read after them
+    # is a table cell the drained wait has already painted.
+    "tests/test_carried_component_state.py": 4,
     "tests/test_config_guard_survey.py": 4,
     "tests/test_config_screen.py": 36,
     "tests/test_decompose_screens.py": 32,
@@ -213,7 +217,14 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/test_home_shell.py": 52,
     "tests/test_inbox.py": 4,
     "tests/test_init_wizard.py": 47,
-    "tests/test_launch_session.py": 57,
+    "tests/test_launch_session.py": 39,
+    # TestRetryScreen split out of test_launch_session.py when the
+    # file-length ratchet fired (#436 B1); its awaits are unchanged
+    # (`mounted`/`drained`/`settled`/`pilot.press`) plus two new tests
+    # in the same sequence (a kstrl.toml ceiling that carries through
+    # the TUI launch, and recorded flags that do not), so this file's
+    # decision for it still holds.
+    "tests/test_retry_screen.py": 39,
     "tests/test_settle_helper.py": 47,
     "tests/test_tui_app.py": 23,
     "tests/test_tui_config_guard.py": 13,

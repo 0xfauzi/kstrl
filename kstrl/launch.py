@@ -6,8 +6,9 @@ i.e. "the CLI invoked with just these flags". The session layer (D6)
 maps each spec onto its command core.
 
 ``assemble_factory_configs`` is the extracted mirror-of-`ks factory`-
-with-no-flags block that cli.retry grew; retry and the launcher share
-it so the two paths can never drift.
+with-no-flags block that cli.retry grew. Since #436 `ks retry` no
+longer calls it: retry re-enters `ks factory` itself with the flags of
+the run it resumes, and this function serves the TUI launcher only.
 """
 
 from __future__ import annotations
