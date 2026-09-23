@@ -727,16 +727,24 @@ def _extract_agent_json(agent: Any, output_lines: list[str]) -> Any:
 # compared after normalization (leading `./` and trailing `/` removed)
 # so `.kstrl`, `.kstrl/` and `./.kstrl/` all match. Keep this set in
 # sync with the prompt body (which only Session 8C may edit).
-_ALLOWED_PATHS_EXCLUDE: frozenset[str] = frozenset(
-    {
-        ".kstrl",  # harness runtime state
-        ".github",  # CI configuration
-        "kstrl",  # harness package
-        "scripts/kstrl",  # bare prefix exposes the manifest + sibling features
-        "pyproject.toml",  # repo-root build manifests
-        "package.json",
-        "Cargo.toml",
-    }
+#: The repo-root build manifests on that list, named on their own
+#: because they are also the files kstrl will never create (#434): no
+#: component may be scoped to one, so a repository without a manifest
+#: cannot get one from the factory. `init_cmd.build_manifest_blocker`
+#: refuses such a repository before the architect is paid, and
+#: tests/test_build_manifest_preflight.py checks that every name here
+#: is one that refusal recognises.
+ROOT_BUILD_MANIFESTS: frozenset[str] = frozenset({"pyproject.toml", "package.json", "Cargo.toml"})
+_ALLOWED_PATHS_EXCLUDE: frozenset[str] = (
+    frozenset(
+        {
+            ".kstrl",  # harness runtime state
+            ".github",  # CI configuration
+            "kstrl",  # harness package
+            "scripts/kstrl",  # bare prefix exposes the manifest + sibling features
+        }
+    )
+    | ROOT_BUILD_MANIFESTS
 )
 
 

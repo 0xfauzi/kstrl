@@ -309,6 +309,8 @@ class TestStartRunSession:
             '[agent]\ntype = "claude"\n',
             encoding="utf-8",
         )
+        # #434: a decompose launch refuses a repository with no build manifest.
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "demo"\n', encoding="utf-8")
         with (
             patch("kstrl.cli.ClaudeCodeAgent.is_available", return_value=True),
             patch(
@@ -343,6 +345,8 @@ class TestStartRunSession:
             '[agent]\ncommand = "fake-agent"\n',
             encoding="utf-8",
         )
+        # #434: a decompose launch refuses a repository with no build manifest.
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "demo"\n', encoding="utf-8")
         with patch("kstrl.agents.get_agent", return_value=ExplodingAgent()):
             session = start_run_session(
                 DecomposeLaunch(spec_path=spec_file, project_name="demo"),
@@ -364,6 +368,8 @@ class TestStartRunSession:
             '[agent]\ncommand = "fake-agent"\n',
             encoding="utf-8",
         )
+        # #434: a decompose launch refuses a repository with no build manifest.
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "demo"\n', encoding="utf-8")
         with patch(
             "kstrl.agents.get_agent",
             return_value=MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT),
@@ -397,6 +403,8 @@ class TestStartRunSession:
             '[agent]\ncommand = "fake-agent"\n',
             encoding="utf-8",
         )
+        # #434: a decompose launch refuses a repository with no build manifest.
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "demo"\n', encoding="utf-8")
         assert DecomposeLaunch().base_branch == ""
         with patch(
             "kstrl.agents.get_agent",
@@ -721,6 +729,8 @@ class TestDecomposeSessionOnBoard:
             '[agent]\ncommand = "fake-agent"\n',
             encoding="utf-8",
         )
+        # #434: a decompose launch refuses a repository with no build manifest.
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "demo"\n', encoding="utf-8")
         app = _home_app(tmp_path)
         with patch(
             "kstrl.agents.get_agent",

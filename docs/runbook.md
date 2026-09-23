@@ -4,15 +4,18 @@ Recovery procedures for the failure modes that actually happen during factory ru
 
 ## Before you point kstrl at a repository
 
-`ks doctor [--root <path>] [--json]` runs nine static checks over a
+`ks doctor [--root <path>] [--json]` runs ten static checks over a
 repository and reports whether kstrl can point at it. Every check is
 mechanical: nothing here runs the repository's own test, typecheck or
-lint commands, spawns an agent, or spends anything. The nine checks are
+lint commands, spawns an agent, or spends anything. The ten checks are
 `git_repo` (a repository with commits and a base branch factory can cut
 a worktree from), `git_clean` (uncommitted work does not reach the
 engineer), `github_cli` (`gh` authenticated and an `origin` remote, for
 pushing branches and opening PRs), `kstrl_config` (`kstrl.toml` resolves
-in full), `verify_commands` (the test, typecheck and lint commands
+in full), `build_manifest` (a build manifest at the repository root
+that kstrl recognises; kstrl will not create one, and `ks decompose`
+and `ks factory --spec` refuse with exit 2 before the architect runs
+without one), `verify_commands` (the test, typecheck and lint commands
 Phase 1 will run), `source_root` (whether `kstrl.feedforward.extract_public_interfaces`
 gives the engineer anything to read), `test_root` (tracked paths that
 read as tests to `adequacy.is_test_path`), `gitignore` (whether
@@ -23,7 +26,7 @@ migration and deploy paths that `[policy] paths_deny` does not cover).
 There are three verdicts. `ready` (exit 0): every check passed.
 `ready-with-warnings` (exit 0): at least one check warned, none failed.
 `not-ready` (exit 2): at least one check failed, most commonly no git
-repository or a `kstrl.toml` that will not parse. The report is also
+repository, no build manifest, or a `kstrl.toml` that will not parse. The report is also
 written as JSON under `.kstrl/doctor/report-<UTC stamp>.json`.
 
 `ks doctor --measure` (Tier B: a flakiness smoke and a cost projection)

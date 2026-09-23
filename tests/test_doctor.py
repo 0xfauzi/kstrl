@@ -1,4 +1,4 @@
-"""`ks doctor` Tier A: the verdict, the nine checks, and the report (#198).
+"""`ks doctor` Tier A: the verdict, the ten checks, and the report (#198).
 
 Every test drives the real click command through `CliRunner`, so the
 preflight seam, the option parsing and the exit code are all in the
@@ -35,7 +35,7 @@ from tests.helpers.gitrepo import git_in, set_identity
 GH_OK = "#!/bin/sh\nexit 0\n"
 GH_UNAUTHENTICATED = "#!/bin/sh\nexit 1\n"
 
-#: The nine rows the report carries, in order. The test's own
+#: The ten rows the report carries, in order. The test's own
 #: literal, not a constant imported from `kstrl.doctor`: each name is
 #: written once in production, inside its own check function, and a
 #: comparison against a second copy the module also owns would pass
@@ -45,6 +45,7 @@ EXPECTED_CHECK_NAMES = (
     "git_clean",
     "github_cli",
     "kstrl_config",
+    "build_manifest",
     "verify_commands",
     "source_root",
     "test_root",
@@ -321,8 +322,12 @@ def test_a_repo_with_no_tests_warns_and_names_the_adequacy_gate(tmp_path: Path) 
 
 
 def test_verify_commands_warn_when_there_is_no_project_for_uv_run(tmp_path: Path) -> None:
+    """A Rust manifest in place of pyproject.toml: the repository has a
+    build manifest, so only the `uv run` defaults are wrong (#434 made a
+    repository with no manifest at all a failed build_manifest row)."""
     root = ready_repo(tmp_path)
     (root / "pyproject.toml").unlink()
+    (root / "Cargo.toml").write_text('[package]\nname = "demo"\n', encoding="utf-8")
     git_in(root, "add", "-A")
     git_in(root, "commit", "-q", "-m", "drop pyproject")
     result = run_doctor(root)
