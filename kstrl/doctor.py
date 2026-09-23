@@ -5,7 +5,7 @@ the repository's own test, typecheck or lint commands, spawns an
 agent, or spends anything. Measured cost: about 0.3 to 0.5 s per run
 on this repository (three runs: 387, 403 and 493 ms), of which one
 gh auth status network round trip is about 250 ms (bounded by
-pr.GH_TIMEOUT when offline); the eight local checks together are
+pr.GH_TIMEOUT when offline); the local checks together are
 the rest. `ks doctor --measure` (Tier B) is not
 built; `ks check` already runs the measurement it would wrap.
 
@@ -38,6 +38,11 @@ from kstrl.feedforward import (
     _MAX_PUBLIC_INTERFACE_FILES,
     _find_top_source_dirs,
     extract_public_interfaces,
+)
+from kstrl.init_cmd import (
+    BUILD_MANIFEST_FIX,
+    build_manifest_blocker,
+    build_manifest_ok_reason,
 )
 from kstrl.policy import ENFORCEMENT_MACHINERY_PATHS, PolicyConfig, _match_glob
 from kstrl.statedir import STATE_DIR_NAME, state_dir
@@ -299,6 +304,25 @@ def _not_evaluated(name: str) -> _CheckResult:
         "not evaluated: kstrl.toml did not load (see kstrl_config)",
         "",
     )
+
+
+def check_build_manifest(root: Path) -> _CheckResult:
+    """A build manifest kstrl will not have to create (#434).
+
+    Consumed by the pre-spend refusal in `ks decompose` and `ks factory
+    --spec` (`init_cmd.build_manifest_blocker`): no component may list
+    a root build manifest in its allowedPaths, so without one the
+    architect can only halt and ask who writes it, after a paid call.
+    A kstrl.toml that does not load routes through `_not_evaluated`,
+    because whether ``[verify]`` names a command is then unknown.
+    """
+    try:
+        blocker = build_manifest_blocker(root)
+    except (OSError, ValueError):
+        return _not_evaluated("build_manifest")
+    if blocker is not None:
+        return (STATUS_FAIL, blocker, BUILD_MANIFEST_FIX)
+    return (STATUS_OK, build_manifest_ok_reason(root), "")
 
 
 def check_verify_commands(root: Path) -> _CheckResult:
@@ -572,6 +596,7 @@ CHECKS: tuple[tuple[str, Callable[[Path], _CheckResult]], ...] = (
     ("git_clean", check_git_clean),
     ("github_cli", check_github_cli),
     ("kstrl_config", check_kstrl_config),
+    ("build_manifest", check_build_manifest),
     ("verify_commands", check_verify_commands),
     ("source_root", check_source_root),
     ("test_root", check_test_root),

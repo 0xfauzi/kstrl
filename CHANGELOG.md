@@ -114,6 +114,19 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Changed
 
+- A repository with no build manifest is named before anything spends
+  (#434). `ks doctor` fails a new `build_manifest` check and puts the
+  remedy first in Fix first; `ks init` prints the same notice; and
+  `ks decompose`, `ks factory --spec` and the home shell's decompose
+  launch refuse with exit 2 before any architect call. kstrl will not
+  create the manifest, because no component may list a root build
+  manifest in its allowedPaths. A manifest is anything `ks init` reads a
+  language from (pyproject.toml, setup.py, Cargo.toml, package.json,
+  go.mod, pom.xml, build.gradle); a repository with none is still let
+  through when `[verify]` names a command that does not run through
+  `uv run`. A package.json that is valid
+  JSON but not an object, or has a null `dependencies`, no longer crashes
+  `ks init`, and cannot crash the new check or refusal.
 - The control-engineering vocabulary is replaced with plain names (#395).
   `ks sense` is now `ks check`. The `[feedforward]` TOML section is now
   `[codebase_scan]`, and its six `KSTRL_FEEDFORWARD_*` environment

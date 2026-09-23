@@ -20,9 +20,16 @@ from textual.binding import Binding
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static
 
+from kstrl.config_preflight import SURFACE_REJECTIONS, raise_if_defect
 from kstrl.interaction import PromptKind, PromptRequest
 from kstrl.launch import FactoryLaunch
-from kstrl.retry_plan import RetryError, prepare_retry, preview_retry
+from kstrl.retry_plan import (
+    RESUME_REFUSAL,
+    RetryError,
+    plan_resume,
+    prepare_retry,
+    preview_retry,
+)
 from kstrl.tui import theme
 from kstrl.tui.screens.options import OptionsModal
 from kstrl.tui.widgets.context_bar import ContextBar
@@ -30,6 +37,7 @@ from kstrl.ui.plain import PlainUI
 
 if TYPE_CHECKING:
     from kstrl.manifest import Component, Manifest
+    from kstrl.retry_plan import ResumePlan, RetryPreview
 
 
 def _load_manifest(root_dir: Path) -> tuple[Manifest | None, Path]:
@@ -46,6 +54,25 @@ def _load_manifest(root_dir: Path) -> tuple[Manifest | None, Path]:
 
 def _failed_components(manifest: Manifest) -> list[Component]:
     return [c for c in manifest.components if c.status == "failed"]
+
+
+def _carry_problem(plan: ResumePlan | None, problems: list[str]) -> str | None:
+    """Why the TUI cannot carry the retry's own resume plan, or None when it can.
+
+    FactoryLaunch carries no cost ceiling as a field, but the TUI launch
+    path (kstrl/tui/session.py -> kstrl/launch.py::assemble_factory_configs
+    -> FactoryConfig.load) loads the same env/kstrl.toml ceiling
+    plan_resume resolved, so a ceiling above 0 is not laundered away and
+    needs no refusal here. `ks factory` recorded flags are a different
+    story: FactoryLaunch has no field for them, and re-entering through
+    the CLI is the only path that can replay them (#436), so the TUI
+    must refuse when the record carries any.
+    """
+    if plan is None:
+        return "; ".join(problems)
+    if plan.argv:
+        return "the recorded run's flags cannot be carried through the TUI"
+    return None
 
 
 class RetryScreen(Screen[None]):
@@ -169,58 +196,8 @@ class RetryScreen(Screen[None]):
         )
 
         def _resolved(choice: int | None) -> None:
-            if choice != 0:
-                return
-            # Reload at commit time. An external factory or editor can
-            # update the manifest while the confirmation modal is open;
-            # never save the stale object captured by the screen.
-            latest, latest_file = _load_manifest(self._root_dir())
-            if latest is None:
-                self.app.notify(
-                    f"retry failed: cannot load {latest_file}",
-                    severity="error",
-                )
-                self.reload()
-                return
-            try:
-                latest_preview = preview_retry(latest, comp.id)
-            except ValueError as exc:
-                self.app.notify(
-                    f"retry plan changed: {exc}",
-                    severity="warning",
-                )
-                self.reload()
-                return
-            if latest_preview != preview:
-                self.app.notify(
-                    "retry plan changed since the preview; review it again",
-                    severity="warning",
-                )
-                self.reload()
-                return
-            # Keep preparation narration off the alternate screen; the
-            # confirmation already presented the same retry plan.
-            narration = io.StringIO()
-            try:
-                prepare_retry(
-                    latest,
-                    comp.id,
-                    latest_file,
-                    self._root_dir(),
-                    PlainUI(no_color=True, file=narration),
-                )
-            except (
-                OSError,
-                ValueError,
-                RetryError,
-                subprocess.SubprocessError,
-            ) as exc:
-                self.app.notify(f"retry failed: {exc}", severity="error")
-                self.reload()
-                return
-            launch = getattr(self.app, "launch", None)
-            if launch is not None:
-                launch(FactoryLaunch(manifest_path=latest_file))
+            if choice == 0:
+                self._confirm_retry(comp, preview)
 
         self.app.push_screen(
             OptionsModal(
@@ -233,3 +210,84 @@ class RetryScreen(Screen[None]):
             ),
             _resolved,
         )
+
+    def _confirm_retry(self, comp: Component, preview: RetryPreview) -> None:
+        # Reload at commit time. An external factory or editor can update
+        # the manifest while the confirmation modal is open; never save
+        # the stale object captured by the screen.
+        latest, latest_file = _load_manifest(self._root_dir())
+        if latest is None:
+            self.app.notify(f"retry failed: cannot load {latest_file}", severity="error")
+            self.reload()
+            return
+        try:
+            latest_preview = preview_retry(latest, comp.id)
+        except ValueError as exc:
+            self.app.notify(f"retry plan changed: {exc}", severity="warning")
+            self.reload()
+            return
+        if latest_preview != preview:
+            self.app.notify(
+                "retry plan changed since the preview; review it again",
+                severity="warning",
+            )
+            self.reload()
+            return
+        problem = self._carry_problem_for(latest, latest_file, comp.id)
+        if problem is not None:
+            self.app.notify(
+                f"{RESUME_REFUSAL}: {problem} - use 'ks retry {comp.id}' instead",
+                severity="error",
+            )
+            self.reload()
+            return
+        # Keep preparation narration off the alternate screen; the
+        # confirmation already presented the same retry plan.
+        narration = io.StringIO()
+        try:
+            prepare_retry(
+                latest,
+                comp.id,
+                latest_file,
+                self._root_dir(),
+                PlainUI(no_color=True, file=narration),
+            )
+        except (OSError, ValueError, RetryError, subprocess.SubprocessError) as exc:
+            self.app.notify(f"retry failed: {exc}", severity="error")
+            self.reload()
+            return
+        launch = getattr(self.app, "launch", None)
+        if launch is not None:
+            launch(FactoryLaunch(manifest_path=latest_file))
+
+    def _carry_problem_for(
+        self,
+        manifest: Manifest,
+        manifest_file: Path,
+        component_id: str,
+    ) -> str | None:
+        """`_carry_problem` against this screen's own resume plan (#436).
+
+        `plan_resume` loads `FactoryConfig` (the ceiling `_ceiling_problems`
+        checks against) and lets a config rejection propagate, the same as
+        `assemble_factory_configs` - so this call needs the same guard
+        `kstrl/tui/session.py::_prepare_factory` puts around that one,
+        or a broken kstrl.toml would take the Textual event loop down
+        instead of being reported (#289's defect class).
+        """
+        from kstrl.cli import factory as factory_command
+
+        try:
+            plan, problems = plan_resume(
+                self._root_dir(),
+                manifest,
+                manifest_file,
+                factory_command,
+                max_cost_usd=None,
+                max_parallel=None,
+                keep_worktrees_on_failure=False,
+            )
+        except SURFACE_REJECTIONS as exc:
+            raise_if_defect(exc)
+            return f"failed to load configuration: {exc}"
+        return _carry_problem(plan, problems)

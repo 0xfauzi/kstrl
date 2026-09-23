@@ -91,6 +91,7 @@ from kstrl.knowledge import (
     distill_facts,
     measure_fact_utilization,
 )
+from kstrl.launch_record import FlagValue, write_launch_record
 from kstrl.linear import LinearConfig, build_linear_sink
 from kstrl.loop import LoopBudget
 from kstrl.manifest import (
@@ -408,6 +409,14 @@ class FactoryConfig:
     # there. TestTheEnvelopeDoesNotOutliveItsRun fails if the write
     # comes back.
     policy_config: PolicyConfig | None = None
+    # #436: the options `ks factory` was launched with on its command
+    # line, minus launch_record.NOT_REPLAYED. Written to the run's
+    # launch record before anything is spent, so `ks retry` can re-enter
+    # the factory with them. Empty for every entry point that is not the
+    # `ks factory` command, and never read from kstrl.toml or env.
+    launch_flags: tuple[tuple[str, FlagValue], ...] = field(
+        default=(), metadata={"provenance": True}
+    )
 
     def resolved_verify_config(self) -> VerifyConfig:
         """The VerifyConfig Phase 1 runs with (#261).
@@ -1757,7 +1766,13 @@ def _preflight_component_scope(
     return errors
 
 
-def _record_run_scope(run_scope: RunScope, bus: EventBus, ui: UI) -> None:
+def _record_run_scope(
+    run_scope: RunScope,
+    bus: EventBus,
+    ui: UI,
+    *,
+    manifest: Manifest,
+) -> None:
     """Write down what each component may change, and why (#269).
 
     A scope resolved once has to be RECORDED once, or the only way to
@@ -1785,6 +1800,10 @@ def _record_run_scope(run_scope: RunScope, bus: EventBus, ui: UI) -> None:
     resolved = run_scope.by_component
     if not resolved:
         return
+    # #448: the run's only record of a component it will not schedule.
+    # Indexed, not .get(): the snapshot is resolved from this manifest,
+    # so a missing id is a broken invariant and must raise.
+    statuses = {comp.id: comp.status for comp in manifest.components}
     for comp_id, scope in resolved.items():
         bus.emit(
             ComponentScopeResolved(
@@ -1794,6 +1813,7 @@ def _record_run_scope(run_scope: RunScope, bus: EventBus, ui: UI) -> None:
                 allowed_paths=tuple(scope.allowed_paths or ()),
                 harness_paths=tuple(scope.harness_paths),
                 error=scope.error or "",
+                manifest_status=statuses[comp_id],
             )
         )
     counts = Counter(scope.source for scope in resolved.values())
@@ -1886,6 +1906,7 @@ def _run_preflights(
     ui: UI,
     *,
     lock_held: bool,
+    manifest_path: Path,
 ) -> tuple[SpecDecision, ...] | None:
     """Every pre-spend refusal, cheapest first, and what survives them.
 
@@ -1907,6 +1928,22 @@ def _run_preflights(
     to worktree mode: without worktrees the factory neither creates
     branches nor worktree dirs.
     """
+    # #436 first: `ks retry` reads this record to replay the run's flags,
+    # so a run that cannot leave one must not start (CLAUDE.md, artifact
+    # identity: a failed write of an artifact a later phase reads is the
+    # writing phase's failure).
+    if _report_preflight(
+        ui,
+        "the run's launch record cannot be written",
+        write_launch_record(
+            root_dir,
+            run_id,
+            manifest_path,
+            factory_config.launch_flags,
+            factory_config.max_cost_usd,
+        ),
+    ):
+        return None
     _warn_claude_md_divergence(root_dir, factory_config, ui)
     register_errors, run_decisions = _preflight_decision_register(manifest, root_dir)
     if _report_preflight(ui, "the architect decision register cannot bind", register_errors):
@@ -3731,7 +3768,7 @@ def _run_factory_locked(
     # launch anything, which is what makes the value one the agent never
     # had access to, with or without worktrees.
     run_scope = RunScope.resolve(manifest, root_dir, base_config)
-    _record_run_scope(run_scope, bus, ui)
+    _record_run_scope(run_scope, bus, ui, manifest=manifest)
 
     # R7.3: the per-component phase chain and every component state
     # transition live in ComponentPipeline. Hooks are resolved from this
@@ -3959,6 +3996,7 @@ def _run_factory_locked(
         run_id,
         ui,
         lock_held=lock_held,
+        manifest_path=manifest_path,
     )
     # ``is None`` and not falsiness: a clean run with no decisions binds
     # the empty tuple, which is the normal state for every project that

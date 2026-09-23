@@ -41,8 +41,12 @@ def fold_run(ref: RunRef) -> RunState:
 
 
 def summarize_state(ref: RunRef, state: RunState) -> RunSummary:
-    done = sum(1 for comp in state.components.values() if comp.status == "completed")
-    failed = sum(1 for comp in state.components.values() if comp.status == "failed")
+    # A run's row counts what the run did. A component it carried from
+    # an earlier run keeps that run's status on the board, but it was
+    # not completed or failed HERE (#448).
+    ran = [comp for comp in state.components.values() if not comp.carried]
+    done = sum(1 for comp in ran if comp.status == "completed")
+    failed = sum(1 for comp in ran if comp.status == "failed")
     total = len(state.plan_order) or len(state.components)
     if ref.live:
         outcome = "live"

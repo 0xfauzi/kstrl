@@ -114,7 +114,9 @@ class TestRecordRun:
                 ),
             ]
         )
-        factory_result = FactoryResult(completed=["a"], failed=["b"], skipped=[])
+        factory_result = FactoryResult(
+            completed=["a"], failed=["b"], skipped=[], scheduled=["a", "b"]
+        )
 
         journal.record_run("run-001", manifest, factory_result)
 
@@ -177,7 +179,7 @@ class TestRecordRun:
             Finding.infrastructure_error("security", "agent timeout"),
         ]
         manifest = _make_manifest([comp])
-        factory_result = FactoryResult(completed=["a"], failed=[], skipped=[])
+        factory_result = FactoryResult(completed=["a"], failed=[], skipped=[], scheduled=["a"])
 
         journal.record_run("run-findings", manifest, factory_result)
 
@@ -688,7 +690,7 @@ class TestRecordRunFactUtilization:
         journal.record_run(
             "run-001",
             _make_manifest([comp]),
-            FactoryResult(completed=["b"], failed=[], skipped=[]),
+            FactoryResult(completed=["b"], failed=[], skipped=[], scheduled=["b"]),
             fact_utilization={
                 "b": {
                     "measured": True,
@@ -715,7 +717,7 @@ class TestRecordRunFactUtilization:
         journal.record_run(
             "run-001",
             _make_manifest([comp]),
-            FactoryResult(completed=["b"], failed=[], skipped=[]),
+            FactoryResult(completed=["b"], failed=[], skipped=[], scheduled=["b"]),
             fact_utilization={
                 "b": {
                     "measured": True,
@@ -762,7 +764,7 @@ class TestRecordRunFactUtilization:
         journal.record_run(
             "run-001",
             _make_manifest([comp]),
-            FactoryResult(completed=["b"], failed=[], skipped=[]),
+            FactoryResult(completed=["b"], failed=[], skipped=[], scheduled=["b"]),
             fact_utilization={
                 "b": {
                     "measured": True,
@@ -790,7 +792,7 @@ class TestRecordRunFactUtilization:
                     _make_component("b", status=ComponentStatus.COMPLETED.value),
                 ]
             ),
-            FactoryResult(completed=["a", "b"], failed=[], skipped=[]),
+            FactoryResult(completed=["a", "b"], failed=[], skipped=[], scheduled=["a", "b"]),
             fact_utilization={
                 "a": {"measured": True, "injected": 4, "referenced": 2, "reason": ""},
                 "b": {"measured": True, "injected": 3, "referenced": 0, "reason": ""},

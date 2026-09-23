@@ -420,6 +420,7 @@ class TestScopeIsRecorded:
             RunScope.resolve(manifest, root, _base_config(root)),
             bus,
             PlainUI(no_color=True, file=io.StringIO()),
+            manifest=manifest,
         )
         return [e for e in seen if isinstance(e, ComponentScopeResolved)]
 
@@ -451,9 +452,11 @@ class TestScopeIsRecorded:
         component, but it must not get silence."""
         _setup_project(tmp_path)
         out = io.StringIO()
+        manifest = _manifest([_component()])
         _record_run_scope(
-            RunScope.resolve(_manifest([_component()]), tmp_path, _base_config(tmp_path)),
+            RunScope.resolve(manifest, tmp_path, _base_config(tmp_path)),
             EventBus(CallbackSink(lambda _e: None), run_id="run-test"),
             PlainUI(no_color=True, file=out),
+            manifest=manifest,
         )
         assert "Scope resolved for 1 component(s): 1 from component_prd" in out.getvalue()

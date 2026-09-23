@@ -30,7 +30,7 @@ from typing import Any
 
 from kstrl.autonomy import MIN_DECISIVE_RUNS
 from kstrl.autonomy_replay import RunRecord, load_runs
-from kstrl.evolution import EvolutionConfig
+from kstrl.evolution import EvolutionConfig, without_carried_results
 from kstrl.observability import read_progress_events
 
 LAMBDA = 0.2
@@ -212,7 +212,7 @@ def readings_from(runs: Sequence[RunRecord], journal_path: Path) -> list[MetricR
     hands the same population here, rather than reading the file a
     second time (#151's simplify pass).
     """
-    infra = _infra_rate_by_run(read_progress_events(journal_path))
+    infra = _infra_rate_by_run(without_carried_results(read_progress_events(journal_path)))
     series = _run_series(runs, infra)
     return [_reading(metric, values) for metric, values in series.items()]
 

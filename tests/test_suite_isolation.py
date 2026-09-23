@@ -78,7 +78,7 @@ class TestRedirect:
         config = EvolutionConfig()  # defaults: relative .kstrl/ paths
         journal = EvolutionJournal(config)
         manifest = _make_manifest_with_one_component()
-        result = FactoryResult(completed=["iso"], failed=[], skipped=[])
+        result = FactoryResult(completed=["iso"], failed=[], skipped=[], scheduled=["iso"])
 
         journal.record_run(_RUN_MARKER, manifest, result)
 
