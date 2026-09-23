@@ -471,6 +471,13 @@ class ComponentScopeResolved(Event):
     allowed_paths: tuple[str, ...] = ()
     harness_paths: tuple[str, ...] = ()
     error: str = ""
+    #: The component's manifest ``status`` when the run resolved scopes,
+    #: before crash recovery and before anything was scheduled (#448).
+    #: The run writes no other event for a component it does not
+    #: schedule, so this is how a surface that folds only this run's
+    #: events tells "completed by an earlier run" from "not started".
+    #: Empty in a log written before #448.
+    manifest_status: str = ""
 
 
 @dataclass(frozen=True, kw_only=True)

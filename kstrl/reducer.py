@@ -29,6 +29,7 @@ from typing import Any
 
 from kstrl import events as ev
 from kstrl.agents.base import CEILING_AXES
+from kstrl.manifest import COMPONENT_STATUS_VALUES, ComponentStatus
 from kstrl.observability import latest_run_id, parse_event_ts, read_progress_events
 
 # Bounded so a security-heavy run cannot bloat the state.
@@ -36,6 +37,17 @@ MAX_RECENT_FINDINGS = 50
 MAX_SPEC_ISSUES = 100
 MAX_ARTIFACTS = 100
 SPEC_ISSUE_SEVERITIES = frozenset({"blocker", "major", "minor"})
+
+#: Status of a component whose state at run start this log does not
+#: record: a scope event written before #448, or one whose recorded
+#: status is outside the manifest vocabulary. Not "pending", because
+#: that is a claim the log cannot support (#448).
+UNRECORDED_STATUS = "unknown"
+
+#: The factory's crash recovery resets these to PENDING before it
+#: schedules anything (``factory._run_factory_locked``), after the scope
+#: record is written, so a run that recorded one starts it as pending.
+_RESET_AT_RUN_START = frozenset({ComponentStatus.RUNNING.value, ComponentStatus.VERIFYING.value})
 
 
 @dataclass
@@ -45,7 +57,8 @@ class ComponentState:
     component_id: str
     title: str = ""
     deps: tuple[str, ...] = ()
-    # pending | running | verifying | completed | merge_pending | failed | skipped
+    # pending | running | verifying | completed | merge_pending | failed | skipped,
+    # or UNRECORDED_STATUS for a run-start record the log does not carry.
     status: str = "pending"
     phase: str = ""
     phase_explicit: bool = False  # a phase_started was seen; inference stops
@@ -75,6 +88,11 @@ class ComponentState:
     pr_state: str = ""  # "" | created | merge_pending | merged
     checkpoint_open: str = ""  # kind of the unresolved checkpoint_requested
     error: str = ""
+    #: True while the only event this run has written for the component
+    #: is its ``component_scope_resolved`` record, so ``status`` is the
+    #: one the run started it in and nothing in this run has moved it.
+    #: A per-run count (the home screen's run row) skips these (#448).
+    carried: bool = False
 
     @property
     def tokens_are_lower_bound(self) -> bool:
@@ -230,6 +248,36 @@ def _infer_phase(event: ev.Event) -> str | None:
     return None
 
 
+def _status_at_run_start(recorded: str) -> str:
+    """The status a run starts a component in, from its scope record (#448)."""
+    if recorded in _RESET_AT_RUN_START:
+        return ComponentStatus.PENDING.value
+    if recorded in COMPONENT_STATUS_VALUES:
+        return recorded
+    return UNRECORDED_STATUS
+
+
+def _budget_halt_error(event: ev.BudgetExceeded) -> str:
+    """The component error line for a budget halt.
+
+    Names the ceiling that tripped, via the shared classifier so this
+    surface cannot drift from the Linear sink's reading of the same
+    payload. Payloads written before the cost ceiling landed carry no
+    ``ceiling`` and decode to "", in which case the token wording is the
+    only honest reading.
+    """
+    kind = ev.budget_halt_kind(event.condition, event.ceilings, event.ceiling)
+    if kind == "unenforceable":
+        # No threshold was crossed, so there is no ">=" to state.
+        # The old wording claimed one and printed the untouched
+        # totals as evidence for it (review finding on #180).
+        named = ", ".join(event.ceilings) or event.ceiling or "budget"
+        return f"budget ceiling unenforceable ({named}): no configured ceiling can still fire"
+    if kind == "cost":
+        return f"cost budget exceeded: ${event.cost_usd:.6f} >= ${event.max_cost_usd}"
+    return f"token budget exceeded: {event.total_tokens} >= {event.max_total_tokens}"
+
+
 def _component(state: RunState, component_id: str) -> ComponentState:
     comp = state.components.get(component_id)
     if comp is None:
@@ -344,6 +392,8 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
         return
     comp = _component(state, event.component)
     comp.last_event = type(event).type
+    # Any other event for the component means this run touched it.
+    comp.carried = isinstance(event, ev.ComponentScopeResolved)
     if event.ts:
         comp.last_event_ts = max(comp.last_event_ts, event.ts)
 
@@ -355,6 +405,10 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
     if isinstance(event, ev.ComponentStarted):
         comp.status = "running"
         comp.error = ""
+    elif isinstance(event, ev.ComponentScopeResolved):
+        # Written for every component before the run schedules any, so
+        # it is the starting status; later events in the run move it.
+        comp.status = _status_at_run_start(event.manifest_status)
     elif isinstance(event, ev.PhaseStarted):
         comp.phase_explicit = True
         comp.phase = event.phase
@@ -464,24 +518,7 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
     elif isinstance(event, ev.CheckpointResolved):
         comp.checkpoint_open = ""
     elif isinstance(event, ev.BudgetExceeded):
-        # Names the ceiling that tripped, via the shared classifier so
-        # this surface cannot drift from the Linear sink's reading of
-        # the same payload. Payloads written before the cost ceiling
-        # landed carry no ``ceiling`` and decode to "", in which case
-        # the token wording is the only honest reading.
-        kind = ev.budget_halt_kind(event.condition, event.ceilings, event.ceiling)
-        if kind == "unenforceable":
-            # No threshold was crossed, so there is no ">=" to state.
-            # The old wording claimed one and printed the untouched
-            # totals as evidence for it (review finding on #180).
-            named = ", ".join(event.ceilings) or event.ceiling or "budget"
-            comp.error = (
-                f"budget ceiling unenforceable ({named}): no configured ceiling can still fire"
-            )
-        elif kind == "cost":
-            comp.error = f"cost budget exceeded: ${event.cost_usd:.6f} >= ${event.max_cost_usd}"
-        else:
-            comp.error = f"token budget exceeded: {event.total_tokens} >= {event.max_total_tokens}"
+        comp.error = _budget_halt_error(event)
 
 
 def fold(events: Iterable[ev.Event], run_id: str = "") -> RunState:
