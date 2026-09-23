@@ -30,8 +30,10 @@ from kstrl.decisions import (
     decisions_payload_errors,
     enum_field_error,
     escalations,
+    open_escalation_item,
     parse_decisions,
     required_field_error,
+    resolve_escalation_items,
     write_decisions,
 )
 from kstrl.delimiters import generate_data_delimiter
@@ -2636,6 +2638,15 @@ def _decompose_spec_impl(
                 halted=True,
             ),
         )
+        open_escalation_item(
+            escalated,
+            root_dir,
+            project_name,
+            spec_path.name,
+            register_path=rel_display(decisions_path) if decisions_path is not None else "",
+            run_id=bus.run_id if bus is not None else "",
+            warn=ui.warn,
+        )
         # The run dir must read as FINISHED, not dead: the halt is the
         # architect's judgment, delivered before the error propagates.
         emit(
@@ -2844,6 +2855,17 @@ def _decompose_spec_impl(
             except OSError:
                 pass
         raise
+    # #449: after the manifest and the register commit, never inside the
+    # cleanup scope above, so an escalation is resolved only for a
+    # decompose that is on disk.
+    resolve_escalation_items(
+        root_dir,
+        project_name,
+        spec_path.name,
+        run_id=bus.run_id if bus is not None else "",
+        info=ui.info,
+        warn=ui.warn,
+    )
 
     # Publish transactional artifacts only after the PRD + manifest
     # write set commits. If a later write failed, the cleanup above
