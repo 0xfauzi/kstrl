@@ -390,6 +390,21 @@ def test_ks_evolve_a_row_missing_a_carried_field_breaks_the_copy_chain(tmp_path:
     assert "concern hit rate: 0 of 3 components" in out
 
 
+def test_ks_evolve_compares_a_row_only_with_the_previous_row(tmp_path: Path) -> None:
+    """r3 repeats r1 but not r2, so it is not a copy: a copy repeats its
+    component's previous row, not any earlier one."""
+    kstrl_dir = tmp_path / ".kstrl"
+    kstrl_dir.mkdir()
+    rows = [_legacy_row("r1", 10.5, 2), _legacy_row("r2", 11.25, 2), _legacy_row("r3", 10.5, 2)]
+    (kstrl_dir / "evolution.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+    )
+
+    out = _evolve(tmp_path)
+
+    assert "concern hit rate: 0 of 3 components" in out
+
+
 def test_ks_evolve_drops_a_copy_in_a_row_with_no_event_type(tmp_path: Path) -> None:
     """A row written before #30 (2026-04-09) has neither ``event_type`` nor
     ``schema_version``. ``carried_result_indices`` selects a component_result
