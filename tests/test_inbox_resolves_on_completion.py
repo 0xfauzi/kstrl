@@ -350,8 +350,9 @@ class TestAConfirmedMergeClosesEveryItemForTheComponent:
             "kstrl.pr.wait_for_merge", lambda *a, **k: MergeConfirmation(state="merged")
         )
         monkeypatch.setattr("kstrl.git.fetch_base_branch", lambda *a, **k: None)
+        out = io.StringIO()
         pipeline, manifest, _result, _calls = _make_pipeline(
-            tmp_path, config=_factory_config(create_prs=True)
+            tmp_path, config=_factory_config(create_prs=True), ui=PlainUI(no_color=True, file=out)
         )
         comp = manifest.get_component(COMP)
         assert comp is not None
@@ -372,6 +373,8 @@ class TestAConfirmedMergeClosesEveryItemForTheComponent:
             # _make_pipeline's run id, and the merge that completed it.
             assert "run-test" in decided.decision_comment, decided.decision_comment
             assert "PR #7 merged" in decided.decision_comment, decided.decision_comment
+        assert f"Inbox: resolved {gate.id[:8]}" in out.getvalue(), out.getvalue()
+        assert f"Inbox: resolved {halt.id[:8]}" in out.getvalue(), out.getvalue()
 
 
 class TestAnOperatorDecisionSurvivesTheCompletionRace:
@@ -480,8 +483,9 @@ class TestAnOperatorDecisionSurvivesTheCompletionRace:
             "kstrl.pr.wait_for_merge", lambda *a, **k: MergeConfirmation(state="merged")
         )
         monkeypatch.setattr("kstrl.git.fetch_base_branch", lambda *a, **k: None)
+        out = io.StringIO()
         pipeline, manifest, _result, _calls = _make_pipeline(
-            tmp_path, config=_factory_config(create_prs=True)
+            tmp_path, config=_factory_config(create_prs=True), ui=PlainUI(no_color=True, file=out)
         )
         comp = manifest.get_component(COMP)
         assert comp is not None
@@ -515,6 +519,7 @@ class TestAnOperatorDecisionSurvivesTheCompletionRace:
             "operator",
         ), final
         assert final.decision_comment == "ship it"
+        assert f"Inbox: resolved {gate.id[:8]}" not in out.getvalue(), out.getvalue()
 
 
 # --- layer 2: the census ----------------------------------------------------
