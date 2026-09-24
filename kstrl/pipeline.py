@@ -137,6 +137,62 @@ def _iso_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+#: How a retry this run carried from an interrupted run is marked (#463).
+CARRIED_REASON_PREFIX = "carried from run "
+
+
+def _carried_reason(prior_run_id: str, reason: str) -> str:
+    """``reason`` marked as carried from ``prior_run_id``, once (#463)."""
+    if reason.startswith(CARRIED_REASON_PREFIX):
+        return reason
+    return f"{CARRIED_REASON_PREFIX}{prior_run_id}: {reason}"
+
+
+def _usage_by_component_phase(events: Sequence[ev.Event]) -> dict[tuple[str, str], UsageTotals]:
+    """Every ``component_usage`` in ``events``, summed per (component, phase) (#463)."""
+    spent: dict[tuple[str, str], UsageTotals] = {}
+    for event in events:
+        if not isinstance(event, ev.ComponentUsage):
+            continue
+        spent.setdefault((event.component, event.phase), UsageTotals()).merge(
+            UsageTotals(
+                calls=event.calls,
+                known_calls=event.known_calls,
+                token_calls=event.token_calls,
+                cost_calls=event.cost_calls,
+                input_tokens=event.input_tokens,
+                output_tokens=event.output_tokens,
+                cache_read_tokens=event.cache_read_tokens,
+                cache_creation_tokens=event.cache_creation_tokens,
+                total_tokens=event.total_tokens,
+                cost_usd=event.cost_usd,
+                duration_seconds=event.duration_seconds,
+            )
+        )
+    return spent
+
+
+def _take_over_attempts(components: Sequence[Component], *, carrying: bool) -> dict[str, range]:
+    """Set the first attempt each component answers for in this run, and
+    return the earlier attempts this run takes over, per component (#463).
+
+    Only a PENDING component of a run that stopped before its summary
+    (``carrying``) is taken over: it keeps ``first_attempt`` and this run
+    owes attempts ``first_attempt..retries``. Every other component starts
+    at ``retries + 1``, including one the killed run left MERGE_PENDING or
+    AWAITING_APPROVAL, whose earlier attempts this run does not write again.
+    """
+    owed = {
+        comp.id: range(comp.first_attempt, comp.retries + 1)
+        for comp in components
+        if carrying and comp.status == ComponentStatus.PENDING.value
+    }
+    for comp in components:
+        if comp.id not in owed:
+            comp.first_attempt = comp.retries + 1
+    return owed
+
+
 class Transition(Enum):
     """Terminal disposition of one ``process_result`` pass."""
 
@@ -853,6 +909,69 @@ class ComponentPipeline:
         if totals is None:
             return
         self._record_usage(ARCHITECT_COMPONENT, ARCHITECT_ROLE, totals)
+
+    def carry_interrupted_run(self) -> None:
+        """Take over what an interrupted run recorded (#463).
+
+        The run the manifest names, when ``completed_at`` is empty, stopped
+        before its summary: it was killed, or its process died, so it wrote
+        no journal result, no experiments.tsv row, and its spend is in no
+        run total. Its retries are already on the manifest. This run records
+        the rest under its own id, so every per-run surface counts what the
+        manifest counts:
+
+        - every ``component_usage`` in that run's stream enters this run's
+          meter, so the run total, the cost ceiling, the journal and
+          experiments.tsv include it;
+        - for each component this run will run again (PENDING after the
+          crash-recovery reset), that run's ``component_retrying`` events and
+          ``findings_superseded`` journal rows are written again under this
+          run's id, so progress.jsonl and the #233 reading see every attempt
+          the manifest counts.
+
+        A chain of interrupted runs carries through, because each resume
+        writes what it took over under its own id and the next resume reads
+        it from there. Must run before the manifest is saved with this
+        run's id.
+        """
+        prior = self.manifest.run_id
+        carrying = bool(prior) and not self.manifest.completed_at
+        owed = _take_over_attempts(self.manifest.components, carrying=carrying)
+        if not carrying:
+            return
+        from kstrl.evolution import EvolutionJournal
+        from kstrl.reducer import read_run_dir
+
+        events = read_run_dir(ev.RunPaths.for_run(self.root_dir, prior).root)
+        spent = _usage_by_component_phase(events)
+        for (comp_id, phase), totals in spent.items():
+            self._record_usage(comp_id, phase, totals)
+        retried = [
+            e
+            for e in events
+            if isinstance(e, ev.ComponentRetrying) and e.attempt in owed.get(e.component, range(0))
+        ]
+        for event in retried:
+            self.bus.emit(
+                ev.ComponentRetrying(
+                    component=event.component,
+                    attempt=event.attempt,
+                    reason=_carried_reason(prior, event.reason),
+                )
+            )
+        readings = 0
+        journal = EvolutionJournal.open(self.root_dir, warn=self.ui.warn)
+        if journal is not None:
+            try:
+                readings = journal.carry_superseded(prior, self.run_id, owed)
+            except OSError as exc:
+                self.ui.warn(f"  Evolution journal write failed (non-fatal): {exc}")
+        self.ui.info(
+            f"  Carried from interrupted run {prior}: {len(retried)} retried attempt(s), "
+            f"{readings} attempt reading(s), "
+            f"{sum(t.calls for t in spent.values())} call(s) costing "
+            f"${sum(t.cost_usd for t in spent.values()):.4f}"
+        )
 
     def record_injected_knowledge(
         self,

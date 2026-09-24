@@ -1290,6 +1290,7 @@ class Queue:
         reason: str,
         actor: str = "",
         pr_urls: tuple[str, ...] = (),
+        run_id: str = "",
     ) -> QueueItem:
         """A run that parked work at the merge gate (#465).
 
@@ -1305,6 +1306,7 @@ class Queue:
             actor=actor,
             pr_urls=union,
             detail={"reason": reason},
+            last_run_id=run_id,
         )
 
     def poison(

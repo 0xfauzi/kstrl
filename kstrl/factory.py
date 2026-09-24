@@ -4029,6 +4029,13 @@ def _run_factory_locked(
             ui.info(f"  Resetting '{comp.id}' from {comp.status} to PENDING")
             comp.status = ComponentStatus.PENDING.value
 
+    # #463: a run the manifest names that never reached its summary hands
+    # its attempts, readings and spend to this one. After the reset above,
+    # so the components this run will run again are PENDING; before the
+    # run id below is saved, so a resume that dies here leaves the manifest
+    # naming the run whose record it had not yet taken over.
+    pipeline.carry_interrupted_run()
+
     # R3.3: persist which run owns this manifest state. completed_at is
     # blanked while the run is in flight and stamped in the summary
     # epilogue, so "did the last run finish?" is answerable from the

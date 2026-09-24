@@ -153,7 +153,7 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     # in the same split.
     "operator_guidance.py": 1,
     "parsers.py": 1,
-    "pipeline.py": 3,
+    "pipeline.py": 4,  # 3 until #463 added carry_interrupted_run's journal open
     "prd.py": 1,
     # 4 until #352 routed ``mark_applied`` through ``appendio`` for the
     # same reason. The three left are the CLAUDE.md read, the proposal

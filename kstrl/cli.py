@@ -5361,6 +5361,52 @@ def inbox_reject(
     _decide_and_report("reject", item_id, root, ui, no_color, comment=comment)
 
 
+def _serve_parked(root_dir: Path, run_id: str, ui_impl: UI) -> bool:
+    """Whether `ks serve` launched the run that parked (#463).
+
+    serve records the parked run's id on the queue item it moves to
+    awaiting approval; that item is the only link. A queue that cannot be
+    read is a refusal before the decision is recorded, because answering
+    "no" would leave the approval run's spend out of the daemon's total.
+    """
+    from kstrl.workqueue import ItemState, QueueError
+
+    try:
+        _root, queue = _queue_for(root_dir)
+        parked = queue.items((ItemState.AWAITING_APPROVAL,))
+    except (QueueError, OSError) as exc:
+        ui_impl.err(f"cannot read the queue to tell whether ks serve parked this run: {exc}")
+        sys.exit(2)
+    return bool(run_id) and any(item.last_run_id == run_id for item in parked)
+
+
+def _charge_serve_for_approval_run(
+    root_dir: Path, runs_before: frozenset[str], ui_impl: UI
+) -> None:
+    """Charge an approval run to the daemon's daily total, as serve charged the park (#463)."""
+    from kstrl.serve import ServeStateError, SpendLedger, owned_run_spend
+
+    owned, spend = owned_run_spend(root_dir, runs_before)
+    try:
+        day = SpendLedger(root_dir).charge(
+            spend.cost_usd,
+            covered_calls=spend.cost_calls,
+            total_calls=spend.usage_calls,
+            unmetered_phases=spend.unmetered_phases,
+            metered_run=bool(owned),
+        )
+    except (ServeStateError, OSError) as exc:
+        ui_impl.err(
+            f"the approval run spent ${spend.cost_usd:.2f} over {spend.usage_calls} call(s) "
+            f"and could not be charged to the ks serve spend ledger: {exc}"
+        )
+        return
+    ui_impl.info(
+        f"charged ${spend.cost_usd:.2f} over {len(owned)} run dir(s) to the ks serve "
+        f"spend ledger; today ${day.spent_usd:.2f}"
+    )
+
+
 def _decide_parked_merge_if_parked(
     action: str,
     item_id: str,
@@ -5409,6 +5455,7 @@ def _decide_parked_merge_if_parked(
     if plan is None:
         _report_preflight(ui_impl, RESUME_REFUSAL, problems)
         sys.exit(2)
+    serve_parked = _serve_parked(root_dir, manifest.run_id, ui_impl)
     try:
         if action == "approve":
             box.approve(item.id, actor=_actor(), comment=comment)
@@ -5434,8 +5481,15 @@ def _decide_parked_merge_if_parked(
     factory_ctx = factory.make_context(
         "factory", [*argv, *plan.argv], parent=click.get_current_context()
     )
-    with factory_ctx:
-        factory.invoke(factory_ctx)
+    from kstrl.serve import run_dir_names
+
+    runs_before = run_dir_names(root_dir)
+    try:
+        with factory_ctx:
+            factory.invoke(factory_ctx)
+    finally:
+        if serve_parked:
+            _charge_serve_for_approval_run(root_dir, runs_before, ui_impl)
 
 
 @inbox_group.command(name="snooze")

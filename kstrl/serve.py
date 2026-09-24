@@ -3863,7 +3863,11 @@ def serve_cycle(
         }
     )
 
-    if _settle_unfailed(root_dir, queue, ledger, running, verdict, pr_urls, obs, result):
+    # The run id reaches the queue item only on AWAITING_APPROVAL, which
+    # classify_run returns only from a manifest this invocation owns (#463).
+    if _settle_unfailed(
+        root_dir, queue, ledger, running, verdict, pr_urls, obs, result, manifest_run_after
+    ):
         return result
 
     # The failure branch. Every remote writeback below happens AFTER the
@@ -3969,6 +3973,7 @@ def _settle_unfailed(
     pr_urls: tuple[str, ...],
     obs: ServeObserver,
     result: CycleResult,
+    parked_run: str,
 ) -> bool:
     """Finish an item whose run did not fail: done, or awaiting approval.
 
@@ -3989,7 +3994,13 @@ def _settle_unfailed(
             ledger.record_terminal(poisoned=False)
             state, said, detail = "done", "done", "The factory run completed."
         elif verdict.verdict is Verdict.AWAITING_APPROVAL:
-            queue.await_approval(current, reason=verdict.reason, actor="serve", pr_urls=pr_urls)
+            queue.await_approval(
+                current,
+                reason=verdict.reason,
+                actor="serve",
+                pr_urls=pr_urls,
+                run_id=parked_run,
+            )
             result.needs_human = True
             state, said, detail = "awaiting_approval", "awaiting approval", verdict.reason
         else:
