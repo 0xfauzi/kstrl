@@ -53,6 +53,7 @@ from kstrl.agents.base import (
     collect_usage,
     usage_coverage,
 )
+from kstrl.atomicio import atomic_write_text
 from kstrl.context import IterationContext, IterationRecord
 from kstrl.divergence import (
     AttemptReading,
@@ -1982,14 +1983,15 @@ class ComponentPipeline:
             signatures=["token_budget:exceeded"],
         )
 
-    def complete(
-        self,
-        comp: Component,
-        duration_seconds: float,
-        iterations: int,
-    ) -> Transition:
+    def complete(self, comp: Component) -> Transition:
         """VERIFYING -> COMPLETED: every gate passed (and the PR merge,
-        when configured, was confirmed)."""
+        when configured, was confirmed).
+
+        The event and the console line read ``comp.duration_seconds``
+        after ``_end_attempt`` has stamped it, so they carry the value the
+        manifest and the journal carry: the whole attempt, not the
+        engineer loop (#450). The engineer loop's own duration is on the
+        ``phase_completed`` event for the engineer phase."""
         comp.status = ComponentStatus.COMPLETED.value
         comp.error = ""
         self.component_failure_signatures.pop(comp.id, None)
@@ -1999,11 +2001,14 @@ class ComponentPipeline:
         self.bus.emit(
             ev.ComponentCompleted(
                 component=comp.id,
-                duration_seconds=duration_seconds,
-                iterations=iterations,
+                duration_seconds=comp.duration_seconds,
+                iterations=comp.iteration_count,
             )
         )
-        self.ui.ok(f"  COMPLETED: {comp.id} ({iterations} iterations, {duration_seconds:.0f}s)")
+        self.ui.ok(
+            f"  COMPLETED: {comp.id} ({comp.iteration_count} iterations, "
+            f"{comp.duration_seconds:.0f}s)"
+        )
         self.manifest.save(self.manifest_path)
         # #438: after the save, so an item is never resolved for a
         # completion the manifest does not yet hold.
@@ -2568,7 +2573,7 @@ class ComponentPipeline:
             return
         pr = self._phase_pr(comp)
         if pr.disposition in (PrDisposition.MERGED, PrDisposition.NO_GH):
-            self.complete(comp, comp.duration_seconds, comp.iteration_count)
+            self.complete(comp)
         elif pr.disposition == PrDisposition.MERGE_PENDING:
             self._park_merge_pending(comp, pr.error)
         else:
@@ -2614,8 +2619,7 @@ class ComponentPipeline:
         if comp is None:
             return None
 
-        # Record timing
-        comp.duration_seconds = comp_result.duration_seconds
+        # The iteration count only: _end_attempt stamps duration_seconds (#450).
         comp.iteration_count = comp_result.iterations
 
         # Engineer bracket closer: PhaseStarted(engineer) was emitted by
@@ -2883,6 +2887,7 @@ class ComponentPipeline:
             checkpoint = self._phase_checkpoint(
                 comp,
                 diff_text=diff.diff,
+                review=review,
             )
             if checkpoint == CheckpointDecision.REJECTED:
                 return PipelineOutcome(
@@ -3034,11 +3039,7 @@ class ComponentPipeline:
             del self.worktree_paths[comp_id]
 
         return PipelineOutcome(
-            transition=self.complete(
-                comp,
-                comp_result.duration_seconds,
-                comp_result.iterations,
-            ),
+            transition=self.complete(comp),
             verify=verify,
             diff=diff,
             review=review,
@@ -3089,6 +3090,39 @@ class ComponentPipeline:
         """
         for gap in verification.not_measured:
             self.ui.warn(f"  {comp.id}: {gap.check} not measured ({gap.reason}) - {gap.detail}")
+
+    def _write_gate_logs(
+        self,
+        comp: Component,
+        verification: VerificationResult,
+    ) -> tuple[str, ...]:
+        """Write each failed gate's output to disk; return the paths (#462).
+
+        One file per failed test / typecheck / lint gate, at
+        ``.kstrl/debug/<run>/<component>/attempt-<n>/<check>.log``: the
+        directory the failure summary, ``ks status`` and the TUI retry
+        screen already name as the component's raw outputs, split by
+        attempt so a retry does not overwrite the evidence of the attempt
+        before it. A write that fails is said out loud and left out of
+        the returned paths, so the event never names a file that is not
+        there, and it does not change Phase 1's verdict.
+        """
+        attempt_dir = self._debug_dir_for(comp.id) / f"attempt-{comp.retries + 1}"
+        written: list[str] = []
+        for check in verification.checks:
+            if check.passed or check.output is None:
+                continue
+            path = attempt_dir / f"{check.name}.log"
+            try:
+                attempt_dir.mkdir(parents=True, exist_ok=True)
+                atomic_write_text(path, check.output)
+            except OSError as exc:
+                self.ui.warn(
+                    f"  {comp.id}: could not write the {check.name} output to {path}: {exc}"
+                )
+                continue
+            written.append(str(path))
+        return tuple(written)
 
     def _phase_verify(
         self,
@@ -3221,6 +3255,7 @@ class ComponentPipeline:
                 failures=tuple(c.message for c in verification.checks if not c.passed),
                 duration_seconds=round(verify_duration, 2),
                 not_measured=tuple(g.as_token() for g in verification.not_measured),
+                gate_logs=self._write_gate_logs(comp, verification),
             )
         )
 
@@ -3894,17 +3929,16 @@ class ComponentPipeline:
         # string is a derived view kept for backward-compat consumers.
         self._add_findings(comp, review_result.as_findings())
         comp.review_findings = review_result.as_pr_body_section()
-        # Observability gets criterion-only counts to preserve the
-        # historical meaning of fail_count = "failed PRD criteria".
-        # Concern counts ride along separately via fail_concerns /
-        # advisory_concerns so dashboards can distinguish.
+        # #450: the two properties the "Review ..." log line prints and
+        # the divergence reading's blocking_count reads. Criteria and
+        # concerns together, one per finding row recorded just above.
         self.bus.emit(
             ev.ReviewResultEvent(
                 component=comp.id,
                 passed=review_result.passed,
                 mode=review_mode.value,
-                fail_count=review_result.criterion_fail_count,
-                advisory_count=review_result.criterion_advisory_count,
+                fail_count=review_result.fail_count,
+                advisory_count=review_result.advisory_count,
                 duration_seconds=round(review_result.duration_seconds, 2),
             )
         )
@@ -4264,8 +4298,8 @@ class ComponentPipeline:
                     component=comp.id,
                     passed=sec_result.passed,
                     mode=f"security-{sec_config.mode}",
-                    fail_count=sec_result.critical_count + sec_result.high_count,
-                    advisory_count=len(sec_result.findings),
+                    fail_count=sec_result.fail_count,
+                    advisory_count=sec_result.advisory_count,
                     duration_seconds=round(sec_result.duration_seconds, 2),
                 )
             )
@@ -4602,7 +4636,8 @@ class ComponentPipeline:
         self,
         comp: Component,
         *,
-        diff_text: str = "",
+        diff_text: str,
+        review: ReviewPhaseResult,
     ) -> CheckpointDecision:
         """E6: human-in-the-loop checkpoint. When opt-in, prompt
         before pushing+merging so a human can inspect the diff,
@@ -4674,6 +4709,16 @@ class ComponentPipeline:
                     decided_by="inbox",
                 )
             )
+            evidence: dict[str, Any] = {
+                "branch": comp.branch_name,
+                "head_sha": git.branch_sha(comp.branch_name, self.root_dir) or "",
+            }
+            # #450: the review_result event's counts, read from the same
+            # properties. Absent when the review produced no reading, so a
+            # crashed or skipped review is never reported as zero findings.
+            if review.produced_a_reading and review.result is not None:
+                evidence["review_fail_count"] = review.result.fail_count
+                evidence["review_advisory_count"] = review.result.advisory_count
             self._inbox_add(
                 ItemKind.MERGE_GATE,
                 f"{comp.id} awaiting merge approval",
@@ -4687,11 +4732,7 @@ class ComponentPipeline:
                 ),
                 component=comp.id,
                 dedupe_key=park_dedupe_key(comp.id),
-                evidence={
-                    "branch": comp.branch_name,
-                    "head_sha": git.branch_sha(comp.branch_name, self.root_dir) or "",
-                    "review_findings": len([f for f in comp.findings if f.phase == "review"]),
-                },
+                evidence=evidence,
             )
             return CheckpointDecision.PARKED
         self.ui.section(f"Human checkpoint: {comp.id}")

@@ -23,6 +23,7 @@ from kstrl.appendio import JOURNAL_REPAIR_EVENT, REPAIR_DETAIL, append_records
 from kstrl.manifest import ADVERSARIAL_BUDGET_CHECK, ComponentStatus
 from kstrl.observability import read_progress_events
 from kstrl.verify import SCOPE_UNREADABLE_CHECK, SCOPE_UNREADABLE_ERROR_PREFIX
+from kstrl.version import kstrl_version
 
 if TYPE_CHECKING:
     from kstrl.factory import FactoryResult
@@ -136,8 +137,17 @@ EXPERIMENTS_HEADER = ExperimentsDialect.delimiter.join(
         "total_tokens",
         "total_cost_usd",
         "unreported_calls",
+        "kstrl_version",
     )
 )
+
+
+#: The width of every EXPERIMENTS_HEADER before the current one: before
+#: R3.1 (11) and from R3.1 to #451 (14). A file keeps the header it was
+#: started with, and each later kstrl appends its own full-width row, so
+#: a row is legal at its file header's width and at every later width.
+#: Adding a column appends the width it replaces here.
+OLDER_EXPERIMENTS_WIDTHS: tuple[int, ...] = (11, 14)
 
 
 def experiment_rows(text: str) -> list[dict[str, Any]]:
@@ -159,7 +169,14 @@ def experiment_rows(text: str) -> list[dict[str, Any]]:
     legal one would answer a rendering defect by silently deleting every
     row of a legacy file, which is a worse defect than the one it fixes.
     So both widths are legal when the file's header is a PREFIX of the
-    current one, and only then.
+    current one, and only then. A full-width row under such a header is
+    read with the CURRENT header's names (#451): an experiments.tsv
+    started between R3.1 and #451 has the 14-column header, and zipping
+    the new row against it would drop the ``kstrl_version`` column from
+    every run recorded after the upgrade. Every width in
+    :data:`OLDER_EXPERIMENTS_WIDTHS` above the file header's own is legal
+    too, because each kstrl in between appended its own full-width row:
+    a file started before R3.1 holds 11-, 14- and 15-field rows.
 
     Blank lines are skipped rather than dropped as malformed, and NOT
     for the reason this said in round 1. The pad the writer leaves
@@ -196,9 +213,9 @@ def experiment_rows(text: str) -> list[dict[str, Any]]:
        to ``ks evolve --status`` and to ``ks autonomy replay`` with
        nothing logged.
     3. A fragment torn INSIDE the first field survives. A concatenation
-       has ``k + 14 - 1`` fields for a fragment of ``k`` fields, which
-       is 15 or more for a tear past the first tab; a tear before it
-       gives ``k == 1`` and exactly 14, which is legal. Measured: both
+       has ``k + 15 - 1`` fields for a fragment of ``k`` fields, which
+       is 16 or more for a tear past the first tab; a tear before it
+       gives ``k == 1`` and exactly 15, which is legal. Measured: both
        readers return ``run_id='run-2run-3'`` with every other column
        holding run-3's real values. ``run_id`` is column 1, so this is
        whatever share of the row's bytes a run id occupies, not a
@@ -259,11 +276,12 @@ def experiment_rows(text: str) -> list[dict[str, Any]]:
         return []
     header, rows = records[0], records[1:]
     columns = EXPERIMENTS_HEADER.split(ExperimentsDialect.delimiter)
-    widths = {len(header)}
+    names, widths = header, {len(header)}
     if header == columns[: len(header)]:
-        widths.add(len(columns))
+        names = columns
+        widths.update(w for w in (*OLDER_EXPERIMENTS_WIDTHS, len(columns)) if w > len(header))
     return [
-        dict(zip(header, fields, strict=False))
+        dict(zip(names[: len(fields)], fields, strict=True))
         for fields in rows
         if fields and len(fields) in widths
     ]
@@ -1311,8 +1329,12 @@ def entry_str(entry: dict[str, Any], key: str) -> str:
 
 
 def _journal_line(entry: dict[str, Any]) -> str:
-    """One JSONL line, terminator included. The journal's line format."""
-    return json.dumps(entry, separators=(",", ":")) + "\n"
+    """One JSONL line, terminator included. The journal's line format.
+
+    Stamps the kstrl that wrote the row (#451), so every row carries it
+    whichever of the journal's writers built the dict.
+    """
+    return json.dumps({**entry, "kstrl_version": kstrl_version()}, separators=(",", ":")) + "\n"
 
 
 def _log_experiments_repair(repaired: bool, path: Path) -> None:
@@ -1708,8 +1730,8 @@ class EvolutionJournal:
         # unreported_calls > 0 marks the token/cost figures as lower
         # bounds. Files written before R3.1 keep their shorter header;
         # experiment_rows keeps such a row while the file's header is a
-        # PREFIX of the current one and drops the extra values, which is
-        # its second legal width. The reader has not been a bare
+        # PREFIX of the current one and reads it with the current header's
+        # names, which is its second legal width. The reader has not been a bare
         # csv.DictReader since #331 and this comment named one until
         # #352 round 2.
         if run_usage:
@@ -1743,6 +1765,7 @@ class EvolutionJournal:
                 total_tokens_col,
                 total_cost_col,
                 unreported_col,
+                kstrl_version(),
             )
         )
 

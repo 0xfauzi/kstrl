@@ -219,6 +219,9 @@ class Manifest:
     # (PolicyConfig.envelope_hash). "" when policy is unset. The audit
     # record of what merge guardrails were in force.
     policy_hash: str = ""
+    # #451: the kstrl that ran ``run_id``, set with it at run start.
+    # "" on a manifest no run has operated on, or one written before #451.
+    kstrl_version: str = ""
 
     @classmethod
     def from_prd(
@@ -338,6 +341,7 @@ class Manifest:
             linear_project_id=data.get("linearProjectId", ""),
             linear_sync_key=data.get("linearSyncKey", ""),
             policy_hash=data.get("policyHash", ""),
+            kstrl_version=data.get("kstrlVersion", ""),
         )
 
     def save(self, path: Path) -> None:
@@ -353,6 +357,7 @@ class Manifest:
             "linearProjectId": self.linear_project_id,
             "linearSyncKey": self.linear_sync_key,
             "policyHash": self.policy_hash,
+            "kstrlVersion": self.kstrl_version,
             "components": [
                 {
                     "id": c.id,
@@ -435,12 +440,9 @@ class Manifest:
                 errors.append(f"baseBranch: {base_error}")
         if not isinstance(data.get("singlePr"), bool):
             errors.append("singlePr must be a boolean")
-        if "runId" in data and not isinstance(data["runId"], str):
-            errors.append("runId must be a string")
-        if "completedAt" in data and not isinstance(data["completedAt"], str):
-            errors.append("completedAt must be a string")
-        if "policyHash" in data and not isinstance(data["policyHash"], str):
-            errors.append("policyHash must be a string")
+        for key in ("runId", "completedAt", "policyHash", "kstrlVersion"):
+            if key in data and not isinstance(data[key], str):
+                errors.append(f"{key} must be a string")
 
         components = data.get("components")
         if not isinstance(components, list):

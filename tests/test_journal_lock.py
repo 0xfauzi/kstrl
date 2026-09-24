@@ -42,6 +42,7 @@ from typing import Any
 import pytest
 
 from kstrl.appendio import JOURNAL_REPAIR_EVENT
+from kstrl.version import kstrl_version
 from tests.helpers.journal import tear
 
 fcntl = pytest.importorskip("fcntl", reason="flock is POSIX-only, as the helper says")
@@ -339,7 +340,8 @@ class TestAFlockThatCannotBeTakenDoesNotCostTheEntry:
 
         _journal(path).append_entries([entry])
 
-        assert path.read_bytes() == json.dumps(entry, separators=(",", ":")).encode() + b"\n"
+        stamped = {**entry, "kstrl_version": kstrl_version()}
+        assert path.read_bytes() == json.dumps(stamped, separators=(",", ":")).encode() + b"\n"
         assert attempted == [fcntl.LOCK_EX], (
             "the acquisition is attempted once and the release is not, because "
             "there is nothing held to release"

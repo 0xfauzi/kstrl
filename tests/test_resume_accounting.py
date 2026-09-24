@@ -507,6 +507,8 @@ def test_an_approval_run_is_charged_to_the_serve_ledger_that_charged_the_park(
     parked = serve_cycle(root, config=ServeConfig(caffeinate=False), runner=runner)
     assert str(parked.verdict) == "awaiting_approval", parked.reason
     parked_run = Manifest.load(_manifest_path(root)).run_id
+    linked = queue.get(remote.item_id)
+    assert linked is not None and linked.last_run_id == parked_run
     before = SpendLedger(root).read_state().spend
 
     approved = _ks(
@@ -528,8 +530,10 @@ def test_an_approval_run_is_charged_to_the_serve_ledger_that_charged_the_park(
     # The parked run reached its summary, so the approval run took over
     # nothing and the park's spend, which serve already charged, is not in it.
     assert "Carried from interrupted run" not in out
+    # The dependent parked under the approval run's own id, so the item
+    # still awaits approval and now points at that run (#464).
     item = queue.get(remote.item_id)
-    assert item is not None and item.last_run_id == parked_run
+    assert item is not None and item.last_run_id == approval_run
 
 
 @pytest.mark.usefixtures("no_open_prs")

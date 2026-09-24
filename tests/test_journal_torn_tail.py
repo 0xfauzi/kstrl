@@ -38,6 +38,7 @@ import pytest
 from kstrl.appendio import JOURNAL_REPAIR_EVENT, handle_ends_without_newline
 from kstrl.evolution import EXPERIMENTS_HEADER, SPEC_ISSUES_EVENT
 from kstrl.observability import read_progress_events
+from kstrl.version import kstrl_version
 from tests.helpers.journal import (
     DANGLING_UTF8,
     TORN_FRAGMENT,
@@ -162,7 +163,8 @@ class TestWhatIsNotATear:
 
         after = path.read_bytes()
         assert after.startswith(before)
-        assert after == before + json.dumps(audit("beta"), separators=(",", ":")).encode() + b"\n"
+        beta = {**audit("beta"), "kstrl_version": kstrl_version()}
+        assert after == before + json.dumps(beta, separators=(",", ":")).encode() + b"\n"
         assert repair_rows_in(journal) == []
 
     def test_an_empty_journal_file_is_not_a_tear(self, tmp_path: Path) -> None:

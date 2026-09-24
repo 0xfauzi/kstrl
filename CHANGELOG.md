@@ -249,6 +249,21 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- One fact, one value (#450). `component_completed` and the console
+  `COMPLETED:` line now carry the whole attempt's duration, the value the
+  manifest and the journal already carried, instead of the engineer
+  loop's (which stays on the engineer `phase_completed` event), and
+  `progress.jsonl` no longer rounds it a second time. The manifest's
+  `durationSeconds` has one writer, the end of the attempt: it is no
+  longer first set to the engineer loop's duration, which a manifest
+  saved mid-attempt used to carry. `review_result`
+  now counts criteria and concerns together, the numbers the `Review`
+  log line prints and the divergence reading joins against, where it
+  counted criteria only. Phase 2.5's `advisory_count` no longer includes
+  the critical and high findings `fail_count` already counts. The
+  merge-gate inbox item's `review_findings` becomes `review_fail_count`
+  and `review_advisory_count`, the same two counts, left out when the
+  review produced no reading.
 - A `kstrl.toml` section that will not read no longer stops the `ks
   serve` daemon. `serve` has no per-cycle handler, so an exception from a
   config read on the poll path left `serve()` and killed the process;
