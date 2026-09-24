@@ -311,6 +311,13 @@ class CheckResult:
     # itself: `signature_slug` strips digits, so "timed out after 300.0s" and
     # "timed out after 1800.0s" are the same string.
     measured: bool = True
+    # #462: the gate's own output, stdout then stderr, when a test,
+    # typecheck or lint gate ran and FAILED; None for every other row.
+    # Bounded by :func:`bounded_gate_output`. The pipeline writes it to
+    # disk as the operator's evidence for the failure. It is never put in
+    # the retry prompt, the report table or ``ks check --json``: those
+    # read ``details``, which is the parse of this text.
+    output: str | None = None
 
 
 #: Why a check that was ASKED FOR produced no measurement. Stable
@@ -1236,6 +1243,36 @@ def scrub_project_claude_md(
     return scrub_stale_verify_commands(claude_md, commands)
 
 
+#: The most characters of one gate's output kept for its log (#462).
+#: Measured on kstrl's own tree: one failing test printed 699 characters,
+#: 179 collection errors 273,184, mypy with 3,981 error lines 352,260, and
+#: a shared helper broken under the full suite (1,265 failures) 4,523,001,
+#: of which the closing short summary was the last 141,403. At this bound
+#: the first three are kept whole and the fourth keeps its full summary.
+GATE_OUTPUT_MAX_CHARS = 1_048_576
+
+
+def bounded_gate_output(output: str, limit: int = GATE_OUTPUT_MAX_CHARS) -> str:
+    """``output`` whole when it fits in ``limit`` characters; else its
+    first and last ``limit // 2`` characters with a line between them
+    saying how many were dropped (#462).
+
+    Both ends, because they answer different questions: the head holds
+    the first error, which is usually the cause (a collection error, an
+    import failure), and the tail holds the tool's summary (pytest's
+    short summary, mypy's count, and stderr, which comes after stdout).
+    """
+    if len(output) <= limit:
+        return output
+    half = limit // 2
+    dropped = len(output) - 2 * half
+    marker = (
+        f"\n[kstrl: output truncated, {dropped} of {len(output)} characters "
+        f"dropped here; kept the first {half} and the last {half}]\n"
+    )
+    return output[:half] + marker + output[-half:]
+
+
 def _failed_gate_result(
     name: str,
     message: str,
@@ -1243,6 +1280,8 @@ def _failed_gate_result(
     cmd: str,
     cwd: Path,
     start: float,
+    *,
+    output: str,
 ) -> CheckResult:
     """Enrich a parse and package it as the gate's failing CheckResult.
 
@@ -1295,6 +1334,7 @@ def _failed_gate_result(
         duration_seconds=time.monotonic() - start,
         parsed=parsed,
         measured=parsed.recognised,
+        output=bounded_gate_output(output),
     )
 
 
@@ -1340,6 +1380,7 @@ def check_test_suite(
             cmd,
             cwd,
             start,
+            output=output,
         )
 
     return CheckResult(
@@ -1388,6 +1429,7 @@ def check_typecheck(
             cmd,
             cwd,
             start,
+            output=output,
         )
 
     return CheckResult(
@@ -1436,6 +1478,7 @@ def check_linter(
             cmd,
             cwd,
             start,
+            output=output,
         )
 
     return CheckResult(

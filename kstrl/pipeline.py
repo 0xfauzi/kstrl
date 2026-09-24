@@ -53,6 +53,7 @@ from kstrl.agents.base import (
     collect_usage,
     usage_coverage,
 )
+from kstrl.atomicio import atomic_write_text
 from kstrl.context import IterationContext, IterationRecord
 from kstrl.divergence import (
     AttemptReading,
@@ -2971,6 +2972,39 @@ class ComponentPipeline:
         for gap in verification.not_measured:
             self.ui.warn(f"  {comp.id}: {gap.check} not measured ({gap.reason}) - {gap.detail}")
 
+    def _write_gate_logs(
+        self,
+        comp: Component,
+        verification: VerificationResult,
+    ) -> tuple[str, ...]:
+        """Write each failed gate's output to disk; return the paths (#462).
+
+        One file per failed test / typecheck / lint gate, at
+        ``.kstrl/debug/<run>/<component>/attempt-<n>/<check>.log``: the
+        directory the failure summary, ``ks status`` and the TUI retry
+        screen already name as the component's raw outputs, split by
+        attempt so a retry does not overwrite the evidence of the attempt
+        before it. A write that fails is said out loud and left out of
+        the returned paths, so the event never names a file that is not
+        there, and it does not change Phase 1's verdict.
+        """
+        attempt_dir = self._debug_dir_for(comp.id) / f"attempt-{comp.retries + 1}"
+        written: list[str] = []
+        for check in verification.checks:
+            if check.passed or check.output is None:
+                continue
+            path = attempt_dir / f"{check.name}.log"
+            try:
+                attempt_dir.mkdir(parents=True, exist_ok=True)
+                atomic_write_text(path, check.output)
+            except OSError as exc:
+                self.ui.warn(
+                    f"  {comp.id}: could not write the {check.name} output to {path}: {exc}"
+                )
+                continue
+            written.append(str(path))
+        return tuple(written)
+
     def _phase_verify(
         self,
         comp: Component,
@@ -3102,6 +3136,7 @@ class ComponentPipeline:
                 failures=tuple(c.message for c in verification.checks if not c.passed),
                 duration_seconds=round(verify_duration, 2),
                 not_measured=tuple(g.as_token() for g in verification.not_measured),
+                gate_logs=self._write_gate_logs(comp, verification),
             )
         )
 
