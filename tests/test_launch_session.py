@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
+from kstrl.init_cmd import gitignore_block
 from kstrl.interaction import (
     PromptKind,
     PromptRequest,
@@ -404,6 +405,8 @@ class TestStartRunSession:
         )
         # #434: a decompose launch refuses a repository with no build manifest.
         (tmp_path / "pyproject.toml").write_text('[project]\nname = "demo"\n', encoding="utf-8")
+        # #459: and one whose build output git does not ignore.
+        (tmp_path / ".gitignore").write_text(gitignore_block("Python"), encoding="utf-8")
         assert DecomposeLaunch().base_branch == ""
         with patch(
             "kstrl.agents.get_agent",

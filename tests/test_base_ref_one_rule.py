@@ -148,6 +148,7 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "git.py git diff --name-status -z ref --": 1,
     "git.py git restore f'--source={ref}' --staged --worktree -- file": 1,
     "git.py git add -- file": 1,
+    "git.py git check-ignore --stdin -z": 1,
     "git.py git check-ignore -v -- file": 1,
     "git.py git rm --cached --ignore-unmatch -q -- file": 1,
     "git.py git restore --staged --worktree -- file": 1,

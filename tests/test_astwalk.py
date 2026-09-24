@@ -370,6 +370,8 @@ class TestTheWalkAgainstTheRealPackage:
         resolvers, its one ``subprocess.run`` counted inside the original
         68 - so the total drops back to 72; ``git.resolve_base_sha``, the
         one resolver left, already had its own row and is unaffected.
+        #459 adds ``git.ignored_paths`` (``git check-ignore --stdin -z``,
+        with ``timeout=``), which makes it 73.
         """
         spawns = frozenset(
             {
@@ -381,7 +383,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 72
+        assert len(found.seen) == 73
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [
