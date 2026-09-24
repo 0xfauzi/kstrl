@@ -141,6 +141,15 @@ class TestTheStampHasOneSource:
         head = _repo_with_a_commit(tmp_path)
         assert version_of_source(tmp_path) == f"{__version__}+g{head[:12]}"
 
+    def test_a_worktree_checkout_stamps_its_commit(self, tmp_path: Path) -> None:
+        """A git worktree of kstrl has a .git FILE, not a directory. It is
+        still a checkout, so it stamps its commit, not the bare package
+        version that would pass for an installed kstrl."""
+        head = _repo_with_a_commit(tmp_path / "main")
+        git_in(tmp_path / "main", "worktree", "add", "-q", "--detach", str(tmp_path / "wt"))
+        assert (tmp_path / "wt" / ".git").is_file()
+        assert version_of_source(tmp_path / "wt") == f"{__version__}+g{head[:12]}"
+
     def test_an_installed_kstrl_never_stamps_the_project_commit(self, tmp_path: Path) -> None:
         """kstrl installed in a project's virtualenv sits inside that
         project's repository. The stamp is the package version alone,
