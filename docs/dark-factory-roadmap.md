@@ -460,9 +460,10 @@ much of the factory's backlog plus every product's" without anyone having
 decided that trade.
 
 `pause_before_pr_merge` on an unattended run no longer proceeds. It
-returns `CheckpointDecision.PARKED`: the merge is withheld, the
-component fails at `phase=pr / check=merge_gate`, and the decision goes
-to the inbox. Proceeding defeated the gate in exactly the unattended
+returns `CheckpointDecision.PARKED`: the merge is withheld and the
+decision goes to the inbox. Since #465 the component is not failed: it
+waits as `awaiting_approval`, its dependents stay pending, and
+`ks inbox approve` pushes, opens the PR, merges and continues the run. Proceeding defeated the gate in exactly the unattended
 case R8.2's L1/L2 forces it on for.
 
 Closes three IOUs left by earlier items: R8.1's "violations route to the

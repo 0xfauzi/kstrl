@@ -103,7 +103,12 @@ from kstrl.interaction import (
 from kstrl.jsonread import read_json_file
 from kstrl.launch_record import option_argv, replayable_flags
 from kstrl.loop import run_loop
-from kstrl.manifest import COMPONENT_STATUS_VALUES, Manifest
+from kstrl.manifest import (
+    COMPONENT_STATUS_VALUES,
+    MERGE_GATE_PARK_KEY,
+    ComponentStatus,
+    Manifest,
+)
 from kstrl.observability import (
     event_age_seconds,
     format_age,
@@ -5313,7 +5318,14 @@ def inbox_approve(
     ui: str,
     no_color: bool,
 ) -> None:
-    """Accept the exception and close the item."""
+    """Accept the exception and close the item.
+
+    For a component parked at the merge gate, approval also re-enters
+    `ks factory` on the same manifest, with the flags of the run that
+    parked it: that run pushes the reviewed branch, opens the PR, merges
+    it and continues with the dependents (#465).
+    """
+    _decide_parked_merge_if_parked("approve", item_id, root, ui, no_color, comment)
     _decide_and_report("approve", item_id, root, ui, no_color, comment=comment)
 
 
@@ -5330,8 +5342,91 @@ def inbox_reject(
     ui: str,
     no_color: bool,
 ) -> None:
-    """Refuse the exception, recording why."""
+    """Refuse the exception, recording why.
+
+    For a component parked at the merge gate, rejection also re-enters
+    `ks factory` on the same manifest, which records the component failed
+    and skips its dependents (#465).
+    """
+    _decide_parked_merge_if_parked("reject", item_id, root, ui, no_color, comment)
     _decide_and_report("reject", item_id, root, ui, no_color, comment=comment)
+
+
+def _decide_parked_merge_if_parked(
+    action: str,
+    item_id: str,
+    root: Path | None,
+    ui: str,
+    no_color: bool,
+    comment: str,
+) -> None:
+    """Decide a merge-gate park and re-enter the factory, or return (#465).
+
+    Returns only when ``item_id`` is not a park, and the caller then
+    records the decision as it always has. For a park it never returns:
+    it refuses (exit 1 or 2) or hands over to `ks factory`, which exits
+    with the run's own code. Every refusal happens before the decision is
+    recorded, so a refused command changes nothing.
+    """
+    from kstrl.inbox import InboxError
+
+    root_dir, box = _inbox_for(root)
+    item = box.get(item_id)
+    if item is None or not item.dedupe_key.startswith(MERGE_GATE_PARK_KEY):
+        return
+    ui_impl = _autonomy_ui(ui, no_color)
+    manifest_file = root_dir / "scripts" / "kstrl" / "manifest.json"
+    if not manifest_file.exists():
+        ui_impl.err(f"No manifest at {manifest_file}")
+        sys.exit(1)
+    manifest = _load_manifest_or_exit(manifest_file, ui_impl)
+    comp = manifest.get_component(item.component)
+    if comp is None or comp.status != ComponentStatus.AWAITING_APPROVAL.value:
+        where = comp.status if comp is not None else "not in the manifest"
+        ui_impl.err(
+            f"{item.id[:8]}: component '{item.component}' is {where}, not awaiting "
+            f"approval in {manifest_file}; there is no parked merge to {action}"
+        )
+        sys.exit(2)
+    plan, problems = plan_resume(
+        root_dir,
+        manifest,
+        manifest_file,
+        factory,
+        max_cost_usd=None,
+        max_parallel=None,
+        keep_worktrees_on_failure=False,
+    )
+    if plan is None:
+        _report_preflight(ui_impl, RESUME_REFUSAL, problems)
+        sys.exit(2)
+    try:
+        if action == "approve":
+            box.approve(item.id, actor=_actor(), comment=comment)
+        else:
+            box.reject(item.id, actor=_actor(), comment=comment)
+    except InboxError as exc:
+        ui_impl.err(str(exc))
+        sys.exit(1)
+    said = {"approve": "approved", "reject": "rejected"}[action]
+    ui_impl.ok(f"{said} {item.id[:8]}: {item.title}")
+    print_resume_plan(ui_impl, plan)
+    argv = option_argv(
+        factory,
+        {
+            "manifest_path": str(manifest_file),
+            "root": str(root_dir),
+            "yes": True,
+            "tui": False,
+            "ui": ui,
+            "no_color": no_color,
+        },
+    )
+    factory_ctx = factory.make_context(
+        "factory", [*argv, *plan.argv], parent=click.get_current_context()
+    )
+    with factory_ctx:
+        factory.invoke(factory_ctx)
 
 
 @inbox_group.command(name="snooze")
@@ -5386,6 +5481,12 @@ def inbox_retry(
         reset = manifest.reset_for_retry(item.component)
     except (ValueError, KeyError) as exc:
         ui_impl.err(f"Could not requeue {item.component}: {exc}")
+        if item.dedupe_key.startswith(MERGE_GATE_PARK_KEY):
+            ui_impl.info(
+                f"It is parked at the merge gate: `ks inbox approve {item.id[:8]}` "
+                f"merges its reviewed branch, `ks inbox reject {item.id[:8]} "
+                "--comment ...` fails it."
+            )
         sys.exit(1)
     manifest.save(manifest_path)
     box.resolve(item.id, actor=_actor(), comment="requeued via ks inbox retry")
@@ -5462,7 +5563,7 @@ def _resolve_queue_item(queue: Any, item_id: str, ui_impl: UI) -> Any:
     default=False,
     help=(
         "Request auto-merge when green (still gated by the autonomy "
-        "ladder), or stop at the PR for a human (default)"
+        "ladder), or wait for a human merge approval (default)"
     ),
 )
 @click.option(
@@ -5526,7 +5627,9 @@ def queue_add(
     "--state",
     "states",
     multiple=True,
-    help="Filter by state (repeatable): queued/leased/running/done/failed/poison",
+    help=(
+        "Filter by state (repeatable): queued/leased/running/done/failed/poison/awaiting_approval"
+    ),
 )
 @_queue_root_option
 @_queue_ui_option
@@ -5786,7 +5889,7 @@ def queue_sync(
     """Pull labelled GitHub issues into the queue (R8.6).
 
     Polls open issues carrying the trigger label and enqueues the ones
-    not already seen. Remote items ALWAYS stop at the PR for a human.
+    not already seen. Remote items ALWAYS wait for a human merge approval.
 
     The trigger label is the authorization, and applying it needs only
     GitHub's Triage role. Set [intake_github] allowed_actors to the logins
@@ -6045,6 +6148,7 @@ def serve(
         check_cost_coverage,
         check_inbox_cap,
         check_open_pr_bound,
+        check_parked_merges,
         check_poison_breaker,
         consecutive_poison_count,
         factory_lock_held,
@@ -6158,6 +6262,7 @@ def serve(
             ("cost coverage", check_cost_coverage(ledger, config)),
             ("budget", check_budget(ledger, config)),
             ("inbox cap", check_inbox_cap(root_dir)),
+            ("parked merges", check_parked_merges(root_dir)),
             # Last, matching serve_cycle: the only gate that reaches the
             # network, and the only one a dry run can make slow.
             ("open-PR bound", check_open_pr_bound(config, root_dir)),

@@ -535,6 +535,9 @@ EXPECTED_END_ATTEMPT_SITES: dict[str, str] = {
     "pipeline.py:complete": "terminal; the reading reaches component_result",
     "pipeline.py:_park_merge_pending": "terminal; the reading reaches component_result",
     "pipeline.py:_fail_pr_flow": "terminal; the reading reaches component_result",
+    "pipeline.py:_park_awaiting_approval": (
+        "terminal for this run; the reading reaches component_result"
+    ),
     "pipeline.py:fail_scheduler_backstop": (
         "terminal, and the disclosed blind spot: process_result never ran "
         "for this attempt, so iteration_count is stale or 0. See "

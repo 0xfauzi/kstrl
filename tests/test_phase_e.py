@@ -265,9 +265,9 @@ class TestE6HitlCheckpoint:
     def test_non_interactive_ui_parks_for_approval(self, tmp_path: Path) -> None:
         """When pause_before_pr_merge=True but the UI can't prompt
         (PlainUI in tests), the factory must NOT merge unapproved. R8.3:
-        it parks the component (fails it at phase=pr/check=merge_gate)
-        and routes the decision to the inbox as a merge_gate item, so a
-        human can approve it later with `ks inbox retry`. Proceeding
+        it parks the component and routes the decision to the inbox as a
+        merge_gate item. #465: the park is AWAITING_APPROVAL, not a
+        failure, and `ks inbox approve` merges it later. Proceeding
         would defeat the gate in exactly the unattended case R8.2's
         L1/L2 forces the gate on for."""
         from kstrl.factory import ComponentResult
@@ -360,11 +360,14 @@ class TestE6HitlCheckpoint:
         # PlainUI returns False for can_prompt(), so the gate cannot be
         # answered: the component is parked, not merged.
         assert "comp-a" not in result.completed
-        assert "comp-a" in result.failed
+        assert "comp-a" not in result.failed
+        assert result.awaiting_approval == ["comp-a"]
+        assert result.exit_code == 1
         comp = manifest.get_component("comp-a")
         assert comp is not None
-        assert comp.failed_phase == "pr"
-        assert comp.failed_check == "merge_gate"
+        assert comp.status == "awaiting_approval"
+        assert comp.failed_phase == ""
+        assert comp.failed_check == ""
         # ...and the decision is queued for a human, exactly once.
         items = Inbox(tmp_path, InboxConfig()).open_items()
         assert [i.kind for i in items] == [ItemKind.MERGE_GATE]

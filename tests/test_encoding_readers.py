@@ -426,17 +426,15 @@ class TestEveryReadInThePackageIsAccountedFor:
 # #409: THE SECOND POPULATION -- child-process spawns, layer 1 and layer 2.
 # --------------------------------------------------------------------------
 
-#: Every AST node in ``kstrl/`` whose folded value is EXACTLY ``"subprocess"``
-#: - the module name itself, not any of the seven callables built on it -
-#: counted per module. ``spells(token)`` is an EQUALITY net
-#: (``tests/helpers/astwalk/net.py``), so it does not count the word inside
-#: a longer prose sentence; it counts ``import subprocess``,
-#: ``import subprocess as sp``, ``from subprocess import run as _run`` (the
-#: module name lives in ``ImportFrom.module``) and a bare ``subprocess``
-#: reference such as the attribute root of ``subprocess.run(...)``.
-#: Deliberately generous the same way ``EXPECTED_READ_SPELLINGS`` is: a
-#: module cannot spawn without naming ``subprocess`` somewhere, and a net
-#: that decides what to leave out can be wrong about what it left out.
+#: Every AST node in ``kstrl/`` whose folded value is EXACTLY ``"subprocess"`` - the module name
+#: itself, not any of the seven callables built on it - counted per module. ``spells(token)`` is an
+#: EQUALITY net (``tests/helpers/astwalk/net.py``), so it does not count the word inside a longer
+#: prose sentence; it counts ``import subprocess``, ``import subprocess as sp``,
+#: ``from subprocess import run as _run`` (the module name lives in ``ImportFrom.module``) and a
+#: bare ``subprocess`` reference such as the attribute root of ``subprocess.run(...)``.
+#: Deliberately generous the same way ``EXPECTED_READ_SPELLINGS`` is: a module cannot spawn
+#: without naming ``subprocess`` somewhere, and a net that decides what to leave out can be wrong
+#: about what it left out.
 #: Unchanged by this fix: adding ``encoding="utf-8"`` spells no ``subprocess``.
 EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "agents/codex.py": 4,
@@ -444,11 +442,10 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "breaker.py": 4,
     "contract.py": 5,
     "doctor.py": 5,
-    "factory.py": 13,
+    "factory.py": 15,
     "fixtures.py": 3,
-    # 58: 57 since #435 (see git blame), +1 for `merge_base_ref`, hoisted
-    # here from `verify.py` by the #435 fix-round's A0.
-    "git.py": 58,
+    # 60: 58 after #435 hoisted `merge_base_ref` here, +2 for #465's `branch_sha`.
+    "git.py": 60,
     "intake_github.py": 3,
     "licensing.py": 3,
     "observability.py": 5,
@@ -469,9 +466,9 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
 }
 
 
-#: How many TEXT-MODE spawns each module holds. Unchanged by replacing
-#: ``text=True,`` with ``encoding="utf-8",``, which moves a site between
-#: ``clear`` and ``reported``, never between text mode and bytes mode.
+#: How many TEXT-MODE spawns each module holds. Unchanged by replacing ``text=True,``
+#: with ``encoding="utf-8",``, which moves a site between ``clear`` and ``reported``,
+#: never between text mode and bytes mode.
 #: ``timeout.py`` is NOT a row here: its one text-mode-looking call also
 #: forwards ``**kwargs`` (A1, #409's simplify pass), so it is undecided
 #: rather than counted as text mode at all - see ``EXPECTED_UNDECIDED_SPAWNS``.
@@ -480,9 +477,9 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     "agents/proc.py": 1,
     "breaker.py": 1,
     "doctor.py": 1,
-    "factory.py": 3,
-    # 23 since #435: `resolve_ref`'s deleted body held one text-mode spawn.
-    "git.py": 23,
+    "factory.py": 4,
+    # 24: 23 after #435 deleted `resolve_ref`, +1 for #465's `branch_sha`.
+    "git.py": 24,
     "intake_github.py": 1,
     "licensing.py": 1,
     "pr.py": 9,
@@ -509,6 +506,7 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "factory.py subprocess.run(['git', 'branch', '-D', branch], cwd=root_dir, capture_",
     "factory.py subprocess.run(['git', 'worktree', 'add', str(worktree_path), '-b', br",
     "factory.py subprocess.run(['git', 'worktree', 'add', str(worktree_path), branch_n",
+    "factory.py subprocess.run(['git', 'worktree', 'list', '--porcelain', '-z'], cwd=r",
     # codespell:ignore-next-line
     "git.py subprocess.run(['git', 'add', '--', file], cwd=cwd, capture_output=Tru",
     "git.py subprocess.run(['git', 'branch', flag, '--', branch_name], cwd=cwd, ca",
@@ -531,6 +529,7 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "git.py subprocess.run(['git', 'rev-parse', '--is-inside-work-tree'], cwd=path",
     "git.py subprocess.run(['git', 'rev-parse', '--show-toplevel'], cwd=path, capt",
     "git.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', 'HEAD'], cw",
+    "git.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'refs/head",
     # codespell:ignore-next-line
     "git.py subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'{candidat",
     "intake_github.py subprocess.run(['gh', *args], cwd=str(cwd) if cwd else None, capture_o",

@@ -57,7 +57,8 @@ class ComponentState:
     component_id: str
     title: str = ""
     deps: tuple[str, ...] = ()
-    # pending | running | verifying | completed | merge_pending | failed | skipped,
+    # pending | running | verifying | completed | merge_pending | awaiting_approval
+    # | failed | skipped,
     # or UNRECORDED_STATUS for a run-start record the log does not carry.
     status: str = "pending"
     phase: str = ""
@@ -255,6 +256,14 @@ def _status_at_run_start(recorded: str) -> str:
     if recorded in COMPONENT_STATUS_VALUES:
         return recorded
     return UNRECORDED_STATUS
+
+
+#: #465: a merge gate with nobody to ask parks the component, and the
+#: manifest records AWAITING_APPROVAL. The board shows the same status. A
+#: lookup rather than a branch keeps `apply`'s dispatch flat.
+_STATUS_AFTER_CHECKPOINT: dict[str, str] = {
+    "parked": ComponentStatus.AWAITING_APPROVAL.value,
+}
 
 
 def _budget_halt_error(event: ev.BudgetExceeded) -> str:
@@ -517,6 +526,7 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
         comp.checkpoint_open = event.kind or "checkpoint"
     elif isinstance(event, ev.CheckpointResolved):
         comp.checkpoint_open = ""
+        comp.status = _STATUS_AFTER_CHECKPOINT.get(event.decision, comp.status)
     elif isinstance(event, ev.BudgetExceeded):
         comp.error = _budget_halt_error(event)
 

@@ -16,6 +16,11 @@ and every transition out of it:
     FAILED         retries exhausted, budget wall, HITL reject, PR failure
                    (dependents cascade-skip)
     MERGE_PENDING  PR merge initiated but unconfirmed; re-polled next run
+    AWAITING_APPROVAL
+                   every gate passed and the merge gate had nobody to ask;
+                   nothing pushed, dependents wait (#465). The next run
+                   merges it once `ks inbox approve` has, or fails it once
+                   `ks inbox reject` has (apply_merge_decisions).
     COMPLETED      merge confirmed (or PR flow not configured)
 
 Each phase returns an explicit typed result; ``process_result`` is the
@@ -62,7 +67,15 @@ from kstrl.findings import (
     finding_model,
     tag_finding_with_attempt,
 )
-from kstrl.inbox import UNDECIDED, Inbox, InboxError, ItemKind, notifiable
+from kstrl.inbox import (
+    UNDECIDED,
+    Inbox,
+    InboxError,
+    InboxItem,
+    ItemKind,
+    ItemStatus,
+    notifiable,
+)
 from kstrl.interaction import (
     CheckpointContext,
     InteractionChannel,
@@ -76,6 +89,7 @@ from kstrl.manifest import (
     Component,
     ComponentStatus,
     Manifest,
+    park_dedupe_key,
 )
 from kstrl.observability import NotifyHooks
 from kstrl.policy import count_diff_size
@@ -129,6 +143,7 @@ class Transition(Enum):
     RETRYING = "retrying"
     FAILED = "failed"
     MERGE_PENDING = "merge_pending"
+    AWAITING_APPROVAL = "awaiting_approval"
     COMPLETED = "completed"
 
 
@@ -2056,6 +2071,46 @@ class ComponentPipeline:
         self.manifest.save(self.manifest_path)
         return Transition.MERGE_PENDING
 
+    def _park_awaiting_approval(self, comp: Component) -> Transition:
+        """VERIFYING -> AWAITING_APPROVAL: the merge gate had nobody to ask (#465).
+
+        Every gate passed, so nothing here is a failure: no failure
+        signature, no cascade skip, no completed_at, no halted_run item.
+        The branch keeps the reviewed commits and the dependents stay
+        PENDING. The attempt's journal slice is closed like any other
+        terminal transition of this run (R3.3).
+
+        A park is only a park when its merge_gate item is open: that item
+        is the one thing `ks inbox approve` and `ks inbox reject` can act
+        on. With the inbox disabled or unwritable nothing could ever move
+        the component, so it fails at the gate as it did before #465 and
+        `ks retry` can rebuild it.
+        """
+        item = self._park_decision(comp.id)
+        if item is None or item.status is not ItemStatus.OPEN:
+            return self.fail(
+                comp,
+                "Stopped at the merge gate with nothing to approve it: no open "
+                "merge_gate inbox item ([inbox] disabled or unwritable), so "
+                f"nothing was pushed; `ks retry {comp.id}` rebuilds it",
+                phase="pr",
+                check="merge_gate",
+            )
+        comp.status = ComponentStatus.AWAITING_APPROVAL.value
+        comp.error = (
+            "Parked awaiting merge approval (pause_before_pr_merge, no "
+            "interactive UI); `ks inbox approve <id>` merges it"
+        )
+        self._end_attempt(comp)
+        self.ui.warn(
+            f"  AWAITING APPROVAL: {comp.id} passed every gate and nothing was "
+            f"pushed; its dependents wait. `ks inbox ls` lists the merge_gate "
+            f"item; `ks inbox approve <id>` merges {comp.branch_name} and "
+            f"continues the run"
+        )
+        self.manifest.save(self.manifest_path)
+        return Transition.AWAITING_APPROVAL
+
     def _retry_after_merge_conflict(
         self,
         comp: Component,
@@ -2321,6 +2376,85 @@ class ComponentPipeline:
                         f"PR #{pr_number}; dependents stay blocked"
                     )
         self.manifest.save(self.manifest_path)
+
+    def apply_merge_decisions(self) -> None:
+        """#465: act on the decision each merge-gate park was waiting for.
+
+        Run at run start, beside ``repoll_merge_pending`` and before
+        anything is scheduled, so an approved component is merged before
+        its dependents are cut from the base branch. The decision is the
+        park's merge_gate inbox item: APPROVED merges the branch the gate
+        parked, REJECTED fails the component and skips its dependents, and
+        anything else (open, snoozed, no item, inbox off) leaves it parked.
+        """
+        parked = [
+            c
+            for c in self.manifest.components
+            if c.status == ComponentStatus.AWAITING_APPROVAL.value
+        ]
+        for comp in parked:
+            decision = self._park_decision(comp.id)
+            if decision is not None and decision.status is ItemStatus.APPROVED:
+                self._merge_approved(comp, decision)
+            elif decision is not None and decision.status is ItemStatus.REJECTED:
+                # The rejection IS the human decision; a halted_run item
+                # on top would ask for it again.
+                self._inbox_suppress_generic(comp.id)
+                self.fail(
+                    comp,
+                    f"Rejected at the merge gate: {decision.decision_comment}",
+                    phase="pr",
+                    check="hitl_reject",
+                    signatures=["review:hitl-rejected"],
+                )
+            else:
+                self.ui.warn(
+                    f"  '{comp.id}' is still awaiting merge approval; its "
+                    f"dependents wait (`ks inbox ls`, then `ks inbox approve <id>`)"
+                )
+
+    def _park_decision(self, comp_id: str) -> InboxItem | None:
+        """The merge_gate item that parked ``comp_id``, or None when unreadable."""
+        try:
+            if self._inbox is None:
+                if not self.inbox_config.enabled:
+                    return None
+                self._inbox = Inbox(self.root_dir, self.inbox_config)
+            return self._inbox.find_by_dedupe_key(park_dedupe_key(comp_id))
+        except (OSError, TypeError, ValueError, InboxError, ControlStateError) as exc:
+            # The tuple _inbox_resolve catches. Unreadable is not a
+            # decision: the component stays parked, and says why.
+            self.ui.warn(f"  Inbox read failed; '{comp_id}' stays parked: {exc}")
+            return None
+
+    def _merge_approved(self, comp: Component, decision: InboxItem) -> None:
+        """Push, open and merge the branch exactly as the gate parked it.
+
+        The approval covers the commit recorded when the gate parked the
+        component. A branch that has moved since carries work nobody
+        reviewed, so it is refused and nothing is pushed.
+        """
+        approved = str(decision.evidence.get("head_sha") or "")
+        head = git.branch_sha(comp.branch_name, self.root_dir) or ""
+        if not approved or head != approved:
+            self.fail(
+                comp,
+                f"merge approval does not match the branch: approved "
+                f"{approved or 'no recorded commit'}, '{comp.branch_name}' is "
+                f"now at {head or 'nothing'}; nothing was pushed",
+                phase="pr",
+                check="merge_gate",
+            )
+            return
+        pr = self._phase_pr(comp)
+        if pr.disposition in (PrDisposition.MERGED, PrDisposition.NO_GH):
+            self.complete(comp, comp.duration_seconds, comp.iteration_count)
+        elif pr.disposition == PrDisposition.MERGE_PENDING:
+            self._park_merge_pending(comp, pr.error)
+        else:
+            # A conflict too: the re-run doctrine re-runs the engineer,
+            # and an approval is not a request for that. `ks retry` is.
+            self._fail_pr_flow(comp, pr.error or "PR flow failed")
 
     # ------------------------------------------------------------------
     # Phase chain
@@ -2680,25 +2814,12 @@ class ComponentPipeline:
                 )
             if checkpoint == CheckpointDecision.PARKED:
                 # R8.3: the gate could not be answered, so the merge does
-                # NOT happen. Terminal for this run and routed to the
-                # inbox (the item was raised in _phase_checkpoint); the
-                # typed marker stops fail() adding a generic halted_run
-                # on top of it.
-                self._inbox_suppress_generic(comp.id)
+                # NOT happen. #465: and it is not a failure either. The
+                # component waits with its reviewed branch, its
+                # dependents wait with it, and the merge_gate item
+                # _phase_checkpoint filed is the question.
                 return PipelineOutcome(
-                    transition=self.fail(
-                        comp,
-                        "Parked awaiting merge approval "
-                        "(pause_before_pr_merge, no interactive UI); "
-                        "approve with `ks inbox retry <id>`",
-                        phase="pr",
-                        check="merge_gate",
-                        # #339: deliberately NO signatures=. Nobody
-                        # answered the gate, so there is no verdict to
-                        # record and the `pr` fallback is correct: the
-                        # ladder treats the run as an outage, which is
-                        # what it was. See the rule at hitl_reject above.
-                    ),
+                    transition=self._park_awaiting_approval(comp),
                     verify=verify,
                     diff=diff,
                     review=review,
@@ -4416,8 +4537,10 @@ class ComponentPipeline:
             # pause_before_pr_merge, and proceeding here silently merged
             # without the approval that was asked for - in exactly the
             # unattended case R8.2's L1/L2 forces the gate ON for. Park
-            # the component instead and route the decision to the inbox;
-            # `ks inbox retry` requeues it once a human has looked.
+            # the component instead and route the decision to the inbox.
+            # #465: the item records the commit it parked, and
+            # apply_merge_decisions merges exactly that commit once
+            # `ks inbox approve` has answered.
             self.ui.warn(
                 f"  pause_before_pr_merge requested but UI is "
                 f"non-interactive; parking {comp.id} for approval "
@@ -4436,13 +4559,17 @@ class ComponentPipeline:
                 f"{comp.id} awaiting merge approval",
                 detail=(
                     "pause_before_pr_merge is on but no interactive UI was "
-                    "available, so the merge was NOT performed. Review the "
-                    "component, then `ks inbox retry <id>` to requeue it."
+                    "available, so nothing was pushed and no PR was opened. "
+                    "The branch holds the reviewed work. `ks inbox approve "
+                    "<id>` pushes it, opens the PR, merges it and continues "
+                    "the run; `ks inbox reject <id> --comment ...` fails the "
+                    "component and skips its dependents."
                 ),
                 component=comp.id,
-                dedupe_key=f"merge-gate:{comp.id}",
+                dedupe_key=park_dedupe_key(comp.id),
                 evidence={
                     "branch": comp.branch_name,
+                    "head_sha": git.branch_sha(comp.branch_name, self.root_dir) or "",
                     "review_findings": len([f for f in comp.findings if f.phase == "review"]),
                 },
             )

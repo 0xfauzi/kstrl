@@ -66,7 +66,7 @@ SERVE_SOURCE = KSTRL_PACKAGE / "serve.py"
 #: anywhere the AST can hold a string. Not individually meaningful; the
 #: DELTA is the signal, and it moves for a shape layer 2 does not model
 #: as readily as for one it does.
-EXPECTED_LOAD_SPELLINGS = {"serve.py": 17}
+EXPECTED_LOAD_SPELLINGS = {"serve.py": 18}
 
 
 def test_every_spelling_of_load_in_serve_is_counted() -> None:
@@ -194,7 +194,7 @@ EXPECTED_CONFIG_LOADS = {
 #: census silently does not cover.
 EXPECTED_OTHER_LOADS = {
     "AutonomyState": 1,
-    "Manifest": 2,
+    "Manifest": 3,
     "OpenPrCountStreak": 1,
 }
 

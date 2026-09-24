@@ -15,8 +15,11 @@ The restart then proves the R0.5 recovery contract end to end:
 - the crashed run's ``<run_id>/`` worktree is pruned (run ids differ, so
   the new run can never mistake it for its own);
 - the crashed attempt's branch is handled per the stale-branch policy:
-  auto-deleted when fully merged, loudly REFUSED (exit 2, operator
-  decides) when it carries unmerged commits - never silently reused;
+  auto-deleted when fully merged, and (#460) when it carries unmerged
+  commits but is provably the crashed run's own, because git still
+  registers it in that run's worktree; the deletion names the commit.
+  A branch the crashed run cannot be shown to have made is still
+  REFUSED (exit 2, operator decides). Never silently reused;
 - the manifest ends consistent: the component re-runs to COMPLETED with
   no stale error, and no worktree survives the run.
 """
@@ -222,16 +225,18 @@ class TestCrashRecovery:
         assert final.components[0].status == ComponentStatus.COMPLETED.value
         assert final.components[0].error == ""
 
-    def test_restart_refuses_crashed_branch_with_commits_then_operator_recovers(
+    def test_restart_reclaims_the_crashed_attempts_own_branch_and_names_its_commit(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Crashed attempt COMMITTED work before dying: the restart still
-        resets state and prunes the stale worktree, but refuses to run
-        (exit 2) rather than silently reuse or destroy the branch - loud
-        beats lossy (R0.5). Deleting the branch, as the refusal
-        instructs, lets the next run complete."""
+        """Crashed attempt COMMITTED work before dying. #460: the branch is
+        the crashed run's own (its worktree is still registered at that
+        run's path), so the restart deletes it rather than refusing, the
+        same way it prunes the worktree, and names the commit it pointed
+        at so the attempt's work stays recoverable. A branch the crashed
+        run cannot be shown to have made is still refused; that side is
+        tests/test_resume_reclaims_own_branch.py."""
         monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
         root = tmp_path / "repo"
         init_kstrl_repo(root, (COMP,))
@@ -255,9 +260,11 @@ class TestCrashRecovery:
             manifest_path,
             ComponentStatus.VERIFYING.value,
         )
+        crashed_run = Manifest.load(manifest_path).run_id
+        crashed_tip = git("rev-parse", BRANCH, cwd=root)
 
         out = io.StringIO()
-        refused = run_factory(
+        restarted = run_factory(
             Manifest.load(manifest_path),
             factory_config(),
             base_config(root),
@@ -267,38 +274,16 @@ class TestCrashRecovery:
         )
         ui_output = out.getvalue()
 
-        assert refused.exit_code == 2
-        assert refused.completed == []
-        assert "Refusing to run: stale component branches found" in ui_output
-        assert f"branch '{BRANCH}'" in ui_output
-        # Stale-worktree handling ran even though the run was refused.
+        assert restarted.exit_code == 0, ui_output
+        assert restarted.completed == [COMP]
+        assert "Refusing to run" not in ui_output
+        assert f"Deleted stale branch '{BRANCH}'" in ui_output
+        assert f"left by interrupted run {crashed_run} at {crashed_tip}" in ui_output
         assert "Pruned 1 stale worktree(s) from previous runs" in ui_output
         assert not stale_worktree.exists()
-        # The crashed attempt's commits were preserved, not destroyed.
-        assert git("branch", "--list", BRANCH, cwd=root).strip()
-        assert (
-            "progress.txt"
-            in git(
-                "ls-tree",
-                "--name-only",
-                BRANCH,
-                cwd=root,
-            ).splitlines()
-        )
-
-        # Operator path from the refusal message: delete the branch and
-        # re-run; recovery then completes and the manifest is consistent.
-        git("branch", "-D", BRANCH, cwd=root)
-        rerun = run_factory(
-            Manifest.load(manifest_path),
-            factory_config(),
-            base_config(root),
-            PlainUI(no_color=True, file=io.StringIO()),
-            root,
-            manifest_path=manifest_path,
-        )
-        assert rerun.exit_code == 0
-        assert rerun.completed == [COMP]
+        # The crashed attempt's commit is still in the object store, so the
+        # recovery command the line names works.
+        assert git("cat-file", "-t", crashed_tip, cwd=root) == "commit"
         final = Manifest.load(manifest_path)
         assert final.components[0].status == ComponentStatus.COMPLETED.value
         assert final.components[0].error == ""

@@ -29,7 +29,8 @@ ks queue show <id>
 ```
 
 Items live under `.kstrl/queue/` as one directory each (spec + `meta.json`),
-moved between `queued/ leased/ running/ done/ failed/ poison/` by a single
+moved between `queued/ leased/ running/ done/ failed/ poison/ awaiting_approval/`
+by a single
 `os.replace`. The spec is **copied** at enqueue, so editing or deleting the
 original afterwards cannot change what runs. Locks (`queue.lock`,
 `serve.lock`) stay beside the queue. The pause marker and spend ledger do
@@ -81,6 +82,7 @@ infrastructural**:
 | Evidence | Verdict |
 |---|---|
 | exit 0 | success |
+| no component failed, and at least one waits at the merge gate | **awaiting approval** (never retried, never poison) |
 | launch failed before any spend | retry (free) |
 | killed by signal, or our timeout with the process group confirmed dead | retry |
 | exit 2 with a lock-contention marker in the output | retry |
@@ -101,6 +103,48 @@ context. Raising the ceiling or narrowing the spec is a human decision.
 
 Poisoned items wait for a human. `ks queue ls --state poison` lists them;
 `ks inbox ls` carries the decision.
+
+### A parked merge waits for approval, and is not a failure
+
+With `pause_before_pr_merge` on and nobody at an interactive checkpoint
+(every `ks serve` run), a component that passes every gate stops before
+anything leaves the machine: nothing is pushed and no PR exists. The
+manifest records it as `awaiting_approval`, not `failed`. Its dependents
+stay `pending`; they are not skipped. The factory exits 1, the queue item
+moves to `awaiting_approval/`, and a GitHub-sourced item gets the
+`kstrl:awaiting_approval` label and a comment naming the commands below.
+It does not count toward `max_consecutive_poison`.
+
+The decision is an inbox item of kind `merge_gate`:
+
+- `ks inbox approve <id>` records the approval and re-enters `ks factory`
+  on the same manifest with the parked run's flags. After its pre-spend
+  checks pass, that run checks that the branch is still at the commit the
+  gates passed, pushes it, opens the PR, merges it and continues with the
+  dependents. A run the pre-spend checks refuse pushes nothing; the
+  approval stays recorded and the next `ks factory` on that manifest
+  merges it. No engineer runs again
+  for the approved component. A branch that moved after the park is not
+  pushed: the component fails at `phase=pr / check=merge_gate` and the
+  error names both commits.
+- `ks inbox reject <id> --comment ...` re-enters the factory the same way,
+  which fails the component at `check=hitl_reject` and skips its
+  dependents.
+
+`ks inbox retry` is refused for a parked merge, because it would rebuild
+work that already passed.
+
+A park needs its inbox item. With `[inbox] enabled = false`, or when the
+item cannot be written, nothing could approve the component, so it fails
+at `phase=pr / check=merge_gate` as it did before and `ks retry
+<component>` rebuilds it. The classifier does not count that failure as a
+spec failure.
+
+While a park sits in `scripts/kstrl/manifest.json`, `ks serve` claims
+nothing: the next item's `ks factory --spec` would decompose over that
+manifest and lose the parked run. `ks serve --dry-run` shows this as the
+`parked merges` gate. The queue item itself stays in `awaiting_approval/`
+after the approval run; `ks queue rm` clears it.
 
 ### Five backstops, because a correct classifier is not enough
 
@@ -211,6 +255,7 @@ gh label create "kstrl:running" --color fbca04
 gh label create "kstrl:done"    --color 0075ca
 gh label create "kstrl:failed"  --color d93f0b
 gh label create "kstrl:poison"  --color b60205
+gh label create "kstrl:awaiting_approval" --color 5319e7
 
 ks queue sync --dry-run
 ks queue sync
@@ -262,8 +307,10 @@ refused. GitHub lets an issue author rewrite the body after a maintainer
 has labelled it, so the label is bound to the body revision it authorized.
 Re-apply the label to authorize the new text.
 
-**Remote items always stop at the PR.** No label and no config value can
-grant auto-merge to remote-sourced work.
+**Remote items always stop at a human approval.** No label and no config
+value can grant auto-merge to remote-sourced work. The run parks each
+component before it pushes, and `ks inbox approve` is what pushes, opens
+the PR and merges it (see "A parked merge waits for approval" above).
 
 ### Cross-repository intake is refused
 
