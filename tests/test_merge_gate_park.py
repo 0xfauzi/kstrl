@@ -580,3 +580,147 @@ class TestTheClassifierNeverBlamesAPark:
         outcome = self._classify(tmp_path, [self._parked(), other])
         assert str(outcome.verdict) == "spec_failure", outcome.reason
         assert outcome.evidence["judged_failures"] == ["other"]
+
+
+class TestTheDecisionRunSettlesTheQueueItem:
+    """#464: the run `ks inbox approve` or `reject` starts moves serve's item on.
+
+    Before #464 the item stayed in ``awaiting_approval/`` after the
+    approval run with no PR URLs, and the GitHub issue kept the
+    ``kstrl:awaiting_approval`` label. The join is the run id serve
+    records when it parks the item.
+    """
+
+    @staticmethod
+    def _served_park(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> tuple[Path, dict[str, str], Queue, str]:
+        root = _repo(tmp_path, f'[intake_github]\nenabled = true\nrepo = "{REPO}"\n')
+        env = _env(tmp_path)
+        for key in ("PATH", "GH_LOG", "GH_COMMENTS", "GH_PUSHED", "GH_HEAD"):
+            monkeypatch.setenv(key, env[key])
+        queue = Queue(root, QueueConfig())
+        remote = queue.add(
+            "# spec\n",
+            title="remote",
+            source=ItemSource.GITHUB,
+            source_ref=f"{REPO}#{ISSUE}",
+            target_repo=REPO,
+        )
+        runner = _real_factory_runner(tmp_path / "manifest.template.json", env, [])
+        serve_cycle(root, config=ServeConfig(caffeinate=False), runner=runner)
+        parked = queue.get(remote.item_id)
+        assert parked is not None and str(parked.state) == "awaiting_approval"
+        assert parked.last_run_id == Manifest.load(_manifest_path(root)).run_id
+        return root, env, queue, remote.item_id
+
+    def test_approval_moves_the_item_to_done_with_its_pr_urls_and_tells_the_issue(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root, env, queue, item_id = self._served_park(tmp_path, monkeypatch)
+
+        first = _ks(
+            root, env, "inbox", "approve", _park_item(root).id, "--ui", "plain", "--no-color"
+        )
+        out = first.stdout + first.stderr
+        # http merged, and the dependent parked under the approval run's own id.
+        assert _status(root, HTTP) == "completed", out
+        assert _status(root, CMDS) == "awaiting_approval", out
+        still = queue.get(item_id)
+        assert still is not None and str(still.state) == "awaiting_approval", out
+        assert still.last_run_id == Manifest.load(_manifest_path(root)).run_id, out
+
+        second = _ks(
+            root, env, "inbox", "approve", _park_item(root).id, "--ui", "plain", "--no-color"
+        )
+        out = second.stdout + second.stderr
+        assert second.returncode == 0, out
+        assert _status(root, CMDS) == "completed", out
+
+        done = queue.get(item_id)
+        assert done is not None
+        assert str(done.state) == "done", out
+        assert done.pr_urls == ("https://github.com/o/r/pull/41",), out
+        edits = [line for line in _lines(tmp_path / "gh.log") if "issue edit" in line]
+        assert "--add-label kstrl:done" in edits[-1], edits
+        comments = (tmp_path / "gh.comments").read_text(encoding="utf-8")
+        assert "**kstrl: done**" in comments
+        assert "https://github.com/o/r/pull/41" in comments
+
+    def test_rejection_poisons_the_item_and_tells_the_issue(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root, env, queue, item_id = self._served_park(tmp_path, monkeypatch)
+
+        rejected = _ks(
+            root,
+            env,
+            "inbox",
+            "reject",
+            _park_item(root).id,
+            "--comment",
+            "no",
+            "--ui",
+            "plain",
+            "--no-color",
+        )
+        out = rejected.stdout + rejected.stderr
+
+        poisoned = queue.get(item_id)
+        assert poisoned is not None
+        assert str(poisoned.state) == "poison", out
+        assert poisoned.poison_reason, out
+        edits = [line for line in _lines(tmp_path / "gh.log") if "issue edit" in line]
+        assert "--add-label kstrl:poison" in edits[-1], edits
+
+    def test_a_refused_approval_run_leaves_the_item_awaiting(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root, env, queue, item_id = self._served_park(tmp_path, monkeypatch)
+        # The stale-branch preflight refuses the run with exit 2, which the
+        # classifier reads before the manifest.
+        tree = _git(root, "rev-parse", "main^{tree}")
+        foreign = _git(root, "commit-tree", tree, "-p", "main", "-m", "foreign")
+        _git(root, "update-ref", f"refs/heads/kstrl/factory/{CMDS}", foreign)
+
+        approved = _ks(
+            root, env, "inbox", "approve", _park_item(root).id, "--ui", "plain", "--no-color"
+        )
+        out = approved.stdout + approved.stderr
+
+        assert approved.returncode == 2, out
+        waiting = queue.get(item_id)
+        assert waiting is not None and str(waiting.state) == "awaiting_approval", out
+        edits = [line for line in _lines(tmp_path / "gh.log") if "issue edit" in line]
+        assert not any("--add-label kstrl:poison" in line for line in edits), edits
+
+    def test_only_the_item_parked_on_this_run_is_settled(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root, env, queue, item_id = self._served_park(tmp_path, monkeypatch)
+        # A second awaiting item, parked on another run. Its higher priority
+        # sorts it first, so neither "the only awaiting item" nor "the first
+        # awaiting item" names the one this decision belongs to.
+        other = queue.add("# other\n", title="other", priority=10)
+        other = queue.start(queue.lease(other), run_id="factory-other")
+        queue.await_approval(other, reason="parked elsewhere", run_id="factory-other")
+
+        rejected = _ks(
+            root,
+            env,
+            "inbox",
+            "reject",
+            _park_item(root).id,
+            "--comment",
+            "no",
+            "--ui",
+            "plain",
+            "--no-color",
+        )
+        out = rejected.stdout + rejected.stderr
+
+        settled = queue.get(item_id)
+        assert settled is not None and str(settled.state) == "poison", out
+        untouched = queue.get(other.item_id)
+        assert untouched is not None and str(untouched.state) == "awaiting_approval", out
+        assert untouched.last_run_id == "factory-other", out

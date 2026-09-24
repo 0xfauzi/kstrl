@@ -73,6 +73,7 @@ from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.atomicio import atomic_write_json
 from kstrl.jsonread import read_json
 from kstrl.manifest import ADVERSARIAL_BUDGET_CHECK, Component, ComponentStatus, Manifest
+from kstrl.observability import read_progress_events
 from kstrl.pr import GH_TIMEOUT, PR_FOOTER_MARKER
 from kstrl.procdispose import drain_or_abandon
 from kstrl.procgroup import (
@@ -501,9 +502,10 @@ class ServeState:
 
     spend: DailySpend = field(default_factory=DailySpend)
     consecutive_poison: int = 0
-    #: Set once any run has reported a cost figure. Until then a
-    #: configured budget is unenforceable and serve refuses to claim
-    #: work (#186 F8) rather than discovering it after a run.
+    #: Set once a daemon run has reported a cost figure. Until then
+    #: ``check_cost_coverage`` also reads the repo's progress log (#464),
+    #: and refuses to claim work when neither shows a call that reported
+    #: a cost (#186 F8) rather than discovering it after a run.
     cost_coverage_seen: bool = False
     schema_version: int = 1
 
@@ -2219,13 +2221,47 @@ def _floor_note(spend: DailySpend) -> str:
     return f" (a FLOOR: {'; '.join(parts)})"
 
 
+def _positive(value: object) -> bool:
+    """A JSON number above zero; a bool is not a number here."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+
+
+def _recorded_cost_evidence(root_dir: Path) -> tuple[Path, int, bool]:
+    """What this repo's progress log says about cost reporting (#464).
+
+    Returns the log's path, the agent calls its ``component_usage``
+    events record, and whether any of them reported a cost. An event
+    reported a cost when its ``cost_calls`` is positive, or, for a
+    payload written before ``cost_calls`` existed, when its ``cost_usd``
+    is positive: a dollar figure above zero exists only because a call
+    reported one.
+
+    Every ``ks factory`` run writes this file unless
+    ``progress_log_enabled`` is off or ``--progress-log`` moved it, so it
+    holds evidence from before the daemon's first run. A missing or
+    unreadable log reads as no calls, which refuses.
+    """
+    path = state_dir(root_dir) / "progress.jsonl"
+    calls = 0
+    reported = False
+    for event in read_progress_events(path):
+        data = event.get("data")
+        if event.get("event") != "component_usage" or not isinstance(data, dict):
+            continue
+        raw_calls = data.get("calls")
+        if isinstance(raw_calls, int) and _positive(raw_calls):
+            calls += raw_calls
+        reported = reported or _positive(data.get("cost_calls")) or _positive(data.get("cost_usd"))
+    return path, calls, reported
+
+
 def check_cost_coverage(
     ledger: SpendLedger,
     config: ServeConfig,
     *,
     today: str | None = None,
 ) -> Admission:
-    """Refuse to run under a budget that can never fire.
+    """Refuse to run under a budget nothing shows can fire.
 
     Three cases, and only the third is unenforceable:
 
@@ -2240,24 +2276,48 @@ def check_cost_coverage(
     dollar total is positive: a fully-metered run that legitimately cost
     $0 has perfect coverage (#186 F9).
 
-    Evaluated before the first claim using the persisted
-    ``cost_coverage_seen`` flag, so an unenforceable budget is caught
-    without spending a run to discover it (#186 F8).
+    Evaluated before the first claim, so an unenforceable budget is
+    caught without spending a run to discover it (#186 F8). Two sources
+    of evidence: the ledger's ``cost_coverage_seen`` flag, which only a
+    daemon run sets, and the repo's progress log, which every
+    ``ks factory`` run writes (#464). Before #464 only the flag counted,
+    so the first ``ks serve`` refused on a repo whose manual runs had
+    reported cost. The refusal names the log it read, and a repo with no
+    recorded call at all is told to record one rather than to switch
+    the protection off.
     """
     if config.daily_budget_usd <= 0 or config.allow_uncovered_cost:
         return Admission(allowed=True)
     state = ledger.read_state(today)
     if state.cost_coverage_seen:
         return Admission(allowed=True)
+    path, calls, reported = _recorded_cost_evidence(ledger.root_dir)
+    if reported:
+        return Admission(allowed=True)
+    budget = f"daily_budget_usd is ${config.daily_budget_usd:.2f}"
+    if calls == 0:
+        return Admission(
+            allowed=False,
+            reason=(
+                f"{budget} but no agent call is recorded on this repo yet: the "
+                f"daemon has run nothing and {path} holds no component_usage "
+                "event, so nothing shows the configured agent reports cost. "
+                "The unreported spend is deliberately NOT estimated. Run "
+                "`ks factory` on this repo once so its calls record their "
+                "cost in that log, then run `ks queue resume`, because this "
+                "refusal pauses the queue, and start `ks serve` again."
+            ),
+            pause_reason="daily budget is unproven: no agent call recorded yet",
+        )
     return Admission(
         allowed=False,
         reason=(
-            f"daily_budget_usd is ${config.daily_budget_usd:.2f} but no call "
-            "has ever reported a cost figure on this repo, so the cap can "
-            "never fire. The unreported spend is deliberately NOT estimated. "
-            "Use a cost-reporting agent (the codex adapter reports tokens and "
-            "no cost), or set [serve] allow_uncovered_cost = true to accept an "
-            "unenforceable budget."
+            f"{budget} but none of the {calls} agent call(s) recorded in {path} "
+            "reported a cost figure, and no daemon run has either, so the cap "
+            "can never fire. The unreported spend is deliberately NOT "
+            "estimated. Use a cost-reporting agent (the codex adapter reports "
+            "tokens and no cost), or set [serve] allow_uncovered_cost = true "
+            "to accept an unenforceable budget."
         ),
         pause_reason="daily budget is unenforceable: no cost coverage",
     )
@@ -3863,7 +3923,9 @@ def serve_cycle(
         }
     )
 
-    if _settle_unfailed(root_dir, queue, ledger, running, verdict, pr_urls, obs, result):
+    if _settle_unfailed(
+        root_dir, queue, ledger, running, verdict, pr_urls, manifest_run_after, obs, result
+    ):
         return result
 
     # The failure branch. Every remote writeback below happens AFTER the
@@ -3967,6 +4029,7 @@ def _settle_unfailed(
     running: QueueItem,
     verdict: Outcome,
     pr_urls: tuple[str, ...],
+    run_id: str,
     obs: ServeObserver,
     result: CycleResult,
 ) -> bool:
@@ -3989,7 +4052,9 @@ def _settle_unfailed(
             ledger.record_terminal(poisoned=False)
             state, said, detail = "done", "done", "The factory run completed."
         elif verdict.verdict is Verdict.AWAITING_APPROVAL:
-            queue.await_approval(current, reason=verdict.reason, actor="serve", pr_urls=pr_urls)
+            queue.await_approval(
+                current, reason=verdict.reason, run_id=run_id, actor="serve", pr_urls=pr_urls
+            )
             result.needs_human = True
             state, said, detail = "awaiting_approval", "awaiting approval", verdict.reason
         else:
@@ -3998,6 +4063,75 @@ def _settle_unfailed(
     obs.info(f"  {running.item_id[:12]} {said}")
     _report_remote_outcome(root_dir, finished, state=state, detail=detail, observer=obs)
     return True
+
+
+def settle_approval_run(
+    root_dir: Path,
+    queue: Queue,
+    *,
+    parked_run_id: str,
+    returncode: int,
+    actor: str,
+    observer: ServeObserver,
+) -> QueueItem | None:
+    """Move the queue item a merge-gate decision ran for out of awaiting_approval (#464).
+
+    Called by `ks inbox approve` and `ks inbox reject` once the factory
+    run they started has exited. The item is the one ``serve`` parked on
+    ``parked_run_id``, joined by the run id ``Queue.await_approval``
+    recorded rather than by counting awaiting items. A park no daemon
+    made (a manual `ks factory`) has no item, and this returns None.
+
+    Read from the manifest the run left, in this order:
+
+    - a component still awaits approval: a pre-spend check refused the
+      run, or it merged the approved component and parked a dependent.
+      The item stays, linked to the manifest's current run id.
+    - exit 0: done, with every PR URL the manifest records.
+    - anything else (a rejection, a branch that moved, an unconfirmed
+      merge): poison, with the classifier's reason. The run was not a
+      queue attempt, so nothing retries it.
+
+    The park is checked first because a refused run exits 2, and the
+    classifier reads exit 2 before it reads the manifest.
+    """
+    linked = [
+        item
+        for item in queue.items((ItemState.AWAITING_APPROVAL,))
+        if parked_run_id and item.last_run_id == parked_run_id
+    ]
+    if len(linked) != 1:
+        return None
+    manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
+    run_id = _run_id_from_manifest(manifest_path)
+    park = check_parked_merges(root_dir)
+    verdict = classify_run(
+        root_dir,
+        run=RunOutcome(returncode=returncode),
+        manifest_path=manifest_path,
+        owned_run_ids=(run_id,) if run_id else (),
+    )
+    pr_urls = _pr_urls_from_manifest(manifest_path, True, observer)
+    with queue_lock(root_dir, blocking=True):
+        current = queue.get(linked[0].item_id)
+        if current is None or current.state is not ItemState.AWAITING_APPROVAL:
+            return None
+        if not park.allowed:
+            if run_id == current.last_run_id:
+                return current
+            queue.relink_run(current, run_id=run_id, reason=park.reason, actor=actor)
+            state, detail = "awaiting_approval", park.reason
+        elif verdict.verdict is Verdict.SUCCESS:
+            queue.finish_ok(current, actor=actor, pr_urls=pr_urls)
+            merged = ", ".join(pr_urls) or "no PR recorded"
+            state, detail = "done", f"Approved at the merge gate and completed: {merged}."
+        else:
+            queue.poison(current, reason=verdict.reason, actor=actor)
+            state, detail = "poison", verdict.reason
+        settled = queue.get(current.item_id)
+    observer.info(f"  queue item {current.item_id[:12]} {state}")
+    _report_remote_outcome(root_dir, settled, state=state, detail=detail, observer=observer)
+    return settled
 
 
 def _default_runner(config: ServeConfig) -> FactoryRunner:

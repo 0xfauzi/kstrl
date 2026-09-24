@@ -148,6 +148,8 @@ EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "observability.py: ProgressLog._repair_event": 1,
     "pipeline.py: ComponentPipeline.journal_superseded_findings": 1,
     "reducer.py: upconvert_v1": 1,
+    "workqueue.py: Queue.await_approval": 1,
+    "workqueue.py: Queue.relink_run": 1,
 }
 
 _JOURNAL = (
@@ -161,6 +163,11 @@ _DEMOTION = (
 _V1 = (
     "progress.jsonl is the v1 projection whose line format V1CompatSink holds "
     "still; the same run's events.jsonl, written by the same bus, is stamped"
+)
+
+_QUEUE_LINK = (
+    "a queue item's last_run_id points at the run that parked it (#464); the "
+    "item is a work item with its own id, not a record of the run"
 )
 
 #: Layer 2. Each row is a run-record site that is not stamped at the
@@ -182,6 +189,8 @@ NOT_STAMPED_HERE: dict[str, str] = {
     ),
     "observability.py: ProgressLog.emit": _V1,
     "observability.py: ProgressLog._repair_event": _V1,
+    "workqueue.py: Queue.await_approval": _QUEUE_LINK,
+    "workqueue.py: Queue.relink_run": _QUEUE_LINK,
 }
 
 

@@ -5459,8 +5459,25 @@ def _decide_parked_merge_if_parked(
     factory_ctx = factory.make_context(
         "factory", [*argv, *plan.argv], parent=click.get_current_context()
     )
-    with factory_ctx:
-        factory.invoke(factory_ctx)
+    try:
+        with factory_ctx:
+            factory.invoke(factory_ctx)
+    except SystemExit as exc:
+        # `ks factory` always leaves through sys.exit with the run's own
+        # code. Settle the queue item serve parked on this run (#464),
+        # then exit with that code.
+        from kstrl.serve import settle_approval_run
+        from kstrl.workqueue import Queue, QueueConfig
+
+        settle_approval_run(
+            root_dir,
+            Queue(root_dir, QueueConfig.load(root_dir)),
+            parked_run_id=manifest.run_id,
+            returncode=exc.code if isinstance(exc.code, int) else 1,
+            actor=_actor(),
+            observer=_ServeUiObserver(ui_impl),
+        )
+        raise
 
 
 @inbox_group.command(name="snooze")
