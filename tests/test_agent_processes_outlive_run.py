@@ -482,3 +482,51 @@ def test_a_worktree_recreated_for_a_retry_is_swept_first(tmp_path: Path) -> None
         assert child.wait(timeout=10) == -signal.SIGKILL
     finally:
         _dispose(child)
+
+
+#: Leaves ``sleep 600`` running with SIGTERM ignored in a process group whose
+#: leader has exited: a shell in a session of its own backgrounds the sleep and
+#: returns. The sleep's pgid is then the dead shell's pid, not its own, which is
+#: the shape ``server &`` from a tool's shell has once that shell exits.
+#: Writes ``<pid> <pgid>`` to the file named by its one argument.
+ORPHANED_GROUP_SCRIPT = """\
+import os, signal, subprocess, sys
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+out = sys.argv[1]
+subprocess.Popen(
+    ["sh", "-c", 'sleep 600 & echo $! > "$0"', out + ".tmp"],
+    start_new_session=True,
+    stdin=subprocess.DEVNULL,
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+).wait()
+pid = int(open(out + ".tmp", encoding="utf-8").read())
+open(out, "w", encoding="utf-8").write(f"{pid} {os.getpgid(pid)}")
+"""
+
+
+def test_a_process_whose_group_leader_has_exited_is_killed_through_its_group(
+    tmp_path: Path,
+) -> None:
+    """The sweep must signal the group the process is IN. A sweep that sent
+    the signal to the group numbered by the process's own pid would reach no
+    group at all for a process that is not its group's leader, record it as
+    gone, and leave it running."""
+    root = _repo(tmp_path)
+    script = tmp_path / "orphaned_group.py"
+    script.write_text(ORPHANED_GROUP_SCRIPT, encoding="utf-8")
+    ids = tmp_path / "orphaned.ids"
+    proc = _factory(root, f"{sys.executable} {script} {ids} && {COMPLETE}", "1")
+    pid: int | None = None
+    try:
+        _run_to_end(proc)
+        pid, pgid = (int(field) for field in ids.read_text(encoding="utf-8").split())
+        assert pgid != pid, f"precondition: pid {pid} leads its own group"
+        assert procs.wait_for_pid_to_die(pid, timeout=10), (
+            f"pid {pid}, in group {pgid} whose leader had exited, survived the run"
+        )
+        assert _naming(root, pid, "engineer"), f"no engineer-phase finding names pid {pid}"
+    finally:
+        _stop_factory(proc)
+        if pid is not None:
+            _kill_pid(pid)
