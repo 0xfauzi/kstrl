@@ -138,6 +138,8 @@ class RunState:
 
     run_id: str = ""
     project: str = ""
+    #: The kstrl that wrote the run's events (#451); "" before stamping.
+    kstrl_version: str = ""
     started_ts: float = 0.0
     last_event_ts: float = 0.0
     finished: bool = False
@@ -295,6 +297,16 @@ def _component(state: RunState, component_id: str) -> ComponentState:
     return comp
 
 
+def _note_run_identity(state: RunState, event: ev.Event) -> None:
+    """The run id and the kstrl that wrote the run (#451), from the first
+    event that carries each. A stream written before stamping leaves
+    ``kstrl_version`` empty."""
+    if not state.run_id and event.run_id:
+        state.run_id = event.run_id
+    if not state.kstrl_version and event.kstrl_version:
+        state.kstrl_version = event.kstrl_version
+
+
 def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispatch
     """Fold one event into ``state`` (mutates in place)."""
     if isinstance(event, ev.UnknownEvent):
@@ -309,8 +321,7 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
         if not state.started_ts:
             state.started_ts = event.ts
         state.last_event_ts = max(state.last_event_ts, event.ts)
-    if not state.run_id and event.run_id:
-        state.run_id = event.run_id
+    _note_run_identity(state, event)
 
     if isinstance(event, ev.RunStarted):
         state.project = event.project or state.project

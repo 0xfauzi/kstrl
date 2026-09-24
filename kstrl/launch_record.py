@@ -28,6 +28,7 @@ from click.core import ParameterSource
 from kstrl.atomicio import atomic_write_json
 from kstrl.events import RunPaths
 from kstrl.jsonread import read_json
+from kstrl.version import kstrl_version
 
 if TYPE_CHECKING:
     from kstrl.manifest import Manifest
@@ -101,6 +102,7 @@ def write_launch_record(
                 "manifest": str(manifest_path.resolve()),
                 "flags": dict(flags),
                 "maxCostUsd": max_cost_usd,
+                "kstrlVersion": kstrl_version(),
             },
         )
     except OSError as exc:
