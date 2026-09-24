@@ -143,8 +143,17 @@ spec failure.
 While a park sits in `scripts/kstrl/manifest.json`, `ks serve` claims
 nothing: the next item's `ks factory --spec` would decompose over that
 manifest and lose the parked run. `ks serve --dry-run` shows this as the
-`parked merges` gate. The queue item itself stays in `awaiting_approval/`
-after the approval run; `ks queue rm` clears it.
+`parked merges` gate.
+
+The run `ks inbox approve` or `ks inbox reject` starts settles the queue
+item `ks serve` parked on that run (#464). Exit 0 moves it to `done/` with
+the PR URLs the manifest records. A run that merges the approved component
+and parks the next one leaves it in `awaiting_approval/`, linked to the new
+run. A run a pre-spend check refuses leaves it where it is. Anything else
+(a rejection, a branch that moved, an unconfirmed merge) poisons it with
+the classifier's reason. A GitHub-sourced item gets the matching label and
+comment. A park from a manual `ks factory` has no queue item, and nothing
+is settled.
 
 ### Five backstops, because a correct classifier is not enough
 
@@ -229,9 +238,19 @@ Three cases, and they are reported distinctly:
 - **partial coverage** - a *lower-bound* cap: it fires at or after the
   threshold, never before. Still a real bound. Every total is labelled
   `(a FLOOR: ...)` with what was not counted.
-- **zero coverage** - no call has ever reported a cost figure, so the cap
-  can never fire. `ks serve` **refuses to run** unless you set
+- **zero coverage** - no call has reported a cost figure, so the cap can
+  never fire. `ks serve` **refuses to run** unless you set
   `[serve] allow_uncovered_cost = true`.
+
+Coverage is read before the daemon has run anything (#464). Besides the
+daemon's own ledger, the gate reads `.kstrl/progress.jsonl`, where every
+`ks factory` run records its calls: one `component_usage` event with a
+positive `cost_calls` (or, on a payload older than that field, a positive
+`cost_usd`) is enough. The refusal names that file. When no call is
+recorded at all, the refusal asks for one `ks factory` run instead of
+suggesting `allow_uncovered_cost`, because nothing yet says whether the
+agent reports cost. A progress log moved with `--progress-log` or switched
+off with `progress_log_enabled = false` is not read.
 
 The unreported spend is deliberately **never** estimated into a dollar
 figure. A number that looks like a measurement but is a guess is worse
@@ -638,7 +657,7 @@ gone - a crash, an OOM kill, a reboot - not for an ordinary lid close.
 |---|---|
 | Daemon runs, nothing happens | `ks serve --dry-run` - it prints every gate and which one blocks |
 | Queue paused unexpectedly | `ks queue ls` shows the reason; budget pauses clear at local midnight |
-| `ks serve` refuses to start | a budget is set with no cost coverage; see §2, or set `allow_uncovered_cost` |
+| `ks serve` refuses to start | a budget is set and no recorded call reported a cost; the message names the log it read (see §2) |
 | Items poisoned in a row | the poison breaker paused the queue; something systemic is failing |
 | `sync` finds nothing | the label may not have propagated yet (§3); confirm with `gh issue list --label kstrl:queued` |
 | launchd job not running | `launchctl list \| grep kstrl`; then `.kstrl/logs/serve.err.log` |

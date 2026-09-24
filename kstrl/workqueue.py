@@ -196,8 +196,10 @@ _LEGAL_TRANSITIONS: dict[ItemState, frozenset[ItemState]] = {
     ItemState.FAILED: frozenset({ItemState.QUEUED, ItemState.POISON}),
     ItemState.POISON: frozenset({ItemState.QUEUED}),
     ItemState.DONE: frozenset(),
-    # No automatic exit yet (#465 handoff): `ks queue rm` clears one.
-    ItemState.AWAITING_APPROVAL: frozenset(),
+    # #464: the run `ks inbox approve` or `ks inbox reject` starts settles
+    # the item: done when it exits 0, poison otherwise. A run that parks
+    # the next component leaves it here (``Queue.relink_run``).
+    ItemState.AWAITING_APPROVAL: frozenset({ItemState.DONE, ItemState.POISON}),
 }
 
 
@@ -1288,6 +1290,7 @@ class Queue:
         item: QueueItem,
         *,
         reason: str,
+        run_id: str,
         actor: str = "",
         pr_urls: tuple[str, ...] = (),
     ) -> QueueItem:
@@ -1295,7 +1298,9 @@ class Queue:
 
         Not a failure and not a finish: the work passed every gate and
         waits for a human. ``reason`` is journalled so the item's history
-        says what it waits for.
+        says what it waits for. ``run_id`` is the run that parked it, and
+        the only thing that joins this item to the approval (#464): the
+        approval run looks the item up by the manifest's run id.
         """
         union = tuple(dict.fromkeys(item.pr_urls + pr_urls))
         return self.transition(
@@ -1304,8 +1309,42 @@ class Queue:
             reason="awaiting approval",
             actor=actor,
             pr_urls=union,
-            detail={"reason": reason},
+            last_run_id=run_id,
+            detail={"reason": reason, "run_id": run_id},
         )
+
+    def relink_run(
+        self, item: QueueItem, *, run_id: str, reason: str, actor: str = ""
+    ) -> QueueItem:
+        """Point an awaiting item at the run that parked its next component (#464).
+
+        An approval run merges the approved component and continues; when
+        a dependent meets the merge gate it parks under the approval run's
+        own id, and the next `ks inbox approve` finds the item by that id.
+        Not a transition, so ``meta.json`` is rewritten in place, as
+        ``adopt_lease`` does. Refuses unless the item awaits approval.
+        """
+        if item.state is not ItemState.AWAITING_APPROVAL:
+            raise QueueError(f"cannot relink {item.item_id} in state {item.state}")
+        directory = self.item_dir(item)
+        if not directory.is_dir():
+            raise QueueError(f"queue item {item.item_id} is not at {directory}")
+        item.last_run_id = run_id
+        item.updated_at = _iso(_utc_now())
+        self._write_meta(item, directory)
+        self._journal(
+            JournalEntry(
+                ts=item.updated_at,
+                item_id=item.item_id,
+                from_state=str(item.state),
+                to_state=str(item.state),
+                reason="parked again",
+                actor=actor,
+                attempts=item.attempts,
+                detail={"run_id": run_id, "reason": reason},
+            )
+        )
+        return item
 
     def poison(
         self,
