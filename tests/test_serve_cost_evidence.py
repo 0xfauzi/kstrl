@@ -130,9 +130,12 @@ class TestTheFirstServeReadsRecordedCost:
         assert "no call has ever reported" not in result.skipped
 
     def test_a_repo_with_no_recorded_call_is_told_to_record_one(self, tmp_path: Path) -> None:
-        calls, result, _queue = _cycle(tmp_path)
+        calls, result, queue = _cycle(tmp_path)
 
         assert calls == []
+        # The message tells the operator to run `ks queue resume`; that
+        # advice is only true while this refusal pauses the queue.
+        assert queue.pause_state().paused, result.skipped
         assert "no agent call is recorded on this repo yet" in result.skipped, result.skipped
         assert "ks factory" in result.skipped
         assert "ks queue resume" in result.skipped
