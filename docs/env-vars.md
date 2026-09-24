@@ -59,18 +59,20 @@ to run and tell you which section, key and value to fix.
 
 ## TimeoutConfig (`[timeout]`)
 
-All values are seconds; 0 or less disables that limit.
+All values are seconds; 0 or less disables that limit. When a limit on how long kstrl's work may take is not set, there is no limit (#467): every work limit here and in `[verify]`, `[security]`, `[contract]` and `[knowledge]` defaults to 0. The run header and `ks config show` print an unset limit as `no limit`. A hang guard is different: it bounds a stuck tool rather than long work, so it keeps its default when unset.
 
 | Env var | Type | Default | Notes |
 |---|---|---|---|
-| `KSTRL_TIMEOUT_GIT` | float | 30 | Per git subprocess |
-| `KSTRL_TIMEOUT_AGENT_ITERATION` | float | 1800 | One engineer iteration |
-| `KSTRL_TIMEOUT_COMPONENT` | float | 7200 | Wall clock per component across iterations |
-| `KSTRL_TIMEOUT_VERIFY` | float | 300 | Each Phase 1 check subprocess (also read by `VerifyConfig.subprocess_timeout`) |
-| `KSTRL_TIMEOUT_REVIEW` | float | 600 | Phase 2 reviewer call |
-| `KSTRL_TIMEOUT_CONTRACT` | float | 600 | Phase 3 contract test run (also read by `ContractConfig.timeout`) |
-| `KSTRL_TIMEOUT_DEFAULT` | float | 60 | Any other subprocess |
-| `KSTRL_TIMEOUT_BACKSTOP_MARGIN` | float | 60 | Extra slack before the scheduler declares a worker dead |
+| `KSTRL_TIMEOUT_GIT` | float | 30 | Hang guard. Not read by any code path today |
+| `KSTRL_TIMEOUT_AGENT_ITERATION` | float | 0 (no limit) | One engineer iteration |
+| `KSTRL_TIMEOUT_COMPONENT` | float | 0 (no limit) | Wall clock per component across iterations |
+| `KSTRL_TIMEOUT_VERIFY` | float | 0 (no limit) | Each Phase 1 check subprocess. The limit that applies is `VerifyConfig.subprocess_timeout`, which reads the same variable; `[timeout] verification_check` is not read |
+| `KSTRL_TIMEOUT_REVIEW` | float | 0 (no limit) | Not read by any code path today: the Phase 2 reviewer call has no limit |
+| `KSTRL_TIMEOUT_CONTRACT` | float | 0 (no limit) | Phase 3 contract test run. The limit that applies is `ContractConfig.timeout`, which reads the same variable; `[timeout] contract_test` is not read |
+| `KSTRL_TIMEOUT_DEFAULT` | float | 60 | Hang guard. Not read by any code path today |
+| `KSTRL_TIMEOUT_BACKSTOP_MARGIN` | float | 60 | Extra slack before the scheduler declares a worker dead. Applies only when `component_total` is set |
+
+With no work limit, an agent that hangs without output holds its component slot until Ctrl-C or `[serve] factory_timeout_seconds`. It spends nothing while idle.
 
 ## FactoryConfig (`[factory]`)
 
@@ -79,10 +81,10 @@ All values are seconds; 0 or less disables that limit.
 | `FACTORY_MAX_PARALLEL` | int | 4 |
 | `FACTORY_MAX_RETRIES` | int | 3 |
 | `FACTORY_RETRY_DELAY` | float | 5.0 |
-| `FACTORY_MERGE_TIMEOUT` | float | 300.0 |
-| `KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS` | int | 0 (unbounded) |
-| `KSTRL_FACTORY_MAX_TOTAL_TOKENS` | int | 0 (unbounded) |
-| `KSTRL_FACTORY_MAX_COST_USD` | float | 0 (unbounded) |
+| `FACTORY_MERGE_TIMEOUT` | float | 300.0 (hang guard, kept when unset) |
+| `KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS` | int | 0 (no limit) |
+| `KSTRL_FACTORY_MAX_TOTAL_TOKENS` | int | 0 (no limit) |
+| `KSTRL_FACTORY_MAX_COST_USD` | float | 0 (no limit) |
 | `KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE` | bool (`1`/`true`/`yes`) | false |
 | `KSTRL_FACTORY_PROGRESS_LOG_ENABLED` | bool | true |
 | `KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE` | bool | false |
@@ -293,8 +295,8 @@ agent's worktree by construction on both CLIs.
 | `KSTRL_DEAD_CODE_CMD` | str | unset |
 | `KSTRL_MUTATION_TESTING` | bool (`1`) | false |
 | `KSTRL_MUTATION_THRESHOLD` | float | 50 |
-| `KSTRL_MUTATION_TIMEOUT` | float | 600 |
-| `KSTRL_TIMEOUT_VERIFY` | float | 300 |
+| `KSTRL_MUTATION_TIMEOUT` | float | 0 (no limit) |
+| `KSTRL_TIMEOUT_VERIFY` | float | 0 (no limit) |
 | `KSTRL_VERIFY_REQUIRE_SELF_CRITIQUE` | bool (`1`) | false |
 | `KSTRL_VERIFY_SELF_CRITIQUE_MIN_BULLETS` | int | 3 |
 | `KSTRL_VERIFY_PROGRESS_FILE` | path | unset = the progress log beside the component's PRD |
@@ -393,7 +395,7 @@ Opt-in and **advisory first**: findings are recorded without failing, so turning
 
 `[adequacy] patch_coverage` (#152) is Layer 1: an opt-in, toml-only key (no env var, matching `require_strong_oracle` and `flag_assertionless_tests`), off by default. On, and only when `enabled` is also true, it runs the project's own test command a SECOND time under `--cov=. --cov-report=` (data only, no report), then a third spawn (`coverage json --include=<changed files>`) turns that data into a report narrowed to the diff, and reports what fraction of the lines this diff ADDED to non-test Python files the suite executed - patch coverage, restricted to changed non-test lines rather than the whole file or run. Advisory always: there is no floor key, nothing blocks, and the finding is emitted at every percentage including 100%, because the distribution a floor will later be set from is the point of shipping this now. It costs a second full test run either way: measured on kstrl's own suite (6844 tests) against the single-spawn `--cov-report=json:<tmp>` design this replaced, the baseline run was 457.04s and the same run under coverage was 536.79s (993.83s total, 2.17x); the two-spawn split measured here costs no more per file (`tests/test_atomicio.py` alone: 8.17s / 448MB for the old single JSON-report spawn vs 2.31s / 157MB + 0.10s / 34MB for the two new ones), so the full-suite total is expected at or below the figure above, not re-measured end to end.
 
-`[adequacy] diff_mutation` (#152) is Layer 2: an opt-in, toml-only key, off by default, and REFUSED at config load unless `patch_coverage` is also `true` - Layer 2 mutates only the lines Layer 1 measured as changed AND covered, and runs no coverage pass of its own. On, it hands mutmut a synthetic patch naming exactly that line set (`--use-patch-file`, since `--use-coverage` and `--use-patch-file` cannot be combined and `--use-coverage` would need a `.coverage` file Layer 1's own D3 refuses to write into the project tree), then filters the reported mutants back to the same set before scoring, so mutmut's own selection is never trusted for the number. At most one mutant counts per line - the lowest-id mutant with a killed-or-survived status. The mutation SPAWN itself draws from `[verify] mutation_timeout` (default 600s) as ONE PHASE-LEVEL BUDGET shared with `[verify] mutation_testing`, not two independent copies of that number (#391 simplify pass on PR #392, A2): Layer 2 runs FIRST (`run_mechanical_verification` calls `_diff_mutation_checks` before `_mutation_checks`) and is bounded by the FULL configured value; Layer 1 then gets whatever that call's own wall clock actually left of it. Both checks now reach mutmut through the same driver (#391), differing only in the target selector they pass it (Layer 1: every changed non-test file; Layer 2: the synthetic patch above) and, since A2, in how much of the shared cap each gets. On a run that FINISHES, the check's own real wall-clock ceiling is higher than its share of that number: `run_scrubbed`'s timeout path costs the cap plus up to two `_SCRUB_TERM_GRACE_SECONDS` (5s each, SIGTERM then SIGKILL) on the mutation spawn, plus the fixed `_MUTATION_REPORT_TIMEOUT` (30s) and its own grace for the report spawn afterward - about 650s total for Layer 2 at the 600s default, an 8% overrun (#152 simplify pass, A4; `check_diff_mutation`'s own docstring already stated this, this file previously did not). Both checks also refuse before spending anything, symmetrically since A2 (Layer 1's guard is the byte-for-byte twin of Layer 2's, `_mutation_checks` docstring): when `[verify] test_suite` already failed (mutmut's own baseline run would only run the suite a third time to abort), and when Layer 1's own coverage-run duration already meets or exceeds what remains of the shared cap (mutmut always pays that same suite's baseline in full before mutating a single line). Measured on kstrl's own suite (533.15s, re-measured against the repo's own recorded 457.04s) at the 600s default: the baseline alone is already 89% of the budget, so the FIRST surviving mutant - which runs the suite to completion rather than exiting early - guarantees the cap fires, and this gate can only ever produce a SAMPLED score here, never a complete one; the pre-spend refusal above does not fire only because 533s is still (barely) under 600s. A cap that FIRES is now, always, a `timed_out` sidecar with no row (#391, D4): measured, mutmut 2.5.1's junitxml cannot read a truncated cache - it raises `ValueError: Obtained null mutant` under `--untested-policy=error` (the policy this driver always passes), and under any other policy an un-run mutant renders exactly like a killed one, so no safe read of a truncated run exists. `sampled` therefore now has ONE cause, not two: fewer target lines reached a definite status than mutmut reported a mutant for, on a run that otherwise completed. Surviving lines are recorded as `path:line` in the finding and the check's details, as concrete test targets - feeding them into an automatic remediation iteration is not built. Advisory always: no floor key, nothing blocks, no autonomy level reads it. It rewrites the source files it mutates (restored from the `.bak` mutmut itself writes, after every run including a timed-out one) and so, unlike Layer 1, does NOT run under `ks check` or any other `read_only` verification.
+`[adequacy] diff_mutation` (#152) is Layer 2: an opt-in, toml-only key, off by default, and REFUSED at config load unless `patch_coverage` is also `true` - Layer 2 mutates only the lines Layer 1 measured as changed AND covered, and runs no coverage pass of its own. On, it hands mutmut a synthetic patch naming exactly that line set (`--use-patch-file`, since `--use-coverage` and `--use-patch-file` cannot be combined and `--use-coverage` would need a `.coverage` file Layer 1's own D3 refuses to write into the project tree), then filters the reported mutants back to the same set before scoring, so mutmut's own selection is never trusted for the number. At most one mutant counts per line - the lowest-id mutant with a killed-or-survived status. The mutation SPAWN itself draws from `[verify] mutation_timeout` (default: no limit; the arithmetic below applies when it is set) as ONE PHASE-LEVEL BUDGET shared with `[verify] mutation_testing`, not two independent copies of that number (#391 simplify pass on PR #392, A2): Layer 2 runs FIRST (`run_mechanical_verification` calls `_diff_mutation_checks` before `_mutation_checks`) and is bounded by the FULL configured value; Layer 1 then gets whatever that call's own wall clock actually left of it. Both checks now reach mutmut through the same driver (#391), differing only in the target selector they pass it (Layer 1: every changed non-test file; Layer 2: the synthetic patch above) and, since A2, in how much of the shared cap each gets. On a run that FINISHES, the check's own real wall-clock ceiling is higher than its share of that number: `run_scrubbed`'s timeout path costs the cap plus up to two `_SCRUB_TERM_GRACE_SECONDS` (5s each, SIGTERM then SIGKILL) on the mutation spawn, plus the fixed `_MUTATION_REPORT_TIMEOUT` (30s) and its own grace for the report spawn afterward - about 650s total for Layer 2 at a 600s cap, an 8% overrun (#152 simplify pass, A4; `check_diff_mutation`'s own docstring already stated this, this file previously did not). Both checks also refuse before spending anything, symmetrically since A2 (Layer 1's guard is the byte-for-byte twin of Layer 2's, `_mutation_checks` docstring): when `[verify] test_suite` already failed (mutmut's own baseline run would only run the suite a third time to abort), and when Layer 1's own coverage-run duration already meets or exceeds what remains of the shared cap (mutmut always pays that same suite's baseline in full before mutating a single line). Measured on kstrl's own suite (533.15s, re-measured against the repo's own recorded 457.04s) at a 600s cap: the baseline alone is already 89% of the budget, so the FIRST surviving mutant - which runs the suite to completion rather than exiting early - guarantees the cap fires, and this gate can only ever produce a SAMPLED score here, never a complete one; the pre-spend refusal above does not fire only because 533s is still (barely) under 600s. A cap that FIRES is now, always, a `timed_out` sidecar with no row (#391, D4): measured, mutmut 2.5.1's junitxml cannot read a truncated cache - it raises `ValueError: Obtained null mutant` under `--untested-policy=error` (the policy this driver always passes), and under any other policy an un-run mutant renders exactly like a killed one, so no safe read of a truncated run exists. `sampled` therefore now has ONE cause, not two: fewer target lines reached a definite status than mutmut reported a mutant for, on a run that otherwise completed. Surviving lines are recorded as `path:line` in the finding and the check's details, as concrete test targets - feeding them into an automatic remediation iteration is not built. Advisory always: no floor key, nothing blocks, no autonomy level reads it. It rewrites the source files it mutates (restored from the `.bak` mutmut itself writes, after every run including a timed-out one) and so, unlike Layer 1, does NOT run under `ks check` or any other `read_only` verification.
 
 Layer 3 (fixtures required at L3+) is not built; see `docs/dark-factory-roadmap.md` for why it waits on measured thresholds.
 
@@ -438,7 +440,7 @@ In `single_pr` mode every component shares one branch, so the reported numbers i
 |---|---|---|
 | `KSTRL_CONTRACT_MODE` | str | `tier` (`tier\|final\|skip`) |
 | `KSTRL_CONTRACT_TEST_CMD` | str | `uv run pytest` |
-| `KSTRL_TIMEOUT_CONTRACT` | float | 600 |
+| `KSTRL_TIMEOUT_CONTRACT` | float | 0 (no limit) |
 
 Invalid mode raises ValueError (Phase B8).
 
@@ -450,7 +452,7 @@ Invalid mode raises ValueError (Phase B8).
 | `KSTRL_SECURITY_AGENT_CMD` | str | unset |
 | `KSTRL_SECURITY_AGENT_TYPE` | str | unset |
 | `KSTRL_SECURITY_MODEL` | str | unset |
-| `KSTRL_SECURITY_TIMEOUT` | float | 600 |
+| `KSTRL_SECURITY_TIMEOUT` | float | 0 (no limit) |
 | `KSTRL_SECURITY_FAIL_THRESHOLD` | str | `high` (`critical\|high\|medium\|low`) |
 
 Invalid mode or threshold raises ValueError (Phase B8). The default mode is `skip` everywhere (dataclass, env, CLI); enable the pass with `advisory` or `hard`.
@@ -463,7 +465,7 @@ Invalid mode or threshold raises ValueError (Phase B8). The default mode is `ski
 | `KSTRL_KNOWLEDGE_MAX_CORE_TOKENS` | int | 2000 |
 | `KSTRL_KNOWLEDGE_MAX_DEPENDENCY_TOKENS` | int | 1000 |
 | `KSTRL_KNOWLEDGE_MAX_SIBLING_TOKENS` | int | 500 |
-| `KSTRL_KNOWLEDGE_DISTILL_TIMEOUT_SECONDS` | float | 300 |
+| `KSTRL_KNOWLEDGE_DISTILL_TIMEOUT_SECONDS` | float | 0 (no limit) |
 | `KSTRL_KNOWLEDGE_DISTILL_MODEL` | str | falls back to `MODEL` |
 | `KSTRL_KNOWLEDGE_MAX_FACTS_PER_DISTILL` | int | 7 |
 | `KSTRL_KNOWLEDGE_DEPENDENCY_SCOPE` | str | `direct` (`direct\|transitive`) |

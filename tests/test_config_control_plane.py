@@ -583,6 +583,8 @@ EXPECTED_SCAFFOLD_KEYS = {
         "review_mode",
         "merge_timeout",
         "max_adversarial_calls",
+        "max_total_tokens",
+        "max_cost_usd",
         "pause_before_pr_merge",
     },
     "verify": {

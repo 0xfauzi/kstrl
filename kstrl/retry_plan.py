@@ -28,6 +28,7 @@ from kstrl.launch_record import (
     launch_record_path,
     read_launch_record,
 )
+from kstrl.timeout import NO_LIMIT
 
 if TYPE_CHECKING:
     import click
@@ -278,5 +279,5 @@ def print_resume_plan(ui: UI, plan: ResumePlan) -> None:
             f"No launch record for run {plan.run_id or '(none)'}: "
             "the flags of the run being resumed are not carried over"
         )
-    ui.kv("Cost ceiling", f"${plan.max_cost_usd}" if plan.max_cost_usd > 0 else "disabled")
+    ui.kv("Cost ceiling", f"${plan.max_cost_usd}" if plan.max_cost_usd > 0 else NO_LIMIT)
     ui.kv("Max parallel", str(plan.max_parallel))

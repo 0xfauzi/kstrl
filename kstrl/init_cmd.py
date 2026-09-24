@@ -529,12 +529,14 @@ DEFAULT_KSTRL_TOML = """\
 # single_pr = false                # one PR for the whole factory vs per-component
 # create_prs = true                # call `gh` to push + merge per component
 # review_mode = "hard"             # hard | advisory | skip
-# merge_timeout = 300.0            # seconds to wait for PR merge confirmation
-# max_adversarial_calls = 0        # 0 = unbounded; caps review+security+distill LLM calls per run
+# merge_timeout = 300.0            # hang guard: seconds to wait for PR merge confirmation
+# max_adversarial_calls = 0        # 0 = no limit; caps review+security+distill LLM calls per run
 # At the cap, hard-mode review and security HALT the component.
 # The halt records failed_check=adversarial_budget and does not retry.
 # Advisory skips instead, and can still fail at the claim gate.
 # Budget 3 calls per component (docs/runbook.md).
+# max_total_tokens = 0             # 0 = no limit; run-level token ceiling
+# max_cost_usd = 0.0               # 0 = no limit; run-level USD ceiling, checked between iterations
 # pause_before_pr_merge = false    # opt-in HITL checkpoint before each PR push+merge
 
 # Phase 1 mechanical verification. These three are the one source of truth for
@@ -555,8 +557,8 @@ DEFAULT_KSTRL_TOML = """\
 # dead_code_command = ""           # custom dead-code detector (default: vulture)
 # mutation_testing = false
 # mutation_threshold = 50.0
-# mutation_timeout = 600.0
-# subprocess_timeout = 300.0
+# mutation_timeout = 0.0          # 0 = no limit
+# subprocess_timeout = 0.0        # 0 = no limit
 # require_self_critique = false    # fail Phase 1 if the ## Self-Critique block is missing/sparse
 # self_critique_min_bullets = 3
 # progress_file_path = ""          # empty = the log beside the component's PRD
@@ -616,7 +618,7 @@ DEFAULT_KSTRL_TOML = """\
 [security]
 # mode = "skip"                    # skip | advisory | hard (skip = default, opt in explicitly)
 # fail_threshold = "high"          # critical | high | medium | low (hard mode only)
-# timeout_seconds = 600.0
+# timeout_seconds = 0.0           # 0 = no limit
 # agent_cmd = ""                   # leave blank to inherit from [agent]
 # agent_type = ""
 # model = ""
@@ -625,7 +627,7 @@ DEFAULT_KSTRL_TOML = """\
 [contract]
 # mode = "tier"                    # tier | final | skip
 # test_command = "uv run pytest"
-# timeout = 600.0
+# timeout = 0.0                   # 0 = no limit
 
 # Phase 0 codebase scan (computational structural scan; no LLM).
 [codebase_scan]
@@ -644,7 +646,7 @@ DEFAULT_KSTRL_TOML = """\
 # max_core_tokens = 2000           # current component's facts (full text)
 # max_dependency_tokens = 1000     # dependency facts (full text)
 # max_sibling_tokens = 500         # other components' facts (first sentence only)
-# distill_timeout_seconds = 300
+# distill_timeout_seconds = 0.0   # 0 = no limit
 # distill_model = ""               # empty = falls back to [agent].model
 # max_facts_per_distill = 7
 # dependency_scope = "direct"      # direct | transitive
@@ -657,15 +659,17 @@ DEFAULT_KSTRL_TOML = """\
 # min_pattern_frequency = 2
 # lookback_runs = 10
 
-# Timeouts in seconds; 0 or less disables that limit.
+# Timeouts in seconds. Unset or 0 means no limit, which is the default for
+# every work limit. git_operation and subprocess_default are hang guards and
+# keep their defaults.
 [timeout]
-# git_operation = 30.0
-# agent_iteration = 1800.0         # per agent iteration
-# component_total = 7200.0         # wall clock per component
-# verification_check = 300.0
-# review_agent = 600.0
-# contract_test = 600.0
-# subprocess_default = 60.0
+# git_operation = 30.0             # hang guard
+# agent_iteration = 0.0            # per agent iteration; 0 = no limit
+# component_total = 0.0            # wall clock per component; 0 = no limit
+# verification_check = 0.0
+# review_agent = 0.0
+# contract_test = 0.0
+# subprocess_default = 60.0        # hang guard
 # scheduler_backstop_margin = 60.0
 """
 

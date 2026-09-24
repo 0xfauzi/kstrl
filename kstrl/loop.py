@@ -21,7 +21,7 @@ from kstrl.interaction import (
     UiInteractionChannel,
 )
 from kstrl.prd import PRD
-from kstrl.timeout import TimeoutConfig
+from kstrl.timeout import TimeoutConfig, describe_limit_seconds
 from kstrl.verify import (
     VerifyConfig,
     resolve_verify_commands,
@@ -592,14 +592,8 @@ def run_loop(
     ui.kv("Allowed paths", allowed_paths)
     ui.kv("Reasoning", config.model_reasoning_effort or "<default>")
     ui.kv("UI", config.ui_mode)
-    ui.kv(
-        "Agent timeout",
-        f"{timeouts.agent_iteration}s" if timeouts.agent_iteration > 0 else "<disabled>",
-    )
-    ui.kv(
-        "Component timeout",
-        f"{timeouts.component_total}s" if timeouts.component_total > 0 else "<disabled>",
-    )
+    ui.kv("Agent timeout", describe_limit_seconds(timeouts.agent_iteration))
+    ui.kv("Component timeout", describe_limit_seconds(timeouts.component_total))
     ui.kv(
         "No-progress breaker",
         f"{breaker_config.no_progress_iterations} iterations"

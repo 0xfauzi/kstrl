@@ -337,13 +337,13 @@ ascii = false  # ASCII separators only (no box-drawing characters)
 
 # Timeout limits (seconds; 0 or less disables)
 [timeout]
-git_operation = 30.0              # per git subprocess
-agent_iteration = 1800.0          # one engineer iteration
-component_total = 7200.0          # wall clock per component across iterations
-verification_check = 300.0        # each Phase 1 check subprocess
-review_agent = 600.0              # Phase 2 reviewer call
-contract_test = 600.0             # Phase 3 contract test run
-subprocess_default = 60.0         # any other subprocess
+git_operation = 30.0              # hang guard, kept when unset; not read today
+agent_iteration = 0.0             # one engineer iteration; 0 = no limit
+component_total = 0.0             # wall clock per component across iterations; 0 = no limit
+verification_check = 0.0          # 0 = no limit; not read today ([verify] subprocess_timeout is the limit that applies)
+review_agent = 0.0                # 0 = no limit; not read today (the reviewer call has no limit)
+contract_test = 0.0               # 0 = no limit; not read today ([contract] timeout is the limit that applies)
+subprocess_default = 60.0         # hang guard, kept when unset; not read today
 scheduler_backstop_margin = 60.0  # extra slack before the scheduler declares a worker dead
 
 # Factory orchestration (Phase 0-3 pipeline)
@@ -356,10 +356,10 @@ single_pr = false                  # one PR for the whole run instead of per-com
 create_prs = true                  # push + merge PRs via gh
 review_mode = "hard"               # hard | advisory | skip (Phase 2)
 claim_agreement = "advisory"       # advisory | block: what to do when the reviewer does not confirm a story the engineer marked passes=true (R10.3)
-merge_timeout = 300.0              # seconds to wait for PR merge confirmation
-max_adversarial_calls = 0          # cap on review+security+distill LLM calls; 0 = unbounded. At the cap a hard-mode review or security phase HALTS the component rather than merging it unreviewed; an advisory one skips. Budget 3 calls per component for hard review + hard security + knowledge (R10.5, docs/runbook.md)
-max_total_tokens = 0               # run-level token budget; 0 = unbounded. Counts cache reads at par, so it is a poor proxy for cost - prefer max_cost_usd. Halts before the next engineer iteration or phase, never mid-call (docs/env-vars.md)
-max_cost_usd = 0.0                 # run-level USD budget; 0 = unbounded. Same halt granularity as max_total_tokens (between iterations, not mid-call), so NOT a hard cap. Not [agent] budget_usd (docs/env-vars.md)
+merge_timeout = 300.0              # hang guard: seconds to wait for PR merge confirmation
+max_adversarial_calls = 0          # cap on review+security+distill LLM calls; 0 = no limit. At the cap a hard-mode review or security phase HALTS the component rather than merging it unreviewed; an advisory one skips. Budget 3 calls per component for hard review + hard security + knowledge (R10.5, docs/runbook.md)
+max_total_tokens = 0               # run-level token budget; 0 = no limit. Counts cache reads at par, so it is a poor proxy for cost - prefer max_cost_usd. Halts before the next engineer iteration or phase, never mid-call (docs/env-vars.md)
+max_cost_usd = 0.0                 # run-level USD budget; 0 = no limit. Same halt granularity as max_total_tokens (between iterations, not mid-call), so NOT a hard cap. Not [agent] budget_usd (docs/env-vars.md)
 pause_before_pr_merge = false      # human checkpoint before each PR (E6)
 progress_log_enabled = true        # JSONL event log at .kstrl/progress.jsonl (R3.2); usage accounting is written either way (docs/env-vars.md)
 keep_worktrees_on_failure = false  # keep failed components' worktrees for post-mortem (R3.3)
@@ -389,8 +389,8 @@ dead_code_cleanup = false      # optional dead-code check
 dead_code_command = ""         # empty = smart default when dead_code_cleanup is on
 mutation_testing = false       # optional mutation testing
 mutation_threshold = 50.0      # minimum percentage of mutable lines in the changed files whose first definite mutant was killed
-mutation_timeout = 600.0       # seconds in the phase's one shared mutation budget ([verify] mutation_testing and [adequacy] diff_mutation both draw from it, #391); full ceiling arithmetic in the [adequacy] diff_mutation paragraph (docs/env-vars.md)
-subprocess_timeout = 300.0     # seconds per verification subprocess
+mutation_timeout = 0.0         # seconds in the phase's one shared mutation budget ([verify] mutation_testing and [adequacy] diff_mutation both draw from it, #391); full ceiling arithmetic in the [adequacy] diff_mutation paragraph (docs/env-vars.md); 0 = no limit
+subprocess_timeout = 0.0       # seconds per verification subprocess; 0 = no limit
 require_self_critique = false  # fail Phase 1 if the ## Self-Critique block is missing/sparse
 self_critique_min_bullets = 3  # minimum substantive bullets in the block
 progress_file_path = ""        # progress file the self-critique check reads; empty = the log beside the component's PRD
@@ -480,14 +480,14 @@ mode = "skip"            # skip | advisory | hard
 agent_cmd = ""           # empty = inherit [agent]
 agent_type = ""          # empty = inherit [agent]
 model = ""               # empty = inherit [agent]
-timeout_seconds = 600.0  # reviewer call timeout
+timeout_seconds = 0.0    # reviewer call timeout; 0 = no limit
 fail_threshold = "high"  # critical | high | medium | low (hard mode)
 
 # Phase 3 cross-component contract testing
 [contract]
 mode = "tier"                   # tier | final | skip
 test_command = "uv run pytest"  # integration test command on merged tiers
-timeout = 600.0                 # seconds per contract test run
+timeout = 0.0                   # seconds per contract test run; 0 = no limit
 
 # Phase 4 release (R8.7 slice 1: records the release ref; deploys nothing)
 [release]
@@ -505,14 +505,14 @@ max_context_tokens = 4000  # cap to avoid prompt bloat
 
 # Per-component knowledge layer
 [knowledge]
-enabled = true                   # distill + inject durable facts
-max_core_tokens = 2000           # current component's facts (full text)
-max_dependency_tokens = 1000     # dependency facts (full text)
-max_sibling_tokens = 500         # other components' facts (first sentence)
-distill_timeout_seconds = 300.0  # distiller call timeout
-distill_model = ""               # empty = falls back to [agent].model
-max_facts_per_distill = 7        # cap on facts written per component
-dependency_scope = "direct"      # direct | transitive (E8)
+enabled = true                 # distill + inject durable facts
+max_core_tokens = 2000         # current component's facts (full text)
+max_dependency_tokens = 1000   # dependency facts (full text)
+max_sibling_tokens = 500       # other components' facts (first sentence)
+distill_timeout_seconds = 0.0  # distiller call timeout; 0 = no limit
+distill_model = ""             # empty = falls back to [agent].model
+max_facts_per_distill = 7      # cap on facts written per component
+dependency_scope = "direct"    # direct | transitive (E8)
 
 # Continuous-learning journal
 [evolution]

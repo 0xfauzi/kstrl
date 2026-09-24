@@ -67,6 +67,7 @@ from kstrl.prd import PRD
 from kstrl.procdispose import drain_or_abandon
 from kstrl.procgroup import signal_process_tree
 from kstrl.statedir import STATE_DIR_NAME
+from kstrl.timeout import limit_seconds
 
 # R2.6 env scrub: verification subprocesses execute agent-authored code
 # (the project's tests, linters run over agent files, CLI fixtures), so
@@ -158,7 +159,7 @@ def run_scrubbed(
     cmd: str | list[str],
     *,
     cwd: Path,
-    timeout: float,
+    timeout: float | None,
     term_grace: float = _SCRUB_TERM_GRACE_SECONDS,
     extra_env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
@@ -182,6 +183,11 @@ def run_scrubbed(
     points ``COVERAGE_FILE`` at a throwaway directory so pytest-cov's
     data file cannot land in the tree being measured; see that function
     for the alternative (``--cov-config``) this rejects and why.
+
+    ``timeout=None`` waits with no deadline: that is what a work limit the
+    operator did not set means (#467). Callers turn a configured value into
+    one with :func:`kstrl.timeout.limit_seconds`, because ``timeout=0``
+    would mean "already expired" here.
 
     Raises :class:`subprocess.TimeoutExpired` after the group is dead so
     existing callers' timeout handling keeps working unchanged, and
@@ -219,7 +225,7 @@ def run_scrubbed(
     )
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as expired:
         _signal_process_group(proc, signal.SIGTERM)
         try:
             proc.wait(timeout=term_grace)
@@ -232,7 +238,7 @@ def run_scrubbed(
         stdout, stderr = drain_or_abandon(proc, term_grace)
         raise subprocess.TimeoutExpired(
             cmd,
-            timeout,
+            expired.timeout,
             output=stdout,
             stderr=stderr,
         ) from None
@@ -265,6 +271,15 @@ def run_scrubbed(
         drain_or_abandon(proc, term_grace)
         raise
     return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+
+
+def _budget_left(limit: float | None, spent: float) -> float | None:
+    """What remains of a time budget after ``spent`` seconds, never below 0.
+
+    ``None`` in is ``None`` out: a budget the operator did not set has no
+    remainder to run out of (#467).
+    """
+    return None if limit is None else max(0.0, limit - spent)
 
 
 @dataclass
@@ -513,8 +528,8 @@ class VerifyConfig:
     dead_code_command: str | None = None
     mutation_testing: bool = False
     mutation_threshold: float = 50.0
-    mutation_timeout: float = 600.0
-    subprocess_timeout: float = 300.0
+    mutation_timeout: float = 0.0
+    subprocess_timeout: float = 0.0
     # Mechanical enforcement of the engineer prompt's "## Self-Critique"
     # mandate. Off by default to keep this opt-in; set to True (or
     # KSTRL_VERIFY_REQUIRE_SELF_CRITIQUE=1) to fail Phase 1 when an
@@ -547,8 +562,8 @@ class VerifyConfig:
             dead_code_command=os.environ.get("KSTRL_DEAD_CODE_CMD"),
             mutation_testing=os.environ.get("KSTRL_MUTATION_TESTING", "") == "1",
             mutation_threshold=float(os.environ.get("KSTRL_MUTATION_THRESHOLD", "50")),
-            mutation_timeout=float(os.environ.get("KSTRL_MUTATION_TIMEOUT", "600")),
-            subprocess_timeout=float(os.environ.get("KSTRL_TIMEOUT_VERIFY", "300")),
+            mutation_timeout=float(os.environ.get("KSTRL_MUTATION_TIMEOUT", "0")),
+            subprocess_timeout=float(os.environ.get("KSTRL_TIMEOUT_VERIFY", "0")),
             require_self_critique=os.environ.get("KSTRL_VERIFY_REQUIRE_SELF_CRITIQUE", "") == "1",
             self_critique_min_bullets=int(
                 os.environ.get("KSTRL_VERIFY_SELF_CRITIQUE_MIN_BULLETS", "3"),
@@ -1286,7 +1301,7 @@ def _failed_gate_result(
 def check_test_suite(
     cwd: Path,
     command: str | None = None,
-    timeout: float = 300.0,
+    timeout: float | None = None,
     tool: str | None = None,
 ) -> CheckResult:
     """Run the project's test suite independently.
@@ -1338,7 +1353,7 @@ def check_test_suite(
 def check_typecheck(
     cwd: Path,
     command: str | None = None,
-    timeout: float = 300.0,
+    timeout: float | None = None,
     tool: str | None = None,
 ) -> CheckResult:
     """Run typecheck independently. See ``check_test_suite`` for ``tool``."""
@@ -1386,7 +1401,7 @@ def check_typecheck(
 def check_linter(
     cwd: Path,
     command: str | None = None,
-    timeout: float = 300.0,
+    timeout: float | None = None,
     tool: str | None = None,
 ) -> CheckResult:
     """Run linter independently. See ``check_test_suite`` for ``tool``."""
@@ -2623,7 +2638,7 @@ def check_mutation_score(
     base_branch: str,
     test_command: str | None,
     threshold: float = 50.0,
-    timeout: float = 600.0,
+    timeout: float | None = None,
 ) -> CheckResult | NotMeasured:
     """R8.5 Layer 1 (#152, #391): mutate every non-test Python file this
     diff changed, and score the report against ``threshold``.
@@ -2941,7 +2956,7 @@ def _coverage_json_command(
 def _run_coverage_step(
     command: list[str],
     cwd: Path,
-    timeout: float,
+    timeout: float | None,
     coverage_file: Path,
 ) -> subprocess.CompletedProcess[str] | NotMeasured:
     """Run one of :func:`_coverage_report`'s two spawns; classify the two
@@ -2984,7 +2999,7 @@ def _run_coverage_step(
 def _coverage_report(
     cwd: Path,
     tokens: list[str],
-    timeout: float,
+    timeout: float | None,
     targets: Iterable[str],
     json_path: Path,
     spawn_start: float,
@@ -3057,8 +3072,8 @@ def _coverage_report(
             f"the test command exited {data_result.returncode} under coverage; "
             "a partial run's coverage is not a measurement of the suite",
         )
-    remaining = timeout - (time.monotonic() - spawn_start)
-    if remaining <= 0:
+    remaining = _budget_left(timeout, time.monotonic() - spawn_start)
+    if remaining is not None and remaining <= 0:
         return NotMeasured(
             PATCH_COVERAGE_CHECK,
             NOT_MEASURED_TIMED_OUT,
@@ -3093,7 +3108,7 @@ def check_patch_coverage(
     cwd: Path,
     base_branch: str,
     test_command: str | None,
-    timeout: float,
+    timeout: float | None,
 ) -> PatchCoverage | NotMeasured:
     """R8.5 Layer 1 (#152): what fraction of the lines this diff ADDED to
     non-test Python files did the project's own test suite execute.
@@ -3287,7 +3302,9 @@ def _patch_coverage_checks(
     if adequacy_config is None or not (adequacy_config.enabled and adequacy_config.patch_coverage):
         return [], None, None
     start = time.monotonic()
-    outcome = check_patch_coverage(cwd, base_branch, config.test_command, config.subprocess_timeout)
+    outcome = check_patch_coverage(
+        cwd, base_branch, config.test_command, limit_seconds(config.subprocess_timeout)
+    )
     if isinstance(outcome, NotMeasured):
         return [], outcome, None
     return [_patch_coverage_row(outcome, start)], None, outcome
@@ -3482,7 +3499,7 @@ def _restore_mutated_sources(cwd: Path, modes: Mapping[str, int]) -> None:
 
 
 def _mutmut_run_spawn(
-    cwd: Path, check: str, command: list[str], cap: float, paths: Sequence[str]
+    cwd: Path, check: str, command: list[str], cap: float | None, paths: Sequence[str]
 ) -> NotMeasured | None:
     """Run mutmut and restore the tree. ``None`` means the run left a
     cache worth reading; anything else is a sidecar (#391).
@@ -3517,11 +3534,11 @@ def _mutmut_run_spawn(
     """
     modes = _target_modes(cwd, paths)
     result: subprocess.CompletedProcess[str] | None = None
-    timed_out = False
+    fired_after: float | None = None
     try:
         result = run_scrubbed(command, cwd=cwd, timeout=cap)
-    except subprocess.TimeoutExpired:
-        timed_out = True
+    except subprocess.TimeoutExpired as expired:
+        fired_after = expired.timeout
     except OSError as exc:
         return NotMeasured(
             check,
@@ -3536,11 +3553,11 @@ def _mutmut_run_spawn(
         )
     finally:
         _restore_mutated_sources(cwd, modes)
-    if timed_out:
+    if fired_after is not None:
         return NotMeasured(
             check,
             NOT_MEASURED_TIMED_OUT,
-            f"the {cap:.0f}s [verify] mutation_timeout cap fired, and "
+            f"the {fired_after:.0f}s [verify] mutation_timeout cap fired, and "
             + _MUTMUT_CANNOT_REPORT_TRUNCATED,
         )
     if result is not None and result.returncode & 1:
@@ -3630,7 +3647,7 @@ def _mutmut_measure(
     tokens: list[str],
     paths: Sequence[str],
     patch_lines: Mapping[str, Collection[int]] | None,
-    cap: float,
+    cap: float | None,
 ) -> MutationScore | NotMeasured:
     """One mutmut run, scored (#391). The ONE driver: both mutation
     checks reach mutmut through here, so the cache lifecycle, the
@@ -3796,7 +3813,7 @@ def check_diff_mutation(
     cwd: Path,
     coverage: PatchCoverage,
     test_command: str | None,
-    cap: float,
+    cap: float | None,
 ) -> CheckResult | NotMeasured:
     """R8.5 Layer 2 (#152): mutate the changed AND covered lines this
     diff added, and report what fraction the suite detects a change to.
@@ -3889,7 +3906,8 @@ def _diff_mutation_checks(
       byte-for-byte identical guard since the #391 simplify pass on PR
       #392: reaching mutmut through one shared driver made the missing
       guard on that side the only remaining asymmetry.
-    - ``coverage_duration >= config.mutation_timeout`` (A1): Layer 1's
+    - ``coverage_duration >= cap`` (A1), where ``cap`` is ``[verify]
+      mutation_timeout`` and there is no refusal when it is unset (#467): Layer 1's
       OWN measured coverage-run duration already meets or exceeds the
       cap this check's mutation run would be bounded by. mutmut always
       pays its baseline test-suite run in full before mutating a single
@@ -3902,7 +3920,7 @@ def _diff_mutation_checks(
       a single mutant runs. No invented ratio: this compares the two
       measured durations directly, never a tightened factor guessed
       without a second repository's numbers beside kstrl's own.
-      ``config.mutation_timeout`` is unchanged here: this check runs
+      The cap is the full ``config.mutation_timeout`` here: this check runs
       FIRST in the phase (see :func:`run_mechanical_verification`) and
       gets the full budget; :func:`_mutation_checks`, running second,
       gets what THIS check's own run actually left of it (#391 simplify
@@ -3949,21 +3967,22 @@ def _diff_mutation_checks(
                 "before spending anything",
             )
         ]
-    if coverage_duration >= config.mutation_timeout:
+    cap = limit_seconds(config.mutation_timeout)
+    if cap is not None and coverage_duration >= cap:
         return [], [
             NotMeasured(
                 DIFF_MUTATION_CHECK,
                 NOT_MEASURED_TIMED_OUT,
                 f"R8.5 Layer 1's own coverage run already took "
                 f"{coverage_duration:.0f}s, at or beyond the "
-                f"{config.mutation_timeout:.0f}s [verify] mutation_timeout cap "
+                f"{cap:.0f}s [verify] mutation_timeout cap "
                 "this check's mutation run would share; mutmut always pays "
                 "that same suite's baseline in full before mutating a single "
                 "line, so it would certainly exhaust the cap before "
                 "measuring anything, and Layer 2 refuses before spending it",
             )
         ]
-    outcome = check_diff_mutation(cwd, coverage, config.test_command, config.mutation_timeout)
+    outcome = check_diff_mutation(cwd, coverage, config.test_command, cap)
     if isinstance(outcome, NotMeasured):
         return [], [outcome]
     return [outcome], []
@@ -4188,7 +4207,7 @@ def _ruff_fix_message(cwd: Path, output: str, count: int) -> str:
 
 def check_dead_code_ruff(
     cwd: Path,
-    timeout: float = 300.0,
+    timeout: float | None = None,
     *,
     read_only: bool = False,
 ) -> CheckResult | NotMeasured:
@@ -4356,7 +4375,7 @@ def check_dead_code(
     cwd: Path,
     base_branch: str,
     command: str | None = None,
-    timeout: float = 300.0,
+    timeout: float | None = None,
 ) -> CheckResult | NotMeasured:
     """Detect dead code with vulture, or with the operator's own command.
 
@@ -4471,14 +4490,14 @@ def _dead_code_checks(
         return [], []
     ruff_outcome = check_dead_code_ruff(
         cwd,
-        config.subprocess_timeout,
+        limit_seconds(config.subprocess_timeout),
         read_only=read_only,
     )
     detect_outcome = check_dead_code(
         cwd,
         base_branch,
         config.dead_code_command,
-        config.subprocess_timeout,
+        limit_seconds(config.subprocess_timeout),
     )
     outcomes = (ruff_outcome, detect_outcome)
     return (
@@ -4557,7 +4576,7 @@ def _mutation_checks(
     coverage_duration: float,
     *,
     test_suite_passed: bool,
-    cap: float,
+    cap: float | None,
     read_only: bool,
 ) -> tuple[list[CheckResult], list[NotMeasured]]:
     """``(rows, gaps)`` for mutation testing: at most one of each (#306).
@@ -4627,7 +4646,7 @@ def _mutation_checks(
     side, ``mutation_timeout`` plus the mutation spawn's own
     ``_SCRUB_TERM_GRACE_SECONDS`` wait and post-SIGKILL drain (5s each)
     plus ``_MUTATION_REPORT_TIMEOUT`` (30s) plus that report spawn's own
-    matching wait and drain (5s each) - at the 600s default, 650s per
+    matching wait and drain (5s each) - at a 600s cap, 650s per
     side, both sides summing to 1300s for a run that scores nothing on
     either side. See the PR body for the exact arithmetic this repo's
     own 533s baseline suite length produces against that number.
@@ -4654,7 +4673,7 @@ def _mutation_checks(
                 "guard R8.5 Layer 2 already had)",
             )
         ]
-    if coverage_duration >= cap:
+    if cap is not None and coverage_duration >= cap:
         return [], [
             NotMeasured(
                 MUTATION_TESTING_CHECK,
@@ -4985,7 +5004,7 @@ def run_mechanical_verification(
         check_test_suite(
             worktree_path,
             config.test_command,
-            config.subprocess_timeout,
+            limit_seconds(config.subprocess_timeout),
             config.test_tool,
         )
     )
@@ -4994,7 +5013,7 @@ def run_mechanical_verification(
         check_typecheck(
             worktree_path,
             config.typecheck_command,
-            config.subprocess_timeout,
+            limit_seconds(config.subprocess_timeout),
             config.typecheck_tool,
         )
     )
@@ -5003,7 +5022,7 @@ def run_mechanical_verification(
         check_linter(
             worktree_path,
             config.lint_command,
-            config.subprocess_timeout,
+            limit_seconds(config.subprocess_timeout),
             config.lint_tool,
         )
     )
@@ -5098,7 +5117,7 @@ def run_mechanical_verification(
         config,
         coverage_duration,
         test_suite_passed=test_suite_passed,
-        cap=max(0.0, config.mutation_timeout - mutation_diff_elapsed),
+        cap=_budget_left(limit_seconds(config.mutation_timeout), mutation_diff_elapsed),
         read_only=read_only,
     )
     checks.extend(mutation_rows)

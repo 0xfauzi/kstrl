@@ -33,6 +33,7 @@ from kstrl.decompose import (
 from kstrl.delimiters import generate_data_delimiter
 from kstrl.findings import Finding, dump_raw_debug, tag_finding_with_model
 from kstrl.prd import prd_text_for_prompt
+from kstrl.timeout import limit_seconds
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent
@@ -257,7 +258,7 @@ class SecurityConfig:
     agent_cmd: str | None = None
     agent_type: str | None = None
     model: str | None = None
-    timeout_seconds: float = 600.0
+    timeout_seconds: float = 0.0
     # Severity threshold above which findings cause the phase to fail
     # in HARD mode. Default "high" means critical+high fail the phase.
     fail_threshold: str = "high"
@@ -284,7 +285,7 @@ class SecurityConfig:
             agent_cmd=os.environ.get("KSTRL_SECURITY_AGENT_CMD") or None,
             agent_type=os.environ.get("KSTRL_SECURITY_AGENT_TYPE") or None,
             model=os.environ.get("KSTRL_SECURITY_MODEL") or None,
-            timeout_seconds=float(os.environ.get("KSTRL_SECURITY_TIMEOUT", "600")),
+            timeout_seconds=float(os.environ.get("KSTRL_SECURITY_TIMEOUT", "0")),
             fail_threshold=os.environ.get("KSTRL_SECURITY_FAIL_THRESHOLD", "high"),
         )
 
@@ -688,7 +689,7 @@ def run_security_review(
             agent,
             prompt,
             cwd=worktree_path,
-            timeout=config.timeout_seconds,
+            timeout=limit_seconds(config.timeout_seconds),
             on_line=on_line,
         )
     except (AgentOutputTooLarge, Exception) as exc:  # noqa: BLE001
