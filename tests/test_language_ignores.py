@@ -220,6 +220,8 @@ def test_rerunning_init_appends_the_missing_ignores_once_and_clears_every_refusa
     lines = text.splitlines()
     for entry in _LANGUAGE_IGNORES["Python"]:
         assert entry in lines, entry
+    # Only the missing entries are appended, not a second kstrl block.
+    assert lines.count(".kstrl/") == 1, text
 
     second = ks_init(root)
     assert second.returncode == 0, second.stdout
@@ -404,3 +406,11 @@ def test_the_wizard_preview_matches_what_a_rerun_of_init_writes(tmp_path: Path) 
     assert ks_init(root).returncode == 0
     planned = {entry.path.name: entry.action for entry in plan_scaffold(root)}
     assert planned[".gitignore"] == "keep"
+
+
+def test_a_git_that_cannot_start_is_not_read_as_nothing_ignored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No git on PATH raises OSError inside ignored_paths; that is None too."""
+    monkeypatch.setenv("PATH", str(tmp_path / "no-bin"))
+    assert git.ignored_paths(["x"], tmp_path) is None
