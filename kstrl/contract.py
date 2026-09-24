@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING
 
 from kstrl import git
 from kstrl.manifest import Manifest
+from kstrl.timeout import limit_seconds
 from kstrl.verify import DEFAULT_TEST_COMMAND, ChildOutputDecodeError, run_scrubbed
 
 if TYPE_CHECKING:
@@ -83,7 +84,7 @@ class ContractConfig:
     #: ``[verify] test_command`` does not move Phase 3 with it, because
     #: ``load`` reads only ``[contract]``.
     test_command: str = DEFAULT_TEST_COMMAND
-    timeout: float = 600.0
+    timeout: float = 0.0
 
     def __post_init__(self) -> None:
         # B8: reject typo'd modes loudly instead of letting them silently
@@ -100,7 +101,7 @@ class ContractConfig:
         return cls(
             mode=os.environ.get("KSTRL_CONTRACT_MODE", ContractMode.TIER.value),
             test_command=os.environ.get("KSTRL_CONTRACT_TEST_CMD", DEFAULT_TEST_COMMAND),
-            timeout=float(os.environ.get("KSTRL_TIMEOUT_CONTRACT", "600")),
+            timeout=float(os.environ.get("KSTRL_TIMEOUT_CONTRACT", "0")),
         )
 
     @classmethod
@@ -254,7 +255,7 @@ def _remove_temp_worktree(
 def _run_tests(
     cwd: Path,
     test_command: str,
-    timeout: float,
+    timeout: float | None,
 ) -> tuple[bool, str]:
     """Run test suite and return (passed, output)."""
     try:
@@ -283,7 +284,7 @@ def bisect_breaker(
     tier_branches: list[tuple[str, str]],
     root_dir: Path,
     test_command: str,
-    timeout: float = 600.0,
+    timeout: float | None = None,
 ) -> str | None:
     """Linear bisection to identify which component broke integration.
 
@@ -405,7 +406,7 @@ def run_tier_check(
         passed, output = _run_tests(
             worktree_path,
             config.test_command,
-            config.timeout,
+            limit_seconds(config.timeout),
         )
 
         if passed:
@@ -435,7 +436,7 @@ def run_tier_check(
         tier_branches,
         root_dir,
         config.test_command,
-        config.timeout,
+        limit_seconds(config.timeout),
     )
 
     if breaker:
@@ -494,7 +495,7 @@ def run_integrated_base_check(
         passed, output = _run_tests(
             worktree_path,
             config.test_command,
-            config.timeout,
+            limit_seconds(config.timeout),
         )
     finally:
         _remove_temp_worktree(worktree_path, root_dir)

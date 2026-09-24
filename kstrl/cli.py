@@ -2475,7 +2475,7 @@ def decompose(
     type=float,
     default=None,
     help="Timeout per agent iteration in seconds; 0 disables "
-    "(default: 1800, or KSTRL_TIMEOUT_AGENT_ITERATION / "
+    "(default: no limit, or KSTRL_TIMEOUT_AGENT_ITERATION / "
     "[timeout].agent_iteration in kstrl.toml)",
 )
 @click.option(
@@ -2483,7 +2483,7 @@ def decompose(
     type=float,
     default=None,
     help="Timeout per component total in seconds; 0 disables "
-    "(default: 7200, or KSTRL_TIMEOUT_COMPONENT / "
+    "(default: no limit, or KSTRL_TIMEOUT_COMPONENT / "
     "[timeout].component_total in kstrl.toml)",
 )
 @click.option(

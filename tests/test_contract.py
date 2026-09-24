@@ -88,7 +88,7 @@ class TestContractConfig:
         # "these are one fact" assertion lives in
         # tests/test_engineer_verify_instructions.py.
         assert config.test_command == DEFAULT_TEST_COMMAND
-        assert config.timeout == 600.0
+        assert config.timeout == 0.0
 
     def test_from_env(self, monkeypatch) -> None:
         monkeypatch.setenv("KSTRL_CONTRACT_MODE", "final")

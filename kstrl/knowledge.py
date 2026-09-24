@@ -40,6 +40,7 @@ from kstrl.decompose import (
 from kstrl.delimiters import generate_data_delimiter
 from kstrl.jsonread import read_json
 from kstrl.prd import prd_text_for_prompt
+from kstrl.timeout import limit_seconds
 
 if TYPE_CHECKING:
     from kstrl.agents.base import Agent
@@ -63,7 +64,7 @@ class KnowledgeConfig:
     max_core_tokens: int = 2000
     max_dependency_tokens: int = 1000
     max_sibling_tokens: int = 500
-    distill_timeout_seconds: float = 300.0
+    distill_timeout_seconds: float = 0.0
     distill_model: str = ""  # empty = falls back to base config's model
     max_facts_per_distill: int = 7
     # E8: scope of the "Dependencies" full-text tier in build_knowledge_context.
@@ -1260,7 +1261,7 @@ def distill_facts(
             agent,
             prompt,
             cwd=worktree_path,
-            timeout=config.distill_timeout_seconds,
+            timeout=limit_seconds(config.distill_timeout_seconds),
             on_line=on_line,
         )
     except AgentOutputTooLarge as exc:

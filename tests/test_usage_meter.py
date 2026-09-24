@@ -19,6 +19,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import re
 import stat
 import time
 from collections.abc import Callable, Iterator
@@ -5014,13 +5015,14 @@ class TestCeilingScopeIsStatedUpFront:
         assert "Token ceiling" in out
         assert "counts only calls whose agent reports a token count" in out
 
-    def test_an_unconfigured_ceiling_is_not_advertised(
+    def test_an_unconfigured_ceiling_says_no_limit(
         self,
         tmp_path: Path,
     ) -> None:
+        """#467: an unset ceiling is stated as "no limit", never left out."""
         out = self._run(tmp_path)
-        assert "Cost ceiling" not in out
-        assert "Token ceiling" not in out
+        assert re.search(r"Cost ceiling:\s*no limit\n", out), out
+        assert re.search(r"Token ceiling:\s*no limit\n", out), out
 
 
 class TestEveryConfiguredCeilingRecordsItsCoverage:

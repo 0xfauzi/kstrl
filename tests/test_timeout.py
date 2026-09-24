@@ -13,8 +13,8 @@ class TestTimeoutConfig:
     def test_defaults(self) -> None:
         config = TimeoutConfig()
         assert config.git_operation == 30.0
-        assert config.agent_iteration == 1800.0
-        assert config.component_total == 7200.0
+        assert config.agent_iteration == 0.0
+        assert config.component_total == 0.0
 
     def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("KSTRL_TIMEOUT_GIT", "10")

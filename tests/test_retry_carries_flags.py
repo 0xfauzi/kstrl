@@ -227,7 +227,7 @@ class TestRetryReplaysTheRunsFlags:
         retried = _ks(root, "retry", "storage")
         out = retried.stdout + retried.stderr
         assert retried.returncode == 1, out
-        assert re.search(r"Cost ceiling:\s*disabled\n", out), out
+        assert re.search(r"Cost ceiling:\s*no limit\n", out), out
 
 
 class TestRetryRefusesToDropTheCeiling:

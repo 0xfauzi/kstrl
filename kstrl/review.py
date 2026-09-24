@@ -1067,7 +1067,7 @@ def run_review(
     verification_result: VerificationResult,
     mode: ReviewMode,
     ui: UI,
-    timeout: float = 600.0,
+    timeout: float | None = None,
     *,
     debug_dir: Path | None = None,
     on_line: Callable[[str], None] | None = None,

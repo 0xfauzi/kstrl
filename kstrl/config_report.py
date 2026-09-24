@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.config import KstrlConfig, load_toml_section, resolve_config_file
+from kstrl.timeout import NO_LIMIT
 
 
 @dataclass(frozen=True)
@@ -184,6 +185,28 @@ UNSET_RENDERINGS: dict[tuple[str, str], str] = {
     ("paths", "progress"): "<unset: each component writes beside its own PRD>",
 }
 
+# Every time and spend limit in the report. At 0 or below each one means
+# no limit, and the row says so rather than printing 0.0 (#467). The hang
+# guards ([timeout] git_operation / subprocess_default, [factory]
+# merge_timeout) are not here: 0 does not mean "no limit" for them.
+NO_LIMIT_KEYS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("factory", "max_adversarial_calls"),
+        ("factory", "max_total_tokens"),
+        ("factory", "max_cost_usd"),
+        ("verify", "mutation_timeout"),
+        ("verify", "subprocess_timeout"),
+        ("security", "timeout_seconds"),
+        ("contract", "timeout"),
+        ("knowledge", "distill_timeout_seconds"),
+        ("timeout", "agent_iteration"),
+        ("timeout", "component_total"),
+        ("timeout", "verification_check"),
+        ("timeout", "review_agent"),
+        ("timeout", "contract_test"),
+    }
+)
+
 
 def format_config_value(value: Any) -> str:
     if isinstance(value, Path):
@@ -195,6 +218,8 @@ def format_row_value(section: str, key: str, value: Any) -> str:
     """``format_config_value`` plus the per-row unset renderings."""
     if value is None and (section, key) in UNSET_RENDERINGS:
         return UNSET_RENDERINGS[(section, key)]
+    if (section, key) in NO_LIMIT_KEYS and value <= 0:
+        return NO_LIMIT
     return format_config_value(value)
 
 
@@ -381,7 +406,7 @@ def _phase_rows(
             ConfigRow(
                 section=section,
                 key=field_name,
-                value=format_config_value(value),
+                value=format_row_value(section, field_name, value),
                 source=source,
             )
         )

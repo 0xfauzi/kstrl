@@ -127,7 +127,7 @@ class TestKnowledgeConfig:
         assert config.max_core_tokens == 2000
         assert config.max_dependency_tokens == 1000
         assert config.max_sibling_tokens == 500
-        assert config.distill_timeout_seconds == 300.0
+        assert config.distill_timeout_seconds == 0.0
         assert config.max_facts_per_distill == 7
 
     def test_load_no_toml_uses_defaults(

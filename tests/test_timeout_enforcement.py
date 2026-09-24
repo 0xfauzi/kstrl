@@ -1347,8 +1347,8 @@ class TestTimeoutConfigLoading:
         ):
             monkeypatch.delenv(var, raising=False)
         config = TimeoutConfig.load(tmp_path)
-        assert config.agent_iteration == 1800.0
-        assert config.component_total == 7200.0
+        assert config.agent_iteration == 0.0
+        assert config.component_total == 0.0
         assert config.scheduler_backstop_margin == 60.0
 
     def test_kstrl_config_duplicate_fields_deleted(self) -> None:
