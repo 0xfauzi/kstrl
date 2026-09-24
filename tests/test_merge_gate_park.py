@@ -318,6 +318,26 @@ class TestTheParkIsItsOwnOutcome:
         _ks(root, env, "retry", HTTP, "--yes", "--ui", "plain", "--no-color")
         assert _engineer_ran(tmp_path) == [HTTP, HTTP]
 
+    def test_a_parked_run_is_not_clean_so_the_release_gate_withholds(self, tmp_path: Path) -> None:
+        """A park is incomplete, not failed, but it is still not clean: the
+        R8.7 release gate (`factory.run_is_clean`) must withhold a release
+        while `http` sits at AWAITING_APPROVAL, exactly as it withholds one
+        while a component sits at MERGE_PENDING
+        (`tests.test_spine_pr_failures.TestSpineReleaseRef.test_a_merge_pending_run_is_not_clean`).
+        """
+        root, _env_, _tip = _parked_run(
+            tmp_path, '[release]\nenabled = true\nenvironment = "staging"\n'
+        )
+        runs = sorted((root / ".kstrl" / "runs").iterdir())
+        rows = [
+            json.loads(line)
+            for line in (runs[-1] / "events.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        completed = [r for r in rows if r["event"] == "factory_completed"]
+        assert len(completed) == 1, completed
+        assert completed[0]["data"]["release_withheld"] == "run_not_clean"
+
 
 class TestApprovalMergesTheReviewedBranch:
     def test_approve_pushes_opens_and_merges_the_reviewed_branch_then_runs_the_dependent(
