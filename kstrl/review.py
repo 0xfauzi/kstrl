@@ -263,34 +263,22 @@ class ReviewResult:
         return "\n".join(lines)
 
     @property
-    def criterion_fail_count(self) -> int:
-        return sum(1 for c in self.criteria if c.verdict == ReviewVerdict.FAIL.value)
-
-    @property
-    def criterion_advisory_count(self) -> int:
-        return sum(1 for c in self.criteria if c.verdict == ReviewVerdict.ADVISORY.value)
-
-    @property
-    def concern_fail_count(self) -> int:
-        return sum(1 for c in self.concerns if c.severity == "fail")
-
-    @property
-    def concern_advisory_count(self) -> int:
-        return sum(1 for c in self.concerns if c.severity == "advisory")
-
-    @property
     def fail_count(self) -> int:
-        """Total fails across criteria AND concerns. The combined count
-        is what gates run_review's pass/fail decision. For observability
-        that needs to distinguish (e.g. dashboards), use the
-        criterion_/concern_ specific properties instead."""
-        return self.criterion_fail_count + self.concern_fail_count
+        """Failed criteria plus failing concerns: one per ``fail`` row
+        ``as_findings`` produces. The one definition the log line, the
+        ``review_result`` event, the merge-gate evidence and the
+        divergence reading all read (#450)."""
+        return sum(1 for c in self.criteria if c.verdict == ReviewVerdict.FAIL.value) + sum(
+            1 for c in self.concerns if c.severity == "fail"
+        )
 
     @property
     def advisory_count(self) -> int:
-        """Total advisories across criteria AND concerns. See
-        fail_count docstring for the breakdown properties."""
-        return self.criterion_advisory_count + self.concern_advisory_count
+        """Advisory criteria plus advisory concerns: one per ``advisory``
+        row ``as_findings`` produces. See ``fail_count``."""
+        return sum(1 for c in self.criteria if c.verdict == ReviewVerdict.ADVISORY.value) + sum(
+            1 for c in self.concerns if c.severity == "advisory"
+        )
 
     def story_verdicts(self) -> dict[str, str]:
         """R10.3: per-story verdict derived from criterion verdicts.

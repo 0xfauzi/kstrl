@@ -199,6 +199,17 @@ class SecurityResult:
     def high_count(self) -> int:
         return sum(1 for f in self.findings if f.severity == "high")
 
+    @property
+    def fail_count(self) -> int:
+        """Critical and high findings: the two the log line names."""
+        return self.critical_count + self.high_count
+
+    @property
+    def advisory_count(self) -> int:
+        """Every other finding, so fail_count + advisory_count is the
+        number of findings, one row each in the finding stream (#450)."""
+        return len(self.findings) - self.fail_count
+
     def as_findings(self) -> list[Finding]:
         """E3: typed representation of every SecurityFinding, enriched
         with the OWASP/CWE taxonomy from SECURITY_CATEGORY_MAP. Used by
