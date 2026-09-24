@@ -215,7 +215,7 @@ class ProgressLog:
             "component_completed",
             component_id=component_id,
             data={
-                "duration_seconds": round(duration, 2),
+                "duration_seconds": duration,
                 "iterations": iterations,
             },
         )
