@@ -245,9 +245,10 @@ _mutation_repo = repo_builder(EMPTY_CONFTEST_BASE_FILES, FEAT_FILES)
 class TestZeroMeansNoLimitAtEveryWait:
     """0 is the documented "no limit"; it must never reach a wait as 0."""
 
-    def test_a_zero_verify_timeout_lets_every_gate_run(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("unset", [0.0, -1.0])
+    def test_a_zero_verify_timeout_lets_every_gate_run(self, tmp_path: Path, unset: float) -> None:
         _mutation_repo(tmp_path)
-        result = run_adequacy(tmp_path, subprocess_timeout=0.0)
+        result = run_adequacy(tmp_path, subprocess_timeout=unset)
         for check in ("test_suite", "typecheck", "linter", "patch_coverage"):
             row = only_row(result, check)
             assert row.passed is True, (check, row.message)
