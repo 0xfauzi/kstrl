@@ -159,6 +159,9 @@ class ItemState(StrEnum):
     DONE = "done"
     FAILED = "failed"
     POISON = "poison"
+    #: #465: the run parked work at the merge gate. Not a failure and not
+    #: a finish; nothing moves the item on automatically.
+    AWAITING_APPROVAL = "awaiting_approval"
 
 
 #: Every state directory, created eagerly so a scan never has to
@@ -185,6 +188,7 @@ _LEGAL_TRANSITIONS: dict[ItemState, frozenset[ItemState]] = {
             ItemState.DONE,
             ItemState.FAILED,
             ItemState.POISON,
+            ItemState.AWAITING_APPROVAL,
         }
     ),
     # Terminal-ish: a human (or the retry policy) can requeue, and a
@@ -192,6 +196,8 @@ _LEGAL_TRANSITIONS: dict[ItemState, frozenset[ItemState]] = {
     ItemState.FAILED: frozenset({ItemState.QUEUED, ItemState.POISON}),
     ItemState.POISON: frozenset({ItemState.QUEUED}),
     ItemState.DONE: frozenset(),
+    # No automatic exit yet (#465 handoff): `ks queue rm` clears one.
+    ItemState.AWAITING_APPROVAL: frozenset(),
 }
 
 
@@ -1275,6 +1281,30 @@ class Queue:
             last_error=error,
             pr_urls=union,
             detail={"pr_urls": list(union)} if union else None,
+        )
+
+    def await_approval(
+        self,
+        item: QueueItem,
+        *,
+        reason: str,
+        actor: str = "",
+        pr_urls: tuple[str, ...] = (),
+    ) -> QueueItem:
+        """A run that parked work at the merge gate (#465).
+
+        Not a failure and not a finish: the work passed every gate and
+        waits for a human. ``reason`` is journalled so the item's history
+        says what it waits for.
+        """
+        union = tuple(dict.fromkeys(item.pr_urls + pr_urls))
+        return self.transition(
+            item,
+            ItemState.AWAITING_APPROVAL,
+            reason="awaiting approval",
+            actor=actor,
+            pr_urls=union,
+            detail={"reason": reason},
         )
 
     def poison(

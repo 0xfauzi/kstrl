@@ -505,6 +505,32 @@ def get_head_sha(
     return result.stdout.strip() or None
 
 
+def branch_sha(
+    branch: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> str | None:
+    """The commit local branch ``branch`` points at, or None when it does
+    not exist (or git cannot answer).
+
+    #465: the merge gate records this when it parks a component, and the
+    approval merges only a branch still at that commit.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
+            cwd=cwd,
+            capture_output=True,
+            encoding="utf-8",
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
 def get_origin_slug(
     cwd: Path | None = None,
     timeout: float = DEFAULT_TIMEOUT,

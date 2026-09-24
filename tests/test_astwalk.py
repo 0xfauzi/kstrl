@@ -372,6 +372,10 @@ class TestTheWalkAgainstTheRealPackage:
         one resolver left, already had its own row and is unaffected.
         #459 adds ``git.ignored_paths`` (``git check-ignore --stdin -z``,
         with ``timeout=``), which makes it 73.
+        #465 adds two more, so 75: ``git.branch_sha`` reads the sha a
+        parked merge_gate component was approved at, and
+        ``factory._interrupted_run_branches`` lists worktrees to attribute
+        a branch to the run a resume is recovering. Both carry a timeout.
         """
         spawns = frozenset(
             {
@@ -383,7 +387,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 73
+        assert len(found.seen) == 75
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [

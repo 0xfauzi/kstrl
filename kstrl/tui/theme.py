@@ -78,6 +78,7 @@ STATUS_GLYPHS: dict[str, tuple[str, str]] = {
     "verifying": ("◐", STEEL),
     "completed": ("✓", SUCCESS),
     "merge_pending": ("⏸", VIOLET),
+    "awaiting_approval": ("◇", VIOLET),
     "failed": ("✗", ERROR),
     "skipped": ("◌", MUTED),
 }

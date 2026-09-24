@@ -24,6 +24,19 @@ from kstrl.names import validate_branch_name, validate_component_id
 #: that carries it, so neither module has to import the other.
 ADVERSARIAL_BUDGET_CHECK = "adversarial_budget"
 
+#: The inbox dedupe-key prefix of the merge_gate item a merge-gate park
+#: files (#465). Three modules have to agree on it: ``kstrl/pipeline.py``
+#: files the item and later reads its decision, and ``kstrl/cli.py``
+#: recognises a park by it when `ks inbox approve` or `ks inbox reject`
+#: is given one. The other merge_gate item, "merge unconfirmed", is keyed
+#: ``merge:<id>`` and is not a park.
+MERGE_GATE_PARK_KEY = "merge-gate:"
+
+
+def park_dedupe_key(component_id: str) -> str:
+    """The dedupe key of the merge_gate item that parks ``component_id``."""
+    return f"{MERGE_GATE_PARK_KEY}{component_id}"
+
 
 def _iso_now() -> str:
     """Current UTC time as ISO 8601, matching the factory's timestamps."""
@@ -44,6 +57,12 @@ class ComponentStatus(StrEnum):
     # requires COMPLETED), because they would build without the
     # dependency's merged code (CRIT-2).
     MERGE_PENDING = "merge_pending"
+    # #465: every gate passed, and the merge gate had nobody to ask (no
+    # interactive UI), so nothing was pushed. Not a failure: the branch
+    # holds the reviewed commits and the dependents stay PENDING, which
+    # get_ready_components will not schedule until this one is COMPLETED.
+    # `ks inbox approve` merges it; `ks inbox reject` fails it.
+    AWAITING_APPROVAL = "awaiting_approval"
     FAILED = "failed"
     SKIPPED = "skipped"
 

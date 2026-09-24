@@ -677,23 +677,28 @@ class TestWriteback:
         assert "tests failed" in body
         assert "reset-attempts" in body, "say what the human can do"
 
-    def test_a_done_comment_states_the_merge_gate(
+    def test_an_awaiting_approval_comment_names_the_approval_command(
         self,
         tmp_path: Path,
     ) -> None:
+        """#465: the merge gate parks before any push, so the comment says
+        how to approve and no longer claims a PR is waiting."""
         item = self._github_item(tmp_path)
         stub = _GhStub()
         with patch("kstrl.intake_github.run_gh", stub):
             report_outcome(
                 item,
-                state="done",
-                detail="completed",  # type: ignore[arg-type]
+                state="awaiting_approval",
+                detail="awaiting merge approval: http",  # type: ignore[arg-type]
                 config=_config(),
                 root_dir=tmp_path,
             )
+        edit = [c for c in stub.calls if "edit" in c][0]
+        assert edit[edit.index("--add-label") + 1] == "kstrl:awaiting_approval"
         comment = [c for c in stub.calls if "comment" in c][0]
         body = comment[comment.index("--body") + 1]
-        assert "stop at the PR" in body
+        assert "ks inbox approve" in body
+        assert "stop at the PR" not in body
 
     def test_a_local_item_is_never_reported(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path)
@@ -775,6 +780,7 @@ class TestWriteback:
             "kstrl:running",
             "kstrl:failed",
             "kstrl:poison",
+            "kstrl:awaiting_approval",
         }
 
     def test_comments_can_be_switched_off(self, tmp_path: Path) -> None:
@@ -825,6 +831,7 @@ class TestConfig:
             "kstrl:done",
             "kstrl:failed",
             "kstrl:poison",
+            "kstrl:awaiting_approval",
         )
 
     def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:

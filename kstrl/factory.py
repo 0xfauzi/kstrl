@@ -1068,6 +1068,10 @@ class FactoryResult:
     # Not failed - a factory re-run re-polls them - but their dependents
     # were not scheduled, so the run is incomplete (nonzero exit code).
     merge_pending: list[str] = field(default_factory=list)
+    # #465: components the merge gate parked (every gate passed, nobody
+    # to ask). Not failed, but their dependents were not scheduled, so
+    # the run is incomplete (nonzero exit code), the same as merge_pending.
+    awaiting_approval: list[str] = field(default_factory=list)
     pr_urls: list[str] = field(default_factory=list)
     # R0.3: unresolved contract failures (one human-readable line per
     # failed check). Non-empty forces a nonzero exit code even when no
@@ -1111,6 +1115,9 @@ def run_is_clean(
         # Incomplete, not failed: unconfirmed merges blocked their
         # dependents.
         return False
+    if result.awaiting_approval:
+        # Incomplete, not failed: parked merges hold their dependents (#465).
+        return False
     if result.skipped and not result.completed:
         return False
     # #263: components the manifest ends the run short of COMPLETED. Read
@@ -1143,6 +1150,11 @@ def resolve_exit_code(
         # Incomplete, not failed: unconfirmed merges blocked their
         # dependents. Nonzero so automation notices; a re-run re-polls.
         return 1
+    if factory_result.awaiting_approval:
+        # Incomplete, not failed (#465): `ks serve` reads the manifest to
+        # tell this apart from a failure, so the code only has to be
+        # nonzero so `ks factory && deploy` does not deploy half a run.
+        return 1
     if factory_result.skipped and not factory_result.completed:
         return 1
 
@@ -1161,6 +1173,24 @@ def resolve_exit_code(
     unfinished = [c.id for c in manifest.components if c.status != ComponentStatus.COMPLETED.value]
     _report_nothing_scheduled(manifest, unfinished, ui)
     return 1
+
+
+def _ids_in_status(manifest: Manifest, status: ComponentStatus) -> list[str]:
+    """The ids of the components in ``status``, in manifest order."""
+    return [c.id for c in manifest.components if c.status == status.value]
+
+
+def _report_awaiting_approval(factory_result: FactoryResult, ui: UI) -> None:
+    """Name the components the merge gate parked, and what moves them (#465)."""
+    if not factory_result.awaiting_approval:
+        return
+    ui.kv("Awaiting approval", str(len(factory_result.awaiting_approval)))
+    ui.warn(
+        "Parked at the merge gate, nothing pushed: "
+        + ", ".join(factory_result.awaiting_approval)
+        + ". `ks inbox ls` lists them; `ks inbox approve <id>` merges one and "
+        "continues the run, `ks inbox reject <id> --comment ...` fails it."
+    )
 
 
 def _report_nothing_scheduled(
@@ -1576,10 +1606,84 @@ def _prune_stale_worktrees(
         )
 
 
+def _worktree_records(listing: str) -> dict[str, tuple[str, str]]:
+    """``git worktree list --porcelain -z`` as {resolved path: (branch ref, head)}.
+
+    Every field ends in a NUL and every record ends in one more, so an
+    empty field closes a record. A field is ``<key> <value>`` or a bare
+    ``<key>`` (``detached``, ``locked``). Split on single NULs: a literal
+    holding two is the static guards' hole marker (tests/helpers/astfold.py).
+    """
+    records: dict[str, tuple[str, str]] = {}
+    fields: dict[str, str] = {}
+    for entry in listing.split("\0"):
+        if entry:
+            key, _, value = entry.partition(" ")
+            fields[key] = value
+            continue
+        path = fields.get("worktree", "")
+        if path:
+            records[str(Path(path).resolve())] = (fields.get("branch", ""), fields.get("HEAD", ""))
+        fields = {}
+    return records
+
+
+def _interrupted_run_branches(manifest: Manifest, root_dir: Path) -> dict[str, str]:
+    """Branches the interrupted run that last held this manifest provably made (#460).
+
+    A component the manifest still records RUNNING or VERIFYING was
+    mid-attempt when that run stopped without finishing. Its branch is
+    that run's own when git still registers a worktree at
+    ``.kstrl/worktrees/<manifest.run_id>/<component id>`` with the branch
+    checked out: ``_setup_worktree`` is the only thing that creates a
+    worktree at that path, the run id in the path is the interrupted
+    run's, and that run's own branch preflight refused any unmerged branch
+    it did not create. Returns {branch: why it may be deleted}.
+
+    Everything it cannot prove is absent, and
+    ``_preflight_component_branches`` refuses it exactly as before. It must
+    run BEFORE the crash-recovery reset, which rewrites the statuses it
+    reads, and before ``_prune_stale_worktrees``, which removes the
+    registrations it reads. Never in single_pr mode: there every component
+    shares one branch that carries completed components' commits.
+    """
+    if manifest.single_pr or not manifest.run_id or manifest.completed_at:
+        return {}
+    run_dir = (root_dir / ".kstrl" / "worktrees" / manifest.run_id).resolve()
+    wanted = {
+        str(run_dir / comp.id): comp.branch_name
+        for comp in manifest.components
+        if comp.status in (ComponentStatus.RUNNING.value, ComponentStatus.VERIFYING.value)
+    }
+    if not wanted:
+        return {}
+    try:
+        listing = subprocess.run(
+            ["git", "worktree", "list", "--porcelain", "-z"],
+            cwd=root_dir,
+            capture_output=True,
+            encoding="utf-8",
+            timeout=30,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return {}
+    records = _worktree_records(listing.stdout) if listing.returncode == 0 else {}
+    found: dict[str, str] = {}
+    for path, branch in wanted.items():
+        ref, head = records.get(path, ("", ""))
+        if ref == f"refs/heads/{branch}" and head:
+            found[branch] = (
+                f"left by interrupted run {manifest.run_id} at {head}; recover "
+                f"its commits with: git branch {branch} {head}"
+            )
+    return found
+
+
 def _preflight_component_branches(
     manifest: Manifest,
     root_dir: Path,
     ui: UI,
+    interrupted: Mapping[str, str],
 ) -> list[str]:
     """Refuse to silently reuse component branches from previous runs.
 
@@ -1590,6 +1694,11 @@ def _preflight_component_branches(
     operator decides (merge or ``git branch -D``). Previously such
     branches were silently reused with their old commits via the
     worktree-add fallback (R0.5, H-7).
+
+    #460: the one other branch deleted rather than refused is one the
+    interrupted run that last held this manifest provably made
+    (``interrupted``, from ``_interrupted_run_branches``). The deletion
+    line names the commit, so the attempt's work stays recoverable.
 
     Note: a squash-merged branch is NOT an ancestor of base (the squash
     rewrites history), so leftovers from squash-merge flows are refused
@@ -1620,31 +1729,32 @@ def _preflight_component_branches(
             capture_output=True,
             timeout=30,
         )
-        if merged.returncode == 0:
-            deleted = subprocess.run(
-                ["git", "branch", "-D", branch],
-                cwd=root_dir,
-                capture_output=True,
-                encoding="utf-8",
-                timeout=30,
-            )
-            if deleted.returncode == 0:
-                ui.info(
-                    f"  Deleted stale branch '{branch}' from a previous "
-                    f"run (fully merged into {manifest.base_branch})"
-                )
-            else:
-                errors.append(
-                    f"stale branch '{branch}' (component '{comp.id}') is "
-                    f"fully merged but could not be deleted: "
-                    f"{deleted.stderr.strip()}"
-                )
-        else:
+        if merged.returncode != 0 and branch not in interrupted:
             errors.append(
                 f"branch '{branch}' (component '{comp.id}') already exists "
                 f"with commits not merged into '{manifest.base_branch}'; "
                 f"refusing to silently reuse it. Merge it or delete it "
                 f"(git branch -D {branch}) and re-run."
+            )
+            continue
+        why = (
+            f"fully merged into {manifest.base_branch}"
+            if merged.returncode == 0
+            else interrupted[branch]
+        )
+        deleted = subprocess.run(
+            ["git", "branch", "-D", branch],
+            cwd=root_dir,
+            capture_output=True,
+            encoding="utf-8",
+            timeout=30,
+        )
+        if deleted.returncode == 0:
+            ui.info(f"  Deleted stale branch '{branch}' from a previous run ({why})")
+        else:
+            errors.append(
+                f"stale branch '{branch}' (component '{comp.id}', {why}) could "
+                f"not be deleted: {deleted.stderr.strip()}"
             )
     return errors
 
@@ -1907,6 +2017,7 @@ def _run_preflights(
     *,
     lock_held: bool,
     manifest_path: Path,
+    interrupted_branches: Mapping[str, str],
 ) -> tuple[SpecDecision, ...] | None:
     """Every pre-spend refusal, cheapest first, and what survives them.
 
@@ -1971,7 +2082,7 @@ def _run_preflights(
     if _report_preflight(
         ui,
         "stale component branches found",
-        _preflight_component_branches(manifest, root_dir, ui),
+        _preflight_component_branches(manifest, root_dir, ui, interrupted_branches),
     ):
         return None
     return run_decisions
@@ -3905,6 +4016,10 @@ def _run_factory_locked(
     topo_order = manifest.topological_order()
     ui.ok(f"DAG valid: {len(topo_order)} components in dependency order")
 
+    # #460: read BEFORE the reset below rewrites the statuses it keys on,
+    # and before _run_preflights prunes the worktree registrations it reads.
+    interrupted_branches = _interrupted_run_branches(manifest, root_dir)
+
     # Crash recovery: reset intermediate states
     for comp in manifest.components:
         if comp.status in (
@@ -4038,6 +4153,7 @@ def _run_factory_locked(
         ui,
         lock_held=lock_held,
         manifest_path=manifest_path,
+        interrupted_branches=interrupted_branches,
     )
     # ``is None`` and not falsiness: a clean run with no decisions binds
     # the empty tuple, which is the normal state for every project that
@@ -4046,6 +4162,10 @@ def _run_factory_locked(
     if run_decisions is None:
         factory_result.exit_code = 2
         return factory_result
+    # #465: after every pre-spend refusal (a refused run must not have
+    # pushed or merged anything) and before anything is scheduled, so the
+    # dependents of an approved component are cut from a base that holds it.
+    pipeline.apply_merge_decisions()
 
     ui.section("Factory: Execution")
     ui.kv("Max parallel", str(max_parallel))
@@ -4711,9 +4831,8 @@ def _run_factory_locked(
     # before #154's fix round (B11): nothing between this line and the
     # old site mutates a component's status, so the move changes nothing
     # else this function reports.
-    factory_result.merge_pending = [
-        c.id for c in manifest.components if c.status == ComponentStatus.MERGE_PENDING.value
-    ]
+    factory_result.merge_pending = _ids_in_status(manifest, ComponentStatus.MERGE_PENDING)
+    factory_result.awaiting_approval = _ids_in_status(manifest, ComponentStatus.AWAITING_APPROVAL)
 
     # R8.7 slice 1 (#154): the run's release ref and the reason no
     # release followed it. Nothing here starts anything; see
@@ -4808,6 +4927,7 @@ def _run_factory_locked(
             ui.err(f"  {line}")
     if factory_result.merge_pending:
         ui.kv("Merge pending", str(len(factory_result.merge_pending)))
+    _report_awaiting_approval(factory_result, ui)
     ui.kv("Duration", f"{factory_duration:.0f}s")
     # R3.1 usage rollup: per component, per phase, plus the run total.
     print_usage_rollup(

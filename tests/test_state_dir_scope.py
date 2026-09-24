@@ -398,7 +398,7 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "decompose.py": 1,
     "doctor.py": 2,
     "events.py": 1,
-    "factory.py": 8,
+    "factory.py": 9,
     "feedforward.py": 1,
     "knowledge.py": 2,
     "pipeline.py": 1,

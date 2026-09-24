@@ -72,7 +72,7 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     "cli.py": 1,
     "decisions.py": 2,
     "factory.py": 1,
-    "pipeline.py": 3,
+    "pipeline.py": 4,
     "serve.py": 2,
     "tui/screens/inbox.py": 1,
 }
@@ -138,6 +138,12 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
         guarded=False, reason="as _decide_and_report::approve"
     ),
     "cli.py::_decide_and_report::resolve": Disposition(
+        guarded=False, reason="as _decide_and_report::approve"
+    ),
+    "cli.py::_decide_parked_merge_if_parked::approve": Disposition(
+        guarded=False, reason="as _decide_and_report::approve"
+    ),
+    "cli.py::_decide_parked_merge_if_parked::reject": Disposition(
         guarded=False, reason="as _decide_and_report::approve"
     ),
     "cli.py::inbox_retry::resolve": Disposition(

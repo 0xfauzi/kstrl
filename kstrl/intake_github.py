@@ -251,7 +251,10 @@ class GitHubIntakeConfig:
         """
         return (
             self.queued_label,
-            *(self.state_label(name) for name in ("running", "done", "failed", "poison")),
+            *(
+                self.state_label(name)
+                for name in ("running", "done", "failed", "poison", "awaiting_approval")
+            ),
         )
 
     @classmethod
@@ -1364,12 +1367,15 @@ def _outcome_comment(item: QueueItem, state: str, detail: str) -> str:
                 "again, `ks queue retry --reset-attempts`.",
             ]
         )
-    elif state == "done":
+    elif state == "awaiting_approval":
         lines.extend(
             [
                 "",
-                "The PR waits for a human merge decision: remote-sourced items "
-                "always stop at the PR.",
+                "Nothing was pushed: the merge gate waits for a human. On the "
+                "machine running `ks serve`, `ks inbox ls` lists the merge_gate "
+                "item; `ks inbox approve <id>` pushes the reviewed branch, opens "
+                "the PR, merges it and continues the run, and `ks inbox reject "
+                "<id> --comment ...` fails the component.",
             ]
         )
     return "\n".join(lines)

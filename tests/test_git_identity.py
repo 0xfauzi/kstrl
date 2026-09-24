@@ -147,6 +147,14 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_prompt_upgrade.py": 1,
     "tests/test_provisioning.py": 2,
     "tests/test_resume_ergonomics.py": 2,
+    # #465: the parked-merge and resume tests commit through set_identity.
+    # The single_pr shared-branch regression test (blocker 1 of the PR
+    # #471 fixer round) adds two more of the same shape: the shared
+    # repo's own base commit and comp-b's agent-script commit onto the
+    # shared branch, both into repositories built through
+    # `tests.helpers.gitrepo.set_identity`.
+    "tests/test_merge_gate_park.py": 2,
+    "tests/test_resume_reclaims_own_branch.py": 5,
     "tests/test_retry_carries_flags.py": 1,
     "tests/test_review_coverage.py": 2,
     "tests/test_review_gates.py": 1,
@@ -166,7 +174,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # calls tests.helpers.gitrepo.set_identity.
     "tests/test_check_baseline_cli.py": 2,
     "tests/test_spine_contract.py": 4,
-    "tests/test_spine_crash_recovery.py": 1,
+    "tests/test_spine_crash_recovery.py": 2,
     "tests/test_spine_engineer_loop.py": 4,
     "tests/test_spine_golden_patterns_e2e.py": 1,
     # #154: TestSpineReleaseRef's `_enable_release` commits the inert

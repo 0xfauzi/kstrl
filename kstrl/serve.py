@@ -72,7 +72,7 @@ from typing import TYPE_CHECKING, Any, Final, Protocol
 from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.atomicio import atomic_write_json
 from kstrl.jsonread import read_json
-from kstrl.manifest import ADVERSARIAL_BUDGET_CHECK, Component, Manifest
+from kstrl.manifest import ADVERSARIAL_BUDGET_CHECK, Component, ComponentStatus, Manifest
 from kstrl.pr import GH_TIMEOUT, PR_FOOTER_MARKER
 from kstrl.procdispose import drain_or_abandon
 from kstrl.procgroup import (
@@ -151,6 +151,10 @@ class Verdict(StrEnum):
     #: DETERMINISTIC - the only verdict that would otherwise have been
     #: read as retryable infrastructure. See budget_halt_reason.
     BUDGET_HALT = "budget_halt"
+    #: The merge gate parked work that passed every gate, and nothing
+    #: failed (#465). Not a verdict on the spec and not retryable: the
+    #: item waits for `ks inbox approve` or `ks inbox reject`.
+    AWAITING_APPROVAL = "awaiting_approval"
 
     @property
     def may_retry(self) -> bool:
@@ -1081,20 +1085,7 @@ def classify_run(
 
     failed = [comp for comp in manifest.components if str(comp.status) == "failed"]
     if not failed:
-        # Nonzero exit with nothing blamed: unconfirmed merges, contract
-        # failures, a stop mid-run. Each may well be resumable, but none
-        # is an infrastructure_error, and inventing that label here is
-        # exactly the fail-open shape this module refuses.
-        return Outcome(
-            Verdict.UNCLASSIFIABLE,
-            f"exit {run.returncode} with no failed component to attribute it "
-            "to (unconfirmed merge, contract failure, or an interrupted "
-            "run); a human decides whether to resume",
-            {
-                "returncode": run.returncode,
-                "statuses": sorted({str(c.status) for c in manifest.components}),
-            },
-        )
+        return _unfailed_outcome(manifest, run.returncode)
 
     # R10.5 (#226). Checked FIRST among the manifest branches, because
     # every budget-halted component carries an infrastructure_error
@@ -1104,6 +1095,43 @@ def classify_run(
     if budget is not None:
         return budget
     return _merits_outcome(failed, run.returncode)
+
+
+def _unfailed_outcome(manifest: Manifest, returncode: int) -> Outcome:
+    """A nonzero exit whose manifest blames no component.
+
+    #465: a component the merge gate parked is positive evidence of WHY:
+    it passed every gate and waits for a human, so the item awaits
+    approval. Anything else here (unconfirmed merges, contract failures,
+    a stop mid-run) may well be resumable, but none is an
+    infrastructure_error, and inventing that label here is exactly the
+    fail-open shape this module refuses. Split out of ``classify_run``,
+    which is past the cyclomatic ratchet.
+    """
+    parked = [
+        comp.id
+        for comp in manifest.components
+        if comp.status == ComponentStatus.AWAITING_APPROVAL.value
+    ]
+    if parked:
+        return Outcome(
+            Verdict.AWAITING_APPROVAL,
+            "awaiting merge approval: "
+            + ", ".join(parked)
+            + " passed every gate and the merge gate parked it with nothing "
+            "pushed; `ks inbox approve <id>` merges it and continues the run",
+            {"returncode": returncode, "awaiting_approval": parked},
+        )
+    return Outcome(
+        Verdict.UNCLASSIFIABLE,
+        f"exit {returncode} with no failed component to attribute it "
+        "to (unconfirmed merge, contract failure, or an interrupted "
+        "run); a human decides whether to resume",
+        {
+            "returncode": returncode,
+            "statuses": sorted({str(c.status) for c in manifest.components}),
+        },
+    )
 
 
 def _timeout_outcome(manifest_path: Path | None, returncode: int) -> Outcome:
@@ -1221,8 +1249,16 @@ def _merits_outcome(failed: Sequence[Component], returncode: int) -> Outcome:
     # merits, not on infrastructure". Both verdicts poison, so the money
     # behaviour was already right; the STATEMENT was false. Every unit
     # test had constructed manifests WITH findings, so nothing caught it.
-    judged = [comp.id for comp in failed if comp.findings and not _infra_casualty(comp)]
-    unevidenced = [comp for comp in failed if not comp.findings]
+    # #465: a component stopped at the merge gate passed every gate, so
+    # its findings are not why it stopped; its error says why.
+    judged = [
+        comp.id
+        for comp in failed
+        if comp.findings and not _infra_casualty(comp) and comp.failed_check != "merge_gate"
+    ]
+    unevidenced = [
+        comp for comp in failed if not comp.findings or comp.failed_check == "merge_gate"
+    ]
     # Collected BEFORE the SPEC_FAILURE return: a mixed manifest used to
     # report only the component with a finding, silently dropping a
     # sibling's "fatal: invalid reference" from both the reason and the
@@ -2258,6 +2294,44 @@ def check_poison_breaker(ledger: SpendLedger, config: ServeConfig) -> Admission:
             f"{streak} consecutive items poisoned (limit "
             f"{config.max_consecutive_poison}); something systemic is "
             "failing, not one bad spec"
+        ),
+    )
+
+
+def check_parked_merges(root_dir: Path) -> Admission:
+    """Wait while the manifest holds work parked at the merge gate (#465).
+
+    Claiming another item runs `ks factory --spec`, which writes a new
+    ``scripts/kstrl/manifest.json`` over the one that records the park,
+    and the approval then has nothing to merge. The wait clears itself:
+    `ks inbox approve` or `ks inbox reject` re-enters the factory, which
+    moves the component out of AWAITING_APPROVAL.
+
+    A manifest that is missing or cannot be read ADMITS, and that is a
+    reading of the mechanism rather than a fail-open: what this protects
+    is a park `ks inbox approve` can act on, and approve loads the same
+    file with the same ``Manifest.load`` and refuses when it cannot. A
+    file nothing can approve holds nothing a new run could destroy, and
+    serve claimed over such a file before #465.
+    """
+    path = root_dir / "scripts" / "kstrl" / "manifest.json"
+    try:
+        manifest = Manifest.load(path)
+    except Exception as exc:  # noqa: BLE001 - nothing approvable is the same answer
+        return Admission(allowed=True, reason=f"no approvable park in {path}: {exc}")
+    parked = [
+        comp.id
+        for comp in manifest.components
+        if comp.status == ComponentStatus.AWAITING_APPROVAL.value
+    ]
+    if not parked:
+        return Admission(allowed=True)
+    return Admission(
+        allowed=False,
+        reason=(
+            f"{', '.join(parked)} waits at the merge gate in {path}: `ks inbox "
+            "approve <id>` merges it and continues the run, `ks inbox reject "
+            "<id> --comment ...` fails it; a new item would overwrite that manifest"
         ),
     )
 
@@ -3301,7 +3375,7 @@ def _wait_gate_refusal(
 ) -> str | None:
     """The gates that make the cycle WAIT, in evaluation order, or None.
 
-    These three sit outside the ``gates`` tuple and share a shape: none
+    These four sit outside the ``gates`` tuple and share a shape: none
     pauses the queue, none charges the item an attempt. Each is a
     condition that clears itself, so the cycle skips and re-checks on
     the next poll.
@@ -3313,8 +3387,12 @@ def _wait_gate_refusal(
     nothing anywhere to read.
 
     These are ordered by cost. The inbox cap reads one local file, the
-    factory lock takes one flock, and the open-PR bound reaches GitHub,
-    so the bound is evaluated last and only once the other two admit.
+    factory lock takes one flock, the parked-merge check (#465) reads the
+    manifest, and the open-PR bound reaches GitHub, so the bound is
+    evaluated last and only once the other three admit. The parked-merge
+    check follows the lock on purpose: while an approval's factory run
+    holds the lock, "a factory run already holds this root" is the
+    accurate reason.
     That is also why these are not members of the ``gates`` tuple: it is
     built eagerly, so every element is evaluated before the loop reads
     the first refusal, and a ``gh`` call per poll behind an
@@ -3339,6 +3417,11 @@ def _wait_gate_refusal(
         reason = "a factory run already holds this root"
         obs.info(reason)
         return reason
+
+    parked_gate = check_parked_merges(root_dir)
+    if not parked_gate.allowed:
+        obs.warn(parked_gate.reason)
+        return parked_gate.reason
 
     pr_gate = check_open_pr_bound(config, root_dir, streak=streak)
     if not pr_gate.allowed:
@@ -3780,30 +3863,7 @@ def serve_cycle(
         }
     )
 
-    with queue_lock(root_dir, blocking=True):
-        current = queue.get(running.item_id)
-        if current is None:
-            obs.err(f"{running.item_id[:12]} vanished mid-run")
-            return result
-        if verdict.verdict is Verdict.SUCCESS:
-            queue.finish_ok(current, actor="serve", pr_urls=pr_urls)
-            ledger.record_terminal(poisoned=False)
-            finished = queue.get(running.item_id)
-            succeeded = True
-        else:
-            finished = None
-            succeeded = False
-
-    if succeeded:
-        obs.info(f"  {running.item_id[:12]} done")
-        # Outside the mutex (#187 F10).
-        _report_remote_outcome(
-            root_dir,
-            finished,
-            state="done",
-            detail="The factory run completed.",
-            observer=obs,
-        )
+    if _settle_unfailed(root_dir, queue, ledger, running, verdict, pr_urls, obs, result):
         return result
 
     # The failure branch. Every remote writeback below happens AFTER the
@@ -3898,6 +3958,46 @@ def serve_cycle(
         ),
     )
     return result
+
+
+def _settle_unfailed(
+    root_dir: Path,
+    queue: Queue,
+    ledger: SpendLedger,
+    running: QueueItem,
+    verdict: Outcome,
+    pr_urls: tuple[str, ...],
+    obs: ServeObserver,
+    result: CycleResult,
+) -> bool:
+    """Finish an item whose run did not fail: done, or awaiting approval.
+
+    True when the cycle is over for this item (including the item having
+    vanished from the queue mid-run); False sends the caller down the
+    failure branch. #465 added the second state: a park is neither a
+    finish nor a failure, so it is not poisoned, it does not touch the
+    poison streak, and it is not retried. The remote writeback runs after
+    the mutex is released (#187 F10).
+    """
+    with queue_lock(root_dir, blocking=True):
+        current = queue.get(running.item_id)
+        if current is None:
+            obs.err(f"{running.item_id[:12]} vanished mid-run")
+            return True
+        if verdict.verdict is Verdict.SUCCESS:
+            queue.finish_ok(current, actor="serve", pr_urls=pr_urls)
+            ledger.record_terminal(poisoned=False)
+            state, said, detail = "done", "done", "The factory run completed."
+        elif verdict.verdict is Verdict.AWAITING_APPROVAL:
+            queue.await_approval(current, reason=verdict.reason, actor="serve", pr_urls=pr_urls)
+            result.needs_human = True
+            state, said, detail = "awaiting_approval", "awaiting approval", verdict.reason
+        else:
+            return False
+        finished = queue.get(running.item_id)
+    obs.info(f"  {running.item_id[:12]} {said}")
+    _report_remote_outcome(root_dir, finished, state=state, detail=detail, observer=obs)
+    return True
 
 
 def _default_runner(config: ServeConfig) -> FactoryRunner:
