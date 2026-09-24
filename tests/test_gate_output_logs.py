@@ -255,3 +255,51 @@ def test_a_failed_write_is_said_and_the_event_names_no_file(tmp_path: Path) -> N
     assert data["passed"] is False
     assert result.failure is not None
     assert f"could not write the {GATE_TEST} output" in run.narration.getvalue()
+
+
+def test_every_failing_gate_in_one_attempt_leaves_its_own_log(tmp_path: Path) -> None:
+    """All three gates fail in one attempt: each gets its own file and the
+    event names all three, not only the first one written."""
+    project = _project(tmp_path)
+    comp = component()
+    failing = _python("import sys; print('kstrl462 every gate'); sys.exit(1)")
+    run = _Run(
+        project,
+        _config(
+            test=f"{PYTHON} -m pytest -q -p no:cacheprovider test_fixture.py",
+            typecheck=failing,
+            lint=failing,
+        ),
+        comp,
+    )
+
+    run.phase_1()
+
+    (data,) = run.verification_events()
+    attempt = _debug_dir(project, comp) / "attempt-1"
+    expected = [str(attempt / f"{gate}.log") for gate in (GATE_TEST, GATE_TYPECHECK, GATE_LINT)]
+    assert sorted(data["gate_logs"]) == sorted(expected)
+    assert FAILING_TEST_NAME in (attempt / f"{GATE_TEST}.log").read_text(encoding="utf-8")
+    for gate in (GATE_TYPECHECK, GATE_LINT):
+        assert "kstrl462 every gate" in (attempt / f"{gate}.log").read_text(encoding="utf-8")
+
+
+def test_an_error_that_is_not_an_os_error_is_not_swallowed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only a failed write (OSError) becomes a warning. Any other exception
+    raised while writing the log is a defect in kstrl and must propagate."""
+    project = _project(tmp_path)
+    comp = component()
+    run = _Run(
+        project,
+        _config(test=f"{PYTHON} -m pytest -q -p no:cacheprovider test_fixture.py"),
+        comp,
+    )
+
+    def broken_write(target: Path, content: str) -> None:
+        raise RuntimeError("kstrl462 not an OSError")
+
+    monkeypatch.setattr("kstrl.pipeline.atomic_write_text", broken_write)
+    with pytest.raises(RuntimeError, match="kstrl462 not an OSError"):
+        run.phase_1()
