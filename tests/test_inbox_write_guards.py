@@ -55,6 +55,7 @@ EXPECTED_CONSTRUCTIONS = (
     "autonomy.py kstrl.inbox.Inbox",
     "calibration_ladder.py kstrl.inbox.Inbox",
     "cli.py kstrl.inbox.Inbox",
+    "decisions.py kstrl.inbox.Inbox",
     "factory.py kstrl.inbox.Inbox",
     "pipeline.py kstrl.inbox.Inbox",
     "serve.py kstrl.inbox.Inbox",
@@ -69,6 +70,7 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     "autonomy.py": 1,
     "calibration_ladder.py": 1,
     "cli.py": 1,
+    "decisions.py": 2,
     "factory.py": 1,
     "pipeline.py": 4,
     "serve.py": 2,
@@ -110,6 +112,8 @@ _GUARDED = Disposition(guarded=True)
 EXPECTED_MUTATIONS: dict[str, Disposition] = {
     "autonomy.py::apply_demotion::add": _GUARDED,
     "calibration_ladder.py::_open_drift_item::add": _GUARDED,
+    "decisions.py::open_escalation_item::add": _GUARDED,
+    "decisions.py::resolve_escalation_items::resolve": _GUARDED,
     "factory.py::_open_health_breach_items::add": _GUARDED,
     "pipeline.py::ComponentPipeline._inbox_add::add": _GUARDED,
     "pipeline.py::ComponentPipeline._inbox_resolve::resolve": _GUARDED,
@@ -171,6 +175,8 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
 EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
     "autonomy.py::apply_demotion": _GUARDED,
     "calibration_ladder.py::_open_drift_item": _GUARDED,
+    "decisions.py::open_escalation_item": _GUARDED,
+    "decisions.py::resolve_escalation_items": _GUARDED,
     "factory.py::_open_health_breach_items": _GUARDED,
     "serve.py::_file_inbox_item": _GUARDED,
     "serve.py::check_inbox_cap": Disposition(

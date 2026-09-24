@@ -26,6 +26,7 @@ from click.testing import CliRunner, Result
 from kstrl import doctor
 from kstrl.cli import cli
 from kstrl.feedforward import extract_public_interfaces
+from kstrl.init_cmd import _LANGUAGE_IGNORES, gitignore_block
 from tests.helpers.fakegh import put_gh_on_path
 from tests.helpers.gitrepo import git_in, set_identity
 
@@ -76,7 +77,7 @@ def ready_repo(tmp_path: Path, name: str = "demo") -> Path:
     (root / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
     )
-    (root / ".gitignore").write_text(".kstrl/\n", encoding="utf-8")
+    (root / ".gitignore").write_text(gitignore_block("Python"), encoding="utf-8")
     pkg = root / "demo"
     pkg.mkdir()
     (pkg / "__init__.py").write_text("", encoding="utf-8")
@@ -226,7 +227,10 @@ def test_a_repo_that_does_not_ignore_the_state_dir_warns_with_the_line_to_add(
     tmp_path: Path,
 ) -> None:
     root = ready_repo(tmp_path)
-    (root / ".gitignore").unlink()
+    # #459: every Python entry stays, so the only thing missing is `.kstrl/`.
+    (root / ".gitignore").write_text(
+        "".join(f"{entry}\n" for entry in _LANGUAGE_IGNORES["Python"]), encoding="utf-8"
+    )
     git_in(root, "add", "-A")
     git_in(root, "commit", "-q", "-m", "drop ignore")
     result = run_doctor(root)
@@ -328,6 +332,7 @@ def test_verify_commands_warn_when_there_is_no_project_for_uv_run(tmp_path: Path
     root = ready_repo(tmp_path)
     (root / "pyproject.toml").unlink()
     (root / "Cargo.toml").write_text('[package]\nname = "demo"\n', encoding="utf-8")
+    (root / ".gitignore").write_text(gitignore_block("Rust"), encoding="utf-8")  # #459
     git_in(root, "add", "-A")
     git_in(root, "commit", "-q", "-m", "drop pyproject")
     result = run_doctor(root)

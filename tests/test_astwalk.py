@@ -370,7 +370,9 @@ class TestTheWalkAgainstTheRealPackage:
         resolvers, its one ``subprocess.run`` counted inside the original
         68 - so the total drops back to 72; ``git.resolve_base_sha``, the
         one resolver left, already had its own row and is unaffected.
-        #465 adds two, so 74: ``git.branch_sha`` reads the sha a
+        #459 adds ``git.ignored_paths`` (``git check-ignore --stdin -z``,
+        with ``timeout=``), which makes it 73.
+        #465 adds two more, so 75: ``git.branch_sha`` reads the sha a
         parked merge_gate component was approved at, and
         ``factory._interrupted_run_branches`` lists worktrees to attribute
         a branch to the run a resume is recovering. Both carry a timeout.
@@ -385,7 +387,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 74
+        assert len(found.seen) == 75
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [

@@ -321,12 +321,12 @@ def report_verification(
     way, making somebody who pressed stop wait out a test suite is the
     opposite of what they asked for: measured on this repo, 246s.
 
-    A stop pressed during the measurement itself is NOT cancellable, and
-    is bounded by ``3 x [verify] subprocess_timeout`` (900s at the
-    default) because ``run_scrubbed`` kills each process group at its own
-    deadline. That window is the same shape as, and half the size of, the
-    one the agent call inside ``run_loop`` already has (``[timeout]``
-    ``agent_iteration``, 1800s); closing it needs cooperative
+    A stop pressed during the measurement itself is NOT cancellable. It
+    is bounded by ``3 x [verify] subprocess_timeout`` when that is set,
+    because ``run_scrubbed`` kills each process group at its own
+    deadline, and it is unbounded when it is not (the default since
+    #467). The agent call inside ``run_loop`` has the same window under
+    ``[timeout] agent_iteration``; closing it needs cooperative
     cancellation inside the shared checker, which is not this flow's to
     add.
 

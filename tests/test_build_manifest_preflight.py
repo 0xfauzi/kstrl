@@ -22,6 +22,7 @@ import pytest
 from click.testing import CliRunner
 
 from kstrl.cli import cli
+from kstrl.init_cmd import _detect_project_context, gitignore_block
 from kstrl.launch import DecomposeLaunch
 from kstrl.tui.session import LaunchError, start_run_session
 from tests.helpers.gitrepo import git_in, set_identity
@@ -55,6 +56,10 @@ def greenfield(tmp_path: Path, *, extra: dict[str, str] | None = None) -> Path:
     (root / "legacy" / "old_notes.py").write_text("x = 1\n", encoding="utf-8")
     for name, body in (extra or {}).items():
         (root / name).write_text(body, encoding="utf-8")
+    # #459: the ignores `ks init` writes for whatever language the extras
+    # make this, so a manifest test is not refused over its build output.
+    language = _detect_project_context(root)["language"]
+    (root / ".gitignore").write_text(gitignore_block(language), encoding="utf-8")
     git_in(root, "add", "-A")
     git_in(root, "commit", "-q", "-m", "initial")
     return root

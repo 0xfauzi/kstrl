@@ -444,8 +444,8 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "doctor.py": 5,
     "factory.py": 15,
     "fixtures.py": 3,
-    # 60: 58 after #435 hoisted `merge_base_ref` here, +2 for #465's `branch_sha`.
-    "git.py": 60,
+    # 62: 58 after #435, +2 for #465's `branch_sha`, +2 for #459's `ignored_paths`.
+    "git.py": 62,
     "intake_github.py": 3,
     "licensing.py": 3,
     "observability.py": 5,
@@ -478,8 +478,8 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     "breaker.py": 1,
     "doctor.py": 1,
     "factory.py": 4,
-    # 24: 23 after #435 deleted `resolve_ref`, +1 for #465's `branch_sha`.
-    "git.py": 24,
+    # 25: 23 after #435, +1 for #465's `branch_sha`, +1 for #459's `ignored_paths`.
+    "git.py": 25,
     "intake_github.py": 1,
     "licensing.py": 1,
     "pr.py": 9,
@@ -510,6 +510,7 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     # codespell:ignore-next-line
     "git.py subprocess.run(['git', 'add', '--', file], cwd=cwd, capture_output=Tru",
     "git.py subprocess.run(['git', 'branch', flag, '--', branch_name], cwd=cwd, ca",
+    "git.py subprocess.run(['git', 'check-ignore', '--stdin', '-z'], cwd=cwd, capt",
     "git.py subprocess.run(['git', 'check-ignore', '-v', '--', file], cwd=cwd, cap",
     "git.py subprocess.run(['git', 'checkout', '-b', branch], cwd=cwd, capture_out",
     "git.py subprocess.run(['git', 'checkout', '-b', branch_name, base, '--'], cwd",

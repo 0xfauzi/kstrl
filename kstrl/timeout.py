@@ -22,21 +22,47 @@ _ENV_VARS: dict[str, str] = {
 }
 
 
+#: What every surface prints for a limit that is not set (#467).
+NO_LIMIT = "no limit"
+
+
+def limit_seconds(value: float) -> float | None:
+    """A configured time limit as a wait deadline: None when it is not set.
+
+    A work limit in kstrl.toml is 0 (the default) or less when the operator
+    set none, and that means no limit (#467). A wait needs ``None`` for that:
+    ``timeout=0`` means "already expired" to ``subprocess`` and ``Popen``.
+    """
+    return value if value > 0 else None
+
+
+def describe_limit_seconds(value: float) -> str:
+    """A time limit as a run header prints it: ``"1800.0s"`` or ``"no limit"``."""
+    return f"{value}s" if value > 0 else NO_LIMIT
+
+
 @dataclass
 class TimeoutConfig:
     """Timeout configuration for various operations.
 
     Single source of truth for the agent-iteration and component wall-clock
     limits enforced by loop.py, the agent adapters, and the factory
-    scheduler (R0.1). A value of 0 or less disables that limit.
+    scheduler (R0.1). A value of 0 or less disables that limit, and the
+    work limits default to 0: a limit the operator did not set does not
+    end a run (#467).
+
+    ``git_operation`` and ``subprocess_default`` keep their defaults
+    because they are hang guards, not work limits. Neither they nor
+    ``verification_check``, ``review_agent`` or ``contract_test`` is read
+    by any code path today.
     """
 
     git_operation: float = 30.0
-    agent_iteration: float = 1800.0
-    component_total: float = 7200.0
-    verification_check: float = 300.0
-    review_agent: float = 600.0
-    contract_test: float = 600.0
+    agent_iteration: float = 0.0
+    component_total: float = 0.0
+    verification_check: float = 0.0
+    review_agent: float = 0.0
+    contract_test: float = 0.0
     subprocess_default: float = 60.0
     # Extra slack the factory scheduler grants a worker past
     # component_total before declaring the component dead: workers need

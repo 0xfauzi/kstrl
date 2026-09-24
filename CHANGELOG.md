@@ -114,6 +114,17 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Changed
 
+- Build output git does not ignore is named before anything spends
+  (#459). On a greenfield repository `ks init` runs before the build
+  manifest exists, so it wrote no language ignores, and the bytecode
+  every `uv run pytest` writes then failed each component's first
+  attempt on the in-loop scope guard. `ks doctor`'s `gitignore` row now
+  fails when git does not ignore an entry of the detected language's
+  block (probed at the root and one directory down), and `ks decompose`,
+  `ks factory --spec` and the home shell's decompose launch refuse with
+  exit 2 before any architect call. Re-running `ks init` appends the
+  missing entries, and the bootstrap commands `ks init` prints now
+  include that re-run and `.gitignore` in the commit.
 - A repository with no build manifest is named before anything spends
   (#434). `ks doctor` fails a new `build_manifest` check and puts the
   remedy first in Fix first; `ks init` prints the same notice; and

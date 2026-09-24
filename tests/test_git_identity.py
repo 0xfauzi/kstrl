@@ -120,6 +120,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_init_cmd.py": 3,
     "tests/test_input_hygiene.py": 4,
     "tests/test_instance_safety.py": 2,
+    # #459: five `git commit` spellings, every one into a repository
+    # this file's `isolated_repo` put through
+    # `tests.helpers.gitrepo.set_identity`.
+    "tests/test_language_ignores.py": 5,
     "tests/test_launch_session.py": 1,
     "tests/test_loop.py": 2,
     "tests/test_notify.py": 1,

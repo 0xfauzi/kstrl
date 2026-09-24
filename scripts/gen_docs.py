@@ -496,13 +496,15 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("git", "branch"): "branch override; empty = use PRD branchName",
     ("git", "auto_checkout"): "check the branch out automatically",
     ("ui", "ascii"): "ASCII separators only (no box-drawing characters)",
-    ("timeout", "git_operation"): "per git subprocess",
-    ("timeout", "agent_iteration"): "one engineer iteration",
-    ("timeout", "component_total"): "wall clock per component across iterations",
-    ("timeout", "verification_check"): "each Phase 1 check subprocess",
-    ("timeout", "review_agent"): "Phase 2 reviewer call",
-    ("timeout", "contract_test"): "Phase 3 contract test run",
-    ("timeout", "subprocess_default"): "any other subprocess",
+    ("timeout", "git_operation"): "hang guard, kept when unset; not read today",
+    ("timeout", "agent_iteration"): "one engineer iteration; 0 = no limit",
+    ("timeout", "component_total"): "wall clock per component across iterations; 0 = no limit",
+    ("timeout", "verification_check"): "0 = no limit; not read today ([verify] "
+    "subprocess_timeout is the limit that applies)",
+    ("timeout", "review_agent"): "0 = no limit; not read today (the reviewer call has no limit)",
+    ("timeout", "contract_test"): "0 = no limit; not read today ([contract] timeout "
+    "is the limit that applies)",
+    ("timeout", "subprocess_default"): "hang guard, kept when unset; not read today",
     (
         "timeout",
         "scheduler_backstop_margin",
@@ -518,11 +520,11 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "advisory | block: what to do when the reviewer does not confirm a "
         "story the engineer marked passes=true (R10.3)"
     ),
-    ("factory", "merge_timeout"): "seconds to wait for PR merge confirmation",
+    ("factory", "merge_timeout"): "hang guard: seconds to wait for PR merge confirmation",
     (
         "factory",
         "max_adversarial_calls",
-    ): "cap on review+security+distill LLM calls; 0 = unbounded. "
+    ): "cap on review+security+distill LLM calls; 0 = no limit. "
     "At the cap a hard-mode review or security phase HALTS the component "
     "rather than merging it unreviewed; an advisory one skips. Budget 3 calls "
     "per component for hard review + hard security + knowledge (R10.5, "
@@ -530,10 +532,10 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     (
         "factory",
         "max_total_tokens",
-    ): "run-level token budget; 0 = unbounded. Counts cache reads at par, so "
+    ): "run-level token budget; 0 = no limit. Counts cache reads at par, so "
     "it is a poor proxy for cost - prefer max_cost_usd. Halts before the "
     "next engineer iteration or phase, never mid-call (docs/env-vars.md)",
-    ("factory", "max_cost_usd"): "run-level USD budget; 0 = unbounded. Same halt granularity as "
+    ("factory", "max_cost_usd"): "run-level USD budget; 0 = no limit. Same halt granularity as "
     "max_total_tokens (between iterations, not mid-call), so NOT a hard "
     "cap. Not [agent] budget_usd (docs/env-vars.md)",
     ("factory", "pause_before_pr_merge"): "human checkpoint before each PR (E6)",
@@ -581,8 +583,8 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ): "seconds in the phase's one shared mutation budget ([verify] "
     "mutation_testing and [adequacy] diff_mutation both draw from it, #391); "
     "full ceiling arithmetic in the [adequacy] diff_mutation paragraph "
-    "(docs/env-vars.md)",
-    ("verify", "subprocess_timeout"): "seconds per verification subprocess",
+    "(docs/env-vars.md); 0 = no limit",
+    ("verify", "subprocess_timeout"): "seconds per verification subprocess; 0 = no limit",
     (
         "verify",
         "require_self_critique",
@@ -700,11 +702,11 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("security", "agent_cmd"): "empty = inherit [agent]",
     ("security", "agent_type"): "empty = inherit [agent]",
     ("security", "model"): "empty = inherit [agent]",
-    ("security", "timeout_seconds"): "reviewer call timeout",
+    ("security", "timeout_seconds"): "reviewer call timeout; 0 = no limit",
     ("security", "fail_threshold"): "critical | high | medium | low (hard mode)",
     ("contract", "mode"): "tier | final | skip",
     ("contract", "test_command"): "integration test command on merged tiers",
-    ("contract", "timeout"): "seconds per contract test run",
+    ("contract", "timeout"): "seconds per contract test run; 0 = no limit",
     ("release", "enabled"): "record a release ref; still deploys nothing (R8.7 slice 1)",
     ("release", "environment"): "deploy environment name, e.g. staging or prod",
     ("codebase_scan", "enabled"): "inject structural context into the prompt",
@@ -717,7 +719,7 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("knowledge", "max_core_tokens"): "current component's facts (full text)",
     ("knowledge", "max_dependency_tokens"): "dependency facts (full text)",
     ("knowledge", "max_sibling_tokens"): "other components' facts (first sentence)",
-    ("knowledge", "distill_timeout_seconds"): "distiller call timeout",
+    ("knowledge", "distill_timeout_seconds"): "distiller call timeout; 0 = no limit",
     ("knowledge", "distill_model"): "empty = falls back to [agent].model",
     ("knowledge", "max_facts_per_distill"): "cap on facts written per component",
     ("knowledge", "dependency_scope"): "direct | transitive (E8)",

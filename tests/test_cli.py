@@ -12,6 +12,7 @@ from click.testing import CliRunner, Result
 from kstrl.cli import _format_component_status, _run_structural_override_notices, cli
 from kstrl.factory import FactoryConfig
 from kstrl.git import BASE_BRANCH_CANDIDATES, detect_base_branch, resolve_base_branch
+from kstrl.init_cmd import gitignore_block
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from tests.helpers import gitrepo
 from tests.spine_utils import git as spine_git
@@ -614,6 +615,8 @@ def _halting_decompose(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
 
 def _spec_at(root: Path) -> Path:
     (root / "pyproject.toml").write_text("[project]\n")  # #434: else refused pre-spend
+    # #459: and a Python project whose build output git does not ignore is refused too.
+    (root / ".gitignore").write_text(gitignore_block("Python"), encoding="utf-8")
     spec = root / "spec.md"
     spec.write_text("# Spec\n")
     return spec

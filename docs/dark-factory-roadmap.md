@@ -431,7 +431,8 @@ Status: `[x]` - Shipped in `kstrl/inbox.py` + `ks inbox` +
 `kstrl/tui/screens/inbox.py`. Append-only `.kstrl/inbox.jsonl` folded on
 read; item kinds policy_exception / merge_gate / halted_run /
 budget_overrun / demotion_notice / calibration_drift / test_adequacy /
-health_breach (added with its emitter in #232);
+health_breach (added with its emitter in #232) / spec_escalation (added
+with its emitter in #449);
 dedupe by key, snooze with a TTL that RETURNS the item, and an open-item
 cap that R8.6 will consult before admitting queue work.
 
@@ -442,7 +443,9 @@ token-budget halt (budget_overrun), R8.1 policy findings
 (policy_exception, advisories excluded), R8.5 blocking test-adequacy
 findings (test_adequacy, advisories excluded for the same reason), and
 R8.2 demotions (demotion_notice, carrying the triggering evidence - the
-item R8.2 promised). Verified end-to-end: a run with a planted policy
+item R8.2 promised), and an architect escalation that halts decompose
+(spec_escalation, resolved by the next decompose of the same project and
+spec that escalates nothing). Verified end-to-end: a run with a planted policy
 violation produces a policy_exception, a halted_run, AND a
 demotion_notice while the ladder drops L3 -> L2.
 

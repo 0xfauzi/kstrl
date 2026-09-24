@@ -643,3 +643,21 @@ class TestCleanupFailsLoudly:
 
         assert result.exit_code == 1
         assert any("cleanup failed" in line for line in result.contract_failures)
+
+
+class TestZeroContractTimeoutBisects:
+    def test_a_zero_contract_timeout_still_bisects_to_the_real_breaker(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "repo"
+        _init_repo(root)
+        _commit_on_branch(root, "kstrl/a", {"good.txt": "fine\n"})
+        _commit_on_branch(root, "kstrl/b", {"bad_marker.txt": "boom\n"})
+        manifest = _make_manifest([_component("a", "kstrl/a"), _component("b", "kstrl/b")])
+        config = ContractConfig(
+            mode=ContractMode.TIER.value, test_command=MARKER_TEST_CMD, timeout=0.0
+        )
+        result = run_tier_check(manifest, ["a", "b"], [], root, config, PlainUI(no_color=True), 0)
+        assert result.passed is False
+        assert "INTEGRATION BROKEN" in result.test_output
+        assert result.breaker == "b"

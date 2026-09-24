@@ -91,7 +91,9 @@ from kstrl.git import (
 from kstrl.init_cmd import (
     BUILD_MANIFEST_FIX,
     DEFAULT_FEATURE_UNDERSTAND,
+    LANGUAGE_IGNORES_FIX,
     build_manifest_blocker,
+    language_ignores_blocker,
     run_init,
     staleness_notice,
 )
@@ -725,6 +727,13 @@ def _refuse_without_build_manifest(root_dir: Path, ui_impl: UI) -> None:
         ui_impl,
         "this repository has no build manifest kstrl can use",
         [blocker, BUILD_MANIFEST_FIX] if blocker else [],
+    ):
+        sys.exit(2)
+    ignores = language_ignores_blocker(root_dir)
+    if _report_preflight(
+        ui_impl,
+        "git does not ignore what this project's verify commands write",
+        [ignores, LANGUAGE_IGNORES_FIX] if ignores else [],
     ):
         sys.exit(2)
 
@@ -2471,7 +2480,7 @@ def decompose(
     type=float,
     default=None,
     help="Timeout per agent iteration in seconds; 0 disables "
-    "(default: 1800, or KSTRL_TIMEOUT_AGENT_ITERATION / "
+    "(default: no limit, or KSTRL_TIMEOUT_AGENT_ITERATION / "
     "[timeout].agent_iteration in kstrl.toml)",
 )
 @click.option(
@@ -2479,7 +2488,7 @@ def decompose(
     type=float,
     default=None,
     help="Timeout per component total in seconds; 0 disables "
-    "(default: 7200, or KSTRL_TIMEOUT_COMPONENT / "
+    "(default: no limit, or KSTRL_TIMEOUT_COMPONENT / "
     "[timeout].component_total in kstrl.toml)",
 )
 @click.option(

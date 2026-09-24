@@ -80,7 +80,7 @@ class TestSecurityConfigDefaults:
         # security review is an opt-in extra LLM call.
         c = SecurityConfig()
         assert c.mode == "skip"
-        assert c.timeout_seconds == 600.0
+        assert c.timeout_seconds == 0.0
         assert c.fail_threshold == "high"
 
     def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:

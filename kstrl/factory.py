@@ -132,7 +132,7 @@ from kstrl.security import (
 )
 from kstrl.shutdown import StopController
 from kstrl.statedir import ControlStateError
-from kstrl.timeout import TimeoutConfig
+from kstrl.timeout import NO_LIMIT, TimeoutConfig, describe_limit_seconds
 from kstrl.ui.bridge import EventBridgeUI
 from kstrl.verify import (
     SCOPE_UNREADABLE_CHECK,
@@ -2275,8 +2275,8 @@ def _run_component(
     codebase_map_file_str: str = "scripts/kstrl/codebase_map.md",
     golden_patterns_file_str: str = "scripts/kstrl/golden-patterns.md",
     memory_file_str: str = "scripts/kstrl/memory.md",
-    agent_iteration_timeout: float = 1800.0,
-    component_timeout: float = 7200.0,
+    agent_iteration_timeout: float = 0.0,
+    component_timeout: float = 0.0,
     max_iterations: int = 10,
     interactive: bool = False,
     scope: ComponentScope | None = None,
@@ -3602,6 +3602,47 @@ def _resolve_ladder(
     )
 
 
+def _execution_limit_rows(
+    timeout_cfg: TimeoutConfig, factory_config: FactoryConfig
+) -> list[tuple[str, str]]:
+    """Every time and spend limit the Execution header states, set or not.
+
+    An unset limit is printed as "no limit" rather than left out (#467):
+    a missing line reads the same as a header written before the limit
+    existed.
+
+    R8 (measured): each ceiling states what it counts, before the run
+    spends anything. An operator set --max-cost-usd 25.0 on a run whose
+    cross-family reviewer reports tokens and no cost, and got a ceiling
+    that bounded the engineer alone; nothing had told them the ceiling is
+    denominated in REPORTED dollars. Nothing here names which roles will
+    be covered: no call has been made yet, so that would be a prediction.
+    The measured per-role figure follows as a `budget_coverage` event at
+    the first call that reports nothing.
+    """
+    tokens = factory_config.max_total_tokens
+    cost = factory_config.max_cost_usd
+    calls = factory_config.max_adversarial_calls
+    return [
+        ("Agent timeout", describe_limit_seconds(timeout_cfg.agent_iteration)),
+        ("Component timeout", describe_limit_seconds(timeout_cfg.component_total)),
+        (
+            "Token ceiling",
+            f"{tokens} total tokens (counts only calls whose agent reports a token count)"
+            if tokens > 0
+            else NO_LIMIT,
+        ),
+        (
+            "Cost ceiling",
+            f"${cost} (counts only calls whose agent reports a cost; roles whose "
+            "agent reports none are unpriced and unbounded by it)"
+            if cost > 0
+            else NO_LIMIT,
+        ),
+        ("Adversarial calls", str(calls) if calls > 0 else NO_LIMIT),
+    ]
+
+
 def _run_factory_locked(
     manifest: Manifest,
     factory_config: FactoryConfig,
@@ -4134,40 +4175,8 @@ def _run_factory_locked(
         factory_config.contract_config.mode if factory_config.contract_config else "skip"
     )
     ui.kv("Contract check", contract_mode)
-    ui.kv(
-        "Agent timeout",
-        f"{timeout_cfg.agent_iteration}s" if timeout_cfg.agent_iteration > 0 else "<disabled>",
-    )
-    ui.kv(
-        "Component timeout",
-        f"{timeout_cfg.component_total}s" if timeout_cfg.component_total > 0 else "<disabled>",
-    )
-    # R8 (measured): state each ceiling AND what it counts, before the
-    # run spends anything. An operator set --max-cost-usd 25.0 on a run
-    # whose cross-family reviewer reports tokens and no cost, and got a
-    # ceiling that bounded the engineer alone; nothing had told them the
-    # ceiling is denominated in REPORTED dollars.
-    #
-    # Deliberately says nothing about which roles will be covered. No
-    # call has been made yet, so any per-role claim here would be a
-    # prediction from a hard-coded adapter capability table - a table
-    # this repo does not have and that would go stale the day an adapter
-    # starts reporting cost. The measured per-role figure follows as a
-    # `budget_coverage` event at the first call that reports nothing,
-    # which is still early enough to act on.
-    if factory_config.max_total_tokens > 0:
-        ui.kv(
-            "Token ceiling",
-            f"{factory_config.max_total_tokens} total tokens "
-            "(counts only calls whose agent reports a token count)",
-        )
-    if factory_config.max_cost_usd > 0:
-        ui.kv(
-            "Cost ceiling",
-            f"${factory_config.max_cost_usd} "
-            "(counts only calls whose agent reports a cost; roles whose "
-            "agent reports none are unpriced and unbounded by it)",
-        )
+    for label, value in _execution_limit_rows(timeout_cfg, factory_config):
+        ui.kv(label, value)
 
     def _path_relative_to_root(path: Path) -> str:
         """Render `path` relative to root_dir for use inside per-component
