@@ -119,6 +119,10 @@ def _validate_component_fields(comp: dict[str, Any], prefix: str) -> list[str]:
                 f"must be one of: {', '.join(COMPONENT_STATUS_VALUES)}"
             )
 
+    first = comp.get("firstAttempt", 1)
+    if isinstance(first, bool) or not isinstance(first, int) or first < 1:
+        errors.append(f"{prefix}.firstAttempt: must be an integer of at least 1")
+
     return errors
 
 
@@ -135,6 +139,11 @@ class Component:
     status: str = ComponentStatus.PENDING.value
     error: str = ""
     retries: int = 0
+    # #463: the first attempt the run in flight answers for. Every run sets
+    # it to retries + 1 at its start, except one resuming a run that never
+    # finished, which keeps that run's value for each PENDING component
+    # because it records that run's attempts of it too.
+    first_attempt: int = 1
     pr_number: int | None = None
     pr_url: str = ""
     # R8.7 slice 1: the commit this component's merge produced, read off
@@ -293,6 +302,7 @@ class Manifest:
                 status=c.get("status", ComponentStatus.PENDING.value),
                 error=c.get("error", ""),
                 retries=c.get("retries", 0),
+                first_attempt=c.get("firstAttempt", 1),
                 pr_number=c.get("prNumber"),
                 pr_url=c.get("prUrl", ""),
                 merge_sha=c.get("mergeSha", ""),
@@ -359,6 +369,7 @@ class Manifest:
                     "status": c.status,
                     "error": c.error,
                     "retries": c.retries,
+                    "firstAttempt": c.first_attempt,
                     "prNumber": c.pr_number,
                     "prUrl": c.pr_url,
                     "mergeSha": c.merge_sha,
@@ -443,6 +454,7 @@ class Manifest:
             "status",
             "error",
             "retries",
+            "firstAttempt",
             "prNumber",
             "prUrl",
             "mergeSha",
@@ -715,6 +727,7 @@ class Manifest:
             target.status = ComponentStatus.PENDING.value
             target.error = ""
             target.retries = 0
+            target.first_attempt = 1
             target.started_at = ""
             target.completed_at = ""
             target.duration_seconds = 0.0

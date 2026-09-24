@@ -3923,6 +3923,8 @@ def serve_cycle(
         }
     )
 
+    # The run id reaches the queue item only on AWAITING_APPROVAL, which
+    # classify_run returns only from a manifest this invocation owns (#463).
     if _settle_unfailed(
         root_dir, queue, ledger, running, verdict, pr_urls, manifest_run_after, obs, result
     ):

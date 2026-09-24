@@ -13,14 +13,14 @@ import logging
 import os
 import re
 from collections import Counter
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl.appendio import JOURNAL_REPAIR_EVENT, REPAIR_DETAIL, append_records
-from kstrl.manifest import ADVERSARIAL_BUDGET_CHECK
+from kstrl.manifest import ADVERSARIAL_BUDGET_CHECK, ComponentStatus
 from kstrl.observability import read_progress_events
 from kstrl.verify import SCOPE_UNREADABLE_CHECK, SCOPE_UNREADABLE_ERROR_PREFIX
 from kstrl.version import kstrl_version
@@ -333,6 +333,17 @@ def _int_field(entry: dict[str, Any], key: str, where: str) -> tuple[int | None,
     return value, ""
 
 
+def _first_attempt(entry: dict[str, Any], where: str) -> tuple[int | None, str]:
+    """The row's ``first_attempt``, 1 when absent (a row written before #463),
+    or ``(None, reason)`` when it is present and not an integer of at least 1."""
+    if "first_attempt" not in entry:
+        return 1, ""
+    first, reason = _int_field(entry, "first_attempt", where)
+    if first == 0:
+        return None, f"{where}: first_attempt is 0"
+    return first, reason
+
+
 def _component_attempt_readings(
     result: dict[str, Any],
     superseded: list[dict[str, Any]],
@@ -345,7 +356,14 @@ def _component_attempt_readings(
     final, reason = _int_field(result, "iteration_count", f"{cid}: component_result")
     if final is None:
         return None, reason
-    seen: dict[int, int] = {retries + 1: final}
+    first, reason = _first_attempt(result, f"{cid}: component_result")
+    if first is None:
+        return None, reason
+    # A PENDING row was retried and stopped before its next attempt began,
+    # so attempt retries + 1 never ran and its iteration_count is the
+    # previous attempt's (#463).
+    last = retries if result.get("status") == ComponentStatus.PENDING.value else retries + 1
+    seen: dict[int, int] = {} if last == retries else {last: final}
     for entry in superseded:
         attempt, reason = _int_field(entry, "attempt", f"{cid}: findings_superseded")
         if attempt is None:
@@ -356,13 +374,13 @@ def _component_attempt_readings(
         if attempt in seen:
             return None, f"{cid}: attempt {attempt} recorded twice"
         seen[attempt] = count
-    expected = set(range(1, retries + 2))
+    expected = set(range(first, last + 1))
     if set(seen) != expected:
         missing = sorted(expected - set(seen))
         if missing:
-            return None, (f"{cid}: attempts {missing} have no reading (expected 1..{retries + 1})")
+            return None, (f"{cid}: attempts {missing} have no reading (expected {first}..{last})")
         extra = sorted(set(seen) - expected)
-        return None, (f"{cid}: unexpected attempts {extra} (expected 1..{retries + 1})")
+        return None, (f"{cid}: unexpected attempts {extra} (expected {first}..{last})")
     return seen, ""
 
 
@@ -1420,8 +1438,8 @@ def _components_this_run(manifest: Manifest, factory_result: FactoryResult) -> l
     return [comp for comp in manifest.components if comp.id in touched]
 
 
-def _effective_result_fields(comp: Component, launched: set[str]) -> tuple[int, int, float]:
-    """(retries, iteration_count, duration_seconds) for ``comp``'s row this run.
+def _effective_result_fields(comp: Component, launched: set[str]) -> tuple[int, int, int, float]:
+    """(retries, first_attempt, iteration_count, duration_seconds) for ``comp``'s row.
 
     A component this run moved to FAILED or skipped without launching it
     (a merge re-poll that finds the parked PR closed, and the cascade
@@ -1435,15 +1453,23 @@ def _effective_result_fields(comp: Component, launched: set[str]) -> tuple[int, 
     reports zero for all three. ``status``, ``error`` and
     ``failure_signatures`` are untouched: the FAILED transition and its
     ``pr:closed-without-merge`` signature are real.
+
+    The one exception (#463): a component whose earlier attempts this run
+    took over from a run it resumed (``first_attempt <= retries``) keeps its
+    retries and first attempt, because those attempts' readings are this
+    run's rows now; only its iteration count and duration are zero.
     """
-    if comp.id not in launched:
-        return 0, 0, 0.0
-    return comp.retries, comp.iteration_count, comp.duration_seconds
+    if comp.id in launched:
+        return comp.retries, comp.first_attempt, comp.iteration_count, comp.duration_seconds
+    if comp.first_attempt <= comp.retries:
+        return comp.retries, comp.first_attempt, 0, 0.0
+    return 0, 1, 0, 0.0
 
 
 def _role_usage_entries(
     usage_by_component: dict[str, dict[str, dict[str, Any]]],
     *,
+    journaled: set[str],
     manifest: Manifest,
     run_id: str,
     timestamp: str,
@@ -1467,6 +1493,12 @@ def _role_usage_entries(
     be spelled, so the two sets are now disjoint by construction rather
     than by what the architect happened to name things.
 
+    Since #463 the difference is against ``journaled``, the components this
+    run writes a ``component_result`` row for, not every manifest id: a run
+    that resumes a killed one takes over the killed run's spend, including a
+    component the killed run finished and this run does not run again, and
+    that component's spend has no row of its own to sit on.
+
     A distinct ``event_type`` rather than a synthetic
     ``component_result``, because every field that row carries - status,
     retries, findings, failed_phase - is meaningless for something that
@@ -1474,7 +1506,6 @@ def _role_usage_entries(
     ``component_result`` specifically. They ignore this type, which is
     the point: the row records spend without inventing an outcome.
     """
-    component_ids = {comp.id for comp in manifest.components}
     return [
         {
             "schema_version": JOURNAL_SCHEMA_VERSION,
@@ -1485,7 +1516,7 @@ def _role_usage_entries(
             "event_type": "role_usage",
             "usage": usage_by_component[role],
         }
-        for role in sorted(set(usage_by_component) - component_ids)
+        for role in sorted(set(usage_by_component) - journaled)
     ]
 
 
@@ -1577,10 +1608,15 @@ class EvolutionJournal:
         effective_by_comp: dict[str, tuple[int, int, float]] = {}
         entries: list[dict[str, Any]] = []
         for comp in ran:
-            eff_retries, eff_iteration_count, eff_duration = _effective_result_fields(
+            eff_retries, eff_first, eff_iteration_count, eff_duration = _effective_result_fields(
                 comp, launched
             )
-            effective_by_comp[comp.id] = (eff_retries, eff_iteration_count, eff_duration)
+            # The TSV counts the retries this run answers for (#463).
+            effective_by_comp[comp.id] = (
+                eff_retries - eff_first + 1,
+                eff_iteration_count,
+                eff_duration,
+            )
             has_error = bool(comp.error) and comp.status in (
                 ComponentStatus.FAILED.value,
                 ComponentStatus.PENDING.value,  # retried components reset to pending
@@ -1614,6 +1650,7 @@ class EvolutionJournal:
                 "event_type": "component_result",
                 "status": comp.status,
                 "retries": eff_retries,
+                "first_attempt": eff_first,
                 "error": comp.error,
                 "check_name": check_name,
                 "error_signature": error_sig,
@@ -1638,6 +1675,7 @@ class EvolutionJournal:
         entries.extend(
             _role_usage_entries(
                 usage_by_component,
+                journaled={comp.id for comp in ran},
                 manifest=manifest,
                 run_id=run_id,
                 timestamp=timestamp,
@@ -2595,6 +2633,29 @@ class EvolutionJournal:
     # ------------------------------------------------------------------
     # append_entries
     # ------------------------------------------------------------------
+
+    def carry_superseded(self, from_run_id: str, to_run_id: str, owed: Mapping[str, range]) -> int:
+        """Write ``from_run_id``'s superseded attempts again under
+        ``to_run_id`` (#463), for the attempts ``owed`` names per component;
+        returns how many.
+
+        ``carried_from_run`` names the run the attempt actually ran in, and a
+        row carried twice keeps the first run's name.
+        """
+        rows = [
+            {
+                **entry,
+                "run_id": to_run_id,
+                "carried_from_run": entry.get("carried_from_run") or from_run_id,
+            }
+            for entry in self._read_all_entries()
+            if entry.get("event_type") == FINDINGS_SUPERSEDED_EVENT
+            and entry.get("run_id") == from_run_id
+            and entry.get("attempt") in owed.get(str(entry.get("component_id", "")), range(0))
+        ]
+        if rows:
+            self.append_entries(rows)
+        return len(rows)
 
     def append_entries(self, entries: list[dict[str, Any]]) -> None:
         """Append entries to the journal in JSONL form.

@@ -283,6 +283,18 @@ Ctrl-C) force-kills. This is also what Ctrl-C now does in plain mode -
 the pre-TUI behavior (skipped cleanup, orphaned agents) was a bug,
 fixed in the same rewrite.
 
+What a resume counts (#463). A retry count carries across runs on the
+manifest, and a Ctrl-C does not reset it. A run that reached its summary
+keeps the attempts and the spend it recorded, and the next run answers
+for its attempts from there. A run that was killed before its summary
+recorded no journal result, no experiments.tsv row and no run total, so
+the run that resumes the manifest takes its record over: it prints
+`Carried from interrupted run <id>: ...`, its run total and its cost
+ceiling include the killed run's spend, and its journal and
+progress.jsonl carry the killed run's retries and attempt readings. A
+resume whose carried spend already meets `--max-cost-usd` halts before
+the next call.
+
 The E6 checkpoint modal shows the diff excerpt, review + security
 findings, and the attempt's spend; approve/reject/retry with
 `a`/`r`/`t`, or `escape` to leave it pending (the run stays blocked -
