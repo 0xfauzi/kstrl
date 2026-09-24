@@ -54,6 +54,7 @@ from kstrl.scope import RunScope
 from kstrl.security import SecurityConfig, SecurityResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
+from kstrl.worktree_sweep import WorktreeSweep
 from tests.test_context import CURRENT, NOT_REMEASURED, RESOLVED, section
 
 
@@ -166,7 +167,7 @@ def _recording_hooks(
             "utilization",
             {"injected": 0, "referenced": 0},
         ),
-        cleanup_worktree=_rec("cleanup_worktree", None),
+        cleanup_worktree=_rec("cleanup_worktree", WorktreeSweep()),
     )
     defaults.update(overrides)
     return PipelineHooks(**defaults)

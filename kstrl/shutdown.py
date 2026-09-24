@@ -19,6 +19,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from types import FrameType
 
+from kstrl.agents.proc import kill_active_process_groups
+
 
 @dataclass
 class StopController:
@@ -54,8 +56,9 @@ def install_signal_handlers(
 
     Main-thread only (signal.signal requirement). The first signal
     requests a graceful stop; the second sets ``force`` and calls
-    ``on_second`` (the immediate-kill path). The uninstaller restores
-    the previous handlers - call it in a ``finally``.
+    ``on_second`` (the immediate-kill path). Every signal also ends the
+    agents running in THIS process (#461). The uninstaller restores the
+    previous handlers - call it in a ``finally``.
     """
     previous: dict[int, object] = {}
 
@@ -68,6 +71,14 @@ def install_signal_handlers(
                 on_second()
         else:
             stop.request(f"received {name}")
+        # #461: with one worker the agent runs on this thread, inside
+        # `executor.submit`, so the scheduling loop that honours the stop
+        # does not run again until the agent's iteration ends: measured at
+        # 120 s for an agent sleeping 120 s. Ending the agents here ends
+        # the iteration, and the loop's own stop check does the rest.
+        # Pool workers hold no agent in this process, so this is a no-op
+        # for them; their agents end through `_abort_inflight`.
+        kill_active_process_groups()
 
     for signum in (signal.SIGINT, signal.SIGTERM):
         previous[signum] = signal.signal(signum, _handler)

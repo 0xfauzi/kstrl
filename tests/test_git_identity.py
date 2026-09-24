@@ -77,6 +77,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/helpers/run_config.py": 1,
     "tests/spine_utils.py": 1,
     "tests/test_adequacy.py": 8,
+    "tests/test_agent_processes_outlive_run.py": 1,
     "tests/test_autonomy_ladder.py": 1,
     # #414/#425: three `git commit` spellings - `_commit_rename`, the
     # rename-then-break test, and `_advance_main` - all into a repository

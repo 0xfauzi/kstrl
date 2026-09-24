@@ -61,6 +61,7 @@ from kstrl.scope import ComponentScope, RunScope
 from kstrl.security import SecurityResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerificationResult, VerifyConfig, run_mechanical_verification
+from kstrl.worktree_sweep import WorktreeSweep
 from tests.helpers import gitrepo
 
 COMPONENT_ID = "hmac-sign-verify"
@@ -219,7 +220,7 @@ def _pipeline(
             measure_fact_utilization=(
                 measure_fact_utilization or (lambda *a, **k: {"injected": 0, "referenced": 0})
             ),
-            cleanup_worktree=lambda *a, **k: None,
+            cleanup_worktree=lambda *a, **k: WorktreeSweep(),
         ),
         run_scope=RunScope.resolve(_manifest([comp]), root, _base_config(root)),
         run_envelope=RunEnvelope.load(root),

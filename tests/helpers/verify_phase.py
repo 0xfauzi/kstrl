@@ -39,6 +39,7 @@ from kstrl.scope import RunScope
 from kstrl.security import SecurityResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerificationResult, VerifyConfig, run_mechanical_verification
+from kstrl.worktree_sweep import WorktreeSweep
 
 if TYPE_CHECKING:
     from kstrl.verify import CheckResult
@@ -127,7 +128,7 @@ def _pipeline(
         run_security_review=lambda *a, **k: SecurityResult(passed=True, mode="advisory"),
         distill_facts=lambda *a, **k: (1, "1 fact written"),
         measure_fact_utilization=lambda *a, **k: {"injected": 0, "referenced": 0},
-        cleanup_worktree=lambda *a, **k: None,
+        cleanup_worktree=lambda *a, **k: WorktreeSweep(),
     )
     return ComponentPipeline(
         manifest=manifest,

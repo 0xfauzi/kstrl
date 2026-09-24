@@ -114,6 +114,7 @@ from kstrl.verify import (
     VerificationResult,
     scope_unreadable_error,
 )
+from kstrl.worktree_sweep import WorktreeSweep, sweep_findings
 
 if TYPE_CHECKING:
     from kstrl.config import KstrlConfig
@@ -445,7 +446,7 @@ class PipelineHooks:
     # ComponentPipeline.record_injected_knowledge, so there is no way
     # to reintroduce the rebuild through this struct.
     measure_fact_utilization: Callable[..., dict[str, int]]
-    cleanup_worktree: Callable[[str, Path, str], None]
+    cleanup_worktree: Callable[[str, Path, str], WorktreeSweep]
 
 
 def _verify_routing(failing: list[CheckResult]) -> tuple[FailureAction, str]:
@@ -1644,6 +1645,12 @@ class ComponentPipeline:
             signatures=signatures,
         )
 
+    def record_worktree_sweep(self, comp_id: str, sweep: WorktreeSweep, phase: str) -> None:
+        """Record a worktree sweep's survivors as findings on the component (#461)."""
+        comp = self.manifest.get_component(comp_id)
+        if comp is not None:
+            self._add_findings(comp, sweep_findings(sweep, phase))
+
     def fail_aborted(self, comp_id: str, reason: str) -> None:
         """PR B: a shutdown aborted this component's in-flight attempt.
         Recorded as a plain FAILED with phase="aborted" so a resume can
@@ -2515,6 +2522,8 @@ class ComponentPipeline:
         # failed attempts cost real tokens too.
         if comp_result.usage is not None:
             self._record_usage(comp_id, "engineer", comp_result.usage)
+        # #461: what the attempt left running in its worktree.
+        self._add_findings(comp, sweep_findings(comp_result.worktree_sweep, "engineer"))
 
         # R3.1 budget checkpoint: the engineer loop just reported the
         # dominant spend; halt before starting adversarial phases (or a
@@ -2911,7 +2920,13 @@ class ComponentPipeline:
 
         # Clean up worktree now that code is merged
         if self.factory_config.use_worktrees and comp_id in self.worktree_paths:
-            self.hooks.cleanup_worktree(comp_id, self.root_dir, self.run_id)
+            self._add_findings(
+                comp,
+                sweep_findings(
+                    self.hooks.cleanup_worktree(comp_id, self.root_dir, self.run_id),
+                    "cleanup",
+                ),
+            )
             del self.worktree_paths[comp_id]
 
         return PipelineOutcome(

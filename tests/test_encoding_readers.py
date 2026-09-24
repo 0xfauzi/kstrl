@@ -460,9 +460,9 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "timeout.py": 3,
     "tui/screens/home.py": 3,
     "tui/screens/retry.py": 2,
-    # 25: `_base_finding`'s `git show` spawn (#414/#425); the sibling
-    # `git merge-base` spawn moved to `git.py` with the #435 fix-round.
+    # 25: `_base_finding`'s `git show` (#414/#425); `git merge-base` moved to `git.py` in #435.
     "verify.py": 25,
+    "worktree_sweep.py": 2,  # #461: the import, and `TimeoutExpired` from `run_scrubbed`
 }
 
 
