@@ -270,6 +270,24 @@ class TestALaterDecomposeClosesIt:
         ), items
         assert "Architect escalated" in _inbox_ls(root)
 
+    def test_a_snoozed_item_and_a_repeat_halt_are_both_resolved(self, tmp_path: Path) -> None:
+        """The operator snoozes the item, the spec halts again (``Inbox.add``
+        opens a fresh OPEN item because the old one is SNOOZED), and a
+        closing decompose must resolve both, not just the newest."""
+        root = _project(tmp_path)
+        _decompose(root, ESCALATED)
+        (item,) = _escalations(root)
+        snoozed = run_ks(
+            root, "inbox", "snooze", item.id, "--hours", "24", "--root", str(root), "--ui", "plain"
+        )
+        assert snoozed.returncode == 0, snoozed.stdout
+        _decompose(root, ESCALATED)
+        assert len(_escalations(root)) == 2, _escalations(root)
+        closing_run = _decompose(root, CLOSED)
+        after = _escalations(root)
+        assert [str(i.status) for i in after] == [str(ItemStatus.RESOLVED)] * 2, after
+        assert all(closing_run in i.decision_comment for i in after), after
+
 
 def _decompose_in_process(root: Path, payload: dict[str, Any], out: io.StringIO) -> None:
     """The real ``decompose_spec`` with a stub agent and no run bus."""
@@ -310,7 +328,7 @@ class TestInProcessFailures:
         with pytest.raises(SpecBlockerError):
             _decompose_in_process(tmp_path, ESCALATED, out)
         assert (
-            "Inbox write for the escalation on spec.md failed (non-fatal): "
+            "WARN: Inbox write for the escalation on spec.md failed (non-fatal): "
             "control lock held elsewhere"
         ) in out.getvalue(), out.getvalue()
 
@@ -329,7 +347,7 @@ class TestInProcessFailures:
         _decompose_in_process(tmp_path, CLOSED, out)
 
         assert (
-            "Inbox resolve for the escalation on spec.md failed (items stay open): "
+            "WARN: Inbox resolve for the escalation on spec.md failed (items stay open): "
             "control lock held elsewhere"
         ) in out.getvalue(), out.getvalue()
         (item,) = _escalations(tmp_path)
