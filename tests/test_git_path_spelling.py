@@ -186,6 +186,7 @@ def package_argvs() -> list[Argv]:
 EXPECTED_WITH_Z: tuple[str, ...] = (
     "breaker.py git status --porcelain -uall -z",
     "doctor.py git ls-files -z",
+    "git.py git check-ignore --stdin -z",
     "git.py git diff --name-only --cached -z",
     "git.py git diff --name-only -z",
     "git.py git diff --name-status -z -M -C ? --",
@@ -249,6 +250,7 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "factory.py git worktree remove --force ?": 4,
     "git.py git add -- ?": 1,
     "git.py git branch ? -- ?": 1,
+    "git.py git check-ignore --stdin -z": 1,
     "git.py git check-ignore -v -- ?": 1,
     "git.py git checkout -b ?": 1,
     "git.py git checkout -b ? ? --": 1,

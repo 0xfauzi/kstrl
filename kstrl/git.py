@@ -817,6 +817,34 @@ def ignore_source(
     return result.stdout.strip().splitlines()[0].split("\t")[0]
 
 
+def ignored_paths(
+    paths: Sequence[str],
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> frozenset[str] | None:
+    """Which of ``paths`` git ignores, or None when git could not answer.
+
+    One ``git check-ignore --stdin -z`` call for the whole set. The paths
+    need not exist. Exit 0 means some are ignored and 1 means none are;
+    anything else (128: not a repository) and a timeout mean git gave no
+    answer, which is None rather than "nothing is ignored".
+    """
+    try:
+        result = subprocess.run(
+            ["git", "check-ignore", "--stdin", "-z"],
+            cwd=cwd,
+            capture_output=True,
+            encoding="utf-8",
+            input="\0".join(paths) + "\0",
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return None
+    if result.returncode not in (0, 1):
+        return None
+    return frozenset(path for path in result.stdout.split("\0") if path)
+
+
 def remove_from_index(
     file: str,
     cwd: Path | None = None,
