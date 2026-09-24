@@ -657,7 +657,7 @@ gone - a crash, an OOM kill, a reboot - not for an ordinary lid close.
 |---|---|
 | Daemon runs, nothing happens | `ks serve --dry-run` - it prints every gate and which one blocks |
 | Queue paused unexpectedly | `ks queue ls` shows the reason; budget pauses clear at local midnight |
-| `ks serve` refuses to start | a budget is set and no recorded call reported a cost; the message names the log it read (see §2) |
+| `ks serve` refuses to start | a budget is set and no recorded call reported a cost; the message names the log it read (see §2). The refusal pauses the queue: `ks queue resume` after fixing it |
 | Items poisoned in a row | the poison breaker paused the queue; something systemic is failing |
 | `sync` finds nothing | the label may not have propagated yet (§3); confirm with `gh issue list --label kstrl:queued` |
 | launchd job not running | `launchctl list \| grep kstrl`; then `.kstrl/logs/serve.err.log` |

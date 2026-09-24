@@ -135,6 +135,7 @@ class TestTheFirstServeReadsRecordedCost:
         assert calls == []
         assert "no agent call is recorded on this repo yet" in result.skipped, result.skipped
         assert "ks factory" in result.skipped
+        assert "ks queue resume" in result.skipped
         assert "allow_uncovered_cost" not in result.skipped
         assert "NOT estimated" in result.skipped
 

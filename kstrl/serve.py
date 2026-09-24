@@ -2304,7 +2304,8 @@ def check_cost_coverage(
                 "event, so nothing shows the configured agent reports cost. "
                 "The unreported spend is deliberately NOT estimated. Run "
                 "`ks factory` on this repo once so its calls record their "
-                "cost in that log, then start `ks serve` again."
+                "cost in that log, then run `ks queue resume`, because this "
+                "refusal pauses the queue, and start `ks serve` again."
             ),
             pause_reason="daily budget is unproven: no agent call recorded yet",
         )
