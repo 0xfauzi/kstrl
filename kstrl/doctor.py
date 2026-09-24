@@ -41,8 +41,10 @@ from kstrl.feedforward import (
 )
 from kstrl.init_cmd import (
     BUILD_MANIFEST_FIX,
+    LANGUAGE_IGNORES_FIX,
     build_manifest_blocker,
     build_manifest_ok_reason,
+    language_ignores_blocker,
 )
 from kstrl.policy import ENFORCEMENT_MACHINERY_PATHS, PolicyConfig, _match_glob
 from kstrl.statedir import STATE_DIR_NAME, state_dir
@@ -469,7 +471,15 @@ def check_test_root(root: Path) -> _CheckResult:
 
 
 def check_gitignore(root: Path) -> _CheckResult:
-    """`.kstrl/` is ignored.
+    """`.kstrl/` and the detected language's build output are ignored.
+
+    The build output comes first and fails the row (#459): every entry of
+    `init_cmd._LANGUAGE_IGNORES` for the language `ks init` detects,
+    asked of git through `init_cmd.language_ignores_blocker`, the same
+    function the `ks decompose` / `ks factory --spec` preflight refuses
+    on. A greenfield repository gets its language after `ks init` ran, so
+    nothing else adds those entries, and the files the verify commands
+    write then fail every component's first attempt on the scope guard.
 
     Asked of git rather than of the .gitignore text, because the
     in-loop scope guard walks `git ls-files --others
@@ -488,6 +498,9 @@ def check_gitignore(root: Path) -> _CheckResult:
     (`config.component_harness_files`), and ignoring it would hide
     files kstrl expects to be committed.
     """
+    blocker = language_ignores_blocker(root)
+    if blocker is not None:
+        return (STATUS_FAIL, blocker, LANGUAGE_IGNORES_FIX)
     probe = f"{STATE_DIR_NAME}/runs/probe.json"
     ignore_line = f"{STATE_DIR_NAME}/"
     try:

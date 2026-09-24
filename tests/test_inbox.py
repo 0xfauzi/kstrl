@@ -225,6 +225,7 @@ class TestCapacityAndNotification:
             (ItemKind.CALIBRATION_DRIFT, False),
             (ItemKind.TEST_ADEQUACY, True),  # a blocked change waits
             (ItemKind.HEALTH_BREACH, False),  # a trend, reported not gated
+            (ItemKind.SPEC_ESCALATION, True),  # the architect waits on the owner
         ],
     )
     def test_action_required_taxonomy(self, kind: ItemKind, expected: bool) -> None:

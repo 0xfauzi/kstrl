@@ -91,7 +91,9 @@ from kstrl.git import (
 from kstrl.init_cmd import (
     BUILD_MANIFEST_FIX,
     DEFAULT_FEATURE_UNDERSTAND,
+    LANGUAGE_IGNORES_FIX,
     build_manifest_blocker,
+    language_ignores_blocker,
     run_init,
     staleness_notice,
 )
@@ -720,6 +722,13 @@ def _refuse_without_build_manifest(root_dir: Path, ui_impl: UI) -> None:
         ui_impl,
         "this repository has no build manifest kstrl can use",
         [blocker, BUILD_MANIFEST_FIX] if blocker else [],
+    ):
+        sys.exit(2)
+    ignores = language_ignores_blocker(root_dir)
+    if _report_preflight(
+        ui_impl,
+        "git does not ignore what this project's verify commands write",
+        [ignores, LANGUAGE_IGNORES_FIX] if ignores else [],
     ):
         sys.exit(2)
 

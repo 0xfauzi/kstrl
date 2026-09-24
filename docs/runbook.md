@@ -18,9 +18,12 @@ and `ks factory --spec` refuse with exit 2 before the architect runs
 without one), `verify_commands` (the test, typecheck and lint commands
 Phase 1 will run), `source_root` (whether `kstrl.feedforward.extract_public_interfaces`
 gives the engineer anything to read), `test_root` (tracked paths that
-read as tests to `adequacy.is_test_path`), `gitignore` (whether
-`.kstrl/` is ignored, so the in-loop scope guard does not count kstrl's
-own run journals against a component), and `protected_paths` (CI,
+read as tests to `adequacy.is_test_path`), `gitignore` (whether git
+ignores the build output the detected language's toolchain writes, and
+`.kstrl/`, so the in-loop scope guard counts neither against a
+component; a missing build-output entry fails the row, `ks decompose`
+and `ks factory --spec` refuse with exit 2 before the architect runs,
+and re-running `ks init` appends the missing entries), and `protected_paths` (CI,
 migration and deploy paths that `[policy] paths_deny` does not cover).
 
 There are three verdicts. `ready` (exit 0): every check passed.

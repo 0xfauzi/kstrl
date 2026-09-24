@@ -1492,6 +1492,60 @@ def gitignore_block(language: str) -> str:
     return _GITIGNORE_BLOCK_HEADER + "\n".join(entries) + "\n"
 
 
+def _ignore_probes(entry: str) -> tuple[str, str]:
+    """Two paths git must ignore for ``entry`` to count as ignored (#459).
+
+    The name the entry matches, at the repository root and one directory
+    down, because the build output that failed #459 was nested
+    (src/<pkg>/__pycache__/, tests/__pycache__/) and a root-anchored rule
+    such as ``/__pycache__/`` ignores only the first. A character class
+    becomes its first character and ``*`` becomes a fixed word, so
+    ``*.py[cod]`` probes ``kstrl-probe.pyc``; a directory entry probes a
+    file inside it.
+    """
+    name = re.sub(r"\*", "kstrl-probe", re.sub(r"\[(.)[^\]]*\]", r"\1", entry.rstrip("/")))
+    if entry.endswith("/"):
+        name += "/kstrl-probe"
+    return name, f"kstrl-probe/{name}"
+
+
+def missing_language_ignores(root: Path, language: str) -> tuple[str, ...] | None:
+    """The ``_LANGUAGE_IGNORES`` entries git does not ignore under ``root``.
+
+    Asked of git, not of the .gitignore text, because the in-loop scope
+    guard lists untracked files with ``git ls-files --others
+    --exclude-standard``, which honours every ignore source git has. An
+    entry counts as ignored only when both of its probes are. None when
+    git could not answer (not a repository), which is not "none missing".
+    """
+    entries = _LANGUAGE_IGNORES.get(language, ())
+    if not entries:
+        return ()
+    probes = {entry: _ignore_probes(entry) for entry in entries}
+    ignored = git.ignored_paths([path for pair in probes.values() for path in pair], root)
+    if ignored is None:
+        return None
+    return tuple(entry for entry, pair in probes.items() if not set(pair) <= ignored)
+
+
+def _gitignore_addition(root: Path, language: str, existing: str) -> str:
+    """What init appends to an existing, readable .gitignore; "" for nothing.
+
+    The whole block when the kstrl marker is absent, as before #459. Once
+    it is present, only the language entries git does not ignore: on a
+    greenfield repository the first `ks init` ran before the build
+    manifest existed and wrote no language block, and this is how a
+    re-run adds it.
+    """
+    if GITIGNORE_BLOCK_MARKER not in existing:
+        return gitignore_block(language)
+    missing = missing_language_ignores(root, language)
+    if not missing:
+        return ""
+    header = f"# kstrl: {language} build output git did not ignore when `ks init` re-ran\n"
+    return header + "\n".join(missing) + "\n"
+
+
 def _read_text_or_none(path: Path) -> str | None:
     """``path``'s text, or None when it cannot be read as text.
 
@@ -1531,9 +1585,10 @@ def _gitignore_state(root: Path) -> tuple[ScaffoldAction, str | None]:
     existing = _read_text_or_none(path)
     if existing is None:
         return "keep", None
-    if GITIGNORE_BLOCK_MARKER in existing:
-        return "keep", existing
-    return "append", existing
+    language = _detect_project_context(root)["language"]
+    if _gitignore_addition(root, language, existing):
+        return "append", existing
+    return "keep", existing
 
 
 def gitignore_plan(root: Path) -> ScaffoldAction:
@@ -1590,9 +1645,16 @@ def _ensure_gitignore(root: Path, language: str, ui: UI) -> None:
     # decide whether the block is already there. The block is ASCII, so
     # this changes no byte today; what it removes is a write and a read
     # of the same file that could disagree (#320).
+    addition = _gitignore_addition(root, language, existing)
+    if not addition:
+        ui.info("  .gitignore already has the kstrl block")
+        return
     separator = "" if not existing else "\n"
-    append_records(path, separator + gitignore_block(language), repair="")
-    ui.ok("  Appended the kstrl block to .gitignore")
+    append_records(path, separator + addition, repair="")
+    if GITIGNORE_BLOCK_MARKER in existing:
+        ui.ok(f"  Appended the {language} ignores git did not apply to .gitignore")
+    else:
+        ui.ok("  Appended the kstrl block to .gitignore")
 
 
 def _ensure_lockfiles_tracked(root: Path, language: str, is_repo: bool, ui: UI) -> None:
@@ -1779,13 +1841,37 @@ BUILD_MANIFEST_MISSING = (
 BUILD_MANIFEST_FIX = (
     "kstrl will not create the build manifest, so create and commit it before "
     "`ks decompose`. For a Python project: `uv init --package .`, then "
-    "`uv add --dev pytest mypy ruff`, then "
-    "`git add pyproject.toml uv.lock .python-version README.md src` and "
+    "`uv add --dev pytest mypy ruff`, then `ks init` again, which adds the Python "
+    "ignores to .gitignore now that the language is known, then "
+    "`git add pyproject.toml uv.lock .python-version README.md src .gitignore` and "
     '`git commit -m "Add the build manifest"`. For another language, commit the '
     "manifest its own toolchain creates. If the project builds with a tool kstrl "
     "does not recognise, set [verify] test_command, typecheck_command or "
     "lint_command in kstrl.toml instead."
 )
+
+
+#: #459: the fix `ks doctor` and the `ks decompose` / `ks factory --spec`
+#: preflight print when the language's build output is not ignored.
+LANGUAGE_IGNORES_FIX = (
+    "Run `ks init` again: it appends the entries git does not ignore to "
+    ".gitignore. Then `git add .gitignore` and commit it, because a factory "
+    "worktree is cut from a commit and an uncommitted .gitignore is not in it."
+)
+
+
+def language_ignores_blocker(root: Path) -> str | None:
+    """Why the verify commands' own output would fail every component, or None (#459)."""
+    language = _detect_project_context(root)["language"]
+    missing = missing_language_ignores(root, language)
+    if not missing:
+        return None
+    return (
+        f"git does not ignore {', '.join(missing)}, which the {language} toolchain "
+        f"writes; the in-loop scope guard counts every untracked file against the "
+        f"component's allowedPaths, so the files the verify commands write fail "
+        f"each component's first attempt"
+    )
 
 
 def _verify_command_runs_through_uv(command: str) -> bool:
