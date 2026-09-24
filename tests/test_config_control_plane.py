@@ -275,7 +275,7 @@ class TestEvolveCommandTomlRoundTrip:
             cli_mod.cli,
             ["evolve", "--status", "--root", str(tmp_path), "--ui", "plain"],
         )
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "disabled" in result.output
 
     def test_journal_path_reaches_journal(
@@ -563,6 +563,9 @@ EXPECTED_SCAFFOLD_SECTIONS = {
     "knowledge",
     "evolution",
     "timeout",
+    "queue",
+    "serve",
+    "intake_github",
 }
 
 # Keys each loader actually consumes, mirrored by hand so a typo'd or
@@ -678,6 +681,29 @@ EXPECTED_SCAFFOLD_KEYS = {
         "subprocess_default",
         "scheduler_backstop_margin",
     },
+    "queue": {"max_attempts", "lease_ttl_seconds"},
+    "serve": {
+        "poll_interval_seconds",
+        "daily_budget_usd",
+        "max_consecutive_poison",
+        "caffeinate",
+        "factory_timeout_seconds",
+        "allow_uncovered_cost",
+        "max_open_prs",
+    },
+    "intake_github": {
+        "enabled",
+        "repo",
+        "queued_label",
+        "label_prefix",
+        "max_items_per_sync",
+        "default_priority",
+        "comment_on_result",
+        "dry_run",
+        "timeout_seconds",
+        "allowed_actors",
+        "steer_enabled",
+    },
 }
 
 
@@ -708,6 +734,29 @@ class TestInitScaffold:
         assert set(data.keys()) == EXPECTED_SCAFFOLD_SECTIONS
         # All keys commented out: scaffolding changes no effective value.
         assert all(section == {} for section in data.values())
+
+    def test_the_daemon_sections_scaffold_their_real_defaults(self, tmp_path: Path) -> None:
+        """#452: the scaffold had no [queue], [serve] or [intake_github]
+        section. Each line shows the built-in default, so uncommenting
+        every one of them changes no value."""
+        from kstrl.intake_github import GitHubIntakeConfig
+        from kstrl.serve import ServeConfig
+        from kstrl.workqueue import QueueConfig
+
+        (tmp_path / "kstrl.toml").write_text(
+            _uncomment_scaffold(DEFAULT_KSTRL_TOML), encoding="utf-8"
+        )
+        assert QueueConfig.load(tmp_path) == QueueConfig()
+        assert ServeConfig.load(tmp_path) == ServeConfig()
+        assert GitHubIntakeConfig.load(tmp_path) == GitHubIntakeConfig()
+
+    def test_the_header_says_where_the_other_keys_are(self) -> None:
+        """#452: the header claimed every key was listed, and most
+        sections were not. It now names the keys it lists and where the
+        rest are."""
+        header = DEFAULT_KSTRL_TOML.split("\n\n", 1)[0]
+        assert "Every key" not in header
+        assert "configuration reference" in header
 
     def test_init_does_not_overwrite_existing(self, tmp_path: Path) -> None:
         (tmp_path / "kstrl.toml").write_text("[factory]\nmax_parallel = 2\n")

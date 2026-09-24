@@ -13,17 +13,17 @@ When is a bad value caught? At command entry, before the command builds
 or spends anything. Every section below is resolved once by
 `kstrl/config_preflight.py`, and a value that will not parse stops the
 command with an `error:` line naming the section, the key or environment
-variable, and the value (exit 1). `[evolution]` is the one section that
+variable, and the value (exit 2). `[evolution]` is the one section that
 warns and continues, because the journal is an optional audit trail;
 losing it costs the record and nothing else. `ks evolve` is the one
 command that section is fatal for, because there the journal is the work.
 
 `ks init` skips the check: it writes the file, and refusing to replace a
-file it cannot parse would take away the recovery path. `ks config show`,
-`ks check` and `ks serve` skip only the entry seam and run the same check
-themselves: `config show` prints every row it can resolve and then names
-each rejected section with its key and value, and the other two report
-through their documented exit 2 (with a JSON error document for
+file it cannot parse would take away the recovery path. `ks config show`
+and `ks check` skip only the entry seam and run the same check
+themselves: `config show` prints every row it can resolve, then names
+each rejected section with its key and value and exits 1, and `ks check`
+reports through its documented exit 2 (with a JSON error document for
 `ks check --json`).
 
 When everything else refuses, `ks config show` is the command guaranteed
@@ -55,6 +55,7 @@ to run and tell you which section, key and value to fix.
 | `KSTRL_NO_TUI` | bool | unset | `1` disables the embedded factory dashboard (plain output) |
 | `NO_COLOR` | bool flag | false | Disables colors |
 | `KSTRL_ASCII` | bool | false | ASCII-only UI |
+| `GUM_FORCE` | bool (`1`) | unset | Legacy name: `1` makes `--ui auto` use the rich renderer even when stderr is not a terminal |
 | `XDG_STATE_HOME` | path | `~/.local/state` | Base for R8.9 control state (`$XDG_STATE_HOME/kstrl/<repo-id>/`: autonomy, inbox, spend, pause, GitHub processed ledger). Must stay outside the repo tree for L3+ |
 
 ## TimeoutConfig (`[timeout]`)
@@ -395,7 +396,7 @@ Opt-in and **advisory first**: findings are recorded without failing, so turning
 
 `[adequacy] patch_coverage` (#152) is Layer 1: an opt-in, toml-only key (no env var, matching `require_strong_oracle` and `flag_assertionless_tests`), off by default. On, and only when `enabled` is also true, it runs the project's own test command a SECOND time under `--cov=. --cov-report=` (data only, no report), then a third spawn (`coverage json --include=<changed files>`) turns that data into a report narrowed to the diff, and reports what fraction of the lines this diff ADDED to non-test Python files the suite executed - patch coverage, restricted to changed non-test lines rather than the whole file or run. Advisory always: there is no floor key, nothing blocks, and the finding is emitted at every percentage including 100%, because the distribution a floor will later be set from is the point of shipping this now. It costs a second full test run either way: measured on kstrl's own suite (6844 tests) against the single-spawn `--cov-report=json:<tmp>` design this replaced, the baseline run was 457.04s and the same run under coverage was 536.79s (993.83s total, 2.17x); the two-spawn split measured here costs no more per file (`tests/test_atomicio.py` alone: 8.17s / 448MB for the old single JSON-report spawn vs 2.31s / 157MB + 0.10s / 34MB for the two new ones), so the full-suite total is expected at or below the figure above, not re-measured end to end.
 
-`[adequacy] diff_mutation` (#152) is Layer 2: an opt-in, toml-only key, off by default, and REFUSED at config load unless `patch_coverage` is also `true` - Layer 2 mutates only the lines Layer 1 measured as changed AND covered, and runs no coverage pass of its own. On, it hands mutmut a synthetic patch naming exactly that line set (`--use-patch-file`, since `--use-coverage` and `--use-patch-file` cannot be combined and `--use-coverage` would need a `.coverage` file Layer 1's own D3 refuses to write into the project tree), then filters the reported mutants back to the same set before scoring, so mutmut's own selection is never trusted for the number. At most one mutant counts per line - the lowest-id mutant with a killed-or-survived status. The mutation SPAWN itself draws from `[verify] mutation_timeout` (default: no limit; the arithmetic below applies when it is set) as ONE PHASE-LEVEL BUDGET shared with `[verify] mutation_testing`, not two independent copies of that number (#391 simplify pass on PR #392, A2): Layer 2 runs FIRST (`run_mechanical_verification` calls `_diff_mutation_checks` before `_mutation_checks`) and is bounded by the FULL configured value; Layer 1 then gets whatever that call's own wall clock actually left of it. Both checks now reach mutmut through the same driver (#391), differing only in the target selector they pass it (Layer 1: every changed non-test file; Layer 2: the synthetic patch above) and, since A2, in how much of the shared cap each gets. On a run that FINISHES, the check's own real wall-clock ceiling is higher than its share of that number: `run_scrubbed`'s timeout path costs the cap plus up to two `_SCRUB_TERM_GRACE_SECONDS` (5s each, SIGTERM then SIGKILL) on the mutation spawn, plus the fixed `_MUTATION_REPORT_TIMEOUT` (30s) and its own grace for the report spawn afterward - about 650s total for Layer 2 at a 600s cap, an 8% overrun (#152 simplify pass, A4; `check_diff_mutation`'s own docstring already stated this, this file previously did not). Both checks also refuse before spending anything, symmetrically since A2 (Layer 1's guard is the byte-for-byte twin of Layer 2's, `_mutation_checks` docstring): when `[verify] test_suite` already failed (mutmut's own baseline run would only run the suite a third time to abort), and when Layer 1's own coverage-run duration already meets or exceeds what remains of the shared cap (mutmut always pays that same suite's baseline in full before mutating a single line). Measured on kstrl's own suite (533.15s, re-measured against the repo's own recorded 457.04s) at a 600s cap: the baseline alone is already 89% of the budget, so the FIRST surviving mutant - which runs the suite to completion rather than exiting early - guarantees the cap fires, and this gate can only ever produce a SAMPLED score here, never a complete one; the pre-spend refusal above does not fire only because 533s is still (barely) under 600s. A cap that FIRES is now, always, a `timed_out` sidecar with no row (#391, D4): measured, mutmut 2.5.1's junitxml cannot read a truncated cache - it raises `ValueError: Obtained null mutant` under `--untested-policy=error` (the policy this driver always passes), and under any other policy an un-run mutant renders exactly like a killed one, so no safe read of a truncated run exists. `sampled` therefore now has ONE cause, not two: fewer target lines reached a definite status than mutmut reported a mutant for, on a run that otherwise completed. Surviving lines are recorded as `path:line` in the finding and the check's details, as concrete test targets - feeding them into an automatic remediation iteration is not built. Advisory always: no floor key, nothing blocks, no autonomy level reads it. It rewrites the source files it mutates (restored from the `.bak` mutmut itself writes, after every run including a timed-out one) and so, unlike Layer 1, does NOT run under `ks check` or any other `read_only` verification.
+`[adequacy] diff_mutation` (#152) is Layer 2: an opt-in, toml-only key, off by default, and REFUSED at config load unless `patch_coverage` is also `true` - Layer 2 mutates only the lines Layer 1 measured as changed AND covered, and runs no coverage pass of its own. On, it hands mutmut a synthetic patch naming exactly that line set (`--use-patch-file`, since `--use-coverage` and `--use-patch-file` cannot be combined and `--use-coverage` would need a `.coverage` file Layer 1's own D3 refuses to write into the project tree), then filters the reported mutants back to the same set before scoring, so mutmut's own selection is never trusted for the number. At most one mutant counts per line - the lowest-id mutant with a killed-or-survived status. The mutation SPAWN itself draws from `[verify] mutation_timeout` (default: no limit; the arithmetic below applies when it is set) as ONE PHASE-LEVEL BUDGET shared with `[verify] mutation_testing`, not two independent copies of that number (#391 simplify pass on PR #392, A2): Layer 2 runs FIRST (`run_mechanical_verification` calls `_diff_mutation_checks` before `_mutation_checks`) and is bounded by the FULL configured value; Layer 1 then gets whatever that call's own wall clock actually left of it. Both checks now reach mutmut through the same driver (#391), differing only in the target selector they pass it (Layer 1: every changed non-test file; Layer 2: the synthetic patch above) and, since A2, in how much of the shared cap each gets. On a run that FINISHES, the check's own real wall-clock ceiling is higher than its share of that number: `run_scrubbed`'s timeout path costs the cap plus up to two `_SCRUB_TERM_GRACE_SECONDS` (5s each, SIGTERM then SIGKILL) on the mutation spawn, plus the fixed `_MUTATION_REPORT_TIMEOUT` (30s) and its own grace for the report spawn afterward - about 650s total for Layer 2 at a 600s cap, an 8% overrun (#152 simplify pass, A4; `check_diff_mutation`'s own docstring already stated this, this file previously did not). Both checks also refuse before spending anything, symmetrically since A2 (Layer 1's guard is the byte-for-byte twin of Layer 2's, `_mutation_checks` docstring): when the Phase 1 `test_suite` check already failed (mutmut's own baseline run would only run the suite a third time to abort), and when Layer 1's own coverage-run duration already meets or exceeds what remains of the shared cap (mutmut always pays that same suite's baseline in full before mutating a single line). Measured on kstrl's own suite (533.15s, re-measured against the repo's own recorded 457.04s) at a 600s cap: the baseline alone is already 89% of the budget, so the FIRST surviving mutant - which runs the suite to completion rather than exiting early - guarantees the cap fires, and this gate can only ever produce a SAMPLED score here, never a complete one; the pre-spend refusal above does not fire only because 533s is still (barely) under 600s. A cap that FIRES is now, always, a `timed_out` sidecar with no row (#391, D4): measured, mutmut 2.5.1's junitxml cannot read a truncated cache - it raises `ValueError: Obtained null mutant` under `--untested-policy=error` (the policy this driver always passes), and under any other policy an un-run mutant renders exactly like a killed one, so no safe read of a truncated run exists. `sampled` therefore now has ONE cause, not two: fewer target lines reached a definite status than mutmut reported a mutant for, on a run that otherwise completed. Surviving lines are recorded as `path:line` in the finding and the check's details, as concrete test targets - feeding them into an automatic remediation iteration is not built. Advisory always: no floor key, nothing blocks, no autonomy level reads it. It rewrites the source files it mutates (restored from the `.bak` mutmut itself writes, after every run including a timed-out one) and so, unlike Layer 1, does NOT run under `ks check` or any other `read_only` verification.
 
 Layer 3 (fixtures required at L3+) is not built; see `docs/dark-factory-roadmap.md` for why it waits on measured thresholds.
 
@@ -518,6 +519,64 @@ Run-milestone shell hooks (R3.2), each condition fired at most once per run. The
 | `KSTRL_LINEAR_TIMEOUT` | float | 30 | Per-request timeout (seconds) |
 | `KSTRL_LINEAR_MIN_INTERVAL` | float | 0.5 | Client-side throttle between requests |
 
+## QueueConfig (`[queue]`)
+
+The work queue `ks queue` manages and `ks serve` drains (R8.6).
+
+| Env var | Type | Default | Notes |
+|---|---|---|---|
+| `KSTRL_QUEUE_MAX_ATTEMPTS` | int | 3 | Execution attempts per item before it is poisoned; must be >= 1 |
+| `KSTRL_QUEUE_LEASE_TTL` | float | 3600.0 | Seconds a claim stays valid without a heartbeat; the reaper recovers anything older |
+
+## ServeConfig (`[serve]`)
+
+The continuous-intake daemon (R8.6). Booleans here are true only for `1`.
+
+| Env var | Type | Default | Notes |
+|---|---|---|---|
+| `KSTRL_SERVE_POLL_INTERVAL` | float | 60.0 | Seconds between poll cycles |
+| `KSTRL_SERVE_DAILY_BUDGET_USD` | float | 0.0 (no limit) | Unattended spend per day; any positive value is a hard stop, and it counts only cost an adapter reports |
+| `KSTRL_SERVE_MAX_CONSECUTIVE_POISON` | int | 3 | Poisoned items in a row before the queue pauses |
+| `KSTRL_SERVE_CAFFEINATE` | bool (`1`) | true | Hold `caffeinate -i` for each run (macOS) |
+| `KSTRL_SERVE_FACTORY_TIMEOUT` | float | 0.0 (no limit) | Seconds before a run is killed |
+| `KSTRL_SERVE_ALLOW_UNCOVERED_COST` | bool (`1`) | false | Run unattended even when no adapter reports cost, so the budget cannot be enforced |
+| `KSTRL_SERVE_MAX_OPEN_PRS` | int | 1 | Scheduled admission stops while this many kstrl PRs are open; 0 = no limit |
+| `KSTRL_SERVE_REQUIRE_TIMEOUT` | bool (`1`) | unset | Set by a scheduled LaunchAgent, not by hand: `ks serve` then refuses to start while `factory_timeout_seconds` is 0 |
+
+## GitHubIntakeConfig (`[intake_github]`)
+
+GitHub Issues as the remote inbox (R8.6). Off by default. Booleans here are true only for `1`.
+
+| Env var | Type | Default | Notes |
+|---|---|---|---|
+| `KSTRL_INTAKE_GITHUB_ENABLED` | bool (`1`) | false | |
+| `KSTRL_INTAKE_GITHUB_REPO` | str | empty | `owner/name`; empty resolves from the checkout |
+| `KSTRL_INTAKE_GITHUB_QUEUED_LABEL` | str | `kstrl:queued` | The label that authorizes work |
+| `KSTRL_INTAKE_GITHUB_LABEL_PREFIX` | str | `kstrl:` | Prefix of the state labels written back |
+| `KSTRL_INTAKE_GITHUB_MAX_ITEMS` | int | 5 | Items admitted per sync |
+| `KSTRL_INTAKE_GITHUB_PRIORITY` | int | 0 | Queue priority of an admitted item |
+| `KSTRL_INTAKE_GITHUB_COMMENT` | bool (`1`) | true | Post the verdict back to the source issue |
+| `KSTRL_INTAKE_GITHUB_DRY_RUN` | bool (`1`) | false | Poll and log, send no writebacks |
+| `KSTRL_INTAKE_GITHUB_TIMEOUT` | float | 60.0 | Seconds per `gh` call |
+| `KSTRL_INTAKE_GITHUB_ALLOWED_ACTORS` | comma-list | empty | Logins allowed to apply the trigger label; empty = anyone who can label |
+| `KSTRL_INTAKE_GITHUB_STEER_ENABLED` | bool (`1`) | false | Act on `/memory` and `/iterate` comments on open kstrl PRs |
+
+## SignalsConfig (`[signals]`)
+
+The runtime signal poller (R8.8). It records and classifies; it queues nothing.
+
+| Env var | Type | Default | Notes |
+|---|---|---|---|
+| `KSTRL_SIGNALS_ENABLED` | bool | false | |
+| `KSTRL_SIGNALS_PRODUCT` | str | empty | The product name recorded on every ledger row |
+| `KSTRL_SIGNALS_BASE_URL` | str | `http://127.0.0.1:8000` | The tracker's root URL |
+| `KSTRL_SIGNALS_PROJECT_ID` | str | empty | The tracker's project id |
+| `KSTRL_SIGNALS_TOKEN_ENV` | str | `KSTRL_SIGNALS_TOKEN` | NAME of the env var holding the tracker's bearer token |
+| `KSTRL_SIGNALS_TOKEN` | secret | unset | The bearer token, read from the variable `token_env` names |
+| `KSTRL_SIGNALS_HTTP_TIMEOUT` | float | 10.0 | Per-request timeout (seconds) |
+| `KSTRL_SIGNALS_NEW_ISSUE_EVENTS` | int | 3 | Advisory threshold: labels a new issue, gates nothing |
+| `KSTRL_SIGNALS_REPEAT_GROWTH_EVENTS` | int | 10 | Advisory threshold: labels a repeat, gates nothing |
+
 ## Calibration
 
 | Env var | Default | Notes |
@@ -525,6 +584,8 @@ Run-milestone shell hooks (R3.2), each condition fired at most once per run. The
 | `KSTRL_RUN_CALIBRATION` | unset | Set to `1` to enable real-LLM calibration tests under `tests/test_calibration.py` |
 | `KSTRL_CALIBRATION_MODEL` | `haiku` | Fast model used by the calibration suite. Changing it triggers the R5.5 model-drift warning until a fresh baseline is captured (H2-extended) |
 | `KSTRL_CALIBRATION_RUNS` | `3` | Runs per fixture (R5.1). The suite gates on majority-of-runs consistency; use `1` for a cheap smoke, keep `3` for baseline capture |
+| `KSTRL_CALIBRATION_REVIEWER_AGENT_TYPE` | unset | Agent type for the reviewer and security calibration agents (R7.1), so the suite can measure a reviewer from the other model family; the architect keeps the base calibration agent |
+| `KSTRL_CALIBRATION_REVIEWER_MODEL` | unset | Model for those two agents, set with the agent type above |
 
 ## Patterns
 

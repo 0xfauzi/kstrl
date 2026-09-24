@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import ast
+import inspect
 import json
 import os
 import stat
+import textwrap
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -1411,7 +1414,7 @@ class TestDistillFacts:
         )
 
         assert written == 1
-        assert "wrote 1" in status
+        assert status == "wrote 1 of 1 facts"
         facts = read_facts(knowledge_root, "comp-a")
         assert len(facts) == 1
         # Legacy "verified" string is aliased to "review_passed" on read (E5).
@@ -1437,7 +1440,7 @@ class TestDistillFacts:
             review_passed=True,
         )
         assert written == 0
-        assert "no_facts" in status
+        assert status == "the distiller returned no facts"
 
     def test_empty_facts_returns_no_files(self, tmp_path: Path) -> None:
         component = _make_component("comp-a")
@@ -1459,7 +1462,7 @@ class TestDistillFacts:
             review_passed=True,
         )
         assert written == 0
-        assert "no_facts" in status
+        assert status == "the distiller returned no facts"
         # No fact files were written (a debug dump may exist alongside;
         # that's a diagnostic, not a knowledge artifact).
         assert read_facts(knowledge_root, "comp-a") == []
@@ -1486,7 +1489,7 @@ class TestDistillFacts:
             review_passed=True,
         )
         assert written == 0
-        assert status == "knowledge.disabled"
+        assert status == "off ([knowledge] enabled = false)"
 
     def test_review_skip_caps_confidence_at_asserted(
         self,
@@ -1787,7 +1790,7 @@ class TestFailedDistillRetention:
             review_passed=True,
         )
         assert written2 == 0
-        assert "no_facts" in status2
+        assert status2 == "the distiller returned no facts"
 
         facts = read_facts(knowledge_root, "comp-a")
         assert {f.id for f in facts} == {f"fact-{i:03d}" for i in range(1, 8)}
@@ -2528,3 +2531,30 @@ def test_rerun_supersedes_same_fact_id(tmp_path: Path) -> None:
     facts = read_facts(knowledge_root, "comp-a")
     assert len(facts) == 1
     assert facts[0].claim == "NEW"
+
+
+class TestDistillStatusIsAnOperatorSentence:
+    """#452: the factory printed `Knowledge: knowledge.wrote 7/7 facts` and
+    `Knowledge: knowledge.no_facts`. The status reaches the operator as it
+    is, so it is a sentence, not a message key."""
+
+    @staticmethod
+    def _status_heads() -> list[str]:
+        """The literal start of the status in every ``return`` of distill_facts."""
+        tree = ast.parse(textwrap.dedent(inspect.getsource(distill_facts)))
+        heads: list[str] = []
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Return) and isinstance(node.value, ast.Tuple)):
+                continue
+            status = node.value.elts[1]
+            first = status.values[0] if isinstance(status, ast.JoinedStr) else status
+            if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                heads.append(first.value)
+        return heads
+
+    def test_every_return_is_seen(self) -> None:
+        """The census control: six returns today, each with a status."""
+        assert len(self._status_heads()) == 6
+
+    def test_no_status_is_a_message_key(self) -> None:
+        assert [head for head in self._status_heads() if head.startswith("knowledge.")] == []

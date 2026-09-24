@@ -389,7 +389,7 @@ class TestApprovalMergesTheReviewedBranch:
         retried = _ks(root, env, "inbox", "retry", item.id, "--ui", "plain", "--no-color")
         out = retried.stdout + retried.stderr
 
-        assert retried.returncode == 1, out
+        assert retried.returncode == 2, out
         assert "ks inbox approve" in out, out
         # Nothing moved: the reviewed work is still parked and still asks.
         assert _status(root, HTTP) == "awaiting_approval", out

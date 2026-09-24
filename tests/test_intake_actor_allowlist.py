@@ -329,10 +329,10 @@ class TestTheOperatorCanFindOutWhy:
         assert "refuse_unauthorized" in result.output
         assert BOT in result.output
         # The printed allowlist itself (kstrl/cli.py's own kv line:
-        # "allowed_actors:0xfauzi"), not its incidental mention inside the
+        # "allowed_actors: 0xfauzi"), not its incidental mention inside the
         # refusal reason ("allowed_actors (0xfauzi)") - the two render
         # differently, and only the kv line's own spelling proves it.
-        assert "allowed_actors:0xfauzi" in result.output
+        assert "allowed_actors: 0xfauzi" in result.output
         assert Queue(tmp_path, QueueConfig()).items() == []
 
     def test_serve_dry_run_names_the_actor(self, tmp_path: Path) -> None:
@@ -342,7 +342,7 @@ class TestTheOperatorCanFindOutWhy:
             result = _invoke(["serve", "--dry-run"], tmp_path)
         assert f"skip {REPO}#7:" in result.output, result.output
         assert BOT in result.output
-        assert "allowed_actors:0xfauzi" in result.output
+        assert "allowed_actors: 0xfauzi" in result.output
 
 
 class TestTheValueIsCheckedBeforeAnythingIsSpent:
@@ -365,7 +365,7 @@ class TestTheValueIsCheckedBeforeAnythingIsSpent:
     ) -> None:
         _toml(tmp_path, allowed=value)
         result = _invoke(["queue", "sync"], tmp_path)
-        assert result.exit_code == 1, result.output
+        assert result.exit_code == 2, result.output
         assert "configuration rejected before anything was started" in result.output
         assert "[intake_github]" in result.output
         assert fragment in result.output

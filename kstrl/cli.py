@@ -140,7 +140,7 @@ from kstrl.verify import DEFAULT_LINT_COMMAND, DEFAULT_TEST_COMMAND
 
 
 def _load_manifest_or_exit(path: Path, ui: UI) -> Manifest:
-    """Load a manifest, or print why not and exit 1.
+    """Load a manifest, or print why not and exit 2.
 
     A `Manifest.load` reachable from the CLI must never traceback at the
     operator: the input is a file a human or another tool wrote, so a bad
@@ -151,7 +151,7 @@ def _load_manifest_or_exit(path: Path, ui: UI) -> Manifest:
         return Manifest.load(path)
     except (OSError, ValueError) as exc:
         ui.err(f"Failed to load manifest {path}: {exc}")
-        sys.exit(1)
+        sys.exit(2)
 
 
 def _format_component_status(status: str | None) -> str:
@@ -335,7 +335,7 @@ def _probe_target_family(agent_cmd: str | None, canonical: str | None) -> str | 
 
 
 def _check_agent_preflight(config: KstrlConfig, ui_impl: UI) -> None:
-    """Run the agent preflight against a resolved config; exit(1) on failure.
+    """Run the agent preflight against a resolved config; exit(2) on failure.
 
     On success, canonicalizes ``config.agent_type`` in place so every
     downstream ``get_agent`` call selects the same agent the preflight
@@ -354,7 +354,7 @@ def _check_agent_preflight(config: KstrlConfig, ui_impl: UI) -> None:
         ui_impl.err(error)
         if hint is not None:
             ui_impl.info(hint)
-        sys.exit(1)
+        sys.exit(2)
     config.agent_type = canonical
     family = _probe_target_family(config.agent_cmd, canonical)
     if family is None:
@@ -385,24 +385,24 @@ def _check_prd_preflight(prd_file: Path, ui_impl: UI) -> None:
             "Run `ks init` to scaffold scripts/kstrl/prd.json, "
             "or point --prd / PRD_FILE at an existing PRD."
         )
-        sys.exit(1)
+        sys.exit(2)
 
     try:
         with open(prd_file, encoding="utf-8") as f:
             data = read_json_file(f)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         ui_impl.err(f"Invalid JSON in {prd_file}: {exc}")
-        sys.exit(1)
+        sys.exit(2)
     except OSError as exc:
         ui_impl.err(f"Cannot read PRD file {prd_file}: {exc}")
-        sys.exit(1)
+        sys.exit(2)
 
     errors = PRD.validate_schema(data)
     if errors:
         ui_impl.err(f"PRD schema validation failed for {prd_file}:")
         for error in errors:
             ui_impl.info(f"  - {error}")
-        sys.exit(1)
+        sys.exit(2)
 
 
 def _check_prompt_preflight(path: Path | None, ui_impl: UI) -> None:
@@ -640,6 +640,15 @@ def _derive_feature_name(prd_path: Path, root: Path) -> str:
     return prd_path.stem
 
 
+#: `ks factory --progress-log` and `ks retry --progress-log`: retry hands the
+#: value straight to factory, so the two describe one log in one sentence.
+_PROGRESS_LOG_HELP = (
+    "Path for the JSONL progress log (default: <root>/.kstrl/progress.jsonl; "
+    "the log is on by default, disable via [factory].progress_log_enabled = "
+    "false or KSTRL_FACTORY_PROGRESS_LOG_ENABLED=0)"
+)
+
+
 def _timestamp() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -657,22 +666,20 @@ def _timestamp() -> str:
 #   fatality defensible without an escape flag: the way out of a bad
 #   config is a command, not a way to skip the check.
 # - `ks check` reports a config failure through a documented MACHINE
-#   contract that the seam would destroy: exit 2 (not 1) and a JSON
-#   error document on stdout for `--json`. It calls the preflight
-#   itself, under that contract.
-# - `ks serve` has the same documented exit 2, and also calls the
-#   preflight itself, before `--print-plist` returns.
+#   contract that the seam would destroy: a JSON error document on
+#   stdout for `--json`. It calls the preflight itself, under that
+#   contract.
 # - `ks doctor` REPORTS a rejected configuration as one of its ten
-#   checks, with the not-ready verdict and the exit 2 that go with
+#   checks, with the not-ready verdict and the exit 1 that go with
 #   it, and calls `config_preflight.config_problem_lines` itself to
 #   do so. Under the seam, the command an operator diagnoses WITH
 #   would print one refusal and none of its checks, for the very file
 #   it exists to report on.
 #
-# The last four are exempt from the SEAM, never from the check: each
+# The last three are exempt from the SEAM, never from the check: each
 # still resolves every section in its own body, under its own
-# contract, but not all of them the same way. `check` and `serve` call
-# `preflight_config` and turn a rejection into their own documented
+# contract, but not all of them the same way. `check` calls
+# `preflight_config` and turns a rejection into its own documented
 # refusal; `config show` and `doctor` REPORT instead, through the
 # reporting half of the same traversal (`collect_config_problems` /
 # `config_problem_lines`) rather than the raising one. `init` is the
@@ -697,15 +704,6 @@ _PREFLIGHT_EXEMPT = frozenset({"init", "config", "check", "doctor"})
 _PREFLIGHT_REQUIRED: dict[str, frozenset[str]] = {
     "evolve": frozenset({"evolution"}),
 }
-
-# Exit code for a rejected configuration, per command. 1 unless the
-# command documents otherwise. `ks serve` is the only entry here: it
-# promises exit 2 for "cannot run", and reading that from the seam is
-# what makes the ORDERING structural. Calling the check in its body
-# instead left `--print-plist` in front of it, returning before the
-# check ran and then exiting 1 through the group handler; the next early
-# return would have done the same.
-_PREFLIGHT_EXIT: dict[str, int] = {"serve": 2}
 
 # The commands that derive their root from a prompt or PRD path, and so
 # the only ones whose `--prompt` / `--prd` / `--understand-prompt` (and
@@ -943,8 +941,9 @@ class _KstrlGroup(click.Group):
     ``command_class`` puts the check that raises it in front of every
     command body; this catches what it raises.
 
-    Exit code 1 with an ``error:`` line, matching what `config show`
-    already did for the same defect - one class of failure, one contract.
+    Exit code 2 with an ``error:`` line: a configuration the entry check
+    rejects is a command that cannot run, which is what 2 means on every
+    command (#452).
     """
 
     command_class = _KstrlCommand
@@ -957,10 +956,10 @@ class _KstrlGroup(click.Group):
             return super().invoke(ctx)
         except ConfigError as exc:
             click.echo(f"error: {exc}", err=True)
-            sys.exit(_PREFLIGHT_EXIT.get(ctx.invoked_subcommand or "", 1))
+            sys.exit(2)
         except BudgetConfigError as exc:
             click.echo(f"error: {exc}", err=True)
-            sys.exit(1)
+            sys.exit(2)
 
 
 @click.group(cls=_KstrlGroup, invoke_without_command=True)
@@ -1909,7 +1908,7 @@ def feature(
     if not codebase_map.exists():
         ui_impl.err(f"codebase_map.md not found: {codebase_map}")
         ui_impl.info("Run `ks init` or `ks understand` first.")
-        sys.exit(1)
+        sys.exit(2)
 
     if _use_cli_value(ctx, "understand_iterations"):
         if understand_iterations is None or understand_iterations < 0:
@@ -1946,13 +1945,13 @@ def feature(
 
     if not prd_path.exists():
         ui_impl.err(f"Feature PRD not found: {prd_path}")
-        sys.exit(1)
+        sys.exit(2)
 
     try:
         prd_doc = PRD.load(prd_path)
     except Exception as exc:
         ui_impl.err(f"Invalid PRD: {exc}")
-        sys.exit(1)
+        sys.exit(2)
 
     feature_name = _derive_feature_name(prd_path, root_dir)
     if not feature_name:
@@ -2234,7 +2233,7 @@ def decompose(
         ui_impl.err(type_error)
         if type_hint:
             ui_impl.info(type_hint)
-        sys.exit(1)
+        sys.exit(2)
     effective_type = canonical_type or effective_type
     _refuse_without_build_manifest(root_dir, ui_impl)
 
@@ -2343,7 +2342,8 @@ def decompose(
     "--manifest",
     "manifest_path",
     type=click.Path(exists=True, path_type=Path),
-    help="Existing manifest file (skip decompose)",
+    help="Existing manifest file to build from instead of decomposing a spec "
+    "(no default: pass this or --spec)",
 )
 @click.option(
     "--root",
@@ -2535,10 +2535,7 @@ def decompose(
 @click.option(
     "--progress-log",
     type=click.Path(path_type=Path),
-    help="Path for the JSONL progress log (default: .kstrl/progress.jsonl; "
-    "the log is on by default, disable via "
-    "[factory].progress_log_enabled = false or "
-    "KSTRL_FACTORY_PROGRESS_LOG_ENABLED=0)",
+    help=_PROGRESS_LOG_HELP,
 )
 @click.option(
     "--no-worktrees",
@@ -2695,7 +2692,7 @@ def factory(
         ui_impl.err(type_error)
         if type_hint:
             ui_impl.info(type_hint)
-        sys.exit(1)
+        sys.exit(2)
     effective_type = canonical_type or effective_type
 
     agent = get_agent(effective_cmd, effective_model, effective_reasoning, effective_type)
@@ -2733,7 +2730,7 @@ def factory(
             manifest = Manifest.load(manifest_path)
         except Exception as exc:
             ui_impl.err(f"Failed to load manifest: {exc}")
-            sys.exit(1)
+            sys.exit(2)
     else:
         assert spec is not None
         if not project_name:
@@ -3491,7 +3488,7 @@ def dash(root: Path | None, run_id: str | None, poll: float) -> None:
             + ". Run `ks factory` first, or check --root.",
             err=True,
         )
-        _sys.exit(1)
+        _sys.exit(2)
 
     from kstrl.tui.app import KstrlTuiApp, Mode
     from kstrl.tui.dispatch import initial_screens_for_kind
@@ -3526,14 +3523,15 @@ def dash(root: Path | None, run_id: str | None, poll: float) -> None:
     "--manifest",
     "manifest_path",
     type=click.Path(path_type=Path),
-    help="Manifest file (default: scripts/kstrl/manifest.json, falling "
-    "back to scripts/kstrl/run-manifest.json)",
+    help="Manifest file (default: <root>/scripts/kstrl/manifest.json, falling "
+    "back to <root>/scripts/kstrl/run-manifest.json)",
 )
 @click.option(
     "--progress-log",
     "progress_log_path",
     type=click.Path(path_type=Path),
-    help="Progress log to join onto the manifest (default: <root>/.kstrl/progress.jsonl)",
+    help="Progress log to join onto the manifest (default: the newest run under "
+    "<root>/.kstrl/runs/, falling back to <root>/.kstrl/progress.jsonl)",
 )
 @click.option(
     "--watch",
@@ -3679,7 +3677,7 @@ def status(
             # path would make the question unaskable on a repo that has
             # never completed a run - including this one (R10.4).
             _render_safe_mode(ui_impl, root_dir)
-            return 1
+            return 2
 
         try:
             manifest = Manifest.load(manifest_file)
@@ -3689,7 +3687,7 @@ def status(
             # predicate does not read the manifest, so a broken one must
             # not hide a paused queue.
             _render_safe_mode(ui_impl, root_dir)
-            return 1
+            return 2
 
         state, source_path = _load_state(manifest)
         _render_status(
@@ -4201,11 +4199,11 @@ def check(
     try:
         # The WHOLE configuration, not only the four sections this
         # command reads. `check` is exempt from the entry seam because
-        # its contract is exit 2 plus a JSON error document rather than
-        # the seam's exit 1, and an exemption is only honest if the
-        # command does the same check: checking four of twenty-two
-        # would keep exactly the "depends which section you typo'd"
-        # property #272 removed, inside the exemption.
+        # its contract adds a JSON error document to the seam's exit 2,
+        # and an exemption is only honest if the command does the same
+        # check: checking four of twenty-two would keep exactly the
+        # "depends which section you typo'd" property #272 removed,
+        # inside the exemption.
         preflight_config(root_dir, warn=_preflight_warn)
         verify_cfg = VerifyConfig.load(root_dir)
         policy_cfg = PolicyConfig.load(root_dir)
@@ -4283,7 +4281,8 @@ def check(
 def doctor(root: Path | None, as_json: bool, measure: bool) -> None:
     """Assess whether this repository is ready to point kstrl at.
 
-    Exit 0 for ready and ready-with-warnings, 2 for not-ready.
+    Exit 0 for ready and ready-with-warnings, 1 for not-ready (a
+    finding), 2 when it cannot run (an unusable --root, or --measure).
     """
     from kstrl import doctor as doctor_mod
 
@@ -4322,12 +4321,12 @@ def doctor(root: Path | None, as_json: bool, measure: bool) -> None:
     "--manifest",
     "manifest_path",
     type=click.Path(path_type=Path),
-    help="Manifest file (default: scripts/kstrl/manifest.json)",
+    help="Manifest file (default: <root>/scripts/kstrl/manifest.json)",
 )
 @click.option(
     "--progress-log",
     type=click.Path(path_type=Path),
-    help="Path for JSONL progress log",
+    help=_PROGRESS_LOG_HELP,
 )
 @click.option(
     "--keep-worktrees-on-failure",
@@ -4411,7 +4410,7 @@ def retry(
     if not manifest_file.exists():
         ui_impl.err(f"No manifest found at {manifest_file}")
         ui_impl.info("Run `ks factory` first, or pass --manifest.")
-        sys.exit(1)
+        sys.exit(2)
     manifest = _load_manifest_or_exit(manifest_file, ui_impl)
 
     try:
@@ -4438,7 +4437,7 @@ def retry(
         ui_impl.err(str(exc))
         sys.exit(2)
     except RetryError:
-        sys.exit(1)
+        sys.exit(2)
     print_resume_plan(ui_impl, plan)
 
     _retry_channel = UiInteractionChannel(ui_impl)
@@ -4493,11 +4492,11 @@ def retry(
 @click.option(
     "--root",
     type=click.Path(path_type=Path),
-    help="Project root path",
+    help="Project root path (defaults to current directory)",
 )
 @click.option(
     "--ui",
-    type=click.Choice(["auto", "rich", "plain"]),
+    type=click.Choice(["auto", "rich", "plain", "gum"]),
     default="auto",
     help="UI mode",
 )
@@ -4536,7 +4535,7 @@ def evolve(
 
     if not evo_config.enabled:
         ui_impl.err("Evolution is disabled in config")
-        sys.exit(1)
+        sys.exit(2)
 
     journal = EvolutionJournal(evo_config)
 
@@ -4572,7 +4571,7 @@ def evolve(
         proposals_dir = root_dir / ".kstrl" / "proposals"
         if not proposals_dir.exists():
             ui_impl.err("No proposals found. Run `ks evolve` first.")
-            sys.exit(1)
+            sys.exit(2)
         exit_code = _evolve_apply(
             apply_id,
             proposals_dir,
@@ -4756,12 +4755,12 @@ def _evolve_apply(
         paths = sorted(proposals_dir.glob("prop-*.md"))
         if not paths:
             ui_impl.err(f"No proposal files in {proposals_dir}.")
-            return 1
+            return 2
     else:
         candidate = proposals_dir / f"{apply_id.lower()}.md"
         if not candidate.exists():
             ui_impl.err(f"Proposal '{apply_id}' not found (expected {candidate}).")
-            return 1
+            return 2
         paths = [candidate]
 
     claude_md = root_dir / "CLAUDE.md"
@@ -4814,7 +4813,7 @@ def _evolve_apply(
             continue
         mark_applied(path)
         ui_impl.ok(f"  {pid} appended to {claude_md}.")
-    return 1 if failures else 0
+    return 2 if failures else 0
 
 
 @cli.group(name="autonomy")
@@ -4959,18 +4958,18 @@ def autonomy_promote(
     authority_error = promotion_authority_error(force=force)
     if authority_error is not None:
         ui_impl.err(f"Promotion refused: {authority_error}")
-        sys.exit(1)
+        sys.exit(2)
     state = AutonomyState.load(root_dir)
     target = AutonomyLevel(min(int(state.autonomy_level) + 1, int(AutonomyLevel.L4_DEPLOY)))
     relocation_error = control_relocation_error(root_dir, target_level=target)
     if relocation_error is not None:
         ui_impl.err(f"Promotion refused: {relocation_error}")
-        sys.exit(1)
+        sys.exit(2)
     try:
         record = state.promote(actor=actor, ack=ack, force=force)
     except AutonomyError as exc:
         ui_impl.err(f"Promotion refused: {exc}")
-        sys.exit(1)
+        sys.exit(2)
     commit_transition(state, record, root_dir)
     ui_impl.ok(
         f"Promoted L{record.from_level} -> L{record.to_level} "
@@ -5257,7 +5256,7 @@ def inbox_show(
     item = box.get(item_id)
     if item is None:
         ui_impl.err(f"No inbox item matching {item_id!r}")
-        sys.exit(1)
+        sys.exit(2)
     ui_impl.section(item.title)
     ui_impl.kv("id", item.id)
     ui_impl.kv("kind", str(item.kind))
@@ -5309,7 +5308,7 @@ def _decide_and_report(
             item = box.resolve(item_id, actor=_actor(), comment=comment)
     except InboxError as exc:
         ui_impl.err(str(exc))
-        sys.exit(1)
+        sys.exit(2)
     ui_impl.ok(f"{action}d {item.id[:8]}: {item.title}")
     sys.exit(0)
 
@@ -5373,7 +5372,7 @@ def _decide_parked_merge_if_parked(
 
     Returns only when ``item_id`` is not a park, and the caller then
     records the decision as it always has. For a park it never returns:
-    it refuses (exit 1 or 2) or hands over to `ks factory`, which exits
+    it refuses (exit 2) or hands over to `ks factory`, which exits
     with the run's own code. Every refusal happens before the decision is
     recorded, so a refused command changes nothing.
     """
@@ -5387,7 +5386,7 @@ def _decide_parked_merge_if_parked(
     manifest_file = root_dir / "scripts" / "kstrl" / "manifest.json"
     if not manifest_file.exists():
         ui_impl.err(f"No manifest at {manifest_file}")
-        sys.exit(1)
+        sys.exit(2)
     manifest = _load_manifest_or_exit(manifest_file, ui_impl)
     comp = manifest.get_component(item.component)
     if comp is None or comp.status != ComponentStatus.AWAITING_APPROVAL.value:
@@ -5416,7 +5415,7 @@ def _decide_parked_merge_if_parked(
             box.reject(item.id, actor=_actor(), comment=comment)
     except InboxError as exc:
         ui_impl.err(str(exc))
-        sys.exit(1)
+        sys.exit(2)
     said = {"approve": "approved", "reject": "rejected"}[action]
     ui_impl.ok(f"{said} {item.id[:8]}: {item.title}")
     print_resume_plan(ui_impl, plan)
@@ -5477,14 +5476,14 @@ def inbox_retry(
     item = box.get(item_id)
     if item is None:
         ui_impl.err(f"No inbox item matching {item_id!r}")
-        sys.exit(1)
+        sys.exit(2)
     if not item.component:
         ui_impl.err(f"{item.id[:8]} has no component to requeue")
-        sys.exit(1)
+        sys.exit(2)
     manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
     if not manifest_path.exists():
         ui_impl.err(f"No manifest at {manifest_path}")
-        sys.exit(1)
+        sys.exit(2)
     manifest = _load_manifest_or_exit(manifest_path, ui_impl)
     try:
         reset = manifest.reset_for_retry(item.component)
@@ -5496,7 +5495,7 @@ def inbox_retry(
                 f"merges its reviewed branch, `ks inbox reject {item.id[:8]} "
                 "--comment ...` fails it."
             )
-        sys.exit(1)
+        sys.exit(2)
     manifest.save(manifest_path)
     box.resolve(item.id, actor=_actor(), comment="requeued via ks inbox retry")
     ui_impl.ok(
@@ -5549,10 +5548,10 @@ def _resolve_queue_item(queue: Any, item_id: str, ui_impl: UI) -> Any:
         item = queue.get(item_id)
     except QueueError as exc:
         ui_impl.err(str(exc))
-        sys.exit(1)
+        sys.exit(2)
     if item is None:
         ui_impl.err(f"No queue item matching {item_id!r}")
-        sys.exit(1)
+        sys.exit(2)
     return item
 
 
@@ -5622,7 +5621,7 @@ def queue_add(
             )
     except QueueError as exc:
         ui_impl.err(str(exc))
-        sys.exit(1)
+        sys.exit(2)
     ui_impl.ok(f"Queued {item.item_id} - {item.title}")
     ui_impl.kv("merge", str(item.merge_disposition))
     ui_impl.kv("attempts allowed", str(item.max_attempts))
@@ -5660,7 +5659,7 @@ def queue_ls(
             selected = tuple(ItemState(value) for value in states)
         except ValueError as exc:
             ui_impl.err(str(exc))
-            sys.exit(1)
+            sys.exit(2)
     items = queue.items(selected)
     pause = queue.pause_state()
     if pause.active():
@@ -5770,13 +5769,13 @@ def queue_retry(
         ui_impl.err(
             f"{item.item_id[:12]} is {item.state}; only failed or poisoned items can be retried"
         )
-        sys.exit(1)
+        sys.exit(2)
     if not reset_attempts and item.attempts_remaining == 0:
         ui_impl.err(
             f"{item.item_id[:12]} has used all {item.max_attempts} attempts; "
             "pass --reset-attempts to authorize spending again"
         )
-        sys.exit(1)
+        sys.exit(2)
     try:
         with queue_lock(root_dir):
             queue.requeue(
@@ -5787,14 +5786,14 @@ def queue_retry(
             )
     except (QueueError, OSError) as exc:
         ui_impl.err(str(exc))
-        sys.exit(1)
+        sys.exit(2)
     ui_impl.ok(f"Requeued {item.item_id[:12]} ({item.attempts}/{item.max_attempts} attempts used)")
     sys.exit(0)
 
 
 @queue_group.command(name="rm")
 @click.argument("item_id")
-@click.option("--yes", is_flag=True, help="Skip the confirmation prompt")
+@click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt")
 @_queue_root_option
 @_queue_ui_option
 @_queue_no_color_option
@@ -5824,7 +5823,7 @@ def queue_rm(
         # A deletion that failed must not print success: the operator
         # would believe the item is gone when it is still queued (#185 F6).
         ui_impl.err(f"Could not remove {item.item_id[:12]}: {exc}")
-        sys.exit(1)
+        sys.exit(2)
     ui_impl.ok(f"Removed {item.item_id[:12]}")
     sys.exit(0)
 
@@ -5921,7 +5920,7 @@ def queue_sync(
             "GitHub intake is off. Set [intake_github] enabled = true in "
             "kstrl.toml (or KSTRL_INTAKE_GITHUB_ENABLED=1)."
         )
-        sys.exit(1)
+        sys.exit(2)
 
     # --dry-run runs the PRODUCTION planner with writes disabled, rather
     # than a second decision tree. Review #187 F4/F11: the old dry-run
@@ -5935,10 +5934,10 @@ def queue_sync(
             result = run_sync(queue, config, root_dir)
     except QueueLockedError as exc:
         ui_impl.err(f"{exc}. Another queue operation is in progress; retry shortly.")
-        sys.exit(1)
+        sys.exit(2)
     except (QueueError, OSError) as exc:
         ui_impl.err(f"Sync failed: {exc}")
-        sys.exit(1)
+        sys.exit(2)
 
     heading = "Would sync from" if dry_run else "Sync from"
     ui_impl.section(f"{heading} {result.repo or 'unknown repo'}")
@@ -6033,12 +6032,12 @@ def signals_poll(
             "signals polling is off. Set [signals] enabled = true in "
             "kstrl.toml (or KSTRL_SIGNALS_ENABLED=1)."
         )
-        sys.exit(1)
+        sys.exit(2)
     try:
         report = poll(root_dir, config, from_file=from_file, capture=capture)
     except SignalsError as exc:
         ui_impl.err(str(exc))
-        sys.exit(1)
+        sys.exit(2)
 
     ui_impl.section("Signals")
     ui_impl.info(f"{len(report.signals)} signals (dropped {report.dropped_rows})")

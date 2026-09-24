@@ -15,18 +15,24 @@ runner.
 
 from __future__ import annotations
 
+import ast
+import inspect
 import json
+import pkgutil
+import re
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner, Result
 
+import kstrl
 from kstrl import doctor
 from kstrl.cli import cli
 from kstrl.feedforward import extract_public_interfaces
-from kstrl.init_cmd import _LANGUAGE_IGNORES, gitignore_block
+from kstrl.init_cmd import _LANGUAGE_IGNORES, build_manifest_ok_reason, gitignore_block
 from tests.helpers.fakegh import put_gh_on_path
 from tests.helpers.gitrepo import git_in, set_identity
 
@@ -111,13 +117,13 @@ def test_a_directory_that_is_not_a_git_repo_is_not_ready(tmp_path: Path) -> None
     plain = tmp_path / "plain"
     plain.mkdir()
     result = run_doctor(plain)
-    assert result.exit_code == 2, result.output
+    assert result.exit_code == 1, result.output
     assert "ks doctor: not-ready" in result.output
     assert "[fail] git_repo" in result.output
     assert "Fix first:" in result.output
 
 
-def test_the_process_exit_code_is_two_for_not_ready(tmp_path: Path) -> None:
+def test_the_process_exit_code_is_one_for_not_ready(tmp_path: Path) -> None:
     """This one does NOT get the stub gh, because a subprocess inherits
     the real environment; it asserts only the exit code and the
     verdict, both of which a `git_repo` failure decides on its own
@@ -132,7 +138,7 @@ def test_the_process_exit_code_is_two_for_not_ready(tmp_path: Path) -> None:
         timeout=120,
         cwd=str(tmp_path),
     )
-    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert proc.returncode == 1, proc.stdout + proc.stderr
     assert "not-ready" in proc.stdout
 
 
@@ -170,7 +176,7 @@ def test_a_repo_with_no_python_source_warns_and_names_the_codebase_scan_stage(
     result = run_doctor(root)
     assert result.exit_code == 0, result.output
     assert "[warn] source_root" in result.output
-    assert "extract_public_interfaces" in result.output
+    assert "codebase scan" in result.output
 
 
 def test_the_interface_count_ignores_the_sentence_an_empty_section_carries() -> None:
@@ -273,7 +279,7 @@ def test_a_broken_kstrl_toml_is_a_failed_check_not_a_refusal(tmp_path: Path) -> 
     root = ready_repo(tmp_path)
     (root / "kstrl.toml").write_bytes(b"[verify\n")
     result = run_doctor(root)
-    assert result.exit_code == 2, result.output
+    assert result.exit_code == 1, result.output
     assert "[fail] kstrl_config" in result.output
     assert "kstrl.toml" in result.output
     # the exemption is the point: the other checks still ran
@@ -400,3 +406,83 @@ def test_the_refusals_carry_the_same_json_envelope_as_check(tmp_path: Path) -> N
     assert measured_document["schema_version"] == doctor.DOCTOR_SCHEMA_VERSION
     assert "ks check" in measured_document["error"]
     assert not (root / ".kstrl").exists()  # it refused before measuring anything
+
+
+# --- #452 item 10: the report names no Python module ---------------------
+
+#: Every module and package name under kstrl/, longest first so the
+#: alternation prefers `config_preflight` over `config`.
+_MODULE_NAMES = sorted(
+    {info.name.rsplit(".", 1)[-1] for info in pkgutil.walk_packages(kstrl.__path__, "kstrl.")},
+    key=len,
+    reverse=True,
+)
+_ALTERNATION = "|".join(re.escape(name) for name in _MODULE_NAMES)
+_MODULE_PATH = re.compile(rf"\bkstrl\.(?:{_ALTERNATION})\b|\b(?:{_ALTERNATION})\.([A-Za-z_]\w*)")
+#: `kstrl.toml` and `report.json` are file names, not module paths.
+_FILE_SUFFIXES = frozenset(
+    {"json", "jsonl", "lock", "md", "py", "toml", "tsv", "txt", "yaml", "yml"}
+)
+
+
+def module_paths(text: str) -> list[str]:
+    """Every Python module path in ``text``, such as `adequacy.is_test_path`."""
+    return [m.group(0) for m in _MODULE_PATH.finditer(text) if m.group(1) not in _FILE_SUFFIXES]
+
+
+def _non_docstring_strings(tree: ast.AST) -> list[str]:
+    """String constants in ``tree`` that are not docstrings: what can print."""
+    docstrings = {
+        id(node.body[0].value)
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+    }
+    return [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and id(node) not in docstrings
+    ]
+
+
+def test_the_module_path_matcher_tells_a_module_from_a_file() -> None:
+    """The control for both tests below."""
+    assert module_paths("see adequacy.is_test_path, and kstrl.pr pushes") == [
+        "adequacy.is_test_path",
+        "kstrl.pr",
+    ]
+    assert module_paths("kstrl.toml resolves; wrote .kstrl/doctor/report.json") == []
+
+
+@pytest.mark.parametrize("state", ["empty", "ready"])
+def test_the_report_names_no_python_module(tmp_path: Path, state: str) -> None:
+    """#452: the source_root line printed `kstrl.feedforward.extract_public_interfaces`
+    to the operator. An empty repository reaches the warn branches and a
+    ready one the ok branches, so between them every check prints."""
+    if state == "ready":
+        root = ready_repo(tmp_path)
+    else:
+        root = tmp_path / "empty"
+        root.mkdir()
+        git_in(root, "init", "-q")
+    result = run_doctor(root)
+    assert "source_root" in result.output
+    assert module_paths(result.output) == []
+
+
+def test_no_string_the_doctor_can_print_names_a_python_module() -> None:
+    """The static half, for the branches no fixture above reaches.
+    Docstrings are exempt: they are for the next maintainer."""
+    doctor_tree = ast.parse(Path(doctor.__file__).read_text(encoding="utf-8"))
+    ok_reason_tree = ast.parse(textwrap.dedent(inspect.getsource(build_manifest_ok_reason)))
+    hits = [
+        (text[:60], path)
+        for tree in (doctor_tree, ok_reason_tree)
+        for text in _non_docstring_strings(tree)
+        for path in module_paths(text)
+    ]
+    assert hits == []

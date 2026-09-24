@@ -118,7 +118,7 @@ class TestAdd:
         blank = tmp_path / "blank.md"
         blank.write_text("\n\n")
         result = _invoke(["queue", "add", str(blank)], tmp_path)
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "empty spec" in result.output
 
     def test_zero_max_attempts_is_rejected_by_the_option(
@@ -197,7 +197,7 @@ class TestLs:
 
     def test_unknown_state_filter_is_an_error(self, tmp_path: Path) -> None:
         result = _invoke(["queue", "ls", "--state", "wat"], tmp_path)
-        assert result.exit_code == 1
+        assert result.exit_code == 2
 
     def test_paused_queue_is_announced(
         self,
@@ -254,7 +254,7 @@ class TestShow:
 
     def test_unknown_id(self, tmp_path: Path) -> None:
         result = _invoke(["queue", "show", "q-nope"], tmp_path)
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "No queue item" in result.output
 
     def test_ambiguous_prefix_is_an_error(
@@ -265,7 +265,7 @@ class TestShow:
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         result = _invoke(["queue", "show", "q-"], tmp_path)
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "matches multiple items" in result.output
 
     def test_show_prints_the_recorded_prs(self, tmp_path: Path, spec_file: Path) -> None:
@@ -320,7 +320,7 @@ class TestRetry:
         item = queue.items()[0]
 
         result = _invoke(["queue", "retry", item.item_id], tmp_path)
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "--reset-attempts" in result.output
         assert _queue(tmp_path).items()[0].state is ItemState.FAILED
 
@@ -354,7 +354,7 @@ class TestRetry:
         _invoke(["queue", "add", str(spec_file)], tmp_path)
         item = _queue(tmp_path).items()[0]
         result = _invoke(["queue", "retry", item.item_id], tmp_path)
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "only failed or poisoned" in result.output
 
     def test_retry_of_a_poisoned_item(
@@ -410,7 +410,7 @@ class TestRm:
             side_effect=PermissionError("read-only"),
         ):
             result = _invoke(["queue", "rm", item.item_id, "--yes"], tmp_path)
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "Could not remove" in result.output
         assert len(_queue(tmp_path).items()) == 1
 
@@ -424,7 +424,7 @@ class TestRm:
         queue.start(queue.lease(queue.items()[0]))
         item = queue.items()[0]
         result = _invoke(["queue", "rm", item.item_id, "--yes"], tmp_path)
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "is running" in result.output
         assert len(_queue(tmp_path).items()) == 1
 
@@ -516,7 +516,7 @@ class TestQueueSync:
 
     def test_sync_is_off_by_default(self, tmp_path: Path) -> None:
         result = _invoke(["queue", "sync"], tmp_path)
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "GitHub intake is off" in result.output
 
     def test_dry_run_applies_the_admission_cap(self, tmp_path: Path) -> None:
@@ -572,7 +572,7 @@ class TestQueueSync:
                 self._stub(self._issues(1)),
             ):
                 result = _invoke(["queue", "sync"], tmp_path)
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert result.exception is None or isinstance(
             result.exception,
             SystemExit,

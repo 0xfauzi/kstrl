@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from typing import TYPE_CHECKING
 
@@ -39,6 +40,16 @@ CHANNEL_COLORS = {
 }
 
 
+def _is_terminal(stream: object) -> bool:
+    isatty = getattr(stream, "isatty", None)
+    if isatty is None:
+        return False
+    try:
+        return bool(isatty())
+    except (OSError, ValueError):
+        return False
+
+
 class PlainUI:
     """Plain text UI with optional ANSI colors."""
 
@@ -48,9 +59,9 @@ class PlainUI:
         ascii_only: bool = False,
         file: TextIO | None = None,
     ):
-        self.no_color = no_color
         self.ascii_only = ascii_only
         self._file = file or sys.stderr
+        self.no_color = no_color or "NO_COLOR" in os.environ or not _is_terminal(self._file)
         self._hr_char = "-" if ascii_only else "\u2500"
         self._sep_char = "|" if ascii_only else "\u2502"
         self._block_tl = "+" if ascii_only else "\u250c"
@@ -119,7 +130,7 @@ class PlainUI:
 
     def kv(self, key: str, value: str) -> None:
         """Display a key-value pair."""
-        padded_key = f"  {key}:".ljust(16)
+        padded_key = f"  {key}: ".ljust(16)
         self._print(f"{padded_key}{value}")
 
     def info(self, text: str) -> None:

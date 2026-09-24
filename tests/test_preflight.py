@@ -219,7 +219,7 @@ class TestUnderstandPreflightWiring:
             ["understand", "1", "--root", str(tmp_path), "--ui", "plain", "--no-color"],
         )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "codex not found in PATH" in result.output
         assert calls == []
 
@@ -238,7 +238,7 @@ class TestUnderstandPreflightWiring:
             ["understand", "1", "--root", str(tmp_path), "--ui", "plain", "--no-color"],
         )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "claude not found in PATH" in result.output
         assert calls == []
 
@@ -268,7 +268,7 @@ class TestFeaturePreflightWiring:
             ],
         )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "claude not found in PATH" in result.output
         assert calls == []
 
@@ -318,7 +318,7 @@ class TestRunPrdPreflight:
 
         result = self._invoke_run(tmp_path, marker)
 
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "PRD file not found" in result.output
         assert factory_calls == []
         assert not marker.exists()
@@ -334,7 +334,7 @@ class TestRunPrdPreflight:
 
         result = self._invoke_run(tmp_path, marker)
 
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "Invalid JSON" in result.output
         assert factory_calls == []
         assert not marker.exists()
@@ -354,7 +354,7 @@ class TestRunPrdPreflight:
 
         result = self._invoke_run(tmp_path, marker)
 
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "PRD schema validation failed" in result.output
         assert "userStories[0]" in result.output
         assert factory_calls == []

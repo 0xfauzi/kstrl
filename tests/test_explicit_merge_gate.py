@@ -494,7 +494,7 @@ class TestStrictBoolean:
 
     @pytest.mark.parametrize(
         ("args", "exit_code"),
-        [(["serve", "--print-plist", "--no-color"], 2), (["status"], 1)],
+        [(["serve", "--print-plist", "--no-color"], 2), (["status"], 2)],
         ids=["serve", "status"],
     )
     def test_the_refusal_arrives_as_the_command_s_own_exit_code(
@@ -506,8 +506,9 @@ class TestStrictBoolean:
         """Which number, per command, because there is more than one.
 
         ``preflight_config`` raises ``ConfigError`` and chooses no exit
-        code: the entry seam turns it into exit 1, and ``ks serve``
-        carries its own contract of exit 2. Round 1's PR body said
+        code: the entry seam turns it into exit 2 for every command, the
+        code for a command that cannot run (#452); it used to be 1 for
+        all but ``ks serve``. Round 1's PR body said
         "``config_preflight`` exit 2" for the ``ks factory`` path, which
         is the wrong number for the command this issue is about, and
         CLAUDE.md makes exit 2 the named convention for pre-spend

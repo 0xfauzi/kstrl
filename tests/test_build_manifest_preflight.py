@@ -228,7 +228,7 @@ def test_doctor_puts_the_missing_manifest_first_in_fix_first(tmp_path: Path) -> 
 
     proc = run_ks(root, "doctor", "--root", str(root))
 
-    assert proc.returncode == 2, proc.stdout
+    assert proc.returncode == 1, proc.stdout
     assert "ks doctor: not-ready" in proc.stdout
     assert "[fail] build_manifest:" in proc.stdout
     lines = proc.stdout.splitlines()
@@ -247,7 +247,7 @@ def test_doctor_does_not_guess_when_kstrl_toml_does_not_load(tmp_path: Path) -> 
 
     proc = run_ks(root, "doctor", "--root", str(root))
 
-    assert proc.returncode == 2, proc.stdout
+    assert proc.returncode == 1, proc.stdout
     assert (
         "[fail] build_manifest: not evaluated: kstrl.toml did not load (see kstrl_config)"
         in proc.stdout

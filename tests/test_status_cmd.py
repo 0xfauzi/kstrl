@@ -125,7 +125,7 @@ class TestStatusCommand:
     def test_no_manifest_errors_with_hint(self, tmp_path: Path) -> None:
         exit_code, output = _invoke_status("--root", str(tmp_path))
 
-        assert exit_code == 1
+        assert exit_code == 2
         assert "No manifest found" in output
         assert "ks factory" in output
 
@@ -136,7 +136,7 @@ class TestStatusCommand:
 
         exit_code, output = _invoke_status("--root", str(tmp_path))
 
-        assert exit_code == 1
+        assert exit_code == 2
         assert "Failed to load manifest" in output
 
 
@@ -546,7 +546,7 @@ class TestSafeModeLine:
 
         exit_code, output = _invoke_status("--root", str(tmp_path))
 
-        assert exit_code == 1  # the manifest really is missing
+        assert exit_code == 2  # the manifest really is missing
         assert "No manifest found" in output
         assert "[queue] poison breaker tripped" in output
 
@@ -565,7 +565,7 @@ class TestSafeModeLine:
 
         exit_code, output = _invoke_status("--root", str(tmp_path))
 
-        assert exit_code == 1
+        assert exit_code == 2
         assert "Failed to load manifest" in output
         assert "[queue] paused" in output
 

@@ -154,7 +154,7 @@ class TestEvolveApply:
     def test_apply_unknown_id_errors(self, tmp_path: Path) -> None:
         root = _root_with_proposal(tmp_path)
         exit_code, output = _invoke(root, "--apply", "PROP-999")
-        assert exit_code == 1
+        assert exit_code == 2
         assert "not found" in output
 
     def test_apply_without_agent_learnings_section_fails_honestly(
@@ -169,7 +169,7 @@ class TestEvolveApply:
             "PROP-001",
             input="y\n",
         )
-        assert exit_code == 1
+        assert exit_code == 2
         assert "Agent Learnings" in output
 
 

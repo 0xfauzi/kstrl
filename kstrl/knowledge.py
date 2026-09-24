@@ -1239,7 +1239,7 @@ def distill_facts(
     handled defensively) cap at "asserted".
     """
     if not config.enabled:
-        return 0, "knowledge.disabled"
+        return 0, "off ([knowledge] enabled = false)"
 
     # Truncate diff to match review.py's 50KB convention
     diff_for_prompt = diff_content
@@ -1265,9 +1265,9 @@ def distill_facts(
             on_line=on_line,
         )
     except AgentOutputTooLarge as exc:
-        return 0, f"knowledge.agent_output_too_large: {exc}"
+        return 0, f"the distiller's output was too large to read: {exc}"
     except Exception as exc:  # noqa: BLE001 - non-fatal
-        return 0, f"knowledge.agent_error: {exc}"
+        return 0, f"the distiller agent failed: {exc}"
 
     streamed_output = "\n".join(output_lines)
     # Select the best candidate: prefer agent.final_message when it
@@ -1305,7 +1305,7 @@ def distill_facts(
         # Could be a clean empty response or a parse failure - dump so we
         # can tell which without re-running.
         _dump_debug("no_facts")
-        return 0, "knowledge.no_facts"
+        return 0, "the distiller returned no facts"
 
     facts = _coerce_facts(
         raw_facts,
@@ -1346,10 +1346,10 @@ def distill_facts(
         # can see why coercion failed without grepping the dump.
         sample = raw_output[:200].replace("\n", " ")
         _dump_debug("no_valid_facts")
-        return 0, f"knowledge.no_valid_facts (raw: {sample}...)"
+        return 0, f"the distiller returned no valid fact (raw: {sample}...)"
 
     written = write_facts(facts, knowledge_root, component.id, run_id)
-    return written, f"knowledge.wrote {written}/{len(facts)} facts"
+    return written, f"wrote {written} of {len(facts)} facts"
 
 
 # ---------------------------------------------------------------------------

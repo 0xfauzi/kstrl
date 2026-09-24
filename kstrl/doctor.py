@@ -63,10 +63,9 @@ VERDICT_READY = "ready"
 VERDICT_READY_WITH_WARNINGS = "ready-with-warnings"
 VERDICT_NOT_READY = "not-ready"
 
-#: Exit code for every refusal this command makes: a not-ready
-#: verdict, an unusable --root, and --measure. 2 is what `ks check`
-#: and `ks serve` already document for "cannot run".
-EXIT_REFUSED = 2
+#: Exit code for a not-ready verdict: the checks ran and the answer
+#: is a finding, which is what 1 means on every `ks` command (#452).
+EXIT_NOT_READY = 1
 
 #: Subdirectory of the state directory the report lands in. Declared
 #: in `statedir.STATE_SUBDIRS` as well, which is what
@@ -167,8 +166,8 @@ def check_git_repo(root: Path) -> _CheckResult:
     except git.GitDiffError as exc:
         return (
             STATUS_WARN,
-            f"git.detect_base_branch answered {base!r} and git cannot "
-            f"measure a diff against it ({exc}); the diff-scope, "
+            f"the detected base branch {base!r} cannot be diffed against "
+            f"({exc}); the diff-scope, "
             f"bad-patterns, policy and adequacy checks all read that diff",
             f"Create or fetch {base}, or name the long-lived branch with "
             f"`ks check --base` and `ks run --base-branch`.",
@@ -176,7 +175,7 @@ def check_git_repo(root: Path) -> _CheckResult:
     return (
         STATUS_OK,
         f"git repository at HEAD {head[:12]}, base branch {base} "
-        f"(git.detect_base_branch, what factory cuts worktrees from)",
+        f"(the branch factory cuts component worktrees from)",
         "",
     )
 
@@ -204,9 +203,8 @@ def check_git_clean(root: Path) -> _CheckResult:
             STATUS_WARN,
             f"{len(changed)} uncommitted or untracked file(s) ({listed}); "
             f"factory cuts each component worktree from the base ref, so "
-            f"none of this reaches the engineer, and "
-            f"git.capture_workspace_baseline has to subtract it from the "
-            f"in-loop scope guard",
+            f"none of this reaches the engineer, and the in-loop scope "
+            f"guard has to subtract it",
             "Commit or stash before starting a run.",
         )
     return (
@@ -229,8 +227,7 @@ def check_github_cli(root: Path) -> _CheckResult:
     if available and slug:
         return (
             STATUS_OK,
-            f"gh is authenticated and origin is {slug}, so "
-            f"pr.push_create_and_merge_pr can push and open PRs",
+            f"gh is authenticated and origin is {slug}, so kstrl can push branches and open PRs",
             "",
         )
     missing = []
@@ -240,7 +237,7 @@ def check_github_cli(root: Path) -> _CheckResult:
         missing.append("there is no `origin` remote")
     return (
         STATUS_WARN,
-        "degraded mode: " + "; ".join(missing) + "; kstrl.pr can push no branch and open no PR",
+        "degraded mode: " + "; ".join(missing) + "; kstrl can push no branch and open no PR",
         "Run `gh auth login` and add an origin remote, or set "
         "[factory] create_prs = false and merge by hand.",
     )
@@ -283,7 +280,7 @@ def check_kstrl_config(root: Path) -> _CheckResult:
         )
     return (
         STATUS_OK,
-        f"{path} resolves in full (config_preflight.config_problem_lines)",
+        f"{path} resolves in full",
         "",
     )
 
@@ -364,8 +361,7 @@ def check_verify_commands(root: Path) -> _CheckResult:
         )
     return (
         STATUS_OK,
-        f"Phase 1 will run {stated} (verify.resolve_verify_commands); "
-        f"Tier A does not run them, `ks check` does",
+        f"Phase 1 will run {stated}; Tier A does not run them, `ks check` does",
         "",
     )
 
@@ -413,15 +409,14 @@ def check_source_root(root: Path) -> _CheckResult:
     if count == 0:
         return (
             STATUS_WARN,
-            f"kstrl.feedforward.extract_public_interfaces summarises 0 files "
-            f"for the engineer; source roots found: {listed}",
+            f"the codebase scan summarises 0 files for the engineer; source roots found: {listed}",
             "Nothing is broken in your repository; kstrl's interface "
             "extraction does not reach this layout, so the engineer works "
             "without an interface section. Track issue #378.",
         )
     return (
         STATUS_OK,
-        f"kstrl.feedforward.extract_public_interfaces summarises {count} file(s) "
+        f"the codebase scan summarises {count} file(s) "
         f"of a {_MAX_PUBLIC_INTERFACE_FILES}-file budget from source "
         f"root(s): {listed}",
         "",
@@ -457,15 +452,15 @@ def check_test_root(root: Path) -> _CheckResult:
     if not tests:
         return (
             STATUS_WARN,
-            "0 tracked paths read as tests to adequacy.is_test_path, the "
-            "predicate the [adequacy] gate classifies a diff with, so that "
+            "0 tracked paths read as tests to the [adequacy] gate, which "
+            "classifies a diff by the same rule, so that "
             "gate sees no test file and the Phase 1 test command has "
             "nothing to run",
             "Add tests, or expect the adequacy gate to report nothing.",
         )
     return (
         STATUS_OK,
-        f"{len(tests)} tracked test path(s), e.g. {', '.join(tests[:3])} (adequacy.is_test_path)",
+        f"{len(tests)} tracked test path(s), e.g. {', '.join(tests[:3])}",
         "",
     )
 
@@ -525,8 +520,7 @@ def check_gitignore(root: Path) -> _CheckResult:
             f"{probe} is not ignored; the in-loop scope guard counts every "
             f"untracked file against the component's allowedPaths, and "
             f"`git add -A` would commit kstrl's run journals",
-            f"Add the line `{ignore_line}` to .gitignore, which is what "
-            "`ks init` scaffolds (init_cmd.gitignore_block).",
+            f"Add the line `{ignore_line}` to .gitignore, which is what `ks init` scaffolds.",
         )
     return (
         STATUS_WARN,
@@ -587,8 +581,8 @@ def check_protected_paths(root: Path) -> _CheckResult:
         return (
             STATUS_WARN,
             f"[policy] is enabled and its patterns do not cover "
-            f"{', '.join(uncovered)} (tested with policy._match_glob, the "
-            f"gate's own matcher; the candidate list itself is a heuristic)",
+            f"{', '.join(uncovered)} (tested with the policy gate's own "
+            f"matcher; the candidate list itself is a heuristic)",
             f"Add to [policy] paths_deny: {suggestions}",
         )
     return (
@@ -638,8 +632,8 @@ def verdict(checks: Sequence[DoctorCheck]) -> str:
 
 
 def exit_code_for(value: str) -> int:
-    """0 for both ready verdicts, 2 for not-ready."""
-    return EXIT_REFUSED if value == VERDICT_NOT_READY else 0
+    """0 for both ready verdicts, 1 for not-ready."""
+    return EXIT_NOT_READY if value == VERDICT_NOT_READY else 0
 
 
 def fix_first(checks: Sequence[DoctorCheck]) -> list[str]:

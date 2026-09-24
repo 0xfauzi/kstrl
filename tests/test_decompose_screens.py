@@ -457,7 +457,7 @@ class TestStatusTui:
             cli,
             ["status", "--root", str(tmp_path), "--tui"],
         )
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "No manifest found" in result.output
 
     def test_non_tty_default_stays_plain(self, tmp_path: Path) -> None:

@@ -2,7 +2,7 @@
 
 `ks <command>` resolves every kstrl.toml section at command entry
 (``config_preflight``, #272), so a typo produces one named line and
-exit 1 before anything is built. The home shell runs that same check -
+exit 2 before anything is built. The home shell runs that same check -
 ``cli.cli`` calls ``preflight_config`` before opening it - and the gap
 #289 names is not that the shell skipped it.
 

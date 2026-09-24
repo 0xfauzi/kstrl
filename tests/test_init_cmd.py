@@ -15,6 +15,7 @@ import re
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
 
 from kstrl import init_cmd
 from kstrl.appendio import append_records
@@ -546,3 +547,45 @@ class TestExitCodes:
 
         assert code == 1
         assert "Invalid JSON" in output
+
+
+class TestGreenfieldInitSaysWhatComesFirst:
+    """#452: on a repository with no build manifest, `ks init --ui plain`
+    printed `Detected language: unknown` and led its Next steps with
+    `ks decompose`, which its own Fix first block says is refused until a
+    manifest exists."""
+
+    @staticmethod
+    def _init(repo: Path) -> str:
+        result = CliRunner().invoke(cli, ["init", str(repo), "--ui", "plain"])
+        assert result.exit_code == 0, result.output
+        return result.output
+
+    @staticmethod
+    def _greenfield(tmp_path: Path) -> Path:
+        repo = tmp_path / "green"
+        repo.mkdir()
+        git("init", "-q", "-b", "main", cwd=repo)
+        return repo
+
+    def test_the_language_line_says_none_was_detected(self, tmp_path: Path) -> None:
+        output = self._init(self._greenfield(tmp_path))
+        assert "Detected language: none" in output
+        assert not re.search(r"Detected language:\s*unknown", output)
+
+    def test_next_steps_lead_with_the_build_manifest(self, tmp_path: Path) -> None:
+        output = self._init(self._greenfield(tmp_path))
+        steps = output.split("== Next steps ==", 1)[1]
+        assert steps.index("build manifest") < steps.index("ks decompose")
+
+    def test_a_python_repo_gets_neither_notice(self, tmp_path: Path) -> None:
+        """The control: with a manifest there is nothing to fix first, and
+        the spec path leads again."""
+        repo = make_repo(
+            tmp_path, "py", "pyproject.toml", '[project]\nname = "demo"\nversion = "0.1.0"\n'
+        )
+        output = self._init(repo)
+        assert "Detected language: Python" in output
+        steps = output.split("== Next steps ==", 1)[1]
+        assert "build manifest" not in steps
+        assert steps.lstrip().startswith("You have a spec")
