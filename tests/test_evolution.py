@@ -1183,8 +1183,12 @@ class TestSpecAudits:
             audit("mine", "right.md"),
         ]
         journal = self._journal(tmp_path, entries)
+        on_disk = [
+            json.loads(line)
+            for line in journal.config.journal_path.read_text(encoding="utf-8").splitlines()
+        ]
 
-        assert journal.get_spec_issue_runs("mine", audits=entries) == journal.get_spec_issue_runs(
+        assert journal.get_spec_issue_runs("mine", audits=on_disk) == journal.get_spec_issue_runs(
             "mine"
         )
 

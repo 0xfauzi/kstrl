@@ -142,6 +142,7 @@ from kstrl.verify import (
     scope_unreadable_error,
     scrub_project_claude_md,
 )
+from kstrl.version import kstrl_version
 
 if TYPE_CHECKING:
     from kstrl.agents.liveness import ProbeResult
@@ -4034,6 +4035,7 @@ def _run_factory_locked(
     # epilogue, so "did the last run finish?" is answerable from the
     # manifest alone (and later, from Linear).
     manifest.run_id = run_id
+    manifest.kstrl_version = kstrl_version()
     manifest.completed_at = ""
     # R8.2: apply this run's permissions from the autonomy level. The
     # bundle is computed at run start and WINS over contradicting config,

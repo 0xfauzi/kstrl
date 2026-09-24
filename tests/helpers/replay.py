@@ -50,9 +50,9 @@ def write_runs(root: Path, records: Sequence[RunRecord]) -> None:
     Resolves the path the same way the module under test does
     (``EvolutionConfig.load``), so a test that moves
     ``[evolution] experiments_path`` writes to the file the code will
-    actually read rather than a hardcoded default. The four columns
+    actually read rather than a hardcoded default. The five columns
     ``RunRecord`` does not track (avg_iterations, avg_duration_s,
-    total_tokens, unreported_calls) get a fixed placeholder: nothing
+    total_tokens, unreported_calls, kstrl_version) get a fixed placeholder: nothing
     reading through ``RunRecord`` sees them, so no test asserts on their
     value.
     """
@@ -78,6 +78,7 @@ def write_runs(root: Path, records: Sequence[RunRecord]) -> None:
                     "1000",
                     cost,
                     "0",
+                    "fixture",
                 )
             )
         )

@@ -137,6 +137,7 @@ from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.base import UI
 from kstrl.verify import DEFAULT_LINT_COMMAND, DEFAULT_TEST_COMMAND
+from kstrl.version import stamp_label
 
 
 def _load_manifest_or_exit(path: Path, ui: UI) -> Manifest:
@@ -3296,6 +3297,29 @@ def _render_safe_mode(ui_impl: UI, root_dir: Path) -> None:
         ui_impl.info(f"  - [{reason.source}] {reason.detail} (see {reason.recovery})")
 
 
+def _render_run_version(
+    ui_impl: UI,
+    manifest: Manifest,
+    state: RunState | None,
+    source_path: Path | None,
+) -> None:
+    """The kstrl version that wrote the run this report shows (#451).
+
+    From the event stream when the report reads one, because every line
+    of it is stamped; from the manifest's run stamp when there is no
+    stream. A v1 progress log carries no stamp, so that arm prints none.
+    A record with no stamp was written before stamping, and the label
+    says so rather than reporting it as a defect.
+    """
+    if state is not None and source_path is not None:
+        if source_path.name == "events.jsonl":
+            ui_impl.kv("kstrl version", stamp_label(state.kstrl_version))
+        return
+    if manifest.run_id:
+        ui_impl.kv("Run id", manifest.run_id)
+        ui_impl.kv("kstrl version", stamp_label(manifest.kstrl_version))
+
+
 def _render_status(
     manifest: Manifest,
     manifest_file: Path,
@@ -3348,6 +3372,7 @@ def _render_status(
                 # The ceiling's own words, uncovered magnitude in TOKENS.
                 if gap.detail:
                     ui_impl.kv("  coverage", gap.detail)
+    _render_run_version(ui_impl, manifest, state, source_path)
 
     if root_dir is not None:
         _render_safe_mode(ui_impl, root_dir)
