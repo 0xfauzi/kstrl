@@ -403,7 +403,8 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "knowledge.py": 2,
     "pipeline.py": 1,
     "reducer.py": 3,
-    "serve.py": 5,
+    # 6: +1 for #464, which reads the progress log for cost evidence.
+    "serve.py": 6,
     "statedir.py": 7,
     "tui/home_data.py": 1,
     "tui/runs.py": 2,

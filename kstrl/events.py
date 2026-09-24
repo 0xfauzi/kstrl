@@ -11,7 +11,7 @@ Envelope (one JSON object per line)::
 
     {"schema": 2, "event": "<type>", "ts": <float epoch seconds>,
      "run_id": "...", "component": "...", "source": "orchestrator|worker",
-     "seq": <int>, "data": {<payload fields>}}
+     "seq": <int>, "kstrl_version": "...", "data": {<payload fields>}}
 
 Envelope fields are stamped by :meth:`EventBus.emit`, never by call
 sites. Decoding is TOTAL: every payload field has a default, unknown
@@ -46,10 +46,11 @@ from kstrl.appendio import (
 )
 from kstrl.jsonread import read_json
 from kstrl.observability import ProgressLog
+from kstrl.version import kstrl_version
 
 SCHEMA_VERSION: Final = 2
 
-_ENVELOPE_FIELDS: Final = frozenset({"ts", "run_id", "component", "source", "seq"})
+_ENVELOPE_FIELDS: Final = frozenset({"ts", "run_id", "component", "source", "seq", "kstrl_version"})
 
 _REGISTRY: dict[str, type[Event]] = {}
 _FIELD_DEFAULTS: dict[str, dict[str, Any]] = {}
@@ -72,6 +73,9 @@ class Event:
     component: str = ""
     source: str = "orchestrator"
     seq: int = 0
+    #: The kstrl that wrote the line (#451). Stamped by EventBus.emit;
+    #: "" on a line written before stamping.
+    kstrl_version: str = ""
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -93,6 +97,7 @@ class Event:
             "component": self.component,
             "source": self.source,
             "seq": self.seq,
+            "kstrl_version": self.kstrl_version,
             "data": data,
         }
 
@@ -798,6 +803,9 @@ def _envelope_kwargs(obj: Mapping[str, Any]) -> dict[str, Any]:
         "component": obj.get("component") if isinstance(obj.get("component"), str) else "",
         "source": obj.get("source") if isinstance(obj.get("source"), str) else "orchestrator",
         "seq": seq if isinstance(seq, int) and not isinstance(seq, bool) else 0,
+        "kstrl_version": (
+            obj.get("kstrl_version") if isinstance(obj.get("kstrl_version"), str) else ""
+        ),
     }
 
 
@@ -1235,6 +1243,7 @@ class EventBus:
             component=event.component or self.component,
             source=self.source,
             seq=seq,
+            kstrl_version=kstrl_version(),
         )
         for sink in self._sinks:
             try:

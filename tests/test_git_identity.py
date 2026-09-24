@@ -161,6 +161,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_review_gates.py": 1,
     "tests/test_review_payload.py": 2,
     "tests/test_run_honesty.py": 1,
+    "tests/test_run_record_version.py": 1,
     # Prose, not a commit: a tuple of literal argv-prefix strings an
     # allowlist test checks a Claude reviewer's permission RULES against
     # ("git commit" among them), never spawned.
