@@ -165,3 +165,25 @@ class TestConfigShowNamesTheDaemonSections:
         assert "factory_timeout_seconds = no limit  (default)" in result.output
         assert "[intake_github]" in result.output
         assert "repo = 'acme/demo'  (toml)" in result.output
+
+    def test_a_zero_serve_limit_reads_as_no_limit(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The three [serve] keys where 0 disables the limit print `no limit`,
+        the way the [factory] ceilings do, not a bare 0 (#452)."""
+        (tmp_path / "kstrl.toml").write_text("[serve]\nmax_open_prs = 0\n", encoding="utf-8")
+        for name in (
+            "KSTRL_SERVE_DAILY_BUDGET_USD",
+            "KSTRL_SERVE_FACTORY_TIMEOUT",
+            "KSTRL_SERVE_MAX_OPEN_PRS",
+        ):
+            monkeypatch.delenv(name, raising=False)
+
+        result = CliRunner().invoke(cli, ["config", "show", "--root", str(tmp_path)])
+
+        assert result.exit_code == 0, result.output
+        assert "daily_budget_usd = no limit  (default)" in result.output
+        assert "factory_timeout_seconds = no limit  (default)" in result.output
+        assert "max_open_prs = no limit  (toml)" in result.output
