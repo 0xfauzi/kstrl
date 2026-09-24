@@ -592,3 +592,53 @@ def test_a_resume_rewrites_only_the_attempts_the_manifest_still_counts(tmp_path:
     assert [(e["component_id"], e["attempt"], e["carried_from_run"]) for e in carried] == [
         ("comp-a", 2, "old")
     ]
+
+
+def test_a_chain_of_killed_runs_carries_through_to_the_run_that_finishes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Run 1 is killed in comp-a's attempt 2; run 2 resumes it and is killed in
+    the same attempt; run 3 finishes. Run 3 answers for run 1's attempt 1 and
+    spend, and the carried row names run 1, where attempt 1 ran."""
+    monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
+    root, manifest_path, state, verify, engineer = _killed_run(tmp_path)
+    first_run = Manifest.load(manifest_path).run_id
+    (state / "hang").unlink()
+    proc = subprocess.Popen(
+        [sys.executable, "-c", _DRIVER, str(root), str(manifest_path), verify, engineer],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        deadline = time.monotonic() + 120
+        while not (state / "hang").exists():
+            assert time.monotonic() < deadline, "run 2 never reached comp-a's attempt 2"
+            assert proc.poll() is None, proc.communicate()[0]
+            time.sleep(0.05)
+    finally:
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait(timeout=10)
+    second_run = Manifest.load(manifest_path).run_id
+    assert second_run != first_run
+    (state / "resume").touch()
+    (state / "pass").touch()
+    _price_every_call(monkeypatch)
+
+    exit_code, out = _resume(root, manifest_path, verify, engineer)
+
+    assert exit_code == 0, out
+    run = Manifest.load(manifest_path).run_id
+    assert f"Carried from interrupted run {second_run}" in out
+    assert (
+        "iterations_all_attempts=2.00 (1 component(s) ran, 2 iteration(s) across 2 attempt(s))"
+        in _reading(root, run)
+    )
+    assert float(_tsv(root)[run]["total_cost_usd"]) == pytest.approx(0.75)
+    superseded = [
+        (e["attempt"], e["carried_from_run"])
+        for e in _journal(root, run)
+        if e.get("event_type") == FINDINGS_SUPERSEDED_EVENT and e["component_id"] == "comp-a"
+    ]
+    assert superseded == [(1, first_run)]
