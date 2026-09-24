@@ -39,12 +39,13 @@ template.
 from __future__ import annotations
 
 import time
-from collections.abc import Collection, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from kstrl.atomicio import atomic_write_json
+from kstrl.inbox import UNDECIDED, Inbox, InboxConfig, ItemKind
 from kstrl.jsonread import read_json
 
 # Relative location of the persisted register. Next to manifest.json and
@@ -535,3 +536,101 @@ def build_decisions_context(
         other_total=len(other),
         other="\n".join(_render_summary(d) for d in shown_other),
     )
+
+
+def _escalation_key(project_name: str, spec_file: str) -> str:
+    """The inbox identity of one spec's escalation: project and spec file."""
+    return f"escalation:{project_name}:{spec_file}"
+
+
+def open_escalation_item(
+    escalated: Sequence[SpecDecision],
+    root_dir: Path,
+    project_name: str,
+    spec_file: str,
+    *,
+    register_path: str,
+    run_id: str,
+    warn: Callable[[str], None],
+) -> None:
+    """Record a decompose halted on the owner as one inbox item (#449).
+
+    Called on the halt path before ``SpecBlockerError`` is raised. An
+    escalation is the one halt that is by definition waiting on the
+    owner, and before #449 it was the one halt that never reached the
+    inbox.
+
+    Never raises. ``except Exception`` is the callee's whole surface
+    (``InboxConfig.load`` casts per key, ``Inbox.add`` takes the control
+    lock), and anything that escaped here would replace the
+    ``SpecBlockerError`` the caller is about to raise, so the documented
+    exit code 2 would become a traceback. A failure warns, naming the
+    spec, because a silently empty inbox reads as a clean run.
+    """
+    ids = [d.issue for d in escalated]
+    lines = [f"- [{d.issue}] {d.question}\n  owner must decide: {d.resolution}" for d in escalated]
+    lines.append(f"Register: {register_path or '(not written)'}")
+    lines.append(
+        "Answer in the spec and re-run the decompose. The next decompose of "
+        "this spec that escalates nothing resolves this item."
+    )
+    try:
+        config = InboxConfig.load(root_dir)
+        if not config.enabled:
+            return
+        Inbox(root_dir, config).add(
+            ItemKind.SPEC_ESCALATION,
+            f"Architect escalated {', '.join(ids)} on {spec_file}",
+            detail="\n".join(lines),
+            run_id=run_id,
+            dedupe_key=_escalation_key(project_name, spec_file),
+            evidence={
+                "project": project_name,
+                "spec_file": spec_file,
+                "questions": ids,
+                "register": register_path,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 - must not replace the halt
+        warn(f"Inbox write for the escalation on {spec_file} failed (non-fatal): {exc}")
+
+
+def resolve_escalation_items(
+    root_dir: Path,
+    project_name: str,
+    spec_file: str,
+    *,
+    run_id: str,
+    info: Callable[[str], None],
+    warn: Callable[[str], None],
+) -> None:
+    """Resolve every undecided escalation item for this spec (#449).
+
+    Called after a decompose of the same project and spec saved its
+    manifest and a register with ``halted`` false: that is the fact that
+    the escalation is closed, the same resolve-on-the-fact rule #438
+    applies to components. ``only_from=UNDECIDED`` keeps a decision an
+    operator made in the meantime.
+
+    Never raises: the manifest is already saved, so a broken inbox must
+    not fail the decompose. The items stay open and the warning says so.
+    """
+    comment = f"closed by decompose run {run_id or '(no run id)'}: {spec_file} escalated nothing"
+    key = _escalation_key(project_name, spec_file)
+    try:
+        config = InboxConfig.load(root_dir)
+        if not config.enabled:
+            return
+        box = Inbox(root_dir, config)
+        undecided = [
+            item
+            for item in box.items()
+            if item.kind is ItemKind.SPEC_ESCALATION
+            and item.dedupe_key == key
+            and item.status in UNDECIDED
+        ]
+        for item in undecided:
+            if box.resolve(item.id, comment=comment, only_from=UNDECIDED) is not None:
+                info(f"Inbox: resolved {item.id[:8]} ({item.kind}): {comment}")
+    except Exception as exc:  # noqa: BLE001 - the manifest is already saved
+        warn(f"Inbox resolve for the escalation on {spec_file} failed (items stay open): {exc}")

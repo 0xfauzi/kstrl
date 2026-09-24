@@ -66,6 +66,7 @@ class ItemKind(StrEnum):
     CALIBRATION_DRIFT = "calibration_drift"  # detection rate moved
     TEST_ADEQUACY = "test_adequacy"  # R8.5 Layer 0 blocked a change
     HEALTH_BREACH = "health_breach"  # R8.4 control-limit breach (#232)
+    SPEC_ESCALATION = "spec_escalation"  # decompose halted on the owner (#449)
 
     @property
     def action_required(self) -> bool:
@@ -85,6 +86,9 @@ class ItemKind(StrEnum):
             # decide whether the suite really may get weaker here. The
             # advisory ones never reach the inbox at all (see pipeline).
             ItemKind.TEST_ADEQUACY,
+            # The architect refused to choose: nothing moves on this spec
+            # until the owner answers (#449).
+            ItemKind.SPEC_ESCALATION,
         }
 
 
@@ -117,6 +121,7 @@ DEFAULT_PRIORITY: dict[ItemKind, Priority] = {
     ItemKind.CALIBRATION_DRIFT: Priority.LOW,
     ItemKind.TEST_ADEQUACY: Priority.NORMAL,
     ItemKind.HEALTH_BREACH: Priority.NORMAL,
+    ItemKind.SPEC_ESCALATION: Priority.NORMAL,
 }
 
 _PRIORITY_ORDER = {Priority.HIGH: 0, Priority.NORMAL: 1, Priority.LOW: 2}
