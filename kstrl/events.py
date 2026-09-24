@@ -214,6 +214,10 @@ class VerificationResultEvent(Event):
     #: a consumer counting green checks must not count these. Defaults
     #: empty, so payloads already on disk decode unchanged.
     not_measured: tuple[str, ...] = ()
+    #: #462: the absolute path of each file holding a failed gate's
+    #: output, one per failed test / typecheck / lint gate whose write
+    #: succeeded. The output itself stays out of the event.
+    gate_logs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1047,6 +1051,8 @@ class V1CompatSink:
 
     ``not_measured`` (#306) is dropped here for the same reason, and a
     v1 reader is not told which enabled check measured nothing.
+    ``gate_logs`` (#462) is dropped for the same reason: a v1 reader is not
+    told where a failed gate's output was written, though the file is.
 
     Nothing is wrong today, because `ks feature` is the only command
     that emits advisory reports and it attaches no ``V1CompatSink``. The
