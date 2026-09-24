@@ -436,6 +436,22 @@ class TestApprovalMergesTheReviewedBranch:
         assert not any("pr create" in line for line in _lines(tmp_path / "gh.log")), out
         assert _engineer_ran(tmp_path) == [HTTP], out
 
+    def test_an_approved_merge_github_has_not_confirmed_is_merge_pending(
+        self, tmp_path: Path
+    ) -> None:
+        root, env, _reviewed = _parked_run(tmp_path)
+        item = _park_item(root)
+        # GitHub accepts the merge but never reports it MERGED.
+        write_executable(
+            tmp_path / "bin" / "gh", FAKE_GH.replace('"state": "MERGED"', '"state": "OPEN"')
+        )
+        env["FACTORY_MERGE_TIMEOUT"] = "2"
+        approved = _ks(root, env, "inbox", "approve", item.id, "--ui", "plain", "--no-color")
+        out = approved.stdout + approved.stderr
+        assert _status(root, HTTP) == "merge_pending", out
+        assert _status(root, CMDS) == "pending", out
+        assert _engineer_ran(tmp_path) == [HTTP], out
+
 
 def _real_factory_runner(
     template: Path, env: dict[str, str], calls: list[str]
