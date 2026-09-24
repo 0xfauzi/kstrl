@@ -299,6 +299,29 @@ class TestZeroMeansNoLimitAtEveryWait:
         )
         assert [r.passed for r in results] == [True], [r.test_output for r in results]
 
+    def test_a_zero_contract_timeout_lets_the_tier_check_run(self, tmp_path: Path) -> None:
+        root = make_review_repo(tmp_path / "repo").path
+        component = Component("comp-a", "A", "", [], "prd.json", "feature")
+        component.status = "completed"
+        manifest = Manifest(
+            version="1",
+            spec_file="spec.md",
+            project_name="p",
+            base_branch="main",
+            single_pr=False,
+            components=[component],
+        )
+        results = run_contract_testing(
+            manifest,
+            root,
+            ContractConfig(
+                test_command=f"{sys.executable} -c 'import time; time.sleep(0.2)'",
+                timeout=0.0,
+            ),
+            PlainUI(no_color=True, file=io.StringIO()),
+        )
+        assert [r.passed for r in results] == [True], [r.test_output for r in results]
+
 
 def _ks(root: Path, *args: str) -> str:
     """Run the ``ks`` CLI in a subprocess with no limit set in the env."""
