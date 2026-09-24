@@ -2380,9 +2380,10 @@ class ComponentPipeline:
     def apply_merge_decisions(self) -> None:
         """#465: act on the decision each merge-gate park was waiting for.
 
-        Run at run start, beside ``repoll_merge_pending`` and before
-        anything is scheduled, so an approved component is merged before
-        its dependents are cut from the base branch. The decision is the
+        Run after every pre-spend refusal in ``_run_factory_locked`` (a
+        refused run must not push or merge anything) and before anything
+        is scheduled, so an approved component is merged before its
+        dependents are cut from the base branch. The decision is the
         park's merge_gate inbox item: APPROVED merges the branch the gate
         parked, REJECTED fails the component and skips its dependents, and
         anything else (open, snoozed, no item, inbox off) leaves it parked.

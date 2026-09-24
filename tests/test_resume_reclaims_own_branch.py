@@ -43,6 +43,7 @@ A = "comp-a"
 B = "comp-b"
 A_BRANCH = f"kstrl/factory/{A}"
 B_BRANCH = f"kstrl/factory/{B}"
+SHARED_BRANCH = "kstrl/factory/shared"
 
 FLAGS = (
     "--yes",
@@ -129,6 +130,60 @@ def _repo(tmp_path: Path) -> Path:
     return root
 
 
+def _repo_shared_branch(tmp_path: Path) -> Path:
+    """Two dependent components on one shared branch (single_pr): `comp-b`
+    depends on `comp-a`, and both carry `branchName` `SHARED_BRANCH` in
+    their PRD and in the manifest.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    gitrepo.git_in(root, "init", "-q", "-b", "main")
+    gitrepo.set_identity(root)
+    (root / "README.md").write_text("seed\n", encoding="utf-8")
+    components = []
+    for cid, deps in ((A, []), (B, [A])):
+        prd = root / "scripts" / "kstrl" / "feature" / cid / "prd.json"
+        prd.parent.mkdir(parents=True)
+        story = {
+            "id": "US-001",
+            "title": "t",
+            "acceptanceCriteria": ["AC1"],
+            "priority": 1,
+            "passes": True,
+            "notes": "",
+        }
+        prd.write_text(
+            json.dumps({"branchName": SHARED_BRANCH, "userStories": [story]}),
+            encoding="utf-8",
+        )
+        components.append(
+            {
+                "id": cid,
+                "title": cid,
+                "description": "",
+                "dependencies": deps,
+                "prdPath": f"scripts/kstrl/feature/{cid}/prd.json",
+                "branchName": SHARED_BRANCH,
+            }
+        )
+    gitrepo.git_in(root, "add", "-A")
+    gitrepo.git_in(root, "commit", "-q", "-m", "init")
+    (root / "scripts" / "kstrl" / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": "1",
+                "specFile": "spec.md",
+                "projectName": "p",
+                "baseBranch": "main",
+                "singlePr": True,
+                "components": components,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return root
+
+
 def _env(agent: str) -> dict[str, str]:
     env = {
         k: v
@@ -195,9 +250,69 @@ def _interrupt_after_commit(tmp_path: Path, root: Path) -> str:
     return manifest.run_id
 
 
+def _interrupt_comp_b_after_commit(tmp_path: Path, root: Path) -> str:
+    """Run the shared (single_pr) branch factory until comp-a has
+    COMPLETED and comp-b's engineer has committed on top of it, then kill
+    the group.
+
+    comp-a's engineer commits and completes normally; comp-b's engineer
+    only starts once comp-a is COMPLETED (it depends on it), commits its
+    own attempt onto the shared branch, then blocks on a marker.
+    Returns the interrupted run's id.
+    """
+    marker = tmp_path / "committed-b"
+    agent = (
+        'c=$(basename "$(pwd)"); echo w > "work-$c.txt"; git add -A; '
+        'git commit -q -m "$c"; '
+        f"if [ \"$c\" = {B} ]; then touch '{marker}'; sleep 120; fi; "
+        f"{COMPLETE}"
+    )
+    proc = subprocess.Popen(
+        _argv(root) + ["--single-pr"],
+        cwd=root,
+        env=_env(agent),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        deadline = time.monotonic() + 120
+        while not marker.exists():
+            assert time.monotonic() < deadline, "comp-b's engineer never committed"
+            assert proc.poll() is None, proc.communicate()[0]
+            time.sleep(0.05)
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait(timeout=30)
+    finally:
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait(timeout=30)
+    manifest = Manifest.load(root / "scripts" / "kstrl" / "manifest.json")
+    comp_a = manifest.get_component(A)
+    comp_b = manifest.get_component(B)
+    assert comp_a is not None and comp_a.status == "completed", "precondition: comp-a COMPLETED"
+    assert comp_b is not None and comp_b.status == "running", "precondition: comp-b left RUNNING"
+    assert _git(root, "log", "-1", "--format=%s", SHARED_BRANCH) == B
+    return manifest.run_id
+
+
 def _resume(root: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         _argv(root),
+        cwd=root,
+        env=_env(COMPLETE),
+        capture_output=True,
+        encoding="utf-8",
+        stdin=subprocess.DEVNULL,
+        timeout=300,
+    )
+
+
+def _resume_single_pr(root: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        _argv(root) + ["--single-pr"],
         cwd=root,
         env=_env(COMPLETE),
         capture_output=True,
@@ -273,3 +388,23 @@ class TestResumeReclaimsTheInterruptedRunsBranch:
         refusals = [line for line in out.splitlines() if "already exists" in line]
         assert any(A_BRANCH in line for line in refusals), out
         assert _git(root, "log", "-1", "--format=%s", A_BRANCH) == "attempt"
+
+    def test_a_single_pr_shared_branch_is_still_refused(self, tmp_path: Path) -> None:
+        """single_pr shares one branch across components. Without the
+        `manifest.single_pr` exclusion in `_interrupted_run_branches`, the
+        resume would see comp-b's worktree registered on that branch,
+        attribute the WHOLE branch to comp-b's interrupted attempt alone,
+        and delete it - taking comp-a's already-COMPLETED commit down
+        with it. The branch must still be refused as unmerged, not
+        silently recreated from base.
+        """
+        root = _repo_shared_branch(tmp_path)
+        _interrupt_comp_b_after_commit(tmp_path, root)
+
+        resumed = _resume_single_pr(root)
+        out = resumed.stdout + resumed.stderr
+
+        assert resumed.returncode == 2, out
+        refusals = [line for line in out.splitlines() if "already exists" in line]
+        assert any(SHARED_BRANCH in line for line in refusals), out
+        assert A in _git(root, "log", "--format=%s", SHARED_BRANCH), out
