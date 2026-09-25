@@ -159,7 +159,7 @@ class TestExperimentsTsvSurvivesATornTail:
         """
         from kstrl.evolution import EXPERIMENTS_HEADER
 
-        legacy = "\t".join(EXPERIMENTS_HEADER.split("\t")[:-3])
+        legacy = "\t".join(EXPERIMENTS_HEADER.split("\t")[:11])
         journal = self.journal_at(tmp_path)
         path = journal.config.experiments_path
         path.parent.mkdir(parents=True, exist_ok=True)

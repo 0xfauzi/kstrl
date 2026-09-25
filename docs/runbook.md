@@ -321,6 +321,31 @@ Ctrl-C) force-kills. This is also what Ctrl-C now does in plain mode -
 the pre-TUI behavior (skipped cleanup, orphaned agents) was a bug,
 fixed in the same rewrite.
 
+Commands an agent's shell tool starts run in process groups of their
+own, so ending the agent's group does not end them (#461). At the end of
+every engineer attempt, and before any component worktree is removed or
+recreated, kstrl kills the process group of every process whose working
+directory is inside that worktree. One found at the end of an attempt or
+at the run's cleanup is recorded on the component as an `orphan_process`
+finding naming its pid and command; one found when a stale worktree is
+pruned or a worktree is recreated for a retry is logged as a warning. A
+shell you opened inside a component worktree while a run is going counts
+as one of those processes. If the census cannot run (`lsof` missing, or
+listing nothing), the finding says so instead of reporting a clean
+worktree.
+
+What a resume counts (#463). A retry count carries across runs on the
+manifest, and a Ctrl-C does not reset it. A run that reached its summary
+keeps the attempts and the spend it recorded, and the next run answers
+for its attempts from there. A run that was killed before its summary
+recorded no journal result, no experiments.tsv row and no run total, so
+the run that resumes the manifest takes its record over: it prints
+`Carried from interrupted run <id>: ...`, its run total and its cost
+ceiling include the killed run's spend, and its journal and
+progress.jsonl carry the killed run's retries and attempt readings. A
+resume whose carried spend already meets `--max-cost-usd` halts before
+the next call.
+
 The E6 checkpoint modal shows the diff excerpt, review + security
 findings, and the attempt's spend; approve/reject/retry with
 `a`/`r`/`t`, or `escape` to leave it pending (the run stays blocked -

@@ -119,6 +119,10 @@ def _validate_component_fields(comp: dict[str, Any], prefix: str) -> list[str]:
                 f"must be one of: {', '.join(COMPONENT_STATUS_VALUES)}"
             )
 
+    first = comp.get("firstAttempt", 1)
+    if isinstance(first, bool) or not isinstance(first, int) or first < 1:
+        errors.append(f"{prefix}.firstAttempt: must be an integer of at least 1")
+
     return errors
 
 
@@ -135,6 +139,11 @@ class Component:
     status: str = ComponentStatus.PENDING.value
     error: str = ""
     retries: int = 0
+    # #463: the first attempt the run in flight answers for. Every run sets
+    # it to retries + 1 at its start, except one resuming a run that never
+    # finished, which keeps that run's value for each PENDING component
+    # because it records that run's attempts of it too.
+    first_attempt: int = 1
     pr_number: int | None = None
     pr_url: str = ""
     # R8.7 slice 1: the commit this component's merge produced, read off
@@ -210,6 +219,9 @@ class Manifest:
     # (PolicyConfig.envelope_hash). "" when policy is unset. The audit
     # record of what merge guardrails were in force.
     policy_hash: str = ""
+    # #451: the kstrl that ran ``run_id``, set with it at run start.
+    # "" on a manifest no run has operated on, or one written before #451.
+    kstrl_version: str = ""
 
     @classmethod
     def from_prd(
@@ -290,6 +302,7 @@ class Manifest:
                 status=c.get("status", ComponentStatus.PENDING.value),
                 error=c.get("error", ""),
                 retries=c.get("retries", 0),
+                first_attempt=c.get("firstAttempt", 1),
                 pr_number=c.get("prNumber"),
                 pr_url=c.get("prUrl", ""),
                 merge_sha=c.get("mergeSha", ""),
@@ -328,6 +341,7 @@ class Manifest:
             linear_project_id=data.get("linearProjectId", ""),
             linear_sync_key=data.get("linearSyncKey", ""),
             policy_hash=data.get("policyHash", ""),
+            kstrl_version=data.get("kstrlVersion", ""),
         )
 
     def save(self, path: Path) -> None:
@@ -343,6 +357,7 @@ class Manifest:
             "linearProjectId": self.linear_project_id,
             "linearSyncKey": self.linear_sync_key,
             "policyHash": self.policy_hash,
+            "kstrlVersion": self.kstrl_version,
             "components": [
                 {
                     "id": c.id,
@@ -354,6 +369,7 @@ class Manifest:
                     "status": c.status,
                     "error": c.error,
                     "retries": c.retries,
+                    "firstAttempt": c.first_attempt,
                     "prNumber": c.pr_number,
                     "prUrl": c.pr_url,
                     "mergeSha": c.merge_sha,
@@ -424,12 +440,9 @@ class Manifest:
                 errors.append(f"baseBranch: {base_error}")
         if not isinstance(data.get("singlePr"), bool):
             errors.append("singlePr must be a boolean")
-        if "runId" in data and not isinstance(data["runId"], str):
-            errors.append("runId must be a string")
-        if "completedAt" in data and not isinstance(data["completedAt"], str):
-            errors.append("completedAt must be a string")
-        if "policyHash" in data and not isinstance(data["policyHash"], str):
-            errors.append("policyHash must be a string")
+        for key in ("runId", "completedAt", "policyHash", "kstrlVersion"):
+            if key in data and not isinstance(data[key], str):
+                errors.append(f"{key} must be a string")
 
         components = data.get("components")
         if not isinstance(components, list):
@@ -441,6 +454,7 @@ class Manifest:
             "status",
             "error",
             "retries",
+            "firstAttempt",
             "prNumber",
             "prUrl",
             "mergeSha",
@@ -713,6 +727,7 @@ class Manifest:
             target.status = ComponentStatus.PENDING.value
             target.error = ""
             target.retries = 0
+            target.first_attempt = 1
             target.started_at = ""
             target.completed_at = ""
             target.duration_seconds = 0.0

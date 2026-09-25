@@ -77,6 +77,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/helpers/run_config.py": 1,
     "tests/spine_utils.py": 1,
     "tests/test_adequacy.py": 8,
+    "tests/test_agent_processes_outlive_run.py": 1,
     "tests/test_autonomy_ladder.py": 1,
     # #414/#425: three `git commit` spellings - `_commit_rename`, the
     # rename-then-break test, and `_advance_main` - all into a repository
@@ -160,6 +161,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_review_gates.py": 1,
     "tests/test_review_payload.py": 2,
     "tests/test_run_honesty.py": 1,
+    "tests/test_run_record_version.py": 1,
     # Prose, not a commit: a tuple of literal argv-prefix strings an
     # allowlist test checks a Claude reviewer's permission RULES against
     # ("git commit" among them), never spawned.

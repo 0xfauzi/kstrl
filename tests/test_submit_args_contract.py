@@ -75,8 +75,9 @@ class _CapturingPool:
 
     seen: dict[str, Any] = {}
 
-    def __init__(self, max_workers: int) -> None:
+    def __init__(self, max_workers: int, initializer: Any = None) -> None:
         self.max_workers = max_workers
+        self.initializer = initializer
 
     def submit(self, fn: Any, /, *args: Any) -> Future[ComponentResult]:
         _CapturingPool.seen = {"args": fn.args, "kwargs": fn.keywords}

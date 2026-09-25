@@ -224,6 +224,10 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     "timeout.py": ("subprocess",),
     "tui/screens/home.py": ("subprocess",),
     "tui/screens/retry.py": ("subprocess",),
+    # #461: `subprocess.TimeoutExpired`, caught from `verify.run_scrubbed`,
+    # which is what runs the `lsof` census. The module creates no child
+    # itself and signals groups only through `procgroup.signal_group`.
+    "worktree_sweep.py": ("subprocess",),
     # The word, not the call: `actor: str = "system"`.
     "autonomy.py": ("system",),
     "inbox.py": ("system",),

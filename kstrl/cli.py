@@ -137,6 +137,7 @@ from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.base import UI
 from kstrl.verify import DEFAULT_LINT_COMMAND, DEFAULT_TEST_COMMAND
+from kstrl.version import stamp_label
 
 
 def _load_manifest_or_exit(path: Path, ui: UI) -> Manifest:
@@ -3293,6 +3294,29 @@ def _render_safe_mode(ui_impl: UI, root_dir: Path) -> None:
         ui_impl.info(f"  - [{reason.source}] {reason.detail} (see {reason.recovery})")
 
 
+def _render_run_version(
+    ui_impl: UI,
+    manifest: Manifest,
+    state: RunState | None,
+    source_path: Path | None,
+) -> None:
+    """The kstrl version that wrote the run this report shows (#451).
+
+    From the event stream when the report reads one, because every line
+    of it is stamped; from the manifest's run stamp when there is no
+    stream. A v1 progress log carries no stamp, so that arm prints none.
+    A record with no stamp was written before stamping, and the label
+    says so rather than reporting it as a defect.
+    """
+    if state is not None and source_path is not None:
+        if source_path.name == "events.jsonl":
+            ui_impl.kv("kstrl version", stamp_label(state.kstrl_version))
+        return
+    if manifest.run_id:
+        ui_impl.kv("Run id", manifest.run_id)
+        ui_impl.kv("kstrl version", stamp_label(manifest.kstrl_version))
+
+
 def _render_status(
     manifest: Manifest,
     manifest_file: Path,
@@ -3345,6 +3369,7 @@ def _render_status(
                 # The ceiling's own words, uncovered magnitude in TOKENS.
                 if gap.detail:
                     ui_impl.kv("  coverage", gap.detail)
+    _render_run_version(ui_impl, manifest, state, source_path)
 
     if root_dir is not None:
         _render_safe_mode(ui_impl, root_dir)
@@ -5360,6 +5385,52 @@ def inbox_reject(
     _decide_and_report("reject", item_id, root, ui, no_color, comment=comment)
 
 
+def _serve_parked(root_dir: Path, run_id: str, ui_impl: UI) -> bool:
+    """Whether `ks serve` launched the run that parked (#463).
+
+    serve records the parked run's id on the queue item it moves to
+    awaiting approval; that item is the only link. A queue that cannot be
+    read is a refusal before the decision is recorded, because answering
+    "no" would leave the approval run's spend out of the daemon's total.
+    """
+    from kstrl.workqueue import ItemState, QueueError
+
+    try:
+        _root, queue = _queue_for(root_dir)
+        parked = queue.items((ItemState.AWAITING_APPROVAL,))
+    except (QueueError, OSError) as exc:
+        ui_impl.err(f"cannot read the queue to tell whether ks serve parked this run: {exc}")
+        sys.exit(2)
+    return bool(run_id) and any(item.last_run_id == run_id for item in parked)
+
+
+def _charge_serve_for_approval_run(
+    root_dir: Path, runs_before: frozenset[str], ui_impl: UI
+) -> None:
+    """Charge an approval run to the daemon's daily total, as serve charged the park (#463)."""
+    from kstrl.serve import ServeStateError, SpendLedger, owned_run_spend
+
+    owned, spend = owned_run_spend(root_dir, runs_before)
+    try:
+        day = SpendLedger(root_dir).charge(
+            spend.cost_usd,
+            covered_calls=spend.cost_calls,
+            total_calls=spend.usage_calls,
+            unmetered_phases=spend.unmetered_phases,
+            metered_run=bool(owned),
+        )
+    except (ServeStateError, OSError) as exc:
+        ui_impl.err(
+            f"the approval run spent ${spend.cost_usd:.2f} over {spend.usage_calls} call(s) "
+            f"and could not be charged to the ks serve spend ledger: {exc}"
+        )
+        return
+    ui_impl.info(
+        f"charged ${spend.cost_usd:.2f} over {len(owned)} run dir(s) to the ks serve "
+        f"spend ledger; today ${day.spent_usd:.2f}"
+    )
+
+
 def _decide_parked_merge_if_parked(
     action: str,
     item_id: str,
@@ -5408,6 +5479,7 @@ def _decide_parked_merge_if_parked(
     if plan is None:
         _report_preflight(ui_impl, RESUME_REFUSAL, problems)
         sys.exit(2)
+    serve_parked = _serve_parked(root_dir, manifest.run_id, ui_impl)
     try:
         if action == "approve":
             box.approve(item.id, actor=_actor(), comment=comment)
@@ -5433,8 +5505,31 @@ def _decide_parked_merge_if_parked(
     factory_ctx = factory.make_context(
         "factory", [*argv, *plan.argv], parent=click.get_current_context()
     )
-    with factory_ctx:
-        factory.invoke(factory_ctx)
+    from kstrl.serve import run_dir_names
+
+    runs_before = run_dir_names(root_dir)
+    try:
+        with factory_ctx:
+            factory.invoke(factory_ctx)
+    except SystemExit as exc:
+        # `ks factory` always leaves through sys.exit with the run's own
+        # code. Settle the queue item serve parked on this run (#464),
+        # then exit with that code.
+        from kstrl.serve import settle_approval_run
+        from kstrl.workqueue import Queue, QueueConfig
+
+        settle_approval_run(
+            root_dir,
+            Queue(root_dir, QueueConfig.load(root_dir)),
+            parked_run_id=manifest.run_id,
+            returncode=exc.code if isinstance(exc.code, int) else 1,
+            actor=_actor(),
+            observer=_ServeUiObserver(ui_impl),
+        )
+        raise
+    finally:
+        if serve_parked:
+            _charge_serve_for_approval_run(root_dir, runs_before, ui_impl)
 
 
 @inbox_group.command(name="snooze")

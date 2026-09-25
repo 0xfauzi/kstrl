@@ -28,7 +28,7 @@ migrations are detectable.
 | `component_result` | `EvolutionJournal.record_run` | Once per component the run touched (launched, or failed or cascade-skipped without a launch) at the end of every factory run; a component that carried its state from an earlier run gets no row, and neither does a merge the run's re-poll confirms, which the launching run already recorded (#447) |
 | `findings_superseded` | pipeline `ComponentPipeline.journal_superseded_findings` | When a retry supersedes an attempt (R3.3); written for every superseded attempt, whether or not it produced findings (#233) |
 | `contract_result` | factory `_record_contract_event` | After every contract-test tier, pass or fail (R0.3) |
-| `role_usage` | `EvolutionJournal.record_run` | Once per role that spent tokens outside any manifest component (#257) |
+| `role_usage` | `EvolutionJournal.record_run` | Once per role that spent tokens outside any manifest component (#257), and once per component whose spend a resumed run took over from the run it resumed but did not run again (#463) |
 | `autonomy_transition` | `autonomy.commit_transition` | Every promotion or demotion of the autonomy ladder |
 | `spec_issues` | `decompose._record_spec_issues_event` | Once per spec audit (#280); carries no `run_id` |
 | `journal_repair` | `EvolutionJournal.append_entries` | When an append finds the file not newline-terminated, i.e. a previous write was interrupted (#312) |
@@ -92,6 +92,7 @@ did. Reading one of these rows:
 | `iteration_count` | Engineer-loop iterations of THIS attempt, not a running total (#233). |
 | `failure_signatures` | The attempt's structured `"<check>:<code>"` signatures. |
 | `findings` | The attempt's typed Finding stream. Empty when the attempt produced none; the row is written either way (#233), so the attempt series is complete. |
+| `carried_from_run` | Present only on a row a resumed run wrote again (#463): the run the attempt ran in, which stopped before its summary. The row's `run_id` is the run that resumed it, and the #233 reading counts the attempt there. |
 
 ### `component_result` fields
 
@@ -103,7 +104,8 @@ did. Reading one of these rows:
 | `project` | `manifest.project_name`. |
 | `component_id` | Manifest component id. |
 | `status` | Terminal manifest status (`completed`, `failed`, `pending`, ...). `pending` with a non-empty `error` means the component was retried and the run ended before another attempt. |
-| `retries` | Retry counter at end of run; 0 for a component the run failed or cascade-skipped without launching it (#447). |
+| `retries` | Retry counter at end of run; 0 for a component the run failed or cascade-skipped without launching it (#447), unless the run took that component's earlier attempts over from a run it resumed (#463). |
+| `first_attempt` | #463: the first attempt this run answers for. A run starts at `retries + 1` for every component, except that a run resuming one which never reached its summary keeps that run's value for each component it runs again (PENDING after the crash-recovery reset), because it writes that run's `findings_superseded` rows for them again under its own id. The #233 reading expects one reading for each attempt from `first_attempt` to `retries + 1`, and to `retries` for a `pending` row, whose next attempt never began. Absent on rows written before #463, where it reads as 1. |
 | `error` | Flattened human-readable error of the last failure, `""` on success. Display only: metrics must use `failure_signatures`. |
 | `failure_signatures` | R6.1: list of structured `"<check>:<code>"` signatures for the last failed attempt, e.g. `linter:E501`, `typecheck:arg-type`, `test_suite:assertion-error`, `review:scope_creep`, `security:injection`, `diff_scope:files-outside-allowed-scope`, `scope_unreadable:scope-could-not-be-read-at-plan-time-failing-closed`, `contract:tier_1`, `engineer:component-timeout`, `token_budget:exceeded`, `pr:closed-without-merge`. Codes come from the tool parser (ruff rule, mypy error code, pytest exception type) or the finding taxonomy; sites without parser codes record a stable slug of the error text (paths, line numbers, and counts stripped). Empty on success. |
 | `check_name` / `error_signature` | Convenience split of the FIRST signature (`check_name:error_signature`). Kept for v1-shaped readers; new consumers should read `failure_signatures`. |
@@ -128,9 +130,9 @@ One row per factory run, appended by `record_run`. Columns:
 | `completed` / `failed` / `skipped` | Counts from the run's FactoryResult (skipped = cascade-skipped dependents of failures). |
 | `avg_iterations` | Mean engineer-loop iterations over components with `iteration_count` > 0, where `iteration_count` is the LAST attempt's count (see above): a lower bound on the iterations a retried component actually ran. 0.00 when no component ran. The per-attempt series is in the evolution journal, on the `component_result` and `findings_superseded` rows; `ks evolve --status` reads it. |
 | `avg_duration_s` | Mean `duration_seconds` (last-attempt wall clock, see above) over components with a duration > 0. |
-| `retry_rate` | Total retries across the components the run touched divided by `components_total`: the average number of retries per component, NOT the fraction of components that were retried. A run of 4 components where one burned 3 retries records 0.75. Can exceed 1.0. |
+| `retry_rate` | Total retries across the components the run touched divided by `components_total`: the average number of retries per component, NOT the fraction of components that were retried. A run of 4 components where one burned 3 retries records 0.75. Can exceed 1.0. Counts only the retries the run answers for, from `first_attempt` on (#463), so a resumed run does not report its predecessor's retries again. |
 | `common_failure` | The most frequent full `"<check>:<code>"` failure signature among FAILED components this run; `""` when nothing failed. |
-| `total_tokens` / `total_cost_usd` / `unreported_calls` | R3.1 run totals. Empty string (not 0) when usage tracking was unavailable: zero would misread as "measured, free". Figures are agent-CLI self-reports and are lower bounds whenever `unreported_calls` > 0. |
+| `total_tokens` / `total_cost_usd` / `unreported_calls` | R3.1 run totals. Empty string (not 0) when usage tracking was unavailable: zero would misread as "measured, free". Figures are agent-CLI self-reports and are lower bounds whenever `unreported_calls` > 0. A run that resumes one which never reached its summary includes that run's recorded spend (#463). |
 
 Rows written before a column existed keep their shorter header;
 `get_experiment_trends` (csv.DictReader) tolerates both shapes.

@@ -53,6 +53,7 @@ from kstrl.agents.base import (
     collect_usage,
     usage_coverage,
 )
+from kstrl.atomicio import atomic_write_text
 from kstrl.context import IterationContext, IterationRecord
 from kstrl.divergence import (
     AttemptReading,
@@ -114,6 +115,7 @@ from kstrl.verify import (
     VerificationResult,
     scope_unreadable_error,
 )
+from kstrl.worktree_sweep import WorktreeSweep, sweep_findings
 
 if TYPE_CHECKING:
     from kstrl.config import KstrlConfig
@@ -135,6 +137,62 @@ CHECKPOINT_DIFF_CHAR_LIMIT = 20_000
 def _iso_now() -> str:
     """Current UTC time as ISO 8601, matching the manifest timestamps."""
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+#: How a retry this run carried from an interrupted run is marked (#463).
+CARRIED_REASON_PREFIX = "carried from run "
+
+
+def _carried_reason(prior_run_id: str, reason: str) -> str:
+    """``reason`` marked as carried from ``prior_run_id``, once (#463)."""
+    if reason.startswith(CARRIED_REASON_PREFIX):
+        return reason
+    return f"{CARRIED_REASON_PREFIX}{prior_run_id}: {reason}"
+
+
+def _usage_by_component_phase(events: Sequence[ev.Event]) -> dict[tuple[str, str], UsageTotals]:
+    """Every ``component_usage`` in ``events``, summed per (component, phase) (#463)."""
+    spent: dict[tuple[str, str], UsageTotals] = {}
+    for event in events:
+        if not isinstance(event, ev.ComponentUsage):
+            continue
+        spent.setdefault((event.component, event.phase), UsageTotals()).merge(
+            UsageTotals(
+                calls=event.calls,
+                known_calls=event.known_calls,
+                token_calls=event.token_calls,
+                cost_calls=event.cost_calls,
+                input_tokens=event.input_tokens,
+                output_tokens=event.output_tokens,
+                cache_read_tokens=event.cache_read_tokens,
+                cache_creation_tokens=event.cache_creation_tokens,
+                total_tokens=event.total_tokens,
+                cost_usd=event.cost_usd,
+                duration_seconds=event.duration_seconds,
+            )
+        )
+    return spent
+
+
+def _take_over_attempts(components: Sequence[Component], *, carrying: bool) -> dict[str, range]:
+    """Set the first attempt each component answers for in this run, and
+    return the earlier attempts this run takes over, per component (#463).
+
+    Only a PENDING component of a run that stopped before its summary
+    (``carrying``) is taken over: it keeps ``first_attempt`` and this run
+    owes attempts ``first_attempt..retries``. Every other component starts
+    at ``retries + 1``, including one the killed run left MERGE_PENDING or
+    AWAITING_APPROVAL, whose earlier attempts this run does not write again.
+    """
+    owed = {
+        comp.id: range(comp.first_attempt, comp.retries + 1)
+        for comp in components
+        if carrying and comp.status == ComponentStatus.PENDING.value
+    }
+    for comp in components:
+        if comp.id not in owed:
+            comp.first_attempt = comp.retries + 1
+    return owed
 
 
 class Transition(Enum):
@@ -445,7 +503,7 @@ class PipelineHooks:
     # ComponentPipeline.record_injected_knowledge, so there is no way
     # to reintroduce the rebuild through this struct.
     measure_fact_utilization: Callable[..., dict[str, int]]
-    cleanup_worktree: Callable[[str, Path, str], None]
+    cleanup_worktree: Callable[[str, Path, str], WorktreeSweep]
 
 
 def _verify_routing(failing: list[CheckResult]) -> tuple[FailureAction, str]:
@@ -853,6 +911,69 @@ class ComponentPipeline:
         if totals is None:
             return
         self._record_usage(ARCHITECT_COMPONENT, ARCHITECT_ROLE, totals)
+
+    def carry_interrupted_run(self) -> None:
+        """Take over what an interrupted run recorded (#463).
+
+        The run the manifest names, when ``completed_at`` is empty, stopped
+        before its summary: it was killed, or its process died, so it wrote
+        no journal result, no experiments.tsv row, and its spend is in no
+        run total. Its retries are already on the manifest. This run records
+        the rest under its own id, so every per-run surface counts what the
+        manifest counts:
+
+        - every ``component_usage`` in that run's stream enters this run's
+          meter, so the run total, the cost ceiling, the journal and
+          experiments.tsv include it;
+        - for each component this run will run again (PENDING after the
+          crash-recovery reset), that run's ``component_retrying`` events and
+          ``findings_superseded`` journal rows are written again under this
+          run's id, so progress.jsonl and the #233 reading see every attempt
+          the manifest counts.
+
+        A chain of interrupted runs carries through, because each resume
+        writes what it took over under its own id and the next resume reads
+        it from there. Must run before the manifest is saved with this
+        run's id.
+        """
+        prior = self.manifest.run_id
+        carrying = bool(prior) and not self.manifest.completed_at
+        owed = _take_over_attempts(self.manifest.components, carrying=carrying)
+        if not carrying:
+            return
+        from kstrl.evolution import EvolutionJournal
+        from kstrl.reducer import read_run_dir
+
+        events = read_run_dir(ev.RunPaths.for_run(self.root_dir, prior).root)
+        spent = _usage_by_component_phase(events)
+        for (comp_id, phase), totals in spent.items():
+            self._record_usage(comp_id, phase, totals)
+        retried = [
+            e
+            for e in events
+            if isinstance(e, ev.ComponentRetrying) and e.attempt in owed.get(e.component, range(0))
+        ]
+        for event in retried:
+            self.bus.emit(
+                ev.ComponentRetrying(
+                    component=event.component,
+                    attempt=event.attempt,
+                    reason=_carried_reason(prior, event.reason),
+                )
+            )
+        readings = 0
+        journal = EvolutionJournal.open(self.root_dir, warn=self.ui.warn)
+        if journal is not None:
+            try:
+                readings = journal.carry_superseded(prior, self.run_id, owed)
+            except OSError as exc:
+                self.ui.warn(f"  Evolution journal write failed (non-fatal): {exc}")
+        self.ui.info(
+            f"  Carried from interrupted run {prior}: {len(retried)} retried attempt(s), "
+            f"{readings} attempt reading(s), "
+            f"{sum(t.calls for t in spent.values())} call(s) costing "
+            f"${sum(t.cost_usd for t in spent.values()):.4f}"
+        )
 
     def record_injected_knowledge(
         self,
@@ -1644,6 +1765,12 @@ class ComponentPipeline:
             signatures=signatures,
         )
 
+    def record_worktree_sweep(self, comp_id: str, sweep: WorktreeSweep, phase: str) -> None:
+        """Record a worktree sweep's survivors as findings on the component (#461)."""
+        comp = self.manifest.get_component(comp_id)
+        if comp is not None:
+            self._add_findings(comp, sweep_findings(sweep, phase))
+
     def fail_aborted(self, comp_id: str, reason: str) -> None:
         """PR B: a shutdown aborted this component's in-flight attempt.
         Recorded as a plain FAILED with phase="aborted" so a resume can
@@ -1863,14 +1990,15 @@ class ComponentPipeline:
             signatures=["token_budget:exceeded"],
         )
 
-    def complete(
-        self,
-        comp: Component,
-        duration_seconds: float,
-        iterations: int,
-    ) -> Transition:
+    def complete(self, comp: Component) -> Transition:
         """VERIFYING -> COMPLETED: every gate passed (and the PR merge,
-        when configured, was confirmed)."""
+        when configured, was confirmed).
+
+        The event and the console line read ``comp.duration_seconds``
+        after ``_end_attempt`` has stamped it, so they carry the value the
+        manifest and the journal carry: the whole attempt, not the
+        engineer loop (#450). The engineer loop's own duration is on the
+        ``phase_completed`` event for the engineer phase."""
         comp.status = ComponentStatus.COMPLETED.value
         comp.error = ""
         self.component_failure_signatures.pop(comp.id, None)
@@ -1880,11 +2008,14 @@ class ComponentPipeline:
         self.bus.emit(
             ev.ComponentCompleted(
                 component=comp.id,
-                duration_seconds=duration_seconds,
-                iterations=iterations,
+                duration_seconds=comp.duration_seconds,
+                iterations=comp.iteration_count,
             )
         )
-        self.ui.ok(f"  COMPLETED: {comp.id} ({iterations} iterations, {duration_seconds:.0f}s)")
+        self.ui.ok(
+            f"  COMPLETED: {comp.id} ({comp.iteration_count} iterations, "
+            f"{comp.duration_seconds:.0f}s)"
+        )
         self.manifest.save(self.manifest_path)
         # #438: after the save, so an item is never resolved for a
         # completion the manifest does not yet hold.
@@ -2449,7 +2580,7 @@ class ComponentPipeline:
             return
         pr = self._phase_pr(comp)
         if pr.disposition in (PrDisposition.MERGED, PrDisposition.NO_GH):
-            self.complete(comp, comp.duration_seconds, comp.iteration_count)
+            self.complete(comp)
         elif pr.disposition == PrDisposition.MERGE_PENDING:
             self._park_merge_pending(comp, pr.error)
         else:
@@ -2495,8 +2626,7 @@ class ComponentPipeline:
         if comp is None:
             return None
 
-        # Record timing
-        comp.duration_seconds = comp_result.duration_seconds
+        # The iteration count only: _end_attempt stamps duration_seconds (#450).
         comp.iteration_count = comp_result.iterations
 
         # Engineer bracket closer: PhaseStarted(engineer) was emitted by
@@ -2515,6 +2645,8 @@ class ComponentPipeline:
         # failed attempts cost real tokens too.
         if comp_result.usage is not None:
             self._record_usage(comp_id, "engineer", comp_result.usage)
+        # #461: what the attempt left running in its worktree.
+        self._add_findings(comp, sweep_findings(comp_result.worktree_sweep, "engineer"))
 
         # R3.1 budget checkpoint: the engineer loop just reported the
         # dominant spend; halt before starting adversarial phases (or a
@@ -2764,6 +2896,7 @@ class ComponentPipeline:
             checkpoint = self._phase_checkpoint(
                 comp,
                 diff_text=diff.diff,
+                review=review,
             )
             if checkpoint == CheckpointDecision.REJECTED:
                 return PipelineOutcome(
@@ -2911,15 +3044,17 @@ class ComponentPipeline:
 
         # Clean up worktree now that code is merged
         if self.factory_config.use_worktrees and comp_id in self.worktree_paths:
-            self.hooks.cleanup_worktree(comp_id, self.root_dir, self.run_id)
+            self._add_findings(
+                comp,
+                sweep_findings(
+                    self.hooks.cleanup_worktree(comp_id, self.root_dir, self.run_id),
+                    "cleanup",
+                ),
+            )
             del self.worktree_paths[comp_id]
 
         return PipelineOutcome(
-            transition=self.complete(
-                comp,
-                comp_result.duration_seconds,
-                comp_result.iterations,
-            ),
+            transition=self.complete(comp),
             verify=verify,
             diff=diff,
             review=review,
@@ -2970,6 +3105,39 @@ class ComponentPipeline:
         """
         for gap in verification.not_measured:
             self.ui.warn(f"  {comp.id}: {gap.check} not measured ({gap.reason}) - {gap.detail}")
+
+    def _write_gate_logs(
+        self,
+        comp: Component,
+        verification: VerificationResult,
+    ) -> tuple[str, ...]:
+        """Write each failed gate's output to disk; return the paths (#462).
+
+        One file per failed test / typecheck / lint gate, at
+        ``.kstrl/debug/<run>/<component>/attempt-<n>/<check>.log``: the
+        directory the failure summary, ``ks status`` and the TUI retry
+        screen already name as the component's raw outputs, split by
+        attempt so a retry does not overwrite the evidence of the attempt
+        before it. A write that fails is said out loud and left out of
+        the returned paths, so the event never names a file that is not
+        there, and it does not change Phase 1's verdict.
+        """
+        attempt_dir = self._debug_dir_for(comp.id) / f"attempt-{comp.retries + 1}"
+        written: list[str] = []
+        for check in verification.checks:
+            if check.passed or check.output is None:
+                continue
+            path = attempt_dir / f"{check.name}.log"
+            try:
+                attempt_dir.mkdir(parents=True, exist_ok=True)
+                atomic_write_text(path, check.output)
+            except OSError as exc:
+                self.ui.warn(
+                    f"  {comp.id}: could not write the {check.name} output to {path}: {exc}"
+                )
+                continue
+            written.append(str(path))
+        return tuple(written)
 
     def _phase_verify(
         self,
@@ -3102,6 +3270,7 @@ class ComponentPipeline:
                 failures=tuple(c.message for c in verification.checks if not c.passed),
                 duration_seconds=round(verify_duration, 2),
                 not_measured=tuple(g.as_token() for g in verification.not_measured),
+                gate_logs=self._write_gate_logs(comp, verification),
             )
         )
 
@@ -3775,17 +3944,16 @@ class ComponentPipeline:
         # string is a derived view kept for backward-compat consumers.
         self._add_findings(comp, review_result.as_findings())
         comp.review_findings = review_result.as_pr_body_section()
-        # Observability gets criterion-only counts to preserve the
-        # historical meaning of fail_count = "failed PRD criteria".
-        # Concern counts ride along separately via fail_concerns /
-        # advisory_concerns so dashboards can distinguish.
+        # #450: the two properties the "Review ..." log line prints and
+        # the divergence reading's blocking_count reads. Criteria and
+        # concerns together, one per finding row recorded just above.
         self.bus.emit(
             ev.ReviewResultEvent(
                 component=comp.id,
                 passed=review_result.passed,
                 mode=review_mode.value,
-                fail_count=review_result.criterion_fail_count,
-                advisory_count=review_result.criterion_advisory_count,
+                fail_count=review_result.fail_count,
+                advisory_count=review_result.advisory_count,
                 duration_seconds=round(review_result.duration_seconds, 2),
             )
         )
@@ -4145,8 +4313,8 @@ class ComponentPipeline:
                     component=comp.id,
                     passed=sec_result.passed,
                     mode=f"security-{sec_config.mode}",
-                    fail_count=sec_result.critical_count + sec_result.high_count,
-                    advisory_count=len(sec_result.findings),
+                    fail_count=sec_result.fail_count,
+                    advisory_count=sec_result.advisory_count,
                     duration_seconds=round(sec_result.duration_seconds, 2),
                 )
             )
@@ -4483,7 +4651,8 @@ class ComponentPipeline:
         self,
         comp: Component,
         *,
-        diff_text: str = "",
+        diff_text: str,
+        review: ReviewPhaseResult,
     ) -> CheckpointDecision:
         """E6: human-in-the-loop checkpoint. When opt-in, prompt
         before pushing+merging so a human can inspect the diff,
@@ -4555,6 +4724,16 @@ class ComponentPipeline:
                     decided_by="inbox",
                 )
             )
+            evidence: dict[str, Any] = {
+                "branch": comp.branch_name,
+                "head_sha": git.branch_sha(comp.branch_name, self.root_dir) or "",
+            }
+            # #450: the review_result event's counts, read from the same
+            # properties. Absent when the review produced no reading, so a
+            # crashed or skipped review is never reported as zero findings.
+            if review.produced_a_reading and review.result is not None:
+                evidence["review_fail_count"] = review.result.fail_count
+                evidence["review_advisory_count"] = review.result.advisory_count
             self._inbox_add(
                 ItemKind.MERGE_GATE,
                 f"{comp.id} awaiting merge approval",
@@ -4568,11 +4747,7 @@ class ComponentPipeline:
                 ),
                 component=comp.id,
                 dedupe_key=park_dedupe_key(comp.id),
-                evidence={
-                    "branch": comp.branch_name,
-                    "head_sha": git.branch_sha(comp.branch_name, self.root_dir) or "",
-                    "review_findings": len([f for f in comp.findings if f.phase == "review"]),
-                },
+                evidence=evidence,
             )
             return CheckpointDecision.PARKED
         self.ui.section(f"Human checkpoint: {comp.id}")

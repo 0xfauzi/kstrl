@@ -1038,12 +1038,16 @@ class TestCostCoverageGate:
         self,
         tmp_path: Path,
     ) -> None:
-        """#186 F8: this used to be discovered only after a run had spent."""
+        """#186 F8: this used to be discovered only after a run had spent.
+
+        #464: with no call recorded anywhere, the refusal says so rather
+        than claiming the cap can never fire.
+        """
         ledger = SpendLedger(tmp_path)
         config = ServeConfig(daily_budget_usd=10.0)
         admission = check_cost_coverage(ledger, config, today="d")
         assert not admission.allowed
-        assert "can never fire" in admission.reason
+        assert "no agent call is recorded on this repo yet" in admission.reason
 
     def test_coverage_once_seen_persists(self, tmp_path: Path) -> None:
         """The flag is not a daily fact; capability does not reset nightly."""
