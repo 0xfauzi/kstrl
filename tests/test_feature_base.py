@@ -242,6 +242,35 @@ class TestTheStamp:
         assert "Refusing to run" in output
         assert _on_disk(tmp_path).get("featureBaseSha", "") == ""
 
+    def test_the_stamp_is_on_disk_before_any_merge_decision_runs(self, tmp_path: Path) -> None:
+        """``apply_merge_decisions`` can merge an approved component into
+        the base, so the stamp must already be saved when it runs."""
+        before = _git_project(tmp_path, ["comp-a"])
+        seen: list[object] = []
+
+        def record(self: ComponentPipeline) -> None:
+            seen.append(_on_disk(tmp_path).get("featureBaseSha"))
+
+        with patch.object(
+            ComponentPipeline, "apply_merge_decisions", autospec=True, side_effect=record
+        ):
+            _run(tmp_path, _make_manifest([_component("comp-a")]))
+
+        assert seen == [before]
+
+    def test_an_unexpected_error_while_stamping_is_not_read_as_an_unknown_base(
+        self, tmp_path: Path
+    ) -> None:
+        """Only a base that does not resolve means "unknown". Any other
+        error is a defect and must surface, not become an empty stamp."""
+        _git_project(tmp_path, ["comp-a"])
+
+        with (
+            patch("kstrl.git.resolve_base_sha", side_effect=RuntimeError("stamp defect")),
+            pytest.raises(RuntimeError, match="stamp defect"),
+        ):
+            _run(tmp_path, _make_manifest([_component("comp-a")]))
+
 
 class TestTheManifestField:
     def test_the_field_round_trips_through_save_and_load(self, tmp_path: Path) -> None:
