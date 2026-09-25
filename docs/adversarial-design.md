@@ -119,7 +119,7 @@ Exit code 0 = no regression, 1 = regression, 2 = usage/load error. Both v1 (pre-
 |---|---|---|
 | `MAX_ROLE_DETECTION_DROP` | 0.15 | A role's mean detection rate may not drop more than this between baselines. Sized so one run flipping on a 3-fixture role (drop ~0.11) is variance, an entire fixture going dark (~0.33) is a regression. |
 | `MAX_CATEGORY_DETECTION_DROP` | 0.40 | Same per category (per-CWE categories usually hold one fixture: one run flip ~0.33 tolerated, two flips fail). Only meaningful at 3+ runs. |
-| `MIN_ROLE_DETECTION_RATE` | security 0.80, reviewer/architect 0.65, allowed_paths 0.50 | Absolute floors on the new baseline so successive comparisons cannot ratchet a role downward. |
+| `MIN_ROLE_DETECTION_RATE` | security 0.80, reviewer/architect 0.65, allowed_paths 0.50, integration 0.65, integration_clean 1.00 (#482) | Absolute floors on the new baseline so successive comparisons cannot ratchet a role downward. |
 | `FIXTURE_DETECTION_THRESHOLD` | 0.5 | Majority-of-completed-runs gate used by the suite and by per-fixture `detected`. |
 | `DEFAULT_CALIBRATION_RUNS` | 3 | Default runs per fixture for baseline capture. |
 

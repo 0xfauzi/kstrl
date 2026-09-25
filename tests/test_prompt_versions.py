@@ -316,9 +316,9 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "1630b9ee2c33c3513965f03e28a4f2e4d76c4cbf434b031fdb789819f23fae23",
         "1.0.0",
     ),
-    # 1.0.0 (#482): new. H3 only; its calibration role "integration" has
-    # no fixture yet (#480 section 8), so H2 cannot be discharged until
-    # the Layer B fixtures land.
+    # 1.0.0 (#482): new. H3 discharged here. Its H2 roles, "integration"
+    # and "integration_clean", are scored on the #480 section 8 Layer B
+    # fixtures; no saved baseline carries their ids yet.
     "INTEGRATION_CRITERIA_PROMPT": (
         "dfee33026e55e8979e483983a0387a84ff2c235323f39092bd2bbf275db38e87",
         "1.0.0",

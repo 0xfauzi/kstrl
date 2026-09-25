@@ -1,0 +1,23 @@
+{
+  "fixture_id": "int-d3-duplicate-rule",
+  "design_label": "F-D3",
+  "role": "integration",
+  "kind": "positive",
+  "story": "IC3",
+  "repo_dir": "05_d3_duplicate_rule_repo",
+  "components": {
+    "api": [
+      "src/pastebin/api.py"
+    ],
+    "server": [
+      "src/pastebin/server.py"
+    ]
+  },
+  "planted": [
+    {
+      "path": "src/pastebin/server.py",
+      "contains": "_OWS = \" \\t\""
+    }
+  ],
+  "description": "The optional-whitespace rule (spec.md H3) is defined twice, as api.OWS and server._OWS, and the two agree: an undeclared agreeing duplicate, the #453 D3 _OWS pair. The tree also holds S4 (snippets.MAX_SNIPPET_BYTES) and H9 (server.MAX_REQUEST_BODY_BYTES), equal values the spec states as separate rules, which is not a defect. Detected when IC3 fails citing api.py and server.py."
+}

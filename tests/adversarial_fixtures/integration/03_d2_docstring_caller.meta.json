@@ -1,0 +1,23 @@
+{
+  "fixture_id": "int-d2-docstring-caller",
+  "design_label": "F-D2",
+  "role": "integration",
+  "kind": "positive",
+  "story": "IC1",
+  "repo_dir": "03_d2_docstring_caller_repo",
+  "components": {
+    "tokens": [
+      "src/pastebin/tokens.py"
+    ],
+    "api": [
+      "src/pastebin/api.py"
+    ]
+  },
+  "planted": [
+    {
+      "path": "src/pastebin/tokens.py",
+      "contains": "Callers pass the raw header value exactly as received."
+    }
+  ],
+  "description": "parse_bearer's docstring says callers pass the raw header value and that surrounding whitespace gets the request refused; its one caller, api.get_snippet, strips RFC 9110 optional whitespace first (spec.md H3), which is the correct behaviour. The docstring misdescribes its caller: the #453 D2 defect. Detected when IC1 fails citing both files."
+}

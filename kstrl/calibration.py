@@ -71,6 +71,10 @@ from kstrl.calibration_baseline import (
 #   independent of the old one, so a slow multi-comparison slide cannot
 #   ratchet a role to zero. security 0.80 = at most one of five fixtures
 #   lost; reviewer/architect 0.65 = at least two of three caught.
+# - integration 0.65 and integration_clean 1.0 (#482) are design #480
+#   section 8's acceptance, adopted by its decision 6: each positive at or
+#   above the reviewer floor, and no clean twin opening a finding in any
+#   run. The paid tests gate each fixture on the same two numbers.
 # ---------------------------------------------------------------------------
 
 DEFAULT_CALIBRATION_RUNS = 3
@@ -81,6 +85,8 @@ MIN_ROLE_DETECTION_RATE: dict[str, float] = {
     "reviewer": 0.65,
     "architect": 0.65,
     "architect_allowed_paths": 0.50,
+    "integration": 0.65,
+    "integration_clean": 1.0,
 }
 DEFAULT_MIN_ROLE_DETECTION_RATE = 0.50
 
