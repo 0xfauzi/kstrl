@@ -294,3 +294,20 @@ def test_the_seed_repository_is_not_collected_by_our_own_suite() -> None:
     )
 
     assert proc.returncode == 5, proc.stdout + proc.stderr
+
+
+#: A slice-2 module that validates nothing. No call raises, so no message can
+#: carry the suffix, and the check must not read that as following the convention.
+VALIDATES_NOTHING = """
+def parse_amount(text: str) -> int:
+    return 0
+"""
+
+
+def test_scorer_fails_a_worktree_whose_parse_amount_raises_nothing(tmp_path: Path) -> None:
+    proc = _score("--worktree", _worktree(tmp_path, VALIDATES_NOTHING))
+
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    check = _report(proc)["hidden_check"]
+    assert check["passed"] is False
+    assert "raised nothing" in check["reason"]
