@@ -4,6 +4,8 @@ event stream."""
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -50,3 +52,25 @@ def test_unreadable_runs_directory_is_not_counted_as_zero(
 
     assert line.startswith("  distill replies that did not parse: not counted, ")
     assert " 0 of " not in line
+
+
+def test_ks_evolve_uses_the_configured_lookback_runs(tmp_path: Path) -> None:
+    """The window is ``[evolution] lookback_runs`` read by the real
+    ``ks evolve``, not a constant that happens to equal the default 10."""
+    _write_run(tmp_path, OLDER, True, True)
+    _write_run(tmp_path, NEWER, True, False)
+    (tmp_path / "kstrl.toml").write_text("[evolution]\nlookback_runs = 1\n", encoding="utf-8")
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "kstrl", "evolve", "--root", str(tmp_path), "--ui", "plain"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stdout
+    assert (
+        "distill replies that did not parse: 1 of 2 distill(s) in the last 1 run(s)" in proc.stdout
+    )
