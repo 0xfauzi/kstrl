@@ -100,6 +100,8 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "intake_github.py": 7,
     "jsonread.py": 4,
     "knowledge.py": 6,
+    # #508: the import and one json.dumps of the scorer's report; no parse.
+    "learning_fixture.py": 2,
     "linear.py": 5,
     "observability.py": 4,
     # #509: the import, one json.dumps for the ledger line, and the

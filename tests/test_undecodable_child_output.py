@@ -360,6 +360,7 @@ def test_the_call_site_census_is_pinned() -> None:
         "breaker.py": 1,
         "contract.py": 5,
         "fixtures.py": 2,
+        "learning_fixture.py": 1,
         "verify.py": 10,
         "worktree_sweep.py": 1,
     }
@@ -441,6 +442,7 @@ def test_the_disposition_census_is_pinned() -> None:
         "contract.py:returns": 2,
         "contract.py:swallows": 2,
         "fixtures.py:returns": 2,
+        "learning_fixture.py:raises": 1,
         "verify.py:converts": 1,
         "verify.py:returns": 9,
         "worktree_sweep.py:returns": 1,

@@ -55,6 +55,8 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # +2 for #500's `tracked_files_at`.
     "git.py": 64,
     "intake_github.py": 3,
+    # #508: the import, and `TimeoutExpired` from `run_scrubbed`.
+    "learning_fixture.py": 2,
     "licensing.py": 3,
     "observability.py": 5,
     "pr.py": 18,
