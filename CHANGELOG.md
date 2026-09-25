@@ -289,6 +289,15 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- With `[agent] command` set and no `--review-agent-cmd`, the code
+  reviewer, which is also the integration reviewer, now runs the
+  engineer's command (#498), as the security reviewer already did and as
+  the `--review-agent-cmd` help has always said. It auto-detected an
+  installed `claude` or `codex` CLI instead, so a run with a stub
+  engineer paid for real review calls. The startup warning that a
+  custom-command reviewer cannot be held read-only now names the code
+  reviewer as well.
+
 - One fact, one value (#450). `component_completed` and the console
   `COMPLETED:` line now carry the whole attempt's duration, the value the
   manifest and the journal already carried, instead of the engineer
