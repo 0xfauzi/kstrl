@@ -8,7 +8,7 @@ file the reviewer is handed. The factory-facing half is
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,7 +23,7 @@ from kstrl.review import (
     normalize_story_id,
 )
 
-INTEGRATION_CRITERIA_PROMPT_VERSION = "1.0.0"
+INTEGRATION_CRITERIA_PROMPT_VERSION = "1.1.0"
 
 # One story per line: "id | title | criterion". Instruction to the reviewer
 # LLM, and the detector itself, so it is enrolled (H3). Its H2 roles are
@@ -34,7 +34,7 @@ IC1 | Calls across component boundaries | Every call from one component into ano
 IC2 | Stored data read back | Data that one component writes and another component reads back is read under rules that still accept everything written before, so a validation rule tightened for new input cannot make stored data unreadable.
 IC3 | One definition per shared rule | A value or rule that more than one component depends on is defined once and imported by the others, unless the specification states them as separate rules that share a value, in which case separate definitions are correct and are not a defect.
 IC4 | Calls into code that predates the feature | Every call the feature makes into code that already existed at commit {feature_base_sha} uses that code as its docstring and its tests state, including argument formats, return values and raised errors.
-IC5 | Decisions agree with criteria | Each decision in scripts/kstrl/decisions.json agrees with the acceptance criteria in scripts/kstrl/feature/<component>/prd.json of the component it binds and with every other decision in that file. If decisions.json does not exist at this commit, this criterion passes and the explanation says the file is absent.
+IC5 | Decisions agree with criteria | Each decision in scripts/kstrl/decisions.json agrees with every other decision in that file and with the acceptance criteria of the component it binds, which are in the prd.json file in the directory of that component under scripts/kstrl/feature/. If decisions.json does not exist at this commit, this criterion passes and the explanation says the file is absent.
 """
 
 INTEGRATION_CARRIED_PROMPT_VERSION = "1.0.0"
@@ -170,7 +170,8 @@ def write_integration_prd(path: Path, stories: Sequence[ExpectedStory]) -> None:
 
 def cited_paths(text: str) -> tuple[str, ...]:
     """Repository-relative file paths named in ``text``, in order, once each.
-    Candidates only: the caller keeps those that exist at the reviewed commit."""
+    Candidates only: :func:`scope_locations` resolves them against the files
+    tracked at the reviewed commit."""
     found: list[str] = []
     for token in _PATH_TOKEN.findall(text):
         path = token.removeprefix("./")
@@ -180,17 +181,48 @@ def cited_paths(text: str) -> tuple[str, ...]:
     return tuple(found)
 
 
+def scope_locations(text: str, tracked: Collection[str]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """``(located, missing)`` for the paths ``text`` cites (#500).
+
+    A cited path tracked as written is itself. Otherwise it names the one
+    tracked file whose trailing whole path segments equal it: ``storage.py``
+    names ``src/snippetvault/storage.py`` when no other tracked file ends in
+    ``/storage.py``. A path matching no tracked file, or more than one, is
+    missing: two candidates are never chosen between. ``located`` holds each
+    resolved file once, in citation order; ``missing`` holds the cited
+    spelling of each path that resolved to nothing.
+    """
+    located: list[str] = []
+    missing: list[str] = []
+    for path in cited_paths(text):
+        resolved = _resolve_location(path, tracked)
+        if not resolved:
+            missing.append(path)
+        elif resolved not in located:
+            located.append(resolved)
+    return tuple(located), tuple(missing)
+
+
+def _resolve_location(path: str, tracked: Collection[str]) -> str:
+    if path in tracked:
+        return path
+    candidates = [name for name in tracked if name.endswith("/" + path)]
+    return candidates[0] if len(candidates) == 1 else ""
+
+
 def integration_outcome(
     test_result: ContractResult | None,
     review_result: ReviewResult,
     expected: Sequence[ExpectedStory],
     *,
-    location_exists: Callable[[str], bool],
+    tracked: Collection[str],
 ) -> IntegrationOutcome:
     """The only place the design 3.3 rules are written.
 
     ``test_result`` is the round's integrated check, or None when the tests
-    did not run. The verdict is read from the validated verdicts and never
+    did not run. ``tracked`` is every file tracked at the reviewed commit,
+    which each cited path is resolved against (:func:`scope_locations`).
+    The verdict is read from the validated verdicts and never
     from ``review_result.passed``, which counts every fail concern,
     including the record-only ones.
     """
@@ -209,7 +241,7 @@ def integration_outcome(
                 output or "the integrated tests failed with no output",
                 "",
                 output,
-                location_exists,
+                tracked,
             )
         )
     by_story = {normalize_story_id(cr.story_id): cr for cr in review_result.criteria}
@@ -220,9 +252,9 @@ def integration_outcome(
         if story.story_id.startswith(FINDING_ID_PREFIX):
             _read_carried(story, verdict, closed, still_open)
             continue
-        _read_verdict(story, verdict, opened, recorded, location_exists)
+        _read_verdict(story, verdict, opened, recorded, tracked)
     for concern in review_result.concerns:
-        _read_concern(concern, opened, recorded, location_exists)
+        _read_concern(concern, opened, recorded, tracked)
     return IntegrationOutcome(
         opened=tuple(opened),
         recorded=tuple(recorded),
@@ -302,7 +334,7 @@ def _read_verdict(
     verdict: CriterionReview,
     opened: list[OpenedFinding],
     recorded: list[RecordedOnly],
-    location_exists: Callable[[str], bool],
+    tracked: Collection[str],
 ) -> None:
     if verdict.verdict == ReviewVerdict.ADVISORY.value:
         recorded.append(
@@ -333,7 +365,7 @@ def _read_verdict(
             text,
             verdict.suggestion,
             f"{verdict.explanation} {verdict.suggestion}",
-            location_exists,
+            tracked,
         )
     )
 
@@ -342,7 +374,7 @@ def _read_concern(
     concern: ReviewConcern,
     opened: list[OpenedFinding],
     recorded: list[RecordedOnly],
-    location_exists: Callable[[str], bool],
+    tracked: Collection[str],
 ) -> None:
     if concern.severity != "fail" or concern.category in RECORD_ONLY_CONCERN_CATEGORIES:
         recorded.append(
@@ -363,7 +395,7 @@ def _read_concern(
             concern.explanation,
             concern.suggestion,
             concern.location,
-            location_exists,
+            tracked,
         )
     )
 
@@ -375,12 +407,10 @@ def _scoped(
     text: str,
     suggestion: str,
     cited_in: str,
-    location_exists: Callable[[str], bool],
+    tracked: Collection[str],
 ) -> OpenedFinding:
-    """A finding whose cited files exist at the reviewed commit is open; one
-    citing none that exist cannot be scoped and is handed off, never widened."""
-    cited = cited_paths(cited_in)
-    present = tuple(path for path in cited if location_exists(path))
-    missing = tuple(path for path in cited if path not in present)
+    """A finding that cites a file tracked at the reviewed commit is open; one
+    citing none cannot be scoped and is handed off, never widened."""
+    present, missing = scope_locations(cited_in, tracked)
     status = STATUS_OPEN if present else STATUS_HANDOFF
     return OpenedFinding(kind, story_id, category, text, suggestion, present, missing, status)

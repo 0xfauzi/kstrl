@@ -283,6 +283,7 @@ class TestEveryStrictReaderConvertsADecodeFailure:
             "get_diff_numstat": 1,
             "get_untracked_files": 1,
             "resolve_base_sha": 1,
+            "tracked_files_at": 1,
         }
 
     def test_every_subject_spawn_converts_a_decode_failure(self) -> None:
@@ -405,7 +406,7 @@ class TestGitDiffErrorHasOneHome:
                 if isinstance(node, ast.Raise) and _names_git_diff_error(node):
                     census[where] = census.get(where, 0) + 1
 
-        assert census == {"git.py": 17}
+        assert census == {"git.py": 20}
 
     def test_no_importfrom_outside_git_py_binds_the_name(self) -> None:
         offenders = [
