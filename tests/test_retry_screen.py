@@ -301,3 +301,50 @@ class TestRetryScreen:
         persisted = Manifest.load(manifest_file).get_component("comp-a")
         assert persisted is not None
         assert persisted.status == ComponentStatus.FAILED.value
+
+
+async def test_the_confirmation_names_the_failed_component_it_leaves_out(tmp_path: Path) -> None:
+    """#485: http-api and cli both FAILED; retrying http-api names cli and its command."""
+    manifest_file = tmp_path / "scripts" / "kstrl" / "manifest.json"
+    manifest_file.parent.mkdir(parents=True)
+    Manifest(
+        version="1",
+        spec_file="s",
+        project_name="demo",
+        base_branch="main",
+        single_pr=False,
+        components=[
+            Component(
+                id=cid,
+                title=cid,
+                description="",
+                dependencies=deps,
+                prd_path="p.json",
+                branch_name=f"kstrl/{cid}",
+                status=status.value,
+            )
+            for cid, deps, status in (
+                ("storage", [], ComponentStatus.COMPLETED),
+                ("http-api", ["storage"], ComponentStatus.FAILED),
+                ("cli", ["storage"], ComponentStatus.FAILED),
+            )
+        ],
+    ).save(manifest_file)
+    app = _home_app(tmp_path)
+    async with app.run_test(size=(130, 40)) as pilot:
+        app.push_screen(RetryScreen())
+        table = await mounted(pilot, lambda: app.screen, "#retry-table")
+        await drained(pilot, app.screen, what="the retry screen's on_mount to run")
+        assert table.row_count == 2  # type: ignore[attr-defined]
+        await pilot.press("r")
+        await settled(
+            pilot,
+            lambda: not isinstance(app.screen, RetryScreen),
+            what="r to open the retry confirmation",
+        )
+        assert isinstance(app.screen, OptionsModal)
+        header = app.screen.request.header
+        assert header.startswith("Retry 'http-api'?"), header
+        assert "Not in this retry" in header, header
+        assert "cli: FAILED; retry it after this run with ks retry cli" in header, header
+        assert "ks retry http-api" not in header, header

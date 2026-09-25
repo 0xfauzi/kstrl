@@ -194,6 +194,10 @@ class RetryScreen(Screen[None]):
             "removes the failed attempt's worktree and branch, and "
             "re-enters the factory."
         )
+        if preview.not_in_retry:
+            header += "\nNot in this retry:\n" + "\n".join(
+                f"  {line}" for line in preview.not_in_retry
+            )
 
         def _resolved(choice: int | None) -> None:
             if choice == 0:
