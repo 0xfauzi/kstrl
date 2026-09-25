@@ -142,10 +142,6 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "pipeline.py": 5,  # 3 until #463 added carry_interrupted_run's journal
     # open; 5 since #482 added journal_integration_result's journal open
     "prd.py": 1,
-    # 4 until #352 routed ``mark_applied`` through ``appendio`` for the
-    # same reason. The three left are the CLAUDE.md read, the proposal
-    # read, and the CLAUDE.md write.
-    "proposals.py": 3,
     "security.py": 1,
     # Five reads, and five reads only. Round 1 of #228 spelled the gh
     # flag as two argv tokens, so the bare literal "open" landed here and
@@ -263,11 +259,6 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "pipeline.py open(path, 'a', buffering=1, encoding='utf-8')",
     "pipeline.py progress_path.read_text(encoding='utf-8')",
     "prd.py open(path, encoding='utf-8')",
-    "proposals.py claude_md.read_text(encoding='utf-8')",
-    # ``proposals.py open(path, 'a', encoding='utf-8')`` was here until
-    # #352, and is deleted for the same reason as the ``init_cmd`` row
-    # above: ``mark_applied`` appends through ``appendio`` now.
-    "proposals.py path.read_text(encoding='utf-8')",
     "security.py prd_path.read_text(encoding='utf-8')",
     "serve.py open(lock_path, 'a+', encoding='utf-8')",
     "serve.py path.read_text(encoding='utf-8')",

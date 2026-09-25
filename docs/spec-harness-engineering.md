@@ -362,6 +362,12 @@ This is a flat, greppable file that answers: "Are we getting better over time?" 
 
 #### 3.4.3 Automatic harness proposals
 
+**Status**: deleted by #507 (Slice 1 of #217). `ks evolve` reports recurring
+patterns and writes nothing; `--apply` and the `auto_propose` and
+`auto_apply_computational` keys are gone. The rest of this subsection is the
+original design, kept as a record. The replacement is
+[continuous-learning-design.md](continuous-learning-design.md).
+
 After extracting patterns, kstrl proposes concrete changes:
 
 **Computational proposals** (deterministic, no LLM):
@@ -378,9 +384,7 @@ After extracting patterns, kstrl proposes concrete changes:
 **Human review gate**: Proposals are written to `.kstrl/proposals/` as markdown files. The user reviews and applies them:
 
 ```bash
-ks evolve                    # analyze recent runs, generate proposals
-ks evolve --apply            # apply all approved proposals
-ks evolve --apply PROP-003   # apply a specific proposal
+ks evolve                    # analyze recent runs, report recurring patterns
 ```
 
 **Configuration** (`kstrl.toml`):
@@ -389,10 +393,8 @@ ks evolve --apply PROP-003   # apply a specific proposal
 enabled = true
 journal_path = ".kstrl/evolution.jsonl"
 experiments_path = ".kstrl/experiments.tsv"
-min_pattern_frequency = 2      # pattern must occur N times before proposal
+min_pattern_frequency = 2      # pattern must recur in N runs to be reported
 lookback_runs = 10             # how many past runs to analyze
-auto_propose = true            # generate proposals after each factory run
-auto_apply_computational = false  # auto-apply rule additions (no human gate)
 ```
 
 ---
@@ -528,8 +530,6 @@ journal_path = ".kstrl/evolution.jsonl"
 experiments_path = ".kstrl/experiments.tsv"
 min_pattern_frequency = 2
 lookback_runs = 10
-auto_propose = true
-auto_apply_computational = false
 
 [fixtures]
 enabled = false
@@ -546,8 +546,7 @@ ks run [N]                  # now delegates to factory (single-component)
 ks run --no-verify [N]      # skip verification (lightweight mode)
 ks run --legacy [N]         # old behavior (direct loop.py)
 
-ks evolve                   # analyze runs, show proposals
-ks evolve --apply           # apply approved proposals
+ks evolve                   # analyze runs, report recurring patterns
 ks evolve --status          # show experiment trends
 ```
 

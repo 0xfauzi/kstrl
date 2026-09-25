@@ -486,7 +486,6 @@ EXPECTED_ROUTED_APPENDS: dict[str, int] = {
     "init_cmd.py: append_records(lock=default (False))": 1,
     "knowledge.py: append_records(lock=default (False))": 1,
     "observability.py: append_records(lock=default (False))": 1,
-    "proposals.py: append_records(lock=default (False))": 1,
     "workqueue.py: append_records(lock=default (False))": 1,
 }
 
