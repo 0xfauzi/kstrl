@@ -202,6 +202,24 @@ class TestNotInThisRetry:
             "e: SKIPPED; waits on b",
         ]
 
+    def test_a_skipped_component_names_every_failure_it_waits_on_in_manifest_order(
+        self,
+    ) -> None:
+        manifest = _manifest_of(
+            _component("a", [], ComponentStatus.FAILED),
+            _component("b", [], ComponentStatus.FAILED),
+            _component("c", [], ComponentStatus.FAILED),
+            _component("d", ["c", "b"], ComponentStatus.SKIPPED),
+        )
+
+        preview = preview_retry(manifest, "a")
+
+        assert preview.not_in_retry == [
+            "b: FAILED; retry it after this run with ks retry b",
+            "c: FAILED; retry it after this run with ks retry c",
+            "d: SKIPPED; waits on b, c",
+        ]
+
     def test_a_dependent_this_retry_resets_is_not_listed(self) -> None:
         preview = preview_retry(_skipped_on_one_failure(), "a")
 
