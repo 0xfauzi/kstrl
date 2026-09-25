@@ -24,7 +24,7 @@ import json
 import os
 import re
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -38,6 +38,15 @@ from kstrl.decompose import (
     collect_agent_output,
 )
 from kstrl.delimiters import generate_data_delimiter
+from kstrl.fact_scope import (
+    FACT_TIERS,
+    TIER_CORE,
+    TIER_DEPENDENCY,
+    TIER_SIBLING,
+    evidence_cites_existing_path,
+    is_stale,
+    tier_for,
+)
 from kstrl.jsonread import read_json
 from kstrl.prd import prd_text_for_prompt
 from kstrl.timeout import limit_seconds
@@ -427,6 +436,24 @@ def read_facts(knowledge_root: Path, component_id: str) -> list[Fact]:
     return list(facts_by_id.values())
 
 
+def _read_every_fact(knowledge_root: Path) -> list[tuple[str, Fact]]:
+    """Every fact stored under the knowledge root, as ``(owner, fact)``.
+
+    ``owner`` is the component directory the fact was read from. Every
+    directory is read, not only the current manifest's ids, because a
+    component id does not survive a new manifest (#517). Facts are kept
+    apart per directory: ``fact-001`` exists in every one of them, so a
+    fact's identity is ``(owner, fact.id)`` and never ``fact.id`` alone.
+    Underscore-prefixed entries are metadata, as in :func:`_run_dirs`.
+    """
+    owners = sorted(
+        entry.name
+        for entry in knowledge_root.iterdir()
+        if entry.is_dir() and not entry.name.startswith("_")
+    )
+    return [(owner, fact) for owner in owners for fact in read_facts(knowledge_root, owner)]
+
+
 def write_facts(
     facts: list[Fact],
     knowledge_root: Path,
@@ -587,16 +614,13 @@ def _pack_facts_summary(
     return kept, overflowed
 
 
-# The three prefix tiers, named once. The renderer below and the
-# fact-utilization parser (`_extract_prefix_claims`) both resolve
-# section titles through these, because the two drifting apart would
-# silently mis-bin claims: per-tier counts would keep summing to the
-# right total while attributing facts to the wrong tier, and nothing
-# would fail. `_tier_for_section` is the single decoder.
-TIER_CORE = "core"
-TIER_DEPENDENCY = "dependency"
-TIER_SIBLING = "sibling"
-FACT_TIERS = (TIER_CORE, TIER_DEPENDENCY, TIER_SIBLING)
+# The three prefix tiers are named once, in `kstrl.fact_scope`. The
+# renderer below and the fact-utilization parser
+# (`_extract_prefix_claims`) both resolve section titles through them,
+# because the two drifting apart would silently mis-bin claims: per-tier
+# counts would keep summing to the right total while attributing facts
+# to the wrong tier, and nothing would fail. `_tier_for_section` is the
+# single decoder.
 
 # The core title carries the component id, so it is matched by prefix.
 _CORE_SECTION_PREFIX = "Current component ("
@@ -654,19 +678,64 @@ KNOWLEDGE_OVERFLOW_PROMPT = (
 )
 
 
+def _dependency_ids(
+    manifest: Manifest,
+    component_id: str,
+    knowledge_root: Path,
+    config: KnowledgeConfig,
+) -> set[str]:
+    """The dependency ids whose facts go in the full-text tier.
+
+    Scope controlled by the E8 config flag. Always computes the
+    transitive set: the direct subset is used in direct mode, and the
+    delta is recorded as E8 telemetry, so a downstream consumer can
+    detect "I switched to direct scope and silently lost N facts per
+    build". The withheld facts still appear in the sibling summaries.
+    """
+    transitive_dep_ids = _transitive_dependencies(manifest, component_id)
+    if config.dependency_scope == "transitive":
+        return transitive_dep_ids
+    direct_dep_ids = _direct_dependencies(manifest, component_id)
+    excluded_dep_ids = transitive_dep_ids - direct_dep_ids
+    if excluded_dep_ids:
+        withheld_facts = sum(len(read_facts(knowledge_root, dep_id)) for dep_id in excluded_dep_ids)
+        record_dependency_scope_gap(
+            component_id=component_id,
+            excluded_dep_count=len(excluded_dep_ids),
+            withheld_fact_count=withheld_facts,
+            knowledge_root=knowledge_root,
+        )
+    return direct_dep_ids
+
+
 def build_knowledge_context(
     manifest: Manifest,
     component: Component,
     knowledge_root: Path,
     config: KnowledgeConfig,
+    *,
+    allowed_paths: Sequence[str] | None = None,
+    dependency_paths: Mapping[str, Sequence[str]] | None = None,
+    worktree: Path | None = None,
 ) -> str:
     """Build the three-tier knowledge prefix for a component's prompt.
 
+    Reads every fact stored under ``knowledge_root``, whichever manifest
+    wrote it (#517), and places each by :func:`kstrl.fact_scope.tier_for`.
     Tiers (each token-capped from config):
-    - Core: full text of all facts for ``component``.
-    - Dependency: full text of facts for every direct (or transitive
-      under opt-in) dependency.
-    - Sibling: first-sentence summary of facts for every other component.
+    - Core: full text of facts written under ``component``, or citing a
+      path inside ``allowed_paths``.
+    - Dependency: full text of facts written under a direct (or
+      transitive under opt-in) dependency, or citing a path inside that
+      dependency's entry in ``dependency_paths``.
+    - Sibling: first-sentence summary of every other fact.
+
+    ``allowed_paths`` of None matches by component id only. With a
+    ``worktree``, a fact from a component outside this manifest is
+    dropped when none of the paths it cites exists there. A fact of this
+    manifest's own components is never dropped that way: its code may
+    not have reached the base branch yet (``--no-prs``), and the fact is
+    then all a dependent learns about it.
 
     Returns the empty string when there is nothing to surface or when
     knowledge is disabled. Side-effect: when ``dependency_scope=direct``
@@ -679,53 +748,22 @@ def build_knowledge_context(
     if not knowledge_root.is_dir():
         return ""
 
-    # Core
-    core_facts = read_facts(knowledge_root, component.id)
-    core_kept, core_overflow = _pack_facts_full(core_facts, config.max_core_tokens)
+    dep_ids = _dependency_ids(manifest, component.id, knowledge_root, config)
+    manifest_ids = {comp.id for comp in manifest.components}
+    tiers: dict[str, list[Fact]] = {tier: [] for tier in FACT_TIERS}
+    for owner, fact in _read_every_fact(knowledge_root):
+        if worktree is not None and owner not in manifest_ids and is_stale(fact, worktree):
+            continue
+        tier = tier_for(owner, fact, component.id, allowed_paths, dep_ids, dependency_paths or {})
+        tiers[tier].append(fact)
 
-    # Dependency tier -- scope controlled by E8 config flag. Always
-    # compute the transitive set; we use the direct subset when in
-    # direct mode, and the delta for E8 telemetry.
-    transitive_dep_ids = _transitive_dependencies(manifest, component.id)
-    direct_dep_ids = _direct_dependencies(manifest, component.id)
-    if config.dependency_scope == "transitive":
-        dep_ids = transitive_dep_ids
-    else:
-        dep_ids = direct_dep_ids
-        # E8 telemetry: facts that direct scope withheld from the
-        # full-text tier (they still appear in sibling summaries).
-        # Recorded so a downstream consumer can detect "I switched to
-        # direct scope and silently lost N facts per build."
-        excluded_dep_ids = transitive_dep_ids - direct_dep_ids
-        if excluded_dep_ids:
-            withheld_facts = sum(
-                len(read_facts(knowledge_root, dep_id)) for dep_id in excluded_dep_ids
-            )
-            record_dependency_scope_gap(
-                component_id=component.id,
-                excluded_dep_count=len(excluded_dep_ids),
-                withheld_fact_count=withheld_facts,
-                knowledge_root=knowledge_root,
-            )
-    dep_facts: list[Fact] = []
-    for dep_id in dep_ids:
-        dep_facts.extend(read_facts(knowledge_root, dep_id))
+    core_kept, core_overflow = _pack_facts_full(tiers[TIER_CORE], config.max_core_tokens)
     dep_kept, dep_overflow = _pack_facts_full(
-        dep_facts,
+        tiers[TIER_DEPENDENCY],
         config.max_dependency_tokens,
     )
-
-    # Sibling: everything not in core or dep tiers. When dependency_scope
-    # is "direct", transitive deps land here -- not invisible, just
-    # downgraded to first-sentence summaries.
-    excluded = {component.id} | dep_ids
-    sibling_facts: list[Fact] = []
-    for comp in manifest.components:
-        if comp.id in excluded:
-            continue
-        sibling_facts.extend(read_facts(knowledge_root, comp.id))
     sibling_kept, sibling_overflow = _pack_facts_summary(
-        sibling_facts,
+        tiers[TIER_SIBLING],
         config.max_sibling_tokens,
     )
 
@@ -1207,34 +1245,6 @@ def _coerce_facts(
     return facts
 
 
-def _evidence_cites_existing_path(evidence: list[str], worktree_path: Path) -> bool:
-    """Return True when at least one evidence item cites a path that
-    exists inside the worktree.
-
-    Evidence items look like ``path/to/file.py:42-58``; everything
-    before the first ``:`` is treated as a worktree-relative path.
-    Absolute paths and paths that resolve outside the worktree never
-    count - evidence must point at the artifact under review.
-    """
-    try:
-        resolved_root = worktree_path.resolve()
-    except OSError:
-        return False
-    for item in evidence:
-        cited = item.split(":", 1)[0].strip()
-        if not cited or Path(cited).is_absolute():
-            continue
-        try:
-            candidate = (worktree_path / cited).resolve()
-        except OSError:
-            continue
-        if candidate == resolved_root or not candidate.is_relative_to(resolved_root):
-            continue
-        if candidate.exists():
-            return True
-    return False
-
-
 def _dump_distill_debug(
     debug_dir: Path,
     streamed_output: str,
@@ -1355,7 +1365,7 @@ def distill_facts(
     facts = [
         replace(f, confidence="asserted")
         if f.confidence == "test_verified"
-        and not _evidence_cites_existing_path(f.evidence, worktree_path)
+        and not evidence_cites_existing_path(f.evidence, worktree_path)
         else f
         for f in facts
     ]

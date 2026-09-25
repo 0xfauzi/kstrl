@@ -186,7 +186,7 @@ Baselines record the model id, and an always-run structural test (`tests/test_ca
 Two memory surfaces exist for the implementing agent. They look similar but serve different jobs:
 
 - **Codebase scan** (`kstrl/feedforward.py`) is *computed* fresh each iteration. Walks the worktree, builds a module map with LOC counts, lists public interfaces from `__init__.py` / `__all__`, infers a dependency graph from imports, and extracts conventions from `pyproject.toml` / `package.json` / etc. No LLM, no persistence. Used to ground the implementing agent in the current code shape.
-- **Knowledge** (`kstrl/knowledge.py`) is *distilled* by an LLM after a component completes and persists across runs. Stored at `.kstrl/knowledge/<component>/<run>/<fact>.md`. Three-tier retrieval (core / dependency / sibling) injects relevant facts into the prompt of downstream components.
+- **Knowledge** (`kstrl/knowledge.py`) is *distilled* by an LLM after a component completes and persists across runs. Stored at `.kstrl/knowledge/<component>/<run>/<fact>.md`. Three-tier retrieval (core / dependency / sibling) injects relevant facts into the prompt of downstream components. Retrieval reads every component directory under the knowledge root, not only the current manifest's ids, and places a fact by the component it was written under or by the paths its evidence cites against the component's authored `allowedPaths` (`kstrl/fact_scope.py`, #517). A fact from outside the current manifest whose cited paths are all absent from the worktree is dropped.
 
 The overlap: both can describe what a component exports. The distinction:
 - Codebase scan describes what *exists* at this instant (computationally extracted).
