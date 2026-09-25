@@ -10,7 +10,7 @@ import pytest
 
 from kstrl.contract import ContractConfig, ContractMode
 from kstrl.factory import FactoryConfig
-from kstrl.integration_state import fresh_state
+from kstrl.integration_state import fresh_state, state_binding
 from kstrl.manifest import Manifest
 from kstrl.pipeline import ComponentPipeline
 from tests.helpers import integration_harness as h
@@ -277,3 +277,41 @@ def test_a_state_path_that_cannot_be_read_is_refused_not_treated_as_missing(
     ev = json.loads(evidence[0].read_text(encoding="utf-8"))
     assert ev["outcome"] == "not_run"
     assert "unreadable" in ev["reason"]
+
+
+@pytest.mark.parametrize("history", [[], [{"event": "opened"}], [{"runId": 7}], "opened"])
+def test_a_finding_whose_history_names_no_run_is_refused(tmp_path: Path, history: object) -> None:
+    """#497: the loop reads the run id of a finding's last history entry, so
+    a state whose history cannot give one is unreadable, never read as empty."""
+    root = tmp_path / "repo"
+    h.merged_feature(root)
+    manifest_path = h.manifest_file(root)
+    state = fresh_state(state_binding(Manifest.load(manifest_path), manifest_path))
+    state["findings"].append(
+        {
+            "id": "IF-1",
+            "status": "handoff",
+            "kind": "register",
+            "text": "IC5 failed: the register disagrees",
+            "locations": [],
+            "history": history,
+        }
+    )
+    state_path = h.state_file(root)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    raw = state_path.read_bytes()
+    reviewer = h.FakeReviewer("{}")
+
+    h.run_factory_over(root, reviewer)
+
+    assert reviewer.calls == 0
+    assert state_path.read_bytes() == raw
+    evidence = h.evidence_files(root)
+    assert len(evidence) == 1
+    ev = json.loads(evidence[0].read_text(encoding="utf-8"))
+    assert ev["outcome"] == "not_run"
+    assert (
+        "findings[0].history must be a non-empty list of objects with a string runId"
+        in ev["reason"]
+    )

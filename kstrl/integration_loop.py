@@ -16,7 +16,7 @@ from collections.abc import Iterator, Sequence
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
-from kstrl.integration import STATUS_CLOSED, STATUS_OPEN
+from kstrl.integration import STATUS_CLOSED, STATUS_HANDOFF, STATUS_OPEN
 from kstrl.integration_fix import (
     FindingScope,
     append_fix_component,
@@ -86,16 +86,25 @@ def decide_round(
     run: IntegrationRun, phase3: Phase3Round, record: IntegrationRecord
 ) -> IntegrationRecord:
     """Blocking only: build a fix from the round's open code findings, or
-    stop on the first rule of design 3.5 that applies. A round that was
-    clean, red or not run is its own stop, already recorded."""
-    if record.state is None or record.outcome != OUTCOME_OPEN_FINDINGS:
+    stop on the first rule of design 3.5 that applies. A round that was red
+    or not run is its own stop, already recorded. A clean round is one too,
+    unless this run handed a finding off in an earlier round (#497)."""
+    if record.state is None:
+        return record
+    if record.outcome == OUTCOME_CLEAN:
+        handed = _handed_off_this_run(record.state, run.run_id)
+        if handed:
+            return _stop(run, record, OUTCOME_RED, _handoff_reason(handed))
+        return record
+    if record.outcome != OUTCOME_OPEN_FINDINGS:
         return record
     findings = _loop_findings(record.state, record)
     scopes = _scope_findings(run, record, findings)
     stop = _stop_reason(run, record, findings)
     if stop is not None:
         return _stop(run, record, *stop)
-    return _build_fix(run, phase3, record, findings, scopes)
+    open_findings = [f for f in findings if f["status"] == STATUS_OPEN]
+    return _build_fix(run, phase3, record, open_findings, scopes)
 
 
 def _loop_findings(state: dict[str, Any], record: IntegrationRecord) -> list[dict[str, Any]]:
@@ -124,13 +133,10 @@ def _scope_findings(
 def _stop_reason(
     run: IntegrationRun, record: IntegrationRecord, findings: Sequence[dict[str, Any]]
 ) -> tuple[str, str] | None:
-    """The first stop rule that applies, as (outcome, reason), or None."""
-    handed = [f["id"] for f in findings if f["status"] != STATUS_OPEN]
-    if handed:
-        return OUTCOME_RED, (
-            f"{len(handed)} findings cannot become a fix story (register or unscoped): "
-            f"{', '.join(handed)}"
-        )
+    """The first stop rule that applies, as (outcome, reason), or None. A
+    handed-off finding does not stop a round that has an open one (#497)."""
+    if not any(f["status"] == STATUS_OPEN for f in findings):
+        return OUTCOME_RED, _handoff_reason([f["id"] for f in findings])
     if record.still_open and not record.closed:
         return OUTCOME_OPEN_FINDINGS, (
             f"no progress: no carried finding closed ({', '.join(record.still_open)} still open)"
@@ -148,6 +154,24 @@ def _stop_reason(
             "that depends on it would never be scheduled"
         )
     return None
+
+
+def _handoff_reason(handed: Sequence[str]) -> str:
+    return (
+        f"{len(handed)} findings cannot become a fix story (register or unscoped): "
+        f"{', '.join(handed)}"
+    )
+
+
+def _handed_off_this_run(state: dict[str, Any], run_id: str) -> list[str]:
+    """The findings this run handed off, in any round (#497). A finding is
+    handed off by the run that wrote its last history entry: add_findings
+    opens a register finding as handed off, hand_off appends one."""
+    return [
+        f["id"]
+        for f in state["findings"]
+        if f["status"] == STATUS_HANDOFF and f["history"][-1]["runId"] == run_id
+    ]
 
 
 def _stop(
@@ -244,12 +268,13 @@ def project_stop(run: IntegrationRun, record: IntegrationRecord) -> None:
     if record.outcome == OUTCOME_CLEAN:
         return
     open_ids = _open_ids(record)
-    lines = [f"integration {fid}: {_summary(record, fid)}" for fid in open_ids]
-    if not lines:
-        lines = [f"integration {record.outcome}: {record.reason}"]
+    handed = [] if record.state is None else _handed_off_this_run(record.state, run.run_id)
+    ids = [*open_ids, *(fid for fid in handed if fid not in open_ids)]
+    lines = [] if open_ids else [f"integration {record.outcome}: {record.reason}"]
+    lines.extend(f"integration {fid}: {_summary(record, fid)}" for fid in ids)
     run.pipeline.factory_result.contract_failures.extend(lines)
     run.pipeline.record_integration_halt(
-        f"{record.outcome}: {record.reason}", open_ids, str(record.evidence or "")
+        f"{record.outcome}: {record.reason}", ids, str(record.evidence or "")
     )
 
 

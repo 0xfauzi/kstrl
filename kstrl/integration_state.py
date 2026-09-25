@@ -111,7 +111,18 @@ def _finding_errors(index: int, entry: Any) -> list[str]:
     errors = [error for error in found if error is not None]
     if not _string_list(entry.get("locations")):
         errors.append(f"{prefix}.locations must be a list of strings")
+    if not _history_ok(entry.get("history")):
+        errors.append(f"{prefix}.history must be a non-empty list of objects with a string runId")
     return errors
+
+
+def _history_ok(value: Any) -> bool:
+    """The loop reads the last entry's runId (#497), so every entry has one."""
+    return (
+        isinstance(value, list)
+        and bool(value)
+        and all(isinstance(item, dict) and isinstance(item.get("runId"), str) for item in value)
+    )
 
 
 def _fix_errors(index: int, entry: Any) -> list[str]:
