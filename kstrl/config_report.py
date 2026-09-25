@@ -270,6 +270,7 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
                 "pause_before_pr_merge",
                 "progress_log_enabled",
                 "keep_worktrees_on_failure",
+                "integration_review",
             ],
         ),
         # Derived, not hand-listed. The hand-written copy of this list

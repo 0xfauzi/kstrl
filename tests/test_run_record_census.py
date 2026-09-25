@@ -140,6 +140,10 @@ EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "factory.py: _record_health_breaches": 1,
     "factory.py: _record_autonomy_outcome": 1,
     "inbox.py: InboxItem.to_dict": 1,
+    "integration_phase.py: _not_run": 1,
+    "integration_phase.py: _review_evidence": 1,
+    "integration_state.py: add_findings": 1,
+    "integration_state.py: add_stop": 1,
     "launch_record.py: write_launch_record": 1,
     "manifest.py: Manifest.save": 1,
     # The tuple of string-typed top-level keys the schema check walks. A
@@ -147,6 +151,7 @@ EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
     "manifest.py: Manifest.validate_schema": 1,
     "observability.py: ProgressLog.emit": 1,
     "observability.py: ProgressLog._repair_event": 1,
+    "pipeline.py: ComponentPipeline.journal_integration_result": 1,
     "pipeline.py: ComponentPipeline.journal_superseded_findings": 1,
     "reducer.py: upconvert_v1": 1,
     "workqueue.py: Queue.await_approval": 1,
@@ -180,6 +185,7 @@ NOT_STAMPED_HERE: dict[str, str] = {
     "evolution.py: EvolutionJournal.carry_superseded": _JOURNAL,
     "factory.py: _run_factory_locked._record_contract_event": _JOURNAL,
     "pipeline.py: ComponentPipeline.journal_superseded_findings": _JOURNAL,
+    "pipeline.py: ComponentPipeline.journal_integration_result": _JOURNAL,
     "factory.py: _record_health_breaches": _DEMOTION,
     "factory.py: _record_autonomy_outcome": _DEMOTION,
     "inbox.py: InboxItem.to_dict": (

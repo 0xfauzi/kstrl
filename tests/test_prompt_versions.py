@@ -94,7 +94,7 @@ from types import ModuleType
 
 import pytest
 
-from kstrl import decisions, decompose, git, knowledge, review, security, verify
+from kstrl import decisions, decompose, git, integration, knowledge, review, security, verify
 from kstrl.decisions import (
     DECISIONS_CONTEXT_PROMPT,
     DECISIONS_CONTEXT_PROMPT_VERSION,
@@ -121,6 +121,7 @@ from kstrl.init_cmd import (
     DEFAULT_PROMPT,
     DEFAULT_PROMPT_VERSION,
 )
+from kstrl.integration import INTEGRATION_CRITERIA_PROMPT, INTEGRATION_CRITERIA_PROMPT_VERSION
 from kstrl.knowledge import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
 from kstrl.manifest import Component
 from kstrl.review import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION, ReviewMode
@@ -166,6 +167,7 @@ _PROMPTS: dict[str, str] = {
     "REPO_CHANGE_SOURCE_PROMPT": REPO_CHANGE_SOURCE_PROMPT,
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT,
     "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT,
+    "INTEGRATION_CRITERIA_PROMPT": INTEGRATION_CRITERIA_PROMPT,
     **BUILDER_PROMPTS,
     **NOTICE_PROMPTS,
 }
@@ -182,6 +184,7 @@ _VERSIONS: dict[str, str] = {
     "REPO_CHANGE_SOURCE_PROMPT": REPO_CHANGE_SOURCE_PROMPT_VERSION,
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT_VERSION,
     "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT_VERSION,
+    "INTEGRATION_CRITERIA_PROMPT": INTEGRATION_CRITERIA_PROMPT_VERSION,
     **BUILDER_VERSIONS,
     **NOTICE_VERSIONS,
 }
@@ -311,6 +314,13 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # nobody named is text nobody has to justify.
     "DECISIONS_CONTEXT_PROMPT": (
         "1630b9ee2c33c3513965f03e28a4f2e4d76c4cbf434b031fdb789819f23fae23",
+        "1.0.0",
+    ),
+    # 1.0.0 (#482): new. H3 only; its calibration role "integration" has
+    # no fixture yet (#480 section 8), so H2 cannot be discharged until
+    # the Layer B fixtures land.
+    "INTEGRATION_CRITERIA_PROMPT": (
+        "dfee33026e55e8979e483983a0387a84ff2c235323f39092bd2bbf275db38e87",
         "1.0.0",
     ),
     **BUILDER_SNAPSHOTS,
@@ -492,6 +502,10 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     "REPO_CHANGE_SOURCE_PROMPT": (git, lambda _p: repo_change_source("BASE_SHA")),
     "PASTED_CHANGE_SOURCE_PROMPT": (git, lambda _p: pasted_change_source("DIFF")[0]),
     "DECISIONS_CONTEXT_PROMPT": (decisions, _decisions_context_render),
+    "INTEGRATION_CRITERIA_PROMPT": (
+        integration,
+        lambda _p: integration.render_integration_criteria("BASE_SHA"),
+    ),
     **NOTICE_RENDERERS,
 }
 

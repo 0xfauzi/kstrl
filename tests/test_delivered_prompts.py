@@ -78,7 +78,7 @@ from types import ModuleType
 
 import pytest
 
-from kstrl import decompose, git, init_cmd, knowledge, review, security
+from kstrl import decompose, git, init_cmd, integration, knowledge, review, security
 from kstrl.decisions import SpecDecision, build_decisions_context
 from kstrl.loop import COMPLETION_MARKER
 from kstrl.manifest import Component
@@ -192,6 +192,15 @@ def _reviewer(tmp_path: Path) -> str:
     return review.build_review_prompt(prd_path, "BASE_SHA", _VERIFICATION)
 
 
+def _integration_reviewer(tmp_path: Path) -> str:
+    """What the integration review sends (#482): the reviewer prompt over the
+    PRD the harness writes from the enrolled criteria."""
+    prd_path = tmp_path / "prd.json"
+    prd_path.parent.mkdir(parents=True, exist_ok=True)
+    integration.write_integration_prd(prd_path, integration.integration_stories("BASE_SHA"))
+    return review.build_review_prompt(prd_path, "BASE_SHA", VerificationResult(passed=True))
+
+
 def _engineer(tmp_path: Path) -> str:
     """The engineer has no builder: the assembly IS ``run_loop``.
 
@@ -259,6 +268,18 @@ _ROLES: dict[str, _Role] = {
         frozenset({"DEFAULT_PROMPT", "VERIFY_COMMANDS_PROMPT"}),
         "0ce37b67c9717479aac69ab7428959cd736e703806d6107715946de28f721428",
         5145,
+    ),
+    "integration-criteria": _Role(
+        lambda _p: integration.render_integration_criteria("BASE_SHA"),
+        frozenset({"INTEGRATION_CRITERIA_PROMPT"}),
+        "2e940a4995f0df24b52782364f8ab66bab8b8c857413932bbb55705cfd8ba5b3",
+        1404,
+    ),
+    "integration-reviewer": _Role(
+        _integration_reviewer,
+        frozenset({"REVIEWER_PROMPT", "REPO_CHANGE_SOURCE_PROMPT"}),
+        "9ea1bc6167cac1f7a75faa1127b7386f405d3e632e05870537bbedf8ce18c460",
+        8901,
     ),
     "pasted-change-source": _Role(
         lambda _p: git.pasted_change_source(_DIFF_TEXT)[0],

@@ -13,6 +13,20 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Added
 
+- A record-only integration review of the merged feature after Phase 3
+  (#482, slice 2 of #480). The existing hard-mode reviewer runs once over
+  `featureBaseSha...<round commit>` in a temporary worktree, against a
+  harness-written PRD built from the new enrolled `INTEGRATION_CRITERIA_PROMPT`
+  (IC1 to IC5: cross-component calls, stored data read back, one definition
+  per shared rule, calls into pre-existing code, and decision-register
+  agreement). Its output is validated strictly and turned into findings
+  recorded in `.kstrl/integration/state.json`, one evidence file per round
+  under the run directory, and the evolution journal. Record only: it never
+  changes `contract_failures` or the exit code, and the run summary says so.
+  It runs only when Phase 2 review is on, and not in `single_pr` or
+  `create_prs=False` runs, which the summary records as not run. New
+  `[factory] integration_review` (default true) and
+  `KSTRL_FACTORY_INTEGRATION_REVIEW`.
 - `ks doctor [--root <path>] [--json]` (Tier A, #198): nine static checks
   over whether a repository is ready to point kstrl at, each naming the
   kstrl component that consumes its signal - git and gh state,

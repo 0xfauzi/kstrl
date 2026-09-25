@@ -300,6 +300,10 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # declaration and its one use site) = 44. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
     "init_cmd.py": 44,
+    # #482: 2 constants (INTEGRATION_CRITERIA_PROMPT and its _VERSION is
+    # not counted; the walk keys on names ending in _PROMPT) declared
+    # once each in kstrl/integration.py.
+    "integration.py": 2,
     # #303: 2 pre-existing + 2 new fragments x 2 spellings each (the
     # declaration and its one use site) = 6. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.

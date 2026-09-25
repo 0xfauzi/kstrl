@@ -74,6 +74,8 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # tokens without either running a commit. It sets no repository, so
     # there is nothing for gitrepo.set_identity to be checked against.
     "tests/helpers/gitrepo.py": 1,
+    # #482: merged_feature and commit_file, in a repo set_identity configured.
+    "tests/helpers/integration_harness.py": 2,
     "tests/helpers/run_config.py": 1,
     "tests/spine_utils.py": 1,
     "tests/test_adequacy.py": 8,

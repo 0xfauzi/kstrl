@@ -171,6 +171,12 @@ class ReviewResult:
     # as a ``model:<id>`` tag and into the PR body, so same-family vs
     # cross-family review outcomes stay attributable.
     reviewer_model: str = ""
+    # #482: concern entries parse_review_output dropped as malformed, and
+    # whether ``concerns`` was missing or not a list. The per-component path
+    # still ignores both, as it always has; the integration review refuses
+    # a result carrying either (integration.integration_outcome).
+    dropped_concerns: int = 0
+    concerns_not_list: bool = False
 
     @property
     def coverage_refused(self) -> bool:
@@ -958,10 +964,13 @@ def parse_review_output(
             )
 
     concerns: list[ReviewConcern] = []
+    dropped_concerns = 0
+    concerns_not_list = not isinstance(data.get("concerns"), list)
     raw_concerns = data.get("concerns", [])
     if isinstance(raw_concerns, list):
         for c in raw_concerns:
             if not isinstance(c, dict):
+                dropped_concerns += 1
                 continue
             category = str(c.get("category", "")).strip()
             severity = str(c.get("severity", "")).strip()
@@ -969,10 +978,13 @@ def parse_review_output(
             explanation = str(c.get("explanation", "")).strip()
             # Reject malformed entries instead of silently storing junk
             if category not in VALID_CONCERN_CATEGORIES:
+                dropped_concerns += 1
                 continue
             if severity not in ("fail", "advisory"):
+                dropped_concerns += 1
                 continue
             if not explanation:
+                dropped_concerns += 1
                 continue
             concerns.append(
                 ReviewConcern(
@@ -999,6 +1011,8 @@ def parse_review_output(
         observed_diffstat=git.parse_observed_diffstat(data.get("observedDiffstat")),
         overall_notes=overall_notes,
         raw_output=raw_output[:2000],
+        dropped_concerns=dropped_concerns,
+        concerns_not_list=concerns_not_list,
     )
 
 

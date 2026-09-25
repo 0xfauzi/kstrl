@@ -164,6 +164,7 @@ progress_log_enabled = true        # JSONL event log at .kstrl/progress.jsonl (R
 # NOT drop usage accounting: engineer_usage.json is still written per component
 # under .kstrl/runs/<run_id>/ so a killed worker's spend still reaches the meter.
 keep_worktrees_on_failure = false  # keep failed components' worktrees for post-mortem (R3.3)
+integration_review = true      # record-only review of the merged feature after Phase 3 (#482)
 
 # Phase 1 mechanical verification.
 [verify]
