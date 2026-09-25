@@ -376,6 +376,8 @@ class TestTheWalkAgainstTheRealPackage:
         parked merge_gate component was approved at, and
         ``factory._interrupted_run_branches`` lists worktrees to attribute
         a branch to the run a resume is recovering. Both carry a timeout.
+        #500 adds one more, so 76: ``git.tracked_files_at`` lists the files
+        tracked at the reviewed commit, and carries a timeout.
         """
         spawns = frozenset(
             {
@@ -387,7 +389,7 @@ class TestTheWalkAgainstTheRealPackage:
             }
         )
         found = package_calls(spawns)
-        assert len(found.seen) == 75
+        assert len(found.seen) == 76
         assert found.without_line_numbers().undecided == tuple(
             sorted(
                 [

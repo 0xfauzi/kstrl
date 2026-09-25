@@ -243,6 +243,12 @@ def _spend_refusal(pipeline: ComponentPipeline) -> str:
 
 
 def _review_round(run: IntegrationRun, state: dict[str, Any], pin: _Pin) -> IntegrationRecord:
+    try:
+        tracked = git.tracked_files_at(pin.sha, run.root_dir)
+    except git.GitDiffError as exc:
+        return _not_run(
+            run, f"the files at {pin.sha[:12]} could not be listed: {exc}", state, pin.sha
+        )
     directory = evidence_dir(run.root_dir, run.run_id)
     number = next_review_number(directory)
     stories = (
@@ -253,13 +259,11 @@ def _review_round(run: IntegrationRun, state: dict[str, Any], pin: _Pin) -> Inte
     worktree, error = _create_temp_worktree(pin.sha, run.root_dir, "integration")
     if worktree is None:
         result = _infra(f"the integration worktree could not be created: {error}")
-        outcome = integration_outcome(pin.test_result, result, stories, location_exists=_nowhere)
+        outcome = integration_outcome(pin.test_result, result, stories, tracked=tracked)
         return _record_round(run, state, pin, number, stories, result, outcome, "")
     try:
         result = _run_reviewer(run, worktree, stories, directory / f"prd-{number}.json")
-        outcome = integration_outcome(
-            pin.test_result, result, stories, location_exists=_inside(worktree)
-        )
+        outcome = integration_outcome(pin.test_result, result, stories, tracked=tracked)
     finally:
         cleanup_error = _remove(worktree, run.root_dir)
     return _record_round(run, state, pin, number, stories, result, outcome, cleanup_error)
@@ -341,17 +345,6 @@ def _remove(worktree: Path, root: Path) -> str:
     except ContractCleanupError as exc:
         return str(exc)
     return ""
-
-
-def _nowhere(_path: str) -> bool:
-    return False
-
-
-def _inside(worktree: Path) -> Callable[[str], bool]:
-    def exists(path: str) -> bool:
-        return (worktree / path).is_file()
-
-    return exists
 
 
 def _stop_outcome(outcome: IntegrationOutcome) -> str:
