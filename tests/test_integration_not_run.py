@@ -279,7 +279,16 @@ def test_a_state_path_that_cannot_be_read_is_refused_not_treated_as_missing(
     assert "unreadable" in ev["reason"]
 
 
-@pytest.mark.parametrize("history", [[], [{"event": "opened"}], [{"runId": 7}], "opened"])
+@pytest.mark.parametrize(
+    "history",
+    [
+        [],
+        [{"event": "opened"}],
+        [{"runId": 7}],
+        "opened",
+        [{"runId": "run-0"}, {"event": "handed_off"}],
+    ],
+)
 def test_a_finding_whose_history_names_no_run_is_refused(tmp_path: Path, history: object) -> None:
     """#497: the loop reads the run id of a finding's last history entry, so
     a state whose history cannot give one is unreadable, never read as empty."""
