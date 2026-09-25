@@ -273,6 +273,7 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
                 "integration_review",
                 "integration_blocking",
                 "integration_max_rounds",
+                "convergence_attempts",
             ],
         ),
         # Derived, not hand-listed. The hand-written copy of this list

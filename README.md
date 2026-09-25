@@ -272,6 +272,7 @@ ks inbox retry ITEM_ID          Requeue the item's component and close the item.
 ks inbox show ITEM_ID           Show one item in full, including its evidence.
 ks inbox snooze ITEM_ID         Defer an item; it returns when the TTL lapses.
 ks init [DIRECTORY]             Initialize kstrl in a project directory.
+ks learn playbook               Print the folded global playbook and its ledger's line count and SHA-256.
 ks queue add SPEC               Enqueue a spec file.
 ks queue ls                     List queue items in run order.
 ks queue pause                  Stop admitting queued work.
@@ -366,6 +367,7 @@ keep_worktrees_on_failure = false  # keep failed components' worktrees for post-
 integration_review = true          # record-only review of the merged feature after Phase 3 (#482); never gates
 integration_blocking = false       # open integration findings become a fix component; a non-clean stop fails the run (#483)
 integration_max_rounds = 1         # most fix components one feature may get, counted from the manifest; at least 1 (#483)
+convergence_attempts = 0           # fail a component whose gate failure count has not fallen for this many consecutive attempts; 0 = off (#233)
 
 # No-progress circuit breaker (R7.5; 0 iterations disables)
 [breaker]
@@ -397,6 +399,7 @@ subprocess_timeout = 0.0       # seconds per verification subprocess; 0 = no lim
 require_self_critique = false  # fail Phase 1 if the ## Self-Critique block is missing/sparse
 self_critique_min_bullets = 3  # minimum substantive bullets in the block
 progress_file_path = ""        # progress file the self-critique check reads; empty = the log beside the component's PRD
+fast_iteration_checks = []     # gates run after each unfinished engineer iteration, failures shown in the next prompt: any of "test_suite", "typecheck", "linter"; empty = off (#233)
 
 # Phase 1 approved-fixtures oracle (R7.2; default off)
 [fixtures]
@@ -553,6 +556,11 @@ token_env = "KSTRL_SIGNALS_TOKEN"   # NAME of the env var holding the tracker's 
 http_timeout = 10.0                 # per-request timeout
 new_issue_events = 3                # advisory threshold; labels a new issue, gates nothing
 repeat_growth_events = 10           # advisory threshold; labels a repeat, gates nothing
+
+# Cross-project learning: the global playbook (#217)
+[learning]
+contribute = true  # append this project's lessons to the global playbook
+consume = true     # read global playbook lessons into this project's prompts
 ```
 
 Environment variables override kstrl.toml, and CLI flags override both.
