@@ -13,6 +13,26 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Added
 
+- The integration loop's fixer (#483, slice 3 of #480), behind the new
+  `[factory] integration_blocking` (default false) and
+  `[factory] integration_max_rounds` (default 1, at least 1), with
+  `KSTRL_FACTORY_INTEGRATION_BLOCKING` and
+  `KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS`. With blocking on, the open code
+  findings of an integration review become one `integration-fix-<n>`
+  component appended to the manifest mid-run (state entry, then PRD, then
+  manifest; a mismatch between the three is refused on resume), scoped to
+  the cited files plus the test paths of the components that own them,
+  resolved into the run's scope snapshot, and run through the ordinary
+  pipeline. The next review carries each fixed finding as a story that
+  closes only on its single pass verdict. The loop stops on a clean
+  verdict, the bound (counted from the manifest), a fix that did not
+  merge, a round that closed nothing, or anything it cannot scope or
+  read. A stop without a clean verdict adds a line per open finding to
+  `contract_failures`, so the run exits nonzero, and leaves one
+  `halted_run` inbox item. New enrolled prompts `INTEGRATION_CARRIED_PROMPT`
+  and `INTEGRATION_FIX_PROMPT`. `.kstrl/integration/` is no longer carved
+  out of the in-loop scope guard, because its state now decides what the
+  next review carries.
 - A record-only integration review of the merged feature after Phase 3
   (#482, slice 2 of #480). The existing hard-mode reviewer runs once over
   `featureBaseSha...<round commit>` in a temporary worktree, against a

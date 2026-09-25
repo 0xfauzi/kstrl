@@ -177,9 +177,17 @@ STATE_FILES: tuple[str, ...] = (
 #: operator running ``ks serve`` against this repo does not trip over
 #: queue items that predate the run, only over one written while the
 #: agent was working, which is the case worth seeing.
+#:
+#: ``integration`` (#483) meets both criteria on its own terms rather than
+#: through the policy list. Its ``state.json`` decides which findings the
+#: next integration review carries and which fix components exist, so an
+#: edited status could close a finding no review closed. It is written only
+#: by the factory between scheduling passes (``integration_phase``,
+#: ``integration_loop``), never while an engineer loop runs.
 STATE_NOT_CARVED: tuple[str, ...] = (
     CONTROL_AUTONOMY,
     CONTROL_INBOX,
+    "integration",
     "proposals",
     "queue",
 )

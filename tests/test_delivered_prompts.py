@@ -78,7 +78,16 @@ from types import ModuleType
 
 import pytest
 
-from kstrl import decompose, git, init_cmd, integration, knowledge, review, security
+from kstrl import (
+    decompose,
+    git,
+    init_cmd,
+    integration,
+    integration_fix,
+    knowledge,
+    review,
+    security,
+)
 from kstrl.decisions import SpecDecision, build_decisions_context
 from kstrl.loop import COMPLETION_MARKER
 from kstrl.manifest import Component
@@ -274,6 +283,18 @@ _ROLES: dict[str, _Role] = {
         frozenset({"INTEGRATION_CRITERIA_PROMPT"}),
         "2e940a4995f0df24b52782364f8ab66bab8b8c857413932bbb55705cfd8ba5b3",
         1404,
+    ),
+    "integration-carried": _Role(
+        lambda _p: integration.carried_story("IF-1", "TEXT", ["src/a.py"]).criterion,
+        frozenset({"INTEGRATION_CARRIED_PROMPT"}),
+        "08ce96bc303abbc21ad141eac54f50a2e6242f0c1466ac94b65a4f5e9fe09b21",
+        44,
+    ),
+    "integration-fix": _Role(
+        lambda _p: integration_fix.render_fix_criteria("TEXT", ["src/a.py"]),
+        frozenset({"INTEGRATION_FIX_PROMPT"}),
+        "06d98de531e3c4402d5bc872a5713cd5d6c82595a72c6d1adbb1b0dbcdf312e2",
+        198,
     ),
     "integration-reviewer": _Role(
         _integration_reviewer,

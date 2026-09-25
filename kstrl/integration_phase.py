@@ -1,4 +1,4 @@
-"""The record-only integration review, factory side (#482)."""
+"""The integration review, factory side (#482, #483)."""
 
 from __future__ import annotations
 
@@ -22,10 +22,12 @@ from kstrl.integration import (
     STATUS_HANDOFF,
     ExpectedStory,
     IntegrationOutcome,
+    carried_story,
     integration_outcome,
     integration_stories,
     write_integration_prd,
 )
+from kstrl.integration_fix import reconcile_fixes
 from kstrl.integration_state import (
     OUTCOME_CLEAN,
     OUTCOME_NOT_RUN,
@@ -34,7 +36,10 @@ from kstrl.integration_state import (
     add_findings,
     add_stop,
     bind_state,
+    carried_findings,
+    close_findings,
     evidence_dir,
+    fix_components,
     has_fix_component,
     next_finding_ids,
     next_review_number,
@@ -43,11 +48,13 @@ from kstrl.integration_state import (
     write_evidence,
     write_state,
 )
+from kstrl.manifest import ComponentStatus
 from kstrl.review import ReviewMode, ReviewResult
 from kstrl.verify import VerificationResult
 from kstrl.version import kstrl_version
 
 if TYPE_CHECKING:
+    from kstrl.decisions import SpecDecision
     from kstrl.factory import FactoryConfig
     from kstrl.manifest import Manifest
     from kstrl.pipeline import ComponentPipeline
@@ -58,6 +65,10 @@ GATE_NOTE = (
     "Record only: the integration verdict does not gate this run, so it cannot "
     "report the feature as integrated (#482)."
 )
+BLOCKING_NOTE = (
+    "Blocking: a stop without a clean integration verdict fails this run, and "
+    "open code findings become a fix component (#483)."
+)
 
 
 @dataclass
@@ -65,6 +76,12 @@ class Phase3Round:
     base_sha: str = ""
     ran: bool = False
     results: list[ContractResult] = field(default_factory=list)
+    #: Set by the factory when a contract breaker was sent back for retry:
+    #: the round re-enters scheduling without an integration review.
+    breaker_reset: bool = False
+    #: len(contract_failures) when the round began, so the lines this round
+    #: added can be told apart (#483).
+    failures_before: int = 0
 
     def record(self, results: list[ContractResult]) -> None:
         self.ran = True
@@ -79,6 +96,8 @@ class IntegrationRun:
     run_id: str
     pipeline: ComponentPipeline
     ui: UI
+    #: The architect decisions this run bound (#260), for a fix PRD's notes.
+    decisions: tuple[SpecDecision, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -88,6 +107,15 @@ class IntegrationRecord:
     opened: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
     evidence: Path | None = None
+    #: The state this round wrote, for the loop's decision (#483). None
+    #: when no state could be bound.
+    state: dict[str, Any] | None = None
+    sha: str = ""
+    closed: tuple[str, ...] = ()
+    still_open: tuple[str, ...] = ()
+    gates: bool = False
+    #: The fix component the loop built after this round; "" when none.
+    fix: str = ""
 
 
 @dataclass(frozen=True)
@@ -102,8 +130,8 @@ def run_integration_review(
 ) -> IntegrationRecord:
     reason = _unreachable_reason(run.pipeline.factory_config, stop)
     if reason:
-        return IntegrationRecord(OUTCOME_NOT_RUN, reason)
-    run.ui.section("Integration review (record only)")
+        return IntegrationRecord(OUTCOME_NOT_RUN, reason, gates=_gates(run))
+    run.ui.section(f"Integration review ({'blocking' if _gates(run) else 'record only'})")
     if not run.manifest.feature_base_sha:
         return _not_run(
             run,
@@ -123,6 +151,9 @@ def run_integration_review(
             f"  Integration state belonged to another feature "
             f"({bound.state['replacedBinding']}); starting a new record"
         )
+    reason = _fix_refusal(run, bound.state)
+    if reason:
+        return _not_run(run, reason, bound.state, "")
     pin = _pin_round(run, phase3)
     if pin.refusal:
         return _not_run(run, pin.refusal, bound.state, pin.sha)
@@ -130,6 +161,26 @@ def run_integration_review(
     if reason:
         return _not_run(run, reason, bound.state, pin.sha)
     return _review_round(run, bound.state, pin)
+
+
+def _gates(run: IntegrationRun) -> bool:
+    return run.pipeline.factory_config.integration_blocking
+
+
+def _fix_refusal(run: IntegrationRun, state: dict[str, Any]) -> str:
+    """Why no round may be reviewed: a fix whose three creation stages
+    disagree, or a last fix that did not end COMPLETED and merged (design
+    3.5 rule 3). "" when the round may proceed."""
+    errors = reconcile_fixes(state, run.manifest, run.root_dir)
+    if errors:
+        return "; ".join(errors)
+    fixes = fix_components(run.manifest)
+    if not fixes:
+        return ""
+    last = fixes[-1]
+    if last.status == ComponentStatus.COMPLETED.value and (last.merge_sha or last.pr_url):
+        return ""
+    return f"the last fix {last.id} ended {last.status}, not merged, so no tree holds it"
 
 
 def _unreachable_reason(config: FactoryConfig, stop: StopController | None) -> str:
@@ -194,7 +245,10 @@ def _spend_refusal(pipeline: ComponentPipeline) -> str:
 def _review_round(run: IntegrationRun, state: dict[str, Any], pin: _Pin) -> IntegrationRecord:
     directory = evidence_dir(run.root_dir, run.run_id)
     number = next_review_number(directory)
-    stories = integration_stories(run.manifest.feature_base_sha)
+    stories = (
+        *integration_stories(run.manifest.feature_base_sha),
+        *(carried_story(f["id"], f["text"], f["locations"]) for f in carried_findings(state)),
+    )
     run.pipeline.adversarial_budget_consume()
     worktree, error = _create_temp_worktree(pin.sha, run.root_dir, "integration")
     if worktree is None:
@@ -277,18 +331,22 @@ def _inside(worktree: Path) -> Callable[[str], bool]:
 def _stop_outcome(outcome: IntegrationOutcome) -> str:
     if outcome.errors:
         return OUTCOME_RED
-    if outcome.opened:
+    if outcome.opened or outcome.still_open:
         return OUTCOME_OPEN_FINDINGS
     return OUTCOME_CLEAN
 
 
-def _round_reason(stop_outcome: str, outcome: IntegrationOutcome) -> str:
+def _round_reason(stop_outcome: str, outcome: IntegrationOutcome, gates: bool) -> str:
     if stop_outcome == OUTCOME_RED:
         return f"the review output failed validation ({len(outcome.errors)} errors); nothing opened"
     if stop_outcome == OUTCOME_OPEN_FINDINGS:
         handoffs = sum(1 for f in outcome.opened if f.status == STATUS_HANDOFF)
-        return f"{len(outcome.opened)} findings opened, {handoffs} handed off; recorded only"
-    return "no finding opened"
+        return (
+            f"{len(outcome.opened)} findings opened, {handoffs} handed off, "
+            f"{len(outcome.closed)} carried closed, {len(outcome.still_open)} carried "
+            f"still open; {'blocking' if gates else 'recorded only'}"
+        )
+    return f"no finding open; {len(outcome.closed)} carried closed"
 
 
 def _base_moved_to(run: IntegrationRun, sha: str) -> str:
@@ -315,7 +373,7 @@ def _record_round(
 ) -> IntegrationRecord:
     ids = next_finding_ids(state, len(outcome.opened))
     stop_outcome = _stop_outcome(outcome)
-    reason = _round_reason(stop_outcome, outcome)
+    reason = _round_reason(stop_outcome, outcome, _gates(run))
     payload = _review_evidence(
         run, pin, stories, result, outcome, ids, stop_outcome, reason, cleanup_error
     )
@@ -323,9 +381,12 @@ def _record_round(
         evidence_dir(run.root_dir, run.run_id), number, payload
     )
     add_findings(state, run.run_id, pin.sha, list(zip(ids, outcome.opened, strict=True)))
-    add_stop(state, run.run_id, pin.sha, stop_outcome, reason, evidence)
+    close_findings(state, outcome.closed, run.run_id, pin.sha)
+    add_stop(state, run.run_id, pin.sha, stop_outcome, reason, evidence, gates=_gates(run))
     state_error = write_state(run.root_dir, state)
-    run.pipeline.journal_integration_result(stop_outcome, reason, pin.sha, ids, outcome.errors)
+    run.pipeline.journal_integration_result(
+        stop_outcome, reason, pin.sha, ids, outcome.errors, gates=_gates(run)
+    )
     for label, error in (
         ("worktree cleanup", cleanup_error),
         ("evidence write", evidence_error),
@@ -334,7 +395,18 @@ def _record_round(
         if error:
             run.ui.err(f"  Integration {label} failed: {error}")
     run.ui.info(f"  Integration review: {stop_outcome}: {reason}")
-    return IntegrationRecord(stop_outcome, reason, tuple(ids), outcome.errors, evidence)
+    return IntegrationRecord(
+        stop_outcome,
+        reason,
+        tuple(ids),
+        outcome.errors,
+        evidence,
+        state=state,
+        sha=pin.sha,
+        closed=outcome.closed,
+        still_open=outcome.still_open,
+        gates=_gates(run),
+    )
 
 
 def _review_evidence(
@@ -366,7 +438,7 @@ def _review_evidence(
         "at": _now(),
         "outcome": stop_outcome,
         "reason": reason,
-        "gates": False,
+        "gates": _gates(run),
         "featureBaseSha": run.manifest.feature_base_sha,
         "reviewedSha": pin.sha,
         "baseMovedTo": _base_moved_to(run, pin.sha),
@@ -410,6 +482,8 @@ def _review_evidence(
             for fid, finding in zip(ids, outcome.opened, strict=True)
         ],
         "recorded": [dataclasses.asdict(r) for r in outcome.recorded],
+        "closed": list(outcome.closed),
+        "stillOpen": list(outcome.still_open),
         "cleanupError": cleanup_error,
     }
 
@@ -425,21 +499,23 @@ def _not_run(
         "at": _now(),
         "outcome": OUTCOME_NOT_RUN,
         "reason": reason,
-        "gates": False,
+        "gates": _gates(run),
         "featureBaseSha": run.manifest.feature_base_sha,
         "reviewedSha": sha,
     }
     evidence, evidence_error = write_evidence(directory, next_review_number(directory), payload)
     state_error = ""
     if state is not None:
-        add_stop(state, run.run_id, sha, OUTCOME_NOT_RUN, reason, evidence)
+        add_stop(state, run.run_id, sha, OUTCOME_NOT_RUN, reason, evidence, gates=_gates(run))
         state_error = write_state(run.root_dir, state)
-    run.pipeline.journal_integration_result(OUTCOME_NOT_RUN, reason, sha, [], ())
+    run.pipeline.journal_integration_result(OUTCOME_NOT_RUN, reason, sha, [], (), gates=_gates(run))
     run.ui.warn(f"  Integration review not run: {reason}")
     for label, error in (("evidence write", evidence_error), ("state write", state_error)):
         if error:
             run.ui.err(f"  Integration {label} failed: {error}")
-    return IntegrationRecord(OUTCOME_NOT_RUN, reason, evidence=evidence)
+    return IntegrationRecord(
+        OUTCOME_NOT_RUN, reason, evidence=evidence, state=state, sha=sha, gates=_gates(run)
+    )
 
 
 def report_integration(record: IntegrationRecord, ui: UI) -> None:
@@ -450,4 +526,4 @@ def report_integration(record: IntegrationRecord, ui: UI) -> None:
         ui.err(f"  {error}")
     if record.evidence:
         ui.info(f"  evidence: {record.evidence}")
-    ui.info(f"  {GATE_NOTE}")
+    ui.info(f"  {BLOCKING_NOTE if record.gates else GATE_NOTE}")

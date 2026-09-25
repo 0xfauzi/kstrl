@@ -209,12 +209,8 @@ class FakeReviewer:
         )
 
 
-def run_factory_over(
-    root: Path, reviewer: FakeReviewer, **overrides: Any
-) -> tuple[FactoryResult, str]:
-    """The real ``run_factory`` over ``root``'s saved manifest. Returns the
-    result and everything the run printed."""
-    out = io.StringIO()
+def factory_config(root: Path, **overrides: Any) -> FactoryConfig:
+    """The FactoryConfig every integration test runs under, plus ``overrides``."""
     config: dict[str, Any] = dict(
         use_worktrees=False,
         create_prs=True,
@@ -236,7 +232,11 @@ def run_factory_over(
         progress_log_path=root / "progress.jsonl",
     )
     config.update(overrides)
-    base_config = KstrlConfig(
+    return FactoryConfig(**config)
+
+
+def kstrl_config(root: Path) -> KstrlConfig:
+    return KstrlConfig(
         prompt_file=root / "scripts" / "kstrl" / "prompt.md",
         prd_file=root / "scripts" / "kstrl" / "prd.json",
         sleep_seconds=0,
@@ -246,6 +246,14 @@ def run_factory_over(
         ui_mode="plain",
         no_color=True,
     )
+
+
+def run_factory_over(
+    root: Path, reviewer: FakeReviewer, **overrides: Any
+) -> tuple[FactoryResult, str]:
+    """The real ``run_factory`` over ``root``'s saved manifest. Returns the
+    result and everything the run printed."""
+    out = io.StringIO()
     with (
         patch(
             "kstrl.factory._run_component",
@@ -256,8 +264,8 @@ def run_factory_over(
     ):
         result = run_factory(
             Manifest.load(manifest_file(root)),
-            FactoryConfig(**config),
-            base_config,
+            factory_config(root, **overrides),
+            kstrl_config(root),
             PlainUI(no_color=True, file=out),
             root,
             manifest_file(root),

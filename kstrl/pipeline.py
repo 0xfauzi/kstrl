@@ -1582,6 +1582,8 @@ class ComponentPipeline:
         reviewed_sha: str,
         opened: Sequence[str],
         errors: Sequence[str],
+        *,
+        gates: bool = False,
     ) -> None:
         """Journal one integration review round (#482). Non-fatal, never silent."""
         from kstrl.evolution import (
@@ -1605,12 +1607,26 @@ class ComponentPipeline:
             "reviewed_sha": reviewed_sha,
             "opened": list(opened),
             "errors": list(errors),
-            "gates": False,
+            "gates": gates,
         }
         try:
             journal.append_entries([entry])
         except OSError as exc:
             self.ui.warn(f"  Evolution journal write failed (non-fatal): {exc}")
+
+    def record_integration_halt(
+        self, reason: str, open_findings: Sequence[str], evidence: str
+    ) -> None:
+        """The one inbox item a blocking integration loop leaves when it stops
+        without a clean verdict (#483). Run-level, so it names no component.
+        The durable record is .kstrl/integration/state.json, written first."""
+        self._inbox_add(
+            ItemKind.HALTED_RUN,
+            "integration loop stopped without a clean verdict",
+            detail=reason,
+            dedupe_key=f"halted:integration:{self.run_id}",
+            evidence={"open_findings": list(open_findings), "evidence": evidence},
+        )
 
     def journal_superseded_findings(self, comp: Component) -> None:
         """A scheduled retry supersedes the current attempt. Record the

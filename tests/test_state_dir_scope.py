@@ -143,7 +143,6 @@ class TestStateDirCarveOut:
             ".kstrl/evolution.jsonl",
             ".kstrl/experiments.tsv",
             ".kstrl/factory.lock",
-            ".kstrl/integration/",
             ".kstrl/knowledge/",
             ".kstrl/logs/",
             ".kstrl/progress.jsonl",
@@ -209,6 +208,7 @@ class TestStateDirCarveOut:
             ".kstrl/queue/new/item-1/item.json",
             ".kstrl/proposals/prop-001.md",
             ".kstrl/proposals/evil.json",
+            ".kstrl/integration/state.json",
         ):
             assert not path_is_allowed(visible, entries), visible
 

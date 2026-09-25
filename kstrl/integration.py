@@ -36,6 +36,17 @@ IC4 | Calls into code that predates the feature | Every call the feature makes i
 IC5 | Decisions agree with criteria | Each decision in scripts/kstrl/decisions.json agrees with the acceptance criteria in scripts/kstrl/feature/<component>/prd.json of the component it binds and with every other decision in that file. If decisions.json does not exist at this commit, this criterion passes and the explanation says the file is absent.
 """
 
+INTEGRATION_CARRIED_PROMPT_VERSION = "1.0.0"
+
+# The criterion of the story that carries one open finding into the next
+# review (#483; design #480 section 3.2, IF-n). Instruction to the reviewer
+# LLM, so it is enrolled (H3). Its H2 role is `integration`, which has no
+# fixture yet.
+INTEGRATION_CARRIED_PROMPT = "The defect {text} at {locations} no longer holds."
+
+#: A finding's id, and the id of the story that carries it (#483).
+FINDING_ID_PREFIX = "IF-"
+
 #: The criterion about the decision register. A fail here is a register
 #: finding: recorded and handed off, never a code finding (design 3.3, 3.4).
 REGISTER_STORY_ID = "IC5"
@@ -53,7 +64,8 @@ FINDING_KINDS = (KIND_TEST, KIND_CRITERION, KIND_CONCERN, KIND_REGISTER)
 
 STATUS_OPEN = "open"
 STATUS_HANDOFF = "handoff"
-FINDING_STATUSES = (STATUS_OPEN, STATUS_HANDOFF)
+STATUS_CLOSED = "closed"
+FINDING_STATUSES = (STATUS_OPEN, STATUS_HANDOFF, STATUS_CLOSED)
 
 _PATH_TOKEN = re.compile(r"[\w./-]*\w\.[A-Za-z][A-Za-z0-9]{0,4}\b")
 
@@ -93,6 +105,10 @@ class IntegrationOutcome:
     errors: tuple[str, ...] = ()
     opened: tuple[OpenedFinding, ...] = ()
     recorded: tuple[RecordedOnly, ...] = ()
+    #: Carried findings (#483) whose story got its single pass verdict.
+    closed: tuple[str, ...] = ()
+    #: Carried findings whose story got fail or advisory: still open.
+    still_open: tuple[str, ...] = ()
 
 
 def render_integration_criteria(feature_base_sha: str) -> str:
@@ -116,6 +132,21 @@ def integration_stories(feature_base_sha: str) -> tuple[ExpectedStory, ...]:
             )
         stories.append(ExpectedStory(story_id=parts[0], title=parts[1], criterion=parts[2]))
     return tuple(stories)
+
+
+def carried_story(finding_id: str, text: str, locations: Sequence[str]) -> ExpectedStory:
+    """The story that carries one open finding into the next review (#483).
+
+    The story id is the finding id. The criterion is one line, because the
+    reviewer must echo it exactly (``_story_errors``).
+    """
+    return ExpectedStory(
+        story_id=finding_id,
+        title=finding_id,
+        criterion=INTEGRATION_CARRIED_PROMPT.format(
+            text=" ".join(text.split()), locations=", ".join(locations)
+        ),
+    )
 
 
 def write_integration_prd(path: Path, stories: Sequence[ExpectedStory]) -> None:
@@ -181,13 +212,22 @@ def integration_outcome(
             )
         )
     by_story = {normalize_story_id(cr.story_id): cr for cr in review_result.criteria}
+    closed: list[str] = []
+    still_open: list[str] = []
     for story in expected:
-        _read_verdict(
-            story, by_story[normalize_story_id(story.story_id)], opened, recorded, location_exists
-        )
+        verdict = by_story[normalize_story_id(story.story_id)]
+        if story.story_id.startswith(FINDING_ID_PREFIX):
+            _read_carried(story, verdict, closed, still_open)
+            continue
+        _read_verdict(story, verdict, opened, recorded, location_exists)
     for concern in review_result.concerns:
         _read_concern(concern, opened, recorded, location_exists)
-    return IntegrationOutcome(opened=tuple(opened), recorded=tuple(recorded))
+    return IntegrationOutcome(
+        opened=tuple(opened),
+        recorded=tuple(recorded),
+        closed=tuple(closed),
+        still_open=tuple(still_open),
+    )
 
 
 def review_errors(result: ReviewResult, expected: Sequence[ExpectedStory]) -> list[str]:
@@ -240,6 +280,20 @@ def _story_errors(story: ExpectedStory, verdicts: Sequence[CriterionReview]) -> 
     if not only.explanation.strip():
         errors.append(f"story {story.story_id}: empty explanation")
     return errors
+
+
+def _read_carried(
+    story: ExpectedStory,
+    verdict: CriterionReview,
+    closed: list[str],
+    still_open: list[str],
+) -> None:
+    """A carried finding closes only on its single pass verdict (#483). Fail
+    and advisory keep it open, and it never opens a second finding."""
+    if verdict.verdict == ReviewVerdict.PASS.value:
+        closed.append(story.story_id)
+    else:
+        still_open.append(story.story_id)
 
 
 def _read_verdict(

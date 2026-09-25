@@ -682,7 +682,7 @@ def strict_bool(section: Mapping[str, Any], key: str, default: bool) -> bool:
     disarms it, so a non-boolean is named and refused rather than
     coerced.
 
-    Five keys, not the whole repo. Three are ``[autonomy]``'s: the two
+    Six keys, not the whole repo. Three are ``[autonomy]``'s: the two
     revocation switches and ``enabled``, which is the switch that arms
     them and can therefore only fail in the arming direction. The fourth
     is ``[factory] pause_before_pr_merge``, added by #195 for a reason
@@ -691,7 +691,10 @@ def strict_bool(section: Mapping[str, Any], key: str, default: bool) -> bool:
     an explicit request nobody wrote and then keep the gate up at every
     level. The fifth is ``[factory] integration_review`` (#482): a
     coerced ``"false"`` would read as True and spend a reviewer call the
-    operator switched off. The remaining coercion is repo-wide (29
+    operator switched off. The sixth is ``[factory] integration_blocking``
+    (#483): a coerced ``"false"`` would read as True and let open findings
+    build a fix component the operator never enabled. The remaining
+    coercion is repo-wide (29
     ``bool(section[...])`` sites in ``kstrl/``, counted by grep) and
     tightening the rest changes how existing configs load, which is its
     own change with its own guard.

@@ -94,7 +94,17 @@ from types import ModuleType
 
 import pytest
 
-from kstrl import decisions, decompose, git, integration, knowledge, review, security, verify
+from kstrl import (
+    decisions,
+    decompose,
+    git,
+    integration,
+    integration_fix,
+    knowledge,
+    review,
+    security,
+    verify,
+)
 from kstrl.decisions import (
     DECISIONS_CONTEXT_PROMPT,
     DECISIONS_CONTEXT_PROMPT_VERSION,
@@ -121,7 +131,13 @@ from kstrl.init_cmd import (
     DEFAULT_PROMPT,
     DEFAULT_PROMPT_VERSION,
 )
-from kstrl.integration import INTEGRATION_CRITERIA_PROMPT, INTEGRATION_CRITERIA_PROMPT_VERSION
+from kstrl.integration import (
+    INTEGRATION_CARRIED_PROMPT,
+    INTEGRATION_CARRIED_PROMPT_VERSION,
+    INTEGRATION_CRITERIA_PROMPT,
+    INTEGRATION_CRITERIA_PROMPT_VERSION,
+)
+from kstrl.integration_fix import INTEGRATION_FIX_PROMPT, INTEGRATION_FIX_PROMPT_VERSION
 from kstrl.knowledge import DISTILL_PROMPT, DISTILL_PROMPT_VERSION
 from kstrl.manifest import Component
 from kstrl.review import REVIEWER_PROMPT, REVIEWER_PROMPT_VERSION, ReviewMode
@@ -168,6 +184,8 @@ _PROMPTS: dict[str, str] = {
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT,
     "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT,
     "INTEGRATION_CRITERIA_PROMPT": INTEGRATION_CRITERIA_PROMPT,
+    "INTEGRATION_CARRIED_PROMPT": INTEGRATION_CARRIED_PROMPT,
+    "INTEGRATION_FIX_PROMPT": INTEGRATION_FIX_PROMPT,
     **BUILDER_PROMPTS,
     **NOTICE_PROMPTS,
 }
@@ -185,6 +203,8 @@ _VERSIONS: dict[str, str] = {
     "PASTED_CHANGE_SOURCE_PROMPT": PASTED_CHANGE_SOURCE_PROMPT_VERSION,
     "DECISIONS_CONTEXT_PROMPT": DECISIONS_CONTEXT_PROMPT_VERSION,
     "INTEGRATION_CRITERIA_PROMPT": INTEGRATION_CRITERIA_PROMPT_VERSION,
+    "INTEGRATION_CARRIED_PROMPT": INTEGRATION_CARRIED_PROMPT_VERSION,
+    "INTEGRATION_FIX_PROMPT": INTEGRATION_FIX_PROMPT_VERSION,
     **BUILDER_VERSIONS,
     **NOTICE_VERSIONS,
 }
@@ -321,6 +341,20 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # the Layer B fixtures land.
     "INTEGRATION_CRITERIA_PROMPT": (
         "dfee33026e55e8979e483983a0387a84ff2c235323f39092bd2bbf275db38e87",
+        "1.0.0",
+    ),
+    # 1.0.0 (#483): new. The criterion of a carried finding's story, sent to
+    # the integration reviewer. H3 only, for INTEGRATION_CRITERIA_PROMPT's
+    # reason: its calibration role "integration" has no fixture yet.
+    "INTEGRATION_CARRIED_PROMPT": (
+        "71c4e1edade09d984f65f6dac1356f26b4ea9baea01ee5f9b9b321fa91975d7c",
+        "1.0.0",
+    ),
+    # 1.0.0 (#483): new. The criteria of each story of an integration fix
+    # PRD, read by the fix's engineer. Engineer-facing, so no calibration
+    # fixture scores it: H3 only, the #303 position.
+    "INTEGRATION_FIX_PROMPT": (
+        "4d8692a21b96a23c9d980e7182671b6d57a65b5a1cdff05194b83f789806ccf8",
         "1.0.0",
     ),
     **BUILDER_SNAPSHOTS,
@@ -505,6 +539,14 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
     "INTEGRATION_CRITERIA_PROMPT": (
         integration,
         lambda _p: integration.render_integration_criteria("BASE_SHA"),
+    ),
+    "INTEGRATION_CARRIED_PROMPT": (
+        integration,
+        lambda _p: integration.carried_story("IF-1", "TEXT", ["src/a.py"]).criterion,
+    ),
+    "INTEGRATION_FIX_PROMPT": (
+        integration_fix,
+        lambda _p: integration_fix.render_fix_criteria("TEXT", ["src/a.py"]),
     ),
     **NOTICE_RENDERERS,
 }
