@@ -27,7 +27,7 @@ from kstrl.review import (
 
 BASE = "a" * 40
 STORIES = integration_stories(BASE)
-EXISTS = {"src/store.py", "src/api.py"}.__contains__
+TRACKED = frozenset({"src/store.py", "src/api.py"})
 
 
 def _payload() -> dict[str, object]:
@@ -61,7 +61,7 @@ def _read(payload: dict[str, object]) -> ReviewResult:
 
 
 def _outcome(result: ReviewResult, test: ContractResult | None = None) -> IntegrationOutcome:
-    return integration_outcome(test, result, STORIES, location_exists=EXISTS)
+    return integration_outcome(test, result, STORIES, tracked=TRACKED)
 
 
 def test_a_clean_review_opens_nothing() -> None:

@@ -31,16 +31,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from kstrl import git
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.integration import (
     ExpectedStory,
     IntegrationOutcome,
     OpenedFinding,
-    cited_paths,
     integration_outcome,
     integration_stories,
+    scope_locations,
 )
-from kstrl.integration_phase import _inside, review_commit
+from kstrl.integration_phase import review_commit
 from kstrl.review import ReviewResult, normalize_story_id, run_review
 from kstrl.ui.plain import PlainUI
 from tests.helpers.calibration_repo_fixture import FIXTURES_DIR
@@ -131,6 +132,8 @@ class FixtureRound:
     stories: tuple[ExpectedStory, ...]
     result: ReviewResult
     outcome: IntegrationOutcome
+    #: Every file tracked at the reviewed commit, as the factory reads it.
+    tracked: frozenset[str]
 
 
 def load_integration_fixtures() -> list[IntegrationFixture]:
@@ -255,22 +258,22 @@ def review_fixture(fixture: IntegrationFixture, agent: Any, slot: Path) -> Fixtu
         slot / "evidence" / "prd-1.json",
         PlainUI(no_color=True, file=io.StringIO()),
     )
-    outcome = integration_outcome(None, result, stories, location_exists=_inside(repo.path))
-    return FixtureRound(repo, stories, result, outcome)
+    tracked = git.tracked_files_at(repo.head_sha, repo.path)
+    outcome = integration_outcome(None, result, stories, tracked=tracked)
+    return FixtureRound(repo, stories, result, outcome, tracked)
 
 
 def _label(finding: OpenedFinding) -> str:
     return f"{finding.kind}:{finding.story_id or finding.category}"
 
 
-def cited_files(finding: OpenedFinding, repo: Path) -> tuple[str, ...]:
+def cited_files(finding: OpenedFinding, tracked: frozenset[str]) -> tuple[str, ...]:
     """The files a finding names that exist at the reviewed commit.
 
     For a code finding this is ``finding.locations``, computed by the same
     rule. A register finding (IC5) carries no locations because it is never
     scoped, so the rule is applied to its text here."""
-    exists = _inside(repo)
-    return tuple(p for p in cited_paths(f"{finding.text} {finding.suggestion}") if exists(p))
+    return scope_locations(f"{finding.text} {finding.suggestion}", tracked)[0]
 
 
 def detected(fixture: IntegrationFixture, review_round: FixtureRound) -> tuple[bool, str]:
@@ -285,7 +288,7 @@ def detected(fixture: IntegrationFixture, review_round: FixtureRound) -> tuple[b
         return False, f"{fixture.story} did not fail; opened {[_label(f) for f in outcome.opened]}"
     detail = ""
     for finding in failed:
-        cited = cited_files(finding, review_round.repo.path)
+        cited = cited_files(finding, review_round.tracked)
         uncovered = [
             name for name, paths in fixture.components.items() if not set(paths) & set(cited)
         ]

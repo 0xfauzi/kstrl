@@ -459,6 +459,31 @@ def get_untracked_files(
     return _nul_paths(result.stdout)
 
 
+def tracked_files_at(sha: str, cwd: Path, timeout: float = DEFAULT_TIMEOUT) -> frozenset[str]:
+    """Every file tracked at commit ``sha``, spelled as git stores it
+    (``-z``, #423).
+
+    Raises :class:`GitDiffError` on a timeout, a spawn failure, a non-zero
+    exit or a name this process cannot decode. An empty answer would read
+    as "no cited file exists" and hand every integration finding off (#500).
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-tree", "-r", "--name-only", "-z", sha],
+            cwd=cwd,
+            capture_output=True,
+            encoding="utf-8",
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        raise GitDiffError(f"git ls-tree {sha} did not run: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise GitDiffError(_undecodable_message(f"git ls-tree {sha}", exc)) from exc
+    if result.returncode != 0:
+        raise GitDiffError(f"git ls-tree {sha} exited {result.returncode}: {result.stderr.strip()}")
+    return frozenset(_nul_paths(result.stdout))
+
+
 @dataclass(frozen=True)
 class WorkspaceBaseline:
     """The workspace as it stood BEFORE an agent was let loose on it.
