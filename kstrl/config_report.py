@@ -194,6 +194,9 @@ NO_LIMIT_KEYS: frozenset[tuple[str, str]] = frozenset(
         ("factory", "max_adversarial_calls"),
         ("factory", "max_total_tokens"),
         ("factory", "max_cost_usd"),
+        ("serve", "daily_budget_usd"),
+        ("serve", "factory_timeout_seconds"),
+        ("serve", "max_open_prs"),
         ("verify", "mutation_timeout"),
         ("verify", "subprocess_timeout"),
         ("security", "timeout_seconds"),
@@ -242,6 +245,8 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
     account of, one level down.
     """
     from kstrl.config_preflight import config_sections
+    from kstrl.intake_github import GitHubIntakeConfig
+    from kstrl.serve import ServeConfig
     from kstrl.timeout import TimeoutConfig
     from kstrl.verify import VerifyConfig
 
@@ -326,6 +331,8 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
             ],
         ),
         ("timeout", [f.name for f in dataclass_fields(TimeoutConfig)]),
+        ("intake_github", [f.name for f in dataclass_fields(GitHubIntakeConfig)]),
+        ("serve", [f.name for f in dataclass_fields(ServeConfig)]),
         (
             "notify",
             [

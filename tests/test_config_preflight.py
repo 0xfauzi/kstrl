@@ -147,7 +147,7 @@ class TestTheDecomposePathFailsBeforeTheArchitect:
         result = _invoke(DECOMPOSE_ARGS, toml=MALFORMED_TOML)
 
         assert built == []
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "error:" in result.output
         assert "Invalid TOML" in result.output
         # The line and the column, so the operator can go straight there.
@@ -168,7 +168,7 @@ class TestTheDecomposePathFailsBeforeTheArchitect:
         )
 
         assert built == []
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "[linear]" in result.output
         assert "timeout_seconds" in result.output
         assert "'soon'" in result.output
@@ -203,7 +203,7 @@ class TestTheEnvironmentIsCheckedInTheSamePass:
         result = _invoke(FACTORY_ARGS)
 
         assert not isinstance(result.exception, ValueError), result.exception
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "error:" in result.output
         assert section in result.output
         # Named by REMOVAL: the variable whose absence makes the load
@@ -241,7 +241,7 @@ class TestFatalVersusDegrading:
         coming."""
         result = _invoke(["evolve", "--status"], toml='[evolution]\nlookback_runs = "many"\n')
 
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "error:" in result.output
         assert "[evolution] lookback_runs = 'many'" in result.output
         # Promoted at the seam, so the warning it would otherwise have
@@ -257,7 +257,7 @@ class TestFatalVersusDegrading:
 
         result = _invoke(FACTORY_ARGS, toml='[verify]\nmutation_threshold = "many"\n')
 
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert ran == []
         assert "[verify]" in result.output
         assert "mutation_threshold" in result.output
@@ -412,7 +412,7 @@ class TestTheRootIsTheOneTheCommandWillUse:
 
         result = _invoke(["status"], toml='[verify]\nmutation_threshold = "many"\n')
 
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "[verify] could not convert string to float: 'many'" in result.output
 
     def test_a_command_that_declares_prompt_still_reads_the_env_var(
@@ -428,7 +428,7 @@ class TestTheRootIsTheOneTheCommandWillUse:
 
         result = _invoke(["run", "--agent-cmd", "true"])
 
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "Invalid TOML" in result.output
 
     def test_the_prompt_option_feature_actually_uses_derives_the_root(
@@ -457,7 +457,7 @@ class TestTheRootIsTheOneTheCommandWillUse:
         result = _invoke(["feature", "--understand-prompt", str(prompt), "--agent-cmd", "true"])
 
         assert built == []
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "[linear]" in result.output
 
     def test_a_broken_config_under_root_is_found_from_a_clean_cwd(
@@ -473,7 +473,7 @@ class TestTheRootIsTheOneTheCommandWillUse:
         result = _invoke([*DECOMPOSE_ARGS, "--root", str(elsewhere)])
 
         assert built == []
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "Invalid TOML" in result.output
 
     def test_a_broken_config_in_the_cwd_does_not_fail_another_root(
@@ -523,21 +523,21 @@ class TestTheRootIsTheOneTheCommandWillUse:
 #: ``test_the_table_names_every_command_the_seam_guards`` keeps the list
 #: honest rather than a count in a comment doing it.
 SEAM_COMMANDS: list[tuple[list[str], int]] = [
-    (["autonomy", "status"], 1),
-    (["dash"], 1),
-    (DECOMPOSE_ARGS, 1),
-    (["evolve"], 1),
-    (FACTORY_ARGS, 1),
-    (["feature", "--prd", "s.md", "--agent-cmd", "true"], 1),
-    (["health"], 1),
-    (["inbox", "ls"], 1),
-    (["queue", "ls"], 1),
-    (["retry", "comp-a"], 1),
-    (["run", "--agent-cmd", "true"], 1),
+    (["autonomy", "status"], 2),
+    (["dash"], 2),
+    (DECOMPOSE_ARGS, 2),
+    (["evolve"], 2),
+    (FACTORY_ARGS, 2),
+    (["feature", "--prd", "s.md", "--agent-cmd", "true"], 2),
+    (["health"], 2),
+    (["inbox", "ls"], 2),
+    (["queue", "ls"], 2),
+    (["retry", "comp-a"], 2),
+    (["run", "--agent-cmd", "true"], 2),
     (["serve", "--print-plist", "--no-color"], 2),
-    (["signals", "poll"], 1),
-    (["status"], 1),
-    (["understand", "--agent-cmd", "true"], 1),
+    (["signals", "poll"], 2),
+    (["status"], 2),
+    (["understand", "--agent-cmd", "true"], 2),
 ]
 
 
@@ -598,7 +598,7 @@ class TestAConfigThatWillNotParseIsReportedNotCrashed:
         result = _invoke(DECOMPOSE_ARGS, toml=toml)
 
         assert built == []
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert fragment in result.output
 
     def test_the_table_names_every_command_the_seam_guards(self) -> None:
@@ -682,7 +682,7 @@ class TestTheCommandsThatMustSurviveABrokenConfig:
         the config it exists to report on."""
         result = _invoke(["doctor"], toml=toml)
 
-        assert result.exit_code == 2
+        assert result.exit_code == 1
         assert "[fail] kstrl_config" in result.output
         assert "[ok] git_repo" not in result.output  # the tmp_path cwd is not a repo
         assert fragment in result.output
@@ -800,7 +800,7 @@ class TestTheHomeShellIsNotAFifthExemption:
         )
 
         assert opened == []
-        assert code == 1
+        assert code == 2
         # And the operator is told which section, not just refused.
         assert "[linear]" in capsys.readouterr().err
 
@@ -850,7 +850,7 @@ class TestConfigShowIsTheSurfaceThatAlwaysWorks:
             refused = _invoke(["status"])
             explained = _invoke(["config", "show"])
 
-        assert refused.exit_code == 1
+        assert refused.exit_code == 2
         assert explained.exit_code == 1
         assert "[agent]" in explained.output
         assert "[linear]" in explained.output

@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
 
+from kstrl.cli import cli
 from kstrl.config import KstrlConfig
 from kstrl.config_report import (
     ConfigRow,
@@ -136,3 +138,52 @@ class TestNormalizeUiMode:
         assert normalize_ui_mode("") == "auto"
         assert normalize_ui_mode("RICH ") == "rich"
         assert normalize_ui_mode("garbage") == "auto"
+
+
+class TestConfigShowNamesTheDaemonSections:
+    """#452: `ks config show` printed no [serve] or [intake_github] row,
+    so an operator could not confirm the intake settings were read
+    before starting the daemon; only `ks serve --dry-run` showed them."""
+
+    def test_serve_and_intake_rows_carry_their_source(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        (tmp_path / "kstrl.toml").write_text(
+            '[serve]\ndaily_budget_usd = 5.0\n[intake_github]\nrepo = "acme/demo"\n',
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("KSTRL_SERVE_MAX_OPEN_PRS", "3")
+
+        result = CliRunner().invoke(cli, ["config", "show", "--root", str(tmp_path)])
+
+        assert result.exit_code == 0, result.output
+        assert "[serve]" in result.output
+        assert "daily_budget_usd = 5.0  (toml)" in result.output
+        assert "max_open_prs = 3  (env)" in result.output
+        assert "factory_timeout_seconds = no limit  (default)" in result.output
+        assert "[intake_github]" in result.output
+        assert "repo = 'acme/demo'  (toml)" in result.output
+
+    def test_a_zero_serve_limit_reads_as_no_limit(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The three [serve] keys where 0 disables the limit print `no limit`,
+        the way the [factory] ceilings do, not a bare 0 (#452)."""
+        (tmp_path / "kstrl.toml").write_text("[serve]\nmax_open_prs = 0\n", encoding="utf-8")
+        for name in (
+            "KSTRL_SERVE_DAILY_BUDGET_USD",
+            "KSTRL_SERVE_FACTORY_TIMEOUT",
+            "KSTRL_SERVE_MAX_OPEN_PRS",
+        ):
+            monkeypatch.delenv(name, raising=False)
+
+        result = CliRunner().invoke(cli, ["config", "show", "--root", str(tmp_path)])
+
+        assert result.exit_code == 0, result.output
+        assert "daily_budget_usd = no limit  (default)" in result.output
+        assert "factory_timeout_seconds = no limit  (default)" in result.output
+        assert "max_open_prs = no limit  (toml)" in result.output

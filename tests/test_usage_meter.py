@@ -3959,22 +3959,24 @@ class TestBudgetConfigErrorReachesTheOperator:
         }
 
     @pytest.mark.parametrize(
-        ("command", "toml_value"),
+        ("command", "toml_value", "exit_code"),
         [
             # --agent-cmd keeps this independent of what is on PATH.
             # Without it the run aborts on agent detection BEFORE the
             # ceiling is read, so the test passed on a developer machine
             # with `claude` installed and failed in CI without it -
             # measuring the environment, not the fix.
-            (["factory", "--manifest", "m.json", "--agent-cmd", "true"], "nan"),
-            (["factory", "--manifest", "m.json", "--agent-cmd", "true"], "-3.0"),
-            (["config", "show"], "nan"),
+            (["factory", "--manifest", "m.json", "--agent-cmd", "true"], "nan", 2),
+            (["factory", "--manifest", "m.json", "--agent-cmd", "true"], "-3.0", 2),
+            # `config show` REPORTS the rejected section: a finding, 1 (#452).
+            (["config", "show"], "nan", 1),
         ],
     )
     def test_no_entry_point_leaks_a_traceback(
         self,
         command: list[str],
         toml_value: str,
+        exit_code: int,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -3992,7 +3994,7 @@ class TestBudgetConfigErrorReachesTheOperator:
         result = CliRunner().invoke(cli, command, catch_exceptions=True)
 
         assert not isinstance(result.exception, BudgetConfigError)
-        assert result.exit_code == 1
+        assert result.exit_code == exit_code
         assert "error:" in _strip_ansi(result.output)
         assert "max_cost_usd" in result.output
 
@@ -4018,7 +4020,7 @@ class TestBudgetConfigErrorReachesTheOperator:
         )
 
         output = _strip_ansi(result.output)
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         # The preflight names the FLAG, not the generic knob: the
         # operator has to know which of the three sources to fix.
         assert "error: --max-cost-usd must be a finite number" in output
@@ -4087,7 +4089,7 @@ class TestCeilingsAreCheckedBeforeAnythingSpends:
         spent = marker.exists()
 
         assert not spent, "an agent call happened before the ceiling was checked"
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert expected in _strip_ansi(result.output)
 
     def test_a_valid_ceiling_does_not_block_the_spec_path(self, tmp_path: Path) -> None:

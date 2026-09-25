@@ -257,7 +257,7 @@ class TestPollRefusesLoudly:
             cli, ["signals", "poll", "--root", str(root)], catch_exceptions=True
         )
 
-        assert result.exit_code == 1, result.output
+        assert result.exit_code == 2, result.output
         assert "enabled" in result.output
         assert not control_file(root, CONTROL_SIGNALS).exists()
 
@@ -273,7 +273,7 @@ class TestPollRefusesLoudly:
 
         result = _invoke_poll(root, FIXTURE)
 
-        assert result.exit_code == 1, result.output
+        assert result.exit_code == 2, result.output
         assert "enabled" in result.output
         assert not control_file(root, CONTROL_SIGNALS).exists()
 
@@ -286,7 +286,7 @@ class TestPollRefusesLoudly:
             cli, ["signals", "poll", "--root", str(root)], catch_exceptions=True
         )
 
-        assert result.exit_code == 1, result.output
+        assert result.exit_code == 2, result.output
         assert "error:" in result.output
         assert "kstrl.toml" in result.output
         assert not isinstance(result.exception, ValueError)
@@ -308,7 +308,7 @@ class TestPollRefusesLoudly:
 
         result = _invoke_poll(root, FIXTURE)
 
-        assert result.exit_code == 1, result.output
+        assert result.exit_code == 2, result.output
         assert "http_timeout" in result.output
         assert not control_file(root, CONTROL_SIGNALS).exists()
 

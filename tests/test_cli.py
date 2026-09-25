@@ -416,7 +416,7 @@ class TestInboxRetryManifestLoad:
     def test_off_enum_status_reports_cleanly(self, tmp_path: Path) -> None:
         item_id = self._project(tmp_path, "PENDING")
         result = self._run(tmp_path, item_id)
-        assert result.exit_code == 1
+        assert result.exit_code == 2
         assert "Failed to load manifest" in result.output
         assert "'PENDING' is not a valid status" in result.output
         # A clean exit, not a traceback leaking past the new guard.

@@ -96,9 +96,9 @@ def test_a_retired_name_stops_the_command_before_its_body(tmp_path: Path) -> Non
         env={**os.environ, "KSTRL_NO_TUI": "1"},
     )
 
-    # Not 2. The CLI configuration seam (_KstrlGroup.invoke) exits
-    # _PREFLIGHT_EXIT.get(subcommand, 1); only "serve" has a row there.
-    assert proc.returncode == 1
+    # The CLI configuration seam (_KstrlGroup.invoke) exits 2 for a
+    # rejected configuration on every command (#452).
+    assert proc.returncode == 2
     assert "[codebase_scan]" in proc.stderr
     # The command stopped BEFORE its body: without this assertion the
     # test would also pass on a run that printed the refusal and then

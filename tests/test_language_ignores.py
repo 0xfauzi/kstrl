@@ -191,7 +191,7 @@ def test_doctor_decompose_and_factory_refuse_a_python_repo_whose_bytecode_is_not
     root = bootstrapped_without_reinit(tmp_path)
 
     report = run_ks(root, "doctor", "--root", str(root))
-    assert report.returncode == 2, report.stdout
+    assert report.returncode == 1, report.stdout
     assert "ks doctor: not-ready" in report.stdout
     fail_line = next(
         line for line in report.stdout.splitlines() if line.startswith("  [fail] gitignore:")

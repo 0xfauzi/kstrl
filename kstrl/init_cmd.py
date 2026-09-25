@@ -480,15 +480,17 @@ Otherwise end normally.
 
 
 # Scaffolded kstrl.toml (R2.1): the project's discoverable config
-# surface. Every key is commented out and shows its built-in default, so
+# surface. Each key is commented out and shows its built-in default, so
 # scaffolding changes no effective value; uncommenting a line is the
 # explicit opt-in. Content mirrors kstrl.toml.example trimmed to keys the
 # loaders actually read, plus the [timeout] section wired in R0.1.
 DEFAULT_KSTRL_TOML = """\
 # kstrl configuration (scaffolded by `ks init`).
-# Every key is commented out and shows its built-in default: uncomment a
-# line to override it. Precedence: CLI flag > environment variable > this
-# file > built-in default. See docs/env-vars.md for the env-var mapping.
+# Each key below is commented out and shows its built-in default: uncomment
+# a line to override it. This file lists the keys most projects set; the
+# README's configuration reference lists every section and key.
+# Precedence: CLI flag > environment variable > this file > built-in
+# default. See docs/env-vars.md for the env-var mapping.
 
 [agent]
 # type = ""                        # "claude-code" | "claude-sdk" | "codex" (empty = auto-detect)
@@ -671,6 +673,37 @@ DEFAULT_KSTRL_TOML = """\
 # contract_test = 0.0
 # subprocess_default = 60.0        # hang guard
 # scheduler_backstop_margin = 60.0
+
+# Work queue (R8.6): what `ks queue` manages and `ks serve` drains.
+[queue]
+# max_attempts = 3                 # execution attempts per item before poisoning
+# lease_ttl_seconds = 3600.0       # claim validity; the reaper recovers anything past this
+
+# Continuous-intake daemon (R8.6): `ks serve` runs one factory at a time.
+# daily_budget_usd can only count cost an adapter reports.
+[serve]
+# poll_interval_seconds = 60.0     # seconds between poll cycles
+# daily_budget_usd = 0.0           # 0 = no limit; any positive value is a hard stop
+# max_consecutive_poison = 3       # poisoned in a row before the queue pauses
+# caffeinate = true                # hold caffeinate -i per run (macOS)
+# factory_timeout_seconds = 0.0    # kill a run after this long; 0 = no limit
+# allow_uncovered_cost = false     # true = run unattended under an unenforceable budget
+# max_open_prs = 1                 # admission stops at this many open kstrl PRs; 0 = no limit
+
+# GitHub Issues as the remote inbox (R8.6). Off by default: enabling makes
+# kstrl poll GitHub and post public comments. Remote items stop at the PR.
+[intake_github]
+# enabled = false
+# repo = ""                        # "owner/name"; empty resolves from the checkout
+# queued_label = "kstrl:queued"    # the label that authorizes work
+# allowed_actors = []              # logins allowed to apply it; empty = anyone who can label
+# label_prefix = "kstrl:"          # prefix of the state labels written back
+# max_items_per_sync = 5           # items admitted per sync
+# default_priority = 0
+# comment_on_result = true         # post the verdict back to the source issue
+# dry_run = false                  # true = poll and log, send no writebacks
+# timeout_seconds = 60.0
+# steer_enabled = false            # true = act on /memory and /iterate PR comments
 """
 
 # What `ks init` does to a scaffolded file. The TUI wizard's preview
@@ -1220,6 +1253,14 @@ Measure before you spend (no agent, no cost):
   ks check --allowed-path '<glob>'                     # preflight the guard
 """
 
+# Printed above NEXT_STEPS when the Fix first block ran (#452): the spec
+# steps below it are refused until the build manifest exists, so they
+# cannot be what the operator is told to do first.
+NEXT_STEPS_BLOCKED = """First, commit a build manifest (see Fix first above).
+Until it exists, `ks decompose` and `ks factory --spec` refuse before the
+architect runs, so the spec steps below wait on it.
+"""
+
 
 def run_init(directory: Path, ui: UI, *, upgrade_prompts: bool = False) -> int:
     """Initialize kstrl harness in a project directory.
@@ -1321,11 +1362,12 @@ def run_init(directory: Path, ui: UI, *, upgrade_prompts: bool = False) -> int:
         ui.kv("Passing", str(passing))
         ui.kv("Failing", str(failing))
 
-    _report_build_manifest(root, ui)
+    blocked = _report_build_manifest(root, ui)
 
     # Next steps
     ui.section("Next steps")
-    for line in NEXT_STEPS.splitlines():
+    lead = NEXT_STEPS_BLOCKED if blocked else ""
+    for line in (lead + NEXT_STEPS).splitlines():
         ui.info(line)
 
     return 0
@@ -1957,24 +1999,24 @@ def build_manifest_ok_reason(root: Path) -> str:
     if _detect_project_context(root)["language"] != "unknown":
         return (
             "a build manifest kstrl recognises is at the repository root, so the "
-            "`ks decompose` preflight (init_cmd.build_manifest_blocker) lets the "
-            "architect run"
+            "`ks decompose` preflight lets the architect run"
         )
     return (
         "no build manifest kstrl recognises is at the repository root, but [verify] "
         "names a command that does not depend on one, so the `ks decompose` "
-        "preflight (init_cmd.build_manifest_blocker) lets the architect run"
+        "preflight lets the architect run"
     )
 
 
-def _report_build_manifest(root: Path, ui: UI) -> None:
-    """Print the #434 notice in a Fix first section, or nothing."""
+def _report_build_manifest(root: Path, ui: UI) -> bool:
+    """Print the #434 notice in a Fix first section; True when it printed."""
     blocker = build_manifest_blocker(root, read_verify=False)
     if blocker is None:
-        return
+        return False
     ui.section("Fix first")
     ui.warn(blocker)
     ui.info(BUILD_MANIFEST_FIX)
+    return True
 
 
 #: H3 (#303): the per-language bodies looked up by _LANGUAGE_STANDARDS and
@@ -2257,7 +2299,10 @@ def bootstrap_claude_md(root: Path, ui: UI, ctx: dict[str, str]) -> None:
 
     ui.section("Agent context files")
 
-    ui.kv("Detected language", ctx["language"])
+    language = ctx["language"]
+    if language == "unknown":
+        language = "none (no build manifest kstrl recognises; see Fix first)"
+    ui.kv("Detected language", language)
     if ctx["framework"]:
         ui.kv("Detected framework", ctx["framework"])
 

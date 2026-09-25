@@ -16,9 +16,9 @@ in full), `build_manifest` (a build manifest at the repository root
 that kstrl recognises; kstrl will not create one, and `ks decompose`
 and `ks factory --spec` refuse with exit 2 before the architect runs
 without one), `verify_commands` (the test, typecheck and lint commands
-Phase 1 will run), `source_root` (whether `kstrl.feedforward.extract_public_interfaces`
-gives the engineer anything to read), `test_root` (tracked paths that
-read as tests to `adequacy.is_test_path`), `gitignore` (whether git
+Phase 1 will run), `source_root` (whether the codebase scan gives the
+engineer any public interface to read), `test_root` (tracked paths the
+`[adequacy]` gate reads as tests), `gitignore` (whether git
 ignores the build output the detected language's toolchain writes, and
 `.kstrl/`, so the in-loop scope guard counts neither against a
 component; a missing build-output entry fails the row, `ks decompose`
@@ -28,7 +28,7 @@ migration and deploy paths that `[policy] paths_deny` does not cover).
 
 There are three verdicts. `ready` (exit 0): every check passed.
 `ready-with-warnings` (exit 0): at least one check warned, none failed.
-`not-ready` (exit 2): at least one check failed, most commonly no git
+`not-ready` (exit 1): at least one check failed, most commonly no git
 repository, no build manifest, or a `kstrl.toml` that will not parse. The report is also
 written as JSON under `.kstrl/doctor/report-<UTC stamp>.json`.
 
@@ -36,6 +36,31 @@ written as JSON under `.kstrl/doctor/report-<UTC stamp>.json`.
 is not built and exits 2 naming the command that already runs the
 measurement it would wrap: `ks check`, which runs the mechanical checks
 against a tree with no PRD, branch, worktree or agent spend.
+
+## Exit codes
+
+Every `ks` command uses the same three codes, so a script or a scheduler
+can act on the number alone.
+
+- `0`: the command did what was asked and found nothing that needs you.
+  An empty answer counts: an empty queue or inbox, no failure patterns
+  yet, too little history for `ks health` to call a breach.
+- `1`: the command did what was asked and the answer is a finding you
+  act on: `ks check` failed a check, `ks check --compare-baseline
+  --fail-on-regression` found a regression, `ks health` found a breach,
+  `ks doctor` says not-ready, `ks config show` names a rejected section,
+  `ks factory` finished with a failed or unmerged component, `ks queue
+  sync` could not sync an issue, `ks serve` left work waiting on a human.
+- `2`: the command could not do what was asked: a usage error, a
+  `kstrl.toml` or environment value the entry check rejects, an input it
+  needs that is missing or unreadable (no manifest yet for `ks status`
+  or `ks retry`, an inbox or queue item that does not exist), a feature
+  that is off (`ks queue sync`, `ks signals poll`), or a refusal before
+  any work starts. `ks autonomy replay` exits 2 when there is too little
+  history to replay, so a script cannot read "nothing replayed" as a
+  pass.
+
+A factory run you stop with `q` exits 130.
 
 A green verdict from `ks doctor` is not the same as a spec being ready
 to run. Every report ends with the same four sentences, because none of
@@ -193,9 +218,9 @@ To stop it failing components, set `[divergence] mode = "advisory"` (the default
 
 **Resolve**: the system handles this automatically up to `max_retries`. If it keeps breaking, the integration is genuinely broken: inspect the merged tier branch, fix the spec or the components' contracts, re-run.
 
-## Knowledge layer reports `no_valid_facts`
+## Knowledge layer reports no valid fact
 
-**Symptom**: `Knowledge: knowledge.no_valid_facts (raw: ...)`
+**Symptom**: `Knowledge: the distiller returned no valid fact (raw: ...)`
 
 **Diagnose**: the distiller LLM returned output, the JSON parsed, but `_coerce_facts` rejected every fact. Common causes:
 
@@ -209,7 +234,20 @@ To stop it failing components, set `[divergence] mode = "advisory"` (the default
 
 - Inspect `.kstrl/knowledge/<comp_id>/<run_id>/_distill_raw.txt` (saved automatically on failure paths) to see the agent's actual output.
 - If the agent consistently produces malformed output, the distill prompt may need to be tightened.
-- If the failure is `no_facts` (not `no_valid_facts`), the JSON didn't parse at all; usually means the agent emitted prose around the JSON.
+- If the line says `the distiller returned no facts` instead, the JSON didn't parse at all; usually means the agent emitted prose around the JSON.
+
+## After a factory run, `scripts/kstrl/manifest.json` is modified
+
+**Symptom**: `git status` shows `scripts/kstrl/manifest.json` modified after `ks factory` finishes, often by hundreds of lines.
+
+**What it is**: the manifest is the factory's record of the run: each component's status, retries, PR number and merge commit. The factory rewrites it in your checkout as the run progresses, and `ks status`, `ks retry`, `ks inbox approve` and `ks inbox retry` read it back. Nothing is wrong.
+
+**Resolve**:
+
+- While you may still retry a component or approve a parked merge from this run, leave the file as it is: those commands act on the statuses in it.
+- Keep it out of unrelated commits. Stage the paths you changed by name rather than with `git add -A`.
+- When you are done with the run, choose one. To keep the record in history, commit the file on its own, for example `git add scripts/kstrl/manifest.json && git commit -m "Record factory run <run id>"`. To drop it, restore the committed copy with `git restore scripts/kstrl/manifest.json`; `ks retry` and `ks inbox approve` can then no longer act on that run.
+- The next `ks decompose` or `ks factory --spec` writes a new manifest over it either way.
 
 ## Concurrent factory runs clobbering each other
 

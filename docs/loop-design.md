@@ -568,9 +568,9 @@ no PRD, no branch, no worktree, and no agent spend:
   lenient git helpers map an unresolvable base onto an empty file list, which
   reads as a clean tree, so a standalone sensor must preflight the diff and
   report could-not-measure rather than pass.
-- **`ks check --review`** runs the adversarial sensors over a diff. This one
-  costs an LLM call, so it is opt-in and reports its cost, but it makes the
-  reviewer inspectable without a factory run.
+- **`ks check --review`** is not built. It would run the adversarial sensors
+  over a diff. It costs an LLM call, so it would be opt-in and report its cost,
+  and it would make the reviewer inspectable without a factory run.
 - **`ks check --json`** emits the measurement in machine form, which is what
   makes every threshold in this document measurable by piping rather than by
   instrumenting.

@@ -725,7 +725,7 @@ data a later pass needs is on disk after this lands.
 
 ADVISORY ALWAYS, same as Layer 1: no floor key, nothing blocks, no
 autonomy level reads it. Unlike Layer 1, it does NOT run under `ks
-sense`: mutmut rewrites the source files it mutates (restored afterward
+check`: mutmut rewrites the source files it mutates (restored afterward
 from the `.bak` mutmut itself writes, on every run including a timed-out
 one), where Layer 1's coverage run writes nothing into the tree.
 

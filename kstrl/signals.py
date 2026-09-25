@@ -102,7 +102,7 @@ class SignalsConfig:
 
     ``enabled`` is checked by the ``ks signals poll`` CLI callback before
     it opens a socket or replays a ``--from-file`` page, refusing with
-    exit 1 when it is false (#155 fix round A1).
+    exit 2 when it is false (#155 fix round A1; #452).
 
     ``token_env`` is the NAME of the environment variable holding the
     tracker's bearer token, read at call time by ``fetch_bugsink`` - the
