@@ -93,27 +93,6 @@ def test_no_integration_criterion_holds_placeholder_text() -> None:
         )
 
 
-def test_an_ic5_criterion_with_one_word_changed_is_refused(tmp_path: Path) -> None:
-    root = tmp_path / "repo"
-    base, _head = h.merged_feature(root)
-    payload = h.review_payload(root, base)
-    for story in payload["stories"]:
-        if story["storyId"] == "IC5":
-            criterion = story["criteria"][0]["criterion"]
-            assert " agrees " in criterion
-            story["criteria"][0]["criterion"] = criterion.replace(" agrees ", " conflicts ", 1)
-
-    h.run_factory_over(root, h.FakeReviewer(json.dumps(payload)))
-
-    state = _state(root)
-    assert state["findings"] == []
-    stops = state["stops"]
-    assert isinstance(stops, list)
-    assert stops[-1]["outcome"] == "red"
-    evidence = json.loads(h.evidence_files(root)[-1].read_text(encoding="utf-8"))
-    assert evidence["errors"] == ["story IC5: criterion text differs from the PRD's"]
-
-
 def test_tracked_files_at_lists_the_commit_not_the_working_tree(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     _base, head = h.merged_feature(root)

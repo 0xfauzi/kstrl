@@ -100,13 +100,18 @@ def test_a_verdict_for_an_unexpected_story_is_red() -> None:
     assert any("unexpected story id 'IC9'" in e for e in outcome.errors)
 
 
-def test_criterion_text_that_differs_from_the_prd_is_red() -> None:
+def test_a_verdict_is_read_by_its_story_id_whatever_criterion_text_it_echoes() -> None:
     payload = _payload()
     for story in payload["stories"]:
         if story["storyId"] == "IC4":
             story["criteria"][0]["criterion"] = "something else"
+            story["criteria"][0]["verdict"] = "fail"
+            story["criteria"][0]["explanation"] = "src/api.py:2 calls save with a string"
     outcome = _outcome(_read(payload))
-    assert any("story IC4: criterion text differs" in e for e in outcome.errors)
+    assert outcome.errors == ()
+    assert [(f.story_id, f.kind, f.status, f.locations) for f in outcome.opened] == [
+        ("IC4", "criterion", "open", ("src/api.py",))
+    ]
 
 
 def test_an_empty_explanation_is_red() -> None:
