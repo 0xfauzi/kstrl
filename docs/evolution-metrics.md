@@ -246,6 +246,27 @@ is now overwhelmingly in the under-counting direction, but the match is
 lexical, not semantic. This is a property of the measurement, not a
 defect in the recording, and it bounds every number above.
 
+## Distill replies that did not parse (#495)
+
+`ks evolve` prints one more readiness line, for example:
+
+```
+  distill replies that did not parse: 1 of 3 distill(s) in the last 10 run(s)
+```
+
+It counts the `distill_result` events in `.kstrl/runs/<run_id>/events.jsonl`
+across the newest `[evolution] lookback_runs` run directories, and the ones
+among them with `parse_failed: true`. A reply that did not parse writes no
+facts, as a reply that parsed to an empty list does, and before #495 the
+two shared the `no_facts` status. They are now separate: the debug dump in
+`.kstrl/knowledge/<component>/_debug/<run_id>/_distill_status.txt` records
+`unparseable`, `no_facts` or `no_valid_facts`, and only `unparseable` sets
+`parse_failed`. The reply is never repaired or retried.
+
+The window is run directories, not the journal's run ids, so this line and
+the fact-utilization line can cover different runs. An unreadable
+`.kstrl/runs/` prints "not counted", never a zero.
+
 ## Proposals: `.kstrl/proposals/prop-NNN.md`
 
 - IDs are monotonic across `ks evolve` invocations: numbering

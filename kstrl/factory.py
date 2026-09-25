@@ -3718,12 +3718,13 @@ def _warn_unsandboxable_reviewers(
     """#266: say so when a reviewer cannot be held read-only.
 
     ``get_agent`` returns ``CustomAgent`` BEFORE any adapter branch, so a
-    custom command drops the read-only posture as well as the sandbox -
-    and the reviewer selections fall back to the engineer's
-    ``agent_cmd``, so ``[agent] command`` alone reaches them. The
-    read-only guarantee is the one an operator is most likely to assume
-    holds unconditionally, which is exactly why it is worth saying out
-    loud when it does not.
+    custom command drops the read-only posture as well as the sandbox.
+    Both reviewer selections fall back to the engineer's ``agent_cmd``
+    when no reviewer command is configured (the code reviewer since
+    #498), so ``[agent] command`` alone reaches them. The read-only
+    guarantee is the one an operator is most likely to assume holds
+    unconditionally, which is exactly why it is worth saying out loud
+    when it does not.
     """
     for role, selection in (
         ("review", review_selection),
@@ -4081,7 +4082,9 @@ def _run_factory_locked(
         explicit_cmd=factory_config.review_agent_cmd,
         explicit_type=factory_config.review_agent_type,
         explicit_model=factory_config.review_model,
-        fallback_cmd=None,
+        # #498: the engineer's command, as security below and the
+        # --review-agent-cmd help both say. None auto-detected a real CLI.
+        fallback_cmd=base_config.agent_cmd,
         fallback_type=base_config.agent_type,
         fallback_model=None,
         fallback_reasoning=None,

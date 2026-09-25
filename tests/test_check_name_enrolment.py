@@ -1,9 +1,9 @@
 """Every check and signature prefix is enrolled in the category map.
 
 ``evolution.category_for_check`` maps a name onto a
-``FailurePattern.category`` and falls through to ``"iteration"`` for
-anything the table does not carry, which files a mechanical verification
-gate in the journal under the engineer loop. Enrolment in
+``FailurePattern.category``. Until #496 it fell through to ``"iteration"``
+for anything the table does not carry, filing a mechanical verification
+gate under the engineer loop; now it returns ``"unenrolled"``. Enrolment in
 ``_CATEGORY_BY_CHECK`` was a convention with no mechanism, and measured
 during #294 the convention did not hold.
 
@@ -706,8 +706,8 @@ class TestEveryCheckNameIsEnrolled:
         assert not missing, (
             f"names emitted by kstrl/ but absent from "
             f"evolution._CATEGORY_BY_CHECK: {missing}. An unenrolled name "
-            f"falls through to 'iteration', filing a verification gate under "
-            f"the engineer loop. Add a row to that table."
+            f"is category 'unenrolled' and is never routed to a proposal "
+            f"or a lesson. Add a row to that table."
         )
 
     def test_the_walk_covers_every_enrolled_name_but_these(self) -> None:

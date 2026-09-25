@@ -16,6 +16,7 @@ from tests.helpers import integration_harness as h
 from tests.helpers import integration_loop as lp
 
 NARROW = ["src/store.py", "tests/test_store.py", "scripts/kstrl/feature/integration-fix-1/"]
+IC5_FAIL = {"IC5": ("fail", "decision shutdown-semantics says 10 s, US-019 says 2 s")}
 
 
 @pytest.mark.parametrize("worktrees", [False, True])
@@ -227,12 +228,19 @@ def test_a_register_finding_stops_the_loop_red(tmp_path: Path) -> None:
     result, _out = lp.run_loop(root, rig)
 
     assert rig.launched == []
+    assert lp.manifest_ids(root) == ["comp-a", "comp-b"]
+    assert lp.state(root).get("fixes", []) == []
     stop = lp.state(root)["stops"][-1]
     assert stop["outcome"] == "red"
     assert "IF-1" in stop["reason"]
     assert result.exit_code == 1
-    assert result.contract_failures[0].startswith("integration IF-1: handoff:")
-    assert len(lp.run_halts(root)) == 1
+    assert result.contract_failures == [
+        "integration IF-1: handoff: IC5 failed: decision shutdown-semantics says 10 s, "
+        "US-019 says 2 s"
+    ]
+    halts = lp.run_halts(root)
+    assert len(halts) == 1
+    assert halts[0].evidence["open_findings"] == ["IF-1"]
 
 
 def test_a_finding_with_no_test_path_is_handed_off(tmp_path: Path) -> None:
@@ -355,3 +363,120 @@ def test_a_feature_prd_that_cannot_be_read_stops_the_loop_red(tmp_path: Path) ->
     assert lp.state(root).get("fixes", []) == []
     assert result.exit_code == 1
     assert len(lp.run_halts(root)) == 1
+
+
+def test_a_register_finding_does_not_stop_a_code_fix(tmp_path: Path) -> None:
+    """#497: round 1 has one code finding (IF-1) and one register finding
+    (IF-2). The fix is built from IF-1; IF-2 stays handed off."""
+    root = tmp_path / "repo"
+    base, _head = lp.loop_feature(root)
+    reviewer = lp.ScriptedReviewer(base, [{**lp.IC2_FAIL, **IC5_FAIL}, {}])
+    rig = lp.Rig(root, reviewer)
+
+    lp.run_loop(root, rig)
+
+    assert rig.launched == [lp.FIX_1]
+    assert reviewer.calls == 2
+    state = lp.state(root)
+    assert state["fixes"][0]["findings"] == ["IF-1"]
+    prd = PRD.load(root / "scripts" / "kstrl" / "feature" / lp.FIX_1 / "prd.json")
+    assert [s.id for s in prd.user_stories] == ["IF-1"]
+    assert [(f["id"], f["status"]) for f in state["findings"]] == [
+        ("IF-1", "closed"),
+        ("IF-2", "handoff"),
+    ]
+
+
+def test_a_register_finding_from_an_earlier_round_fails_the_run(tmp_path: Path) -> None:
+    """#497: the fix closes IF-1 and round 2 is clean, but IF-2 was handed
+    off in round 1 of this run, so the run ends not clean."""
+    root = tmp_path / "repo"
+    base, _head = lp.loop_feature(root)
+    reviewer = lp.ScriptedReviewer(base, [{**lp.IC2_FAIL, **IC5_FAIL}, {}])
+    rig = lp.Rig(root, reviewer)
+
+    result, _out = lp.run_loop(root, rig)
+
+    stop = lp.state(root)["stops"][-1]
+    assert stop["outcome"] == "red"
+    assert stop["gates"] is True
+    assert "IF-2" in stop["reason"]
+    assert result.exit_code == 1
+    ifs = [line for line in result.contract_failures if line.startswith("integration IF-")]
+    assert len(ifs) == 1
+    assert ifs[0].startswith("integration IF-2: handoff: IC5 failed:")
+    halts = lp.run_halts(root)
+    assert len(halts) == 1
+    assert halts[0].evidence["open_findings"] == ["IF-2"]
+
+
+def test_a_handoff_from_an_earlier_run_does_not_fail_a_clean_run(tmp_path: Path) -> None:
+    """#497: only this run's handoffs fail it. Nothing closes a handed-off
+    finding, so counting an earlier run's would fail every later run."""
+    root = tmp_path / "repo"
+    base, _head = lp.loop_feature(root)
+    first, _out = lp.run_loop(root, lp.Rig(root, lp.ScriptedReviewer(base, [IC5_FAIL])))
+    assert first.exit_code == 1
+    rig = lp.Rig(root, lp.ScriptedReviewer(base, [{}]))
+
+    result, _out = lp.run_loop(root, rig)
+
+    assert rig.launched == []
+    state = lp.state(root)
+    assert [(f["id"], f["status"]) for f in state["findings"]] == [("IF-1", "handoff")]
+    assert state["stops"][-1]["outcome"] == "clean"
+    assert result.exit_code == 0
+    assert result.contract_failures == []
+    assert len(lp.run_halts(root)) == 1
+
+
+def test_a_later_stop_names_its_own_cause_and_this_runs_handoff(tmp_path: Path) -> None:
+    """#497: the fix built from IF-1 fails, so round 2 is not run. The run
+    names that cause and IF-2, which round 1 handed off."""
+    root = tmp_path / "repo"
+    base, _head = lp.loop_feature(root)
+    reviewer = lp.ScriptedReviewer(base, [{**lp.IC2_FAIL, **IC5_FAIL}])
+    rig = lp.Rig(root, reviewer, fix_succeeds=False)
+
+    result, _out = lp.run_loop(root, rig)
+
+    assert rig.launched == [lp.FIX_1]
+    assert lp.state(root)["stops"][-1]["outcome"] == "not_run"
+    assert result.exit_code == 1
+    assert result.contract_failures == [
+        "integration not_run: the last fix integration-fix-1 ended failed, not merged, "
+        "so no tree holds it",
+        "integration IF-2: handoff: IC5 failed: decision shutdown-semantics says 10 s, "
+        "US-019 says 2 s",
+    ]
+    halts = lp.run_halts(root)
+    assert len(halts) == 1
+    assert halts[0].evidence["open_findings"] == ["IF-2"]
+
+
+def test_a_bound_stop_names_this_rounds_finding_and_an_earlier_handoff(tmp_path: Path) -> None:
+    """#497: round 2 opens IF-3 and the bound stops the loop. The run names
+    IF-3 and IF-2, which round 1 handed off."""
+    root = tmp_path / "repo"
+    base, _head = lp.loop_feature(root)
+    reviewer = lp.ScriptedReviewer(base, [{**lp.IC2_FAIL, **IC5_FAIL}, lp.IC1_FAIL])
+    rig = lp.Rig(root, reviewer)
+
+    result, _out = lp.run_loop(root, rig)
+
+    assert rig.launched == [lp.FIX_1]
+    state = lp.state(root)
+    assert [(f["id"], f["status"]) for f in state["findings"]] == [
+        ("IF-1", "closed"),
+        ("IF-2", "handoff"),
+        ("IF-3", "open"),
+    ]
+    assert state["stops"][-1]["reason"] == "bound reached: 1 of 1 fix components built"
+    assert result.exit_code == 1
+    assert [line.split(":")[0] for line in result.contract_failures] == [
+        "integration IF-3",
+        "integration IF-2",
+    ]
+    halts = lp.run_halts(root)
+    assert len(halts) == 1
+    assert halts[0].evidence["open_findings"] == ["IF-3", "IF-2"]

@@ -1051,18 +1051,38 @@ def _read_prd_text(prd_path: Path) -> str:
     return prd_text_for_prompt(text)
 
 
-def _parse_distill_output(raw_output: str) -> list[dict[str, Any]]:
-    """Extract the facts array from raw agent output. Returns [] on any failure."""
+@dataclass(frozen=True)
+class DistillReply:
+    """What the distiller's reply parsed to (#495).
+
+    ``error`` is None exactly when the reply parsed as a JSON object with
+    a ``facts`` list; ``facts`` is then that list as the reply gave it.
+    An entry that is not an object is dropped with the other invalid
+    facts, so a list of them reports "no valid fact", not "no facts".
+    A reply that did not parse and a reply that parsed to an empty list
+    are different outcomes and never share a status: counting what could
+    not be parsed as zero is the fail-open shape CLAUDE.md forbids.
+    """
+
+    facts: list[Any]
+    error: str | None
+
+
+def _parse_distill_output(raw_output: str) -> DistillReply:
+    """Extract the facts array from raw agent output.
+
+    Never repairs the reply: a repaired reply is a different answer.
+    """
     try:
         data = _extract_json(raw_output)
-    except ValueError:
-        return []
+    except ValueError as exc:
+        return DistillReply(facts=[], error=str(exc))
     if not isinstance(data, dict):
-        return []
+        return DistillReply(facts=[], error="the reply is not a JSON object")
     facts = data.get("facts")
     if not isinstance(facts, list):
-        return []
-    return [f for f in facts if isinstance(f, dict)]
+        return DistillReply(facts=[], error='the reply has no "facts" list')
+    return DistillReply(facts=facts, error=None)
 
 
 _FACT_ID_RE = re.compile(r"^fact-\d{3}$")
@@ -1215,6 +1235,34 @@ def _evidence_cites_existing_path(evidence: list[str], worktree_path: Path) -> b
     return False
 
 
+def _dump_distill_debug(
+    debug_dir: Path,
+    streamed_output: str,
+    final_message: str | None,
+    label: str,
+) -> None:
+    """Persist raw distiller output so failure modes are diagnosable
+    without re-running. ``debug_dir`` is ``_debug/<run_id>/`` under the
+    component, outside the run-dir namespace, so a failed distill never
+    creates a fact-less run dir that could shadow real facts (read_facts
+    skips underscore-prefixed dirs entirely). Best-effort; ignore disk
+    errors."""
+    try:
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        (debug_dir / "_distill_raw.txt").write_text(
+            streamed_output,
+            encoding="utf-8",
+        )
+        if final_message and final_message != streamed_output:
+            (debug_dir / "_distill_final.txt").write_text(
+                final_message,
+                encoding="utf-8",
+            )
+        (debug_dir / "_distill_status.txt").write_text(label, encoding="utf-8")
+    except OSError:
+        pass
+
+
 def distill_facts(
     agent: Agent,
     component: Component,
@@ -1228,18 +1276,20 @@ def distill_facts(
     review_passed: bool | None,
     *,
     on_line: Callable[[str], None] | None = None,
-) -> tuple[int, str]:
+) -> tuple[int, str, bool]:
     """Run the LLM distillation call and persist any facts returned.
 
-    Returns ``(written_count, status_message)``. Failures are reported in
-    the status message rather than raised - distillation is non-fatal.
+    Returns ``(written_count, status_message, parse_failed)``. Failures
+    are reported in the status message rather than raised - distillation
+    is non-fatal. ``parse_failed`` is True only when the reply did not
+    parse (#495); the pipeline puts it on the ``DistillResult`` event.
 
     ``review_passed`` controls the confidence ceiling: ``True`` allows
     "verified", ``None`` (skip mode) and ``False`` (shouldn't happen but
     handled defensively) cap at "asserted".
     """
     if not config.enabled:
-        return 0, "off ([knowledge] enabled = false)"
+        return 0, "off ([knowledge] enabled = false)", False
 
     # Truncate diff to match review.py's 50KB convention
     diff_for_prompt = diff_content
@@ -1265,9 +1315,9 @@ def distill_facts(
             on_line=on_line,
         )
     except AgentOutputTooLarge as exc:
-        return 0, f"the distiller's output was too large to read: {exc}"
+        return 0, f"the distiller's output was too large to read: {exc}", False
     except Exception as exc:  # noqa: BLE001 - non-fatal
-        return 0, f"the distiller agent failed: {exc}"
+        return 0, f"the distiller agent failed: {exc}", False
 
     streamed_output = "\n".join(output_lines)
     # Select the best candidate: prefer agent.final_message when it
@@ -1277,38 +1327,18 @@ def distill_facts(
     raw_output = _select_agent_output(agent, output_lines)
     final_message = getattr(agent, "final_message", None)
 
-    def _dump_debug(label: str) -> None:
-        """Persist raw distiller output so failure modes are diagnosable
-        without re-running. Lives under _debug/<run_id>/, outside the
-        run-dir namespace, so a failed distill never creates a fact-less
-        run dir that could shadow real facts (read_facts skips
-        underscore-prefixed dirs entirely). Best-effort; ignore disk
-        errors."""
-        try:
-            debug_dir = knowledge_root / component.id / _DEBUG_DIR_NAME / run_id
-            debug_dir.mkdir(parents=True, exist_ok=True)
-            (debug_dir / "_distill_raw.txt").write_text(
-                streamed_output,
-                encoding="utf-8",
-            )
-            if final_message and final_message != streamed_output:
-                (debug_dir / "_distill_final.txt").write_text(
-                    final_message,
-                    encoding="utf-8",
-                )
-            (debug_dir / "_distill_status.txt").write_text(label, encoding="utf-8")
-        except OSError:
-            pass
+    debug_dir = knowledge_root / component.id / _DEBUG_DIR_NAME / run_id
 
-    raw_facts = _parse_distill_output(raw_output)
-    if not raw_facts:
-        # Could be a clean empty response or a parse failure - dump so we
-        # can tell which without re-running.
-        _dump_debug("no_facts")
-        return 0, "the distiller returned no facts"
+    reply = _parse_distill_output(raw_output)
+    if reply.error is not None:
+        _dump_distill_debug(debug_dir, streamed_output, final_message, "unparseable")
+        return 0, f"the distiller's reply did not parse: {reply.error}", True
+    if not reply.facts:
+        _dump_distill_debug(debug_dir, streamed_output, final_message, "no_facts")
+        return 0, "the distiller returned no facts", False
 
     facts = _coerce_facts(
-        raw_facts,
+        [f for f in reply.facts if isinstance(f, dict)],
         component.id,
         iteration_count,
         run_id,
@@ -1345,11 +1375,11 @@ def distill_facts(
         # Surface a brief sample of the rejected raw output so the user
         # can see why coercion failed without grepping the dump.
         sample = raw_output[:200].replace("\n", " ")
-        _dump_debug("no_valid_facts")
-        return 0, f"the distiller returned no valid fact (raw: {sample}...)"
+        _dump_distill_debug(debug_dir, streamed_output, final_message, "no_valid_facts")
+        return 0, f"the distiller returned no valid fact (raw: {sample}...)", False
 
     written = write_facts(facts, knowledge_root, component.id, run_id)
-    return written, f"wrote {written} of {len(facts)} facts"
+    return written, f"wrote {written} of {len(facts)} facts", False
 
 
 # ---------------------------------------------------------------------------

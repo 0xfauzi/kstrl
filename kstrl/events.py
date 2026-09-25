@@ -587,6 +587,10 @@ class DistillResult(Event):
     type: ClassVar[str] = "distill_result"
     facts_written: int = 0
     duration_seconds: float = 0.0
+    #: #495: True when the distiller's reply did not parse. A reply that
+    #: parsed to an empty facts list is False: the two used to share one
+    #: status. Read by ``kstrl.distill_readiness`` for ``ks evolve``.
+    parse_failed: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
