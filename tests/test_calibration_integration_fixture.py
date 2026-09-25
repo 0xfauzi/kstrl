@@ -626,3 +626,31 @@ def test_compare_fails_a_clean_twin_that_opened_a_finding_once(tmp_path: Path) -
         f.startswith(f"role {INTEGRATION_CLEAN_ROLE!r} detection rate 0.67 is below its floor 1.00")
         for f in comparison.failures
     ), comparison.failures
+
+
+def _shortest_unique_suffix(path: str, tracked: frozenset[str]) -> str:
+    """The fewest trailing path segments of ``path`` that name exactly one
+    tracked file, which is what a reviewer citing a bare name gives."""
+    parts = path.split("/")
+    for n in range(1, len(parts) + 1):
+        suffix = "/".join(parts[-n:])
+        if [t for t in tracked if t == suffix or t.endswith("/" + suffix)] == [path]:
+            return suffix
+    return path
+
+
+@pytest.mark.parametrize("fixture", POSITIVES)
+def test_a_finding_citing_bare_names_is_scored_as_the_factory_reads_it(
+    fixture: IntegrationFixture, tmp_path: Path
+) -> None:
+    """#500: the factory resolves a cited name to the one tracked file it
+    ends; the scorer must read citations by the same rule, or a paid capture
+    scores a finding the factory scoped as a miss."""
+    probe = materialize(fixture, tmp_path / "probe")
+    tracked = git.tracked_files_at(probe.head_sha, probe.path)
+    firsts = [paths[0] for paths in fixture.components.values()]
+    bare = [_shortest_unique_suffix(p, tracked) for p in firsts]
+    assert bare != firsts, f"every cited path is already its shortest name: {firsts}"
+    text = "defect at " + " and ".join(f"{name}:1" for name in bare)
+    caught, detail = detected(fixture, _review(fixture, tmp_path, {fixture.story: text}))
+    assert caught, detail

@@ -1,4 +1,5 @@
-"""Tables for the 53 #303 instruction-text fragments enrolled under H3.
+"""Tables for the 54 instruction-text fragments enrolled under H3: 53 from
+#303 and one from #233.
 
 These builders assemble optional, branching text (a fragment may or may
 not appear in a given render), so a single per-module `*_PROMPT` body
@@ -8,9 +9,9 @@ tables below are what `tests/test_prompt_versions.py` merges in.
 
 They live here rather than in `tests/test_prompt_versions.py` because
 that file is close to the repo's 800-line file-length ratchet and these
-53 snapshot rows do not fit inside the remaining headroom.
+54 snapshot rows do not fit inside the remaining headroom.
 
-`_BUILDERS` is the single source: ten rows of (module, the name of that
+`_BUILDERS` is the single source: eleven rows of (module, the name of that
 module's shared `*_PROMPT_VERSION` constant, the fragment names that
 module's builder assembles). `BUILDER_PROMPTS`, `BUILDER_VERSIONS` and
 `BUILDER_RENDER_EXEMPT` are all derived from it, so a fragment enters the
@@ -18,7 +19,7 @@ census by appearing in exactly one row here.
 
 BUILDER_PROMPTS: name -> the enrolled body.
 BUILDER_VERSIONS: name -> the *_PROMPT_VERSION of the BUILDER that
-    delivers it (10 distinct values for 53 names). The version's unit is
+    delivers it (11 distinct values for 54 names). The version's unit is
     the text one builder delivers to a role, which is what a role
     receives; `test_prompt_versions._drift_message` names
     `<NAME>_VERSION` in its instructions, and for these fragments the
@@ -35,7 +36,7 @@ BUILDER_RENDER_EXEMPT: every name, because each fragment is one branch
     `test_prompt_versions.py::test_renderer_renders_the_enrolled_body`
     cannot hold it. Their orphan guards are
     `tests/test_builder_prompts.py::test_enrolled_fragment_reaches_its_builder`
-    (the 31 call-time constants), the two container-equality tests (the
+    (the 32 call-time constants), the two container-equality tests (the
     22 constants captured by value at import), and the delivered-output
     digests in the same file.
 """
@@ -44,9 +45,9 @@ from __future__ import annotations
 
 from types import ModuleType
 
-from kstrl import context, factory, init_cmd, knowledge, parsers, review, verify
+from kstrl import context, factory, init_cmd, knowledge, loop, parsers, review, verify
 
-#: Ten rows: (module, the name of that module's shared version constant,
+#: Eleven rows: (module, the name of that module's shared version constant,
 #: the fragment names it assembles). This is the one place a fragment is
 #: declared enrolled; BUILDER_PROMPTS, BUILDER_VERSIONS and
 #: BUILDER_RENDER_EXEMPT are all read off it below.
@@ -150,6 +151,13 @@ _BUILDERS: tuple[tuple[ModuleType, str, tuple[str, ...]], ...] = (
         verify,
         "POLICY_ENVELOPE_PROMPT_VERSION",
         ("POLICY_DIFF_UNREADABLE_PROMPT",),
+    ),
+    # #233, not #303: the between-iteration measurement block, present in
+    # an iteration's prompt only when the last iteration's gates failed.
+    (
+        loop,
+        "LAST_ITERATION_MEASUREMENT_PROMPT_VERSION",
+        ("LAST_ITERATION_MEASUREMENT_PROMPT",),
     ),
 )
 
@@ -278,6 +286,10 @@ BUILDER_SNAPSHOTS: dict[str, tuple[str, str]] = {
     ),
     "KOTLIN_STANDARDS_PROMPT": (
         "e5d06e783c4ef15f94e05f1b6536ecf93f951a02b1103ae4cbce459f31901d2d",
+        "1.0.0",
+    ),
+    "LAST_ITERATION_MEASUREMENT_PROMPT": (
+        "f6f5329dbe821f18fce2ae140c0c798e48fe35f0e34275517e67e995017b337b",
         "1.0.0",
     ),
     "LINE_TOO_LONG_HINT_PROMPT": (

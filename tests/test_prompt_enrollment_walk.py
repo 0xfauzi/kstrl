@@ -311,7 +311,10 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # declaration and its one use site) = 6. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
     "knowledge.py": 6,
-    "loop.py": 2,
+    # 2 pre-existing (the DEFAULT_PROMPT import and its use in run_loop)
+    # + #233: LAST_ITERATION_MEASUREMENT_PROMPT x 2 spellings (the
+    # declaration and its one use in measurement_block) = 4.
+    "loop.py": 4,
     # #303: 0 pre-existing + 12 new fragments x 2 spellings each (the
     # declaration and its one use site) = 24. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.

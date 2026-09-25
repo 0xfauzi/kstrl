@@ -37,6 +37,13 @@ ADEQUACY_CATEGORY_PREFIX = "adequacy_"
 # adequacy families, so no model tag: the predicate decided, not an LLM.
 DIVERGENCE_CATEGORY = "review_divergence"
 
+# #233: the across-attempt convergence check tripped - the gate's failure
+# count did not fall for ``[factory] convergence_attempts`` consecutive
+# attempts. Filed under the engineer phase, and distinct from the
+# no-progress breaker's stall (signature ``engineer:no-progress-stall``)
+# so the journal can tell the two apart. Mechanical, so no model tag.
+ENGINEER_DIVERGENCE_CATEGORY = "divergence"
+
 # R10.3: one story the engineer marked passes=true that the reviewer did
 # not independently mark pass. The comparison is mechanical, but the
 # evidence is an LLM's verdict, so unlike the policy and adequacy
@@ -239,6 +246,24 @@ class Finding:
             location="",
             explanation=explanation,
             tags=("divergence", "phase:review"),
+        )
+
+    @classmethod
+    def not_converging(cls, explanation: str) -> Finding:
+        """Build the Finding for a #233 convergence-check trip.
+
+        Severity ``fail``: the trip ends the component. Mechanical, so no
+        model tag. Filed under the engineer phase with its own category,
+        so the journal tells it apart from the #265 review divergence and
+        from the no-progress stall.
+        """
+        return cls(
+            phase="engineer",
+            category=ENGINEER_DIVERGENCE_CATEGORY,
+            severity="fail",
+            location="",
+            explanation=explanation,
+            tags=("divergence", "phase:engineer"),
         )
 
     @classmethod

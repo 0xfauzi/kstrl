@@ -519,6 +519,11 @@ class IterationCompleted(Event):
     duration_seconds: float = 0.0
     completed: bool = False
     timed_out: bool = False
+    #: #233: the gates ``[verify] fast_iteration_checks`` ran after this
+    #: iteration that failed. Empty when they all passed, when none are
+    #: configured, and when the iteration completed or was killed, in
+    #: which case they did not run.
+    fast_checks_failed: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
