@@ -223,8 +223,11 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     # (`mounted`/`drained`/`settled`/`pilot.press`) plus two new tests
     # in the same sequence (a kstrl.toml ceiling that carries through
     # the TUI launch, and recorded flags that do not), so this file's
-    # decision for it still holds.
-    "tests/test_retry_screen.py": 39,
+    # decision for it still holds. #485 adds one test in the same
+    # sequence (`mounted`/`drained`/`pilot.press`/`settled`); its only
+    # read after them is `request.header`, which OptionsModal holds from
+    # construction.
+    "tests/test_retry_screen.py": 44,
     "tests/test_settle_helper.py": 47,
     "tests/test_tui_app.py": 23,
     "tests/test_tui_config_guard.py": 13,

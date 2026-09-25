@@ -28,6 +28,7 @@ from kstrl.launch_record import (
     launch_record_path,
     read_launch_record,
 )
+from kstrl.manifest import ComponentStatus
 from kstrl.timeout import NO_LIMIT
 
 if TYPE_CHECKING:
@@ -48,6 +49,50 @@ class RetryPreview:
     evidence_worktree: str
     failed_branch: str
     single_pr: bool
+    #: What stays FAILED or SKIPPED after the reset, one line each (#485).
+    not_in_retry: list[str]
+
+
+def _failed_dependencies(manifest: Manifest, component_id: str) -> list[str]:
+    """Every FAILED component among *component_id*'s transitive dependencies."""
+    seen: set[str] = set()
+    stack = [component_id]
+    while stack:
+        comp = manifest.get_component(stack.pop())
+        for dep in comp.dependencies if comp is not None else []:
+            if dep not in seen:
+                seen.add(dep)
+                stack.append(dep)
+    return [
+        c.id
+        for c in manifest.components
+        if c.id in seen and c.status == ComponentStatus.FAILED.value
+    ]
+
+
+def _not_in_retry(manifest: Manifest) -> list[str]:
+    """The FAILED and SKIPPED components a retry leaves out, in manifest order (#485).
+
+    Read AFTER ``reset_for_retry``: the retried component and every
+    dependent it reset are PENDING by then, so neither can be listed.
+    """
+    retryable = set(manifest.retryable_component_ids())
+    lines: list[str] = []
+    for comp in manifest.components:
+        if comp.id in retryable:
+            lines.append(f"{comp.id}: FAILED; retry it after this run with ks retry {comp.id}")
+        elif comp.status == ComponentStatus.SKIPPED.value:
+            waits = _failed_dependencies(manifest, comp.id)
+            lines.append(
+                f"{comp.id}: SKIPPED; waits on {', '.join(waits) or 'no FAILED component'}"
+            )
+    return lines
+
+
+def _print_not_in_retry(ui: UI, not_in_retry: list[str]) -> None:
+    """One `Not in this retry` row per component the retry leaves out, or `(none)`."""
+    for line in not_in_retry or ["(none)"]:
+        ui.kv("Not in this retry", line)
 
 
 def preview_retry(manifest: Manifest, component_id: str) -> RetryPreview:
@@ -65,6 +110,7 @@ def preview_retry(manifest: Manifest, component_id: str) -> RetryPreview:
         evidence_worktree=comp.evidence_worktree if comp else "",
         failed_branch=comp.branch_name if comp else "",
         single_pr=manifest.single_pr,
+        not_in_retry=_not_in_retry(scratch),
     )
 
 
@@ -96,6 +142,8 @@ def prepare_retry(
         "Cascade-skipped dependents reset",
         ", ".join(reset_dependents) if reset_dependents else "(none)",
     )
+    not_in_retry = _not_in_retry(manifest)
+    _print_not_in_retry(ui, not_in_retry)
     ui.kv("Manifest", str(manifest_file))
 
     # The failed attempt's worktree and branch are superseded by the
@@ -160,6 +208,7 @@ def prepare_retry(
         evidence_worktree=evidence_worktree,
         failed_branch=failed_branch,
         single_pr=manifest.single_pr,
+        not_in_retry=not_in_retry,
     )
 
 
