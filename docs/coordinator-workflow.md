@@ -218,3 +218,13 @@ test, a small named set, or a plant.
 
 If a parallel run and a serial run ever disagree on counts, that is a finding.
 Report both; do not pick one.
+
+## Machine budget
+
+Running many lanes at once overheated the machine on 2026-09-25. Measured at the time: a load average of 22.5 on 10 cores, the macOS file-event daemon at 95% of a core and 6.9 GB of memory, 58 throwaway virtualenvs, and 23 GB of lane scratch. The agents themselves used little CPU. The load came from repeated full-suite runs and from copies of the repository. Three rules follow.
+
+- **No repository copies and no new virtualenvs.** A lane runs code only in its own worktree, with that worktree's environment. Before the implementer starts, the planner and critic may prototype in the worktree. They save the change as a diff in the lane directory and leave the tree clean.
+- **The full suite runs at most once per role, and only in three roles:** the implementer (on the final change), the verifier, and a fixer (after its fix). The planner, the critic and a finisher run only the test files the change touches, plus the guard and census files that pin that code. The merge gate runs the full suite again on the merged tree, so nothing is lost. The full suite uses three workers.
+- **Clean up when a lane merges.** Delete its worktree, and delete any clone or virtualenv in its lane directory. Keep the lane's text records (plan, measurements, PR body).
+
+**Option: background priority for long runs.** On Apple Silicon, `taskpolicy -b -p <pid>` moves a running process onto the efficiency cores. This cuts heat and fan noise, and the process runs slower. Processes it starts afterwards inherit the policy; this was measured on 2026-09-25 (priority 4, against 31 for a normal child). It suits long runs that nobody is waiting on, such as a paid calibration or a replay. Apply it to the whole process tree, including the wrapper shell, so later steps inherit it too. Do not use it on a lane whose result the next merge waits for: it trades wall-clock time for temperature. To start a run in the background from the beginning, use `taskpolicy -b <command>`.
