@@ -768,7 +768,7 @@ class TestEvolutionRecording:
             ),
             patch(
                 "kstrl.factory.distill_facts",
-                return_value=(0, "none"),
+                return_value=(0, "none", False),
             ),
         ):
             run_factory(
@@ -813,7 +813,7 @@ class TestEvolutionRecording:
             patch("kstrl.factory.build_knowledge_context", boom),
             patch(
                 "kstrl.factory.distill_facts",
-                return_value=(0, "none"),
+                return_value=(0, "none", False),
             ),
         ):
             run_factory(

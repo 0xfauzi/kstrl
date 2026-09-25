@@ -126,7 +126,7 @@ def _pipeline(
         run_mechanical_verification=verify_hook or (lambda *a, **k: verification),
         run_review=lambda *a, **k: ReviewResult(passed=True, mode="advisory"),
         run_security_review=lambda *a, **k: SecurityResult(passed=True, mode="advisory"),
-        distill_facts=lambda *a, **k: (1, "1 fact written"),
+        distill_facts=lambda *a, **k: (1, "1 fact written", False),
         measure_fact_utilization=lambda *a, **k: {"injected": 0, "referenced": 0},
         cleanup_worktree=lambda *a, **k: WorktreeSweep(),
     )

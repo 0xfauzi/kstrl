@@ -496,7 +496,7 @@ class PipelineHooks:
     run_mechanical_verification: MechanicalVerification
     run_review: Callable[..., ReviewResult]
     run_security_review: Callable[..., SecurityResult]
-    distill_facts: Callable[..., tuple[int, str]]
+    distill_facts: Callable[..., tuple[int, str, bool]]
     # No build_knowledge_context seam by design (#191). The distill
     # phase once rebuilt the knowledge prefix to measure utilization
     # against; that rebuild read the store AFTER distillation had
@@ -4575,7 +4575,7 @@ class ComponentPipeline:
             )
             distill_start = time.monotonic()
             with self._phase_transcript(comp.id, "distill") as on_line:
-                written, status = self.hooks.distill_facts(
+                written, status, parse_failed = self.hooks.distill_facts(
                     distill_agent,
                     comp,
                     diff_content,
@@ -4592,6 +4592,7 @@ class ComponentPipeline:
                 ev.DistillResult(
                     component=comp.id,
                     facts_written=written,
+                    parse_failed=parse_failed,
                     duration_seconds=round(
                         time.monotonic() - distill_start,
                         2,

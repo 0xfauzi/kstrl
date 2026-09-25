@@ -1028,7 +1028,7 @@ class TestFactoryUsageAggregation:
             ),
             patch(
                 "kstrl.factory.distill_facts",
-                return_value=(1, "ok"),
+                return_value=(1, "ok", False),
             ),
         ):
             result = run_factory(

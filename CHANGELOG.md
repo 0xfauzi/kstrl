@@ -289,6 +289,12 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- A distiller reply that did not parse is no longer reported as a reply
+  that parsed to no facts (#495). The status reads "the distiller's reply
+  did not parse: <reason>", the debug dump records `unparseable`, and the
+  `distill_result` event carries `parse_failed: true`. `ks evolve` prints
+  how many distills in the recent runs did not parse. The reply is not
+  repaired or retried.
 - One fact, one value (#450). `component_completed` and the console
   `COMPLETED:` line now carry the whole attempt's duration, the value the
   manifest and the journal already carried, instead of the engineer
