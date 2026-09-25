@@ -1,7 +1,8 @@
-"""H3a (#303): enrolment guards for the 53 harness-authored fragments that
-seven multi-branch builders assemble into a role's prompt. Why these
-fragments cannot be enrolled the way one plain prompt is is explained
-once, in ``tests/helpers/builder_prompts.py``'s module docstring. Four
+"""H3a (#303): enrolment guards for the 54 harness-authored fragments (53
+from #303, one from #233) that eight multi-branch builders assemble into a
+role's prompt. Why these fragments cannot be enrolled the way one plain
+prompt is is explained once, in ``tests/helpers/builder_prompts.py``'s
+module docstring. Four
 layers are checked here, none of them by ``tests/test_prompt_versions.py``
 alone:
 
@@ -28,7 +29,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl import context, factory, init_cmd, knowledge, parsers, review, verify
+from kstrl import context, factory, init_cmd, knowledge, loop, parsers, review, verify
 from kstrl.context import LEGACY_ATTEMPT, IterationContext, IterationRecord
 from kstrl.findings import Finding
 from kstrl.knowledge import KnowledgeConfig
@@ -213,6 +214,22 @@ def _policy_diff_unreadable(tmp: Path) -> str:
     return "\n".join(d for d in result.details if not d.startswith("Error:"))
 
 
+def _loop_measurement(_tmp: Path) -> str:
+    """The block the engineer loop puts in the next prompt (#233)."""
+    reading = verify.VerificationResult(
+        passed=False,
+        checks=[
+            verify.CheckResult(
+                name="linter",
+                passed=False,
+                message="Linter failed (exit code 1)",
+                details=["a.py:1:1: F401 unused import"],
+            )
+        ],
+    )
+    return loop.measurement_block(reading)
+
+
 _FACTORY_PRD_REL = "components/c1/prd.json"
 
 
@@ -387,6 +404,7 @@ SCENARIOS: dict[str, Callable[[Path], str]] = {
     "factory_guard": _factory_guard,
     "knowledge_plain": _knowledge(False),
     "knowledge_overflow": _knowledge(True),
+    "loop_measurement": _loop_measurement,
 }
 
 
@@ -450,6 +468,7 @@ DIGESTS: dict[str, str] = {
     "factory_guard": "975a099e1906f2c1585fb97a5c2b06dd3db574ab33b097b4c24b7173e84e39e5",
     "knowledge_overflow": "d7ef0f68094a4ae521985ae10270f5302813be17a1e36c0348075679f08d732b",
     "knowledge_plain": "88716e667ff7e50d57775c3900aadf3c668f9929983dd691acb557ffba65738f",
+    "loop_measurement": "d52903bd125d4505f5e6026f62ff93a6db7bcca66a6a3212c79acb36a5c80740",
     "policy_diff_unreadable": "f628c8378f20bb097023e0a39dc113f268f8e75d7b06755b58f8d9cc97a82677",
     "prd_tamper": "1a210bdd7077628703f6e5bfa2893be949ebcf0636102cd4d7507a7b7af41a97",
     "scope_unreadable_cause": "599979f4317abead4ddb248f85e3b2a5b73bf6d37bcf66951694959acc3b9ace",
@@ -485,7 +504,7 @@ def test_delivered_prompt_digest(name: str, tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 3: orphan guard for the 31 constants read at CALL TIME.
+# Test 3: orphan guard for the 32 constants read at CALL TIME.
 # ---------------------------------------------------------------------------
 
 #: name -> (module holding the constant, scenario that exercises the
@@ -525,6 +544,7 @@ CALL_TIME_GUARDS: dict[str, tuple[ModuleType, str]] = {
     "CLAUDE_MD_PRINCIPLES_PROMPT": (init_cmd, "claude_md_python"),
     "CLAUDE_MD_ANTIPATTERNS_HEADING_PROMPT": (init_cmd, "claude_md_python"),
     "CLAUDE_MD_LEARNINGS_PROMPT": (init_cmd, "claude_md_python"),
+    "LAST_ITERATION_MEASUREMENT_PROMPT": (loop, "loop_measurement"),
 }
 
 
@@ -590,7 +610,7 @@ CONTAINER_CAPTURED_NAMES: frozenset[str] = (
 
 
 def test_every_call_time_fragment_has_a_guard() -> None:
-    """Closed by construction: a 54th constant with no entry in either
+    """Closed by construction: a 55th constant with no entry in either
     set fails here rather than being silently unguarded."""
     covered = set(CALL_TIME_GUARDS) | CONTAINER_CAPTURED_NAMES
     assert covered == set(BUILDER_PROMPTS), (

@@ -402,8 +402,9 @@ def test_every_enrolled_prompt_is_delivered_somewhere() -> None:
     union: set[str] = set()
     for spec in _ROLES.values():
         union |= spec.covers
-    # The 53 #303 builder fragments are single branches of a multi-branch
-    # builder, so no one role's delivered text carries all of them. Their
+    # The 53 #303 builder fragments, and #233's measurement block, are single
+    # branches of a multi-branch builder, so no one role's delivered text
+    # carries all of them. Their
     # delivered-output digests and orphan guards live in
     # tests/test_builder_prompts.py, not here.
     # The six #428 codebase scan notices are each returned VERBATIM by one

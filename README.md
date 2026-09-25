@@ -366,6 +366,7 @@ keep_worktrees_on_failure = false  # keep failed components' worktrees for post-
 integration_review = true          # record-only review of the merged feature after Phase 3 (#482); never gates
 integration_blocking = false       # open integration findings become a fix component; a non-clean stop fails the run (#483)
 integration_max_rounds = 1         # most fix components one feature may get, counted from the manifest; at least 1 (#483)
+convergence_attempts = 0           # fail a component whose gate failure count has not fallen for this many consecutive attempts; 0 = off (#233)
 
 # No-progress circuit breaker (R7.5; 0 iterations disables)
 [breaker]
@@ -397,6 +398,7 @@ subprocess_timeout = 0.0       # seconds per verification subprocess; 0 = no lim
 require_self_critique = false  # fail Phase 1 if the ## Self-Critique block is missing/sparse
 self_critique_min_bullets = 3  # minimum substantive bullets in the block
 progress_file_path = ""        # progress file the self-critique check reads; empty = the log beside the component's PRD
+fast_iteration_checks = []     # gates run after each unfinished engineer iteration, failures shown in the next prompt: any of "test_suite", "typecheck", "linter"; empty = off (#233)
 
 # Phase 1 approved-fixtures oracle (R7.2; default off)
 [fixtures]

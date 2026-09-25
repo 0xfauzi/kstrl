@@ -398,3 +398,37 @@ def detect_divergence(
             # growth bought something, so the streak restarts.
             return None
     return DivergenceVerdict(readings=tail)
+
+
+#: #233: greppable prefix for the convergence check's message, the
+#: counterpart of :data:`DIVERGENCE_MESSAGE_PREFIX` for the other detector.
+CONVERGENCE_MESSAGE_PREFIX = "convergence check tripped"
+
+
+def failure_counts_not_converging(counts: Sequence[int], attempts: int) -> bool:
+    """#233: True when the failure count has not fallen at any of the last
+    ``attempts`` attempt-to-attempt steps.
+
+    ``counts`` is one reading per CONSECUTIVE failed attempt, oldest first;
+    the caller clears it when an attempt produces no count or fails in a
+    different phase, so a gap breaks the run, which is the fail-open
+    direction. ``attempts`` 0 (or less) is
+    off. Equal counts are "not fallen": an agent that fixes one failure and
+    introduces another is not converging.
+    """
+    if attempts < 1 or len(counts) <= attempts:
+        return False
+    window = counts[-(attempts + 1) :]
+    return all(later >= earlier for earlier, later in zip(window, window[1:], strict=False))
+
+
+def convergence_message(counts: Sequence[int], attempts: int) -> str:
+    """What tripped, with the numbers, and what to do about it."""
+    window = " -> ".join(str(count) for count in counts[-(attempts + 1) :])
+    return (
+        f"{CONVERGENCE_MESSAGE_PREFIX}: the failure count the gates reported did "
+        f"not fall across the last {attempts + 1} attempts ({window}), and "
+        f"[factory] convergence_attempts is {attempts}. Another retry buys another "
+        "engineer run on a component that is not converging. Split this component "
+        "into smaller ones, or narrow its PRD, then run it again."
+    )

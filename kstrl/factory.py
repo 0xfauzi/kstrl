@@ -403,6 +403,12 @@ class FactoryConfig:
     # #483: the most fix components one feature may get. A termination bound,
     # derived at run time by counting integration-fix-* components.
     integration_max_rounds: int = 1
+    # #233: fail a component whose gate failure count has not fallen for
+    # this many consecutive attempts that failed in the same phase (a
+    # phase change starts the count again). 0 (the default) is off: the
+    # operator sets it after reading the per-attempt `failure_count` the
+    # journal records on every superseded attempt.
+    convergence_attempts: int = 0
     # R7.2: approved-fixtures oracle for Phase 1. None means run_factory
     # loads FixturesConfig.load(root_dir) - toml [fixtures] section +
     # env - so `ks factory` honors the config with no CLI wiring.
@@ -506,6 +512,10 @@ class FactoryConfig:
                 _env_int(os.environ.get("KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS", "1")),
                 "KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS",
             ),
+            convergence_attempts=_validate_convergence_attempts(
+                _env_int(os.environ.get("KSTRL_FACTORY_CONVERGENCE_ATTEMPTS", "0")),
+                "KSTRL_FACTORY_CONVERGENCE_ATTEMPTS",
+            ),
             # R10.3: unlike review_mode next door, this key HAS an env
             # var, so from_env must read it. `ks factory` uses from_env
             # as the environment-only baseline that _collect_toml_notes
@@ -592,6 +602,10 @@ class FactoryConfig:
             section.get("integration_max_rounds", config.integration_max_rounds),
             "[factory] integration_max_rounds",
         )
+        config.convergence_attempts = _validate_convergence_attempts(
+            section.get("convergence_attempts", config.convergence_attempts),
+            "[factory] convergence_attempts",
+        )
         # Env overrides (consistent with from_env)
         if "FACTORY_MAX_PARALLEL" in os.environ:
             config.max_parallel = int(os.environ["FACTORY_MAX_PARALLEL"])
@@ -638,6 +652,14 @@ class FactoryConfig:
             ),
             "KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS",
         )
+        config.convergence_attempts = _validate_convergence_attempts(
+            _env_int(
+                os.environ.get(
+                    "KSTRL_FACTORY_CONVERGENCE_ATTEMPTS", str(config.convergence_attempts)
+                )
+            ),
+            "KSTRL_FACTORY_CONVERGENCE_ATTEMPTS",
+        )
         if "KSTRL_FACTORY_CLAIM_AGREEMENT" in os.environ:
             config.claim_agreement = _validate_claim_agreement(
                 os.environ["KSTRL_FACTORY_CLAIM_AGREEMENT"],
@@ -656,6 +678,17 @@ def _validate_max_rounds(value: object, source: str) -> int:
     """
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise ValueError(f"{source} must be a whole number of at least 1, got {value!r}")
+    return value
+
+
+def _validate_convergence_attempts(value: object, source: str) -> int:
+    """``convergence_attempts`` as a whole number of at least 0 (#233).
+
+    0 is off. A bool and a quoted number are refused, as
+    :func:`_validate_max_rounds` refuses them.
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{source} must be a whole number of at least 0, got {value!r}")
     return value
 
 
