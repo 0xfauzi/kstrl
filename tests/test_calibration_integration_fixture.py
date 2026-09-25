@@ -464,6 +464,30 @@ def test_an_agent_that_produced_no_review_is_reported_as_unavailable(
     assert agent_failure(agent, review_round.result) != ""
 
 
+def test_an_agent_that_raises_any_exception_is_reported_as_unavailable(tmp_path: Path) -> None:
+    """run_review reads ANY exception from the agent as an infrastructure
+    error, so the harness must record any exception, not only OSError, or a
+    crashed run is scored as a miss instead of being excluded."""
+
+    class RaisingReviewer:
+        name = "raising-integration-reviewer"
+        final_message: str | None = None
+
+        def run(
+            self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+        ) -> Iterator[str]:
+            raise RuntimeError("reviewer exited 1")
+            yield ""  # pragma: no cover - makes this a generator, as every adapter is
+
+    fixture = FIXTURES[0]
+    agent = BoundedAgent(RaisingReviewer(), 5.0)
+    review_round = review_fixture(fixture, agent, run_slot(fixture, tmp_path))
+    assert review_round.outcome.errors, "run_review reads a dead agent as an infrastructure error"
+    assert agent_failure(agent, review_round.result) == (
+        "agent raised RuntimeError: reviewer exited 1"
+    )
+
+
 def test_a_review_that_never_reached_the_agent_is_a_harness_fault() -> None:
     agent = BoundedAgent(ScriptedReviewer({}), 5.0)
     result = ReviewResult(passed=False, mode="hard", overall_notes="base did not resolve")
