@@ -4700,7 +4700,7 @@ def _echo_pattern_routing(routing: PatternRouting, ui_impl: UI) -> None:
     and the first time a row of that table is wrong the operator sees it
     in this output.
     """
-    from kstrl.evolution import category_for_check
+    from kstrl.evolution import UNENROLLED_CATEGORY, category_for_check
 
     if routing.mechanical:
         ui_impl.section("Routed to the inbox (mechanical, not a lesson)")
@@ -4720,7 +4720,7 @@ def _echo_pattern_routing(routing: PatternRouting, ui_impl: UI) -> None:
             )
         ui_impl.info(
             "  A check name not in evolution._CATEGORY_BY_CHECK lands here "
-            "too, because its category falls back to 'iteration'."
+            f"too, with category '{UNENROLLED_CATEGORY}'."
         )
 
 
@@ -4747,9 +4747,11 @@ def _echo_learning_readiness(
 
     util = journal.get_fact_utilization(lookback_runs=evo_config.lookback_runs)
     concern = journal.get_concern_hit_rate(lookback_runs=evo_config.lookback_runs)
+    superseded_only = sum(1 for pattern in patterns if pattern.superseded_only)
     ui_impl.section("Learning readiness")
     ui_impl.info(
-        f"  recurring signatures (>= {evo_config.min_pattern_frequency} runs): {len(patterns)}"
+        f"  recurring signatures (>= {evo_config.min_pattern_frequency} runs): "
+        f"{len(patterns)}, of which {superseded_only} only on superseded attempts"
     )
     ui_impl.info(
         f"  fact utilization: measured {util['measured']}, unmeasured "
