@@ -59,7 +59,9 @@ from kstrl.atomicio import atomic_write_text
 from kstrl.context import IterationContext, IterationRecord
 from kstrl.divergence import (
     AttemptReading,
+    convergence_message,
     detect_divergence,
+    failure_counts_not_converging,
     review_finding_keys,
 )
 from kstrl.findings import (
@@ -232,6 +234,16 @@ class PhaseFailure:
     check: str = ""
     context_json: str | None = None
     signatures: list[str] | None = None
+    #: #233: how many failures the gate reported, for ``[factory]
+    #: convergence_attempts``. None when the failure is not a gate's
+    #: count (an engineer-loop failure, a crashed reviewer), which breaks
+    #: the run of readings rather than counting as a reading.
+    failure_count: int | None = None
+
+
+def _gate_failure_count(result: ReviewResult | SecurityResult) -> int | None:
+    """A reviewer's blocking-finding count, or None when it did not run."""
+    return None if result.infrastructure_error else result.fail_count
 
 
 @dataclass(frozen=True)
@@ -689,6 +701,13 @@ class ComponentPipeline:
         # rendered into the engineer's prompt - a cost governor has no
         # business in the agent's context.
         self.review_readings: dict[str, list[AttemptReading]] = {}
+        # #233: (phase, gate failure count) of each consecutive failed
+        # attempt, keyed by component id, for [factory] convergence_attempts.
+        # In-run only for the reasons review_readings gives above, and
+        # cleared by an attempt that produced no count or failed in a
+        # different phase, and by a contract-breaker reset
+        # (record_contract_failure).
+        self.failure_counts: dict[str, list[tuple[str, int]]] = {}
         # #247: which skippable phases produced a reading, per component
         # and per attempt, as (attempt, phase) pairs. Merged into the
         # retry context at whichever gate finally fails, because that is
@@ -1628,7 +1647,9 @@ class ComponentPipeline:
             evidence={"open_findings": list(open_findings), "evidence": evidence},
         )
 
-    def journal_superseded_findings(self, comp: Component) -> None:
+    def journal_superseded_findings(
+        self, comp: Component, failure_count: int | None = None
+    ) -> None:
         """A scheduled retry supersedes the current attempt. Record the
         attempt's findings and iteration count in the evolution journal
         (attempt-tagged) before the next attempt clears the manifest
@@ -1675,6 +1696,10 @@ class ComponentPipeline:
                 [],
             ),
             "findings": [f.to_dict() for f in comp.findings],
+            # #233: the gate's failure count for this attempt, null when the
+            # failure was not a gate's. The distribution
+            # [factory] convergence_attempts is set from.
+            "failure_count": failure_count,
         }
         try:
             journal.append_entries([entry])
@@ -1752,6 +1777,10 @@ class ComponentPipeline:
         ctx.add_contract_failure(test_output, attempt=attempt)
         self._merge_phase_readings(comp_id, ctx)
         self.component_contexts[comp_id] = ctx.to_json()
+        # #233: the attempt passed every gate before its contract test
+        # failed, so it has no gate count, and the run of readings starts
+        # again, as it does after any attempt that produced no count.
+        self.failure_counts.pop(comp_id, None)
 
     def retry_or_fail(
         self,
@@ -1762,6 +1791,7 @@ class ComponentPipeline:
         check: str = "",
         signatures: list[str] | None = None,
         fresh_base: bool = False,
+        failure_count: int | None = None,
     ) -> Transition:
         """Retry a component or mark it as failed. ``phase``/``check``
         name the gate that fired (R3.3); on a retry they describe the
@@ -1769,9 +1799,15 @@ class ComponentPipeline:
         ``signatures`` are the structured failure signatures (R6.1).
         ``fresh_base=True`` (R7.5 merge-conflict doctrine) forces the
         retry to recreate the worktree AND branch from the freshly
-        merged base instead of resuming the attempt's commits."""
+        merged base instead of resuming the attempt's commits.
+        ``failure_count`` is the gate's count for #233's convergence
+        check; a retry it would buy is refused when the count has not
+        fallen for ``[factory] convergence_attempts`` attempts."""
         self._record_failure_signatures(comp, phase, error, signatures)
+        counts = self._record_failure_count(comp.id, phase, failure_count)
         if comp.retries < self.factory_config.max_retries:
+            if failure_counts_not_converging(counts, self.factory_config.convergence_attempts):
+                return self._fail_not_converging(comp, counts)
             if fresh_base and self.factory_config.use_worktrees:
                 self.fresh_base_retry_ids.add(comp.id)
                 error = (
@@ -1792,7 +1828,7 @@ class ComponentPipeline:
             # the retry counter moves (the tag and the journal entry
             # must agree on the attempt number), then stamp the
             # attempt's evidence pointers.
-            self.journal_superseded_findings(comp)
+            self.journal_superseded_findings(comp, failure_count)
             self._end_attempt(comp)
             comp.failed_phase = phase
             comp.failed_check = check
@@ -1827,6 +1863,36 @@ class ComponentPipeline:
             phase=phase,
             check=check,
             signatures=signatures,
+        )
+
+    def _record_failure_count(self, comp_id: str, phase: str, count: int | None) -> list[int]:
+        """Add this attempt's gate failure count to the component's run of
+        readings and return the run's counts, oldest first (#233).
+
+        The run starts again when the attempt produced no count, and when
+        it failed in a different phase from the attempt before: two gates'
+        counts measure different things, and reaching a later gate is
+        progress the counts cannot show.
+        """
+        history = self.failure_counts.setdefault(comp_id, [])
+        if count is None or (history and history[-1][0] != phase):
+            history.clear()
+        if count is not None:
+            history.append((phase, count))
+        return [reading for _, reading in history]
+
+    def _fail_not_converging(self, comp: Component, counts: list[int]) -> Transition:
+        """#233: end the component instead of buying a retry that the
+        failure count says is not converging."""
+        attempts = self.factory_config.convergence_attempts
+        message = convergence_message(counts, attempts)
+        self._add_findings(comp, [Finding.not_converging(message)])
+        return self.fail(
+            comp,
+            message,
+            phase="engineer",
+            check="convergence",
+            signatures=["engineer:divergence"],
         )
 
     def record_worktree_sweep(self, comp_id: str, sweep: WorktreeSweep, phase: str) -> None:
@@ -3152,6 +3218,7 @@ class ComponentPipeline:
             phase=failure.phase,
             check=failure.check,
             signatures=failure.signatures,
+            failure_count=failure.failure_count,
         )
 
     def _warn_not_measured(self, comp: Component, verification: VerificationResult) -> None:
@@ -3368,6 +3435,7 @@ class ComponentPipeline:
                     signatures=signatures_from_verification(
                         verification.checks,
                     ),
+                    failure_count=verification.failure_count,
                 ),
             )
 
@@ -3848,6 +3916,7 @@ class ComponentPipeline:
                 check=("infrastructure" if review_result.infrastructure_error else "criteria"),
                 context_json=ctx.to_json(),
                 signatures=signatures_from_findings("review", review_result.as_findings()),
+                failure_count=_gate_failure_count(review_result),
             ),
         )
 
@@ -4462,6 +4531,7 @@ class ComponentPipeline:
                 check=("infrastructure" if sec_result.infrastructure_error else "findings"),
                 context_json=ctx.to_json(),
                 signatures=signatures_from_findings("security", sec_result.as_findings()),
+                failure_count=_gate_failure_count(sec_result),
             ),
         )
 

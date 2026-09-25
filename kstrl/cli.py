@@ -198,6 +198,32 @@ def _use_cli_value(ctx: click.Context, name: str) -> bool:
     return ctx.get_parameter_source(name) == ParameterSource.COMMANDLINE
 
 
+def _agent_settings(
+    ctx: click.Context,
+    root_dir: Path,
+    agent_cmd: str | None,
+    model: str | None,
+    reasoning: str | None,
+    agent_type: str | None,
+) -> tuple[str | None, str | None, str | None, str]:
+    """The engineer agent's command, model, reasoning effort and type for
+    ``decompose`` and ``factory``: a flag, else the environment, else
+    ``[agent]`` in kstrl.toml.
+
+    ``KstrlConfig.load`` already applies the environment over the file, so
+    this reads the same values ``run_factory`` builds the engineer from.
+    Reading the environment alone refused a project whose kstrl.toml sets
+    ``[agent] command`` on a machine with neither claude nor codex, before
+    the run that would have used that command started."""
+    config = KstrlConfig.load(root_dir)
+    return (
+        agent_cmd or config.agent_cmd,
+        model if _use_cli_value(ctx, "model") else config.model,
+        reasoning if _use_cli_value(ctx, "reasoning") else config.model_reasoning_effort,
+        (agent_type if _use_cli_value(ctx, "agent_type") else config.agent_type) or "auto",
+    )
+
+
 def _reject_blank_project_name(
     ctx: click.Context,
     param: click.Parameter,
@@ -2213,15 +2239,8 @@ def decompose(
     force_rich = os.environ.get("GUM_FORCE") == "1"
     ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
 
-    effective_cmd = agent_cmd or os.environ.get("AGENT_CMD")
-    effective_model = model if _use_cli_value(ctx, "model") else os.environ.get("MODEL")
-    effective_reasoning = (
-        reasoning if _use_cli_value(ctx, "reasoning") else os.environ.get("MODEL_REASONING_EFFORT")
-    )
-    effective_type = (
-        agent_type
-        if _use_cli_value(ctx, "agent_type")
-        else os.environ.get("KSTRL_AGENT_TYPE", "auto")
+    effective_cmd, effective_model, effective_reasoning, effective_type = _agent_settings(
+        ctx, root_dir, agent_cmd, model, reasoning, agent_type
     )
 
     # R2.4 mirror (measured 2026-07-20): canonicalize aliases like
@@ -2672,15 +2691,8 @@ def factory(
     force_rich = os.environ.get("GUM_FORCE") == "1"
     ui_impl = _console_ui(_normalize_ui_mode(ui), no_color, force_rich=force_rich)
 
-    effective_cmd = agent_cmd or os.environ.get("AGENT_CMD")
-    effective_model = model if _use_cli_value(ctx, "model") else os.environ.get("MODEL")
-    effective_reasoning = (
-        reasoning if _use_cli_value(ctx, "reasoning") else os.environ.get("MODEL_REASONING_EFFORT")
-    )
-    effective_type = (
-        agent_type
-        if _use_cli_value(ctx, "agent_type")
-        else os.environ.get("KSTRL_AGENT_TYPE", "auto")
+    effective_cmd, effective_model, effective_reasoning, effective_type = _agent_settings(
+        ctx, root_dir, agent_cmd, model, reasoning, agent_type
     )
 
     # R2.4 mirror (measured 2026-07-20): canonicalize aliases like
@@ -6207,6 +6219,35 @@ def signals_ls(root: Path | None, ui: str, no_color: bool) -> None:
         )
     if ledger.dropped:
         ui_impl.kv("dropped", str(ledger.dropped))
+    sys.exit(0)
+
+
+@cli.group(name="learn")
+def learn_group() -> None:
+    """Inspect the cross-project learning store (#217). Read-only."""
+
+
+@learn_group.command(name="playbook")
+@_autonomy_ui_option
+@_autonomy_no_color_option
+def learn_playbook(ui: str, no_color: bool) -> None:
+    """Print the folded global playbook and its ledger's line count and SHA-256."""
+    from kstrl.playbook import PlaybookError, load_playbook
+
+    ui_impl = _autonomy_ui(ui, no_color)
+    try:
+        playbook = load_playbook()
+    except (PlaybookError, OSError) as exc:
+        ui_impl.err(f"the global playbook could not be read: {exc}")
+        sys.exit(2)
+    ui_impl.section("Playbook")
+    if not playbook.lessons:
+        ui_impl.ok("No lessons recorded yet.")
+    for lesson in playbook.lessons:
+        ui_impl.info(f"  {lesson.id}  {lesson.status:<8} {lesson.section}: {lesson.insight}")
+    ui_impl.kv("ledger", str(playbook.path))
+    ui_impl.kv("lines", str(playbook.line_count))
+    ui_impl.kv("sha256", playbook.sha256)
     sys.exit(0)
 
 

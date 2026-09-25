@@ -156,6 +156,7 @@ def _section_specs() -> list[SectionSpec]:
     from kstrl.knowledge import KnowledgeConfig
     from kstrl.linear import LinearConfig
     from kstrl.observability import NotifyConfig
+    from kstrl.playbook import LearningConfig
     from kstrl.policy import PolicyConfig
     from kstrl.release import ReleaseConfig
     from kstrl.sandbox import SandboxConfig
@@ -272,6 +273,7 @@ def _section_specs() -> list[SectionSpec]:
                     "integration_review",
                     "integration_blocking",
                     "integration_max_rounds",
+                    "convergence_attempts",
                 ],
             ),
             lambda root: FactoryConfig.load(root_dir=root),
@@ -461,6 +463,14 @@ def _section_specs() -> list[SectionSpec]:
             SignalsConfig(),
             probe_undocumented_fields=True,
         ),
+        SectionSpec(
+            "learning",
+            "Cross-project learning: the global playbook (#217)",
+            identity_keys(LearningConfig, _all_field_names(LearningConfig)),
+            lambda root: LearningConfig.load(root_dir=root),
+            LearningConfig(),
+            probe_undocumented_fields=True,
+        ),
     ]
     return specs
 
@@ -564,6 +574,11 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "integration_max_rounds",
     ): "most fix components one feature may get, counted from the manifest; at least 1 (#483)",
     (
+        "factory",
+        "convergence_attempts",
+    ): "fail a component whose gate failure count has not fallen for this many "
+    "consecutive attempts; 0 = off (#233)",
+    (
         "breaker",
         "no_progress_iterations",
     ): "halt after N consecutive no-progress iterations; 0 disables (R7.5)",
@@ -607,6 +622,9 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("verify", "self_critique_min_bullets"): "minimum substantive bullets in the block",
     ("verify", "progress_file_path"): "progress file the self-critique check reads; "
     "empty = the log beside the component's PRD",
+    ("verify", "fast_iteration_checks"): "gates run after each unfinished engineer iteration, "
+    'failures shown in the next prompt: any of "test_suite", "typecheck", "linter"; '
+    "empty = off (#233)",
     ("fixtures", "enabled"): "run PRD-defined fixtures during Phase 1 (sandboxed; opt-in)",
     ("fixtures", "snapshot_on_success"): "save passing outputs for cross-run regression comparison",
     ("fixtures", "snapshot_dir"): "relative paths resolve against the repo root",
@@ -765,12 +783,14 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("signals", "http_timeout"): "per-request timeout",
     ("signals", "new_issue_events"): "advisory threshold; labels a new issue, gates nothing",
     ("signals", "repeat_growth_events"): "advisory threshold; labels a repeat, gates nothing",
+    ("learning", "contribute"): "append this project's lessons to the global playbook",
+    ("learning", "consume"): "read global playbook lessons into this project's prompts",
 }
 
 # Sentinel values for keys whose loader validates the value (enum
 # membership, or a typed check the generic type-derived sentinel would
 # fail - e.g. budget_usd ignores non-numeric and non-positive values).
-ENUM_SENTINELS: dict[tuple[str, str], str | float] = {
+ENUM_SENTINELS: dict[tuple[str, str], str | float | list[str]] = {
     ("agent", "type"): "codex",
     ("agent", "budget_usd"): 123.5,
     ("agent", "reasoning_effort"): "high",
@@ -796,6 +816,9 @@ ENUM_SENTINELS: dict[tuple[str, str], str | float] = {
     ("verify", "test_tool"): GATE_TOOLS[GATE_TEST][1],
     ("verify", "typecheck_tool"): GATE_TOOLS[GATE_TYPECHECK][1],
     ("verify", "lint_tool"): GATE_TOOLS[GATE_LINT][1],
+    # Validated against the three gate names, so the generic list
+    # sentinel ["sentinel/path/"] is refused by the loader.
+    ("verify", "fast_iteration_checks"): [GATE_LINT],
 }
 
 

@@ -92,6 +92,7 @@ With no work limit, an agent that hangs without output holds its component slot 
 | `KSTRL_FACTORY_INTEGRATION_REVIEW` | bool | true |
 | `KSTRL_FACTORY_INTEGRATION_BLOCKING` | bool | false |
 | `KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS` | int, at least 1 | 1 |
+| `KSTRL_FACTORY_CONVERGENCE_ATTEMPTS` | int, at least 0 | 0 (off) |
 | `KSTRL_FACTORY_CLAIM_AGREEMENT` | `advisory` \| `block` | advisory |
 
 The two safety knobs (E4 `max_adversarial_calls`, E6 `pause_before_pr_merge`) are reachable via all three surfaces since R2.2: the env vars above, `[factory]` keys in kstrl.toml, and the `--max-adversarial-calls` / `--pause-before-pr-merge` CLI flags.
@@ -304,6 +305,7 @@ agent's worktree by construction on both CLIs.
 | `KSTRL_VERIFY_REQUIRE_SELF_CRITIQUE` | bool (`1`) | false |
 | `KSTRL_VERIFY_SELF_CRITIQUE_MIN_BULLETS` | int | 3 |
 | `KSTRL_VERIFY_PROGRESS_FILE` | path | unset = the progress log beside the component's PRD |
+| `KSTRL_VERIFY_FAST_ITERATION_CHECKS` | comma-separated gate names (`test_suite`, `typecheck`, `linter`) | unset or empty = off |
 
 `[verify] mutation_testing` (#391) scores every non-test Python file the diff changed through `mutmut junitxml`, never the text `mutmut results` prints (which carries no killed count under any flag). It now requires `[verify] test_command` to be a single pytest invocation mutmut's `--runner` can wrap - a behaviour change from before #391, when this check ignored `test_command` entirely - and reports `tool_missing` for any command it cannot wrap, the same refusal `[adequacy] diff_mutation` already made. Since the #391 simplify pass on PR #392 (A1/A2) it also shares its mutation cap and its two pre-spend refusals with `[adequacy] diff_mutation`, which runs first and takes what it needs of `[verify] mutation_timeout` before this check gets what is left - see that key's own paragraph for the full arithmetic.
 
@@ -579,6 +581,15 @@ The runtime signal poller (R8.8). It records and classifies; it queues nothing.
 | `KSTRL_SIGNALS_HTTP_TIMEOUT` | float | 10.0 | Per-request timeout (seconds) |
 | `KSTRL_SIGNALS_NEW_ISSUE_EVENTS` | int | 3 | Advisory threshold: labels a new issue, gates nothing |
 | `KSTRL_SIGNALS_REPEAT_GROWTH_EVENTS` | int | 10 | Advisory threshold: labels a repeat, gates nothing |
+
+## LearningConfig (`[learning]`)
+
+The global playbook opt-out (#217). An unreadable `kstrl.toml` makes `contribute` false for that run whatever these say.
+
+| Env var | Type | Default | Notes |
+|---|---|---|---|
+| `KSTRL_LEARNING_CONTRIBUTE` | bool | true | Append this project's lessons to the global playbook |
+| `KSTRL_LEARNING_CONSUME` | bool | true | Read global playbook lessons into this project's prompts |
 
 ## Calibration
 

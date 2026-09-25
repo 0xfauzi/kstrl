@@ -23,8 +23,10 @@ from kstrl.interaction import (
 from kstrl.prd import PRD
 from kstrl.timeout import TimeoutConfig, describe_limit_seconds
 from kstrl.verify import (
+    VerificationResult,
     VerifyConfig,
     resolve_verify_commands,
+    run_fast_checks,
     scrub_project_claude_md,
 )
 
@@ -36,6 +38,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 COMPLETION_MARKER = "<promise>COMPLETE</promise>"
+
+#: H3 (#233): the block that hands the next engineer iteration the
+#: failures ``[verify] fast_iteration_checks`` measured after this one.
+#: Engineer-facing context, enrolled in tests/helpers/builder_prompts.py;
+#: the calibration suite scores no fixture for it, so it carries the H3
+#: obligation and no H2 obligation the suite can discharge.
+LAST_ITERATION_MEASUREMENT_PROMPT_VERSION = "1.0.0"
+
+LAST_ITERATION_MEASUREMENT_PROMPT = (
+    "=== LAST ITERATION MEASUREMENT ===\n{failures}\n=== END LAST ITERATION MEASUREMENT ==="
+)
 
 #: The exit code a loop returns when ``stop_check`` asked it to stop:
 #: the shell's 128 + SIGINT, so an operator's Ctrl-C and a TUI stop
@@ -424,6 +437,60 @@ class LoopResult:
     guard_violations: tuple[str, ...] = ()
 
 
+def fast_iteration_reading(
+    verify_config: VerifyConfig | None,
+    cwd: Path,
+    ui: UI,
+    *,
+    completed: bool,
+    timed_out: bool,
+) -> VerificationResult | None:
+    """Run ``[verify] fast_iteration_checks`` after an iteration (#233).
+
+    None, and nothing runs, when no gate is configured, when no gate runs
+    for this loop at all (``verify_config`` None), or when the iteration
+    completed or was killed: a completed iteration goes to Phase 1, and a
+    killed one left a tree nobody finished writing.
+    """
+    if completed or timed_out or verify_config is None:
+        return None
+    if not verify_config.fast_iteration_checks:
+        return None
+    reading = run_fast_checks(cwd, verify_config)
+    ui.info(
+        "Fast checks: "
+        + ", ".join(f"{c.name} {'pass' if c.passed else 'FAIL'}" for c in reading.checks)
+    )
+    return reading
+
+
+def failed_fast_checks(reading: VerificationResult | None) -> tuple[str, ...]:
+    """The names of the gates that failed in ``reading``, in run order."""
+    if reading is None:
+        return ()
+    return tuple(check.name for check in reading.checks if not check.passed)
+
+
+def measurement_block(reading: VerificationResult | None) -> str:
+    """The prompt block for ``reading``'s failures, or "" when none failed."""
+    if reading is None or reading.passed:
+        return ""
+    return LAST_ITERATION_MEASUREMENT_PROMPT.format(failures=reading.as_context())
+
+
+def assemble_prompt(retry_context: str | None, measurement: str, body: str) -> str:
+    """One iteration's prompt: the retry context, then the last iteration's
+    measurement, then ``body`` (project context plus the prompt template).
+
+    An empty part is left out with its separator, so with no measurement
+    this is byte for byte the assembly before #233. The measurement is
+    passed in whole every iteration, so a later reading REPLACES an
+    earlier one rather than being appended to it.
+    """
+    head = [part for part in (retry_context, measurement) if part]
+    return "\n\n".join([*head, body])
+
+
 def build_project_context(
     cwd: Path,
     ui: UI,
@@ -639,9 +706,10 @@ def run_loop(
     if project_context:
         prompt = project_context + "\n\n---\n\n" + prompt
 
-    # Prepend context from previous retries if provided
-    if context_prefix:
-        prompt = context_prefix + "\n\n" + prompt
+    # The retry context goes in front of the body; from iteration 2 on the
+    # last iteration's measurement goes between them (#233).
+    body = prompt
+    prompt = assemble_prompt(context_prefix, "", body)
 
     # Preflight
     ui.section("Preflight")
@@ -754,6 +822,7 @@ def run_loop(
         # Run agent
         completion_seen = False
         iteration_timed_out = False
+        fast_checks_failed: tuple[str, ...] = ()
         try:
             for line in agent.run(prompt, cwd, timeout=iteration_timeout):
                 if line.strip() == COMPLETION_MARKER:
@@ -767,6 +836,14 @@ def run_loop(
                 completion_seen = any(
                     line.strip() == COMPLETION_MARKER for line in final_message.splitlines()
                 )
+            # #233: measure the tree this iteration left and rebuild the
+            # next prompt around the reading. Inside the timed block, so
+            # the checks' cost is part of the iteration's wall clock.
+            reading = fast_iteration_reading(
+                verify_config, cwd, ui, completed=completion_seen, timed_out=iteration_timed_out
+            )
+            fast_checks_failed = failed_fast_checks(reading)
+            prompt = assemble_prompt(context_prefix, measurement_block(reading), body)
         finally:
             iter_duration = time.monotonic() - iter_start
             iteration_durations.append(iter_duration)
@@ -777,6 +854,7 @@ def run_loop(
                         duration_seconds=round(iter_duration, 2),
                         completed=completion_seen,
                         timed_out=iteration_timed_out,
+                        fast_checks_failed=fast_checks_failed,
                     )
                 )
 

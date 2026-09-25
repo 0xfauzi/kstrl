@@ -104,6 +104,9 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "learning_fixture.py": 2,
     "linear.py": 5,
     "observability.py": 4,
+    # #509: the import, one json.dumps for the ledger line, and the
+    # json.JSONDecodeError it catches from read_json. No parse.
+    "playbook.py": 3,
     "policy.py": 2,
     "prd.py": 2,
     "sandbox.py": 3,

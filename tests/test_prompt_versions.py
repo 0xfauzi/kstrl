@@ -339,9 +339,11 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # 1.0.0 (#482): new. H3 discharged here. Its H2 roles, "integration"
     # and "integration_clean", are scored on the #480 section 8 Layer B
     # fixtures; no saved baseline carries their ids yet.
+    # 1.1.0 (#500): IC5 names the component's prd.json in words instead of the `<component>`
+    # placeholder a reviewer echoing it could rewrite. H2 pending: the owner's paid calibration run.
     "INTEGRATION_CRITERIA_PROMPT": (
-        "dfee33026e55e8979e483983a0387a84ff2c235323f39092bd2bbf275db38e87",
-        "1.0.0",
+        "e78a770d6741f9ca86c08460cdb5cf1d82e2cdff7ac352f7f75fec4218619460",
+        "1.1.0",
     ),
     # 1.0.0 (#483): new. The criterion of a carried finding's story, sent to
     # the integration reviewer. H3 only, for INTEGRATION_CRITERIA_PROMPT's

@@ -169,7 +169,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_retry_carries_flags.py": 1,
     # #498: one base commit, into the repository `_repo` builds through
     # `tests.helpers.gitrepo.git_in` / `set_identity`.
-    "tests/test_review_agent_fallback.py": 1,
+    "tests/test_review_agent_fallback.py": 2,
     "tests/test_review_coverage.py": 2,
     "tests/test_review_gates.py": 1,
     "tests/test_review_payload.py": 2,

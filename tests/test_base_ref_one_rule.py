@@ -144,6 +144,7 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "git.py git diff --name-only -z": 1,
     "git.py git diff --name-only --cached -z": 1,
     "git.py git ls-files --others --exclude-standard -z": 1,
+    "git.py git ls-tree -r --name-only -z sha": 1,
     "git.py git rev-parse --verify --quiet HEAD": 1,
     "git.py git rev-parse --verify --quiet f'refs/heads/{branch}'": 1,
     "git.py git config --get remote.origin.url": 1,
