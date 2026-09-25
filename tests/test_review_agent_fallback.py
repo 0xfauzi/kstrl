@@ -14,12 +14,18 @@ agent is ever dispatched: the run resolves the reviewer, announces it,
 records it in ``.kstrl/progress.jsonl``, and ends. A custom engineer
 command has no known model family, so the R7.1 liveness probe never runs
 either, and ``KSTRL_AGENT_PROBE=0`` is set as a second lock.
+
+The subprocess PATH holds no ``claude`` and no ``codex``. With one of them
+installed, a run that ignores ``[agent] command`` at startup still starts,
+so these tests passed on a developer machine and failed in CI, where
+neither is installed.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -31,6 +37,19 @@ ENGINEER = "./stub-engineer.sh"
 REVIEWER = "./stub-reviewer.sh"
 REVIEW_WARNING = "the review reviewer is a custom command"
 EXECUTION_HEADER = "== Factory: Execution =="
+AGENT_CLIS = ("claude", "codex")
+
+
+def _path_without_agent_clis() -> str:
+    """This process's PATH minus every directory holding an agent CLI."""
+    kept = [
+        d
+        for d in os.environ.get("PATH", "").split(os.pathsep)
+        if d and not any(os.access(os.path.join(d, name), os.X_OK) for name in AGENT_CLIS)
+    ]
+    path = os.pathsep.join(kept)
+    assert shutil.which("git", path=path), f"no git left on {path!r}"
+    return path
 
 
 def _repo(tmp_path: Path) -> Path:
@@ -62,14 +81,19 @@ def _repo(tmp_path: Path) -> Path:
     return root
 
 
-def _factory(root: Path, *flags: str) -> subprocess.CompletedProcess[str]:
+def _factory(
+    root: Path, *flags: str, extra_env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     """`ks factory` in a subprocess, with every ambient kstrl knob removed
-    so kstrl.toml is the only place the engineer command comes from."""
+    so kstrl.toml is the only place the engineer command comes from, and
+    no agent CLI reachable."""
     env = {
         k: v
         for k, v in os.environ.items()
         if not k.startswith("KSTRL_") and k not in ("AGENT_CMD", "MODEL")
     }
+    env["PATH"] = _path_without_agent_clis()
+    env.update(extra_env or {})
     env["KSTRL_AGENT_PROBE"] = "0"
     env["KSTRL_KNOWLEDGE_ENABLED"] = "0"
     env["KSTRL_NO_TUI"] = "1"
@@ -146,3 +170,16 @@ def test_review_agent_cmd_still_wins_over_the_engineer_command(tmp_path: Path) -
     selection = _review_selection(root)
     assert selection["identity"] == f"custom ({REVIEWER})", selection
     assert selection["source"] == "explicit", selection
+
+
+def test_agent_cmd_in_the_environment_wins_over_kstrl_toml(tmp_path: Path) -> None:
+    """``AGENT_CMD`` outranks ``[agent] command``, as ``KstrlConfig.load``
+    orders them, at startup as well as in the run."""
+    root = _repo(tmp_path)
+
+    result = _factory(root, extra_env={"AGENT_CMD": REVIEWER})
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    selection = _review_selection(root)
+    assert selection["identity"] == f"custom ({REVIEWER})", selection
+    assert selection["source"] == "same-family-fallback", selection
