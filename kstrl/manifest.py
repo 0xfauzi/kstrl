@@ -222,6 +222,11 @@ class Manifest:
     # #451: the kstrl that ran ``run_id``, set with it at run start.
     # "" on a manifest no run has operated on, or one written before #451.
     kstrl_version: str = ""
+    # #481: the base branch's commit before this feature's first merge,
+    # stamped once before anything is scheduled. "" means not known: a
+    # manifest from before #481, one a component had merged into before
+    # any run stamped it, or a base that did not resolve.
+    feature_base_sha: str = ""
 
     @classmethod
     def from_prd(
@@ -342,6 +347,7 @@ class Manifest:
             linear_sync_key=data.get("linearSyncKey", ""),
             policy_hash=data.get("policyHash", ""),
             kstrl_version=data.get("kstrlVersion", ""),
+            feature_base_sha=data.get("featureBaseSha", ""),
         )
 
     def save(self, path: Path) -> None:
@@ -358,6 +364,7 @@ class Manifest:
             "linearSyncKey": self.linear_sync_key,
             "policyHash": self.policy_hash,
             "kstrlVersion": self.kstrl_version,
+            "featureBaseSha": self.feature_base_sha,
             "components": [
                 {
                     "id": c.id,
@@ -440,7 +447,7 @@ class Manifest:
                 errors.append(f"baseBranch: {base_error}")
         if not isinstance(data.get("singlePr"), bool):
             errors.append("singlePr must be a boolean")
-        for key in ("runId", "completedAt", "policyHash", "kstrlVersion"):
+        for key in ("runId", "completedAt", "policyHash", "kstrlVersion", "featureBaseSha"):
             if key in data and not isinstance(data[key], str):
                 errors.append(f"{key} must be a string")
 

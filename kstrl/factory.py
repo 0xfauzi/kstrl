@@ -18,6 +18,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Protocol, TextIO
 
+from kstrl import git
 from kstrl.agents.base import UsageTotals, collect_usage, print_usage_rollup
 from kstrl.agents.proc import kill_active_process_groups
 from kstrl.atomicio import atomic_write_json
@@ -3443,6 +3444,63 @@ def _record_autonomy_outcome(
     _record_health_breaches(root_dir, state, autonomy_config, run_id=run_id, ui=ui, bus=bus)
 
 
+def _has_merged(comp: Component) -> bool:
+    """Whether ``comp``'s change has reached the base branch, or may have.
+
+    MERGE_PENDING counts: its merge was initiated and may have landed. A
+    recorded merge commit counts. So does a COMPLETED component with a
+    PR, because once a PR exists COMPLETED requires a confirmed merge
+    (R0.2) and ``merge_sha`` may be empty for a merged PR. A COMPLETED
+    component with no PR (``create_prs=False``, or no gh) merged nothing.
+    """
+    if comp.status == ComponentStatus.MERGE_PENDING.value or comp.merge_sha:
+        return True
+    return comp.status == ComponentStatus.COMPLETED.value and bool(comp.pr_url)
+
+
+def _stamp_feature_base(manifest: Manifest, manifest_path: Path, root_dir: Path, ui: UI) -> None:
+    """Record the commit this feature starts from, once (#481).
+
+    Called before anything is scheduled or merged. An existing stamp is
+    never rewritten, so a resume keeps the commit its first run recorded.
+    When a component has already merged, the commit before the first
+    merge can no longer be known: ``merge_sha`` may be empty for a merged
+    PR, manifest order is not merge order, and a resumed run can hold
+    merges from an earlier invocation. The stamp then stays empty and the
+    run says so, as it does when the base does not resolve.
+    """
+    if manifest.feature_base_sha:
+        return
+    if any(_has_merged(c) for c in manifest.components):
+        ui.warn(
+            "  Feature base unknown: a component merged before any run recorded "
+            "where this feature started"
+        )
+        return
+    try:
+        manifest.feature_base_sha = git.resolve_base_sha(manifest.base_branch, root_dir)
+    except git.GitDiffError as exc:
+        ui.warn(f"  Feature base unknown: {exc}")
+        return
+    manifest.save(manifest_path)
+    ui.kv("Feature base", manifest.feature_base_sha)
+
+
+def _resolve_round_base(manifest: Manifest, root_dir: Path, ui: UI) -> str:
+    """The commit the base branch names now, for one Phase 3 round (#481).
+
+    Resolved once per round and handed to the integrated check, so the
+    tree it tests is one fixed commit even if a merge moves the branch
+    meanwhile. "" when the base does not resolve; the integrated check
+    then fails having tested nothing.
+    """
+    try:
+        return git.resolve_base_sha(manifest.base_branch, root_dir)
+    except git.GitDiffError as exc:
+        ui.warn(f"  Phase 3 base unresolved: {exc}")
+        return ""
+
+
 def run_factory(
     manifest: Manifest,
     factory_config: FactoryConfig,
@@ -4220,6 +4278,10 @@ def _run_factory_locked(
     if run_decisions is None:
         factory_result.exit_code = 2
         return factory_result
+    # #481: after the refusals (a refused run stamps nothing) and the
+    # worktree preflight's fetch, and before the merge decisions below,
+    # which can merge a component into the base.
+    _stamp_feature_base(manifest, manifest_path, root_dir, ui)
     # #465: after every pre-spend refusal (a refused run must not have
     # pushed or merged anything) and before anything is scheduled, so the
     # dependents of an approved component are cut from a base that holds it.
@@ -4757,6 +4819,9 @@ def _run_factory_locked(
         if contract_config is None or contract_config.mode == ContractMode.SKIP.value:
             break
 
+        # #481: one commit per round. The integrated check tests it and a
+        # later check of the same round must judge the same tree.
+        round_base_sha = _resolve_round_base(manifest, root_dir, ui)
         try:
             contract_results = run_contract_testing(
                 manifest,
@@ -4764,6 +4829,7 @@ def _run_factory_locked(
                 contract_config,
                 ui,
                 components_merged=components_merged,
+                base_sha=round_base_sha,
             )
         except ContractCleanupError as exc:
             # A contract temp worktree survived removal. The user's

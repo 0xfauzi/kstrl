@@ -200,7 +200,12 @@ def test_the_contract_checkout_carries_the_merged_tier(fx: StaleBase) -> None:
         timeout=120.0,
     )
     result = contract.run_integrated_base_check(
-        manifest, ["link-rules"], fx.repo, config, PlainUI(no_color=True, file=io.StringIO())
+        manifest,
+        ["link-rules"],
+        fx.repo,
+        config,
+        PlainUI(no_color=True, file=io.StringIO()),
+        git.resolve_base_sha("main", fx.repo),
     )
     assert result.passed is True
 
@@ -220,7 +225,12 @@ def test_a_contract_run_that_collected_nothing_says_so(fx: StaleBase) -> None:
         timeout=120.0,
     )
     result = contract.run_integrated_base_check(
-        manifest, ["link-rules"], fx.repo, config, PlainUI(no_color=True, file=io.StringIO())
+        manifest,
+        ["link-rules"],
+        fx.repo,
+        config,
+        PlainUI(no_color=True, file=io.StringIO()),
+        git.resolve_base_sha("main", fx.repo),
     )
     assert result.passed is False
     assert "exited 5" in result.test_output

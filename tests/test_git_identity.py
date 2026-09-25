@@ -109,6 +109,11 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # real repository through `tests.helpers.gitrepo.set_identity`.
     "tests/test_encoding_sites.py": 2,
     "tests/test_explicit_merge_gate.py": 1,
+    # #481: two commits, the base commit _git_project makes and the one
+    # _advance makes, both into a repository _git_project put through
+    # tests.helpers.gitrepo.set_identity. The third count is prose: the
+    # module docstring names "git" and "commit" in one string.
+    "tests/test_feature_base.py": 3,
     "tests/test_feature_verification.py": 1,
     "tests/test_feature_verification_attribution.py": 1,
     "tests/test_git_identity_helper.py": 5,

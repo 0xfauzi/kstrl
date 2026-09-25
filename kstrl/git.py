@@ -1619,6 +1619,27 @@ def resolve_base_sha(
     )
 
 
+def base_moved(
+    base_branch: str,
+    pinned_sha: str,
+    cwd: Path | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> tuple[bool, str]:
+    """Resolve the base again and say whether it left ``pinned_sha``.
+
+    Returns ``(moved, current_sha)``. A verdict reached on ``pinned_sha``
+    holds at that commit; when the base has moved since, the caller
+    records both commits rather than presenting the verdict as one about
+    the current base (#480, section 3.1).
+
+    Raises :class:`GitDiffError` when the base does not resolve, as
+    :func:`resolve_base_sha` does: a check that could not be made must
+    not read as "did not move".
+    """
+    current = resolve_base_sha(base_branch, cwd, timeout)
+    return current != pinned_sha, current
+
+
 def get_diff_stat(
     base_branch: str,
     cwd: Path | None = None,

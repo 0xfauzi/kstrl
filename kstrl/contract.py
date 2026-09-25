@@ -70,6 +70,9 @@ class ContractResult:
     breaker: str | None = None
     test_output: str = ""
     duration_seconds: float = 0.0
+    #: #481: the commit the integrated check was given to test. "" for a
+    #: tier or final check, which merges branches onto the base instead.
+    tested_sha: str = ""
 
 
 @dataclass
@@ -460,6 +463,7 @@ def run_integrated_base_check(
     root_dir: Path,
     config: ContractConfig,
     ui: UI,
+    base_sha: str,
 ) -> ContractResult:
     """Contract check for already-merged components (create_prs mode).
 
@@ -467,18 +471,36 @@ def run_integrated_base_check(
     component completed, so the integrated state IS the base branch:
     re-merging component branches would be content no-ops and bisection
     would blame the first component unconditionally. Instead, run the
-    test suite once against the base branch in a detached temp worktree
-    and report pass/fail with NO breaker attribution.
+    test suite once against the base in a detached temp worktree and
+    report pass/fail with NO breaker attribution.
+
+    #481: the worktree is cut at ``base_sha``, the commit the caller
+    resolved the base branch to for this round, never at the branch
+    name, which moves every time a PR merges. The result carries it as
+    ``tested_sha`` so a later check can judge the same tree. An empty
+    ``base_sha`` means the caller could not resolve the base, and the
+    check fails having tested nothing.
     """
     start = time.monotonic()
+    if not base_sha:
+        return ContractResult(
+            passed=False,
+            tier=0,
+            components_tested=list(component_ids),
+            test_output=(
+                f"The base branch '{manifest.base_branch}' did not resolve to a "
+                "commit for this round, so nothing was tested"
+            ),
+            duration_seconds=time.monotonic() - start,
+        )
     ui.info(
-        f"  Integrated check: testing '{manifest.base_branch}' with "
+        f"  Integrated check: testing '{manifest.base_branch}' at {base_sha[:12]} with "
         f"{len(component_ids)} merged components "
         f"({', '.join(component_ids)})"
     )
 
     worktree_path, error = _create_temp_worktree(
-        manifest.base_branch,
+        base_sha,
         root_dir,
         "integrated",
     )
@@ -489,6 +511,7 @@ def run_integrated_base_check(
             components_tested=list(component_ids),
             test_output=f"Failed to create contract worktree: {error}",
             duration_seconds=time.monotonic() - start,
+            tested_sha=base_sha,
         )
 
     try:
@@ -515,6 +538,7 @@ def run_integrated_base_check(
         breaker=None,
         test_output=output[:2000],
         duration_seconds=time.monotonic() - start,
+        tested_sha=base_sha,
     )
 
 
@@ -524,12 +548,15 @@ def run_contract_testing(
     config: ContractConfig,
     ui: UI,
     components_merged: bool = False,
+    base_sha: str = "",
 ) -> list[ContractResult]:
     """Run contract testing across DAG tiers.
 
     ``components_merged=True`` (create_prs per-component mode) runs a
-    single integrated check of the base branch with no blame
-    attribution - see :func:`run_integrated_base_check`.
+    single integrated check of the base branch at ``base_sha``, the
+    commit the caller resolved for this round, with no blame
+    attribution - see :func:`run_integrated_base_check`. The tier and
+    final checks below do not read ``base_sha``.
 
     Otherwise (deferred-merge mode):
     In TIER mode: tests each tier incrementally.
@@ -558,6 +585,7 @@ def run_contract_testing(
                 root_dir,
                 config,
                 ui,
+                base_sha,
             )
         ]
 
