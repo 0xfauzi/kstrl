@@ -158,6 +158,7 @@ def test_an_integrated_test_failure_opens_a_finding(tmp_path: Path) -> None:
     assert finding["status"] == "open"
     assert finding["locations"] == ["src/api.py"]
     assert finding["missingLocations"] == ["tests/test_api.py"]
+    assert "FAILED tests/test_api.py::test_x" in finding["text"]
 
     evidence = h.evidence_files(root)
     ev = json.loads(evidence[0].read_text(encoding="utf-8"))

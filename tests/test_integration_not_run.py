@@ -254,3 +254,26 @@ def test_a_reached_cost_ceiling_records_not_run(tmp_path: Path) -> None:
     assert state["stops"][-1]["outcome"] == "not_run"
     assert state["stops"][-1]["reason"] == "the run reached max_cost_usd"
     assert result.exit_code == 0
+
+
+def test_a_state_path_that_cannot_be_read_is_refused_not_treated_as_missing(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    h.merged_feature(root)
+    state_path = h.state_file(root)
+    state_path.mkdir(parents=True)
+    marker = state_path / "keep.txt"
+    marker.write_text("operator data\n", encoding="utf-8")
+    reviewer = h.FakeReviewer("{}")
+
+    h.run_factory_over(root, reviewer)
+
+    assert reviewer.calls == 0
+    assert state_path.is_dir()
+    assert marker.read_text(encoding="utf-8") == "operator data\n"
+    evidence = h.evidence_files(root)
+    assert len(evidence) == 1
+    ev = json.loads(evidence[0].read_text(encoding="utf-8"))
+    assert ev["outcome"] == "not_run"
+    assert "unreadable" in ev["reason"]

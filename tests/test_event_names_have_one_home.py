@@ -75,7 +75,11 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from kstrl.appendio import JOURNAL_REPAIR_EVENT
-from kstrl.evolution import FINDINGS_SUPERSEDED_EVENT, SPEC_ISSUES_EVENT
+from kstrl.evolution import (
+    FINDINGS_SUPERSEDED_EVENT,
+    INTEGRATION_RESULT_EVENT,
+    SPEC_ISSUES_EVENT,
+)
 
 # Reached through the module for readability rather than for safety:
 # ``test_sources`` carries ``__test__ = False``, so a from-import of it
@@ -116,6 +120,7 @@ ENROLLED_EVENT_CONSTANTS = {
     "SPEC_ISSUES_EVENT": SPEC_ISSUES_EVENT,
     "JOURNAL_REPAIR_EVENT": JOURNAL_REPAIR_EVENT,
     "FINDINGS_SUPERSEDED_EVENT": FINDINGS_SUPERSEDED_EVENT,
+    "INTEGRATION_RESULT_EVENT": INTEGRATION_RESULT_EVENT,
 }
 
 #: The journal column every row is written under and selected on. A bare
@@ -193,7 +198,8 @@ EXPECTED_EVENT_NAME_SPELLINGS: dict[str, int] = {
     # JOURNAL_REPAIR_EVENT to appendio.py; evolution.py imports it now,
     # and an imported Name folds to nothing, which is why the count
     # dropped rather than staying put.
-    "evolution.py": 2,
+    # 3 since #482 declared INTEGRATION_RESULT_EVENT there.
+    "evolution.py": 3,
     # The TUI reading that artifact label back.
     "tui/screens/decompose.py": 1,
 }
