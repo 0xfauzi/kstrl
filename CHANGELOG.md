@@ -111,6 +111,12 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   and writes them through the existing queue transition, so `ks queue show
   <id>` names the pull request an item produced. A manifest this run does not
   own, or cannot read, records nothing.
+- `featureBaseSha` on the manifest (#481): the base branch's commit before a
+  feature's first merge, stamped once before anything is scheduled and never
+  rewritten on resume. It stays empty, with a "Feature base unknown" warning,
+  when a component had already merged or the base does not resolve. Phase 3's
+  integrated check now tests one commit per round, resolved by the factory,
+  and reports it as `ContractResult.tested_sha`.
 
 ### Changed
 

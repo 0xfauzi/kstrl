@@ -27,6 +27,7 @@ from pathlib import Path
 import pytest
 
 from kstrl import contract as contract_mod
+from kstrl import git
 from kstrl.config import KstrlConfig
 from kstrl.contract import (
     ContractCleanupError,
@@ -522,6 +523,7 @@ class TestMergedModeNoBlame:
             config,
             PlainUI(no_color=True),
             components_merged=True,
+            base_sha=git.resolve_base_sha("main", root),
         )
 
         assert len(results) == 1
@@ -553,6 +555,7 @@ class TestMergedModeNoBlame:
             config,
             PlainUI(no_color=True),
             components_merged=True,
+            base_sha=git.resolve_base_sha("main", root),
         )
 
         assert len(results) == 1
