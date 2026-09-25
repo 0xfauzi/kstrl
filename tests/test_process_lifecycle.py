@@ -213,6 +213,8 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     "fixtures.py": ("subprocess",),
     "git.py": ("subprocess",),
     "intake_github.py": ("subprocess",),
+    # #508: `TimeoutExpired` from `run_scrubbed`, which owns the process group.
+    "learning_fixture.py": ("subprocess",),
     "licensing.py": ("subprocess",),
     "observability.py": ("subprocess",),
     "pr.py": ("subprocess",),

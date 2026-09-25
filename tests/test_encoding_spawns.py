@@ -54,6 +54,8 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     # 62: 58 after #435, +2 for #465's `branch_sha`, +2 for #459's `ignored_paths`.
     "git.py": 62,
     "intake_github.py": 3,
+    # #508: the import, and `TimeoutExpired` from `run_scrubbed`.
+    "learning_fixture.py": 2,
     "licensing.py": 3,
     "observability.py": 5,
     "pr.py": 18,
