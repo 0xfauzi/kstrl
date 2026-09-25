@@ -316,7 +316,7 @@ class TestTwoFilesAreTwoSubjects:
     ) -> None:
         root = _project(tmp_path, ("comp-a",))
         golden_typo = root / "scripts" / "kstrl" / "gloden-patterns.md"
-        memory_typo = root / "scripts" / "kstrl" / "memroy.md"
+        memory_typo = root / "scripts" / "kstrl" / "memroy.md"  # codespell:ignore
 
         ui = _run(root, ("comp-a",), golden=golden_typo, memory=memory_typo)
 
