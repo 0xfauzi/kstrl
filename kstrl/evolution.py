@@ -13,7 +13,7 @@ import logging
 import os
 import re
 from collections import Counter
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -440,6 +440,45 @@ def without_carried_results(entries: list[dict[str, Any]]) -> list[dict[str, Any
     return [entry for index, entry in enumerate(entries) if index not in carried]
 
 
+def _row_signatures(entry: dict[str, Any]) -> list[str]:
+    """The ``"<check>:<code>"`` signatures one journal row records.
+
+    A v1 row with no ``failure_signatures`` composes one from its legacy
+    ``check_name`` and ``error_signature`` fields.
+    """
+    sigs = entry.get("failure_signatures") or []
+    if not sigs:
+        legacy_sig = entry.get("error_signature", "")
+        if not legacy_sig:
+            return []
+        sigs = [f"{entry.get('check_name') or 'unknown'}:{legacy_sig}"]
+    return [sig for sig in sigs if isinstance(sig, str) and sig]
+
+
+def _signature_rows(
+    entries: list[dict[str, Any]],
+) -> Iterator[tuple[str, str, list[str], bool]]:
+    """``(run, component, signatures, superseded)`` for every row the
+    cross-run router counts: each ``component_result`` row and, since
+    #496, each ``findings_superseded`` row, the attempt a retry replaced.
+
+    ``run`` is the run the attempt ran in. A superseded row that
+    :meth:`EvolutionJournal.carry_superseded` wrote again under a later
+    run names its original run in ``carried_from_run``, so the copy and
+    the original give the same ``(run, component, attempt)`` and count as
+    one run.
+    """
+    for entry in entries:
+        event = entry.get("event_type", "component_result")
+        superseded = event == FINDINGS_SUPERSEDED_EVENT
+        if not superseded and event != "component_result":
+            continue
+        run_id = entry.get("run_id", "")
+        if superseded:
+            run_id = entry.get("carried_from_run") or run_id
+        yield str(run_id), str(entry.get("component_id", "")), _row_signatures(entry), superseded
+
+
 def _run_results(
     entries: list[dict[str, Any]],
     run_id: str,
@@ -772,8 +811,11 @@ class FailurePattern:
     # "scope_creep" for a review concern) - the part after the colon in
     # the full "<check>:<code>" signature
     error_signature: str
-    # A _CATEGORY_BY_CHECK value; see category_for_check.
+    # A _CATEGORY_BY_CHECK value, or UNENROLLED_CATEGORY; see category_for_check.
     category: str
+    # #496: True when every row the signature was counted from is a
+    # findings_superseded row, so it was never on a component's final attempt.
+    superseded_only: bool = False
 
 
 @dataclass
@@ -1009,10 +1051,9 @@ _CATEGORY_BY_CHECK = {
     # factory's live accounting, which reads the infrastructure_error
     # finding the same refusal attaches.
     ADVERSARIAL_BUDGET_CHECK: "infrastructure",
-    # #315: the fallback already answers "iteration" for these two. The
-    # rows are here so the table states every name kstrl emits rather
-    # than most of them, and so that a reader cannot tell an unenrolled
-    # name from a deliberate one by its absence. "unknown" is what
+    # #315: these two rows state "iteration" explicitly, and since #496
+    # they are the only way a name reaches it: the fallback for a name
+    # the table does not carry is UNENROLLED_CATEGORY. "unknown" is what
     # _classify_check returns when it cannot recognise a legacy error
     # string: not the engineer's fault so much as nobody's, and inventing
     # a category for "we could not tell" would be a worse answer than
@@ -1092,11 +1133,21 @@ def split_signature(signature: str) -> tuple[str, str]:
     return check or "unknown", code or "failed"
 
 
+#: The category of a check name ``_CATEGORY_BY_CHECK`` does not carry
+#: (#496). Not a learnable category: ``route_patterns`` sends it to
+#: ``unrouted``. Before #496 an unlisted name fell through to
+#: ``"iteration"``, a learnable category, which
+#: docs/continuous-learning-design.md section 9 requires inverted before
+#: anything writes to a store shared across repositories.
+UNENROLLED_CATEGORY = "unenrolled"
+
+
 def category_for_check(check_name: str) -> str:
     """Map a check/gate name to a FailurePattern category.
 
-    An unlisted name falls through to "iteration", which files a gate
-    under the engineer loop. Enrolling a new check in
+    An unlisted name returns :data:`UNENROLLED_CATEGORY`. Until #496 it
+    fell through to "iteration", which filed a gate under the engineer
+    loop. Enrolling a new check in
     ``_CATEGORY_BY_CHECK`` was a convention with no mechanism, and
     measured during #294 the convention did not hold for eight of the
     nineteen names ``kstrl/`` emits. All eight are enrolled as of #315,
@@ -1136,7 +1187,7 @@ def category_for_check(check_name: str) -> str:
     happened. The one surface that displays it is the evolve screen's
     patterns table; the ``ks evolve`` CLI prints the check name.
     """
-    return _CATEGORY_BY_CHECK.get(check_name, "iteration")
+    return _CATEGORY_BY_CHECK.get(check_name, UNENROLLED_CATEGORY)
 
 
 @dataclass(frozen=True)
@@ -1155,14 +1206,11 @@ class PatternRouting:
       destination; what it must not have is a proposal telling an agent
       to take extra care about a failed git push.
     - ``lessons``: a check name ``propose_improvements`` has an arm for.
-    - ``unrouted``: everything else. This bucket exists because
-      ``category_for_check`` defaults an unenrolled name to
-      ``"iteration"``, a LEARNABLE category, so a two-way filter would
-      keep an unenrolled name and then silently produce nothing for it
-      once the generic arm is gone. Measured:
-      ``category_for_check("zzz-never-enrolled") == "iteration"``.
-      Anything that later feeds a store crossing repositories must
-      invert that default to "not a lesson" before it writes.
+    - ``unrouted``: everything else, including every check name
+      ``_CATEGORY_BY_CHECK`` does not carry, whose category is
+      :data:`UNENROLLED_CATEGORY` since #496. An unenrolled name can
+      never be a lesson: ``PROPOSAL_CHECKS`` is a subset of the table,
+      which ``TestRoutingIsClosedOverTheTable`` asserts.
     """
 
     mechanical: tuple[FailurePattern, ...]
@@ -1904,41 +1952,31 @@ class EvolutionJournal:
         appear in >= min_pattern_frequency distinct runs. Legacy v1
         entries without ``failure_signatures`` fall back to composing
         the signature from their check_name/error_signature fields.
+
+        Since #496 the rows counted include every attempt a retry
+        superseded (:func:`_signature_rows`). ``frequency`` is a count of
+        distinct runs, so a signature on several attempts of one run
+        counts once, and ``superseded_only`` marks a signature that was
+        never on a component's final attempt.
         """
         entries = self._read_journal_entries(lookback_runs)
         if not entries:
             return []
 
         # Group by full signature across distinct run_ids.
+        runs: set[str] = set()
         sig_runs: dict[str, set[str]] = {}
         sig_components: dict[str, list[str]] = {}
-
-        for entry in entries:
-            if entry.get("event_type", "component_result") != "component_result":
-                continue
-            sigs = entry.get("failure_signatures") or []
-            if not sigs:
-                # v1 fallback: compose from the legacy scalar fields.
-                legacy_sig = entry.get("error_signature", "")
-                if not legacy_sig:
-                    continue
-                legacy_check = entry.get("check_name") or "unknown"
-                sigs = [f"{legacy_check}:{legacy_sig}"]
-            run_id = entry.get("run_id", "")
-            comp_id = entry.get("component_id", "")
+        on_a_final_attempt: set[str] = set()
+        for run_id, comp_id, sigs, superseded in _signature_rows(entries):
+            runs.add(run_id)
             for sig in sigs:
-                if not isinstance(sig, str) or not sig:
-                    continue
                 sig_runs.setdefault(sig, set()).add(run_id)
                 sig_components.setdefault(sig, []).append(comp_id)
+                if not superseded:
+                    on_a_final_attempt.add(sig)
 
-        total_runs = len(
-            {
-                e.get("run_id")
-                for e in entries
-                if e.get("event_type", "component_result") == "component_result"
-            }
-        )
+        total_runs = len(runs)
         patterns: list[FailurePattern] = []
 
         for sig, run_ids in sig_runs.items():
@@ -1958,6 +1996,7 @@ class EvolutionJournal:
                     check_name=check_name,
                     error_signature=code,
                     category=category_for_check(check_name),
+                    superseded_only=sig not in on_a_final_attempt,
                 )
             )
 

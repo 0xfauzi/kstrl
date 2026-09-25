@@ -420,7 +420,7 @@ class TestC5SinglePrMode:
             ),
             patch(
                 "kstrl.factory.distill_facts",
-                return_value=(0, "skipped"),
+                return_value=(0, "skipped", False),
             ) as mock_distill,
             patch(
                 "kstrl.git.get_diff_content",

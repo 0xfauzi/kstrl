@@ -216,7 +216,7 @@ def _pipeline(
                 passed=True,
                 mode="advisory",
             ),
-            distill_facts=lambda *a, **k: (1, "1 fact written"),
+            distill_facts=lambda *a, **k: (1, "1 fact written", False),
             measure_fact_utilization=(
                 measure_fact_utilization or (lambda *a, **k: {"injected": 0, "referenced": 0})
             ),
