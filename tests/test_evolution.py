@@ -13,7 +13,6 @@ from kstrl.evolution import (
     SPEC_ISSUES_EVENT,
     EvolutionConfig,
     EvolutionJournal,
-    FailurePattern,
     signature_counts_from_verification,
     signature_for_error,
     signatures_from_findings,
@@ -75,8 +74,7 @@ class TestEvolutionConfigDefaults:
         assert config.enabled is True
         assert config.min_pattern_frequency == 2
         assert config.lookback_runs == 10
-        assert config.auto_propose is True
-        assert config.auto_apply_computational is False
+        assert config.retired_keys == ()
         assert str(config.journal_path).endswith("evolution.jsonl")
         assert str(config.experiments_path).endswith("experiments.tsv")
 
@@ -364,134 +362,6 @@ class TestConcernHitRate:
             "security_concern": 1,
         }
         assert "infrastructure_error" not in result["by_category"]
-
-
-# ---------------------------------------------------------------------------
-# propose_improvements
-# ---------------------------------------------------------------------------
-
-
-class TestProposeImprovements:
-    def test_propose_improvements(self) -> None:
-        config = EvolutionConfig()
-        journal = EvolutionJournal(config)
-
-        patterns = [
-            FailurePattern(
-                description="linter failure 'S608' in 3/5 components",
-                frequency=3,
-                total_components=5,
-                affected_components=["a", "b", "c"],
-                check_name="linter",
-                error_signature="S608",
-                category="verification",
-            ),
-            FailurePattern(
-                description="test_suite failure 'assert-mismatch' in 2/5 components",
-                frequency=2,
-                total_components=5,
-                affected_components=["d", "e"],
-                check_name="test_suite",
-                error_signature="assert-mismatch",
-                category="verification",
-            ),
-        ]
-
-        proposals = journal.propose_improvements(patterns)
-        assert len(proposals) == 2
-        assert proposals[0].id == "PROP-001"
-        assert "S608" in proposals[0].title
-        assert proposals[0].target == "claude_md"
-        assert proposals[1].target == "codebase_scan_config"
-
-    # Every branch of propose_improvements, not just the two that named
-    # a toolchain. `check_name` is the GATE, which carries no toolchain
-    # at all now that each gate dispatches per project (#258), so a code
-    # in any of these can be a tsc TS-number or an eslint rule as easily
-    # as a mypy or ruff one.
-    @pytest.mark.parametrize(
-        ("check_name", "signature", "expected_target"),
-        [
-            ("linter", "no-unused-vars", "claude_md"),
-            ("typecheck", "TS2322", "typecheck_config"),
-            ("test_suite", "assertion-error", "codebase_scan_config"),
-            ("review", "scope_creep", "claude_md"),
-            ("security", "injection", "claude_md"),
-        ],
-    )
-    def test_proposals_name_no_toolchain(
-        self, check_name: str, signature: str, expected_target: str
-    ) -> None:
-        """#258 review: a TypeScript project was sent to edit a pyproject.toml.
-
-        save_proposals writes the target verbatim into the proposal file
-        as `**Target**: ...`, one line above the prose, so the field is
-        as visible to the reader as the sentences are and has to be as
-        neutral. The whole proposal is searched, not just the suggested
-        change, because a name in the description or the target ships
-        just as far.
-        """
-        config = EvolutionConfig()
-        journal = EvolutionJournal(config)
-        patterns = [
-            FailurePattern(
-                description=f"{check_name} failure '{signature}' in 3/5 components",
-                frequency=3,
-                total_components=5,
-                affected_components=["a", "b", "c"],
-                check_name=check_name,
-                error_signature=signature,
-                category="verification",
-            )
-        ]
-
-        proposal = journal.propose_improvements(patterns)[0]
-        written = " ".join(
-            [proposal.target, proposal.title, proposal.description, proposal.suggested_change]
-        )
-
-        assert proposal.target == expected_target
-        for toolchain in ("pyproject", "mypy", "pyright", "ruff", "flake8"):
-            assert toolchain not in written, f"{check_name} proposal names {toolchain}"
-
-    def test_propose_improvements_empty(self) -> None:
-        config = EvolutionConfig()
-        journal = EvolutionJournal(config)
-        proposals = journal.propose_improvements([])
-        assert proposals == []
-
-
-# ---------------------------------------------------------------------------
-# save_proposals
-# ---------------------------------------------------------------------------
-
-
-class TestSaveProposals:
-    def test_save_proposals(self, tmp_path: Path) -> None:
-        config = EvolutionConfig()
-        journal = EvolutionJournal(config)
-
-        patterns = [
-            FailurePattern(
-                description="linter failure 'E501' in 4/6 components",
-                frequency=4,
-                total_components=6,
-                affected_components=["a", "b", "c", "d"],
-                check_name="linter",
-                error_signature="E501",
-                category="verification",
-            ),
-        ]
-        proposals = journal.propose_improvements(patterns)
-
-        output_dir = tmp_path / "proposals"
-        written = journal.save_proposals(proposals, output_dir)
-        assert len(written) == 1
-        assert written[0].name == "prop-001.md"
-        content = written[0].read_text()
-        assert "PROP-001" in content
-        assert "E501" in content
-        assert "computational" in content
 
 
 # ---------------------------------------------------------------------------
@@ -876,7 +746,7 @@ class TestRecordRunFactUtilization:
 
 class TestEvolutionIntegration:
     """R6 'done when': a synthetic-but-realistic journal (real signature
-    strings, typed findings) yields a proposal traceable to a recorded
+    strings, typed findings) yields a pattern traceable to a recorded
     signature and a nonzero concern hit rate."""
 
     def _failed_component(self, comp_id: str) -> Component:
@@ -902,7 +772,7 @@ class TestEvolutionIntegration:
         ]
         return comp
 
-    def test_journal_to_traceable_proposal(self, tmp_path: Path) -> None:
+    def test_journal_to_traceable_pattern(self, tmp_path: Path) -> None:
         config = EvolutionConfig(
             journal_path=tmp_path / "evolution.jsonl",
             experiments_path=tmp_path / "experiments.tsv",
@@ -952,83 +822,13 @@ class TestEvolutionIntegration:
             p for p in patterns if p.check_name == "review" and p.error_signature == "scope_creep"
         ]
         assert review_patterns
-
-        # Proposals trace back to the recorded signature: the S608
-        # linter fast path fires, and the review proposal derives from
-        # the finding taxonomy.
-        proposals = journal.propose_improvements(patterns)
-        s608 = [p for p in proposals if "S608" in p.title]
-        assert s608 and s608[0].target == "claude_md"
-        assert any("S608" in src for src in s608[0].source_patterns)
-        assert any("scope_creep" in p.title for p in proposals)
+        assert "linter:S608" in linter_patterns[0].description
 
         # Concern hit rate is nonzero because findings_summary carries
         # the scope_creep finding.
         hit_rate = journal.get_concern_hit_rate()
         assert hit_rate["with_concern"] > 0
         assert hit_rate["by_category"].get("scope_creep", 0) > 0
-
-
-class TestProposalIdMonotonicity:
-    def test_ids_continue_across_invocations(self, tmp_path: Path) -> None:
-        """R6.2: a second `evolve` run continues numbering after the
-        files already on disk and never clobbers them."""
-        config = EvolutionConfig()
-        journal = EvolutionJournal(config)
-        output_dir = tmp_path / "proposals"
-
-        def _pattern(sig: str) -> FailurePattern:
-            return FailurePattern(
-                description=f"linter failure '{sig}' in 2/4 components",
-                frequency=2,
-                total_components=4,
-                affected_components=["a", "b"],
-                check_name="linter",
-                error_signature=sig,
-                category="verification",
-            )
-
-        first = journal.propose_improvements(
-            [_pattern("S608")],
-            starting_number=journal.next_proposal_number(output_dir),
-        )
-        assert first[0].id == "PROP-001"
-        journal.save_proposals(first, output_dir)
-        first_content = (output_dir / "prop-001.md").read_text()
-
-        second = journal.propose_improvements(
-            [_pattern("E501")],
-            starting_number=journal.next_proposal_number(output_dir),
-        )
-        assert second[0].id == "PROP-002"
-        written = journal.save_proposals(second, output_dir)
-        assert [p.name for p in written] == ["prop-002.md"]
-        # Prior file untouched.
-        assert (output_dir / "prop-001.md").read_text() == first_content
-
-    def test_save_never_clobbers_existing_file(self, tmp_path: Path) -> None:
-        config = EvolutionConfig()
-        journal = EvolutionJournal(config)
-        output_dir = tmp_path / "proposals"
-        output_dir.mkdir()
-        (output_dir / "prop-001.md").write_text("# PROP-001: original\n")
-
-        clashing = journal.propose_improvements(
-            [
-                FailurePattern(
-                    description="linter failure 'E501' in 2/4 components",
-                    frequency=2,
-                    total_components=4,
-                    affected_components=["a", "b"],
-                    check_name="linter",
-                    error_signature="E501",
-                    category="verification",
-                ),
-            ]
-        )
-        written = journal.save_proposals(clashing, output_dir)
-        assert written == []
-        assert (output_dir / "prop-001.md").read_text() == "# PROP-001: original\n"
 
 
 # ---------------------------------------------------------------------------

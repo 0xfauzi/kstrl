@@ -108,14 +108,14 @@ When verification fails, kstrl doesn't dump raw stderr into the retry prompt. It
 
 After each component, a distiller writes durable facts about what was built, and later components receive those facts in their context. That loop is closed and its uptake is measured (as a lower bound) on every run.
 
-After each factory run, kstrl also records structured failure signatures, costs and finding categories to an evolution journal, and `ks evolve` turns recurring patterns into proposals written as markdown for you to read.
+After each factory run, kstrl also records structured failure signatures, costs and finding categories to an evolution journal, and `ks evolve` reports the patterns that recur, sorted into inbox traffic, candidate lessons and neither.
 
 ```bash
 ks evolve              # analyze recent runs, find patterns
 ks evolve --status     # show experiment trends (retry rate over time)
 ```
 
-Be clear about what that is today: a record and a proposal, not a closed loop. Nothing reads a proposal back into the next run, and nothing yet checks whether an applied proposal helped. The design that closes it, with attribution (a lesson that keeps failing to prevent the failure it targets retires itself) and a shared playbook across every project you run, is [docs/continuous-learning-design.md](docs/continuous-learning-design.md), tracked as R9. Until it lands, this README does not claim the harness improves itself.
+Be clear about what that is today: a record, not a closed loop. Nothing writes a candidate lesson anywhere, and nothing reads one back into the next run. The design that closes it, with attribution (a lesson that keeps failing to prevent the failure it targets retires itself) and a shared playbook across every project you run, is [docs/continuous-learning-design.md](docs/continuous-learning-design.md), tracked as R9. Until it lands, this README does not claim the harness improves itself.
 
 ## Factory mode - parallel multi-component execution
 
@@ -261,7 +261,7 @@ ks config show                  Print the fully resolved config with the source 
 ks dash                         Live dashboard over a factory run (observe-only).
 ks decompose                    Decompose a spec into components and generate PRDs.
 ks doctor                       Assess whether this repository is ready to point kstrl at.
-ks evolve                       Analyze factory runs and propose harness improvements.
+ks evolve                       Analyze factory runs and report recurring failure patterns.
 ks factory                      Run the software factory - decompose and execute a spec.
 ks feature                      Run feature understanding, then implementation.
 ks health                       Trend the factory's own run metrics against its own history (R8.4).
@@ -525,10 +525,8 @@ dependency_scope = "direct"    # direct | transitive (E8)
 enabled = true                               # record run outcomes
 journal_path = ".kstrl/evolution.jsonl"      # JSONL journal location
 experiments_path = ".kstrl/experiments.tsv"  # experiment tracker location
-min_pattern_frequency = 2                    # pattern must recur N times before proposal
+min_pattern_frequency = 2                    # pattern must recur in N runs to be reported
 lookback_runs = 10                           # past runs to analyze
-auto_propose = true                          # generate proposals after each factory run
-auto_apply_computational = false             # auto-apply computational proposals
 
 # Run-milestone notification hooks (R3.2)
 [notify]

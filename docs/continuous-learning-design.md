@@ -2,10 +2,12 @@
 
 Status: proposed. Supersedes the `ks evolve` proposal generator described in
 [spec-harness-engineering.md](spec-harness-engineering.md) section 3.4. #217
-shipped the router and the disclosure described in this document's section 3;
-the generator's six typed proposal arms stay as they were, and only its
-generic arm (the one that wrote "Take extra care with this pattern" for any
-check name without a typed arm) is gone.
+shipped the router and the disclosure described in this document's section 3.
+#507 (Slice 1 of the #217 plan) deleted the generator and its consumers:
+`propose_improvements`, `ks evolve --apply`, the TUI proposals tab and the
+CLAUDE.md apply path. The router's `lessons` bucket is printed as candidate
+lessons and nothing writes it until the playbook ships. Sections 1 to 3 are
+the audit as it was written, before that deletion.
 
 ## Status, 2026-09-22
 
@@ -369,12 +371,14 @@ Each phase ships and is measured before the next starts.
 - **Phase 5, GEPA on prompts.** Rung 4. Real spend, real prompts, full four-step
   gate chain.
 
-Rung 3 (CLAUDE.md and `kstrl.toml` edits) already exists via
-`kstrl/proposals.py` and is not re-built. It gains correctness for free once the
-router stops feeding it kind 4 signals.
+Rung 3 (CLAUDE.md and `kstrl.toml` edits) has no implementation. It was
+`kstrl/proposals.py`, which #507 deleted with the generator that fed it.
 
-Delete `propose_improvements` and its template branches at phase 4, not before.
-The old path stays until the new one demonstrates attribution.
+This section used to say: delete `propose_improvements` at phase 4, not before,
+and keep the old path until the new one demonstrates attribution. The owner
+decided otherwise on 2026-09-25: the generator and its consumers are deleted
+now (#507, Slice 1 of the #217 plan), because no code path read a proposal back
+into a run, so there was nothing for the new path to be measured against.
 
 ## 9. Unlocks, with the number measured on 2026-09-22
 

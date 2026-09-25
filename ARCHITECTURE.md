@@ -28,7 +28,7 @@ the next section is what happens inside one tick of the two middle loops.
 | tens of minutes | integrate | scheduling and merging | contract tests | the manifest satisfied |
 | hours | intake | queue admission | queue state, spend, the inbox cap | the queue drained within bounds |
 | days | trust | the autonomy level | run outcomes, calibration | the autonomy the evidence supports |
-| weeks | learn | facts, proposals | fact utilisation | the harness's own detection rates |
+| weeks | learn | facts, recurring patterns | fact utilisation | the harness's own detection rates |
 | days | operate (planned: R8.7, R8.8) | the release driver | runtime errors, health probes | the shipped service's objectives |
 
 The rule that holds every loop together: **what acts never measures its own
@@ -159,8 +159,8 @@ MERGE_PENDING without scheduling dependents past it.
 ## The learning loop
 
 The learning loop as it exists today is open at the last step:
-proposals are written and nothing reads them back into a run, and no
-mechanism yet checks whether an applied proposal helped. The one learning
+recurring patterns are reported and nothing turns them into a lesson a
+later run reads. The one learning
 path that is closed is the per-component knowledge layer (distill facts,
 inject them into later components, measure their uptake as a lower bound).
 The design that closes the rest, with attribution and a playbook shared
@@ -168,15 +168,15 @@ across projects, is [docs/continuous-learning-design.md](docs/continuous-learnin
 
 Three flows are the whole learning loop today: facts from the distiller
 into later components' prompts, outcomes into the journal, and patterns from
-the journal into proposals. Nothing reads a proposal back. The playbook and
-the runtime signals are not built.
+the journal into the `ks evolve` report. The proposal generator was deleted
+by #507. The playbook and the runtime signals are not built.
 
 Failures are journaled as structured signatures (`linter:E501`,
 `typecheck:arg-type`, `diff_scope:rename`), not flattened strings;
-review/security failures record finding categories. `ks evolve` derives
-proposals from those taxonomies, and applying a convention-type proposal
-appends to the project CLAUDE.md only after explicit confirmation -
-everything else prints instructions for manual action. Metrics semantics
+review/security failures record finding categories. `ks evolve` routes
+each recurring signature by its check's category: infrastructure to the
+inbox, verification, review, security and contract to the candidate
+lessons, and the rest to neither. It writes nothing. Metrics semantics
 are documented in [docs/evolution-metrics.md](docs/evolution-metrics.md).
 
 ## Where you stand
@@ -236,7 +236,7 @@ Everything lives under `.kstrl/` at the project root (gitignored):
 | `.kstrl/worktrees/<run>/<component>/` | Isolated git worktrees (run-keyed, never shared across invocations) |
 | `.kstrl/knowledge/<component>/<run>/` | Distilled facts (latest-wins by fact id; re-validated on read) |
 | `.kstrl/evolution.jsonl`, `.kstrl/experiments.tsv` | Learning-loop journals |
-| `.kstrl/proposals/` | Harness improvement proposals |
+| `.kstrl/proposals/` | Files the proposal generator wrote before #507 deleted it; `ks evolve` counts them and nothing reads them |
 | `.kstrl/snapshots/` | Approved-fixture output snapshots |
 | `.kstrl/factory.lock` | Run-level flock: a second invocation on the same root refuses to start |
 

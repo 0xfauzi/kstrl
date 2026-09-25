@@ -565,41 +565,6 @@ class TestEvolutionIntegration:
         assert trends[0]["run_id"] == "run-000"
         assert trends[2]["run_id"] == "run-002"
 
-    def test_propose_improvements(self, tmp_path: Path) -> None:
-        from kstrl.evolution import (
-            EvolutionConfig,
-            EvolutionJournal,
-            FailurePattern,
-        )
-
-        config = EvolutionConfig(
-            journal_path=tmp_path / "evolution.jsonl",
-            experiments_path=tmp_path / "experiments.tsv",
-        )
-        journal = EvolutionJournal(config)
-
-        patterns = [
-            FailurePattern(
-                description="Agent used raw SQL in 3 components",
-                frequency=3,
-                total_components=5,
-                affected_components=["auth", "api", "db"],
-                check_name="linter",
-                error_signature="S608",
-                category="verification",
-            ),
-        ]
-        proposals = journal.propose_improvements(patterns)
-        assert len(proposals) >= 1
-        assert proposals[0].target == "claude_md"
-
-        # Save and verify
-        paths = journal.save_proposals(proposals, tmp_path / "proposals")
-        assert len(paths) >= 1
-        content = paths[0].read_text()
-        assert "PROP-" in content
-        assert "S608" in content
-
 
 # ---------------------------------------------------------------------------
 # 5. Manifest.from_prd

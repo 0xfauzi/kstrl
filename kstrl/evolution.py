@@ -1,4 +1,4 @@
-"""Continuous learning - evolution journal, experiment tracking, and harness proposals.
+"""Continuous learning - evolution journal, experiment tracking, and pattern routing.
 
 Records factory run outcomes and extracts recurring failure patterns across runs.
 Inspired by AutoResearchClaw's evolution directory and autoresearch-agents' results.tsv.
@@ -660,6 +660,13 @@ _UNMEASURED_UTILIZATION: dict[str, Any] = {
 # ---------------------------------------------------------------------------
 
 
+#: [evolution] keys that did something until #217 deleted the proposal
+#: generator. Existing kstrl.toml files still set them, so they are neither
+#: read nor refused: EvolutionConfig.load records which are present and
+#: `ks evolve` names them.
+RETIRED_EVOLUTION_KEYS: tuple[str, ...] = ("auto_propose", "auto_apply_computational")
+
+
 @dataclass
 class EvolutionConfig:
     enabled: bool = True
@@ -667,8 +674,12 @@ class EvolutionConfig:
     experiments_path: Path = field(default_factory=lambda: Path(".kstrl/experiments.tsv"))
     min_pattern_frequency: int = 2
     lookback_runs: int = 10
-    auto_propose: bool = True
-    auto_apply_computational: bool = False
+    # #217: the [evolution] keys of the deleted proposal generator that
+    # load() found in kstrl.toml, so `ks evolve` can name them instead of
+    # dropping them silently. Provenance, not a setting: it has no toml
+    # key of its own, and metadata["provenance"] keeps the surfaces that
+    # sweep dataclass fields (cli._collect_toml_notes, gen_docs) off it.
+    retired_keys: tuple[str, ...] = field(default=(), metadata={"provenance": True})
 
     @classmethod
     def from_env(cls, root_dir: Path | None = None) -> EvolutionConfig:
@@ -705,10 +716,7 @@ class EvolutionConfig:
             config.min_pattern_frequency = int(section["min_pattern_frequency"])
         if "lookback_runs" in section:
             config.lookback_runs = int(section["lookback_runs"])
-        if "auto_propose" in section:
-            config.auto_propose = bool(section["auto_propose"])
-        if "auto_apply_computational" in section:
-            config.auto_apply_computational = bool(section["auto_apply_computational"])
+        config.retired_keys = tuple(key for key in RETIRED_EVOLUTION_KEYS if key in section)
         _apply_env_overrides(config, root_dir)
         _resolve_relative_paths(config, root_dir)
         return config
@@ -818,17 +826,6 @@ class FailurePattern:
     superseded_only: bool = False
 
 
-@dataclass
-class HarnessProposal:
-    id: str  # e.g. "PROP-001"
-    title: str
-    description: str
-    proposal_type: str  # "computational" or "inferential"
-    target: str  # what to change: "claude_md", "typecheck_config", "codebase_scan_config"
-    suggested_change: str  # the actual proposed content/config change
-    source_patterns: list[str]  # pattern descriptions that led to this proposal
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -895,12 +892,9 @@ def _classify_check(error: str) -> str:
     time it happened.
 
     #294 round 2: that is what happened to the scope refusal. Its own
-    ``_CATEGORY_BY_CHECK`` row and its own ``propose_improvements`` arm
-    were both unreachable on this path, so ``ks evolve`` still emitted
-    the generic "add this to CLAUDE.md" proposal - agent advice for a
-    state no agent can influence, which is the thing the arm exists to
-    prevent. Matched FIRST because the text also contains words the
-    later rules claim.
+    ``_CATEGORY_BY_CHECK`` row was unreachable on this path, so ``ks
+    evolve`` filed it under a check name that was not its own. Matched
+    FIRST because the text also contains words the later rules claim.
 
     #315: this returned ``(check_name, category)`` until every caller
     was measured to discard the category, making it a SECOND place a
@@ -1074,27 +1068,13 @@ INFRASTRUCTURE_CHECKS: frozenset[str] = frozenset(
     name for name, category in _CATEGORY_BY_CHECK.items() if category == "infrastructure"
 )
 
-#: Check names ``EvolutionJournal.propose_improvements`` has a typed arm
-#: for. Hand-written because it is the arm list, not a slice of
-#: ``_CATEGORY_BY_CHECK``, and tied to the arms by an AST guard:
-#: ``tests/test_evolve_routing.py::TestRoutingIsClosedOverTheTable::
-#: test_the_arms_in_the_source_are_exactly_PROPOSAL_CHECKS`` parses the
-#: function and fails if the two disagree in EITHER direction. One
-#: vocabulary, because two definitions of the same judgement means the
-#: weaker one is the one the gate consults (#260).
-#:
-#: Disjoint from INFRASTRUCTURE_CHECKS by test, not by convention, so
-#: "which wins" is a question the router never has to answer.
-PROPOSAL_CHECKS: frozenset[str] = frozenset(
-    {
-        "linter",
-        "typecheck",
-        "test_suite",
-        "review",
-        "security",
-        SCOPE_UNREADABLE_CHECK,
-    }
-)
+#: The categories a recurring failure can teach a lesson in (#217 Slice 1).
+#: ``route_patterns`` puts a pattern in ``lessons`` when its check's
+#: category is one of these. "infrastructure" is not here because no agent
+#: can act on it, "iteration" because it names the engineer loop rather
+#: than a check, and :data:`UNENROLLED_CATEGORY` because a name the table
+#: does not carry must never become a lesson.
+LESSON_CATEGORIES: frozenset[str] = frozenset({"verification", "review", "security", "contract"})
 
 # Cap on distinct per-check signatures so one catastrophic run (e.g. 40
 # distinct ruff rules) cannot flood the journal entry.
@@ -1202,15 +1182,15 @@ class PatternRouting:
 
     - ``mechanical``: something is broken, not a lesson. The pipeline
       already opens a deduped ``ItemKind.HALTED_RUN`` inbox item for
-      this traffic (``kstrl/pipeline.py:2058``), so it has a
-      destination; what it must not have is a proposal telling an agent
-      to take extra care about a failed git push.
-    - ``lessons``: a check name ``propose_improvements`` has an arm for.
-    - ``unrouted``: everything else, including every check name
-      ``_CATEGORY_BY_CHECK`` does not carry, whose category is
-      :data:`UNENROLLED_CATEGORY` since #496. An unenrolled name can
-      never be a lesson: ``PROPOSAL_CHECKS`` is a subset of the table,
-      which ``TestRoutingIsClosedOverTheTable`` asserts.
+      this traffic, so it has a destination; what it must not have is a
+      lesson telling an agent to take extra care about a failed git push.
+    - ``lessons``: a check whose category is in
+      :data:`LESSON_CATEGORIES`. Nothing writes them anywhere yet (#217
+      Slice 1 deleted the proposal generator); ``ks evolve`` prints them
+      as candidate lessons.
+    - ``unrouted``: everything else: the ``iteration`` rows, and every
+      check name ``_CATEGORY_BY_CHECK`` does not carry, whose category
+      is :data:`UNENROLLED_CATEGORY` since #496.
     """
 
     mechanical: tuple[FailurePattern, ...]
@@ -1222,25 +1202,19 @@ def route_patterns(patterns: list[FailurePattern]) -> PatternRouting:
     """Split patterns into mechanical, lessons and unrouted.
 
     Keyed on ``check_name`` through ``category_for_check``, never on the
-    stamped ``FailurePattern.category``. ``propose_improvements``
-    dispatches on ``check_name``, so routing on the other field would be
-    a second definition of the same judgement, and a record whose two
-    fields disagree would route one way and dispatch the other. The
-    stamped field stays what it has always been: what the evolve screen
-    displays.
-
-    Infrastructure is tested first. ``PROPOSAL_CHECKS`` and
-    ``INFRASTRUCTURE_CHECKS`` are asserted disjoint, so the order is
-    unobservable; it is written this way so a future overlap fails
-    closed rather than turning transport noise into agent advice.
+    stamped ``FailurePattern.category``: the table is the one answer, and
+    a record whose stamped field disagrees with it routes by the table.
+    The stamped field stays what it has always been: what the evolve
+    screen displays.
     """
     mechanical: list[FailurePattern] = []
     lessons: list[FailurePattern] = []
     unrouted: list[FailurePattern] = []
     for pattern in patterns:
-        if category_for_check(pattern.check_name) == "infrastructure":
+        category = category_for_check(pattern.check_name)
+        if category == "infrastructure":
             mechanical.append(pattern)
-        elif pattern.check_name in PROPOSAL_CHECKS:
+        elif category in LESSON_CATEGORIES:
             lessons.append(pattern)
         else:
             unrouted.append(pattern)
@@ -2002,328 +1976,6 @@ class EvolutionJournal:
 
         patterns.sort(key=lambda p: p.frequency, reverse=True)
         return patterns
-
-    # ------------------------------------------------------------------
-    # propose_improvements
-    # ------------------------------------------------------------------
-
-    def propose_improvements(
-        self,
-        patterns: list[FailurePattern],
-        starting_number: int = 1,
-    ) -> list[HarnessProposal]:
-        """Generate concrete harness improvement proposals from patterns.
-
-        Computational proposals only (no LLM calls):
-        - Recurring linter errors - suggest CLAUDE.md convention entry
-        - Recurring typecheck patterns - suggest config change
-        - Recurring test failures on same module - suggest codebase scan focus
-        - Recurring review/security finding categories - suggest CLAUDE.md
-          guidance derived from the finding taxonomy
-
-        R6.2: IDs are monotonic across runs - pass
-        ``next_proposal_number(output_dir)`` as ``starting_number`` so a
-        second `ks evolve` continues numbering instead of restarting
-        at PROP-001 and clobbering earlier files.
-        """
-        proposals: list[HarnessProposal] = []
-        counter = starting_number - 1
-
-        for pattern in patterns:
-            counter += 1
-            proposal_id = f"PROP-{counter:03d}"
-
-            if pattern.check_name == "linter":
-                proposals.append(
-                    HarnessProposal(
-                        id=proposal_id,
-                        title=f"Add linter convention for {pattern.error_signature} to CLAUDE.md",
-                        description=(
-                            f"Linter rule {pattern.error_signature} triggered in "
-                            f"{pattern.frequency} components. Adding an explicit convention "
-                            f"to CLAUDE.md will help the agent avoid this pattern."
-                        ),
-                        proposal_type="computational",
-                        target="claude_md",
-                        suggested_change=(
-                            f"Add to CLAUDE.md:\n"
-                            f"> Avoid triggering linter rule {pattern.error_signature}. "
-                            f"Check the rule in your linter's documentation for the "
-                            f"correct pattern."
-                        ),
-                        source_patterns=[pattern.description],
-                    )
-                )
-
-            elif pattern.check_name == "typecheck":
-                proposals.append(
-                    HarnessProposal(
-                        id=proposal_id,
-                        title=f"Adjust type-checking config for '{pattern.error_signature}'",
-                        description=(
-                            f"Type error pattern '{pattern.error_signature}' recurred in "
-                            f"{pattern.frequency} components. Consider adjusting the type "
-                            f"checker's config or adding a CLAUDE.md note about the "
-                            f"expected typing style."
-                        ),
-                        proposal_type="computational",
-                        # Not "pyproject": save_proposals writes this
-                        # verbatim as "**Target**: ..." into the
-                        # proposal file, so a TypeScript project got a
-                        # proposal naming a file it does not have,
-                        # directly above prose that carefully did not.
-                        target="typecheck_config",
-                        # Toolchain-neutral prose on purpose. The gate
-                        # dispatches per project (#258), so this code can
-                        # be a tsc TS-number as easily as a mypy code,
-                        # and `check_name` is the GATE, which carries no
-                        # toolchain. Naming [tool.mypy] here sent a
-                        # TypeScript project to edit a pyproject.toml it
-                        # does not have.
-                        suggested_change=(
-                            f"Review the type checker's configuration. If this is a known "
-                            f"false positive, add it to the ignore list. Otherwise add to "
-                            f"CLAUDE.md:\n"
-                            f"> Ensure all functions have return type annotations to avoid "
-                            f"'{pattern.error_signature}'."
-                        ),
-                        source_patterns=[pattern.description],
-                    )
-                )
-
-            elif pattern.check_name == "test_suite":
-                proposals.append(
-                    HarnessProposal(
-                        id=proposal_id,
-                        title=(
-                            f"Add codebase scan focus for test pattern '{pattern.error_signature}'"
-                        ),
-                        description=(
-                            f"Test failure '{pattern.error_signature}' hit "
-                            f"{pattern.frequency} components: "
-                            f"{', '.join(pattern.affected_components[:5])}. "
-                            f"Focusing codebase scan context on this pattern may help the agent "
-                            f"fix the root cause earlier in the iteration loop."
-                        ),
-                        proposal_type="computational",
-                        target="codebase_scan_config",
-                        suggested_change=(
-                            f"Add to codebase scan config or CLAUDE.md:\n"
-                            f"> Known recurring test issue: '{pattern.error_signature}'. "
-                            f"When tests fail with this pattern, check the affected modules "
-                            f"before re-running."
-                        ),
-                        source_patterns=[pattern.description],
-                    )
-                )
-
-            elif pattern.check_name == "review":
-                proposals.append(
-                    HarnessProposal(
-                        id=proposal_id,
-                        title=f"Add review guidance for '{pattern.error_signature}'",
-                        description=(
-                            f"Review finding category '{pattern.error_signature}' "
-                            f"(reviewer concern taxonomy) appeared in "
-                            f"{pattern.frequency} components. Adding explicit guidance to "
-                            f"CLAUDE.md can help the agent avoid this in the first pass."
-                        ),
-                        proposal_type="computational",
-                        target="claude_md",
-                        suggested_change=(
-                            f"Add to CLAUDE.md:\n"
-                            f"> Reviewer repeatedly flags '{pattern.error_signature}'. "
-                            f"Address this pattern proactively."
-                        ),
-                        source_patterns=[pattern.description],
-                    )
-                )
-
-            elif pattern.check_name == "security":
-                proposals.append(
-                    HarnessProposal(
-                        id=proposal_id,
-                        title=(f"Add security guidance for '{pattern.error_signature}'"),
-                        description=(
-                            f"Security finding category '{pattern.error_signature}' "
-                            f"(OWASP-mapped taxonomy) appeared in "
-                            f"{pattern.frequency} components. Adding an explicit "
-                            f"convention to CLAUDE.md can prevent the vulnerability "
-                            f"class from being introduced at all."
-                        ),
-                        proposal_type="computational",
-                        target="claude_md",
-                        suggested_change=(
-                            f"Add to CLAUDE.md:\n"
-                            f"> Security reviewer repeatedly flags "
-                            f"'{pattern.error_signature}'. Follow the secure "
-                            f"pattern for this category from the start."
-                        ),
-                        source_patterns=[pattern.description],
-                    )
-                )
-
-            # #294: the one check here that no agent can act on. The
-            # generic branch below writes CLAUDE.md advice aimed at the
-            # ENGINEER, and a scope the harness could not establish at
-            # plan time is not something the engineer can take extra
-            # care about. Reaching this arm at all depends on
-            # _classify_check recognising the failure text, which is why
-            # that function matches the error prefix first.
-            elif pattern.check_name == SCOPE_UNREADABLE_CHECK:
-                proposals.append(
-                    HarnessProposal(
-                        id=proposal_id,
-                        title=(
-                            f"Repair the component scopes that would not "
-                            f"resolve ({pattern.frequency} runs)"
-                        ),
-                        description=(
-                            f"No trustworthy scope could be established for a "
-                            f"component in {pattern.frequency} runs, across "
-                            f"{', '.join(pattern.affected_components[:5])}. "
-                            f"The component is refused before its engineer "
-                            f"runs, because the snapshot is fixed for the life "
-                            f"of the run. No agent can clear it: the scope is "
-                            f"read from the main checkout, outside every "
-                            f"worktree."
-                        ),
-                        proposal_type="computational",
-                        target="repository",
-                        suggested_change=(
-                            "Two faults produce this, and the run's failure "
-                            "record says which. A pre-run PRD that would not "
-                            "read: check that every component's `prdPath` "
-                            "names a readable, parseable file in the main "
-                            "checkout, and that decompose is writing it. No "
-                            "plan-time scope resolved for the component at "
-                            "all: the PRD is fine and the manifest disagrees "
-                            "with the resolved run scope, which is a harness "
-                            "fault. A run-wide `--allowed-paths` fixes "
-                            "neither: scope resolution refuses before it "
-                            "reaches the flag."
-                        ),
-                        source_patterns=[pattern.description],
-                    )
-                )
-
-            else:
-                # #217: the arm that wrote "Take extra care with this
-                # pattern" for every check name without a typed arm,
-                # including the three git-transport flakes that became
-                # prop-001..003.md. Deleted rather than narrowed: a
-                # proposal with no content is worse than no proposal.
-                #
-                # A raise, not a silent skip, because "produced nothing,
-                # quietly" is the failure direction this whole change
-                # exists to close: a caller that has not routed would
-                # get an empty list back and no way to tell it from a
-                # corpus with nothing in it. route_patterns() is what
-                # callers use to avoid this, and PROPOSAL_CHECKS and the
-                # arms above are held equal by an AST guard, so a caller
-                # that routed first cannot reach this line.
-                raise ValueError(
-                    f"propose_improvements has no arm for check name "
-                    f"{pattern.check_name!r}; route_patterns() puts it in "
-                    f"`unrouted` or `mechanical`. Call route_patterns() "
-                    f"first and pass only routing.lessons."
-                )
-
-        return proposals
-
-    # ------------------------------------------------------------------
-    # save_proposals
-    # ------------------------------------------------------------------
-
-    def next_proposal_number(self, output_dir: Path) -> int:
-        """Next monotonic proposal number: max existing PROP number in
-        ``output_dir`` plus one (R6.2). 1 when the directory is empty or
-        missing."""
-        highest = 0
-        try:
-            candidates = list(output_dir.glob("prop-*.md"))
-        except OSError:
-            return 1
-        for path in candidates:
-            m = re.fullmatch(r"prop-(\d+)\.md", path.name)
-            if m:
-                highest = max(highest, int(m.group(1)))
-        return highest + 1
-
-    def save_proposals(
-        self,
-        proposals: list[HarnessProposal],
-        output_dir: Path,
-    ) -> list[Path]:
-        """Write proposals as markdown files to output_dir.
-
-        Returns list of written file paths. Never overwrites an existing
-        proposal file (R6.2): a filename collision means the caller
-        numbered the batch wrong (see ``next_proposal_number``), and
-        clobbering would silently rewrite audit history - skip and warn
-        instead.
-        """
-        written: list[Path] = []
-        try:
-            output_dir.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            logger.warning(
-                "proposal dir creation failed (non-fatal): %s: %s",
-                output_dir,
-                exc,
-            )
-            return written
-
-        for proposal in proposals:
-            filename = f"{proposal.id.lower()}.md"
-            filepath = output_dir / filename
-
-            if filepath.exists():
-                logger.warning(
-                    "refusing to overwrite existing proposal %s; "
-                    "renumber with next_proposal_number()",
-                    filepath,
-                )
-                continue
-
-            sources_block = "\n".join(f"- {s}" for s in proposal.source_patterns)
-
-            content = (
-                f"# {proposal.id}: {proposal.title}\n"
-                f"\n"
-                f"**Type**: {proposal.proposal_type}\n"
-                f"**Target**: {proposal.target}\n"
-                f"**Source patterns**:\n"
-                f"{sources_block}\n"
-                f"\n"
-                f"## Description\n"
-                f"\n"
-                f"{proposal.description}\n"
-                f"\n"
-                f"## Suggested change\n"
-                f"\n"
-                f"{proposal.suggested_change}\n"
-            )
-
-            try:
-                # encoding named, ValueError caught: the description
-                # and suggested_change come from an LLM, so one curly
-                # quote makes this a UnicodeEncodeError under LC_ALL=C,
-                # and that is a ValueError, which the OSError handler
-                # below does not catch (measured: US-ASCII preferred
-                # encoding, write_text raises). A proposal write is
-                # explicitly non-fatal; without this it took the run
-                # down instead.
-                filepath.write_text(content, encoding="utf-8")
-                written.append(filepath)
-            except (OSError, ValueError) as exc:
-                logger.warning(
-                    "proposal write failed (non-fatal): %s: %s",
-                    filepath,
-                    exc,
-                )
-
-        return written
 
     # ------------------------------------------------------------------
     # get_concern_hit_rate (D8)

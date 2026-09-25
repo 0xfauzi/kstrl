@@ -130,13 +130,16 @@ class SectionSpec:
 
 
 def _all_field_names(cfg_cls: Any) -> list[str]:
-    """Every field name on a config dataclass, in declaration order.
+    """Every field name on a config dataclass, in declaration order,
+    except fields declared ``metadata={"provenance": True}``: those
+    record where a value came from and have no toml key
+    (``EvolutionConfig.retired_keys``, #217).
 
     Outside :func:`_section_specs` on purpose: an inline comprehension
     per spec is what made that function's complexity grow with every
     section registered, and both complexity gates measure it.
     """
-    return [f.name for f in dataclasses.fields(cfg_cls)]
+    return [f.name for f in dataclasses.fields(cfg_cls) if not f.metadata.get("provenance")]
 
 
 def _section_specs() -> list[SectionSpec]:
@@ -759,10 +762,8 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("evolution", "enabled"): "record run outcomes",
     ("evolution", "journal_path"): "JSONL journal location",
     ("evolution", "experiments_path"): "experiment tracker location",
-    ("evolution", "min_pattern_frequency"): "pattern must recur N times before proposal",
+    ("evolution", "min_pattern_frequency"): "pattern must recur in N runs to be reported",
     ("evolution", "lookback_runs"): "past runs to analyze",
-    ("evolution", "auto_propose"): "generate proposals after each factory run",
-    ("evolution", "auto_apply_computational"): "auto-apply computational proposals",
     ("notify", "on_complete"): "shell hook fired once when the run finishes; empty = disabled",
     ("notify", "on_first_failure"): "shell hook fired once on the first component failure",
     ("notify", "on_inbox_item"): "shell hook fired per R8.3 inbox item kind; empty = disabled",

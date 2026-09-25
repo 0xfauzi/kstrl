@@ -1,8 +1,6 @@
 """Stage 3 PR A (TUI rewrite): the interaction seam.
 
-Covers the channel primitives (Ui + Queue), the E6 checkpoint context,
-and the evolve-apply fix (the one prompt that previously crashed with
-click.Abort on non-TTY EOF).
+Covers the channel primitives (Ui + Queue) and the E6 checkpoint context.
 """
 
 from __future__ import annotations
@@ -253,55 +251,3 @@ class TestCheckpointContext:
         assert ctx.usage is not None
         assert ctx.usage.total_tokens == 1234
         assert ctx.branch == "kstrl/factory/comp-a"
-
-
-class TestEvolveApplyNonTty:
-    def test_no_click_abort_on_non_tty(self, tmp_path: Path) -> None:
-        """The old raw click.confirm crashed with click.Abort on EOF;
-        the seam degrades to a clean "not applied" skip."""
-        from click.testing import CliRunner
-
-        from kstrl.cli import cli
-        from kstrl.evolution import (
-            EvolutionConfig,
-            EvolutionJournal,
-            FailurePattern,
-        )
-
-        (tmp_path / "CLAUDE.md").write_text(
-            "# X\n\n## Agent Learnings\n\n### Conventions\n",
-        )
-        journal = EvolutionJournal(EvolutionConfig())
-        proposals = journal.propose_improvements(
-            [
-                FailurePattern(
-                    description="linter failure 'S608' in 2/4 components",
-                    frequency=2,
-                    total_components=4,
-                    affected_components=["a", "b"],
-                    check_name="linter",
-                    error_signature="S608",
-                    category="verification",
-                )
-            ]
-        )
-        journal.save_proposals(proposals, tmp_path / ".kstrl" / "proposals")
-
-        # No input= at all: stdin is at EOF, which used to raise
-        # click.Abort out of the raw click.confirm.
-        result = CliRunner().invoke(
-            cli,
-            [
-                "evolve",
-                "--apply",
-                "PROP-001",
-                "--root",
-                str(tmp_path),
-                "--ui",
-                "plain",
-                "--no-color",
-            ],
-        )
-        assert result.exit_code == 0, result.output
-        assert "not applied (declined)" in result.output
-        assert "S608" not in (tmp_path / "CLAUDE.md").read_text()
