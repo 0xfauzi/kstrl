@@ -25,6 +25,7 @@ from kstrl import git
 from kstrl.integration import integration_stories
 from kstrl.pipeline import ComponentPipeline
 from tests.helpers import integration_harness as h
+from tests.helpers.gitrepo import git_in
 
 BARE_CITATION = (
     "Every row read back is rebuilt through save (store.py:614-635), "
@@ -173,3 +174,21 @@ def test_a_cited_path_of_several_segments_resolves_by_its_whole_suffix(tmp_path:
     assert finding["status"] == "open"
     assert finding["locations"] == ["pkg/a/store.py"]
     assert finding["missingLocations"] == []
+
+
+def test_the_listing_reads_the_reviewed_commit_not_the_checked_out_one(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    base, head = h.merged_feature(root)
+    payload = h.review_payload(root, base)
+    h.set_verdict(payload, "IC2", "fail", BARE_CITATION)
+    git_in(root, "checkout", "-q", "--detach", base)
+
+    h.run_factory_over(root, h.FakeReviewer(json.dumps(payload)))
+
+    state = _state(root)
+    evidence = json.loads(h.evidence_files(root)[-1].read_text(encoding="utf-8"))
+    assert evidence["reviewedSha"] == head
+    findings = state["findings"]
+    assert isinstance(findings, list) and len(findings) == 1
+    assert findings[0]["status"] == "open"
+    assert findings[0]["locations"] == [h.STORE]
