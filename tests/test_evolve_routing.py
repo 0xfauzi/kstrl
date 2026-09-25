@@ -4,7 +4,7 @@ lessons or neither, and ``ks evolve`` prints each bucket.
 ``TestRoutingIsClosedOverTheTable`` is the routing guard, derived from
 ``_CATEGORY_BY_CHECK`` rather than hand-written.
 ``TestEvolveRoutesMechanicalFailuresAway``,
-``TestEvolvePrintsReadinessNumbers`` and the four module-level #507 tests
+``TestEvolvePrintsReadinessNumbers`` and the six module-level #507 tests
 at the end drive ``ks evolve`` end to end. #507 (Slice 1 of #217) deleted
 the proposal generator, so nothing here expects a file to be written.
 
@@ -18,8 +18,10 @@ that attribute and truncates stdout.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
@@ -539,3 +541,52 @@ def test_the_apply_option_is_gone(tmp_path: Path) -> None:
         assert "--apply" in result.output, result.output
     assert claude_md.read_text(encoding="utf-8") == "# CLAUDE.md\n\n## Agent Learnings\n"
     assert proposal.read_text(encoding="utf-8") == proposal_text
+
+
+def test_the_proposals_notice_counts_files_and_survives_an_unreadable_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#507: the notice counts files, not subdirectories, and a proposals
+    directory that cannot be listed is named with the reason rather than
+    taking ``ks evolve`` down with a traceback."""
+    root = tmp_path.resolve()
+    proposals = root / ".kstrl" / "proposals"
+    (proposals / "archive").mkdir(parents=True)
+    (proposals / "prop-001.md").write_text("# PROP-001: a\n", encoding="utf-8")
+    _write_journal(root, [("r1", "comp-a", "linter:S608")])
+
+    result = _invoke(root)
+    assert result.exit_code == 0, (result.output, result.exception)
+    named = [line for line in result.output.splitlines() if str(proposals) in line]
+    assert named == [
+        f"{proposals}: 1 file(s) from the deleted proposal generator; "
+        f"nothing reads this directory since #217"
+    ], result.output
+
+    real_iterdir = Path.iterdir
+
+    def refusing_iterdir(self: Path) -> Iterator[Path]:
+        if self == proposals:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_iterdir(self)
+
+    monkeypatch.setattr(Path, "iterdir", refusing_iterdir)
+    result = _invoke(root)
+    assert result.exit_code == 0, (result.output, result.exception)
+    named = [line for line in result.output.splitlines() if str(proposals) in line]
+    assert len(named) == 1, result.output
+    assert named[0].startswith(f"{proposals}: files not counted ("), result.output
+    assert "Permission denied" in named[0], result.output
+
+
+def test_retired_keys_are_named_when_evolution_is_disabled(tmp_path: Path) -> None:
+    """#507: the retired-key notice sits before the ``enabled`` exit, so a
+    config that turns evolution off still hears that its keys are dead."""
+    (tmp_path / "kstrl.toml").write_text(
+        "[evolution]\nenabled = false\nauto_propose = true\n", encoding="utf-8"
+    )
+    result = _invoke(tmp_path)
+    assert result.exit_code == 2, (result.output, result.exception)
+    assert "Evolution is disabled in config" in result.output, result.output
+    named = [line for line in result.output.splitlines() if "no effect since #217" in line]
+    assert named == [_RETIRED_LINE.format(keys="auto_propose")], result.output
