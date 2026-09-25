@@ -582,6 +582,15 @@ The runtime signal poller (R8.8). It records and classifies; it queues nothing.
 | `KSTRL_SIGNALS_NEW_ISSUE_EVENTS` | int | 3 | Advisory threshold: labels a new issue, gates nothing |
 | `KSTRL_SIGNALS_REPEAT_GROWTH_EVENTS` | int | 10 | Advisory threshold: labels a repeat, gates nothing |
 
+## LearningConfig (`[learning]`)
+
+The global playbook opt-out (#217). An unreadable `kstrl.toml` makes `contribute` false for that run whatever these say.
+
+| Env var | Type | Default | Notes |
+|---|---|---|---|
+| `KSTRL_LEARNING_CONTRIBUTE` | bool | true | Append this project's lessons to the global playbook |
+| `KSTRL_LEARNING_CONSUME` | bool | true | Read global playbook lessons into this project's prompts |
+
 ## Calibration
 
 | Env var | Default | Notes |

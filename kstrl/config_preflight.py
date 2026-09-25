@@ -218,6 +218,7 @@ def config_sections() -> list[ConfigSection]:
     from kstrl.knowledge import KnowledgeConfig
     from kstrl.linear import LinearConfig
     from kstrl.observability import NotifyConfig
+    from kstrl.playbook import LearningConfig
     from kstrl.policy import PolicyConfig
     from kstrl.release import ReleaseConfig
     from kstrl.sandbox import SandboxConfig
@@ -253,6 +254,7 @@ def config_sections() -> list[ConfigSection]:
         ConfigSection(("evolution",), EvolutionConfig.load, fatal=False),
         ConfigSection(("release",), ReleaseConfig.load),
         ConfigSection(("signals",), SignalsConfig.load),
+        ConfigSection(("learning",), LearningConfig.load),
     ]
 
 
