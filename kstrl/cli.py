@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 if TYPE_CHECKING:
     from kstrl.adequacy import AdequacyConfig
+    from kstrl.autonomy import AutonomyState
     from kstrl.autonomy_replay import RunRecord
     from kstrl.evolution import EvolutionConfig, EvolutionJournal, FailurePattern, PatternRouting
     from kstrl.interaction import InteractionChannel
@@ -4874,6 +4875,27 @@ _autonomy_no_color_option = click.option(
 )
 
 
+#: Why the evidence counters stay at zero: the factory records ladder
+#: evidence only while ``[autonomy] enabled`` is true.
+_AUTONOMY_DISABLED_NOTE = "Evidence is not recorded while [autonomy] enabled = false."
+
+
+def _report_autonomy_since(
+    ui_impl: UI, state: AutonomyState, *, state_file: Path, enabled: bool
+) -> None:
+    """Print ``since`` only for a ladder record read from disk (#484).
+
+    ``AutonomyState.load`` returns a fresh default when ``state_file`` is
+    missing and when it discards a damaged one, and a fresh default's
+    ``since`` is the time of the call. Printing it would report evidence
+    that was never recorded, with a new start time on every invocation.
+    """
+    recorded = state_file.exists() and state.degraded_reason is None
+    ui_impl.kv("since", state.since if recorded else "-")
+    if not enabled:
+        ui_impl.info(_AUTONOMY_DISABLED_NOTE)
+
+
 @autonomy_group.command(name="status")
 @_autonomy_root_option
 @_autonomy_ui_option
@@ -4910,7 +4932,12 @@ def autonomy_status(root: Path | None, ui: str, no_color: bool) -> None:
         "enabled",
         "yes" if config.enabled else "no ([autonomy] enabled=false)",
     )
-    ui_impl.kv("since", state.since or "-")
+    _report_autonomy_since(
+        ui_impl,
+        state,
+        state_file=AutonomyState.path_for(root_dir),
+        enabled=config.enabled,
+    )
     if state.last_promoted_by:
         ui_impl.kv("promoted by", state.last_promoted_by)
 
