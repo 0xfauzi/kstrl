@@ -387,3 +387,29 @@ def test_a_contract_reset_after_a_passing_attempt_starts_the_run_again(tmp_path:
         Transition.RETRYING,
     ]
     assert comp.failed_check == "linter"
+
+
+def test_a_passing_check_adds_nothing_to_the_count(tmp_path: Path) -> None:
+    """Phase 1 always reports passing checks beside the failing one. Only a
+    failing check's failures count: 2 lint failures next to a passing test
+    suite and a passing typecheck journal 2, not 4."""
+    passing = [
+        CheckResult(name="test_suite", passed=True, message="Tests passed"),
+        CheckResult(name="typecheck", passed=True, message="Typecheck passed"),
+    ]
+    results = iter([VerificationResult(passed=False, checks=[*passing, *_failing(2).checks])])
+    pipeline, manifest, _, _ = _make_pipeline(
+        tmp_path,
+        config=_factory_config(max_retries=10),
+        hooks_overrides={"run_mechanical_verification": lambda *a, **k: next(results)},
+    )
+    comp = manifest.get_component("comp-a")
+    assert comp is not None
+    pipeline.begin_attempt(comp)
+    outcome = pipeline.process_result(
+        "comp-a",
+        ComponentResult("comp-a", success=True, iterations=1, duration_seconds=1.0),
+    )
+    assert outcome is not None
+    assert outcome.transition == Transition.RETRYING
+    assert _journaled_counts(tmp_path) == [(1, 2)]
