@@ -289,6 +289,16 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- A handed-off integration finding no longer stops the blocking loop
+  before a code finding is fixed (#497, part of #480). A round with open
+  code findings and a register or unscoped finding builds the fix from
+  the open ones. Every finding the run handed off, in any round, is still
+  a `contract_failures` line and is named in the `halted_run` item, so the
+  run ends not clean and exits nonzero; a clean later round becomes a red
+  stop that names them. A finding an earlier run handed off does not fail
+  a later run. The state file refuses a finding whose `history` does not
+  give a `runId` for every entry.
+
 - A distiller reply that did not parse is no longer reported as a reply
   that parsed to no facts (#495). The status reads "the distiller's reply
   did not parse: <reason>", the debug dump records `unparseable`, and the
