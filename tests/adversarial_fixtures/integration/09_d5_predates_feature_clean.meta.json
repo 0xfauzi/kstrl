@@ -1,0 +1,18 @@
+{
+  "fixture_id": "int-d5-predates-feature-clean",
+  "design_label": "F-D5-clean",
+  "role": "integration_clean",
+  "kind": "clean",
+  "story": "IC4",
+  "twin_of": "int-d5-predates-feature",
+  "repo_dir": "09_d5_predates_feature_clean_repo",
+  "components": {
+    "tokens": [
+      "src/pastebin/tokens.py"
+    ],
+    "client": [
+      "src/pastebin/client.py"
+    ]
+  },
+  "description": "F-D5 with load_token passing parse_bearer the header value it documents, and a test that a valid token loads. The clean-use case replay E2 checks on the real tree. Clean when the round opens nothing and is not red."
+}

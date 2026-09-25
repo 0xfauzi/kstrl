@@ -26,8 +26,9 @@ from kstrl.review import (
 INTEGRATION_CRITERIA_PROMPT_VERSION = "1.0.0"
 
 # One story per line: "id | title | criterion". Instruction to the reviewer
-# LLM, and the detector itself, so it is enrolled (H3). Its H2 role is
-# `integration`, which has no fixture yet (#480 section 8).
+# LLM, and the detector itself, so it is enrolled (H3). Its H2 roles are
+# `integration` and `integration_clean`, scored on the #480 section 8
+# fixtures in tests/adversarial_fixtures/integration/.
 INTEGRATION_CRITERIA_PROMPT = """\
 IC1 | Calls across component boundaries | Every call from one component into another passes inputs the callee documents as valid and handles every outcome the callee documents, errors and empty results included, and every such callee's docstring describes what its callers actually do.
 IC2 | Stored data read back | Data that one component writes and another component reads back is read under rules that still accept everything written before, so a validation rule tightened for new input cannot make stored data unreadable.

@@ -1,0 +1,23 @@
+{
+  "fixture_id": "int-d5-predates-feature",
+  "design_label": "F-D5",
+  "role": "integration",
+  "kind": "positive",
+  "story": "IC4",
+  "repo_dir": "08_d5_predates_feature_repo",
+  "components": {
+    "tokens": [
+      "src/pastebin/tokens.py"
+    ],
+    "client": [
+      "src/pastebin/client.py"
+    ]
+  },
+  "planted": [
+    {
+      "path": "src/pastebin/client.py",
+      "contains": "parse_bearer(token)"
+    }
+  ],
+  "description": "tokens.parse_bearer exists at the feature base, documented and tested to take a whole header value and to return None for a bare token. The feature's client.load_token passes it the bare PASTEBIN_TOKEN, so every valid token is refused: a later feature misusing a pre-existing function, the cross-spec half of #466. Detected when IC4 fails citing client.py and tokens.py."
+}

@@ -275,8 +275,6 @@ def _run_reviewer(
 
     agent: object | None = None
     try:
-        prd_path.parent.mkdir(parents=True, exist_ok=True)
-        write_integration_prd(prd_path, stories)
         selection = run.pipeline.review_selection
         agent = get_agent(
             selection.agent_cmd,
@@ -286,21 +284,49 @@ def _run_reviewer(
             sandbox=run.pipeline.sandbox_config,
             read_only=True,
         )
-        return run.pipeline.hooks.run_review(
+        return review_commit(
             agent,
-            prd_path,
+            run.pipeline.hooks.run_review,
             worktree,
             run.manifest.feature_base_sha,
-            VerificationResult(passed=True, checks=[]),
-            ReviewMode.HARD,
+            stories,
+            prd_path,
             run.ui,
-            debug_dir=prd_path.parent,
         )
     except Exception as exc:  # noqa: BLE001 - as Phase 2
         return _infra(f"the integration reviewer crashed: {exc}")
     finally:
         if agent is not None:
             run.pipeline.record_integration_usage(collect_usage(agent))
+
+
+def review_commit(
+    agent: object,
+    run_review: Callable[..., ReviewResult],
+    worktree: Path,
+    feature_base_sha: str,
+    stories: Sequence[ExpectedStory],
+    prd_path: Path,
+    ui: UI,
+) -> ReviewResult:
+    """The integration review call: write the PRD at ``prd_path``, then run
+    ``run_review`` in HARD mode over ``feature_base_sha...HEAD`` in ``worktree``.
+
+    The factory and the ``integration`` calibration role both call this, so
+    the call a calibration run measures is the call the factory makes (#482).
+    """
+    prd_path.parent.mkdir(parents=True, exist_ok=True)
+    write_integration_prd(prd_path, stories)
+    return run_review(
+        agent,
+        prd_path,
+        worktree,
+        feature_base_sha,
+        VerificationResult(passed=True, checks=[]),
+        ReviewMode.HARD,
+        ui,
+        debug_dir=prd_path.parent,
+    )
 
 
 def _infra(notes: str) -> ReviewResult:

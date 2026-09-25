@@ -1,0 +1,28 @@
+{
+  "fixture_id": "int-d4-decision-criterion",
+  "design_label": "F-D4",
+  "role": "integration",
+  "kind": "positive",
+  "story": "IC5",
+  "repo_dir": "07_d4_decision_criterion_repo",
+  "components": {
+    "register": [
+      "scripts/kstrl/decisions.json"
+    ],
+    "http-server": [
+      "scripts/kstrl/feature/http-server/prd.json",
+      "src/pastebin/server.py"
+    ]
+  },
+  "planted": [
+    {
+      "path": "scripts/kstrl/decisions.json",
+      "contains": "wait up to 10 seconds"
+    },
+    {
+      "path": "scripts/kstrl/feature/http-server/prd.json",
+      "contains": "at most 2 seconds"
+    }
+  ],
+  "description": "The register's shutdown-semantics decision binds http-server to a 10 second wait; http-server's PRD criterion and its code allow 2 seconds. The #453 D4 register conflict. The register and the PRD are committed at the feature base, as a decompose leaves them. Detected when IC5 fails citing decisions.json and a file of http-server."
+}

@@ -1,0 +1,18 @@
+{
+  "fixture_id": "int-d3-separate-rules-clean",
+  "design_label": "F-D3-clean",
+  "role": "integration_clean",
+  "kind": "clean",
+  "story": "IC3",
+  "twin_of": "int-d3-duplicate-rule",
+  "repo_dir": "06_d3_separate_rules_clean_repo",
+  "components": {
+    "api": [
+      "src/pastebin/api.py"
+    ],
+    "server": [
+      "src/pastebin/server.py"
+    ]
+  },
+  "description": "F-D3 with server.py reading headers through api.header_value, so the whitespace rule has one definition. What remains is the #453 S4/H9 pair: two equal constants the spec states as separate rules. IC3's exception makes that correct, and reporting it is the false positive design #480 section 5 names. Clean when the round opens nothing and is not red."
+}

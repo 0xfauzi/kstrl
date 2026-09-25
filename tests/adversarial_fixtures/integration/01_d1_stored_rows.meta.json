@@ -1,0 +1,23 @@
+{
+  "fixture_id": "int-d1-stored-rows",
+  "design_label": "F-D1",
+  "role": "integration",
+  "kind": "positive",
+  "story": "IC2",
+  "repo_dir": "01_d1_stored_rows_repo",
+  "components": {
+    "snippets": [
+      "src/pastebin/snippets.py"
+    ],
+    "storage": [
+      "src/pastebin/storage.py"
+    ]
+  },
+  "planted": [
+    {
+      "path": "src/pastebin/snippets.py",
+      "contains": "def __post_init__(self) -> None:"
+    }
+  ],
+  "description": "Snippet.__post_init__ applies the rules for a NEW snippet (S1 title length, S2 expiry range) and SnippetStore.list_all builds every stored row through Snippet, so a row stored under an older, wider rule makes the whole list raise SnippetError once S1 or S2 is tightened. The #453 D1 defect. Detected when IC2 fails citing both files."
+}
