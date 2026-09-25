@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
 from kstrl import events as ev
 from kstrl.feedforward import CodebaseScanConfig, build_codebase_scan_context
 from tests.test_event_stream import _setup_project
@@ -56,6 +58,32 @@ def test_scaffold_timeout_says_it_timed_out(tmp_path: Path) -> None:
         "  Scaffold command failed for comp-a: TimeoutExpired: "
         "Command 'sleep 200' timed out after 120 seconds"
     ]
+
+
+def test_scaffold_killed_by_a_signal_is_a_note(tmp_path: Path) -> None:
+    from kstrl.factory import _prepare_component_tree
+
+    # A shell killed by a signal has a negative returncode (-9 here). "Non-zero"
+    # must include it, not only a positive exit status.
+    result = _prepare_component_tree(tmp_path, "comp-a", "kill -9 $$", None, None)
+    assert result == ("", ["  Scaffold command failed for comp-a: exit code -9"])
+
+
+def test_keyboard_interrupt_is_not_turned_into_a_note(tmp_path: Path) -> None:
+    from kstrl.factory import _prepare_component_tree
+
+    # The handlers catch Exception: an operator's Ctrl-C during the scaffold
+    # or the scan must stop the worker, not become a warning.
+    with (
+        patch("kstrl.factory.subprocess.run", side_effect=KeyboardInterrupt),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        _prepare_component_tree(tmp_path, "comp-a", "true", None, None)
+    with (
+        patch("kstrl.factory.build_codebase_scan_context", side_effect=KeyboardInterrupt),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        _prepare_component_tree(tmp_path, "comp-a", None, {"enabled": True}, None)
 
 
 def test_scan_crash_is_a_note(tmp_path: Path) -> None:
