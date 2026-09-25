@@ -143,6 +143,7 @@ from kstrl.verify import (
     scrub_project_claude_md,
 )
 from kstrl.version import kstrl_version
+from kstrl.worktree_sweep import WorktreeSweep, sweep_worktree
 
 if TYPE_CHECKING:
     from kstrl.agents.liveness import ProbeResult
@@ -1056,6 +1057,9 @@ class ComponentResult:
     # section, where R0.4 established the retry agent looks for scope
     # guidance - catching the violation earlier must not relocate it.
     guard_violations: tuple[str, ...] = ()
+    # #461: processes the attempt left running in its worktree, killed
+    # before the result was returned. The pipeline records one finding each.
+    worktree_sweep: WorktreeSweep = field(default_factory=WorktreeSweep)
 
 
 @dataclass
@@ -1418,6 +1422,9 @@ def _setup_worktree(
         # registered-but-missing entry. remove --force clears the
         # registration in that state too (measured on git 2.47); when
         # nothing is registered it fails harmlessly, like `branch -D`.
+        # #461: kill what an earlier attempt's phases left running there
+        # first; the sweep logs each process it kills.
+        sweep_worktree(worktree_path)
         subprocess.run(
             ["git", "worktree", "remove", "--force", str(worktree_path)],
             cwd=root_dir,
@@ -1483,17 +1490,22 @@ def _setup_worktree(
             lock_fp.close()
 
 
-def _cleanup_worktree(component_id: str, root_dir: Path, run_id: str) -> None:
-    """Remove a git worktree for a component of the current run."""
+def _cleanup_worktree(component_id: str, root_dir: Path, run_id: str) -> WorktreeSweep:
+    """Kill what is still running in a component's worktree, then remove it.
+
+    Returns what the sweep found so the caller can record it (#461).
+    """
     worktree_path = root_dir / ".kstrl" / "worktrees" / run_id / component_id
     if not worktree_path.exists():
-        return
+        return WorktreeSweep()
+    sweep = sweep_worktree(worktree_path)
     subprocess.run(
         ["git", "worktree", "remove", "--force", str(worktree_path)],
         cwd=root_dir,
         capture_output=True,
         timeout=30,
     )
+    return sweep
 
 
 def _evidence_worktrees_to_keep(manifest: Manifest) -> set[str]:
@@ -1559,6 +1571,7 @@ def _prune_stale_worktrees(
             if _kept(entry):
                 kept += 1
                 continue
+            sweep_worktree(entry)
             subprocess.run(
                 ["git", "worktree", "remove", "--force", str(entry)],
                 cwd=root_dir,
@@ -1575,6 +1588,7 @@ def _prune_stale_worktrees(
                     if _kept(wt):
                         entry_kept += 1
                         continue
+                    sweep_worktree(wt)
                     subprocess.run(
                         ["git", "worktree", "remove", "--force", str(wt)],
                         cwd=root_dir,
@@ -2386,11 +2400,6 @@ def _run_component(
             # dup2 BEFORE any threads start (chunk 6 invariant); stray
             # library writes land in the transcript, never the terminal.
             _redirect_worker_output(run_paths.engineer_log(component_id))
-            # PR B: a shutdown SIGTERM from the parent must group-kill
-            # this worker's agent subprocess (its own session leader),
-            # not orphan it. Pool mode only - inline mode runs in the
-            # parent, whose handlers belong to the cli/TUI.
-            _install_worker_signal_forwarding()
 
     agent = get_agent(
         agent_cmd,
@@ -2721,6 +2730,7 @@ def _run_component(
             budget_halt_condition=result.budget_halt_condition,
             budget_halt_ceilings=result.budget_halt_ceilings,
             guard_violations=result.guard_violations,
+            worktree_sweep=_attempt_sweep(worktree_path, root_dir),
         )
     except Exception as exc:
         return ComponentResult(
@@ -2733,6 +2743,7 @@ def _run_component(
             # The loop crashed, but any iterations that did run still
             # cost tokens; collect what the agent recorded (R3.1).
             usage=collect_usage(agent),
+            worktree_sweep=_attempt_sweep(worktree_path, root_dir),
         )
     finally:
         if stop_heartbeat is not None:
@@ -2746,9 +2757,33 @@ def _run_component(
                 pass
 
 
+def _attempt_sweep(worktree_path: Path, root_dir: Path) -> WorktreeSweep:
+    """Sweep the attempt's worktree, or nothing when there is no worktree.
+
+    Under ``use_worktrees=False`` the engineer ran in the project root,
+    where the operator's own shells and editors also live, so nothing is
+    swept there.
+    """
+    if worktree_path.resolve() == root_dir.resolve():
+        return WorktreeSweep()
+    return sweep_worktree(worktree_path)
+
+
 def _install_worker_signal_forwarding() -> None:
-    """Pool-worker SIGTERM handler: kill the agent's process group,
-    then exit 130. Installed only on a worker's main thread."""
+    """A pool worker's signal handlers, installed as the pool's initializer.
+
+    SIGTERM kills the agent's process group, then exits 130: that is how
+    ``_abort_inflight`` ends a worker. SIGINT does nothing (#461). Ctrl-C
+    sends SIGINT to every process in the terminal's foreground group, and
+    pool workers are in it. A worker that raised KeyboardInterrupt handed
+    it to the parent through ``future.result()``, which re-raised it past
+    the scheduler: the run exited 1 in 0.07 s with no abort recorded, no
+    worktree cleaned up and every component left RUNNING. The parent owns
+    the stop.
+
+    An initializer rather than a call inside ``_run_component``, which
+    installed it only when progress logging was on. Installed only on a
+    worker's main thread."""
     if threading.current_thread() is not threading.main_thread():
         return
 
@@ -2761,8 +2796,19 @@ def _install_worker_signal_forwarding() -> None:
 
     try:
         signal.signal(signal.SIGTERM, _on_term)
+        signal.signal(signal.SIGINT, _ignore_interrupt)
     except (ValueError, OSError):
         pass
+
+
+def _ignore_interrupt(signum: int, frame: object) -> None:
+    """A pool worker's SIGINT handler: do nothing (#461).
+
+    A function and not ``signal.SIG_IGN``: an ignored disposition survives
+    ``exec``, so the agent and every command its tools run would start
+    with SIGINT ignored. A handler is reset to the default by ``exec``.
+    """
+    del signum, frame
 
 
 def _redirect_worker_output(log_path: Path) -> None:
@@ -3046,7 +3092,10 @@ def _salvage_aborted_usage(
             result = future.result(timeout=0)
         except Exception:  # noqa: BLE001 - a crashed worker reported nothing
             return
-        if result is not None and result.usage is not None:
+        if result is None:
+            return
+        pipeline.record_worktree_sweep(comp_id, result.worktree_sweep, "engineer")
+        if result.usage is not None:
             pipeline.record_engineer_usage(comp_id, result.usage)
         return
     usage_paths = pipeline.usage_paths
@@ -4400,7 +4449,10 @@ def _run_factory_locked(
         if max_parallel <= 1:
             executor = _InlineExecutor()
         else:
-            executor = ProcessPoolExecutor(max_workers=max_parallel)
+            executor = ProcessPoolExecutor(
+                max_workers=max_parallel,
+                initializer=_install_worker_signal_forwarding,
+            )
         slots_cap = max(1, max_parallel)
         running_futures: dict[Future[ComponentResult], str] = {}
         future_deadlines: dict[Future[ComponentResult], float] = {}
@@ -4605,7 +4657,6 @@ def _run_factory_locked(
         if not factory_config.use_worktrees:
             return
         ui.section("Factory: Cleanup")
-        kept_evidence = False
         for comp_id in run_state.worktree_paths:
             if comp_id in leaked_component_ids:
                 # A possibly-live worker still owns this worktree; removing
@@ -4620,15 +4671,22 @@ def _run_factory_locked(
                 and comp.status == ComponentStatus.FAILED.value
             ):
                 comp.evidence_worktree = str(run_state.worktree_paths[comp_id])
-                kept_evidence = True
                 ui.info(
                     "  Keeping failed worktree for post-mortem: "
                     f"{run_state.worktree_paths[comp_id]}"
                 )
+                pipeline.record_worktree_sweep(
+                    comp_id,
+                    sweep_worktree(run_state.worktree_paths[comp_id]),
+                    "cleanup",
+                )
                 continue
-            _cleanup_worktree(comp_id, root_dir, run_id)
-        if kept_evidence:
-            manifest.save(manifest_path)
+            pipeline.record_worktree_sweep(
+                comp_id,
+                _cleanup_worktree(comp_id, root_dir, run_id),
+                "cleanup",
+            )
+        manifest.save(manifest_path)
         # Drop the run's now-empty worktree dir; leaked workers' and
         # failed components' kept worktrees leave it non-empty and it
         # stays for the next run's prune pass (which preserves recorded
