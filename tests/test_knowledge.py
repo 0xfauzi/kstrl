@@ -20,6 +20,7 @@ from kstrl.factory import ComponentResult, FactoryConfig, run_factory
 from kstrl.knowledge import (
     DISTILL_PROMPT,
     MAX_EVIDENCE_ITEM_LENGTH,
+    DistillReply,
     Fact,
     KnowledgeConfig,
     _coerce_facts,
@@ -40,6 +41,7 @@ from kstrl.knowledge import (
 from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
+from tests.helpers.distill_replies import BROKEN_REPLY, EMPTY_REPLY
 
 # ---------------------------------------------------------------------------
 # Test helpers
@@ -1341,20 +1343,34 @@ class TestStreamSizeCap:
 class TestParseDistillOutput:
     def test_valid_json(self) -> None:
         output = json.dumps({"facts": [{"id": "fact-001"}]})
-        assert _parse_distill_output(output) == [{"id": "fact-001"}]
+        assert _parse_distill_output(output) == DistillReply(facts=[{"id": "fact-001"}], error=None)
 
     def test_fenced_json(self) -> None:
         output = '```json\n{"facts": [{"id": "fact-001"}]}\n```'
-        assert _parse_distill_output(output) == [{"id": "fact-001"}]
+        assert _parse_distill_output(output) == DistillReply(facts=[{"id": "fact-001"}], error=None)
 
-    def test_invalid_json_returns_empty(self) -> None:
-        assert _parse_distill_output("garbage") == []
+    def test_empty_facts_list_parses(self) -> None:
+        assert _parse_distill_output('{"facts": []}') == DistillReply(facts=[], error=None)
 
-    def test_missing_facts_key_returns_empty(self) -> None:
-        assert _parse_distill_output('{"other": 1}') == []
+    def test_invalid_json_is_unparseable(self) -> None:
+        assert _parse_distill_output("garbage") == DistillReply(
+            facts=[], error="No valid JSON found in output"
+        )
 
-    def test_facts_not_a_list_returns_empty(self) -> None:
-        assert _parse_distill_output('{"facts": "not a list"}') == []
+    def test_json_that_is_not_an_object_is_unparseable(self) -> None:
+        assert _parse_distill_output('[{"id": "fact-001"}]') == DistillReply(
+            facts=[], error="the reply is not a JSON object"
+        )
+
+    def test_missing_facts_key_is_unparseable(self) -> None:
+        assert _parse_distill_output('{"other": 1}') == DistillReply(
+            facts=[], error='the reply has no "facts" list'
+        )
+
+    def test_facts_not_a_list_is_unparseable(self) -> None:
+        assert _parse_distill_output('{"facts": "not a list"}') == DistillReply(
+            facts=[], error='the reply has no "facts" list'
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1400,7 +1416,7 @@ class TestDistillFacts:
             ]
         )
 
-        written, status = distill_facts(
+        written, status, _parse_failed = distill_facts(
             agent,
             component,
             "diff text",
@@ -1427,7 +1443,7 @@ class TestDistillFacts:
         config = KnowledgeConfig(knowledge_root=knowledge_root)
         agent = _FakeAgent(["garbage that is not json"])
 
-        written, status = distill_facts(
+        written, status, parse_failed = distill_facts(
             agent,
             component,
             "diff",
@@ -1440,7 +1456,8 @@ class TestDistillFacts:
             review_passed=True,
         )
         assert written == 0
-        assert status == "the distiller returned no facts"
+        assert status == "the distiller's reply did not parse: No valid JSON found in output"
+        assert parse_failed is True
 
     def test_empty_facts_returns_no_files(self, tmp_path: Path) -> None:
         component = _make_component("comp-a")
@@ -1449,7 +1466,7 @@ class TestDistillFacts:
         config = KnowledgeConfig(knowledge_root=knowledge_root)
         agent = _FakeAgent([json.dumps({"facts": []})])
 
-        written, status = distill_facts(
+        written, status, _parse_failed = distill_facts(
             agent,
             component,
             "diff",
@@ -1469,6 +1486,89 @@ class TestDistillFacts:
         fact_files = list(knowledge_root.glob("comp-a/*/fact-*.md"))
         assert fact_files == []
 
+    @staticmethod
+    def _debug_status(knowledge_root: Path) -> str:
+        """What the distill dump recorded for comp-a in run-1."""
+        path = knowledge_root / "comp-a" / "_debug" / "run-1" / "_distill_status.txt"
+        return path.read_text(encoding="utf-8")
+
+    def test_unparseable_distill_reply_is_not_reported_as_empty(self, tmp_path: Path) -> None:
+        """#495, the #453 D13 shape: the first fact closes with a doubled
+        brace, so the reply does not parse. That is not a reply that
+        parsed to no facts, and must not be reported as one."""
+        prd_path = self._setup_prd(tmp_path, "comp-a")
+        knowledge_root = tmp_path / "knowledge"
+
+        result = distill_facts(
+            _FakeAgent([BROKEN_REPLY]),
+            _make_component("comp-a"),
+            "diff",
+            prd_path,
+            1,
+            "run-1",
+            knowledge_root,
+            KnowledgeConfig(knowledge_root=knowledge_root),
+            tmp_path,
+            review_passed=True,
+        )
+
+        assert result[1] == "the distiller's reply did not parse: No valid JSON found in output"
+        assert self._debug_status(knowledge_root) == "unparseable"
+        assert result == (
+            0,
+            "the distiller's reply did not parse: No valid JSON found in output",
+            True,
+        )
+        assert read_facts(knowledge_root, "comp-a") == []
+
+    def test_clean_empty_reply_is_reported_as_no_facts(self, tmp_path: Path) -> None:
+        """#495: a reply that parsed to an empty facts list keeps the
+        no_facts status and is not a parse failure."""
+        prd_path = self._setup_prd(tmp_path, "comp-a")
+        knowledge_root = tmp_path / "knowledge"
+
+        result = distill_facts(
+            _FakeAgent([EMPTY_REPLY]),
+            _make_component("comp-a"),
+            "diff",
+            prd_path,
+            1,
+            "run-1",
+            knowledge_root,
+            KnowledgeConfig(knowledge_root=knowledge_root),
+            tmp_path,
+            review_passed=True,
+        )
+
+        assert result == (0, "the distiller returned no facts", False)
+        assert self._debug_status(knowledge_root) == "no_facts"
+
+    def test_facts_that_are_not_objects_are_reported_as_no_valid_facts(
+        self, tmp_path: Path
+    ) -> None:
+        """#495: a facts list whose entries are not objects parsed, and
+        every entry failed validation. That is no_valid_facts, not an
+        empty reply."""
+        prd_path = self._setup_prd(tmp_path, "comp-a")
+        knowledge_root = tmp_path / "knowledge"
+
+        written, status, parse_failed = distill_facts(
+            _FakeAgent(['{"facts": ["not an object"]}']),
+            _make_component("comp-a"),
+            "diff",
+            prd_path,
+            1,
+            "run-1",
+            knowledge_root,
+            KnowledgeConfig(knowledge_root=knowledge_root),
+            tmp_path,
+            review_passed=True,
+        )
+
+        assert status.startswith("the distiller returned no valid fact (raw: ")
+        assert (written, parse_failed) == (0, False)
+        assert self._debug_status(knowledge_root) == "no_valid_facts"
+
     def test_disabled_short_circuits(self, tmp_path: Path) -> None:
         component = _make_component("comp-a")
         prd_path = self._setup_prd(tmp_path, "comp-a")
@@ -1476,7 +1576,7 @@ class TestDistillFacts:
         config = KnowledgeConfig(knowledge_root=knowledge_root, enabled=False)
         agent = _FakeAgent([json.dumps({"facts": [{"id": "fact-001"}]})])
 
-        written, status = distill_facts(
+        written, status, _parse_failed = distill_facts(
             agent,
             component,
             "diff",
@@ -1517,7 +1617,7 @@ class TestDistillFacts:
             ]
         )
 
-        written, _status = distill_facts(
+        written, _status, _parse_failed = distill_facts(
             agent,
             component,
             "diff",
@@ -1597,7 +1697,7 @@ prompt echoed back: schema is
             def final_message(self) -> str | None:
                 return real_response
 
-        written, _status = distill_facts(
+        written, _status, _parse_failed = distill_facts(
             _EchoingAgent(),
             component,
             "diff",
@@ -1669,7 +1769,7 @@ prompt echoed back: schema is
                 # Only the last line, like CustomAgent records
                 return multi_line_json.split(",")[-1]
 
-        written, status = distill_facts(
+        written, status, _parse_failed = distill_facts(
             _PartialFinalAgent(),
             component,
             "diff",
@@ -1762,7 +1862,7 @@ class TestFailedDistillRetention:
             for i in range(1, 8)
         ]
         run1 = "factory-20260101-120000.000000-aaaaaa"
-        written, _status = distill_facts(
+        written, _status, _parse_failed = distill_facts(
             _FakeAgent([json.dumps({"facts": seven})]),
             component,
             "diff",
@@ -1777,7 +1877,7 @@ class TestFailedDistillRetention:
         assert written == 7
 
         run2 = "factory-20260102-120000.000000-bbbbbb"
-        written2, status2 = distill_facts(
+        written2, status2, _parse_failed = distill_facts(
             _FakeAgent(["garbage that is not json"]),
             component,
             "diff",
@@ -1790,7 +1890,7 @@ class TestFailedDistillRetention:
             review_passed=True,
         )
         assert written2 == 0
-        assert status2 == "the distiller returned no facts"
+        assert status2 == "the distiller's reply did not parse: No valid JSON found in output"
 
         facts = read_facts(knowledge_root, "comp-a")
         assert {f.id for f in facts} == {f"fact-{i:03d}" for i in range(1, 8)}
@@ -1856,7 +1956,7 @@ class TestTestVerifiedCrossCheck:
                 )
             ]
         )
-        written, status = distill_facts(
+        written, status, _parse_failed = distill_facts(
             agent,
             component,
             "diff",
@@ -2311,7 +2411,7 @@ class TestFactoryDistillIntegration:
             ),
             patch(
                 "kstrl.factory.distill_facts",
-                return_value=(2, "ok"),
+                return_value=(2, "ok", False),
             ) as mock_distill,
             patch(
                 "kstrl.git.get_diff_content",
@@ -2349,7 +2449,7 @@ class TestFactoryDistillIntegration:
             ),
             patch(
                 "kstrl.factory.distill_facts",
-                return_value=(0, "skipped"),
+                return_value=(0, "skipped", False),
             ) as mock_distill,
         ):
             result = run_factory(manifest, config, base, ui, root)
@@ -2391,7 +2491,7 @@ class TestFactoryDistillIntegration:
             ),
             patch(
                 "kstrl.factory.distill_facts",
-                return_value=(0, "disabled"),
+                return_value=(0, "disabled", False),
             ) as mock_distill,
             patch(
                 "kstrl.git.get_diff_content",
@@ -2438,7 +2538,7 @@ class TestFactoryDistillIntegration:
             ),
             patch(
                 "kstrl.factory.distill_facts",
-                return_value=(0, "ok"),
+                return_value=(0, "ok", False),
             ) as mock_distill,
             patch(
                 "kstrl.git.get_diff_content",
@@ -2487,7 +2587,7 @@ class TestFactoryDistillIntegration:
             ),
             patch(
                 "kstrl.factory.distill_facts",
-                return_value=(1, "ok"),
+                return_value=(1, "ok", False),
             ) as mock_distill,
             patch(
                 "kstrl.git.get_diff_content",
@@ -2553,8 +2653,8 @@ class TestDistillStatusIsAnOperatorSentence:
         return heads
 
     def test_every_return_is_seen(self) -> None:
-        """The census control: six returns today, each with a status."""
-        assert len(self._status_heads()) == 6
+        """The census control: seven returns today, each with a status."""
+        assert len(self._status_heads()) == 7
 
     def test_no_status_is_a_message_key(self) -> None:
         assert [head for head in self._status_heads() if head.startswith("knowledge.")] == []

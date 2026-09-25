@@ -162,7 +162,7 @@ def _recording_hooks(
             "security",
             SecurityResult(passed=True, mode="advisory"),
         ),
-        distill_facts=_rec("distill", (1, "1 fact written")),
+        distill_facts=_rec("distill", (1, "1 fact written", False)),
         measure_fact_utilization=_rec(
             "utilization",
             {"injected": 0, "referenced": 0},
@@ -1717,6 +1717,22 @@ class TestFactUtilizationRecording:
             for f in dataclasses.fields(distills[0])
         )
 
+    def test_distill_result_carries_the_hooks_parse_failed_flag(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """#495: ``parse_failed`` on the event is the third element
+        distill_facts returned, not something read back out of the status
+        text. The status here names no parse failure while the flag is
+        True, so a pipeline that parses the text reports False."""
+        _, _, captured, _ = self._run(
+            tmp_path,
+            distill=lambda *a, **k: (0, "the distiller returned no facts", True),
+        )
+        distills = [e for e in captured if isinstance(e, ev.DistillResult)]
+        assert len(distills) == 1
+        assert distills[0].parse_failed is True
+
     def test_measured_against_the_injected_prefix(
         self,
         tmp_path: Path,
@@ -1755,7 +1771,7 @@ class TestFactUtilizationRecording:
         """
         knowledge_root = tmp_path / "knowledge"
 
-        def distill(*args: Any, **kwargs: Any) -> tuple[int, str]:
+        def distill(*args: Any, **kwargs: Any) -> tuple[int, str, bool]:
             # Stand-in for write_facts: land new facts for this same
             # component, exactly what a rebuild would then pick up.
             dest = knowledge_root / "comp-a" / "run-test"
@@ -1763,7 +1779,7 @@ class TestFactUtilizationRecording:
             (dest / "new.md").write_text(
                 "- **comp-a**[api] {review_passed}: freshly distilled fact\n"
             )
-            return 1, "1 fact written"
+            return 1, "1 fact written", False
 
         seen: list[str] = []
 

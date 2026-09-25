@@ -228,8 +228,8 @@ class TestTheConsumersOfTheCheckName:
 
     def test_both_names_categorise_as_verification(self) -> None:
         """The new name because a name absent from
-        ``_CATEGORY_BY_CHECK`` falls through to "iteration", filing a
-        Phase 1 gate under the engineer loop; the old one because
+        ``_CATEGORY_BY_CHECK`` is "unenrolled" (#496), which routes a
+        Phase 1 gate to no proposal at all; the old one because
         journal entries written before the split carry
         ``diff_scope:...`` signatures and are not migrated."""
         assert category_for_check("scope_unreadable") == "verification"
