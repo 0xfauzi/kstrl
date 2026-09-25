@@ -318,3 +318,40 @@ def test_blocking_with_the_review_off_fails_the_run(tmp_path: Path) -> None:
     assert result.contract_failures == ["integration not_run: [factory] integration_review = false"]
     assert result.exit_code == 1
     assert len(lp.run_halts(root)) == 1
+
+
+def test_a_finding_citing_kstrl_files_is_handed_off(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    base, _head = lp.loop_feature(root)
+    h.commit_file(root, "scripts/kstrl/notes.md", "harness notes\n")
+    cites = {"IC2": ("fail", f"{h.STORE}:1 and scripts/kstrl/notes.md:1 disagree")}
+    rig = lp.Rig(root, lp.ScriptedReviewer(base, [cites]))
+
+    result, _out = lp.run_loop(root, rig)
+
+    assert rig.launched == []
+    finding = lp.state(root)["findings"][0]
+    assert finding["status"] == "handoff"
+    assert finding["handoffReason"] == "it cites kstrl's own files: scripts/kstrl/notes.md"
+    assert lp.manifest_ids(root) == ["comp-a", "comp-b"]
+    assert result.exit_code == 1
+
+
+def test_a_feature_prd_that_cannot_be_read_stops_the_loop_red(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    base, _head = lp.loop_feature(root)
+    (root / "scripts" / "kstrl" / "feature" / "comp-b" / "prd.json").write_text(
+        "{not json", encoding="utf-8"
+    )
+    rig = lp.Rig(root, lp.ScriptedReviewer(base, [lp.IC2_FAIL]))
+
+    result, _out = lp.run_loop(root, rig)
+
+    assert rig.launched == []
+    assert lp.manifest_ids(root) == ["comp-a", "comp-b"]
+    stop = lp.state(root)["stops"][-1]
+    assert stop["outcome"] == "red"
+    assert stop["reason"].startswith("a feature PRD could not be read")
+    assert lp.state(root).get("fixes", []) == []
+    assert result.exit_code == 1
+    assert len(lp.run_halts(root)) == 1
