@@ -705,7 +705,8 @@ class ComponentPipeline:
         # attempt, keyed by component id, for [factory] convergence_attempts.
         # In-run only for the reasons review_readings gives above, and
         # cleared by an attempt that produced no count or failed in a
-        # different phase.
+        # different phase, and by a contract-breaker reset
+        # (record_contract_failure).
         self.failure_counts: dict[str, list[tuple[str, int]]] = {}
         # #247: which skippable phases produced a reading, per component
         # and per attempt, as (attempt, phase) pairs. Merged into the
@@ -1776,6 +1777,10 @@ class ComponentPipeline:
         ctx.add_contract_failure(test_output, attempt=attempt)
         self._merge_phase_readings(comp_id, ctx)
         self.component_contexts[comp_id] = ctx.to_json()
+        # #233: the attempt passed every gate before its contract test
+        # failed, so it has no gate count, and the run of readings starts
+        # again, as it does after any attempt that produced no count.
+        self.failure_counts.pop(comp_id, None)
 
     def retry_or_fail(
         self,

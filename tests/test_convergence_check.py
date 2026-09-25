@@ -342,3 +342,48 @@ def test_convergence_attempts_loads_from_toml_and_env(
     monkeypatch.setenv("KSTRL_FACTORY_CONVERGENCE_ATTEMPTS", "3")
     assert FactoryConfig.load(tmp_path).convergence_attempts == 3
     assert FactoryConfig.from_env().convergence_attempts == 3
+
+
+@pytest.mark.usefixtures("_no_real_diff")
+def test_a_contract_reset_after_a_passing_attempt_starts_the_run_again(tmp_path: Path) -> None:
+    """Attempts 1 and 2 fail Phase 1 with 2 failures, attempt 3 passes every
+    gate, and the contract breaker resets it. Attempt 3 counted nothing, so
+    attempt 4 failing with 2 again is one reading, not the third of a run."""
+    results = iter(
+        [_failing(2), _failing(2), VerificationResult(passed=True, checks=[]), _failing(2)]
+    )
+    pipeline, manifest, _, _ = _make_pipeline(
+        tmp_path,
+        config=_factory_config(max_retries=10, convergence_attempts=2),
+        hooks_overrides={"run_mechanical_verification": lambda *a, **k: next(results)},
+    )
+    comp = manifest.get_component("comp-a")
+    assert comp is not None
+    transitions: list[Transition] = []
+    for attempt in range(4):
+        pipeline.begin_attempt(comp)
+        outcome = pipeline.process_result(
+            "comp-a",
+            ComponentResult(
+                "comp-a",
+                success=True,
+                iterations=1,
+                duration_seconds=1.0,
+                context_json=pipeline.component_contexts.get("comp-a"),
+            ),
+        )
+        assert outcome is not None
+        transitions.append(outcome.transition)
+        if attempt == 2:
+            # The factory's contract-breaker reset, as run_factory does it.
+            pipeline.journal_superseded_findings(comp)
+            comp.retries += 1
+            comp.status = ComponentStatus.PENDING.value
+            pipeline.record_contract_failure("comp-a", comp.retries, "contract output")
+    assert transitions == [
+        Transition.RETRYING,
+        Transition.RETRYING,
+        Transition.COMPLETED,
+        Transition.RETRYING,
+    ]
+    assert comp.failed_check == "linter"
