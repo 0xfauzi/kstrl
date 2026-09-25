@@ -133,7 +133,9 @@ def _sample_events() -> list[ev.Event]:
         ev.PrCreated(component="comp-a", pr_number=7, pr_url="http://pr/7"),
         ev.PrMerged(component="comp-a", pr_number=7, pr_url="http://pr/7", merge_sha="a" * 40),
         ev.PrMergePending(component="comp-a", pr_url="http://pr/7", error="pending"),
-        ev.DistillResult(component="comp-a", facts_written=3, duration_seconds=12.0),
+        ev.DistillResult(
+            component="comp-a", facts_written=3, duration_seconds=12.0, parse_failed=True
+        ),
         ev.FactUtilizationMeasured(
             component="comp-a",
             measured=True,

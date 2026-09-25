@@ -4611,7 +4611,7 @@ def evolve(
     ui_impl.section("Evolution: Analyzing Runs")
     patterns = journal.get_cross_run_patterns(lookback_runs=evo_config.lookback_runs)
     routing = route_patterns(patterns)
-    _report_patterns_and_readiness(journal, evo_config, patterns, routing, ui_impl)
+    _report_patterns_and_readiness(journal, evo_config, patterns, routing, ui_impl, root_dir)
 
     if not patterns:
         sys.exit(0)
@@ -4664,6 +4664,7 @@ def _report_patterns_and_readiness(
     patterns: list[FailurePattern],
     routing: PatternRouting,
     ui_impl: UI,
+    root_dir: Path,
 ) -> None:
     """Print the patterns found, the routing disclosure and the
     readiness numbers, in that order, whether or not any pattern
@@ -4685,7 +4686,7 @@ def _report_patterns_and_readiness(
         ui_impl.info("Run more factory sessions to accumulate data.")
 
     _echo_pattern_routing(routing, ui_impl)
-    _echo_learning_readiness(journal, evo_config, patterns, ui_impl)
+    _echo_learning_readiness(journal, evo_config, patterns, ui_impl, root_dir)
 
 
 def _echo_pattern_routing(routing: PatternRouting, ui_impl: UI) -> None:
@@ -4728,8 +4729,9 @@ def _echo_learning_readiness(
     evo_config: EvolutionConfig,
     patterns: list[FailurePattern],
     ui_impl: UI,
+    root_dir: Path,
 ) -> None:
-    """Print the three numbers that gate the unbuilt phases of #217.
+    """Print the numbers that gate the unbuilt phases of #217.
 
     Sections 5.2 and 7 of docs/continuous-learning-design.md both say
     the attribution thresholds must be measured before they are chosen,
@@ -4741,6 +4743,8 @@ def _echo_learning_readiness(
     already computed it from the same journal, and a second read is a
     second answer to one question.
     """
+    from kstrl.distill_readiness import distill_parse_failure_line
+
     util = journal.get_fact_utilization(lookback_runs=evo_config.lookback_runs)
     concern = journal.get_concern_hit_rate(lookback_runs=evo_config.lookback_runs)
     superseded_only = sum(1 for pattern in patterns if pattern.superseded_only)
@@ -4762,6 +4766,9 @@ def _echo_learning_readiness(
         f"{concern['components']} components"
         + (f", by category: {by_category}" if by_category else "")
     )
+    # #495: the one reader of DistillResult.parse_failed. From the event
+    # stream, not the journal; the module docstring says why.
+    ui_impl.info(distill_parse_failure_line(root_dir, evo_config.lookback_runs))
 
 
 def _evolve_apply(
