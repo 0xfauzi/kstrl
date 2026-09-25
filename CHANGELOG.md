@@ -289,6 +289,16 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- `ks factory` and `ks decompose` read `[agent]` in kstrl.toml at
+  startup. They read the engineer command, model, reasoning effort and
+  type from the flags and the environment only, so a project whose
+  kstrl.toml sets `[agent] command`, on a machine with neither claude nor
+  codex, was refused with "No agent available" before the run that would
+  have used that command. The order is now flag, then environment, then
+  kstrl.toml, the order `KstrlConfig.load` already used for the run
+  itself. The #498 tests passed on a machine with claude installed and
+  failed in CI; they now run with no agent CLI on PATH.
+
 - A handed-off integration finding no longer stops the blocking loop
   before a code finding is fixed (#497, part of #480). A round with open
   code findings and a register or unscoped finding builds the fix from

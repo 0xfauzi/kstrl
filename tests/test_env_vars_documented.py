@@ -121,7 +121,9 @@ def test_the_walk_reaches_the_real_tree() -> None:
     """Both layers run on kstrl/: a prefixed name read through a table,
     an unprefixed literal read, and every listed exception."""
     found = _names_read_by_kstrl()
-    assert {"KSTRL_SERVE_POLL_INTERVAL", "KSTRL_SERVE_REQUIRE_TIMEOUT", "MODEL"} <= set(found)
+    assert {"KSTRL_SERVE_POLL_INTERVAL", "KSTRL_SERVE_REQUIRE_TIMEOUT", "MAX_ITERATIONS"} <= set(
+        found
+    )
     assert set(NOT_KSTRL_SETTINGS) <= set(found), "an exception no longer read; drop it"
 
 
