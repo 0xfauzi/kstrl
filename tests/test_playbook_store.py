@@ -205,6 +205,18 @@ def test_signatures_and_run_ids_are_accepted_as_evidence(xdg: Path) -> None:
     assert load_playbook().lessons[0].evidence == evidence
 
 
+def test_a_batch_with_one_refused_op_writes_none_of_it(xdg: Path) -> None:
+    """``append_ops`` validates every op before it writes any, so a
+    refused op cannot leave the ops in front of it on disk."""
+    good = Op(OpKind.ADD, "L1", AT, lesson=_lesson("L1"))
+    bad = Op(OpKind.ADD, "L2", AT, lesson=_lesson("L2", evidence=("kstrl/playbook.py:42",)))
+
+    with pytest.raises(PlaybookError, match=r"op 1\b.*evidence\[0\]"):
+        append_ops([good, bad])
+
+    assert not ledger_path().exists()
+
+
 def _write_toml(root: Path, body: bytes) -> None:
     (root / "kstrl.toml").write_bytes(body)
 
