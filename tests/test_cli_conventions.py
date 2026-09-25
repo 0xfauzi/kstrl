@@ -89,6 +89,7 @@ EMPTY_REPO_EXITS: tuple[tuple[tuple[str, ...], tuple[str, ...], int, str], ...] 
     (("inbox", "show"), ("x",), 2, "no such inbox item"),
     (("inbox", "snooze"), ("x",), 2, "no such inbox item"),
     (("init",), ("--ui", "plain"), 0, "scaffolds the project"),
+    (("learn", "playbook"), (), 0, "an empty playbook is an answer"),
     (("queue", "add"), ("spec.md",), 0, "queues the spec"),
     (("queue", "ls"), (), 0, "an empty queue"),
     (("queue", "pause"), (), 0, "pauses intake"),

@@ -427,3 +427,11 @@ token_env = "KSTRL_SIGNALS_TOKEN"  # env var holding the tracker's bearer token
 http_timeout = 10.0
 new_issue_events = 3               # advisory only: labels, gates nothing
 repeat_growth_events = 10          # advisory only: labels, gates nothing
+
+# Cross-project learning (#217). The global playbook is an append-only
+# ledger under $XDG_STATE_HOME/kstrl/global/playbook/, outside every
+# repository. `ks learn playbook` prints it. If this file cannot be read,
+# contribute is false for that run.
+[learning]
+contribute = true                  # append this project's lessons to the global playbook
+consume = true                     # read global playbook lessons into prompts

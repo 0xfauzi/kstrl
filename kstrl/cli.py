@@ -6210,6 +6210,35 @@ def signals_ls(root: Path | None, ui: str, no_color: bool) -> None:
     sys.exit(0)
 
 
+@cli.group(name="learn")
+def learn_group() -> None:
+    """Inspect the cross-project learning store (#217). Read-only."""
+
+
+@learn_group.command(name="playbook")
+@_autonomy_ui_option
+@_autonomy_no_color_option
+def learn_playbook(ui: str, no_color: bool) -> None:
+    """Print the folded global playbook and its ledger's line count and SHA-256."""
+    from kstrl.playbook import PlaybookError, load_playbook
+
+    ui_impl = _autonomy_ui(ui, no_color)
+    try:
+        playbook = load_playbook()
+    except (PlaybookError, OSError) as exc:
+        ui_impl.err(f"the global playbook could not be read: {exc}")
+        sys.exit(2)
+    ui_impl.section("Playbook")
+    if not playbook.lessons:
+        ui_impl.ok("No lessons recorded yet.")
+    for lesson in playbook.lessons:
+        ui_impl.info(f"  {lesson.id}  {lesson.status:<8} {lesson.section}: {lesson.insight}")
+    ui_impl.kv("ledger", str(playbook.path))
+    ui_impl.kv("lines", str(playbook.line_count))
+    ui_impl.kv("sha256", playbook.sha256)
+    sys.exit(0)
+
+
 @cli.command()
 @click.option(
     "--once",

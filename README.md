@@ -272,6 +272,7 @@ ks inbox retry ITEM_ID          Requeue the item's component and close the item.
 ks inbox show ITEM_ID           Show one item in full, including its evidence.
 ks inbox snooze ITEM_ID         Defer an item; it returns when the TTL lapses.
 ks init [DIRECTORY]             Initialize kstrl in a project directory.
+ks learn playbook               Print the folded global playbook and its ledger's line count and SHA-256.
 ks queue add SPEC               Enqueue a spec file.
 ks queue ls                     List queue items in run order.
 ks queue pause                  Stop admitting queued work.
@@ -555,6 +556,11 @@ token_env = "KSTRL_SIGNALS_TOKEN"   # NAME of the env var holding the tracker's 
 http_timeout = 10.0                 # per-request timeout
 new_issue_events = 3                # advisory threshold; labels a new issue, gates nothing
 repeat_growth_events = 10           # advisory threshold; labels a repeat, gates nothing
+
+# Cross-project learning: the global playbook (#217)
+[learning]
+contribute = true  # append this project's lessons to the global playbook
+consume = true     # read global playbook lessons into this project's prompts
 ```
 
 Environment variables override kstrl.toml, and CLI flags override both.

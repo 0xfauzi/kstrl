@@ -58,6 +58,10 @@ EXPECTED_SURFACE_CLASSES: dict[str, frozenset[str]] = {
         "InboxConfig",
         "KnowledgeConfig",
         "KstrlConfig",
+        # LearningConfig is not in RunEnvelope yet: nothing in a factory
+        # run reads it until slice 8 of #217, which is where that
+        # decision belongs. Today only `ks learn` and the preflight load it.
+        "LearningConfig",
         "LinearConfig",
         "NotifyConfig",
         "PolicyConfig",
