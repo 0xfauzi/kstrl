@@ -662,4 +662,8 @@ class TestTheRouterCountsSupersededAttempts:
             result.output
         )
         assert "'iteration'" not in result.output
+        assert (
+            "A check name not in evolution._CATEGORY_BY_CHECK lands here too, "
+            "with category 'unenrolled'."
+        ) in result.output
         assert list((tmp_path / ".kstrl" / "proposals").glob("prop-*.md")) == []
