@@ -420,3 +420,34 @@ def test_run_wide_allowed_paths_match_by_id_only(tmp_path: Path) -> None:
     tiers = _tiers(prefix)
     assert tiers[TIER_CORE] == []
     assert tiers[TIER_SIBLING] == ["The CLI exits 2 on bad input."]
+
+
+def test_an_exact_file_entry_holds_that_file(tmp_path: Path) -> None:
+    """An ``allowedPaths`` entry may name one file (``guards.path_is_allowed``
+    accepts exact-file entries). That entry holds the file itself, so a fact
+    citing it is core, and a fact citing a neighbouring file is not."""
+    root, worktree = tmp_path / "knowledge", tmp_path / "wt"
+    _touch(worktree, "src/cli/main.py", "src/cli/other.py")
+    _store(
+        root,
+        "old-cli",
+        [
+            _fact("fact-001", "old-cli", "Main parses argv.", ["src/cli/main.py:1"]),
+            _fact("fact-002", "old-cli", "Other is not listed.", ["src/cli/other.py:1"]),
+        ],
+    )
+    manifest = _manifest(_component("cli"))
+
+    prefix = build_knowledge_context(
+        manifest,
+        manifest.components[0],
+        root,
+        _config(root),
+        allowed_paths=["src/cli/main.py"],
+        dependency_paths={},
+        worktree=worktree,
+    )
+
+    tiers = _tiers(prefix)
+    assert tiers[TIER_CORE] == ["Main parses argv."]
+    assert tiers[TIER_SIBLING] == ["Other is not listed."]
