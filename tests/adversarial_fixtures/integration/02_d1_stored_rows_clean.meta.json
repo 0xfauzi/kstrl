@@ -1,0 +1,18 @@
+{
+  "fixture_id": "int-d1-stored-rows-clean",
+  "design_label": "F-D1-clean",
+  "role": "integration_clean",
+  "kind": "clean",
+  "story": "IC2",
+  "twin_of": "int-d1-stored-rows",
+  "repo_dir": "02_d1_stored_rows_clean_repo",
+  "components": {
+    "snippets": [
+      "src/pastebin/snippets.py"
+    ],
+    "storage": [
+      "src/pastebin/storage.py"
+    ]
+  },
+  "description": "F-D1 with the rules moved from Snippet construction into new_snippet, so a stored row is read back without being re-validated. Clean when the round opens nothing and is not red."
+}

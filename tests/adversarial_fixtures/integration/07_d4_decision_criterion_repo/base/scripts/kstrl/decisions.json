@@ -1,0 +1,32 @@
+{
+  "project": "pastebin",
+  "specFile": "spec.md",
+  "generatedAt": "2026-09-01T10:00:00Z",
+  "halted": false,
+  "counts": {
+    "escalated": 0,
+    "decided": 2,
+    "assumed": 0,
+    "spiked": 0
+  },
+  "decisions": [
+    {
+      "issue": "shutdown-semantics",
+      "question": "How long may the server wait for in-flight requests after SIGTERM before it exits?",
+      "disposition": "decided",
+      "resolution": "Stop accepting connections at once, then wait up to 10 seconds for in-flight requests before exiting.",
+      "reason": "Uploads of large snippets over slow links take several seconds, and 10 seconds lets them complete.",
+      "alternative": "Exit at once and drop in-flight requests.",
+      "component": "http-server"
+    },
+    {
+      "issue": "listen-address",
+      "question": "Which address does the server listen on by default?",
+      "disposition": "decided",
+      "resolution": "127.0.0.1:8080 unless PASTEBIN_ADDR is set.",
+      "reason": "A local default does not expose the service by accident.",
+      "alternative": "0.0.0.0:8080.",
+      "component": "http-server"
+    }
+  ]
+}

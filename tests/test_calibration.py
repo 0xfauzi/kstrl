@@ -84,6 +84,20 @@ from kstrl.security import (
     parse_security_output,
 )
 from tests.conftest import make_review_repo
+from tests.helpers.calibration_integration_fixture import (
+    INTEGRATION_CLEAN_ROLE,
+    INTEGRATION_ROLE,
+    BoundedAgent,
+    FixtureRound,
+    IntegrationFixture,
+    agent_failure,
+    detected,
+    integration_clean_twins,
+    integration_positives,
+    opened_nothing,
+    review_fixture,
+    run_slot,
+)
 from tests.helpers.calibration_repo_fixture import (
     FIXTURES_DIR,
     REUSE_ROLE,
@@ -1028,9 +1042,11 @@ def _gate_on_consistency(
     *,
     category: str | None = None,
     cwe: str | None = None,
+    threshold: float = calibration_baseline.FIXTURE_DETECTION_THRESHOLD,
 ) -> None:
     """Run ``run_once`` CALIBRATION_RUNS times, record every run, then
-    assert the fixture's consistency meets the codified threshold."""
+    assert the fixture's consistency meets ``threshold`` (default: the
+    codified majority threshold; the integration roles pass their floor)."""
     detected = 0
     errored = 0
     details: list[str] = []
@@ -1058,10 +1074,10 @@ def _gate_on_consistency(
     if completed == 0:
         pytest.skip(f"agent unavailable for all {CALIBRATION_RUNS} runs")
     observed = calibration_baseline.consistency(detected, completed)
-    assert observed >= calibration_baseline.FIXTURE_DETECTION_THRESHOLD, (
+    assert observed >= threshold, (
         f"{role} missed planted issue {fixture_id} in most runs: "
         f"consistency {detected}/{completed} = {observed:.2f} < "
-        f"{calibration_baseline.FIXTURE_DETECTION_THRESHOLD}\n" + "\n".join(details)
+        f"{threshold}\n" + "\n".join(details)
     )
 
 
@@ -1508,6 +1524,77 @@ def test_architect_reuses_what_the_repository_already_has(
         report,
         run_once,
         category=arm.name,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Integration review (#482; design #480 section 8, Layer B)
+# ---------------------------------------------------------------------------
+
+#: The pytest ids are the fixture ids a run records under;
+#: tests/test_calibration_integration_fixture.py pins that they are.
+INTEGRATION_POSITIVE_PARAMS = [pytest.param(f, id=f.fixture_id) for f in integration_positives()]
+INTEGRATION_CLEAN_PARAMS = [pytest.param(f, id=f.fixture_id) for f in integration_clean_twins()]
+
+
+def _integration_run_once(fixture: IntegrationFixture, tmp_path: Path) -> FixtureRound:
+    """One review of ``fixture`` by the reviewer calibration agent, in a
+    fresh repository, through the call the factory makes."""
+    agent = BoundedAgent(_get_reviewer_calibration_agent(), AGENT_RUN_TIMEOUT_S)
+    review_round = review_fixture(fixture, agent, run_slot(fixture, tmp_path))
+    failure = agent_failure(agent, review_round.result)
+    if failure:
+        raise _AgentUnavailable(failure)
+    return review_round
+
+
+@_skip_unless_calibrating
+@pytest.mark.parametrize("fixture", INTEGRATION_POSITIVE_PARAMS)
+def test_integration_review_detects_planted_defect(
+    fixture: IntegrationFixture,
+    tmp_path: Path,
+    report: _DetectionReport,
+) -> None:
+    """The integration review fails the fixture's story and cites a file of
+    every component the meta names, in at least the INTEGRATION_ROLE floor
+    of runs (0.65: two of three). Design #480 section 8 acceptance, adopted
+    by its decision 6; a capture that meets it is what may turn the review
+    blocking."""
+
+    def run_once() -> tuple[bool, str]:
+        return detected(fixture, _integration_run_once(fixture, tmp_path))
+
+    _gate_on_consistency(
+        INTEGRATION_ROLE,
+        fixture.fixture_id,
+        report,
+        run_once,
+        category=fixture.story,
+        threshold=calibration.min_role_rate(INTEGRATION_ROLE),
+    )
+
+
+@_skip_unless_calibrating
+@pytest.mark.parametrize("fixture", INTEGRATION_CLEAN_PARAMS)
+def test_integration_review_opens_nothing_on_a_clean_twin(
+    fixture: IntegrationFixture,
+    tmp_path: Path,
+    report: _DetectionReport,
+) -> None:
+    """A clean twin opens no finding and is not red in ANY run (the
+    INTEGRATION_CLEAN_ROLE floor, 1.0). Every false finding would buy a fix
+    component that can merge a wrong change (design #480 section 8)."""
+
+    def run_once() -> tuple[bool, str]:
+        return opened_nothing(_integration_run_once(fixture, tmp_path))
+
+    _gate_on_consistency(
+        INTEGRATION_CLEAN_ROLE,
+        fixture.fixture_id,
+        report,
+        run_once,
+        category=fixture.story,
+        threshold=calibration.min_role_rate(INTEGRATION_CLEAN_ROLE),
     )
 
 

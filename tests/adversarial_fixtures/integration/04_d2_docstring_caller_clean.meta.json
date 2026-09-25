@@ -1,0 +1,18 @@
+{
+  "fixture_id": "int-d2-docstring-caller-clean",
+  "design_label": "F-D2-clean",
+  "role": "integration_clean",
+  "kind": "clean",
+  "story": "IC1",
+  "twin_of": "int-d2-docstring-caller",
+  "repo_dir": "04_d2_docstring_caller_clean_repo",
+  "components": {
+    "tokens": [
+      "src/pastebin/tokens.py"
+    ],
+    "api": [
+      "src/pastebin/api.py"
+    ]
+  },
+  "description": "F-D2 with parse_bearer's docstring stating what its caller does: strip optional whitespace first. Clean when the round opens nothing and is not red."
+}

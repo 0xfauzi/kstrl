@@ -69,6 +69,9 @@ EXPECTED_IDENTITY_SPELLINGS: dict[str, int] = {
 #: the repository was through ``tests.helpers.gitrepo.set_identity``.
 EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/conftest.py": 2,
+    # #482: materialize commits the fixture's base and feature trees into a
+    # repository it has just put through tests.helpers.gitrepo.set_identity.
+    "tests/helpers/calibration_integration_fixture.py": 2,
     # Prose, not a commit: the module docstring narrates "commits" and
     # "git" in separate sentences, so the folded string holds both
     # tokens without either running a commit. It sets no repository, so

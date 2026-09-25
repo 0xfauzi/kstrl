@@ -1,0 +1,26 @@
+{
+  "branchName": "kstrl/factory/http-server",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Listen on the configured address",
+      "acceptanceCriteria": [
+        "The server listens on 127.0.0.1:8080 unless PASTEBIN_ADDR is set, in which case it listens on that host:port."
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Stop on SIGTERM",
+      "acceptanceCriteria": [
+        "On SIGTERM the server stops accepting new connections at once.",
+        "In-flight requests are given at most 2 seconds to finish, and the process exits within 2 seconds of SIGTERM."
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": ""
+    }
+  ]
+}
