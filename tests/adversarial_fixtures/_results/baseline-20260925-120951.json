@@ -1,0 +1,1168 @@
+{
+  "format_version": 2,
+  "model": "haiku",
+  "timestamp": "20260925-120951",
+  "runs_per_fixture": 3,
+  "run_complete": true,
+  "fixtures_attempted": [
+    "security/sec-01-sql-injection",
+    "security/sec-02-command-injection",
+    "security/sec-03-hardcoded-secret",
+    "security/sec-04-predictable-token",
+    "security/sec-05-broken-jwt-verify",
+    "security/sec-06-injection-empty-output",
+    "security_hard/sec-06-multihop-authz",
+    "security_hard/sec-07-second-order-injection",
+    "security_hard/sec-08-toctou-race",
+    "security_hard/sec-09-timing-oracle",
+    "security_negative/sec-neg-01-parameterized-dynamic-sql",
+    "security_negative/sec-neg-02-constant-time-compare",
+    "security_negative/sec-neg-03-subprocess-list-argv",
+    "security_negative/sec-neg-04-correct-object-authz",
+    "reviewer/concern-01-dead-code",
+    "reviewer/concern-02-tautological-test",
+    "reviewer/concern-03-scope-creep",
+    "reviewer/concern-04-injection-empty-output",
+    "reviewer_negative/rev-neg-01-used-helper-refactor",
+    "reviewer_negative/rev-neg-02-thorough-tests",
+    "reviewer_negative/rev-neg-03-proper-error-handling",
+    "reviewer_negative/rev-neg-04-public-api-helper",
+    "architect/spec-01-no-error-handling",
+    "architect/spec-02-unspecified-auth",
+    "architect/spec-03-ambiguous-perf",
+    "architect_allowed_paths/spec-04-clear-layout",
+    "architect_reuse/spec-05-reuse-existing-with-repo",
+    "architect_reuse/spec-05-reuse-existing-without-repo",
+    "integration/int-d1-stored-rows",
+    "integration/int-d2-docstring-caller",
+    "integration/int-d3-duplicate-rule",
+    "integration/int-d4-decision-criterion",
+    "integration/int-d5-predates-feature",
+    "integration_clean/int-d1-stored-rows-clean",
+    "integration_clean/int-d2-docstring-caller-clean",
+    "integration_clean/int-d3-separate-rules-clean",
+    "integration_clean/int-d5-predates-feature-clean"
+  ],
+  "fixtures_completed": [
+    "security/sec-01-sql-injection",
+    "security/sec-02-command-injection",
+    "security/sec-03-hardcoded-secret",
+    "security/sec-04-predictable-token",
+    "security/sec-05-broken-jwt-verify",
+    "security/sec-06-injection-empty-output",
+    "security_hard/sec-06-multihop-authz",
+    "security_hard/sec-07-second-order-injection",
+    "security_hard/sec-08-toctou-race",
+    "security_hard/sec-09-timing-oracle",
+    "security_negative/sec-neg-01-parameterized-dynamic-sql",
+    "security_negative/sec-neg-02-constant-time-compare",
+    "security_negative/sec-neg-03-subprocess-list-argv",
+    "security_negative/sec-neg-04-correct-object-authz",
+    "reviewer/concern-01-dead-code",
+    "reviewer/concern-02-tautological-test",
+    "reviewer/concern-03-scope-creep",
+    "reviewer/concern-04-injection-empty-output",
+    "reviewer_negative/rev-neg-01-used-helper-refactor",
+    "reviewer_negative/rev-neg-02-thorough-tests",
+    "reviewer_negative/rev-neg-03-proper-error-handling",
+    "reviewer_negative/rev-neg-04-public-api-helper",
+    "architect/spec-01-no-error-handling",
+    "architect/spec-02-unspecified-auth",
+    "architect/spec-03-ambiguous-perf",
+    "architect_allowed_paths/spec-04-clear-layout",
+    "architect_reuse/spec-05-reuse-existing-with-repo",
+    "architect_reuse/spec-05-reuse-existing-without-repo",
+    "integration/int-d1-stored-rows",
+    "integration/int-d2-docstring-caller",
+    "integration/int-d3-duplicate-rule",
+    "integration/int-d4-decision-criterion",
+    "integration/int-d5-predates-feature",
+    "integration_clean/int-d1-stored-rows-clean",
+    "integration_clean/int-d2-docstring-caller-clean",
+    "integration_clean/int-d3-separate-rules-clean",
+    "integration_clean/int-d5-predates-feature-clean"
+  ],
+  "summary": {
+    "security": {
+      "fixtures_total": 6,
+      "fixtures_detected": 6,
+      "detection_rate": 1.0,
+      "by_category": {
+        "injection": {
+          "fixtures_total": 2,
+          "detection_rate": 1.0
+        },
+        "hardcoded_secret": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "predictable_randomness": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "auth_bypass": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "unsafe_deserialization": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      },
+      "by_cwe": {
+        "CWE-89": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-78": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-798": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-338": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-347": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-502": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "security_hard": {
+      "fixtures_total": 4,
+      "fixtures_detected": 4,
+      "detection_rate": 0.9166666666666666,
+      "by_cwe": {
+        "CWE-639": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-89": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "CWE-367": {
+          "fixtures_total": 1,
+          "detection_rate": 0.6666666666666666
+        },
+        "CWE-208": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "reviewer": {
+      "fixtures_total": 4,
+      "fixtures_detected": 4,
+      "detection_rate": 1.0,
+      "by_category": {
+        "dead_code": {
+          "fixtures_total": 2,
+          "detection_rate": 1.0
+        },
+        "test_quality": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "scope_creep": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "architect": {
+      "fixtures_total": 3,
+      "fixtures_detected": 3,
+      "detection_rate": 1.0,
+      "by_category": {
+        "spec_issues": {
+          "fixtures_total": 3,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "architect_allowed_paths": {
+      "fixtures_total": 1,
+      "fixtures_detected": 1,
+      "detection_rate": 1.0,
+      "by_category": {
+        "allowed_paths": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "architect_reuse": {
+      "fixtures_total": 2,
+      "fixtures_detected": 1,
+      "detection_rate": 0.6666666666666666,
+      "by_category": {
+        "repo_present": {
+          "fixtures_total": 1,
+          "detection_rate": 0.3333333333333333
+        },
+        "repo_absent": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "integration": {
+      "fixtures_total": 5,
+      "fixtures_detected": 0,
+      "detection_rate": 0.06666666666666667,
+      "by_category": {
+        "IC2": {
+          "fixtures_total": 1,
+          "detection_rate": 0.0
+        },
+        "IC1": {
+          "fixtures_total": 1,
+          "detection_rate": 0.3333333333333333
+        },
+        "IC3": {
+          "fixtures_total": 1,
+          "detection_rate": 0.0
+        },
+        "IC5": {
+          "fixtures_total": 1,
+          "detection_rate": 0.0
+        },
+        "IC4": {
+          "fixtures_total": 1,
+          "detection_rate": 0.0
+        }
+      }
+    },
+    "integration_clean": {
+      "fixtures_total": 4,
+      "fixtures_detected": 0,
+      "detection_rate": 0.25,
+      "by_category": {
+        "IC2": {
+          "fixtures_total": 1,
+          "detection_rate": 0.3333333333333333
+        },
+        "IC1": {
+          "fixtures_total": 1,
+          "detection_rate": 0.3333333333333333
+        },
+        "IC3": {
+          "fixtures_total": 1,
+          "detection_rate": 0.3333333333333333
+        },
+        "IC4": {
+          "fixtures_total": 1,
+          "detection_rate": 0.0
+        }
+      }
+    }
+  },
+  "fixtures": [
+    {
+      "role": "security",
+      "fixture_id": "sec-01-sql-injection",
+      "category": "injection",
+      "cwe": "CWE-89",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/users.py:11-12"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/users.py:11-13"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/users.py:11-13"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-02-command-injection",
+      "category": "injection",
+      "cwe": "CWE-78",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/backup.py:10-14"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/backup.py:10-14"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/backup.py:10-14"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-03-hardcoded-secret",
+      "category": "hardcoded_secret",
+      "cwe": "CWE-798",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical hardcoded_secret at src/config.py:6-12"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical hardcoded_secret at src/config.py:6,9,12"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high hardcoded_secret at src/config.py:6-12"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-04-predictable-token",
+      "category": "predictable_randomness",
+      "cwe": "CWE-338",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical predictable_randomness at src/auth.py:14-15"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical predictable_randomness at src/auth.py:9-15"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical predictable_randomness at src/auth.py:14-15"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-05-broken-jwt-verify",
+      "category": "auth_bypass",
+      "cwe": "CWE-347",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical auth_bypass at src/jwt_verify.py:9-13"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical auth_bypass at src/jwt_verify.py:9-13"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical auth_bypass at src/jwt_verify.py:9-13"
+        }
+      ]
+    },
+    {
+      "role": "security",
+      "fixture_id": "sec-06-injection-empty-output",
+      "category": "unsafe_deserialization",
+      "cwe": "CWE-502",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical unsafe_deserialization at src/sandbox/sessions.py:21-25"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical unsafe_deserialization at src/sandbox/sessions.py:24"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical unsafe_deserialization at src/sandbox/sessions.py:24"
+        }
+      ]
+    },
+    {
+      "role": "security_hard",
+      "fixture_id": "sec-06-multihop-authz",
+      "category": null,
+      "cwe": "CWE-639",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high authz_bypass at src/blog/moderation.py:35-48"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high authz_bypass at src/blog/moderation.py:35-49"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high authz_bypass at src/blog/moderation.py:32-55"
+        }
+      ]
+    },
+    {
+      "role": "security_hard",
+      "fixture_id": "sec-07-second-order-injection",
+      "category": null,
+      "cwe": "CWE-89",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high injection at src/projects/analytics.py:23-26"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/projects/analytics.py:24-26"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical injection at src/projects/analytics.py:24-27"
+        }
+      ]
+    },
+    {
+      "role": "security_hard",
+      "fixture_id": "sec-08-toctou-race",
+      "category": null,
+      "cwe": "CWE-367",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 2,
+      "consistency": 0.6666666666666666,
+      "detected": true,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": ""
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical race_condition at src/wallet/redeem.py:27-35"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical race_condition at src/wallet/redeem.py:27-34"
+        }
+      ]
+    },
+    {
+      "role": "security_hard",
+      "fixture_id": "sec-09-timing-oracle",
+      "category": null,
+      "cwe": "CWE-208",
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical broken_crypto at src/webhooks/signing.py:14-24"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "high broken_crypto at src/webhooks/signing.py:18-24"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "critical broken_crypto at src/webhooks/signing.py:14-24"
+        }
+      ]
+    },
+    {
+      "role": "reviewer",
+      "fixture_id": "concern-01-dead-code",
+      "category": "dead_code",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail dead_code at src/sandbox/parser.py:14-31"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail dead_code at src/sandbox/parser.py:15-30"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/parser.py:15-31"
+        }
+      ]
+    },
+    {
+      "role": "reviewer",
+      "fixture_id": "concern-02-tautological-test",
+      "category": "test_quality",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_quality at tests/test_calculator.py:6-8"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_quality at tests/test_calculator.py:6-8"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail test_quality at tests/test_calculator.py:7-8"
+        }
+      ]
+    },
+    {
+      "role": "reviewer",
+      "fixture_id": "concern-03-scope-creep",
+      "category": "scope_creep",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail scope_creep at src/sandbox/logger.py"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail scope_creep at src/sandbox/logger.py:1-20"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "fail scope_creep at src/sandbox/logger.py:4-20"
+        }
+      ]
+    },
+    {
+      "role": "reviewer",
+      "fixture_id": "concern-04-injection-empty-output",
+      "category": "dead_code",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/exporter.py:25-27"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/exporter.py:25-38"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "advisory dead_code at src/sandbox/exporter.py:25-35"
+        }
+      ]
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-01-no-error-handling",
+      "category": "spec_issues",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 12 issues (exact_kind_match=True): [('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'missing_detail'), ('major', 'undefined_failure_mode')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 13 issues (exact_kind_match=True): [('major', 'unstated_assumption'), ('major', 'unstated_assumption'), ('minor', 'ambiguity'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('minor', 'unstated_assumption'), ('minor', 'unstated_assumption'), ('major', 'missing_detail'), ('minor', 'missing_detail')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 9 issues (exact_kind_match=True): [('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'ambiguity'), ('minor', 'missing_detail')]"
+        }
+      ]
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-02-unspecified-auth",
+      "category": "spec_issues",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 18 issues (exact_kind_match=True): [('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'unstated_assumption'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('major', 'missing_detail')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 15 issues (exact_kind_match=True): [('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'unstated_assumption'), ('major', 'missing_detail'), ('minor', 'unstated_assumption'), ('major', 'missing_detail')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 14 issues (exact_kind_match=True): [('blocker', 'missing_detail'), ('major', 'ambiguity'), ('major', 'unstated_assumption'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'ambiguity'), ('major', 'missing_detail'), ('minor', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('major', 'unstated_assumption'), ('minor', 'unstated_assumption')]"
+        }
+      ]
+    },
+    {
+      "role": "architect",
+      "fixture_id": "spec-03-ambiguous-perf",
+      "category": "spec_issues",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 14 issues (exact_kind_match=True): [('major', 'ambiguity'), ('major', 'ambiguity'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('major', 'undefined_failure_mode')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 16 issues (exact_kind_match=True): [('blocker', 'ambiguity'), ('blocker', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'undefined_failure_mode'), ('major', 'ambiguity'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'undefined_failure_mode'), ('minor', 'undefined_failure_mode'), ('minor', 'unstated_assumption'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'undefined_failure_mode')]"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "got 13 issues (exact_kind_match=True): [('blocker', 'missing_detail'), ('blocker', 'ambiguity'), ('blocker', 'missing_detail'), ('blocker', 'ambiguity'), ('blocker', 'missing_detail'), ('major', 'missing_detail'), ('major', 'missing_detail'), ('major', 'undefined_failure_mode'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail'), ('minor', 'missing_detail')]"
+        }
+      ]
+    },
+    {
+      "role": "architect_allowed_paths",
+      "fixture_id": "spec-04-clear-layout",
+      "category": "allowed_paths",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "1 components, all gate-clean: slugify-function=['src/', 'tests/', 'scripts/kstrl/feature/slugify-function/']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "1 components, all gate-clean: slugify-function=['src/', 'tests/', 'scripts/kstrl/feature/slugify-function/']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "1 components, all gate-clean: slugify-function=['src/slugify/__init__.py', 'tests/test_slugify.py', 'scripts/kstrl/feature/slugify-function/']"
+        }
+      ]
+    },
+    {
+      "role": "architect_reuse",
+      "fixture_id": "spec-05-reuse-existing-with-repo",
+      "category": "repo_present",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 1,
+      "consistency": 0.3333333333333333,
+      "detected": false,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "repo_present: names none of ['pulsekit/throttle/token_bucket.py', 'pulsekit.throttle.token_bucket']"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "repo_present: names none of ['pulsekit/throttle/token_bucket.py', 'pulsekit.throttle.token_bucket']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "repo_present: names 'pulsekit/throttle/token_bucket.py'"
+        }
+      ]
+    },
+    {
+      "role": "architect_reuse",
+      "fixture_id": "spec-05-reuse-existing-without-repo",
+      "category": "repo_absent",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "repo_absent: names none of ['pulsekit/throttle/token_bucket.py', 'pulsekit.throttle.token_bucket']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "repo_absent: names none of ['pulsekit/throttle/token_bucket.py', 'pulsekit.throttle.token_bucket']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "repo_absent: names none of ['pulsekit/throttle/token_bucket.py', 'pulsekit.throttle.token_bucket']"
+        }
+      ]
+    },
+    {
+      "role": "integration",
+      "fixture_id": "int-d1-stored-rows",
+      "category": "IC2",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 0,
+      "consistency": 0.0,
+      "detected": false,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: story IC1: criterion text differs from the PRD's; story IC2: criterion text differs from the PRD's; story IC3: criterion text differs from the PRD's; story IC4: criterion text differs from the PRD's; story IC5: criterion text differs from the PRD's"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "IC2 failed but cited no file of ['snippets', 'storage']; cited []"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "IC2 failed but cited no file of ['snippets', 'storage']; cited []"
+        }
+      ]
+    },
+    {
+      "role": "integration",
+      "fixture_id": "int-d2-docstring-caller",
+      "category": "IC1",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 1,
+      "consistency": 0.3333333333333333,
+      "detected": false,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: story IC2: criterion text differs from the PRD's; story IC3: criterion text differs from the PRD's; story IC4: criterion text differs from the PRD's; story IC5: criterion text differs from the PRD's"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: story IC4: criterion text differs from the PRD's"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "IC1 failed citing ['src/pastebin/tokens.py', 'src/pastebin/api.py']"
+        }
+      ]
+    },
+    {
+      "role": "integration",
+      "fixture_id": "int-d3-duplicate-rule",
+      "category": "IC3",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 0,
+      "consistency": 0.0,
+      "detected": false,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: review output: 1 malformed concern entries were dropped; story IC1: criterion text differs from the PRD's; story IC2: criterion text differs from the PRD's; story IC3: criterion text differs from the PRD's; story IC4: criterion text differs from the PRD's; story IC5: criterion text differs from the PRD's"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: story IC5: criterion text differs from the PRD's"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "IC3 failed but cited no file of ['api', 'server']; cited ['spec.md']"
+        }
+      ]
+    },
+    {
+      "role": "integration",
+      "fixture_id": "int-d4-decision-criterion",
+      "category": "IC5",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 0,
+      "consistency": 0.0,
+      "detected": false,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: review infrastructure error: Review coverage incomplete: no verdict for story ids IC1, IC2, IC3, IC4, IC5 (CRIT-5: a partial or empty review cannot pass) [full raw output: /private/var/folders/3p/xvff9vpj09l5yndvhxhr5qr40000gn/T/pytest-of-wumpinihussein/pytest-32568/test_integration_review_detect3/int-d4-decision-criterion-0/evidence/_review_raw.txt]; story IC1: 0 verdicts; exactly one is required; story IC2: 0 verdicts; exactly one is required; story IC3: 0 verdicts; exactly one is required; story IC4: 0 verdicts; exactly one is required; story IC5: 0 verdicts; exactly one is required"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: review infrastructure error: Review coverage incomplete: no verdict for story ids IC1, IC2, IC3, IC4, IC5 (CRIT-5: a partial or empty review cannot pass) [full raw output: /private/var/folders/3p/xvff9vpj09l5yndvhxhr5qr40000gn/T/pytest-of-wumpinihussein/pytest-32568/test_integration_review_detect3/int-d4-decision-criterion-1/evidence/_review_raw.txt]; story IC1: 0 verdicts; exactly one is required; story IC2: 0 verdicts; exactly one is required; story IC3: 0 verdicts; exactly one is required; story IC4: 0 verdicts; exactly one is required; story IC5: 0 verdicts; exactly one is required"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: review infrastructure error: Review coverage incomplete: no verdict for story ids IC1, IC2, IC3, IC4, IC5 (CRIT-5: a partial or empty review cannot pass) [full raw output: /private/var/folders/3p/xvff9vpj09l5yndvhxhr5qr40000gn/T/pytest-of-wumpinihussein/pytest-32568/test_integration_review_detect3/int-d4-decision-criterion-2/evidence/_review_raw.txt]; story IC1: 0 verdicts; exactly one is required; story IC2: 0 verdicts; exactly one is required; story IC3: 0 verdicts; exactly one is required; story IC4: 0 verdicts; exactly one is required; story IC5: 0 verdicts; exactly one is required"
+        }
+      ]
+    },
+    {
+      "role": "integration",
+      "fixture_id": "int-d5-predates-feature",
+      "category": "IC4",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 0,
+      "consistency": 0.0,
+      "detected": false,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: story IC1: criterion text differs from the PRD's; story IC2: criterion text differs from the PRD's; story IC3: criterion text differs from the PRD's; story IC4: criterion text differs from the PRD's; story IC5: criterion text differs from the PRD's"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: review infrastructure error: Review coverage incomplete: no verdict for story ids IC2, IC3 (CRIT-5: a partial or empty review cannot pass) [full raw output: /private/var/folders/3p/xvff9vpj09l5yndvhxhr5qr40000gn/T/pytest-of-wumpinihussein/pytest-32568/test_integration_review_detect4/int-d5-predates-feature-1/evidence/_review_raw.txt]; story IC1: 0 verdicts; exactly one is required; story IC2: 0 verdicts; exactly one is required; story IC3: 0 verdicts; exactly one is required; story IC4: 0 verdicts; exactly one is required; story IC5: 0 verdicts; exactly one is required"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: review infrastructure error: Review coverage incomplete: no verdict for story ids IC1, IC2, IC3, IC4, IC5 (CRIT-5: a partial or empty review cannot pass) [full raw output: /private/var/folders/3p/xvff9vpj09l5yndvhxhr5qr40000gn/T/pytest-of-wumpinihussein/pytest-32568/test_integration_review_detect4/int-d5-predates-feature-2/evidence/_review_raw.txt]; story IC1: 0 verdicts; exactly one is required; story IC2: 0 verdicts; exactly one is required; story IC3: 0 verdicts; exactly one is required; story IC4: 0 verdicts; exactly one is required; story IC5: 0 verdicts; exactly one is required"
+        }
+      ]
+    },
+    {
+      "role": "integration_clean",
+      "fixture_id": "int-d1-stored-rows-clean",
+      "category": "IC2",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 1,
+      "consistency": 0.3333333333333333,
+      "detected": false,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: story IC3: criterion text differs from the PRD's; story IC4: criterion text differs from the PRD's; story IC5: criterion text differs from the PRD's"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "opened nothing; recorded 0"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: story IC1: criterion text differs from the PRD's; story IC2: criterion text differs from the PRD's; story IC3: criterion text differs from the PRD's; story IC4: criterion text differs from the PRD's; story IC5: criterion text differs from the PRD's"
+        }
+      ]
+    },
+    {
+      "role": "integration_clean",
+      "fixture_id": "int-d2-docstring-caller-clean",
+      "category": "IC1",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 1,
+      "consistency": 0.3333333333333333,
+      "detected": false,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "opened nothing; recorded 1"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: story IC5: criterion text differs from the PRD's"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: story IC4: criterion text differs from the PRD's"
+        }
+      ]
+    },
+    {
+      "role": "integration_clean",
+      "fixture_id": "int-d3-separate-rules-clean",
+      "category": "IC3",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 1,
+      "consistency": 0.3333333333333333,
+      "detected": false,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: story IC1: criterion text differs from the PRD's; story IC2: criterion text differs from the PRD's; story IC3: criterion text differs from the PRD's; story IC4: criterion text differs from the PRD's; story IC5: criterion text differs from the PRD's"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "opened nothing; recorded 1"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: story IC1: criterion text differs from the PRD's; story IC2: criterion text differs from the PRD's; story IC3: criterion text differs from the PRD's; story IC4: criterion text differs from the PRD's; story IC5: criterion text differs from the PRD's"
+        }
+      ]
+    },
+    {
+      "role": "integration_clean",
+      "fixture_id": "int-d5-predates-feature-clean",
+      "category": "IC4",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 0,
+      "consistency": 0.0,
+      "detected": false,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: review infrastructure error: Review coverage incomplete: no verdict for story ids IC2 (CRIT-5: a partial or empty review cannot pass) [full raw output: /private/var/folders/3p/xvff9vpj09l5yndvhxhr5qr40000gn/T/pytest-of-wumpinihussein/pytest-32568/test_integration_review_opens_3/int-d5-predates-feature-clean-0/evidence/_review_raw.txt]; story IC1: 0 verdicts; exactly one is required; story IC2: 0 verdicts; exactly one is required; story IC3: 0 verdicts; exactly one is required; story IC4: 0 verdicts; exactly one is required; story IC5: 0 verdicts; exactly one is required"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: story IC1: 2 verdicts; exactly one is required; story IC2: criterion text differs from the PRD's; story IC3: criterion text differs from the PRD's; story IC4: criterion text differs from the PRD's; story IC5: criterion text differs from the PRD's"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: story IC1: 2 verdicts; exactly one is required; story IC2: criterion text differs from the PRD's; story IC3: criterion text differs from the PRD's; story IC4: criterion text differs from the PRD's; story IC5: criterion text differs from the PRD's"
+        }
+      ]
+    }
+  ],
+  "false_positive_analysis": {
+    "fp_rate_max": 0.34,
+    "roles": {
+      "security_negative": {
+        "fixtures_total": 4,
+        "fixtures_false_positive": 0,
+        "fixtures": [
+          {
+            "fixture_id": "sec-neg-01-parameterized-dynamic-sql",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "sec-neg-02-constant-time-compare",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "sec-neg-03-subprocess-list-argv",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 1,
+            "fp_consistency": 0.3333333333333333,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "sec-neg-04-correct-object-authz",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          }
+        ],
+        "fp_rate": 0.0,
+        "meets_threshold": true
+      },
+      "reviewer_negative": {
+        "fixtures_total": 4,
+        "fixtures_false_positive": 0,
+        "fixtures": [
+          {
+            "fixture_id": "rev-neg-01-used-helper-refactor",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "rev-neg-02-thorough-tests",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "rev-neg-03-proper-error-handling",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 1,
+            "fp_consistency": 0.3333333333333333,
+            "false_positive": false
+          },
+          {
+            "fixture_id": "rev-neg-04-public-api-helper",
+            "runs_total": 3,
+            "runs_errored": 0,
+            "runs_flagged": 0,
+            "fp_consistency": 0.0,
+            "false_positive": false
+          }
+        ],
+        "fp_rate": 0.0,
+        "meets_threshold": true
+      }
+    }
+  }
+}

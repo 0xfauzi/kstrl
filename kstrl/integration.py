@@ -138,8 +138,9 @@ def integration_stories(feature_base_sha: str) -> tuple[ExpectedStory, ...]:
 def carried_story(finding_id: str, text: str, locations: Sequence[str]) -> ExpectedStory:
     """The story that carries one open finding into the next review (#483).
 
-    The story id is the finding id. The criterion is one line, because the
-    reviewer must echo it exactly (``_story_errors``).
+    The story id is the finding id, and it is what the verdict is joined by
+    (``_story_errors``). The criterion is one line, so the PRD the reviewer
+    reads shows it as one bullet.
     """
     return ExpectedStory(
         story_id=finding_id,
@@ -304,15 +305,16 @@ def _verdict_errors(
 
 
 def _story_errors(story: ExpectedStory, verdicts: Sequence[CriterionReview]) -> list[str]:
+    """A story is judged when exactly one verdict names its id and that
+    verdict has an explanation. The story id is the join (#518). The
+    criterion text the reviewer echoes is recorded in the evidence and never
+    compared: a reviewer that rewords or shortens it has still judged the
+    story its id names."""
     if len(verdicts) != 1:
         return [f"story {story.story_id}: {len(verdicts)} verdicts; exactly one is required"]
-    only = verdicts[0]
-    errors: list[str] = []
-    if only.criterion.strip() != story.criterion.strip():
-        errors.append(f"story {story.story_id}: criterion text differs from the PRD's")
-    if not only.explanation.strip():
-        errors.append(f"story {story.story_id}: empty explanation")
-    return errors
+    if not verdicts[0].explanation.strip():
+        return [f"story {story.story_id}: empty explanation"]
+    return []
 
 
 def _read_carried(

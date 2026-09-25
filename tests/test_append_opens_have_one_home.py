@@ -489,7 +489,6 @@ EXPECTED_ROUTED_APPENDS: dict[str, int] = {
     # #509: the global playbook ledger. Every project's runs append to
     # one file, so concurrent writers are the normal case.
     "playbook.py: append_records(lock=True)": 1,
-    "proposals.py: append_records(lock=default (False))": 1,
     "workqueue.py: append_records(lock=default (False))": 1,
 }
 

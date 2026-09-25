@@ -11,7 +11,6 @@ from kstrl.tui.home_data import (
     HomeStats,
     SummaryCache,
     fold_run,
-    pending_proposal_count,
     summarize_run,
 )
 from kstrl.tui.messages import SummariesReady
@@ -23,13 +22,6 @@ from tests.helpers.fake_run import (
     write_fake_understand_run,
 )
 from tests.helpers.settle import mounted, settled
-
-CONVENTION_PROP = """# PROP-001: Pin versions
-**Type**: computational
-**Target**: claude_md
-
-> Pin them.
-"""
 
 
 class TestSummarizeRun:
@@ -127,19 +119,6 @@ class TestSummaryCache:
         assert spy.call_count == 1
 
 
-class TestPendingProposals:
-    def test_counts_unapplied_only(self, tmp_path: Path) -> None:
-        proposals_dir = tmp_path / ".kstrl" / "proposals"
-        proposals_dir.mkdir(parents=True)
-        (proposals_dir / "prop-001.md").write_text(CONVENTION_PROP)
-        (proposals_dir / "prop-002.md").write_text(
-            CONVENTION_PROP.replace("PROP-001", "PROP-002")
-            + "\n**Applied**: 2026-07-19T00:00:00Z\n",
-        )
-        assert pending_proposal_count(tmp_path) == 1
-        assert pending_proposal_count(tmp_path / "empty") == 0
-
-
 class TestHomeSummariesPilot:
     async def test_cells_fill_after_the_worker_lands(
         self,
@@ -150,9 +129,11 @@ class TestHomeSummariesPilot:
         sets `_summaries` before it writes any of the cells read below,
         which keeps the wait weaker than every assertion here."""
         write_fake_run(tmp_path, FakeRunSpec(components=2))
+        # A proposals directory the deleted generator left behind (#217):
+        # home neither reads nor counts it any more.
         proposals_dir = tmp_path / ".kstrl" / "proposals"
         proposals_dir.mkdir(parents=True)
-        (proposals_dir / "prop-001.md").write_text(CONVENTION_PROP)
+        (proposals_dir / "prop-001.md").write_text("# PROP-001: Pin versions\n")
 
         app = KstrlTuiApp(root_dir=tmp_path, mode=Mode.HOME, poll_interval=0.05)
         async with app.run_test(size=(130, 40)) as pilot:
@@ -165,14 +146,14 @@ class TestHomeSummariesPilot:
             )
             stats = str(stats_widget.content)
             assert "✓ done 2/2" in stats
-            assert "proposal(s) pending" in stats
+            assert "proposal" not in stats
             row = table.get_row_at(0)  # type: ignore[attr-defined]
             cells = " ".join(str(cell) for cell in row)
             assert "2/2" in cells
             assert "+" in cells  # lower-bound marker rides along
 
             app.screen.on_summaries_ready(
-                SummariesReady({}, HomeStats(None, 0)),
+                SummariesReady({}, HomeStats(None)),
             )
             assert app.screen._summaries == {}
             row = table.get_row_at(0)  # type: ignore[attr-defined]

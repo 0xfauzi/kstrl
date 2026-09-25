@@ -9,9 +9,10 @@ The contract is the one CLAUDE.md states: kstrl writes utf-8, so every
 reader of a file kstrl writes must NAME utf-8 and must catch
 ``ValueError`` alongside ``OSError``, because ``UnicodeDecodeError`` is
 a ``ValueError`` and walks straight out of a fail-closed ``except
-OSError``. ``EvolveScreen.on_mount`` reads three such files in a row and
+OSError``. ``EvolveScreen.on_mount`` read three such files in a row and
 all three had the defect; the round-one fix caught two of them and the
-test that claimed "both" is why the third survived a review.
+test that claimed "both" is why the third survived a review. #217 Slice 1
+deleted the proposals tab, so the screen reads two of them now.
 """
 
 from __future__ import annotations
@@ -41,20 +42,6 @@ def test_a_non_utf8_experiments_file_does_not_crash_the_evolve_screen(
     (kstrl_dir / "experiments.tsv").write_bytes(b"run_id\tcompleted\n2026-\xe9x\t1\n")
     journal = EvolutionJournal(EvolutionConfig.load(tmp_path))
     assert journal.get_experiment_trends(last_n=5) == []
-
-
-def test_a_non_utf8_proposal_does_not_crash_the_evolve_screen(tmp_path: Path) -> None:
-    """The same defect one line earlier in the same on_mount:
-    list_proposals read with no encoding behind `except OSError`."""
-    from kstrl.proposals import existing_proposal_titles, list_proposals
-
-    proposals = tmp_path / ".kstrl" / "proposals"
-    proposals.mkdir(parents=True)
-    (proposals / "prop-001.md").write_bytes(
-        b"# PROP-001: \xe9\xe9\xe9 title\n**Type**: computational\n"
-    )
-    assert list_proposals(proposals) == []
-    assert existing_proposal_titles(proposals) == set()
 
 
 def test_a_non_utf8_journal_does_not_crash_the_evolve_screen(tmp_path: Path) -> None:
@@ -98,18 +85,16 @@ def test_the_journal_reader_is_shared_with_ks_status() -> None:
     assert "except (OSError, ValueError):" in observability
 
 
-async def test_the_evolve_screen_survives_all_three_undecodable_files(tmp_path: Path) -> None:
-    """The three above, through the screen, which is where it mattered."""
+async def test_the_evolve_screen_survives_both_undecodable_files(tmp_path: Path) -> None:
+    """The two above, through the screen, which is where it mattered."""
     kstrl_dir = tmp_path / ".kstrl"
-    (kstrl_dir / "proposals").mkdir(parents=True)
-    (kstrl_dir / "proposals" / "prop-001.md").write_bytes(b"# PROP-001: \xe9\xe9\xe9\n")
+    kstrl_dir.mkdir()
     (kstrl_dir / "experiments.tsv").write_bytes(b"run_id\tcompleted\n2026-\xe9x\t1\n")
     (kstrl_dir / "evolution.jsonl").write_bytes(
         b'{"event_type": "component_result", "run_id": "r1", "component_id": "\xe9x"}\n'
     )
     async with evolve_screen(tmp_path) as (screen, _pilot):
         assert screen.query_one("#trends-table", DataTable).row_count == 0
-        assert screen.query_one("#proposals-table", DataTable).row_count == 0
         assert screen.query_one("#patterns-table", DataTable).row_count == 0
         # The config itself is fine, so the banner must NOT claim it is
         # unreadable: these are data files, not configuration.
@@ -131,42 +116,3 @@ def test_experiments_tsv_is_written_with_the_encoding_it_is_read_with(tmp_path: 
     assert 'read_text(encoding="utf-8")' in source
     helper = (root / "kstrl" / "appendio.py").read_text(encoding="utf-8")
     assert 'payload.encode("utf-8")' in helper
-
-
-def test_a_proposal_survives_being_written_under_an_ascii_locale(tmp_path: Path) -> None:
-    """The WRITE side of the proposal reader fixed two tests up.
-
-    `save_proposals` wrote prop-*.md with the locale encoding, and its
-    text is LLM output: one curly quote makes that a UnicodeEncodeError,
-    which is a ValueError and so walks out of the adjacent `except
-    OSError`. Measured: under a US-ASCII preferred encoding,
-    `write_text` raises. That write is explicitly non-fatal ("proposal
-    write failed (non-fatal)"), so this took the run down instead.
-
-    A child process, because `locale.getpreferredencoding` is read at
-    interpreter start; the helper is IMPORTED from test_atomicio rather
-    than copied, which is what #291 set it up for.
-    """
-    from tests.test_atomicio import run_under_c_locale
-
-    body = (
-        "from pathlib import Path\n"
-        "from kstrl.evolution import EvolutionConfig, EvolutionJournal, HarnessProposal\n"
-        "out = Path(sys.argv[1])\n"
-        "journal = EvolutionJournal(EvolutionConfig.load(out))\n"
-        "written = journal.save_proposals([HarnessProposal(\n"
-        "    id='PROP-001',\n"
-        "    title='quote',\n"
-        "    description='the agent\\u2019s note',\n"
-        "    proposal_type='computational',\n"
-        "    target='claude_md',\n"
-        "    suggested_change='c',\n"
-        "    source_patterns=[],\n"
-        ")], out)\n"
-        "print(len(written))\n"
-    )
-    result = run_under_c_locale(tmp_path, body, str(tmp_path))
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "1", result.stdout
-    written = (tmp_path / "prop-001.md").read_bytes()
-    assert "the agent\u2019s note".encode() in written
