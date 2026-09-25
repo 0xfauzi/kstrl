@@ -29,6 +29,7 @@ import kstrl.evolution
 from kstrl.cli import cli
 from kstrl.evolution import (
     _CATEGORY_BY_CHECK,
+    FINDINGS_SUPERSEDED_EVENT,
     INFRASTRUCTURE_CHECKS,
     PROPOSAL_CHECKS,
     EvolutionConfig,
@@ -353,7 +354,7 @@ class TestRoutingIsClosedOverTheTable:
         assert routing.unrouted == ()
 
     def test_an_unenrolled_name_is_unrouted_and_never_a_lesson(self) -> None:
-        assert category_for_check("zzz-never-enrolled") == "iteration"
+        assert category_for_check("zzz-never-enrolled") == "unenrolled"
         pattern = FailurePattern(
             description="d",
             frequency=2,
@@ -477,3 +478,188 @@ class TestEvolvePrintsReadinessNumbers:
         assert not (tmp_path / ".kstrl" / "proposals").exists()
         assert "recurring signatures" in result.output
         assert "push-of-x-failed-to-https" in result.output
+
+
+def _write_rows(root: Path, entries: list[dict[str, object]]) -> None:
+    """Write whole journal rows, for the #496 tests that need a row
+    ``_write_journal`` cannot express (a ``findings_superseded`` row)."""
+    path = root / ".kstrl" / "evolution.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(json.dumps(e) for e in entries) + "\n", encoding="utf-8")
+
+
+def _result_row(run_id: str, component_id: str, signatures: list[str]) -> dict[str, object]:
+    """A ``component_result`` row: the fields ``get_cross_run_patterns`` reads."""
+    return {
+        "schema_version": 3,
+        "run_id": run_id,
+        "component_id": component_id,
+        "event_type": "component_result",
+        "status": "failed" if signatures else "completed",
+        "failure_signatures": signatures,
+        "findings_summary": {"total": 0, "by_category": {}},
+    }
+
+
+def _superseded_row(
+    run_id: str,
+    component_id: str,
+    attempt: int,
+    signatures: list[str],
+    carried_from_run: str | None = None,
+) -> dict[str, object]:
+    """The row ``Pipeline.journal_superseded_findings`` writes, plus the
+    ``carried_from_run`` key ``EvolutionJournal.carry_superseded`` adds."""
+    row: dict[str, object] = {
+        "schema_version": 3,
+        "run_id": run_id,
+        "project": "p",
+        "component_id": component_id,
+        "event_type": FINDINGS_SUPERSEDED_EVENT,
+        "attempt": attempt,
+        "iteration_count": 1,
+        "failure_signatures": signatures,
+        "findings": [],
+    }
+    if carried_from_run is not None:
+        row["carried_from_run"] = carried_from_run
+    return row
+
+
+def _pattern_rows(root: Path) -> list[tuple[str, str, int, int, list[str], bool]]:
+    """What the router returns for ``root``, through the real config loader."""
+    journal = EvolutionJournal(EvolutionConfig.load(root))
+    return [
+        (
+            p.check_name,
+            p.error_signature,
+            p.frequency,
+            p.total_components,
+            p.affected_components,
+            p.superseded_only,
+        )
+        for p in journal.get_cross_run_patterns(lookback_runs=10)
+    ]
+
+
+class TestTheRouterCountsSupersededAttempts:
+    """#496: an attempt a retry superseded is journaled as a
+    ``findings_superseded`` row, and the router read only
+    ``component_result`` rows, so every retried attempt's signatures were
+    missing from its input."""
+
+    def test_superseded_attempt_signatures_are_counted(self, tmp_path: Path) -> None:
+        _write_rows(
+            tmp_path,
+            [
+                _superseded_row("r1", "comp-a", 1, ["review:error_handling"]),
+                _result_row("r1", "comp-a", []),
+                _superseded_row("r2", "comp-b", 1, ["review:error_handling"]),
+                _result_row("r2", "comp-b", []),
+            ],
+        )
+        assert _pattern_rows(tmp_path) == [
+            ("review", "error_handling", 2, 2, ["comp-a", "comp-b"], True)
+        ]
+        result = _invoke(tmp_path)
+        assert result.exit_code == 0, (result.output, result.exception)
+        assert "'review:error_handling' appeared in 2/2 runs across 2 components" in result.output
+        assert "recurring signatures (>= 2 runs): 1, of which 1 only on superseded attempts" in (
+            result.output
+        )
+
+    def test_superseded_and_final_in_one_run_count_once(self, tmp_path: Path) -> None:
+        _write_rows(
+            tmp_path,
+            [
+                _superseded_row("r1", "comp-a", 1, ["review:prd_criterion"]),
+                _superseded_row("r1", "comp-a", 2, ["review:prd_criterion"]),
+                _result_row("r1", "comp-a", ["review:prd_criterion"]),
+                _superseded_row("r2", "comp-b", 1, ["review:prd_criterion"]),
+                _result_row("r2", "comp-b", []),
+            ],
+        )
+        assert _pattern_rows(tmp_path) == [
+            ("review", "prd_criterion", 2, 2, ["comp-a", "comp-b"], False)
+        ]
+        result = _invoke(tmp_path)
+        assert result.exit_code == 0, (result.output, result.exception)
+        assert "'review:prd_criterion' appeared in 2/2 runs across 2 components" in result.output
+        assert "recurring signatures (>= 2 runs): 1, of which 0 only on superseded attempts" in (
+            result.output
+        )
+
+    def test_a_carried_superseded_row_counts_in_the_run_it_ran_in(self, tmp_path: Path) -> None:
+        """``carry_superseded`` (#463) writes run rA's superseded row again
+        under rB with ``carried_from_run="rA"``. The attempt ran once, in
+        rA, so it is one run, not two."""
+        (tmp_path / "kstrl.toml").write_text(
+            "[evolution]\nmin_pattern_frequency = 1\n", encoding="utf-8"
+        )
+        _write_rows(
+            tmp_path,
+            [
+                _superseded_row("rA", "comp-a", 1, ["review:test_quality"]),
+                _superseded_row("rB", "comp-a", 1, ["review:test_quality"], carried_from_run="rA"),
+                _result_row("rB", "comp-a", []),
+            ],
+        )
+        assert _pattern_rows(tmp_path) == [("review", "test_quality", 1, 2, ["comp-a"], True)]
+        result = _invoke(tmp_path)
+        assert result.exit_code == 0, (result.output, result.exception)
+        assert "'review:test_quality' appeared in 1/2 runs across 1 components" in result.output
+        assert "recurring signatures (>= 1 runs): 1, of which 1 only on superseded attempts" in (
+            result.output
+        )
+
+    def test_a_carried_row_counts_when_its_original_is_outside_the_window(
+        self, tmp_path: Path
+    ) -> None:
+        """rA's own row falls outside the ten-run lookback window, so the
+        copy rB carried is the only row of that attempt the router reads.
+        It still counts, attributed to rA."""
+        (tmp_path / "kstrl.toml").write_text(
+            "[evolution]\nmin_pattern_frequency = 1\n", encoding="utf-8"
+        )
+        _write_rows(
+            tmp_path,
+            [
+                _superseded_row("rA", "comp-a", 1, ["review:test_quality"]),
+                *[_result_row(f"r{n}", "comp-x", []) for n in range(1, 10)],
+                _superseded_row("rB", "comp-a", 1, ["review:test_quality"], carried_from_run="rA"),
+                _result_row("rB", "comp-a", []),
+            ],
+        )
+        assert [(c, s, f, comps, only) for c, s, f, _, comps, only in _pattern_rows(tmp_path)] == [
+            ("review", "test_quality", 1, ["comp-a"], True)
+        ]
+        result = _invoke(tmp_path)
+        assert result.exit_code == 0, (result.output, result.exception)
+        assert "'review:test_quality' appeared in 1/" in result.output
+
+    def test_unenrolled_check_is_not_a_lesson(self, tmp_path: Path) -> None:
+        assert category_for_check("zzz-never-enrolled") == "unenrolled"
+        assert category_for_check("engineer") == "iteration"
+        assert category_for_check("unknown") == "iteration"
+        _write_rows(
+            tmp_path,
+            [
+                _result_row("r1", "comp-z", ["zzz-never-enrolled:boom"]),
+                _result_row("r2", "comp-z", ["zzz-never-enrolled:boom"]),
+            ],
+        )
+        patterns = EvolutionJournal(EvolutionConfig.load(tmp_path)).get_cross_run_patterns()
+        assert [(p.check_name, p.category) for p in patterns] == [
+            ("zzz-never-enrolled", "unenrolled")
+        ]
+        routing = route_patterns(patterns)
+        assert routing.unrouted == tuple(patterns)
+        assert routing.lessons == ()
+        assert routing.mechanical == ()
+        result = _invoke(tmp_path)
+        assert result.exit_code == 0, (result.output, result.exception)
+        assert "[zzz-never-enrolled] boom (category unenrolled; no proposal is written" in (
+            result.output
+        )
+        assert "'iteration'" not in result.output
+        assert list((tmp_path / ".kstrl" / "proposals").glob("prop-*.md")) == []
