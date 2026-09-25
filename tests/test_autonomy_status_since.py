@@ -159,3 +159,23 @@ def test_the_real_cli_on_a_fresh_repo_prints_a_dash_and_the_note(repo: Path) -> 
     assert _since(output) == "-"
     assert output.count(DISABLED_NOTE) == 1, output
     assert not AutonomyState.path_for(repo).exists()
+
+
+def test_the_note_is_the_line_after_since_on_the_same_stream(repo: Path) -> None:
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("KSTRL_", "FACTORY_"))}
+    env.update(KSTRL_NO_TUI="1", KSTRL_AGENT_PROBE="0")
+    proc = subprocess.run(
+        [sys.executable, "-m", "kstrl", "autonomy", "status", "--ui", "plain"],
+        cwd=repo,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    streams = [s for s in (proc.stdout, proc.stderr) if "since:" in s]
+    assert len(streams) == 1, (proc.stdout, proc.stderr)
+    lines = [line.strip() for line in streams[0].splitlines()]
+    at = next(i for i, line in enumerate(lines) if line.startswith("since:"))
+    assert lines[at + 1 : at + 2] == [DISABLED_NOTE], streams[0]
