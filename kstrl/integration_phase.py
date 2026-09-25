@@ -1,0 +1,453 @@
+"""The record-only integration review, factory side (#482)."""
+
+from __future__ import annotations
+
+import dataclasses
+import time
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from kstrl import git
+from kstrl.agents.base import collect_usage
+from kstrl.contract import (
+    ContractCleanupError,
+    ContractMode,
+    ContractResult,
+    _create_temp_worktree,
+    _remove_temp_worktree,
+)
+from kstrl.integration import (
+    STATUS_HANDOFF,
+    ExpectedStory,
+    IntegrationOutcome,
+    integration_outcome,
+    integration_stories,
+    write_integration_prd,
+)
+from kstrl.integration_state import (
+    OUTCOME_CLEAN,
+    OUTCOME_NOT_RUN,
+    OUTCOME_OPEN_FINDINGS,
+    OUTCOME_RED,
+    add_findings,
+    add_stop,
+    bind_state,
+    evidence_dir,
+    has_fix_component,
+    next_finding_ids,
+    next_review_number,
+    read_state,
+    state_binding,
+    write_evidence,
+    write_state,
+)
+from kstrl.review import ReviewMode, ReviewResult
+from kstrl.verify import VerificationResult
+from kstrl.version import kstrl_version
+
+if TYPE_CHECKING:
+    from kstrl.factory import FactoryConfig
+    from kstrl.manifest import Manifest
+    from kstrl.pipeline import ComponentPipeline
+    from kstrl.shutdown import StopController
+    from kstrl.ui.base import UI
+
+GATE_NOTE = (
+    "Record only: the integration verdict does not gate this run, so it cannot "
+    "report the feature as integrated (#482)."
+)
+
+
+@dataclass
+class Phase3Round:
+    base_sha: str = ""
+    ran: bool = False
+    results: list[ContractResult] = field(default_factory=list)
+
+    def record(self, results: list[ContractResult]) -> None:
+        self.ran = True
+        self.results = list(results)
+
+
+@dataclass(frozen=True)
+class IntegrationRun:
+    manifest: Manifest
+    manifest_path: Path
+    root_dir: Path
+    run_id: str
+    pipeline: ComponentPipeline
+    ui: UI
+
+
+@dataclass(frozen=True)
+class IntegrationRecord:
+    outcome: str
+    reason: str
+    opened: tuple[str, ...] = ()
+    errors: tuple[str, ...] = ()
+    evidence: Path | None = None
+
+
+@dataclass(frozen=True)
+class _Pin:
+    sha: str = ""
+    test_result: ContractResult | None = None
+    refusal: str = ""
+
+
+def run_integration_review(
+    run: IntegrationRun, phase3: Phase3Round, stop: StopController | None
+) -> IntegrationRecord:
+    reason = _unreachable_reason(run.pipeline.factory_config, stop)
+    if reason:
+        return IntegrationRecord(OUTCOME_NOT_RUN, reason)
+    run.ui.section("Integration review (record only)")
+    if not run.manifest.feature_base_sha:
+        return _not_run(
+            run,
+            "no feature base: featureBaseSha is empty, so the feature's change has no known start",
+            None,
+            "",
+        )
+    bound = bind_state(
+        read_state(run.root_dir),
+        state_binding(run.manifest, run.manifest_path),
+        has_fix_component(run.manifest),
+    )
+    if bound.state is None:
+        return _not_run(run, bound.refusal, None, "")
+    if "replacedBinding" in bound.state:
+        run.ui.warn(
+            f"  Integration state belonged to another feature "
+            f"({bound.state['replacedBinding']}); starting a new record"
+        )
+    pin = _pin_round(run, phase3)
+    if pin.refusal:
+        return _not_run(run, pin.refusal, bound.state, pin.sha)
+    reason = _spend_refusal(run.pipeline)
+    if reason:
+        return _not_run(run, reason, bound.state, pin.sha)
+    return _review_round(run, bound.state, pin)
+
+
+def _unreachable_reason(config: FactoryConfig, stop: StopController | None) -> str:
+    from kstrl.factory import review_enabled
+
+    if not config.integration_review:
+        return "[factory] integration_review = false"
+    if config.single_pr:
+        return (
+            "single_pr mode opens its one PR after Phase 3, so the base branch "
+            "is not the merged feature"
+        )
+    if not config.create_prs:
+        return "create_prs is off, so no component merged into the base branch"
+    if not review_enabled(config):
+        return "review_mode = skip, so no reviewer was resolved to dispatch"
+    if stop is not None and stop.is_set():
+        return f"the run was stopped ({stop.reason})"
+    return ""
+
+
+def _pin_round(run: IntegrationRun, phase3: Phase3Round) -> _Pin:
+    contract = run.pipeline.factory_config.contract_config
+    if contract is None or contract.mode == ContractMode.SKIP.value:
+        return _pin_without_tests(run)
+    if not phase3.ran:
+        return _Pin(refusal="Phase 3 did not finish, so there is no tested commit to review")
+    if len(phase3.results) != 1 or not phase3.base_sha:
+        return _Pin(
+            refusal=f"Phase 3 did not test one pinned commit ({len(phase3.results)} results, "
+            f"base {phase3.base_sha or 'unresolved'})"
+        )
+    return _nothing_merged(run, _Pin(sha=phase3.base_sha, test_result=phase3.results[0]))
+
+
+def _pin_without_tests(run: IntegrationRun) -> _Pin:
+    try:
+        sha = git.resolve_base_sha(run.manifest.base_branch, run.root_dir)
+    except git.GitDiffError as exc:
+        return _Pin(refusal=f"the base branch did not resolve: {exc}")
+    return _nothing_merged(run, _Pin(sha=sha))
+
+
+def _nothing_merged(run: IntegrationRun, pin: _Pin) -> _Pin:
+    if pin.sha == run.manifest.feature_base_sha:
+        return dataclasses.replace(
+            pin, refusal=f"nothing merged since the feature base {pin.sha[:12]}"
+        )
+    return pin
+
+
+def _spend_refusal(pipeline: ComponentPipeline) -> str:
+    if not pipeline.adversarial_budget_ok():
+        cap = pipeline.factory_config.max_adversarial_calls
+        return f"the adversarial call budget ({cap}) is exhausted"
+    breached = pipeline.breached_ceiling()
+    if breached is not None:
+        return f"the run reached {breached}"
+    return ""
+
+
+def _review_round(run: IntegrationRun, state: dict[str, Any], pin: _Pin) -> IntegrationRecord:
+    directory = evidence_dir(run.root_dir, run.run_id)
+    number = next_review_number(directory)
+    stories = integration_stories(run.manifest.feature_base_sha)
+    run.pipeline.adversarial_budget_consume()
+    worktree, error = _create_temp_worktree(pin.sha, run.root_dir, "integration")
+    if worktree is None:
+        result = _infra(f"the integration worktree could not be created: {error}")
+        outcome = integration_outcome(pin.test_result, result, stories, location_exists=_nowhere)
+        return _record_round(run, state, pin, number, stories, result, outcome, "")
+    try:
+        result = _run_reviewer(run, worktree, stories, directory / f"prd-{number}.json")
+        outcome = integration_outcome(
+            pin.test_result, result, stories, location_exists=_inside(worktree)
+        )
+    finally:
+        cleanup_error = _remove(worktree, run.root_dir)
+    return _record_round(run, state, pin, number, stories, result, outcome, cleanup_error)
+
+
+def _run_reviewer(
+    run: IntegrationRun,
+    worktree: Path,
+    stories: Sequence[ExpectedStory],
+    prd_path: Path,
+) -> ReviewResult:
+    from kstrl.agents import get_agent
+
+    agent: object | None = None
+    try:
+        prd_path.parent.mkdir(parents=True, exist_ok=True)
+        write_integration_prd(prd_path, stories)
+        selection = run.pipeline.review_selection
+        agent = get_agent(
+            selection.agent_cmd,
+            selection.model,
+            selection.reasoning,
+            selection.agent_type,
+            sandbox=run.pipeline.sandbox_config,
+            read_only=True,
+        )
+        return run.pipeline.hooks.run_review(
+            agent,
+            prd_path,
+            worktree,
+            run.manifest.feature_base_sha,
+            VerificationResult(passed=True, checks=[]),
+            ReviewMode.HARD,
+            run.ui,
+            debug_dir=prd_path.parent,
+        )
+    except Exception as exc:  # noqa: BLE001 - as Phase 2
+        return _infra(f"the integration reviewer crashed: {exc}")
+    finally:
+        if agent is not None:
+            run.pipeline.record_integration_usage(collect_usage(agent))
+
+
+def _infra(notes: str) -> ReviewResult:
+    return ReviewResult(
+        passed=False, mode=ReviewMode.HARD.value, overall_notes=notes, infrastructure_error=True
+    )
+
+
+def _remove(worktree: Path, root: Path) -> str:
+    try:
+        _remove_temp_worktree(worktree, root)
+    except ContractCleanupError as exc:
+        return str(exc)
+    return ""
+
+
+def _nowhere(_path: str) -> bool:
+    return False
+
+
+def _inside(worktree: Path) -> Callable[[str], bool]:
+    def exists(path: str) -> bool:
+        return (worktree / path).is_file()
+
+    return exists
+
+
+def _stop_outcome(outcome: IntegrationOutcome) -> str:
+    if outcome.errors:
+        return OUTCOME_RED
+    if outcome.opened:
+        return OUTCOME_OPEN_FINDINGS
+    return OUTCOME_CLEAN
+
+
+def _round_reason(stop_outcome: str, outcome: IntegrationOutcome) -> str:
+    if stop_outcome == OUTCOME_RED:
+        return f"the review output failed validation ({len(outcome.errors)} errors); nothing opened"
+    if stop_outcome == OUTCOME_OPEN_FINDINGS:
+        handoffs = sum(1 for f in outcome.opened if f.status == STATUS_HANDOFF)
+        return f"{len(outcome.opened)} findings opened, {handoffs} handed off; recorded only"
+    return "no finding opened"
+
+
+def _base_moved_to(run: IntegrationRun, sha: str) -> str:
+    try:
+        moved, current = git.base_moved(run.manifest.base_branch, sha, run.root_dir)
+    except git.GitDiffError as exc:
+        return f"unresolved: {exc}"
+    return current if moved else ""
+
+
+def _now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _record_round(
+    run: IntegrationRun,
+    state: dict[str, Any],
+    pin: _Pin,
+    number: int,
+    stories: Sequence[ExpectedStory],
+    result: ReviewResult,
+    outcome: IntegrationOutcome,
+    cleanup_error: str,
+) -> IntegrationRecord:
+    ids = next_finding_ids(state, len(outcome.opened))
+    stop_outcome = _stop_outcome(outcome)
+    reason = _round_reason(stop_outcome, outcome)
+    payload = _review_evidence(
+        run, pin, stories, result, outcome, ids, stop_outcome, reason, cleanup_error
+    )
+    evidence, evidence_error = write_evidence(
+        evidence_dir(run.root_dir, run.run_id), number, payload
+    )
+    add_findings(state, run.run_id, pin.sha, list(zip(ids, outcome.opened, strict=True)))
+    add_stop(state, run.run_id, pin.sha, stop_outcome, reason, evidence)
+    state_error = write_state(run.root_dir, state)
+    run.pipeline.journal_integration_result(stop_outcome, reason, pin.sha, ids, outcome.errors)
+    for label, error in (
+        ("worktree cleanup", cleanup_error),
+        ("evidence write", evidence_error),
+        ("state write", state_error),
+    ):
+        if error:
+            run.ui.err(f"  Integration {label} failed: {error}")
+    run.ui.info(f"  Integration review: {stop_outcome}: {reason}")
+    return IntegrationRecord(stop_outcome, reason, tuple(ids), outcome.errors, evidence)
+
+
+def _review_evidence(
+    run: IntegrationRun,
+    pin: _Pin,
+    stories: Sequence[ExpectedStory],
+    result: ReviewResult,
+    outcome: IntegrationOutcome,
+    ids: list[str],
+    stop_outcome: str,
+    reason: str,
+    cleanup_error: str,
+) -> dict[str, Any]:
+    test = pin.test_result
+    phase3: dict[str, Any] = (
+        {"ran": False}
+        if test is None
+        else {
+            "ran": True,
+            "passed": test.passed,
+            "testedSha": test.tested_sha,
+            "output": test.test_output[:2000],
+        }
+    )
+    return {
+        "schemaVersion": 1,
+        "runId": run.run_id,
+        "kstrlVersion": kstrl_version(),
+        "at": _now(),
+        "outcome": stop_outcome,
+        "reason": reason,
+        "gates": False,
+        "featureBaseSha": run.manifest.feature_base_sha,
+        "reviewedSha": pin.sha,
+        "baseMovedTo": _base_moved_to(run, pin.sha),
+        "phase3": phase3,
+        "stories": [
+            {"id": s.story_id, "title": s.title, "criterion": s.criterion} for s in stories
+        ],
+        "review": {
+            "mode": result.mode,
+            "passed": result.passed,
+            "infrastructureError": result.infrastructure_error,
+            "coverage": result.diffstat_disagreement,
+            "reviewerModel": result.reviewer_model,
+            "overallNotes": result.overall_notes,
+            "droppedConcerns": result.dropped_concerns,
+            "concernsNotList": result.concerns_not_list,
+            "criteria": [
+                {
+                    "storyId": c.story_id,
+                    "criterion": c.criterion,
+                    "verdict": c.verdict,
+                    "explanation": c.explanation,
+                    "suggestion": c.suggestion,
+                }
+                for c in result.criteria
+            ],
+            "concerns": [
+                {
+                    "category": c.category,
+                    "severity": c.severity,
+                    "location": c.location,
+                    "explanation": c.explanation,
+                    "suggestion": c.suggestion,
+                }
+                for c in result.concerns
+            ],
+        },
+        "errors": list(outcome.errors),
+        "opened": [
+            {"id": fid, **dataclasses.asdict(finding)}
+            for fid, finding in zip(ids, outcome.opened, strict=True)
+        ],
+        "recorded": [dataclasses.asdict(r) for r in outcome.recorded],
+        "cleanupError": cleanup_error,
+    }
+
+
+def _not_run(
+    run: IntegrationRun, reason: str, state: dict[str, Any] | None, sha: str
+) -> IntegrationRecord:
+    directory = evidence_dir(run.root_dir, run.run_id)
+    payload = {
+        "schemaVersion": 1,
+        "runId": run.run_id,
+        "kstrlVersion": kstrl_version(),
+        "at": _now(),
+        "outcome": OUTCOME_NOT_RUN,
+        "reason": reason,
+        "gates": False,
+        "featureBaseSha": run.manifest.feature_base_sha,
+        "reviewedSha": sha,
+    }
+    evidence, evidence_error = write_evidence(directory, next_review_number(directory), payload)
+    state_error = ""
+    if state is not None:
+        add_stop(state, run.run_id, sha, OUTCOME_NOT_RUN, reason, evidence)
+        state_error = write_state(run.root_dir, state)
+    run.pipeline.journal_integration_result(OUTCOME_NOT_RUN, reason, sha, [], ())
+    run.ui.warn(f"  Integration review not run: {reason}")
+    for label, error in (("evidence write", evidence_error), ("state write", state_error)):
+        if error:
+            run.ui.err(f"  Integration {label} failed: {error}")
+    return IntegrationRecord(OUTCOME_NOT_RUN, reason, evidence=evidence)
+
+
+def report_integration(record: IntegrationRecord, ui: UI) -> None:
+    ui.kv("Integration review", f"{record.outcome}: {record.reason}")
+    if record.opened:
+        ui.info(f"  open findings: {', '.join(record.opened)}")
+    for error in record.errors:
+        ui.err(f"  {error}")
+    if record.evidence:
+        ui.info(f"  evidence: {record.evidence}")
+    ui.info(f"  {GATE_NOTE}")

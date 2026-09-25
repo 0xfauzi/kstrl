@@ -452,6 +452,14 @@ ARCHITECT_ROLE: Final = "architect"
 #: name.
 ARCHITECT_COMPONENT: Final = role_component_key(ARCHITECT_ROLE)
 
+#: The integration review's role name (#482): its PHASE key in the meter.
+#: Bare for the reason ARCHITECT_ROLE is bare.
+INTEGRATION_ROLE: Final = "integration"
+
+#: The integration review's pseudo-component key in the usage meter and the
+#: ComponentUsage events, namespaced out of reach of any component id (#281).
+INTEGRATION_COMPONENT: Final = role_component_key(INTEGRATION_ROLE)
+
 # Rollup row order for the R3.1 usage table, in the order the roles run:
 # the architect decomposes the spec before any component's engineer loop
 # starts (#257). Phases outside this list (future additions) sort after,
@@ -462,6 +470,7 @@ _USAGE_PHASE_ORDER: Final[tuple[str, ...]] = (
     "review",
     "security",
     "distill",
+    INTEGRATION_ROLE,
 )
 
 

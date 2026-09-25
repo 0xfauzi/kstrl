@@ -127,6 +127,11 @@ ignore = []
 "kstrl/review.py" = ["E501"]
 "kstrl/security.py" = ["E501"]
 "kstrl/knowledge.py" = ["E501"]
+# The integration review's one-line-per-story template (#482): the
+# format is "id | title | criterion", one story per line, and reflowing
+# a criterion changes the prompt SHA-256 for the same reason review.py
+# is exempt above.
+"kstrl/integration.py" = ["E501"]
 # init_cmd.py is full of triple-quoted CLAUDE.md / prompt template
 # strings used to scaffold user projects. Reflowing markdown inside
 # those strings changes the output users see; keep bytes stable.

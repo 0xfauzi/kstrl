@@ -269,6 +269,7 @@ def _section_specs() -> list[SectionSpec]:
                     "pause_before_pr_merge",
                     "progress_log_enabled",
                     "keep_worktrees_on_failure",
+                    "integration_review",
                 ],
             ),
             lambda root: FactoryConfig.load(root_dir=root),
@@ -548,6 +549,10 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "factory",
         "keep_worktrees_on_failure",
     ): "keep failed components' worktrees for post-mortem (R3.3)",
+    (
+        "factory",
+        "integration_review",
+    ): "record-only review of the merged feature after Phase 3 (#482); never gates",
     (
         "breaker",
         "no_progress_iterations",

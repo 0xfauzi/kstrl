@@ -288,6 +288,10 @@ ALLOWED_APPEND_OPENS: dict[str, tuple[Reason, str]] = {
         Reason.NOT_AN_APPEND,
         "EvolutionJournal.open(self.root_dir), the same classmethod",
     ),
+    "pipeline.py:ComponentPipeline.journal_integration_result": (
+        Reason.NOT_AN_APPEND,
+        "EvolutionJournal.open(self.root_dir), the same classmethod",
+    ),
 }
 
 #: Layer 1's pinned inventory. Seventeen sites in fifteen rows;
@@ -310,8 +314,9 @@ EXPECTED_APPEND_OPENS: dict[str, int] = {
     "factory.py: EvolutionJournal.open(root_dir)": 1,
     "factory.py: open('a')": 2,
     "factory.py: open('a+')": 1,
-    # Two since #463: carry_interrupted_run is the second caller.
-    "pipeline.py: EvolutionJournal.open(self.root_dir)": 2,
+    # Two since #463: carry_interrupted_run is the second caller. Three
+    # since #482: journal_integration_result is the third.
+    "pipeline.py: EvolutionJournal.open(self.root_dir)": 3,
     "pipeline.py: open('a')": 1,
     "serve.py: open('a+')": 2,
     "statedir.py: open('a+')": 1,

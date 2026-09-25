@@ -83,6 +83,12 @@ from kstrl.fixtures import FixturesConfig
 from kstrl.git import fetch_base_branch, resolve_base_ref
 from kstrl.guards import ScopeHazard, scope_entry_hazard
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
+from kstrl.integration_phase import (
+    IntegrationRun,
+    Phase3Round,
+    report_integration,
+    run_integration_review,
+)
 from kstrl.interaction import InteractionChannel
 from kstrl.jsonread import read_json
 from kstrl.knowledge import (
@@ -391,6 +397,9 @@ class FactoryConfig:
     # manifest and survive the next run's stale-worktree prune for as
     # long as the component stays FAILED.
     keep_worktrees_on_failure: bool = False
+    # #482: run the record-only integration review after Phase 3. Its
+    # outcome is recorded and printed and gates nothing in this slice.
+    integration_review: bool = True
     # R7.2: approved-fixtures oracle for Phase 1. None means run_factory
     # loads FixturesConfig.load(root_dir) - toml [fixtures] section +
     # env - so `ks factory` honors the config with no CLI wiring.
@@ -487,6 +496,7 @@ class FactoryConfig:
             keep_worktrees_on_failure=_parse_bool(
                 os.environ.get("KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE")
             ),
+            integration_review=_parse_bool(os.environ.get("KSTRL_FACTORY_INTEGRATION_REVIEW", "1")),
             # R10.3: unlike review_mode next door, this key HAS an env
             # var, so from_env must read it. `ks factory` uses from_env
             # as the environment-only baseline that _collect_toml_notes
@@ -563,6 +573,9 @@ class FactoryConfig:
             config.progress_log_enabled = bool(section["progress_log_enabled"])
         if "keep_worktrees_on_failure" in section:
             config.keep_worktrees_on_failure = bool(section["keep_worktrees_on_failure"])
+        config.integration_review = strict_bool(
+            section, "integration_review", config.integration_review
+        )
         # Env overrides (consistent with from_env)
         if "FACTORY_MAX_PARALLEL" in os.environ:
             config.max_parallel = int(os.environ["FACTORY_MAX_PARALLEL"])
@@ -595,6 +608,9 @@ class FactoryConfig:
             config.keep_worktrees_on_failure = _parse_bool(
                 os.environ["KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE"]
             )
+        config.integration_review = _parse_bool(
+            os.environ.get("KSTRL_FACTORY_INTEGRATION_REVIEW", str(config.integration_review))
+        )
         if "KSTRL_FACTORY_CLAIM_AGREEMENT" in os.environ:
             config.claim_agreement = _validate_claim_agreement(
                 os.environ["KSTRL_FACTORY_CLAIM_AGREEMENT"],
@@ -4835,6 +4851,7 @@ def _run_factory_locked(
     # deferred-merge (tier merge + bisection) mode.
     components_merged = factory_config.create_prs and not factory_config.single_pr
 
+    phase3_round = Phase3Round()
     # R0.3: scheduling + contract testing form one outer loop so a
     # contract breaker reset to PENDING actually re-enters scheduling.
     # Termination: every reset consumes one of the breaker's bounded
@@ -4855,6 +4872,7 @@ def _run_factory_locked(
         # #481: one commit per round. The integrated check tests it and a
         # later check of the same round must judge the same tree.
         round_base_sha = _resolve_round_base(manifest, root_dir, ui)
+        phase3_round = Phase3Round(base_sha=round_base_sha)
         try:
             contract_results = run_contract_testing(
                 manifest,
@@ -4872,6 +4890,7 @@ def _run_factory_locked(
             factory_result.contract_failures.append(f"contract cleanup failed: {exc}")
             break
 
+        phase3_round.record(contract_results)
         for cr in contract_results:
             bus.emit(
                 ContractResultEvent(
@@ -4971,6 +4990,22 @@ def _run_factory_locked(
             ui.err(f"  Contract failure recorded for tier {cr.tier}; run will exit nonzero")
         manifest.save(manifest_path)
         break
+
+    # #482: the record-only integration review of the merged feature, once,
+    # after the Phase 3 loop. Nothing it records reaches contract_failures
+    # or the exit code in this slice.
+    integration_record = run_integration_review(
+        IntegrationRun(
+            manifest=manifest,
+            manifest_path=manifest_path,
+            root_dir=root_dir,
+            run_id=run_id,
+            pipeline=pipeline,
+            ui=ui,
+        ),
+        phase3_round,
+        stop,
+    )
 
     # Create PRs for any remaining components that weren't handled per-component
     # (e.g. single-pr mode, or stragglers from parallel execution)
@@ -5091,6 +5126,7 @@ def _run_factory_locked(
         ui.kv("Contract failures", str(len(factory_result.contract_failures)))
         for line in factory_result.contract_failures:
             ui.err(f"  {line}")
+    report_integration(integration_record, ui)
     if factory_result.merge_pending:
         ui.kv("Merge pending", str(len(factory_result.merge_pending)))
     _report_awaiting_approval(factory_result, ui)

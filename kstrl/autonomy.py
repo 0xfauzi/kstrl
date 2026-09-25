@@ -682,17 +682,19 @@ def strict_bool(section: Mapping[str, Any], key: str, default: bool) -> bool:
     disarms it, so a non-boolean is named and refused rather than
     coerced.
 
-    Four keys, not the whole repo. Three are ``[autonomy]``'s: the two
+    Five keys, not the whole repo. Three are ``[autonomy]``'s: the two
     revocation switches and ``enabled``, which is the switch that arms
     them and can therefore only fail in the arming direction. The fourth
     is ``[factory] pause_before_pr_merge``, added by #195 for a reason
     the other three do not have: since #195 that key OUTRANKS the ladder
     when the operator set it, so a coerced ``"false"`` would manufacture
     an explicit request nobody wrote and then keep the gate up at every
-    level. The remaining coercion is repo-wide (29 ``bool(section[...])``
-    sites in ``kstrl/``, counted by grep) and tightening the rest changes
-    how existing configs load, which is its own change with its own
-    guard.
+    level. The fifth is ``[factory] integration_review`` (#482): a
+    coerced ``"false"`` would read as True and spend a reviewer call the
+    operator switched off. The remaining coercion is repo-wide (29
+    ``bool(section[...])`` sites in ``kstrl/``, counted by grep) and
+    tightening the rest changes how existing configs load, which is its
+    own change with its own guard.
 
     The message carries no section prefix. ``config_preflight`` puts the
     section label in front of whatever the loader raises, and each of

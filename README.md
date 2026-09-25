@@ -363,6 +363,7 @@ max_cost_usd = 0.0                 # run-level USD budget; 0 = no limit. Same ha
 pause_before_pr_merge = false      # human checkpoint before each PR (E6)
 progress_log_enabled = true        # JSONL event log at .kstrl/progress.jsonl (R3.2); usage accounting is written either way (docs/env-vars.md)
 keep_worktrees_on_failure = false  # keep failed components' worktrees for post-mortem (R3.3)
+integration_review = true          # record-only review of the merged feature after Phase 3 (#482); never gates
 
 # No-progress circuit breaker (R7.5; 0 iterations disables)
 [breaker]

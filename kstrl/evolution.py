@@ -73,6 +73,10 @@ SPEC_ISSUES_EVENT = "spec_issues"
 # and they share this name.
 FINDINGS_SUPERSEDED_EVENT = "findings_superseded"
 
+# #482: the event_type of the journal row recording one integration review
+# round (record only). Declared here for the reason SPEC_ISSUES_EVENT is.
+INTEGRATION_RESULT_EVENT = "integration_result"
+
 
 class ExperimentsDialect(csv.Dialect):
     """The ON-DISK shape of experiments.tsv, in one place (#352 round 2).

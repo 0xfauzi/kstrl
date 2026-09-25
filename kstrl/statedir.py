@@ -91,6 +91,7 @@ CONTROL_FILENAMES: tuple[str, ...] = (
 #: - ``contract``   ``contract.py`` throwaway merge worktrees
 #: - ``debug``      ``pipeline.py`` per-component debug dumps
 #: - ``doctor``     ``doctor.py`` Tier A readiness reports
+#: - ``integration`` ``integration_state.py`` the integration review's durable state (#482)
 #: - ``knowledge``  ``knowledge.py`` distilled facts (default root)
 #: - ``logs``       ``cli.py`` feature transcripts, ``serve.py`` launchd logs
 #: - ``proposals``  ``cli.py`` evolution proposals
@@ -117,6 +118,7 @@ STATE_SUBDIRS: tuple[str, ...] = (
     "contract",
     "debug",
     "doctor",
+    "integration",
     "knowledge",
     "logs",
     "proposals",

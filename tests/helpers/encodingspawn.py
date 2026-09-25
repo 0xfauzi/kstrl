@@ -28,7 +28,7 @@ point that can decode: measured, exactly ``Popen``, ``call``,
 ``check_call``, ``check_output``, ``getoutput``, ``getstatusoutput`` and
 ``run``. A hand-written list is what #340 and #324 merged into a tree with
 ``SPAWN_FUNCS`` at zero readers and ``getoutput`` ungated, and CLAUDE.md
-records that merge. ``tests/test_encoding_readers.py`` pins the derivation's
+records that merge. ``tests/test_encoding_spawns.py`` pins the derivation's
 output against ``tests/test_timeout_enforcement.py``'s own set, so the two
 cannot drift apart in silence.
 
@@ -115,7 +115,7 @@ def _spawn_entry_points() -> frozenset[str]:
     return frozenset(found)
 
 
-#: The seven, derived once. Pinned in ``tests/test_encoding_readers.py`` so a
+#: The seven, derived once. Pinned in ``tests/test_encoding_spawns.py`` so a
 #: CPython release that drops one is loud rather than silent.
 SPAWN_TARGETS = _spawn_entry_points()
 
@@ -230,7 +230,7 @@ def scan_source(text: str, *, where: str = "", module: str = "") -> SpawnScan:
     """Every ``subprocess`` spawn in one module's source, partitioned.
 
     Takes TEXT rather than a path so the planted shapes in
-    ``tests/test_encoding_readers.py`` exercise the same code the package
+    ``tests/test_encoding_spawns.py`` exercise the same code the package
     sweep runs. ``resolved_calls`` answers the SEEN half only, so
     ``calls_to(...).undecided`` is taken over the same tree in the same
     function: the rule ``tests/test_astwalk_mechanisms.py`` enforces.

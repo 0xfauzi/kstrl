@@ -48,6 +48,8 @@ from kstrl.agents.base import (
     ARCHITECT_COMPONENT,
     ARCHITECT_ROLE,
     CEILING_AXES,
+    INTEGRATION_COMPONENT,
+    INTEGRATION_ROLE,
     CeilingCoverage,
     UsageTotals,
     collect_usage,
@@ -912,6 +914,15 @@ class ComponentPipeline:
             return
         self._record_usage(ARCHITECT_COMPONENT, ARCHITECT_ROLE, totals)
 
+    def record_integration_usage(self, totals: UsageTotals) -> None:
+        """Meter the integration review (#482) under its own role row.
+
+        Through ``_record_usage`` like every role, so the run total, the
+        ceilings and the coverage accounting count it. Zero calls record
+        nothing, as for the architect.
+        """
+        self._record_usage(INTEGRATION_COMPONENT, INTEGRATION_ROLE, totals)
+
     def carry_interrupted_run(self) -> None:
         """Take over what an interrupted run recorded (#463).
 
@@ -1563,6 +1574,43 @@ class ComponentPipeline:
                 ev.ComponentSkipped(component=sid, reason=f"dependency '{failed_id}' failed")
             )
         return skipped
+
+    def journal_integration_result(
+        self,
+        outcome: str,
+        reason: str,
+        reviewed_sha: str,
+        opened: Sequence[str],
+        errors: Sequence[str],
+    ) -> None:
+        """Journal one integration review round (#482). Non-fatal, never silent."""
+        from kstrl.evolution import (
+            INTEGRATION_RESULT_EVENT,
+            JOURNAL_SCHEMA_VERSION,
+            EvolutionJournal,
+        )
+
+        journal = EvolutionJournal.open(self.root_dir, warn=self.ui.warn)
+        if journal is None:
+            return
+        entry = {
+            "schema_version": JOURNAL_SCHEMA_VERSION,
+            "timestamp": _iso_now(),
+            "run_id": self.run_id,
+            "project": self.manifest.project_name,
+            "component_id": "",
+            "event_type": INTEGRATION_RESULT_EVENT,
+            "outcome": outcome,
+            "reason": reason,
+            "reviewed_sha": reviewed_sha,
+            "opened": list(opened),
+            "errors": list(errors),
+            "gates": False,
+        }
+        try:
+            journal.append_entries([entry])
+        except OSError as exc:
+            self.ui.warn(f"  Evolution journal write failed (non-fatal): {exc}")
 
     def journal_superseded_findings(self, comp: Component) -> None:
         """A scheduled retry supersedes the current attempt. Record the

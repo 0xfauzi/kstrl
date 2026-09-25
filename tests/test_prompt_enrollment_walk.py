@@ -300,6 +300,10 @@ EXPECTED_PROMPT_NAME_SPELLINGS: dict[str, int] = {
     # declaration and its one use site) = 44. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.
     "init_cmd.py": 44,
+    # #482: 1 prompt x 2 spellings (the INTEGRATION_CRITERIA_PROMPT
+    # declaration and its one use in render_integration_criteria) = 2. The
+    # version constant adds nothing: the walk keys on names ending in _PROMPT.
+    "integration.py": 2,
     # #303: 2 pre-existing + 2 new fragments x 2 spellings each (the
     # declaration and its one use site) = 6. The version constant adds
     # nothing: the walk keys on names ending in _PROMPT, not _VERSION.

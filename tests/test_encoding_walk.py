@@ -476,6 +476,7 @@ class TestTheReadBytesExclusion:
         "config_toml.py": 1,
         "baseline.py": 1,
         "inbox.py": 1,
+        "integration_state.py": 1,  # #482: the launch_record.py shape
         "launch_record.py": 1,  # #436: the baseline.py shape, I/O outside the guard
         "safemode.py": 1,
         "signals.py": 2,
