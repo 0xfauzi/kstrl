@@ -389,7 +389,7 @@ class TestScrubStaleVerifyCommands:
         scrubbed = scrub_stale_verify_commands(_LEGACY_CLAUDE_MD, self._commands())
         assert "## Verification Commands" in scrubbed.text
         assert "Note on scope: this prose explains something a human wrote." in scrubbed.text
-        # proposals.py anchors on this heading and errors without it.
+        # Agents append their learnings under this heading.
         assert "## Agent Learnings" in scrubbed.text
         assert "- keep me" in scrubbed.text
 

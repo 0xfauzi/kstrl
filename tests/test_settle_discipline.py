@@ -201,7 +201,8 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/test_config_guard_survey.py": 4,
     "tests/test_config_screen.py": 36,
     "tests/test_decompose_screens.py": 32,
-    "tests/test_evolve_screen.py": 37,
+    # 12 since #507 deleted the proposals tab and its three modal tests.
+    "tests/test_evolve_screen.py": 12,
     "tests/test_evolve_screen_encoding.py": 1,
     # Four ``async with evolve_screen(...)``, added by #333. The
     # decision each one needs: every read after them is of

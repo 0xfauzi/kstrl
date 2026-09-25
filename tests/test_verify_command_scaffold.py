@@ -56,7 +56,8 @@ class TestGeneratedClaudeMd:
         assert "test_command" in generated
 
     def test_the_proposals_anchor_heading_is_untouched(self) -> None:
-        """proposals.py:194 errors when this literal heading is absent."""
+        """``init_cmd.CLAUDE_MD_LEARNINGS_PROMPT`` writes this heading, and
+        agents append their learnings under it."""
         assert "## Agent Learnings" in self._generated()
 
     def test_a_scrub_of_a_freshly_generated_file_finds_nothing_to_do(

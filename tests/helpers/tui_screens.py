@@ -2,7 +2,7 @@
 
 Three test files push ``EvolveScreen`` at a tmp_path and assert on what
 it renders: one about a broken kstrl.toml, one about undecodable data
-files, one about the screen's own three tabs. What they share is not a
+files, one about the screen's own two tabs. What they share is not a
 pause count but a sequence of CONDITIONS, and stating it once is the
 point of this module.
 
@@ -18,10 +18,10 @@ There are three, in the order the app satisfies them.
    "a screen pushed before the app's on_mount lands under home" is
    false, and was corrected by a /simplify pass that checked it.
 2. ``EvolveScreen`` composes a ``TabbedContent`` whose panes mount on a
-   later frame. That frame is what the callers' ``#proposals-table`` /
-   ``#patterns-table`` / ``#trends-table`` / ``#proposal-detail``
-   queries used to race, and it is why the 0.2s pauses were here.
-3. ``EvolveScreen.on_mount`` adds the columns to all three tables and
+   later frame. That frame is what the callers' ``#patterns-table`` /
+   ``#trends-table`` queries used to race, and it is why the 0.2s
+   pauses were here.
+3. ``EvolveScreen.on_mount`` adds the columns to both tables and
    THEN calls ``reload`` in one synchronous call. A poll can only run
    between messages, so a table that has columns is a screen whose
    on_mount has returned: the rows and the config-problem banner are
@@ -49,7 +49,7 @@ def home_app(root_dir: Path) -> KstrlTuiApp:
 
 
 async def evolve_on(app: KstrlTuiApp, pilot: Pilot[None]) -> EvolveScreen:
-    """Push ``EvolveScreen`` on a live app and wait out its three tabs.
+    """Push ``EvolveScreen`` on a live app and wait out its two tabs.
 
     The module docstring says which conditions and why. The last one is
     deliberately weaker than anything a caller asserts: "on_mount has
@@ -67,7 +67,7 @@ async def evolve_on(app: KstrlTuiApp, pilot: Pilot[None]) -> EvolveScreen:
     await settled(
         pilot,
         lambda: cast(DataTable, trends).columns,
-        what="the evolve screen's on_mount to load its three tabs",
+        what="the evolve screen's on_mount to load its two tabs",
     )
     return screen
 

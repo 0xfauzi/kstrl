@@ -120,9 +120,6 @@ from kstrl.observability import (
 )
 from kstrl.output import build_console
 from kstrl.prd import PRD
-from kstrl.proposals import append_to_agent_learnings as _append_to_agent_learnings
-from kstrl.proposals import existing_proposal_titles as _existing_proposal_titles
-from kstrl.proposals import mark_applied, parse_proposal_file
 from kstrl.reducer import ComponentState, RunState, fold, load_run_state, upconvert_v1
 from kstrl.retry_plan import (
     RESUME_REFUSAL,
@@ -4515,13 +4512,6 @@ def retry(
 
 @cli.command()
 @click.option(
-    "--apply",
-    "apply_id",
-    type=str,
-    default=None,
-    help="Apply a specific proposal (e.g. PROP-001) or 'all' for all proposals",
-)
-@click.option(
     "--status",
     "show_status",
     is_flag=True,
@@ -4544,20 +4534,17 @@ def retry(
     help="Disable colors",
 )
 def evolve(
-    apply_id: str | None,
     show_status: bool,
     root: Path | None,
     ui: str,
     no_color: bool,
 ) -> None:
-    """Analyze factory runs and propose harness improvements.
+    """Analyze factory runs and report recurring failure patterns.
 
-    Without arguments, analyzes recent runs and shows proposals.
+    Without arguments, analyzes recent runs, routes each recurring
+    pattern to the inbox, the candidate lessons or neither, and prints
+    the learning-readiness numbers. Nothing is written.
     Use --status to see experiment trends.
-    Use --apply PROP-NNN (or 'all') to apply proposals: convention-type
-    proposals (target claude_md) are appended to the project CLAUDE.md
-    Agent Learnings section after confirmation; every other target
-    prints manual instructions.
     """
     from kstrl.evolution import EvolutionConfig, EvolutionJournal, route_patterns
 
@@ -4570,6 +4557,7 @@ def evolve(
     # one that [evolution] is FATAL for, so the entry seam has already
     # rejected a config this would raise on.
     evo_config = EvolutionConfig.load(root_dir)
+    _echo_retired_evolution_keys(evo_config, ui_impl)
 
     if not evo_config.enabled:
         ui_impl.err("Evolution is disabled in config")
@@ -4605,69 +4593,45 @@ def evolve(
         _echo_iteration_criterion(journal, trends, ui_impl)
         sys.exit(0)
 
-    if apply_id:
-        proposals_dir = root_dir / ".kstrl" / "proposals"
-        if not proposals_dir.exists():
-            ui_impl.err("No proposals found. Run `ks evolve` first.")
-            sys.exit(2)
-        exit_code = _evolve_apply(
-            apply_id,
-            proposals_dir,
-            root_dir,
-            evo_config,
-            ui_impl,
-        )
-        sys.exit(exit_code)
-
-    # Default: analyze and propose
     ui_impl.section("Evolution: Analyzing Runs")
     patterns = journal.get_cross_run_patterns(lookback_runs=evo_config.lookback_runs)
     routing = route_patterns(patterns)
     _report_patterns_and_readiness(journal, evo_config, patterns, routing, ui_impl, root_dir)
-
-    if not patterns:
-        sys.exit(0)
-
-    # R6.3: honor [evolution] auto_propose - when disabled, evolve only
-    # reports patterns and never writes proposal files.
-    if not evo_config.auto_propose:
-        ui_impl.info(
-            "auto_propose is disabled ([evolution] auto_propose = false); "
-            "patterns reported, no proposals generated."
-        )
-        sys.exit(0)
-
-    proposals_dir = root_dir / ".kstrl" / "proposals"
-    proposals = journal.propose_improvements(list(routing.lessons))
-    # Idempotence across repeated `ks evolve` runs: a proposal whose
-    # title already exists on disk is the same pattern re-detected, not
-    # new signal - skip it rather than duplicating files.
-    existing_titles = _existing_proposal_titles(proposals_dir)
-    fresh = [p for p in proposals if p.title not in existing_titles]
-    already = len(proposals) - len(fresh)
-    # R6.2: monotonic IDs across invocations - number only the fresh
-    # proposals, continuing after the highest PROP number on disk, so a
-    # deduped batch never burns or reuses an existing number.
-    start = journal.next_proposal_number(proposals_dir)
-    for offset, proposal in enumerate(fresh):
-        proposal.id = f"PROP-{start + offset:03d}"
-    if fresh:
-        paths = journal.save_proposals(fresh, proposals_dir)
-        ui_impl.section("Proposals Generated")
-        for path in paths:
-            ui_impl.info(f"  {path}")
-        if already:
-            ui_impl.info(f"  ({already} proposal(s) already on disk; not duplicated)")
-        ui_impl.info("")
-        ui_impl.info("Review proposals and apply with `ks evolve --apply <ID>`")
-    elif already:
-        ui_impl.info(
-            f"All {already} proposal(s) for these patterns already exist in {proposals_dir}."
-        )
-    else:
-        ui_impl.info("No actionable proposals generated from current patterns.")
-
+    _echo_retired_proposals_dir(root_dir, ui_impl)
     sys.exit(0)
+
+
+def _echo_retired_evolution_keys(evo_config: EvolutionConfig, ui_impl: UI) -> None:
+    """Name the [evolution] keys #217 retired, so they do not vanish silently.
+
+    They are neither read nor refused: existing kstrl.toml files set
+    them, and a refusal would stop every run over a key that does
+    nothing.
+    """
+    if evo_config.retired_keys:
+        ui_impl.warn(
+            f"[evolution] {', '.join(evo_config.retired_keys)} in kstrl.toml: "
+            f"no effect since #217 (the proposal generator is deleted)"
+        )
+
+
+def _echo_retired_proposals_dir(root_dir: Path, ui_impl: UI) -> None:
+    """One line about files the deleted proposal generator left behind.
+
+    The directory is the operator's: it is counted and named, never
+    read, changed or deleted.
+    """
+    proposals_dir = root_dir / ".kstrl" / "proposals"
+    if not proposals_dir.is_dir():
+        return
+    try:
+        count = f"{sum(1 for entry in proposals_dir.iterdir() if entry.is_file())} file(s)"
+    except OSError as exc:
+        count = f"files not counted ({exc})"
+    ui_impl.info(
+        f"{proposals_dir}: {count} from the deleted proposal generator; "
+        f"nothing reads this directory since #217"
+    )
 
 
 def _report_patterns_and_readiness(
@@ -4680,7 +4644,7 @@ def _report_patterns_and_readiness(
 ) -> None:
     """Print the patterns found, the routing disclosure and the
     readiness numbers, in that order, whether or not any pattern
-    recurred and whether or not proposals will follow.
+    recurred.
 
     Extracted out of ``evolve`` on its own (#217 added no new branch
     here that the plan did not already ask for; this split keeps
@@ -4702,18 +4666,25 @@ def _report_patterns_and_readiness(
 
 
 def _echo_pattern_routing(routing: PatternRouting, ui_impl: UI) -> None:
-    """Name every pattern that will NOT become a proposal, and why.
+    """Print every routed pattern under a heading naming its bucket.
 
-    This is a guard in the clearing direction: it drops traffic. The
-    repo's rule is that a guard which clears must be able to prove a
-    site compliant, and this one cannot prove an operator agrees with a
-    row of _CATEGORY_BY_CHECK. So it never drops anything silently: each
-    dropped pattern is printed under a heading naming its destination,
-    and the first time a row of that table is wrong the operator sees it
-    in this output.
+    This is a guard in the clearing direction: it decides which
+    patterns are lessons. The repo's rule is that a guard which clears
+    must be able to prove a site compliant, and this one cannot prove an
+    operator agrees with a row of _CATEGORY_BY_CHECK. So it never drops
+    anything silently: each pattern is printed under the heading of its
+    bucket, and the first time a row of that table is wrong the operator
+    sees it in this output.
     """
     from kstrl.evolution import UNENROLLED_CATEGORY, category_for_check
 
+    if routing.lessons:
+        ui_impl.section("Candidate lessons (no writer until the playbook ships)")
+        for pattern in routing.lessons:
+            ui_impl.info(
+                f"  [{pattern.check_name}] {pattern.error_signature} "
+                f"(category {category_for_check(pattern.check_name)})"
+            )
     if routing.mechanical:
         ui_impl.section("Routed to the inbox (mechanical, not a lesson)")
         for pattern in routing.mechanical:
@@ -4723,12 +4694,11 @@ def _echo_pattern_routing(routing: PatternRouting, ui_impl: UI) -> None:
                 f"see `ks inbox`)"
             )
     if routing.unrouted:
-        ui_impl.section("Not routed (no proposal arm for this check name)")
+        ui_impl.section("Not routed (not a learnable category)")
         for pattern in routing.unrouted:
             ui_impl.info(
                 f"  [{pattern.check_name}] {pattern.error_signature} "
-                f"(category {category_for_check(pattern.check_name)}; no "
-                f"proposal is written for this check name)"
+                f"(category {category_for_check(pattern.check_name)}; not a lesson)"
             )
         ui_impl.info(
             "  A check name not in evolution._CATEGORY_BY_CHECK lands here "
@@ -4781,86 +4751,6 @@ def _echo_learning_readiness(
     # #495: the one reader of DistillResult.parse_failed. From the event
     # stream, not the journal; the module docstring says why.
     ui_impl.info(distill_parse_failure_line(root_dir, evo_config.lookback_runs))
-
-
-def _evolve_apply(
-    apply_id: str,
-    proposals_dir: Path,
-    root_dir: Path,
-    evo_config: EvolutionConfig,
-    ui_impl: UI,
-) -> int:
-    """R6.3: the minimal REAL apply path. Convention-type proposals
-    (computational, target=claude_md) append to the project CLAUDE.md
-    Agent Learnings section after explicit confirmation
-    (auto_apply_computational=true skips the prompt); every other
-    proposal type prints honest manual instructions - no false
-    "applied" claims. Mechanics live in kstrl.proposals (shared with
-    the evolve screen); narration and the click.confirm wrapper stay
-    here."""
-    if apply_id.lower() == "all":
-        paths = sorted(proposals_dir.glob("prop-*.md"))
-        if not paths:
-            ui_impl.err(f"No proposal files in {proposals_dir}.")
-            return 2
-    else:
-        candidate = proposals_dir / f"{apply_id.lower()}.md"
-        if not candidate.exists():
-            ui_impl.err(f"Proposal '{apply_id}' not found (expected {candidate}).")
-            return 2
-        paths = [candidate]
-
-    claude_md = root_dir / "CLAUDE.md"
-    failures = 0
-    for path in paths:
-        proposal = parse_proposal_file(path)
-        pid = proposal.display_id
-        if proposal.applied:
-            ui_impl.info(f"{pid} already applied at {proposal.applied}; skipping.")
-            continue
-        if not proposal.is_convention:
-            ui_impl.info(f"{pid}: {proposal.title}")
-            ui_impl.warn(
-                f"  Automated apply only covers convention-type proposals "
-                f"(target claude_md). This one targets "
-                f"'{proposal.target or 'unknown'}': review {path} and "
-                f"apply it manually."
-            )
-            continue
-        ui_impl.info(f"{pid}: {proposal.title}")
-        ui_impl.info(f"  Convention: {proposal.convention}")
-        if not evo_config.auto_apply_computational:
-            # PR A: the old bare click.confirm raised click.Abort on
-            # non-TTY EOF and crashed the command. Piped input
-            # ("echo y | ks evolve --apply ...") must keep working,
-            # so this stays click.confirm - with EOF now meaning
-            # "declined", never a crash.
-            try:
-                confirmed = click.confirm(
-                    f"Append this convention to {claude_md}?",
-                    default=False,
-                )
-            except click.Abort:
-                ui_impl.info("")
-                confirmed = False
-            if not confirmed:
-                ui_impl.info(f"  {pid} not applied (declined).")
-                continue
-        if not _append_to_agent_learnings(
-            claude_md,
-            pid,
-            proposal.convention,
-        ):
-            ui_impl.err(
-                f"  Could not apply {pid}: {claude_md} is missing or has "
-                f"no '## Agent Learnings' section. Add the section or "
-                f"apply manually from {path}."
-            )
-            failures += 1
-            continue
-        mark_applied(path)
-        ui_impl.ok(f"  {pid} appended to {claude_md}.")
-    return 2 if failures else 0
 
 
 @cli.group(name="autonomy")

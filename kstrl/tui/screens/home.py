@@ -57,7 +57,7 @@ HOME_COMMANDS: list[HomeCommand] = [
     HomeCommand("dash", "dashboard", "open the newest run"),
     HomeCommand("config", "config", "resolved values + sources"),
     HomeCommand("inbox", "inbox", "decisions awaiting you"),
-    HomeCommand("evolve", "evolve", "proposals and trends"),
+    HomeCommand("evolve", "evolve", "failure patterns and trends"),
     HomeCommand("init", "init", "scaffold a project"),
     HomeCommand("feature", "feature", "via CLI: ks feature --tui"),
     HomeCommand("understand", "understand", "via CLI: ks understand --tui"),
@@ -131,12 +131,6 @@ def _stats_line(stats: HomeStats) -> Text:
         if last.cost_usd:
             text.append(" · ", style=theme.MUTED)
             text.append(f"${last.cost_usd:.2f}{marker}")
-    if stats.pending_proposals:
-        text.append("   ", style=theme.MUTED)
-        text.append(
-            f"▲ {stats.pending_proposals} proposal(s) pending",
-            style=theme.WARNING,
-        )
     return text
 
 
@@ -223,24 +217,16 @@ class HomeScreen(Screen[None]):
             # the UI thread, with "·" cells until the message lands.
             self._summarizing = True
             self.run_worker(
-                lambda: self._compute_summaries(list(refs), root_dir),
+                lambda: self._compute_summaries(list(refs)),
                 thread=True,
             )
 
-    def _compute_summaries(
-        self,
-        refs: list[RunRef],
-        root_dir: Path,
-    ) -> None:
+    def _compute_summaries(self, refs: list[RunRef]) -> None:
         try:
             summaries = self._cache.refresh(refs)
-            stats = gather_stats(
-                root_dir,
-                summaries,
-                refs[0].run_id if refs else "",
-            )
+            stats = gather_stats(summaries, refs[0].run_id if refs else "")
         except Exception:  # noqa: BLE001 - a broken run dir must not kill home
-            summaries, stats = {}, HomeStats(None, 0)
+            summaries, stats = {}, HomeStats(None)
         self.post_message(SummariesReady(summaries, stats))
 
     def on_summaries_ready(self, message: SummariesReady) -> None:

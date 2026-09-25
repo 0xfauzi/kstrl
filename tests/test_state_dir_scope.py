@@ -197,9 +197,9 @@ class TestStateDirCarveOut:
         """The bound on that residual.
 
         ``queue`` is the in-tree work queue ``ks serve`` drains, so a
-        file written there can admit work; ``proposals`` is what
-        ``ks evolve --apply`` reads to mutate config and prompts, and
-        ``auto_apply_computational`` can skip its confirmation. The
+        file written there can admit work; ``proposals`` was what
+        ``ks evolve --apply`` read until #507 deleted it, and stays
+        countable until a change decides otherwise. The
         control files these subtrees hold are owned by
         ``test_no_legacy_control_file_is_carved_out``.
         """
@@ -394,7 +394,9 @@ _PACKAGE_ENTRIES: set[str] | None = None
 #: ``.kstrl``. So a hiding place added under one of them moves a count
 #: here even though ``_named_entries`` reports nothing.
 _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
-    "cli.py": 6,
+    # 5: -1 for #507, which deleted the proposal generator and --apply
+    # and kept one join to the proposals directory for the notice about it.
+    "cli.py": 5,
     "contract.py": 1,
     "decompose.py": 1,
     "doctor.py": 2,
@@ -408,9 +410,7 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     # 6: +1 for #464, which reads the progress log for cost evidence.
     "serve.py": 6,
     "statedir.py": 7,
-    "tui/home_data.py": 1,
     "tui/runs.py": 2,
-    "tui/screens/evolve.py": 1,
     "workqueue.py": 2,
 }
 

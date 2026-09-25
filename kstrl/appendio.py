@@ -37,9 +37,9 @@ about it. Four callers pass "" for a bare pad, and each has a reason
 written at the call site: the inbox, because a repair row is counted by
 ``scan().unparseable_count()`` and would consume admission capacity
 against the #190 cap; experiments.tsv, because TSV has no marker that a
-reader would not render as a run; and the two files that are prose
-rather than records, a proposal's applied stamp and the .gitignore
-block, where a repair line would be a line a person reads.
+reader would not render as a run; and the .gitignore block, which is
+prose rather than records, where a repair line would be a line a person
+reads.
 
 ``handle_ends_without_newline`` and the ``JOURNAL_REPAIR_EVENT`` name
 moved here from ``observability`` and ``evolution`` when the second
@@ -114,9 +114,7 @@ def handle_ends_without_newline(handle: IO[bytes]) -> bool:
     refused with a message one step earlier, where this widening would
     refuse it with an ``OSError``.
 
-    Each caller says so where it opens. ``proposals.mark_applied`` was
-    the one that did not, for a round: the S1 routing added the call
-    after the S2 sweep wrote the clause at the other seven.
+    Each caller says so where it opens.
 
     Binary, which is the point: the last byte of a file torn
     mid-utf-8-sequence cannot be decoded, and a text-mode probe would
@@ -310,15 +308,15 @@ def appending(path: Path, *, lock: bool = False) -> Iterator[IO[bytes]]:
     tolerant and unlocked and unchanged.
 
     Only ``evolution.EvolutionJournal.append_entries`` asks for the lock
-    today. The other eight appendio callers either hold an outer lock
+    today. The other seven appendio callers either hold an outer lock
     already (``inbox`` under ``control_lock``, ``workqueue`` under the
     caller's ``queue_lock``) or have one writer process per file
     (``progress.jsonl``, ``events.jsonl``, ``engineer.jsonl``, the E8
-    telemetry log, ``experiments.tsv``, a proposal file and
-    ``.gitignore``), and each says which at its call site. Eight rather
-    than six because #352 routed the last two that were standing on a
-    reason in the append-open guard instead; the count is the routed
-    census minus this module's own two rows and the journal.
+    telemetry log, ``experiments.tsv`` and ``.gitignore``), and each
+    says which at its call site. #352 routed the last two that were
+    standing on a reason in the append-open guard, and #507 deleted the
+    proposal file's; the count is the routed census minus this module's
+    own two rows and the journal.
     """
     handle = open_for_append(path)
     exclusion: AbstractContextManager[None] = _flock(handle) if lock else nullcontext()

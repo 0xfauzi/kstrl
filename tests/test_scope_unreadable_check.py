@@ -35,8 +35,8 @@ This file pins what is new here:
    cannot be handed the error at all, by keyword OR positionally, and an
    ambiguous empty sentinel refuses rather than passing.
 4. Every consumer that keys on the check-name string was decided - the
-   journal's category, signature and proposal move to the new name, the
-   in-loop guard keeps the old one.
+   journal's category and signature move to the new name, the in-loop
+   guard keeps the old one.
 
 The cheapest refusal is not here: ``factory``'s launch gate refuses an
 untrustworthy scope BEFORE the engineer runs, which is the only place
@@ -64,9 +64,6 @@ import pytest
 
 from kstrl.config import KstrlConfig
 from kstrl.evolution import (
-    EvolutionConfig,
-    EvolutionJournal,
-    FailurePattern,
     category_for_check,
     signatures_from_verification,
     split_signature,
@@ -229,7 +226,7 @@ class TestTheConsumersOfTheCheckName:
     def test_both_names_categorise_as_verification(self) -> None:
         """The new name because a name absent from
         ``_CATEGORY_BY_CHECK`` is "unenrolled" (#496), which routes a
-        Phase 1 gate to no proposal at all; the old one because
+        Phase 1 gate to ``unrouted`` and never to the lessons; the old one because
         journal entries written before the split carry
         ``diff_scope:...`` signatures and are not migrated."""
         assert category_for_check("scope_unreadable") == "verification"
@@ -243,26 +240,6 @@ class TestTheConsumersOfTheCheckName:
         # Whole words: ``signature_slug`` cuts at 60 characters, and a
         # signature is a cross-run grouping key an operator reads.
         assert code == "scope-could-not-be-read-at-plan-time-failing-closed"
-
-    def test_ks_evolve_proposes_an_operator_fix_not_agent_advice(self) -> None:
-        """The other place that dispatches on the check name. Without a
-        branch, a recurring scope failure has no arm at all (#217
-        deleted the generic one) and ``propose_improvements`` raises -
-        advice to the agent was never the right answer for a state the
-        agent cannot influence."""
-        pattern = FailurePattern(
-            description="d",
-            frequency=3,
-            total_components=4,
-            affected_components=["comp-a"],
-            check_name="scope_unreadable",
-            error_signature="scope-could-not-be-read-at-plan-time-failing-closed",
-            category="verification",
-        )
-        proposal = EvolutionJournal(EvolutionConfig()).propose_improvements([pattern])[0]
-        assert proposal.target == "repository"
-        assert "CLAUDE.md" not in proposal.suggested_change
-        assert "prdPath" in proposal.suggested_change
 
     def test_the_in_loop_guard_still_reports_diff_scope(self) -> None:
         """The third consumer, ``pipeline`` on ``guard_violations``, is
