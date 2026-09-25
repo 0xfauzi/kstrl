@@ -83,12 +83,8 @@ from kstrl.fixtures import FixturesConfig
 from kstrl.git import fetch_base_branch, resolve_base_ref
 from kstrl.guards import ScopeHazard, scope_entry_hazard
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
-from kstrl.integration_phase import (
-    IntegrationRun,
-    Phase3Round,
-    report_integration,
-    run_integration_review,
-)
+from kstrl.integration_loop import IntegrationLoop
+from kstrl.integration_phase import IntegrationRun, report_integration
 from kstrl.interaction import InteractionChannel
 from kstrl.jsonread import read_json
 from kstrl.knowledge import (
@@ -400,6 +396,13 @@ class FactoryConfig:
     # #482: run the record-only integration review after Phase 3. Its
     # outcome is recorded and printed and gates nothing in this slice.
     integration_review: bool = True
+    # #483: when true, open integration findings become a fix component and
+    # a stop without a clean verdict fails the run. Off until the owner turns
+    # it on after the `integration` calibration (#480 decision 2).
+    integration_blocking: bool = False
+    # #483: the most fix components one feature may get. A termination bound,
+    # derived at run time by counting integration-fix-* components.
+    integration_max_rounds: int = 1
     # R7.2: approved-fixtures oracle for Phase 1. None means run_factory
     # loads FixturesConfig.load(root_dir) - toml [fixtures] section +
     # env - so `ks factory` honors the config with no CLI wiring.
@@ -462,6 +465,7 @@ class FactoryConfig:
             self.claim_agreement,
             "[factory] claim_agreement",
         )
+        _validate_max_rounds(self.integration_max_rounds, "[factory] integration_max_rounds")
 
     @classmethod
     def from_env(cls) -> FactoryConfig:
@@ -497,6 +501,11 @@ class FactoryConfig:
                 os.environ.get("KSTRL_FACTORY_KEEP_WORKTREES_ON_FAILURE")
             ),
             integration_review=_parse_bool(os.environ.get("KSTRL_FACTORY_INTEGRATION_REVIEW", "1")),
+            integration_blocking=_parse_bool(os.environ.get("KSTRL_FACTORY_INTEGRATION_BLOCKING")),
+            integration_max_rounds=_validate_max_rounds(
+                _env_int(os.environ.get("KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS", "1")),
+                "KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS",
+            ),
             # R10.3: unlike review_mode next door, this key HAS an env
             # var, so from_env must read it. `ks factory` uses from_env
             # as the environment-only baseline that _collect_toml_notes
@@ -576,6 +585,13 @@ class FactoryConfig:
         config.integration_review = strict_bool(
             section, "integration_review", config.integration_review
         )
+        config.integration_blocking = strict_bool(
+            section, "integration_blocking", config.integration_blocking
+        )
+        config.integration_max_rounds = _validate_max_rounds(
+            section.get("integration_max_rounds", config.integration_max_rounds),
+            "[factory] integration_max_rounds",
+        )
         # Env overrides (consistent with from_env)
         if "FACTORY_MAX_PARALLEL" in os.environ:
             config.max_parallel = int(os.environ["FACTORY_MAX_PARALLEL"])
@@ -611,12 +627,45 @@ class FactoryConfig:
         config.integration_review = _parse_bool(
             os.environ.get("KSTRL_FACTORY_INTEGRATION_REVIEW", str(config.integration_review))
         )
+        config.integration_blocking = _parse_bool(
+            os.environ.get("KSTRL_FACTORY_INTEGRATION_BLOCKING", str(config.integration_blocking))
+        )
+        config.integration_max_rounds = _validate_max_rounds(
+            _env_int(
+                os.environ.get(
+                    "KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS", str(config.integration_max_rounds)
+                )
+            ),
+            "KSTRL_FACTORY_INTEGRATION_MAX_ROUNDS",
+        )
         if "KSTRL_FACTORY_CLAIM_AGREEMENT" in os.environ:
             config.claim_agreement = _validate_claim_agreement(
                 os.environ["KSTRL_FACTORY_CLAIM_AGREEMENT"],
                 "KSTRL_FACTORY_CLAIM_AGREEMENT",
             )
         return config
+
+
+def _validate_max_rounds(value: object, source: str) -> int:
+    """``integration_max_rounds`` as a whole number of at least 1 (#483).
+
+    Zero is refused rather than read as "no fixes": turning the fixer off is
+    ``integration_blocking = false``, and #467 made an unset limit mean no
+    limit, which a termination bound must never mean. A bool and a quoted
+    number are refused, as strict_bool refuses a quoted bool.
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"{source} must be a whole number of at least 1, got {value!r}")
+    return value
+
+
+def _env_int(raw: str) -> object:
+    """An environment value as an int when it is one, else the text, so the
+    validator names the bad value in its own words."""
+    try:
+        return int(raw)
+    except ValueError:
+        return raw
 
 
 def merge_gate_unreachable_warning(config: FactoryConfig) -> str | None:
@@ -3800,6 +3849,21 @@ def _execution_limit_rows(
     ]
 
 
+def _run_plan_event(manifest: Manifest, factory_config: FactoryConfig) -> RunPlan:
+    """The component DAG plus budget caps (chunk 4). Emitted at run start and
+    again when the integration loop appends a fix component (#483), because
+    the dashboard replaces its plan only on RunPlan."""
+    return RunPlan(
+        components=tuple(
+            {"id": c.id, "title": c.title, "deps": list(c.dependencies)}
+            for c in manifest.components
+        ),
+        max_total_tokens=factory_config.max_total_tokens,
+        max_adversarial_calls=factory_config.max_adversarial_calls,
+        max_cost_usd=factory_config.max_cost_usd,
+    )
+
+
 def _run_factory_locked(
     manifest: Manifest,
     factory_config: FactoryConfig,
@@ -3968,17 +4032,7 @@ def _run_factory_locked(
     )
     # Chunk 4: the component DAG + budget caps as one event, so a
     # dashboard can draw the board without reading the manifest.
-    bus.emit(
-        RunPlan(
-            components=tuple(
-                {"id": c.id, "title": c.title, "deps": list(c.dependencies)}
-                for c in manifest.components
-            ),
-            max_total_tokens=factory_config.max_total_tokens,
-            max_adversarial_calls=factory_config.max_adversarial_calls,
-            max_cost_usd=factory_config.max_cost_usd,
-        )
-    )
+    bus.emit(_run_plan_event(manifest, factory_config))
 
     # R7.1: resolve which model family reviews this run's diffs ONCE so
     # the choice is stable across components and the homogeneity warning
@@ -4410,7 +4464,7 @@ def _run_factory_locked(
     def _submit_args(comp: Component, wt_path: Path) -> tuple[Any, ...]:
         ctx_json = run_state.component_contexts.get(comp.id)
         engineer_usage = pipeline.engineer_usage_totals()
-        scope = run_scope.for_component(comp.id)
+        scope = pipeline.run_scope.for_component(comp.id)
         knowledge_prefix = ""
         if knowledge_config.enabled:
             try:
@@ -4593,7 +4647,7 @@ def _run_factory_locked(
                     # Budget ceilings and an untrustworthy plan-time
                     # scope: three conditions that fail the component
                     # loudly rather than spending an engineer loop on it.
-                    if _refused_before_launch(pipeline, comp, run_scope):
+                    if _refused_before_launch(pipeline, comp, pipeline.run_scope):
                         transitioned_without_launch += 1
                         continue
                     pipeline.begin_attempt(comp)
@@ -4851,28 +4905,44 @@ def _run_factory_locked(
     # deferred-merge (tier merge + bisection) mode.
     components_merged = factory_config.create_prs and not factory_config.single_pr
 
-    phase3_round = Phase3Round()
     # R0.3: scheduling + contract testing form one outer loop so a
     # contract breaker reset to PENDING actually re-enters scheduling.
-    # Termination: every reset consumes one of the breaker's bounded
-    # retries, and any pass without a reset breaks out.
-    while True:
+    # #483: the rounds come from the integration loop, which gives the loop
+    # its second reason to re-enter: a fix component built from open
+    # integration findings. Every exit below is a `continue`, so the round
+    # always returns to the loop, which reviews it once and decides.
+    # Termination: every breaker reset consumes one of the breaker's bounded
+    # retries, and every fix counts against integration_max_rounds, which the
+    # loop derives from the manifest.
+    integration = IntegrationLoop(
+        IntegrationRun(
+            manifest=manifest,
+            manifest_path=manifest_path,
+            root_dir=root_dir,
+            run_id=run_id,
+            pipeline=pipeline,
+            ui=ui,
+            decisions=run_decisions,
+        ),
+        stop,
+    )
+    for phase3_round in integration.rounds():
         _run_scheduling_pass()
         _cleanup_pass_worktrees()
 
         if stop is not None and stop.is_set():
             ui.warn(f"  Run stopped: {stop.reason}")
-            break
+            continue
 
         # PHASE 3: Contract testing
         contract_config = factory_config.contract_config
         if contract_config is None or contract_config.mode == ContractMode.SKIP.value:
-            break
+            continue
 
         # #481: one commit per round. The integrated check tests it and a
         # later check of the same round must judge the same tree.
         round_base_sha = _resolve_round_base(manifest, root_dir, ui)
-        phase3_round = Phase3Round(base_sha=round_base_sha)
+        phase3_round.base_sha = round_base_sha
         try:
             contract_results = run_contract_testing(
                 manifest,
@@ -4888,7 +4958,7 @@ def _run_factory_locked(
             # state - fail the run loudly instead of continuing.
             ui.err(f"  Contract cleanup FAILED: {exc}")
             factory_result.contract_failures.append(f"contract cleanup failed: {exc}")
-            break
+            continue
 
         phase3_round.record(contract_results)
         for cr in contract_results:
@@ -4904,11 +4974,10 @@ def _run_factory_locked(
 
         failures = [cr for cr in contract_results if not cr.passed]
         if not failures:
-            break
+            continue
 
         # Reset retryable breakers to PENDING; the outer loop then
         # re-enters scheduling so the promised retry actually runs.
-        any_breaker_reset = False
         for cr in failures:
             if not cr.breaker:
                 continue
@@ -4940,10 +5009,10 @@ def _run_factory_locked(
                     cr.test_output[:500],
                 )
                 manifest.save(manifest_path)
-                any_breaker_reset = True
+                phase3_round.breaker_reset = True
                 ui.warn(f"  Contract breaker '{cr.breaker}' sent back for retry")
 
-        if any_breaker_reset:
+        if phase3_round.breaker_reset:
             continue
 
         # Terminal contract failure: nothing left to retry. Record it in
@@ -4989,23 +5058,11 @@ def _run_factory_locked(
                 )
             ui.err(f"  Contract failure recorded for tier {cr.tier}; run will exit nonzero")
         manifest.save(manifest_path)
-        break
 
-    # #482: the record-only integration review of the merged feature, once,
-    # after the Phase 3 loop. Nothing it records reaches contract_failures
-    # or the exit code in this slice.
-    integration_record = run_integration_review(
-        IntegrationRun(
-            manifest=manifest,
-            manifest_path=manifest_path,
-            root_dir=root_dir,
-            run_id=run_id,
-            pipeline=pipeline,
-            ui=ui,
-        ),
-        phase3_round,
-        stop,
-    )
+    # #482: the integration review ran after the last round, inside the
+    # loop. #483: with integration_blocking on, a stop without a clean
+    # verdict is already in contract_failures.
+    integration_record = integration.record
 
     # Create PRs for any remaining components that weren't handled per-component
     # (e.g. single-pr mode, or stragglers from parallel execution)

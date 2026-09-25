@@ -165,6 +165,8 @@ progress_log_enabled = true        # JSONL event log at .kstrl/progress.jsonl (R
 # under .kstrl/runs/<run_id>/ so a killed worker's spend still reaches the meter.
 keep_worktrees_on_failure = false  # keep failed components' worktrees for post-mortem (R3.3)
 integration_review = true      # record-only review of the merged feature after Phase 3 (#482)
+integration_blocking = false   # open findings become a fix component; a non-clean stop fails the run (#483)
+integration_max_rounds = 1     # most fix components one feature may get; at least 1 (#483)
 
 # Phase 1 mechanical verification.
 [verify]

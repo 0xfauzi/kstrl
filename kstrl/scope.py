@@ -260,6 +260,31 @@ class RunScope:
             )
         )
 
+    def with_component(
+        self,
+        comp: Component,
+        root_dir: Path,
+        base_config: KstrlConfig,
+    ) -> RunScope:
+        """This snapshot plus one component appended mid-run (#483).
+
+        Resolves ONLY ``comp``, from ``root_dir``, before its engineer
+        first runs, and carries every existing entry over unchanged, so no
+        component's scope is ever re-resolved (#269). An id the snapshot
+        already holds raises ValueError, because re-resolving it is exactly
+        what #269 forbids.
+        """
+        if comp.id in self.by_component:
+            raise ValueError(f"component '{comp.id}' already has a plan-time scope")
+        return RunScope(
+            MappingProxyType(
+                {
+                    **self.by_component,
+                    comp.id: ComponentScope.resolve(comp, root_dir, base_config),
+                }
+            )
+        )
+
     def for_component(self, component_id: str) -> ComponentScope:
         """The snapshot for ``component_id``, or a fail-closed stand-in.
 

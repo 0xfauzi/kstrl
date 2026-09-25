@@ -270,6 +270,8 @@ def _section_specs() -> list[SectionSpec]:
                     "progress_log_enabled",
                     "keep_worktrees_on_failure",
                     "integration_review",
+                    "integration_blocking",
+                    "integration_max_rounds",
                 ],
             ),
             lambda root: FactoryConfig.load(root_dir=root),
@@ -553,6 +555,14 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
         "factory",
         "integration_review",
     ): "record-only review of the merged feature after Phase 3 (#482); never gates",
+    (
+        "factory",
+        "integration_blocking",
+    ): "open integration findings become a fix component; a non-clean stop fails the run (#483)",
+    (
+        "factory",
+        "integration_max_rounds",
+    ): "most fix components one feature may get, counted from the manifest; at least 1 (#483)",
     (
         "breaker",
         "no_progress_iterations",
