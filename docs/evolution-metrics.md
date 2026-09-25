@@ -267,18 +267,14 @@ The window is run directories, not the journal's run ids, so this line and
 the fact-utilization line can cover different runs. An unreadable
 `.kstrl/runs/` prints "not counted", never a zero.
 
-## Proposals: `.kstrl/proposals/prop-NNN.md`
+## Proposals: deleted by #507
 
-- IDs are monotonic across `ks evolve` invocations: numbering
-  continues after the highest `prop-NNN.md` already on disk (R6.2).
-- Existing proposal files are never overwritten; a proposal whose title
-  already exists on disk is skipped, not duplicated.
-- `ks evolve --apply PROP-NNN` (or `all`) really applies only
-  convention-type proposals (computational, target `claude_md`): after
-  explicit confirmation it appends the convention to the project
-  CLAUDE.md `## Agent Learnings` section and stamps the proposal file
-  with `**Applied**: <timestamp>` so a re-apply is a no-op.
-  `[evolution] auto_apply_computational = true` skips the confirmation
-  prompt. Every other target prints manual instructions (R6.3).
-- `[evolution] auto_propose = false` restricts `ks evolve` to
-  pattern reporting; no proposal files are generated.
+`ks evolve` no longer writes `.kstrl/proposals/prop-NNN.md`, and
+`ks evolve --apply` is gone (#507, Slice 1 of #217). A recurring pattern
+whose check's category is verification, review, security or contract is
+printed under "Candidate lessons (no writer until the playbook ships)".
+
+- A `.kstrl/proposals/` directory already on disk is left alone. `ks evolve`
+  prints one line naming it and its file count.
+- `[evolution] auto_propose` and `auto_apply_computational` have no effect.
+  When `kstrl.toml` sets either, `ks evolve` prints one line naming them.

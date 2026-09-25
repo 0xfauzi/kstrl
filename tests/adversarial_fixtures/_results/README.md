@@ -152,3 +152,40 @@ The first two rows are the same bytes, which is the point of listing
 both: `#266` landed between them and could have moved the body, so
 `baseline-20260831-034641.json` measuring 1.4.2 exactly as `cbdff7c`
 carries it is a checked fact rather than an assumption.
+
+## The 2026-09-25 captures (#480, #401)
+
+Two files, both haiku, three runs per fixture, owner-authorised.
+
+`baseline-20260925-120951.json` is a full capture of every role at
+`f2d9d2d`: DECOMPOSE_PROMPT 3.1.0, ARCHITECT_REPO_SOURCE_PROMPT and
+ARCHITECT_NO_REPO_SOURCE_PROMPT 1.0.0, REVIEWER_PROMPT 2.0.0,
+SECURITY_PROMPT 2.0.0, INTEGRATION_CRITERIA_PROMPT 1.0.0. It is the
+first file to carry both arm ids of the #401 reuse fixture
+(`architect_reuse` 0.67: 1/3 with the repository, 3/3 without) and the
+first to carry the #482 integration ids.
+
+| role | rate |
+|---|---|
+| security | 1.00 |
+| security_hard | 0.92 (`sec-08-toctou-race` 2/3) |
+| reviewer | 1.00 |
+| architect | 1.00 |
+| architect_allowed_paths | 1.00 |
+| architect_reuse | 0.67 |
+| security_negative, reviewer_negative | 0 of 4 fixtures a false positive |
+
+Treat its `integration` (0.07) and `integration_clean` (0.25) figures
+as VOID, like the 20260729 `architect_allowed_paths` figure above. The
+tree predates #500: `integration_outcome` could not resolve a bare file
+name such as `storage.py`, so a finding naming one could not be
+credited, and IC5's criterion carried a `<component>` placeholder.
+
+`baseline-20260925-211436.json` recaptures only the two integration
+roles at `5f476ed` (after #500, INTEGRATION_CRITERIA_PROMPT 1.1.0):
+`integration` 0.07, `integration_clean` 0.25. These are real
+measurements of that tree, and they measure the output contract, not
+detection: of 27 runs, 17 were refused because the reply's criterion
+text differed from the PRD's and 6 because the five stories came back
+as one, and all 4 runs that were scored were correct. #518 tracks the
+join; re-capture both roles after it lands.

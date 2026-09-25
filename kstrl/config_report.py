@@ -330,8 +330,6 @@ def _phase_sections() -> list[tuple[str, Any, list[str]]]:
                 "experiments_path",
                 "min_pattern_frequency",
                 "lookback_runs",
-                "auto_propose",
-                "auto_apply_computational",
             ],
         ),
         ("timeout", [f.name for f in dataclass_fields(TimeoutConfig)]),

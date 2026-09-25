@@ -11,9 +11,7 @@ carry the "+".
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
-from kstrl.proposals import list_proposals
 from kstrl.reducer import RunState, fold, read_run_dir
 from kstrl.tui.runs import RunRef
 
@@ -33,7 +31,6 @@ class RunSummary:
 @dataclass(frozen=True)
 class HomeStats:
     last: RunSummary | None
-    pending_proposals: int
 
 
 def fold_run(ref: RunRef) -> RunState:
@@ -143,17 +140,8 @@ def _run_stream_signature(
     return tuple(signature)
 
 
-def pending_proposal_count(root_dir: Path) -> int:
-    proposals_dir = root_dir / ".kstrl" / "proposals"
-    return sum(1 for proposal in list_proposals(proposals_dir) if not proposal.applied)
-
-
 def gather_stats(
-    root_dir: Path,
     summaries: dict[str, RunSummary],
     newest_run_id: str,
 ) -> HomeStats:
-    return HomeStats(
-        last=summaries.get(newest_run_id),
-        pending_proposals=pending_proposal_count(root_dir),
-    )
+    return HomeStats(last=summaries.get(newest_run_id))

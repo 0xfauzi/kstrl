@@ -94,7 +94,7 @@ CONTROL_FILENAMES: tuple[str, ...] = (
 #: - ``integration`` ``integration_state.py`` the integration review's durable state (#482)
 #: - ``knowledge``  ``knowledge.py`` distilled facts (default root)
 #: - ``logs``       ``cli.py`` feature transcripts, ``serve.py`` launchd logs
-#: - ``proposals``  ``cli.py`` evolution proposals
+#: - ``proposals``  ``cli.py`` counts what the deleted proposal generator left (#217)
 #: - ``queue``      ``workqueue.py`` (``QUEUE_DIR_NAME``)
 #: - ``runs``       ``events.py`` event journals and transcripts
 #: - ``snapshots``  ``fixtures.py`` (``FixturesConfig.snapshot_dir``)
@@ -152,9 +152,10 @@ STATE_FILES: tuple[str, ...] = (
 #:    it is worse than a false scope failure. ``queue`` is the in-tree
 #:    work queue ``ks serve`` drains (``workqueue.py``), so a file
 #:    written there can admit work; the pause marker, spend ledger and
-#:    GitHub processed-ids sit inside it. ``proposals`` is what
-#:    ``ks evolve --apply`` reads to mutate config and prompts, and
-#:    ``[evolution] auto_apply_computational`` can skip its confirmation.
+#:    GitHub processed-ids sit inside it. ``proposals`` was what
+#:    ``ks evolve --apply`` read to edit CLAUDE.md until #507 deleted
+#:    that reader; nothing reads it now, and it stays countable here
+#:    until a change decides the scope guard's treatment of it.
 #:    ``autonomy.json`` is the autonomy level itself and ``inbox.jsonl``
 #:    the human-decision stream. All five are exactly
 #:    ``policy.ENFORCEMENT_MACHINERY_PATHS``, where touching one is a
