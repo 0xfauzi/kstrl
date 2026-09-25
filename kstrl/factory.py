@@ -2459,32 +2459,15 @@ def _run_component(
         elif claude_dest.exists():
             agents_dest.symlink_to("CLAUDE.md")
 
-    # Run scaffold script if configured
-    if scaffold_cmd:
-        try:
-            subprocess.run(
-                scaffold_cmd,
-                shell=True,
-                cwd=worktree_path,
-                capture_output=True,
-                timeout=120,
-            )
-        except Exception:
-            pass  # scaffold failure is non-fatal
-
-    # Build codebase scan context (Phase 0)
-    codebase_scan_prefix: str = ""
-    if codebase_scan_config_dict:
-        try:
-            ff_config = CodebaseScanConfig(**codebase_scan_config_dict)
-            codebase_scan_prefix = build_codebase_scan_context(
-                worktree_path,
-                ff_config,
-                component_id=component_id,
-                component_deps=component_deps,
-            )
-        except Exception:
-            pass  # codebase scan failure is non-fatal
+    # The scaffold command and the Phase 0 scan. Both stay non-fatal; a
+    # failure comes back as a note that is warned once `ui` is bound (#486).
+    codebase_scan_prefix, setup_notes = _prepare_component_tree(
+        worktree_path,
+        component_id,
+        scaffold_cmd,
+        codebase_scan_config_dict,
+        component_deps,
+    )
 
     # R10.8 and R10.9: the operator's own files, one call each through
     # the one resolver. Resolved by `operator_file_spec` against the REPO
@@ -2635,6 +2618,8 @@ def _run_component(
     guard_base_ref = resolve_base_ref(base_branch, root_dir)
 
     try:
+        for note in setup_notes:
+            ui.warn(note)
         result = run_loop(
             config,
             ui,
@@ -2755,6 +2740,54 @@ def _run_component(
                 transcript_fh.close()
             except OSError:
                 pass
+
+
+def _prepare_component_tree(
+    worktree_path: Path,
+    component_id: str,
+    scaffold_cmd: str | None,
+    codebase_scan_config_dict: dict[str, Any] | None,
+    component_deps: list[str] | None,
+) -> tuple[str, list[str]]:
+    """Run the scaffold command and build the Phase 0 scan context.
+
+    Returns ``(codebase_scan_prefix, notes)``. Neither failure stops the
+    component, and neither is passed over: each one is a note the caller
+    warns on the worker's UI. The engineer runs without its Phase 0
+    context when the scan note is present (#486).
+    """
+    notes: list[str] = []
+    if scaffold_cmd:
+        try:
+            completed = subprocess.run(
+                scaffold_cmd,
+                shell=True,
+                cwd=worktree_path,
+                capture_output=True,
+                timeout=120,
+            )
+        except Exception as exc:  # noqa: BLE001 - non-fatal, never silent
+            notes.append(
+                f"  Scaffold command failed for {component_id}: {type(exc).__name__}: {exc}"
+            )
+        else:
+            if completed.returncode != 0:
+                notes.append(
+                    f"  Scaffold command failed for {component_id}: "
+                    f"exit code {completed.returncode}"
+                )
+    codebase_scan_prefix = ""
+    if codebase_scan_config_dict:
+        try:
+            codebase_scan_prefix = build_codebase_scan_context(
+                worktree_path,
+                CodebaseScanConfig(**codebase_scan_config_dict),
+                component_id=component_id,
+                component_deps=component_deps,
+            )
+        except Exception as exc:  # noqa: BLE001 - non-fatal, never silent
+            notes.append(f"  Codebase scan failed for {component_id}: {type(exc).__name__}: {exc}")
+    return codebase_scan_prefix, notes
 
 
 def _attempt_sweep(worktree_path: Path, root_dir: Path) -> WorktreeSweep:
