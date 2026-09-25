@@ -13,6 +13,18 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Added
 
+- Checks between engineer iterations and a convergence check across
+  attempts (#233), both off by default. `[verify] fast_iteration_checks`
+  (`KSTRL_VERIFY_FAST_ITERATION_CHECKS`, comma-separated) names gates out
+  of `test_suite`, `typecheck` and `linter` to run after every engineer
+  iteration that neither completed nor was killed; their failures are put
+  in the next iteration's prompt, replaced every iteration, and recorded
+  as `fast_checks_failed` on `iteration_completed`. `[factory]
+  convergence_attempts` (`KSTRL_FACTORY_CONVERGENCE_ATTEMPTS`, default 0)
+  fails a component whose gate failure count has not fallen for that many
+  consecutive attempts in the same phase, as `engineer:divergence`; every
+  superseded attempt now records its count as `failure_count` in the
+  evolution journal.
 - The integration loop's fixer (#483, slice 3 of #480), behind the new
   `[factory] integration_blocking` (default false) and
   `[factory] integration_max_rounds` (default 1, at least 1), with

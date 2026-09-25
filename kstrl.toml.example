@@ -167,6 +167,7 @@ keep_worktrees_on_failure = false  # keep failed components' worktrees for post-
 integration_review = true      # record-only review of the merged feature after Phase 3 (#482)
 integration_blocking = false   # open findings become a fix component; a non-clean stop fails the run (#483)
 integration_max_rounds = 1     # most fix components one feature may get; at least 1 (#483)
+convergence_attempts = 0       # fail a component whose gate failure count stops falling for N attempts; 0 = off (#233)
 
 # Phase 1 mechanical verification.
 [verify]
@@ -183,6 +184,7 @@ subprocess_timeout = 300.0
 require_self_critique = false      # opt-in: fail Phase 1 if engineer's ## Self-Critique block missing/sparse
 self_critique_min_bullets = 3
 progress_file_path = ""            # empty = the progress log beside the component's PRD
+fast_iteration_checks = []         # gates run between engineer iterations, e.g. ["typecheck", "linter"]; empty = off (#233)
 
 # Phase 1 policy envelope (R8.1): declarative merge guardrails enforced on
 # ARTIFACTS (git diff, uv.lock), never on agent self-report. Opt-in: when

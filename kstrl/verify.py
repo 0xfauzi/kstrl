@@ -427,6 +427,22 @@ class VerificationResult:
                     lines.append(f"  {detail}")
         return "\n".join(lines)
 
+    @property
+    def failure_count(self) -> int:
+        """How many failures the failing checks reported (#233).
+
+        Each parsed failure counts one, and a failing check with none
+        parsed counts one, because it still failed. This is the number
+        ``[factory] convergence_attempts`` watches across attempts; the
+        retry context cannot supply it, because Phase 1 files one entry
+        per attempt however many checks failed.
+        """
+        return sum(
+            len(check.parsed.failures) if check.parsed is not None and check.parsed.failures else 1
+            for check in self.checks
+            if not check.passed
+        )
+
     def report_lines(
         self,
         *,
@@ -483,6 +499,39 @@ def _optional_str(value: object) -> str | None:
     return str(value) or None
 
 
+#: The gates ``[verify] fast_iteration_checks`` may name (#233), by the
+#: CheckResult name each produces. :func:`run_fast_checks` runs exactly
+#: these three and validates against this tuple before it runs anything.
+FAST_ITERATION_GATES: tuple[str, ...] = (GATE_TEST, GATE_TYPECHECK, GATE_LINT)
+
+
+def validate_fast_iteration_checks(value: object, source: str) -> list[str]:
+    """``value`` as a list of gate names, or ValueError naming ``source``.
+
+    A list of strings, each one of :data:`FAST_ITERATION_GATES`. Empty is
+    valid and turns the between-iteration checks off.
+    """
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"{source} must be a list of gate names, got {value!r}")
+    unknown = [item for item in value if item not in FAST_ITERATION_GATES]
+    if unknown:
+        raise ValueError(
+            f"{source} names unknown gate(s) {unknown}; "
+            f"expected any of {list(FAST_ITERATION_GATES)}"
+        )
+    return list(value)
+
+
+def _fast_iteration_checks_from_toml(value: object) -> list[str]:
+    return validate_fast_iteration_checks(value, "[verify] fast_iteration_checks")
+
+
+def _fast_iteration_checks_from_env(raw: str) -> list[str]:
+    """Comma-separated. Blank parts are dropped, so "" is the empty list."""
+    names = [part.strip() for part in raw.split(",") if part.strip()]
+    return validate_fast_iteration_checks(names, "KSTRL_VERIFY_FAST_ITERATION_CHECKS")
+
+
 #: Every live ``[verify]`` toml key and how its value is coerced onto the
 #: dataclass. A table rather than a per-key ``if``: the chain it replaced
 #: was fourteen near-identical branches, and its cyclomatic complexity
@@ -510,6 +559,7 @@ _VERIFY_TOML_FIELDS: tuple[tuple[str, Callable[[Any], object]], ...] = (
     ("require_self_critique", bool),
     ("self_critique_min_bullets", int),
     ("progress_file_path", _optional_str),
+    ("fast_iteration_checks", _fast_iteration_checks_from_toml),
 )
 
 
@@ -552,6 +602,10 @@ class VerifyConfig:
     # "was it set?" flag because every scalar field of this dataclass is
     # a documented kstrl.toml key (scripts/gen_docs.py probes for that).
     progress_file_path: str | None = None
+    # #233: the gates run between engineer iterations, whose failures are
+    # handed to the next iteration's prompt. Empty (the default) is off.
+    # A list, never a tuple: scripts/gen_docs.py probes list defaults.
+    fast_iteration_checks: list[str] = field(default_factory=list)
 
     @classmethod
     def from_env(cls) -> VerifyConfig:
@@ -576,6 +630,9 @@ class VerifyConfig:
                 os.environ.get("KSTRL_VERIFY_SELF_CRITIQUE_MIN_BULLETS", "3"),
             ),
             progress_file_path=os.environ.get("KSTRL_VERIFY_PROGRESS_FILE"),
+            fast_iteration_checks=_fast_iteration_checks_from_env(
+                os.environ.get("KSTRL_VERIFY_FAST_ITERATION_CHECKS", ""),
+            ),
         )
 
     @classmethod
@@ -613,6 +670,7 @@ class VerifyConfig:
             "KSTRL_VERIFY_REQUIRE_SELF_CRITIQUE": "require_self_critique",
             "KSTRL_VERIFY_SELF_CRITIQUE_MIN_BULLETS": "self_critique_min_bullets",
             "KSTRL_VERIFY_PROGRESS_FILE": "progress_file_path",
+            "KSTRL_VERIFY_FAST_ITERATION_CHECKS": "fast_iteration_checks",
         }
         for env_var, field_name in env_var_to_field.items():
             if env_var in os.environ:
@@ -1487,6 +1545,35 @@ def check_linter(
         message="Linter passed",
         duration_seconds=time.monotonic() - start,
     )
+
+
+def run_fast_checks(worktree_path: Path, config: VerifyConfig) -> VerificationResult:
+    """The gates ``config.fast_iteration_checks`` names, run between
+    engineer iterations (#233), in Phase 1's order.
+
+    Each gate is the same per-gate function
+    :func:`run_mechanical_verification` calls, with the same command,
+    parser and timeout, so the reading handed to the next iteration is the
+    reading Phase 1 would take of the same tree. Direct calls rather than
+    a lookup table, because every static guard that resolves a spawn's
+    callee has to be able to read these three.
+    """
+    selected = validate_fast_iteration_checks(
+        config.fast_iteration_checks, "[verify] fast_iteration_checks"
+    )
+    timeout = limit_seconds(config.subprocess_timeout)
+    checks: list[CheckResult] = []
+    if GATE_TEST in selected:
+        checks.append(
+            check_test_suite(worktree_path, config.test_command, timeout, config.test_tool)
+        )
+    if GATE_TYPECHECK in selected:
+        checks.append(
+            check_typecheck(worktree_path, config.typecheck_command, timeout, config.typecheck_tool)
+        )
+    if GATE_LINT in selected:
+        checks.append(check_linter(worktree_path, config.lint_command, timeout, config.lint_tool))
+    return VerificationResult(passed=all(check.passed for check in checks), checks=checks)
 
 
 #: What the two diff-driven checks report when the diff handed them nothing.

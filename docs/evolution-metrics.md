@@ -92,6 +92,7 @@ did. Reading one of these rows:
 | `iteration_count` | Engineer-loop iterations of THIS attempt, not a running total (#233). |
 | `failure_signatures` | The attempt's structured `"<check>:<code>"` signatures. |
 | `findings` | The attempt's typed Finding stream. Empty when the attempt produced none; the row is written either way (#233), so the attempt series is complete. |
+| `failure_count` | How many failures the gate that ended this attempt reported, the reading `[factory] convergence_attempts` compares across consecutive attempts that failed in the same phase (#233): every parsed failure of every failing Phase 1 check, counting 1 for a failing check with none parsed, or the reviewer's `fail_count` for Phase 2 and Phase 2.5. `null` when the attempt did not end on one of those gates (an engineer-loop failure, a crashed reviewer, a claim disagreement, a merge conflict, a checkpoint retry) and on the contract breaker's row. Absent on rows written before #233. |
 | `carried_from_run` | Present only on a row a resumed run wrote again (#463): the run the attempt ran in, which stopped before its summary. The row's `run_id` is the run that resumed it, and the #233 reading counts the attempt there. |
 
 ### `component_result` fields
