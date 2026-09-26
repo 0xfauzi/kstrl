@@ -265,7 +265,7 @@ def _review_round(run: IntegrationRun, state: dict[str, Any], pin: _Pin) -> Inte
         result = _run_reviewer(run, worktree, stories, directory / f"prd-{number}.json")
         outcome = integration_outcome(pin.test_result, result, stories, tracked=tracked)
     finally:
-        cleanup_error = _remove(worktree, run.root_dir)
+        cleanup_error = _remove(worktree, run.root_dir, run.ui)
     return _record_round(run, state, pin, number, stories, result, outcome, cleanup_error)
 
 
@@ -339,9 +339,9 @@ def _infra(notes: str) -> ReviewResult:
     )
 
 
-def _remove(worktree: Path, root: Path) -> str:
+def _remove(worktree: Path, root: Path, ui: UI) -> str:
     try:
-        _remove_temp_worktree(worktree, root)
+        _remove_temp_worktree(worktree, root, ui, "integration")
     except ContractCleanupError as exc:
         return str(exc)
     return ""
