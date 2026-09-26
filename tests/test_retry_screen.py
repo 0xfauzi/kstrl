@@ -99,6 +99,11 @@ class TestRetryScreen:
             assert table.row_count == 1  # type: ignore[attr-defined]
             detail = str(detail_widget.content)
             assert "review found blocking issues" in detail
+            await settled(
+                pilot,
+                lambda: app.screen.check_action("retry_selected", ()) is True,
+                what="r to be offered once the carry is read",
+            )
             await pilot.press("r")
             # Weaker than the assertion: r handed over to some other
             # screen, not specifically to the confirm modal.
@@ -157,6 +162,11 @@ class TestRetryScreen:
                 pilot,
                 app.screen,
                 what="the retry screen's on_mount to run",
+            )
+            await settled(
+                pilot,
+                lambda: app.screen.check_action("retry_selected", ()) is True,
+                what="r to be offered once the carry is read",
             )
             await pilot.press("r")
             await settled(
@@ -251,6 +261,11 @@ class TestRetryScreen:
             app.push_screen(RetryScreen())
             await mounted(pilot, lambda: app.screen, "#retry-table")
             await drained(pilot, app.screen, what="on_mount to run")
+            await settled(
+                pilot,
+                lambda: app.screen.check_action("retry_selected", ()) is True,
+                what="r to be offered once the carry is read",
+            )
             await pilot.press("r")
             await settled(
                 pilot,
@@ -346,6 +361,11 @@ async def test_the_confirmation_names_the_failed_component_it_leaves_out(tmp_pat
         table = await mounted(pilot, lambda: app.screen, "#retry-table")
         await drained(pilot, app.screen, what="the retry screen's on_mount to run")
         assert table.row_count == 2  # type: ignore[attr-defined]
+        await settled(
+            pilot,
+            lambda: app.screen.check_action("retry_selected", ()) is True,
+            what="r to be offered once the carry is read",
+        )
         await pilot.press("r")
         await settled(
             pilot,

@@ -21,7 +21,7 @@ from kstrl.inbox import Inbox, InboxConfig, InboxItem, ItemKind
 from kstrl.manifest import Component, ComponentStatus, Manifest, park_dedupe_key
 from kstrl.reducer import ComponentState, RunState, fold
 from kstrl.tui.agent_health import ALIVE, EXITED, UNKNOWN, agent_health
-from kstrl.tui.delivery import Delivery, Merge, integration_summary, merge_summary
+from kstrl.tui.delivery import Delivery, Merge, integration_summary, merge_lines
 from kstrl.tui.home_data import RunSummary
 from kstrl.tui.home_view import attention_line, fit_rows, history_note
 from kstrl.tui.inbox_consequences import consequences
@@ -38,6 +38,7 @@ from kstrl.tui.operator_queue import (
     failure_queue,
     supersessions,
 )
+from kstrl.tui.retry_carry import Carry
 from kstrl.tui.retry_scope import retry_scope
 from kstrl.tui.run_status import component_took
 from kstrl.tui.runs import RunRef
@@ -334,15 +335,14 @@ class TestIntegrationReview:
 
 
 class TestDelivery:
-    def test_ci_is_unknown_and_says_why(self) -> None:
+    def test_a_delivery_whose_ledger_was_not_read_is_unknown_and_says_why(self) -> None:
         delivery = Delivery("r", (Merge("api", 8, "4ab99ae6"),), "4c4706b3", "", None)
-        text = merge_summary(delivery).plain
-        assert "PR #8 4ab99ae" in text and "release ref 4c4706b" in text
-        assert "CI unknown (kstrl records no CI check state)" in text
+        [line] = merge_lines(delivery, NOW, 200)
+        assert line.plain == "merged PR #8 4ab99ae  CI unknown · the CI ledger was not read"
 
     def test_a_run_that_merged_nothing_makes_no_ci_claim(self) -> None:
-        text = merge_summary(Delivery("r", (), "", "", None)).plain
-        assert "none recorded in this run" in text and "CI" not in text
+        [line] = merge_lines(Delivery("r", (), "", "", None), NOW, 200)
+        assert "none recorded in this run" in line.plain and "CI" not in line.plain
 
     def test_the_reducer_keeps_the_merge_sha_release_ref_and_heartbeat_pid(self) -> None:
         state = fold(
@@ -436,7 +436,7 @@ class TestRetryScope:
             tmp_path,
             self._manifest(tmp_path),
             "api",
-            carry=lambda: ("no cost ceiling, 1 in parallel", ""),
+            carry=lambda: Carry(runs_under="no cost ceiling, 1 in parallel"),
             probe_branch=lambda _root, _branch: None,
         )
         assert scope.unknown == ("branch",)
@@ -447,7 +447,7 @@ class TestRetryScope:
             tmp_path,
             self._manifest(tmp_path),
             "api",
-            carry=lambda: ("no cost ceiling, 1 in parallel", ""),
+            carry=lambda: Carry(runs_under="no cost ceiling, 1 in parallel"),
             probe_branch=lambda _root, _branch: 128,
         )
         assert scope.offerable
@@ -460,7 +460,7 @@ class TestRetryScope:
             tmp_path,
             self._manifest(tmp_path),
             "api",
-            carry=lambda: ("", "the recorded run's flags cannot be carried"),
+            carry=lambda: Carry(refusal="the recorded run's flags cannot be carried"),
             probe_branch=lambda _root, _branch: 0,
         )
         assert not scope.offerable and scope.refusal
