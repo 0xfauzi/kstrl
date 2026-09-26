@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from textual.message import Message
 
 if TYPE_CHECKING:
+    from kstrl.ci_state import CiLedger
     from kstrl.reducer import RunState
     from kstrl.safemode import SafeModeReason
     from kstrl.tui.home_data import HomeStats, RunSummary
@@ -58,17 +59,22 @@ class SummariesReady(Message):
 
 
 class DeliveryRead(Message):
-    """The run overview's worker read the integration files and the serve
-    queue (#433 F9, M1)."""
+    """The run overview's worker read the integration files, the serve
+    queue and the CI ledger (#433 F9, M1, G11)."""
 
     def __init__(
         self,
         integration: IntegrationReview | None,
         serve: ServeState | None,
+        ci: CiLedger | None,
+        ci_problem: str,
     ) -> None:
         super().__init__()
         self.integration = integration
         self.serve = serve
+        #: None when the ledger could not be read; ``ci_problem`` says why.
+        self.ci = ci
+        self.ci_problem = ci_problem
 
 
 class FailuresRead(Message):
