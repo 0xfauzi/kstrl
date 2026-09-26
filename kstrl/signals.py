@@ -129,7 +129,9 @@ class SignalsConfig:
 
     def __post_init__(self) -> None:
         if self.http_timeout <= 0:
-            raise ValueError("SignalsConfig.http_timeout must be positive")
+            raise ValueError(
+                f"SignalsConfig.http_timeout must be positive, got {self.http_timeout!r}"
+            )
         if not self.token_env:
             raise ValueError("SignalsConfig.token_env must not be empty")
 

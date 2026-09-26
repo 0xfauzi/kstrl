@@ -42,6 +42,7 @@ from kstrl.agents.claude_sdk import (
 )
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.config import (
+    ConfigError,
     KstrlConfig,
     _apply_env_overrides,
     _apply_toml_overrides,
@@ -483,18 +484,21 @@ class TestRegistration:
         assert config.agent_type == "claude-sdk"
         assert config.agent_budget_usd == 2.5
 
-    def test_toml_budget_rejects_bool_and_nonpositive(
+    def test_toml_budget_refuses_bool_and_reads_zero_and_empty_as_unset(
         self,
         tmp_path: Path,
     ) -> None:
+        """#583: a bool was dropped silently; it is refused, naming the key.
+        0 and "" still mean no ceiling (README documents both)."""
         toml = tmp_path / "kstrl.toml"
         toml.write_text("[agent]\nbudget_usd = true\n")
         config = KstrlConfig()
-        _apply_toml_overrides(config, toml, tmp_path)
-        assert config.agent_budget_usd is None
-        toml.write_text("[agent]\nbudget_usd = 0\n")
-        _apply_toml_overrides(config, toml, tmp_path)
-        assert config.agent_budget_usd is None
+        with pytest.raises(ConfigError, match=r"\[agent\] budget_usd must be a number, got True"):
+            _apply_toml_overrides(config, toml, tmp_path)
+        for unset in ("0", '""'):
+            toml.write_text(f"[agent]\nbudget_usd = {unset}\n")
+            _apply_toml_overrides(config, toml, tmp_path)
+            assert config.agent_budget_usd is None
 
     def test_env_budget_overrides(
         self,
@@ -506,12 +510,25 @@ class TestRegistration:
         _apply_env_overrides(config, tmp_path)
         assert config.agent_budget_usd == 3.75
 
-    def test_env_budget_ignores_garbage(
+    def test_env_budget_refuses_garbage(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        """#583: ``lots`` used to read as no ceiling. It is refused, quoting it."""
         monkeypatch.setenv("KSTRL_AGENT_BUDGET_USD", "lots")
+        config = KstrlConfig()
+        with pytest.raises(ValueError, match="'lots'"):
+            _apply_env_overrides(config, tmp_path)
+
+    @pytest.mark.parametrize("unset", ["", "0"])
+    def test_env_budget_empty_or_zero_is_no_ceiling(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        unset: str,
+    ) -> None:
+        monkeypatch.setenv("KSTRL_AGENT_BUDGET_USD", unset)
         config = KstrlConfig()
         _apply_env_overrides(config, tmp_path)
         assert config.agent_budget_usd is None
