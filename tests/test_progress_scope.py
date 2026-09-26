@@ -284,6 +284,7 @@ class TestProgressPathInsideAllowedPaths:
             _architect_component(),
             tmp_path,
             "kstrl/factory/hmac",
+            plan_id="plan-1",
         )
         rel_prd = f"{FEATURE_DIR}/prd.json"
         allowed = PRD.load(prd_path).allowed_paths
@@ -349,6 +350,7 @@ class TestProgressPathInsideAllowedPaths:
             _architect_component(),
             tmp_path,
             "kstrl/factory/hmac",
+            plan_id="plan-1",
         )
         rel_prd = f"{FEATURE_DIR}/prd.json"
         allowed = PRD.load(prd_path).allowed_paths

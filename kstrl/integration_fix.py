@@ -108,7 +108,8 @@ def tooling_criteria(manifest: Manifest, root_dir: Path) -> list[str]:
     for comp in manifest.components:
         if comp.id.startswith(FIX_COMPONENT_PREFIX):
             continue
-        for story in PRD.load(pre_run_prd_path(root_dir, comp.id, comp.prd_path)).user_stories:
+        source = pre_run_prd_path(root_dir, comp.id, comp.prd_path, plan_id=comp.plan_id)
+        for story in PRD.load(source).user_stories:
             for item in story.acceptance_criteria:
                 lower = item.lower()
                 tool = "typecheck" in lower or "tests" in lower or "lint" in lower
@@ -163,17 +164,22 @@ def build_fix_prd(
     )
 
 
-def write_fix_prd(root_dir: Path, component_id: str, prd: PRD) -> None:
+def write_fix_prd(root_dir: Path, component_id: str, plan_id: str, prd: PRD) -> None:
     """Stage 2 (design 3.4): at ``root_dir``, outside every worktree, and
     at ``plan_prd_path`` rather than ``fix_prd_rel``, which the fix's
-    branch commits (#545)."""
-    path = plan_prd_path(root_dir, component_id)
+    branch commits (#545). ``plan_id`` is the run building the fix, and
+    ``append_fix_component`` stamps the same id on the component (#568)."""
+    path = plan_prd_path(root_dir, component_id, plan_id=plan_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     prd.save(path)
 
 
 def append_fix_component(
-    manifest: Manifest, manifest_path: Path, component_id: str, finding_ids: Sequence[str]
+    manifest: Manifest,
+    manifest_path: Path,
+    component_id: str,
+    finding_ids: Sequence[str],
+    plan_id: str,
 ) -> Component:
     """Stage 3 (design 3.4). Depends on every existing component, so it is
     ready only once the feature is complete."""
@@ -184,6 +190,7 @@ def append_fix_component(
         dependencies=[c.id for c in manifest.components],
         prd_path=fix_prd_rel(component_id),
         branch_name=fix_branch(component_id),
+        plan_id=plan_id,
     )
     manifest.components.append(comp)
     manifest.save(manifest_path)
@@ -192,14 +199,20 @@ def append_fix_component(
 
 def reconcile_fixes(state: Mapping[str, Any], manifest: Manifest, root_dir: Path) -> list[str]:
     """Every fix whose three creation stages disagree (design 3.4). A fix is
-    whole only with a state entry, a PRD and a manifest component."""
-    planned = {str(entry["id"]) for entry in state.get("fixes", [])}
-    built = {c.id for c in manifest.components if c.id.startswith(FIX_COMPONENT_PREFIX)}
+    whole only with a state entry, a PRD and a manifest component.
+
+    The PRD is looked for under the fix's plan id: the component's when
+    stage 3 happened, else the run that recorded the state entry, which
+    is the run that wrote the PRD (#568)."""
+    planned = {str(entry["id"]): str(entry.get("runId", "")) for entry in state.get("fixes", [])}
+    built = {c.id: c.plan_id for c in manifest.components if c.id.startswith(FIX_COMPONENT_PREFIX)}
     errors: list[str] = []
-    for component_id in sorted(planned | built):
+    for component_id in sorted(planned.keys() | built.keys()):
+        plan_id = built.get(component_id) or planned.get(component_id, "")
+        prd = pre_run_prd_path(root_dir, component_id, fix_prd_rel(component_id), plan_id=plan_id)
         present = {
             "state entry": component_id in planned,
-            "PRD": plan_prd_path(root_dir, component_id).is_file(),
+            "PRD": prd.is_file(),
             "manifest component": component_id in built,
         }
         if not all(present.values()):

@@ -8,6 +8,8 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
+from kstrl.config_numbers import check_numbers
+
 # Field name -> environment variable, shared by from_env and load so the
 # two surfaces cannot drift.
 _ENV_VARS: dict[str, str] = {
@@ -24,8 +26,9 @@ NO_LIMIT = "no limit"
 def limit_seconds(value: float) -> float | None:
     """A configured time limit as a wait deadline: None when it is not set.
 
-    A work limit in kstrl.toml is 0 (the default) or less when the operator
-    set none, and that means no limit (#467). A wait needs ``None`` for that:
+    A work limit in kstrl.toml is 0 (the default) when the operator set
+    none, and that means no limit (#467); a negative one is refused at load
+    (#571). A wait needs ``None`` for that:
     ``timeout=0`` means "already expired" to ``subprocess`` and ``Popen``.
     """
     return value if value > 0 else None
@@ -42,9 +45,10 @@ class TimeoutConfig:
 
     Single source of truth for the agent-iteration and component wall-clock
     limits enforced by loop.py, the agent adapters, and the factory
-    scheduler (R0.1). A value of 0 or less disables that limit, and the
+    scheduler (R0.1). A value of 0 disables that limit, and the
     work limits default to 0: a limit the operator did not set does not
-    end a run (#467).
+    end a run (#467). ``load`` refuses a value that is negative or not
+    finite (#571).
 
     Every field here has a reader. #525 removed five that had none
     (``git_operation``, ``verification_check``, ``review_agent``,
@@ -84,7 +88,7 @@ class TimeoutConfig:
             if f.name in section:
                 setattr(config, f.name, float(section[f.name]))
         _apply_env_overrides(config)
-        return config
+        return check_numbers(config)
 
 
 def _apply_env_overrides(config: TimeoutConfig) -> None:

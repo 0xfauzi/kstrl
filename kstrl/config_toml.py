@@ -16,6 +16,8 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
+from kstrl.config_numbers import refuse_non_finite
+
 
 class ConfigError(ValueError):
     """Configuration the operator has to fix before anything can run.
@@ -240,7 +242,9 @@ def section_table(document: dict[str, Any], section: str, toml_path: Path) -> di
 
     Raises :class:`ConfigError` when the name holds a value rather than a
     table (``learning = false`` where ``[learning]`` belongs): returning
-    ``{}`` for it loaded the defaults in silence (#525).
+    ``{}`` for it loaded the defaults in silence (#525). Raises
+    ``BudgetConfigError`` for a ``nan`` or ``inf`` anywhere in the table,
+    before any loader coerces it (#571).
     """
     value = document.get(section, {})
     if not isinstance(value, dict):
@@ -248,6 +252,8 @@ def section_table(document: dict[str, Any], section: str, toml_path: Path) -> di
             f"{toml_path} sets {section} = {value!r}, but kstrl reads [{section}] "
             f"as a table; write it as a [{section}] section with its keys under it"
         )
+    for key, item in value.items():
+        refuse_non_finite(item, key)
     return value
 
 

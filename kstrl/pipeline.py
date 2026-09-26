@@ -3358,7 +3358,9 @@ class ComponentPipeline:
             # the snapshot does NOT provide: the stories, criteria and
             # fixtures Phase 1 still has to read from the live file
             # (#269). Outside every worktree, so not agent-writable.
-            pre_run_prd_path=pre_run_prd_path(self.root_dir, comp.id, comp.prd_path),
+            pre_run_prd_path=pre_run_prd_path(
+                self.root_dir, comp.id, comp.prd_path, plan_id=comp.plan_id
+            ),
             fixtures_config=self.fixtures_config,
             policy_config=self.run_envelope.policy,
             adequacy_config=self.run_envelope.adequacy,

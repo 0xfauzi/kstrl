@@ -155,6 +155,28 @@ the classifier's reason. A GitHub-sourced item gets the matching label and
 comment. A park from a manual `ks factory` has no queue item, and nothing
 is settled.
 
+### The CI state of every merge commit (#570)
+
+After every cycle, `--once` included, `ks serve` asks GitHub through `gh`
+for the checks on each merge commit kstrl recorded and appends what it
+read to the CI ledger that `ks ci poll` writes. The commits are the
+`pr_merged` events of every run under `.kstrl/runs/` plus the manifest's
+`mergeSha` values, so a merge an earlier manifest recorded is read too.
+`ks status` prints the newest reading of each commit with its read time;
+a commit never read, or a ledger that cannot be read, shows as unknown
+with the reason.
+
+A commit whose newest reading is passed or failed is not read again;
+`ks ci poll` still re-reads it. A running or unknown commit is read again
+once the time since its newest reading is at least the time between its
+first reading and its newest, so the gap doubles: a commit that never
+settles costs about log2(age / poll interval) + 2 calls, and one that
+settles is seen within twice its CI's duration. The refresh runs between
+cycles, never during a factory run. A refresh that cannot read or write
+is reported (`CI state not refreshed: ...`) and the daemon carries on.
+Measured on 2026-09-26: one call costs 1 GraphQL point of the 5000 an
+hour `gh`'s token gets, and 0.37 to 0.55 s.
+
 ### Five backstops, because a correct classifier is not enough
 
 A *persistent* infrastructure fault is retryable by the rules above and

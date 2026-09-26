@@ -22,6 +22,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from kstrl.config_numbers import check_numbers
 from kstrl.manifest import Component
 
 RELEASE_SECTION = "release"
@@ -86,7 +87,7 @@ class ReleaseConfig:
         environment = (
             str(section["environment"]) if "environment" in section else defaults.environment
         )
-        return cls(enabled=enabled, environment=environment)
+        return check_numbers(cls(enabled=enabled, environment=environment))
 
 
 @dataclass(frozen=True)

@@ -40,8 +40,8 @@ from tests.helpers.astwalk import (
 #: every other guard built on ``tests.helpers.astwalk`` already pins.
 EXPECTED_SEEN: tuple[str, ...] = (
     "licensing.py:162 urllib.request.urlopen",
-    "linear.py:314 urllib.request.urlopen",
-    "signals.py:554 urllib.request.urlopen",
+    "linear.py:315 urllib.request.urlopen",
+    "signals.py:555 urllib.request.urlopen",
 )
 
 EXPECTED_UNDECIDED: tuple[str, ...] = (

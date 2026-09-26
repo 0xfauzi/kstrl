@@ -44,6 +44,8 @@ from kstrl.config import (
     component_progress_path,
     relative_to_root,
 )
+from kstrl.config_numbers import BudgetConfigError as BudgetConfigError
+from kstrl.config_numbers import check_number, check_numbers
 from kstrl.context import IterationContext
 from kstrl.contract import (
     ContractCleanupError,
@@ -177,62 +179,6 @@ IN_LOOP_SCOPE_VIOLATION_PROMPT = (
     "{harness_paths}. "
     "Do not widen allowedPaths."
 )
-
-
-class BudgetConfigError(ValueError):
-    """A budget ceiling was configured with a value that cannot bound
-    anything.
-
-    Raised rather than coerced because these are SAFETY limits and every
-    bad value fails in a different silent direction: ``nan`` makes
-    ``max_cost_usd > 0`` false, so the ceiling disables itself while
-    reading as configured; a negative value disables it the same way;
-    ``inf`` produces a ceiling that is enabled and can never be reached.
-    All three are indistinguishable from "off" at the moment they
-    matter, which is the failure mode a budget cap must never have.
-    """
-
-
-def validate_cost_ceiling(value: float, source: str) -> float:
-    """A cost ceiling must be finite and non-negative. 0 means unbounded.
-
-    Public because the CLI has to reject a bad ``--max-cost-usd`` in
-    preflight, before the architect spends a call - the flag reaches
-    ``run_factory`` without passing any config loader.
-    """
-    import math
-
-    if not math.isfinite(value):
-        raise BudgetConfigError(
-            f"{source} must be a finite number, got {value!r}; use 0 to "
-            "disable the ceiling. A non-finite ceiling silently stops "
-            "bounding anything."
-        )
-    if value < 0:
-        raise BudgetConfigError(
-            f"{source} must be >= 0, got {value!r}; use 0 to disable the "
-            "ceiling rather than a negative value, which disables it "
-            "without saying so."
-        )
-    return value
-
-
-def validate_token_ceiling(value: int, source: str) -> int:
-    """A token ceiling must be non-negative. 0 means unbounded.
-
-    The same defect as :func:`validate_cost_ceiling`, in the knob that
-    predates it: ``max_total_tokens = -5`` made ``max_total_tokens > 0``
-    false, so the ceiling disabled itself while still reading as
-    configured - measured, not assumed. Only the finiteness check is
-    absent, because this one is an int.
-    """
-    if value < 0:
-        raise BudgetConfigError(
-            f"{source} must be >= 0, got {value!r}; use 0 to disable the "
-            "ceiling rather than a negative value, which disables it "
-            "without saying so."
-        )
-    return value
 
 
 #: R10.3: the two settings [factory] claim_agreement accepts.
@@ -491,11 +437,11 @@ class FactoryConfig:
             retry_delay=float(os.environ.get("FACTORY_RETRY_DELAY", "5.0")),
             merge_timeout=float(os.environ.get("FACTORY_MERGE_TIMEOUT", "300.0")),
             max_adversarial_calls=int(os.environ.get("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS", "0")),
-            max_total_tokens=validate_token_ceiling(
+            max_total_tokens=check_number(
                 int(os.environ.get("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "0")),
                 "KSTRL_FACTORY_MAX_TOTAL_TOKENS",
             ),
-            max_cost_usd=validate_cost_ceiling(
+            max_cost_usd=check_number(
                 float(os.environ.get("KSTRL_FACTORY_MAX_COST_USD", "0")),
                 "KSTRL_FACTORY_MAX_COST_USD",
             ),
@@ -581,12 +527,12 @@ class FactoryConfig:
         if "max_adversarial_calls" in section:
             config.max_adversarial_calls = int(section["max_adversarial_calls"])
         if "max_total_tokens" in section:
-            config.max_total_tokens = validate_token_ceiling(
+            config.max_total_tokens = check_number(
                 int(section["max_total_tokens"]),
                 "[factory] max_total_tokens",
             )
         if "max_cost_usd" in section:
-            config.max_cost_usd = validate_cost_ceiling(
+            config.max_cost_usd = check_number(
                 float(section["max_cost_usd"]),
                 "[factory] max_cost_usd",
             )
@@ -631,11 +577,11 @@ class FactoryConfig:
         if "KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS" in os.environ:
             config.max_adversarial_calls = int(os.environ["KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS"])
         if "KSTRL_FACTORY_MAX_TOTAL_TOKENS" in os.environ:
-            config.max_total_tokens = validate_token_ceiling(
+            config.max_total_tokens = check_number(
                 int(os.environ["KSTRL_FACTORY_MAX_TOTAL_TOKENS"]), "KSTRL_FACTORY_MAX_TOTAL_TOKENS"
             )
         if "KSTRL_FACTORY_MAX_COST_USD" in os.environ:
-            config.max_cost_usd = validate_cost_ceiling(
+            config.max_cost_usd = check_number(
                 float(os.environ["KSTRL_FACTORY_MAX_COST_USD"]), "KSTRL_FACTORY_MAX_COST_USD"
             )
         if "KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE" in os.environ:
@@ -679,7 +625,7 @@ class FactoryConfig:
                 "KSTRL_FACTORY_CLAIM_AGREEMENT",
                 VALID_CLAIM_AGREEMENT,
             )
-        return config
+        return check_numbers(config)
 
 
 def _validate_max_rounds(value: object, source: str) -> int:
@@ -2564,6 +2510,7 @@ def _run_component(
     base_branch: str = "main",
     verify_config: VerifyConfig | None = None,
     attempt: int = 1,
+    plan_id: str = "",
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
@@ -2628,12 +2575,11 @@ def _run_component(
 
     start = time.monotonic()
     worktree_path = Path(worktree_path_str)
-    # R0.4: every copy source below resolves against root_dir, never the
-    # worker's inherited CWD. prompt.md and the PRD live under gitignored
-    # scripts/kstrl/, so a fresh worktree NEVER contains them via git; if
-    # a CWD-relative lookup missed them (e.g. --root from another
-    # directory) the copies silently no-op'd and the engineer fell back
-    # to the harness DEFAULT_PROMPT (phase-f e2e validation, line 38).
+    # R0.4: every source below (the PRD seed, prompt.md, CLAUDE.md)
+    # resolves against root_dir, never the worker's inherited CWD. A
+    # CWD-relative lookup (e.g. --root from another directory) missed
+    # them and the engineer fell back to the harness DEFAULT_PROMPT
+    # (phase-f e2e validation, line 38).
     root_dir = Path(root_dir_str)
 
     ui: UI
@@ -2669,17 +2615,16 @@ def _run_component(
 
     # Copy PRD into worktree if needed.
     #
-    # shutil.copyfile, not read_text/write_text: these are COPIES, and a
+    # shutil.copyfile, not read_text/write_text: this is a COPY, and a
     # copy that decodes and re-encodes is only byte-exact when the
     # locale's codec round-trips. #291 made the PRD utf-8 on disk, which
-    # under LC_ALL=C a bare read_text cannot decode at all, and #286's
-    # scaffold digests depend on prompt.md copying byte for byte. A byte
-    # copy removes the encoding question rather than answering it four
-    # times.
+    # under LC_ALL=C a bare read_text cannot decode at all. A byte copy
+    # removes the encoding question rather than answering it.
     # The source is the copy the run starts from, which for a planned
-    # component is under .kstrl/plan/ and never at prd_path (#545).
+    # component is under .kstrl/plan/<plan_id>/ and never at prd_path
+    # (#545, #568).
     worktree_prd = worktree_path / prd_path_str
-    prd_source = pre_run_prd_path(root_dir, component_id, prd_path_str)
+    prd_source = pre_run_prd_path(root_dir, component_id, prd_path_str, plan_id=plan_id)
     if not worktree_prd.exists() and prd_source.exists():
         worktree_prd.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(prd_source, worktree_prd)
@@ -2689,31 +2634,15 @@ def _run_component(
     # at runtime by loop.py with config.prd_file, so the agent reads the
     # SAME per-component PRD that check_prd_stories re-reads (R2.3, H-11)
     # without overwriting scripts/kstrl/prd.json.
-
-    # Copy prompt into worktree if needed
-    worktree_prompt = worktree_path / prompt_file_str
-    prompt_source = root_dir / prompt_file_str
-    if not worktree_prompt.exists() and prompt_source.exists():
-        worktree_prompt.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(prompt_source, worktree_prompt)
-
-    # Copy CLAUDE.md / AGENTS.md into the worktree from root_dir. When
-    # use_worktrees=False, worktree_path IS the repo root so the files are
-    # already in place - the .exists() guards handle this correctly.
-    claude_dest = worktree_path / "CLAUDE.md"
-    claude_src = root_dir / "CLAUDE.md"
-    if not claude_dest.exists() and claude_src.exists():
-        shutil.copyfile(claude_src, claude_dest)
-    agents_dest = worktree_path / "AGENTS.md"
-    agents_src = root_dir / "AGENTS.md"
-    if not agents_dest.exists():
-        if agents_src.is_symlink() and claude_dest.exists():
-            # Preserve the AGENTS.md -> CLAUDE.md symlink convention.
-            agents_dest.symlink_to("CLAUDE.md")
-        elif agents_src.exists():
-            shutil.copyfile(agents_src, agents_dest)
-        elif claude_dest.exists():
-            agents_dest.symlink_to("CLAUDE.md")
+    #
+    # #569: prompt.md and CLAUDE.md are read from root_dir, the checkout
+    # kstrl ran from, and nothing of kstrl's is copied into the worktree
+    # beside the PRD. A copy there is an untracked file the engineer's
+    # `git add -A` commits, and when the same file is uncommitted in the
+    # root checkout, `git merge` of the component branch refuses on it and
+    # Phase 1 fails the component on diff_scope. They are kstrl's context
+    # for the engineer, not the component's change.
+    prompt_file = root_dir / prompt_file_str
 
     # The scaffold command and the Phase 0 scan. Both stay non-fatal; a
     # failure comes back as a note that is warned once `ui` is bound (#486).
@@ -2792,7 +2721,7 @@ def _run_component(
     authored_paths, harness_paths = _worker_scope(scope)
     config = KstrlConfig(
         max_iterations=max_iterations,
-        prompt_file=worktree_prompt,
+        prompt_file=prompt_file,
         prd_file=worktree_prd,
         progress_file=worktree_path / component_progress_rel,
         codebase_map_file=worktree_path / codebase_map_file_str,
@@ -2897,6 +2826,7 @@ def _run_component(
                 # worktree they differ and the loop carves nothing out, so a
                 # `.kstrl/` the AGENT wrote there stays a violation.
                 guard_state_root=root_dir,
+                context_root=root_dir,
                 verify_config=verify_config,
             )
         # Report which limit fired so the retry/fail path can act on it
@@ -3835,8 +3765,8 @@ def run_factory(
     # path), which bypasses those. Re-check at the boundary: a safety
     # limit that only holds when you came in through the front door is
     # not a safety limit.
-    validate_cost_ceiling(factory_config.max_cost_usd, "max_cost_usd")
-    validate_token_ceiling(factory_config.max_total_tokens, "max_total_tokens")
+    check_number(factory_config.max_cost_usd, "max_cost_usd")
+    check_number(factory_config.max_total_tokens, "max_total_tokens")
 
     try:
         run_lock = _acquire_run_lock(
@@ -4928,6 +4858,7 @@ def _run_factory_locked(
                             base_branch=pipeline.component_base(comp.id),
                             verify_config=engineer_verify,
                             attempt=comp.retries + 1,
+                            plan_id=comp.plan_id,
                             redirect_output=False,  # type: ignore[misc]
                             live_line=functools.partial(
                                 ui.stream_line,
@@ -4952,6 +4883,7 @@ def _run_factory_locked(
                                 base_branch=pipeline.component_base(comp.id),  # type: ignore[misc]
                                 verify_config=engineer_verify,
                                 attempt=comp.retries + 1,
+                                plan_id=comp.plan_id,
                             ),
                         )
                     running_futures[future] = comp.id

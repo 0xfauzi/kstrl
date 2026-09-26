@@ -204,9 +204,9 @@ def active_empty(queue: OperatorQueue | None) -> Text:
     return text
 
 
-def delivery_text(queue: OperatorQueue | None, width: int) -> Text:
-    """The newest finished factory run's integration, merges and CI (Q7, Q8)."""
-    from kstrl.tui.delivery import integration_summary, merge_summary
+def delivery_text(queue: OperatorQueue | None, width: int, now: float) -> Text:
+    """The newest finished factory run's integration, and each merge's CI (Q7, Q8, G11)."""
+    from kstrl.tui.delivery import integration_summary, merge_lines, release_note
 
     text = Text("delivery", style=f"bold {theme.MUTED}")
     if queue is None:
@@ -217,10 +217,12 @@ def delivery_text(queue: OperatorQueue | None, width: int) -> Text:
         text.append("  no finished factory run yet", style=theme.MUTED)
         return text
     text.append(f"  run {theme.short_run_id(delivery.run_id)}", style=theme.MUTED)
-    text.append("\n  ")
-    text.append_text(integration_summary(delivery.integration, short=width < 110))
-    text.append("\n  ")
-    text.append_text(merge_summary(delivery, short=width < 110))
+    text.append(release_note(delivery), style=theme.MUTED)
+    # #home-delivery pads one cell a side and each line is indented two.
+    lines = merge_lines(delivery, now, width - 4)
+    for line in [integration_summary(delivery.integration, short=width < 110), *lines]:
+        text.append("\n  ")
+        text.append_text(line)
     return text
 
 

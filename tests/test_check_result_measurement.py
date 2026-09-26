@@ -256,7 +256,9 @@ EXPECTED_RESULT_SITES: dict[str, int] = {
     # valid utf-8, and that is neither a GitDiffError nor a
     # PolicyConfigError.
     "verify.py: check_policy_envelope: CheckResult": 5,
-    "verify.py: check_prd_stories: CheckResult": 4,
+    # #568: one new row, the pre-run copy that will not load, failing closed
+    # where it used to compare against nothing.
+    "verify.py: check_prd_stories: CheckResult": 5,
     "verify.py: check_scope_unreadable: CheckResult": 1,
     "verify.py: check_self_critique: CheckResult": 3,
     "verify.py: check_test_adequacy: CheckResult": 3,
@@ -326,8 +328,10 @@ EXPECTED_MEASURED_ARGUMENTS: dict[str, int] = {
     # valid utf-8). All three are the harness failing to establish its own
     # input.
     "verify.py: check_policy_envelope: CheckResult: measured=False": 3,
-    # The PRD could not be loaded at all.
-    "verify.py: check_prd_stories: CheckResult: measured=False": 1,
+    # The PRD could not be loaded at all, or (#568) the pre-run copy the
+    # run started from could not be: kstrl lost its own input, which lives
+    # outside every worktree.
+    "verify.py: check_prd_stories: CheckResult: measured=False": 2,
     # This check name exists ONLY in the unreadable state, so it never appears
     # on a healthy run. Marked rather than exempted: exempting it would put the
     # name in `measured_checks` on the one run that produces it, and its

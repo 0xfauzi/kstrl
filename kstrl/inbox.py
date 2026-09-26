@@ -45,6 +45,7 @@ from typing import Any
 
 from kstrl.appendio import append_records
 from kstrl.atomicio import atomic_write_text
+from kstrl.config_numbers import check_numbers
 from kstrl.jsonread import read_json
 from kstrl.statedir import CONTROL_INBOX, control_file, control_lock, ensure_control_state
 
@@ -332,11 +333,13 @@ class InboxConfig:
             snooze_hours = float(os.environ["KSTRL_INBOX_SNOOZE_HOURS"])
         if "KSTRL_INBOX_NOTIFY" in os.environ:
             notify_action_required = os.environ["KSTRL_INBOX_NOTIFY"] == "1"
-        return cls(
-            enabled=enabled,
-            open_item_cap=open_item_cap,
-            snooze_hours=snooze_hours,
-            notify_action_required=notify_action_required,
+        return check_numbers(
+            cls(
+                enabled=enabled,
+                open_item_cap=open_item_cap,
+                snooze_hours=snooze_hours,
+                notify_action_required=notify_action_required,
+            )
         )
 
 
