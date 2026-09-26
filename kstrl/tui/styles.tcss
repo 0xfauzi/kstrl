@@ -380,9 +380,9 @@ CheckpointModal {
 }
 
 #home-delivery {
+    /* title, integration, up to delivery.MERGE_LINES merges, and any line a
+     * CI reason wraps onto: never cut (#433 K3) */
     height: auto;
-    /* title, integration, and up to delivery.MERGE_LINES merge lines */
-    max-height: 6;
     padding: 0 1;
     margin-top: 1;
 }
@@ -898,19 +898,19 @@ QuitModal {
 /* ---- delivery row + integration review (#433 F9, M3) --------------------- */
 
 /* The run overview's pinned summary: a title, integration verdicts, and
- * each merge commit with its CI (up to delivery.MERGE_LINES lines), under
- * the board. Hidden for kinds that deliver nothing (decompose, understand). */
+ * each merge commit with its CI (up to delivery.MERGE_LINES merges, a CI
+ * reason wrapped under its merge rather than cut, #433 K3), under the
+ * board. Hidden for kinds that deliver nothing (decompose, understand). */
 #delivery-row {
     height: auto;
-    max-height: 6;
     margin-top: 1;
     padding: 0 2;
     background: $surface;
 }
 
+/* Every round whole, each reason wrapped under itself (#433 K7). */
 #integration-rounds {
     height: auto;
-    max-height: 4;
     padding: 0 2;
 }
 
@@ -944,4 +944,11 @@ IntegrationScreen.tiny .panel-title {
 
 IntegrationScreen.tiny #integration-detail {
     padding: 0 2;
+}
+
+/* Below 30 rows the wrapped rounds take the rows the tables give up; each
+ * table scrolls under its cursor, and the detail keeps four lines (#433 K7). */
+IntegrationScreen.tiny #integration-criteria,
+IntegrationScreen.tiny #integration-findings {
+    max-height: 5;
 }

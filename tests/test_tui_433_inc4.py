@@ -110,6 +110,10 @@ def _shipped(root: Path, shas: tuple[str, ...]) -> None:
 
 @pytest.fixture
 def polled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    return poll_four(tmp_path, monkeypatch)
+
+
+def poll_four(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Four merges; ``poll_ci`` read three of them through a fake gh:
     passed, failed, and one gh refused (unknown). The fourth was never read."""
     put_gh_on_path(tmp_path, monkeypatch, FAKE_GH)
@@ -162,7 +166,7 @@ def _assert_ci_lines(widget: Static, lines: list[str]) -> None:
     assert merged[1].startswith("  merged PR #2 0aa55d9  CI failed · read "), merged[1]
     assert merged[2].startswith("  merged PR #3 6cabef5  CI unknown · read "), merged[2]
     assert "ago · gh api failed (4)" in merged[2], merged[2]
-    assert merged[3] == f"  merged PR #4 1111111  {NO_CI_READING}", merged[3]
+    assert merged[3].startswith(f"  merged PR #4 1111111  {NO_CI_READING} · "), merged[3]
     assert theme.SUCCESS in _styles_at(content, "CI passed")
     for never_green in ("CI failed", "CI unknown", NO_CI_READING):
         assert theme.SUCCESS not in _styles_at(content, never_green), never_green
@@ -182,10 +186,9 @@ class TestCiOnDelivery:
             await settled(
                 pilot, lambda: "merged PR #4" in str(delivery.content), what="the delivery lines"
             )
-            await settled(pilot, lambda: delivery.region.height == 6, what="six lines laid out")
             lines = str(delivery.content).splitlines()
+            await settled(pilot, lambda: delivery.region.height == len(lines), what="every line")
             assert lines[0] == "delivery  run ship01 · release ref 1111111", lines
-            assert len(lines) == 6 and delivery.region.height == 6, (lines, delivery.region)
             _assert_ci_lines(delivery, lines)
 
     @pytest.mark.parametrize("size", SIZES)
@@ -200,10 +203,9 @@ class TestCiOnDelivery:
                 lambda: row.display and "merged PR #4" in str(row.content),
                 what="the delivery lines",
             )
-            await settled(pilot, lambda: row.region.height == 6, what="six lines laid out")
             lines = str(row.content).splitlines()
+            await settled(pilot, lambda: row.region.height == len(lines), what="every line")
             assert lines[0] == "delivery · release ref 1111111", lines
-            assert len(lines) == 6 and row.region.height == 6, (lines, row.region)
             _assert_ci_lines(row, lines)
 
     @pytest.mark.parametrize("screen", ["home", "overview"])

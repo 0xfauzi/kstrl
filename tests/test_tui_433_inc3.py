@@ -342,7 +342,7 @@ class TestDecisionScreens:
             assert row[1] == "merge gate" and row[3].endswith("s") and row[4] == "open", row
             for slug in ("merge_gate", "priority=", "head_sha", "['IF-1'"):
                 assert slug not in text, (slug, text)
-            assert "PR head: 87c3e2efbe2c" in text and "open findings: IF-1, IF-2" in text
+            assert "branch head: 87c3e2efbe2c" in text and "open findings: IF-1, IF-2" in text
             assert re.search(r"a approve:\s+records approval only; nothing merges until", text)
             scroll = app.screen.query_one("#inbox-detail-scroll")
             await settled(pilot, lambda: scroll.region.height, what="the detail to lay out")

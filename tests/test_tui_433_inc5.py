@@ -222,9 +222,12 @@ class TestRecordedFlags:
             await pilot.press("r")
             body = await mounted(pilot, lambda: app.screen, "#options-detail Static")
             text = flat(body)
-            assert re.search(r"replays\s+" + re.escape(spelled) + "\n", text + "\n"), text
             if name == "max_parallel":
+                # Stated once, under "runs under" (#433 K6).
                 assert re.search(r"runs under\s+.*, 1 in parallel", text), text
+                assert "replays" not in text, text
+            else:
+                assert re.search(r"replays\s+" + re.escape(spelled) + "\n", text + "\n"), text
             await pilot.press("1")
             await settled(pilot, lambda: specs, what="the confirmation to relaunch")
         assert getattr(specs[0], name) == value, specs
@@ -470,7 +473,9 @@ class TestCheckpoint:
         assert [option.split(" (")[0] for option in asked[0]] == list(CHOICE_EFFECTS), asked
 
 
-def _live_run_with_serve_item(root: Path, moving: bool) -> tuple[Path, Any]:
+def _live_run_with_serve_item(
+    root: Path, moving: bool, title: str = "slice three"
+) -> tuple[Path, Any]:
     """A live factory run, whose comp-b is writing its transcript when
     ``moving``, and a ks serve item leased by this process, which holds
     the factory lock."""
@@ -485,7 +490,7 @@ def _live_run_with_serve_item(root: Path, moving: bool) -> tuple[Path, Any]:
     log.parent.mkdir(parents=True, exist_ok=True)
     log.write_text("working\n", encoding="utf-8")
     queue = Queue(root)
-    queue.start(queue.lease(queue.add("spec", title="slice three"), pid=os.getpid()))
+    queue.start(queue.lease(queue.add("spec", title=title), pid=os.getpid()))
     lock = (root / ".kstrl" / "factory.lock").open("a+", encoding="utf-8")
     fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     lock.write(f"{os.getpid()}\n")

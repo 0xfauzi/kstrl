@@ -161,9 +161,11 @@ def read_carry(root: Path, manifest: Manifest, manifest_file: Path) -> Carry:
             not_replayed=dropped,
         )
     runs_under = f"{limits_line(plan)}, {plan.max_parallel} in parallel"
+    # runs_under states the parallel count, so replays leaves it out (#433 K6).
+    replayed = {name: value for name, value in plan.flags if name != "max_parallel"}
     return Carry(
         runs_under=runs_under,
         not_replayed=dropped,
         carried=plan.flags,
-        replays=shlex.join(plan.argv),
+        replays=shlex.join(option_argv(factory_command, replayed)),
     )

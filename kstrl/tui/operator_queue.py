@@ -377,7 +377,6 @@ def _serve_rows(serve: ServeState | None, runs: Sequence[ActiveRow] = ()) -> lis
     outputs = {row.run_id: row.output for row in runs}
     rows = []
     for item in serve.items:
-        short = ""
         if item.state == "queued":
             state = f"queued #{item.position}"
             detail = item.title
@@ -392,10 +391,10 @@ def _serve_rows(serve: ServeState | None, runs: Sequence[ActiveRow] = ()) -> lis
             if item.run_id:
                 output = outputs.get(item.run_id) or "no output recorded"
                 run = f"run {short_run_id(item.run_id)} · {output}"
+            # The title first at every width: at 80 columns the run's output
+            # age is what is cut, and the run's own row states it (#433 K8).
             detail = f"{item.title} · {run}"
-            # Narrow: the run and its output first, so the title is what gets cut.
-            short = f"{run} · {item.title}"
-        rows.append(ActiveRow("ks serve", item.item_id, state, detail, item.run_id, short))
+        rows.append(ActiveRow("ks serve", item.item_id, state, detail, item.run_id))
     return rows
 
 

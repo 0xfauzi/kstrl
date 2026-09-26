@@ -51,7 +51,8 @@ _DECISIONS = frozenset({"approve", "reject", "snooze"})
 #: Evidence keys in the detail's words; any other key loses its underscores.
 EVIDENCE_LABELS = {
     "pr": "PR",
-    "head_sha": "PR head",
+    # A park records its branch's head before any push: no PR exists yet (#433 K2).
+    "head_sha": "branch head",
     "open_findings": "open findings",
     "evidence": "evidence file",
 }
@@ -71,7 +72,7 @@ def item_age(item: InboxItem, now: float | None = None) -> str:
 
 
 def evidence_line(key: str, value: object) -> str:
-    """``PR head: 87c3e2efbe2c``: a label, and a list as a list (#433 G6)."""
+    """``branch head: 87c3e2efbe2c``: a label, and a list as a list (#433 G6)."""
     label = EVIDENCE_LABELS.get(key, key.replace("_", " "))
     shown = ", ".join(str(v) for v in value) if isinstance(value, list | tuple) else str(value)
     return f"{label}: {shown}"
@@ -230,7 +231,7 @@ class InboxScreen(Screen[None]):
         seen = f" · seen {item.occurrences} times" if item.occurrences > 1 else ""
         lines.append(
             f"{kind_label(item.kind)} · {item.priority} priority · raised {item_age(item)} ago"
-            f"{seen}\n",
+            f"{seen} · id {item.id[:8]}\n",
             style="dim",
         )
         if item.component:

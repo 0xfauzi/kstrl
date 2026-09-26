@@ -15,6 +15,7 @@ about LIVE diff updates starving input, which does not apply here.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from rich.text import Text
@@ -40,8 +41,8 @@ MAX_VALUE_WIDTH = 48
 _QUIET_VALUES = frozenset({"None", "''", '""', "[]"})
 
 
-def display_value(raw: str, root: str, shown: str = "") -> Text:
-    """Root-relative, width-capped, with unset values quiet.
+def display_value(raw: str, root: str, shown: str = "", width: int = MAX_VALUE_WIDTH) -> Text:
+    """Root-relative, cut to ``width`` in its middle, with unset values quiet.
 
     The plain report prints absolute reprs; a TABLE that lets a long
     path push the source column off-screen has failed at its one job,
@@ -68,8 +69,8 @@ def display_value(raw: str, root: str, shown: str = "") -> Text:
                 lambda match: f"{match.group(1)}.",
                 text,
             )
-    if len(text) > MAX_VALUE_WIDTH:
-        half = (MAX_VALUE_WIDTH - 1) // 2
+    if len(text) > width:
+        half = (width - 1) // 2
         text = f"{text[:half]}…{text[-half:]}"
     if raw in _QUIET_VALUES:
         return Text(text, style=theme.MUTED)
@@ -86,12 +87,31 @@ SOURCE_STYLES = {
 COLUMNS = ("section", "key", "value", "source")
 
 
+def value_room(rows: Sequence[ConfigRow], width: int) -> int:
+    """The cells the value column has at ``width``, at most ``MAX_VALUE_WIDTH``,
+    with section, key and source whole: a value is cut once, in its middle,
+    never again at the screen's edge (#433 K5). Each column pads one cell a
+    side, and the table keeps four of its own (``home_view.fit_rows``)."""
+    widest = [
+        max([len(name), *(len(str(getattr(row, name))) for row in rows)])
+        for name in ("section", "key", "source")
+    ]
+    return max(12, min(MAX_VALUE_WIDTH, width - sum(widest) - 2 * len(COLUMNS) - 4))
+
+
+def _add_columns(table: DataTable[object]) -> None:
+    for column in COLUMNS:
+        table.add_column(column, key=column)
+
+
 class ConfigScreen(Screen[None]):
     BINDINGS = [
         Binding("escape", "back_or_clear", "Back"),
         Binding("slash", "focus_filter", "Filter", key_display="/"),
         Binding("r", "refresh", "Refresh", show=False),
     ]
+    #: The value column's room at the last render; 0 before the first.
+    _room = 0
 
     def compose(self) -> ComposeResult:
         yield ContextBar("config", "resolved values and their sources")
@@ -110,8 +130,7 @@ class ConfigScreen(Screen[None]):
         table = self.query_one(DataTable)
         table.cursor_type = "row"
         table.zebra_stripes = False
-        for column in COLUMNS:
-            table.add_column(column, key=column)
+        _add_columns(table)
         report = self._report()
         bar = self.query_one(ContextBar)
         if report is not None:
@@ -143,13 +162,20 @@ class ConfigScreen(Screen[None]):
             return
         needle = needle.strip().lower()
         root = str(report.root_dir)
+        room = value_room(report.rows, self.size.width or 120)
+        if room < self._room:
+            # DataTable widens a column to its widest cell and never narrows it,
+            # so a narrower value column needs its columns built again (#433 K5).
+            table.clear(columns=True)
+            _add_columns(table)
+        self._room = room
         shown = cut = 0
         for row in report.rows:
             haystack = f"{row.section} {row.key} {row.value} {row.shown} {row.source}"
             if needle and needle not in haystack.lower():
                 continue
             shown += 1
-            value = display_value(row.value, root, row.shown)
+            value = display_value(row.value, root, row.shown, room)
             # display_value cuts a long value with one "…" in its middle.
             cut += value.plain.count("…") > (row.shown or row.value).count("…")
             table.add_row(
@@ -201,6 +227,15 @@ class ConfigScreen(Screen[None]):
 
     def on_input_changed(self, event: Input.Changed) -> None:
         self._render_report(event.value)
+
+    def on_resize(self) -> None:
+        """Values re-cut to the new width; the selected row stays selected (#433 K5)."""
+        if not self.ready:
+            return
+        table = self.query_one(DataTable)
+        row = table.cursor_row
+        self._render_report(self.query_one(Input).value)
+        table.move_cursor(row=row)
 
     def on_data_table_row_highlighted(
         self,
