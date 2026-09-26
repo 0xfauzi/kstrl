@@ -93,7 +93,7 @@ def _park(item: InboxItem, component_status: str | None, snooze_hours: float) ->
     approve = (
         "records approval only; nothing merges until the next ks factory run. That run "
         f"pushes and merges {cid}'s branch if its head is still {head[:12]}; otherwise "
-        f"{cid} fails and nothing is pushed. `ks inbox approve` also starts that run."
+        f"{cid} fails and nothing is pushed. From the shell, ks inbox approve also starts that run."
         if head
         else "records approval only. The next ks factory run fails "
         f"{cid}: the park recorded no commit to merge, so nothing is pushed."

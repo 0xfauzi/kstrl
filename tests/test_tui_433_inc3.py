@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import patch
@@ -39,6 +40,7 @@ from kstrl.tui.screens.options import OptionsModal
 from kstrl.tui.screens.retry import RetryScreen
 from kstrl.tui.widgets.transcript import TranscriptTail
 from tests.helpers.fake_run import write_fake_decompose_run
+from tests.helpers.rendered import flat
 from tests.helpers.settle import drained, mounted, settled
 from tests.helpers.tui_screens import evolve_on
 
@@ -143,8 +145,8 @@ def _plain(renderable: Any) -> str:
 
 
 def _text(widget: Any) -> str:
-    """A Static's content as text."""
-    return str(cast(Static, widget).content)
+    """A Static's content as text, a Rich Group included (#433 H3)."""
+    return flat(widget)
 
 
 class TestFailureQueue:
@@ -334,14 +336,14 @@ class TestDecisionScreens:
             app.push_screen(InboxScreen())
             table = cast(DataTable[Any], await mounted(pilot, lambda: app.screen, "#inbox-table"))
             detail = cast(Static, app.screen.query_one("#inbox-detail"))
-            await settled(pilot, lambda: "what each choice" in str(detail.content), what="choices")
-            text = str(detail.content)
+            await settled(pilot, lambda: "what each choice" in flat(detail), what="choices")
+            text = flat(detail)
             row = [str(cell) for cell in table.get_row_at(0)]
             assert row[1] == "merge gate" and row[3].endswith("s") and row[4] == "open", row
             for slug in ("merge_gate", "priority=", "head_sha", "['IF-1'"):
                 assert slug not in text, (slug, text)
             assert "PR head: 87c3e2efbe2c" in text and "open findings: IF-1, IF-2" in text
-            assert "a approve: records approval only; nothing merges until" in text, text
+            assert re.search(r"a approve:\s+records approval only; nothing merges until", text)
             scroll = app.screen.query_one("#inbox-detail-scroll")
             await settled(pilot, lambda: scroll.region.height, what="the detail to lay out")
             assert scroll.region.bottom <= app.screen.query_one("Footer").region.y

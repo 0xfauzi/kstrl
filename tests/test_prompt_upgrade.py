@@ -36,6 +36,7 @@ from kstrl.init_cmd import (
 )
 from kstrl.init_wizard import plan_scaffold
 from tests.helpers import gitrepo
+from tests.helpers.prompt_calls import offline_run
 from tests.spine_utils import git as spine_git
 from tests.test_init_cmd import run_init_capturing
 from tests.test_prompt_staleness import (
@@ -482,6 +483,7 @@ class TestFeatureChecksThePromptItActuallyRuns:
                 PlainUI(no_color=True, file=io.StringIO()),
                 tmp_path,
                 interaction=ScriptedChannel(0),
+                run=offline_run(tmp_path, "feature"),
             )
         assert params.prompt_file in seen
 

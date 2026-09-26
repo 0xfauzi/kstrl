@@ -594,6 +594,7 @@ class TestFactoryForwardsItsResolvedConfig:
                 sleep_seconds=0.0,
                 redirect_output=False,
                 **kwargs,
+                run_id="test-run",
             )
         assert len(seen) == 1
         return seen[0]

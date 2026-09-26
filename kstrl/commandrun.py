@@ -17,7 +17,8 @@ block with two deliberate differences:
 
 Gating matches the factory exactly: ``[factory] progress_log_enabled``
 (env or kstrl.toml) turns recording off, in which case the bus still
-renders to the terminal but nothing lands on disk.
+renders to the terminal and nothing lands on disk except the prompt
+records (#567), which the factory also keeps with recording off.
 """
 
 from __future__ import annotations
@@ -108,13 +109,19 @@ class _StreamFilterSink:
 @dataclass
 class CommandRun:
     """One command execution's recording session. ``paths`` is None
-    when recording is disabled - every accessor degrades to None and
-    ``close()`` stays safe to call."""
+    when recording is disabled: the transcript accessors return None,
+    ``agent_call`` still names ``run_root`` (#567), and ``close()``
+    stays safe to call."""
 
     run_id: str
     kind: str
     bus: EventBus
     paths: RunPaths | None
+    #: ``<project>/.kstrl/runs/<run_id>``, set whether or not recording is
+    #: on: the prompt records live here (#567), the way the factory keeps
+    #: its usage accounting under the run directory with the progress log
+    #: off.
+    run_root: Path
     _sinks: list[EventSink] = field(default_factory=list)
     _stop_heartbeat: Callable[[], None] | None = None
     _transcripts: dict[str, TextIO] = field(default_factory=dict)
@@ -125,17 +132,15 @@ class CommandRun:
     def recording(self) -> bool:
         return self.paths is not None
 
-    def agent_call(self, component: str, role: str, attempt: int = 1) -> AgentCall | None:
+    def agent_call(self, component: str, role: str, attempt: int = 1) -> AgentCall:
         """Who this run's agent prompts are recorded for (#532).
 
-        None while recording is off: a command run with
-        ``progress_log_enabled = false`` leaves no run directory, and a
-        prompt record does not create one.
+        Recording off does not turn it off (#567): the record is evidence a
+        later reader scores, so it survives ``progress_log_enabled = false``
+        the way the factory's own records and usage accounting do.
         """
-        if self.paths is None:
-            return None
         return AgentCall(
-            run_root=self.paths.root,
+            run_root=self.run_root,
             run_id=self.run_id,
             component=component,
             role=role,
@@ -234,6 +239,7 @@ def open_command_run(
         kind=kind,
         bus=bus,
         paths=None,
+        run_root=RunPaths.for_run(root_dir, rid).root,
         _restore_run_id=restore_run_id,
         _restore_component=restore_component,
     )

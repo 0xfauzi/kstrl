@@ -70,13 +70,35 @@ NOT_REPLAYED: dict[str, str] = {
 #: says so, instead of refusing the whole record. Every other name a record
 #: carries must still be an option of `ks factory`.
 REMOVED_OPTIONS: dict[str, str] = {
-    "verify_command": "removed in #539: nothing read it, so the command it named "
-    "never ran; Phase 1 runs --test-command, --typecheck-command and --lint-command",
+    "verify_command": "The command it named never ran. Verification runs "
+    "--test-command, --typecheck-command and --lint-command.",
 }
+
+#: Why a record cannot be used, in one line with no path (#433 H4).
+UNREADABLE = "the run's launch record cannot be read"
+ANOTHER_RUN = "the launch record belongs to another run"
+MOVED = (
+    "the launch record names a manifest at another path: this project moved "
+    "or was copied after the run"
+)
+MALFORMED = "the run's launch record is malformed"
 
 
 class LaunchRecordError(ValueError):
-    """A launch record is present but cannot be used."""
+    """A launch record is present but cannot be used.
+
+    ``cause`` is the refusal in one line with no path, for a surface too
+    narrow for the message; ``paths`` names each path the refusal is
+    about, by what it is (#433 H4). Both are empty for a refusal of a
+    recorded flag, whose message names no path.
+    """
+
+    def __init__(
+        self, message: str, *, cause: str = "", paths: tuple[tuple[str, str], ...] = ()
+    ) -> None:
+        super().__init__(message)
+        self.cause = cause
+        self.paths = paths
 
 
 @dataclass(frozen=True)
@@ -151,15 +173,25 @@ def _is_flag_value(value: object) -> bool:
     return isinstance(value, str | int | float | bool)
 
 
-def _record_problem(payload: object, run_id: str, manifest_file: Path) -> str | None:
-    """Why the raw payload is not this run's record, or None when it is."""
+def _record_problem(payload: object, run_id: str, manifest_file: Path) -> tuple[str, str] | None:
+    """Why the raw payload is not this run's record, and the cause it
+    shows as (#433 H4), or None when it is."""
     if not isinstance(payload, dict):
-        return "the record is not a JSON object"
+        return "the record is not a JSON object", MALFORMED
     if payload.get("runId") != run_id:
-        return f"runId is {payload.get('runId')!r}, but the manifest names run {run_id!r}"
+        return (
+            f"runId is {payload.get('runId')!r}, but the manifest names run {run_id!r}",
+            ANOTHER_RUN,
+        )
     expected = str(manifest_file.resolve())
     if payload.get("manifest") != expected:
-        return f"manifest is {payload.get('manifest')!r}, not {expected!r}"
+        return f"manifest is {payload.get('manifest')!r}, not {expected!r}", MOVED
+    problem = _shape_problem(payload)
+    return None if problem is None else (problem, MALFORMED)
+
+
+def _shape_problem(payload: dict[str, object]) -> str | None:
+    """Why this run's record carries unusable flags or limits, or None."""
     flags = payload.get("flags")
     if not isinstance(flags, dict):
         return "flags is not a JSON object"
@@ -211,14 +243,27 @@ def read_launch_record(
     except FileNotFoundError:
         return None
     except OSError as exc:
-        raise LaunchRecordError(f"{path} cannot be read: {exc}") from exc
+        raise LaunchRecordError(
+            f"{path} cannot be read: {exc}", cause=UNREADABLE, paths=(("launch record", str(path)),)
+        ) from exc
     try:
         payload = read_json(raw)
     except ValueError as exc:
-        raise LaunchRecordError(f"{path} cannot be read: {exc}") from exc
-    problem = _record_problem(payload, manifest.run_id, manifest_file)
-    if problem is not None:
-        raise LaunchRecordError(f"{path} is not the record of this run: {problem}")
+        raise LaunchRecordError(
+            f"{path} cannot be read: {exc}", cause=UNREADABLE, paths=(("launch record", str(path)),)
+        ) from exc
+    found = _record_problem(payload, manifest.run_id, manifest_file)
+    if found is not None:
+        problem, cause = found
+        paths = [("launch record", str(path))]
+        if cause == MOVED:
+            paths += [
+                ("it names", str(payload["manifest"])),
+                ("this project's", str(manifest_file.resolve())),
+            ]
+        raise LaunchRecordError(
+            f"{path} is not the record of this run: {problem}", cause=cause, paths=tuple(paths)
+        )
     return LaunchRecord(
         run_id=payload["runId"],
         manifest=payload["manifest"],

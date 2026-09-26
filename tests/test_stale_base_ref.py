@@ -311,6 +311,7 @@ def test_the_in_loop_scope_message_names_the_ref_it_judged(fx: StaleBase) -> Non
             scope=ComponentScope(["src/"], [rel], "storage", rel),
             base_branch="main",
             redirect_output=False,
+            run_id="test-run",
         )
 
     assert seen["guard_base_ref"] == "origin/main"

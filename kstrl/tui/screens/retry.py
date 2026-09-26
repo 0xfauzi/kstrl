@@ -27,6 +27,9 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from rich.console import Group, RenderableType
+from rich.padding import Padding
+from rich.table import Table
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -35,7 +38,6 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static
 
 from kstrl.interaction import PromptKind, PromptRequest
-from kstrl.launch import FactoryLaunch
 from kstrl.retry_plan import RESUME_REFUSAL, RetryError, prepare_retry, preview_retry
 from kstrl.tui import theme
 from kstrl.tui.home_view import fit_rows
@@ -81,6 +83,8 @@ COLUMNS = ("run", "component", "cause", "tries", "failed", "recovery")
 NARROW_BELOW = 100
 #: The recovery word when only ``ks retry`` can carry the retry (#433 G1).
 CLI_ONLY = "retry via CLI"
+#: The recovery word when ``ks retry`` refuses the launch record too (#433 H4).
+BLOCKED = "retry blocked"
 
 
 def columns_for(width: int) -> tuple[str, ...]:
@@ -93,31 +97,39 @@ def _when(ts: float) -> str:
     return time.strftime("%m-%d %H:%M", time.localtime(ts))
 
 
-def scope_header(scope: RetryScope) -> str:
-    """The confirmation question: the retry and its whole scope."""
-    lines = [f"Retry '{scope.component_id}'?"]
-    lines.extend(f"{line.label}: {line.value}" for line in scope.lines if line.label != "stays out")
-    preview = scope.preview
-    if preview is not None and preview.not_in_retry:
-        lines.append("Not in this retry:")
-        lines.extend(f"  {line}" for line in preview.not_in_retry)
-    return "\n".join(lines)
+def scope_rows(scope: RetryScope) -> Table:
+    """The retry's scope, one label per line, wrapped under the value (#433 H3).
+
+    The pane and the confirmation show this same table. A label repeated
+    on consecutive lines ("stays out", "not replayed") is shown once.
+    """
+    rows = []
+    for index, line in enumerate(scope.lines):
+        repeat = index > 0 and scope.lines[index - 1].label == line.label
+        rows.append(
+            (
+                Text("" if repeat else line.label, style=theme.MUTED),
+                Text(line.value, style="" if line.known else f"bold {theme.WARNING}"),
+            )
+        )
+    return theme.label_rows(rows)
 
 
-def scope_text(scope: RetryScope) -> Text:
-    text = Text()
-    text.append("retry scope", style=f"bold {theme.ACCENT}")
-    for line in scope.lines:
-        text.append(f"\n  {line.label:<13}", style=theme.MUTED)
-        text.append(line.value, style="" if line.known else f"bold {theme.WARNING}")
+def scope_text(scope: RetryScope) -> Group:
+    parts: list[RenderableType] = [
+        Text("retry scope", style=f"bold {theme.ACCENT}"),
+        Padding(scope_rows(scope), (0, 0, 0, 2)),
+    ]
     if scope.unknown:
-        text.append(
-            f"\nnot offered: the effect on {', '.join(scope.unknown)} is unknown",
-            style=f"bold {theme.WARNING}",
+        parts.append(
+            Text(
+                f"not offered: the effect on {', '.join(scope.unknown)} is unknown",
+                style=f"bold {theme.WARNING}",
+            )
         )
     elif scope.refusal:
-        text.append(f"\nnot offered here: {scope.refusal}", style=f"bold {theme.WARNING}")
-    return text
+        parts.append(Text(f"not offered here: {scope.refusal}", style=f"bold {theme.WARNING}"))
+    return Group(*parts)
 
 
 def narration_lines(narration: str) -> list[str]:
@@ -294,18 +306,20 @@ class RetryScreen(Screen[None]):
         # Once the scope or the CLI command is on screen it is what the
         # operator reads; the gate output keeps its path, o opens it whole.
         _append_gate_output(detail, entry, self._root_dir(), lines=0 if scoped or cli_only else 4)
+        below: RenderableType | None = None
         if cli_only and carry is not None:
-            detail.append_text(cli_retry_text(carry, entry.component_id))
+            below = cli_retry_text(carry, entry.component_id)
         elif scope is not None and scoped:
-            detail.append("\n")
-            detail.append_text(scope_text(scope))
+            below = Group(Text(), scope_text(scope))
         elif entry.retryable and not self._carry_read:
             detail.append("\nreading scope...", style=theme.MUTED)
         elif entry.retryable:
             detail.append(
                 "\nr works out what a retry would do, before it is offered", style=theme.MUTED
             )
-        self.query_one("#retry-detail", Static).update(detail)
+        self.query_one("#retry-detail", Static).update(
+            detail if below is None else Group(detail, below)
+        )
 
     def on_data_table_row_highlighted(
         self,
@@ -374,10 +388,11 @@ class RetryScreen(Screen[None]):
             OptionsModal(
                 PromptRequest(
                     kind=PromptKind.CONFIRM,
-                    header=scope_header(scope),
+                    header=f"Retry '{scope.component_id}'?",
                     options=("Start retry", "Cancel"),
                     default=1,
-                )
+                ),
+                detail=scope_rows(scope),
             ),
             _resolved,
         )
@@ -432,7 +447,7 @@ class RetryScreen(Screen[None]):
         _notify_narration(self.app, narration_lines(narration.getvalue()))
         launch = getattr(self.app, "launch", None)
         if launch is not None:
-            launch(FactoryLaunch(manifest_path=latest_file))
+            launch(carry.launch(latest_file))
 
     def action_open_output(self) -> None:
         entry = self._selected()
@@ -448,28 +463,52 @@ def _recovery_word(entry: FailureEntry, carry: Carry | None) -> str:
     if entry.successor:
         return f"superseded by {theme.short_run_id(entry.successor)}"
     if entry.retryable and carry is not None and carry.refusal:
-        return CLI_ONLY
+        return BLOCKED if carry.details else CLI_ONLY
     return entry.recovery
 
 
 def _recovery_style(entry: FailureEntry, carry: Carry | None) -> str:
     if not entry.retryable:
         return theme.MUTED
-    return theme.WARNING if _recovery_word(entry, carry) == CLI_ONLY else theme.SUCCESS
+    return theme.SUCCESS if _recovery_word(entry, carry) == entry.recovery else theme.WARNING
 
 
-def cli_retry_text(carry: Carry, component_id: str) -> Text:
-    """Why this screen cannot run the retry and the command that can (#433 G1)."""
+def cli_retry_text(carry: Carry, component_id: str) -> RenderableType:
+    """Why this screen cannot run the retry and the command that can (#433 G1),
+    or, for a launch record ``ks retry`` refuses too, why and the paths (#433 H4)."""
+    if carry.details:
+        return _blocked_text(carry)
     text = Text()
     text.append("\nretry from the CLI", style=f"bold {theme.WARNING}")
     text.append(": this screen cannot carry it", style=theme.WARNING)
-    text.append(f"\n  {carry.refusal}", style=theme.MUTED)
-    text.append(f"\n  {carry.command(component_id)}", style="bold")
+    lines = [
+        Text(carry.refusal, style=theme.MUTED),
+        Text(carry.command(component_id), style="bold"),
+    ]
     if carry.needs_value:
-        text.append(f"\n  {VALUE_NOTE}", style=theme.MUTED)
-    for line in carry.not_replayed:
-        text.append(f"\n  not replayed: {line}", style=theme.MUTED)
-    return text
+        lines.append(Text(VALUE_NOTE, style=theme.MUTED))
+    dropped = theme.label_rows(
+        (Text("not replayed" if n == 0 else "", style=theme.MUTED), Text(line, style=theme.MUTED))
+        for n, line in enumerate(carry.not_replayed)
+    )
+    return Group(text, Padding(Group(*lines, dropped), (0, 0, 0, 2)))
+
+
+def _blocked_text(carry: Carry) -> Group:
+    """The cause first, short; each path whole on its own row below it (#433 H4)."""
+    rows = [(Text(label, style=theme.MUTED), Text(path)) for label, path in carry.details]
+    body = Group(
+        Text(carry.refusal, style=theme.WARNING),
+        Text(
+            "ks retry refuses this launch record too. Delete it to retry without "
+            "the recorded flags.",
+            style=theme.MUTED,
+        ),
+        theme.label_rows(rows),
+    )
+    return Group(
+        Text("\nretry blocked", style=f"bold {theme.WARNING}"), Padding(body, (0, 0, 0, 2))
+    )
 
 
 def _notify_narration(app: object, lines: list[str]) -> None:

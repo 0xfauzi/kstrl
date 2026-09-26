@@ -7,6 +7,7 @@ audit). Text-only behaviour is in ``test_tui_433_state.py``.
 from __future__ import annotations
 
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any, cast
@@ -32,6 +33,7 @@ from kstrl.tui.widgets.component_table import ComponentTable
 from kstrl.tui.widgets.header import RunHeader
 from kstrl.tui.widgets.transcript import TranscriptTail
 from tests.helpers.fake_run import FakeRunSpec, write_fake_decompose_run, write_fake_run
+from tests.helpers.rendered import flat
 from tests.helpers.settle import drained, mounted, settled
 from tests.helpers.tui_screens import evolve_on
 
@@ -689,8 +691,8 @@ class TestRetryScope:
             await settled(
                 pilot, lambda: isinstance(app.screen, OptionsModal), what="the scope modal"
             )
-            header = cast(OptionsModal, app.screen).request.header
-            assert f"worktree: removes {evidence}" in header, header
+            scope = flat(await mounted(pilot, lambda: app.screen, "#options-detail Static"))
+            assert re.search(rf"worktree\s+removes {re.escape(str(evidence))}", scope), scope
             await pilot.press("1")
             await settled(
                 pilot,
@@ -749,9 +751,9 @@ class TestInboxChoices:
             await mounted(pilot, lambda: app.screen, "#inbox-table")
             detail = cast(Static, app.screen.query_one("#inbox-detail"))
             await settled(
-                pilot, lambda: "what each choice does" in str(detail.content), what="the choices"
+                pilot, lambda: "what each choice does" in flat(detail), what="the choices"
             )
-            text = str(detail.content)
+            text = flat(detail)
             assert "approve and reject are not offered: api is completed, not parked" in text
             assert app.screen.check_action("approve", ()) is False
             assert app.screen.check_action("snooze", ()) is True

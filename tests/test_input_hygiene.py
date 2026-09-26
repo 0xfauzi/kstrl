@@ -38,6 +38,7 @@ from kstrl.names import (
 from kstrl.pr import push_branch
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo
+from tests.helpers.prompt_calls import architect_call
 
 # Unicode dash confusables: non-breaking hyphen, minus sign, en dash.
 NB_HYPHEN = "‑"
@@ -377,6 +378,7 @@ class TestDecomposeValidationHygiene:
             agent=agent,
             ui=PlainUI(no_color=True),
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
 
         assert len(agent.prompts) == 2
@@ -405,6 +407,7 @@ class TestDecomposeValidationHygiene:
                 agent=agent,
                 ui=PlainUI(no_color=True),
                 root_dir=tmp_path,
+                prompt_call=architect_call(tmp_path),
             )
 
 

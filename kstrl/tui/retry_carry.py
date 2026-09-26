@@ -1,9 +1,12 @@
 """Whether the TUI can carry a retry, and the CLI command that can (#433 G1).
 
-A retry re-enters the factory through ``FactoryLaunch``, which has no
-field for a recorded flag and no field for a run limit (#436, #526). So
-``plan_resume``'s refusal is a refusal of THIS surface, not of the
-retry: ``ks retry`` can run it with the options the refusal names.
+A retry re-enters the factory through ``FactoryLaunch``, which has a
+field for two recorded flags, ``max_parallel`` and ``review_mode``
+(:data:`CARRIED_FLAGS`), and none for any other flag or for a run limit
+(#436, #526). So a refusal of another flag or of a limit is a refusal of
+THIS surface, not of the retry: ``ks retry`` can run it with the options
+the refusal names. A launch record ``plan_resume`` cannot use is refused
+by ``ks retry`` too, so that refusal names no command (#433 H4).
 
 The failure queue asks once per read, off the event loop, and the row,
 the detail and the ``r`` binding all answer from the same ``Carry``. The
@@ -13,11 +16,20 @@ wording, so a refusal the TUI cannot word still names the right options.
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl.config_preflight import SURFACE_REJECTIONS, raise_if_defect
+from kstrl.launch import FactoryLaunch
+from kstrl.launch_record import (
+    FlagValue,
+    LaunchRecordError,
+    launch_record_path,
+    option_argv,
+    read_launch_record,
+)
 from kstrl.retry_plan import UnkeptLimit, limits_line, not_replayed, plan_resume
 from kstrl.tui.theme import short_run_id
 
@@ -28,6 +40,10 @@ if TYPE_CHECKING:
 VALUE = "N"
 VALUE_NOTE = f"{VALUE}: a value keeps that limit; 0 runs without it"
 
+#: The recorded flags ``FactoryLaunch`` has a field for; ``session._prepare_factory``
+#: applies each the way ``ks factory`` applies the option (#433 H5).
+CARRIED_FLAGS = ("max_parallel", "review_mode")
+
 
 @dataclass(frozen=True)
 class Carry:
@@ -37,8 +53,24 @@ class Carry:
     refusal: str = ""
     #: The run limits the refusal names; () for any other refusal.
     unkept: tuple[UnkeptLimit, ...] = ()
-    #: ``--option, why`` for each recorded flag the retry leaves out (#539).
+    #: ``--option is no longer an option. Why.`` for each recorded flag
+    #: the retry leaves out (#539).
     not_replayed: tuple[str, ...] = ()
+    #: The recorded flags the relaunch passes on, and their spelling (#433 H5).
+    carried: tuple[tuple[str, FlagValue], ...] = ()
+    replays: str = ""
+    #: The paths a launch record refusal is about, by what each is (#433 H4).
+    details: tuple[tuple[str, str], ...] = ()
+
+    def launch(self, manifest_file: Path) -> FactoryLaunch:
+        """The relaunch, carrying every recorded flag ``FactoryLaunch`` has a field for."""
+        flags = dict(self.carried)
+        parallel, mode = flags.get("max_parallel"), flags.get("review_mode")
+        return FactoryLaunch(
+            manifest_path=manifest_file,
+            max_parallel=None if parallel is None else int(parallel),
+            review_mode=None if mode is None else str(mode),
+        )
 
     def command(self, component_id: str) -> str:
         """The ``ks retry`` command that carries what this surface cannot."""
@@ -85,6 +117,12 @@ def read_carry(root: Path, manifest: Manifest, manifest_file: Path) -> Carry:
     from kstrl.cli import factory as factory_command
 
     try:
+        # The read plan_resume makes first, taken here for the refusal's
+        # cause and paths: plan_resume keeps only its wording (#433 H4).
+        read_launch_record(root, manifest, manifest_file)
+    except LaunchRecordError as exc:
+        return Carry(refusal=exc.cause or str(exc), details=exc.paths)
+    try:
         plan, problems, unkept = plan_resume(
             root,
             manifest,
@@ -100,14 +138,32 @@ def read_carry(root: Path, manifest: Manifest, manifest_file: Path) -> Carry:
     if unkept:
         return Carry(refusal=_limit_refusal(manifest.run_id, unkept), unkept=unkept)
     if plan is None:
-        return Carry(refusal="; ".join(problems) or "no resume plan")
-    dropped = not_replayed(plan)
-    if plan.argv:
-        # FactoryLaunch has no field for a recorded flag; `ks retry`
-        # replays them (#436).
+        # plan_resume refuses only a launch record here (a recorded option
+        # `ks factory` lacks), and `ks retry` makes the same call (#433 H4).
+        record = launch_record_path(root, manifest.run_id)
         return Carry(
-            refusal="the recorded run's flags cannot be carried through the TUI",
+            refusal=problems[0] if problems else "no resume plan",
+            details=(("launch record", str(record)),),
+        )
+    dropped = not_replayed(plan)
+    # A plain flag recorded off spells as nothing, so there is nothing to drop.
+    uncarried = [
+        shlex.join(spelled)
+        for name, value in plan.flags
+        if name not in CARRIED_FLAGS and (spelled := option_argv(factory_command, {name: value}))
+    ]
+    if uncarried:
+        # FactoryLaunch has no field for these; `ks retry` replays them (#436).
+        run = f"run {short_run_id(plan.run_id)}" if plan.run_id else "the run"
+        return Carry(
+            refusal=f"{run} was launched with {', '.join(uncarried)}, "
+            "which this screen cannot pass on",
             not_replayed=dropped,
         )
     runs_under = f"{limits_line(plan)}, {plan.max_parallel} in parallel"
-    return Carry(runs_under=runs_under, not_replayed=dropped)
+    return Carry(
+        runs_under=runs_under,
+        not_replayed=dropped,
+        carried=plan.flags,
+        replays=shlex.join(plan.argv),
+    )
