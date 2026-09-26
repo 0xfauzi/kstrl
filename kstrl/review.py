@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -182,6 +183,13 @@ class ReviewResult:
     # a result carrying either (integration.integration_outcome).
     dropped_concerns: int = 0
     concerns_not_list: bool = False
+    # #480: set by parse_review_output on a reply it refused that states
+    # nothing a second reply could replace (``_nothing_to_discard``). Only
+    # the integration review reads it, to ask the reviewer once more.
+    reply_unread: bool = False
+    # #480: the refused reading a re-ask replaced, kept for the audit
+    # trail. None when the reviewer was asked once.
+    replaced: ReviewResult | None = None
 
     @property
     def coverage_refused(self) -> bool:
@@ -895,6 +903,78 @@ def render_review_prompt(
     )
 
 
+#: #480: the verdicts a refused reply may state and still be asked again.
+_REASKABLE_VERDICTS = frozenset({ReviewVerdict.PASS.value, ReviewVerdict.ADVISORY.value})
+#: #480: a "verdict" or "severity" key with a string value, as JSON writes it,
+#: anywhere in a reply's text, inside the parsed object or outside it.
+_JUDGEMENT_FIELD = re.compile(r'"(?:verdict|severity)"\s*:\s*"([^"]*)"', re.IGNORECASE)
+#: #480: every spelling of those two words. One that _JUDGEMENT_FIELD did not
+#: read is a judgement the rule cannot read, so it blocks the re-ask.
+_JUDGEMENT_WORD = re.compile(r"verdict|severity", re.IGNORECASE)
+
+
+def _nothing_to_discard(
+    data: object, expected_story_ids: Sequence[str] | None, raw_output: str
+) -> bool:
+    """#480: whether a refused reply states nothing a re-ask could discard.
+
+    Two layers, both required. The TEXT layer reads the whole reply, parsed
+    or not: every "verdict" or "severity" in it must be a JSON string field
+    whose value is pass or advisory. It exists because the parsed object can
+    be part of the reply only (``_extract_json`` takes the first fenced block
+    or the first balanced braces), and because a reply that did not parse can
+    still state a fail: the kept 131430 int-d2 run-3 reply is invalid JSON
+    holding ``"verdict": "fail"`` on the planted story. The OBJECT layer reads
+    what the parser read: ``data`` is None (no JSON, or JSON null), or it is
+    an object whose ``stories`` and ``concerns`` are lists (or absent), that
+    names no expected story id, whose every verdict is pass or advisory and
+    every concern advisory. Everything else is False: the re-ask replaces a
+    refusal, so it may only replace one that holds no verdict it would drop.
+    Prose ("IC1 fails") is not read as a verdict here, as the parser never
+    reads it as one.
+    """
+    if not _text_states_no_fail(raw_output):
+        return False
+    if data is None:
+        return True
+    if not isinstance(data, dict):
+        return False
+    stories = data.get("stories", [])
+    concerns = data.get("concerns", [])
+    if not isinstance(stories, list) or not isinstance(concerns, list):
+        return False
+    wanted = {normalize_story_id(sid) for sid in expected_story_ids or ()}
+    return all(_story_states_nothing(story, wanted) for story in stories) and all(
+        _severity(concern) == ReviewVerdict.ADVISORY.value for concern in concerns
+    )
+
+
+def _text_states_no_fail(raw_output: str) -> bool:
+    values = _JUDGEMENT_FIELD.findall(raw_output)
+    if len(values) != len(_JUDGEMENT_WORD.findall(raw_output)):
+        return False
+    return all(value.strip().lower() in _REASKABLE_VERDICTS for value in values)
+
+
+def _story_states_nothing(story: object, wanted: set[str]) -> bool:
+    if not isinstance(story, dict):
+        return False
+    if normalize_story_id(str(story.get("storyId", ""))) in wanted:
+        return False
+    criteria = story.get("criteria", [])
+    if not isinstance(criteria, list):
+        return False
+    return all(_verdict(entry) in _REASKABLE_VERDICTS for entry in criteria)
+
+
+def _verdict(entry: object) -> str:
+    return str(entry.get("verdict", "")).strip().lower() if isinstance(entry, dict) else ""
+
+
+def _severity(entry: object) -> str:
+    return str(entry.get("severity", "")).strip().lower() if isinstance(entry, dict) else ""
+
+
 def parse_review_output(
     raw_output: str,
     expected_story_ids: Sequence[str] | None = None,
@@ -917,7 +997,7 @@ def parse_review_output(
     manifest/journal size.
     """
 
-    def _infra(notes: str, label: str) -> ReviewResult:
+    def _infra(notes: str, label: str, data: object) -> ReviewResult:
         dump_path = dump_raw_debug(debug_dir, "review", raw_output, label)
         if dump_path:
             notes = f"{notes} [full raw output: {dump_path}]"
@@ -927,12 +1007,13 @@ def parse_review_output(
             overall_notes=notes,
             raw_output=raw_output[:2000],
             infrastructure_error=True,
+            reply_unread=_nothing_to_discard(data, expected_story_ids, raw_output),
         )
 
     try:
         data = _extract_json(raw_output)
     except ValueError:
-        return _infra("Failed to parse reviewer output as JSON", "no_json")
+        return _infra("Failed to parse reviewer output as JSON", "no_json", None)
 
     # R1.2: _extract_json returns whatever json.loads produced - null,
     # a list, a bare string. Anything but an object would crash the
@@ -941,6 +1022,7 @@ def parse_review_output(
         return _infra(
             f"Review output was not a JSON object (got {type(data).__name__})",
             "non_dict_json",
+            data,
         )
 
     criteria: list[CriterionReview] = []
@@ -950,6 +1032,7 @@ def parse_review_output(
         return _infra(
             "Invalid review output: 'stories' is not an array",
             "stories_not_array",
+            data,
         )
 
     covered_story_ids: set[str] = set()
@@ -993,6 +1076,7 @@ def parse_review_output(
             + ", ".join(repr(v) for v in invalid_verdicts)
             + " (valid: pass/fail/advisory)",
             "invalid_verdict",
+            data,
         )
 
     if expected_story_ids:
@@ -1005,6 +1089,7 @@ def parse_review_output(
                 + ", ".join(missing)
                 + " (CRIT-5: a partial or empty review cannot pass)",
                 "coverage_gap",
+                data,
             )
 
     concerns: list[ReviewConcern] = []

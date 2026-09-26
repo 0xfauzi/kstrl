@@ -71,6 +71,10 @@ BLOCKING_NOTE = (
     "open code findings become a fix component (#483)."
 )
 
+#: #480: how many times one round may ask the reviewer: the first ask, and
+#: one more when the first reply held nothing to read.
+REVIEW_ASKS = 2
+
 
 @dataclass
 class Phase3Round:
@@ -306,6 +310,7 @@ def _run_reviewer(
             stories,
             prd_path,
             run.ui,
+            reask_refusal=lambda: _reask_refusal(run.pipeline),
         )
     except Exception as exc:  # noqa: BLE001 - as Phase 2
         return _infra(f"the integration reviewer crashed: {exc}")
@@ -322,25 +327,54 @@ def review_commit(
     stories: Sequence[ExpectedStory],
     prd_path: Path,
     ui: UI,
+    *,
+    reask_refusal: Callable[[], str],
 ) -> ReviewResult:
     """The integration review call: write the PRD at ``prd_path``, then run
     ``run_review`` in HARD mode over ``feature_base_sha...HEAD`` in ``worktree``.
 
     The factory and the ``integration`` calibration role both call this, so
     the call a calibration run measures is the call the factory makes (#482).
+
+    #480: a reply the parser refused with nothing in it to discard
+    (``ReviewResult.reply_unread``) is asked once more, when
+    ``reask_refusal()`` returns "" (the factory spends one adversarial call
+    there). The second reading is returned whatever it is, carrying the first
+    in ``replaced``; a second refusal stays a refusal. When ``reask_refusal()``
+    names a reason, the first reading is returned with that reason in its notes.
     """
     prd_path.parent.mkdir(parents=True, exist_ok=True)
     write_integration_prd(prd_path, stories)
-    return run_review(
-        agent,
-        prd_path,
-        worktree,
-        feature_base_sha,
-        VerificationResult(passed=True, checks=[]),
-        ReviewMode.HARD,
-        ui,
-        debug_dir=prd_path.parent,
-    )
+    replaced: ReviewResult | None = None
+    for _ask in range(REVIEW_ASKS):
+        result = run_review(
+            agent,
+            prd_path,
+            worktree,
+            feature_base_sha,
+            VerificationResult(passed=True, checks=[]),
+            ReviewMode.HARD,
+            ui,
+            debug_dir=prd_path.parent,
+        )
+        if replaced is not None or not result.reply_unread:
+            break
+        refusal = reask_refusal()
+        if refusal:
+            result.overall_notes = f"{result.overall_notes} (not asked again: {refusal})"
+            break
+        ui.warn("  Integration reviewer reply held nothing readable; asking once more (#480)")
+        replaced = result
+    result.replaced = replaced
+    return result
+
+
+def _reask_refusal(pipeline: ComponentPipeline) -> str:
+    """Spend one adversarial call on a re-ask, or say why none may be spent (#480)."""
+    reason = _spend_refusal(pipeline)
+    if not reason:
+        pipeline.adversarial_budget_consume()
+    return reason
 
 
 def _infra(notes: str) -> ReviewResult:
@@ -484,6 +518,7 @@ def _review_evidence(
             "overallNotes": result.overall_notes,
             "droppedConcerns": result.dropped_concerns,
             "concernsNotList": result.concerns_not_list,
+            "replaced": _replaced_evidence(result.replaced),
             "criteria": [
                 {
                     "storyId": c.story_id,
@@ -515,6 +550,13 @@ def _review_evidence(
         "stillOpen": list(outcome.still_open),
         "cleanupError": cleanup_error,
     }
+
+
+def _replaced_evidence(replaced: ReviewResult | None) -> dict[str, str] | None:
+    """The refused first reply a re-ask replaced (#480), or None when none was."""
+    if replaced is None:
+        return None
+    return {"overallNotes": replaced.overall_notes, "rawOutput": replaced.raw_output}
 
 
 def _not_run(
