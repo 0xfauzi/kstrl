@@ -106,6 +106,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # counted at conftest.py's row above, the same shape
     # tests/test_patch_coverage.py's row below argues for.
     "tests/test_cli.py": 2,
+    # #562: `_project` commits the E2E fixture repo once, after
+    # `tests.helpers.gitrepo.set_identity(root)`.
+    "tests/test_config_refused_before_spend.py": 1,
     "tests/test_contract_safety.py": 4,
     # `ready_repo` calls `tests.helpers.gitrepo.set_identity` before it
     # commits (#198), once per scenario that builds its own fixture.
