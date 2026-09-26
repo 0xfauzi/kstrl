@@ -955,22 +955,22 @@ def _tamper_changes(prd: PRD, pre_run_prd_path: Path | None) -> list[str]:
 
     - ``pre_run_prd_path`` is None. The caller has no trustworthy copy
       to offer: ``ks check`` judges an operator's own working tree.
-    - The pre-run copy will not load. A harness or operator condition,
-      not something an agent can arrange from inside its worktree.
     - It is the SAME file, which is ``use_worktrees=False``: both reads
       return the same document and the comparison is empty by
       arithmetic rather than by a special case. That mode has no
       isolation boundary, so this check cannot be what gives it one.
       Scope is the part of the answer that does survive there, because
       #269 reads it before the agent starts.
+
+    A pre-run copy that will not load raises what ``PRD.load`` raises,
+    ``OSError`` or ``ValueError``, and ``check_prd_stories`` fails closed
+    on it (#568). It was read once already, at plan time, so it went
+    missing or changed during the run, and an empty comparison would be
+    the mechanism removed without a word.
     """
     if pre_run_prd_path is None:
         return []
-    try:
-        pre_run = PRD.load(pre_run_prd_path)
-    except (OSError, ValueError):
-        return []
-    return prd.tamper_changes(pre_run)
+    return prd.tamper_changes(PRD.load(pre_run_prd_path))
 
 
 #: H3 (#303): fragments check_prd_stories' tamper branch assembles;
@@ -1022,7 +1022,19 @@ def check_prd_stories(prd_path: Path, pre_run_prd_path: Path | None = None) -> C
             measured=False,
         )
 
-    tampered = _tamper_changes(prd, pre_run_prd_path)
+    try:
+        tampered = _tamper_changes(prd, pre_run_prd_path)
+    except (OSError, ValueError) as exc:
+        return CheckResult(
+            name="prd_stories",
+            passed=False,
+            message=(
+                f"The PRD this run started from, {pre_run_prd_path}, could not be "
+                f"read; failing closed: {exc}"
+            ),
+            duration_seconds=time.monotonic() - start,
+            measured=False,
+        )
     if tampered:
         return CheckResult(
             name="prd_stories",

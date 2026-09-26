@@ -108,7 +108,7 @@ def scope_text(scope: RetryScope) -> Text:
     text = Text()
     text.append("retry scope", style=f"bold {theme.ACCENT}")
     for line in scope.lines:
-        text.append(f"\n  {line.label:<11}", style=theme.MUTED)
+        text.append(f"\n  {line.label:<13}", style=theme.MUTED)
         text.append(line.value, style="" if line.known else f"bold {theme.WARNING}")
     if scope.unknown:
         text.append(
@@ -150,8 +150,11 @@ class RetryScreen(Screen[None]):
         self._entries: list[FailureEntry] = []
         self._scoping = False
         self._scope: RetryScope | None = None
-        #: Whether this surface can carry a retry; None until read.
+        #: Whether this surface can carry a retry; None until read, and
+        #: None after the read when no entry is retryable.
         self._carry: Carry | None = None
+        #: Whether the worker has read the carry: r waits for it (#433).
+        self._carry_read = False
 
     def compose(self) -> ComposeResult:
         yield ContextBar("retry", "failure queue: what failed, and what a retry would do")
@@ -182,6 +185,7 @@ class RetryScreen(Screen[None]):
         self._manifest_file = manifest_file
         self._scope = None
         self._carry = None
+        self._carry_read = False
         entries = failure_queue(manifest, [], {}) if manifest is not None else []
         self._show_entries(entries)
         root = self._root_dir()
@@ -190,13 +194,15 @@ class RetryScreen(Screen[None]):
             try:
                 queue = _read_failure_queue(root)
             except Exception:  # noqa: BLE001 - the manifest rows stay up
-                return
+                queue = entries
+            # Posted either way: r is withheld until the carry is read.
             self.post_message(FailuresRead(queue, _read_queue_carry(root, queue)))
 
         self.run_worker(_work, thread=True, group="failures", exclusive=True)
 
     def on_failures_read(self, message: FailuresRead) -> None:
         self._carry = message.carry
+        self._carry_read = True
         self._show_entries(message.entries)
 
     def _show_entries(self, entries: list[FailureEntry]) -> None:
@@ -265,8 +271,10 @@ class RetryScreen(Screen[None]):
         entry = self._selected()
         if action == "retry_selected":
             # Withheld when this surface cannot carry the retry (#433 G1).
+            # Withheld until the carry is read, too: before it, the screen
+            # cannot tell whether it can carry the retry (#433).
             refused = self._carry is not None and bool(self._carry.refusal)
-            return entry is not None and entry.retryable and not refused
+            return entry is not None and entry.retryable and self._carry_read and not refused
         if action == "open_output":
             return entry is not None and bool(entry.gate_logs)
         return True
@@ -291,6 +299,8 @@ class RetryScreen(Screen[None]):
         elif scope is not None and scoped:
             detail.append("\n")
             detail.append_text(scope_text(scope))
+        elif entry.retryable and not self._carry_read:
+            detail.append("\nreading scope...", style=theme.MUTED)
         elif entry.retryable:
             detail.append(
                 "\nr works out what a retry would do, before it is offered", style=theme.MUTED
@@ -311,6 +321,8 @@ class RetryScreen(Screen[None]):
         manifest = self._manifest
         if entry is None or not entry.retryable or manifest is None or self._scoping:
             return
+        if not self._carry_read:
+            return
         self._scoping = True
         self.query_one("#retry-detail", Static).update(
             Text(f"working out what retrying {entry.component_id} would do...", style=theme.MUTED)
@@ -318,13 +330,11 @@ class RetryScreen(Screen[None]):
         root, manifest_file = self._root_dir(), self._manifest_file
         cid = entry.component_id
 
-        def _carry() -> tuple[str, str]:
-            carry = read_carry(root, manifest, manifest_file)
-            return carry.runs_under, carry.refusal
-
         def _work() -> None:
             try:
-                scope = retry_scope(root, manifest, cid, carry=_carry)
+                scope = retry_scope(
+                    root, manifest, cid, carry=lambda: read_carry(root, manifest, manifest_file)
+                )
             except Exception as exc:  # noqa: BLE001 - reported, never a crash
                 scope = RetryScope(
                     cid, (), None, refusal=f"the scope could not be worked out: {exc}"
@@ -457,6 +467,8 @@ def cli_retry_text(carry: Carry, component_id: str) -> Text:
     text.append(f"\n  {carry.command(component_id)}", style="bold")
     if carry.needs_value:
         text.append(f"\n  {VALUE_NOTE}", style=theme.MUTED)
+    for line in carry.not_replayed:
+        text.append(f"\n  not replayed: {line}", style=theme.MUTED)
     return text
 
 

@@ -393,6 +393,12 @@ def limits_line(plan: ResumePlan) -> str:
     return ", ".join(set_) if set_ else "no run limit"
 
 
+def not_replayed(plan: ResumePlan) -> tuple[str, ...]:
+    """``--option, why`` for each recorded flag the retry leaves out
+    (#539): what ``print_resume_plan`` prints, so the TUI says the same (#433)."""
+    return tuple(f"{_opt(name)}, {REMOVED_OPTIONS[name]}" for name in plan.dropped)
+
+
 def print_resume_plan(ui: UI, plan: ResumePlan) -> None:
     """Say, before the confirmation and before any spend, what the retry runs under."""
     if plan.carried:
@@ -403,8 +409,8 @@ def print_resume_plan(ui: UI, plan: ResumePlan) -> None:
             f"No launch record for run {plan.run_id or '(none)'}: "
             "the flags of the run being resumed are not carried over"
         )
-    for name in plan.dropped:
-        ui.warn(f"Not replayed from run {plan.run_id}: {_opt(name)}, {REMOVED_OPTIONS[name]}")
+    for line in not_replayed(plan):
+        ui.warn(f"Not replayed from run {plan.run_id}: {line}")
     for name, value in plan.limits:
         ui.kv(_opt(name), str(value) if value > 0 else NO_LIMIT)
     ui.kv("Max parallel", str(plan.max_parallel))
