@@ -292,10 +292,11 @@ class SpawnerRules:
 #: than a silent addition.
 #:
 #: ``serve`` has two disposal calls because both the timeout path and the
-#: broad clause let go. ``verify`` has three (#416): the timeout path, the
-#: new ``UnicodeDecodeError`` clause (a diff or a child's output that could
-#: not be decoded as utf-8 is disposed of before the named error is raised),
-#: and the broad clause.
+#: broad clause let go. ``verify`` has two: the timeout path and the broad
+#: clause. #416 added a third, a ``UnicodeDecodeError`` clause on the
+#: ``communicate``; #527 removed it, because ``run_scrubbed`` now reads bytes
+#: and decodes them after the read completes, when the child is reaped and
+#: both pipes are closed, so no decode failure can leave a child behind.
 EXPECTED_SPAWNERS: dict[str, SpawnerRules] = {
     # `procgroup.py` is NOT here, and its absence is the pin: #209 round
     # 3 moved the one `Popen` and the one `communicate` it owned into
@@ -307,7 +308,7 @@ EXPECTED_SPAWNERS: dict[str, SpawnerRules] = {
     "procdispose.py": SpawnerRules(0, 1, 0, 0),
     "agents/proc.py": SpawnerRules(1, 0, 1, 2),
     "serve.py": SpawnerRules(1, 1, 1, 2),
-    "verify.py": SpawnerRules(1, 1, 1, 3),
+    "verify.py": SpawnerRules(1, 1, 1, 2),
 }
 
 

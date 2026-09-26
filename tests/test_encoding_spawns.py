@@ -103,7 +103,6 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     "serve.py": 1,
     "statedir.py": 1,
     "tui/screens/home.py": 1,
-    "verify.py": 1,
 }
 
 
@@ -163,7 +162,6 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     "serve.py subprocess.Popen(command, cwd=str(cwd), env=env, stdout=subprocess.PIP",
     "statedir.py subprocess.run(['git', '-C', str(root_dir), 'remote', 'get-url', 'orig",
     "tui/screens/home.py subprocess.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=root_",
-    "verify.py subprocess.Popen(cmd, shell=isinstance(cmd, str), cwd=cwd, stdout=subp",
 )
 
 
@@ -198,8 +196,11 @@ EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     "git.py": 7,
     "observability.py": 1,
     "retry_plan.py": 3,
-    # 1: `_base_finding`'s `git show` (#414/#425); its sibling moved above.
-    "verify.py": 1,
+    # 2: `_base_finding`'s `git show` (#414/#425), and #527's
+    # `run_scrubbed`, which reads bytes and decodes them itself, strictly,
+    # so a gate whose output is not utf-8 can still write its log.
+    # `tests/test_undecodable_child_output.py` pins the strictness.
+    "verify.py": 2,
 }
 
 
