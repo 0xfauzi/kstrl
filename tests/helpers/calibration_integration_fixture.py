@@ -44,6 +44,7 @@ from kstrl.integration import (
 from kstrl.integration_phase import review_commit
 from kstrl.review import ReviewResult, normalize_story_id, run_review
 from kstrl.ui.plain import PlainUI
+from tests.helpers.calibration_replies import keep_call
 from tests.helpers.calibration_repo_fixture import FIXTURES_DIR
 from tests.helpers.gitrepo import GIT_TIMEOUT_SECONDS, git_in, set_identity
 
@@ -203,6 +204,10 @@ class BoundedAgent:
     reads as red and a positive would score as a miss. This record is what
     lets the harness exclude such a run instead, as every other role does.
     Every other attribute (``name``, ``final_message``) is the wrapped agent's.
+
+    It is also where an integration run's reply is kept (#523): ``run_review``
+    drains the agent itself, so this is the one place the harness sees the
+    lines and the ``final_message`` it scores.
     """
 
     def __init__(self, inner: Any, timeout: float) -> None:
@@ -219,14 +224,17 @@ class BoundedAgent:
     ) -> Iterator[str]:
         self.started = True
         bound = self._timeout if timeout is None else timeout
-        last = ""
+        streamed: list[str] = []
         try:
             for line in self._inner.run(prompt, cwd=cwd, timeout=bound):
-                last = line
+                streamed.append(line)
                 yield line
         except Exception as exc:
             self.failure = f"agent raised {type(exc).__name__}: {exc}"
             raise
+        finally:
+            keep_call(streamed, getattr(self._inner, "final_message", None))
+        last = streamed[-1] if streamed else ""
         if last.startswith(TIMEOUT_MESSAGE_PREFIX):
             self.failure = last
 

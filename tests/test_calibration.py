@@ -98,6 +98,7 @@ from tests.helpers.calibration_integration_fixture import (
     review_fixture,
     run_slot,
 )
+from tests.helpers.calibration_replies import keep_call, replies_dir, take_calls, write_reply
 from tests.helpers.calibration_repo_fixture import (
     FIXTURES_DIR,
     REUSE_ROLE,
@@ -478,8 +479,13 @@ def _collect(agent, prompt: str, cwd: Path) -> list[str]:
     denominator.
     """
     output: list[str] = []
-    for line in agent.run(prompt, cwd=cwd, timeout=AGENT_RUN_TIMEOUT_S):
-        output.append(line)
+    try:
+        for line in agent.run(prompt, cwd=cwd, timeout=AGENT_RUN_TIMEOUT_S):
+            output.append(line)
+    finally:
+        # #523: kept whatever happens, so a timed-out or crashed run's
+        # partial reply is on disk beside the baseline too.
+        keep_call(output, getattr(agent, "final_message", None))
     if output and output[-1].startswith(TIMEOUT_MESSAGE_PREFIX):
         raise RuntimeError(output[-1])
     return output
@@ -872,8 +878,10 @@ class _DetectionReport:
         category: str | None = None,
         cwe: str | None = None,
         error: bool = False,
+        calls: list[dict],
     ) -> None:
-        """Record one RUN and write it (#398 A1).
+        """Record one RUN and write it (#398 A1), after writing its agent
+        replies (#523).
 
         A death mid-fixture must not discard the runs that already
         completed: at ``KSTRL_CALIBRATION_RUNS=9`` a lost fixture is up
@@ -883,17 +891,17 @@ class _DetectionReport:
         number). ``begin_fixture``'s flush stays: it is what records
         WHICH fixture was in flight, which this call does not touch.
         """
-        self.records.append(
-            {
-                "role": role,
-                "fixture_id": fixture_id,
-                "category": category,
-                "cwe": cwe,
-                "caught": caught,
-                "error": error,
-                "detail": detail,
-            }
-        )
+        entry = {
+            "role": role,
+            "fixture_id": fixture_id,
+            "category": category,
+            "cwe": cwe,
+            "caught": caught,
+            "error": error,
+            "detail": detail,
+        }
+        self._keep_replies(self.records, entry, calls)
+        self.records.append(entry)
         self.flush()
 
     def record_fp(
@@ -904,18 +912,34 @@ class _DetectionReport:
         detail: str = "",
         *,
         error: bool = False,
+        calls: list[dict],
     ) -> None:
-        """Record one RUN of a NEGATIVE fixture (R5.2) and write it (#398 A1)."""
-        self.fp_records.append(
-            {
-                "role": role,
-                "fixture_id": fixture_id,
-                "false_positive": false_positive,
-                "error": error,
-                "detail": detail,
-            }
-        )
+        """Record one RUN of a NEGATIVE fixture (R5.2) and write it (#398 A1),
+        after writing its agent replies (#523)."""
+        entry = {
+            "role": role,
+            "fixture_id": fixture_id,
+            "false_positive": false_positive,
+            "error": error,
+            "detail": detail,
+        }
+        self._keep_replies(self.fp_records, entry, calls)
+        self.fp_records.append(entry)
         self.flush()
+
+    def _keep_replies(self, earlier: list[dict], entry: dict, calls: list[dict]) -> None:
+        """Write one run's agent replies before the run is recorded (#523).
+
+        The run number is this fixture's count of records so far plus one,
+        so ``run-<n>.json`` is the baseline's ``runs[n - 1]``. Written first
+        so a write that fails leaves the run unrecorded and its fixture
+        dangling, which makes the saved baseline a partial capture."""
+        run = 1 + sum(
+            1
+            for r in earlier
+            if (r["role"], r["fixture_id"]) == (entry["role"], entry["fixture_id"])
+        )
+        write_reply(replies_dir(RESULTS_DIR, self.timestamp), entry, run, calls)
 
     def begin_fixture(self, role: str, fixture_id: str) -> None:
         """Record that a fixture's run loop is starting, and write.
@@ -1034,6 +1058,22 @@ class _AgentUnavailable(Exception):
     """The agent could not run at all (infrastructure, not behavior)."""
 
 
+def _run_kept(
+    run_once: Callable[[], tuple[bool, str]],
+) -> tuple[bool, str, bool, list[dict]]:
+    """One run: ``(hit, detail, error, calls)``, where ``calls`` is every
+    agent call the run made (#523). Calls left over from a run that raised
+    out of its gate helper are dropped first, so they cannot be kept under
+    this run's name."""
+    take_calls()
+    try:
+        hit, detail = run_once()
+        error = False
+    except _AgentUnavailable as exc:
+        hit, detail, error = False, f"agent error: {exc}", True
+    return hit, detail, error, take_calls()
+
+
 def _gate_on_consistency(
     role: str,
     fixture_id: str,
@@ -1052,11 +1092,8 @@ def _gate_on_consistency(
     details: list[str] = []
     with report.fixture(role, fixture_id):
         for run_index in range(CALIBRATION_RUNS):
-            try:
-                caught, detail = run_once()
-                error = False
-            except _AgentUnavailable as exc:
-                caught, detail, error = False, f"agent error: {exc}", True
+            caught, detail, error, calls = _run_kept(run_once)
+            if error:
                 errored += 1
             if caught:
                 detected += 1
@@ -1069,6 +1106,7 @@ def _gate_on_consistency(
                 category=category,
                 cwe=cwe,
                 error=error,
+                calls=calls,
             )
     completed = CALIBRATION_RUNS - errored
     if completed == 0:
@@ -1101,11 +1139,8 @@ def _measure_detection(
     errored = 0
     with report.fixture(role, fixture_id):
         for _ in range(CALIBRATION_RUNS):
-            try:
-                caught, detail = run_once()
-                error = False
-            except _AgentUnavailable as exc:
-                caught, detail, error = False, f"agent error: {exc}", True
+            caught, detail, error, calls = _run_kept(run_once)
+            if error:
                 errored += 1
             report.record(
                 role,
@@ -1115,6 +1150,7 @@ def _measure_detection(
                 category=category,
                 cwe=cwe,
                 error=error,
+                calls=calls,
             )
     if errored == CALIBRATION_RUNS:
         pytest.skip(f"agent unavailable for all {CALIBRATION_RUNS} runs")
@@ -1136,13 +1172,10 @@ def _measure_false_positives(
     errored = 0
     with report.fixture(role, fixture_id):
         for _ in range(CALIBRATION_RUNS):
-            try:
-                is_fp, detail = run_once()
-                error = False
-            except _AgentUnavailable as exc:
-                is_fp, detail, error = False, f"agent error: {exc}", True
+            is_fp, detail, error, calls = _run_kept(run_once)
+            if error:
                 errored += 1
-            report.record_fp(role, fixture_id, is_fp, detail, error=error)
+            report.record_fp(role, fixture_id, is_fp, detail, error=error, calls=calls)
     if errored == CALIBRATION_RUNS:
         pytest.skip(f"agent unavailable for all {CALIBRATION_RUNS} runs")
 
