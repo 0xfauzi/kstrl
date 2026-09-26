@@ -58,6 +58,13 @@ CONTROL_PR_COUNT_STREAK = "pr_count_streak.json"
 #: agent under test can author. Post-R8.9, so it has no legacy in-tree
 #: location; see ``legacy_control_paths`` below.
 CONTROL_SIGNALS = "signals.jsonl"
+#: #553. The CI check state of each commit a kstrl merge produced: one
+#: append-only line per (commit, read). Control state for the same
+#: reason as the signal ledger above: a later release gate will read it
+#: to decide whether main is green, so it must not be a file the
+#: engineer agent under test can author. Post-R8.9, so it has no legacy
+#: in-tree location.
+CONTROL_CI_CHECKS = "ci_checks.jsonl"
 
 #: Every file kstrl keeps in the XDG control directory. Wider than
 #: :func:`legacy_control_paths`, whose keys are the subset that also
@@ -70,6 +77,7 @@ CONTROL_FILENAMES: tuple[str, ...] = (
     CONTROL_GITHUB_PROCESSED,
     CONTROL_PR_COUNT_STREAK,
     CONTROL_SIGNALS,
+    CONTROL_CI_CHECKS,
 )
 
 #: Directories kstrl creates directly under ``.kstrl/``. A statement of

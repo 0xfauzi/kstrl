@@ -482,6 +482,9 @@ EXPECTED_ROUTED_APPENDS: dict[str, int] = {
     "evolution.py: append_records(lock=True)": 1,
     "evolution.py: append_records(lock=default (False))": 1,
     "signals.py: append_records(lock=True)": 1,
+    # #553: the CI ledger, for the signal ledger's reason: a scheduled
+    # `ks ci poll` and an operator's can interleave.
+    "ci_state.py: append_records(lock=True)": 1,
     "inbox.py: append_records(lock=default (False))": 1,
     "init_cmd.py: append_records(lock=default (False))": 1,
     "knowledge.py: append_records(lock=default (False))": 1,
