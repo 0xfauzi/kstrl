@@ -344,6 +344,9 @@ class HomeScreen(Screen[None]):
             for row, values in zip(shown, cells, strict=True):
                 needs.add_row(*values, key=f"{row.kind}:{row.key}")
         needs.display = bool(rows)
+        # An explicit height, not auto: a table whose rows land in the
+        # frame it is shown in was laid out at height 0 at 80x24.
+        needs.styles.height = min(len(rows), SECTION_ROWS)
         if len(rows) > SECTION_ROWS:
             line = self.query_one("#home-attention", Static)
             line.update(
@@ -369,6 +372,7 @@ class HomeScreen(Screen[None]):
             for index, values in enumerate(cells):
                 active.add_row(*values, key=f"active:{index}")
         active.display = bool(moving)
+        active.styles.height = min(len(moving), SECTION_ROWS)
         self.query_one("#home-delivery", Static).update(delivery_text(queue, width))
 
     def on_screen_resume(self) -> None:

@@ -463,6 +463,35 @@ class TestOperatorQueue:
                 stats = str(cast(Static, app.screen.query_one("#home-stats")).content)
                 assert f"ks serve running (pid {os.getpid()})" in stats, stats
 
+    async def test_at_80x24_every_queue_row_has_its_line(self, tmp_path: Path) -> None:
+        """The active table was laid out at height 0 at 80x24, under a
+        title that said "active", while its rows existed. Seen in the
+        screenshot harness only; this test does not reproduce that race
+        with the fix removed, so it pins the outcome, not the cause."""
+        from kstrl.serve import serve_lock
+        from kstrl.workqueue import Queue
+
+        _save_manifest(tmp_path, api="failed")
+        _run(tmp_path, NEW, api="failed")
+        Inbox(tmp_path, InboxConfig()).add(ItemKind.HALTED_RUN, "halted", dedupe_key="h")
+        queue = Queue(tmp_path)
+        queue.start(queue.lease(queue.add("spec", title="slice three"), pid=os.getpid()))
+        queue.add("spec", title="slice four")
+        app = _home(tmp_path)
+        with serve_lock(tmp_path):
+            async with app.run_test(size=(80, 24)) as pilot:
+                needs = cast(
+                    DataTable[Any], await mounted(pilot, lambda: app.screen, "#home-needs")
+                )
+                active = cast(DataTable[Any], app.screen.query_one("#home-active"))
+                await settled(
+                    pilot,
+                    lambda: needs.row_count == 2 and active.row_count == 2,
+                    what="the queue rows",
+                )
+                await drained(pilot, app.screen, what="the layout after the rows")
+                assert (needs.region.height, active.region.height) == (2, 2)
+
     async def test_the_overview_pins_the_integration_review_and_i_opens_it(
         self, tmp_path: Path
     ) -> None:

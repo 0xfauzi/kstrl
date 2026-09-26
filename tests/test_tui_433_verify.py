@@ -16,8 +16,8 @@ import pytest
 from kstrl.manifest import Manifest
 from kstrl.tui import runs as runs_mod
 from kstrl.tui.home_data import HomeStats, SummaryCache
-from kstrl.tui.operator_queue import build_queue
 from kstrl.tui.home_view import attention_line
+from kstrl.tui.operator_queue import build_queue
 from kstrl.tui.widgets.cost_meter import render_cost_meter
 from kstrl.tui.widgets.header import app_live
 from tests.helpers.fake_run import FakeRunSpec, write_fake_run
@@ -83,6 +83,7 @@ class TestAttention:
     def test_an_unreadable_inbox_log_is_not_counted(self, tmp_path: Path) -> None:
         """A torn multibyte write makes the scan unreadable, not empty."""
         from kstrl.inbox import Inbox, InboxConfig, ItemKind
+
         box = Inbox(tmp_path, InboxConfig())
         box.add(ItemKind.HALTED_RUN, "halted", dedupe_key="h")
         box.path.write_bytes(b"\xe2\x80")

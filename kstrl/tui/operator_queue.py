@@ -348,7 +348,9 @@ def _active_run_rows(
         if moving:
             health = agent_health(ref.run_dir, moving[0], now)
             detail = f"{reason} · {health.text()}"
-            short = f"{reason} · {health.text(short=True)}"
+            # Health first: a narrow cell cuts the end, and the reason
+            # is the part the board repeats.
+            short = f"{health.text(short=True)} · {reason}"
         rows.append(ActiveRow(ref.kind, ref.run_id, RUNNING, detail, ref.run_id, short))
     return rows
 

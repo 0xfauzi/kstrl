@@ -208,8 +208,9 @@ class TestRetryScreen:
                 # carry is refused at r and no modal opens.
                 await settled(
                     pilot,
-                    lambda: _notified(app, RESUME_REFUSAL)
-                    or not isinstance(app.screen, RetryScreen),
+                    lambda: (
+                        _notified(app, RESUME_REFUSAL) or not isinstance(app.screen, RetryScreen)
+                    ),
                     what="r to refuse the uncarryable ceiling",
                 )
                 assert isinstance(app.screen, RetryScreen)
@@ -288,8 +289,9 @@ class TestRetryScreen:
                 # carry is refused at r and no modal opens.
                 await settled(
                     pilot,
-                    lambda: _notified(app, RESUME_REFUSAL)
-                    or not isinstance(app.screen, RetryScreen),
+                    lambda: (
+                        _notified(app, RESUME_REFUSAL) or not isinstance(app.screen, RetryScreen)
+                    ),
                     what="r to refuse the uncarryable flags",
                 )
                 assert isinstance(app.screen, RetryScreen)

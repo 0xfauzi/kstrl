@@ -180,5 +180,3 @@ def gather_home(
         failed_components=queue.failures,
         queue=queue,
     )
-
-

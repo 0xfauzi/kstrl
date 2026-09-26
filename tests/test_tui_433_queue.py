@@ -399,9 +399,7 @@ class TestServe:
         unheld = read_serve_state(tmp_path, "factory-x", factory_lock_held=False)
         assert unheld is not None and unheld.in_flight[0].run_id == ""
 
-    def test_no_queue_is_no_serve_and_a_released_lock_is_not_running(
-        self, tmp_path: Path
-    ) -> None:
+    def test_no_queue_is_no_serve_and_a_released_lock_is_not_running(self, tmp_path: Path) -> None:
         """The daemon never clears its pid. A live pid left in a lock
         nobody holds (this process's own, here) is not a running daemon."""
         from kstrl.serve import serve_lock
