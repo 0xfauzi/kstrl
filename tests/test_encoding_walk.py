@@ -472,6 +472,7 @@ class TestTheReadBytesExclusion:
     """
 
     EXPECTED_READ_BYTES: dict[str, int] = {
+        "agents/prompt_record.py": 1,  # #532: the baseline.py shape, I/O outside the guard
         "breaker.py": 1,
         "config_toml.py": 1,
         "baseline.py": 1,

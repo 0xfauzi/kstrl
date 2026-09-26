@@ -43,6 +43,7 @@ from kstrl.agents import (
 )
 from kstrl.agents.base import (
     ARCHITECT_COMPONENT,
+    ARCHITECT_ROLE,
     Agent,
     UsageTotals,
     collect_usage,
@@ -50,6 +51,7 @@ from kstrl.agents.base import (
 )
 from kstrl.agents.liveness import CLAUDE_FAMILY, PROBE_ENV_VAR, probe_family
 from kstrl.agents.logging import LoggingAgent
+from kstrl.agents.prompt_record import recording_prompts
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import CommandRun, open_command_run
 from kstrl.config import (
@@ -1685,19 +1687,20 @@ def _understand_core(
     understand_harness_paths = config.standalone_harness_files(root_dir)
 
     try:
-        result = run_loop(
-            config,
-            ui_impl,
-            loop_agent,
-            root_dir,
-            timeouts=TimeoutConfig.load(root_dir),
-            breaker_config=BreakerConfig.load(root_dir),
-            bus=bus,
-            interaction=interaction,
-            stop_check=stop_check,
-            guard_ignored_paths=understand_harness_paths,
-            guard_state_root=root_dir,
-        )
+        with recording_prompts(run.agent_call(component, "understand")):
+            result = run_loop(
+                config,
+                ui_impl,
+                loop_agent,
+                root_dir,
+                timeouts=TimeoutConfig.load(root_dir),
+                breaker_config=BreakerConfig.load(root_dir),
+                bus=bus,
+                interaction=interaction,
+                stop_check=stop_check,
+                guard_ignored_paths=understand_harness_paths,
+                guard_state_root=root_dir,
+            )
     except Exception as exc:
         duration = round(time.monotonic() - started, 2)
         detail = f"{type(exc).__name__}: {exc}"
@@ -2296,6 +2299,7 @@ def decompose(
                 root_dir=root_dir,
                 bus=command_run.bus,
                 transcript=command_run.transcript_writer(ARCHITECT_COMPONENT),
+                prompt_call=command_run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
             )
             core_ui.ok(f"Decomposed into {len(manifest.components)} components")
             return 0

@@ -21,6 +21,7 @@ from typing import IO, TYPE_CHECKING, Any, Protocol, TextIO
 from kstrl import git
 from kstrl.agents.base import UsageTotals, collect_usage, print_usage_rollup
 from kstrl.agents.proc import kill_active_process_groups
+from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.atomicio import atomic_write_json
 from kstrl.autonomy import (
     AutonomyConfig,
@@ -2370,6 +2371,25 @@ def _report_operator_files(base_config: KstrlConfig, root_dir: Path, ui: UI) -> 
         ui.warn(f"  {subject}: {message}")
 
 
+def _engineer_call(
+    usage_dir_str: str | None, run_id: str, component_id: str, attempt: int
+) -> AgentCall | None:
+    """Who the engineer's prompts are recorded for (#532).
+
+    The accounting directory is the run directory, and the factory always
+    passes it; None is a direct caller outside a run, which records nothing.
+    """
+    if usage_dir_str is None:
+        return None
+    return AgentCall(
+        run_root=Path(usage_dir_str),
+        run_id=run_id,
+        component=component_id,
+        role="engineer",
+        attempt=attempt,
+    )
+
+
 def _run_component(
     component_id: str,
     prd_path_str: str,
@@ -2411,6 +2431,7 @@ def _run_component(
     stop_check: Callable[[], bool] | None = None,
     base_branch: str = "main",
     verify_config: VerifyConfig | None = None,
+    attempt: int = 1,
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
@@ -2721,28 +2742,29 @@ def _run_component(
     try:
         for note in setup_notes:
             ui.warn(note)
-        result = run_loop(
-            config,
-            ui,
-            agent,
-            worktree_path,
-            context_prefix=context_prefix,
-            timeouts=timeouts,
-            breaker_config=breaker_config,
-            bus=worker_bus,
-            stop_check=stop_check,
-            budget=token_budget,
-            on_iteration_usage=on_iteration_usage,
-            guard_base_ref=guard_base_ref,
-            guard_ignored_paths=harness_paths,
-            # #274: the project root, NOT worktree_path. The two are the
-            # same directory only under use_worktrees=False, which is
-            # exactly when `.kstrl/` reaches the guard's walk; in a real
-            # worktree they differ and the loop carves nothing out, so a
-            # `.kstrl/` the AGENT wrote there stays a violation.
-            guard_state_root=root_dir,
-            verify_config=verify_config,
-        )
+        with recording_prompts(_engineer_call(usage_dir_str, run_id, component_id, attempt)):
+            result = run_loop(
+                config,
+                ui,
+                agent,
+                worktree_path,
+                context_prefix=context_prefix,
+                timeouts=timeouts,
+                breaker_config=breaker_config,
+                bus=worker_bus,
+                stop_check=stop_check,
+                budget=token_budget,
+                on_iteration_usage=on_iteration_usage,
+                guard_base_ref=guard_base_ref,
+                guard_ignored_paths=harness_paths,
+                # #274: the project root, NOT worktree_path. The two are the
+                # same directory only under use_worktrees=False, which is
+                # exactly when `.kstrl/` reaches the guard's walk; in a real
+                # worktree they differ and the loop carves nothing out, so a
+                # `.kstrl/` the AGENT wrote there stays a violation.
+                guard_state_root=root_dir,
+                verify_config=verify_config,
+            )
         # Report which limit fired so the retry/fail path can act on it
         # (timeout errors trigger the recreate-from-base retry hygiene).
         if result.completed:
@@ -4756,6 +4778,7 @@ def _run_factory_locked(
                             # lands on redirect_output.
                             base_branch=manifest.base_branch,
                             verify_config=engineer_verify,
+                            attempt=comp.retries + 1,
                             redirect_output=False,  # type: ignore[misc]
                             live_line=functools.partial(
                                 ui.stream_line,
@@ -4779,6 +4802,7 @@ def _run_factory_locked(
                                 # inline branch annotates above.
                                 base_branch=manifest.base_branch,  # type: ignore[misc]
                                 verify_config=engineer_verify,
+                                attempt=comp.retries + 1,
                             ),
                         )
                     running_futures[future] = comp.id

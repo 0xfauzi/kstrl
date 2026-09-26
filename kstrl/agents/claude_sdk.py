@@ -39,6 +39,7 @@ from typing import Any
 
 from kstrl.agents.base import UsageRecord
 from kstrl.agents.proc import DeadlineStreamer, timeout_message
+from kstrl.agents.prompt_record import record_prompt
 from kstrl.jsonread import read_json
 from kstrl.sandbox import (
     SandboxConfig,
@@ -162,6 +163,7 @@ class ClaudeSdkAgent:
         }
 
         cmd = [sys.executable, "-u", "-m", "kstrl.agents.sdk_runner"]
+        record_prompt(prompt, agent_cli="claude-sdk")
         streamer = DeadlineStreamer(
             cmd,
             cwd=cwd,

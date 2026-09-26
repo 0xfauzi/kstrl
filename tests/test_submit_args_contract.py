@@ -51,17 +51,25 @@ from kstrl.verify import VerifyConfig
 COMP = "comp-a"
 PRD_REL = f"scripts/kstrl/feature/{COMP}/prd.json"
 
-#: The five parameters the scheduler passes BY NAME rather than through
-#: the tuple. Named here so a sixth is a decision somebody writes down.
-BY_KEYWORD = {"base_branch", "live_line", "redirect_output", "stop_check", "verify_config"}
+#: The six parameters the scheduler passes BY NAME rather than through
+#: the tuple. Named here so a seventh is a decision somebody writes down.
+#: ``attempt`` is #532's: the engineer's prompt records carry it.
+BY_KEYWORD = {
+    "attempt",
+    "base_branch",
+    "live_line",
+    "redirect_output",
+    "stop_check",
+    "verify_config",
+}
 
-#: What the POOL branch passes by name, which is two of the five. A pool
+#: What the POOL branch passes by name, which is three of the six. A pool
 #: worker has no parent terminal to mirror transcript lines to and no
 #: in-process stop event to share, so those three take
 #: ``_run_component``'s own defaults there. Review round 2, nit 7: this
 #: file exercised the inline branch only, so "closed over the SIGNATURE"
 #: held for one of two call sites.
-POOL_KEYWORDS = {"base_branch", "verify_config"}
+POOL_KEYWORDS = {"attempt", "base_branch", "verify_config"}
 
 
 class _CapturingPool:
@@ -293,6 +301,15 @@ class TestTheWholeSubmitTupleIsBound:
         ]
 
         assert len(set(quartet)) == 4, quartet
+
+    @pytest.mark.parametrize("max_parallel", [1, 2], ids=["inline", "pool"])
+    def test_the_worker_is_told_which_attempt_it_runs(
+        self, tmp_path: Path, max_parallel: int
+    ) -> None:
+        """#532: the engineer's prompt records carry the attempt, and the
+        worker cannot work it out for itself."""
+        _bound, kwargs = _positional(_project(tmp_path), max_parallel)
+        assert kwargs["attempt"] == 1
 
     @pytest.mark.parametrize(
         "max_parallel, expected",

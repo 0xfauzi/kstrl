@@ -128,6 +128,8 @@ def unstamped_run_records() -> list[str]:
 
 #: Layer 1. Re-derive by running the census; never edit a count by hand.
 EXPECTED_RUN_RECORD_SITES: dict[str, int] = {
+    "agents/prompt_record.py: <module>": 1,  # #532: the field table the writer and reader share
+    "agents/prompt_record.py: record_prompt": 1,  # #532: one prompt record per agent call
     "autonomy.py: commit_transition": 1,
     "events.py: <module>": 1,
     "events.py: _envelope_kwargs": 1,
