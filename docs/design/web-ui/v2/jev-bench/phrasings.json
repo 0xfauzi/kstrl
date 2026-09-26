@@ -1,0 +1,1002 @@
+{
+  "_note": "Labelled before any call. `route` is the primary label; `accept` lists other routes that would also be a correct reading of an ambiguous phrasing. `args` maps argument id to the accepted values (a list). Arguments not listed are not scored.",
+  "items": [
+    {
+      "id": 1,
+      "text": "cost?",
+      "route": "ask_cost",
+      "args": {
+        "cost_scope": [
+          "this_run",
+          "unstated"
+        ]
+      },
+      "kind": "terse"
+    },
+    {
+      "id": 2,
+      "text": "why did client-commands fail",
+      "route": "ask_why_failed",
+      "args": {
+        "component": [
+          "client-commands"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 3,
+      "text": "why did token-crypto fail",
+      "route": "ask_why_failed",
+      "args": {
+        "component": [
+          "token-crypto"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 4,
+      "text": "is main green",
+      "route": "ask_main_green",
+      "args": {},
+      "kind": "plain"
+    },
+    {
+      "id": 5,
+      "text": "did the merges pass ci",
+      "route": "ask_main_green",
+      "accept": [
+        "open_delivery"
+      ],
+      "args": {},
+      "kind": "plain"
+    },
+    {
+      "id": 6,
+      "text": "what needs me",
+      "route": "ask_needs_me",
+      "accept": [
+        "open_decisions"
+      ],
+      "args": {},
+      "kind": "plain"
+    },
+    {
+      "id": 7,
+      "text": "anything waiting on me?",
+      "route": "ask_needs_me",
+      "accept": [
+        "open_decisions"
+      ],
+      "args": {},
+      "kind": "plain"
+    },
+    {
+      "id": 8,
+      "text": "is the agent alive",
+      "route": "ask_alive",
+      "args": {
+        "component": [
+          "not named"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 9,
+      "text": "is http-app still doing anything",
+      "route": "ask_alive",
+      "args": {
+        "component": [
+          "http-app"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 10,
+      "text": "how much have we spent today",
+      "route": "ask_cost",
+      "args": {
+        "period": [
+          "today"
+        ],
+        "cost_scope": [
+          "all_runs",
+          "unstated"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 11,
+      "text": "spend on live01",
+      "route": "ask_cost",
+      "args": {
+        "cost_scope": [
+          "named_run"
+        ],
+        "run": [
+          "live01"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 12,
+      "text": "total cost this week",
+      "route": "ask_cost",
+      "args": {
+        "cost_scope": [
+          "all_runs"
+        ],
+        "period": [
+          "this_week"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 13,
+      "text": "open live01",
+      "route": "open_run",
+      "args": {
+        "run": [
+          "live01"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 14,
+      "text": "8d80e8",
+      "route": "open_run",
+      "args": {
+        "run": [
+          "8d80e8"
+        ]
+      },
+      "kind": "terse"
+    },
+    {
+      "id": 15,
+      "text": "show me the live run",
+      "route": "open_run",
+      "args": {
+        "run": [
+          "the live run",
+          "live01"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 16,
+      "text": "http-app",
+      "route": "open_component",
+      "args": {
+        "component": [
+          "http-app"
+        ]
+      },
+      "kind": "terse"
+    },
+    {
+      "id": 17,
+      "text": "go to storage",
+      "route": "open_component",
+      "args": {
+        "component": [
+          "storage"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 18,
+      "text": "decisions",
+      "route": "open_decisions",
+      "args": {},
+      "kind": "terse"
+    },
+    {
+      "id": 19,
+      "text": "inbox",
+      "route": "open_decisions",
+      "args": {},
+      "kind": "terse"
+    },
+    {
+      "id": 20,
+      "text": "failures",
+      "route": "open_failures",
+      "args": {},
+      "kind": "terse"
+    },
+    {
+      "id": 21,
+      "text": "what failed",
+      "route": "open_failures",
+      "accept": [
+        "ask_why_failed"
+      ],
+      "args": {},
+      "kind": "ambiguous"
+    },
+    {
+      "id": 22,
+      "text": "delivery",
+      "route": "open_delivery",
+      "args": {},
+      "kind": "terse"
+    },
+    {
+      "id": 23,
+      "text": "ci",
+      "route": "open_delivery",
+      "accept": [
+        "ci_poll",
+        "ask_main_green"
+      ],
+      "args": {},
+      "kind": "ambiguous"
+    },
+    {
+      "id": 24,
+      "text": "serve queue",
+      "route": "open_serve",
+      "args": {},
+      "kind": "terse"
+    },
+    {
+      "id": 25,
+      "text": "whats queued",
+      "route": "open_serve",
+      "args": {},
+      "kind": "plain"
+    },
+    {
+      "id": 26,
+      "text": "config",
+      "route": "open_config",
+      "args": {},
+      "kind": "terse"
+    },
+    {
+      "id": 27,
+      "text": "what is the cost cap",
+      "route": "open_config",
+      "accept": [
+        "ask_cost"
+      ],
+      "args": {},
+      "kind": "ambiguous"
+    },
+    {
+      "id": 28,
+      "text": "learning",
+      "route": "open_learning",
+      "args": {},
+      "kind": "terse"
+    },
+    {
+      "id": 29,
+      "text": "recurring failure patterns",
+      "route": "open_learning",
+      "args": {},
+      "kind": "plain"
+    },
+    {
+      "id": 30,
+      "text": "history",
+      "route": "open_history",
+      "args": {},
+      "kind": "terse"
+    },
+    {
+      "id": 31,
+      "text": "past runs",
+      "route": "open_history",
+      "args": {},
+      "kind": "plain"
+    },
+    {
+      "id": 32,
+      "text": "approve client-commands",
+      "route": "decide",
+      "args": {
+        "decide_choice": [
+          "approve_run",
+          "unspecified"
+        ],
+        "target_item": [
+          "merge gate: client-commands (run 8d80e8)"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 33,
+      "text": "approve and merge comp-c",
+      "route": "decide",
+      "args": {
+        "decide_choice": [
+          "approve_run"
+        ],
+        "target_item": [
+          "checkpoint: comp-c (approve PR creation and merge)"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 34,
+      "text": "approve only, don't run anything",
+      "route": "decide",
+      "args": {
+        "decide_choice": [
+          "approve_only"
+        ],
+        "target_item": [
+          "not named"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 35,
+      "text": "reject comp-c",
+      "route": "decide",
+      "args": {
+        "decide_choice": [
+          "reject"
+        ],
+        "target_item": [
+          "checkpoint: comp-c (approve PR creation and merge)"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 36,
+      "text": "send comp-c back to the engineer",
+      "route": "decide",
+      "args": {
+        "decide_choice": [
+          "send_back"
+        ],
+        "target_item": [
+          "checkpoint: comp-c (approve PR creation and merge)"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 37,
+      "text": "decide later",
+      "route": "decide",
+      "args": {
+        "decide_choice": [
+          "later"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 38,
+      "text": "retry client-commands",
+      "route": "retry",
+      "args": {
+        "component": [
+          "client-commands"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 39,
+      "text": "rerun token-crypto",
+      "route": "retry",
+      "args": {
+        "component": [
+          "token-crypto"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 40,
+      "text": "retry",
+      "route": "retry",
+      "accept": [
+        "open_failures"
+      ],
+      "args": {
+        "component": [
+          "not named"
+        ]
+      },
+      "kind": "terse"
+    },
+    {
+      "id": 41,
+      "text": "snooze the merge gate for a day",
+      "route": "snooze",
+      "args": {
+        "target_item": [
+          "merge gate: client-commands (run 8d80e8)"
+        ],
+        "snooze_duration": [
+          "24h"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 42,
+      "text": "hide the halted run for a week",
+      "route": "snooze",
+      "args": {
+        "target_item": [
+          "halted run fda682 (the integration loop stopped)"
+        ],
+        "snooze_duration": [
+          "7d"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 43,
+      "text": "start a factory run from spec.md",
+      "route": "start_factory",
+      "args": {},
+      "kind": "plain"
+    },
+    {
+      "id": 44,
+      "text": "run the factory on slice 4",
+      "route": "start_factory",
+      "args": {},
+      "kind": "plain"
+    },
+    {
+      "id": 45,
+      "text": "stop live01",
+      "route": "stop_run",
+      "args": {
+        "run": [
+          "live01"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 46,
+      "text": "kill the run",
+      "route": "stop_run",
+      "args": {
+        "run": [
+          "the live run"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 47,
+      "text": "pause serve",
+      "route": "serve_control",
+      "args": {
+        "serve_action": [
+          "pause"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 48,
+      "text": "resume the queue",
+      "route": "serve_control",
+      "args": {
+        "serve_action": [
+          "resume"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 49,
+      "text": "poll ci now",
+      "route": "ci_poll",
+      "args": {},
+      "kind": "plain"
+    },
+    {
+      "id": 50,
+      "text": "refresh the ci state",
+      "route": "ci_poll",
+      "args": {},
+      "kind": "plain"
+    },
+    {
+      "id": 51,
+      "text": "dark mode",
+      "route": "toggle_theme",
+      "args": {
+        "theme": [
+          "dark"
+        ]
+      },
+      "kind": "terse"
+    },
+    {
+      "id": 52,
+      "text": "switch to light",
+      "route": "toggle_theme",
+      "args": {
+        "theme": [
+          "light"
+        ]
+      },
+      "kind": "plain"
+    },
+    {
+      "id": 53,
+      "text": "show me failed components this week by cost as a timeline",
+      "route": "make_view",
+      "args": {
+        "view_source": [
+          "components"
+        ],
+        "view_filter_state": [
+          "failed"
+        ],
+        "period": [
+          "this_week"
+        ],
+        "view_sort": [
+          "cost"
+        ],
+        "view_form": [
+          "timeline"
+        ]
+      },
+      "kind": "view"
+    },
+    {
+      "id": 54,
+      "text": "cost per run as a sparkline",
+      "route": "make_view",
+      "args": {
+        "view_source": [
+          "costs"
+        ],
+        "view_form": [
+          "sparkline"
+        ],
+        "view_group": [
+          "run"
+        ]
+      },
+      "kind": "view"
+    },
+    {
+      "id": 55,
+      "text": "board of components by state",
+      "route": "make_view",
+      "args": {
+        "view_source": [
+          "components"
+        ],
+        "view_form": [
+          "board"
+        ],
+        "view_group": [
+          "state"
+        ]
+      },
+      "kind": "view"
+    },
+    {
+      "id": 56,
+      "text": "table of findings by severity",
+      "route": "make_view",
+      "args": {
+        "view_source": [
+          "findings"
+        ],
+        "view_form": [
+          "table"
+        ],
+        "view_group": [
+          "severity"
+        ]
+      },
+      "kind": "view"
+    },
+    {
+      "id": 57,
+      "text": "timeline of live01's phases",
+      "route": "make_view",
+      "args": {
+        "view_source": [
+          "events"
+        ],
+        "view_form": [
+          "timeline"
+        ],
+        "run": [
+          "live01"
+        ]
+      },
+      "kind": "view"
+    },
+    {
+      "id": 58,
+      "text": "tokens over the last month",
+      "route": "make_view",
+      "accept": [
+        "ask_cost"
+      ],
+      "args": {
+        "view_source": [
+          "costs"
+        ],
+        "period": [
+          "this_month"
+        ]
+      },
+      "kind": "view"
+    },
+    {
+      "id": 59,
+      "text": "a meter of spend against the cap, dock it",
+      "route": "make_view",
+      "args": {
+        "view_source": [
+          "costs"
+        ],
+        "view_form": [
+          "meter"
+        ],
+        "view_placement": [
+          "dock"
+        ]
+      },
+      "kind": "view"
+    },
+    {
+      "id": 60,
+      "text": "list runs sorted by cost",
+      "route": "make_view",
+      "accept": [
+        "open_history"
+      ],
+      "args": {
+        "view_source": [
+          "runs"
+        ],
+        "view_form": [
+          "list"
+        ],
+        "view_sort": [
+          "cost"
+        ]
+      },
+      "kind": "view"
+    },
+    {
+      "id": 61,
+      "text": "graph of the components and their dependencies",
+      "route": "make_view",
+      "args": {
+        "view_source": [
+          "components"
+        ],
+        "view_form": [
+          "graph"
+        ]
+      },
+      "kind": "view"
+    },
+    {
+      "id": 62,
+      "text": "how many runs failed this month, just the number",
+      "route": "make_view",
+      "args": {
+        "view_source": [
+          "runs"
+        ],
+        "view_form": [
+          "number"
+        ],
+        "view_filter_state": [
+          "failed"
+        ],
+        "period": [
+          "this_month"
+        ]
+      },
+      "kind": "view"
+    },
+    {
+      "id": 63,
+      "text": "diff for comp-c",
+      "route": "make_view",
+      "accept": [
+        "open_component"
+      ],
+      "args": {
+        "view_source": [
+          "diff"
+        ],
+        "view_form": [
+          "diff"
+        ],
+        "component": [
+          "comp-c"
+        ]
+      },
+      "kind": "view"
+    },
+    {
+      "id": 64,
+      "text": "findings by phase, floating",
+      "route": "make_view",
+      "args": {
+        "view_source": [
+          "findings"
+        ],
+        "view_group": [
+          "phase"
+        ],
+        "view_placement": [
+          "float"
+        ]
+      },
+      "kind": "view"
+    },
+    {
+      "id": 65,
+      "text": "ci state per merge as a list",
+      "route": "make_view",
+      "accept": [
+        "open_delivery"
+      ],
+      "args": {
+        "view_source": [
+          "ci"
+        ],
+        "view_form": [
+          "list"
+        ]
+      },
+      "kind": "view"
+    },
+    {
+      "id": 66,
+      "text": "queue as a board",
+      "route": "make_view",
+      "accept": [
+        "open_serve"
+      ],
+      "args": {
+        "view_source": [
+          "queue"
+        ],
+        "view_form": [
+          "board"
+        ]
+      },
+      "kind": "view"
+    },
+    {
+      "id": 67,
+      "text": "running components only, as a list, newest first",
+      "route": "make_view",
+      "args": {
+        "view_source": [
+          "components"
+        ],
+        "view_filter_state": [
+          "running"
+        ],
+        "view_form": [
+          "list"
+        ],
+        "view_sort": [
+          "time"
+        ]
+      },
+      "kind": "view"
+    },
+    {
+      "id": 68,
+      "text": "what's the weather",
+      "route": "no_match",
+      "args": {},
+      "kind": "nomatch"
+    },
+    {
+      "id": 69,
+      "text": "hello",
+      "route": "no_match",
+      "args": {},
+      "kind": "nomatch"
+    },
+    {
+      "id": 70,
+      "text": "delete everything",
+      "route": "no_match",
+      "args": {},
+      "kind": "nomatch"
+    },
+    {
+      "id": 71,
+      "text": "write me a poem about merges",
+      "route": "no_match",
+      "args": {},
+      "kind": "nomatch"
+    },
+    {
+      "id": 72,
+      "text": "git push origin main",
+      "route": "no_match",
+      "args": {},
+      "kind": "nomatch"
+    },
+    {
+      "id": 73,
+      "text": "asdfgh",
+      "route": "no_match",
+      "args": {},
+      "kind": "nomatch"
+    },
+    {
+      "id": 74,
+      "text": "how do I install kstrl on windows",
+      "route": "no_match",
+      "args": {},
+      "kind": "nomatch"
+    },
+    {
+      "id": 75,
+      "text": "email the report to the team",
+      "route": "no_match",
+      "args": {},
+      "kind": "nomatch"
+    },
+    {
+      "id": 76,
+      "text": "retyr client-comands",
+      "route": "retry",
+      "args": {
+        "component": [
+          "client-commands"
+        ]
+      },
+      "kind": "typo"
+    },
+    {
+      "id": 77,
+      "text": "aprove the merge",
+      "route": "decide",
+      "args": {
+        "decide_choice": [
+          "approve_run",
+          "unspecified"
+        ],
+        "target_item": [
+          "merge gate: client-commands (run 8d80e8)",
+          "not named"
+        ]
+      },
+      "kind": "typo"
+    },
+    {
+      "id": 78,
+      "text": "cst of live01",
+      "route": "ask_cost",
+      "args": {
+        "cost_scope": [
+          "named_run"
+        ],
+        "run": [
+          "live01"
+        ]
+      },
+      "kind": "typo"
+    },
+    {
+      "id": 79,
+      "text": "opne failures",
+      "route": "open_failures",
+      "args": {},
+      "kind": "typo"
+    },
+    {
+      "id": 80,
+      "text": "comp-c",
+      "route": "open_component",
+      "accept": [
+        "open_decisions"
+      ],
+      "args": {
+        "component": [
+          "comp-c"
+        ]
+      },
+      "kind": "ambiguous"
+    },
+    {
+      "id": 81,
+      "text": "merge",
+      "route": "decide",
+      "accept": [
+        "open_decisions",
+        "open_delivery"
+      ],
+      "args": {},
+      "kind": "ambiguous"
+    },
+    {
+      "id": 82,
+      "text": "why",
+      "route": "no_match",
+      "accept": [
+        "ask_why_failed"
+      ],
+      "args": {},
+      "kind": "ambiguous"
+    },
+    {
+      "id": 83,
+      "text": "run",
+      "route": "no_match",
+      "accept": [
+        "open_run",
+        "start_factory"
+      ],
+      "args": {},
+      "kind": "ambiguous"
+    },
+    {
+      "id": 84,
+      "text": "heatmap of cost by hour of day",
+      "route": "make_view",
+      "args": {
+        "view_source": [
+          "costs"
+        ]
+      },
+      "kind": "view"
+    },
+    {
+      "id": 85,
+      "text": "word cloud of finding kinds",
+      "route": "make_view",
+      "args": {
+        "view_source": [
+          "findings"
+        ]
+      },
+      "kind": "view"
+    },
+    {
+      "id": 86,
+      "text": "treemap of cost by component",
+      "route": "make_view",
+      "args": {
+        "view_source": [
+          "costs",
+          "components"
+        ],
+        "view_group": [
+          "component"
+        ]
+      },
+      "kind": "view"
+    }
+  ]
+}

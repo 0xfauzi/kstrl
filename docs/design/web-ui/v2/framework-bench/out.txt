@@ -1,0 +1,24 @@
+== server install weight and time (uv, warm cache after the first line) ==
+stdlib                   12 KB in site-packages    0 dists  install 0.04s
+starlette+uvicorn      2636 KB in site-packages    7 dists  install 0.25s
+fastapi+uvicorn       10252 KB in site-packages   13 dists  install 0.18s
+litestar+uvicorn      26516 KB in site-packages   23 dists  install 0.53s
+aiohttp                4116 KB in site-packages   10 dists  install 0.32s
+flask                  2576 KB in site-packages    7 dists  install 0.18s
+
+== hello-world SSE latency (time to first event, then per-event delay at 5 events/s, 50 events) ==
+stdlib     first event   53.1 ms   per-event delay p50  0.34 ms  max  1.21 ms  (50 events)
+starlette  first event   67.2 ms   per-event delay p50  0.25 ms  max  0.62 ms  (50 events)
+fastapi    first event   55.4 ms   per-event delay p50  0.25 ms  max  0.55 ms  (50 events)
+
+aiohttp    first event   52.8 ms   per-event delay p50  0.23 ms  max  0.46 ms  (50 events)   (rerun with handle_signals=False)
+
+== client runtime size, gzipped bytes of the runtime bundled with its dependencies (esm.sh ?bundle, one hop followed) ==
+htmx 2                   18456 bytes gz     61564 raw  (1 file: /htmx.org@2.0.11/es2022/htmx.org.bundle.mjs)
+preact 10 + hooks         5638 bytes gz     13606 raw  (1 file: /preact@10.29.8/es2022/hooks.bundle.mjs)
+htm 3                      733 bytes gz      1279 raw  (1 file: /htm@3.1.1/es2022/htm.bundle.mjs)
+lit 3                     5804 bytes gz     14811 raw  (2 files: /lit@3.3.3/es2022/lit.bundle.mjs, /@lit/reactive-element@^2.1.0/css-tag?target=es2022)
+solid-js 1 + web         12393 bytes gz     32775 raw  (1 file: /solid-js@1.9.15/es2022/web.bundle.mjs)
+react 19 + react-dom     70723 bytes gz    225643 raw  (3 files: /react-dom@19.3.0/es2022/client.bundle.mjs, /react-dom@19.3.0/es2022/client.bundle.mjs, /react@19.3.0/es2022/react.mjs)
+svelte 5 runtime         38823 bytes gz    107910 raw  (1 file: /svelte@5.57.1/es2022/internal/client.bundle.mjs)
+alpine 3                 19968 bytes gz     55980 raw  (1 file: /alpinejs@3.17.4/es2022/alpinejs.bundle.mjs)

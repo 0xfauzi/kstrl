@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kstrl · snippetvault</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="strip">
+  <div class="brand"><span class="mark" aria-hidden="true"></span><span class="name" id="project">snippetvault</span><span class="branch" id="branch">main</span></div>
+  <div class="cmd" id="cmd">
+    <div class="cmd-field">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+      <input id="cmd-input" type="text" autocomplete="off" spellcheck="false" placeholder="Go, act, ask, or make a view" aria-label="Command">
+      <kbd id="cmd-kbd">⌘K</kbd>
+    </div>
+    <div class="cmd-panel hidden" id="cmd-panel" role="listbox"></div>
+  </div>
+  <div class="telemetry" id="telemetry"></div>
+</header>
+
+<main class="board" id="board">
+  <section class="region needs" id="needs"></section>
+  <section class="region run" id="run"></section>
+  <section class="region main" id="main"></section>
+  <section class="region hist" id="hist"></section>
+  <section class="dock" id="dock"></section>
+  <div class="help" id="help"><span><kbd>⌘K</kbd> command</span><span><kbd>1</kbd>–<kbd>4</kbd> needs you</span><span><kbd>t</kbd> theme</span><span><kbd>Esc</kbd> close</span></div>
+</main>
+
+<div id="sheet-root"></div>
+<div id="hud-root"></div>
+<div class="fviews" id="fviews"></div>
+<div id="toast-root"></div>
+
+<script src="data.js"></script>
+<script src="replay.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

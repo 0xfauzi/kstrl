@@ -1,0 +1,38 @@
+{
+ "n_items": 86,
+ "n_calls": 169,
+ "model": "jev-1.13.0",
+ "route_top1_strict": 0.8721,
+ "route_top1_lenient": 0.9535,
+ "by_kind": {
+  "terse": 1.0,
+  "plain": 0.917,
+  "ambiguous": 1.0,
+  "view": 1.0,
+  "nomatch": 1.0,
+  "typo": 0.75
+ },
+ "arg_accuracy": 0.9659,
+ "args_scored": 88,
+ "nomatch_recall": 0.8,
+ "false_nomatch_rate": 0.0,
+ "latency_p50_s": 0.241,
+ "latency_p95_s": 0.288,
+ "latency_max_s": 0.536,
+ "input_tokens_mean": 3065,
+ "input_tokens_max": 3072,
+ "right_conf_median": 0.965,
+ "wrong_conf_median": 0.68,
+ "lowest_threshold_with_no_wrong_kept": 0.8
+}
+
+misses:
+   11 'spend on live01': expected ask_cost got open_run conf 0.79 top3 [('open_run', 0.8), ('ask_cost', 0.13), ('make_view', 0.04)]
+   25 'whats queued': expected open_serve got open_decisions conf 0.62 top3 [('open_decisions', 0.65), ('ask_needs_me', 0.28), ('open_serve', 0.05)]
+   37 'decide later': expected decide got snooze conf 0.74 top3 [('snooze', 0.76), ('decide', 0.17), ('open_decisions', 0.03)]
+   78 'cst of live01': expected ask_cost got open_run conf 0.32 top3 [('open_run', 0.36), ('ask_cost', 0.34), ('no_match', 0.22)]
+
+wrong arguments:
+   34 "approve only, don't run anything": target_item got 'checkpoint: comp-c (approve PR creation and merge)' conf 0.92
+   60 'list runs sorted by cost': view_source got 'costs' conf 0.54
+   77 'aprove the merge': target_item got 'checkpoint: comp-c (approve PR creation and merge)' conf 0.94

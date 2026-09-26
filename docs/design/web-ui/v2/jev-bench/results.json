@@ -1,0 +1,3153 @@
+{
+ "n_items": 86,
+ "n_calls": 169,
+ "model": "jev-1.13.0",
+ "route_top1_strict": 0.8721,
+ "route_top1_lenient": 0.9535,
+ "by_kind": {
+  "terse": 1.0,
+  "plain": 0.917,
+  "ambiguous": 1.0,
+  "view": 1.0,
+  "nomatch": 1.0,
+  "typo": 0.75
+ },
+ "arg_accuracy": 0.9659,
+ "args_scored": 88,
+ "nomatch_recall": 0.8,
+ "false_nomatch_rate": 0.0,
+ "latency_p50_s": 0.241,
+ "latency_p95_s": 0.288,
+ "latency_max_s": 0.536,
+ "input_tokens_mean": 3065,
+ "input_tokens_max": 3072,
+ "right_conf_median": 0.965,
+ "wrong_conf_median": 0.68,
+ "threshold_sweep": [
+  {
+   "t": 0.0,
+   "right_kept": 82,
+   "wrong_kept": 4
+  },
+  {
+   "t": 0.05,
+   "right_kept": 82,
+   "wrong_kept": 4
+  },
+  {
+   "t": 0.1,
+   "right_kept": 82,
+   "wrong_kept": 4
+  },
+  {
+   "t": 0.15,
+   "right_kept": 82,
+   "wrong_kept": 4
+  },
+  {
+   "t": 0.2,
+   "right_kept": 82,
+   "wrong_kept": 4
+  },
+  {
+   "t": 0.25,
+   "right_kept": 82,
+   "wrong_kept": 4
+  },
+  {
+   "t": 0.3,
+   "right_kept": 80,
+   "wrong_kept": 4
+  },
+  {
+   "t": 0.35,
+   "right_kept": 79,
+   "wrong_kept": 3
+  },
+  {
+   "t": 0.4,
+   "right_kept": 79,
+   "wrong_kept": 3
+  },
+  {
+   "t": 0.45,
+   "right_kept": 78,
+   "wrong_kept": 3
+  },
+  {
+   "t": 0.5,
+   "right_kept": 75,
+   "wrong_kept": 3
+  },
+  {
+   "t": 0.55,
+   "right_kept": 75,
+   "wrong_kept": 3
+  },
+  {
+   "t": 0.6,
+   "right_kept": 74,
+   "wrong_kept": 3
+  },
+  {
+   "t": 0.65,
+   "right_kept": 73,
+   "wrong_kept": 2
+  },
+  {
+   "t": 0.7,
+   "right_kept": 70,
+   "wrong_kept": 2
+  },
+  {
+   "t": 0.75,
+   "right_kept": 70,
+   "wrong_kept": 1
+  },
+  {
+   "t": 0.8,
+   "right_kept": 65,
+   "wrong_kept": 0
+  },
+  {
+   "t": 0.85,
+   "right_kept": 64,
+   "wrong_kept": 0
+  },
+  {
+   "t": 0.9,
+   "right_kept": 60,
+   "wrong_kept": 0
+  },
+  {
+   "t": 0.95,
+   "right_kept": 51,
+   "wrong_kept": 0
+  },
+  {
+   "t": 1.0,
+   "right_kept": 16,
+   "wrong_kept": 0
+  }
+ ],
+ "lowest_threshold_with_no_wrong_kept": 0.8,
+ "items": [
+  {
+   "id": 1,
+   "text": "cost?",
+   "kind": "terse",
+   "expected": "ask_cost",
+   "accept": [],
+   "got": "ask_cost",
+   "p_expected": 0.69,
+   "conf": 0.67,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "cost_scope": {
+     "got": "unstated",
+     "ok": true,
+     "conf": 0.97
+    }
+   },
+   "latency_s": 0.213,
+   "input_tokens": 3063,
+   "top3": [
+    [
+     "ask_cost",
+     0.6900000000000001
+    ],
+    [
+     "no_match",
+     0.23
+    ],
+    [
+     "make_view",
+     0.03
+    ]
+   ]
+  },
+  {
+   "id": 2,
+   "text": "why did client-commands fail",
+   "kind": "plain",
+   "expected": "ask_why_failed",
+   "accept": [],
+   "got": "ask_why_failed",
+   "p_expected": 0.99,
+   "conf": 0.99,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "component": {
+     "got": "client-commands",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2363,
+   "input_tokens": 3068,
+   "top3": [
+    [
+     "ask_why_failed",
+     0.99
+    ],
+    [
+     "no_match",
+     0.01
+    ],
+    [
+     "ci_poll",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 3,
+   "text": "why did token-crypto fail",
+   "kind": "plain",
+   "expected": "ask_why_failed",
+   "accept": [],
+   "got": "ask_why_failed",
+   "p_expected": 1.0,
+   "conf": 1.0,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "component": {
+     "got": "token-crypto",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2753,
+   "input_tokens": 3068,
+   "top3": [
+    [
+     "ask_why_failed",
+     1.0
+    ],
+    [
+     "snooze",
+     0.0
+    ],
+    [
+     "open_history",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 4,
+   "text": "is main green",
+   "kind": "plain",
+   "expected": "ask_main_green",
+   "accept": [],
+   "got": "ask_main_green",
+   "p_expected": 1.0,
+   "conf": 0.99,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2345,
+   "input_tokens": 3064,
+   "top3": [
+    [
+     "ask_main_green",
+     1.0
+    ],
+    [
+     "snooze",
+     0.0
+    ],
+    [
+     "open_history",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 5,
+   "text": "did the merges pass ci",
+   "kind": "plain",
+   "expected": "ask_main_green",
+   "accept": [
+    "open_delivery"
+   ],
+   "got": "ask_main_green",
+   "p_expected": 0.93,
+   "conf": 0.93,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.243,
+   "input_tokens": 3066,
+   "top3": [
+    [
+     "ask_main_green",
+     0.93
+    ],
+    [
+     "open_delivery",
+     0.04
+    ],
+    [
+     "ci_poll",
+     0.03
+    ]
+   ]
+  },
+  {
+   "id": 6,
+   "text": "what needs me",
+   "kind": "plain",
+   "expected": "ask_needs_me",
+   "accept": [
+    "open_decisions"
+   ],
+   "got": "ask_needs_me",
+   "p_expected": 0.99,
+   "conf": 0.98,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2598,
+   "input_tokens": 3064,
+   "top3": [
+    [
+     "ask_needs_me",
+     0.99
+    ],
+    [
+     "open_decisions",
+     0.01
+    ],
+    [
+     "toggle_theme",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 7,
+   "text": "anything waiting on me?",
+   "kind": "plain",
+   "expected": "ask_needs_me",
+   "accept": [
+    "open_decisions"
+   ],
+   "got": "ask_needs_me",
+   "p_expected": 0.95,
+   "conf": 0.95,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.228,
+   "input_tokens": 3066,
+   "top3": [
+    [
+     "ask_needs_me",
+     0.95
+    ],
+    [
+     "open_decisions",
+     0.05
+    ],
+    [
+     "open_delivery",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 8,
+   "text": "is the agent alive",
+   "kind": "plain",
+   "expected": "ask_alive",
+   "accept": [],
+   "got": "ask_alive",
+   "p_expected": 1.0,
+   "conf": 1.0,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "component": {
+     "got": "not named",
+     "ok": true,
+     "conf": 0.93
+    }
+   },
+   "latency_s": 0.2366,
+   "input_tokens": 3065,
+   "top3": [
+    [
+     "ask_alive",
+     1.0
+    ],
+    [
+     "ask_cost",
+     0.0
+    ],
+    [
+     "open_component",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 9,
+   "text": "is http-app still doing anything",
+   "kind": "plain",
+   "expected": "ask_alive",
+   "accept": [],
+   "got": "ask_alive",
+   "p_expected": 0.99,
+   "conf": 0.98,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "component": {
+     "got": "http-app",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2317,
+   "input_tokens": 3067,
+   "top3": [
+    [
+     "ask_alive",
+     0.99
+    ],
+    [
+     "open_component",
+     0.01
+    ],
+    [
+     "toggle_theme",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 10,
+   "text": "how much have we spent today",
+   "kind": "plain",
+   "expected": "ask_cost",
+   "accept": [],
+   "got": "ask_cost",
+   "p_expected": 0.99,
+   "conf": 0.99,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "period": {
+     "got": "today",
+     "ok": true,
+     "conf": 1.0
+    },
+    "cost_scope": {
+     "got": "unstated",
+     "ok": true,
+     "conf": 0.58
+    }
+   },
+   "latency_s": 0.2511,
+   "input_tokens": 3067,
+   "top3": [
+    [
+     "ask_cost",
+     0.99
+    ],
+    [
+     "make_view",
+     0.01
+    ],
+    [
+     "decide",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 11,
+   "text": "spend on live01",
+   "kind": "plain",
+   "expected": "ask_cost",
+   "accept": [],
+   "got": "open_run",
+   "p_expected": 0.13,
+   "conf": 0.79,
+   "strict": false,
+   "lenient": false,
+   "args": {},
+   "latency_s": 0.2616,
+   "input_tokens": 3067,
+   "top3": [
+    [
+     "open_run",
+     0.8
+    ],
+    [
+     "ask_cost",
+     0.13
+    ],
+    [
+     "make_view",
+     0.04
+    ]
+   ]
+  },
+  {
+   "id": 12,
+   "text": "total cost this week",
+   "kind": "plain",
+   "expected": "ask_cost",
+   "accept": [],
+   "got": "ask_cost",
+   "p_expected": 0.9,
+   "conf": 0.88,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "cost_scope": {
+     "got": "all_runs",
+     "ok": true,
+     "conf": 0.8
+    },
+    "period": {
+     "got": "this_week",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2625,
+   "input_tokens": 3065,
+   "top3": [
+    [
+     "ask_cost",
+     0.9
+    ],
+    [
+     "make_view",
+     0.1
+    ],
+    [
+     "open_component",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 13,
+   "text": "open live01",
+   "kind": "plain",
+   "expected": "open_run",
+   "accept": [],
+   "got": "open_run",
+   "p_expected": 0.97,
+   "conf": 0.96,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "run": {
+     "got": "live01",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2375,
+   "input_tokens": 3065,
+   "top3": [
+    [
+     "open_run",
+     0.97
+    ],
+    [
+     "no_match",
+     0.02
+    ],
+    [
+     "open_component",
+     0.01
+    ]
+   ]
+  },
+  {
+   "id": 14,
+   "text": "8d80e8",
+   "kind": "terse",
+   "expected": "open_run",
+   "accept": [],
+   "got": "open_run",
+   "p_expected": 0.95,
+   "conf": 0.94,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "run": {
+     "got": "8d80e8",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2199,
+   "input_tokens": 3067,
+   "top3": [
+    [
+     "open_run",
+     0.95
+    ],
+    [
+     "open_decisions",
+     0.02
+    ],
+    [
+     "open_delivery",
+     0.01
+    ]
+   ]
+  },
+  {
+   "id": 15,
+   "text": "show me the live run",
+   "kind": "plain",
+   "expected": "open_run",
+   "accept": [],
+   "got": "open_run",
+   "p_expected": 0.97,
+   "conf": 0.98,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "run": {
+     "got": "the live run",
+     "ok": true,
+     "conf": 0.69
+    }
+   },
+   "latency_s": 0.2628,
+   "input_tokens": 3066,
+   "top3": [
+    [
+     "open_run",
+     0.97
+    ],
+    [
+     "ask_alive",
+     0.01
+    ],
+    [
+     "open_decisions",
+     0.01
+    ]
+   ]
+  },
+  {
+   "id": 16,
+   "text": "http-app",
+   "kind": "terse",
+   "expected": "open_component",
+   "accept": [],
+   "got": "open_component",
+   "p_expected": 0.77,
+   "conf": 0.75,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "component": {
+     "got": "http-app",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2409,
+   "input_tokens": 3063,
+   "top3": [
+    [
+     "open_component",
+     0.77
+    ],
+    [
+     "no_match",
+     0.08
+    ],
+    [
+     "open_decisions",
+     0.06
+    ]
+   ]
+  },
+  {
+   "id": 17,
+   "text": "go to storage",
+   "kind": "plain",
+   "expected": "open_component",
+   "accept": [],
+   "got": "open_component",
+   "p_expected": 0.98,
+   "conf": 0.96,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "component": {
+     "got": "storage",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2581,
+   "input_tokens": 3064,
+   "top3": [
+    [
+     "open_component",
+     0.98
+    ],
+    [
+     "no_match",
+     0.02
+    ],
+    [
+     "start_factory",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 18,
+   "text": "decisions",
+   "kind": "terse",
+   "expected": "open_decisions",
+   "accept": [],
+   "got": "open_decisions",
+   "p_expected": 0.92,
+   "conf": 0.91,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.226,
+   "input_tokens": 3064,
+   "top3": [
+    [
+     "open_decisions",
+     0.92
+    ],
+    [
+     "decide",
+     0.05
+    ],
+    [
+     "ask_needs_me",
+     0.02
+    ]
+   ]
+  },
+  {
+   "id": 19,
+   "text": "inbox",
+   "kind": "terse",
+   "expected": "open_decisions",
+   "accept": [],
+   "got": "open_decisions",
+   "p_expected": 0.46,
+   "conf": 0.43,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2337,
+   "input_tokens": 3063,
+   "top3": [
+    [
+     "open_decisions",
+     0.46
+    ],
+    [
+     "no_match",
+     0.3
+    ],
+    [
+     "ask_needs_me",
+     0.16
+    ]
+   ]
+  },
+  {
+   "id": 20,
+   "text": "failures",
+   "kind": "terse",
+   "expected": "open_failures",
+   "accept": [],
+   "got": "open_failures",
+   "p_expected": 0.99,
+   "conf": 0.98,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.228,
+   "input_tokens": 3064,
+   "top3": [
+    [
+     "open_failures",
+     0.99
+    ],
+    [
+     "no_match",
+     0.01
+    ],
+    [
+     "start_factory",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 21,
+   "text": "what failed",
+   "kind": "ambiguous",
+   "expected": "open_failures",
+   "accept": [
+    "ask_why_failed"
+   ],
+   "got": "ask_why_failed",
+   "p_expected": 0.2,
+   "conf": 0.75,
+   "strict": false,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2564,
+   "input_tokens": 3063,
+   "top3": [
+    [
+     "ask_why_failed",
+     0.77
+    ],
+    [
+     "open_failures",
+     0.2
+    ],
+    [
+     "no_match",
+     0.03
+    ]
+   ]
+  },
+  {
+   "id": 22,
+   "text": "delivery",
+   "kind": "terse",
+   "expected": "open_delivery",
+   "accept": [],
+   "got": "open_delivery",
+   "p_expected": 0.98,
+   "conf": 0.98,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2286,
+   "input_tokens": 3062,
+   "top3": [
+    [
+     "open_delivery",
+     0.98
+    ],
+    [
+     "no_match",
+     0.01
+    ],
+    [
+     "open_decisions",
+     0.01
+    ]
+   ]
+  },
+  {
+   "id": 23,
+   "text": "ci",
+   "kind": "ambiguous",
+   "expected": "open_delivery",
+   "accept": [
+    "ci_poll",
+    "ask_main_green"
+   ],
+   "got": "ci_poll",
+   "p_expected": 0.19,
+   "conf": 0.47,
+   "strict": false,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.217,
+   "input_tokens": 3062,
+   "top3": [
+    [
+     "ci_poll",
+     0.5
+    ],
+    [
+     "open_delivery",
+     0.19
+    ],
+    [
+     "open_decisions",
+     0.13
+    ]
+   ]
+  },
+  {
+   "id": 24,
+   "text": "serve queue",
+   "kind": "terse",
+   "expected": "open_serve",
+   "accept": [],
+   "got": "open_serve",
+   "p_expected": 0.87,
+   "conf": 0.86,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2545,
+   "input_tokens": 3063,
+   "top3": [
+    [
+     "open_serve",
+     0.87
+    ],
+    [
+     "serve_control",
+     0.05
+    ],
+    [
+     "open_decisions",
+     0.04
+    ]
+   ]
+  },
+  {
+   "id": 25,
+   "text": "whats queued",
+   "kind": "plain",
+   "expected": "open_serve",
+   "accept": [],
+   "got": "open_decisions",
+   "p_expected": 0.05,
+   "conf": 0.62,
+   "strict": false,
+   "lenient": false,
+   "args": {},
+   "latency_s": 0.2334,
+   "input_tokens": 3064,
+   "top3": [
+    [
+     "open_decisions",
+     0.65
+    ],
+    [
+     "ask_needs_me",
+     0.28
+    ],
+    [
+     "open_serve",
+     0.05
+    ]
+   ]
+  },
+  {
+   "id": 26,
+   "text": "config",
+   "kind": "terse",
+   "expected": "open_config",
+   "accept": [],
+   "got": "open_config",
+   "p_expected": 0.94,
+   "conf": 0.93,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2074,
+   "input_tokens": 3062,
+   "top3": [
+    [
+     "open_config",
+     0.94
+    ],
+    [
+     "ask_needs_me",
+     0.02
+    ],
+    [
+     "no_match",
+     0.02
+    ]
+   ]
+  },
+  {
+   "id": 27,
+   "text": "what is the cost cap",
+   "kind": "ambiguous",
+   "expected": "open_config",
+   "accept": [
+    "ask_cost"
+   ],
+   "got": "ask_cost",
+   "p_expected": 0.0,
+   "conf": 0.96,
+   "strict": false,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.3135,
+   "input_tokens": 3066,
+   "top3": [
+    [
+     "ask_cost",
+     0.97
+    ],
+    [
+     "no_match",
+     0.03
+    ],
+    [
+     "ask_alive",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 28,
+   "text": "learning",
+   "kind": "terse",
+   "expected": "open_learning",
+   "accept": [],
+   "got": "open_learning",
+   "p_expected": 0.95,
+   "conf": 0.94,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2522,
+   "input_tokens": 3062,
+   "top3": [
+    [
+     "open_learning",
+     0.95
+    ],
+    [
+     "no_match",
+     0.04
+    ],
+    [
+     "open_decisions",
+     0.01
+    ]
+   ]
+  },
+  {
+   "id": 29,
+   "text": "recurring failure patterns",
+   "kind": "plain",
+   "expected": "open_learning",
+   "accept": [],
+   "got": "open_learning",
+   "p_expected": 0.97,
+   "conf": 0.96,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2057,
+   "input_tokens": 3066,
+   "top3": [
+    [
+     "open_learning",
+     0.97
+    ],
+    [
+     "no_match",
+     0.02
+    ],
+    [
+     "open_failures",
+     0.01
+    ]
+   ]
+  },
+  {
+   "id": 30,
+   "text": "history",
+   "kind": "terse",
+   "expected": "open_history",
+   "accept": [],
+   "got": "open_history",
+   "p_expected": 0.84,
+   "conf": 0.82,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2388,
+   "input_tokens": 3062,
+   "top3": [
+    [
+     "open_history",
+     0.84
+    ],
+    [
+     "no_match",
+     0.12
+    ],
+    [
+     "open_decisions",
+     0.02
+    ]
+   ]
+  },
+  {
+   "id": 31,
+   "text": "past runs",
+   "kind": "plain",
+   "expected": "open_history",
+   "accept": [],
+   "got": "open_history",
+   "p_expected": 1.0,
+   "conf": 0.99,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2362,
+   "input_tokens": 3063,
+   "top3": [
+    [
+     "open_history",
+     1.0
+    ],
+    [
+     "start_factory",
+     0.0
+    ],
+    [
+     "ci_poll",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 32,
+   "text": "approve client-commands",
+   "kind": "plain",
+   "expected": "decide",
+   "accept": [],
+   "got": "decide",
+   "p_expected": 0.99,
+   "conf": 0.98,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "decide_choice": {
+     "got": "approve_run",
+     "ok": true,
+     "conf": 0.45
+    },
+    "target_item": {
+     "got": "merge gate: client-commands (run 8d80e8)",
+     "ok": true,
+     "conf": 0.97
+    }
+   },
+   "latency_s": 0.2735,
+   "input_tokens": 3066,
+   "top3": [
+    [
+     "decide",
+     0.99
+    ],
+    [
+     "no_match",
+     0.01
+    ],
+    [
+     "open_run",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 33,
+   "text": "approve and merge comp-c",
+   "kind": "plain",
+   "expected": "decide",
+   "accept": [],
+   "got": "decide",
+   "p_expected": 1.0,
+   "conf": 1.0,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "decide_choice": {
+     "got": "approve_run",
+     "ok": true,
+     "conf": 1.0
+    },
+    "target_item": {
+     "got": "checkpoint: comp-c (approve PR creation and merge)",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2341,
+   "input_tokens": 3066,
+   "top3": [
+    [
+     "decide",
+     1.0
+    ],
+    [
+     "snooze",
+     0.0
+    ],
+    [
+     "ask_cost",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 34,
+   "text": "approve only, don't run anything",
+   "kind": "plain",
+   "expected": "decide",
+   "accept": [],
+   "got": "decide",
+   "p_expected": 0.98,
+   "conf": 0.97,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "decide_choice": {
+     "got": "approve_only",
+     "ok": true,
+     "conf": 1.0
+    },
+    "target_item": {
+     "got": "checkpoint: comp-c (approve PR creation and merge)",
+     "ok": false,
+     "conf": 0.92
+    }
+   },
+   "latency_s": 0.2122,
+   "input_tokens": 3068,
+   "top3": [
+    [
+     "decide",
+     0.98
+    ],
+    [
+     "no_match",
+     0.01
+    ],
+    [
+     "open_decisions",
+     0.01
+    ]
+   ]
+  },
+  {
+   "id": 35,
+   "text": "reject comp-c",
+   "kind": "plain",
+   "expected": "decide",
+   "accept": [],
+   "got": "decide",
+   "p_expected": 1.0,
+   "conf": 1.0,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "decide_choice": {
+     "got": "reject",
+     "ok": true,
+     "conf": 1.0
+    },
+    "target_item": {
+     "got": "checkpoint: comp-c (approve PR creation and merge)",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2271,
+   "input_tokens": 3064,
+   "top3": [
+    [
+     "decide",
+     1.0
+    ],
+    [
+     "open_history",
+     0.0
+    ],
+    [
+     "serve_control",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 36,
+   "text": "send comp-c back to the engineer",
+   "kind": "plain",
+   "expected": "decide",
+   "accept": [],
+   "got": "decide",
+   "p_expected": 1.0,
+   "conf": 0.99,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "decide_choice": {
+     "got": "send_back",
+     "ok": true,
+     "conf": 1.0
+    },
+    "target_item": {
+     "got": "checkpoint: comp-c (approve PR creation and merge)",
+     "ok": true,
+     "conf": 0.97
+    }
+   },
+   "latency_s": 0.252,
+   "input_tokens": 3068,
+   "top3": [
+    [
+     "decide",
+     1.0
+    ],
+    [
+     "open_learning",
+     0.0
+    ],
+    [
+     "no_match",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 37,
+   "text": "decide later",
+   "kind": "plain",
+   "expected": "decide",
+   "accept": [],
+   "got": "snooze",
+   "p_expected": 0.17,
+   "conf": 0.74,
+   "strict": false,
+   "lenient": false,
+   "args": {},
+   "latency_s": 0.3388,
+   "input_tokens": 3064,
+   "top3": [
+    [
+     "snooze",
+     0.76
+    ],
+    [
+     "decide",
+     0.17
+    ],
+    [
+     "open_decisions",
+     0.03
+    ]
+   ]
+  },
+  {
+   "id": 38,
+   "text": "retry client-commands",
+   "kind": "plain",
+   "expected": "retry",
+   "accept": [],
+   "got": "retry",
+   "p_expected": 0.99,
+   "conf": 0.98,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "component": {
+     "got": "client-commands",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2996,
+   "input_tokens": 3066,
+   "top3": [
+    [
+     "retry",
+     0.99
+    ],
+    [
+     "open_failures",
+     0.01
+    ],
+    [
+     "ask_why_failed",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 39,
+   "text": "rerun token-crypto",
+   "kind": "plain",
+   "expected": "retry",
+   "accept": [],
+   "got": "retry",
+   "p_expected": 0.96,
+   "conf": 0.96,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "component": {
+     "got": "token-crypto",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2651,
+   "input_tokens": 3067,
+   "top3": [
+    [
+     "retry",
+     0.96
+    ],
+    [
+     "open_component",
+     0.02
+    ],
+    [
+     "start_factory",
+     0.01
+    ]
+   ]
+  },
+  {
+   "id": 40,
+   "text": "retry",
+   "kind": "terse",
+   "expected": "retry",
+   "accept": [
+    "open_failures"
+   ],
+   "got": "retry",
+   "p_expected": 0.96,
+   "conf": 0.96,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "component": {
+     "got": "not named",
+     "ok": true,
+     "conf": 0.88
+    }
+   },
+   "latency_s": 0.2306,
+   "input_tokens": 3062,
+   "top3": [
+    [
+     "retry",
+     0.96
+    ],
+    [
+     "open_failures",
+     0.02
+    ],
+    [
+     "no_match",
+     0.01
+    ]
+   ]
+  },
+  {
+   "id": 41,
+   "text": "snooze the merge gate for a day",
+   "kind": "plain",
+   "expected": "snooze",
+   "accept": [],
+   "got": "snooze",
+   "p_expected": 0.99,
+   "conf": 0.99,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "target_item": {
+     "got": "merge gate: client-commands (run 8d80e8)",
+     "ok": true,
+     "conf": 1.0
+    },
+    "snooze_duration": {
+     "got": "24h",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2362,
+   "input_tokens": 3070,
+   "top3": [
+    [
+     "snooze",
+     0.99
+    ],
+    [
+     "decide",
+     0.01
+    ],
+    [
+     "open_history",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 42,
+   "text": "hide the halted run for a week",
+   "kind": "plain",
+   "expected": "snooze",
+   "accept": [],
+   "got": "snooze",
+   "p_expected": 1.0,
+   "conf": 1.0,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "target_item": {
+     "got": "halted run fda682 (the integration loop stopped)",
+     "ok": true,
+     "conf": 1.0
+    },
+    "snooze_duration": {
+     "got": "7d",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2308,
+   "input_tokens": 3068,
+   "top3": [
+    [
+     "snooze",
+     1.0
+    ],
+    [
+     "open_history",
+     0.0
+    ],
+    [
+     "open_run",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 43,
+   "text": "start a factory run from spec.md",
+   "kind": "plain",
+   "expected": "start_factory",
+   "accept": [],
+   "got": "start_factory",
+   "p_expected": 1.0,
+   "conf": 1.0,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2238,
+   "input_tokens": 3068,
+   "top3": [
+    [
+     "start_factory",
+     1.0
+    ],
+    [
+     "open_config",
+     0.0
+    ],
+    [
+     "ask_alive",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 44,
+   "text": "run the factory on slice 4",
+   "kind": "plain",
+   "expected": "start_factory",
+   "accept": [],
+   "got": "start_factory",
+   "p_expected": 0.59,
+   "conf": 0.56,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2473,
+   "input_tokens": 3068,
+   "top3": [
+    [
+     "start_factory",
+     0.59
+    ],
+    [
+     "open_run",
+     0.29000000000000004
+    ],
+    [
+     "no_match",
+     0.06999999999999999
+    ]
+   ]
+  },
+  {
+   "id": 45,
+   "text": "stop live01",
+   "kind": "plain",
+   "expected": "stop_run",
+   "accept": [],
+   "got": "stop_run",
+   "p_expected": 1.0,
+   "conf": 1.0,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "run": {
+     "got": "live01",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2396,
+   "input_tokens": 3065,
+   "top3": [
+    [
+     "stop_run",
+     1.0
+    ],
+    [
+     "snooze",
+     0.0
+    ],
+    [
+     "open_history",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 46,
+   "text": "kill the run",
+   "kind": "plain",
+   "expected": "stop_run",
+   "accept": [],
+   "got": "stop_run",
+   "p_expected": 1.0,
+   "conf": 0.99,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "run": {
+     "got": "the live run",
+     "ok": true,
+     "conf": 0.44
+    }
+   },
+   "latency_s": 0.2191,
+   "input_tokens": 3064,
+   "top3": [
+    [
+     "stop_run",
+     1.0
+    ],
+    [
+     "snooze",
+     0.0
+    ],
+    [
+     "open_delivery",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 47,
+   "text": "pause serve",
+   "kind": "plain",
+   "expected": "serve_control",
+   "accept": [],
+   "got": "serve_control",
+   "p_expected": 1.0,
+   "conf": 1.0,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "serve_action": {
+     "got": "pause",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2597,
+   "input_tokens": 3063,
+   "top3": [
+    [
+     "serve_control",
+     1.0
+    ],
+    [
+     "make_view",
+     0.0
+    ],
+    [
+     "open_learning",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 48,
+   "text": "resume the queue",
+   "kind": "plain",
+   "expected": "serve_control",
+   "accept": [],
+   "got": "serve_control",
+   "p_expected": 0.99,
+   "conf": 0.98,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "serve_action": {
+     "got": "resume",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2094,
+   "input_tokens": 3064,
+   "top3": [
+    [
+     "serve_control",
+     0.99
+    ],
+    [
+     "open_serve",
+     0.01
+    ],
+    [
+     "snooze",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 49,
+   "text": "poll ci now",
+   "kind": "plain",
+   "expected": "ci_poll",
+   "accept": [],
+   "got": "ci_poll",
+   "p_expected": 1.0,
+   "conf": 0.99,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2811,
+   "input_tokens": 3064,
+   "top3": [
+    [
+     "ci_poll",
+     1.0
+    ],
+    [
+     "open_run",
+     0.0
+    ],
+    [
+     "ask_cost",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 50,
+   "text": "refresh the ci state",
+   "kind": "plain",
+   "expected": "ci_poll",
+   "accept": [],
+   "got": "ci_poll",
+   "p_expected": 0.95,
+   "conf": 0.93,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2361,
+   "input_tokens": 3065,
+   "top3": [
+    [
+     "ci_poll",
+     0.95
+    ],
+    [
+     "open_delivery",
+     0.02
+    ],
+    [
+     "no_match",
+     0.01
+    ]
+   ]
+  },
+  {
+   "id": 51,
+   "text": "dark mode",
+   "kind": "terse",
+   "expected": "toggle_theme",
+   "accept": [],
+   "got": "toggle_theme",
+   "p_expected": 0.99,
+   "conf": 0.98,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "theme": {
+     "got": "dark",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2618,
+   "input_tokens": 3063,
+   "top3": [
+    [
+     "toggle_theme",
+     0.99
+    ],
+    [
+     "no_match",
+     0.01
+    ],
+    [
+     "open_run",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 52,
+   "text": "switch to light",
+   "kind": "plain",
+   "expected": "toggle_theme",
+   "accept": [],
+   "got": "toggle_theme",
+   "p_expected": 1.0,
+   "conf": 1.0,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "theme": {
+     "got": "light",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2265,
+   "input_tokens": 3064,
+   "top3": [
+    [
+     "toggle_theme",
+     1.0
+    ],
+    [
+     "ask_main_green",
+     0.0
+    ],
+    [
+     "ci_poll",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 53,
+   "text": "show me failed components this week by cost as a timeline",
+   "kind": "view",
+   "expected": "make_view",
+   "accept": [],
+   "got": "make_view",
+   "p_expected": 1.0,
+   "conf": 1.0,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "view_source": {
+     "got": "components",
+     "ok": true,
+     "conf": 0.53
+    },
+    "view_filter_state": {
+     "got": "failed",
+     "ok": true,
+     "conf": 1.0
+    },
+    "period": {
+     "got": "this_week",
+     "ok": true,
+     "conf": 1.0
+    },
+    "view_sort": {
+     "got": "cost",
+     "ok": true,
+     "conf": 0.79
+    },
+    "view_form": {
+     "got": "timeline",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2515,
+   "input_tokens": 3072,
+   "top3": [
+    [
+     "make_view",
+     1.0
+    ],
+    [
+     "toggle_theme",
+     0.0
+    ],
+    [
+     "ask_main_green",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 54,
+   "text": "cost per run as a sparkline",
+   "kind": "view",
+   "expected": "make_view",
+   "accept": [],
+   "got": "make_view",
+   "p_expected": 1.0,
+   "conf": 1.0,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "view_source": {
+     "got": "costs",
+     "ok": true,
+     "conf": 0.99
+    },
+    "view_form": {
+     "got": "sparkline",
+     "ok": true,
+     "conf": 1.0
+    },
+    "view_group": {
+     "got": "run",
+     "ok": true,
+     "conf": 0.78
+    }
+   },
+   "latency_s": 0.2348,
+   "input_tokens": 3068,
+   "top3": [
+    [
+     "make_view",
+     1.0
+    ],
+    [
+     "open_run",
+     0.0
+    ],
+    [
+     "toggle_theme",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 55,
+   "text": "board of components by state",
+   "kind": "view",
+   "expected": "make_view",
+   "accept": [],
+   "got": "make_view",
+   "p_expected": 1.0,
+   "conf": 1.0,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "view_source": {
+     "got": "components",
+     "ok": true,
+     "conf": 0.98
+    },
+    "view_form": {
+     "got": "board",
+     "ok": true,
+     "conf": 0.99
+    },
+    "view_group": {
+     "got": "state",
+     "ok": true,
+     "conf": 0.93
+    }
+   },
+   "latency_s": 0.2205,
+   "input_tokens": 3066,
+   "top3": [
+    [
+     "make_view",
+     1.0
+    ],
+    [
+     "open_history",
+     0.0
+    ],
+    [
+     "serve_control",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 56,
+   "text": "table of findings by severity",
+   "kind": "view",
+   "expected": "make_view",
+   "accept": [],
+   "got": "make_view",
+   "p_expected": 1.0,
+   "conf": 1.0,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "view_source": {
+     "got": "findings",
+     "ok": true,
+     "conf": 1.0
+    },
+    "view_form": {
+     "got": "table",
+     "ok": true,
+     "conf": 1.0
+    },
+    "view_group": {
+     "got": "severity",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2677,
+   "input_tokens": 3066,
+   "top3": [
+    [
+     "make_view",
+     1.0
+    ],
+    [
+     "serve_control",
+     0.0
+    ],
+    [
+     "open_run",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 57,
+   "text": "timeline of live01's phases",
+   "kind": "view",
+   "expected": "make_view",
+   "accept": [],
+   "got": "make_view",
+   "p_expected": 0.77,
+   "conf": 0.75,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "view_source": {
+     "got": "events",
+     "ok": true,
+     "conf": 0.97
+    },
+    "view_form": {
+     "got": "timeline",
+     "ok": true,
+     "conf": 1.0
+    },
+    "run": {
+     "got": "live01",
+     "ok": true,
+     "conf": 0.98
+    }
+   },
+   "latency_s": 0.2328,
+   "input_tokens": 3068,
+   "top3": [
+    [
+     "make_view",
+     0.77
+    ],
+    [
+     "open_run",
+     0.23
+    ],
+    [
+     "open_history",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 58,
+   "text": "tokens over the last month",
+   "kind": "view",
+   "expected": "make_view",
+   "accept": [
+    "ask_cost"
+   ],
+   "got": "make_view",
+   "p_expected": 0.8,
+   "conf": 0.79,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "view_source": {
+     "got": "costs",
+     "ok": true,
+     "conf": 0.99
+    },
+    "period": {
+     "got": "this_month",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2754,
+   "input_tokens": 3066,
+   "top3": [
+    [
+     "make_view",
+     0.8
+    ],
+    [
+     "ask_cost",
+     0.11
+    ],
+    [
+     "no_match",
+     0.07
+    ]
+   ]
+  },
+  {
+   "id": 59,
+   "text": "a meter of spend against the cap, dock it",
+   "kind": "view",
+   "expected": "make_view",
+   "accept": [],
+   "got": "make_view",
+   "p_expected": 0.29,
+   "conf": 0.25,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "view_source": {
+     "got": "costs",
+     "ok": true,
+     "conf": 0.96
+    },
+    "view_form": {
+     "got": "meter",
+     "ok": true,
+     "conf": 0.99
+    },
+    "view_placement": {
+     "got": "dock",
+     "ok": true,
+     "conf": 0.97
+    }
+   },
+   "latency_s": 0.2677,
+   "input_tokens": 3071,
+   "top3": [
+    [
+     "make_view",
+     0.29000000000000004
+    ],
+    [
+     "ask_cost",
+     0.29000000000000004
+    ],
+    [
+     "decide",
+     0.15000000000000002
+    ]
+   ]
+  },
+  {
+   "id": 60,
+   "text": "list runs sorted by cost",
+   "kind": "view",
+   "expected": "make_view",
+   "accept": [
+    "open_history"
+   ],
+   "got": "make_view",
+   "p_expected": 1.0,
+   "conf": 0.99,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "view_source": {
+     "got": "costs",
+     "ok": false,
+     "conf": 0.54
+    },
+    "view_form": {
+     "got": "list",
+     "ok": true,
+     "conf": 0.97
+    },
+    "view_sort": {
+     "got": "cost",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2387,
+   "input_tokens": 3066,
+   "top3": [
+    [
+     "make_view",
+     1.0
+    ],
+    [
+     "ask_alive",
+     0.0
+    ],
+    [
+     "open_serve",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 61,
+   "text": "graph of the components and their dependencies",
+   "kind": "view",
+   "expected": "make_view",
+   "accept": [],
+   "got": "make_view",
+   "p_expected": 1.0,
+   "conf": 1.0,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "view_source": {
+     "got": "components",
+     "ok": true,
+     "conf": 0.91
+    },
+    "view_form": {
+     "got": "graph",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2584,
+   "input_tokens": 3068,
+   "top3": [
+    [
+     "make_view",
+     1.0
+    ],
+    [
+     "stop_run",
+     0.0
+    ],
+    [
+     "ask_cost",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 62,
+   "text": "how many runs failed this month, just the number",
+   "kind": "view",
+   "expected": "make_view",
+   "accept": [],
+   "got": "make_view",
+   "p_expected": 0.91,
+   "conf": 0.89,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "view_source": {
+     "got": "runs",
+     "ok": true,
+     "conf": 0.9
+    },
+    "view_form": {
+     "got": "number",
+     "ok": true,
+     "conf": 1.0
+    },
+    "view_filter_state": {
+     "got": "failed",
+     "ok": true,
+     "conf": 0.99
+    },
+    "period": {
+     "got": "this_month",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2241,
+   "input_tokens": 3071,
+   "top3": [
+    [
+     "make_view",
+     0.91
+    ],
+    [
+     "open_failures",
+     0.06
+    ],
+    [
+     "ask_cost",
+     0.02
+    ]
+   ]
+  },
+  {
+   "id": 63,
+   "text": "diff for comp-c",
+   "kind": "view",
+   "expected": "make_view",
+   "accept": [
+    "open_component"
+   ],
+   "got": "make_view",
+   "p_expected": 0.7,
+   "conf": 0.67,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "view_source": {
+     "got": "diff",
+     "ok": true,
+     "conf": 0.99
+    },
+    "view_form": {
+     "got": "diff",
+     "ok": true,
+     "conf": 0.99
+    },
+    "component": {
+     "got": "comp-c",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2518,
+   "input_tokens": 3065,
+   "top3": [
+    [
+     "make_view",
+     0.7
+    ],
+    [
+     "open_component",
+     0.28
+    ],
+    [
+     "no_match",
+     0.01
+    ]
+   ]
+  },
+  {
+   "id": 64,
+   "text": "findings by phase, floating",
+   "kind": "view",
+   "expected": "make_view",
+   "accept": [],
+   "got": "make_view",
+   "p_expected": 0.99,
+   "conf": 0.98,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "view_source": {
+     "got": "findings",
+     "ok": true,
+     "conf": 0.8
+    },
+    "view_group": {
+     "got": "phase",
+     "ok": true,
+     "conf": 0.97
+    },
+    "view_placement": {
+     "got": "float",
+     "ok": true,
+     "conf": 0.99
+    }
+   },
+   "latency_s": 0.2296,
+   "input_tokens": 3067,
+   "top3": [
+    [
+     "make_view",
+     0.99
+    ],
+    [
+     "open_decisions",
+     0.01
+    ],
+    [
+     "start_factory",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 65,
+   "text": "ci state per merge as a list",
+   "kind": "view",
+   "expected": "make_view",
+   "accept": [
+    "open_delivery"
+   ],
+   "got": "open_delivery",
+   "p_expected": 0.44,
+   "conf": 0.47,
+   "strict": false,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2086,
+   "input_tokens": 3068,
+   "top3": [
+    [
+     "open_delivery",
+     0.51
+    ],
+    [
+     "make_view",
+     0.44
+    ],
+    [
+     "ci_poll",
+     0.03
+    ]
+   ]
+  },
+  {
+   "id": 66,
+   "text": "queue as a board",
+   "kind": "view",
+   "expected": "make_view",
+   "accept": [
+    "open_serve"
+   ],
+   "got": "make_view",
+   "p_expected": 0.91,
+   "conf": 0.9,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "view_source": {
+     "got": "queue",
+     "ok": true,
+     "conf": 0.95
+    },
+    "view_form": {
+     "got": "board",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2068,
+   "input_tokens": 3065,
+   "top3": [
+    [
+     "make_view",
+     0.91
+    ],
+    [
+     "open_decisions",
+     0.05
+    ],
+    [
+     "open_serve",
+     0.03
+    ]
+   ]
+  },
+  {
+   "id": 67,
+   "text": "running components only, as a list, newest first",
+   "kind": "view",
+   "expected": "make_view",
+   "accept": [],
+   "got": "make_view",
+   "p_expected": 1.0,
+   "conf": 0.99,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "view_source": {
+     "got": "components",
+     "ok": true,
+     "conf": 0.94
+    },
+    "view_filter_state": {
+     "got": "running",
+     "ok": true,
+     "conf": 0.99
+    },
+    "view_form": {
+     "got": "list",
+     "ok": true,
+     "conf": 1.0
+    },
+    "view_sort": {
+     "got": "time",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2278,
+   "input_tokens": 3071,
+   "top3": [
+    [
+     "make_view",
+     1.0
+    ],
+    [
+     "open_run",
+     0.0
+    ],
+    [
+     "toggle_theme",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 68,
+   "text": "what's the weather",
+   "kind": "nomatch",
+   "expected": "no_match",
+   "accept": [],
+   "got": "no_match",
+   "p_expected": 0.99,
+   "conf": 0.98,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2315,
+   "input_tokens": 3065,
+   "top3": [
+    [
+     "no_match",
+     0.99
+    ],
+    [
+     "open_decisions",
+     0.01
+    ],
+    [
+     "toggle_theme",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 69,
+   "text": "hello",
+   "kind": "nomatch",
+   "expected": "no_match",
+   "accept": [],
+   "got": "no_match",
+   "p_expected": 0.67,
+   "conf": 0.65,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2488,
+   "input_tokens": 3062,
+   "top3": [
+    [
+     "no_match",
+     0.67
+    ],
+    [
+     "ask_alive",
+     0.26
+    ],
+    [
+     "open_decisions",
+     0.04
+    ]
+   ]
+  },
+  {
+   "id": 70,
+   "text": "delete everything",
+   "kind": "nomatch",
+   "expected": "no_match",
+   "accept": [],
+   "got": "no_match",
+   "p_expected": 0.96,
+   "conf": 0.94,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2439,
+   "input_tokens": 3063,
+   "top3": [
+    [
+     "no_match",
+     0.96
+    ],
+    [
+     "open_decisions",
+     0.03
+    ],
+    [
+     "stop_run",
+     0.01
+    ]
+   ]
+  },
+  {
+   "id": 71,
+   "text": "write me a poem about merges",
+   "kind": "nomatch",
+   "expected": "no_match",
+   "accept": [],
+   "got": "no_match",
+   "p_expected": 0.99,
+   "conf": 0.98,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2417,
+   "input_tokens": 3067,
+   "top3": [
+    [
+     "no_match",
+     0.99
+    ],
+    [
+     "start_factory",
+     0.01
+    ],
+    [
+     "toggle_theme",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 72,
+   "text": "git push origin main",
+   "kind": "nomatch",
+   "expected": "no_match",
+   "accept": [],
+   "got": "no_match",
+   "p_expected": 0.66,
+   "conf": 0.64,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2481,
+   "input_tokens": 3065,
+   "top3": [
+    [
+     "no_match",
+     0.66
+    ],
+    [
+     "open_delivery",
+     0.22
+    ],
+    [
+     "ci_poll",
+     0.06
+    ]
+   ]
+  },
+  {
+   "id": 73,
+   "text": "asdfgh",
+   "kind": "nomatch",
+   "expected": "no_match",
+   "accept": [],
+   "got": "no_match",
+   "p_expected": 0.86,
+   "conf": 0.85,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2131,
+   "input_tokens": 3063,
+   "top3": [
+    [
+     "no_match",
+     0.86
+    ],
+    [
+     "open_decisions",
+     0.06999999999999999
+    ],
+    [
+     "ask_needs_me",
+     0.02
+    ]
+   ]
+  },
+  {
+   "id": 74,
+   "text": "how do I install kstrl on windows",
+   "kind": "nomatch",
+   "expected": "no_match",
+   "accept": [],
+   "got": "no_match",
+   "p_expected": 0.96,
+   "conf": 0.96,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2658,
+   "input_tokens": 3070,
+   "top3": [
+    [
+     "no_match",
+     0.96
+    ],
+    [
+     "start_factory",
+     0.02
+    ],
+    [
+     "ask_needs_me",
+     0.01
+    ]
+   ]
+  },
+  {
+   "id": 75,
+   "text": "email the report to the team",
+   "kind": "nomatch",
+   "expected": "no_match",
+   "accept": [],
+   "got": "no_match",
+   "p_expected": 0.94,
+   "conf": 0.93,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2424,
+   "input_tokens": 3067,
+   "top3": [
+    [
+     "no_match",
+     0.9400000000000001
+    ],
+    [
+     "open_decisions",
+     0.03
+    ],
+    [
+     "decide",
+     0.01
+    ]
+   ]
+  },
+  {
+   "id": 76,
+   "text": "retyr client-comands",
+   "kind": "typo",
+   "expected": "retry",
+   "accept": [],
+   "got": "retry",
+   "p_expected": 0.96,
+   "conf": 0.95,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "component": {
+     "got": "client-commands",
+     "ok": true,
+     "conf": 0.99
+    }
+   },
+   "latency_s": 0.2085,
+   "input_tokens": 3067,
+   "top3": [
+    [
+     "retry",
+     0.96
+    ],
+    [
+     "no_match",
+     0.04
+    ],
+    [
+     "start_factory",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 77,
+   "text": "aprove the merge",
+   "kind": "typo",
+   "expected": "decide",
+   "accept": [],
+   "got": "decide",
+   "p_expected": 1.0,
+   "conf": 0.99,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "decide_choice": {
+     "got": "approve_run",
+     "ok": true,
+     "conf": 0.87
+    },
+    "target_item": {
+     "got": "checkpoint: comp-c (approve PR creation and merge)",
+     "ok": false,
+     "conf": 0.94
+    }
+   },
+   "latency_s": 0.2266,
+   "input_tokens": 3065,
+   "top3": [
+    [
+     "decide",
+     1.0
+    ],
+    [
+     "open_learning",
+     0.0
+    ],
+    [
+     "open_config",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 78,
+   "text": "cst of live01",
+   "kind": "typo",
+   "expected": "ask_cost",
+   "accept": [],
+   "got": "open_run",
+   "p_expected": 0.34,
+   "conf": 0.32,
+   "strict": false,
+   "lenient": false,
+   "args": {},
+   "latency_s": 0.2671,
+   "input_tokens": 3067,
+   "top3": [
+    [
+     "open_run",
+     0.36
+    ],
+    [
+     "ask_cost",
+     0.34
+    ],
+    [
+     "no_match",
+     0.22
+    ]
+   ]
+  },
+  {
+   "id": 79,
+   "text": "opne failures",
+   "kind": "typo",
+   "expected": "open_failures",
+   "accept": [],
+   "got": "open_failures",
+   "p_expected": 0.98,
+   "conf": 0.97,
+   "strict": true,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2108,
+   "input_tokens": 3064,
+   "top3": [
+    [
+     "open_failures",
+     0.98
+    ],
+    [
+     "no_match",
+     0.02
+    ],
+    [
+     "open_run",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 80,
+   "text": "comp-c",
+   "kind": "ambiguous",
+   "expected": "open_component",
+   "accept": [
+    "open_decisions"
+   ],
+   "got": "open_component",
+   "p_expected": 0.78,
+   "conf": 0.76,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "component": {
+     "got": "comp-c",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2491,
+   "input_tokens": 3063,
+   "top3": [
+    [
+     "open_component",
+     0.78
+    ],
+    [
+     "decide",
+     0.13
+    ],
+    [
+     "open_decisions",
+     0.04
+    ]
+   ]
+  },
+  {
+   "id": 81,
+   "text": "merge",
+   "kind": "ambiguous",
+   "expected": "decide",
+   "accept": [
+    "open_decisions",
+    "open_delivery"
+   ],
+   "got": "open_decisions",
+   "p_expected": 0.29,
+   "conf": 0.27,
+   "strict": false,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2135,
+   "input_tokens": 3062,
+   "top3": [
+    [
+     "open_decisions",
+     0.31
+    ],
+    [
+     "decide",
+     0.29000000000000004
+    ],
+    [
+     "open_delivery",
+     0.19
+    ]
+   ]
+  },
+  {
+   "id": 82,
+   "text": "why",
+   "kind": "ambiguous",
+   "expected": "no_match",
+   "accept": [
+    "ask_why_failed"
+   ],
+   "got": "ask_why_failed",
+   "p_expected": 0.32,
+   "conf": 0.45,
+   "strict": false,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2564,
+   "input_tokens": 3062,
+   "top3": [
+    [
+     "ask_why_failed",
+     0.48
+    ],
+    [
+     "no_match",
+     0.32
+    ],
+    [
+     "open_decisions",
+     0.09
+    ]
+   ]
+  },
+  {
+   "id": 83,
+   "text": "run",
+   "kind": "ambiguous",
+   "expected": "no_match",
+   "accept": [
+    "open_run",
+    "start_factory"
+   ],
+   "got": "start_factory",
+   "p_expected": 0.23,
+   "conf": 0.32,
+   "strict": false,
+   "lenient": true,
+   "args": {},
+   "latency_s": 0.2242,
+   "input_tokens": 3062,
+   "top3": [
+    [
+     "start_factory",
+     0.35
+    ],
+    [
+     "no_match",
+     0.23
+    ],
+    [
+     "open_run",
+     0.11
+    ]
+   ]
+  },
+  {
+   "id": 84,
+   "text": "heatmap of cost by hour of day",
+   "kind": "view",
+   "expected": "make_view",
+   "accept": [],
+   "got": "make_view",
+   "p_expected": 1.0,
+   "conf": 1.0,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "view_source": {
+     "got": "costs",
+     "ok": true,
+     "conf": 0.99
+    }
+   },
+   "latency_s": 0.2866,
+   "input_tokens": 3069,
+   "top3": [
+    [
+     "make_view",
+     1.0
+    ],
+    [
+     "start_factory",
+     0.0
+    ],
+    [
+     "ask_needs_me",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 85,
+   "text": "word cloud of finding kinds",
+   "kind": "view",
+   "expected": "make_view",
+   "accept": [],
+   "got": "make_view",
+   "p_expected": 0.97,
+   "conf": 0.96,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "view_source": {
+     "got": "findings",
+     "ok": true,
+     "conf": 0.96
+    }
+   },
+   "latency_s": 0.2436,
+   "input_tokens": 3066,
+   "top3": [
+    [
+     "make_view",
+     0.97
+    ],
+    [
+     "no_match",
+     0.03
+    ],
+    [
+     "open_learning",
+     0.0
+    ]
+   ]
+  },
+  {
+   "id": 86,
+   "text": "treemap of cost by component",
+   "kind": "view",
+   "expected": "make_view",
+   "accept": [],
+   "got": "make_view",
+   "p_expected": 1.0,
+   "conf": 1.0,
+   "strict": true,
+   "lenient": true,
+   "args": {
+    "view_source": {
+     "got": "costs",
+     "ok": true,
+     "conf": 0.89
+    },
+    "view_group": {
+     "got": "component",
+     "ok": true,
+     "conf": 1.0
+    }
+   },
+   "latency_s": 0.2037,
+   "input_tokens": 3067,
+   "top3": [
+    [
+     "make_view",
+     1.0
+    ],
+    [
+     "start_factory",
+     0.0
+    ],
+    [
+     "ci_poll",
+     0.0
+    ]
+   ]
+  }
+ ]
+}
