@@ -4,9 +4,10 @@ Acceptance scenario is docs/phase-f-e2e-validation-v12.log:
 
 - ``scripts/kstrl/`` is gitignored, so a fresh worktree never contains the
   customized prompt.md or the component PRD via git. ``_run_component``
-  must copy them (plus CLAUDE.md/AGENTS.md) from ``root_dir`` -- resolved
-  against ``root_dir`` explicitly, never the worker's inherited CWD (the
-  logged run fell back to the harness DEFAULT_PROMPT, log line 38).
+  seeds the PRD into the worktree and reads prompt.md and CLAUDE.md from
+  ``root_dir`` explicitly, never the worker's inherited CWD (the logged
+  run fell back to the harness DEFAULT_PROMPT, log line 38). It copies
+  neither into the worktree (#569).
 - A diff-scope failure's retry prompt must name the base branch and the
   full allowed-paths list. In the logged run the retry agent guessed
   ``main`` as base, ran ``git checkout main -- kstrl/...`` reverting
@@ -51,7 +52,7 @@ def _git(*args: str, cwd: Path) -> None:
 def _init_repo(root: Path, allowed_paths: list[str] | None = None) -> None:
     """Real git repo shaped like a kstrl project: scripts/kstrl/ (prompt +
     PRD), CLAUDE.md, and AGENTS.md are all gitignored, so none of them
-    reach a fresh worktree through git -- provisioning must copy them."""
+    reach a fresh worktree through git."""
     root.mkdir(parents=True, exist_ok=True)
     _git("init", "-q", "-b", "main", cwd=root)
     gitrepo.set_identity(root)
@@ -135,16 +136,16 @@ def _base_config(root: Path, agent_cmd: str) -> KstrlConfig:
 
 
 class TestWorktreeProvisioning:
-    def test_worktree_run_provisions_prompt_and_context_files(
+    def test_worktree_run_reads_prompt_and_context_from_the_root(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """A real worktree run has the customized prompt.md, CLAUDE.md, and
-        AGENTS.md present, and the engineer runs on the customized prompt
-        (not the DEFAULT_PROMPT fallback) -- with the worker's CWD pointed
-        somewhere else entirely, proving copies resolve against root_dir."""
+        """The engineer runs on the customized prompt (not the
+        DEFAULT_PROMPT fallback) with CLAUDE.md prepended, both read from
+        root_dir with the worker's CWD pointed somewhere else entirely,
+        and none of the three files is copied into the worktree (#569)."""
         root = tmp_path / "repo"
         _init_repo(root)
         elsewhere = tmp_path / "elsewhere"
@@ -155,12 +156,12 @@ class TestWorktreeProvisioning:
         dump = tmp_path / "dump"
         dump.mkdir()
         # The fake agent captures, from INSIDE the worktree: the rendered
-        # prompt it received (stdin) and the provisioned files.
+        # prompt it received (stdin) and which of kstrl's context files
+        # are absent there.
         agent_cmd = (
             f"cat > {dump}/prompt-received.txt; "
-            f"cp scripts/kstrl/prompt.md {dump}/prompt-in-worktree.md; "
-            f"cp CLAUDE.md {dump}/claude-in-worktree.md; "
-            f"[ -e AGENTS.md ] && echo present > {dump}/agents-present.txt; " + COMPLETE_LINE
+            "for f in AGENTS.md CLAUDE.md scripts/kstrl/prompt.md; do "
+            f'[ -e "$f" ] || [ -L "$f" ] || echo "$f"; done > {dump}/absent.txt; ' + COMPLETE_LINE
         )
 
         result = run_factory(
@@ -172,11 +173,11 @@ class TestWorktreeProvisioning:
         )
 
         assert result.completed == ["comp-a"]
-        assert (dump / "prompt-in-worktree.md").read_text() == CUSTOM_PROMPT, (
-            "customized prompt.md was not provisioned into the worktree"
-        )
-        assert CLAUDE_MD_MARKER in (dump / "claude-in-worktree.md").read_text()
-        assert (dump / "agents-present.txt").exists()
+        assert (dump / "absent.txt").read_text().split() == [
+            "AGENTS.md",
+            "CLAUDE.md",
+            "scripts/kstrl/prompt.md",
+        ]
 
         received = (dump / "prompt-received.txt").read_text()
         assert "CUSTOMIZED-PROMPT-MARKER-7f3a" in received, (

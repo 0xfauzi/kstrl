@@ -2627,12 +2627,11 @@ def _run_component(
 
     start = time.monotonic()
     worktree_path = Path(worktree_path_str)
-    # R0.4: every copy source below resolves against root_dir, never the
-    # worker's inherited CWD. prompt.md and the PRD live under gitignored
-    # scripts/kstrl/, so a fresh worktree NEVER contains them via git; if
-    # a CWD-relative lookup missed them (e.g. --root from another
-    # directory) the copies silently no-op'd and the engineer fell back
-    # to the harness DEFAULT_PROMPT (phase-f e2e validation, line 38).
+    # R0.4: every source below (the PRD seed, prompt.md, CLAUDE.md)
+    # resolves against root_dir, never the worker's inherited CWD. A
+    # CWD-relative lookup (e.g. --root from another directory) missed
+    # them and the engineer fell back to the harness DEFAULT_PROMPT
+    # (phase-f e2e validation, line 38).
     root_dir = Path(root_dir_str)
 
     ui: UI
@@ -2668,13 +2667,11 @@ def _run_component(
 
     # Copy PRD into worktree if needed.
     #
-    # shutil.copyfile, not read_text/write_text: these are COPIES, and a
+    # shutil.copyfile, not read_text/write_text: this is a COPY, and a
     # copy that decodes and re-encodes is only byte-exact when the
     # locale's codec round-trips. #291 made the PRD utf-8 on disk, which
-    # under LC_ALL=C a bare read_text cannot decode at all, and #286's
-    # scaffold digests depend on prompt.md copying byte for byte. A byte
-    # copy removes the encoding question rather than answering it four
-    # times.
+    # under LC_ALL=C a bare read_text cannot decode at all. A byte copy
+    # removes the encoding question rather than answering it.
     # The source is the copy the run starts from, which for a planned
     # component is under .kstrl/plan/<plan_id>/ and never at prd_path
     # (#545, #568).
@@ -2689,31 +2686,15 @@ def _run_component(
     # at runtime by loop.py with config.prd_file, so the agent reads the
     # SAME per-component PRD that check_prd_stories re-reads (R2.3, H-11)
     # without overwriting scripts/kstrl/prd.json.
-
-    # Copy prompt into worktree if needed
-    worktree_prompt = worktree_path / prompt_file_str
-    prompt_source = root_dir / prompt_file_str
-    if not worktree_prompt.exists() and prompt_source.exists():
-        worktree_prompt.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(prompt_source, worktree_prompt)
-
-    # Copy CLAUDE.md / AGENTS.md into the worktree from root_dir. When
-    # use_worktrees=False, worktree_path IS the repo root so the files are
-    # already in place - the .exists() guards handle this correctly.
-    claude_dest = worktree_path / "CLAUDE.md"
-    claude_src = root_dir / "CLAUDE.md"
-    if not claude_dest.exists() and claude_src.exists():
-        shutil.copyfile(claude_src, claude_dest)
-    agents_dest = worktree_path / "AGENTS.md"
-    agents_src = root_dir / "AGENTS.md"
-    if not agents_dest.exists():
-        if agents_src.is_symlink() and claude_dest.exists():
-            # Preserve the AGENTS.md -> CLAUDE.md symlink convention.
-            agents_dest.symlink_to("CLAUDE.md")
-        elif agents_src.exists():
-            shutil.copyfile(agents_src, agents_dest)
-        elif claude_dest.exists():
-            agents_dest.symlink_to("CLAUDE.md")
+    #
+    # #569: prompt.md and CLAUDE.md are read from root_dir, the checkout
+    # kstrl ran from, and nothing of kstrl's is copied into the worktree
+    # beside the PRD. A copy there is an untracked file the engineer's
+    # `git add -A` commits, and when the same file is uncommitted in the
+    # root checkout, `git merge` of the component branch refuses on it and
+    # Phase 1 fails the component on diff_scope. They are kstrl's context
+    # for the engineer, not the component's change.
+    prompt_file = root_dir / prompt_file_str
 
     # The scaffold command and the Phase 0 scan. Both stay non-fatal; a
     # failure comes back as a note that is warned once `ui` is bound (#486).
@@ -2792,7 +2773,7 @@ def _run_component(
     authored_paths, harness_paths = _worker_scope(scope)
     config = KstrlConfig(
         max_iterations=max_iterations,
-        prompt_file=worktree_prompt,
+        prompt_file=prompt_file,
         prd_file=worktree_prd,
         progress_file=worktree_path / component_progress_rel,
         codebase_map_file=worktree_path / codebase_map_file_str,
@@ -2897,6 +2878,7 @@ def _run_component(
                 # worktree they differ and the loop carves nothing out, so a
                 # `.kstrl/` the AGENT wrote there stays a violation.
                 guard_state_root=root_dir,
+                context_root=root_dir,
                 verify_config=verify_config,
             )
         # Report which limit fired so the retry/fail path can act on it
