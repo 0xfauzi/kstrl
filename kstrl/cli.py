@@ -138,7 +138,7 @@ from kstrl.retry_plan import (
 )
 from kstrl.sandbox import SandboxConfig
 from kstrl.security import _SEVERITY_ORDER, SecurityMode
-from kstrl.serve import LAUNCHD_MODES
+from kstrl.serve import ARCHITECT_RUN_KIND, LAUNCHD_MODES
 from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.base import UI
@@ -1696,7 +1696,7 @@ def _understand_core(
         loop_agent = LoggingAgent(agent, transcript)
 
     started = time.monotonic()
-    bus.emit(RunStarted(project=root_dir.name, components=1))
+    bus.emit(RunStarted(project=root_dir.name, components=1, pid=os.getpid()))
     bus.emit(
         RunPlan(components=({"id": component, "title": "Codebase understanding", "deps": []},))
     )
@@ -2775,11 +2775,13 @@ def factory(
     # roles instead of four. A --manifest resume ran no architect and
     # leaves this empty.
     #
-    # Only the paths that reach run_factory are covered: a blocker halt
-    # exits below, and its spend is recorded only in the decompose run
-    # the architect ran as (#567), which the factory run never reads.
-    # `decompose_spec` prints the number to the terminal on that path.
+    # Only the paths that reach run_factory carry it: a blocker halt exits
+    # below, and its spend is recorded only in the decompose run the
+    # architect ran as (#567). `ks serve` charges that run when no factory
+    # run of the launch names it (#587). The factory run names it with
+    # ``architect_run_id``, so the spend is counted once either way.
     architect_usage = UsageTotals()
+    architect_run_id = ""
     if manifest_path:
         try:
             manifest = Manifest.load(manifest_path)
@@ -2808,9 +2810,10 @@ def factory(
         architect_run = open_command_run(
             ui_impl,
             root_dir,
-            "decompose",
+            ARCHITECT_RUN_KIND,
             component=ARCHITECT_COMPONENT,
         )
+        architect_run_id = architect_run.run_id
         try:
             manifest = decompose_spec(
                 spec_path=spec,
@@ -3167,6 +3170,7 @@ def factory(
                 root_dir,
                 manifest_path,
                 architect_usage=architect_usage,
+                architect_run_id=architect_run_id,
             )
         )
 
@@ -3182,6 +3186,7 @@ def factory(
             manifest_path=manifest_path,
             stop=stop,
             architect_usage=architect_usage,
+            architect_run_id=architect_run_id,
         )
     finally:
         uninstall()
@@ -3381,6 +3386,12 @@ def _render_run_version(
         ui_impl.kv("kstrl version", stamp_label(manifest.kstrl_version))
 
 
+def _render_architect_run(ui_impl: UI, state: RunState) -> None:
+    """The run that holds this run's architect records, when it names one (#587)."""
+    if state.architect_run_id:
+        ui_impl.kv("Architect run", state.architect_run_id)
+
+
 def _render_status(
     manifest: Manifest,
     manifest_file: Path,
@@ -3406,6 +3417,7 @@ def _render_status(
         ui_impl.kv(label, str(source_path))
         if state.run_id:
             ui_impl.kv("Run id", state.run_id)
+        _render_architect_run(ui_impl, state)
         if state.last_event_ts:
             age = _age_label_epoch(state.last_event_ts)
             run_state = "finished" if state.finished else "in flight"
@@ -5450,7 +5462,8 @@ def _charge_serve_for_approval_run(
     """Charge an approval run to the daemon's daily total, as serve charged the park (#463)."""
     from kstrl.serve import ServeStateError, SpendLedger, owned_run_spend
 
-    owned, spend = owned_run_spend(root_dir, runs_before)
+    # The approval run is `ks factory` in this process.
+    owned, spend = owned_run_spend(root_dir, runs_before, launch_pid=os.getpid())
     try:
         day = SpendLedger(root_dir).charge(
             spend.cost_usd,

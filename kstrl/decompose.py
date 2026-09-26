@@ -6,6 +6,7 @@ import dataclasses
 import functools
 import json
 import logging
+import os
 import re
 import time
 from collections import Counter
@@ -2393,7 +2394,7 @@ def _decompose_spec_impl(
             return str(path)
 
     run_started = time.monotonic()
-    emit(RunStarted(project=project_name, components=0))
+    emit(RunStarted(project=project_name, components=0, pid=os.getpid()))
     emit(
         RunPlan(
             components=(
