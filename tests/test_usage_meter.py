@@ -5641,7 +5641,7 @@ class TestNothingBetweenTheRunDirAndTheMeterCanLoseTheSpend:
         root = _setup_project(tmp_path, ["comp-a", "comp-b"])
         result = self._run(root, self._cyclic_manifest())
 
-        assert result.exit_code == 1, "the cyclic DAG must still fail the run"
+        assert result.exit_code == 2, "the cyclic DAG is still refused (#531)"
         events = _usage_events(root, ARCHITECT_ROLE)
         assert len(events) == 1, "the spend must reach the run directory"
         assert events[0]["data"]["cost_usd"] == pytest.approx(4.0)

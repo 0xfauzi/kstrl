@@ -4258,7 +4258,9 @@ def _run_factory_locked(
     if dag_errors:
         for err in dag_errors:
             ui.err(f"  {err}")
-        factory_result.exit_code = 1
+        # A refusal before any component runs: 2 under the #452 contract,
+        # which is also the code `ks serve` reads as a refusal (#531).
+        factory_result.exit_code = 2
         return factory_result
 
     topo_order = manifest.topological_order()

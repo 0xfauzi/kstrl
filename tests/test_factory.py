@@ -183,7 +183,7 @@ class TestRunFactoryDAGValidation:
         ui = PlainUI(no_color=True)
 
         result = run_factory(manifest, config, base, ui, root)
-        assert result.exit_code == 1
+        assert result.exit_code == 2  # a refusal before any component runs (#531)
 
     def test_empty_manifest_succeeds(self, tmp_path: Path) -> None:
         root = _setup_project(tmp_path)

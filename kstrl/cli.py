@@ -169,6 +169,28 @@ def _format_component_status(status: str | None) -> str:
     return f"{status} (not a valid status)"
 
 
+def _print_execution_order(manifest: Manifest, ui: UI) -> None:
+    """The plan's execution order, or why there is none (#531).
+
+    A graph that does not validate has no order to print:
+    ``topological_order`` raises on a cycle and a KeyError on an unknown
+    dependency. ``run_factory`` refuses that graph with exit 2 after it has
+    recorded the architect's spend (#257), so this listing must not end
+    the command first.
+    """
+    ui.info("")
+    if manifest.validate_dag():
+        ui.warn("Execution order: none, the dependency graph does not validate")
+        return
+    ui.info("Execution order:")
+    for i, comp_id in enumerate(manifest.topological_order(), 1):
+        comp = manifest.get_component(comp_id)
+        status = _format_component_status(comp.status if comp else None)
+        dep_list = ", ".join(comp.dependencies) if comp and comp.dependencies else ""
+        deps = f" (depends on: {dep_list})" if dep_list else ""
+        ui.info(f"  {i}. {comp_id} [{status}]{deps}")
+
+
 def _console_ui(
     mode: str = "auto",
     no_color: bool = False,
@@ -3011,15 +3033,7 @@ def factory(
     for note in toml_notes:
         ui_impl.info(note)
 
-    topo = manifest.topological_order()
-    ui_impl.info("")
-    ui_impl.info("Execution order:")
-    for i, comp_id in enumerate(topo, 1):
-        comp = manifest.get_component(comp_id)
-        status = _format_component_status(comp.status if comp else None)
-        dep_list = ", ".join(comp.dependencies) if comp and comp.dependencies else ""
-        deps = f" (depends on: {dep_list})" if dep_list else ""
-        ui_impl.info(f"  {i}. {comp_id} [{status}]{deps}")
+    _print_execution_order(manifest, ui_impl)
 
     _factory_channel = UiInteractionChannel(ui_impl)
     if not yes and _factory_channel.can_prompt():
