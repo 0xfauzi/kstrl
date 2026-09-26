@@ -110,8 +110,6 @@ def run_once_for(fixture_id):
         # either run.
         if fixture_id == "fx-d" and MODE == "sigkill" and run == 2:
             os.kill(os.getpid(), signal.SIGKILL)
-        if fixture_id == "fx-d" and MODE == "raise" and run == 2:
-            raise RuntimeError("interrupted inside fx-d")
         if fixture_id == "fx-d" and MODE == "reply_unwritable" and run == 1:
             # A regular file where fx-d's replies directory has to go.
             blocker = replies_dir(tc.RESULTS_DIR, report.timestamp) / "security" / "fx-d"
@@ -119,6 +117,11 @@ def run_once_for(fixture_id):
             blocker.write_text("not a directory", encoding="utf-8")
         if not (fixture_id == "fx-d" and MODE == "no_reply"):
             tc._collect(FakeAgent(reply_text(fixture_id, run)), "prompt", Path("."))
+        # Raised AFTER the agent call, so the run has a reply to keep and only
+        # the exception itself keeps it from being recorded. Raised before it,
+        # an empty reply would stop the run too and hide a widened except (#523).
+        if fixture_id == "fx-d" and MODE == "raise" and run == 2:
+            raise RuntimeError("interrupted inside fx-d")
         return True, "fake result for " + fixture_id
 
     return run_once
