@@ -228,7 +228,7 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/test_tui_433_inc3_board.py": 22,
     "tests/test_tui_433_inc4.py": 47,
     "tests/test_tui_433_inc5.py": 59,
-    "tests/test_tui_433_inc6.py": 29,
+    "tests/test_tui_433_inc6.py": 33,
     "tests/test_tui_app.py": 23,
     "tests/test_tui_config_guard.py": 13,
     "tests/test_tui_detail.py": 41,  # +2 #433: test_follow_toggle waits on a live run

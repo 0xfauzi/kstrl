@@ -236,6 +236,26 @@ class TestIntegrationRounds:
                 assert line.startswith("round ") or line[:column].strip() == "", lines
             assert detail.region.height >= 4, detail.region
 
+    @pytest.mark.parametrize("size", SIZES)
+    async def test_an_unread_state_file_is_said_under_the_rounds(
+        self, tmp_path: Path, size: tuple[int, int]
+    ) -> None:
+        """K7 rebuilt the rounds as a label grid: the "dispositions unknown" line
+        under them must survive it."""
+        run = "factory-20260925-214816.991354-fda682"
+        _review(tmp_path, run, 1, outcome="open_findings", reason="1 finding opened; blocking")
+        review = read_integration_review(tmp_path, tmp_path / ".kstrl" / "runs" / run, {})
+        assert review is not None and review.state_problem, review
+        app = _home(tmp_path)
+        async with app.run_test(size=size) as pilot:
+            await mounted(pilot, lambda: app.screen, "#home-runs")
+            app.push_screen(IntegrationScreen(review, run))
+            rounds = cast(Static, await mounted(pilot, lambda: app.screen, "#integration-rounds"))
+            await settled(pilot, lambda: rounds.content_region.width, what="the rounds laid out")
+            text = _one_line(flat(rounds))
+            assert "1 finding opened; blocking" in text, text
+            assert f"dispositions unknown: {review.state_problem}" in text, text
+
 
 class TestServeRow:
     @pytest.mark.parametrize("size", SIZES)
