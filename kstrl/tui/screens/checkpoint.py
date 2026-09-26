@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from rich.console import Group
+from rich.padding import Padding
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -56,21 +58,54 @@ def _diff_style(line: str) -> str:
     return theme.ERROR if line.startswith("-") else theme.MUTED
 
 
-def _findings_block(title: str, findings: tuple[object, ...]) -> Text:
-    text = Text()
-    text.append(f"{title.lower()}\n", style=f"bold {theme.ACCENT}")
+def _findings_block(title: str, findings: tuple[object, ...]) -> Group:
+    """Each finding's text wraps under itself, after the severity tag (#433 H8)."""
+    heading = Text(title.lower(), style=f"bold {theme.ACCENT}")
     if not findings:
-        text.append("  none\n", style=theme.MUTED)
-        return text
+        return Group(heading, Text("  none\n", style=theme.MUTED))
+    rows = []
     for finding in findings:
         severity = getattr(finding, "severity", "")
-        location = getattr(finding, "location", "")
-        explanation = getattr(finding, "explanation", "")
         style = theme.ERROR if severity in ("critical", "high", "fail") else theme.WARNING
-        text.append(f"  [{severity}] ", style=f"bold {style}")
-        text.append(f"{location}  ", style="bold")
-        text.append(f"{explanation}\n")
-    return text
+        said = Text()
+        said.append(f"{getattr(finding, 'location', '')}  ", style="bold")
+        said.append(str(getattr(finding, "explanation", "")))
+        rows.append((Text(f"[{severity}]", style=f"bold {style}"), said))
+    return Group(heading, Padding(theme.label_rows(rows), (0, 0, 1, 2)))
+
+
+#: What each answer makes the pipeline do (#433 H9), read from
+#: ``Pipeline._phase_checkpoint`` and the branch after it in kstrl/pipeline.py:
+#: Reject is ``fail(..., check="hitl_reject")``, returned before ``_phase_pr``,
+#: so the component is FAILED, its dependents are cascade-skipped, nothing is
+#: pushed and no retry is counted; Retry is ``retry_or_fail(..., check="hitl_retry")``
+#: with "Human reviewer requested changes at PR checkpoint" added to the
+#: engineer's context, PENDING with one more retry used while retries remain,
+#: else FAILED; Approve goes on to ``_phase_pr``, which pushes the branch,
+#: opens the PR and merges it, and the component is COMPLETED only on a
+#: confirmed merge (R0.2). tests/test_pipeline.py pins the first two
+#: (test_checkpoint_reject_fails_component, test_checkpoint_retry_consumes_a_retry).
+CHOICE_EFFECTS = {
+    "Approve": "pushes {branch}, opens its PR and merges it; {cid} completes only once "
+    "the merge is confirmed.",
+    "Reject": "{cid} fails and its dependents are skipped; nothing is pushed.",
+    "Retry": "the engineer runs {cid} again with a note that a human reviewer asked for "
+    "changes; no reason is passed on. Uses one retry; with none left, {cid} fails as on Reject.",
+}
+
+
+def choice_effects(request: PromptRequest) -> Group:
+    """What each offered answer does, for the answers the pipeline defines."""
+    ctx = request.checkpoint
+    cid = request.component_id or (ctx.component_id if ctx else "") or "the component"
+    branch = ctx.branch if ctx is not None and ctx.branch else "the branch"
+    rows = [
+        (Text(label, style="bold"), Text(CHOICE_EFFECTS[label].format(cid=cid, branch=branch)))
+        for label in (option.split(" (")[0] for option in request.options)
+        if label in CHOICE_EFFECTS
+    ]
+    heading = Text("what each choice does", style=f"bold {theme.MUTED}")
+    return Group(heading, Padding(theme.label_rows(rows), (0, 0, 0, 2)))
 
 
 class CheckpointModal(ModalScreen[int | None]):
@@ -132,6 +167,7 @@ class CheckpointModal(ModalScreen[int | None]):
                             style=theme.MUTED,
                         )
                     yield Static(diff_text)
+            yield Static(choice_effects(self.request), id="checkpoint-effects")
             with Horizontal(id="checkpoint-buttons"):
                 # Quiet buttons; the TCSS gives choice-0 the single
                 # accent treatment (one primary action per surface).

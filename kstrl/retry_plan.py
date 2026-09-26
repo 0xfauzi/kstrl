@@ -285,6 +285,9 @@ class ResumePlan:
     max_parallel: int
     #: Recorded flags left out because `ks factory` no longer has them (#539).
     dropped: tuple[str, ...]
+    #: The flags ``argv`` spells, by name, so a caller that cannot pass an
+    #: argv can tell which flags it would drop (#433 H5).
+    flags: tuple[tuple[str, FlagValue], ...] = ()
 
 
 def _unkept_limits(
@@ -382,6 +385,7 @@ def plan_resume(
         limits=tuple(resolved.items()),
         max_parallel=int(flags.get("max_parallel", loaded.max_parallel)),
         dropped=dropped,
+        flags=tuple(flags.items()),
     )
     return plan, [], ()
 
@@ -394,9 +398,12 @@ def limits_line(plan: ResumePlan) -> str:
 
 
 def not_replayed(plan: ResumePlan) -> tuple[str, ...]:
-    """``--option, why`` for each recorded flag the retry leaves out
-    (#539): what ``print_resume_plan`` prints, so the TUI says the same (#433)."""
-    return tuple(f"{_opt(name)}, {REMOVED_OPTIONS[name]}" for name in plan.dropped)
+    """``--option is no longer an option. Why.`` for each recorded flag the
+    retry leaves out (#539): what ``print_resume_plan`` prints, so the TUI
+    says the same (#433)."""
+    return tuple(
+        f"{_opt(name)} is no longer an option. {REMOVED_OPTIONS[name]}" for name in plan.dropped
+    )
 
 
 def print_resume_plan(ui: UI, plan: ResumePlan) -> None:

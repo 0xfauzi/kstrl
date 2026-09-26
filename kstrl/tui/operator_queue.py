@@ -74,6 +74,9 @@ class ActiveRow:
     run_id: str = ""
     #: The detail for a narrow terminal; "" when ``detail`` is already short.
     short_detail: str = ""
+    #: A live run's last output age (``AgentHealth.output``); "" when no
+    #: component is moving (#433 H10).
+    output: str = ""
 
 
 @dataclass(frozen=True)
@@ -356,19 +359,25 @@ def _active_run_rows(
         moving = [
             comp for comp in state.components.values() if comp.status in ("running", "verifying")
         ]
+        output = ""
         if moving:
             health = agent_health(ref.run_dir, moving[0], now)
             detail = f"{reason} · {health.text()}"
             short = _narrow_active(moving, health)
-        rows.append(ActiveRow(ref.kind, ref.run_id, RUNNING, detail, ref.run_id, short))
+            output = health.output()
+        rows.append(ActiveRow(ref.kind, ref.run_id, RUNNING, detail, ref.run_id, short, output))
     return rows
 
 
-def _serve_rows(serve: ServeState | None) -> list[ActiveRow]:
+def _serve_rows(serve: ServeState | None, runs: Sequence[ActiveRow] = ()) -> list[ActiveRow]:
+    """``runs`` are the live run rows: a running item's output age is its
+    run's, and a run with none says so rather than showing an age (#433 H10)."""
     if serve is None:
         return []
+    outputs = {row.run_id: row.output for row in runs}
     rows = []
     for item in serve.items:
+        short = ""
         if item.state == "queued":
             state = f"queued #{item.position}"
             detail = item.title
@@ -379,9 +388,14 @@ def _serve_rows(serve: ServeState | None) -> list[ActiveRow]:
             )
         else:
             state = "running" if item.state == "running" else "starting"
-            run = f"run {short_run_id(item.run_id)}" if item.run_id else "run not recorded"
+            run = "run not recorded"
+            if item.run_id:
+                output = outputs.get(item.run_id) or "no output recorded"
+                run = f"run {short_run_id(item.run_id)} · {output}"
             detail = f"{item.title} · {run}"
-        rows.append(ActiveRow("ks serve", item.item_id, state, detail, item.run_id))
+            # Narrow: the run and its output first, so the title is what gets cut.
+            short = f"{run} · {item.title}"
+        rows.append(ActiveRow("ks serve", item.item_id, state, detail, item.run_id, short))
     return rows
 
 
@@ -439,7 +453,7 @@ def build_queue(
     return OperatorQueue(
         needs_you=tuple(rows),
         unreadable=tuple(unreadable),
-        active=tuple(_active_run_rows(refs, states, now) + _serve_rows(serve)),
+        active=tuple((runs := _active_run_rows(refs, states, now)) + _serve_rows(serve, runs)),
         serve=serve,
         delivery=delivery,
         superseded=supersessions(refs, summaries, states),

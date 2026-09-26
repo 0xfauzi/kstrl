@@ -257,6 +257,8 @@ CheckpointModal {
     width: 92%;
     max-width: 110;
     height: 85%;
+    /* At 24 rows 85% left the findings 3 rows under the choices' effects (#433 H9). */
+    min-height: 22;
     border: round $accent 60%;
     border-title-color: $accent;
     border-title-style: bold;
@@ -285,8 +287,13 @@ CheckpointModal {
     scrollbar-size-vertical: 1;
 }
 
+/* What Approve, Reject and Retry do, above the buttons (#433 H9). */
+#checkpoint-effects {
+    height: auto;
+}
+
 #checkpoint-buttons {
-    height: 3;
+    height: 1;
     margin-top: 1;
     align-horizontal: center;
 }
@@ -459,10 +466,11 @@ HomeScreen.short #home-preview {
 }
 
 /* auto, not 1: the line carries the run's state reason, and a cause
- * cut at the edge is not a cause (#433 F4). */
+ * cut at the edge is not a cause (#433 F4). 8, not 3: a refusal with its
+ * detail line took 5 lines at 80 columns and its remedy was cut (#433 H6). */
 #home-preview-meta {
     height: auto;
-    max-height: 3;
+    max-height: 8;
     padding: 0 1;
     background: $surface;
 }
@@ -741,6 +749,7 @@ OptionsModal {
 
 #options-dialog {
     width: 70%;
+    min-width: 72;
     max-width: 90;
     height: auto;
     border: round $accent 60%;
@@ -759,8 +768,16 @@ OptionsModal {
     color: $foreground;
 }
 
+/* The question's detail (the retry's scope, #433 H3): as tall as it is,
+ * until the dialog would pass the screen's edge; then it scrolls and the
+ * buttons stay on screen. */
+#options-detail {
+    height: auto;
+    max-height: 70vh;
+}
+
 #options-buttons {
-    height: 3;
+    height: 1;
     margin-top: 1;
     align-horizontal: center;
 }

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from rich.padding import Padding
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -48,6 +49,21 @@ if TYPE_CHECKING:
     from kstrl.reducer import ComponentState, RunState
 
 _MOVING = ("running", "verifying")
+
+
+def retry_route(component_id: str) -> Padding:
+    """Where a failed component's retry is (#433 H12). The failure queue
+    says whether a retry is offered and what it would do."""
+    from kstrl.tui.screens.home import HOME_COMMANDS
+
+    key = next(n for n, cmd in enumerate(HOME_COMMANDS, 1) if cmd.command_id == "retry")
+    route = Text(
+        f"{key} on home opens the failure queue; ks retry {component_id} runs one from a shell",
+        style=theme.MUTED,
+    )
+    return Padding(
+        theme.label_rows([(Text("retry", style=f"bold {theme.ACCENT}"), route)]), (0, 0, 0, 2)
+    )
 
 
 class ComponentScreen(Screen[None]):
@@ -117,7 +133,8 @@ class ComponentScreen(Screen[None]):
             self._update_transcript_title()
         self._render_header(comp, live)
         self.query_one(PhaseTimeline).update_state(comp)
-        failure = render_failure_detail(comp, getattr(self.app, "root_dir", None))
+        route = retry_route(comp.component_id) if comp.status == "failed" else None
+        failure = render_failure_detail(comp, getattr(self.app, "root_dir", None), route)
         failure_widget = self.query_one("#failure-detail", Static)
         failure_widget.display = failure is not None
         if failure is not None:
