@@ -6,7 +6,8 @@ store every project can append to, the four delta operations, and the
 one into a prompt; slices 8 and 9 do that.
 
 THE STORE IS A LEDGER, NOT A DOCUMENT. Every change is one JSON line
-appended through ``appendio.append_records`` to
+appended through ``appendio.appending`` and
+``appendio.append_terminated`` to
 ``$XDG_STATE_HOME/kstrl/global/playbook/ops.jsonl``, and the playbook is
 what :func:`load_playbook` gets by folding those lines in order. The
 design doc (section 9, M11) measured the alternative: six concurrent
@@ -20,11 +21,28 @@ A LINE THE FOLD CANNOT USE IS REFUSED, NEVER SKIPPED. A line that does
 not parse, names an op outside :class:`OpKind`, adds an id twice, or
 names a lesson id no earlier line added raises :class:`PlaybookError`
 naming the line number (the #260 rule: an unreadable record is a
-refusal, not an absence). The writer validates each op with the SAME
-function the fold uses, so a write the fold would refuse never lands.
-The cost is stated rather than hidden: a torn final line, left by a
-writer killed mid-append, makes the fold refuse until someone removes
-it by hand.
+refusal, not an absence). The one exception is a line a later VOID
+line names by number and SHA-256, and a VOID is written only by this
+module, which records why.
+
+A WRITE THE FOLD WOULD REFUSE NEVER LANDS (#529). :func:`append_ops`
+folds the ledger and applies the new ops with the fold's own
+:func:`_apply` while it holds the exclusive lock it appends under, so
+a second ADD of one id and an op on an unknown id are refused before
+any byte is written, and two writers racing on one id serialize: the
+second one sees the first one's line.
+
+A LINE IS COMMITTED BY ITS NEWLINE. A writer killed mid-append leaves an
+unterminated tail; the fold does not fold it and reports its size. The
+next append voids it in the same write that appendio's pad turns it into
+a whole line, so the tail does not become a line the fold refuses. The
+residual is a SECOND tear inside that write, before the VOID's newline:
+the fragment is then committed without its VOID, the fold refuses it,
+and ``ks learn repair`` voids it. A tail that happens to hold a whole
+record is voided too: its writer never returned. :func:`repair_ledger`
+(``ks learn repair``) is the way back for a ledger that is already
+refused: it voids every line the fold refuses, each VOID carrying the
+fold's reason, and leaves the voided bytes where they are.
 
 The record shape is ``ace-framework`` 0.13.0's ``Skill`` field names
 (``id``, ``section``, ``keywords``, ``issue``, ``insight``, ``active``,
@@ -52,11 +70,12 @@ import os
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, fields, replace
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from kstrl.appendio import append_records
+from kstrl.appendio import append_terminated, appending
 from kstrl.config import ConfigError, _parse_bool, load_toml_section, resolve_config_file
 from kstrl.decisions import enum_field_error, required_field_error
 from kstrl.jsonread import read_json
@@ -268,13 +287,69 @@ def op_from_record(prefix: str, record: Any) -> Op:
     return Op(kind, record["id"], record["at"])
 
 
+#: The one line kind that is not a lesson op. It names an earlier line
+#: by number and by the SHA-256 of that line's bytes, and the fold
+#: passes over that line. Only :func:`append_ops` (for a torn tail) and
+#: :func:`repair_ledger` write one.
+VOID = "VOID"
+_VOID_KEYS = frozenset({"op", "line", "sha256", "at", "reason"})
+_SHA256_RE = re.compile(r"[0-9a-f]{64}")
+INTERRUPTED_WRITE = (
+    "an interrupted write left this line without its newline, so it was never committed"
+)
+
+
+@dataclass(frozen=True)
+class Void:
+    """One VOID line. The voided bytes stay in the file; this says why."""
+
+    line: int
+    sha256: str
+    at: str
+    reason: str
+
+    def to_record(self) -> dict[str, Any]:
+        return {
+            "op": VOID,
+            "line": self.line,
+            "sha256": self.sha256,
+            "at": self.at,
+            "reason": self.reason,
+        }
+
+
+def void_from_record(prefix: str, record: dict[str, Any]) -> Void:
+    """Validate one raw VOID record. Only the fold calls it: the two
+    writers build each :class:`Void` from a line number and a digest they
+    computed under the lock, and the fold reads what they wrote."""
+    if error := _keys_error(prefix, record, _VOID_KEYS):
+        raise PlaybookError(error)
+    line = record["line"]
+    if isinstance(line, bool) or not isinstance(line, int) or line < 1:
+        raise PlaybookError(f"{prefix}.line: must be a positive integer, got {line!r}")
+    sha256 = record["sha256"]
+    if not isinstance(sha256, str) or not _SHA256_RE.fullmatch(sha256):
+        raise PlaybookError(f"{prefix}.sha256: must be 64 lowercase hex digits")
+    for name in ("at", "reason"):
+        if error := required_field_error(prefix, name, record[name]):
+            raise PlaybookError(error)
+    return Void(line, sha256, record["at"], record["reason"])
+
+
 @dataclass(frozen=True)
 class Playbook:
-    """The folded ledger, and the exact bytes it was folded from."""
+    """The folded ledger, and the exact bytes it was folded from.
+
+    ``line_count`` counts committed (newline-terminated) lines, VOID
+    lines and voided lines included. ``tail_bytes`` is the size of an
+    unterminated tail an interrupted write left, which is not folded.
+    """
 
     path: Path
     lessons: tuple[Lesson, ...]
     line_count: int
+    voided: tuple[int, ...]
+    tail_bytes: int
     byte_count: int
     sha256: str
 
@@ -309,7 +384,7 @@ def _apply(prefix: str, lessons: dict[str, Lesson], op: Op) -> None:
         )
 
 
-def _parse_line(prefix: str, line: bytes) -> Op:
+def _parse_line(prefix: str, line: bytes) -> Op | Void:
     try:
         text = line.decode("utf-8")
     except UnicodeDecodeError as exc:
@@ -318,7 +393,78 @@ def _parse_line(prefix: str, line: bytes) -> Op:
         record = read_json(text)
     except json.JSONDecodeError as exc:
         raise PlaybookError(f"{prefix}: not a JSON record: {exc}") from exc
+    if isinstance(record, dict) and record.get("op") == VOID:
+        return void_from_record(prefix, record)
     return op_from_record(prefix, record)
+
+
+def _parse_or_refusal(prefix: str, line: bytes) -> Op | Void | PlaybookError:
+    try:
+        return _parse_line(prefix, line)
+    except PlaybookError as exc:
+        return exc
+
+
+@dataclass
+class _Folded:
+    """What one fold of one read saw. ``refused`` is filled only when
+    the fold collects refusals instead of raising the first one."""
+
+    lessons: dict[str, Lesson]
+    lines: list[bytes]
+    tail: bytes
+    voided: frozenset[int]
+    refused: list[tuple[int, str]]
+
+
+def _voided_lines(
+    path: Path, lines: list[bytes], parsed: list[Op | Void | PlaybookError]
+) -> frozenset[int]:
+    """The line numbers the VOID lines name, each checked against its digest.
+
+    A VOID may name a VOID line. That changes nothing, because a VOID is
+    never folded as an op and voiding never restores a line. It happens
+    when the next write voids a VOID that an interrupted write left as
+    its tail; refusing it would make that write the tear it repairs.
+    """
+    voided: set[int] = set()
+    for number, item in enumerate(parsed, start=1):
+        if not isinstance(item, Void):
+            continue
+        prefix = f"{path} line {number}"
+        if item.line >= number:
+            raise PlaybookError(f"{prefix}: VOID names line {item.line}, which is not before it")
+        if hashlib.sha256(lines[item.line - 1]).hexdigest() != item.sha256:
+            raise PlaybookError(
+                f"{prefix}: VOID names line {item.line} by a digest it does not have"
+            )
+        voided.add(item.line)
+    return frozenset(voided)
+
+
+def _fold(path: Path, raw: bytes, *, collect: bool = False) -> _Folded:
+    """Fold ``raw`` in order. The only fold: the reader and both writers call it.
+
+    Raises the first refusal, or with ``collect`` records every refused
+    line and folds on without it, which is exactly the state the fold
+    reaches once those lines are voided.
+    """
+    *lines, tail = raw.split(b"\n")
+    parsed = [_parse_or_refusal(f"{path} line {n}", line) for n, line in enumerate(lines, start=1)]
+    voided = _voided_lines(path, lines, parsed)
+    folded = _Folded({}, lines, tail, voided, [])
+    for number, item in enumerate(parsed, start=1):
+        if number in voided or isinstance(item, Void):
+            continue
+        try:
+            if isinstance(item, PlaybookError):
+                raise item
+            _apply(f"{path} line {number}", folded.lessons, item)
+        except PlaybookError as exc:
+            if not collect:
+                raise
+            folded.refused.append((number, str(exc)))
+    return folded
 
 
 def load_playbook(path: Path | None = None) -> Playbook:
@@ -333,39 +479,97 @@ def load_playbook(path: Path | None = None) -> Playbook:
         raw = path.read_bytes()
     except FileNotFoundError:
         raw = b""
-    lines = raw.split(b"\n")
-    if lines[-1] == b"":
-        lines.pop()
-    lessons: dict[str, Lesson] = {}
-    for number, line in enumerate(lines, start=1):
-        prefix = f"{path} line {number}"
-        _apply(prefix, lessons, _parse_line(prefix, line))
+    folded = _fold(path, raw)
     return Playbook(
         path=path,
-        lessons=tuple(lessons.values()),
-        line_count=len(lines),
+        lessons=tuple(folded.lessons.values()),
+        line_count=len(folded.lines),
+        voided=tuple(sorted(folded.voided)),
+        tail_bytes=len(folded.tail),
         byte_count=len(raw),
         sha256=hashlib.sha256(raw).hexdigest(),
     )
 
 
-def append_ops(ops: Sequence[Op], path: Path | None = None) -> None:
-    """Append ``ops`` as one write, after validating every one of them.
+def _utc_now_iso() -> str:
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
-    Nothing is written unless every op passes :func:`op_from_record`,
-    the fold's own validator. ``OSError`` is the caller's: see
-    :func:`contribute` for the one that turns it into a warning.
+
+def _ledger_line(entry: Op | Void) -> str:
+    return json.dumps(entry.to_record()) + "\n"
+
+
+def _append_after_fold(
+    path: Path, compose: Callable[[_Folded], list[Op | Void]], *, collect: bool
+) -> list[Op | Void]:
+    """Fold the ledger and append what ``compose`` makes of it, under ONE lock.
+
+    The read, the fold, the check and the write share one exclusive
+    ``flock`` on one file description, so no writer can land between
+    the state the new lines were checked against and the lines. An
+    unterminated tail is voided in the same write, because appendio's
+    pad makes it a whole line. Returns what was written, tail VOID
+    first.
+    """
+    with appending(path, lock=True) as handle:
+        handle.seek(0)
+        folded = _fold(path, handle.read(), collect=collect)
+        entries = compose(folded)
+        if entries and folded.tail:
+            tail_sha256 = hashlib.sha256(folded.tail).hexdigest()
+            line = len(folded.lines) + 1
+            entries.insert(0, Void(line, tail_sha256, _utc_now_iso(), INTERRUPTED_WRITE))
+        if entries:
+            append_terminated(handle, "".join(_ledger_line(e) for e in entries), repair="")
+    return entries
+
+
+def append_ops(ops: Sequence[Op], path: Path | None = None) -> None:
+    """Append ``ops`` as one write, after the fold has accepted every one.
+
+    Each op's record passes :func:`op_from_record` before the ledger is
+    opened, and the ops are then applied with :func:`_apply`, in order,
+    to the fold of the ledger as it stands under the lock. Nothing is
+    written unless every op is accepted, and a ledger the fold already
+    refuses is refused here too (``ks learn repair`` is the way back).
+    ``OSError`` is the caller's: see :func:`contribute`.
     """
     path = ledger_path() if path is None else path
-    lines: list[str] = []
-    for index, op in enumerate(ops):
-        record = op.to_record()
-        op_from_record(f"op {index}", record)
-        lines.append(json.dumps(record) + "\n")
-    if not lines:
+    checked = [op_from_record(f"op {index}", op.to_record()) for index, op in enumerate(ops)]
+    if not checked:
         return
+
+    def compose(folded: _Folded) -> list[Op | Void]:
+        for index, op in enumerate(checked):
+            _apply(f"op {index}", folded.lessons, op)
+        return list(ops)
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    append_records(path, "".join(lines), repair="", lock=True)
+    _append_after_fold(path, compose, collect=False)
+
+
+def repair_ledger(path: Path | None = None) -> tuple[Void, ...]:
+    """Void every line the fold refuses, as one append. Returns the VOIDs written.
+
+    Each VOID names its line by number and SHA-256 and carries the
+    fold's own refusal as its reason, so the ledger records what was
+    removed and why; the bytes stay where they were. A missing ledger
+    is left missing. A VOID line that names the wrong digest or a later
+    line is still refused here: no writer in this module makes one.
+    """
+    path = ledger_path() if path is None else path
+    if not path.exists():
+        return ()
+    at = _utc_now_iso()
+
+    def compose(folded: _Folded) -> list[Op | Void]:
+        return [
+            Void(number, hashlib.sha256(folded.lines[number - 1]).hexdigest(), at, reason)
+            for number, reason in folded.refused
+        ]
+
+    written = _append_after_fold(path, compose, collect=True)
+    return tuple(entry for entry in written if isinstance(entry, Void))
 
 
 def contribute(
