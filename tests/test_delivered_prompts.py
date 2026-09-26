@@ -299,8 +299,8 @@ _ROLES: dict[str, _Role] = {
     "integration-criteria": _Role(
         lambda _p: integration.render_integration_criteria("BASE_SHA"),
         frozenset({"INTEGRATION_CRITERIA_PROMPT"}),
-        "bc3f55c3a0998a43cb27b26f98a75577cd1ac6bb8c3cc9d61a7bb7d3e486209f",
-        1454,
+        "fc48b4d174d4c947a6843ccb37fedd3cdc1f4e51fb55c23db03d1653bfff486e",
+        2477,
     ),
     "integration-carried": _Role(
         lambda _p: integration.carried_story("IF-1", "TEXT", ["src/a.py"]).criterion,
@@ -317,8 +317,8 @@ _ROLES: dict[str, _Role] = {
     "integration-reviewer": _Role(
         _integration_reviewer,
         frozenset({"REVIEWER_PROMPT", "REPO_CHANGE_SOURCE_PROMPT"}),
-        "5423de48ad9df801637f0faaa1e603d7b4efa3e863da3eeaee6f2b2749e511a3",
-        8951,
+        "cc7c47df2fcc495a022465a0c5d7b9fa75d602360f3fd3e5dddb58aeb1eb8619",
+        9974,
     ),
     "pasted-change-source": _Role(
         lambda _p: git.pasted_change_source(_DIFF_TEXT)[0],
