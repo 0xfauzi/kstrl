@@ -457,3 +457,82 @@ def test_reflection_model_reads_a_multi_line_reply_whole(tmp_path: Path) -> None
     model = ReflectionModel(agent=agent, cwd=tmp_path, timeout=60.0, max_calls=1)
 
     assert model("revise this") == "```\nnew instructions\n```"
+
+
+class _TimedOutAgent(_ScriptedAgent):
+    """An Agent that streams part of a reply and then hits its deadline, as
+    kstrl.agents.claude_code.ClaudeCodeAgent does: the timeout line is
+    yielded last and final_message stays None."""
+
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+    ) -> Iterator[str]:
+        self.runs += 1
+        self.final_message = None
+        self.usage_records.append(UsageRecord(input_tokens=100, output_tokens=10))
+        yield "```"
+        yield "partial instructions"
+        yield f"{TIMEOUT_MESSAGE_PREFIX} after 60.0s"
+
+
+def test_reflection_model_refuses_a_timeout_after_partial_output(tmp_path: Path) -> None:
+    """A reply cut off by the deadline is refused even when the agent
+    streamed part of it first and reports no final message."""
+    model = ReflectionModel(agent=_TimedOutAgent(""), cwd=tmp_path, timeout=60.0, max_calls=1)
+
+    with pytest.raises(RuntimeError, match="timed out"):
+        model("revise this")
+
+
+class _CrashingAgent(_ScriptedAgent):
+    """An Agent whose run records its usage and then raises."""
+
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+    ) -> Iterator[str]:
+        self.runs += 1
+        self.usage_records.append(UsageRecord(input_tokens=100, output_tokens=10))
+        raise OSError("agent stream broke")
+
+
+def test_reflection_model_counts_a_call_whose_agent_raises(tmp_path: Path) -> None:
+    """A call that raises still spends: it counts against max_calls and its
+    usage is folded in, so a caller that retries cannot overrun the cap."""
+    agent = _CrashingAgent("")
+    model = ReflectionModel(agent=agent, cwd=tmp_path, timeout=60.0, max_calls=1)
+
+    with pytest.raises(OSError, match="agent stream broke"):
+        model("revise this")
+    assert model.calls == 1
+    assert model.usage.calls == 1
+    assert model.usage.input_tokens == 100
+    with pytest.raises(RuntimeError, match="reflection budget of 1 calls is spent"):
+        model("again")
+    assert agent.runs == 1
+
+
+def test_a_broken_fixture_raises_instead_of_scoring_the_candidate() -> None:
+    """Only the candidate's own fill is guarded. A fixture whose verification
+    list cannot be rendered is a kstrl defect, so it stops the evaluation
+    instead of scoring 0.0 against a candidate that did nothing wrong."""
+    fixture = [f for f in _fixtures("concerns_negative") if f.negative][0]
+    broken = RoleFixture(
+        fixture.fixture_id, {**fixture.meta, "verification": ["not a check"]}, fixture.diff
+    )
+    runner = CannedRunner({})
+    adapter = KstrlGepaAdapter("reviewer", runner)
+
+    with pytest.raises(AttributeError):
+        adapter.evaluate([broken], {"reviewer": REVIEWER_PROMPT}, capture_traces=True)
+    assert runner.prompts == []
+
+
+def test_split_refuses_a_fixture_of_another_role() -> None:
+    """A security fixture in a reviewer run would be graded by the reviewer's
+    matchers against a requirement written for another role."""
+    fixtures = _fixtures("concerns", "concerns_negative") + _by_id(
+        _fixtures("security"), "sec-01-sql-injection"
+    )
+
+    with pytest.raises(ValueError, match="sec-01-sql-injection is a 'security' fixture"):
+        split_fixtures("reviewer", fixtures)
