@@ -88,6 +88,7 @@ EMPTY_REPO_EXITS: tuple[tuple[tuple[str, ...], tuple[str, ...], int, str], ...] 
     (("autonomy", "replay"), (), 2, "too little history to replay anything"),
     (("autonomy", "status"), (), 0, "reports the starting level"),
     (("check",), (), 2, "git cannot produce a diff in a repo with no commits"),
+    (("ci", "poll"), (), 2, "no manifest: nothing has run here"),
     (("config", "show"), (), 0, "every value resolves to its default"),
     (("dash",), (), 2, "needs a terminal"),
     (("decompose",), (), 2, "usage: --spec is required"),
@@ -356,6 +357,7 @@ FINDING_EXIT_SITES: dict[tuple[str, str], int] = {
     ("calibration.py", "main"): 1,  # `python -m kstrl.calibration`: a detection drop
     ("cli.py", "_check_baseline_report"): 1,  # `--fail-on-regression`: a regression
     ("cli.py", "_check_report"): 2,  # `ks check`: a check failed
+    ("cli.py", "ci_poll"): 1,  # a merge commit's CI failed or could not be read
     ("cli.py", "config_show"): 2,  # a rejected section, reported
     ("cli.py", "decompose"): 1,  # the architect's output could not be used
     ("cli.py", "factory"): 1,  # the architect's output could not be used

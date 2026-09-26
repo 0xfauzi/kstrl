@@ -524,6 +524,7 @@ class TestTheRootIsTheOneTheCommandWillUse:
 #: honest rather than a count in a comment doing it.
 SEAM_COMMANDS: list[tuple[list[str], int]] = [
     (["autonomy", "status"], 2),
+    (["ci", "poll"], 2),
     (["dash"], 2),
     (DECOMPOSE_ARGS, 2),
     (["evolve"], 2),
