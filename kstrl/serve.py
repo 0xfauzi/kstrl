@@ -4347,6 +4347,11 @@ def calendar_schedule(interval_minutes: int) -> list[dict[str, int]]:
     return [{"Hour": h, "Minute": 0} for h in range(0, 24, step)]
 
 
+#: The two LaunchAgent shapes :func:`launchd_plist_dict` builds, and the
+#: ``ks serve --plist-mode`` choices (#565).
+LAUNCHD_MODES: tuple[str, ...] = ("keepalive", "interval")
+
+
 def launchd_plist_dict(
     root_dir: Path,
     *,
@@ -4380,7 +4385,7 @@ def launchd_plist_dict(
     bound is ``[serve] factory_timeout_seconds``, which is why interval
     mode refuses to generate without one (review #189 F2).
     """
-    if mode not in ("keepalive", "interval"):
+    if mode not in LAUNCHD_MODES:
         raise ServeError(f"launchd mode must be 'keepalive' or 'interval', got {mode!r}")
     if mode == "interval" and factory_timeout_seconds <= 0:
         raise ServeError(

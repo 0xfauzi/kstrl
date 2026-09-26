@@ -73,6 +73,8 @@ DEFAULT_BASELINE_PATH = Path("scripts/kstrl/baseline.json")
 
 FORMAT_HUMAN = "human"
 FORMAT_MARKDOWN = "markdown"
+#: The ``ks check --format`` choices (#565).
+OUTPUT_FORMATS: tuple[str, ...] = (FORMAT_HUMAN, FORMAT_MARKDOWN)
 
 #: What :attr:`Comparison.stopped_measuring` records when the current run has
 #: no reason for a check at all: the check produced neither a row nor a gap,

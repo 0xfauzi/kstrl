@@ -173,6 +173,22 @@ OPEN: dict[tuple[str, str], str] = {
     ("SignalsConfig", "token_env"): "an environment variable name",
 }
 
+#: Every CLI flag that sets a CLOSED field (#565): (command path, option)
+#: -> the CLOSED row it sets. ``tests/test_cli_flag_vocabularies.py``
+#: drives each one through the real CLI with every value the field accepts
+#: and values it refuses; ``tests/test_cli_vocabularies.py`` fails on a
+#: Choice option that is in neither this table nor its own ledger, and on
+#: an option named after a CLOSED field that is not in this table.
+FLAG_FIELDS: dict[tuple[tuple[str, ...], str], tuple[str, str]] = {
+    (("config", "show"), "--agent-type"): ("KstrlConfig", "agent_type"),
+    (("decompose",), "--agent-type"): ("KstrlConfig", "agent_type"),
+    (("factory",), "--agent-type"): ("KstrlConfig", "agent_type"),
+    (("factory",), "--review-mode"): ("FactoryConfig", "review_mode"),
+    (("factory",), "--security-mode"): ("SecurityConfig", "mode"),
+    (("factory",), "--security-fail-threshold"): ("SecurityConfig", "fail_threshold"),
+    (("factory",), "--contract-check"): ("ContractConfig", "mode"),
+}
+
 #: (class, field) -> the kstrl.toml key that must NOT be read for it.
 #: Closed values, but no loader reads the field, so there is nothing to
 #: refuse at load. The test proves the key is refused as unread (#525).
