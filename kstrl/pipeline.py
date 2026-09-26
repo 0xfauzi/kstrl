@@ -2618,9 +2618,9 @@ class ComponentPipeline:
                         self.manifest.base_branch,
                         self.root_dir,
                     )
+                    self._record_merge(comp, merge_state.merge_sha)
                     comp.status = ComponentStatus.COMPLETED.value
                     comp.error = ""
-                    comp.merge_sha = merge_state.merge_sha or comp.merge_sha
                     self.component_failure_signatures.pop(comp.id, None)
                     comp.completed_at = _iso_now()
                     self.factory_result.completed.append(comp.id)
@@ -2675,6 +2675,32 @@ class ComponentPipeline:
                         f"PR #{pr_number}; dependents stay blocked"
                     )
         self.manifest.save(self.manifest_path)
+
+    def _record_merge(self, comp: Component, merge_sha: str) -> None:
+        """Record a confirmed merge of ``comp``'s PR: the one place (#584).
+
+        Both paths that confirm a merge call this: ``_phase_pr`` when this
+        run merged the PR, and ``repoll_merge_pending`` when a restarted
+        run finds a parked PR merged. The manifest gets the merge commit
+        and is saved, then the run's stream gets ``pr_merged`` with the
+        PR number, URL and commit the manifest now holds, so every reader
+        of either record sees the same merge. ``merge_sha`` is "" when
+        GitHub published no commit, and then both records say "": a
+        commit an earlier merge of this component recorded is not this
+        merge's commit.
+        """
+        from kstrl.pr import pr_number_from_url
+
+        comp.merge_sha = merge_sha
+        self.manifest.save(self.manifest_path)
+        self.bus.emit(
+            ev.PrMerged(
+                component=comp.id,
+                pr_number=comp.pr_number or pr_number_from_url(comp.pr_url),
+                pr_url=comp.pr_url,
+                merge_sha=comp.merge_sha,
+            )
+        )
 
     def apply_merge_decisions(self) -> None:
         """#465: act on the decision each merge-gate park was waiting for.
@@ -4996,8 +5022,6 @@ class ComponentPipeline:
                     pr_url=outcome.pr_url,
                 )
             )
-        if outcome.merge_sha:
-            comp.merge_sha = outcome.merge_sha
         self.manifest.save(self.manifest_path)
 
         # R0.2 (CRIT-2): COMPLETED requires a CONFIRMED merge.
@@ -5022,14 +5046,7 @@ class ComponentPipeline:
                 pr_url=outcome.pr_url,
                 error=outcome.error or "PR flow failed",
             )
-        self.bus.emit(
-            ev.PrMerged(
-                component=comp.id,
-                pr_number=comp.pr_number or 0,
-                pr_url=outcome.pr_url,
-                merge_sha=outcome.merge_sha,
-            )
-        )
+        self._record_merge(comp, outcome.merge_sha)
         return PrPhaseResult(
             disposition=PrDisposition.MERGED,
             pr_url=outcome.pr_url,
