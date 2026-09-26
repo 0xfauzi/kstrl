@@ -204,18 +204,20 @@ class TestCiOnDelivery:
             assert len(lines) == 6 and row.region.height == 6, (lines, row.region)
             _assert_ci_lines(row, lines)
 
-    async def test_an_old_reading_says_how_old_it_is(self, tmp_path: Path) -> None:
-        """A passed read five minutes ago is shown as five minutes old, so a
-        stale green is visible."""
+    @pytest.mark.parametrize("screen", ["home", "overview"])
+    async def test_an_old_reading_says_how_old_it_is(self, tmp_path: Path, screen: str) -> None:
+        """A passed read five minutes ago is shown as five minutes old, on
+        home and on the run overview, so a stale green is visible."""
         _shipped(tmp_path, (SHA_PASSED,))
         taken = datetime.fromtimestamp(time.time() - 300, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         ensure_control_state(tmp_path)
         reading = CiReading(SHA_PASSED, CiState.PASSED, "7 checks passed", taken, 7)
         payload = json.dumps(reading.to_dict()) + "\n"
         append_records(control_file(tmp_path, CONTROL_CI_CHECKS), payload, repair="", lock=True)
-        app = _home(tmp_path)
+        app = _home(tmp_path) if screen == "home" else _dash(tmp_path, SHIP)
+        selector = "#home-delivery" if screen == "home" else "#delivery-row"
         async with app.run_test(size=(120, 36)) as pilot:
-            delivery = cast(Static, await mounted(pilot, lambda: app.screen, "#home-delivery"))
+            delivery = cast(Static, await mounted(pilot, lambda: app.screen, selector))
             await settled(
                 pilot, lambda: "merged PR #1" in str(delivery.content), what="the delivery line"
             )
