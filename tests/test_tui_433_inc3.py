@@ -200,6 +200,8 @@ class TestFailureQueue:
             )
             text = _text(detail)
             assert "ks retry comp-a --max-total-tokens 5000000" in text, text
+            # --max-total-tokens is an int option: click refuses "5000000.0".
+            assert "5000000" in text.split(), text
             assert "ran under 1 run limit(s)" in text, text
             assert "N: a value" not in text, text
 
