@@ -45,31 +45,34 @@ from kstrl.events import RunPaths
 from kstrl.factory import ComponentResult, FactoryConfig, run_factory
 from kstrl.manifest import Component, Manifest
 from kstrl.runstate import RunState
+from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 
 COMP = "comp-a"
 PRD_REL = f"scripts/kstrl/feature/{COMP}/prd.json"
 
-#: The six parameters the scheduler passes BY NAME rather than through
-#: the tuple. Named here so a seventh is a decision somebody writes down.
+#: The seven parameters the scheduler passes BY NAME rather than through
+#: the tuple. Named here so an eighth is a decision somebody writes down.
 #: ``attempt`` is #532's: the engineer's prompt records carry it.
+#: ``plan_id`` is #568's: the worker seeds its PRD from that plan's copy.
 BY_KEYWORD = {
     "attempt",
     "base_branch",
     "live_line",
+    "plan_id",
     "redirect_output",
     "stop_check",
     "verify_config",
 }
 
-#: What the POOL branch passes by name, which is three of the six. A pool
+#: What the POOL branch passes by name, which is four of the seven. A pool
 #: worker has no parent terminal to mirror transcript lines to and no
 #: in-process stop event to share, so those three take
 #: ``_run_component``'s own defaults there. Review round 2, nit 7: this
 #: file exercised the inline branch only, so "closed over the SIGNATURE"
 #: held for one of two call sites.
-POOL_KEYWORDS = {"attempt", "base_branch", "verify_config"}
+POOL_KEYWORDS = {"attempt", "base_branch", "plan_id", "verify_config"}
 
 
 class _CapturingPool:
@@ -125,7 +128,7 @@ def _project(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def _manifest() -> Manifest:
+def _manifest(plan_id: str = "") -> Manifest:
     return Manifest(
         version="1",
         spec_file="spec.md",
@@ -140,6 +143,7 @@ def _manifest() -> Manifest:
                 dependencies=[],
                 prd_path=PRD_REL,
                 branch_name="kstrl/comp-a",
+                plan_id=plan_id,
             )
         ],
     )
@@ -149,6 +153,7 @@ def _submitted(
     root: Path,
     max_parallel: int = 1,
     progress_log_enabled: bool = True,
+    plan_id: str = "",
 ) -> tuple[tuple[Any, ...], dict[str, Any]]:
     """The exact ``(args, kwargs)`` one real ``run_factory`` submits.
 
@@ -199,7 +204,7 @@ def _submitted(
         patch("kstrl.factory._setup_worktree", return_value=root),
         patch("kstrl.git.get_diff_content", return_value=""),
     ):
-        run_factory(_manifest(), factory_config, base, PlainUI(no_color=True), root)
+        run_factory(_manifest(plan_id), factory_config, base, PlainUI(no_color=True), root)
     submitted = seen or _CapturingPool.seen
     assert "args" in submitted, "the scheduler never submitted a component"
     return submitted["args"], submitted["kwargs"]
@@ -310,6 +315,23 @@ class TestTheWholeSubmitTupleIsBound:
         worker cannot work it out for itself."""
         _bound, kwargs = _positional(_project(tmp_path), max_parallel)
         assert kwargs["attempt"] == 1
+
+    @pytest.mark.parametrize("max_parallel", [1, 2], ids=["inline", "pool"])
+    def test_the_worker_is_told_which_plan_it_starts_from(
+        self, tmp_path: Path, max_parallel: int
+    ) -> None:
+        """#568: the worker seeds the engineer's PRD from the copy the
+        component's plan wrote. ``_run_component`` defaults ``plan_id`` to
+        "", which is the root copy at ``prdPath``, so a branch that stops
+        passing it would seed a planned component from the wrong file."""
+        root = _project(tmp_path)
+        planned = plan_prd_path(root, COMP, plan_id="plan-1")
+        planned.parent.mkdir(parents=True)
+        planned.write_text((root / PRD_REL).read_text(encoding="utf-8"), encoding="utf-8")
+
+        _args, kwargs = _submitted(root, max_parallel, plan_id="plan-1")
+
+        assert kwargs["plan_id"] == "plan-1"
 
     @pytest.mark.parametrize(
         "max_parallel, expected",
