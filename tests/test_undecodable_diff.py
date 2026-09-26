@@ -509,5 +509,7 @@ def test_the_loop_refuses_before_paying_for_an_iteration(tmp_path: Path) -> None
     result = loop.run_loop(config, PlainUI(no_color=True, file=out), agent, repo)
 
     assert agent.runs == 0
-    assert (result.completed, result.exit_code) == (False, 1)
+    assert (result.completed, result.exit_code) == (False, 2), (
+        "a refusal before iteration 1 exits 2 (#452, #531)"
+    )
     assert "not valid utf-8" in out.getvalue()

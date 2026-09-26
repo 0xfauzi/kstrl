@@ -5473,6 +5473,7 @@ class TestFactoryHandsTheArchitectSpendToTheRun:
         monkeypatch: pytest.MonkeyPatch,
         *,
         halt: bool = False,
+        graph: Manifest | None = None,
     ) -> dict[str, Any]:
         """Stand in for the two halves `ks factory` joins.
 
@@ -5513,7 +5514,7 @@ class TestFactoryHandsTheArchitectSpendToTheRun:
                         )
                     ]
                 )
-            return _make_manifest([_component("comp-a")])
+            return graph if graph is not None else _make_manifest([_component("comp-a")])
 
         def fake_run_factory(*args: Any, **kwargs: Any) -> Any:
             captured["architect_usage"] = kwargs.get("architect_usage")
@@ -5550,6 +5551,26 @@ class TestFactoryHandsTheArchitectSpendToTheRun:
         assert spent.calls == 1
         assert spent.cost_usd == pytest.approx(2.25)
         assert spent.total_tokens == 1000
+
+    def test_an_invalid_graph_from_the_architect_still_reaches_the_run(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """#531: the invalid-graph refusal belongs to `run_factory`, which
+        records the architect's spend before it refuses (#257). A refusal
+        in the CLI would exit before that record and lose the spend."""
+        cyclic = _make_manifest(
+            [_component("comp-a", deps=["comp-b"]), _component("comp-b", deps=["comp-a"])]
+        )
+        captured = self._install(monkeypatch, graph=cyclic)
+
+        result = _invoke_factory_cli(
+            ["factory", "--spec", "s.md", "--project-name", "p", "--agent-cmd", "true", "--yes"]
+        )
+
+        assert captured.get("called"), f"run_factory not reached, exit {result.exit_code}"
+        assert captured["architect_usage"].calls == 1
+        assert captured["architect_usage"].cost_usd == pytest.approx(2.25)
 
     def test_the_manifest_path_passes_no_architect_spend(
         self,
@@ -5641,7 +5662,7 @@ class TestNothingBetweenTheRunDirAndTheMeterCanLoseTheSpend:
         root = _setup_project(tmp_path, ["comp-a", "comp-b"])
         result = self._run(root, self._cyclic_manifest())
 
-        assert result.exit_code == 1, "the cyclic DAG must still fail the run"
+        assert result.exit_code == 2, "the cyclic DAG is still refused (#531)"
         events = _usage_events(root, ARCHITECT_ROLE)
         assert len(events) == 1, "the spend must reach the run directory"
         assert events[0]["data"]["cost_usd"] == pytest.approx(4.0)
