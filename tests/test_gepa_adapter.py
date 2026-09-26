@@ -13,6 +13,8 @@ import json
 import os
 import pickle
 import re
+import subprocess
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -27,6 +29,7 @@ from kstrl.gepa_adapter import (
     GEPA_REFLECTION_PROMPT,
     KstrlGepaAdapter,
     ReflectionModel,
+    RoleCallBudgetSpent,
     RoleFixture,
     run_optimization,
     split_fixtures,
@@ -34,6 +37,7 @@ from kstrl.gepa_adapter import (
 from kstrl.review import REVIEWER_PROMPT
 from kstrl.security import SECURITY_PROMPT
 from tests.helpers.calibration_repo_fixture import load_fixtures
+from tests.helpers.localeenv import ascii_child_env
 
 #: The line the scripted reflection model appends to the seed prompt. The
 #: scripted reviewer catches a planted defect only when its prompt holds it.
@@ -113,7 +117,12 @@ class ScriptedReflection:
         return f"```\n{self.seed}\n{MARKER}\n```"
 
 
-def _optimize(tmp_path: Path, reviewer: MarkerReviewer, reflection: ScriptedReflection) -> Path:
+def _optimize(
+    tmp_path: Path,
+    reviewer: MarkerReviewer,
+    reflection: ScriptedReflection,
+    max_metric_calls: int = 10,
+) -> Path:
     fixtures = _by_id(
         _fixtures("concerns", "concerns_negative"),
         "concern-01-dead-code",
@@ -126,7 +135,7 @@ def _optimize(tmp_path: Path, reviewer: MarkerReviewer, reflection: ScriptedRefl
         fixtures,
         runner=reviewer,
         reflection_lm=reflection,
-        max_metric_calls=10,
+        max_metric_calls=max_metric_calls,
         run_dir=tmp_path / "run",
     )
 
@@ -267,6 +276,7 @@ def test_evaluate_scores_with_the_calibration_matchers() -> None:
                 ),
             }
         ),
+        max_role_calls=3,
     )
     batch = reviewer.evaluate(reviewer_batch, {"reviewer": REVIEWER_PROMPT}, capture_traces=True)
     assert batch.scores == [0.0, 1.0, 0.0]
@@ -290,6 +300,7 @@ def test_evaluate_scores_with_the_calibration_matchers() -> None:
         CannedRunner(
             {"sec-01-sql-injection": _finding_reply("injection", "medium", "src/users.py:5")}
         ),
+        max_role_calls=1,
     )
     assert security.evaluate(security_batch, {"security": SECURITY_PROMPT}).scores == [0.0]
 
@@ -309,7 +320,7 @@ def test_unparseable_reply_scores_zero_on_a_negative(
     must not score as a clean pass, or a prompt that breaks the output
     format scores perfectly on every negative."""
     fixture = _by_id(_fixtures(subdir), fixture_id)
-    adapter = KstrlGepaAdapter(role, CannedRunner({fixture_id: "no JSON here"}))
+    adapter = KstrlGepaAdapter(role, CannedRunner({fixture_id: "no JSON here"}), max_role_calls=1)
     batch = adapter.evaluate(fixture, {role: seed}, capture_traces=True)
     assert batch.scores == [0.0]
     records = adapter.make_reflective_dataset({role: seed}, batch, [role])
@@ -336,11 +347,12 @@ def test_a_candidate_that_does_not_render_scores_zero_and_runs_nothing(
     subdir = "concerns_negative" if role == "reviewer" else "security_negative"
     fixture = [f for f in _fixtures(subdir) if f.negative][:1]
     runner = CannedRunner({})
-    adapter = KstrlGepaAdapter(role, runner)
+    adapter = KstrlGepaAdapter(role, runner, max_role_calls=1)
     candidate = {role: template}
     batch = adapter.evaluate(fixture, candidate, capture_traces=True)
     assert batch.scores == [0.0]
     assert runner.prompts == []
+    assert adapter.role_calls == 0, "a candidate that did not render spent a role call"
     records = adapter.make_reflective_dataset(candidate, batch, [role])
     assert records[role][0]["outcome"] == "prompt did not render"
     assert error in records[role][0]["reason"]
@@ -364,6 +376,8 @@ def test_optimize_end_to_end_with_scripted_models(tmp_path: Path) -> None:
         "validation": ["concern-03-scope-creep", "rev-neg-01-used-helper-refactor"],
     }
     assert report["total_metric_calls"] == 10
+    assert report["role_calls"] == 10
+    assert report["stopped_at_cap"] is False
     assert report["best_idx"] == 1
     seed, proposed = report["candidates"]
     assert seed["prompt"] == REVIEWER_PROMPT
@@ -520,7 +534,7 @@ def test_a_broken_fixture_raises_instead_of_scoring_the_candidate() -> None:
         fixture.fixture_id, {**fixture.meta, "verification": ["not a check"]}, fixture.diff
     )
     runner = CannedRunner({})
-    adapter = KstrlGepaAdapter("reviewer", runner)
+    adapter = KstrlGepaAdapter("reviewer", runner, max_role_calls=1)
 
     with pytest.raises(AttributeError):
         adapter.evaluate([broken], {"reviewer": REVIEWER_PROMPT}, capture_traces=True)
@@ -536,3 +550,171 @@ def test_split_refuses_a_fixture_of_another_role() -> None:
 
     with pytest.raises(ValueError, match="sec-01-sql-injection is a 'security' fixture"):
         split_fixtures("reviewer", fixtures)
+
+
+@pytest.mark.parametrize(
+    "cap,kept,best_idx",
+    [
+        # #549's measurement: cap 3 made 10 role calls. Stopped inside the
+        # first iteration's train minibatch, so only the seed is scored.
+        (3, 1, 0),
+        # Stopped inside the proposed candidate's validation pass. gepa adds
+        # a candidate only after that whole pass, so it is not reported.
+        (9, 1, 0),
+        # #546's second measurement: cap 11 made 13. Stopped in the second
+        # iteration, after the proposed candidate was scored on validation,
+        # so it is kept and is the best.
+        (11, 2, 1),
+    ],
+)
+def test_a_run_never_makes_more_role_calls_than_the_cap(
+    tmp_path: Path, cap: int, kept: int, best_idx: int
+) -> None:
+    """gepa checks max_metric_calls before each iteration, not before each
+    call. The adapter refuses the call past the cap, and the run still
+    writes its report, says it stopped, and keeps every scored candidate."""
+    reviewer = MarkerReviewer()
+    report_path = _optimize(tmp_path, reviewer, ScriptedReflection(REVIEWER_PROMPT), cap)
+
+    assert len(reviewer.prompts) == cap
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["max_metric_calls"] == cap
+    assert report["role_calls"] == cap
+    assert report["stopped_at_cap"] is True
+    assert len(report["candidates"]) == kept
+    assert report["best_idx"] == best_idx
+    assert report["candidates"][0]["prompt"] == REVIEWER_PROMPT
+    assert report["candidates"][0]["val_score"] == 0.5
+    if kept == 2:
+        assert report["candidates"][1]["prompt"].endswith(MARKER)
+        assert report["candidates"][1]["val_score"] == 1.0
+
+
+def test_a_cap_below_the_validation_set_is_refused_before_any_call(tmp_path: Path) -> None:
+    """The seed's validation pass is the least a run can keep. A cap below
+    it would spend and keep nothing, so it is refused before run_dir exists."""
+    reviewer = MarkerReviewer()
+    with pytest.raises(ValueError, match="cannot score the seed prompt on the 2 validation"):
+        _optimize(tmp_path, reviewer, ScriptedReflection(REVIEWER_PROMPT), 1)
+    assert reviewer.prompts == []
+    assert not (tmp_path / "run").exists()
+
+
+class _RaisingRunner(CannedRunner):
+    """A role runner whose every call raises after it is recorded."""
+
+    def __call__(self, prompt: str, fixture: RoleFixture) -> str:
+        self.prompts.append((fixture.fixture_id, prompt))
+        raise OSError("role stream broke")
+
+
+def test_a_role_call_that_raises_still_spends_the_budget() -> None:
+    """The call is counted before it runs, as ReflectionModel counts its own,
+    so a runner that raises cannot be retried past the cap."""
+    fixture = [f for f in _fixtures("concerns_negative") if f.negative][:1]
+    runner = _RaisingRunner({})
+    adapter = KstrlGepaAdapter("reviewer", runner, max_role_calls=1)
+
+    with pytest.raises(OSError, match="role stream broke"):
+        adapter.evaluate(fixture, {"reviewer": REVIEWER_PROMPT})
+    assert adapter.role_calls == 1
+    with pytest.raises(RoleCallBudgetSpent, match="role call budget of 1 calls is spent"):
+        adapter.evaluate(fixture, {"reviewer": REVIEWER_PROMPT})
+    assert len(runner.prompts) == 1
+
+
+class _CrashingReviewer(MarkerReviewer):
+    """A :class:`MarkerReviewer` whose fifth call raises. Calls 1 and 2 are
+    the seed's validation pass, so the fifth is inside gepa's first
+    iteration, after the state a stopped run reports from exists."""
+
+    def __call__(self, prompt: str, fixture: RoleFixture) -> str:
+        if len(self.prompts) == 4:
+            self.prompts.append((fixture.fixture_id, prompt))
+            raise OSError("role stream broke")
+        return super().__call__(prompt, fixture)
+
+
+def test_a_runner_crash_mid_run_propagates_and_writes_no_report(tmp_path: Path) -> None:
+    """Only the cap's own refusal is a stop that writes a report. A runner
+    that raises ends the run with its own exception, as it did before the
+    cap existed, and leaves no report that reads as a finished run."""
+    reviewer = _CrashingReviewer()
+    with pytest.raises(OSError, match="role stream broke"):
+        _optimize(tmp_path, reviewer, ScriptedReflection(REVIEWER_PROMPT))
+    assert len(reviewer.prompts) == 5
+    assert not (tmp_path / "run" / "report.json").exists()
+
+
+def test_gepa_logs_to_the_run_log_and_not_to_stdout(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """gepa's own Logger copies stdout and stderr into run_log.txt and
+    run_log_stderr.txt. kstrl's writes gepa's messages to run_log.txt only."""
+    _optimize(tmp_path, MarkerReviewer(), ScriptedReflection(REVIEWER_PROMPT))
+
+    captured = capsys.readouterr()
+    assert "Iteration" not in captured.out
+    run_dir = tmp_path / "run"
+    log = (run_dir / "run_log.txt").read_text(encoding="utf-8")
+    assert "Iteration 1: Proposed new text for reviewer" in log
+    assert not (run_dir / "run_log_stderr.txt").exists()
+
+
+#: The child for the locale test. It reports ASCII only, because printing
+#: the candidate under this locale would raise in the child itself.
+_LOCALE_DRIVER = """
+import sys
+from pathlib import Path
+sys.path.insert(0, {root!r})
+from kstrl import gepa_adapter
+from kstrl.review import REVIEWER_PROMPT
+from tests.test_gepa_adapter import MARKER, MarkerReviewer, _by_id, _fixtures
+assert Path(gepa_adapter.__file__).is_relative_to({root!r}), gepa_adapter.__file__
+assert sys.flags.utf8_mode == 0
+curly = chr(0x201C) + MARKER + chr(0x201D)
+fixtures = _by_id(
+    _fixtures("concerns", "concerns_negative"),
+    "concern-01-dead-code",
+    "concern-03-scope-creep",
+    "rev-neg-01-used-helper-refactor",
+)
+run_dir = Path({run_dir!r})
+gepa_adapter.run_optimization(
+    "reviewer",
+    REVIEWER_PROMPT,
+    fixtures,
+    runner=MarkerReviewer(),
+    reflection_lm=lambda prompt: "```\\n" + REVIEWER_PROMPT + "\\n" + curly + "\\n```",
+    max_metric_calls=10,
+    run_dir=run_dir,
+)
+assert curly in (run_dir / "run_log.txt").read_text(encoding="utf-8")
+print("OK")
+"""
+
+
+def test_the_run_log_takes_a_curly_quote_where_the_locale_default_is_ascii(
+    tmp_path: Path,
+) -> None:
+    """A proposed candidate is model-written and gepa logs it whole. Under a
+    non-utf-8 locale gepa's own Logger raised UnicodeEncodeError on one
+    curly quote and ended the run; kstrl's run log writes utf-8."""
+    env = ascii_child_env()
+    if env is None:
+        pytest.skip("this platform keeps a utf-8 default under LC_ALL=C PYTHONUTF8=0")
+    root = str(Path(__file__).resolve().parents[1])
+    driver = tmp_path / "drive.py"
+    driver.write_text(
+        _LOCALE_DRIVER.format(root=root, run_dir=str(tmp_path / "run")), encoding="utf-8"
+    )
+    result = subprocess.run(
+        [sys.executable, str(driver)],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=root,
+        timeout=300,
+    )
+    assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
+    assert result.stdout.strip() == "OK"

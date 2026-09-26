@@ -23,10 +23,18 @@ source (the #217 plan, section 3.2):
    creates the directory itself and refuses one that already exists, so
    the library never unpickles a file this call did not write.
 2. ``MaxReflectionCostStopper`` reads the model's ``total_cost``, which a
-   plain callable reports as 0.0, so that stopper never trips. The bounds
-   are ``max_metric_calls`` and :attr:`ReflectionModel.max_calls`.
+   plain callable reports as 0.0, so that stopper never trips. gepa checks
+   ``max_metric_calls`` before each iteration, not before each call, so it
+   is a threshold rather than a cap: with a cap of 3 a run made 10 role
+   calls (#549). The bounds are :attr:`KstrlGepaAdapter.max_role_calls`,
+   which refuses the call past ``max_metric_calls``, and
+   :attr:`ReflectionModel.max_calls`.
 3. A model NAME string would be sent through litellm, outside
    ``kstrl.agents`` and its usage accounting. Only a callable is passed.
+   gepa's default ``Logger`` writes ``run_log.txt`` in the locale's
+   encoding and copies stdout into it, so one curly quote in a candidate
+   raised ``UnicodeEncodeError`` under an ASCII locale. :class:`_RunLog`
+   is passed instead.
 4. The library's default reflection prompt would change with a gepa
    upgrade and no H3 record. :data:`GEPA_REFLECTION_PROMPT` is passed
    instead, enrolled in ``tests/test_prompt_versions.py``.
@@ -38,17 +46,20 @@ from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from gepa.api import optimize
-from gepa.core.adapter import EvaluationBatch, GEPAAdapter, ProposalFn
+from gepa.core.adapter import EvaluationBatch, ProposalFn
+from gepa.core.callbacks import GEPACallback, IterationStartEvent
 from gepa.core.result import GEPAResult
+from gepa.core.state import GEPAState
 from gepa.proposer.reflective_mutation.base import LanguageModel
 from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
 from kstrl import git
 from kstrl.agents.base import Agent, UsageTotals, collect_usage, usage_cursor
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
+from kstrl.appendio import append_records
 from kstrl.atomicio import atomic_write_json
 from kstrl.calibration_score import (
     render_verification,
@@ -277,12 +288,26 @@ def _trace(fixture: RoleFixture, match: _Match) -> FixtureTrace:
     )
 
 
+class RoleCallBudgetSpent(Exception):
+    """Raised in place of the role call that would pass the cap.
+
+    An ``Exception`` and not a ``RuntimeError``: it is not a defect and not
+    operator input, it is the stop :func:`run_optimization` catches.
+    """
+
+
 @dataclass
 class KstrlGepaAdapter:
     """gepa's adapter for one role prompt, graded on calibration fixtures."""
 
     role: str
     runner: RoleRunner
+    #: The most calls this adapter makes to :attr:`runner`. The call past
+    #: it raises :class:`RoleCallBudgetSpent` instead of running.
+    max_role_calls: int
+    #: Calls made to :attr:`runner`, counted before each call, so a call
+    #: that raises still counts.
+    role_calls: int = field(default=0, init=False)
     #: Part of gepa's adapter protocol. None tells gepa to propose with its
     #: own reflective proposer, which is the one that sends
     #: :data:`GEPA_REFLECTION_PROMPT`; an adapter that set this would
@@ -328,6 +353,11 @@ class KstrlGepaAdapter:
                 reason,
             )
             return "", unrendered
+        if self.role_calls >= self.max_role_calls:
+            raise RoleCallBudgetSpent(
+                f"the role call budget of {self.max_role_calls} calls is spent"
+            )
+        self.role_calls += 1
         reply = self.runner(prompt, fixture)
         if self.role == "security":
             match = _match_security(reply, fixture)
@@ -430,6 +460,35 @@ def _instructions(reply: str) -> str:
     return InstructionProposalSignature.output_extractor(reply.strip())["new_instruction"].strip()
 
 
+class _RunLog:
+    """gepa's logger: each message appended to ``run_log.txt`` in utf-8.
+
+    Nothing is copied to stdout, which is also a locale-encoded stream.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def log(self, message: str) -> None:
+        append_records(self.path, f"{message}\n", repair="")
+
+
+class _StateKeeper:
+    """A gepa callback that holds the search state gepa is updating.
+
+    A run stopped by :class:`RoleCallBudgetSpent` never returns from
+    ``gepa.optimize``, so this is where its report reads the candidates it
+    scored. gepa adds a candidate to the state only after its whole
+    validation pass, so a candidate cut off mid-pass is not in it.
+    """
+
+    def __init__(self) -> None:
+        self.state: GEPAState[str, int] | None = None
+
+    def on_iteration_start(self, event: IterationStartEvent) -> None:
+        self.state = event["state"]
+
+
 def run_optimization(
     role: str,
     seed_prompt: str,
@@ -444,8 +503,17 @@ def run_optimization(
 
     ``run_dir`` must not exist. It is created here, so gepa never resumes
     from (and never unpickles) a directory this call did not create.
+
+    The run makes at most ``max_metric_calls`` role calls. One stopped at
+    that cap still writes the report, with ``stopped_at_cap`` true and
+    every candidate that finished its validation pass.
     """
     train, validation = split_fixtures(role, fixtures)
+    if max_metric_calls < len(validation):
+        raise ValueError(
+            f"max_metric_calls={max_metric_calls} cannot score the seed prompt on the "
+            f"{len(validation)} validation fixtures, so the run would spend and keep nothing"
+        )
     try:
         run_dir.mkdir(parents=True)
     except FileExistsError as exc:
@@ -453,21 +521,37 @@ def run_optimization(
             f"{run_dir} already exists. gepa resumes from an existing run directory by "
             "unpickling its gepa_state.bin, so a run needs a directory that does not exist."
         ) from exc
-    adapter: GEPAAdapter[RoleFixture, FixtureTrace, str] = KstrlGepaAdapter(role, runner)
-    result: GEPAResult[str, int] = optimize(
-        seed_candidate={role: seed_prompt},
-        trainset=train,
-        valset=validation,
-        adapter=adapter,
-        reflection_lm=reflection_lm,
-        reflection_prompt_template=reflection_template(),
-        acceptance_criterion="strict_improvement",
-        frontier_type="objective",
-        max_metric_calls=max_metric_calls,
-        run_dir=str(run_dir),
-        seed=0,
-        raise_on_exception=True,
-    )
+    adapter = KstrlGepaAdapter(role, runner, max_role_calls=max_metric_calls)
+    keeper = _StateKeeper()
+    stopped_at_cap = False
+    try:
+        result: GEPAResult[str, int] = optimize(
+            seed_candidate={role: seed_prompt},
+            trainset=train,
+            valset=validation,
+            adapter=adapter,
+            reflection_lm=reflection_lm,
+            reflection_prompt_template=reflection_template(),
+            acceptance_criterion="strict_improvement",
+            frontier_type="objective",
+            max_metric_calls=max_metric_calls,
+            logger=_RunLog(run_dir / "run_log.txt"),
+            run_dir=str(run_dir),
+            # gepa calls a callback's methods through getattr and documents each
+            # one as optional, but its Protocol declares all of them.
+            callbacks=[cast(GEPACallback, keeper)],
+            seed=0,
+            raise_on_exception=True,
+        )
+    except RoleCallBudgetSpent:
+        # Unreachable while the check above holds: the seed's validation
+        # pass fits the cap, and gepa starts an iteration, which sets the
+        # state, before any later call. Re-raised rather than reported as
+        # an empty run if gepa ever changes that order.
+        if keeper.state is None:
+            raise
+        result = GEPAResult.from_state(keeper.state, run_dir=str(run_dir), seed=0)
+        stopped_at_cap = True
     objectives = result.val_aggregate_subscores or [{} for _ in result.candidates]
     report = {
         "role": role,
@@ -475,6 +559,8 @@ def run_optimization(
         "reflection_prompt_version": GEPA_REFLECTION_PROMPT_VERSION,
         "max_metric_calls": max_metric_calls,
         "total_metric_calls": result.total_metric_calls,
+        "role_calls": adapter.role_calls,
+        "stopped_at_cap": stopped_at_cap,
         "splits": {
             "train": [f.fixture_id for f in train],
             "validation": [f.fixture_id for f in validation],
