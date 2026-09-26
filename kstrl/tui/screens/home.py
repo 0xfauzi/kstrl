@@ -277,11 +277,7 @@ class HomeScreen(Screen[None]):
         root_dir = self._root_dir()
         refs = discover_runs(root_dir)[:HOME_RUN_LIMIT]
         self._refs = {ref.run_id: ref for ref in refs}
-        self.query_one(RunTable).update_runs(refs, self._summaries, self._history_notes())
-        title = Text("history", style=f"bold {theme.MUTED}")
-        if not refs:
-            title.append("  none yet - run a command below", style=theme.MUTED)
-        self.query_one("#home-runs-title", Static).update(title)
+        self._update_runs()
         if not self._summarizing:
             # Folding every listed run is file IO + reducer work: off
             # the UI thread, with "·" cells until the message lands.
@@ -290,6 +286,17 @@ class HomeScreen(Screen[None]):
                 lambda: self._compute_summaries(list(refs)),
                 thread=True,
             )
+
+    def _update_runs(self) -> None:
+        """The history rows, and a title that says where a cut note is whole."""
+        table = self.query_one(RunTable)
+        table.update_runs(list(self._refs.values()), self._summaries, self._history_notes())
+        title = Text("history", style=f"bold {theme.MUTED}")
+        if not self._refs:
+            title.append("  none yet - run a command below", style=theme.MUTED)
+        elif table.notes_cut:
+            title.append("  a cut note is whole below when its row is selected", style=theme.MUTED)
+        self.query_one("#home-runs-title", Static).update(title)
 
     def _compute_summaries(self, refs: list[RunRef]) -> None:
         # Every file and process read home makes happens here, on the
@@ -308,11 +315,7 @@ class HomeScreen(Screen[None]):
         self._summaries = message.summaries
         self._queue = message.stats.queue
         if self.ready:
-            self.query_one(RunTable).update_runs(
-                list(self._refs.values()),
-                self._summaries,
-                self._history_notes(),
-            )
+            self._update_runs()
             self._stats = message.stats
             self.query_one("#home-stats", Static).update(
                 _stats_line(message.stats, self.size.width),
@@ -423,9 +426,7 @@ class HomeScreen(Screen[None]):
         self.set_class(self.size.height < 30, "tiny")
         keys = self.query_one("#home-keys", Static)
         keys.update(command_strip(HOME_COMMANDS, self.size.width) if narrow else "")
-        self.query_one(RunTable).update_runs(
-            list(self._refs.values()), self._summaries, self._history_notes()
-        )
+        self._update_runs()
         if self._stats is not None:
             self.query_one("#home-stats", Static).update(_stats_line(self._stats, self.size.width))
         self._render_queue()

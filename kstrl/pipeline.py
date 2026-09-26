@@ -138,6 +138,16 @@ if TYPE_CHECKING:
 # review summary string. Bounded so a huge diff cannot flood the modal.
 CHECKPOINT_DIFF_CHAR_LIMIT = 20_000
 
+#: The merge-gate park's inbox item text, which the TUI inbox shows as it
+#: is: plain words, no config key and no markup (#433 H7).
+PARK_DETAIL = (
+    "Merge approval is required and no prompt was available to ask for it, so "
+    "nothing was pushed and no PR was opened. The branch holds the reviewed "
+    "work. ks inbox approve <id> pushes it, opens the PR, merges it and "
+    "continues the run; ks inbox reject <id> --comment ... fails the "
+    "component and skips its dependents."
+)
+
 
 def _iso_now() -> str:
     """Current UTC time as ISO 8601, matching the manifest timestamps."""
@@ -4937,14 +4947,7 @@ class ComponentPipeline:
             self._inbox_add(
                 ItemKind.MERGE_GATE,
                 f"{comp.id} awaiting merge approval",
-                detail=(
-                    "pause_before_pr_merge is on but no interactive UI was "
-                    "available, so nothing was pushed and no PR was opened. "
-                    "The branch holds the reviewed work. `ks inbox approve "
-                    "<id>` pushes it, opens the PR, merges it and continues "
-                    "the run; `ks inbox reject <id> --comment ...` fails the "
-                    "component and skips its dependents."
-                ),
+                detail=PARK_DETAIL,
                 component=comp.id,
                 dedupe_key=park_dedupe_key(comp.id),
                 evidence=evidence,
