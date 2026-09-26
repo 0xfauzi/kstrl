@@ -4723,34 +4723,15 @@ def _echo_learning_readiness(
 
     ``patterns`` is passed in rather than re-read. The caller has
     already computed it from the same journal, and a second read is a
-    second answer to one question.
+    second answer to one question. The lines themselves are built by
+    ``kstrl.evolve_report`` so the TUI's evolve screen shows the same
+    text (#433 F12).
     """
-    from kstrl.distill_readiness import distill_parse_failure_line
+    from kstrl.evolve_report import readiness_lines
 
-    util = journal.get_fact_utilization(lookback_runs=evo_config.lookback_runs)
-    concern = journal.get_concern_hit_rate(lookback_runs=evo_config.lookback_runs)
-    superseded_only = sum(1 for pattern in patterns if pattern.superseded_only)
     ui_impl.section("Learning readiness")
-    ui_impl.info(
-        f"  recurring signatures (>= {evo_config.min_pattern_frequency} runs): "
-        f"{len(patterns)}, of which {superseded_only} only on superseded attempts"
-    )
-    ui_impl.info(
-        f"  fact utilization: measured {util['measured']}, unmeasured "
-        f"{util['unmeasured']}, referenced {util['referenced']}, "
-        f"runs_with_referenced {util['runs_with_referenced']}"
-    )
-    by_category = ", ".join(
-        f"{name} {count}" for name, count in sorted(concern["by_category"].items())
-    )
-    ui_impl.info(
-        f"  concern hit rate: {concern['with_concern']} of "
-        f"{concern['components']} components"
-        + (f", by category: {by_category}" if by_category else "")
-    )
-    # #495: the one reader of DistillResult.parse_failed. From the event
-    # stream, not the journal; the module docstring says why.
-    ui_impl.info(distill_parse_failure_line(root_dir, evo_config.lookback_runs))
+    for line in readiness_lines(journal, evo_config, patterns, root_dir):
+        ui_impl.info(line)
 
 
 @cli.group(name="autonomy")

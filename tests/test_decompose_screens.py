@@ -382,8 +382,10 @@ class TestDecomposeScreen:
             )
             app.screen._refresh(app.store.state)
             table = app.screen.query_one(DataTable)
-            summary_cell = table.get_cell_at(Coordinate(0, 2))
-            location_cell = table.get_cell_at(Coordinate(0, 3))
+            # #433 F11: location before summary, so the summary is the
+            # column that takes what is left of the width.
+            location_cell = table.get_cell_at(Coordinate(0, 2))
+            summary_cell = table.get_cell_at(Coordinate(0, 3))
             assert isinstance(summary_cell, Text)
             assert summary_cell.plain == "[/bold]"
             assert isinstance(location_cell, Text)

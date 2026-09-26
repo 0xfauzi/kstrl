@@ -211,7 +211,8 @@ class TestRenderHelpers:
     def test_header_contains_project_and_state(self, tmp_path: Path) -> None:
         text = render_header(self._state(tmp_path)).plain
         assert "fake-project" in text
-        assert "finished" in text
+        # #433 F4: a finished run says one of the two terminal words.
+        assert "✓ completed" in text
 
     def test_cost_meter_lower_bound_marker(self, tmp_path: Path) -> None:
         state = self._state(tmp_path)
@@ -297,8 +298,8 @@ class TestCostMeterPerAxisLowerBound:
         ).plain
         assert "1.0k tok" in plain
         assert "1.0k+" not in plain
-        assert "% of token cap" in plain
-        assert "%+ of token cap" not in plain
+        assert "% of 100.0k token cap" in plain
+        assert "%+ of 100.0k token cap" not in plain
 
     def test_the_cap_percentage_is_marked_too(self) -> None:
         """The percentage is what an operator reads as headroom; leaving
@@ -306,7 +307,7 @@ class TestCostMeterPerAxisLowerBound:
         plain = render_cost_meter(
             self._state(token_calls=2, cost_calls=1, gap=True),
         ).plain
-        assert "50%+ of cost cap" in plain
+        assert "50%+ of $10.00 cost cap" in plain
 
     def test_the_marker_needs_no_budget_coverage_event(self) -> None:
         """The usage events alone carry the fact; the run-scoped event is
@@ -337,5 +338,9 @@ class TestCostMeterPerAxisLowerBound:
         plain = render_cost_meter(
             self._state(token_calls=2, cost_calls=1, gap=True),
         ).plain
-        # Exactly one dollar figure on the line: the reported total.
-        assert plain.count("$") == 1
+        # Two dollar figures and no third: the reported total and the
+        # configured cap it is measured against (#433 F6). A price for
+        # the uncovered calls would be a third.
+        import re
+
+        assert re.findall(r"\$[0-9.]+\+?", plain) == ["$5.00+", "$10.00"]

@@ -20,7 +20,7 @@ from kstrl.tui.widgets.findings_table import FindingsTable
 from kstrl.tui.widgets.header import RunHeader
 from kstrl.tui.widgets.phase_timeline import render_timeline
 from kstrl.tui.widgets.transcript import TranscriptTail
-from tests.helpers.fake_run import FakeRunSpec, write_fake_run
+from tests.helpers.fake_run import FakeRunSpec, stream_fake_run, write_fake_run
 from tests.helpers.settle import mounted, settled
 
 
@@ -149,13 +149,25 @@ class TestComponentScreen:
         value. That is weaker than the assertions, which read the
         widget's own flag: a toggle that reports a new value without
         storing it settles the wait and fails the assertion."""
-        run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
+        # Follow is offered only while the component is moving in an
+        # unfinished run (#433 F8), so this run stops mid-engineer.
+        run_id = "factory-20260720-160000.000000-live"
+        stepper = stream_fake_run(tmp_path, FakeRunSpec(components=1), run_id=run_id)
+        for _ in range(3):  # started, plan, component + engineer phase started
+            next(stepper)
+        run_dir = tmp_path / ".kstrl" / "runs" / run_id
         app = _app(tmp_path, run_dir)
         async with app.run_test(size=(120, 40)) as pilot:
+            await settled(
+                pilot,
+                lambda: "comp-a" in app.store.state.components,
+                what="the first poll to fold the running component",
+            )
             app.open_component("comp-a")
             tail = await mounted(pilot, lambda: app.screen, TranscriptTail)
             screen = app.screen
             assert isinstance(screen, ComponentScreen)
+            await settled(pilot, lambda: screen._live, what="the screen to see a moving component")
             assert tail.follow is True
             await pilot.press("f")
             await settled(

@@ -5,6 +5,9 @@ paths. `r` renders preview_retry (non-mutating) in the confirm modal;
 on confirm, prepare_retry does the real mutation (reset + worktree/
 branch cleanup + save, narrated into the new session's log) and the
 factory relaunches through the D6 session seam.
+
+#433 E2: with nothing to retry the screen says so once, in one sentence,
+shows no empty table, and does not offer ``r``.
 """
 
 from __future__ import annotations
@@ -75,6 +78,12 @@ def _carry_problem(plan: ResumePlan | None, problems: list[str]) -> str | None:
     return None
 
 
+def _nothing_to_retry(manifest: Manifest | None, manifest_file: Path) -> str:
+    if manifest is None:
+        return f"Nothing to retry: there is no readable manifest at {manifest_file}."
+    return f"Nothing to retry: no component in {manifest_file.name} is in the failed state."
+
+
 class RetryScreen(Screen[None]):
     BINDINGS = [
         Binding("escape", "app.pop_screen", "Back"),
@@ -122,26 +131,21 @@ class RetryScreen(Screen[None]):
         right = Text()
         if self._failed:
             right.append(f"✗ {len(self._failed)} failed", style=theme.ERROR)
-        else:
-            right.append("nothing failed", style=theme.MUTED)
         self.query_one(ContextBar).set_right(right)
-        detail = self.query_one("#retry-detail", Static)
-        if manifest is None:
-            detail.update(
-                Text(
-                    f"no manifest at {manifest_file} - nothing to retry",
-                    style=theme.MUTED,
-                )
-            )
-        elif not self._failed:
-            detail.update(
-                Text(
-                    "no failed components - nothing to retry",
-                    style=theme.MUTED,
-                )
-            )
-        elif self._failed:
+        table.display = bool(self._failed)
+        self.query_one("#retry-title", Static).display = bool(self._failed)
+        self.refresh_bindings()
+        if self._failed:
             self._show_detail(0)
+        else:
+            self.query_one("#retry-detail", Static).update(
+                Text(_nothing_to_retry(manifest, manifest_file), style=theme.MUTED)
+            )
+
+    def check_action(self, action: str, _parameters: tuple[object, ...]) -> bool | None:
+        if action == "retry_selected":
+            return bool(getattr(self, "_failed", []))
+        return True
 
     def _show_detail(self, index: int) -> None:
         if not (0 <= index < len(self._failed)):

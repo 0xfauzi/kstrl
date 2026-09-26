@@ -11,8 +11,10 @@ carry the "+".
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from kstrl.reducer import RunState, fold, read_run_dir
+from kstrl.tui.run_status import state_word
 from kstrl.tui.runs import RunRef
 
 
@@ -26,11 +28,18 @@ class RunSummary:
     total_tokens: int
     tokens_lower_bound: bool
     cost_usd: float
+    #: running | completed | failed | unknown (tui.run_status, #433 F4).
+    state: str = ""
 
 
 @dataclass(frozen=True)
 class HomeStats:
     last: RunSummary | None
+    #: Open inbox items, or None when the inbox could not be read (#433 E3).
+    inbox_open: int | None = None
+    #: Manifest components in the failed state, the ones retry can act on;
+    #: None when there is no readable manifest.
+    failed_components: int | None = None
 
 
 def fold_run(ref: RunRef) -> RunState:
@@ -63,6 +72,7 @@ def summarize_state(ref: RunRef, state: RunState) -> RunSummary:
         # still leaves total_tokens short.
         tokens_lower_bound=state.tokens_are_lower_bound,
         cost_usd=state.cost_usd,
+        state=state_word(outcome),
     )
 
 
@@ -143,5 +153,46 @@ def _run_stream_signature(
 def gather_stats(
     summaries: dict[str, RunSummary],
     newest_run_id: str,
+    root_dir: Path | None = None,
 ) -> HomeStats:
-    return HomeStats(last=summaries.get(newest_run_id))
+    if root_dir is None:
+        return HomeStats(last=summaries.get(newest_run_id))
+    return HomeStats(
+        last=summaries.get(newest_run_id),
+        inbox_open=open_inbox_count(root_dir),
+        failed_components=failed_component_count(root_dir),
+    )
+
+
+def open_inbox_count(root_dir: Path) -> int | None:
+    """Open inbox items, read the way ``ks inbox`` reads them.
+
+    None when the inbox cannot be counted: a config that does not load,
+    a control directory that cannot be read. None renders as nothing; a
+    count of 0 renders as "nothing is waiting on you", which is a claim
+    this function only makes when it read the log.
+    """
+    from kstrl.inbox import Inbox, InboxConfig
+
+    try:
+        config = InboxConfig.load(root_dir)
+        if not config.enabled:
+            return None
+        scan = Inbox(root_dir, config).scan()
+    except Exception:  # noqa: BLE001 - home must render whatever the inbox holds
+        return None
+    return None if scan.unreadable else scan.open_count()
+
+
+def failed_component_count(root_dir: Path) -> int | None:
+    """Failed components in the manifest the retry screen reads."""
+    from kstrl.manifest import Manifest
+
+    manifest_file = root_dir / "scripts" / "kstrl" / "manifest.json"
+    if not manifest_file.exists():
+        return None
+    try:
+        manifest = Manifest.load(manifest_file)
+    except (OSError, ValueError):
+        return None
+    return sum(1 for comp in manifest.components if comp.status == "failed")

@@ -17,15 +17,17 @@ graceful-shutdown flow.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from enum import StrEnum
+from functools import partial
 from pathlib import Path
 
-from textual.app import App
+from textual.app import App, SystemCommand
 from textual.binding import Binding
 from textual.screen import Screen
 from textual.widgets import DataTable
 
+from kstrl.events import Event
 from kstrl.interaction import (
     PromptKind,
     PromptRequest,
@@ -54,6 +56,21 @@ SAFE_MODE_INTERVAL_SECONDS = 5.0
 
 # Bottom-first initial screen stack; None = the default overview.
 ScreenStackFactory = Callable[[], list[Screen[None]]]
+
+
+def _feed_every_screen(screen_stack: list[Screen[object]], batch: list[Event]) -> None:
+    """Narrate a batch into every stacked screen that keeps a feed.
+
+    Not only the top one: a decompose run opens its architect screen over
+    the board, and the board's activity feed stayed empty for the whole
+    time it sat underneath, so escape landed on a run with no history
+    (#433). A feed is an append, so feeding a covered screen costs one
+    write per line and no layout until it is shown again.
+    """
+    for screen in screen_stack:
+        feed = getattr(screen, "feed_events", None)
+        if feed is not None:
+            feed(batch)
 
 
 class Mode(StrEnum):
@@ -254,6 +271,17 @@ class KstrlTuiApp(App[int]):
     def action_safe_mode(self) -> None:
         self.push_screen(SafeModePanel(self._safe_mode_reasons))
 
+    def get_system_commands(self, screen: Screen[object]) -> Iterable[SystemCommand]:
+        """Textual's own commands, plus the screen's (#433: the home
+        launcher is reachable from ^p when a narrow terminal hides it)."""
+        yield from super().get_system_commands(screen)
+        listed = getattr(screen, "palette_commands", None)
+        run = getattr(screen, "run_command", None)
+        if not callable(listed) or not callable(run):
+            return
+        for title, help_text, command_id in listed():
+            yield SystemCommand(title, help_text, partial(run, command_id))
+
     # -- data flow -----------------------------------------------------------
 
     def _poll(self) -> None:
@@ -294,9 +322,8 @@ class KstrlTuiApp(App[int]):
                     )
             else:
                 screen.post_message(StateChanged(run.store.state))
-            feed = getattr(screen, "feed_events", None)
-            if feed is not None and not chunk.truncated:
-                feed(chunk.events)
+            if not chunk.truncated:
+                _feed_every_screen(screen_stack, chunk.events)
         if component_id and ready:
             feed_transcript = getattr(screen, "feed_transcript", None)
             if feed_transcript is not None:
