@@ -4,7 +4,7 @@ One row per discovered run, newest first. Stable polls update cells in
 place; structural changes rebuild the row order while retaining the
 selected run. Ref-only columns (kind, liveness, age) render immediately;
 the folded summary columns (state, comps, tok, cost) render the honest dim
-dot until the D2 worker posts SummariesReady, and keep R3.1's "+"
+dot until the D2 worker posts SummariesReady, and keep R3.1's "≥"
 lower-bound marker whenever the run had unreported calls.
 
 #433: the state column says a word (tui.run_status) instead of leaving a
@@ -22,8 +22,9 @@ from rich.text import Text
 from textual.widgets import DataTable
 
 from kstrl.tui import theme
+from kstrl.tui.home_view import fit_rows
 from kstrl.tui.run_status import RUN_STATE_STYLE, RUNNING
-from kstrl.tui.widgets.cost_meter import format_tokens
+from kstrl.tui.widgets.cost_meter import at_least, format_tokens
 
 if TYPE_CHECKING:
     from kstrl.tui.home_data import RunSummary
@@ -77,13 +78,19 @@ def _summary_cells(summary: RunSummary | None) -> tuple[Text, Text, Text]:
         # A word with the count: "0/2 1✗" was a glyph an operator had to
         # decode (#433 round 1).
         comps.append(f", {summary.components_failed} failed", style=theme.ERROR)
-    marker = "+" if summary.tokens_lower_bound else ""
     tok = (
-        Text(f"{format_tokens(summary.total_tokens)}{marker}", justify="right")
+        Text(
+            at_least(format_tokens(summary.total_tokens), summary.tokens_lower_bound),
+            justify="right",
+        )
         if summary.total_tokens
         else _dot()
     )
-    cost = Text(f"${summary.cost_usd:.2f}{marker}", justify="right") if summary.cost_usd else _dot()
+    cost = (
+        Text(at_least(f"${summary.cost_usd:.2f}", summary.cost_lower_bound), justify="right")
+        if summary.cost_usd
+        else _dot()
+    )
     return comps, tok, cost
 
 
@@ -92,7 +99,7 @@ def _row_values(
     summary: RunSummary | None,
     now: float,
     note: str = "",
-) -> dict[str, Text | str]:
+) -> dict[str, Text]:
     glyph, word = _state_cells(ref, summary)
     comps, tok, cost = _summary_cells(summary)
     return {
@@ -144,13 +151,21 @@ class RunTable(DataTable[Text | str]):
         order_changed = current != desired
         if order_changed:
             self.clear()
+        rows = []
         for ref in refs:
             cells = _row_values(ref, summaries.get(ref.run_id), now, notes.get(ref.run_id, ""))
-            self._put_row(ref.run_id, [cells[_key(column)] for column in columns], columns)
+            rows.append([cells[_key(column)] for column in columns])
+        # The note is the last column: shortened with an ellipsis to the
+        # table's width, never cut at the edge; the preview line under the
+        # table carries the whole reason (#433 G9).
+        width = self.size.width or self.app.size.width
+        fitted = fit_rows(rows, width, columns.index("note"), headers=columns)
+        for ref, values in zip(refs, fitted, strict=True):
+            self._put_row(ref.run_id, values, columns)
         if order_changed and selected_before in desired:
             self.move_cursor(row=desired.index(selected_before))
 
-    def _put_row(self, run_id: str, values: list[Text | str], columns: tuple[str, ...]) -> None:
+    def _put_row(self, run_id: str, values: list[Text], columns: tuple[str, ...]) -> None:
         """Update the row in place (every cell widening its column), or add it."""
         if run_id not in self.rows:
             self.add_row(*values, key=run_id)

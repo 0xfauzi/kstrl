@@ -40,6 +40,19 @@ _MOVING = ("running", "verifying")
 _excerpts: dict[str, tuple[tuple[int, int], list[str]]] = {}
 
 
+def read_tail(path: str, max_bytes: int) -> tuple[str, int]:
+    """The last ``max_bytes`` of a gate log, decoded, and the file's size.
+
+    The one reader of a stored gate log (#462): the excerpt here and the
+    whole-output screen (``screens.gate_log``) both read through it.
+    Raises ``OSError``; undecodable bytes are replaced, never raised.
+    """
+    size = os.stat(path).st_size
+    with open(path, "rb") as handle:
+        handle.seek(max(0, size - max_bytes))
+        return handle.read().decode("utf-8", errors="replace"), size
+
+
 def gate_log_excerpt(path: str, lines: int = EXCERPT_LINES) -> list[str] | None:
     """The last ``lines`` non-blank lines of a gate log; None if unreadable."""
     try:
@@ -48,9 +61,7 @@ def gate_log_excerpt(path: str, lines: int = EXCERPT_LINES) -> list[str] | None:
         cached = _excerpts.get(path)
         if cached is not None and cached[0] == key:
             return cached[1]
-        with open(path, "rb") as handle:
-            handle.seek(max(0, stat.st_size - _EXCERPT_BYTES))
-            tail = handle.read().decode("utf-8", errors="replace")
+        tail, _ = read_tail(path, _EXCERPT_BYTES)
     except OSError:
         return None
     kept = [line.rstrip() for line in tail.splitlines() if line.strip()][-lines:]
@@ -69,7 +80,7 @@ def _moving_detail(comp: ComponentState, now: float, health: AgentHealth | None)
     if health is not None:
         # Q6 (#433 M2): the agent's own output and its process, apart
         # from the event age above.
-        parts.append(health.text())
+        parts.append(health.text(threshold=True))
     return parts
 
 
@@ -126,7 +137,7 @@ def _indented(text: Text, cells: int) -> Padding:
 def _gate_output(entry: dict[str, Any], root_dir: Path | None) -> list[RenderableType]:
     parts: list[RenderableType] = []
     for path in entry.get("gate_logs") or []:
-        parts.append(_indented(Text("output", style=theme.MUTED), 2))
+        parts.append(_indented(Text("output  o opens it whole", style=theme.MUTED), 2))
         parts.append(_indented(Text(shown_path(str(path), root_dir)), 4))
         excerpt = gate_log_excerpt(str(path))
         if excerpt is None:
@@ -158,6 +169,13 @@ def render_failure_detail(comp: ComponentState, root_dir: Path | None = None) ->
     parts: list[RenderableType] = [_failure_line(newest), *_gate_output(newest, root_dir)]
     parts.extend(_failure_line(entry) for entry in older)
     return Group(*parts)
+
+
+def newest_gate_log(comp: ComponentState) -> str:
+    """The stored output of the newest failed phase, "" when it kept none."""
+    failed = [entry for entry in comp.phase_history if not entry.get("passed")]
+    logs = failed[-1].get("gate_logs") if failed else None
+    return str(logs[0]) if logs else ""
 
 
 def transcript_path(run_dir: Path | None, component_id: str) -> Path | None:

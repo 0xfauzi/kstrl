@@ -53,7 +53,7 @@ class TestChipRendering:
 
         assert len({unchecked, nominal, degraded}) == 3
         assert "?" in unchecked
-        assert "ok" in nominal
+        assert "safe mode off" in nominal
         assert "1" in degraded
 
     def test_the_clean_state_is_rendered_not_hidden(self) -> None:
@@ -64,11 +64,13 @@ class TestChipRendering:
 
     def test_the_chip_stays_narrow_in_every_state(self) -> None:
         """Measured, not assumed: at 120 columns a 33-cell chip pushed
-        the run's own state label from "✓ finished" down to "✓". The
-        topbar is one line and the header owns the hierarchy."""
+        the run's own state label from "✓ finished" down to "✓". The chip
+        has since left the run topbar for the home status row, where the
+        clean state is a named assertion rather than "ok" (#433 G9); the
+        bound is that phrase, and the sources still stay in the banner."""
         many = [_reason("queue", f"reason {i}") for i in range(12)]
         for reasons in (None, [], [_reason()], many):
-            assert len(render_chip(reasons).plain) <= 6, reasons
+            assert len(render_chip(reasons).plain) <= len("◍ safe mode off"), reasons
 
     def test_the_banner_names_the_sources(self) -> None:
         banner = render_banner(
@@ -315,7 +317,7 @@ class TestHomeShell:
             text = str(chip.render())
 
         assert app._safe_mode_reasons == []
-        assert "ok" in text
+        assert "safe mode off" in text
 
 
 class TestReviewFindings:

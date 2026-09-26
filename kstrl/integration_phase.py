@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl import git
-from kstrl.agents.base import collect_usage
+from kstrl.agents.base import INTEGRATION_COMPONENT, INTEGRATION_ROLE, collect_usage
+from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.contract import (
     ContractCleanupError,
     ContractMode,
@@ -262,7 +263,16 @@ def _review_round(run: IntegrationRun, state: dict[str, Any], pin: _Pin) -> Inte
         outcome = integration_outcome(pin.test_result, result, stories, tracked=tracked)
         return _record_round(run, state, pin, number, stories, result, outcome, "")
     try:
-        result = _run_reviewer(run, worktree, stories, directory / f"prd-{number}.json")
+        with recording_prompts(
+            AgentCall(
+                run_root=run.pipeline.usage_paths.root,
+                run_id=run.run_id,
+                component=INTEGRATION_COMPONENT,
+                role=INTEGRATION_ROLE,
+                attempt=number,
+            )
+        ):
+            result = _run_reviewer(run, worktree, stories, directory / f"prd-{number}.json")
         outcome = integration_outcome(pin.test_result, result, stories, tracked=tracked)
     finally:
         cleanup_error = _remove(worktree, run.root_dir, run.ui)

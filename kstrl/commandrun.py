@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, TextIO
 
+from kstrl.agents.prompt_record import AgentCall
 from kstrl.events import (
     Event,
     EventBus,
@@ -123,6 +124,23 @@ class CommandRun:
     @property
     def recording(self) -> bool:
         return self.paths is not None
+
+    def agent_call(self, component: str, role: str, attempt: int = 1) -> AgentCall | None:
+        """Who this run's agent prompts are recorded for (#532).
+
+        None while recording is off: a command run with
+        ``progress_log_enabled = false`` leaves no run directory, and a
+        prompt record does not create one.
+        """
+        if self.paths is None:
+            return None
+        return AgentCall(
+            run_root=self.paths.root,
+            run_id=self.run_id,
+            component=component,
+            role=role,
+            attempt=attempt,
+        )
 
     def transcript_path(self, component_id: str) -> Path | None:
         if self.paths is None:

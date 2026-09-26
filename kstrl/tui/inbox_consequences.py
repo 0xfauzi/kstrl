@@ -22,7 +22,7 @@ the decision, and for most kinds nobody does:
 
 The TUI records the decision only. ``ks inbox approve`` and
 ``ks inbox reject`` on a park also start ``ks factory``; this screen does
-not, and says so.
+not, and the approve sentence says so first (#433 advice 2.2).
 """
 
 from __future__ import annotations
@@ -48,6 +48,11 @@ class Consequences:
 
     def allows(self, choice: str) -> bool:
         return any(name == choice for name, _ in self.offered)
+
+
+def kind_label(kind: str) -> str:
+    """``merge gate``, not ``merge_gate`` (#433 G6)."""
+    return str(kind).replace("_", " ")
 
 
 def _hours(snooze_hours: float) -> str:
@@ -86,23 +91,23 @@ def _park(item: InboxItem, component_status: str | None, snooze_hours: float) ->
             offered=(snooze,), withheld=f"approve and reject are not offered: {why}"
         )
     approve = (
-        f"records approval. The next ks factory run pushes and merges {cid}'s branch "
-        f"if its head is still {head[:12]}; otherwise {cid} fails and nothing is pushed."
+        "records approval only; nothing merges until the next ks factory run. That run "
+        f"pushes and merges {cid}'s branch if its head is still {head[:12]}; otherwise "
+        f"{cid} fails and nothing is pushed. `ks inbox approve` also starts that run."
         if head
-        else f"records approval. The next ks factory run fails {cid}: the park recorded "
-        "no commit to merge, so nothing is pushed."
+        else "records approval only. The next ks factory run fails "
+        f"{cid}: the park recorded no commit to merge, so nothing is pushed."
     )
     return Consequences(
         offered=(
             (APPROVE, approve),
             (
                 REJECT,
-                f"records rejection with your reason. The next ks factory run marks {cid} "
-                "failed (hitl_reject) and skips its dependents.",
+                "records rejection with your reason only. The next ks factory run marks "
+                f"{cid} failed as rejected by a person and skips its dependents.",
             ),
             snooze,
         ),
-        note="This screen records the decision only; `ks inbox approve` also starts ks factory.",
     )
 
 
@@ -118,7 +123,7 @@ def consequences(
     """
     if _is_park(item):
         return _park(item, component_status, snooze_hours)
-    record_only = f"closes this item; no kstrl step reads a {item.kind} decision."
+    record_only = f"closes this item; no kstrl step reads a {kind_label(item.kind)} decision."
     return Consequences(
         offered=(
             (APPROVE, record_only),

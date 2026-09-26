@@ -122,19 +122,25 @@ def section_title(name: str, count: int, shown: int) -> Text:
     return text
 
 
-def fit_rows(rows: list[list[Text]], width: int, flex: int) -> list[list[Text]]:
+def fit_rows(
+    rows: list[list[Text]], width: int, flex: int, headers: Sequence[str] = ()
+) -> list[list[Text]]:
     """Shorten column ``flex`` so every row fits ``width`` without scrolling.
 
     A column is as wide as its widest cell, plus one cell of padding a
     side; the table pads one a side and keeps one for its scrollbar. So
     the room left for ``flex`` is what the OTHER columns' widest cells
     leave, which a per-row sum cannot see (#433: the active table
-    scrolled sideways at 80 columns).
+    scrolled sideways at 80 columns). A table that shows its header is
+    as wide as its header too, so pass ``headers`` for one (#433 G2).
     """
     if not rows:
         return rows
     columns = len(rows[0])
-    widest = [max(row[i].cell_len for row in rows) for i in range(columns)]
+    widest = [
+        max([row[i].cell_len for row in rows] + ([len(headers[i])] if headers else []))
+        for i in range(columns)
+    ]
     room = width - sum(w for i, w in enumerate(widest) if i != flex) - 2 * columns - 4
     room = max(12, room)
     for row in rows:
@@ -218,10 +224,16 @@ def delivery_text(queue: OperatorQueue | None, width: int) -> Text:
     return text
 
 
-def history_note(run_id: str, word: str, queue: OperatorQueue | None) -> str:
-    """Why a failed run is history: its successor, or that it is current."""
-    from kstrl.tui.run_status import FAILED
+def history_note(run_id: str, word: str, queue: OperatorQueue | None, reason: str = "") -> str:
+    """Why a failed run is history: its successor, or that it is current.
 
+    An unknown run carries its own reason from the fold (#433 G9): the
+    error its events name, or "no reason recorded".
+    """
+    from kstrl.tui.run_status import FAILED, UNKNOWN
+
+    if word == UNKNOWN:
+        return reason
     if word != FAILED or queue is None:
         return ""
     successor = queue.superseded.get(run_id)

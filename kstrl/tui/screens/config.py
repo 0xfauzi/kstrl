@@ -34,20 +34,22 @@ from kstrl.tui.config_guard import env_scrub_is_safe
 from kstrl.tui.widgets.context_bar import ContextBar
 
 if TYPE_CHECKING:
-    from kstrl.config_report import ConfigReport
+    from kstrl.config_report import ConfigReport, ConfigRow
 
 MAX_VALUE_WIDTH = 48
 _QUIET_VALUES = frozenset({"None", "''", '""', "[]"})
 
 
-def display_value(raw: str, root: str) -> Text:
+def display_value(raw: str, root: str, shown: str = "") -> Text:
     """Root-relative, width-capped, with unset values quiet.
 
     The plain report prints absolute reprs; a TABLE that lets a long
     path push the source column off-screen has failed at its one job,
     so the view trades verbatim reprs for visibility (the hint bar
-    and `ks config show` keep the full values)."""
-    text = raw
+    and `ks config show` keep the full values). ``shown`` is the row's
+    operator rendering (#433 G4); ``raw`` still decides what is quiet.
+    """
+    text = shown or raw
     if root:
         # Values may be reprs of path lists, so operate on path tokens
         # rather than blindly replacing every root-shaped substring.
@@ -143,14 +145,14 @@ class ConfigScreen(Screen[None]):
         root = str(report.root_dir)
         shown = 0
         for row in report.rows:
-            haystack = f"{row.section} {row.key} {row.value} {row.source}"
+            haystack = f"{row.section} {row.key} {row.value} {row.shown} {row.source}"
             if needle and needle not in haystack.lower():
                 continue
             shown += 1
             table.add_row(
                 Text(row.section, style=theme.MUTED),
                 Text(row.key, style="bold"),
-                display_value(row.value, root),
+                display_value(row.value, root, row.shown),
                 Text(row.source, style=SOURCE_STYLES.get(row.source, "")),
                 key=f"{row.section}.{row.key}",
             )
@@ -163,31 +165,33 @@ class ConfigScreen(Screen[None]):
         self._update_hint()
 
     def _update_hint(self) -> None:
+        """The cursor row's whole value, then the file, wrapped (#433 G4)."""
         report = self._report()
         hint = self.query_one("#config-hint", Static)
         if report is None:
             return
         text = Text()
+        row = self._cursor_row(report)
+        if row is not None:
+            text.append(f"[{row.section}] {row.key} = ", style=theme.STEEL)
+            text.append(row.shown or row.value)
+            text.append("\n")
+        text.append("file  ", style=theme.MUTED)
         if report.toml_exists:
             text.append(str(report.toml_path), style=theme.MUTED)
         else:
-            text.append(
-                f"{report.toml_path} (absent - run ks init)",
-                style=theme.WARNING,
-            )
-        table = self.query_one(DataTable)
-        if table.row_count and table.cursor_row is not None:
-            try:
-                row_key = list(table.rows)[table.cursor_row]
-            except IndexError:
-                row_key = None
-            if row_key is not None:
-                section, _, key = str(row_key.value).partition(".")
-                text.append(
-                    f"   [{section}] {key} = ...",
-                    style=theme.STEEL,
-                )
+            text.append(f"{report.toml_path} (absent - run ks init)", style=theme.WARNING)
         hint.update(text)
+
+    def _cursor_row(self, report: ConfigReport) -> ConfigRow | None:
+        table = self.query_one(DataTable)
+        if not table.row_count or table.cursor_row is None:
+            return None
+        try:
+            key = str(list(table.rows)[table.cursor_row].value)
+        except IndexError:
+            return None
+        return next((row for row in report.rows if f"{row.section}.{row.key}" == key), None)
 
     def on_input_changed(self, event: Input.Changed) -> None:
         self._render_report(event.value)

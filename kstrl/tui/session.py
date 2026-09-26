@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.agents.base import ARCHITECT_COMPONENT
+from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.commandrun import open_command_run
 from kstrl.config import KstrlConfig
 from kstrl.config_preflight import SURFACE_REJECTIONS, raise_if_defect
@@ -326,6 +326,7 @@ def _prepare_decompose(
                         root_dir=root_dir,
                         bus=command_run.bus,
                         transcript=command_run.transcript_writer(ARCHITECT_COMPONENT),
+                        prompt_call=command_run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
                     )
                     ui.ok(f"Decomposed into {len(manifest.components)} components")
                     return 0

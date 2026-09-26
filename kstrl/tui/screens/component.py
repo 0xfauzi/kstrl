@@ -32,6 +32,7 @@ from kstrl.tui import theme
 from kstrl.tui.agent_health import agent_health
 from kstrl.tui.messages import StateChanged
 from kstrl.tui.widgets.component_detail import (
+    newest_gate_log,
     render_component_header,
     render_failure_detail,
     transcript_path,
@@ -53,6 +54,7 @@ class ComponentScreen(Screen[None]):
     BINDINGS = [
         Binding("escape", "app.pop_screen", "Back"),
         Binding("f", "toggle_follow", "Follow"),
+        Binding("o", "open_output", "Full output"),
     ]
 
     def __init__(self, component_id: str) -> None:
@@ -67,6 +69,8 @@ class ComponentScreen(Screen[None]):
         #: only then does the transcript grow, so only then is "follow" a
         #: thing to toggle.
         self._live = False
+        #: The newest failed gate's stored output; ``o`` opens it whole.
+        self._gate_log = ""
 
     def compose(self) -> ComposeResult:
         yield Static(id="component-header")
@@ -120,7 +124,10 @@ class ComponentScreen(Screen[None]):
             failure_widget.update(failure)
         self._update_findings(comp)
         manifest_comp = manifest.get_component(self.component_id) if manifest is not None else None
-        self.query_one(EvidencePanel).update_state(comp, manifest_comp)
+        self.query_one(EvidencePanel).update_state(comp, manifest_comp, show_error=failure is None)
+        if newest_gate_log(comp) != self._gate_log:
+            self._gate_log = newest_gate_log(comp)
+            self.refresh_bindings()
 
     def _render_header(self, comp: ComponentState, live: bool) -> None:
         """The header; a live component's carries its agent health (#433 M2).
@@ -189,7 +196,18 @@ class ComponentScreen(Screen[None]):
     def check_action(self, action: str, _parameters: tuple[object, ...]) -> bool | None:
         if action == "toggle_follow":
             return self._live
+        if action == "open_output":
+            return bool(self._gate_log)
         return True
+
+    def action_open_output(self) -> None:
+        if not self._gate_log:
+            return
+        from kstrl.tui.screens.gate_log import GateLogScreen
+
+        self.app.push_screen(
+            GateLogScreen(self._gate_log, self.component_id, getattr(self.app, "root_dir", None))
+        )
 
     def action_toggle_follow(self) -> None:
         self._following = self.query_one(TranscriptTail).toggle_follow()

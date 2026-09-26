@@ -1,4 +1,4 @@
-"""E6 checkpoint modal (PR E).
+"""Checkpoint modal: approve a component's PR before it is merged (PR E).
 
 Turns the checkpoint from a rubber stamp into an inspection surface:
 the bounded diff excerpt, both finding streams, and the attempt's
@@ -20,9 +20,40 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Label, Static
 
 from kstrl.tui import theme
+from kstrl.tui.widgets.cost_meter import at_least
 
 if TYPE_CHECKING:
     from kstrl.interaction import PromptRequest
+
+
+def readable_diff(diff: str) -> list[str]:
+    """The diff's file names and changed lines, without git's headers (#433 G7).
+
+    A file's header (``diff --git``, ``index 980e96d..79a0275 100644``,
+    the mode and rename lines, ``---``/``+++``) runs from its ``diff --git``
+    line to its first ``@@`` hunk; it becomes one ``file <path>`` line.
+    """
+    lines: list[str] = []
+    in_header = False
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            in_header = True
+            lines.append(f"file {line.rsplit(' b/', 1)[-1]}")
+        elif line.startswith("@@"):
+            in_header = False
+            lines.append(line)
+        elif not in_header:
+            lines.append(line)
+    return lines
+
+
+def _diff_style(line: str) -> str:
+    """A ``readable_diff`` line's style: file names, additions, removals."""
+    if line.startswith("file "):
+        return f"bold {theme.ACCENT}"
+    if line.startswith("+"):
+        return theme.SUCCESS
+    return theme.ERROR if line.startswith("-") else theme.MUTED
 
 
 def _findings_block(title: str, findings: tuple[object, ...]) -> Text:
@@ -60,7 +91,7 @@ class CheckpointModal(ModalScreen[int | None]):
     def compose(self) -> ComposeResult:
         ctx = self.request.checkpoint
         dialog = Vertical(id="checkpoint-dialog")
-        dialog.border_title = "E6 checkpoint"
+        dialog.border_title = "approve before merge"
         with dialog:
             yield Label(self.request.header, id="checkpoint-question")
             if ctx is not None:
@@ -69,11 +100,11 @@ class CheckpointModal(ModalScreen[int | None]):
                     summary.append("branch ", style=theme.MUTED)
                     summary.append(ctx.branch, style="bold")
                 if ctx.usage is not None and ctx.usage.calls:
-                    marker = "+" if ctx.usage.unreported_calls else ""
+                    bound = bool(ctx.usage.unreported_calls)
                     summary.append("  ·  spend ", style=theme.MUTED)
                     summary.append(
-                        f"{ctx.usage.total_tokens:,}{marker} tok, "
-                        f"${ctx.usage.cost_usd:.2f}{marker}",
+                        f"{at_least(f'{ctx.usage.total_tokens:,}', bound)} tok, "
+                        f"{at_least(f'${ctx.usage.cost_usd:.2f}', bound)}",
                         style="bold",
                     )
                 yield Static(summary, id="checkpoint-summary")
@@ -93,15 +124,8 @@ class CheckpointModal(ModalScreen[int | None]):
                     diff_text = Text()
                     diff_text.append("diff\n", style=f"bold {theme.ACCENT}")
                     if ctx.diff_excerpt:
-                        for line in ctx.diff_excerpt.splitlines():
-                            style = (
-                                theme.SUCCESS
-                                if line.startswith("+")
-                                else theme.ERROR
-                                if line.startswith("-")
-                                else theme.MUTED
-                            )
-                            diff_text.append(line + "\n", style=style)
+                        for line in readable_diff(ctx.diff_excerpt):
+                            diff_text.append(line + "\n", style=_diff_style(line))
                     else:
                         diff_text.append(
                             "  (no diff captured)\n",

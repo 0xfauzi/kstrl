@@ -25,6 +25,12 @@ Two signals, kept apart because they fail differently:
   crashed run's pid can be reused. A stale heartbeat's pid is not
   probed and reads "process unknown".
 
+Output older than ``STALE_OUTPUT_SECONDS`` is marked stale (#433 advice
+2.4). kstrl configures no output-silence threshold, so this is the one
+liveness window it already has, ``runs.LIVE_MTIME_WINDOW_SECONDS``: a
+run whose event file is older is no longer called live. The component
+detail names it beside the age.
+
 Cost, measured on the harness laptop: four ``stat`` calls and one
 ``kill(pid, 0)`` per running component, no subprocess. It is called on
 the 1 s age tick only for components that are running in a run that has
@@ -43,6 +49,7 @@ from typing import TYPE_CHECKING
 from kstrl.commandrun import HEARTBEAT_INTERVAL_SECONDS
 from kstrl.procgroup import pid_is_alive
 from kstrl.tui.run_status import age_phrase
+from kstrl.tui.runs import LIVE_MTIME_WINDOW_SECONDS
 
 if TYPE_CHECKING:
     from kstrl.reducer import ComponentState
@@ -54,6 +61,9 @@ UNKNOWN = "unknown"
 #: How long a heartbeat's pid still says which process runs the agent:
 #: two missed beats of ``commandrun.start_heartbeat``'s period.
 HEARTBEAT_FRESH_SECONDS = 3 * HEARTBEAT_INTERVAL_SECONDS
+
+#: Output older than this is marked stale; the TUI's run-liveness window.
+STALE_OUTPUT_SECONDS = LIVE_MTIME_WINDOW_SECONDS
 
 #: The transcripts an agent writes while it runs, per phase.
 OUTPUT_LOGS = ("engineer.log", "review.log", "security.log", "distill.log")
@@ -67,27 +77,37 @@ class AgentHealth:
     process: str
     pid: int = 0
 
-    def text(self, *, short: bool = False, pid: bool = True) -> str:
+    @property
+    def process_word(self) -> str:
+        return self.process if self.process != UNKNOWN else "process unknown"
+
+    @property
+    def stale(self) -> bool:
+        return self.output_age is not None and self.output_age > STALE_OUTPUT_SECONDS
+
+    def output(self, *, threshold: bool = False) -> str:
+        """``output 21s ago``, ``output 3m ago, stale`` or ``no output yet``;
+        with ``threshold`` the stale-after window is named (#433 advice 2.4)."""
+        if self.output_age is None:
+            return "no output yet"
+        text = f"output {age_phrase(self.output_age)} ago"
+        if self.stale:
+            text += ", stale"
+        if threshold:
+            text += f" (stale after {age_phrase(STALE_OUTPUT_SECONDS)})"
+        return text
+
+    def text(self, *, short: bool = False, pid: bool = True, threshold: bool = False) -> str:
         """``output 21s ago · worker 4242 alive``; without the pid
-        ``output 21s ago · alive``; short ``21s · alive``."""
-        state = self.process if self.process != UNKNOWN else "process unknown"
+        ``output 21s ago · alive``; short ``21s · alive``. The output age and
+        the process are two separate answers and stay two phrases."""
+        state = self.process_word
         if short:
             out = age_phrase(self.output_age) if self.output_age is not None else "no output"
+            return f"{out}{' stale' if self.stale else ''} · {state}"
+        out = self.output(threshold=threshold)
+        if not pid or self.process == UNKNOWN:
             return f"{out} · {state}"
-        if not pid:
-            out = (
-                f"output {age_phrase(self.output_age)} ago"
-                if self.output_age is not None
-                else "no output yet"
-            )
-            return f"{out} · {state}"
-        out = (
-            f"output {age_phrase(self.output_age)} ago"
-            if self.output_age is not None
-            else "no output yet"
-        )
-        if self.process == UNKNOWN:
-            return f"{out} · process unknown"
         return f"{out} · worker {self.pid} {self.process}"
 
 

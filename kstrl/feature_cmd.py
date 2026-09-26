@@ -50,6 +50,7 @@ from typing import TYPE_CHECKING
 
 from kstrl.agents import get_agent
 from kstrl.agents.logging import LoggingAgent
+from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.breaker import BreakerConfig
 from kstrl.events import (
     ArtifactWritten,
@@ -198,6 +199,13 @@ def _build_repair_prd(
     return repair_path
 
 
+def _agent_call(
+    run: CommandRun | None, component: str, role: str, attempt: int = 1
+) -> AgentCall | None:
+    """Who one phase's prompts are recorded for (#532); None without a run."""
+    return run.agent_call(component, role, attempt) if run is not None else None
+
+
 def run_feature(
     params: FeatureParams,
     base_config: KstrlConfig,
@@ -298,18 +306,19 @@ def run_feature(
     understand_log = _log_path(params, "understand")
     understand_agent = wrap(LoggingAgent(agent, understand_log))
     try:
-        understand_result = run_loop(
-            understand_config,
-            ui,
-            understand_agent,
-            root_dir,
-            timeouts=timeouts,
-            breaker_config=breaker_config,
-            bus=bus,
-            interaction=interaction,
-            stop_check=stop_check,
-            guard_state_root=root_dir,
-        )
+        with recording_prompts(_agent_call(run, component, "understand")):
+            understand_result = run_loop(
+                understand_config,
+                ui,
+                understand_agent,
+                root_dir,
+                timeouts=timeouts,
+                breaker_config=breaker_config,
+                bus=bus,
+                interaction=interaction,
+                stop_check=stop_check,
+                guard_state_root=root_dir,
+            )
     except Exception as exc:
         detail = f"{type(exc).__name__}: {exc}"
         emit(
@@ -461,19 +470,20 @@ def run_feature(
     run_log = _log_path(params, "run")
     run_agent = wrap(LoggingAgent(agent, run_log))
     try:
-        result = run_loop(
-            run_config,
-            ui,
-            run_agent,
-            root_dir,
-            timeouts=timeouts,
-            breaker_config=breaker_config,
-            bus=bus,
-            interaction=interaction,
-            stop_check=stop_check,
-            guard_state_root=root_dir,
-            verify_config=verify_config,
-        )
+        with recording_prompts(_agent_call(run, component, "implement")):
+            result = run_loop(
+                run_config,
+                ui,
+                run_agent,
+                root_dir,
+                timeouts=timeouts,
+                breaker_config=breaker_config,
+                bus=bus,
+                interaction=interaction,
+                stop_check=stop_check,
+                guard_state_root=root_dir,
+                verify_config=verify_config,
+            )
     except Exception as exc:
         detail = f"{type(exc).__name__}: {exc}"
         emit(
@@ -586,19 +596,20 @@ def run_feature(
         )
         repair_agent = wrap(LoggingAgent(repair_agent_base, repair_log))
         try:
-            repair_result = run_loop(
-                repair_config,
-                ui,
-                repair_agent,
-                root_dir,
-                timeouts=timeouts,
-                breaker_config=breaker_config,
-                bus=bus,
-                interaction=interaction,
-                stop_check=stop_check,
-                guard_state_root=root_dir,
-                verify_config=verify_config,
-            )
+            with recording_prompts(_agent_call(run, component, "repair", attempt)):
+                repair_result = run_loop(
+                    repair_config,
+                    ui,
+                    repair_agent,
+                    root_dir,
+                    timeouts=timeouts,
+                    breaker_config=breaker_config,
+                    bus=bus,
+                    interaction=interaction,
+                    stop_check=stop_check,
+                    guard_state_root=root_dir,
+                    verify_config=verify_config,
+                )
         except Exception as exc:
             detail = f"{type(exc).__name__}: {exc}"
             emit(

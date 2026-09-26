@@ -213,7 +213,8 @@ class TestTopbar:
         )
 
     def test_cost_is_shown_beside_the_cap_amount(self) -> None:
-        assert "$19.24 · 24% of $78.00 cost cap" in render_cost_meter(self._state()).plain
+        # 24.67%, rounded up by cap_percent (#433 advice 2.3).
+        assert "$19.24 · 25% of $78.00 cost cap" in render_cost_meter(self._state()).plain
 
     def test_no_cap_is_said(self) -> None:
         state = self._state()
@@ -231,7 +232,7 @@ class TestTopbar:
         assert "$19.24" in meter and "$78.00" in meter
 
     def test_the_short_cost_form_keeps_both_amounts(self) -> None:
-        assert render_cost_meter(self._state(), 20).plain == "$19.24 of $78.00 cap"
+        assert render_cost_meter(self._state(), 20).plain == "$19.24 of $78.00 cap 25%"
 
     def test_an_unfinished_run_that_is_not_live_is_unknown(self) -> None:
         state = self._state()

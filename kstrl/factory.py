@@ -21,6 +21,7 @@ from typing import IO, TYPE_CHECKING, Any, Protocol, TextIO
 from kstrl import git
 from kstrl.agents.base import UsageTotals, collect_usage, print_usage_rollup
 from kstrl.agents.proc import kill_active_process_groups
+from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.atomicio import atomic_write_json
 from kstrl.autonomy import (
     AutonomyConfig,
@@ -1602,6 +1603,87 @@ def _setup_worktree(
             lock_fp.close()
 
 
+def _dependency_branches(manifest: Manifest, comp: Component) -> list[str]:
+    """The branches of ``comp``'s dependencies whose code is not in the base (#543).
+
+    A dependency that merged (``_has_merged``) is already in the base the
+    worktree is cut from, which is how per-component PR mode gives a
+    dependent its dependency's code. Under ``create_prs=False``, or with
+    no gh, a COMPLETED dependency's code exists only on its own branch.
+    In single_pr mode a dependency shares ``comp``'s branch and is
+    already in it.
+    """
+    branches: list[str] = []
+    for dep_id in comp.dependencies:
+        dep = manifest.get_component(dep_id)
+        if dep is None or _has_merged(dep) or dep.branch_name in (comp.branch_name, *branches):
+            continue
+        branches.append(dep.branch_name)
+    return branches
+
+
+def _merge_dependency_branches(worktree_path: Path, branches: list[str]) -> None:
+    """Merge each dependency branch into the component's worktree (#543).
+
+    The same ``git.merge_branch`` the deferred-merge contract phase uses to
+    put a tier's branches together. A merge that fails is raised: the
+    component cannot start from a tree that holds its dependencies' code,
+    and starting it without that code is the defect this exists to remove.
+    The worktree is already registered for the pass-end cleanup, which
+    removes it with ``--force`` (or keeps it, conflict and all, as the
+    failure's evidence under ``keep_worktrees_on_failure``).
+    """
+    for branch in branches:
+        if not git.merge_branch(branch, worktree_path):
+            raise RuntimeError(
+                f"could not merge dependency branch '{branch}' into {worktree_path}: "
+                f"`git merge --no-edit -- {branch}` failed (it conflicts with "
+                f"another dependency's change, or the branch no longer exists)"
+            )
+
+
+def _judged_base(worktree_path: Path, base_branch: str, holds_unmerged_work: bool) -> str:
+    """What a freshly cut component branch is judged against (#543).
+
+    The base branch, unless the worktree holds code the base lacks: then
+    the commit the worktree starts at, so ``<base>...HEAD`` measures the
+    component's own change and not its dependencies' or its single_pr
+    predecessors'. Raises when HEAD cannot be read, because judging the
+    change against the base branch instead would count that code again.
+    """
+    if not holds_unmerged_work:
+        return base_branch
+    head = git.get_head_sha(worktree_path)
+    if head is None:
+        raise RuntimeError(f"could not read HEAD in {worktree_path} to record the component's base")
+    return head
+
+
+def _start_from_dependencies(
+    manifest: Manifest,
+    comp: Component,
+    worktree_path: Path,
+    bases: dict[str, str],
+    *,
+    fresh_from_base: bool,
+) -> None:
+    """Put ``comp``'s dependencies' code in its new worktree and record its base (#543).
+
+    ``bases`` is the run's ``RunState.component_bases``. It is written once
+    per branch: a retry that keeps the branch keeps the base it was cut
+    at, so an earlier attempt's commits are still judged, and a retry
+    that recreates the branch (``fresh_from_base``) records it again.
+    """
+    branches = _dependency_branches(manifest, comp)
+    _merge_dependency_branches(worktree_path, branches)
+    if fresh_from_base or comp.id not in bases:
+        bases[comp.id] = _judged_base(
+            worktree_path,
+            manifest.base_branch,
+            bool(branches) or manifest.single_pr,
+        )
+
+
 def _cleanup_worktree(component_id: str, root_dir: Path, run_id: str) -> WorktreeSweep:
     """Kill what is still running in a component's worktree, then remove it.
 
@@ -2382,6 +2464,25 @@ def _report_operator_files(base_config: KstrlConfig, root_dir: Path, ui: UI) -> 
         ui.warn(f"  {subject}: {message}")
 
 
+def _engineer_call(
+    usage_dir_str: str | None, run_id: str, component_id: str, attempt: int
+) -> AgentCall | None:
+    """Who the engineer's prompts are recorded for (#532).
+
+    The accounting directory is the run directory, and the factory always
+    passes it; None is a direct caller outside a run, which records nothing.
+    """
+    if usage_dir_str is None:
+        return None
+    return AgentCall(
+        run_root=Path(usage_dir_str),
+        run_id=run_id,
+        component=component_id,
+        role="engineer",
+        attempt=attempt,
+    )
+
+
 def _run_component(
     component_id: str,
     prd_path_str: str,
@@ -2423,6 +2524,7 @@ def _run_component(
     stop_check: Callable[[], bool] | None = None,
     base_branch: str = "main",
     verify_config: VerifyConfig | None = None,
+    attempt: int = 1,
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
@@ -2735,28 +2837,29 @@ def _run_component(
     try:
         for note in setup_notes:
             ui.warn(note)
-        result = run_loop(
-            config,
-            ui,
-            agent,
-            worktree_path,
-            context_prefix=context_prefix,
-            timeouts=timeouts,
-            breaker_config=breaker_config,
-            bus=worker_bus,
-            stop_check=stop_check,
-            budget=token_budget,
-            on_iteration_usage=on_iteration_usage,
-            guard_base_ref=guard_base_ref,
-            guard_ignored_paths=harness_paths,
-            # #274: the project root, NOT worktree_path. The two are the
-            # same directory only under use_worktrees=False, which is
-            # exactly when `.kstrl/` reaches the guard's walk; in a real
-            # worktree they differ and the loop carves nothing out, so a
-            # `.kstrl/` the AGENT wrote there stays a violation.
-            guard_state_root=root_dir,
-            verify_config=verify_config,
-        )
+        with recording_prompts(_engineer_call(usage_dir_str, run_id, component_id, attempt)):
+            result = run_loop(
+                config,
+                ui,
+                agent,
+                worktree_path,
+                context_prefix=context_prefix,
+                timeouts=timeouts,
+                breaker_config=breaker_config,
+                bus=worker_bus,
+                stop_check=stop_check,
+                budget=token_budget,
+                on_iteration_usage=on_iteration_usage,
+                guard_base_ref=guard_base_ref,
+                guard_ignored_paths=harness_paths,
+                # #274: the project root, NOT worktree_path. The two are the
+                # same directory only under use_worktrees=False, which is
+                # exactly when `.kstrl/` reaches the guard's walk; in a real
+                # worktree they differ and the loop carves nothing out, so a
+                # `.kstrl/` the AGENT wrote there stays a violation.
+                guard_state_root=root_dir,
+                verify_config=verify_config,
+            )
         # Report which limit fired so the retry/fail path can act on it
         # (timeout errors trigger the recreate-from-base retry hygiene).
         if result.completed:
@@ -4487,6 +4590,16 @@ def _run_factory_locked(
                     run_id,
                     fresh_from_base=fresh_from_base,
                 )
+                # #543: registered before the merge below, so a merge that
+                # fails leaves a worktree the pass-end cleanup removes.
+                run_state.worktree_paths[comp.id] = wt_path
+                _start_from_dependencies(
+                    manifest,
+                    comp,
+                    wt_path,
+                    run_state.component_bases,
+                    fresh_from_base=fresh_from_base,
+                )
             else:
                 wt_path = root_dir
             run_state.worktree_paths[comp.id] = wt_path
@@ -4768,8 +4881,9 @@ def _run_factory_locked(
                             # ends at token_budget by construction (see
                             # above) and a positional extra silently
                             # lands on redirect_output.
-                            base_branch=manifest.base_branch,
+                            base_branch=pipeline.component_base(comp.id),
                             verify_config=engineer_verify,
+                            attempt=comp.retries + 1,
                             redirect_output=False,  # type: ignore[misc]
                             live_line=functools.partial(
                                 ui.stream_line,
@@ -4791,8 +4905,9 @@ def _run_factory_locked(
                                 *args,
                                 # Same unprovable-*args limitation the
                                 # inline branch annotates above.
-                                base_branch=manifest.base_branch,  # type: ignore[misc]
+                                base_branch=pipeline.component_base(comp.id),  # type: ignore[misc]
                                 verify_config=engineer_verify,
+                                attempt=comp.retries + 1,
                             ),
                         )
                     running_futures[future] = comp.id

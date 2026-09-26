@@ -74,7 +74,10 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "contract.py": 1,
     "decisions.py": 1,  # DecisionRegisterError, added by #332
     "decompose.py": 1,
-    "factory.py": 3,  # one subclass, two bare raises
+    # One subclass, four bare raises. #543 added two: a dependency branch
+    # that will not merge into a dependent's worktree, and a HEAD that
+    # cannot be read when recording what the dependent is judged against.
+    "factory.py": 5,
     # #530: three bare raises in ReflectionModel, the spent budget, a
     # timed-out reflection call and an empty reply.
     "gepa_adapter.py": 3,
