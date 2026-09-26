@@ -189,3 +189,30 @@ detection: of 27 runs, 17 were refused because the reply's criterion
 text differed from the PRD's and 6 because the five stories came back
 as one, and all 4 runs that were scored were correct. #518 tracks the
 join; re-capture both roles after it lands.
+
+## The 2026-09-26 integration capture (#518)
+
+`baseline-20260925-235341.json` recaptures only the two integration
+roles at `d6a2a68`, after #521 joined a verdict to its story by id
+(INTEGRATION_CRITERIA_PROMPT 1.1.0, haiku, three runs per fixture).
+
+| role | rate | floor (#480 section 8) |
+|---|---|---|
+| integration | 0.47 | 0.65 |
+| integration_clean | 0.75 | 1.0 |
+
+Both roles are below their floors, so `integration_blocking` stays
+false. Of 27 runs, 7 were still refused on the reply's shape: 6
+returned no verdict for some story ids (`int-d4` in all three runs
+with all five ids missing, `int-d5` once, `int-d5-clean` twice), and 1
+returned two verdicts for IC1 (`int-d2-clean`). The 20 runs that were
+scored:
+
+- clean twins: 9 scored, 0 opened a finding.
+- planted defects: 11 scored, 7 caught. `int-d1-stored-rows` was
+  scored in all three runs and missed in all three (IC2 did not
+  fail). One `int-d5` run failed IC4 but cited only a test file.
+
+Against the 20260925-211436 capture of the same prompt, refusals fell
+from 23 of 27 to 7 of 27. Every clean-twin failure in this file is a
+refusal, not a false positive.
