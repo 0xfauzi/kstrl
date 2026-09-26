@@ -251,8 +251,16 @@ it if 1 chafes.
 ### What `daily_budget_usd` can and cannot do
 
 It counts only cost an adapter **reports**. The codex adapter reports
-tokens and no cost, and `decompose` (the architect) emits no usage events
-at all - so **every** queued item has some unmetered spend.
+tokens and no cost, so an item run on codex has unmetered spend.
+
+The architect is counted once. `ks factory --spec` runs it as a decompose
+run of its own and hands its spend to the factory run, whose
+`factory_started` event names that decompose run (`ks status` prints it
+as `Architect run`). When `ks factory` stops after the architect, on a
+blocker halt, a failed decompose or a refusal before the factory run
+exists, the daemon charges the decompose run instead: the one whose
+`factory_started` event names the pid of the child it spawned. An
+operator's own `ks decompose` names its own process and is not charged.
 
 Three cases, and they are reported distinctly:
 

@@ -3737,6 +3737,7 @@ def run_factory(
     run_id: str | None = None,
     notify_capture_output: bool = False,
     architect_usage: UsageTotals | None = None,
+    architect_run_id: str = "",
 ) -> FactoryResult:
     """Run the factory orchestrator with 3-phase verification.
 
@@ -3763,6 +3764,11 @@ def run_factory(
     architect unconditionally: a second pre-run role would have to grow
     the signature rather than quietly borrow this one's row. None for
     every caller that resumes from a manifest, which ran no architect.
+
+    ``architect_run_id`` names the run that holds that architect's records
+    (#567), and the run's ``factory_started`` event carries it (#587): an
+    operator follows it to the prompts and transcript, and `ks serve`
+    reads it to leave that run uncharged, since this run carries its spend.
     """
     # The ceilings are validated at every CONFIG path, but a FactoryConfig
     # can also be constructed programmatically (tests, embedders, the SDK
@@ -3797,6 +3803,7 @@ def run_factory(
             run_id_override=run_id,
             notify_capture_output=notify_capture_output,
             architect_usage=architect_usage,
+            architect_run_id=architect_run_id,
         )
     finally:
         run_lock.release()
@@ -4003,6 +4010,7 @@ def _run_factory_locked(
     run_id_override: str | None = None,
     notify_capture_output: bool = False,
     architect_usage: UsageTotals | None = None,
+    architect_run_id: str = "",
 ) -> FactoryResult:
     """run_factory body; runs with the run-level lock resolved (held, or
     explicitly degraded via --force-lock / no-fcntl platforms)."""
@@ -4039,16 +4047,10 @@ def _run_factory_locked(
     # (nothing between the sinks and record_architect_usage returns
     # early) is untouched.
     #
-    # What it does to the money, stated rather than left as "there is no
-    # run yet": a refusal inside the `ks factory --spec` architect window
-    # lands on RunSpend.unmetered_phases' blocker-halt path, so `serve`
-    # charges the launch $0 and labels the day's total a floor with
-    # `architect` unmetered. That is the same treatment a spec blocker
-    # already gets. Measured: a launch whose architect spent $4.20 is
-    # charged $4.20 on origin/main, where the malformed [policy] happened
-    # to crash BELOW record_architect_usage, and $0.00 here. Charging it
-    # exactly needs a sink that exists before the run directory does,
-    # which is separate work; see the PR #359 handoff.
+    # What it does to the money: a refusal here leaves no factory run, so
+    # the architect's spend is only in the decompose run it ran as (#567).
+    # `serve` charges that run to the launch whose process wrote it, the
+    # same path a spec blocker takes (#587).
     resolved = RunEnvelope.resolve(
         root_dir,
         policy_override=factory_config.policy_config,
@@ -4154,6 +4156,8 @@ def _run_factory_locked(
         RunStarted(
             project=manifest.project_name,
             components=len(manifest.components),
+            pid=os.getpid(),
+            architect_run_id=architect_run_id,
         )
     )
     # Chunk 4: the component DAG + budget caps as one event, so a

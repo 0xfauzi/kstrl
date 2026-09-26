@@ -3380,10 +3380,10 @@ class TestRunOwnership:
         self,
         tmp_path: Path,
     ) -> None:
-        """The fold is over an empty list on the halt path, and an empty
-        union would say "nothing unmetered" about a launch that may have
-        spent an architect's worth of money."""
-        runs, launch = owned_run_spend(tmp_path, frozenset())
+        """The fold is over an empty list when the launch left no run this
+        daemon charges, and an empty union would say "nothing unmetered"
+        about a launch that may have spent an architect's worth of money."""
+        runs, launch = owned_run_spend(tmp_path, frozenset(), launch_pid=None)
 
         assert runs == []
         assert launch == LaunchSpend(unmetered_phases=("architect",))

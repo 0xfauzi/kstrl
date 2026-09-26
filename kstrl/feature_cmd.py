@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -265,7 +266,7 @@ def run_feature(
         return "ended before completion"
 
     started = time.monotonic()
-    emit(RunStarted(project=params.feature_name, components=1))
+    emit(RunStarted(project=params.feature_name, components=1, pid=os.getpid()))
     emit(RunPlan(components=({"id": component, "title": f"Feature: {component}", "deps": []},)))
     emit(ComponentStarted(component=component))
 
