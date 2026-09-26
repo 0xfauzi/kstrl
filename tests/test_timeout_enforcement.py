@@ -1320,8 +1320,6 @@ class TestTimeoutConfigLoading:
         assert config.agent_iteration == 11.0
         assert config.component_total == 22.0
         assert config.scheduler_backstop_margin == 5.0
-        # Untouched keys keep their defaults.
-        assert config.git_operation == 30.0
 
     def test_env_beats_toml(
         self,

@@ -22,6 +22,7 @@ from kstrl.config_toml import UNPARSEABLE_TOML_MESSAGE as UNPARSEABLE_TOML_MESSA
 from kstrl.config_toml import ConfigError as ConfigError
 from kstrl.config_toml import load_toml_document as load_toml_document
 from kstrl.config_toml import load_toml_section as load_toml_section
+from kstrl.config_toml import section_table as section_table
 from kstrl.config_toml import toml_parse_scope as toml_parse_scope
 
 
@@ -551,47 +552,48 @@ def _apply_toml_overrides(
     """Mutate config in place from a kstrl.toml file.
 
     Maps the documented section structure (agent, run, paths, git, ui) onto
-    the flat KstrlConfig dataclass. Unknown keys are silently ignored.
+    the flat KstrlConfig dataclass. A name this does not ask for is left
+    alone here and refused by the entry check (``config_preflight``, #525);
+    a section written as a value raises through ``section_table``.
     """
     data = load_toml_document(toml_path)
 
     for section, toml_key, _env_var, field_name, is_path in STRING_KEYS:
-        block = data.get(section)
-        if isinstance(block, dict) and isinstance(value := block.get(toml_key), str) and value:
+        value = section_table(data, section, toml_path).get(toml_key)
+        if isinstance(value, str) and value:
             setattr(config, field_name, _resolve_path(value, root_dir) if is_path else value)
 
-    if isinstance(agent := data.get("agent"), dict):
-        budget = agent.get("budget_usd")
-        if isinstance(budget, (int, float)) and not isinstance(budget, bool) and budget > 0:
-            config.agent_budget_usd = float(budget)
+    budget = section_table(data, "agent", toml_path).get("budget_usd")
+    if isinstance(budget, (int, float)) and not isinstance(budget, bool) and budget > 0:
+        config.agent_budget_usd = float(budget)
 
-    if isinstance(run := data.get("run"), dict):
-        if "max_iterations" in run:
-            config.max_iterations = int(run["max_iterations"])
-        if "sleep_seconds" in run:
-            config.sleep_seconds = float(run["sleep_seconds"])
-        if "interactive" in run:
-            config.interactive = bool(run["interactive"])
+    run = section_table(data, "run", toml_path)
+    if "max_iterations" in run:
+        config.max_iterations = int(run["max_iterations"])
+    if "sleep_seconds" in run:
+        config.sleep_seconds = float(run["sleep_seconds"])
+    if "interactive" in run:
+        config.interactive = bool(run["interactive"])
 
-    if isinstance(paths := data.get("paths"), dict):
-        allowed = paths.get("allowed")
-        if isinstance(allowed, list):
-            config.allowed_paths = [str(p) for p in allowed if isinstance(p, str)]
+    allowed = section_table(data, "paths", toml_path).get("allowed")
+    if isinstance(allowed, list):
+        config.allowed_paths = [str(p) for p in allowed if isinstance(p, str)]
 
-    if isinstance(git_section := data.get("git"), dict):
-        if "branch" in git_section:
-            branch = git_section["branch"]
-            # Non-empty only: `branch = ""` in the shipped example means
-            # "no override, fall back to PRD branchName", while
-            # `KSTRL_BRANCH=""` below keeps its historical "explicit
-            # skip". STRING_KEYS states both doors for the string rows.
-            if isinstance(branch, str) and branch:
-                config.kstrl_branch = branch
-                config.kstrl_branch_explicit = True
-        if "auto_checkout" in git_section:
-            config.auto_checkout = bool(git_section["auto_checkout"])
+    git_section = section_table(data, "git", toml_path)
+    if "branch" in git_section:
+        branch = git_section["branch"]
+        # Non-empty only: `branch = ""` in the shipped example means
+        # "no override, fall back to PRD branchName", while
+        # `KSTRL_BRANCH=""` below keeps its historical "explicit
+        # skip". STRING_KEYS states both doors for the string rows.
+        if isinstance(branch, str) and branch:
+            config.kstrl_branch = branch
+            config.kstrl_branch_explicit = True
+    if "auto_checkout" in git_section:
+        config.auto_checkout = bool(git_section["auto_checkout"])
 
-    if isinstance(ui := data.get("ui"), dict) and "ascii" in ui:
+    ui = section_table(data, "ui", toml_path)
+    if "ascii" in ui:
         config.ascii_only = bool(ui["ascii"])
 
 
