@@ -190,8 +190,8 @@ class TestRunBoard:
         async with app.run_test(size=(80, 24)) as pilot:
             board = await mounted(pilot, lambda: app.screen, ComponentTable)
             board.update_state(state)
-            await settled(pilot, lambda: board.row_count == 4, what="the board rows")
-            await pilot.pause()
+            # The header and four rows laid out; the widths are asserted below.
+            await settled(pilot, lambda: board.virtual_size.height >= 5, what="the board layout")
             assert _cells_fit(board) == []
             assert board.virtual_size.width <= board.scrollable_content_region.width
 
@@ -288,9 +288,11 @@ class TestEvolveAndModals:
         app = _home(tmp_path)
         async with app.run_test(size=(120, 36)) as pilot:
             screen = await evolve_on(app, pilot)
-            empty = screen.query_one("#patterns-empty", Static)
+            empty = await mounted(pilot, lambda: screen, "#patterns-empty")
+            assert isinstance(empty, Static)
+            tabs = await mounted(pilot, lambda: screen, "#evolve-tabs")
+            await settled(pilot, lambda: tabs.region.height, what="the tabs to lay out")
             assert empty.display and "No recurring failure patterns" in str(empty.content)
-            tabs = screen.query_one("#evolve-tabs")
             assert tabs.region.y >= 3
 
     async def test_a_long_question_wraps_inside_the_dialog(self, tmp_path: Path) -> None:

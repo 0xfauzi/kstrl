@@ -230,9 +230,10 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     # construction.
     "tests/test_retry_screen.py": 44,
     "tests/test_settle_helper.py": 47,
+    "tests/test_tui_433_screens.py": 56,
     "tests/test_tui_app.py": 23,
     "tests/test_tui_config_guard.py": 13,
-    "tests/test_tui_detail.py": 39,
+    "tests/test_tui_detail.py": 41,  # +2 #433: test_follow_toggle waits on a live run
     "tests/test_tui_embed.py": 52,
     "tests/test_tui_safe_mode.py": 61,
     "tests/test_tui_snapshots.py": 2,
