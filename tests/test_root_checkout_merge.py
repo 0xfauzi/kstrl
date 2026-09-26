@@ -258,3 +258,58 @@ def test_phase_1_compares_the_engineers_prd_with_the_planned_copy(
     assert comp.status == ("failed" if rewrite else "completed"), run.stdout
     assert comp.failed_check == ("prd_stories" if rewrite else ""), run.stdout
     assert (run.returncode == 0) is not rewrite, run.stdout
+
+
+def _stub_agent_in_root(tmp_path: Path, *, rewrite_criteria: bool) -> Path:
+    """The stub for ``--no-worktrees``, where the engineer runs in the root
+    checkout too: it is the architect until the run has seeded the
+    engineer's PRD at the feature path, and the engineer after. It reuses
+    ``_stub_agent``'s ``mark_done.py`` and commits only its own files."""
+    agent = _stub_agent(tmp_path, rewrite_criteria=rewrite_criteria)
+    mark_done = agent.parent / "mark_done.py"
+    agent.write_text(
+        textwrap.dedent(f"""\
+            #!/bin/bash
+            cat > /dev/null
+            feature=scripts/kstrl/feature/{COMP}
+            if [ ! -f "$feature/prd.json" ]; then echo '{ARCHITECT_REPLY}'; exit 0; fi
+            set -e
+            '{sys.executable}' '{mark_done}' "$feature/prd.json" {int(rewrite_criteria)}
+            mkdir -p src
+            echo 'print("hello")' > src/greeter.py
+            printf '## Self-Critique\\nnone\\n' >> "$feature/progress.txt"
+            git add src "$feature"
+            git commit -q -m 'feat: US-001 hello'
+            echo '<promise>COMPLETE</promise>'
+        """),
+        encoding="utf-8",
+    )
+    return agent
+
+
+@pytest.mark.parametrize("rewrite", [False, True])
+def test_without_worktrees_phase_1_still_compares_with_the_planned_copy(
+    tmp_path: Path, rewrite: bool
+) -> None:
+    """Under ``--no-worktrees`` the run seeds the engineer's PRD at
+    ``prdPath`` in the root checkout itself, so a root copy exists there.
+    ``pre_run_prd_path`` must still prefer the planned copy: preferring the
+    root copy would compare the engineer's PRD with itself, and a
+    rewritten criterion would pass Phase 1."""
+    root = _initialised_project(tmp_path)
+
+    run = _factory(
+        root,
+        _stub_agent_in_root(tmp_path, rewrite_criteria=rewrite),
+        "--test-command",
+        "true",
+        "--typecheck-command",
+        "true",
+        "--lint-command",
+        "true",
+        "--no-worktrees",
+    )
+
+    (comp,) = Manifest.load(root / "scripts" / "kstrl" / "manifest.json").components
+    assert comp.status == ("failed" if rewrite else "completed"), run.stdout
+    assert comp.failed_check == ("prd_stories" if rewrite else ""), run.stdout
