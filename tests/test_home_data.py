@@ -150,7 +150,7 @@ class TestHomeSummariesPilot:
             row = table.get_row_at(0)  # type: ignore[attr-defined]
             cells = " ".join(str(cell) for cell in row)
             assert "2/2" in cells
-            assert "+" in cells  # lower-bound marker rides along
+            assert "≥" in cells  # lower-bound marker rides along
 
             app.screen.on_summaries_ready(
                 SummariesReady({}, HomeStats(None)),

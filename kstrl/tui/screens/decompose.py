@@ -13,6 +13,11 @@ never gate, so there is no decision to prompt for.
 #433 F11: the triage table fits each row to the terminal and marks what
 it shortened with an ellipsis; the detail pane under it prints the
 highlighted issue whole, wrapped, with its location and suggestion.
+
+#433 G3: the plan heading counts what the table lists. A finished run's
+architect output is saved, so it waits behind ``t``; a line of it that
+is the architect's JSON reply reads as a sentence naming what the reply
+holds, never as the raw JSON.
 """
 
 from __future__ import annotations
@@ -27,12 +32,13 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static
 
 from kstrl.agents.base import ARCHITECT_COMPONENT
+from kstrl.jsonread import read_json
 from kstrl.tui import theme
 from kstrl.tui.messages import StateChanged
 from kstrl.tui.state import architect_component_id, planned_component_ids
 from kstrl.tui.widgets.context_bar import ContextBar
 from kstrl.tui.widgets.cost_meter import CostMeter
-from kstrl.tui.widgets.dag_table import DagTable
+from kstrl.tui.widgets.dag_table import DagTable, compute_tiers
 from kstrl.tui.widgets.header import RunHeader, meter_width, topbar_header
 from kstrl.tui.widgets.transcript import TranscriptTail
 
@@ -128,6 +134,37 @@ def _summary(state: RunState) -> Text | None:
     return text
 
 
+def plan_title(state: RunState) -> Text:
+    """``plan  6 components in 5 tiers``: what the table under it lists."""
+    planned = planned_component_ids(state)
+    text = Text("plan", style=f"bold {theme.MUTED}")
+    if not planned:
+        text.append("  no components yet", style=theme.MUTED)
+        return text
+    deps = {cid: tuple(state.components[cid].deps) for cid in planned if cid in state.components}
+    tiers = {tier for tier in compute_tiers(deps).values() if tier >= 0}
+    text.append(f"  {len(planned)} components in {len(tiers)} tier(s)", style=theme.MUTED)
+    return text
+
+
+def readable_line(line: str) -> str:
+    """A transcript line; the architect's JSON reply as one sentence."""
+    if not line.lstrip().startswith("{"):
+        return line
+    try:
+        reply = read_json(line)
+    except ValueError:
+        return line
+    if not isinstance(reply, dict):
+        return line
+    held = ", ".join(
+        f"{len(value)} {key.replace('_', ' ')}"
+        for key, value in reply.items()
+        if isinstance(value, list)
+    )
+    return f"architect reply ({len(line):,} characters of JSON): {held or 'no lists'}"
+
+
 def _shorten(text: str, cells: int) -> str:
     return text if len(text) <= cells else text[: max(1, cells - 1)] + "…"
 
@@ -171,6 +208,7 @@ class DecomposeScreen(Screen[None]):
         Binding("escape", "app.pop_screen", "Back"),
         Binding("i", "open_triage", "Triage"),
         Binding("f", "toggle_follow", "Follow"),
+        Binding("t", "toggle_output", "Architect output"),
     ]
 
     def __init__(self) -> None:
@@ -187,6 +225,8 @@ class DecomposeScreen(Screen[None]):
         #: The run has written its finish record: the transcript is saved,
         #: not growing, so there is nothing to follow (#433 F8).
         self._finished = False
+        #: A finished run's saved output is shown only on ``t`` (#433 G3).
+        self._show_output = False
 
     def compose(self) -> ComposeResult:
         from textual.containers import Horizontal
@@ -236,6 +276,7 @@ class DecomposeScreen(Screen[None]):
         try:
             self._update_topbar(state)
             self.query_one("#attempt-strip", Static).update(_attempt_strip(state))
+            self.query_one("#dag-title", Static).update(plan_title(state))
             self.query_one(DagTable).update_state(state)
             self.query_one("#issues-strip", Static).update(_issue_strip(state))
             summary = _summary(state)
@@ -268,20 +309,26 @@ class DecomposeScreen(Screen[None]):
     def feed_transcript(self, lines: list[str]) -> None:
         tail = self.query_one(TranscriptTail)
         before = tail.lines_written
-        tail.feed_lines(lines)
+        tail.feed_lines([readable_line(line) for line in lines])
         if self._finished and tail.lines_written != before:
             self._update_transcript_title()
 
     def check_action(self, action: str, _parameters: tuple[object, ...]) -> bool | None:
         if action == "toggle_follow":
             return not self._finished
+        if action == "toggle_output":
+            return self._finished
         return True
 
     def _update_transcript_title(self) -> None:
-        title = Text("architect transcript", style="bold")
+        title = Text("architect output", style="bold")
+        tail = self.query_one(TranscriptTail)
+        tail.display = not self._finished or self._show_output
         if self._finished:
-            lines = self.query_one(TranscriptTail).lines_written
-            title.append(f"  · saved, {lines} line(s)", style=theme.MUTED)
+            title.append(f"  · saved, {tail.lines_written} line(s)", style=theme.MUTED)
+            title.append(
+                "  (t hides it)" if self._show_output else "  (t shows it)", style=theme.MUTED
+            )
         elif self._following:
             title.append("  ● following", style=theme.ACCENT)
             title.append("  (f pauses)", style=theme.MUTED)
@@ -295,6 +342,10 @@ class DecomposeScreen(Screen[None]):
 
     def action_toggle_follow(self) -> None:
         self._following = self.query_one(TranscriptTail).toggle_follow()
+        self._update_transcript_title()
+
+    def action_toggle_output(self) -> None:
+        self._show_output = not self._show_output
         self._update_transcript_title()
 
     def action_open_triage(self) -> None:

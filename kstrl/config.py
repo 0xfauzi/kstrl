@@ -544,6 +544,25 @@ def resolve_config_file(root_dir: Path) -> Path:
     return root_dir / CONFIG_FILE_NAME
 
 
+def validate_agent_type(value: str | None, source: str) -> None:
+    """Reject an agent type no adapter answers to, where it is read (#562).
+
+    The vocabulary is ``kstrl.agents.AGENT_TYPE_ALIASES``, the table
+    ``get_agent``, ``_cli_family`` and the CLI agent preflight all
+    canonicalise through, so load and use cannot disagree. None (unset)
+    passes: it means auto-detect. Before #562 an unknown value was
+    refused only where an agent was built, and not at all when a custom
+    command was set, which made the typo invisible.
+    """
+    from kstrl.agents import VALID_AGENT_TYPES, canonical_agent_type
+
+    if value is None or canonical_agent_type(value) is not None:
+        return
+    raise ValueError(
+        f"Unknown agent type {value!r} in {source}; expected one of {', '.join(VALID_AGENT_TYPES)}"
+    )
+
+
 def _apply_toml_overrides(
     config: KstrlConfig,
     toml_path: Path,
@@ -562,6 +581,7 @@ def _apply_toml_overrides(
         value = section_table(data, section, toml_path).get(toml_key)
         if isinstance(value, str) and value:
             setattr(config, field_name, _resolve_path(value, root_dir) if is_path else value)
+    validate_agent_type(config.agent_type, "[agent] type")
 
     budget = section_table(data, "agent", toml_path).get("budget_usd")
     if isinstance(budget, (int, float)) and not isinstance(budget, bool) and budget > 0:
@@ -608,6 +628,7 @@ def _apply_env_overrides(config: KstrlConfig, root_dir: Path) -> None:
     for _section, _toml_key, env_var, field_name, is_path in STRING_KEYS:
         if (raw := os.environ.get(env_var)) is not None:
             setattr(config, field_name, _resolve_path(raw, root_dir) if is_path else raw)
+    validate_agent_type(os.environ.get("KSTRL_AGENT_TYPE"), "KSTRL_AGENT_TYPE")
     if "SLEEP_SECONDS" in os.environ:
         config.sleep_seconds = float(os.environ["SLEEP_SECONDS"])
     if "INTERACTIVE" in os.environ:

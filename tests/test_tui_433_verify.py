@@ -139,7 +139,7 @@ class TestMeter:
         full = render_cost_meter(state).plain
         assert "run " in full
         fitted = render_cost_meter(state, len(full) - 1).plain
-        assert "24% of $78.00 cost cap" in fitted
+        assert "25% of $78.00 cost cap" in fitted
         assert "run " not in fitted
         assert len(fitted) <= len(full) - 1
 

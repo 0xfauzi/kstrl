@@ -23,18 +23,18 @@ from kstrl.review import (
     normalize_story_id,
 )
 
-INTEGRATION_CRITERIA_PROMPT_VERSION = "1.1.0"
+INTEGRATION_CRITERIA_PROMPT_VERSION = "1.2.0"
 
 # One story per line: "id | title | criterion". Instruction to the reviewer
 # LLM, and the detector itself, so it is enrolled (H3). Its H2 roles are
 # `integration` and `integration_clean`, scored on the #480 section 8
 # fixtures in tests/adversarial_fixtures/integration/.
 INTEGRATION_CRITERIA_PROMPT = """\
-IC1 | Calls across component boundaries | Every call from one component into another passes inputs the callee documents as valid and handles every outcome the callee documents, errors and empty results included, and every such callee's docstring describes what its callers actually do.
-IC2 | Stored data read back | Data that one component writes and another component reads back is read under rules that still accept everything written before, so a validation rule tightened for new input cannot make stored data unreadable.
-IC3 | One definition per shared rule | A value or rule that more than one component depends on is defined once and imported by the others, unless the specification states them as separate rules that share a value, in which case separate definitions are correct and are not a defect.
-IC4 | Calls into code that predates the feature | Every call the feature makes into code that already existed at commit {feature_base_sha} uses that code as its docstring and its tests state, including argument formats, return values and raised errors.
-IC5 | Decisions agree with criteria | Each decision in scripts/kstrl/decisions.json agrees with every other decision in that file and with the acceptance criteria of the component it binds, which are in the prd.json file in the directory of that component under scripts/kstrl/feature/. If decisions.json does not exist at this commit, this criterion passes and the explanation says the file is absent.
+IC1 | Calls across component boundaries | Every call from one component into another agrees with the callee's docstring: the call passes only inputs the docstring documents as valid, it handles every outcome the docstring documents, errors and empty results included, and the docstring describes what its callers actually do. This story gets its own verdict, pass included; the specification and the prd.json files in the repository are evidence for it, not stories of this review.
+IC2 | Stored data read back | Stored data is read back without re-applying the checks made on new input. This fails when the code that reads stored records back builds each record through a constructor, validator or parser that enforces a rule for new input, such as a length limit, a range or a pattern, because tightening that rule later would make records already stored unreadable. No rule has to have been tightened yet for this to fail. This story gets its own verdict, pass included; the specification and the prd.json files in the repository are evidence for it, not stories of this review.
+IC3 | One definition per shared rule | A value or rule that more than one component depends on is defined once and imported by the others, unless the specification states them as separate rules that share a value, in which case separate definitions are correct and are not a defect. This story gets its own verdict, pass included; the specification and the prd.json files in the repository are evidence for it, not stories of this review.
+IC4 | Calls into code that predates the feature | Every call the feature makes into code that already existed at commit {feature_base_sha} uses that code as its docstring and its tests state, including argument formats, return values and raised errors. This story gets its own verdict, pass included; the specification and the prd.json files in the repository are evidence for it, not stories of this review.
+IC5 | Decisions agree with criteria | Each decision in scripts/kstrl/decisions.json agrees with every other decision in that file and with the acceptance criteria of the component it binds, which are in the prd.json file in the directory of that component under scripts/kstrl/feature/. If decisions.json does not exist at this commit, this criterion passes and the explanation says the file is absent. This story gets its own verdict, pass included; the specification and the prd.json files in the repository are evidence for it, not stories of this review.
 """
 
 INTEGRATION_CARRIED_PROMPT_VERSION = "1.0.0"

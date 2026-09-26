@@ -792,6 +792,7 @@ ENUM_SENTINELS: dict[tuple[str, str], str | float | list[str]] = {
     ("factory", "claim_agreement"): "block",
     ("security", "mode"): "hard",
     ("security", "fail_threshold"): "low",
+    ("security", "agent_type"): "codex",
     ("policy", "license_unresolved"): "advisory",
     ("adequacy", "layer0"): "block",
     ("divergence", "mode"): "block",

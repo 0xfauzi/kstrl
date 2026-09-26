@@ -145,7 +145,7 @@ def integration_summary(review: IntegrationReview | None, *, short: bool = False
     text = Text()
     text.append("integration ", style=f"bold {theme.MUTED}")
     if review is None:
-        text.append("not recorded in this run", style=theme.MUTED)
+        text.append("no review recorded for this run", style=theme.MUTED)
         return text
     word, color, note = _outcome(review)
     text.append(word, style=f"bold {color}")

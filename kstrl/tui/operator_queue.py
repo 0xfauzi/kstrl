@@ -33,10 +33,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.tui.agent_health import agent_health
+from kstrl.tui.agent_health import ALIVE, AgentHealth, agent_health
 from kstrl.tui.delivery import Delivery, merges_of, read_delivery
 from kstrl.tui.integration_view import review_files
-from kstrl.tui.run_status import FAILED, failed_cause, run_reason
+from kstrl.tui.run_status import FAILED, failed_cause, run_reason, running_brief
 from kstrl.tui.serve_view import INTERRUPTED, ServeState, read_serve_state
 from kstrl.tui.theme import short_run_id
 
@@ -325,6 +325,15 @@ def failure_rows(
     ]
 
 
+def _narrow_active(moving: list[ComponentState], health: AgentHealth) -> str:
+    """At 80 columns: component, phase, progress and output age, and the
+    process only when it is not alive (#433 advice 2.6). The board has
+    the rest."""
+    more = f" +{len(moving) - 1} more" if len(moving) > 1 else ""
+    process = "" if health.process == ALIVE else f" · {health.process_word}"
+    return f"{running_brief(moving[0])}{more} · {health.output()}{process}"
+
+
 def _active_run_rows(
     refs: Sequence[RunRef],
     states: Mapping[str, RunState],
@@ -350,9 +359,7 @@ def _active_run_rows(
         if moving:
             health = agent_health(ref.run_dir, moving[0], now)
             detail = f"{reason} · {health.text()}"
-            # Health first: a narrow cell cuts the end, and the reason
-            # is the part the board repeats.
-            short = f"{health.text(short=True)} · {reason}"
+            short = _narrow_active(moving, health)
         rows.append(ActiveRow(ref.kind, ref.run_id, RUNNING, detail, ref.run_id, short))
     return rows
 

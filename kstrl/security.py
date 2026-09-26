@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl import git
+from kstrl.config import validate_agent_type
 from kstrl.decompose import (
     AgentOutputTooLarge,
     _extract_json,
@@ -308,6 +309,7 @@ class SecurityConfig:
                 f"Invalid SecurityConfig.fail_threshold {self.fail_threshold!r}; "
                 f"must be one of {sorted(VALID_SEVERITIES)}"
             )
+        validate_agent_type(self.agent_type, "[security] agent_type")
 
     @classmethod
     def from_env(cls) -> SecurityConfig:

@@ -197,7 +197,11 @@ class OverviewScreen(Screen[None]):
             release_withheld=state.release_withheld,
             integration=self._integration,
         )
-        row.update(Text("\n").join([integration, merge_summary(delivery, short=compact)]))
+        # A section of its own under the board, titled like "activity"
+        # (#433 G10), not two lines flush under the table.
+        title = Text("delivery", style=f"bold {theme.MUTED}")
+        lines = [integration, merge_summary(delivery, short=compact)]
+        row.update(Text("\n").join([title, *(Text("  ") + line for line in lines)]))
         row.display = True
 
     def check_action(self, action: str, _parameters: tuple[object, ...]) -> bool | None:
