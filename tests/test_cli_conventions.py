@@ -90,6 +90,7 @@ EMPTY_REPO_EXITS: tuple[tuple[tuple[str, ...], tuple[str, ...], int, str], ...] 
     (("inbox", "snooze"), ("x",), 2, "no such inbox item"),
     (("init",), ("--ui", "plain"), 0, "scaffolds the project"),
     (("learn", "playbook"), (), 0, "an empty playbook is an answer"),
+    (("learn", "repair"), (), 0, "a missing ledger has nothing to repair"),
     (("queue", "add"), ("spec.md",), 0, "queues the spec"),
     (("queue", "ls"), (), 0, "an empty queue"),
     (("queue", "pause"), (), 0, "pauses intake"),

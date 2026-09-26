@@ -10,6 +10,7 @@ rewritten per operation) only exists when writers actually overlap.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import subprocess
@@ -107,14 +108,24 @@ def test_ops_fold_in_order(xdg: Path) -> None:
     assert playbook.sha256 == hashlib.sha256(raw).hexdigest()
 
 
+def _line(op: Op) -> str:
+    return json.dumps(op.to_record())
+
+
 def test_unparseable_ledger_line_is_refused_by_index(xdg: Path) -> None:
+    """The fold refuses it, and so does the writer: an op cannot be
+    checked against a ledger the fold cannot read."""
     append_ops([Op(OpKind.ADD, "L1", AT, lesson=_lesson("L1"))])
     with ledger_path().open("ab") as handle:
         handle.write(b'{"op": "UPDATE", "id": "L1", "at"\n')
-    append_ops([Op(OpKind.DEMOTE, "L1", LATER)])
+    before = ledger_path().read_bytes()
 
     with pytest.raises(PlaybookError, match=r"line 2\b"):
         load_playbook()
+    with pytest.raises(PlaybookError, match=r"line 2\b"):
+        append_ops([Op(OpKind.DEMOTE, "L1", LATER)])
+
+    assert ledger_path().read_bytes() == before
 
 
 def test_unknown_op_is_refused_by_index(xdg: Path) -> None:
@@ -125,17 +136,28 @@ def test_unknown_op_is_refused_by_index(xdg: Path) -> None:
         load_playbook()
 
 
-def test_unknown_lesson_id_is_refused(xdg: Path) -> None:
-    append_ops([Op(OpKind.ADD, "L1", AT, lesson=_lesson("L1"))])
-    append_ops([Op(OpKind.DEMOTE, "L9", LATER)])
+def test_the_fold_refuses_an_op_on_an_unknown_id_by_index(xdg: Path) -> None:
+    """A line no writer here can produce any more, written by hand."""
+    playbook_dir().mkdir(parents=True)
+    ledger_path().write_bytes(
+        _ledger_lines(
+            _line(Op(OpKind.ADD, "L1", AT, lesson=_lesson("L1"))),
+            _line(Op(OpKind.DEMOTE, "L9", LATER)),
+        )
+    )
 
     with pytest.raises(PlaybookError, match=r"line 2\b.*'L9'"):
         load_playbook()
 
 
-def test_a_second_add_of_one_id_is_refused(xdg: Path) -> None:
-    append_ops([Op(OpKind.ADD, "L1", AT, lesson=_lesson("L1"))])
-    append_ops([Op(OpKind.ADD, "L1", LATER, lesson=_lesson("L1"))])
+def test_the_fold_refuses_a_second_add_of_one_id_by_index(xdg: Path) -> None:
+    playbook_dir().mkdir(parents=True)
+    ledger_path().write_bytes(
+        _ledger_lines(
+            _line(Op(OpKind.ADD, "L1", AT, lesson=_lesson("L1"))),
+            _line(Op(OpKind.ADD, "L1", LATER, lesson=_lesson("L1"))),
+        )
+    )
 
     with pytest.raises(PlaybookError, match=r"line 2\b.*'L1'"):
         load_playbook()
