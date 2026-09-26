@@ -217,20 +217,18 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/test_inbox.py": 4,
     "tests/test_init_wizard.py": 47,
     "tests/test_launch_session.py": 39,
-    # TestRetryScreen split out of test_launch_session.py when the
-    # file-length ratchet fired (#436 B1); its awaits are unchanged
-    # (`mounted`/`drained`/`settled`/`pilot.press`) plus two new tests
-    # in the same sequence (a kstrl.toml ceiling that carries through
-    # the TUI launch, and recorded flags that do not), so this file's
-    # decision for it still holds. #485 adds one test in the same
-    # sequence (`mounted`/`drained`/`pilot.press`/`settled`); its only
-    # read after them is `request.header`, which OptionsModal holds from
-    # construction.
-    "tests/test_retry_screen.py": 40,
+    # TestRetryScreen split out of test_launch_session.py (#436 B1). Every
+    # await is mounted/drained/settled/pilot.press; #485's one read after
+    # them is `request.header`, which OptionsModal holds from construction.
+    # #433 inc3's two refusal tests read only after `drained`.
+    "tests/test_retry_screen.py": 42,
     "tests/test_settle_helper.py": 47,
     "tests/test_tui_433_screens.py": 117,
     # #433 verifier tests: every await is a settle helper or a resize then one.
     "tests/test_tui_433_verify.py": 11,
+    # #433 increment 3: every await is a settle helper or a push then one.
+    "tests/test_tui_433_inc3.py": 62,
+    "tests/test_tui_433_inc3_board.py": 22,
     "tests/test_tui_app.py": 23,
     "tests/test_tui_config_guard.py": 13,
     "tests/test_tui_detail.py": 41,  # +2 #433: test_follow_toggle waits on a live run

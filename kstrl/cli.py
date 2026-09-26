@@ -4501,7 +4501,7 @@ def retry(
     except ValueError as exc:
         ui_impl.err(str(exc))
         sys.exit(2)
-    plan, problems = plan_resume(
+    plan, problems, _unkept = plan_resume(
         root_dir,
         manifest,
         manifest_file,
@@ -5440,7 +5440,7 @@ def _decide_parked_merge_if_parked(
             f"approval in {manifest_file}; there is no parked merge to {action}"
         )
         sys.exit(2)
-    plan, problems = plan_resume(
+    plan, problems, _unkept = plan_resume(
         root_dir,
         manifest,
         manifest_file,

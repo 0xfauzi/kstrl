@@ -89,7 +89,7 @@ class TestEvolveScreen:
             assert trends.row_count == 2  # type: ignore[attr-defined]
             row = trends.get_row_at(0)  # type: ignore[attr-defined]
             cells = " ".join(str(cell) for cell in row)
-            assert "144000+" in cells  # unreported -> lower bound
+            assert "≥144000" in cells  # unreported -> lower bound
             second = trends.get_row_at(1)  # type: ignore[attr-defined]
             second_cells = [str(cell) for cell in second]
             assert theme.EMPTY_CELL in second_cells  # empty tokens honest

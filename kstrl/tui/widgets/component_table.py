@@ -40,7 +40,7 @@ from textual.widgets import DataTable
 from kstrl.tui import theme
 from kstrl.tui.agent_health import agent_health
 from kstrl.tui.run_status import age_phrase, component_took, failed_cause
-from kstrl.tui.widgets.cost_meter import format_tokens
+from kstrl.tui.widgets.cost_meter import at_least, format_tokens
 
 if TYPE_CHECKING:
     from kstrl.reducer import ComponentState, RunState
@@ -135,14 +135,13 @@ def _phase_cell(comp: ComponentState, state: RunState, width: int) -> Text:
 def _tokens(comp: ComponentState) -> Text:
     if not comp.total_tokens:
         return _dim(theme.EMPTY_CELL)
-    marker = "+" if comp.tokens_are_lower_bound else ""
-    return _num(f"{format_tokens(comp.total_tokens)}{marker}")
+    return _num(at_least(format_tokens(comp.total_tokens), comp.tokens_are_lower_bound))
 
 
 def _cost(comp: ComponentState) -> Text:
     if not comp.cost_usd:
         return _dim(theme.EMPTY_CELL)
-    return _num(f"${comp.cost_usd:.2f}{'+' if comp.cost_is_lower_bound else ''}")
+    return _num(at_least(f"${comp.cost_usd:.2f}", comp.cost_is_lower_bound))
 
 
 def _time(comp: ComponentState, now: float) -> Text:
@@ -157,7 +156,13 @@ def _agent_cell(
         # Left-aligned like the text it stands in for.
         return Text(theme.EMPTY_CELL, style=theme.MUTED)
     health = agent_health(run_dir, comp, now)
-    style = theme.ERROR if health.process == "exited" else theme.MUTED
+    style = (
+        theme.ERROR
+        if health.process == "exited"
+        else theme.WARNING
+        if health.stale
+        else theme.MUTED
+    )
     return Text(health.text(short=short, pid=False), style=style)
 
 

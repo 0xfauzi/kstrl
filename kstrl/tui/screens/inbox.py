@@ -23,23 +23,56 @@ other home screen, rather than the process's working directory.
 
 from __future__ import annotations
 
+import time
+from datetime import UTC, datetime
 from typing import Any
 
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
+from textual.containers import VerticalScroll
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static
 
-from kstrl.inbox import Inbox, InboxConfig, InboxError, InboxItem
+from kstrl.inbox import Inbox, InboxConfig, InboxError, InboxItem, ItemStatus
 from kstrl.statedir import ControlStateError
 from kstrl.tui import theme
-from kstrl.tui.inbox_consequences import Consequences, consequences
+from kstrl.tui.inbox_consequences import Consequences, consequences, kind_label
+from kstrl.tui.run_status import age_phrase
 from kstrl.tui.widgets.config_problem import ConfigProblemBanner
 from kstrl.tui.widgets.context_bar import ContextBar
 
 _PRIORITY_STYLE = {"high": "bold red", "normal": "", "low": "dim"}
 _DECISIONS = frozenset({"approve", "reject", "snooze"})
+
+
+#: Evidence keys in the detail's words; any other key loses its underscores.
+EVIDENCE_LABELS = {
+    "pr": "PR",
+    "head_sha": "PR head",
+    "open_findings": "open findings",
+    "evidence": "evidence file",
+}
+
+
+def item_age(item: InboxItem, now: float | None = None) -> str:
+    """How long ago the item was last raised, from its own timestamps."""
+    for stamp in (item.last_seen_at, item.created_at):
+        try:
+            moment = datetime.fromisoformat(stamp)
+        except (TypeError, ValueError):
+            continue
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=UTC)
+        return age_phrase((time.time() if now is None else now) - moment.timestamp())
+    return theme.EMPTY_CELL
+
+
+def evidence_line(key: str, value: object) -> str:
+    """``PR head: 87c3e2efbe2c``: a label, and a list as a list (#433 G6)."""
+    label = EVIDENCE_LABELS.get(key, key.replace("_", " "))
+    shown = ", ".join(str(v) for v in value) if isinstance(value, list | tuple) else str(value)
+    return f"{label}: {shown}"
 
 
 def priority_marker(priority: str) -> Text:
@@ -82,7 +115,9 @@ class InboxScreen(Screen[None]):
         # and rendered one cell wide, so the list of items could not be
         # seen at any terminal size (#433 E1).
         yield DataTable(id="inbox-table")
-        yield Static("", id="inbox-detail")
+        # Scrolls: at 80x24 the last choice ran past the footer (#433 G6).
+        with VerticalScroll(id="inbox-detail-scroll"):
+            yield Static("", id="inbox-detail")
         yield Footer()
 
     @property
@@ -96,7 +131,7 @@ class InboxScreen(Screen[None]):
     def on_mount(self) -> None:
         table = self.query_one("#inbox-table", DataTable)
         table.cursor_type = "row"
-        table.add_columns("", "kind", "title", "status")
+        table.add_columns("", "kind", "title", "age", "status")
         self.action_refresh()
 
     # -- data --------------------------------------------------------------
@@ -133,9 +168,10 @@ class InboxScreen(Screen[None]):
             repeat = f" x{item.occurrences}" if item.occurrences > 1 else ""
             table.add_row(
                 priority_marker(str(item.priority)),
-                str(item.kind),
+                kind_label(item.kind),
                 f"{item.title}{repeat}",
-                "" if item.is_open else str(item.status),
+                item_age(item),
+                str(ItemStatus.OPEN) if item.is_open else str(item.status),
             )
         table.display = bool(self._items)
         if self._select:
@@ -189,11 +225,14 @@ class InboxScreen(Screen[None]):
             return
         lines = Text()
         lines.append(f"{item.title}\n", style="bold")
-        lines.append(f"{item.kind}  priority={item.priority}\n", style="dim")
+        seen = f" · seen {item.occurrences} times" if item.occurrences > 1 else ""
+        lines.append(
+            f"{kind_label(item.kind)} · {item.priority} priority · raised {item_age(item)} ago"
+            f"{seen}\n",
+            style="dim",
+        )
         if item.component:
             lines.append(f"component: {item.component}\n")
-        if item.occurrences > 1:
-            lines.append(f"seen {item.occurrences}x\n")
         if item.decided_by:
             lines.append(
                 f"decided by {item.decided_by} at {item.decided_at}\n",
@@ -204,7 +243,7 @@ class InboxScreen(Screen[None]):
         if item.detail:
             lines.append(f"\n{item.detail}\n")
         for key, value in item.evidence.items():
-            lines.append(f"  {key}: {value}\n", style="dim")
+            lines.append(f"  {evidence_line(key, value)}\n", style="dim")
         if item.is_open:
             _append_choices(lines, self._consequences(item))
         detail.update(lines)

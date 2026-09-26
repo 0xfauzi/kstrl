@@ -491,7 +491,7 @@ class TestInboxChoices:
     def test_other_kinds_are_record_only_and_snooze_names_its_hours(self) -> None:
         item = dataclasses.replace(self._park(), kind=ItemKind.HALTED_RUN, dedupe_key="h")
         choices = consequences(item, None, 6.0)
-        assert "no kstrl step reads a halted_run decision" in choices.offered[0][1]
+        assert "no kstrl step reads a halted run decision" in choices.offered[0][1]
         assert "for 6h" in choices.offered[2][1]
 
 
