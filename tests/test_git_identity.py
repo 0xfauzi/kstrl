@@ -208,6 +208,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # gh stub commits in a clone that includes that repo's config.
     "tests/test_spine_dependency_base.py": 2,
     "tests/test_spine_engineer_loop.py": 4,
+    # #566: the bash engineer and two direct commits, all in a repo
+    # spine_utils.init_kstrl_repo put through set_identity.
+    "tests/test_spine_single_pr_retry.py": 4,
     "tests/test_spine_golden_patterns_e2e.py": 1,
     # #154: TestSpineReleaseRef's `_enable_release` commits the inert
     # `[release]` kstrl.toml onto the repo `init_kstrl_repo` already put
