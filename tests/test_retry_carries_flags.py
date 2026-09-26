@@ -711,3 +711,16 @@ class TestVerifyCommandIsGone:
         assert "Not replayed from run" not in out, out
         # Refused BEFORE the reset: the manifest still says failed.
         assert _status(root, "storage") == ComponentStatus.FAILED.value
+
+
+def test_the_tui_line_states_every_set_limit_not_only_the_cost_ceiling() -> None:
+    """#552 after #551: the retry screen's line is built from `plan.limits`,
+    so a token or timeout limit the retry keeps is stated, not dropped."""
+    from kstrl.retry_plan import ResumePlan, limits_line
+
+    limits = dict.fromkeys(run_limits(FactoryConfig(), TimeoutConfig()), 0.0)
+    limits.update(max_total_tokens=5000.0, agent_timeout=90.0)
+    plan = ResumePlan("r", True, (), tuple(limits.items()), 2, ())
+    assert limits_line(plan) == "--max-total-tokens 5000, --agent-timeout 90"
+    unset = ResumePlan("r", True, (), tuple(dict.fromkeys(limits, 0.0).items()), 2, ())
+    assert limits_line(unset) == "no run limit"

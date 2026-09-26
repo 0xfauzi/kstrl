@@ -16,14 +16,14 @@ import pytest
 
 from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryConfig
+from kstrl.integration_fix import fix_prd_rel
 from kstrl.integration_state import state_payload_errors
 from kstrl.manifest import Component, Manifest
 from kstrl.scope import RunScope
+from kstrl.statedir import plan_prd_path
 from tests.helpers import integration_harness as h
 from tests.helpers import integration_loop as lp
 from tests.helpers.gitrepo import git_in
-
-FIX_PRD = Path("scripts") / "kstrl" / "feature" / lp.FIX_1 / "prd.json"
 
 
 class _Crash(BaseException):
@@ -75,7 +75,7 @@ def test_a_crash_after_the_manifest_append_is_reconciled_on_resume(tmp_path: Pat
         lp.run_loop(root, lp.Rig(root, lp.ScriptedReviewer(base, [lp.IC2_FAIL])))
 
     assert lp.manifest_ids(root) == ["comp-a", "comp-b", lp.FIX_1]
-    assert (root / FIX_PRD).is_file()
+    assert plan_prd_path(root, lp.FIX_1).is_file()
 
     reviewer = lp.ScriptedReviewer(base, [{}])
     rig = lp.Rig(root, reviewer)
@@ -85,6 +85,20 @@ def test_a_crash_after_the_manifest_append_is_reconciled_on_resume(tmp_path: Pat
     assert rig.scopes[lp.FIX_1].allowed_paths == lp.state(root)["fixes"][0]["scope"]
     assert lp.state(root)["findings"][0]["status"] == "closed"
     assert result.exit_code == 0
+
+
+def test_the_fix_prd_is_not_written_where_the_fix_branch_commits_it(tmp_path: Path) -> None:
+    """#545: the fix's branch commits its PRD at ``fix_prd_rel``, so a copy
+    at that path in the root checkout blocks ``git merge`` of the branch.
+    Stopped after the three creation stages, before the fix is launched,
+    so nothing but the integration loop has written anything."""
+    root = tmp_path / "repo"
+    base, _head = lp.loop_feature(root)
+    with patch("kstrl.integration_loop._make_visible", side_effect=_crash), pytest.raises(_Crash):
+        lp.run_loop(root, lp.Rig(root, lp.ScriptedReviewer(base, [lp.IC2_FAIL])))
+
+    assert plan_prd_path(root, lp.FIX_1).is_file()
+    assert not (root / fix_prd_rel(lp.FIX_1)).exists()
 
 
 def test_a_dag_error_in_the_extended_manifest_refuses_the_fix(tmp_path: Path) -> None:

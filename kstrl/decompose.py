@@ -73,6 +73,7 @@ from kstrl.manifest import (
 )
 from kstrl.names import validate_branch_name, validate_component_id
 from kstrl.prd import PRD
+from kstrl.statedir import plan_prd_path
 
 logger = logging.getLogger(__name__)
 
@@ -2250,6 +2251,11 @@ def _generate_component_prd(
     write itself is atomic, so a crash mid-write never leaves a
     truncated prd.json.
 
+    Written at ``statedir.plan_prd_path``, not at the component's
+    ``prd_path``: the component branch commits the engineer's copy at
+    ``prd_path``, so a copy there in the root checkout blocks the merge
+    of that branch (#545).
+
     Returns the path to the generated prd.json.
     """
     comp_id: str = comp_data["id"]
@@ -2259,9 +2265,8 @@ def _generate_component_prd(
     if errors:
         raise ValueError(f"Generated PRD for '{comp_id}' has schema errors: {'; '.join(errors)}")
 
-    feature_dir: Path = root_dir / "scripts" / "kstrl" / "feature" / comp_id
-    feature_dir.mkdir(parents=True, exist_ok=True)
-    prd_path = feature_dir / "prd.json"
+    prd_path = plan_prd_path(root_dir, comp_id)
+    prd_path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_json(prd_path, prd_data)
     return prd_path
 
@@ -2769,7 +2774,7 @@ def _decompose_spec_impl(
 
             # Track directories this run creates so cleanup can remove
             # them; pre-existing directories are left alone.
-            probe = root_dir / "scripts" / "kstrl" / "feature" / comp_id
+            probe = plan_prd_path(root_dir, comp_id).parent
             while not probe.exists() and probe != root_dir:
                 created_dirs.append(probe)
                 probe = probe.parent
@@ -2781,7 +2786,10 @@ def _decompose_spec_impl(
                 routed_issues[comp_id],
             )
             written_prds.append(prd_path)
-            rel_prd = prd_path.relative_to(root_dir).as_posix()
+            # The path the engineer's copy has in its worktree and on
+            # the component branch. Nothing writes it in the root
+            # checkout (#545).
+            rel_prd = f"scripts/kstrl/feature/{comp_id}/prd.json"
 
             issue_ref = linear_sync.issues.get(comp_id) if linear_sync is not None else None
             manifest_components.append(

@@ -10,6 +10,10 @@ if TYPE_CHECKING:
     from kstrl.reducer import RunState
     from kstrl.safemode import SafeModeReason
     from kstrl.tui.home_data import HomeStats, RunSummary
+    from kstrl.tui.integration_view import IntegrationReview
+    from kstrl.tui.operator_queue import FailureEntry
+    from kstrl.tui.retry_scope import RetryScope
+    from kstrl.tui.serve_view import ServeState
 
 
 class StateChanged(Message):
@@ -50,3 +54,33 @@ class SummariesReady(Message):
         super().__init__()
         self.summaries = summaries
         self.stats = stats
+
+
+class DeliveryRead(Message):
+    """The run overview's worker read the integration files and the serve
+    queue (#433 F9, M1)."""
+
+    def __init__(
+        self,
+        integration: IntegrationReview | None,
+        serve: ServeState | None,
+    ) -> None:
+        super().__init__()
+        self.integration = integration
+        self.serve = serve
+
+
+class FailuresRead(Message):
+    """The retry screen's worker joined the recent runs to the manifest."""
+
+    def __init__(self, entries: list[FailureEntry]) -> None:
+        super().__init__()
+        self.entries = entries
+
+
+class ScopeRead(Message):
+    """The retry screen's worker worked out one retry's scope."""
+
+    def __init__(self, scope: RetryScope) -> None:
+        super().__init__()
+        self.scope = scope

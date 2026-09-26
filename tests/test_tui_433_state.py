@@ -153,11 +153,14 @@ class TestComponentTimes:
         )
         assert time_cell_text(comp, NOW) == "30m"
 
-    def test_running_component_shows_its_last_event_age(self) -> None:
+    def test_running_component_shows_how_long_it_has_run(self) -> None:
+        """Increment 2: the time column is elapsed time on every row. A
+        running row read "21s ago" (its last event) under a header that
+        says time, next to rows whose time is a duration."""
         comp = ComponentState(
             component_id="c", status="running", started_ts=NOW - 100, last_event_ts=NOW - 21
         )
-        assert time_cell_text(comp, NOW) == "21s ago"
+        assert time_cell_text(comp, NOW) == "1m"
 
     def test_carried_and_skipped_rows_show_no_time(self) -> None:
         carried = ComponentState(component_id="c", status="completed", carried=True)
@@ -252,7 +255,7 @@ class TestHomeLines:
 
     def test_attention_line_says_nothing_waits(self) -> None:
         text = attention_line(HomeStats(last=None, inbox_open=0, failed_components=0)).plain
-        assert text.strip() == "nothing is waiting on you"
+        assert text.strip() == "needs you: nothing is waiting on you"
 
     def test_attention_line_makes_no_claim_it_could_not_read(self) -> None:
         assert attention_line(HomeStats(last=None)).plain == ""

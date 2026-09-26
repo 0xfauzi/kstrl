@@ -87,6 +87,10 @@ class ComponentState:
     pr_url: str = ""
     pr_number: int = 0
     pr_state: str = ""  # "" | created | merge_pending | merged
+    merge_sha: str = ""  # pr_merged.merge_sha (#442); "" when none recorded (#433 M3)
+    #: The latest worker_heartbeat's pid, the process running the agent
+    #: (#433 M2); 0 when no heartbeat was written.
+    heartbeat_pid: int = 0
     checkpoint_open: str = ""  # kind of the unresolved checkpoint_requested
     error: str = ""
     #: True while the only event this run has written for the component
@@ -195,6 +199,9 @@ class RunState:
     #: and the indented detail lines that follow it (#433 F4). A run that
     #: stopped without a finish record usually said why here first.
     error_block: list[str] = field(default_factory=list)
+    #: factory_completed: the commit the merges produced, and why no release (#442).
+    release_ref: str = ""
+    release_withheld: str = ""
 
     @property
     def kind(self) -> str:
@@ -400,6 +407,8 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
         return
     if isinstance(event, ev.RunCompleted):
         state.finished = True
+        state.release_ref = event.release_ref  # #442; read by the TUI's delivery row
+        state.release_withheld = event.release_withheld
         return
     if isinstance(event, ev.RunPlan):
         state.max_total_tokens = event.max_total_tokens
@@ -547,6 +556,7 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
         comp.max_iterations = event.max_iterations
     elif isinstance(event, ev.WorkerHeartbeat):
         comp.last_heartbeat_ts = max(comp.last_heartbeat_ts, event.ts)
+        comp.heartbeat_pid = event.pid
     elif isinstance(event, ev.ComponentUsage):
         comp.usage_calls += event.calls
         comp.unreported_calls += event.unreported_calls
@@ -593,6 +603,7 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
         comp.pr_url = event.pr_url or comp.pr_url
         comp.pr_number = event.pr_number or comp.pr_number
         comp.pr_state = "merged"
+        comp.merge_sha = event.merge_sha
     elif isinstance(event, ev.PrMergePending):
         comp.pr_url = event.pr_url or comp.pr_url
         comp.pr_state = "merge_pending"

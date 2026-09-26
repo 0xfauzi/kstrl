@@ -131,6 +131,7 @@ from kstrl.retry_plan import (
     retry_confirm_header,
 )
 from kstrl.sandbox import SandboxConfig
+from kstrl.security import _SEVERITY_ORDER
 from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.base import UI
@@ -2497,7 +2498,7 @@ def decompose(
 )
 @click.option(
     "--security-fail-threshold",
-    type=click.Choice(["critical", "high", "medium", "low"]),
+    type=click.Choice(list(_SEVERITY_ORDER)),
     default=None,
     help="In hard mode, findings at or above this severity block "
     "(default: high - critical+high fail)",

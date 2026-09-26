@@ -72,7 +72,9 @@ SECURITY_CATEGORY_MAP: dict[str, dict[str, str]] = {
 VALID_CATEGORIES = frozenset(SECURITY_CATEGORY_MAP.keys())
 
 # Rank of each severity. ``VALID_SEVERITIES`` is its key set, so the
-# parser and the fail count read one vocabulary (#524).
+# parser and the fail count read one vocabulary (#524). The calibration
+# scorer and the ``--security-fail-threshold`` choices read it too, and
+# tests/test_security_severity_one_home.py fails on a second copy (#550).
 _SEVERITY_ORDER = {"critical": 3, "high": 2, "medium": 1, "low": 0}
 
 VALID_SEVERITIES = frozenset(_SEVERITY_ORDER)
