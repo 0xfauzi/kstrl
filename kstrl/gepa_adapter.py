@@ -44,6 +44,7 @@ from gepa.api import optimize
 from gepa.core.adapter import EvaluationBatch, GEPAAdapter, ProposalFn
 from gepa.core.result import GEPAResult
 from gepa.proposer.reflective_mutation.base import LanguageModel
+from gepa.strategies.instruction_proposal import InstructionProposalSignature
 
 from kstrl import git
 from kstrl.agents.base import Agent, UsageTotals, collect_usage, usage_cursor
@@ -411,13 +412,22 @@ class ReflectionModel:
             self.usage.merge(collect_usage(self.agent, since=cursor))
         if lines and lines[-1].startswith(TIMEOUT_MESSAGE_PREFIX):
             raise RuntimeError(lines[-1])
+        # final_message is the whole reply for some agents and only the
+        # last output line for others (kstrl.agents.custom), so it is used
+        # only when gepa can read instructions out of it.
         final = self.agent.final_message
-        reply = final if final else "\n".join(lines)
-        if not reply.strip():
-            # gepa takes an unfenced reply whole as the new prompt, so an
-            # empty reply would be evaluated as an empty candidate.
+        reply = final if final and _instructions(final) else "\n".join(lines)
+        if not _instructions(reply):
+            # gepa evaluates what its extractor reads out of the reply as
+            # the new prompt, so a reply with no instructions in it would
+            # be evaluated as an empty candidate.
             raise RuntimeError("the reflection model returned an empty reply")
         return reply
+
+
+def _instructions(reply: str) -> str:
+    """The new prompt gepa 0.1.4 reads out of a reflection reply."""
+    return InstructionProposalSignature.output_extractor(reply.strip())["new_instruction"].strip()
 
 
 def run_optimization(

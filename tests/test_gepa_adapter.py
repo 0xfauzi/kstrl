@@ -417,6 +417,7 @@ def test_reflection_model_records_usage_and_stops_at_its_cap(tmp_path: Path) -> 
     [
         (f"{TIMEOUT_MESSAGE_PREFIX} after 60.0s", "timed out"),
         ("", "empty reply"),
+        ("```\n```", "empty reply"),
     ],
 )
 def test_reflection_model_refuses_a_timed_out_or_empty_reply(
@@ -433,3 +434,26 @@ def test_reflection_model_refuses_a_timed_out_or_empty_reply(
 
     assert model.calls == 1
     assert model.usage.calls == 1
+
+
+class _LastLineAgent(_ScriptedAgent):
+    """An Agent whose final_message is only its last output line, as
+    kstrl.agents.custom.CustomAgent's is."""
+
+    def run(
+        self, prompt: str, cwd: Path | None = None, timeout: float | None = None
+    ) -> Iterator[str]:
+        self.runs += 1
+        lines = self.reply.split("\n")
+        self.final_message = lines[-1]
+        self.usage_records.append(UsageRecord(input_tokens=100, output_tokens=10))
+        yield from lines
+
+
+def test_reflection_model_reads_a_multi_line_reply_whole(tmp_path: Path) -> None:
+    """A fenced reply streamed over several lines reaches gepa whole, not as
+    the closing fence line an agent reports as its final message."""
+    agent = _LastLineAgent("```\nnew instructions\n```")
+    model = ReflectionModel(agent=agent, cwd=tmp_path, timeout=60.0, max_calls=1)
+
+    assert model("revise this") == "```\nnew instructions\n```"
