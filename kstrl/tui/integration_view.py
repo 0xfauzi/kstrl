@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from kstrl.integration import FINDING_ID_PREFIX
 from kstrl.jsonread import read_json
 
 #: Dispositions, one per IF finding. "dismissed" is absent on purpose:
@@ -36,7 +37,8 @@ HANDED_OFF = "handed off"
 OPEN = "open"
 UNKNOWN = "unknown"
 
-_STATUS_TO_DISPOSITION = {"closed": FIXED, "handoff": HANDED_OFF, "open": OPEN}
+#: state.json's status word for an open finding is the disposition word.
+_STATUS_TO_DISPOSITION = {"closed": FIXED, "handoff": HANDED_OFF, OPEN: OPEN}
 
 #: Largest evidence file read; a review file is a few kilobytes.
 _MAX_FILE_BYTES = 4 * 1024 * 1024
@@ -141,7 +143,9 @@ def _criteria(payload: Mapping[str, Any]) -> tuple[CriterionVerdict, ...]:
         if not isinstance(entry, Mapping):
             continue
         story_id = _text(entry.get("storyId"))
-        if not story_id:
+        # A carried IF story's verdict is how that finding closed, which
+        # its disposition already says; the criteria are IC1 to IC5.
+        if not story_id or story_id.startswith(FINDING_ID_PREFIX):
             continue
         verdicts.append(
             CriterionVerdict(
@@ -239,7 +243,9 @@ def read_integration_review(
     if not files:
         return None
     rounds, criteria, unreadable, seen = _read_rounds(files)
-    state_path = root_dir / ".kstrl" / "integration" / "state.json"
+    from kstrl.integration_state import state_path as integration_state_path
+
+    state_path = integration_state_path(root_dir)
     state, state_problem = _read_object(state_path)
     if state is None and not state_path.exists():
         state_problem = "no .kstrl/integration/state.json"

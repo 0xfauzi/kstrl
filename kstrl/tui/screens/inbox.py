@@ -146,18 +146,15 @@ class InboxScreen(Screen[None]):
         self._render_detail()
 
     def _manifest_statuses(self) -> dict[str, str] | None:
+        """Component statuses; None when a manifest exists and cannot be read."""
         from pathlib import Path
 
-        from kstrl.manifest import Manifest
+        from kstrl.tui.operator_queue import load_manifest
 
-        path = Path(self._root) / "scripts" / "kstrl" / "manifest.json"
-        if not path.exists():
-            return {}
-        try:
-            manifest = Manifest.load(path)
-        except (OSError, ValueError):
+        manifest, problem = load_manifest(Path(self._root))
+        if problem:
             return None
-        return {comp.id: comp.status for comp in manifest.components}
+        return {comp.id: comp.status for comp in manifest.components} if manifest else {}
 
     def _consequences(self, item: InboxItem) -> Consequences:
         status = None if self._statuses is None else self._statuses.get(item.component, "absent")

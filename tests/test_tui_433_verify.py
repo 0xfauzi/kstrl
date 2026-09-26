@@ -15,7 +15,8 @@ import pytest
 
 from kstrl.manifest import Manifest
 from kstrl.tui import runs as runs_mod
-from kstrl.tui.home_data import HomeStats, SummaryCache, failed_component_count
+from kstrl.tui.home_data import HomeStats, SummaryCache
+from kstrl.tui.operator_queue import build_queue
 from kstrl.tui.home_view import attention_line
 from kstrl.tui.widgets.cost_meter import render_cost_meter
 from kstrl.tui.widgets.header import app_live
@@ -82,13 +83,12 @@ class TestAttention:
     def test_an_unreadable_inbox_log_is_not_counted(self, tmp_path: Path) -> None:
         """A torn multibyte write makes the scan unreadable, not empty."""
         from kstrl.inbox import Inbox, InboxConfig, ItemKind
-        from kstrl.tui.home_data import gather_stats, open_inbox_count
-
         box = Inbox(tmp_path, InboxConfig())
         box.add(ItemKind.HALTED_RUN, "halted", dedupe_key="h")
         box.path.write_bytes(b"\xe2\x80")
-        assert open_inbox_count(tmp_path) is None
-        stats = gather_stats({}, "", tmp_path)
+        queue = build_queue(tmp_path, [], {}, {}, 0.0)
+        assert queue.decisions is None
+        stats = HomeStats(last=None, inbox_open=queue.decisions, failed_components=queue.failures)
         assert "nothing is waiting" not in attention_line(stats).plain
 
     def test_failed_components_are_counted_from_the_manifest(self, tmp_path: Path) -> None:
@@ -116,10 +116,10 @@ class TestAttention:
             single_pr=False,
             components=comps,
         ).save(path)
-        assert failed_component_count(tmp_path) == 2
+        assert build_queue(tmp_path, [], {}, {}, 0.0).failures == 2
 
     def test_a_project_with_no_manifest_has_nothing_to_retry(self, tmp_path: Path) -> None:
-        assert failed_component_count(tmp_path) == 0
+        assert build_queue(tmp_path, [], {}, {}, 0.0).failures == 0
 
 
 class TestMeter:

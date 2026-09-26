@@ -78,15 +78,9 @@ def read_run_delivery(
     root_dir: Path, run_dir: Path, fix_status: dict[str, str]
 ) -> tuple[IntegrationReview | None, ServeState | None]:
     """The two file reads the delivery row needs; run on a worker thread."""
-    from kstrl.runid import run_kind, run_sort_key
-    from kstrl.tui.runs import factory_lock_held
+    from kstrl.tui.runs import factory_lock_held, newest_factory_run_id
 
-    try:
-        names = [d.name for d in (root_dir / ".kstrl" / "runs").iterdir()]
-    except OSError:
-        names = []
-    factory = [name for name in names if run_kind(name) == "factory"]
-    newest = max(factory, key=run_sort_key, default="")
+    newest = newest_factory_run_id(root_dir)
     review = read_integration_review(root_dir, run_dir, fix_status)
     return review, read_serve_state(root_dir, newest, factory_lock_held(root_dir))
 
@@ -192,7 +186,8 @@ class OverviewScreen(Screen[None]):
             row.display = False
             return
         compact = self.size.width < 110
-        integration = integration_summary(self._integration, short=compact)
+        # Glyphs only: the words for each verdict are on the review screen.
+        integration = integration_summary(self._integration, short=True)
         if self._integration is not None:
             integration.append("  i opens it", style=theme.MUTED)
         delivery = Delivery(
@@ -202,7 +197,7 @@ class OverviewScreen(Screen[None]):
             release_withheld=state.release_withheld,
             integration=self._integration,
         )
-        row.update(Text("\n").join([integration, merge_summary(delivery)]))
+        row.update(Text("\n").join([integration, merge_summary(delivery, short=compact)]))
         row.display = True
 
     def check_action(self, action: str, _parameters: tuple[object, ...]) -> bool | None:

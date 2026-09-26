@@ -160,20 +160,6 @@ def _run_stream_signature(
     return tuple(signature)
 
 
-def gather_stats(
-    summaries: dict[str, RunSummary],
-    newest_run_id: str,
-    root_dir: Path | None = None,
-) -> HomeStats:
-    if root_dir is None:
-        return HomeStats(last=summaries.get(newest_run_id))
-    return HomeStats(
-        last=summaries.get(newest_run_id),
-        inbox_open=open_inbox_count(root_dir),
-        failed_components=failed_component_count(root_dir),
-    )
-
-
 def gather_home(
     summaries: dict[str, RunSummary],
     refs: list[RunRef],
@@ -196,40 +182,3 @@ def gather_home(
     )
 
 
-def open_inbox_count(root_dir: Path) -> int | None:
-    """Open inbox items, read the way ``ks inbox`` reads them.
-
-    None when the inbox cannot be counted: a config that does not load,
-    a control directory that cannot be read. None renders as nothing; a
-    count of 0 renders as "nothing is waiting on you", which is a claim
-    this function only makes when it read the log.
-    """
-    from kstrl.inbox import Inbox, InboxConfig
-
-    try:
-        config = InboxConfig.load(root_dir)
-        if not config.enabled:
-            return None
-        scan = Inbox(root_dir, config).scan()
-    except Exception:  # noqa: BLE001 - home must render whatever the inbox holds
-        return None
-    return None if scan.unreadable else scan.open_count()
-
-
-def failed_component_count(root_dir: Path) -> int | None:
-    """Failed components in the manifest the retry screen reads.
-
-    0 when there is no manifest: nothing can be retried, which is a
-    count, not a failure to read. None only when a manifest exists and
-    cannot be read, so the home line makes no claim about it.
-    """
-    from kstrl.manifest import Manifest
-
-    manifest_file = root_dir / "scripts" / "kstrl" / "manifest.json"
-    if not manifest_file.exists():
-        return 0
-    try:
-        manifest = Manifest.load(manifest_file)
-    except (OSError, ValueError):
-        return None
-    return sum(1 for comp in manifest.components if comp.status == "failed")

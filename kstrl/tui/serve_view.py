@@ -9,9 +9,10 @@ Sources, all under ``.kstrl/queue/`` (``kstrl.workqueue``):
 - the item directories, one per item, under the state directory that IS
   the item's state (``Queue.items``, a pure read). ``leased`` and
   ``running`` items are in flight, ``queued`` ones wait in run order.
-- ``serve.lock``: the daemon writes its pid there when it takes the lock
-  (``serve.serve_lock``) and never clears it, so the pid is probed rather
-  than trusted.
+- ``serve.lock``: the daemon holds its flock for its whole lifetime
+  (``serve.serve_lock``) and writes its pid there, which it never
+  clears. The flock, probed without blocking, says whether it runs; the
+  pid is only shown.
 
 The queue does not record which run an in-flight item executes: the
 daemon calls ``Queue.start`` without a run id, and the factory child is
@@ -27,8 +28,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-
-from kstrl.procgroup import pid_is_alive
 
 RUNNING = "running"
 NOT_RUNNING = "not running"
@@ -79,13 +78,15 @@ def _read_pid(path: Path) -> int:
 
 
 def _daemon(queue_dir: Path) -> tuple[str, int]:
+    """RUNNING while the daemon holds its flock; the pid is what it wrote."""
+    from kstrl.tui.runs import lock_held
+
     lock = queue_dir / "serve.lock"
     if not lock.exists():
         return NOT_RUNNING, 0
-    pid = _read_pid(lock)
-    if pid <= 0:
-        return UNKNOWN, 0
-    return (RUNNING if pid_is_alive(pid) else NOT_RUNNING), pid
+    if not lock_held(lock):
+        return NOT_RUNNING, 0
+    return RUNNING, _read_pid(lock)
 
 
 def read_serve_state(
@@ -94,10 +95,10 @@ def read_serve_state(
     factory_lock_held: bool,
 ) -> ServeState | None:
     """The daemon and its visible items; None when this project has no queue."""
-    from kstrl.statedir import state_dir
-    from kstrl.workqueue import ItemState, Queue
+    from kstrl.tui.runs import factory_lock_path
+    from kstrl.workqueue import ItemState, Queue, queue_root
 
-    queue_dir = state_dir(root_dir) / "queue"
+    queue_dir = queue_root(root_dir)
     if not queue_dir.is_dir():
         return None
     daemon, daemon_pid = _daemon(queue_dir)
@@ -105,7 +106,7 @@ def read_serve_state(
         found = Queue(root_dir).items(tuple(ItemState(state) for state in _SHOWN))
     except (OSError, ValueError) as exc:
         return ServeState(daemon=daemon, daemon_pid=daemon_pid, problem=f"queue unreadable: {exc}")
-    lock_pid = _read_pid(state_dir(root_dir) / "factory.lock") if factory_lock_held else 0
+    lock_pid = _read_pid(factory_lock_path(root_dir)) if factory_lock_held else 0
     items: list[ServeItem] = []
     position = 0
     for item in found:

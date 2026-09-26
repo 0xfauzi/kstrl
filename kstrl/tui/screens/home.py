@@ -55,6 +55,7 @@ from kstrl.tui.home_view import (
     attention_line,
     command_strip,
     delivery_text,
+    fit_rows,
     history_note,
     needs_cells,
     preview_status,
@@ -74,6 +75,8 @@ HOME_POLL_INTERVAL = 2.0
 HOME_RUN_LIMIT = 15
 #: Below this height the selected run's component board is left out.
 PREVIEW_BOARD_MIN_HEIGHT = 45
+#: Below this width a live run's agent health drops its words ("21s · alive").
+ACTIVE_SHORT_BELOW = 100
 
 
 @dataclass(frozen=True)
@@ -138,16 +141,17 @@ def _masthead(root_dir: Path, branch: str, project: str) -> Text:
     return text
 
 
-def _stats_line(stats: HomeStats) -> Text:
-    text = _last_run(stats)
-    serve = serve_phrase(stats.queue.serve if stats.queue is not None else None)
+def _stats_line(stats: HomeStats, width: int = 120) -> Text:
+    narrow = width < 100
+    text = _last_run(stats, narrow)
+    serve = serve_phrase(stats.queue.serve if stats.queue is not None else None, pid=not narrow)
     if serve.cell_len:
         text.append(" · ", style=theme.MUTED)
         text.append_text(serve)
     return text
 
 
-def _last_run(stats: HomeStats) -> Text:
+def _last_run(stats: HomeStats, narrow: bool = False) -> Text:
     text = Text(" ")
     last = stats.last
     if last is None:
@@ -162,7 +166,7 @@ def _last_run(stats: HomeStats) -> Text:
             style="bold",
         )
         marker = "+" if last.tokens_lower_bound else ""
-        if last.total_tokens:
+        if last.total_tokens and not narrow:
             text.append(" · ", style=theme.MUTED)
             text.append(f"{format_tokens(last.total_tokens)}{marker} tok")
         if last.cost_usd:
@@ -172,6 +176,8 @@ def _last_run(stats: HomeStats) -> Text:
 
 
 class HomeScreen(Screen[None]):
+    # History until the queue is read; then _place_focus decides once.
+    AUTO_FOCUS = "#home-runs"
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
         # One key per command, and every key is one keypress: the tenth
@@ -187,6 +193,8 @@ class HomeScreen(Screen[None]):
         self._summarizing = False
         self._preview_run_id = ""
         self._queue: OperatorQueue | None = None
+        self._stats: HomeStats | None = None
+        self._focus_placed = False
 
     def compose(self) -> ComposeResult:
         with Vertical(id="home-header"):
@@ -296,14 +304,26 @@ class HomeScreen(Screen[None]):
                 self._summaries,
                 self._history_notes(),
             )
+            self._stats = message.stats
             self.query_one("#home-stats", Static).update(
-                _stats_line(message.stats),
+                _stats_line(message.stats, self.size.width),
             )
             self.query_one("#home-attention", Static).update(attention_line(message.stats))
             self._render_queue()
             self._render_preview()
+            self._place_focus()
 
     # -- the operator queue (#433 increment 2) -----------------------------
+
+    def _place_focus(self) -> None:
+        """Once, on the first queue read: the needs-you rows when there
+        are any, otherwise history. Active rows are a tab away; later
+        reads never move the operator's focus."""
+        if self._focus_placed:
+            return
+        self._focus_placed = True
+        needs = self.query_one("#home-needs", DataTable)
+        (needs if needs.row_count else self.query_one(RunTable)).focus()
 
     def _history_notes(self) -> dict[str, str]:
         return {
@@ -319,8 +339,10 @@ class HomeScreen(Screen[None]):
         rows = queue.needs_you if queue is not None else ()
         if rows:
             needs.add_columns("", "what", "action")
-            for row in rows[:SECTION_ROWS]:
-                needs.add_row(*needs_cells(row, width), key=f"{row.kind}:{row.key}")
+            shown = rows[:SECTION_ROWS]
+            cells = fit_rows([needs_cells(row) for row in shown], width, flex=1)
+            for row, values in zip(shown, cells, strict=True):
+                needs.add_row(*values, key=f"{row.kind}:{row.key}")
         needs.display = bool(rows)
         if len(rows) > SECTION_ROWS:
             line = self.query_one("#home-attention", Static)
@@ -341,8 +363,11 @@ class HomeScreen(Screen[None]):
         self.query_one("#home-active-title", Static).update(title)
         if moving:
             active.add_columns("", "who", "state", "detail")
-            for index, item in enumerate(moving[:SECTION_ROWS]):
-                active.add_row(*active_cells(item, width), key=f"active:{index}")
+            narrow = width < ACTIVE_SHORT_BELOW
+            shown_rows = [active_cells(item, narrow=narrow) for item in moving[:SECTION_ROWS]]
+            cells = fit_rows(shown_rows, width, flex=3)
+            for index, values in enumerate(cells):
+                active.add_row(*values, key=f"active:{index}")
         active.display = bool(moving)
         self.query_one("#home-delivery", Static).update(delivery_text(queue, width))
 
@@ -371,6 +396,8 @@ class HomeScreen(Screen[None]):
         self.query_one(RunTable).update_runs(
             list(self._refs.values()), self._summaries, self._history_notes()
         )
+        if self._stats is not None:
+            self.query_one("#home-stats", Static).update(_stats_line(self._stats, self.size.width))
         self._render_queue()
         self._render_preview()
 
@@ -442,6 +469,7 @@ class HomeScreen(Screen[None]):
             # Columns too: their widths were sized for the other run.
             table.reset()
             self._preview_shown = run_id
+        table.run_dir = ref.run_dir if ref is not None else None
         table.update_state(state)
         summary = self._summaries.get(run_id)
         line = preview_status(ref, summary, state)
@@ -457,7 +485,8 @@ class HomeScreen(Screen[None]):
         if counts:
             parts = " ".join(f"{n} {sev}" for sev, n in sorted(counts.items()))
             line.append(f" · spec issues: {parts}", style=theme.WARNING)
-        line.append("  enter opens the board", style=theme.MUTED)
+        if self.size.width >= 100:
+            line.append("  enter opens the board", style=theme.MUTED)
         meta.update(line)
 
     # -- dispatch ------------------------------------------------------------

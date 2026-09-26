@@ -105,7 +105,9 @@ def render_header(
     text.append("  ")
     chip, style, elapsed = _state_chip(state, live)
     text.append(chip, style=style)
-    text.append(f"  {_format_elapsed(max(0.0, elapsed))}", style=theme.MUTED)
+    if not (compact and serve_note):
+        # At 80 columns the ks serve note (Q1) outranks the clock.
+        text.append(f"  {_format_elapsed(max(0.0, elapsed))}", style=theme.MUTED)
     if not state.finished and state.last_event_ts and not compact:
         # Q6: a run in flight says how long ago it last wrote (#433).
         quiet = age_phrase(time.time() - state.last_event_ts)

@@ -64,18 +64,13 @@ class RetryScope:
 
 
 def branch_probe(root_dir: Path, branch: str) -> int | None:
-    """``git rev-parse --verify --quiet refs/heads/<branch>``'s exit code,
-    the probe ``prepare_retry`` makes; None when git could not be run."""
+    """``prepare_retry``'s own branch probe; None when git could not be run."""
+    from kstrl.retry_plan import failed_branch_probe
+
     try:
-        probe = subprocess.run(
-            ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
-            cwd=root_dir,
-            capture_output=True,
-            timeout=10,
-        )
+        return failed_branch_probe(root_dir, branch)
     except (OSError, subprocess.SubprocessError):
         return None
-    return probe.returncode
 
 
 def _worktree_line(path: str) -> ScopeLine:

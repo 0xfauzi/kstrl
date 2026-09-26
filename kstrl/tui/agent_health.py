@@ -54,11 +54,19 @@ class AgentHealth:
     process: str
     pid: int = 0
 
-    def text(self, *, short: bool = False) -> str:
-        """``output 21s ago · worker 4242 alive`` (short: ``21s · alive``)."""
+    def text(self, *, short: bool = False, pid: bool = True) -> str:
+        """``output 21s ago · worker 4242 alive``; without the pid
+        ``output 21s ago · alive``; short ``21s · alive``."""
+        state = self.process if self.process != UNKNOWN else "process unknown"
         if short:
             out = age_phrase(self.output_age) if self.output_age is not None else "no output"
-            state = self.process if self.process != UNKNOWN else "process unknown"
+            return f"{out} · {state}"
+        if not pid:
+            out = (
+                f"output {age_phrase(self.output_age)} ago"
+                if self.output_age is not None
+                else "no output yet"
+            )
             return f"{out} · {state}"
         out = (
             f"output {age_phrase(self.output_age)} ago"

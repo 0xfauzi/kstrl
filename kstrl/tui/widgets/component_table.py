@@ -154,10 +154,11 @@ def _agent_cell(
     comp: ComponentState, state: RunState, run_dir: Path | None, now: float, short: bool
 ) -> Text:
     if state.finished or comp.status not in _MOVING:
-        return _dim(theme.EMPTY_CELL)
+        # Left-aligned like the text it stands in for.
+        return Text(theme.EMPTY_CELL, style=theme.MUTED)
     health = agent_health(run_dir, comp, now)
     style = theme.ERROR if health.process == "exited" else theme.MUTED
-    return Text(health.text(short=short), style=style)
+    return Text(health.text(short=short, pid=False), style=style)
 
 
 def _cells(
@@ -213,6 +214,11 @@ def _columns_for(state: RunState, compact: bool) -> tuple[str, ...]:
 
 
 class ComponentTable(DataTable[Text | str]):
+    #: The run whose transcripts the agent column reads. A board that is
+    #: not the app's own run (the home preview) sets it; None falls back
+    #: to the app's run directory.
+    run_dir: Path | None = None
+
     def on_mount(self) -> None:
         self.cursor_type = "row"
         self.zebra_stripes = False
@@ -249,6 +255,8 @@ class ComponentTable(DataTable[Text | str]):
         return width or 120
 
     def _run_dir(self) -> Path | None:
+        if self.run_dir is not None:
+            return self.run_dir
         run_dir = getattr(self.app, "run_dir", None) if self.is_attached else None
         return run_dir if isinstance(run_dir, Path) else None
 

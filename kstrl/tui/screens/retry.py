@@ -275,9 +275,12 @@ class RetryScreen(Screen[None]):
         comp = self._manifest.get_component(entry.component_id) if self._manifest else None
         if entry.retryable and comp is not None:
             _append_evidence(detail, entry, comp)
-        _append_gate_output(detail, entry, self._root_dir())
         scope = self._scope
-        if scope is not None and scope.component_id == entry.component_id:
+        scoped = scope is not None and scope.component_id == entry.component_id
+        # Once the scope is on screen it is what the operator reads; the
+        # gate output keeps its path and gives up its lines.
+        _append_gate_output(detail, entry, self._root_dir(), lines=0 if scoped else 4)
+        if scope is not None and scoped:
             detail.append("\n")
             detail.append_text(scope_text(scope))
         elif entry.retryable:
@@ -291,6 +294,8 @@ class RetryScreen(Screen[None]):
         event: DataTable.RowHighlighted,
     ) -> None:
         if event.cursor_row is not None and event.cursor_row >= 0:
+            # r is offered only on a row a retry can act on.
+            self.refresh_bindings()
             self._show_detail(event.cursor_row)
 
     def action_retry_selected(self) -> None:
@@ -522,7 +527,9 @@ def _entry_head(entry: FailureEntry) -> Text:
     detail.append(entry.component_id, style=f"bold {theme.ERROR}")
     if entry.run_id:
         detail.append(f"  run {theme.short_run_id(entry.run_id)}", style=theme.MUTED)
-    detail.append(f"  {entry.recovery}", style=theme.SUCCESS if entry.retryable else theme.MUTED)
+    detail.append(
+        f"  {_recovery_word(entry)}", style=theme.SUCCESS if entry.retryable else theme.MUTED
+    )
     detail.append(f"\n{entry.cause or 'no cause recorded'}")
     return detail
 
@@ -536,9 +543,9 @@ def _append_evidence(detail: Text, entry: FailureEntry, comp: Component) -> None
             detail.append(value)
 
 
-def _append_gate_output(detail: Text, entry: FailureEntry, root: Path) -> None:
+def _append_gate_output(detail: Text, entry: FailureEntry, root: Path, lines: int) -> None:
     for path in entry.gate_logs[:1]:
         detail.append("\noutput  ", style=f"bold {theme.ACCENT}")
         detail.append(shown_path(path, root))
-        for line in (gate_log_excerpt(path, 4) or [])[-4:]:
+        for line in (gate_log_excerpt(path, lines) or [])[-lines:] if lines else []:
             detail.append(f"\n  {line}", style=theme.MUTED)

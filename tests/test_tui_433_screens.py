@@ -89,9 +89,10 @@ class TestHome:
         assert keys == list("1234567890")
 
     async def test_launcher_labels_fit_their_column(self, tmp_path: Path) -> None:
-        """F2: `via CLI: ks understand --tui` wrapped onto a second line."""
+        """F2: `via CLI: ks understand --tui` wrapped onto a second line.
+        The launcher column shows from 160 columns (increment 2)."""
         app = _home(tmp_path)
-        async with app.run_test(size=(120, 36)) as pilot:
+        async with app.run_test(size=(180, 50)) as pilot:
             commands = cast(OptionList, await mounted(pilot, lambda: app.screen, "#home-commands"))
             await settled(pilot, lambda: commands.option_count, what="the launcher to fill")
             widths = [
@@ -346,3 +347,316 @@ class TestRunIsLive:
 
         run_dir = write_fake_run(tmp_path, FakeRunSpec(components=1))
         assert run_is_live(run_dir, tmp_path) is False
+
+
+# -- increment 2: the operator queue, driven through Pilot ------------------
+
+
+def _run(root: Path, run_id: str, **ended: str) -> Path:
+    """A finished factory run whose components end as ``ended`` says:
+    "failed", "completed", or "carried" (planned but not run)."""
+    from kstrl import events as ev
+
+    paths = ev.RunPaths.for_run(root, run_id)
+    bus = ev.EventBus(ev.JsonlSink(paths.events_file), run_id=run_id)
+    bus.emit(ev.RunStarted(project="p", components=len(ended)))
+    plan = tuple({"id": cid, "title": cid, "deps": []} for cid in ended)
+    bus.emit(ev.RunPlan(components=plan))
+    for cid, how in ended.items():
+        if how == "carried":
+            continue
+        bus.emit(ev.ComponentStarted(component=cid))
+        if how == "failed":
+            bus.emit(ev.ComponentFailed(component=cid, error=f"{cid} broke"))
+        else:
+            bus.emit(ev.ComponentCompleted(component=cid))
+    failed = sum(1 for how in ended.values() if how == "failed")
+    bus.emit(ev.RunCompleted(failed=failed, completed=len(ended) - failed))
+    return paths.root
+
+
+def _save_manifest(root: Path, run_id: str = "", **statuses: str) -> Path:
+    from kstrl.manifest import Component
+
+    path = root / "scripts" / "kstrl" / "manifest.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    comps = [
+        Component(
+            id=cid,
+            title=cid,
+            description="",
+            dependencies=[],
+            prd_path="p.json",
+            branch_name=f"kstrl/{cid}",
+            status=status,
+        )
+        for cid, status in statuses.items()
+    ]
+    Manifest(
+        version="1",
+        spec_file="s",
+        project_name="p",
+        base_branch="main",
+        single_pr=False,
+        run_id=run_id,
+        components=comps,
+    ).save(path)
+    return path
+
+
+OLD = "factory-20260920-000000.000000-old001"
+NEW = "factory-20260921-000000.000000-new002"
+
+
+class TestOperatorQueue:
+    async def test_needs_you_lists_a_decision_and_a_current_failure_only(
+        self, tmp_path: Path
+    ) -> None:
+        """A failure a later run superseded is history and names that run;
+        the current one and an open decision are the rows that need you,
+        and enter on each opens the screen that acts on it."""
+        _save_manifest(tmp_path, api="failed", web="completed")
+        _run(tmp_path, OLD, web="failed")
+        _run(tmp_path, NEW, web="completed", api="failed")
+        Inbox(tmp_path, InboxConfig()).add(ItemKind.HALTED_RUN, "halted", dedupe_key="h")
+        app = _home(tmp_path)
+        async with app.run_test(size=(120, 36)) as pilot:
+            needs = cast(DataTable[Any], await mounted(pilot, lambda: app.screen, "#home-needs"))
+            await settled(pilot, lambda: needs.row_count == 2, what="the needs-you rows")
+            keys = [key.value for key in needs.rows]
+            assert keys[1] == "failure:api", keys
+            assert str(keys[0]).startswith("decision:"), keys
+            runs = cast(DataTable[Any], app.screen.query_one("#home-runs"))
+            old_note = str(runs.get_cell(OLD, "note"))
+            assert old_note == "superseded by new002", old_note
+            assert app.screen.focused is needs
+            await pilot.press("enter")
+            await settled(
+                pilot, lambda: isinstance(app.screen, InboxScreen), what="enter to open the inbox"
+            )
+            await pilot.press("escape")
+            await settled(pilot, lambda: isinstance(app.screen, HomeScreen), what="back home")
+            await pilot.press("down", "enter")
+            await settled(
+                pilot, lambda: isinstance(app.screen, RetryScreen), what="enter to open retry"
+            )
+
+    async def test_active_lists_a_running_and_a_queued_serve_item(self, tmp_path: Path) -> None:
+        from kstrl.serve import serve_lock
+        from kstrl.workqueue import Queue
+
+        queue = Queue(tmp_path)
+        item = queue.add("spec", title="slice three")
+        queue.start(queue.lease(item, pid=os.getpid()))
+        queue.add("spec", title="slice four")
+        app = _home(tmp_path)
+        with serve_lock(tmp_path):
+            async with app.run_test(size=(120, 36)) as pilot:
+                active = cast(
+                    DataTable[Any], await mounted(pilot, lambda: app.screen, "#home-active")
+                )
+                await settled(pilot, lambda: active.row_count == 2, what="the serve rows")
+                rows = [[str(cell) for cell in active.get_row(key)] for key in active.rows]
+                assert rows[0][1].startswith("ks serve q-") and rows[0][2] == "running"
+                assert rows[0][3] == "slice three · run not recorded", rows[0]
+                assert rows[1][2] == "queued #1" and rows[1][3] == "slice four", rows[1]
+                stats = str(cast(Static, app.screen.query_one("#home-stats")).content)
+                assert f"ks serve running (pid {os.getpid()})" in stats, stats
+
+    async def test_the_overview_pins_the_integration_review_and_i_opens_it(
+        self, tmp_path: Path
+    ) -> None:
+        """F9 and M4 through the screen: verdicts per criterion, the IF
+        dispositions joined by id, and M3's CI unknown on a merged run."""
+        import json
+
+        from kstrl.tui.screens.integration import IntegrationScreen
+
+        run_dir = write_fake_run(tmp_path, FakeRunSpec(components=2))
+        review = run_dir / "integration" / "review-1.json"
+        review.parent.mkdir(parents=True)
+        criteria = [{"storyId": "IC1", "verdict": "fail"}, {"storyId": "IC2", "verdict": "pass"}]
+        opened = [{"id": "IF-1", "text": "same"}, {"id": "IF-2", "text": "same"}]
+        review.write_text(
+            json.dumps(
+                {"outcome": "open_findings", "review": {"criteria": criteria}, "opened": opened}
+            ),
+            encoding="utf-8",
+        )
+        state = tmp_path / ".kstrl" / "integration" / "state.json"
+        state.parent.mkdir(parents=True)
+        findings = [
+            {"id": fid, "status": status, "text": "same", "history": []}
+            for fid, status in (("IF-1", "open"), ("IF-2", "closed"))
+        ]
+        fixes = [{"id": "integration-fix-1", "findings": ["IF-2"]}]
+        state.write_text(json.dumps({"findings": findings, "fixes": fixes}), encoding="utf-8")
+        app = _dash(tmp_path, run_dir)
+        async with app.run_test(size=(120, 36)) as pilot:
+            row = cast(Static, await mounted(pilot, lambda: app.screen, "#delivery-row"))
+            await settled(pilot, lambda: "IC1" in str(row.content), what="the delivery row")
+            text = str(row.content)
+            assert "IC1✗ IC2✓" in text and "IF 1 open, 1 fixed" in text, text
+            assert "CI unknown" in text, text
+            await pilot.press("i")
+            await settled(
+                pilot, lambda: isinstance(app.screen, IntegrationScreen), what="i to open it"
+            )
+            table = cast(DataTable[Any], app.screen.query_one("#integration-findings"))
+            dispositions = {
+                str(key.value): str(table.get_cell(key, table.ordered_columns[2].key))
+                for key in table.rows
+            }
+            assert dispositions == {"IF-1": "open", "IF-2": "fixed"}, dispositions
+
+    async def test_the_run_header_names_the_serve_item_the_run_executes(
+        self, tmp_path: Path
+    ) -> None:
+        from kstrl.serve import serve_lock
+        from kstrl.tui.serve_view import short_item_id
+        from kstrl.workqueue import Queue
+
+        run_dir = write_fake_run(tmp_path, FakeRunSpec(components=2, complete=False))
+        queue = Queue(tmp_path)
+        item = queue.start(queue.lease(queue.add("spec", title="slice three"), pid=os.getpid()))
+        lock = (tmp_path / ".kstrl" / "factory.lock").open("a+", encoding="utf-8")
+        import fcntl
+
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        lock.write(f"{os.getpid()}\n")
+        lock.flush()
+        try:
+            with serve_lock(tmp_path):
+                app = _dash(tmp_path, run_dir)
+                async with app.run_test(size=(120, 36)) as pilot:
+                    header = await mounted(pilot, lambda: app.screen, RunHeader)
+                    want = f"ks serve {short_item_id(item.item_id)}"
+                    await settled(pilot, lambda: want in str(header.content), what="the serve note")
+        finally:
+            lock.close()
+
+    async def test_the_live_board_shows_each_running_agents_output_and_process(
+        self, tmp_path: Path
+    ) -> None:
+        """M2: output age from the transcript and the heartbeat's process."""
+        from kstrl import events as ev
+
+        run_dir = write_fake_run(tmp_path, FakeRunSpec(components=2, complete=False))
+        bus = ev.EventBus(ev.JsonlSink(run_dir / "events.jsonl"), run_id=run_dir.name)
+        bus.emit(ev.ComponentStarted(component="comp-b"))
+        bus.emit(ev.WorkerHeartbeat(component="comp-b", pid=os.getpid()))
+        log = run_dir / "components" / "comp-b" / "engineer.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text("working\n", encoding="utf-8")
+        app = _dash(tmp_path, run_dir)
+        async with app.run_test(size=(160, 36)) as pilot:
+            table = cast(ComponentTable, await mounted(pilot, lambda: app.screen, ComponentTable))
+            await settled(
+                pilot,
+                lambda: (
+                    "agent" in [c.key.value for c in table.ordered_columns]
+                    and "comp-b" in [k.value for k in table.rows]
+                ),
+                what="the agent column",
+            )
+            cell = str(table.get_cell("comp-b", "agent"))
+            assert cell.startswith("output ") and cell.endswith(" · alive"), cell
+
+
+class TestRetryScope:
+    def _failed(self, tmp_path: Path) -> Path:
+        from kstrl.launch_record import write_launch_record
+
+        run_id = "factory-20260101-000000.000000-scope1"
+        manifest_file = _save_manifest(tmp_path, run_id=run_id, api="failed")
+        assert write_launch_record(tmp_path, run_id, manifest_file, (), 0.0) == []
+        return manifest_file
+
+    async def test_the_sweep_warning_prepare_retry_prints_reaches_the_screen(
+        self, tmp_path: Path, monkeypatch: Any
+    ) -> None:
+        """PR #537's sweep narrated into an io.StringIO the screen dropped."""
+        from kstrl import worktree_sweep
+        from tests.test_launch_session import FakeSession, _notified
+
+        manifest_file = self._failed(tmp_path)
+        evidence = tmp_path / "evidence-api"
+        evidence.mkdir()
+        manifest = Manifest.load(manifest_file)
+        comp = manifest.get_component("api")
+        assert comp is not None
+        comp.evidence_worktree = str(evidence)
+        manifest.save(manifest_file)
+        monkeypatch.setattr(worktree_sweep, "LSOF_ARGV", ["kstrl-no-such-command-433"])
+        app = _home(tmp_path)
+        app.start_session = lambda spec: FakeSession(tmp_path)  # type: ignore[method-assign]
+        async with app.run_test(size=(130, 40)) as pilot:
+            await mounted(pilot, lambda: app.screen, "#home-runs")
+            app.push_screen(RetryScreen())
+            await mounted(pilot, lambda: app.screen, "#retry-table")
+            await drained(pilot, app.screen, what="the retry screen's on_mount")
+            await pilot.press("r")
+            await settled(
+                pilot, lambda: isinstance(app.screen, OptionsModal), what="the scope modal"
+            )
+            header = cast(OptionsModal, app.screen).request.header
+            assert f"worktree: removes {evidence}" in header, header
+            await pilot.press("1")
+            await settled(
+                pilot,
+                lambda: _notified(app, "orphan_process (retry)"),
+                what="the sweep warning to be shown",
+            )
+            assert _notified(app, "census could not run")
+
+    async def test_a_retry_whose_branch_cannot_be_looked_up_is_not_offered(
+        self, tmp_path: Path, monkeypatch: Any
+    ) -> None:
+        from kstrl.tui import retry_scope
+        from tests.test_launch_session import _notified
+
+        self._failed(tmp_path)
+        monkeypatch.setattr(retry_scope, "branch_probe", lambda _root, _branch: None)
+        app = _home(tmp_path)
+        async with app.run_test(size=(130, 40)) as pilot:
+            await mounted(pilot, lambda: app.screen, "#home-runs")
+            app.push_screen(RetryScreen())
+            await mounted(pilot, lambda: app.screen, "#retry-table")
+            await drained(pilot, app.screen, what="the retry screen's on_mount")
+            await pilot.press("r")
+            await settled(
+                pilot,
+                lambda: _notified(app, "retry not offered") or isinstance(app.screen, OptionsModal),
+                what="r to work out the scope",
+            )
+            assert isinstance(app.screen, RetryScreen)
+            assert _notified(app, "the effect on branch is unknown")
+
+
+class TestInboxChoices:
+    async def test_approve_is_withheld_for_a_park_the_component_has_left(
+        self, tmp_path: Path
+    ) -> None:
+        from kstrl.manifest import park_dedupe_key
+
+        _save_manifest(tmp_path, api="completed")
+        Inbox(tmp_path, InboxConfig()).add(
+            ItemKind.MERGE_GATE,
+            "merge gate: approve PR #9",
+            component="api",
+            dedupe_key=park_dedupe_key("api"),
+            evidence={"head_sha": "87c3e2ef"},
+        )
+        app = _home(tmp_path)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await mounted(pilot, lambda: app.screen, "#home-runs")
+            app.push_screen(InboxScreen())
+            await mounted(pilot, lambda: app.screen, "#inbox-table")
+            detail = cast(Static, app.screen.query_one("#inbox-detail"))
+            await settled(
+                pilot, lambda: "what each choice does" in str(detail.content), what="the choices"
+            )
+            text = str(detail.content)
+            assert "approve and reject are not offered: api is completed, not parked" in text
+            assert app.screen.check_action("approve", ()) is False
+            assert app.screen.check_action("snooze", ()) is True

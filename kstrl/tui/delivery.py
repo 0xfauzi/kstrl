@@ -80,11 +80,13 @@ class Delivery:
 
 
 def merges_of(state: RunState) -> tuple[Merge, ...]:
-    return tuple(
+    """This run's merges, in PR order."""
+    merged = [
         Merge(comp.component_id, comp.pr_number, comp.merge_sha)
         for comp in state.components.values()
         if comp.pr_state == "merged" and not comp.carried
-    )
+    ]
+    return tuple(sorted(merged, key=lambda merge: (merge.pr_number, merge.component_id)))
 
 
 def fix_statuses(state: RunState) -> dict[str, str]:
@@ -127,7 +129,7 @@ def _verdicts(text: Text, review: IntegrationReview, short: bool) -> None:
 
 def _disposition_counts(text: Text, review: IntegrationReview) -> None:
     counts = [
-        (review.count(OPEN), "open", theme.ERROR),
+        (review.count(OPEN), OPEN, theme.ERROR),
         (review.count(HANDED_OFF), "handed off", theme.VIOLET),
         (review.count(FIXED), "fixed", theme.SUCCESS),
         (review.count(UNKNOWN), "unknown", theme.WARNING),
@@ -173,11 +175,12 @@ def merge_summary(delivery: Delivery, *, short: bool = False) -> Text:
     else:
         text.append("none recorded in this run", style=theme.MUTED)
     if delivery.release_ref:
-        text.append(" · release ref ", style=theme.MUTED)
+        text.append(" · release " if short else " · release ref ", style=theme.MUTED)
         text.append(delivery.release_ref[:7], style="bold")
     if not delivery.merges and not delivery.release_ref:
         return text
     text.append(" · ", style=theme.MUTED)
     text.append(f"CI {delivery.ci}", style=f"bold {theme.WARNING}")
-    text.append(f" ({'not recorded' if short else delivery.ci_reason})", style=theme.MUTED)
+    if not short:
+        text.append(f" ({delivery.ci_reason})", style=theme.MUTED)
     return text

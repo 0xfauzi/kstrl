@@ -68,6 +68,9 @@ EXPECTED_SUBPROCESS_SPELLINGS: dict[str, int] = {
     "serve.py": 8,
     "statedir.py": 3,
     "timeout.py": 3,
+    # #433: the import and SubprocessError; the probe itself is
+    # retry_plan.failed_branch_probe, the one prepare_retry makes.
+    "tui/retry_scope.py": 2,
     "tui/screens/home.py": 3,
     "tui/screens/retry.py": 2,
     # 25: `_base_finding`'s `git show` (#414/#425); `git merge-base` moved to `git.py` in #435.

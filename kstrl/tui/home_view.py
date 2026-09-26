@@ -122,20 +122,40 @@ def section_title(name: str, count: int, shown: int) -> Text:
     return text
 
 
-def needs_cells(row: NeedsYouRow, width: int) -> tuple[Text, Text, Text]:
-    """(glyph, what, action) for one needs-you row."""
+def fit_rows(rows: list[list[Text]], width: int, flex: int) -> list[list[Text]]:
+    """Shorten column ``flex`` so every row fits ``width`` without scrolling.
+
+    A column is as wide as its widest cell, plus one cell of padding a
+    side; the table pads one a side and keeps one for its scrollbar. So
+    the room left for ``flex`` is what the OTHER columns' widest cells
+    leave, which a per-row sum cannot see (#433: the active table
+    scrolled sideways at 80 columns).
+    """
+    if not rows:
+        return rows
+    columns = len(rows[0])
+    widest = [max(row[i].cell_len for row in rows) for i in range(columns)]
+    room = width - sum(w for i, w in enumerate(widest) if i != flex) - 2 * columns - 4
+    room = max(12, room)
+    for row in rows:
+        cell = row[flex]
+        if cell.cell_len > room:
+            row[flex] = Text(_fit(cell.plain, room), style=cell.style)
+    return rows
+
+
+def needs_cells(row: NeedsYouRow) -> list[Text]:
+    """[glyph, what, action] for one needs-you row; fit with ``fit_rows``."""
     from kstrl.tui.operator_queue import DECISION
 
     decision = row.kind == DECISION
     color = theme.WARNING if decision else theme.ERROR
     glyph = Text("◆" if decision else "✗", style=f"bold {color}")
-    action = Text(row.action, style=theme.ACCENT)
-    what = Text(_fit(row.what, max(20, width - action.cell_len - 10)))
-    return glyph, what, action
+    return [glyph, Text(row.what), Text(row.action, style=theme.ACCENT)]
 
 
-def active_cells(row: ActiveRow, width: int) -> tuple[Text, Text, Text, Text]:
-    """(glyph, source and id, state, detail) for one active row."""
+def active_cells(row: ActiveRow, *, narrow: bool = False) -> list[Text]:
+    """[glyph, source and id, state, detail] for one active row."""
     from kstrl.tui.serve_view import short_item_id
 
     serve = row.source == "ks serve"
@@ -145,11 +165,11 @@ def active_cells(row: ActiveRow, width: int) -> tuple[Text, Text, Text, Text]:
     queued = row.state.startswith("queued")
     glyph = Text("○" if queued else "●", style=theme.MUTED if queued else f"bold {theme.ACCENT}")
     state = Text(row.state, style=theme.MUTED if queued else theme.ACCENT)
-    room = max(16, width - source.cell_len - state.cell_len - 10)
-    return glyph, source, state, Text(_fit(row.detail, room), style=theme.MUTED)
+    detail = row.short_detail if narrow and row.short_detail else row.detail
+    return [glyph, source, state, Text(detail, style=theme.MUTED)]
 
 
-def serve_phrase(serve: ServeState | None) -> Text:
+def serve_phrase(serve: ServeState | None, *, pid: bool = True) -> Text:
     """``ks serve running (pid 4242)``, ``not running``, or nothing."""
     from kstrl.tui.serve_view import RUNNING
 
@@ -158,7 +178,7 @@ def serve_phrase(serve: ServeState | None) -> Text:
         return text
     text.append("ks serve ", style=theme.MUTED)
     if serve.daemon == RUNNING:
-        text.append(f"running (pid {serve.daemon_pid})", style=theme.ACCENT)
+        text.append(f"running (pid {serve.daemon_pid})" if pid else "running", style=theme.ACCENT)
     else:
         text.append(serve.daemon, style=theme.MUTED if serve.daemon != "unknown" else theme.WARNING)
     if serve.problem:

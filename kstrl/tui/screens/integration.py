@@ -42,16 +42,19 @@ def _fit(text: str, width: int) -> str:
     return text if len(text) <= width else text[: max(1, width - 1)] + "…"
 
 
-def rounds_text(review: IntegrationReview) -> Text:
+def rounds_text(review: IntegrationReview, width: int = 0) -> Text:
+    """One line per round; with ``width``, each reason is cut to fit it."""
     text = Text()
     for index, entry in enumerate(review.rounds):
         if index:
             text.append("\n")
         word, color = OUTCOME_WORDS.get(entry.outcome, (entry.outcome, theme.WARNING))
-        text.append(f"round {entry.number} ", style=theme.MUTED)
+        head = f"round {entry.number} "
+        text.append(head, style=theme.MUTED)
         text.append(word, style=f"bold {color}")
         if entry.reason:
-            text.append(f"  {entry.reason}", style=theme.MUTED)
+            room = width - len(head) - len(word) - 2 if width else len(entry.reason)
+            text.append(f"  {_fit(entry.reason, max(8, room))}", style=theme.MUTED)
     if review.state_problem:
         text.append(f"\ndispositions unknown: {review.state_problem}", style=theme.WARNING)
     return text
@@ -107,8 +110,15 @@ class IntegrationScreen(Screen[None]):
         yield Static(id="integration-detail")
         yield Footer()
 
+    def on_resize(self) -> None:
+        # Below 30 rows the gaps go, so the detail pane keeps some height.
+        self.set_class(self.size.height < 30, "tiny")
+        rounds = rounds_text(self.review, max(40, self.size.width) - 4)
+        self.query_one("#integration-rounds", Static).update(rounds)
+
     def on_mount(self) -> None:
-        self.query_one("#integration-rounds", Static).update(rounds_text(self.review))
+        rounds = rounds_text(self.review, self._width() - 4)
+        self.query_one("#integration-rounds", Static).update(rounds)
         self._fill_criteria()
         self._fill_findings()
         first = self.query_one("#integration-findings", DataTable)
@@ -131,7 +141,9 @@ class IntegrationScreen(Screen[None]):
             table.display = False
         self.query_one("#integration-criteria-title", Static).update(title)
         table.add_columns("", "criterion", "verdict", "why")
-        room = self._width() - 40
+        # id 3, title 26, verdict 6, each padded 1 a side, the table's own
+        # padding and its scrollbar: 48 cells that are not the "why".
+        room = self._width() - 48
         for verdict in self.review.criteria:
             glyph, color = VERDICT_STYLE.get(verdict.verdict, ("?", theme.WARNING))
             table.add_row(
@@ -151,7 +163,7 @@ class IntegrationScreen(Screen[None]):
             table.display = False
         self.query_one("#integration-findings-title", Static).update(title)
         table.add_columns("", "from", "disposition", "detail")
-        room = self._width() - 40
+        room = self._width() - 44
         for finding in self.review.findings:
             style = DISPOSITION_STYLE.get(finding.disposition, theme.WARNING)
             table.add_row(

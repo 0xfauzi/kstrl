@@ -34,9 +34,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl.tui.agent_health import agent_health
-from kstrl.tui.delivery import Delivery, read_delivery
+from kstrl.tui.delivery import Delivery, merges_of, read_delivery
+from kstrl.tui.integration_view import review_files
 from kstrl.tui.run_status import FAILED, failed_cause, run_reason
 from kstrl.tui.serve_view import ServeState, read_serve_state
+from kstrl.tui.theme import short_run_id
 
 if TYPE_CHECKING:
     from kstrl.inbox import InboxItem
@@ -70,6 +72,8 @@ class ActiveRow:
     state: str
     detail: str
     run_id: str = ""
+    #: The detail for a narrow terminal; "" when ``detail`` is already short.
+    short_detail: str = ""
 
 
 @dataclass(frozen=True)
@@ -157,7 +161,7 @@ def _decision_rows(items: Sequence[InboxItem]) -> list[NeedsYouRow]:
                 kind=DECISION,
                 key=item.id,
                 what=what,
-                action="decide in the inbox (6)",
+                action="decide (6)",
                 run_id=item.run_id,
             )
         )
@@ -285,7 +289,12 @@ def failure_queue(
             (current if is_current else past).append(entry)
     if manifest is not None:
         listed = {entry.component_id for entry in current}
-        current.extend(_manifest_only_entry(manifest, cid) for cid in sorted(still_failed - listed))
+        # In manifest order, which is the order ks retry and main listed them.
+        current.extend(
+            _manifest_only_entry(manifest, comp.id)
+            for comp in manifest.components
+            if comp.id in still_failed and comp.id not in listed
+        )
     return current + past
 
 
@@ -306,7 +315,7 @@ def failure_rows(
             kind=FAILURE,
             key=entry.component_id,
             what=f"{entry.component_id} failed" + (f" · {entry.cause}" if entry.cause else ""),
-            action="retry available (3)",
+            action="retry (3)",
             run_id=entry.run_id,
         )
         for entry in failure_queue(manifest, refs, states)
@@ -331,14 +340,16 @@ def _active_run_rows(
                 ActiveRow(ref.kind, ref.run_id, RUNNING, "folding run state...", ref.run_id)
             )
             continue
-        detail = run_reason(RUNNING, state, now)
+        reason = run_reason(RUNNING, state, now)
+        detail, short = reason, ""
         moving = [
             comp for comp in state.components.values() if comp.status in ("running", "verifying")
         ]
         if moving:
             health = agent_health(ref.run_dir, moving[0], now)
-            detail = f"{detail} · {health.text()}"
-        rows.append(ActiveRow(ref.kind, ref.run_id, RUNNING, detail, ref.run_id))
+            detail = f"{reason} · {health.text()}"
+            short = f"{reason} · {health.text(short=True)}"
+        rows.append(ActiveRow(ref.kind, ref.run_id, RUNNING, detail, ref.run_id, short))
     return rows
 
 
@@ -352,7 +363,7 @@ def _serve_rows(serve: ServeState | None) -> list[ActiveRow]:
             detail = item.title
         else:
             state = "running" if item.state == "running" else "starting"
-            run = f"run {item.run_id}" if item.run_id else "run not recorded"
+            run = f"run {short_run_id(item.run_id)}" if item.run_id else "run not recorded"
             detail = f"{item.title} · {run}"
         rows.append(ActiveRow("ks serve", item.item_id, state, detail, item.run_id))
     return rows
@@ -361,11 +372,22 @@ def _serve_rows(serve: ServeState | None) -> list[ActiveRow]:
 def newest_finished_factory(
     refs: Sequence[RunRef], states: Mapping[str, RunState]
 ) -> RunRef | None:
-    for ref in refs:
-        state = states.get(ref.run_id)
-        if ref.kind == "factory" and state is not None and state.finished:
+    """The run home's delivery section describes: the newest finished
+    factory run that delivered something (a merge, a release ref, or an
+    integration review), else the newest finished one. A run that failed
+    before merging anything is not the latest delivery."""
+    finished = [
+        ref
+        for ref in refs
+        if ref.kind == "factory"
+        and (state := states.get(ref.run_id)) is not None
+        and state.finished
+    ]
+    for ref in finished:
+        state = states[ref.run_id]
+        if state.release_ref or merges_of(state) or review_files(ref.run_dir):
             return ref
-    return None
+    return finished[0] if finished else None
 
 
 def build_queue(
@@ -383,7 +405,7 @@ def build_queue(
     if inbox_problem:
         unreadable.append(inbox_problem)
     rows.extend(_decision_rows(items))
-    manifest, problem = _load_manifest(root_dir)
+    manifest, problem = load_manifest(root_dir)
     if problem:
         unreadable.append(MANIFEST_UNREADABLE)
     elif manifest is not None:
@@ -434,7 +456,8 @@ def _open_inbox_items(root_dir: Path) -> tuple[list[InboxItem], str]:
         return [], INBOX_UNREADABLE
 
 
-def _load_manifest(root_dir: Path) -> tuple[Manifest | None, str]:
+def load_manifest(root_dir: Path) -> tuple[Manifest | None, str]:
+    """The manifest, or None and why; (None, "") when there is none."""
     from kstrl.manifest import Manifest
 
     path = root_dir / "scripts" / "kstrl" / "manifest.json"
@@ -443,4 +466,4 @@ def _load_manifest(root_dir: Path) -> tuple[Manifest | None, str]:
     try:
         return Manifest.load(path), ""
     except (OSError, ValueError) as exc:
-        return None, str(exc)
+        return None, str(exc) or type(exc).__name__

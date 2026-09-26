@@ -175,9 +175,12 @@ ConfigProblemBanner {
 
 /* ---- component detail --------------------------------------------------- */
 
+/* auto: at 80 columns a running component's phase, attempt and agent
+ * health (#433 M2) wrap to a second line rather than past the edge. */
 #component-header {
     dock: top;
-    height: 1;
+    height: auto;
+    max-height: 3;
     background: $surface;
     padding: 0 1;
 }
@@ -903,4 +906,12 @@ QuitModal {
     height: 1fr;
     padding: 1 2;
     background: $surface;
+}
+
+IntegrationScreen.tiny .panel-title {
+    margin-top: 0;
+}
+
+IntegrationScreen.tiny #integration-detail {
+    padding: 0 2;
 }
