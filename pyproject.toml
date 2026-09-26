@@ -38,6 +38,12 @@ dependencies = [
     # Static.renderable -> content rename and 6-8 render changes were
     # absorbed there). Bumped from the earlier <6 pin.
     "textual>=8.2.8,<9",
+    # #530: the prompt optimizer for the role prompts (#217 plan, section 3.2).
+    # Every Requires-Dist of 0.1.4 carries an extra marker, so the base install
+    # adds this one package. Pinned exactly: 0.x moves fast, and kstrl/gepa_adapter.py
+    # relies on its run_dir, stopper and reflection-template behaviour. An upgrade
+    # is its own PR.
+    "gepa==0.1.4",
 ]
 
 # R7.6: the claude-sdk agent adapter is opt-in because the SDK carries a

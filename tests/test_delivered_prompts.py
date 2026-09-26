@@ -80,6 +80,7 @@ import pytest
 
 from kstrl import (
     decompose,
+    gepa_adapter,
     git,
     init_cmd,
     integration,
@@ -182,7 +183,14 @@ _DECISIONS = [
 #: Every module that reads ``generate_data_delimiter`` at prompt-build
 #: time. Each imported the NAME, so the binding to replace is the one in
 #: the consuming module, not the one in ``kstrl.delimiters``.
-_DELIMITER_CONSUMERS: tuple[ModuleType, ...] = (decompose, review, security, knowledge, git)
+_DELIMITER_CONSUMERS: tuple[ModuleType, ...] = (
+    decompose,
+    review,
+    security,
+    knowledge,
+    git,
+    gepa_adapter,
+)
 
 
 def _pin_delimiters(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -277,6 +285,16 @@ _ROLES: dict[str, _Role] = {
         frozenset({"DEFAULT_PROMPT", "VERIFY_COMMANDS_PROMPT"}),
         "0ce37b67c9717479aac69ab7428959cd736e703806d6107715946de28f721428",
         5145,
+    ),
+    "gepa-reflection": _Role(
+        # The template as run_optimization hands it to gepa. The library
+        # fills <curr_param> and <side_info> itself; what it sends is pinned
+        # end to end by tests/test_gepa_adapter.py's
+        # test_reflection_uses_the_enrolled_template.
+        lambda _p: gepa_adapter.reflection_template(),
+        frozenset({"GEPA_REFLECTION_PROMPT"}),
+        "33879d87e1fc44277f8d196c9d3978d950ddbc03adb017de2b402acbdeb86f2a",
+        2018,
     ),
     "integration-criteria": _Role(
         lambda _p: integration.render_integration_criteria("BASE_SHA"),
