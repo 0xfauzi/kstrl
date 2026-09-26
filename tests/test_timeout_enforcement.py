@@ -1874,10 +1874,10 @@ class TestSubprocessTimeoutAudit:
         cleanliness. ``astwalk.calls_to`` partitions instead, and this
         pins the half that is not an answer.
 
-        Ten rows once the line numbers come off, none of them a
+        Eleven rows once the line numbers come off, none of them a
         subprocess. Four are dispatch tables with no identifier for the
         walk to compare, three are a Textual ``App.run`` on a local, and
-        three are an agent adapter reached through a parameter or an
+        four are an agent adapter reached through a parameter or an
         attribute. Keyed by module and expression, because a line number
         here churns on any edit above the site and none of those diffs is
         this test's subject. Adding a row is not
@@ -1901,6 +1901,7 @@ class TestSubprocessTimeoutAudit:
             "decompose.py agent.run",
             "gateparse.py TOOL_PARSERS[chosen]",
             "gateparse.py TOOL_PARSERS[name]",
+            "gepa_adapter.py self.agent.run",
             "loop.py agent.run",
             "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
             "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
