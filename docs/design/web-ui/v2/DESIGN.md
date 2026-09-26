@@ -126,6 +126,6 @@ The prototype replays recorded Jev answers; it does not call the API. It holds n
 
 Not measured: the routing on a catalogue with hundreds of candidates (the design caps candidate lists at 40 by local substring match before asking Jev, which is a rule, not a result); the routing over a slow connection; how a second operator's phrasings route; whether the 0.80 threshold holds for a later model version (the threshold belongs to `jev-1.13.0` and this catalogue).
 
-## 11. What changed after the second reviewer's rounds
+## 11. The second reviewer's rounds did not run
 
-Recorded in `review-record-v2.md` in the coordinator's scratch folder for this lane, with what was accepted, what was rejected and why.
+Both Codex critique rounds were planned and neither ran: the first request returned nothing because the Codex account had hit its usage limit, and the owner then stopped further use. No finding in this document comes from a second reviewer. The defects found and fixed by the designer's own review of the renders are listed in `review-record-v2.md` in the coordinator's scratch folder for this lane. The four questions the owner asked of round 2 (is it still TUI-derived, is it a wall of text, do the details float, is it polished to the standard of Linear and Raycast) are still open for an independent reviewer.
