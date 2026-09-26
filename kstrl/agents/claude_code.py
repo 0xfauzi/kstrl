@@ -12,6 +12,7 @@ from typing import Any
 
 from kstrl.agents.base import UsageRecord
 from kstrl.agents.proc import DeadlineStreamer, timeout_message
+from kstrl.agents.prompt_record import record_prompt
 from kstrl.jsonread import read_json
 from kstrl.sandbox import (
     SandboxConfig,
@@ -132,6 +133,9 @@ class ClaudeCodeAgent:
             cmd.extend(["--effort", self._effort])
         cmd.extend(sandbox_argv)
 
+        # Outside the `try`: a record write that fails with
+        # FileNotFoundError must not read as a missing claude CLI.
+        record_prompt(prompt, agent_cli="claude-code")
         try:
             streamer = DeadlineStreamer(
                 cmd,

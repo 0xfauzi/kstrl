@@ -9,6 +9,7 @@ from pathlib import Path
 
 from kstrl.agents.base import UsageRecord
 from kstrl.agents.proc import DeadlineStreamer, timeout_message
+from kstrl.agents.prompt_record import record_prompt
 
 
 class CustomAgent:
@@ -51,6 +52,7 @@ class CustomAgent:
             # Fallback to /bin/sh when bash is unavailable.
             cmd = self._command
 
+        record_prompt(prompt, agent_cli="custom")
         streamer = DeadlineStreamer(
             cmd,
             shell=not use_bash,

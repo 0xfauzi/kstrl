@@ -55,6 +55,7 @@ from kstrl.agents.base import (
     collect_usage,
     usage_coverage,
 )
+from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.atomicio import atomic_write_text
 from kstrl.context import IterationContext, IterationRecord
 from kstrl.divergence import (
@@ -785,6 +786,18 @@ class ComponentPipeline:
     def component_failure_signatures(self) -> dict[str, list[str]]:
         return self.run_state.component_failure_signatures
 
+    def component_base(self, comp_id: str) -> str:
+        """What ``comp_id``'s change is judged against (#543).
+
+        The commit its worktree started at when that commit holds code the
+        base branch lacks (a dependency that reached no base, or the
+        earlier components on single_pr's shared branch), otherwise the
+        manifest's base branch. Every phase that diffs reads it here, so
+        the in-loop guard, Phase 1, the diff, both reviewers and the
+        divergence reading judge one change.
+        """
+        return self.run_state.component_bases.get(comp_id, self.manifest.base_branch)
+
     @property
     def usage_paths(self) -> ev.RunPaths:
         """Where engineer-loop usage snapshots live.
@@ -1084,7 +1097,7 @@ class ComponentPipeline:
         if diff_text is None:
             try:
                 diff_text = git.get_diff_content(
-                    self.manifest.base_branch,
+                    self.component_base(comp.id),
                     wt_path,
                 )
             except git.GitDiffError as exc:
@@ -1465,6 +1478,21 @@ class ComponentPipeline:
                 fh.close()
             except OSError:
                 pass
+
+    def _agent_call(self, comp: Component, role: str) -> AgentCall:
+        """Who one phase's agent prompts are recorded for (#532).
+
+        Under ``usage_paths``, not ``run_paths``: the record is evidence a
+        later reader scores, so it survives the progress-log opt-out the
+        way the usage accounting does.
+        """
+        return AgentCall(
+            run_root=self.usage_paths.root,
+            run_id=self.run_id,
+            component=comp.id,
+            role=role,
+            attempt=comp.retries + 1,
+        )
 
     def _phase_started(self, comp: Component, phase: str) -> float:
         """Emit the authoritative phase bracket opener; returns the
@@ -3321,7 +3349,7 @@ class ComponentPipeline:
         verification = self.hooks.run_mechanical_verification(
             wt_path,
             wt_path / comp.prd_path,
-            self.manifest.base_branch,
+            self.component_base(comp.id),
             scope.allowed_paths,
             verify_config,
             allowed_paths_error=scope.error,
@@ -3465,9 +3493,10 @@ class ComponentPipeline:
         is an infrastructure failure for the component: record the
         infra finding, journal it, and retry/fail closed.
         """
+        base = self.component_base(comp.id)
         try:
             shared_diff = git.get_diff_content(
-                self.manifest.base_branch,
+                base,
                 wt_path,
             )
         except git.GitDiffError as exc:
@@ -3478,7 +3507,7 @@ class ComponentPipeline:
                     Finding.infrastructure_error(
                         phase="diff",
                         explanation=(
-                            f"git diff against {self.manifest.base_branch} failed; "
+                            f"git diff against {base} failed; "
                             f"knowledge distillation and the PR body cannot "
                             f"be built: {exc}"
                         ),
@@ -3488,7 +3517,7 @@ class ComponentPipeline:
             self.bus.emit(ev.DiffFetchFailed(component=comp.id, error=str(exc)))
             ctx = IterationContext.from_json(comp_result.context_json or "{}")
             ctx.add_verification_failure(
-                f"git diff against {self.manifest.base_branch} failed: {exc}",
+                f"git diff against {base} failed: {exc}",
                 attempt=comp.retries + 1,
                 phase="diff",
                 infrastructure=True,
@@ -3542,7 +3571,7 @@ class ComponentPipeline:
             return None
         try:
             numstat = git.get_diff_numstat(
-                self.manifest.base_branch,
+                self.component_base(comp.id),
                 wt_path,
                 strict=True,
             )
@@ -4033,12 +4062,15 @@ class ComponentPipeline:
                 sandbox=self.sandbox_config,
                 read_only=True,
             )
-            with self._phase_transcript(comp.id, "review") as on_line:
+            with (
+                self._phase_transcript(comp.id, "review") as on_line,
+                recording_prompts(self._agent_call(comp, "review")),
+            ):
                 review_result = self.hooks.run_review(
                     review_agent,
                     wt_path / comp.prd_path,
                     wt_path,
-                    self.manifest.base_branch,
+                    self.component_base(comp.id),
                     verification,
                     review_mode,
                     self.ui,
@@ -4396,12 +4428,15 @@ class ComponentPipeline:
                 sandbox=self.sandbox_config,
                 read_only=True,
             )
-            with self._phase_transcript(comp.id, "security") as on_line:
+            with (
+                self._phase_transcript(comp.id, "security") as on_line,
+                recording_prompts(self._agent_call(comp, "security")),
+            ):
                 sec_result = self.hooks.run_security_review(
                     sec_agent,
                     wt_path / comp.prd_path,
                     wt_path,
-                    self.manifest.base_branch,
+                    self.component_base(comp.id),
                     sec_config,
                     self.ui,
                     debug_dir=adversarial_debug_dir,
@@ -4643,7 +4678,10 @@ class ComponentPipeline:
                 self.base_config.agent_type,
             )
             distill_start = time.monotonic()
-            with self._phase_transcript(comp.id, "distill") as on_line:
+            with (
+                self._phase_transcript(comp.id, "distill") as on_line,
+                recording_prompts(self._agent_call(comp, "distill")),
+            ):
                 written, status, parse_failed = self.hooks.distill_facts(
                     distill_agent,
                     comp,

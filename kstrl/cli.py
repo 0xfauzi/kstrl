@@ -43,6 +43,7 @@ from kstrl.agents import (
 )
 from kstrl.agents.base import (
     ARCHITECT_COMPONENT,
+    ARCHITECT_ROLE,
     Agent,
     UsageTotals,
     collect_usage,
@@ -50,6 +51,7 @@ from kstrl.agents.base import (
 )
 from kstrl.agents.liveness import CLAUDE_FAMILY, PROBE_ENV_VAR, probe_family
 from kstrl.agents.logging import LoggingAgent
+from kstrl.agents.prompt_record import recording_prompts
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import CommandRun, open_command_run
 from kstrl.config import (
@@ -1686,19 +1688,20 @@ def _understand_core(
     understand_harness_paths = config.standalone_harness_files(root_dir)
 
     try:
-        result = run_loop(
-            config,
-            ui_impl,
-            loop_agent,
-            root_dir,
-            timeouts=TimeoutConfig.load(root_dir),
-            breaker_config=BreakerConfig.load(root_dir),
-            bus=bus,
-            interaction=interaction,
-            stop_check=stop_check,
-            guard_ignored_paths=understand_harness_paths,
-            guard_state_root=root_dir,
-        )
+        with recording_prompts(run.agent_call(component, "understand")):
+            result = run_loop(
+                config,
+                ui_impl,
+                loop_agent,
+                root_dir,
+                timeouts=TimeoutConfig.load(root_dir),
+                breaker_config=BreakerConfig.load(root_dir),
+                bus=bus,
+                interaction=interaction,
+                stop_check=stop_check,
+                guard_ignored_paths=understand_harness_paths,
+                guard_state_root=root_dir,
+            )
     except Exception as exc:
         duration = round(time.monotonic() - started, 2)
         detail = f"{type(exc).__name__}: {exc}"
@@ -2297,6 +2300,7 @@ def decompose(
                 root_dir=root_dir,
                 bus=command_run.bus,
                 transcript=command_run.transcript_writer(ARCHITECT_COMPONENT),
+                prompt_call=command_run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
             )
             core_ui.ok(f"Decomposed into {len(manifest.components)} components")
             return 0
@@ -6141,6 +6145,59 @@ def signals_ls(root: Path | None, ui: str, no_color: bool) -> None:
     if ledger.dropped:
         ui_impl.kv("dropped", str(ledger.dropped))
     sys.exit(0)
+
+
+@cli.group(name="ci")
+def ci_group() -> None:
+    """Read and record the CI state of the commits kstrl merges produced (#553).
+
+    Asks GitHub, through gh, for the checks on every merge commit the
+    manifest records, and appends what it read, with the time, to a
+    ledger in the control directory. A state kstrl could not read is
+    recorded as unknown, never as passed.
+    """
+
+
+@ci_group.command(name="poll")
+@click.option(
+    "--manifest",
+    "manifest_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Manifest file (default: <root>/scripts/kstrl/manifest.json)",
+)
+@_signals_root_option
+@_signals_ui_option
+@_signals_no_color_option
+def ci_poll(manifest_path: Path | None, root: Path | None, ui: str, no_color: bool) -> None:
+    """Read the CI state of every recorded merge commit and record it.
+
+    Exit 1 when any commit's CI failed or could not be read: both need
+    the operator. Exit 0 when every commit passed or is still running.
+    """
+    from kstrl.ci_state import CiState, poll_ci
+
+    root_dir = (root or Path.cwd()).resolve()
+    ui_impl = _autonomy_ui(ui, no_color)
+    path = manifest_path or root_dir / "scripts" / "kstrl" / "manifest.json"
+    if not path.exists():
+        ui_impl.err(f"No manifest found at {path}")
+        ui_impl.info("Run `ks factory` first, or pass --manifest.")
+        sys.exit(2)
+    manifest = _load_manifest_or_exit(path, ui_impl)
+    merged = [(comp.id, comp.merge_sha) for comp in manifest.components if comp.merge_sha]
+    if not merged:
+        ui_impl.ok(f"No merge commits recorded in {path}.")
+        sys.exit(0)
+    readings = poll_ci(root_dir, [sha for _, sha in merged])
+    ui_impl.section("CI")
+    for (component_id, _), reading in zip(merged, readings, strict=True):
+        ui_impl.info(
+            f"  {component_id}  {reading.sha[:12]}  {reading.state}  "
+            f"read {reading.observed_at}  {reading.reason}"
+        )
+    needs_operator = any(r.state in (CiState.FAILED, CiState.UNKNOWN) for r in readings)
+    sys.exit(1 if needs_operator else 0)
 
 
 @cli.group(name="learn")

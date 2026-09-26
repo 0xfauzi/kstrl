@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import json
 import logging
@@ -21,6 +22,7 @@ from kstrl.agents.base import (
     print_usage_rollup,
     usage_cursor,
 )
+from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.atomicio import atomic_write_json
 from kstrl.config import KstrlConfig, relative_to_root
 from kstrl.decisions import (
@@ -2329,6 +2331,11 @@ def _report_architect_usage(
     )
 
 
+def _for_attempt(call: AgentCall | None, attempt: int) -> AgentCall | None:
+    """The architect's record identity for one decompose attempt (#532)."""
+    return None if call is None else dataclasses.replace(call, attempt=attempt)
+
+
 def _decompose_spec_impl(
     spec_path: Path,
     project_name: str,
@@ -2341,6 +2348,7 @@ def _decompose_spec_impl(
     *,
     bus: EventBus | None = None,
     transcript: Callable[[str], None] | None = None,
+    prompt_call: AgentCall | None = None,
 ) -> Manifest:
     """Decompose a spec into components and generate PRDs.
 
@@ -2361,6 +2369,8 @@ def _decompose_spec_impl(
         transcript: Optional sink for the architect's streamed lines
             (the run's transcript file); terminal streaming through
             ``ui`` is unchanged either way.
+        prompt_call: Who the architect's prompt is recorded for (#532),
+            with each attempt's number put in; None records nothing.
 
     Returns:
         Manifest with generated components and PRD files
@@ -2457,20 +2467,21 @@ def _decompose_spec_impl(
         total_bytes = 0
         too_large = False
         try:
-            for line in agent.run(retry_prompt, cwd=root_dir):
-                output_lines.append(line)
-                ui.stream_line("AI", line)
-                if transcript is not None:
-                    transcript(line)
-                total_bytes += len(line) + 1
-                if total_bytes > MAX_AGENT_OUTPUT_BYTES:
-                    too_large = True
-                    ui.warn(
-                        "Decompose agent emitted "
-                        f">{MAX_AGENT_OUTPUT_BYTES // 1024 // 1024}MB; "
-                        "aborting this attempt."
-                    )
-                    break
+            with recording_prompts(_for_attempt(prompt_call, attempt)):
+                for line in agent.run(retry_prompt, cwd=root_dir):
+                    output_lines.append(line)
+                    ui.stream_line("AI", line)
+                    if transcript is not None:
+                        transcript(line)
+                    total_bytes += len(line) + 1
+                    if total_bytes > MAX_AGENT_OUTPUT_BYTES:
+                        too_large = True
+                        ui.warn(
+                            "Decompose agent emitted "
+                            f">{MAX_AGENT_OUTPUT_BYTES // 1024 // 1024}MB; "
+                            "aborting this attempt."
+                        )
+                        break
         except BaseException as exc:
             attempt_failed(
                 f"{type(exc).__name__}: {exc}",
@@ -2929,6 +2940,7 @@ def decompose_spec(
     *,
     bus: EventBus | None = None,
     transcript: Callable[[str], None] | None = None,
+    prompt_call: AgentCall | None = None,
 ) -> Manifest:
     """Run decomposition, guaranteeing a ``RunCompleted`` and a usage
     capture on every exit.
@@ -2961,6 +2973,7 @@ def decompose_spec(
             max_retries=max_retries,
             bus=bus,
             transcript=transcript,
+            prompt_call=prompt_call,
         )
     except SpecBlockerError:
         # Blocker halts are deliberately finalized at the audit site so

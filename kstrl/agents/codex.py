@@ -12,6 +12,7 @@ from pathlib import Path
 
 from kstrl.agents.base import UsageRecord
 from kstrl.agents.proc import DeadlineStreamer, timeout_message
+from kstrl.agents.prompt_record import record_prompt
 from kstrl.sandbox import (
     SandboxConfig,
     codex_review_sandbox_args,
@@ -134,6 +135,7 @@ class CodexAgent:
             cmd.extend(["--output-last-message", str(last_msg_file)])
 
         try:
+            record_prompt(prompt, agent_cli="codex")
             streamer = DeadlineStreamer(
                 cmd,
                 cwd=cwd,

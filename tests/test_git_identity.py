@@ -161,6 +161,12 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #531: one commit per fixture repo, after set_identity.
     "tests/test_prelaunch_refusal_exit.py": 1,
     "tests/test_progress_scope.py": 9,
+    # #532: two real `git("commit", ...)` calls (_initialised_project's seed
+    # commit and the architect test's seed commit), each into a repository
+    # already through tests.helpers.gitrepo.set_identity, plus two "git
+    # commit" spellings inside shell strings the fake agent runs to commit
+    # work.txt into those same repositories.
+    "tests/test_prompt_record.py": 4,
     "tests/test_prompt_upgrade.py": 1,
     "tests/test_provisioning.py": 2,
     "tests/test_resume_ergonomics.py": 2,
@@ -197,6 +203,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_check_baseline_cli.py": 2,
     "tests/test_spine_contract.py": 4,
     "tests/test_spine_crash_recovery.py": 2,
+    # #543: the bash engineer commits in worktrees of a repo
+    # spine_utils.init_kstrl_repo put through set_identity, and the merging
+    # gh stub commits in a clone that includes that repo's config.
+    "tests/test_spine_dependency_base.py": 2,
     "tests/test_spine_engineer_loop.py": 4,
     "tests/test_spine_golden_patterns_e2e.py": 1,
     # #154: TestSpineReleaseRef's `_enable_release` commits the inert

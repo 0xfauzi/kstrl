@@ -49,6 +49,7 @@ structure                       factory writes            pipeline writes
 ``worktree_paths``              insert (``_launch_comp``) delete (``_cleanup_...``)
 ``component_contexts``          none (reads at submit)    set
 ``fresh_base_retry_ids``        ``.discard``              ``.add``
+``component_bases``             set (``_launch_comp``)    none (reads)
 ``component_failure_signatures``set (contract breaker)    set / pop
 ``factory_result``              summary + exit code       append completed/failed
 =============================== ========================= =========================
@@ -99,6 +100,11 @@ class RunState:
     worktree_paths: dict[str, Path] = field(default_factory=dict)
     component_contexts: dict[str, str] = field(default_factory=dict)
     fresh_base_retry_ids: set[str] = field(default_factory=set)
+    # #543: what each component's change is judged against, written when
+    # its branch is cut (first provisioning, or a retry that recreates the
+    # branch) and read by every phase that diffs. A component absent here
+    # is judged against the manifest's base branch.
+    component_bases: dict[str, str] = field(default_factory=dict)
     # R6.1: structured "<check>:<code>" failure signatures per component
     # (e.g. "linter:E501", "review:scope_creep"), recorded at each
     # failure site from the parser/finding stream and handed to the
