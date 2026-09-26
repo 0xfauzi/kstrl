@@ -17,6 +17,7 @@ from kstrl.integration_state import FIX_COMPONENT_PREFIX
 from kstrl.manifest import Component, Manifest
 from kstrl.prd import PRD, UserStory
 from kstrl.scope import RunScope
+from kstrl.statedir import plan_prd_path, pre_run_prd_path
 
 INTEGRATION_FIX_PROMPT_VERSION = "1.0.0"
 
@@ -107,7 +108,7 @@ def tooling_criteria(manifest: Manifest, root_dir: Path) -> list[str]:
     for comp in manifest.components:
         if comp.id.startswith(FIX_COMPONENT_PREFIX):
             continue
-        for story in PRD.load(root_dir / comp.prd_path).user_stories:
+        for story in PRD.load(pre_run_prd_path(root_dir, comp.id, comp.prd_path)).user_stories:
             for item in story.acceptance_criteria:
                 lower = item.lower()
                 tool = "typecheck" in lower or "tests" in lower or "lint" in lower
@@ -163,8 +164,10 @@ def build_fix_prd(
 
 
 def write_fix_prd(root_dir: Path, component_id: str, prd: PRD) -> None:
-    """Stage 2 (design 3.4): at ``root_dir``, outside every worktree."""
-    path = root_dir / fix_prd_rel(component_id)
+    """Stage 2 (design 3.4): at ``root_dir``, outside every worktree, and
+    at ``plan_prd_path`` rather than ``fix_prd_rel``, which the fix's
+    branch commits (#545)."""
+    path = plan_prd_path(root_dir, component_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     prd.save(path)
 
@@ -196,7 +199,7 @@ def reconcile_fixes(state: Mapping[str, Any], manifest: Manifest, root_dir: Path
     for component_id in sorted(planned | built):
         present = {
             "state entry": component_id in planned,
-            "PRD": (root_dir / fix_prd_rel(component_id)).is_file(),
+            "PRD": plan_prd_path(root_dir, component_id).is_file(),
             "manifest component": component_id in built,
         }
         if not all(present.values()):

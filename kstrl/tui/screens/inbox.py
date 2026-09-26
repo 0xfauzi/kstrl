@@ -33,6 +33,8 @@ from textual.widgets import DataTable, Footer, Static
 
 from kstrl.inbox import Inbox, InboxConfig, InboxError, InboxItem
 from kstrl.statedir import ControlStateError
+from kstrl.tui import theme
+from kstrl.tui.inbox_consequences import Consequences, consequences
 from kstrl.tui.widgets.config_problem import ConfigProblemBanner
 from kstrl.tui.widgets.context_bar import ContextBar
 
@@ -54,17 +56,23 @@ class InboxScreen(Screen[None]):
         Binding("a", "approve", "approve"),
         Binding("r", "reject", "reject"),
         Binding("s", "snooze", "snooze"),
-        Binding("o", "toggle_decided", "show/hide decided"),
+        Binding("o", "toggle_decided", "decided"),
         Binding("f5", "refresh", "refresh"),
     ]
 
-    def __init__(self, root_dir: Any = None) -> None:
+    def __init__(self, root_dir: Any = None, select: str = "") -> None:
         super().__init__()
+        #: The item to put the cursor on at mount (home's needs-you row).
+        self._select = select
         from pathlib import Path
 
         self._root_arg = Path(root_dir) if root_dir else None
         self._show_decided = False
         self._items: list[InboxItem] = []
+        #: Manifest status per component, None when the manifest could not
+        #: be read; what a merge-gate decision acts on (#433 Q4).
+        self._statuses: dict[str, str] | None = {}
+        self._snooze_hours = InboxConfig().snooze_hours
 
     # -- composition -------------------------------------------------------
     def compose(self) -> ComposeResult:
@@ -119,6 +127,8 @@ class InboxScreen(Screen[None]):
             self._render_detail()
             return
         self._items = box.items() if self._show_decided else box.open_items()
+        self._snooze_hours = box.config.snooze_hours
+        self._statuses = self._manifest_statuses()
         for item in self._items:
             repeat = f" x{item.occurrences}" if item.occurrences > 1 else ""
             table.add_row(
@@ -128,7 +138,27 @@ class InboxScreen(Screen[None]):
                 "" if item.is_open else str(item.status),
             )
         table.display = bool(self._items)
+        if self._select:
+            ids = [item.id for item in self._items]
+            if self._select in ids:
+                table.move_cursor(row=ids.index(self._select))
+            self._select = ""
         self._render_detail()
+
+    def _manifest_statuses(self) -> dict[str, str] | None:
+        """Component statuses; None when a manifest exists and cannot be read."""
+        from pathlib import Path
+
+        from kstrl.tui.operator_queue import load_manifest
+
+        manifest, problem = load_manifest(Path(self._root))
+        if problem:
+            return None
+        return {comp.id: comp.status for comp in manifest.components} if manifest else {}
+
+    def _consequences(self, item: InboxItem) -> Consequences:
+        status = None if self._statuses is None else self._statuses.get(item.component, "absent")
+        return consequences(item, status, self._snooze_hours)
 
     def action_toggle_decided(self) -> None:
         self._show_decided = not self._show_decided
@@ -175,22 +205,25 @@ class InboxScreen(Screen[None]):
             lines.append(f"\n{item.detail}\n")
         for key, value in item.evidence.items():
             lines.append(f"  {key}: {value}\n", style="dim")
+        if item.is_open:
+            _append_choices(lines, self._consequences(item))
         detail.update(lines)
 
     def on_data_table_row_highlighted(self, _event: object) -> None:
         self._render_detail()
 
     def check_action(self, action: str, _parameters: tuple[object, ...]) -> bool | None:
-        """Decisions are offered only for a selected item that is open."""
+        """Decisions are offered only for a selected item that is open,
+        and only the ones whose effect is known (#433 Q4)."""
         if action in _DECISIONS:
             item = self._selected()
-            return item is not None and item.is_open
+            return item is not None and item.is_open and self._consequences(item).allows(action)
         return True
 
     # -- actions -----------------------------------------------------------
     def _decide(self, action: str, comment: str = "") -> None:
         item = self._selected()
-        if item is None:
+        if item is None or not self._consequences(item).allows(action):
             return
         box = self._inbox()
         if box is None:
@@ -263,6 +296,19 @@ class InboxScreen(Screen[None]):
             ),
             _handle,
         )
+
+
+def _append_choices(lines: Text, choices: Consequences) -> None:
+    """What each offered key does, from the code that reads the decision."""
+    lines.append("\nwhat each choice does\n", style=f"bold {theme.MUTED}")
+    keys = {"approve": "a", "reject": "r", "snooze": "s"}
+    for choice, sentence in choices.offered:
+        lines.append(f"  {keys[choice]} {choice}: ", style=f"bold {theme.ACCENT}")
+        lines.append(f"{sentence}\n")
+    if choices.withheld:
+        lines.append(f"  {choices.withheld}\n", style=theme.WARNING)
+    if choices.note:
+        lines.append(f"  {choices.note}\n", style=theme.MUTED)
 
 
 __all__ = ["InboxScreen", "priority_marker"]

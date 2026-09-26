@@ -7,15 +7,22 @@ footer. The feed is what replaced the critique's 85% dead space.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+from rich.text import Text
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.css.query import NoMatches
 from textual.screen import Screen
 from textual.widgets import Footer, Static
 
-from kstrl.tui.messages import StateChanged
+from kstrl.tui import theme
+from kstrl.tui.delivery import Delivery, integration_summary, merge_summary, merges_of
+from kstrl.tui.integration_view import IntegrationReview, read_integration_review
+from kstrl.tui.messages import DeliveryRead, StateChanged
+from kstrl.tui.serve_view import ServeState, read_serve_state, short_item_id
 from kstrl.tui.widgets.activity import ActivityFeed
 from kstrl.tui.widgets.component_table import ComponentTable
 from kstrl.tui.widgets.cost_meter import CostMeter
@@ -46,7 +53,41 @@ class CheckpointBanner(Static):
         self.update(f"◆ checkpoint pending: {names} - {hint}")
 
 
+#: How often the delivery row re-reads the integration files and the
+#: serve queue. Operator time, like the safe-mode check, and on a thread.
+DELIVERY_INTERVAL_SECONDS = 2.0
+
+
+def serve_note(serve: ServeState | None, run_id: str) -> str:
+    """The header's word on ``ks serve`` for this run (#433 M1)."""
+    if serve is None:
+        return ""
+    parts = []
+    item = serve.item_for_run(run_id)
+    if item is not None:
+        parts.append(f"ks serve {short_item_id(item.item_id)}")
+    elif serve.in_flight:
+        running = serve.in_flight[0]
+        parts.append(f"ks serve running {short_item_id(running.item_id)}")
+    if serve.queued:
+        parts.append(f"{len(serve.queued)} queued")
+    return " · ".join(parts)
+
+
+def read_run_delivery(
+    root_dir: Path, run_dir: Path, fix_status: dict[str, str]
+) -> tuple[IntegrationReview | None, ServeState | None]:
+    """The two file reads the delivery row needs; run on a worker thread."""
+    from kstrl.tui.runs import factory_lock_held, newest_factory_run_id
+
+    newest = newest_factory_run_id(root_dir)
+    review = read_integration_review(root_dir, run_dir, fix_status)
+    return review, read_serve_state(root_dir, newest, factory_lock_held(root_dir))
+
+
 class OverviewScreen(Screen[None]):
+    BINDINGS = [Binding("i", "integration", "Integration review")]
+
     def __init__(self, *, observe_only: bool) -> None:
         super().__init__()
         self.observe_only = observe_only
@@ -54,6 +95,10 @@ class OverviewScreen(Screen[None]):
         # catch-up poll) buffer here and flush in on_mount - the run's
         # history must still narrate on attach.
         self._pending_feed: list[ev.Event] = []
+        self._integration: IntegrationReview | None = None
+        self._serve: ServeState | None = None
+        self._delivery_read = False
+        self._reading_delivery = False
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="topbar"):
@@ -62,6 +107,7 @@ class OverviewScreen(Screen[None]):
         yield SafeModeBanner(id="safe-mode-banner")
         yield CheckpointBanner(id="checkpoint-banner")
         yield ComponentTable(id="component-table")
+        yield Static(id="delivery-row")
         yield Static("activity", id="activity-title")
         yield ActivityFeed(id="activity-feed")
         yield Footer()
@@ -94,6 +140,79 @@ class OverviewScreen(Screen[None]):
         if self._pending_feed:
             self.query_one(ActivityFeed).feed_events(self._pending_feed)
             self._pending_feed = []
+        self.query_one("#delivery-row", Static).display = False
+        self._read_delivery()
+        self.set_interval(DELIVERY_INTERVAL_SECONDS, self._read_delivery)
+
+    # -- delivery row (#433 F9, M1, M3) ---------------------------------------
+
+    def _store_state(self) -> RunState | None:
+        store = getattr(self.app, "store", None)
+        return store.state if store is not None else None
+
+    def _read_delivery(self) -> None:
+        """Re-read the integration files and the queue off the event loop."""
+        run_dir = getattr(self.app, "run_dir", None)
+        root = getattr(self.app, "root_dir", None)
+        state = self._store_state()
+        if self._reading_delivery or not isinstance(run_dir, Path) or not isinstance(root, Path):
+            return
+        # Snapshot on this thread: the poll mutates the state in place.
+        fix_status = {cid: comp.status for cid, comp in state.components.items()} if state else {}
+        self._reading_delivery = True
+
+        def _work() -> None:
+            try:
+                review, serve = read_run_delivery(root, run_dir, fix_status)
+            except Exception:  # noqa: BLE001 - a broken file must not kill the board
+                review, serve = None, None
+            self.post_message(DeliveryRead(review, serve))
+
+        self.run_worker(_work, thread=True, group="delivery")
+
+    def on_delivery_read(self, message: DeliveryRead) -> None:
+        self._reading_delivery = False
+        self._integration = message.integration
+        self._serve = message.serve
+        self._delivery_read = True
+        self.refresh_bindings()
+        state = self._store_state()
+        if state is not None:
+            self.refresh_state(state)
+
+    def _render_delivery(self, state: RunState) -> None:
+        row = self.query_one("#delivery-row", Static)
+        if state.kind != "factory" or not self._delivery_read:
+            row.display = False
+            return
+        compact = self.size.width < 110
+        # Glyphs only: the words for each verdict are on the review screen.
+        integration = integration_summary(self._integration, short=True)
+        if self._integration is not None:
+            integration.append("  i opens it", style=theme.MUTED)
+        delivery = Delivery(
+            run_id=state.run_id,
+            merges=merges_of(state),
+            release_ref=state.release_ref,
+            release_withheld=state.release_withheld,
+            integration=self._integration,
+        )
+        row.update(Text("\n").join([integration, merge_summary(delivery, short=compact)]))
+        row.display = True
+
+    def check_action(self, action: str, _parameters: tuple[object, ...]) -> bool | None:
+        if action == "integration":
+            return self._integration is not None
+        return True
+
+    def action_integration(self) -> None:
+        if self._integration is None:
+            return
+        from kstrl.tui.screens.integration import IntegrationScreen
+
+        run_dir = getattr(self.app, "run_dir", None)
+        run_id = run_dir.name if isinstance(run_dir, Path) else ""
+        self.app.push_screen(IntegrationScreen(self._integration, run_id))
 
     @property
     def ready(self) -> bool:
@@ -105,6 +224,7 @@ class OverviewScreen(Screen[None]):
         try:
             self._update_topbar(state)
             self.query_one(ComponentTable).update_state(state)
+            self._render_delivery(state)
             self.query_one(CheckpointBanner).update_state(
                 state,
                 observe_only=self.observe_only,
@@ -136,7 +256,9 @@ class OverviewScreen(Screen[None]):
             return
 
     def _update_topbar(self, state: RunState) -> None:
-        header = topbar_header(state, self.app, self.size.width)
+        run_dir = getattr(self.app, "run_dir", None)
+        note = serve_note(self._serve, run_dir.name if isinstance(run_dir, Path) else "")
+        header = topbar_header(state, self.app, self.size.width, note)
         self.query_one(RunHeader).update(header)
         self.query_one(CostMeter).update_state(state, meter_width(header, self.size.width))
 

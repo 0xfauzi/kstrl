@@ -52,6 +52,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal
 
 from kstrl.prd import PRD
+from kstrl.statedir import pre_run_prd_path
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -199,7 +200,7 @@ class ComponentScope:
         authored: list[str] | None = None
         error: str | None = None
         try:
-            prd = PRD.load(root_dir / comp.prd_path)
+            prd = PRD.load(pre_run_prd_path(root_dir, comp.id, comp.prd_path))
         except FileNotFoundError as exc:
             error = f"pre-run PRD not found ({comp.prd_path}): {exc}"
         except OSError as exc:
