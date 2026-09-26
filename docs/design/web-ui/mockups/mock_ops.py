@@ -224,7 +224,7 @@ def build_serve() -> None:
 def build_safe_mode() -> None:
     body = f"""
 <div class="page-title"><h1>Safe mode</h1><span class="sub">{
-        lamp("go", "nominal")
+        lamp("go", "off")
     } · every signal is clear · checked 3s ago, rechecked every 5s</span></div>
 <div class="cols">
   <div class="stack">{

@@ -179,7 +179,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--focus);outline-o
 .kv dd{margin:0}
 .glass .kv dt{color:var(--glass-muted)}
 
-/* the poll */
+/* the decision layout: what is known, then the choices */
 .poll{display:grid;grid-template-columns:minmax(0,1fr);gap:0}
 .station{display:grid;grid-template-columns:150px minmax(0,1fr);gap:12px;padding:10px 14px;border-bottom:1px solid var(--rule-soft)}
 .station:last-child{border-bottom:0}
@@ -252,7 +252,8 @@ details summary{cursor:pointer;color:var(--amber-ink);text-decoration:underline;
   .bottom-bar{display:flex;position:fixed;left:0;right:0;bottom:0;height:56px;background:var(--steel-2);border-top:1px solid var(--rule);z-index:5}
   .bottom-bar a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;color:var(--ink-2);text-decoration:none;position:relative}
   .bottom-bar a.on{color:var(--ink);font-weight:700;border-top:2px solid var(--amber);margin-top:-1px}
-  .bottom-bar a .count{position:absolute;top:6px;right:calc(50% - 22px);font-family:"JetBrains Mono",monospace;font-size:11px;background:var(--amber);border-radius:3px;padding:0 5px}
+  .bottom-bar a .count{font-family:"JetBrains Mono",monospace;font-size:11px;line-height:14px;background:var(--amber);border-radius:3px;padding:0 5px;margin-bottom:1px}
+  .bottom-bar a .count-space{height:15px}
   .page-title{flex-direction:column;gap:2px}
   .hide-sm{display:none !important}
   .sm-only{display:inline}
@@ -318,7 +319,7 @@ def mast(
     project: str = "snippetvault",
     branch: str = "main",
     config: str = "kstrl.toml valid",
-    safe: str = "safe mode nominal",
+    safe: str = "safe mode off",
     serve: str = "ks serve running",
     clock: str = "",
     readout: str = "",
@@ -357,20 +358,24 @@ def rail(active: str, needs: int = 2, failures: int = 1) -> str:
             count = f'<span class="count{" zero" if failures == 0 else ""}">{failures}</span>'
         on = " on" if key == active else ""
         items.append(f'<a class="{on.strip()}" href="{href}">{escape(name)}{count}</a>')
-    items.insert(0, '<div class="group">Stations</div>')
+    items.insert(0, '<div class="group">Views</div>')
     items.append('<div class="group">Start</div>')
     items.append('<a href="start.html">Start a run</a>')
     items.append('<a href="start-init.html">Initialise a project</a>')
-    return f'<nav class="rail" aria-label="stations">{"".join(items)}</nav>'
+    return f'<nav class="rail" aria-label="views">{"".join(items)}</nav>'
 
 
 def bottom(active: str, needs: int = 2) -> str:
     out = []
     for key, name in BOTTOM:
         on = ' class="on"' if key == active else ""
-        count = f'<span class="count">{needs}</span>' if key == "decisions" and needs else ""
-        out.append(f'<a{on} href="#">{escape(name)}{count}</a>')
-    return f'<nav class="bottom-bar" aria-label="stations">{"".join(out)}</nav>'
+        count = (
+            f'<span class="count">{needs}</span>'
+            if key == "decisions" and needs
+            else '<span class="count-space"></span>'
+        )
+        out.append(f'<a{on} href="#">{count}{escape(name)}</a>')
+    return f'<nav class="bottom-bar" aria-label="views">{"".join(out)}</nav>'
 
 
 def page(

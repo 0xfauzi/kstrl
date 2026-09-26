@@ -168,7 +168,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--focus);outline-o
 .kv dd{margin:0}
 .glass .kv dt{color:var(--glass-muted)}
 
-/* the poll */
+/* the decision layout: what is known, then the choices */
 .poll{display:grid;grid-template-columns:minmax(0,1fr);gap:0}
 .station{display:grid;grid-template-columns:150px minmax(0,1fr);gap:12px;padding:10px 14px;border-bottom:1px solid var(--rule-soft)}
 .station:last-child{border-bottom:0}
@@ -241,13 +241,14 @@ details summary{cursor:pointer;color:var(--amber-ink);text-decoration:underline;
   .bottom-bar{display:flex;position:fixed;left:0;right:0;bottom:0;height:56px;background:var(--steel-2);border-top:1px solid var(--rule);z-index:5}
   .bottom-bar a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;color:var(--ink-2);text-decoration:none;position:relative}
   .bottom-bar a.on{color:var(--ink);font-weight:700;border-top:2px solid var(--amber);margin-top:-1px}
-  .bottom-bar a .count{position:absolute;top:6px;right:calc(50% - 22px);font-family:"JetBrains Mono",monospace;font-size:11px;background:var(--amber);border-radius:3px;padding:0 5px}
+  .bottom-bar a .count{font-family:"JetBrains Mono",monospace;font-size:11px;line-height:14px;background:var(--amber);border-radius:3px;padding:0 5px;margin-bottom:1px}
+  .bottom-bar a .count-space{height:15px}
   .page-title{flex-direction:column;gap:2px}
   .hide-sm{display:none !important}
   .sm-only{display:inline}
 }
 </style></head>
-<body><div class="shell"><header class="mast"><div class="brand"><span class="tag">kstrl</span></div><div class="ctx"><span><b>e3root</b></span><span class="hide-sm"><span class="k">branch</span> <span class="mono">main</span></span><span class="hide-sm"><span class="k"></span><a href="config.html">kstrl.toml valid</a></span><span class="hide-sm"><a href="safe-mode.html">safe mode nominal</a></span><span class="hide-sm"><a href="serve.html">ks serve not running</a></span></div><div class="readout"></div></header><nav class="rail" aria-label="stations"><div class="group">Stations</div><a class="" href="home.html">Home</a><a class="" href="run-board.html">Runs</a><a class="" href="inbox.html">Decisions<span class="count">1</span></a><a class="on" href="failures.html">Failures<span class="count">1</span></a><a class="" href="serve.html">Serve queue</a><a class="" href="config.html">Config</a><a class="" href="learning.html">Learning</a><div class="group">Start</div><a href="start.html">Start a run</a><a href="start-init.html">Initialise a project</a></nav><main>
+<body><div class="shell"><header class="mast"><div class="brand"><span class="tag">kstrl</span></div><div class="ctx"><span><b>e3root</b></span><span class="hide-sm"><span class="k">branch</span> <span class="mono">main</span></span><span class="hide-sm"><span class="k"></span><a href="config.html">kstrl.toml valid</a></span><span class="hide-sm"><a href="safe-mode.html">safe mode off</a></span><span class="hide-sm"><a href="serve.html">ks serve not running</a></span></div><div class="readout"></div></header><nav class="rail" aria-label="views"><div class="group">Views</div><a class="" href="home.html">Home</a><a class="" href="run-board.html">Runs</a><a class="" href="inbox.html">Decisions<span class="count">1</span></a><a class="on" href="failures.html">Failures<span class="count">1</span></a><a class="" href="serve.html">Serve queue</a><a class="" href="config.html">Config</a><a class="" href="learning.html">Learning</a><div class="group">Start</div><a href="start.html">Start a run</a><a href="start-init.html">Initialise a project</a></nav><main>
 <div class="page-title"><h1>Failures</h1><span class="sub">e3root · 1 current · 0 superseded</span></div>
 <section class="panel"><div class="ph">Failure queue</div><div class="pb flush"><table class="data"><thead><tr><th>Run</th><th>Component</th><th>Cause</th><th class="num">Tries</th><th>Failed</th><th>Recovery</th></tr></thead>
 <tbody><tr class="sel"><td class="mono">fda682</td><td class="mono">integration-fix-1</td><td>review: Review failed</td><td class="num">2</td><td class="nowrap">09-25 23:21</td><td><span class="state nogo"><span class="lamp nogo"></span>retry blocked</span></td></tr></tbody></table></div></section>
@@ -271,4 +272,4 @@ details summary{cursor:pointer;color:var(--amber-ink);text-decoration:underline;
 </div>
 <div class="stack">
 <section class="panel"><div class="ph">Evidence</div><div class="pb"><p><b>review failed on attempt 2</b> · Review failed · 1 blocking finding at src/snippetvault/snippets.py:121-124</p><div class="toolbar" style="margin:10px 0 0"><a class="btn sm" href="integration.html">Integration review</a><a class="btn sm" href="#">Review transcript</a></div></div></section>
-</div></div></main></div><nav class="bottom-bar" aria-label="stations"><a href="#">Home</a><a href="#">Runs</a><a href="#">Decide<span class="count">1</span></a><a class="on" href="#">Failures</a><a href="#">More</a></nav></body></html>
+</div></div></main></div><nav class="bottom-bar" aria-label="views"><a href="#"><span class="count-space"></span>Home</a><a href="#"><span class="count-space"></span>Runs</a><a href="#"><span class="count">1</span>Decide</a><a class="on" href="#"><span class="count-space"></span>Failures</a><a href="#"><span class="count-space"></span>More</a></nav></body></html>

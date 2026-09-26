@@ -35,9 +35,9 @@ Why served by kstrl rather than a separate service: PRODUCT.md rule 4 says the f
 
 ## 3. Information architecture and navigation
 
-The page is organised as stations, one per operator job, with Home as the queue that points into the others. On a desktop the stations are a left rail; on a phone they are a bottom bar of five (Home, Runs, Decide, Failures, More).
+The page is organised as views, one per operator job, with Home as the queue that points into the others. On a desktop the views are a left rail; on a phone they are a bottom bar of five (Home, Runs, Decide, Failures, More).
 
-| Station | Route | Job |
+| View | Route | Job |
 |---|---|---|
 | Home | `/` | the operator queue: needs you, active, delivery, history |
 | Runs | `/runs/<run-id>` | the live board of one run, and from it component detail, gate output, the decompose plan, spec issues and the integration review |
@@ -49,7 +49,7 @@ The page is organised as stations, one per operator job, with Home as the queue 
 | Start | `/start/<factory,decompose,feature,understand,init>` | the launchers |
 | Safe mode | `/safe-mode` | the four signals behind the masthead chip |
 
-The masthead is on every page: project, branch, whether kstrl.toml is valid, the safe mode chip, the ks serve state, and for a run the elapsed clock and the spend readout. A checkpoint is not a station: it appears under Needs you and as a pinned panel on its run's board, and it opens as a page of its own (`/runs/<run-id>/checkpoint/<request-id>`).
+The masthead is on every page: project, branch, whether kstrl.toml is valid, the safe mode chip ("safe mode off" when every signal is clear), the ks serve state, and for a run the elapsed clock and the spend readout. A checkpoint has no view of its own in the rail: it appears under Needs you and as a pinned panel on its run's board, and it opens as a page of its own (`/runs/<run-id>/checkpoint/<request-id>`).
 
 Two rules hold across the architecture. First, a decision is never a modal: it is a page with the evidence above the choices, and the page behind it is not needed to understand it. Second, every count on a rail badge or a panel header is the length of the list it opens.
 
@@ -125,7 +125,7 @@ Answers Q3 and Q5. The queue names the gate, cause, attempt count and failed tim
 
 ![Decisions on a phone](mockups/inbox-phone.png)
 
-Answers Q4 and Q5. Each item is a poll: the stations report (branch, branch head, the gates, whether a pull request exists) and then the call, one control per choice with a sentence stating exactly what it does. The merge gate offers approval in two forms because the CLI's approve both records and starts a run while the TUI's records only; the page names the difference instead of hiding it (round 6, K1). The halted run says plainly that no factory step reads its decision.
+Answers Q4 and Q5. Each item is laid out as evidence first, then choices: what is known about the item (branch, branch head, the gates, whether a pull request exists) and then one control per choice with a sentence stating exactly what it does. The merge gate offers approval in two forms because the CLI's approve both records and starts a run while the TUI's records only; the page names the difference instead of hiding it (round 6, K1). The halted run says plainly that no factory step reads its decision.
 
 ### Checkpoint
 
@@ -133,7 +133,7 @@ Answers Q4 and Q5. Each item is a poll: the stations report (branch, branch head
 
 ![Checkpoint on a phone](mockups/checkpoint-phone.png)
 
-Answers Q5 and Q7 at the moment of decision. The stations report covers every gate before this point, the changed files and the spend so far with its lower-bound marker; the call has four choices, each with its consequence, including "Decide later", which states that the run waits. Findings and the diff are below, whole.
+Answers Q5 and Q7 at the moment of decision. The checks panel covers every gate before this point, the changed files and the spend so far with its lower-bound marker; the choices are four, each with its consequence, including "Decide later", which states that the run waits. Findings and the diff are below, whole.
 
 ### Config
 
@@ -181,7 +181,7 @@ Every screen and modal in `kstrl/tui/screens/` and `kstrl/tui/app.py`, and its r
 
 | TUI screen or modal | Web replacement | Note |
 |---|---|---|
-| `HomeScreen` (home shell: context, needs you, active, delivery, history, commands, preview) | Home | The commands column becomes the Start station and the rail; the preview board becomes the run link on each active row |
+| `HomeScreen` (home shell: context, needs you, active, delivery, history, commands, preview) | Home | The commands column becomes the Start view and the rail; the preview board becomes the run link on each active row |
 | `OverviewScreen` (run board) | Run board | Same reducer state; delivery gets its own panel |
 | `ComponentScreen` (component detail) | Component detail | Failed gate, findings and transcript on one page; the transcript follows live |
 | `GateLogScreen` (full gate output) | Gate output | Adds download and copy path |
@@ -288,7 +288,7 @@ The second design review asked for these; each is a rule the mock-ups follow.
 - Clocks. "Last event" is the age of the newest event in the run's event stream. "Last output" is the age of the newest write to the component's agent transcript; it is stale after the configured threshold, which the Agent panel names. "Worker alive" is a process check on the pid in the newest heartbeat event, made by the server on a 5-second cycle and shown with its age ("checked 2s ago"); "process unknown" when there is no heartbeat. "Elapsed" is the run's clock since its first event. Each is labelled with these words wherever it appears.
 - Stale decisions. Every action carries the fact it was shown: the branch head for a merge gate, the run id and manifest for a retry, the request id for a checkpoint. The server refuses an action whose fact has changed, returns the changed fact, and the page shows the current scope before offering the action again.
 - Sources. Values come from the run's files (events, manifest, launch record, inbox, CI ledger, integration state, knowledge, journals) or from a live observation the server writes down before showing (a process check, a CI poll). A live observation carries its source and time on screen ("read 2s ago", "checked 3s ago").
-- Phone layout. The rail becomes a bottom bar; the masthead keeps the project and the compact spend; panels stack in reading order (evidence, then the call); every table becomes labelled stacked rows; long text wraps; nothing scrolls sideways; the bottom bar never covers the last control because the page keeps a margin above it.
+- Phone layout. The rail becomes a bottom bar; the masthead keeps the project and the compact spend; panels stack in reading order (evidence, then the choices); every table becomes labelled stacked rows; long text wraps; nothing scrolls sideways; the bottom bar never covers the last control because the page keeps a margin above it.
 
 ## 8. Delivery in slices, and retiring the TUI
 
@@ -333,7 +333,7 @@ A mechanical design check over three pages after the rounds found three things: 
 
 ## 11. Visual system for builders
 
-The page's world is a control room's status board: a light console-grey ground with dark glass insets for dense data, rectangular lamp lenses for state, one amber accent, one sans face for the interface and one mono face for identifiers, numbers and logs. The one commitment kept from the TUI is the amber: selection, focus, primary action and the running thing.
+The page is a light grey-green ground with dark insets for dense data (logs, diffs, the phase matrix), small rectangular coloured indicators (lamps) for state, one amber accent, one sans face for the interface and one mono face for identifiers, numbers and logs. The one commitment kept from the TUI is the amber: selection, focus, primary action and the running thing.
 
 Tokens (from `mockups/build_mockups.py`, the source of every mock-up):
 

@@ -168,7 +168,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--focus);outline-o
 .kv dd{margin:0}
 .glass .kv dt{color:var(--glass-muted)}
 
-/* the poll */
+/* the decision layout: what is known, then the choices */
 .poll{display:grid;grid-template-columns:minmax(0,1fr);gap:0}
 .station{display:grid;grid-template-columns:150px minmax(0,1fr);gap:12px;padding:10px 14px;border-bottom:1px solid var(--rule-soft)}
 .station:last-child{border-bottom:0}
@@ -241,13 +241,14 @@ details summary{cursor:pointer;color:var(--amber-ink);text-decoration:underline;
   .bottom-bar{display:flex;position:fixed;left:0;right:0;bottom:0;height:56px;background:var(--steel-2);border-top:1px solid var(--rule);z-index:5}
   .bottom-bar a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;color:var(--ink-2);text-decoration:none;position:relative}
   .bottom-bar a.on{color:var(--ink);font-weight:700;border-top:2px solid var(--amber);margin-top:-1px}
-  .bottom-bar a .count{position:absolute;top:6px;right:calc(50% - 22px);font-family:"JetBrains Mono",monospace;font-size:11px;background:var(--amber);border-radius:3px;padding:0 5px}
+  .bottom-bar a .count{font-family:"JetBrains Mono",monospace;font-size:11px;line-height:14px;background:var(--amber);border-radius:3px;padding:0 5px;margin-bottom:1px}
+  .bottom-bar a .count-space{height:15px}
   .page-title{flex-direction:column;gap:2px}
   .hide-sm{display:none !important}
   .sm-only{display:inline}
 }
 </style></head>
-<body><div class="shell"><header class="mast"><div class="brand"><span class="tag">kstrl</span></div><div class="ctx"><span><b>snippetvault</b></span><span class="hide-sm"><span class="k">branch</span> <span class="mono">main</span></span><span class="hide-sm"><span class="k"></span><a href="config.html">kstrl.toml valid</a></span><span class="hide-sm"><a href="safe-mode.html">safe mode nominal</a></span><span class="hide-sm"><a href="serve.html">ks serve running</a></span></div><div class="readout"><span class="hide-sm"><span class="readout-bar"><span class="big">$19.24</span><span class="muted">of $78.00 cap</span><span class="meter"><i style="width:25%"></i></span><span class="mono" title="rounded up from the unrounded amount">25%</span></span></span><span class="sm-only mono">$19.24 of $78 · 25%</span><span class="clock" title="elapsed">1:03:42</span></div></header><nav class="rail" aria-label="stations"><div class="group">Stations</div><a class="" href="home.html">Home</a><a class="" href="run-board.html">Runs</a><a class="" href="inbox.html">Decisions<span class="count">2</span></a><a class="on" href="failures.html">Failures<span class="count">1</span></a><a class="" href="serve.html">Serve queue</a><a class="" href="config.html">Config</a><a class="" href="learning.html">Learning</a><div class="group">Start</div><a href="start.html">Start a run</a><a href="start-init.html">Initialise a project</a></nav><main>
+<body><div class="shell"><header class="mast"><div class="brand"><span class="tag">kstrl</span></div><div class="ctx"><span><b>snippetvault</b></span><span class="hide-sm"><span class="k">branch</span> <span class="mono">main</span></span><span class="hide-sm"><span class="k"></span><a href="config.html">kstrl.toml valid</a></span><span class="hide-sm"><a href="safe-mode.html">safe mode off</a></span><span class="hide-sm"><a href="serve.html">ks serve running</a></span></div><div class="readout"><span class="hide-sm"><span class="readout-bar"><span class="big">$19.24</span><span class="muted">of $78.00 cap</span><span class="meter"><i style="width:25%"></i></span><span class="mono" title="rounded up from the unrounded amount">25%</span></span></span><span class="sm-only mono">$19.24 of $78 · 25%</span><span class="clock" title="elapsed">1:03:42</span></div></header><nav class="rail" aria-label="views"><div class="group">Views</div><a class="" href="home.html">Home</a><a class="" href="run-board.html">Runs</a><a class="" href="inbox.html">Decisions<span class="count">2</span></a><a class="on" href="failures.html">Failures<span class="count">1</span></a><a class="" href="serve.html">Serve queue</a><a class="" href="config.html">Config</a><a class="" href="learning.html">Learning</a><div class="group">Start</div><a href="start.html">Start a run</a><a href="start-init.html">Initialise a project</a></nav><main>
 <div class="page-title"><h1>Retry client-commands?</h1><span class="sub">run fail01 · verify: Tests failed (exit code 1)</span></div>
 <div class="cols">
 <div class="stack">
@@ -270,4 +271,4 @@ details summary{cursor:pointer;color:var(--amber-ink);text-decoration:underline;
 <div class="stack dimmed">
 <section class="panel"><div class="ph">Evidence</div><div class="pb"><p><b>verify failed on attempt 2</b> · Tests failed (exit code 1)</p><div class="path">.kstrl/debug/factory-20260926-171433.450564-fail01/client-commands/attempt-2/test_suite.log</div></div></section>
 </div>
-</div></main></div><nav class="bottom-bar" aria-label="stations"><a href="#">Home</a><a href="#">Runs</a><a href="#">Decide<span class="count">2</span></a><a class="on" href="#">Failures</a><a href="#">More</a></nav></body></html>
+</div></main></div><nav class="bottom-bar" aria-label="views"><a href="#"><span class="count-space"></span>Home</a><a href="#"><span class="count-space"></span>Runs</a><a href="#"><span class="count">2</span>Decide</a><a class="on" href="#"><span class="count-space"></span>Failures</a><a href="#"><span class="count-space"></span>More</a></nav></body></html>

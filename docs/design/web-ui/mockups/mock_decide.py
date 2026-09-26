@@ -197,8 +197,8 @@ def build_inbox() -> None:
 <div style="height:20px"></div>
 <h2 style="font-size:16px;line-height:24px;margin:0 0 12px">client-commands is waiting for merge approval</h2>
 <div class="cols-2">
-  <div class="stack">{panel("Stations report", detail, right="what is known before you decide")}</div>
-  <div class="stack">{panel("Your call", choices, right="each choice says what it does", flush=True)}</div>
+  <div class="stack">{panel("Before you decide", detail, right="what is known about this item")}</div>
+  <div class="stack">{panel("Your decision", choices, right="each choice says what it does", flush=True)}</div>
 </div>"""
     m = mast(clock="1:03:42", readout=spend("$19.24", "$78.00", 25), compact="$19.24 of $78 · 25%")
     page("inbox.html", "Decisions", m, "decisions", body)
@@ -226,8 +226,8 @@ def build_inbox_halted() -> None:
 <div style="height:20px"></div>
 <h2 style="font-size:16px;line-height:24px;margin:0 0 12px">The integration loop stopped without a clean verdict</h2>
 <div class="cols-2">
-  <div class="stack">{panel("Stations report", detail, right="what is known before you decide")}</div>
-  <div class="stack">{panel("Your call", choices, right="each choice says what it does", flush=True)}</div>
+  <div class="stack">{panel("Before you decide", detail, right="what is known about this item")}</div>
+  <div class="stack">{panel("Your decision", choices, right="each choice says what it does", flush=True)}</div>
 </div>"""
     m = mast(clock="1:03:42", readout=spend("$19.24", "$78.00", 25), compact="$19.24 of $78 · 25%")
     page("inbox-halted.html", "Decisions: halted run", m, "decisions", body)
@@ -293,8 +293,8 @@ def build_checkpoint() -> None:
     body = f"""
 <div class="page-title"><h1>Approve PR creation and merge for comp-c?</h1><span class="sub">factory checkpoint · the run is waiting on this answer · asked 2s ago</span></div>
 <div class="cols-2">
-  <div class="stack">{panel("Stations report", stations, right="every gate before this point", flush=True)}</div>
-  <div class="stack">{panel("Your call", choices, right="each choice says what it does", flush=True)}</div>
+  <div class="stack">{panel("Checks before this point", stations, right="every gate that ran on this component", flush=True)}</div>
+  <div class="stack">{panel("Your decision", choices, right="each choice says what it does", flush=True)}</div>
 </div>
 <div style="height:20px"></div>
 <div class="cols-2">
