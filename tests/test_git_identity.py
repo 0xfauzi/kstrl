@@ -168,8 +168,12 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # commit and the architect test's seed commit), each into a repository
     # already through tests.helpers.gitrepo.set_identity, plus two "git
     # commit" spellings inside shell strings the fake agent runs to commit
-    # work.txt into those same repositories.
-    "tests/test_prompt_record.py": 4,
+    # work.txt into those same repositories. #567 adds a third real
+    # `git("commit", ...)` call (`_spec_project`'s own seed commit, always
+    # run, into the repository `_spec_project` sets identity on right
+    # above) and a third shell spelling (`_architect_then_engineer`, which
+    # commits work.txt into a `_spec_project(initialised=True)` repository).
+    "tests/test_prompt_record.py": 6,
     "tests/test_prompt_upgrade.py": 1,
     "tests/test_provisioning.py": 2,
     "tests/test_resume_ergonomics.py": 2,

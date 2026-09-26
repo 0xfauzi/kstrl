@@ -649,6 +649,7 @@ class TestFactoryWiring:
                 agent_type=None,
                 sleep_seconds=0.0,
                 redirect_output=False,
+                run_id="test-run",
             )
 
         assert seen, "run_loop was never called"
@@ -1043,6 +1044,7 @@ def _worker_write_path(
                 root,
             ),
             redirect_output=False,
+            run_id="test-run",
         )
 
     assert seen, "run_loop was never called"

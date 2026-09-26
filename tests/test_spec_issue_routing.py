@@ -37,6 +37,7 @@ from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
 from tests.conftest import make_review_repo
 from tests.helpers.component_prd import write_component_prd
+from tests.helpers.prompt_calls import architect_call
 from tests.test_decompose import (
     MockDecomposeAgent,
     _closures_for,
@@ -332,6 +333,7 @@ class TestHaltingIsUnchanged:
                 agent=MockDecomposeAgent(payload),
                 ui=PlainUI(no_color=True, file=io.StringIO()),
                 root_dir=tmp_path,
+                prompt_call=architect_call(tmp_path),
             )
         assert list(tmp_path.rglob("prd.json")) == []
 
