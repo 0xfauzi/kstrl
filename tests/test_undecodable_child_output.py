@@ -589,3 +589,20 @@ def test_a_timeout_carries_what_the_child_printed_as_text(tmp_path: Path) -> Non
 
     assert excinfo.value.output == "out kstrl527 \\xff\n"
     assert excinfo.value.stderr == "err kstrl527\n"
+
+
+def test_when_both_streams_are_undecodable_the_error_names_stdout_s_byte(tmp_path: Path) -> None:
+    """Text mode decoded stdout first, so its bad byte is the one the error
+    names; ``run_scrubbed`` decodes in the same order (#527)."""
+    command = [
+        sys.executable,
+        "-c",
+        "import sys; sys.stdout.buffer.write(b'ab\\xe9\\n'); sys.stderr.buffer.write(b'\\xff\\n')",
+    ]
+    with pytest.raises(ChildOutputDecodeError) as excinfo:
+        run_scrubbed(command, cwd=tmp_path, timeout=60.0)
+
+    assert "0xe9" in str(excinfo.value)
+    assert "0xff" not in str(excinfo.value)
+    assert excinfo.value.stdout == "ab\\xe9\n"
+    assert excinfo.value.stderr == "\\xff\n"

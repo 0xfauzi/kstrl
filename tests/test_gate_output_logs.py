@@ -393,3 +393,38 @@ def test_a_gate_that_times_out_after_a_byte_that_is_not_utf8_keeps_its_output(
     (data,) = run.verification_events()
     (path,) = data["gate_logs"]
     assert "kstrl527 hung after \\xff" in Path(path).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("stop", ["timeout", "undecodable"])
+def test_a_stopped_gate_s_output_over_the_bound_is_truncated(tmp_path: Path, stop: str) -> None:
+    """The timeout and decode exits bound what they log exactly as the
+    non-zero exit does (#462, #527): both ends kept, the cut marked."""
+    project = _project(tmp_path)
+    comp = component()
+    total = GATE_OUTPUT_MAX_CHARS + 100_000
+    body = total - len("HEAD") - len("TAIL")
+    if stop == "timeout":
+        child = _python(
+            "import sys, time; "
+            f"sys.stdout.write('HEAD' + 'x' * {body} + 'TAIL'); sys.stdout.flush(); "
+            "time.sleep(60)"
+        )
+        config = replace(_config(lint=child), subprocess_timeout=1.0)
+    else:
+        child = _python(
+            "import sys; "
+            f"sys.stdout.buffer.write(b'HEAD' + b'\\xff' + b'x' * {body - 4} + b'TAIL'); "
+            "sys.exit(1)"
+        )
+        config = _config(lint=child)
+    run = _Run(project, config, comp)
+
+    run.phase_1()
+
+    (data,) = run.verification_events()
+    (path,) = data["gate_logs"]
+    log = Path(path).read_text(encoding="utf-8")
+    assert log.startswith("HEAD")
+    assert log.endswith("TAIL")
+    assert "output truncated" in log
+    assert len(log) < GATE_OUTPUT_MAX_CHARS + 200
