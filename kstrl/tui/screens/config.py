@@ -143,16 +143,19 @@ class ConfigScreen(Screen[None]):
             return
         needle = needle.strip().lower()
         root = str(report.root_dir)
-        shown = 0
+        shown = cut = 0
         for row in report.rows:
             haystack = f"{row.section} {row.key} {row.value} {row.shown} {row.source}"
             if needle and needle not in haystack.lower():
                 continue
             shown += 1
+            value = display_value(row.value, root, row.shown)
+            # display_value cuts a long value with one "…" in its middle.
+            cut += value.plain.count("…") > (row.shown or row.value).count("…")
             table.add_row(
                 Text(row.section, style=theme.MUTED),
                 Text(row.key, style="bold"),
-                display_value(row.value, root, row.shown),
+                value,
                 Text(row.source, style=SOURCE_STYLES.get(row.source, "")),
                 key=f"{row.section}.{row.key}",
             )
@@ -161,6 +164,9 @@ class ConfigScreen(Screen[None]):
             f"  {shown}/{len(report.rows)} value(s)",
             style=theme.MUTED,
         )
+        if cut:
+            # The hint under the table shows the selected row's whole value (#433 H11).
+            title.append(f"  {cut} cut to fit, whole below when selected", style=theme.MUTED)
         self.query_one("#config-title", Static).update(title)
         self._update_hint()
 

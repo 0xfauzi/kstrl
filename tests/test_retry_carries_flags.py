@@ -692,7 +692,9 @@ class TestVerifyCommandIsGone:
         resuming = next(ln for ln in out.splitlines() if "Resuming with the flags" in ln)
         assert "--verify-command" not in resuming, resuming
         assert "--max-parallel 1" in resuming, resuming
-        assert f"Not replayed from run {run_id}: --verify-command, removed in #539" in out, out
+        dropped = "--verify-command is no longer an option. The command it named never ran."
+        assert f"Not replayed from run {run_id}: {dropped}" in out, out
+        assert "#539" not in out, out
 
     def test_a_record_that_carries_an_unknown_option_is_still_refused(self, tmp_path: Path) -> None:
         """Only a name in REMOVED_OPTIONS is dropped; any other unknown name is refused."""

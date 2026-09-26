@@ -126,6 +126,10 @@ def _key(column: str) -> str:
 
 
 class RunTable(DataTable[Text | str]):
+    #: Whether ``update_runs`` shortened a note to fit; home then says
+    #: where the note is whole (#433 H6).
+    notes_cut = False
+
     def on_mount(self) -> None:
         self.cursor_type = "row"
         self.zebra_stripes = False
@@ -165,7 +169,12 @@ class RunTable(DataTable[Text | str]):
         # table's width, never cut at the edge; the preview line under the
         # table carries the whole reason (#433 G9).
         width = self.size.width or self.app.size.width
-        fitted = fit_rows(rows, width, columns.index("note"), headers=columns)
+        note = columns.index("note")
+        whole = [row[note].plain for row in rows]
+        fitted = fit_rows(rows, width, note, headers=columns)
+        self.notes_cut = any(
+            row[note].plain != said for row, said in zip(fitted, whole, strict=True)
+        )
         for ref, values in zip(refs, fitted, strict=True):
             self._put_row(ref.run_id, values, columns)
         if order_changed and selected_before in desired:

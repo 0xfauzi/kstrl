@@ -15,7 +15,8 @@ at each of the three doors:
   of every config loader, refuses a non-finite or negative value in any
   ``int`` or ``float`` field.
 - the command line: :class:`LimitNumber` is the click type of every
-  numeric option of ``ks factory`` and ``ks retry``.
+  numeric option and argument of every command that spends (#583:
+  ``ks run --sleep nan`` ran the engineer and failed after the spend).
 
 A field whose negative values mean something (a policy cap, where a
 negative value disables the cap and 0 allows nothing) carries
@@ -101,13 +102,15 @@ class LimitNumber(click.ParamType[Any, Any]):
 
     def convert(self, value: Any, param: click.Parameter | None, ctx: click.Context | None) -> Any:
         number = self.base.convert(value, param, ctx)
-        source = next((o for o in param.opts if o.startswith("--")), "value") if param else "value"
+        source = "value"
+        if param is not None:
+            source = next((o for o in param.opts if o.startswith("--")), param.human_readable_name)
         try:
             return check_number(number, source)
         except BudgetConfigError as exc:
             raise click.BadParameter(str(exc), ctx=ctx, param=param) from exc
 
 
-#: The click types of every numeric option of `ks factory` and `ks retry`.
+#: The click types of every numeric option and argument of a command that spends.
 LIMIT_INT = LimitNumber(click.INT)
 LIMIT_FLOAT = LimitNumber(click.FLOAT)
