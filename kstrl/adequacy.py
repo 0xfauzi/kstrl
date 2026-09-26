@@ -68,6 +68,7 @@ from collections.abc import Collection, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from kstrl.config_numbers import check_numbers
 from kstrl.policy import diff_header_path
 
 #: Test-file path fragments. Deliberately broad: a file that looks like a
@@ -1204,13 +1205,15 @@ class AdequacyConfig:
             enabled = os.environ["KSTRL_ADEQUACY_ENABLED"] == "1"
         if "KSTRL_ADEQUACY_LAYER0" in os.environ:
             layer0 = os.environ["KSTRL_ADEQUACY_LAYER0"]
-        return cls(
-            enabled=enabled,
-            layer0=layer0,
-            require_strong_oracle=require_strong,
-            flag_assertionless_tests=flag_assertionless,
-            patch_coverage=patch_coverage,
-            diff_mutation=diff_mutation,
+        return check_numbers(
+            cls(
+                enabled=enabled,
+                layer0=layer0,
+                require_strong_oracle=require_strong,
+                flag_assertionless_tests=flag_assertionless,
+                patch_coverage=patch_coverage,
+                diff_mutation=diff_mutation,
+            )
         )
 
     def __post_init__(self) -> None:

@@ -71,6 +71,7 @@ from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.atomicio import atomic_write_json
+from kstrl.config_numbers import check_numbers
 from kstrl.jsonread import read_json
 from kstrl.manifest import ADVERSARIAL_BUDGET_CHECK, Component, ComponentStatus, Manifest
 from kstrl.observability import read_progress_events
@@ -384,14 +385,16 @@ class ServeConfig:
         # semantics: int() of an int is that int, of a string parses it.
         open_prs = int(os.environ.get("KSTRL_SERVE_MAX_OPEN_PRS", open_prs))
 
-        return cls(
-            poll_interval_seconds=poll,
-            daily_budget_usd=budget,
-            max_consecutive_poison=poison,
-            caffeinate=caffeinate,
-            factory_timeout_seconds=timeout,
-            allow_uncovered_cost=uncovered,
-            max_open_prs=open_prs,
+        return check_numbers(
+            cls(
+                poll_interval_seconds=poll,
+                daily_budget_usd=budget,
+                max_consecutive_poison=poison,
+                caffeinate=caffeinate,
+                factory_timeout_seconds=timeout,
+                allow_uncovered_cost=uncovered,
+                max_open_prs=open_prs,
+            )
         )
 
 

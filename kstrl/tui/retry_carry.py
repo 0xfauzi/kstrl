@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl.config_preflight import SURFACE_REJECTIONS, raise_if_defect
-from kstrl.retry_plan import UnkeptLimit, limits_line, plan_resume
+from kstrl.retry_plan import UnkeptLimit, limits_line, not_replayed, plan_resume
 from kstrl.tui.theme import short_run_id
 
 if TYPE_CHECKING:
@@ -37,6 +37,8 @@ class Carry:
     refusal: str = ""
     #: The run limits the refusal names; () for any other refusal.
     unkept: tuple[UnkeptLimit, ...] = ()
+    #: ``--option, why`` for each recorded flag the retry leaves out (#539).
+    not_replayed: tuple[str, ...] = ()
 
     def command(self, component_id: str) -> str:
         """The ``ks retry`` command that carries what this surface cannot."""
@@ -99,8 +101,13 @@ def read_carry(root: Path, manifest: Manifest, manifest_file: Path) -> Carry:
         return Carry(refusal=_limit_refusal(manifest.run_id, unkept), unkept=unkept)
     if plan is None:
         return Carry(refusal="; ".join(problems) or "no resume plan")
+    dropped = not_replayed(plan)
     if plan.argv:
         # FactoryLaunch has no field for a recorded flag; `ks retry`
         # replays them (#436).
-        return Carry(refusal="the recorded run's flags cannot be carried through the TUI")
-    return Carry(runs_under=f"{limits_line(plan)}, {plan.max_parallel} in parallel")
+        return Carry(
+            refusal="the recorded run's flags cannot be carried through the TUI",
+            not_replayed=dropped,
+        )
+    runs_under = f"{limits_line(plan)}, {plan.max_parallel} in parallel"
+    return Carry(runs_under=runs_under, not_replayed=dropped)

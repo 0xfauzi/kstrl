@@ -1,4 +1,4 @@
-"""What a run delivered: integration review, merges, and main's CI (#433 F9, M3, Q7, Q8).
+"""What a run delivered: integration review, merges, and each merge's CI (#433 F9, M3, G11).
 
 "All components completed" is not "shipped". Three separate pieces of
 evidence, each shown with its own state:
@@ -6,22 +6,25 @@ evidence, each shown with its own state:
 - the merged-feature integration review (``integration_view``);
 - the merges: each ``pr_merged`` event's PR number and ``merge_sha``,
   and the run's ``release_ref`` from ``factory_completed`` (#442);
-- main's CI for that commit. kstrl records NO check state for any
-  commit: ``pr_state`` asks ``gh`` for ``state`` and ``mergeCommit``
-  only, ``gh pr merge --auto`` waits on checks without storing them, and
-  the signals poller (#441) reads an error tracker, keyed by issue. So
-  the state is always "unknown", with that reason, until a record
-  exists. The TUI never asks the network.
+- the CI state of each merge commit, from the ledger ``ks ci poll``
+  writes (#553, ``ci_state.read_ci_ledger``). The TUI never asks the
+  network. A commit the ledger has not read says so and names the
+  command that reads it; every reading says how long ago it was taken,
+  so a stale one is visible. Only ``passed`` is green: unknown, absent
+  and an unreadable ledger never are.
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rich.text import Text
 
+from kstrl.ci_state import CiLedger, CiState, read_ci_ledger
 from kstrl.tui import theme
 from kstrl.tui.integration_view import (
     FIXED,
@@ -31,12 +34,25 @@ from kstrl.tui.integration_view import (
     IntegrationReview,
     read_integration_review,
 )
+from kstrl.tui.run_status import age_phrase
 
 if TYPE_CHECKING:
     from kstrl.reducer import RunState
 
-CI_UNKNOWN = "unknown"
-CI_UNKNOWN_REASON = "kstrl records no CI check state"
+#: What a merge commit the ledger has no reading of says (#433 G11).
+NO_CI_READING = "no CI reading - run ks ci poll"
+#: Why a Delivery shows no CI until its ledger has been read.
+CI_NOT_READ = "the CI ledger was not read"
+#: The most merge commits listed one per line; the rest share one line.
+MERGE_LINES = 4
+
+#: CI state -> colour. Only passed is green (#433 G11).
+CI_STYLE: dict[CiState, str] = {
+    CiState.PASSED: theme.SUCCESS,
+    CiState.FAILED: theme.ERROR,
+    CiState.RUNNING: theme.ACCENT,
+    CiState.UNKNOWN: theme.WARNING,
+}
 
 #: Review outcome -> (word, colour).
 OUTCOME_WORDS: dict[str, tuple[str, str]] = {
@@ -75,8 +91,10 @@ class Delivery:
     release_ref: str
     release_withheld: str
     integration: IntegrationReview | None
-    ci: str = CI_UNKNOWN
-    ci_reason: str = CI_UNKNOWN_REASON
+    #: The CI ledger as read (#553); None when it was not or could not be.
+    ci: CiLedger | None = None
+    #: Why ``ci`` is None.
+    ci_problem: str = CI_NOT_READ
 
 
 def merges_of(state: RunState) -> tuple[Merge, ...]:
@@ -93,14 +111,30 @@ def fix_statuses(state: RunState) -> dict[str, str]:
     return {cid: comp.status for cid, comp in state.components.items()}
 
 
+def read_ci(root_dir: Path) -> tuple[CiLedger | None, str]:
+    """The CI ledger, or None and why it could not be read (worker thread).
+
+    ``read_ci_ledger`` raises on an unreadable file so that it is never an
+    empty ledger. Here that becomes every commit's ``unknown`` with the
+    reason, and the rest of the delivery section still renders.
+    """
+    try:
+        return read_ci_ledger(root_dir), ""
+    except Exception as exc:  # noqa: BLE001 - shown as unknown with the reason
+        return None, f"the CI ledger could not be read: {type(exc).__name__}: {exc}"
+
+
 def read_delivery(root_dir: Path, run_dir: Path, state: RunState) -> Delivery:
-    """File reads: the run's review rounds and the integration state file."""
+    """File reads: the run's review rounds, the integration state file and the CI ledger."""
+    ci, ci_problem = read_ci(root_dir)
     return Delivery(
         run_id=run_dir.name,
         merges=merges_of(state),
         release_ref=state.release_ref,
         release_withheld=state.release_withheld,
         integration=read_integration_review(root_dir, run_dir, fix_statuses(state)),
+        ci=ci,
+        ci_problem=ci_problem,
     )
 
 
@@ -157,30 +191,75 @@ def integration_summary(review: IntegrationReview | None, *, short: bool = False
     return text
 
 
-def _merges(text: Text, merges: tuple[Merge, ...]) -> None:
-    for index, merge in enumerate(merges):
-        if index:
-            text.append(", ", style=theme.MUTED)
-        text.append(f"PR #{merge.pr_number}" if merge.pr_number else merge.component_id)
-        if merge.merge_sha:
-            text.append(f" {merge.merge_sha[:7]}", style=theme.MUTED)
+def release_note(delivery: Delivery) -> str:
+    """`` · release ref 4c4706b`` for the section title, or ""."""
+    return f" · release ref {delivery.release_ref[:7]}" if delivery.release_ref else ""
 
 
-def merge_summary(delivery: Delivery, *, short: bool = False) -> Text:
-    """``merges PR #8 1a2b3c4, PR #9 4c4706b · release ref 4c4706b · CI unknown (...)``."""
-    text = Text()
-    text.append("merges ", style=f"bold {theme.MUTED}")
-    if delivery.merges:
-        _merges(text, delivery.merges)
-    else:
-        text.append("none recorded in this run", style=theme.MUTED)
-    if delivery.release_ref:
-        text.append(" · release " if short else " · release ref ", style=theme.MUTED)
-        text.append(delivery.release_ref[:7], style="bold")
-    if not delivery.merges and not delivery.release_ref:
-        return text
-    text.append(" · ", style=theme.MUTED)
-    text.append(f"CI {delivery.ci}", style=f"bold {theme.WARNING}")
-    if not short:
-        text.append(f" ({delivery.ci_reason})", style=theme.MUTED)
+def _read_ago(observed_at: str, now: float) -> str:
+    """``read 5m ago``; the recorded time itself when it cannot be parsed."""
+    try:
+        taken = datetime.strptime(observed_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    except ValueError:
+        return f"read at {observed_at}"
+    return f"read {age_phrase(now - taken.timestamp())} ago"
+
+
+def _ci_of(merge: Merge, delivery: Delivery, now: float) -> tuple[CiState | None, list[str]]:
+    """(state, what to say after it) for one merge commit; None is "no reading"."""
+    if not merge.merge_sha:
+        return CiState.UNKNOWN, ["no merge commit recorded"]
+    if delivery.ci is None:
+        return CiState.UNKNOWN, [delivery.ci_problem]
+    reading = delivery.ci.latest(merge.merge_sha)
+    if reading is None:
+        return None, []
+    return reading.state, [_read_ago(reading.observed_at, now), reading.reason]
+
+
+def _ci_word(state: CiState | None) -> str:
+    return NO_CI_READING if state is None else f"CI {state}"
+
+
+def ci_line(merge: Merge, delivery: Delivery, now: float) -> Text:
+    """``merged PR #8 4ab99ae  CI passed · read 5m ago · 7 checks passed``.
+
+    The reason is last, so a narrow screen cuts it and not the state or
+    how old the reading is.
+    """
+    text = Text("merged ", style=f"bold {theme.MUTED}")
+    text.append(f"PR #{merge.pr_number}" if merge.pr_number else merge.component_id)
+    if merge.merge_sha:
+        text.append(f" {merge.merge_sha[:7]}", style=theme.MUTED)
+    state, detail = _ci_of(merge, delivery, now)
+    style = theme.WARNING if state is None else f"bold {CI_STYLE[state]}"
+    text.append(f"  {_ci_word(state)}", style=style)
+    for part in detail:
+        if part:
+            text.append(f" · {part}", style=theme.MUTED)
     return text
+
+
+def _more_line(rest: tuple[Merge, ...], delivery: Delivery, now: float) -> Text:
+    """``+3 more merged: 2 CI passed, 1 CI failed``: counted, never dropped."""
+    counts = Counter(_ci_word(_ci_of(merge, delivery, now)[0]) for merge in rest)
+    text = Text(f"+{len(rest)} more merged: ", style=f"bold {theme.MUTED}")
+    text.append(", ".join(f"{count} {word}" for word, count in counts.items()))
+    return text
+
+
+def merge_lines(delivery: Delivery, now: float, width: int) -> list[Text]:
+    """One line per merge commit with its CI (#433 G11), each cut to
+    ``width`` cells with an ellipsis. Past ``MERGE_LINES`` commits the
+    rest are counted by state on the last line."""
+    if not delivery.merges:
+        lines = [Text("merged ", style=f"bold {theme.MUTED}")]
+        lines[0].append("none recorded in this run", style=theme.MUTED)
+    elif len(delivery.merges) > MERGE_LINES:
+        shown, rest = delivery.merges[: MERGE_LINES - 1], delivery.merges[MERGE_LINES - 1 :]
+        lines = [ci_line(m, delivery, now) for m in shown] + [_more_line(rest, delivery, now)]
+    else:
+        lines = [ci_line(merge, delivery, now) for merge in delivery.merges]
+    for line in lines:
+        line.truncate(max(1, width), overflow="ellipsis")
+    return lines

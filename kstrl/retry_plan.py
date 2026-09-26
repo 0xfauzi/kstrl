@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.factory import FactoryConfig, validate_cost_ceiling, validate_token_ceiling
+from kstrl.factory import FactoryConfig
 from kstrl.launch_record import (
     REMOVED_OPTIONS,
     FlagValue,
@@ -372,10 +372,6 @@ def plan_resume(
         name: float(flags.get(name, value))
         for name, value in run_limits(loaded, TimeoutConfig.load(root_dir)).items()
     }
-    # The two limits `ks factory` validates in its budget preflight, checked
-    # here too so a bad value is refused before prepare_retry changes anything.
-    validate_cost_ceiling(resolved["max_cost_usd"], "--max-cost-usd")
-    validate_token_ceiling(int(resolved["max_total_tokens"]), "--max-total-tokens")
     unkept = _unkept_limits(record, resolved, overrides.keys())
     if unkept:
         return None, _ceiling_problems(manifest.run_id, unkept), unkept
@@ -397,6 +393,12 @@ def limits_line(plan: ResumePlan) -> str:
     return ", ".join(set_) if set_ else "no run limit"
 
 
+def not_replayed(plan: ResumePlan) -> tuple[str, ...]:
+    """``--option, why`` for each recorded flag the retry leaves out
+    (#539): what ``print_resume_plan`` prints, so the TUI says the same (#433)."""
+    return tuple(f"{_opt(name)}, {REMOVED_OPTIONS[name]}" for name in plan.dropped)
+
+
 def print_resume_plan(ui: UI, plan: ResumePlan) -> None:
     """Say, before the confirmation and before any spend, what the retry runs under."""
     if plan.carried:
@@ -407,8 +409,8 @@ def print_resume_plan(ui: UI, plan: ResumePlan) -> None:
             f"No launch record for run {plan.run_id or '(none)'}: "
             "the flags of the run being resumed are not carried over"
         )
-    for name in plan.dropped:
-        ui.warn(f"Not replayed from run {plan.run_id}: {_opt(name)}, {REMOVED_OPTIONS[name]}")
+    for line in not_replayed(plan):
+        ui.warn(f"Not replayed from run {plan.run_id}: {line}")
     for name, value in plan.limits:
         ui.kv(_opt(name), str(value) if value > 0 else NO_LIMIT)
     ui.kv("Max parallel", str(plan.max_parallel))

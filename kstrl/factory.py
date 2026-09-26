@@ -44,6 +44,8 @@ from kstrl.config import (
     component_progress_path,
     relative_to_root,
 )
+from kstrl.config_numbers import BudgetConfigError as BudgetConfigError
+from kstrl.config_numbers import check_number, check_numbers
 from kstrl.context import IterationContext
 from kstrl.contract import (
     ContractCleanupError,
@@ -177,62 +179,6 @@ IN_LOOP_SCOPE_VIOLATION_PROMPT = (
     "{harness_paths}. "
     "Do not widen allowedPaths."
 )
-
-
-class BudgetConfigError(ValueError):
-    """A budget ceiling was configured with a value that cannot bound
-    anything.
-
-    Raised rather than coerced because these are SAFETY limits and every
-    bad value fails in a different silent direction: ``nan`` makes
-    ``max_cost_usd > 0`` false, so the ceiling disables itself while
-    reading as configured; a negative value disables it the same way;
-    ``inf`` produces a ceiling that is enabled and can never be reached.
-    All three are indistinguishable from "off" at the moment they
-    matter, which is the failure mode a budget cap must never have.
-    """
-
-
-def validate_cost_ceiling(value: float, source: str) -> float:
-    """A cost ceiling must be finite and non-negative. 0 means unbounded.
-
-    Public because the CLI has to reject a bad ``--max-cost-usd`` in
-    preflight, before the architect spends a call - the flag reaches
-    ``run_factory`` without passing any config loader.
-    """
-    import math
-
-    if not math.isfinite(value):
-        raise BudgetConfigError(
-            f"{source} must be a finite number, got {value!r}; use 0 to "
-            "disable the ceiling. A non-finite ceiling silently stops "
-            "bounding anything."
-        )
-    if value < 0:
-        raise BudgetConfigError(
-            f"{source} must be >= 0, got {value!r}; use 0 to disable the "
-            "ceiling rather than a negative value, which disables it "
-            "without saying so."
-        )
-    return value
-
-
-def validate_token_ceiling(value: int, source: str) -> int:
-    """A token ceiling must be non-negative. 0 means unbounded.
-
-    The same defect as :func:`validate_cost_ceiling`, in the knob that
-    predates it: ``max_total_tokens = -5`` made ``max_total_tokens > 0``
-    false, so the ceiling disabled itself while still reading as
-    configured - measured, not assumed. Only the finiteness check is
-    absent, because this one is an int.
-    """
-    if value < 0:
-        raise BudgetConfigError(
-            f"{source} must be >= 0, got {value!r}; use 0 to disable the "
-            "ceiling rather than a negative value, which disables it "
-            "without saying so."
-        )
-    return value
 
 
 #: R10.3: the two settings [factory] claim_agreement accepts.
@@ -491,11 +437,11 @@ class FactoryConfig:
             retry_delay=float(os.environ.get("FACTORY_RETRY_DELAY", "5.0")),
             merge_timeout=float(os.environ.get("FACTORY_MERGE_TIMEOUT", "300.0")),
             max_adversarial_calls=int(os.environ.get("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS", "0")),
-            max_total_tokens=validate_token_ceiling(
+            max_total_tokens=check_number(
                 int(os.environ.get("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "0")),
                 "KSTRL_FACTORY_MAX_TOTAL_TOKENS",
             ),
-            max_cost_usd=validate_cost_ceiling(
+            max_cost_usd=check_number(
                 float(os.environ.get("KSTRL_FACTORY_MAX_COST_USD", "0")),
                 "KSTRL_FACTORY_MAX_COST_USD",
             ),
@@ -581,12 +527,12 @@ class FactoryConfig:
         if "max_adversarial_calls" in section:
             config.max_adversarial_calls = int(section["max_adversarial_calls"])
         if "max_total_tokens" in section:
-            config.max_total_tokens = validate_token_ceiling(
+            config.max_total_tokens = check_number(
                 int(section["max_total_tokens"]),
                 "[factory] max_total_tokens",
             )
         if "max_cost_usd" in section:
-            config.max_cost_usd = validate_cost_ceiling(
+            config.max_cost_usd = check_number(
                 float(section["max_cost_usd"]),
                 "[factory] max_cost_usd",
             )
@@ -631,11 +577,11 @@ class FactoryConfig:
         if "KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS" in os.environ:
             config.max_adversarial_calls = int(os.environ["KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS"])
         if "KSTRL_FACTORY_MAX_TOTAL_TOKENS" in os.environ:
-            config.max_total_tokens = validate_token_ceiling(
+            config.max_total_tokens = check_number(
                 int(os.environ["KSTRL_FACTORY_MAX_TOTAL_TOKENS"]), "KSTRL_FACTORY_MAX_TOTAL_TOKENS"
             )
         if "KSTRL_FACTORY_MAX_COST_USD" in os.environ:
-            config.max_cost_usd = validate_cost_ceiling(
+            config.max_cost_usd = check_number(
                 float(os.environ["KSTRL_FACTORY_MAX_COST_USD"]), "KSTRL_FACTORY_MAX_COST_USD"
             )
         if "KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE" in os.environ:
@@ -679,7 +625,7 @@ class FactoryConfig:
                 "KSTRL_FACTORY_CLAIM_AGREEMENT",
                 VALID_CLAIM_AGREEMENT,
             )
-        return config
+        return check_numbers(config)
 
 
 def _validate_max_rounds(value: object, source: str) -> int:
@@ -1478,6 +1424,7 @@ def _setup_worktree(
     root_dir: Path,
     run_id: str,
     fresh_from_base: bool = False,
+    recut_at: str | None = None,
 ) -> Path:
     """Create a git worktree for a component.
 
@@ -1495,9 +1442,11 @@ def _setup_worktree(
 
     ``fresh_from_base=True`` (used for retries after a timeout kill, and
     for merge-conflict re-runs under the R7.5 re-run doctrine)
-    additionally deletes the component branch so the worktree is recreated
-    from ``base_branch`` instead of silently reusing possibly-dirty state
-    from the killed attempt (R0.1).
+    additionally resets the component branch to ``recut_at``, or to
+    ``base_branch`` when that is None, so the worktree does not silently
+    reuse possibly-dirty state from the killed attempt (R0.1). single_pr
+    passes ``recut_at``: its branch is shared, and the commit the
+    component started at holds every earlier component's commits (#566).
 
     POSIX only. On Windows the fcntl import fails; we degrade to the
     pre-lock behavior and document the limitation in the runbook.
@@ -1545,16 +1494,6 @@ def _setup_worktree(
             timeout=30,
         )
 
-        if fresh_from_base:
-            # Delete the branch from the killed attempt so the add below
-            # recreates it from base rather than reusing its commits.
-            subprocess.run(
-                ["git", "branch", "-D", branch_name],
-                cwd=root_dir,
-                capture_output=True,
-                timeout=30,
-            )
-
         # R0.2: cut from origin/<base> when a remote exists so this
         # component builds on the squash-merged history of its
         # dependencies, not a stale local base ref. The fetch is
@@ -1563,29 +1502,51 @@ def _setup_worktree(
         fetch_base_branch(base_branch, root_dir, timeout=60.0)
         base_ref = resolve_base_ref(base_branch, root_dir)
 
-        result = subprocess.run(
-            ["git", "worktree", "add", str(worktree_path), "-b", branch_name, base_ref],
-            cwd=root_dir,
-            capture_output=True,
-            encoding="utf-8",
-            timeout=30,
-        )
-
-        if result.returncode != 0:
-            # Branch already exists: reuse it WITH its commits. After the
-            # run-start preflight (_preflight_component_branches) this can
-            # only be a branch created during THIS run - a non-timeout
-            # retry resuming its own progress, or single_pr components
-            # stacking on the shared branch. Stale branches from previous
-            # runs were deleted (fully merged) or refused at preflight,
-            # never silently reused here (R0.5).
+        if fresh_from_base:
+            # Reset the branch past the killed attempt's commits. -B resets
+            # it in the same command that checks it out, so the branch is
+            # never deleted: a single_pr branch holds earlier components'
+            # commits, and a failure here must not take them with it
+            # (#566). No reuse fallback: that would resume the killed
+            # attempt's commits.
             result = subprocess.run(
-                ["git", "worktree", "add", str(worktree_path), branch_name],
+                [
+                    "git",
+                    "worktree",
+                    "add",
+                    "-B",
+                    branch_name,
+                    str(worktree_path),
+                    recut_at or base_ref,
+                ],
                 cwd=root_dir,
                 capture_output=True,
                 encoding="utf-8",
                 timeout=30,
             )
+        else:
+            result = subprocess.run(
+                ["git", "worktree", "add", str(worktree_path), "-b", branch_name, base_ref],
+                cwd=root_dir,
+                capture_output=True,
+                encoding="utf-8",
+                timeout=30,
+            )
+            if result.returncode != 0:
+                # Branch already exists: reuse it WITH its commits. After the
+                # run-start preflight (_preflight_component_branches) this can
+                # only be a branch created during THIS run - a non-timeout
+                # retry resuming its own progress, or single_pr components
+                # stacking on the shared branch. Stale branches from previous
+                # runs were deleted (fully merged) or refused at preflight,
+                # never silently reused here (R0.5).
+                result = subprocess.run(
+                    ["git", "worktree", "add", str(worktree_path), branch_name],
+                    cwd=root_dir,
+                    capture_output=True,
+                    encoding="utf-8",
+                    timeout=30,
+                )
 
         if result.returncode != 0:
             error = result.stderr.strip() or result.stdout.strip()
@@ -1682,6 +1643,28 @@ def _start_from_dependencies(
             manifest.base_branch,
             bool(branches) or manifest.single_pr,
         )
+
+
+def _recut_point(manifest: Manifest, comp: Component, bases: dict[str, str]) -> str | None:
+    """The commit a ``fresh_from_base`` retry resets ``comp``'s branch to (#566).
+
+    None resets it to the base branch, which is right when the branch is
+    the component's own. A single_pr branch is shared: reset to the base
+    branch, it would lose every earlier component's commits. It is reset
+    to the commit this component started at, which
+    ``_start_from_dependencies`` recorded in ``bases`` when the branch was
+    first provisioned for it, so only the killed attempt's commits go.
+    """
+    if not manifest.single_pr:
+        return None
+    start = bases.get(comp.id)
+    if start is None:
+        raise RuntimeError(
+            f"no recorded start commit for '{comp.id}' on the shared branch "
+            f"'{comp.branch_name}'; resetting it to '{manifest.base_branch}' "
+            f"would drop every earlier component's commits"
+        )
+    return start
 
 
 def _cleanup_worktree(component_id: str, root_dir: Path, run_id: str) -> WorktreeSweep:
@@ -2525,6 +2508,7 @@ def _run_component(
     base_branch: str = "main",
     verify_config: VerifyConfig | None = None,
     attempt: int = 1,
+    plan_id: str = "",
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
@@ -2638,9 +2622,10 @@ def _run_component(
     # copy removes the encoding question rather than answering it four
     # times.
     # The source is the copy the run starts from, which for a planned
-    # component is under .kstrl/plan/ and never at prd_path (#545).
+    # component is under .kstrl/plan/<plan_id>/ and never at prd_path
+    # (#545, #568).
     worktree_prd = worktree_path / prd_path_str
-    prd_source = pre_run_prd_path(root_dir, component_id, prd_path_str)
+    prd_source = pre_run_prd_path(root_dir, component_id, prd_path_str, plan_id=plan_id)
     if not worktree_prd.exists() and prd_source.exists():
         worktree_prd.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(prd_source, worktree_prd)
@@ -3796,8 +3781,8 @@ def run_factory(
     # path), which bypasses those. Re-check at the boundary: a safety
     # limit that only holds when you came in through the front door is
     # not a safety limit.
-    validate_cost_ceiling(factory_config.max_cost_usd, "max_cost_usd")
-    validate_token_ceiling(factory_config.max_total_tokens, "max_total_tokens")
+    check_number(factory_config.max_cost_usd, "max_cost_usd")
+    check_number(factory_config.max_total_tokens, "max_total_tokens")
 
     try:
         run_lock = _acquire_run_lock(
@@ -4589,6 +4574,11 @@ def _run_factory_locked(
                     root_dir,
                     run_id,
                     fresh_from_base=fresh_from_base,
+                    recut_at=(
+                        _recut_point(manifest, comp, run_state.component_bases)
+                        if fresh_from_base
+                        else None
+                    ),
                 )
                 # #543: registered before the merge below, so a merge that
                 # fails leaves a worktree the pass-end cleanup removes.
@@ -4884,6 +4874,7 @@ def _run_factory_locked(
                             base_branch=pipeline.component_base(comp.id),
                             verify_config=engineer_verify,
                             attempt=comp.retries + 1,
+                            plan_id=comp.plan_id,
                             redirect_output=False,  # type: ignore[misc]
                             live_line=functools.partial(
                                 ui.stream_line,
@@ -4908,6 +4899,7 @@ def _run_factory_locked(
                                 base_branch=pipeline.component_base(comp.id),  # type: ignore[misc]
                                 verify_config=engineer_verify,
                                 attempt=comp.retries + 1,
+                                plan_id=comp.plan_id,
                             ),
                         )
                     running_futures[future] = comp.id

@@ -9,7 +9,7 @@ line, four sections in the order an operator needs them
 - **active**: runs whose writer is alive, with the running agent's last
   output and process, and ``ks serve`` items in flight or queued.
 - **delivery**: the newest finished factory run's integration review,
-  merges and main's CI state (unknown: kstrl records none).
+  and each merge commit's CI state from the ``ks ci poll`` ledger.
 - **history**: the run browser. A failed run says whether a later run
   superseded it or it is still current.
 
@@ -349,7 +349,7 @@ class HomeScreen(Screen[None]):
         queue = self._queue
         self._render_needs(queue, width)
         self._render_active(queue, width)
-        self.query_one("#home-delivery", Static).update(delivery_text(queue, width))
+        self.query_one("#home-delivery", Static).update(delivery_text(queue, width, time.time()))
 
     def _render_needs(self, queue: OperatorQueue | None, width: int) -> None:
         needs: DataTable[Text | str] = self.query_one("#home-needs", DataTable)

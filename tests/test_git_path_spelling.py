@@ -243,9 +243,12 @@ EXPECTED_GIT_ARGVS: dict[str, int] = {
     "contract.py git worktree remove --force ?": 1,
     "doctor.py git check-ignore -q -- ?": 1,
     "doctor.py git ls-files -z": 1,
-    "factory.py git branch -D ?": 2,
+    "factory.py git branch -D ?": 1,
     "factory.py git merge-base --is-ancestor ? ?": 1,
     "factory.py git rev-parse --verify --quiet ?": 1,
+    # #566: a fresh-base retry resets its branch with -B in the command
+    # that checks it out, in place of a separate `git branch -D`.
+    "factory.py git worktree add -B ? ? ?": 1,
     "factory.py git worktree add ? -b ? ?": 1,
     "factory.py git worktree add ? ?": 1,
     "factory.py git worktree list --porcelain -z": 1,

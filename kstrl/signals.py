@@ -58,6 +58,7 @@ from typing import Any
 from kstrl.appendio import append_records
 from kstrl.atomicio import atomic_write_text
 from kstrl.config import _parse_bool, load_toml_section, resolve_config_file
+from kstrl.config_numbers import check_numbers
 from kstrl.jsonread import read_json
 from kstrl.statedir import CONTROL_SIGNALS, control_file, ensure_control_state
 
@@ -161,7 +162,7 @@ class SignalsConfig:
         _overlay_toml_section(config, section)
         _overlay_env(config)
         config.__post_init__()
-        return config
+        return check_numbers(config)
 
 
 def _overlay_toml_section(config: SignalsConfig, section: dict[str, Any]) -> None:

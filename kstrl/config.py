@@ -14,6 +14,7 @@ from typing import Protocol
 # this file that grows a row per new [paths] file. Same object, pinned
 # by tests/test_string_keys_reach_every_surface.py.
 from kstrl.config_keys import STRING_KEYS as STRING_KEYS
+from kstrl.config_numbers import check_numbers
 
 # Re-exported from kstrl/config_toml.py, where reading kstrl.toml lives
 # (#366). The ``as`` spelling is what makes this a re-export under mypy
@@ -362,7 +363,7 @@ class KstrlConfig:
         if toml_path.exists():
             _apply_toml_overrides(config, toml_path, root_dir)
         _apply_env_overrides(config, root_dir)
-        return config
+        return check_numbers(config)
 
     @classmethod
     def load_or_anchored(
@@ -583,8 +584,10 @@ def _apply_toml_overrides(
             setattr(config, field_name, _resolve_path(value, root_dir) if is_path else value)
     validate_agent_type(config.agent_type, "[agent] type")
 
+    # 0 is "no ceiling" and leaves the field None. Any other number lands,
+    # so check_numbers refuses a negative one rather than dropping it (#571).
     budget = section_table(data, "agent", toml_path).get("budget_usd")
-    if isinstance(budget, (int, float)) and not isinstance(budget, bool) and budget > 0:
+    if isinstance(budget, (int, float)) and not isinstance(budget, bool) and budget != 0:
         config.agent_budget_usd = float(budget)
 
     run = section_table(data, "run", toml_path)
@@ -645,7 +648,7 @@ def _apply_env_overrides(config: KstrlConfig, root_dir: Path) -> None:
             budget_value = float(os.environ["KSTRL_AGENT_BUDGET_USD"])
         except ValueError:
             budget_value = 0.0
-        if budget_value > 0:
+        if budget_value != 0:
             config.agent_budget_usd = budget_value
     if "KSTRL_UI" in os.environ:
         config.ui_mode = os.environ["KSTRL_UI"]

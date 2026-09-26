@@ -75,6 +75,7 @@ from kstrl.manifest import (
 )
 from kstrl.names import validate_branch_name, validate_component_id
 from kstrl.prd import PRD
+from kstrl.runid import mint_run_id
 from kstrl.statedir import plan_prd_path
 
 logger = logging.getLogger(__name__)
@@ -2244,6 +2245,8 @@ def _generate_component_prd(
     root_dir: Path,
     branch_name: str,
     spec_issues: Sequence[dict[str, str]] = (),
+    *,
+    plan_id: str,
 ) -> Path:
     """Generate a standard PRD file for one component.
 
@@ -2256,7 +2259,9 @@ def _generate_component_prd(
     Written at ``statedir.plan_prd_path``, not at the component's
     ``prd_path``: the component branch commits the engineer's copy at
     ``prd_path``, so a copy there in the root checkout blocks the merge
-    of that branch (#545).
+    of that branch (#545). Under ``plan_id``, the id this decompose
+    stamps on every component it puts in the manifest, so a later
+    decompose reusing the id writes beside this copy (#568).
 
     Returns the path to the generated prd.json.
     """
@@ -2267,7 +2272,7 @@ def _generate_component_prd(
     if errors:
         raise ValueError(f"Generated PRD for '{comp_id}' has schema errors: {'; '.join(errors)}")
 
-    prd_path = plan_prd_path(root_dir, comp_id)
+    prd_path = plan_prd_path(root_dir, comp_id, plan_id=plan_id)
     prd_path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_json(prd_path, prd_data)
     return prd_path
@@ -2778,6 +2783,9 @@ def _decompose_spec_impl(
     # so the specIssues block written below is the one that passed
     # PRD.validate_schema up there.
     routed_issues = _routed_prd_issues(data)
+    # #568: one id for this decompose, stamped on every component it puts
+    # in the manifest and naming the directory its planned PRDs go in.
+    plan_id = mint_run_id("decompose")
     try:
         for comp_data in data["components"]:
             comp_id = comp_data["id"]
@@ -2785,7 +2793,7 @@ def _decompose_spec_impl(
 
             # Track directories this run creates so cleanup can remove
             # them; pre-existing directories are left alone.
-            probe = plan_prd_path(root_dir, comp_id).parent
+            probe = plan_prd_path(root_dir, comp_id, plan_id=plan_id).parent
             while not probe.exists() and probe != root_dir:
                 created_dirs.append(probe)
                 probe = probe.parent
@@ -2795,6 +2803,7 @@ def _decompose_spec_impl(
                 root_dir,
                 branch,
                 routed_issues[comp_id],
+                plan_id=plan_id,
             )
             written_prds.append(prd_path)
             # The path the engineer's copy has in its worktree and on
@@ -2812,6 +2821,7 @@ def _decompose_spec_impl(
                     prd_path=rel_prd,
                     branch_name=branch,
                     status=ComponentStatus.PENDING.value,
+                    plan_id=plan_id,
                     linear_issue_id=issue_ref.id if issue_ref else "",
                     linear_issue_identifier=(issue_ref.identifier if issue_ref else ""),
                 )

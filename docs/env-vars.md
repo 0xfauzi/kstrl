@@ -60,7 +60,7 @@ to run and tell you which section, key and value to fix.
 
 ## TimeoutConfig (`[timeout]`)
 
-All values are seconds; 0 or less disables that limit. When a limit on how long kstrl's work may take is not set, there is no limit (#467): every work limit here and in `[verify]`, `[security]`, `[contract]` and `[knowledge]` defaults to 0. The run header and `ks config show` print an unset limit as `no limit`.
+All values are seconds; 0 disables that limit, and a negative or non-finite value is refused before anything runs (#571). When a limit on how long kstrl's work may take is not set, there is no limit (#467): every work limit here and in `[verify]`, `[security]`, `[contract]` and `[knowledge]` defaults to 0. The run header and `ks config show` print an unset limit as `no limit`.
 
 | Env var | Type | Default | Notes |
 |---|---|---|---|
