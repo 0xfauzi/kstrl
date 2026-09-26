@@ -287,15 +287,17 @@ def failure_queue(
             )
             entry = _run_entry(ref, state.components[cid], is_current, manifest, successor)
             (current if is_current else past).append(entry)
-    if manifest is not None:
-        listed = {entry.component_id for entry in current}
-        # In manifest order, which is the order ks retry and main listed them.
-        current.extend(
-            _manifest_only_entry(manifest, comp.id)
-            for comp in manifest.components
-            if comp.id in still_failed and comp.id not in listed
-        )
-    return current + past
+    listed = {entry.component_id for entry in current}
+    return current + _unlisted_failures(manifest, still_failed - listed) + past
+
+
+def _unlisted_failures(manifest: Manifest | None, ids: set[str]) -> list[FailureEntry]:
+    """Failures no listed run shows, in manifest order (ks retry's order)."""
+    if manifest is None:
+        return []
+    return [
+        _manifest_only_entry(manifest, comp.id) for comp in manifest.components if comp.id in ids
+    ]
 
 
 def _manifest_failed(manifest: Manifest | None) -> set[str]:

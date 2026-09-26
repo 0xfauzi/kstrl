@@ -197,7 +197,6 @@ class TestNeedsYou:
         stats = HomeStats(last=None, inbox_open=queue.decisions, failed_components=queue.failures)
         assert "nothing is waiting" not in attention_line(stats).plain
 
-
     def test_an_inbox_config_that_does_not_load_is_not_counted_as_nothing(
         self, tmp_path: Path
     ) -> None:
@@ -210,6 +209,7 @@ class TestNeedsYou:
         queue = build_queue(tmp_path, [], {}, {}, NOW)
         assert queue.decisions is None
         assert queue.unreadable == ("inbox",)
+
 
 def _review(root: Path, run_id: str, number: int, **payload: object) -> None:
     directory = root / ".kstrl" / "runs" / run_id / "integration"
