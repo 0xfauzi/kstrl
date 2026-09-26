@@ -1,0 +1,335 @@
+{
+  "format_version": 2,
+  "model": "haiku",
+  "timestamp": "20260925-235341",
+  "runs_per_fixture": 3,
+  "run_complete": true,
+  "fixtures_attempted": [
+    "integration/int-d1-stored-rows",
+    "integration/int-d2-docstring-caller",
+    "integration/int-d3-duplicate-rule",
+    "integration/int-d4-decision-criterion",
+    "integration/int-d5-predates-feature",
+    "integration_clean/int-d1-stored-rows-clean",
+    "integration_clean/int-d2-docstring-caller-clean",
+    "integration_clean/int-d3-separate-rules-clean",
+    "integration_clean/int-d5-predates-feature-clean"
+  ],
+  "fixtures_completed": [
+    "integration/int-d1-stored-rows",
+    "integration/int-d2-docstring-caller",
+    "integration/int-d3-duplicate-rule",
+    "integration/int-d4-decision-criterion",
+    "integration/int-d5-predates-feature",
+    "integration_clean/int-d1-stored-rows-clean",
+    "integration_clean/int-d2-docstring-caller-clean",
+    "integration_clean/int-d3-separate-rules-clean",
+    "integration_clean/int-d5-predates-feature-clean"
+  ],
+  "summary": {
+    "integration": {
+      "fixtures_total": 5,
+      "fixtures_detected": 2,
+      "detection_rate": 0.4666666666666667,
+      "by_category": {
+        "IC2": {
+          "fixtures_total": 1,
+          "detection_rate": 0.0
+        },
+        "IC1": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "IC3": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "IC5": {
+          "fixtures_total": 1,
+          "detection_rate": 0.0
+        },
+        "IC4": {
+          "fixtures_total": 1,
+          "detection_rate": 0.3333333333333333
+        }
+      }
+    },
+    "integration_clean": {
+      "fixtures_total": 4,
+      "fixtures_detected": 3,
+      "detection_rate": 0.75,
+      "by_category": {
+        "IC2": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "IC1": {
+          "fixtures_total": 1,
+          "detection_rate": 0.6666666666666666
+        },
+        "IC3": {
+          "fixtures_total": 1,
+          "detection_rate": 1.0
+        },
+        "IC4": {
+          "fixtures_total": 1,
+          "detection_rate": 0.3333333333333333
+        }
+      }
+    }
+  },
+  "fixtures": [
+    {
+      "role": "integration",
+      "fixture_id": "int-d1-stored-rows",
+      "category": "IC2",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 0,
+      "consistency": 0.0,
+      "detected": false,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "IC2 did not fail; opened []"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "IC2 did not fail; opened []"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "IC2 did not fail; opened []"
+        }
+      ]
+    },
+    {
+      "role": "integration",
+      "fixture_id": "int-d2-docstring-caller",
+      "category": "IC1",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "IC1 failed citing ['src/pastebin/tokens.py', 'src/pastebin/api.py']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "IC1 failed citing ['src/pastebin/api.py', 'src/pastebin/tokens.py', 'tests/test_tokens.py']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "IC1 failed citing ['src/pastebin/api.py', 'src/pastebin/tokens.py']"
+        }
+      ]
+    },
+    {
+      "role": "integration",
+      "fixture_id": "int-d3-duplicate-rule",
+      "category": "IC3",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "IC3 failed citing ['src/pastebin/api.py', 'src/pastebin/server.py', 'spec.md']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "IC3 failed citing ['src/pastebin/api.py', 'src/pastebin/server.py']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "IC3 failed citing ['src/pastebin/api.py', 'src/pastebin/server.py', 'tests/test_api.py']"
+        }
+      ]
+    },
+    {
+      "role": "integration",
+      "fixture_id": "int-d4-decision-criterion",
+      "category": "IC5",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 0,
+      "consistency": 0.0,
+      "detected": false,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: review infrastructure error: Review coverage incomplete: no verdict for story ids IC1, IC2, IC3, IC4, IC5 (CRIT-5: a partial or empty review cannot pass) [full raw output: /private/var/folders/3p/xvff9vpj09l5yndvhxhr5qr40000gn/T/pytest-of-wumpinihussein/pytest-33894/test_integration_review_detect3/int-d4-decision-criterion-0/evidence/_review_raw.txt]; story IC1: 0 verdicts; exactly one is required; story IC2: 0 verdicts; exactly one is required; story IC3: 0 verdicts; exactly one is required; story IC4: 0 verdicts; exactly one is required; story IC5: 0 verdicts; exactly one is required"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: review infrastructure error: Review coverage incomplete: no verdict for story ids IC1, IC2, IC3, IC4, IC5 (CRIT-5: a partial or empty review cannot pass) [full raw output: /private/var/folders/3p/xvff9vpj09l5yndvhxhr5qr40000gn/T/pytest-of-wumpinihussein/pytest-33894/test_integration_review_detect3/int-d4-decision-criterion-1/evidence/_review_raw.txt]; story IC1: 0 verdicts; exactly one is required; story IC2: 0 verdicts; exactly one is required; story IC3: 0 verdicts; exactly one is required; story IC4: 0 verdicts; exactly one is required; story IC5: 0 verdicts; exactly one is required"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: review infrastructure error: Review coverage incomplete: no verdict for story ids IC1, IC2, IC3, IC4, IC5 (CRIT-5: a partial or empty review cannot pass) [full raw output: /private/var/folders/3p/xvff9vpj09l5yndvhxhr5qr40000gn/T/pytest-of-wumpinihussein/pytest-33894/test_integration_review_detect3/int-d4-decision-criterion-2/evidence/_review_raw.txt]; story IC1: 0 verdicts; exactly one is required; story IC2: 0 verdicts; exactly one is required; story IC3: 0 verdicts; exactly one is required; story IC4: 0 verdicts; exactly one is required; story IC5: 0 verdicts; exactly one is required"
+        }
+      ]
+    },
+    {
+      "role": "integration",
+      "fixture_id": "int-d5-predates-feature",
+      "category": "IC4",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 1,
+      "consistency": 0.3333333333333333,
+      "detected": false,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: review infrastructure error: Review coverage incomplete: no verdict for story ids IC2, IC3 (CRIT-5: a partial or empty review cannot pass) [full raw output: /private/var/folders/3p/xvff9vpj09l5yndvhxhr5qr40000gn/T/pytest-of-wumpinihussein/pytest-33894/test_integration_review_detect4/int-d5-predates-feature-0/evidence/_review_raw.txt]; story IC1: 0 verdicts; exactly one is required; story IC2: 0 verdicts; exactly one is required; story IC3: 0 verdicts; exactly one is required; story IC4: 0 verdicts; exactly one is required; story IC5: 0 verdicts; exactly one is required"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "IC4 failed but cited no file of ['tokens', 'client']; cited ['tests/test_tokens.py']"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "IC4 failed citing ['src/pastebin/client.py', 'src/pastebin/tokens.py', 'tests/test_tokens.py']"
+        }
+      ]
+    },
+    {
+      "role": "integration_clean",
+      "fixture_id": "int-d1-stored-rows-clean",
+      "category": "IC2",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "opened nothing; recorded 1"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "opened nothing; recorded 1"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "opened nothing; recorded 2"
+        }
+      ]
+    },
+    {
+      "role": "integration_clean",
+      "fixture_id": "int-d2-docstring-caller-clean",
+      "category": "IC1",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 2,
+      "consistency": 0.6666666666666666,
+      "detected": true,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: story IC1: 2 verdicts; exactly one is required"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "opened nothing; recorded 1"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "opened nothing; recorded 0"
+        }
+      ]
+    },
+    {
+      "role": "integration_clean",
+      "fixture_id": "int-d3-separate-rules-clean",
+      "category": "IC3",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 3,
+      "consistency": 1.0,
+      "detected": true,
+      "runs": [
+        {
+          "caught": true,
+          "error": false,
+          "detail": "opened nothing; recorded 1"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "opened nothing; recorded 0"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "opened nothing; recorded 0"
+        }
+      ]
+    },
+    {
+      "role": "integration_clean",
+      "fixture_id": "int-d5-predates-feature-clean",
+      "category": "IC4",
+      "cwe": null,
+      "runs_total": 3,
+      "runs_errored": 0,
+      "runs_detected": 1,
+      "consistency": 0.3333333333333333,
+      "detected": false,
+      "runs": [
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: review infrastructure error: Review coverage incomplete: no verdict for story ids IC2, IC3 (CRIT-5: a partial or empty review cannot pass) [full raw output: /private/var/folders/3p/xvff9vpj09l5yndvhxhr5qr40000gn/T/pytest-of-wumpinihussein/pytest-33894/test_integration_review_opens_3/int-d5-predates-feature-clean-0/evidence/_review_raw.txt]; story IC1: 0 verdicts; exactly one is required; story IC2: 0 verdicts; exactly one is required; story IC3: 0 verdicts; exactly one is required; story IC4: 0 verdicts; exactly one is required; story IC5: 0 verdicts; exactly one is required"
+        },
+        {
+          "caught": true,
+          "error": false,
+          "detail": "opened nothing; recorded 1"
+        },
+        {
+          "caught": false,
+          "error": false,
+          "detail": "red: review infrastructure error: Review coverage incomplete: no verdict for story ids IC1, IC2, IC3, IC4, IC5 (CRIT-5: a partial or empty review cannot pass) [full raw output: /private/var/folders/3p/xvff9vpj09l5yndvhxhr5qr40000gn/T/pytest-of-wumpinihussein/pytest-33894/test_integration_review_opens_3/int-d5-predates-feature-clean-2/evidence/_review_raw.txt]; story IC1: 0 verdicts; exactly one is required; story IC2: 0 verdicts; exactly one is required; story IC3: 0 verdicts; exactly one is required; story IC4: 0 verdicts; exactly one is required; story IC5: 0 verdicts; exactly one is required"
+        }
+      ]
+    }
+  ]
+}

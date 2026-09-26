@@ -69,13 +69,9 @@ class ReleaseConfig:
     """
 
     enabled: bool = False
-    #: No default on purpose. tests/test_config_toml.py:400 pins that an
-    #: unknown TOML key and an unknown section are both dropped in
-    # codespell:ignore-next-line
-    #: silence, so a misspelled key parses clean and falls back rather
-    #: than raising. An empty environment is a refusal
-    #: (REASON_ENVIRONMENT_UNSET), so the typo surfaces instead of
-    #: releasing to a default nobody chose.
+    #: No default on purpose. An empty environment is a refusal
+    #: (REASON_ENVIRONMENT_UNSET), so a run never releases to a default
+    #: nobody chose. A misspelled key is refused at command entry (#525).
     environment: str = ""
 
     @classmethod

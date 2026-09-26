@@ -39,6 +39,7 @@ from kstrl import git
 from kstrl.manifest import Manifest
 from kstrl.timeout import limit_seconds
 from kstrl.verify import DEFAULT_TEST_COMMAND, ChildOutputDecodeError, run_scrubbed
+from kstrl.worktree_sweep import sweep_worktree, warn_sweep
 
 if TYPE_CHECKING:
     from kstrl.ui.base import UI
@@ -206,14 +207,22 @@ def _abort_merge(worktree_path: Path, timeout: float = 30.0) -> None:
 def _remove_temp_worktree(
     worktree_path: Path,
     root_dir: Path,
+    ui: UI,
+    phase: str,
     timeout: float = 60.0,
 ) -> None:
     """Remove a contract temp worktree, asserting the removal succeeded.
+
+    First kills every process still running in it and warns on ``ui``
+    naming each one under ``phase`` (#528): the project's test command and
+    the integration reviewer's shell both run here, and a process either of
+    them starts in a session of its own outlives the call that started it.
 
     Raises :class:`ContractCleanupError` when the worktree directory
     survives the forced removal - the one case where silent continuation
     would leave the repo's worktree metadata pointing at stale state.
     """
+    warn_sweep(sweep_worktree(worktree_path), ui, phase)
     try:
         result = run_scrubbed(
             ["git", "worktree", "remove", "--force", str(worktree_path)],
@@ -287,6 +296,7 @@ def bisect_breaker(
     tier_branches: list[tuple[str, str]],
     root_dir: Path,
     test_command: str,
+    ui: UI,
     timeout: float | None = None,
 ) -> str | None:
     """Linear bisection to identify which component broke integration.
@@ -302,6 +312,7 @@ def bisect_breaker(
         tier_branches: List of (component_id, branch_name) for current tier
         root_dir: Repository root
         test_command: Command to run tests
+        ui: Where the removal of the bisection worktree names what it killed
         timeout: Timeout per test run
 
     Returns:
@@ -333,7 +344,7 @@ def bisect_breaker(
         return None
     finally:
         _abort_merge(worktree_path)
-        _remove_temp_worktree(worktree_path, root_dir)
+        _remove_temp_worktree(worktree_path, root_dir, ui, "contract")
 
 
 def run_tier_check(
@@ -430,7 +441,7 @@ def run_tier_check(
         # the worktree survives - fail loudly, never leave a conflicted
         # checkout behind.
         _abort_merge(worktree_path)
-        _remove_temp_worktree(worktree_path, root_dir)
+        _remove_temp_worktree(worktree_path, root_dir, ui, "contract")
 
     # Bisect to find breaker (fresh temp worktree of its own)
     breaker = bisect_breaker(
@@ -439,6 +450,7 @@ def run_tier_check(
         tier_branches,
         root_dir,
         config.test_command,
+        ui,
         limit_seconds(config.timeout),
     )
 
@@ -521,7 +533,7 @@ def run_integrated_base_check(
             limit_seconds(config.timeout),
         )
     finally:
-        _remove_temp_worktree(worktree_path, root_dir)
+        _remove_temp_worktree(worktree_path, root_dir, ui, "contract")
 
     if passed:
         ui.ok("  Integrated check: contract tests passed")

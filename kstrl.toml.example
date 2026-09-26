@@ -40,13 +40,8 @@ ascii = false
 
 # Timeout limits in seconds (R0.1). A value of 0 or less disables that limit.
 [timeout]
-git_operation = 30.0               # per git subprocess
 agent_iteration = 1800.0           # one engineer iteration
 component_total = 7200.0           # wall clock per component across iterations
-verification_check = 300.0         # each Phase 1 check subprocess
-review_agent = 600.0               # Phase 2 reviewer call
-contract_test = 600.0              # Phase 3 contract test run
-subprocess_default = 60.0          # any other subprocess
 scheduler_backstop_margin = 60.0   # extra slack before the scheduler declares a worker dead
 
 # No-progress circuit breaker (R7.5): halt the engineer loop loudly when N

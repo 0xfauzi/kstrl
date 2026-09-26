@@ -21,6 +21,7 @@ the loader round-trip plus the new ``from_env``.
 from __future__ import annotations
 
 import json
+import os
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -671,16 +672,7 @@ EXPECTED_SCAFFOLD_KEYS = {
         "min_pattern_frequency",
         "lookback_runs",
     },
-    "timeout": {
-        "git_operation",
-        "agent_iteration",
-        "component_total",
-        "verification_check",
-        "review_agent",
-        "contract_test",
-        "subprocess_default",
-        "scheduler_backstop_margin",
-    },
+    "timeout": {"agent_iteration", "component_total", "scheduler_backstop_margin"},
     "queue": {"max_attempts", "lease_ttl_seconds"},
     "serve": {
         "poll_interval_seconds",
@@ -775,6 +767,20 @@ class TestInitScaffold:
             assert not unexpected, (
                 f"[{section}] scaffold keys not consumed by any loader: {sorted(unexpected)}"
             )
+
+    def test_the_uncommented_scaffold_passes_the_entry_check(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """#525: every scaffold key is one a loader reads, so uncommenting
+        any of them never meets the entry check's refusal."""
+        from kstrl.config_preflight import collect_config_problems
+
+        for name in [k for k in os.environ if k.startswith("KSTRL_")]:
+            monkeypatch.delenv(name)
+        (tmp_path / "kstrl.toml").write_text(
+            _uncomment_scaffold(DEFAULT_KSTRL_TOML), encoding="utf-8"
+        )
+        assert collect_config_problems(tmp_path, lambda _message: None) == []
 
     def test_uncommented_scaffold_loads_through_every_loader(self, tmp_path: Path) -> None:
         from kstrl.config import KstrlConfig

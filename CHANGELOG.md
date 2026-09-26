@@ -166,6 +166,14 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Changed
 
+- A kstrl.toml name that no setting reads is refused before anything
+  starts (#525). A misspelled key or section, and a section written as a
+  value (`learning = false` for `[learning]`), used to load in silence and
+  leave the defaults in force. Every command's entry check, `ks config
+  show` and `ks doctor` now name it. The known names are the ones the
+  loaders ask for, recorded while the check runs, so there is no second
+  list of keys.
+
 - Build output git does not ignore is named before anything spends
   (#459). On a greenfield repository `ks init` runs before the build
   manifest exists, so it wrote no language ignores, and the bytecode
@@ -281,6 +289,14 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   must not relabel a row somebody has already read.
 
 ### Removed
+
+- `[timeout] git_operation`, `verification_check`, `review_agent`,
+  `contract_test` and `subprocess_default`, and `KSTRL_TIMEOUT_GIT`,
+  `KSTRL_TIMEOUT_REVIEW` and `KSTRL_TIMEOUT_DEFAULT` (#525). No code read
+  them: `ks init` scaffolded them and `ks config show` printed them as
+  limits that nothing enforced. A kstrl.toml that still sets one is
+  refused by name. `KSTRL_TIMEOUT_VERIFY` and `KSTRL_TIMEOUT_CONTRACT`
+  remain, read by `[verify]` and `[contract]`.
 
 - The `sense dampener` pull-request workflow, which ran this repository's own
   test suite a second time to compare a branch against
