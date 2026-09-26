@@ -36,6 +36,7 @@ from kstrl.decompose import (
 )
 from kstrl.evolution import SPEC_ISSUES_EVENT, EvolutionConfig, EvolutionJournal
 from kstrl.prd import PRD
+from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
 from tests.helpers.journal import audit, journal_at, tear
 
@@ -637,8 +638,11 @@ class TestDecomposeSpec:
         assert manifest.components[1].dependencies == ["database"]
         assert manifest.project_name == "test-project"
 
-        # Verify PRD files were created
-        db_prd = tmp_path / "scripts" / "kstrl" / "feature" / "database" / "prd.json"
+        # Verify PRD files were created, at the plan path and not at the
+        # manifest's prdPath, which the component branch commits (#545)
+        assert manifest.components[0].prd_path == "scripts/kstrl/feature/database/prd.json"
+        assert not (tmp_path / manifest.components[0].prd_path).exists()
+        db_prd = plan_prd_path(tmp_path, "database")
         assert db_prd.exists()
         prd = PRD.load(db_prd)
         assert len(prd.user_stories) == 1
@@ -1625,7 +1629,7 @@ class TestPrdValidationInsideRetryLoop:
         assert "PREVIOUS ATTEMPT FAILED" in agent.prompts[1]
         assert "notes" in agent.prompts[1]
         assert len(manifest.components) == 1
-        prd_path = tmp_path / "scripts" / "kstrl" / "feature" / "comp-a" / "prd.json"
+        prd_path = plan_prd_path(tmp_path, "comp-a")
         assert prd_path.exists()
         assert PRD.load(prd_path).user_stories[0].id == "US-001"
 
@@ -1703,6 +1707,8 @@ class TestPrdValidationInsideRetryLoop:
         assert calls == ["database", "api"]
         assert list(tmp_path.rglob("prd.json")) == []
         assert not (tmp_path / "scripts" / "kstrl" / "feature").exists()
+        # #545: the directories created for the planned copy go too.
+        assert not plan_prd_path(tmp_path, "database").parent.parent.exists()
         assert not (tmp_path / "scripts" / "kstrl" / "manifest.json").exists()
         # The audit artifact is deliberately kept.
         assert (tmp_path / "scripts" / "kstrl" / "spec-issues.json").exists()

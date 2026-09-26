@@ -135,7 +135,7 @@ from kstrl.security import (
     run_security_review,
 )
 from kstrl.shutdown import StopController
-from kstrl.statedir import ControlStateError
+from kstrl.statedir import ControlStateError, pre_run_prd_path
 from kstrl.timeout import NO_LIMIT, TimeoutConfig, describe_limit_seconds
 from kstrl.ui.bridge import EventBridgeUI
 from kstrl.verify import (
@@ -2522,8 +2522,10 @@ def _run_component(
     # scaffold digests depend on prompt.md copying byte for byte. A byte
     # copy removes the encoding question rather than answering it four
     # times.
+    # The source is the copy the run starts from, which for a planned
+    # component is under .kstrl/plan/ and never at prd_path (#545).
     worktree_prd = worktree_path / prd_path_str
-    prd_source = root_dir / prd_path_str
+    prd_source = pre_run_prd_path(root_dir, component_id, prd_path_str)
     if not worktree_prd.exists() and prd_source.exists():
         worktree_prd.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(prd_source, worktree_prd)

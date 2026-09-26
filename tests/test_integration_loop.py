@@ -12,6 +12,7 @@ import pytest
 from kstrl.contract import ContractConfig
 from kstrl.manifest import ComponentStatus, Manifest
 from kstrl.prd import PRD
+from kstrl.statedir import plan_prd_path
 from tests.helpers import integration_harness as h
 from tests.helpers import integration_loop as lp
 
@@ -59,7 +60,7 @@ def test_the_fix_prd_and_scope_are_narrow(tmp_path: Path) -> None:
 
     lp.run_loop(root, rig)
 
-    prd = PRD.load(root / "scripts" / "kstrl" / "feature" / lp.FIX_1 / "prd.json")
+    prd = PRD.load(plan_prd_path(root, lp.FIX_1))
     assert prd.allowed_paths == NARROW
     assert [s.id for s in prd.user_stories] == ["IF-1"]
     criteria = prd.user_stories[0].acceptance_criteria
@@ -75,6 +76,24 @@ def test_the_fix_prd_and_scope_are_narrow(tmp_path: Path) -> None:
     assert resolved[0]["data"]["allowed_paths"] == NARROW
     plans = lp.events(root, "run_plan")
     assert [c["id"] for c in plans[-1]["data"]["components"]] == ["comp-a", "comp-b", lp.FIX_1]
+
+
+def test_the_tooling_criterion_is_read_from_the_planned_copy(tmp_path: Path) -> None:
+    """#545: a decomposed component's starting PRD is under ``.kstrl/plan/``
+    and nothing is at its ``prdPath`` in the root checkout. The fix PRD
+    still ends with the feature's tooling criterion, so the loop read the
+    planned copies."""
+    root = tmp_path / "repo"
+    base, _head = lp.loop_feature(root)
+    for cid in lp.SCOPES:
+        planned = plan_prd_path(root, cid)
+        planned.parent.mkdir(parents=True)
+        (root / "scripts" / "kstrl" / "feature" / cid / "prd.json").rename(planned)
+
+    lp.run_loop(root, lp.Rig(root, lp.ScriptedReviewer(base, [lp.IC2_FAIL, {}])))
+
+    prd = PRD.load(plan_prd_path(root, lp.FIX_1))
+    assert prd.user_stories[0].acceptance_criteria[-1] == lp.TOOLING
 
 
 def test_blocking_off_builds_nothing_and_keeps_the_exit_code(tmp_path: Path) -> None:
@@ -379,7 +398,7 @@ def test_a_register_finding_does_not_stop_a_code_fix(tmp_path: Path) -> None:
     assert reviewer.calls == 2
     state = lp.state(root)
     assert state["fixes"][0]["findings"] == ["IF-1"]
-    prd = PRD.load(root / "scripts" / "kstrl" / "feature" / lp.FIX_1 / "prd.json")
+    prd = PRD.load(plan_prd_path(root, lp.FIX_1))
     assert [s.id for s in prd.user_stories] == ["IF-1"]
     assert [(f["id"], f["status"]) for f in state["findings"]] == [
         ("IF-1", "closed"),
