@@ -142,6 +142,8 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "licensing.py low.replace",
     "observability.py datetime.strptime(ts, '%Y-%m-%dT%H:%M:%SZ').replace",
     "parsers.py failure.rule_or_test.replace",
+    # #526: `retry_plan._opt` spells a run limit as an option name, a str.replace.
+    "retry_plan.py name.replace",
     "serve.py (local + timedelta(days=1)).replace",
     "statedir.py datetime.now(UTC).replace",
     "statedir.py datetime.now(UTC).replace(microsecond=0).isoformat().replace",
