@@ -274,3 +274,27 @@ def test_an_unreadable_base_tree_fails_both_layers_closed(
     assert "could not read the diff" in row.message
     assert any("planted" in d for d in row.details)
     assert [f.category for f in row.findings] == ["infrastructure_error"]
+
+
+def test_lockfile_scope_follows_origin_when_the_local_base_is_stale(
+    tmp_path: Path,
+) -> None:
+    """Phase 1 measures ``origin/main...HEAD`` when origin/main exists (#435),
+    so the lockfile rule must read the tree of THAT merge base. Here the
+    component forked from an origin/main that already commits uv.lock while
+    the local ``main`` is stale and has none. Re-pinning that committed
+    lockfile with its manifest out of scope is a violation; a merge base
+    taken from the stale local ``main`` would read it as newly created and
+    clear it."""
+    _seed(tmp_path, {"pyproject.toml": PYPROJECT})
+    (tmp_path / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    _commit_all(tmp_path)
+    git_in(tmp_path, "update-ref", "refs/remotes/origin/main", "HEAD")
+    baseline = git.capture_workspace_baseline(tmp_path, base_ref="main")
+
+    (tmp_path / "uv.lock").write_text("version = 1\n# repinned\n", encoding="utf-8")
+    _commit_all(tmp_path)
+
+    assert git.resolve_base_ref("main", tmp_path) == "origin/main"
+    assert _in_loop(tmp_path, baseline) == (False, ["uv.lock"])
+    assert _phase_1_violations(tmp_path) == ["uv.lock"]
