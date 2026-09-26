@@ -112,6 +112,10 @@ class DemotionTrigger(IntEnum):
         return self.name.lower()
 
 
+#: The ``ks autonomy demote --trigger`` choices, one per trigger (#565).
+DEMOTION_TRIGGER_LABELS: tuple[str, ...] = tuple(trigger.label for trigger in DemotionTrigger)
+
+
 # ---------------------------------------------------------------------------
 # Thresholds - ALL UNMEASURED PLACEHOLDERS (R8 "no assumed thresholds")
 # ---------------------------------------------------------------------------
