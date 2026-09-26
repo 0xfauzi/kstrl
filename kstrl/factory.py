@@ -77,6 +77,7 @@ from kstrl.events import (
 from kstrl.events import (
     ContractResult as ContractResultEvent,
 )
+from kstrl.fact_scope import authored_paths, paths_by_component
 from kstrl.feedforward import CodebaseScanConfig, build_codebase_scan_context
 from kstrl.findings import POLICY_CATEGORY_PREFIX
 from kstrl.fixtures import FixturesConfig
@@ -4509,6 +4510,9 @@ def _run_factory_locked(
                     comp,
                     knowledge_config.knowledge_root,
                     knowledge_config,
+                    allowed_paths=authored_paths(scope),
+                    dependency_paths=paths_by_component(manifest, pipeline.run_scope),
+                    worktree=wt_path,
                 )
             except Exception as exc:  # noqa: BLE001 - non-fatal, never silent
                 # Non-fatal, but NOT a metrics detail: the engineer runs
