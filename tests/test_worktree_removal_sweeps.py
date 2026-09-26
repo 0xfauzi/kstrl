@@ -34,6 +34,7 @@ from click.testing import CliRunner, Result
 
 from kstrl.cli import cli
 from kstrl.contract import ContractConfig, ContractMode
+from kstrl.events import Log, read_events
 from kstrl.factory import FactoryResult
 from kstrl.manifest import ComponentStatus
 from tests.helpers import integration_harness as harness
@@ -93,16 +94,23 @@ def _kill(*pidfiles: Path) -> None:
 
 
 def _names(text: str, pid: int, phase: str) -> bool:
-    """Whether one line of ``text`` is the ``phase`` warning naming ``pid``."""
+    """Whether one line of ``text`` is the ``phase`` WARNING naming ``pid``.
+
+    ``text`` is PlainUI output, which starts a warning with ``WARN:``; a line
+    printed at any other severity does not count."""
     return any(
-        f"orphan_process ({phase})" in line and f"pid {pid} " in line for line in text.splitlines()
+        line.startswith("WARN: ") and f"orphan_process ({phase})" in line and f"pid {pid} " in line
+        for line in text.splitlines()
     )
 
 
-def _run_events(root: Path) -> str:
+def _run_warnings(root: Path) -> str:
+    """The run's warn-severity events.jsonl lines, spelled as PlainUI prints them."""
     return "\n".join(
-        path.read_text(encoding="utf-8")
+        f"WARN: {event.text}"
         for path in sorted((root / ".kstrl" / "runs").glob("*/events.jsonl"))
+        for event in read_events(path)
+        if isinstance(event, Log) and event.severity == "warn"
     )
 
 
@@ -130,7 +138,7 @@ def test_the_contract_check_kills_and_names_what_its_test_command_left(
         assert sorted(Path(cwd).name.split("-")[0] for _pid, cwd in left) == worktrees, (
             f"precondition: the contract command ran once in each worktree: {left}\n{out}"
         )
-        events = _run_events(root)
+        events = _run_warnings(root)
         for pid, cwd in left:
             assert procs.wait_for_pid_to_die(pid, timeout=10), (
                 f"pid {pid}, left in the contract worktree {cwd}, outlived its removal"
@@ -263,6 +271,8 @@ def test_ks_retry_says_when_the_census_could_not_run(
     assert result.exit_code == 0, result.output
     assert not evidence.exists(), "precondition: the retry removed the evidence worktree"
     assert any(
-        "orphan_process (retry)" in line and "census could not run" in line
+        line.startswith("WARN: ")
+        and "orphan_process (retry)" in line
+        and "census could not run" in line
         for line in result.output.splitlines()
     ), f"no retry warning says the census could not run:\n{result.output}"
