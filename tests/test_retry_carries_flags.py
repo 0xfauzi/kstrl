@@ -196,6 +196,8 @@ class TestRetryReplaysTheRunsFlags:
         assert "--no-prs" in out, out
         resuming = next(ln for ln in out.splitlines() if "Resuming with the flags" in ln)
         assert "--keep-worktrees-on-failure" in resuming, resuming
+        # #539: a record that carries no removed option names none as dropped.
+        assert "Not replayed from run" not in out, out
         header = _execution_header(out)
         assert re.search(r"Max parallel:\s*1\n", header), header
         assert re.search(r"Max retries:\s*0\n", header), header
