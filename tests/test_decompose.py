@@ -39,6 +39,7 @@ from kstrl.prd import PRD
 from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
 from tests.helpers.journal import audit, journal_at, tear
+from tests.helpers.prompt_calls import architect_call
 
 
 class MockDecomposeAgent:
@@ -536,6 +537,7 @@ class TestSpecIssues:
                 agent=agent,
                 ui=ui,
                 root_dir=tmp_path,
+                prompt_call=architect_call(tmp_path),
             )
         assert len(exc_info.value.escalations) == 1
         assert exc_info.value.escalations[0].question == "what is this product for"
@@ -604,6 +606,7 @@ class TestSpecIssues:
             agent=agent,
             ui=ui,
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
         assert len(manifest.components) == 1
         assert manifest.components[0].id == "comp-a"
@@ -630,6 +633,7 @@ class TestDecomposeSpec:
             agent=agent,
             ui=ui,
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
 
         assert len(manifest.components) == 2
@@ -675,6 +679,7 @@ class TestDecomposeSpec:
             agent=agent,
             ui=ui,
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
 
         # All components should share the same branch
@@ -700,6 +705,7 @@ class TestDecomposeSpec:
             agent=agent,
             ui=ui,
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
 
         branches = {c.branch_name for c in manifest.components}
@@ -743,6 +749,7 @@ class TestDecomposeSpec:
             agent=RetryAgent(),
             ui=ui,
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
 
         assert call_count == 2
@@ -768,6 +775,7 @@ class TestDecomposeSpec:
                 ui=ui,
                 root_dir=tmp_path,
                 max_retries=2,
+                prompt_call=architect_call(tmp_path),
             )
 
 
@@ -1195,6 +1203,7 @@ class TestARegisterThatDidNotLandFailsTheDecompose:
                 agent=MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT),
                 ui=PlainUI(no_color=True),
                 root_dir=tmp_path,
+                prompt_call=architect_call(tmp_path),
             )
 
     def test_the_halt_path_still_halts_when_its_register_cannot_land(self, tmp_path: Path) -> None:
@@ -1243,6 +1252,7 @@ class TestARegisterThatDidNotLandFailsTheDecompose:
                 agent=MockDecomposeAgent(output),
                 ui=PlainUI(no_color=True),
                 root_dir=tmp_path,
+                prompt_call=architect_call(tmp_path),
             )
         assert len(exc_info.value.escalations) == 1
         # The halt still names what it can: the audit landed, the
@@ -1349,6 +1359,7 @@ class TestVacuousPrdRejection:
             agent=agent,
             ui=PlainUI(no_color=True),
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
 
         assert len(agent.prompts) == 2
@@ -1415,6 +1426,7 @@ def _run_decompose(
             agent=MockDecomposeAgent(output),
             ui=PlainUI(no_color=True, file=buffer),
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
     except SpecBlockerError:
         pass
@@ -1482,6 +1494,7 @@ class TestSpecIssuesPersistence:
                 agent=MockDecomposeAgent(output),
                 ui=PlainUI(no_color=True),
                 root_dir=tmp_path,
+                prompt_call=architect_call(tmp_path),
             )
 
         artifact = tmp_path / "scripts" / "kstrl" / "spec-issues.json"
@@ -1549,6 +1562,7 @@ class TestSpecIssuesPersistence:
                 agent=MockDecomposeAgent(output),
                 ui=PlainUI(no_color=True),
                 root_dir=tmp_path,
+                prompt_call=architect_call(tmp_path),
             )
 
         assert len(_journal_rows(tmp_path)) == 1, "the writer put more than the audit on disk"
@@ -1628,6 +1642,7 @@ class TestPrdValidationInsideRetryLoop:
             agent=agent,
             ui=PlainUI(no_color=True),
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
 
         assert len(agent.prompts) == 2
@@ -1658,6 +1673,7 @@ class TestPrdValidationInsideRetryLoop:
                 ui=PlainUI(no_color=True),
                 root_dir=tmp_path,
                 max_retries=2,
+                prompt_call=architect_call(tmp_path),
             )
 
         assert not (tmp_path / "scripts" / "kstrl" / "feature").exists()
@@ -1710,6 +1726,7 @@ class TestPrdValidationInsideRetryLoop:
                 agent=agent,
                 ui=PlainUI(no_color=True),
                 root_dir=tmp_path,
+                prompt_call=architect_call(tmp_path),
             )
 
         assert calls == ["database", "api"]
@@ -2968,6 +2985,7 @@ class TestSpecConvergenceThroughDecompose:
                 ),
                 ui=PlainUI(no_color=True, file=io.StringIO()),
                 root_dir=tmp_path,
+                prompt_call=architect_call(tmp_path),
             )
 
         assert (tmp_path / "scripts" / "kstrl" / "spec-issues.json").exists()

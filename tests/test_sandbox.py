@@ -276,6 +276,7 @@ class TestFactoryWorkerPassThrough:
             0.0,
             sandbox_enabled=True,
             sandbox_allow_network=True,
+            run_id="test-run",
         )
         assert result.success is True
         assert captured["sandbox"] == SandboxConfig(

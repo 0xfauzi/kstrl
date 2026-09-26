@@ -2769,13 +2769,15 @@ def factory(
 
     # Get or create manifest.
     #
-    # #257: a --spec run also pays for the architect here, before any run
-    # id or run directory exists, so what it cost has to be carried into
-    # the run by hand for `--max-cost-usd` to bound five roles instead of
-    # four. A --manifest resume ran no architect and leaves this empty.
+    # #257: a --spec run also pays for the architect here, before the
+    # factory run's id or directory exists, so what it cost has to be
+    # carried into the run by hand for `--max-cost-usd` to bound five
+    # roles instead of four. A --manifest resume ran no architect and
+    # leaves this empty.
     #
     # Only the paths that reach run_factory are covered: a blocker halt
-    # exits below, before there is anywhere on disk to record it.
+    # exits below, and its spend is recorded only in the decompose run
+    # the architect ran as (#567), which the factory run never reads.
     # `decompose_spec` prints the number to the terminal on that path.
     architect_usage = UsageTotals()
     if manifest_path:
@@ -2796,6 +2798,19 @@ def factory(
         # of "what the architect spent" cannot disagree, and neither
         # rests on an invariant about who else touched this agent.
         usage_before = usage_cursor(agent)
+        # #567: the architect runs as a decompose run of its own, the way
+        # `ks decompose` and the dashboard's decompose launch run it, so
+        # its prompt records, events and transcript have a run to live
+        # in. Not the factory's run: that directory would exist for the
+        # whole architect call with no event stream, and a factory-kind
+        # run with no stream is what safe mode reports as "could not
+        # read run" (measured on a failed decompose).
+        architect_run = open_command_run(
+            ui_impl,
+            root_dir,
+            "decompose",
+            component=ARCHITECT_COMPONENT,
+        )
         try:
             manifest = decompose_spec(
                 spec_path=spec,
@@ -2809,6 +2824,9 @@ def factory(
                 agent=agent,
                 ui=ui_impl,
                 root_dir=root_dir,
+                bus=architect_run.bus,
+                transcript=architect_run.transcript_writer(ARCHITECT_COMPONENT),
+                prompt_call=architect_run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
             )
         except SpecBlockerError as exc:
             # Architect halted: it escalated a question only the owner
@@ -2822,6 +2840,8 @@ def factory(
         except ValueError as exc:
             ui_impl.err(str(exc))
             sys.exit(1)
+        finally:
+            architect_run.close()
         architect_usage = collect_usage(agent, since=usage_before)
 
     # Build configs (R2.1). Resolution order for every phase config:
@@ -3109,7 +3129,8 @@ def factory(
             base_config.prompt_file = default_prompt
 
     # #286: after the fallback above, so it speaks about the file every
-    # worker will actually copy into its worktree.
+    # worker will actually read (#569: from the root checkout, never a
+    # copy in its worktree).
     _check_prompt_preflight(base_config.prompt_file, ui_impl)
 
     # R0.5 (H-15): state saves back to the file it was loaded from.

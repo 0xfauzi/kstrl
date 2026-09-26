@@ -50,7 +50,7 @@ from typing import TYPE_CHECKING
 
 from kstrl.agents import get_agent
 from kstrl.agents.logging import LoggingAgent
-from kstrl.agents.prompt_record import AgentCall, recording_prompts
+from kstrl.agents.prompt_record import recording_prompts
 from kstrl.breaker import BreakerConfig
 from kstrl.events import (
     ArtifactWritten,
@@ -199,13 +199,6 @@ def _build_repair_prd(
     return repair_path
 
 
-def _agent_call(
-    run: CommandRun | None, component: str, role: str, attempt: int = 1
-) -> AgentCall | None:
-    """Who one phase's prompts are recorded for (#532); None without a run."""
-    return run.agent_call(component, role, attempt) if run is not None else None
-
-
 def run_feature(
     params: FeatureParams,
     base_config: KstrlConfig,
@@ -214,7 +207,7 @@ def run_feature(
     root_dir: Path,
     *,
     interaction: InteractionChannel | None = None,
-    run: CommandRun | None = None,
+    run: CommandRun,
     stop_check: Callable[[], bool] | None = None,
 ) -> int:
     """Understand -> review gate -> implement -> repair loop.
@@ -222,13 +215,12 @@ def run_feature(
     Returns the flow's exit code. ``interaction`` defaults to the
     terminal channel; ``run`` records the flow as an event-stream run
     projected onto the pseudo-component <feature_name> (phases
-    understand / implement / repair-N; the gate as a checkpoint pair);
-    ``stop_check`` threads into every run_loop. Narration and the
-    legacy .kstrl/logs/feature_* transcripts are byte-identical with
-    or without ``run``.
+    understand / implement / repair-N; the gate as a checkpoint pair)
+    and is who every phase's prompt is recorded for, so it is required
+    (#567); ``stop_check`` threads into every run_loop.
     """
     component = params.feature_name
-    bus = run.bus if run is not None else None
+    bus = run.bus
     # This flow used to hand `run_loop` its own `.kstrl/logs/<feature>/`
     # entry. #274 removed it: every loop below runs with `cwd=root_dir`,
     # `guard_state_root=root_dir` carves out `.kstrl/logs/` as part of
@@ -237,13 +229,12 @@ def run_feature(
     # carve-out and read as wider than it is.
 
     def emit(event: Event) -> None:
-        if bus is not None:
-            bus.emit(event)
+        bus.emit(event)
 
     def wrap(phase_agent: Agent) -> Agent:
         """Tee the phase agent onto the run transcript ON TOP of its
         legacy log (nested LoggingAgent: legacy bytes unchanged)."""
-        transcript = run.transcript_path(component) if run is not None else None
+        transcript = run.transcript_path(component)
         if transcript is None:
             return phase_agent
         return LoggingAgent(phase_agent, transcript)
@@ -306,7 +297,7 @@ def run_feature(
     understand_log = _log_path(params, "understand")
     understand_agent = wrap(LoggingAgent(agent, understand_log))
     try:
-        with recording_prompts(_agent_call(run, component, "understand")):
+        with recording_prompts(run.agent_call(component, "understand")):
             understand_result = run_loop(
                 understand_config,
                 ui,
@@ -470,7 +461,7 @@ def run_feature(
     run_log = _log_path(params, "run")
     run_agent = wrap(LoggingAgent(agent, run_log))
     try:
-        with recording_prompts(_agent_call(run, component, "implement")):
+        with recording_prompts(run.agent_call(component, "implement")):
             result = run_loop(
                 run_config,
                 ui,
@@ -596,7 +587,7 @@ def run_feature(
         )
         repair_agent = wrap(LoggingAgent(repair_agent_base, repair_log))
         try:
-            with recording_prompts(_agent_call(run, component, "repair", attempt)):
+            with recording_prompts(run.agent_call(component, "repair", attempt)):
                 repair_result = run_loop(
                     repair_config,
                     ui,

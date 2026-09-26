@@ -29,6 +29,7 @@ from kstrl.manifest import Manifest
 from kstrl.statedir import ControlStateError
 from kstrl.ui.plain import PlainUI
 from tests.helpers import astwalk
+from tests.helpers.prompt_calls import architect_call
 from tests.test_build_manifest_preflight import MANIFESTS, greenfield, run_ks
 from tests.test_decompose import MockDecomposeAgent
 
@@ -302,6 +303,7 @@ def _decompose_in_process(root: Path, payload: dict[str, Any], out: io.StringIO)
         agent=MockDecomposeAgent(json.dumps(payload)),  # type: ignore[arg-type]
         ui=PlainUI(no_color=True, file=out),
         root_dir=root,
+        prompt_call=architect_call(root),
     )
 
 
