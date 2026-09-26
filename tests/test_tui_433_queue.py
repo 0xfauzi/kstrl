@@ -198,6 +198,19 @@ class TestNeedsYou:
         assert "nothing is waiting" not in attention_line(stats).plain
 
 
+    def test_an_inbox_config_that_does_not_load_is_not_counted_as_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        """A TOML date where a number belongs makes InboxConfig.load raise
+        TypeError; that is "not counted", never zero decisions."""
+        (tmp_path / "kstrl.toml").write_text(
+            "[inbox]\nsnooze_hours = 1979-05-27\n", encoding="utf-8"
+        )
+        Inbox(tmp_path, InboxConfig()).add(ItemKind.HALTED_RUN, "halted", dedupe_key="h")
+        queue = build_queue(tmp_path, [], {}, {}, NOW)
+        assert queue.decisions is None
+        assert queue.unreadable == ("inbox",)
+
 def _review(root: Path, run_id: str, number: int, **payload: object) -> None:
     directory = root / ".kstrl" / "runs" / run_id / "integration"
     directory.mkdir(parents=True, exist_ok=True)
