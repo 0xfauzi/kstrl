@@ -391,3 +391,122 @@ def test_a_record_written_before_571_with_a_negative_recorded_flag_is_refused(
     assert "Traceback" not in result.stdout, result.stdout
     assert _agent_calls(tmp_path) == before
     assert _status(root) == ComponentStatus.FAILED.value
+
+
+# #583: a limit the operator set that kstrl cannot read is refused, never
+# read as "no limit". `KSTRL_AGENT_BUDGET_USD=lots` read as no ceiling, and
+# `ks run --sleep nan` ran the engineer and then failed after the spend.
+
+
+@pytest.mark.parametrize("value", ["lots", "5usd", "$5"])
+def test_an_unreadable_agent_budget_in_the_environment_exits_2_before_any_agent_call(
+    tmp_path: Path, value: str
+) -> None:
+    root = _repo(tmp_path)
+
+    result = _factory(root, _env(tmp_path, {"KSTRL_AGENT_BUDGET_USD": value}))
+
+    assert result.returncode == 2, result.stdout
+    assert REFUSAL in result.stdout, result.stdout
+    assert f"KSTRL_AGENT_BUDGET_USD={value}" in result.stdout, result.stdout
+    _assert_no_run_started(root, tmp_path, result.stdout)
+
+
+@pytest.mark.parametrize(
+    ("literal", "shown"),
+    [('"lots"', "'lots'"), ("true", "True"), ("[5]", "[5]")],
+    ids=["string", "bool", "array"],
+)
+def test_an_unreadable_agent_budget_in_kstrl_toml_exits_2_before_any_agent_call(
+    tmp_path: Path, literal: str, shown: str
+) -> None:
+    root = _repo(tmp_path, f"[agent]\nbudget_usd = {literal}\n")
+
+    result = _factory(root, _env(tmp_path))
+
+    assert result.returncode == 2, result.stdout
+    assert REFUSAL in result.stdout, result.stdout
+    assert f"budget_usd = {shown}" in result.stdout, result.stdout
+    _assert_no_run_started(root, tmp_path, result.stdout)
+
+
+@pytest.mark.parametrize(
+    ("toml", "env"),
+    [
+        ("", {"KSTRL_AGENT_BUDGET_USD": ""}),
+        ("", {"KSTRL_AGENT_BUDGET_USD": "0"}),
+        ("", {"KSTRL_AGENT_BUDGET_USD": "2.5"}),
+        ('[agent]\nbudget_usd = ""\n', {}),
+        ("[agent]\nbudget_usd = 0\n", {}),
+    ],
+    ids=["env-empty", "env-zero", "env-set", "toml-empty", "toml-zero"],
+)
+def test_an_unset_or_readable_agent_budget_still_reaches_the_engineer(
+    tmp_path: Path, toml: str, env: dict[str, str]
+) -> None:
+    """Control: "" and 0 still mean no ceiling, and a number is accepted."""
+    root = _repo(tmp_path, toml)
+
+    result = _factory(root, _env(tmp_path, env))
+
+    assert result.returncode == 1, result.stdout
+    assert REFUSAL not in result.stdout, result.stdout
+    assert _agent_calls(tmp_path) >= 1, result.stdout
+
+
+def _loop_args(command: str, root: Path) -> tuple[str, ...]:
+    """What each looping command needs to reach the engineer on this repo."""
+    if command == "run":
+        prd = root / "scripts" / "kstrl" / "feature" / "storage" / "prd.json"
+        return ("run", "1", "--prd", str(prd), "--no-verify", "--branch", "")
+    return (command,)
+
+
+_SLEEP_CASES = [(c, v) for c in ("run", "understand", "feature") for v in ("nan", "inf", "-1")]
+
+
+@pytest.mark.parametrize(
+    ("command", "value"), _SLEEP_CASES, ids=[f"{c}={v}" for c, v in _SLEEP_CASES]
+)
+def test_a_bad_sleep_exits_2_before_any_agent_call(
+    tmp_path: Path, command: str, value: str
+) -> None:
+    root = _repo(tmp_path)
+
+    result = _ks(
+        root,
+        _env(tmp_path),
+        *_loop_args(command, root),
+        "--root",
+        str(root),
+        "--ui",
+        "plain",
+        "--no-color",
+        f"--sleep={value}",
+    )
+
+    assert result.returncode == 2, result.stdout
+    assert "Invalid value for '--sleep'" in result.stdout, result.stdout
+    assert f"got {float(value)}" in result.stdout, result.stdout
+    assert "Traceback" not in result.stdout, result.stdout
+    assert _agent_calls(tmp_path) == 0, result.stdout
+
+
+def test_a_zero_sleep_still_reaches_the_engineer(tmp_path: Path) -> None:
+    """Control: the stub counts under `ks run`, and 0 is not refused."""
+    root = _repo(tmp_path)
+
+    result = _ks(
+        root,
+        _env(tmp_path),
+        *_loop_args("run", root),
+        "--root",
+        str(root),
+        "--ui",
+        "plain",
+        "--no-color",
+        "--sleep=0",
+    )
+
+    assert "Invalid value" not in result.stdout, result.stdout
+    assert _agent_calls(tmp_path) >= 1, result.stdout

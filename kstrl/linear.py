@@ -111,9 +111,14 @@ class LinearConfig:
         if not self.token_env:
             raise ValueError("LinearConfig.token_env must not be empty")
         if self.timeout_seconds <= 0:
-            raise ValueError("LinearConfig.timeout_seconds must be positive")
+            raise ValueError(
+                f"LinearConfig.timeout_seconds must be positive, got {self.timeout_seconds!r}"
+            )
         if self.min_request_interval < 0:
-            raise ValueError("LinearConfig.min_request_interval must not be negative")
+            raise ValueError(
+                "LinearConfig.min_request_interval must not be negative, "
+                f"got {self.min_request_interval!r}"
+            )
 
     @classmethod
     def from_env(cls) -> LinearConfig:
