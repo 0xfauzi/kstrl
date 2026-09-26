@@ -15,14 +15,21 @@ from unittest.mock import patch
 
 import pytest
 
+from kstrl.factory import FactoryConfig
 from kstrl.launch import FactoryLaunch
-from kstrl.launch_record import write_launch_record
+from kstrl.launch_record import run_limits, write_launch_record
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.retry_plan import RESUME_REFUSAL
+from kstrl.timeout import TimeoutConfig
 from kstrl.tui.screens.options import OptionsModal
 from kstrl.tui.screens.retry import RetryScreen
 from tests.helpers.settle import drained, mounted, settled
 from tests.test_launch_session import FakeSession, _home_app, _notified
+
+
+def _limits(max_cost_usd: float) -> dict[str, float]:
+    """Every run limit off except the cost ceiling (#526)."""
+    return {**run_limits(FactoryConfig(), TimeoutConfig()), "max_cost_usd": max_cost_usd}
 
 
 class TestRetryScreen:
@@ -71,7 +78,7 @@ class TestRetryScreen:
         # nothing and needs no ceiling FactoryLaunch cannot carry (#436).
         run_id = "factory-20260101-000000.000000-fake"
         manifest_file = self._failed_manifest(tmp_path, run_id=run_id)
-        assert write_launch_record(tmp_path, run_id, manifest_file, (), 0.0) == []
+        assert write_launch_record(tmp_path, run_id, manifest_file, (), _limits(0.0)) == []
         app = _home_app(tmp_path)
         specs: list[Any] = []
         app.start_session = lambda spec: specs.append(spec) or FakeSession(tmp_path)
@@ -193,7 +200,7 @@ class TestRetryScreen:
         """
         run_id = "factory-20260101-000000.000000-capped"
         manifest_file = self._failed_manifest(tmp_path, run_id=run_id)
-        assert write_launch_record(tmp_path, run_id, manifest_file, (), 5.0) == []
+        assert write_launch_record(tmp_path, run_id, manifest_file, (), _limits(5.0)) == []
         app = _home_app(tmp_path)
         specs: list[Any] = []
         app.start_session = lambda spec: specs.append(spec) or FakeSession(tmp_path)
@@ -238,7 +245,7 @@ class TestRetryScreen:
         (tmp_path / "kstrl.toml").write_text("[factory]\nmax_cost_usd = 5\n", encoding="utf-8")
         run_id = "factory-20260101-000000.000000-toml"
         manifest_file = self._failed_manifest(tmp_path, run_id=run_id)
-        assert write_launch_record(tmp_path, run_id, manifest_file, (), 5.0) == []
+        assert write_launch_record(tmp_path, run_id, manifest_file, (), _limits(5.0)) == []
         app = _home_app(tmp_path)
         specs: list[Any] = []
         app.start_session = lambda spec: specs.append(spec) or FakeSession(tmp_path)
@@ -274,7 +281,7 @@ class TestRetryScreen:
         run_id = "factory-20260101-000000.000000-flags"
         manifest_file = self._failed_manifest(tmp_path, run_id=run_id)
         flags = (("max_parallel", 1),)
-        assert write_launch_record(tmp_path, run_id, manifest_file, flags, 0.0) == []
+        assert write_launch_record(tmp_path, run_id, manifest_file, flags, _limits(0.0)) == []
         app = _home_app(tmp_path)
         specs: list[Any] = []
         app.start_session = lambda spec: specs.append(spec) or FakeSession(tmp_path)

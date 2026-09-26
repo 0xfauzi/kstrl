@@ -4400,6 +4400,34 @@ def doctor(root: Path | None, as_json: bool, measure: bool) -> None:
     "being resumed was launched with. 0 = unbounded.",
 )
 @click.option(
+    "--max-total-tokens",
+    type=int,
+    default=None,
+    help="Run-level token budget for the retry; overrides the value the run "
+    "being resumed was launched with. 0 = unbounded.",
+)
+@click.option(
+    "--max-adversarial-calls",
+    type=int,
+    default=None,
+    help="Cap on adversarial LLM calls for the retry; overrides the value the "
+    "run being resumed was launched with. 0 = unbounded.",
+)
+@click.option(
+    "--agent-timeout",
+    type=float,
+    default=None,
+    help="Timeout per agent iteration in seconds for the retry; overrides the "
+    "value the run being resumed was launched with. 0 disables.",
+)
+@click.option(
+    "--component-timeout",
+    type=float,
+    default=None,
+    help="Timeout per component total in seconds for the retry; overrides the "
+    "value the run being resumed was launched with. 0 disables.",
+)
+@click.option(
     "--max-parallel",
     type=int,
     default=None,
@@ -4431,6 +4459,10 @@ def retry(
     keep_worktrees_on_failure: bool,
     force_lock: bool,
     max_cost_usd: float | None,
+    max_total_tokens: int | None,
+    max_adversarial_calls: int | None,
+    agent_timeout: float | None,
+    component_timeout: float | None,
     max_parallel: int | None,
     yes: bool,
     ui: str,
@@ -4443,10 +4475,12 @@ def retry(
     starts fresh from the base branch; the failed attempt's findings
     stay in the evolution journal), then re-enters `ks factory` with the
     same manifest and the options the run being resumed was launched
-    with, read from its launch record (#436). --max-cost-usd,
-    --max-parallel and --keep-worktrees-on-failure given here win over
-    the recorded ones. A retry that would run with no cost ceiling
-    because none carried over is refused before anything is changed.
+    with, read from its launch record (#436). --max-parallel,
+    --keep-worktrees-on-failure and every run limit option given here win
+    over the recorded ones. A retry that would drop a run limit the run
+    it resumes ran under (cost, tokens, adversarial calls, agent and
+    component timeouts), or cannot tell whether it did, is refused before
+    anything is changed (#526).
     """
     root_dir = root.resolve() if root else Path.cwd()
     force_rich = os.environ.get("GUM_FORCE") == "1"
@@ -4476,6 +4510,12 @@ def retry(
         max_cost_usd=max_cost_usd,
         max_parallel=max_parallel,
         keep_worktrees_on_failure=keep_worktrees_on_failure,
+        limits={
+            "max_total_tokens": max_total_tokens,
+            "max_adversarial_calls": max_adversarial_calls,
+            "agent_timeout": agent_timeout,
+            "component_timeout": component_timeout,
+        },
     )
     if plan is None:
         _report_preflight(ui_impl, RESUME_REFUSAL, problems)
@@ -6110,7 +6150,7 @@ def signals_ls(root: Path | None, ui: str, no_color: bool) -> None:
 
 @cli.group(name="learn")
 def learn_group() -> None:
-    """Inspect the cross-project learning store (#217). Read-only."""
+    """Inspect and repair the cross-project learning store (#217)."""
 
 
 @learn_group.command(name="playbook")
@@ -6123,7 +6163,13 @@ def learn_playbook(ui: str, no_color: bool) -> None:
     ui_impl = _autonomy_ui(ui, no_color)
     try:
         playbook = load_playbook()
-    except (PlaybookError, OSError) as exc:
+    except PlaybookError as exc:
+        ui_impl.err(
+            f"the global playbook could not be read: {exc}. "
+            "`ks learn repair` voids every line the fold refuses."
+        )
+        sys.exit(2)
+    except OSError as exc:
         ui_impl.err(f"the global playbook could not be read: {exc}")
         sys.exit(2)
     ui_impl.section("Playbook")
@@ -6133,7 +6179,31 @@ def learn_playbook(ui: str, no_color: bool) -> None:
         ui_impl.info(f"  {lesson.id}  {lesson.status:<8} {lesson.section}: {lesson.insight}")
     ui_impl.kv("ledger", str(playbook.path))
     ui_impl.kv("lines", str(playbook.line_count))
+    ui_impl.kv("voided", str(len(playbook.voided)))
+    ui_impl.kv("unterminated tail bytes", str(playbook.tail_bytes))
     ui_impl.kv("sha256", playbook.sha256)
+    sys.exit(0)
+
+
+@learn_group.command(name="repair")
+@_autonomy_ui_option
+@_autonomy_no_color_option
+def learn_repair(ui: str, no_color: bool) -> None:
+    """Void every global playbook line the fold refuses, recording each in the ledger."""
+    from kstrl.playbook import PlaybookError, repair_ledger
+
+    ui_impl = _autonomy_ui(ui, no_color)
+    try:
+        voids = repair_ledger()
+    except (PlaybookError, OSError) as exc:
+        ui_impl.err(f"the global playbook could not be repaired: {exc}")
+        sys.exit(2)
+    if not voids:
+        ui_impl.ok("Nothing to repair: the fold accepts every line.")
+        sys.exit(0)
+    ui_impl.section("Voided")
+    for void in voids:
+        ui_impl.info(f"  line {void.line}  sha256 {void.sha256}  {void.reason}")
     sys.exit(0)
 
 
