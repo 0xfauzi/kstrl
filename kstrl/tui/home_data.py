@@ -5,7 +5,7 @@ home screen computes these on a worker thread, renders honest "·"
 cells until they land, and caches by every folded stream's identity,
 mtime, and size so only movers recompute. Numbers keep R3.1 semantics:
 whenever a run has unreported calls, its totals are LOWER BOUNDS and
-carry the "+".
+carry the "≥" (cost_meter.at_least).
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from kstrl.reducer import RunState, fold, read_run_dir
 from kstrl.tui.operator_queue import OperatorQueue, build_queue
-from kstrl.tui.run_status import state_word
+from kstrl.tui.run_status import NO_REASON, state_word
 from kstrl.tui.runs import RunRef
 
 
@@ -31,6 +31,14 @@ class RunSummary:
     cost_usd: float
     #: running | completed | failed | unknown (tui.run_status, #433 F4).
     state: str = ""
+    #: The COST axis's own lower-bound flag (R8 finding 1); the run table
+    #: marked cost with the token flag.
+    cost_lower_bound: bool = False
+    #: The run's cost cap, 0 when it had none (#433 advice 2.3).
+    max_cost_usd: float = 0.0
+    #: Why the run's state is unknown: its error's headline, or "no reason
+    #: recorded" (#433 G9); "" for any other state.
+    reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -76,6 +84,13 @@ def summarize_state(ref: RunRef, state: RunState) -> RunSummary:
         tokens_lower_bound=state.tokens_are_lower_bound,
         cost_usd=state.cost_usd,
         state=state_word(outcome),
+        cost_lower_bound=state.cost_is_lower_bound,
+        max_cost_usd=state.max_cost_usd,
+        # The headline only: the history note is one cell; the preview
+        # line under the table carries the whole error (run_reason).
+        reason=(state.error_block[0] if state.error_block else NO_REASON)
+        if outcome == "stale"
+        else "",
     )
 
 

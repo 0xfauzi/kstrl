@@ -208,22 +208,20 @@ class TestRetryScreen:
             async with app.run_test(size=(130, 40)) as pilot:
                 app.push_screen(RetryScreen())
                 await mounted(pilot, lambda: app.screen, "#retry-table")
-                await drained(pilot, app.screen, what="on_mount to run")
-                await pilot.press("r")
-                # Increment 2 (#433): the scope is worked out BEFORE a
-                # confirmation is offered, so a relaunch the TUI cannot
-                # carry is refused at r and no modal opens.
+                detail = await mounted(pilot, lambda: app.screen, "#retry-detail")
+                # Increment 3 (#433 G1): the failure queue reads the resume
+                # plan when it reads the runs, so the row says the CLI carries
+                # it, names the command, and r is not offered at all.
                 await settled(
                     pilot,
-                    lambda: (
-                        _notified(app, RESUME_REFUSAL) or not isinstance(app.screen, RetryScreen)
-                    ),
-                    what="r to refuse the uncarryable ceiling",
+                    lambda: "ks retry comp-a --max-cost-usd 5" in str(detail.content),  # type: ignore[attr-defined]
+                    what="the queue to name the command that carries the ceiling",
                 )
+                assert app.screen.check_action("retry_selected", ()) is False
+                await pilot.press("r")
+                await drained(pilot, app.screen, what="r to be handled")
                 assert isinstance(app.screen, RetryScreen)
                 assert specs == []
-                assert _notified(app, RESUME_REFUSAL)
-                assert _notified(app, "ks retry")
             mock_prepare.assert_not_called()
 
         persisted = Manifest.load(manifest_file).get_component("comp-a")
@@ -289,21 +287,19 @@ class TestRetryScreen:
             async with app.run_test(size=(130, 40)) as pilot:
                 app.push_screen(RetryScreen())
                 await mounted(pilot, lambda: app.screen, "#retry-table")
-                await drained(pilot, app.screen, what="on_mount to run")
-                await pilot.press("r")
-                # Increment 2 (#433): the scope is worked out BEFORE a
-                # confirmation is offered, so a relaunch the TUI cannot
-                # carry is refused at r and no modal opens.
+                detail = await mounted(pilot, lambda: app.screen, "#retry-detail")
+                # Increment 3 (#433 G1): withheld before r, not refused after.
                 await settled(
                     pilot,
-                    lambda: (
-                        _notified(app, RESUME_REFUSAL) or not isinstance(app.screen, RetryScreen)
-                    ),
-                    what="r to refuse the uncarryable flags",
+                    lambda: "cannot be carried through the TUI" in str(detail.content),  # type: ignore[attr-defined]
+                    what="the queue to say the recorded flags need the CLI",
                 )
+                assert "ks retry comp-a" in str(detail.content)  # type: ignore[attr-defined]
+                assert app.screen.check_action("retry_selected", ()) is False
+                await pilot.press("r")
+                await drained(pilot, app.screen, what="r to be handled")
                 assert isinstance(app.screen, RetryScreen)
                 assert specs == []
-                assert _notified(app, RESUME_REFUSAL)
             mock_prepare.assert_not_called()
 
         persisted = Manifest.load(manifest_file).get_component("comp-a")

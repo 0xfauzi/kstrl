@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from kstrl.tui.home_data import HomeStats, RunSummary
     from kstrl.tui.integration_view import IntegrationReview
     from kstrl.tui.operator_queue import FailureEntry
+    from kstrl.tui.retry_carry import Carry
     from kstrl.tui.retry_scope import RetryScope
     from kstrl.tui.serve_view import ServeState
 
@@ -73,9 +74,11 @@ class DeliveryRead(Message):
 class FailuresRead(Message):
     """The retry screen's worker joined the recent runs to the manifest."""
 
-    def __init__(self, entries: list[FailureEntry]) -> None:
+    def __init__(self, entries: list[FailureEntry], carry: Carry | None = None) -> None:
         super().__init__()
         self.entries = entries
+        #: Whether the TUI can carry a retry; None when not asked (#433 G1).
+        self.carry = carry
 
 
 class ScopeRead(Message):

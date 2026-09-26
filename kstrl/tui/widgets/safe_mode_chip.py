@@ -23,7 +23,7 @@ from kstrl.tui import theme
 
 
 def render_chip(reasons: list[SafeModeReason] | None) -> Text:
-    """A status light, at most five cells wide in every state.
+    """A status light for the home masthead.
 
     Measured first: the topbar is one line holding the run identity and
     the cost meter, and at 120 columns a chip carrying the sources and a
@@ -38,7 +38,8 @@ def render_chip(reasons: list[SafeModeReason] | None) -> Text:
     if reasons is None:
         text.append("◍ ?", style=theme.MUTED)
     elif not reasons:
-        text.append("◍ ok", style=theme.MUTED)
+        # A named assertion, not "ok" (#433 G9): what is checked and clear.
+        text.append("◍ safe mode off", style=theme.MUTED)
     else:
         text.append(
             f" ▲ {len(reasons)} ",

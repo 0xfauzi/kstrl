@@ -284,7 +284,7 @@ class TestCheckpointModal:
             assert "+added line" in rendered
             summary = str(summary_widget.render())
             assert "kstrl/factory/comp-a" in summary
-            assert "4,321+" in summary  # lower-bound marker (unreported)
+            assert "≥4,321" in summary  # lower-bound marker (unreported)
             await pilot.press("a")
             # Weaker than the assertion: ANY reported choice settles it,
             # so approving with the wrong index fails on the assert.

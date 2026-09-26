@@ -21,7 +21,14 @@ if TYPE_CHECKING:
 def render_evidence(
     comp: ComponentState,
     manifest_comp: Component | None,
+    *,
+    show_error: bool = True,
 ) -> Text:
+    """Where the artifacts live; the error only when no failed gate shows it.
+
+    #433 G8: a failed gate already says why above, so repeating the
+    component's error here, pinned over the footer, said it twice.
+    """
     text = Text()
 
     def row(label: str, value: str, style: str = "") -> None:
@@ -40,7 +47,7 @@ def render_evidence(
             row("worktree", manifest_comp.evidence_worktree)
         if manifest_comp.evidence_debug_dir:
             row("raw dumps", manifest_comp.evidence_debug_dir)
-    if comp.error:
+    if comp.error and show_error:
         row("error", comp.error, "red")
     if not text.plain:
         text.append("no evidence recorded", style="dim")
@@ -52,5 +59,7 @@ class EvidencePanel(Static):
         self,
         comp: ComponentState,
         manifest_comp: Component | None,
+        *,
+        show_error: bool = True,
     ) -> None:
-        self.update(render_evidence(comp, manifest_comp))
+        self.update(render_evidence(comp, manifest_comp, show_error=show_error))

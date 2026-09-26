@@ -488,8 +488,10 @@ HomeScreen.short #home-preview {
     background: $background;
 }
 
+/* auto: the cursor row's whole value and the file path wrap rather
+ * than run off the edge (#433 G4). */
 #config-hint {
-    height: 1;
+    height: auto;
     padding: 0 1;
 }
 
@@ -611,19 +613,24 @@ HomeScreen.short #home-preview {
     height: 1;
 }
 
+/* auto: sized to its rows, so no empty band sits between the table and
+ * the detail (#433 G2). */
 #retry-table {
-    height: 1fr;
-    min-height: 3;
+    height: auto;
+    max-height: 50%;
     background: $background;
 }
 
-/* auto: the detail carries the failure's evidence and, after r, the
- * retry's whole scope (#433). */
+/* The detail carries the failure's evidence and, after r, the retry's
+ * whole scope (#433); it scrolls rather than cutting its last lines. */
+#retry-detail-scroll {
+    height: 1fr;
+    background: $surface;
+}
+
 #retry-detail {
     height: auto;
-    max-height: 60%;
     padding: 1 2;
-    background: $surface;
 }
 
 /* ---- evolve screen ------------------------------------------------------- */
@@ -861,8 +868,12 @@ QuitModal {
     max-height: 50%;
 }
 
-#inbox-detail {
+#inbox-detail-scroll {
     height: 1fr;
+}
+
+#inbox-detail {
+    height: auto;
     padding: 1 1 0 1;
 }
 
@@ -873,7 +884,8 @@ QuitModal {
  * deliver nothing (decompose, understand). */
 #delivery-row {
     height: auto;
-    max-height: 3;
+    max-height: 5;
+    margin-top: 1;
     padding: 0 2;
     background: $surface;
 }

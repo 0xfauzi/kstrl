@@ -37,10 +37,8 @@ from kstrl.tui.widgets.context_bar import ContextBar
 TREND_ROWS = 14
 _BAR_BLOCKS = "▁▂▃▄▅▆▇"
 
-NO_PATTERNS = (
-    "No recurring failure patterns across recent runs. "
-    "Run more factory sessions to accumulate data."
-)
+#: Before the config is read; ``no_patterns`` replaces it with the window.
+NO_PATTERNS = "No recurring failure patterns."
 NO_TRENDS = "No experiments recorded yet. Run `ks factory` first."
 
 
@@ -50,7 +48,8 @@ def readiness_block(summary: Text, lines: list[str]) -> Group:
     ``ks evolve`` indents each line two spaces; a line that wraps keeps
     that indent here instead of running back to column 0.
     """
-    parts: list[RenderableType] = [summary, Text("learning readiness", style="bold")]
+    parts: list[RenderableType] = [summary] if summary.plain else []
+    parts.append(Text("learning readiness", style="bold"))
     parts.extend(Padding(Text(line.strip(), style=theme.MUTED), (0, 0, 0, 2)) for line in lines)
     return Group(*parts)
 
@@ -63,13 +62,21 @@ class ReadinessReady(Message):
         self.lines = lines
 
 
+def no_patterns(config: EvolutionConfig) -> str:
+    """The patterns tab's one sentence when nothing recurred (#433 G5)."""
+    return (
+        f"No recurring failure patterns in the last {config.lookback_runs} runs"
+        f" (a pattern recurs in {config.min_pattern_frequency} or more runs)."
+    )
+
+
 def patterns_summary(patterns: list[FailurePattern], config: EvolutionConfig) -> Text:
-    """One sentence on what the patterns tab holds."""
+    """One sentence on what the patterns tab holds; empty when it holds
+    nothing, because the tab says so itself (#433 G5)."""
     text = Text()
-    if patterns:
-        text.append(f"{len(patterns)} recurring failure pattern(s)", style=f"bold {theme.WARNING}")
-    else:
-        text.append("No recurring failure patterns", style="bold")
+    if not patterns:
+        return text
+    text.append(f"{len(patterns)} recurring failure pattern(s)", style=f"bold {theme.WARNING}")
     text.append(
         f" in the last {config.lookback_runs} runs"
         f" (a pattern recurs in {config.min_pattern_frequency} or more runs)",
@@ -174,6 +181,7 @@ class EvolveScreen(Screen[None]):
             )
         for row in journal.get_experiment_trends(last_n=TREND_ROWS):
             trends_table.add_row(*self._trend_cells(row))
+        self.query_one("#patterns-empty", Static).update(no_patterns(config))
         self._show_empty_states()
         self._summary = patterns_summary(patterns, config)
         self.query_one("#evolve-summary", Static).update(self._summary)
@@ -196,12 +204,12 @@ class EvolveScreen(Screen[None]):
         patterns: list[FailurePattern],
         root_dir: Path,
     ) -> None:
-        from kstrl.evolve_report import readiness_lines
+        from kstrl.evolve_report import operator_readiness_lines
 
         try:
-            lines = readiness_lines(journal, config, patterns, root_dir)
+            lines = operator_readiness_lines(journal, config, patterns, root_dir)
         except Exception as exc:  # noqa: BLE001 - a broken read must not take the screen down
-            lines = [f"  learning readiness not measured: {type(exc).__name__}: {exc}"]
+            lines = [f"learning readiness not measured: {type(exc).__name__}: {exc}"]
         self.post_message(ReadinessReady(lines))
 
     def on_readiness_ready(self, message: ReadinessReady) -> None:
@@ -293,7 +301,7 @@ class EvolveScreen(Screen[None]):
             unreported = int(float(row.get("unreported_calls", "") or 0))
         except (OverflowError, ValueError):
             unreported = 0
-        marker = "+" if unreported else ""
+        marker = "≥" if unreported else ""
         tokens = str(row.get("total_tokens", "") or "")
         cost = str(row.get("total_cost_usd", "") or "")
         return (
@@ -301,10 +309,10 @@ class EvolveScreen(Screen[None]):
             _num("completed"),
             _num("failed"),
             Text(f"{retry_bar(rate)} {rate:.2f}" if rate else theme.EMPTY_CELL, justify="right"),
-            Text(f"{tokens}{marker}", justify="right")
+            Text(f"{marker}{tokens}", justify="right")
             if tokens
             else Text(theme.EMPTY_CELL, style=theme.MUTED, justify="right"),
-            Text(f"${cost}{marker}", justify="right")
+            Text(f"{marker}${cost}", justify="right")
             if cost
             else Text(theme.EMPTY_CELL, style=theme.MUTED, justify="right"),
         )

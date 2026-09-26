@@ -32,6 +32,8 @@ RUNNING = "running"
 COMPLETED = "completed"
 FAILED = "failed"
 UNKNOWN = "unknown"
+#: What a run in the unknown state says when its events name no cause.
+NO_REASON = "no reason recorded"
 
 #: outcome (home_data.RunSummary.outcome) -> state word.
 _WORD_BY_OUTCOME = {"live": RUNNING, "done": COMPLETED, "failed": FAILED, "stale": UNKNOWN}
@@ -93,6 +95,23 @@ def _running_detail(comp: ComponentState) -> str:
     if comp.iteration:
         limit = f"/{comp.max_iterations}" if comp.max_iterations else ""
         parts.append(f"iteration {comp.iteration}{limit}")
+    if comp.attempt > 1:
+        parts.append(f"attempt {comp.attempt}")
+    return " ".join(parts)
+
+
+def running_brief(comp: ComponentState) -> str:
+    """``http-app engineer 3/10``: component, phase and progress in few
+    cells, for a row too narrow for ``_running_detail`` (#433 advice 2.6)."""
+    parts = [comp.component_id]
+    if comp.phase:
+        parts.append(comp.phase)
+    if comp.iteration:
+        parts.append(
+            f"{comp.iteration}/{comp.max_iterations}"
+            if comp.max_iterations
+            else f"iteration {comp.iteration}"
+        )
     if comp.attempt > 1:
         parts.append(f"attempt {comp.attempt}")
     return " ".join(parts)
