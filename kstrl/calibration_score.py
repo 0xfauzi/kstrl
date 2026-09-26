@@ -10,6 +10,8 @@ reach them through that import.
 
 The only edits made by the move are type parameters (``dict`` became
 ``dict[str, Any]``) that ``mypy --strict`` requires of ``kstrl/``.
+Since then, #550 replaced the scorer's copy of the severity ranking with
+``security._SEVERITY_ORDER``, the ranking the Phase 2.5 gate reads.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from kstrl.review import ReviewResult
-from kstrl.security import SecurityResult
+from kstrl.security import _SEVERITY_ORDER, SecurityResult
 
 # Realistic mechanical-verification context. The old ``_VERIFICATION_STUB``
 # used check names the harness never emits ("tests", "lint"); the real
@@ -57,16 +59,13 @@ def render_verification(meta: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-# ---------------------------------------------------------------------------
-# Severity ordering shared with security.py
-# ---------------------------------------------------------------------------
-
-
-_SEV_RANK = {"critical": 3, "high": 2, "medium": 1, "low": 0}
+# Severity ordering: security._SEVERITY_ORDER, the one the gate reads (#550)
 
 
 def _meets_severity(actual: str, threshold: str) -> bool:
-    return _SEV_RANK.get(actual, 0) >= _SEV_RANK.get(threshold, 0)
+    # A severity outside the ranking ranks 0 here, where the gate raises.
+    # The parser drops such a finding before either one sees it.
+    return _SEVERITY_ORDER.get(actual, 0) >= _SEVERITY_ORDER.get(threshold, 0)
 
 
 # ---------------------------------------------------------------------------
