@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Integration review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=B612:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+:root{
+  --steel:#d3d9d1; --steel-2:#dfe4dc; --face:#eceeea; --rule:#a9b2a6; --rule-soft:#c4cbc0;
+  --ink:#161c19; --ink-2:#343c38; --muted:#4b544f;
+  --glass:#141a1c; --glass-2:#1c2326; --glass-3:#242c30; --glass-ink:#e2e8e2; --glass-muted:#9aa69e; --glass-rule:#2e3739;
+  --amber:#e5a84f; --amber-ink:#7a4a00; --amber-deep:#b8791a;
+  --go:#79c26b; --go-ink:#23611f;
+  --nogo:#e26d5a; --nogo-ink:#8f2214;
+  --hold:#d9b036; --hold-ink:#6b5200;
+  --verify:#82a7ba; --verify-ink:#2f5a6c;
+  --park:#b48ec9; --park-ink:#5a3a70;
+  --lens-off:#3a4346;
+  --sel:rgba(229,168,79,.28);
+  --focus:#b8791a;
+}
+*{box-sizing:border-box}
+html{font-size:14px;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--steel);color:var(--ink);font-family:"B612",system-ui,sans-serif;line-height:20px;font-variant-numeric:tabular-nums;}
+::selection{background:var(--sel);color:var(--ink)}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:2px}
+a{color:var(--amber-ink);text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:1px}
+a:hover{color:var(--ink)}
+code,.mono,kbd,table.data td.num,table.data th.num,.id,.feed,.path{font-variant-ligatures:none}
+code,.mono,kbd,table.data td.num,table.data th.num,.id{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:13px}
+.num{text-align:right;white-space:nowrap}
+b,strong{font-weight:700}
+hr{border:0;border-top:1px solid var(--rule);margin:0}
+
+/* scrollbars, caret, marks: the parts the browser draws */
+*{scrollbar-color:var(--rule) transparent;scrollbar-width:thin;caret-color:var(--amber-deep)}
+.glass *{scrollbar-color:var(--glass-rule) transparent}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--rule);border:3px solid var(--steel);border-radius:6px}
+.glass ::-webkit-scrollbar-thumb{background:var(--glass-rule);border-color:var(--glass)}
+
+/* shell */
+.shell{display:grid;grid-template-columns:208px minmax(0,1fr);grid-template-rows:48px 1fr;min-height:100vh}
+.mast{grid-column:1/3;display:flex;align-items:center;gap:0;background:var(--face);border-bottom:1px solid var(--rule);padding:0 16px 0 0;height:48px}
+.mast .brand{display:flex;align-items:center;gap:10px;width:208px;padding:0 16px;height:48px;border-right:1px solid var(--rule);font-weight:700;letter-spacing:.02em}
+.mast .brand .tag{background:var(--amber);color:var(--ink);padding:1px 7px;border-radius:3px;font-weight:700;font-size:13px}
+.mast .ctx{display:flex;align-items:center;gap:18px;padding:0 18px;flex:1;min-width:0;white-space:nowrap;overflow:hidden}
+.mast .ctx .sep{color:var(--rule)}
+.mast .ctx .k{color:var(--muted)}
+.mast .readout{display:flex;align-items:center;gap:14px;margin-left:auto;white-space:nowrap}
+.mast .clock{font-family:"JetBrains Mono",monospace;font-size:13px;background:var(--glass);color:var(--glass-ink);padding:3px 9px;border-radius:3px;letter-spacing:.04em}
+.rail{background:var(--steel-2);border-right:1px solid var(--rule);padding:12px 0;display:flex;flex-direction:column;gap:2px}
+.rail a{display:flex;align-items:center;gap:10px;padding:7px 16px;color:var(--ink-2);text-decoration:none;border-left:3px solid transparent}
+.rail a:hover{background:var(--face);color:var(--ink)}
+.rail a.on{border-left-color:var(--amber);background:var(--face);color:var(--ink);font-weight:700}
+.rail a .count{margin-left:auto;font-family:"JetBrains Mono",monospace;font-size:12px;background:var(--amber);color:var(--ink);padding:0 6px;border-radius:3px;min-width:20px;text-align:center}
+.rail a .count.zero{background:transparent;color:var(--muted)}
+.rail .group{margin-top:14px;padding:0 16px 4px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.rail .start{margin:8px 16px 0;padding:7px 12px;border:1px solid var(--rule);border-radius:4px;background:var(--face);color:var(--ink);text-decoration:none;text-align:center;font-weight:700}
+main{padding:20px 24px 40px;min-width:0}
+.page-title{display:flex;align-items:baseline;gap:14px;margin:0 0 16px}
+.page-title h1{font-size:20px;line-height:28px;margin:0;font-weight:700}
+.page-title .sub{color:var(--muted)}
+.cols{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:20px;align-items:start}
+.cols-2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;align-items:start}
+.stack{display:flex;flex-direction:column;gap:20px;min-width:0}
+
+/* panels */
+.panel{border:1px solid var(--rule);background:var(--face);border-radius:4px;min-width:0}
+.panel>.ph{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;padding:8px 14px;border-bottom:1px solid var(--rule-soft);font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:var(--ink-2)}
+.panel>.ph .n{font-family:"JetBrains Mono",monospace;letter-spacing:0;text-transform:none;font-weight:400;color:var(--muted);font-size:12px}
+.panel>.ph .right{margin-left:auto;letter-spacing:0;text-transform:none;font-weight:400;color:var(--muted);font-size:13px}
+.panel>.pb{padding:12px 14px}
+.panel>.pb.flush{padding:0}
+.glass{background:var(--glass);color:var(--glass-ink);border-color:var(--glass-2)}
+.glass>.ph{color:var(--glass-muted);border-bottom-color:var(--glass-rule)}
+.glass a{color:var(--amber)}
+.glass .muted{color:var(--glass-muted)}
+.muted{color:var(--muted)}
+.dim{color:var(--muted)}
+.tight{margin:0}
+p{margin:0 0 8px}
+p:last-child{margin-bottom:0}
+.measure{max-width:72ch}
+
+/* lamps and state words */
+.lamp{display:inline-block;width:10px;height:14px;border-radius:3px;background:var(--lens-off);box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 -1px 0 rgba(0,0,0,.35);vertical-align:-2px;flex:none}
+.lamp.go{background:var(--go)}
+.lamp.nogo{background:var(--nogo)}
+.lamp.hold{background:var(--hold)}
+.lamp.run{background:var(--amber);animation:pulse 1.6s ease-out infinite}
+.lamp.verify{background:var(--verify)}
+.lamp.park{background:var(--park)}
+.lamp.off{background:var(--lens-off);opacity:.55}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(229,168,79,.55),inset 0 1px 0 rgba(255,255,255,.18)}100%{box-shadow:0 0 0 7px rgba(229,168,79,0),inset 0 1px 0 rgba(255,255,255,.18)}}
+@media (prefers-reduced-motion:reduce){.lamp.run{animation:none}}
+.state{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;font-weight:700}
+.state.go{color:var(--go-ink)} .state.nogo{color:var(--nogo-ink)} .state.hold{color:var(--hold-ink)} .state.run{color:var(--amber-ink)} .state.verify{color:var(--verify-ink)} .state.park{color:var(--park-ink)} .state.off{color:var(--muted);font-weight:400}
+.glass .state.go{color:var(--go)} .glass .state.nogo{color:var(--nogo)} .glass .state.hold{color:var(--hold)} .glass .state.run{color:var(--amber)} .glass .state.verify{color:var(--verify)} .glass .state.park{color:var(--park)} .glass .state.off{color:var(--glass-muted)}
+.sev{display:inline-block;font-family:"JetBrains Mono",monospace;font-size:12px;padding:0 6px;border-radius:3px;border:1px solid var(--rule);color:var(--ink-2);white-space:nowrap}
+.sev.advisory{border-color:var(--hold);color:var(--hold-ink)} .sev.low{border-color:var(--verify);color:var(--verify-ink)} .sev.fail,.sev.major,.sev.blocker,.sev.high{border-color:var(--nogo);color:var(--nogo-ink)} .sev.minor{color:var(--muted)}
+.glass .sev{border-color:var(--glass-rule);color:var(--glass-ink)}
+.glass .sev.advisory{border-color:var(--hold);color:var(--hold)} .glass .sev.low{border-color:var(--verify);color:var(--verify)} .glass .sev.fail{border-color:var(--nogo);color:var(--nogo)}
+
+/* readouts */
+.readout-bar{display:inline-flex;align-items:center;gap:10px;white-space:nowrap}
+.meter{width:120px;height:6px;background:var(--glass-3);border-radius:3px;overflow:hidden;display:inline-block;vertical-align:middle}
+.meter i{display:block;height:100%;background:var(--amber)}
+.meter.warn i{background:var(--hold)}
+.big{font-family:"JetBrains Mono",monospace;font-size:15px;font-weight:700}
+
+/* tables */
+table.data{width:100%;border-collapse:collapse}
+table.data th{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1px solid var(--rule-soft);font-weight:700;white-space:nowrap}
+table.data td{padding:7px 10px;border-bottom:1px solid var(--rule-soft);vertical-align:top}
+table.data tr:last-child td{border-bottom:0}
+table.data tr.sel td{background:var(--sel)}
+tr.sel .muted,.strip.sel .l2,.strip.sel .muted{color:var(--ink-2)}
+table.data tr:hover td{background:rgba(0,0,0,.035)}
+table.data td.act{white-space:nowrap;text-align:right}
+.glass table.data th{color:var(--glass-muted);border-bottom-color:var(--glass-rule)}
+.glass table.data td{border-bottom-color:var(--glass-rule)}
+.glass table.data tr:hover td{background:rgba(255,255,255,.04)}
+.glass table.data tr.sel td{background:rgba(229,168,79,.16)}
+.wrap{white-space:normal;overflow-wrap:anywhere}
+.nowrap{white-space:nowrap}
+
+/* the lamp matrix */
+.phases{display:inline-flex;gap:4px;align-items:center}
+.phases .lamp{width:9px;height:13px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:12px}
+.legend span{display:inline-flex;gap:6px;align-items:center}
+
+/* rows that are strips */
+.strips{display:flex;flex-direction:column}
+.strip{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:12px;align-items:start;padding:10px 14px;border-bottom:1px solid var(--rule-soft)}
+.strip:last-child{border-bottom:0}
+.strip.sel{background:var(--sel)}
+.strip .l1{font-weight:700}
+.strip .l2{color:var(--muted)}
+.strip .act{white-space:nowrap}
+
+/* buttons and forms */
+.btn{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border:1px solid var(--rule);border-radius:4px;background:var(--face);color:var(--ink);font:inherit;font-weight:700;cursor:pointer;text-decoration:none;line-height:20px}
+.btn:hover{border-color:var(--ink-2)}
+.btn.primary{background:var(--amber);border-color:var(--amber-deep);color:var(--ink)}
+.btn.primary:hover{background:#eab462}
+.btn.danger{color:var(--nogo-ink)}
+.btn.quiet{background:transparent}
+.btn.sm{padding:3px 10px;font-weight:400}
+.btn[aria-disabled="true"]{opacity:.5;cursor:not-allowed}
+.btn kbd{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted);border:1px solid var(--rule);border-radius:3px;padding:0 4px;background:transparent}
+.glass .btn{background:var(--glass-2);border-color:var(--glass-rule);color:var(--glass-ink)}
+.glass .btn.primary{background:var(--amber);border-color:var(--amber);color:var(--ink)}
+.field{display:grid;grid-template-columns:160px minmax(0,1fr);gap:8px 14px;align-items:start;padding:8px 0;border-bottom:1px solid var(--rule-soft)}
+.field:last-child{border-bottom:0}
+.field label{font-weight:700;padding-top:4px}
+.field .hint{color:var(--muted);font-size:13px;margin-top:4px}
+input[type=text],select,textarea{font:inherit;padding:4px 8px;border:1px solid var(--rule);border-radius:3px;background:#fff;color:var(--ink);width:100%;max-width:420px;line-height:20px}
+input::placeholder{color:var(--muted)}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--focus);outline-offset:1px;border-color:var(--amber-deep)}
+.toggle{display:inline-flex;align-items:center;gap:8px}
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--rule);margin-bottom:16px}
+.tabs a{padding:8px 14px;color:var(--ink-2);text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs a.on{color:var(--ink);font-weight:700;border-bottom-color:var(--amber)}
+
+/* definition rows (scope, consequences) */
+.kv{display:grid;grid-template-columns:150px minmax(0,1fr);gap:6px 16px}
+.kv dt{color:var(--muted);margin:0}
+.kv dd{margin:0}
+.glass .kv dt{color:var(--glass-muted)}
+
+/* the poll */
+.poll{display:grid;grid-template-columns:minmax(0,1fr);gap:0}
+.station{display:grid;grid-template-columns:150px minmax(0,1fr);gap:12px;padding:10px 14px;border-bottom:1px solid var(--rule-soft)}
+.station:last-child{border-bottom:0}
+.station .name{font-weight:700}
+.choices{display:flex;flex-direction:column;gap:0}
+.choice{display:grid;grid-template-columns:172px minmax(0,1fr);gap:12px;align-items:start;padding:12px 14px;border-bottom:1px solid var(--rule-soft)}
+.choice:last-child{border-bottom:0}
+.choice .does{color:var(--ink-2)}
+.dimmed{opacity:.45;pointer-events:none}
+
+/* logs, diffs */
+pre{margin:0;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12.5px;line-height:19px;white-space:pre-wrap;overflow-wrap:anywhere;font-variant-ligatures:none}
+pre .e{color:var(--nogo)} pre .ok{color:var(--go)} pre .m{color:var(--glass-muted)} pre .h{color:var(--amber)}
+pre .add{color:var(--go)} pre .del{color:var(--nogo)} pre .hunk{color:var(--verify)}
+.feed{display:grid;grid-template-columns:70px minmax(0,1fr);gap:2px 12px;font-family:"JetBrains Mono",monospace;font-size:12.5px;line-height:19px}
+.feed .t{color:var(--glass-muted)}
+.feed .c{color:var(--glass-ink);font-weight:700}
+.feed .who{font-weight:700}
+.feed .w{color:var(--hold)} .feed .g{color:var(--go)} .feed .r{color:var(--nogo)} .feed .a{color:var(--amber)}
+.note{padding:10px 14px;border:1px solid var(--rule);border-radius:4px;background:var(--steel-2);color:var(--ink-2)}
+.note.warn{border-color:var(--hold);background:#f1e9c9}
+.note.bad{border-color:var(--nogo);background:#f3dcd6}
+.note.ok{border-color:var(--go);background:#dcecd4}
+.empty{padding:28px 14px;color:var(--muted)}
+.empty b{color:var(--ink)}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:1px 8px;border:1px solid var(--rule);border-radius:10px;font-size:12px;color:var(--ink-2);background:var(--face)}
+.chip .lamp{width:8px;height:11px}
+details summary{cursor:pointer;color:var(--amber-ink);text-decoration:underline;text-underline-offset:3px}
+.path{font-family:"JetBrains Mono",monospace;font-size:12px;overflow-wrap:anywhere;color:var(--ink-2)}
+.glass .path{color:var(--glass-muted)}
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.spacer{flex:1}
+.bottom-bar{display:none}
+.sm-only{display:none}
+
+/* phone */
+@media (max-width:760px){
+  .shell{grid-template-columns:minmax(0,1fr);grid-template-rows:48px 1fr}
+  .mast .clock{display:none}
+  .mast .readout{flex:none}
+  .mast .ctx .k{display:none}
+  .panel>.ph .right{margin-left:0;flex-basis:100%}
+  .rail{display:none}
+  .mast{grid-column:1;padding:0}
+  .mast .brand{width:auto;border-right:0;padding:0 12px}
+  .mast .ctx{padding:0 6px;gap:10px}
+  .mast .ctx .hide-sm{display:none}
+  .mast .readout{padding-right:12px}
+  .mast .readout .hide-sm{display:none}
+  main{padding:14px 16px 84px}
+  .cols,.cols-2{grid-template-columns:1fr}
+  .strip{grid-template-columns:22px minmax(0,1fr)}
+  .strip .act{grid-column:2;justify-self:start}
+  .station,.choice,.kv,.field{grid-template-columns:minmax(0,1fr);gap:4px 0}
+  .readout-bar{white-space:normal;flex-wrap:wrap}
+  td.nowrap,.nowrap{white-space:normal}
+  .mast .ctx{overflow:visible}
+  .choice .btn{width:100%;justify-content:center}
+  table.data,table.data tbody{display:block;width:100%}
+  table.data thead{display:none}
+  table.data tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px 10px;padding:8px 10px;border-bottom:1px solid var(--rule-soft)}
+  table.data td{border:0;padding:1px 0;background:transparent !important}
+  table.data tr.sel{background:var(--sel)}
+  .glass table.data tr.sel{background:rgba(229,168,79,.16)}
+  table.data td.full,table.data td.wrap{grid-column:1/-1}
+  table.data td.num{text-align:left}
+  table.data td[data-label]::before{content:attr(data-label) " ";color:var(--muted);font-family:"B612",sans-serif;font-size:12px}
+  .glass table.data td[data-label]::before{color:var(--glass-muted)}
+  .glass table.data tr{border-bottom-color:var(--glass-rule)}
+  .bottom-bar{display:flex;position:fixed;left:0;right:0;bottom:0;height:56px;background:var(--steel-2);border-top:1px solid var(--rule);z-index:5}
+  .bottom-bar a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;color:var(--ink-2);text-decoration:none;position:relative}
+  .bottom-bar a.on{color:var(--ink);font-weight:700;border-top:2px solid var(--amber);margin-top:-1px}
+  .bottom-bar a .count{position:absolute;top:6px;right:calc(50% - 22px);font-family:"JetBrains Mono",monospace;font-size:11px;background:var(--amber);border-radius:3px;padding:0 5px}
+  .page-title{flex-direction:column;gap:2px}
+  .hide-sm{display:none !important}
+  .sm-only{display:inline}
+}
+</style></head>
+<body><div class="shell"><header class="mast"><div class="brand"><span class="tag">kstrl</span></div><div class="ctx"><span><b>e3root</b></span><span class="k">factory fda682</span><span class="hide-sm"><span class="k">branch</span> <span class="mono">main</span></span><span class="hide-sm"><span class="k"></span><a href="config.html">kstrl.toml valid</a></span><span class="hide-sm"><a href="safe-mode.html">safe mode nominal</a></span><span class="hide-sm"><a href="serve.html">ks serve running</a></span></div><div class="readout"><span class="hide-sm"><span class="readout-bar"><span class="big">at least $4.50</span><span class="muted">of $45.00 cap</span><span class="meter"><i style="width:11%"></i></span><span class="mono" title="rounded up from the unrounded amount">11%</span></span></span><span class="sm-only mono">at least $4.50 of $45 · 11%</span></div></header><nav class="rail" aria-label="stations"><div class="group">Stations</div><a class="" href="home.html">Home</a><a class="on" href="run-board.html">Runs</a><a class="" href="inbox.html">Decisions<span class="count">1</span></a><a class="" href="failures.html">Failures<span class="count">1</span></a><a class="" href="serve.html">Serve queue</a><a class="" href="config.html">Config</a><a class="" href="learning.html">Learning</a><div class="group">Start</div><a href="start.html">Start a run</a><a href="start-init.html">Initialise a project</a></nav><main>
+<div class="page-title"><h1>Integration review</h1><span class="sub">run fda682 · e3root · the merged feature checked as one tree · <span class="state nogo"><span class="lamp nogo"></span>blocking</span> · 3 findings open · 1 handed off · 1 fixed</span></div>
+<div class="note warn" style="margin-bottom:20px"><b>Why the run halted:</b> integration-fix-1 failed review and the fix budget (1) is spent. The halted-run item in <a href="inbox-halted.html">Decisions</a> is yours to close; a new fix needs a new run.</div>
+<div class="cols">
+  <div class="stack">
+    <section class="panel"><div class="ph">Rounds<span class="n">3</span></div><div class="pb flush">
+<div class="strips">
+<div class="strip"><span class="lamp nogo"></span><div><div class="l1">Round 1 · open findings · blocking</div><div class="l2">5 findings opened, 1 handed off, 0 carried closed, 0 carried still open · reviewed 87c3e2e · 21:54</div></div><div class="act muted">review-1.json</div></div>
+<div class="strip"><span class="lamp hold"></span><div><div class="l1">Round 2 · not run</div><div class="l2">the last fix integration-fix-1 ended failed, not merged, so no tree holds it · 22:22</div></div><div class="act muted">review-2.json</div></div>
+<div class="strip"><span class="lamp nogo"></span><div><div class="l1">Round 3 · open findings · blocking</div><div class="l2">0 findings opened, 0 handed off, 1 carried closed, 3 carried still open · reviewed 5c1d0e7</div></div><div class="act muted">review-3.json</div></div>
+</div></div></section>
+    <section class="panel"><div class="ph">Criteria<span class="n">5 · 2 pass · 3 fail</span></div><div class="pb flush"><table class="data"><thead><tr><th>Criterion</th><th>What it asks</th><th>Verdict</th><th>Why</th></tr></thead><tbody><tr><td class="mono">IC1</td><td class="wrap"><b>Calls across component boundaries</b></td><td><span class="state nogo"><span class="lamp nogo"></span>fail</span></td><td class="wrap muted">An authenticated POST containing {&quot;&quot;:0,&quot;title&quot;:&quot;t&quot;,&quot;body&quot;:&quot;x&quot;} produces InvalidField(&quot;&quot;) under src/snippetvault/snippets.py:219-222 and the server returns 500 at src/snippetvault/server.py:394-403 instead of the required validation 400.</td></tr><tr><td class="mono">IC2</td><td class="wrap"><b>Stored data read back</b></td><td><span class="state go"><span class="lamp go"></span>pass</span></td><td class="wrap muted">Fixed by integration-fix-1: persisted-record validation is separated from new-input validation (round 3).</td></tr><tr><td class="mono">IC3</td><td class="wrap"><b>One definition per shared rule</b></td><td><span class="state nogo"><span class="lamp nogo"></span>fail</span></td><td class="wrap muted">Accepted sort fields and orders are independently enumerated in src/snippetvault/api.py:51-56 and src/snippetvault/storage.py:40-51; REQUEST_FIELD is repeated literally in src/snippetvault/server.py:419-438.</td></tr><tr><td class="mono">IC4</td><td class="wrap"><b>Calls into code that predates the feature</b></td><td><span class="state go"><span class="lamp go"></span>pass</span></td><td class="wrap muted">The base revision contains only the placeholder main at src/snippetvault/__init__.py:1-2 and no tests. That function is replaced, not called.</td></tr><tr><td class="mono">IC5</td><td class="wrap"><b>Decisions agree with criteria</b></td><td><span class="state nogo"><span class="lamp nogo"></span>fail</span></td><td class="wrap muted">scripts/kstrl/decisions.json:284-290 binds http-server to finishing in-flight requests bounded by the ten-second socket timeout; the http-server PRD requires serve to return within two seconds.</td></tr></tbody></table></div></section>
+    <section class="panel"><div class="ph">Findings<span class="n">5 · 3 open · 1 handed off · 1 fixed</span><span class="right">agrees with round 3: 1 carried closed, 3 carried still open</span></div><div class="pb flush"><table class="data"><thead><tr><th>Finding</th><th>From</th><th>Disposition</th><th>What happened to it</th></tr></thead><tbody><tr class=sel><td class="mono">IF-1</td><td class="mono">IC1</td><td><span class="state nogo"><span class="lamp nogo"></span>open</span></td><td class="wrap">integration-fix-1 carries it, and that fix failed review</td></tr><tr><td class="mono">IF-2</td><td class="mono">IC2</td><td><span class="state go"><span class="lamp go"></span>fixed</span></td><td class="wrap">by integration-fix-1, confirmed in round 3</td></tr><tr><td class="mono">IF-3</td><td class="mono">IC3</td><td><span class="state nogo"><span class="lamp nogo"></span>open</span></td><td class="wrap">integration-fix-1 carries it, and that fix failed review</td></tr><tr><td class="mono">IF-4</td><td class="mono">IC5</td><td><span class="state park"><span class="lamp park"></span>handed off</span></td><td class="wrap">outside what a fix component can change: a decision record, not code</td></tr><tr><td class="mono">IF-5</td><td class="mono">concern</td><td><span class="state nogo"><span class="lamp nogo"></span>open</span></td><td class="wrap">integration-fix-1 carries it, and that fix failed review</td></tr></tbody></table></div></section>
+  </div>
+  <div class="stack"><section class="panel"><div class="ph">Selected finding</div><div class="pb">
+<p><span class="mono">IF-1</span> · from IC1 · <span class="state nogo"><span class="lamp nogo"></span>open</span></p>
+<p>IC1 failed: An authenticated POST containing {"":0,"title":"t","body":"x"} produces InvalidField("") under src/snippetvault/snippets.py:219-222, consistent with its documented verbatim unknown-key contract at lines 43-48. src/snippetvault/api.py:320-323 forwards that field to error_response, which rejects it at lines 147-149. The server consequently returns 500 at src/snippetvault/server.py:394-403 instead of the required validation 400.</p>
+<dl class="kv" style="margin-top:10px">
+<dt>suggestion</dt><dd>Allow an empty string as an error field while retaining None for an absent field. Add an authenticated POST regression test covering an empty unknown key.</dd>
+<dt>locations</dt><dd class="mono">src/snippetvault/snippets.py · src/snippetvault/api.py · src/snippetvault/server.py</dd>
+<dt>history</dt><dd>opened in run fda682 at 87c3e2e · carried open in round 3</dd>
+</dl></div></section></div>
+</div></main></div><nav class="bottom-bar" aria-label="stations"><a href="#">Home</a><a class="on" href="#">Runs</a><a href="#">Decide<span class="count">1</span></a><a href="#">Failures</a><a href="#">More</a></nav></body></html>
