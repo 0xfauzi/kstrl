@@ -619,6 +619,29 @@ class TestOperatorQueue:
             selected = inbox._selected()
             assert selected is not None and selected.id == wanted
 
+    async def test_the_first_queue_read_leaves_a_focus_the_operator_moved(
+        self, tmp_path: Path
+    ) -> None:
+        """PR #552 CI: the first queue read moved focus to needs-you even
+        when the operator had already focused another widget, so on a slow
+        runner the command list lost the focus it had just taken."""
+        box = Inbox(tmp_path, InboxConfig())
+        box.add(ItemKind.HALTED_RUN, "first", dedupe_key="one")
+        app = _home(tmp_path)
+        async with app.run_test(size=(120, 36)) as pilot:
+            needs = cast(DataTable[Any], await mounted(pilot, lambda: app.screen, "#home-needs"))
+            await settled(pilot, lambda: needs.row_count == 1, what="the needs-you row")
+            screen = cast(HomeScreen, app.screen)
+            commands = await mounted(pilot, lambda: app.screen, "#home-commands")
+            commands.focus()
+            await settled(pilot, lambda: screen.focused is commands, what="focus on commands")
+            # Replay the first read, now arriving after the operator moved.
+            screen._focus_placed = False
+            screen._stats = None
+            screen.refresh_runs()
+            await settled(pilot, lambda: screen._stats is not None, what="one more poll")
+            assert screen.focused is commands
+
 
 class TestRetryScope:
     def _failed(self, tmp_path: Path) -> Path:
