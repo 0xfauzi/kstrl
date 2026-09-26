@@ -6110,7 +6110,7 @@ def signals_ls(root: Path | None, ui: str, no_color: bool) -> None:
 
 @cli.group(name="learn")
 def learn_group() -> None:
-    """Inspect the cross-project learning store (#217). Read-only."""
+    """Inspect and repair the cross-project learning store (#217)."""
 
 
 @learn_group.command(name="playbook")
@@ -6123,7 +6123,13 @@ def learn_playbook(ui: str, no_color: bool) -> None:
     ui_impl = _autonomy_ui(ui, no_color)
     try:
         playbook = load_playbook()
-    except (PlaybookError, OSError) as exc:
+    except PlaybookError as exc:
+        ui_impl.err(
+            f"the global playbook could not be read: {exc}. "
+            "`ks learn repair` voids every line the fold refuses."
+        )
+        sys.exit(2)
+    except OSError as exc:
         ui_impl.err(f"the global playbook could not be read: {exc}")
         sys.exit(2)
     ui_impl.section("Playbook")
@@ -6133,7 +6139,31 @@ def learn_playbook(ui: str, no_color: bool) -> None:
         ui_impl.info(f"  {lesson.id}  {lesson.status:<8} {lesson.section}: {lesson.insight}")
     ui_impl.kv("ledger", str(playbook.path))
     ui_impl.kv("lines", str(playbook.line_count))
+    ui_impl.kv("voided", str(len(playbook.voided)))
+    ui_impl.kv("unterminated tail bytes", str(playbook.tail_bytes))
     ui_impl.kv("sha256", playbook.sha256)
+    sys.exit(0)
+
+
+@learn_group.command(name="repair")
+@_autonomy_ui_option
+@_autonomy_no_color_option
+def learn_repair(ui: str, no_color: bool) -> None:
+    """Void every global playbook line the fold refuses, recording each in the ledger."""
+    from kstrl.playbook import PlaybookError, repair_ledger
+
+    ui_impl = _autonomy_ui(ui, no_color)
+    try:
+        voids = repair_ledger()
+    except (PlaybookError, OSError) as exc:
+        ui_impl.err(f"the global playbook could not be repaired: {exc}")
+        sys.exit(2)
+    if not voids:
+        ui_impl.ok("Nothing to repair: the fold accepts every line.")
+        sys.exit(0)
+    ui_impl.section("Voided")
+    for void in voids:
+        ui_impl.info(f"  line {void.line}  sha256 {void.sha256}  {void.reason}")
     sys.exit(0)
 
 
