@@ -187,6 +187,16 @@ ConfigProblemBanner {
     margin: 1 2 0 2;
 }
 
+/* #433 F7: a failed phase's cause and the tail of its stored gate
+ * output. Hidden (display: none from the screen) when nothing failed. */
+#failure-detail {
+    height: auto;
+    max-height: 14;
+    margin: 1 2 0 2;
+    padding: 0 1;
+    background: $error 10%;
+}
+
 #findings-title {
     height: 2;
     margin-top: 1;
@@ -249,6 +259,7 @@ CheckpointModal {
 }
 
 #checkpoint-question {
+    width: 100%;
     text-style: bold;
     color: $foreground;
 }
@@ -320,9 +331,35 @@ CheckpointModal {
     background: $surface;
 }
 
+#home-status-row {
+    height: 1;
+}
+
 #home-header #safe-mode-chip {
+    width: auto;
     height: 1;
     padding: 0 1;
+}
+
+#home-attention {
+    width: 1fr;
+    height: 1;
+}
+
+/* #433: below 100 columns the launcher column gives way to one line of
+ * keys (HomeScreen.on_resize sets .narrow); ^p lists every command. */
+#home-keys {
+    display: none;
+    height: 1;
+    padding: 0 1;
+}
+
+HomeScreen.narrow #home-commands-col {
+    display: none;
+}
+
+HomeScreen.narrow #home-keys {
+    display: block;
 }
 
 #home-masthead {
@@ -389,8 +426,11 @@ CheckpointModal {
     padding: 0 1;
 }
 
+/* auto, not 1: the line carries the run's state reason, and a cause
+ * cut at the edge is not a cause (#433 F4). */
 #home-preview-meta {
-    height: 1;
+    height: auto;
+    max-height: 3;
     padding: 0 1;
     background: $surface;
 }
@@ -553,8 +593,23 @@ CheckpointModal {
 
 /* ---- evolve screen ------------------------------------------------------- */
 
+/* #433 F12: the summary sits between the context bar and the tabs, so
+ * the tab row no longer runs into the header. */
+#evolve-summary {
+    height: auto;
+    padding: 1 2;
+    background: $surface;
+}
+
 #evolve-tabs {
     height: 1fr;
+    margin-top: 1;
+}
+
+.empty-state {
+    height: auto;
+    padding: 1 2;
+    color: $text-muted;
 }
 
 #patterns-table, #trends-table {
@@ -621,8 +676,11 @@ CheckpointModal {
     background: $background;
 }
 
+/* auto, not 6: the highlighted issue is printed whole here, and at 6
+ * rows the suggestion was cut after its first line (#433 F11). */
 #triage-detail {
-    height: 6;
+    height: auto;
+    max-height: 50%;
     padding: 1 2;
     background: $surface;
 }
@@ -649,7 +707,11 @@ OptionsModal {
     padding: 1 2;
 }
 
+/* width 100%: a Label is width auto, so a long question (the retry
+ * confirm names what it resets and what it leaves) ran past the dialog
+ * and was cut after one line (#433). */
 #options-question {
+    width: 100%;
     text-style: bold;
     color: $foreground;
 }
@@ -756,4 +818,15 @@ QuitModal {
 #safemode-body {
     width: 100%;
     height: auto;
+}
+
+/* Inbox (#433 E1): the list above the selected item's detail. */
+#inbox-table {
+    height: auto;
+    max-height: 50%;
+}
+
+#inbox-detail {
+    height: 1fr;
+    padding: 1 1 0 1;
 }

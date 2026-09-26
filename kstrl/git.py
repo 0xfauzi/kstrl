@@ -459,7 +459,9 @@ def get_untracked_files(
     return _nul_paths(result.stdout)
 
 
-def tracked_files_at(sha: str, cwd: Path, timeout: float = DEFAULT_TIMEOUT) -> frozenset[str]:
+def tracked_files_at(
+    sha: str, cwd: Path | None, timeout: float = DEFAULT_TIMEOUT
+) -> frozenset[str]:
     """Every file tracked at commit ``sha``, spelled as git stores it
     (``-z``, #423).
 

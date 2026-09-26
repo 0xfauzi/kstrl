@@ -273,6 +273,7 @@ ks inbox show ITEM_ID           Show one item in full, including its evidence.
 ks inbox snooze ITEM_ID         Defer an item; it returns when the TTL lapses.
 ks init [DIRECTORY]             Initialize kstrl in a project directory.
 ks learn playbook               Print the folded global playbook and its ledger's line count and SHA-256.
+ks learn repair                 Void every global playbook line the fold refuses, recording each in the ledger.
 ks queue add SPEC               Enqueue a spec file.
 ks queue ls                     List queue items in run order.
 ks queue pause                  Stop admitting queued work.

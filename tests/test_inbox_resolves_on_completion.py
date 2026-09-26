@@ -608,8 +608,11 @@ EXPECTED_STATUS_SPELLINGS: dict[str, int] = {
     "pipeline.py::ComponentPipeline.repoll_merge_pending": 1,
     "pr.py::create_single_pr": 1,
     "reducer.py::apply": 1,
+    "tui/run_status.py::<module>": 4,
+    "tui/run_status.py::finished_word": 1,
     "tui/screens/evolve.py::EvolveScreen._trend_cells": 1,
     "tui/theme.py::<module>": 1,
+    "tui/widgets/component_table.py::<module>": 1,
     "workqueue.py::Queue.finish_ok": 1,
 }
 
@@ -638,6 +641,11 @@ NOT_A_COMPLETION: dict[str, str] = {
     "reducer.py::apply": "the TUI's view of a ComponentCompleted event, not the manifest",
     "tui/screens/evolve.py::EvolveScreen._trend_cells": "the 'completed' trend column",
     "tui/theme.py::<module>": "the TUI glyph for the status",
+    "tui/run_status.py::<module>": "the run state word and its glyph (#433 F4); display only",
+    "tui/run_status.py::finished_word": "names a finished run's state word; reads, never sets",
+    "tui/widgets/component_table.py::<module>": (
+        "the statuses whose time cell is a duration (#433 F5); display only"
+    ),
     "workqueue.py::Queue.finish_ok": "a work-queue item's finish reason",
 }
 

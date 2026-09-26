@@ -124,24 +124,33 @@ DEFAULT_LICENSE_DENY_PARTIAL: tuple[str, ...] = (
     "EUPL",
 )
 
+# The manifest each machine-generated lockfile pins, keyed by the
+# lockfile's basename. The toolchain writes the lockfile in the manifest's
+# own directory, which is how both scope guards find the manifest a
+# changed lockfile belongs to (``guards.without_entitled_lockfiles``, #544).
+# Measured for uv, poetry, pipenv, npm, yarn, pnpm, cargo and bundler: each
+# wrote its lockfile beside its manifest in an empty project. go.sum needs a
+# downloaded dependency and composer is not installed where this was
+# measured, so those two rows are the toolchains' documented layout.
+LOCKFILE_MANIFESTS: dict[str, str] = {
+    "uv.lock": "pyproject.toml",
+    "poetry.lock": "pyproject.toml",
+    "Pipfile.lock": "Pipfile",
+    "package-lock.json": "package.json",
+    "yarn.lock": "package.json",
+    "pnpm-lock.yaml": "package.json",
+    "Cargo.lock": "Cargo.toml",
+    "go.sum": "go.mod",
+    "composer.lock": "composer.json",
+    "Gemfile.lock": "Gemfile",
+}
+
 # Basenames of machine-generated lockfiles, excluded from the size caps:
 # a one-line dependency bump can rewrite hundreds of lockfile lines, so
 # counting them would make ``max_lines_changed`` meaningless. Lockfiles
-# remain subject to ``paths_deny`` and ``deps_allow_new``.
-LOCKFILE_BASENAMES: frozenset[str] = frozenset(
-    {
-        "uv.lock",
-        "poetry.lock",
-        "Pipfile.lock",
-        "package-lock.json",
-        "yarn.lock",
-        "pnpm-lock.yaml",
-        "Cargo.lock",
-        "go.sum",
-        "composer.lock",
-        "Gemfile.lock",
-    }
-)
+# remain subject to ``paths_deny`` and ``deps_allow_new``. Derived from
+# ``LOCKFILE_MANIFESTS`` so the two cannot name different lockfiles.
+LOCKFILE_BASENAMES: frozenset[str] = frozenset(LOCKFILE_MANIFESTS)
 
 _UVLOCK_NAME_RE = re.compile(r'^name = "([^"]+)"')
 _UVLOCK_VERSION_RE = re.compile(r'^version = "([^"]+)"')

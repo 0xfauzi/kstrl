@@ -317,6 +317,17 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- The global playbook ledger no longer accepts an append its own fold
+  refuses (#529). `append_ops` folds the ledger and checks the new ops
+  with the fold's own rules while it holds the append lock, so a second
+  ADD of one id, an op on an unknown id, and two writers racing on one id
+  are refused before anything is written. A line is committed by its
+  newline: the tail a writer killed mid-write leaves is not folded, and
+  the next append voids it. `ks learn repair` voids every line the fold
+  refuses in a ledger that is already refused, appending one VOID line
+  per voided line that names it by number and SHA-256 and carries the
+  fold's reason; the voided bytes stay in the file.
+
 - `ks factory` and `ks decompose` read `[agent]` in kstrl.toml at
   startup. They read the engineer command, model, reasoning effort and
   type from the flags and the environment only, so a project whose

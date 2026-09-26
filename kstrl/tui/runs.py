@@ -101,6 +101,34 @@ def factory_lock_held(root_dir: Path) -> bool:
         return False
 
 
+def run_is_live(run_dir: Path, root_dir: Path) -> bool:
+    """``RunRef.live`` for one run, without listing every run's tail.
+
+    The dashboard's header needs the same answer the home run table
+    gives (#433 F4): a run with no finish record is running only while
+    its log moved in the last minute or it is the newest factory run and
+    the factory lock is held. Otherwise the header said "in flight" over
+    a run that stopped days ago.
+    """
+    events_path = run_dir / "events.jsonl"
+    try:
+        mtime = events_path.stat().st_mtime
+    except OSError:
+        return False
+    if _run_completed(events_path):
+        return False
+    if time.time() - mtime < LIVE_MTIME_WINDOW_SECONDS:
+        return True
+    if run_kind(run_dir.name) != "factory" or not factory_lock_held(root_dir):
+        return False
+    try:
+        names = [d.name for d in (root_dir / ".kstrl" / "runs").iterdir()]
+    except OSError:
+        return False
+    factory = [name for name in names if run_kind(name) == "factory"]
+    return max(factory, key=run_sort_key, default="") == run_dir.name
+
+
 def discover_runs(
     root_dir: Path,
     *,

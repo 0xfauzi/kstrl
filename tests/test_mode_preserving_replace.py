@@ -142,11 +142,15 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "licensing.py low.replace",
     "observability.py datetime.strptime(ts, '%Y-%m-%dT%H:%M:%SZ').replace",
     "parsers.py failure.rule_or_test.replace",
+    "playbook.py datetime.now(UTC).replace",
+    "playbook.py datetime.now(UTC).replace(microsecond=0).isoformat().replace",
     "serve.py (local + timedelta(days=1)).replace",
     "statedir.py datetime.now(UTC).replace",
     "statedir.py datetime.now(UTC).replace(microsecond=0).isoformat().replace",
     "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
     "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
+    "verify.py text.replace",
+    "verify.py text.replace('\\r\\n', '\\n').replace",
     "workqueue.py parsed.replace",
 )
 

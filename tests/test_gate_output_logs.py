@@ -17,6 +17,7 @@ import io
 import json
 import shlex
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -303,3 +304,127 @@ def test_an_error_that_is_not_an_os_error_is_not_swallowed(
     monkeypatch.setattr("kstrl.pipeline.atomic_write_text", broken_write)
     with pytest.raises(RuntimeError, match="kstrl462 not an OSError"):
         run.phase_1()
+
+
+# --- #527: a gate that was stopped still leaves what it printed ----------
+
+#: The gates and the ``_config`` key that sets each one's command.
+_GATE_KEYS = {GATE_TEST: "test", GATE_TYPECHECK: "typecheck", GATE_LINT: "lint"}
+
+#: A child that prints a line to each stream and then hangs past the timeout.
+_HANGS_AFTER_PRINTING = _python(
+    "import sys, time; "
+    "print('kstrl527 last stdout line before the hang', flush=True); "
+    "print('kstrl527 last stderr line before the hang', file=sys.stderr, flush=True); "
+    "time.sleep(60)"
+)
+
+#: A child whose stdout holds one byte that is not utf-8, between two words,
+#: and whose stderr is plain text. It exits 1 so the failure is the gate's.
+_PRINTS_A_BYTE_THAT_IS_NOT_UTF8 = _python(
+    "import sys; "
+    "sys.stdout.buffer.write(b'kstrl527 before \\xff after\\n'); "
+    "sys.stdout.flush(); "
+    "sys.stderr.write('kstrl527 stderr line\\n'); "
+    "sys.exit(1)"
+)
+
+
+@pytest.mark.parametrize("gate", [GATE_TEST, GATE_TYPECHECK, GATE_LINT])
+def test_a_gate_that_times_out_leaves_the_lines_it_printed(tmp_path: Path, gate: str) -> None:
+    """The issue's case: a hung gate is killed on the timeout, and the log
+    holds the last lines it printed on both streams, which is what tells
+    the operator where it hung. The event names the file."""
+    project = _project(tmp_path)
+    comp = component()
+    config = replace(_config(**{_GATE_KEYS[gate]: _HANGS_AFTER_PRINTING}), subprocess_timeout=1.0)
+    run = _Run(project, config, comp)
+
+    run.phase_1()
+
+    (data,) = run.verification_events()
+    expected = _debug_dir(project, comp) / "attempt-1" / f"{gate}.log"
+    assert data["gate_logs"] == [str(expected)]
+    assert any("timed out after 1.0s" in failure for failure in data["failures"])
+    log = expected.read_text(encoding="utf-8")
+    assert "kstrl527 last stdout line before the hang" in log
+    assert "kstrl527 last stderr line before the hang" in log
+
+
+@pytest.mark.parametrize("gate", [GATE_TEST, GATE_TYPECHECK, GATE_LINT])
+def test_a_gate_whose_output_is_not_utf8_leaves_it_with_the_byte_escaped(
+    tmp_path: Path, gate: str
+) -> None:
+    """The decode case: the gate still fails closed, and the log holds both
+    streams, stdout first, with the refused byte written as ``\\xff`` so
+    the operator can see which byte it was."""
+    project = _project(tmp_path)
+    comp = component()
+    run = _Run(project, _config(**{_GATE_KEYS[gate]: _PRINTS_A_BYTE_THAT_IS_NOT_UTF8}), comp)
+
+    run.phase_1()
+
+    (data,) = run.verification_events()
+    expected = _debug_dir(project, comp) / "attempt-1" / f"{gate}.log"
+    assert data["gate_logs"] == [str(expected)]
+    assert any("could not be decoded" in failure for failure in data["failures"])
+    log = expected.read_text(encoding="utf-8")
+    assert "kstrl527 before \\xff after" in log
+    assert log.index("kstrl527 before") < log.index("kstrl527 stderr line")
+
+
+def test_a_gate_that_times_out_after_a_byte_that_is_not_utf8_keeps_its_output(
+    tmp_path: Path,
+) -> None:
+    """Both at once. The drain after the kill used to decode as it read,
+    and a byte that is not utf-8 there lost everything the child printed."""
+    project = _project(tmp_path)
+    comp = component()
+    hangs = _python(
+        "import sys, time; "
+        "sys.stdout.buffer.write(b'kstrl527 hung after \\xff\\n'); "
+        "sys.stdout.flush(); "
+        "time.sleep(60)"
+    )
+    run = _Run(project, replace(_config(lint=hangs), subprocess_timeout=1.0), comp)
+
+    run.phase_1()
+
+    (data,) = run.verification_events()
+    (path,) = data["gate_logs"]
+    assert "kstrl527 hung after \\xff" in Path(path).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("stop", ["timeout", "undecodable"])
+def test_a_stopped_gate_s_output_over_the_bound_is_truncated(tmp_path: Path, stop: str) -> None:
+    """The timeout and decode exits bound what they log exactly as the
+    non-zero exit does (#462, #527): both ends kept, the cut marked."""
+    project = _project(tmp_path)
+    comp = component()
+    total = GATE_OUTPUT_MAX_CHARS + 100_000
+    body = total - len("HEAD") - len("TAIL")
+    if stop == "timeout":
+        child = _python(
+            "import sys, time; "
+            f"sys.stdout.write('HEAD' + 'x' * {body} + 'TAIL'); sys.stdout.flush(); "
+            "time.sleep(60)"
+        )
+        config = replace(_config(lint=child), subprocess_timeout=1.0)
+    else:
+        child = _python(
+            "import sys; "
+            f"sys.stdout.buffer.write(b'HEAD' + b'\\xff' + b'x' * {body - 4} + b'TAIL'); "
+            "sys.exit(1)"
+        )
+        config = _config(lint=child)
+    run = _Run(project, config, comp)
+
+    run.phase_1()
+
+    (data,) = run.verification_events()
+    (path,) = data["gate_logs"]
+    log = Path(path).read_text(encoding="utf-8")
+    assert log.startswith("HEAD")
+    assert log.endswith("TAIL")
+    assert "output truncated" in log
+    assert len(log) < GATE_OUTPUT_MAX_CHARS + 200

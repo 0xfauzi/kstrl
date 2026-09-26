@@ -47,8 +47,8 @@ EXPECTED_SEEN: tuple[str, ...] = (
 EXPECTED_UNDECIDED: tuple[str, ...] = (
     "gateparse.py:112 TOOL_PARSERS[chosen]",
     "gateparse.py:114 TOOL_PARSERS[name]",
-    "tui/app.py:363 initial_screens_for_kind(kind, observe_only=True)",
-    "tui/app.py:435 initial_screens_for_kind(kind, observe_only=False)",
+    "tui/app.py:390 initial_screens_for_kind(kind, observe_only=True)",
+    "tui/app.py:462 initial_screens_for_kind(kind, observe_only=False)",
 )
 
 

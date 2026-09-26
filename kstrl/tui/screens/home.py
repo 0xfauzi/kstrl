@@ -30,7 +30,15 @@ from kstrl.tui.home_data import (
     SummaryCache,
     gather_stats,
 )
+from kstrl.tui.home_view import (
+    COMMAND_KEYS,
+    NARROW_BELOW,
+    attention_line,
+    command_strip,
+    preview_status,
+)
 from kstrl.tui.messages import SummariesReady
+from kstrl.tui.run_status import RUN_STATE_STYLE, state_word
 from kstrl.tui.runs import RunRef, discover_runs
 from kstrl.tui.widgets.component_table import ComponentTable
 from kstrl.tui.widgets.cost_meter import format_tokens
@@ -59,8 +67,8 @@ HOME_COMMANDS: list[HomeCommand] = [
     HomeCommand("inbox", "inbox", "decisions awaiting you"),
     HomeCommand("evolve", "evolve", "failure patterns and trends"),
     HomeCommand("init", "init", "scaffold a project"),
-    HomeCommand("feature", "feature", "via CLI: ks feature --tui"),
-    HomeCommand("understand", "understand", "via CLI: ks understand --tui"),
+    HomeCommand("feature", "feature", "shell: ks feature --tui"),
+    HomeCommand("understand", "understand", "shell: ks understand --tui"),
 ]
 
 
@@ -79,15 +87,13 @@ def _git_branch(root_dir: Path) -> str:
 
 
 def _project_name(root_dir: Path) -> str:
-    manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
-    if manifest_path.exists():
-        try:
-            from kstrl.manifest import Manifest
+    """The project is the directory the shell was opened on (#433 F3).
 
-            return Manifest.load(manifest_path).project_name
-        except (OSError, ValueError):
-            pass
-    return root_dir.name
+    The newest manifest's ``projectName`` names a RUN, not the project: a
+    daemon names each run it starts ``queue-<id>``, and the home header
+    showed that queue name as the project.
+    """
+    return root_dir.resolve().name or str(root_dir)
 
 
 def _masthead(root_dir: Path, branch: str, project: str) -> Text:
@@ -111,15 +117,10 @@ def _stats_line(stats: HomeStats) -> Text:
     if last is None:
         text.append("no finished runs yet", style=theme.MUTED)
     else:
-        glyphs = {
-            "live": ("●", theme.ACCENT),
-            "done": ("✓", theme.SUCCESS),
-            "failed": ("✗", theme.ERROR),
-            "stale": (theme.EMPTY_CELL, theme.MUTED),
-        }
-        glyph, color = glyphs.get(last.outcome, (theme.EMPTY_CELL, theme.MUTED))
+        # The same four words as the run table (#433 F4).
+        glyph, color = RUN_STATE_STYLE[state_word(last.outcome)]
         text.append("last run ", style=theme.MUTED)
-        text.append(f"{glyph} {last.outcome}", style=f"bold {color}")
+        text.append(f"{glyph} {state_word(last.outcome)}", style=f"bold {color}")
         text.append(
             f" {last.components_done}/{last.components_total}",
             style="bold",
@@ -137,7 +138,9 @@ def _stats_line(stats: HomeStats) -> Text:
 class HomeScreen(Screen[None]):
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
-        *[Binding(str(n + 1), f"command({n})", show=False) for n in range(len(HOME_COMMANDS))],
+        # One key per command, and every key is one keypress: the tenth
+        # command used to be bound to "10", which no terminal sends (#433 F2).
+        *[Binding(COMMAND_KEYS[n], f"command({n})", show=False) for n in range(len(HOME_COMMANDS))],
     ]
 
     def __init__(self) -> None:
@@ -151,7 +154,9 @@ class HomeScreen(Screen[None]):
     def compose(self) -> ComposeResult:
         with Vertical(id="home-header"):
             yield Static(id="home-masthead")
-            yield SafeModeChip(id="safe-mode-chip")
+            with Horizontal(id="home-status-row"):
+                yield SafeModeChip(id="safe-mode-chip")
+                yield Static(id="home-attention")
             yield Static(id="home-stats")
         with Horizontal(id="home-columns"):
             with Vertical(id="home-runs-col"):
@@ -160,6 +165,7 @@ class HomeScreen(Screen[None]):
             with Vertical(id="home-commands-col"):
                 yield Static("commands", id="home-commands-title")
                 yield OptionList(id="home-commands")
+        yield Static(id="home-keys")
         yield Static("run preview", id="home-preview-title")
         yield ComponentTable(id="home-preview")
         yield Static(id="home-preview-meta")
@@ -191,7 +197,7 @@ class HomeScreen(Screen[None]):
         commands = self.query_one(OptionList)
         for index, command in enumerate(HOME_COMMANDS):
             label = Text()
-            label.append(f" {index + 1} ", style=f"bold {theme.ACCENT}")
+            label.append(f" {COMMAND_KEYS[index]} ", style=f"bold {theme.ACCENT}")
             label.append(f"{command.title:<11}", style="bold")
             label.append(command.description, style=theme.MUTED)
             commands.add_option(Option(label, id=command.command_id))
@@ -224,7 +230,7 @@ class HomeScreen(Screen[None]):
     def _compute_summaries(self, refs: list[RunRef]) -> None:
         try:
             summaries = self._cache.refresh(refs)
-            stats = gather_stats(summaries, refs[0].run_id if refs else "")
+            stats = gather_stats(summaries, refs[0].run_id if refs else "", self._root_dir())
         except Exception:  # noqa: BLE001 - a broken run dir must not kill home
             summaries, stats = {}, HomeStats(None)
         self.post_message(SummariesReady(summaries, stats))
@@ -240,6 +246,7 @@ class HomeScreen(Screen[None]):
             self.query_one("#home-stats", Static).update(
                 _stats_line(message.stats),
             )
+            self.query_one("#home-attention", Static).update(attention_line(message.stats))
             self._render_preview()
 
     def on_screen_resume(self) -> None:
@@ -252,6 +259,26 @@ class HomeScreen(Screen[None]):
 
     def action_refresh(self) -> None:
         self.refresh_runs()
+
+    def on_resize(self) -> None:
+        # At 80 columns the launcher column took 44 of them and the run
+        # table lost its numbers at the edge; below NARROW_BELOW the
+        # launcher becomes one line of keys and ^p lists every command.
+        narrow = self.size.width < NARROW_BELOW
+        self.set_class(narrow, "narrow")
+        keys = self.query_one("#home-keys", Static)
+        keys.update(command_strip(HOME_COMMANDS, self.size.width) if narrow else "")
+        self._render_preview()
+
+    def palette_commands(self) -> list[tuple[str, str, str]]:
+        """(title, help, command id) per command, for the ^p palette."""
+        return [
+            (f"{COMMAND_KEYS[index]} {command.title}", command.description, command.command_id)
+            for index, command in enumerate(HOME_COMMANDS)
+        ]
+
+    def run_command(self, command_id: str) -> None:
+        self._dispatch(command_id)
 
     # -- run preview ---------------------------------------------------------
 
@@ -306,15 +333,12 @@ class HomeScreen(Screen[None]):
         if getattr(self, "_preview_shown", "") != run_id:
             # Switching runs is a rebuild, not a live diff - the
             # never-clear rule guards live updates, not navigation.
-            table.clear()
+            # Columns too: their widths were sized for the other run.
+            table.reset()
             self._preview_shown = run_id
         table.update_state(state)
         summary = self._summaries.get(run_id)
-        line = Text()
-        if state.finished:
-            line.append("finished", style=theme.MUTED)
-        else:
-            line.append("in flight", style=theme.ACCENT)
+        line = preview_status(ref, summary, state)
         if summary is not None:
             line.append(
                 f" · {summary.components_done}/{summary.components_total} components",

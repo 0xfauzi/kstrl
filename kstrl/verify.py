@@ -46,7 +46,7 @@ from kstrl.gateparse import (
     parse_gate_output,
     validate_tool,
 )
-from kstrl.guards import path_is_allowed
+from kstrl.guards import path_is_allowed, without_entitled_lockfiles
 from kstrl.jsonread import read_json
 from kstrl.parsers import (
     ParsedOutput,
@@ -121,7 +121,7 @@ def scrubbed_subprocess_env() -> dict[str, str]:
 _SCRUB_TERM_GRACE_SECONDS = 5.0
 
 
-def _signal_process_group(proc: subprocess.Popen[str], sig: signal.Signals) -> None:
+def _signal_process_group(proc: subprocess.Popen[bytes], sig: signal.Signals) -> None:
     """Signal the child's whole process group, direct-child fallback.
 
     A one-line forward to :func:`kstrl.procgroup.signal_process_tree`,
@@ -152,7 +152,43 @@ class ChildOutputDecodeError(RuntimeError):
     ``contract._remove_temp_worktree``, whose results were never read and
     which swallow it so cleanup is not blocked. kstrl does not weaken the
     decode with ``errors=`` to make it go away (#409).
+
+    ``stdout`` and ``stderr`` carry what the child printed, rendered by
+    :func:`_readable`, so a gate that fails here still leaves its output
+    for the operator (#527). They are evidence only: no verdict reads them.
     """
+
+    def __init__(self, message: str, *, stdout: str = "", stderr: str = "") -> None:
+        super().__init__(message)
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def _translated(text: str) -> str:
+    """``text`` with ``\\r\\n`` and ``\\r`` turned into ``\\n``.
+
+    Exactly what CPython's ``Popen._translate_newlines`` does in text
+    mode (3.12: decode, then these two replaces), so reading the child's
+    bytes here gives every caller the string text mode used to give it.
+    """
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _readable(data: bytes | str | None) -> str:
+    """A child's output as text the operator can read, whatever it holds (#527).
+
+    A byte that is not valid utf-8 is written as a ``\\xNN`` escape rather
+    than replaced, so the log shows the byte the strict decode refused.
+    This is the EVIDENCE rendering and nothing decides on it: the strict
+    decode in :func:`run_scrubbed` still fails the call (#409, #416).
+    ``str`` is passed through and ``None`` is empty, because a timeout
+    raised by a test double carries no output at all.
+    """
+    if data is None:
+        return ""
+    if isinstance(data, str):
+        return data
+    return _translated(data.decode("utf-8", errors="backslashreplace"))
 
 
 def run_scrubbed(
@@ -213,18 +249,20 @@ def run_scrubbed(
     env = scrubbed_subprocess_env()
     if extra_env:
         env.update(extra_env)
+    # BYTES mode, decoded below (#527). In text mode CPython decodes inside
+    # `communicate`, and a byte that is not utf-8 raised there with both
+    # streams discarded, so a gate that failed that way could leave no log.
     proc = subprocess.Popen(
         cmd,
         shell=isinstance(cmd, str),
         cwd=cwd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        encoding="utf-8",
         env=env,
         start_new_session=True,
     )
     try:
-        stdout, stderr = proc.communicate(timeout=timeout)
+        raw_stdout, raw_stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired as expired:
         _signal_process_group(proc, signal.SIGTERM)
         try:
@@ -235,29 +273,15 @@ def run_scrubbed(
         # grandchild that ignored it can hold the pipes open and would
         # otherwise block the drain below indefinitely.
         _signal_process_group(proc, signal.SIGKILL)
-        stdout, stderr = drain_or_abandon(proc, term_grace)
+        drained_stdout, drained_stderr = drain_or_abandon(proc, term_grace)
+        # What the child printed before the kill, as readable text: the
+        # gate that timed out writes it to its log (#527).
         raise subprocess.TimeoutExpired(
             cmd,
             expired.timeout,
-            output=stdout,
-            stderr=stderr,
+            output=_readable(drained_stdout),
+            stderr=_readable(drained_stderr),
         ) from None
-    except UnicodeDecodeError as exc:
-        # The child ran and has already been waited on: CPython's own
-        # `_communicate` waits before it decodes, so `proc` is reaped and
-        # both pipes are at EOF here (measured, #416's altitude review -
-        # instrumented run: `poll() == 0` on entry, `drain_or_abandon`
-        # returns ("", "")). The call stays anyway, because this module's
-        # disposal rule is uniform across every non-completed-read exit
-        # (#326) rather than reasoned per site, and re-deriving "this one
-        # needs no disposal" per exit is exactly the per-site reasoning
-        # that rule exists to remove. Then the named error, so 18 call
-        # sites can answer for it (#416).
-        drain_or_abandon(proc, term_grace)
-        raise ChildOutputDecodeError(
-            f"the command produced bytes that are not valid utf-8, so its "
-            f"output could not be read: {exc}"
-        ) from exc
     except BaseException:
         # The rule `procgroup._read_ps` already states and this module
         # did not: every exit that is not a completed read leaves a
@@ -270,6 +294,19 @@ def run_scrubbed(
         # highest-frequency spawn in the factory.
         drain_or_abandon(proc, term_grace)
         raise
+    # The read completed, so the child is reaped and both pipes are closed:
+    # a decode failure here leaves nothing to dispose of (#326). Strict
+    # utf-8, stdout first, as text mode decoded them (#409, #416).
+    try:
+        stdout = _translated(raw_stdout.decode("utf-8"))
+        stderr = _translated(raw_stderr.decode("utf-8"))
+    except UnicodeDecodeError as exc:
+        raise ChildOutputDecodeError(
+            f"the command produced bytes that are not valid utf-8, so its "
+            f"output could not be read: {exc}",
+            stdout=_readable(raw_stdout),
+            stderr=_readable(raw_stderr),
+        ) from exc
     return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
 
 
@@ -313,6 +350,8 @@ class CheckResult:
     measured: bool = True
     # #462: the gate's own output, stdout then stderr, when a test,
     # typecheck or lint gate ran and FAILED; None for every other row.
+    # #527: a gate that timed out, or printed bytes that are not utf-8,
+    # FAILED too, and this holds what it printed before it was stopped.
     # Bounded by :func:`bounded_gate_output`. The pipeline writes it to
     # disk as the operator's evidence for the failure. It is never put in
     # the retry prompt, the report table or ``ks check --json``: those
@@ -1331,6 +1370,17 @@ def bounded_gate_output(output: str, limit: int = GATE_OUTPUT_MAX_CHARS) -> str:
     return output[:half] + marker + output[-half:]
 
 
+def _output_before_stop(stdout: bytes | str | None, stderr: bytes | str | None) -> str:
+    """What a gate printed before it timed out or printed bytes that are
+    not utf-8, joined and bounded as any failed gate's output is (#527).
+
+    A hung test suite is the case where the operator most needs the last
+    lines it printed, so these two exits keep the output the exception
+    carries rather than returning a message alone.
+    """
+    return bounded_gate_output((_readable(stdout) + _readable(stderr)).strip())
+
+
 def _failed_gate_result(
     name: str,
     message: str,
@@ -1412,13 +1462,14 @@ def check_test_suite(
 
     try:
         result = run_scrubbed(cmd, cwd=cwd, timeout=timeout)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as expired:
         return CheckResult(
             name=GATE_TEST,
             passed=False,
             message=f"Test suite timed out after {timeout}s",
             duration_seconds=time.monotonic() - start,
             measured=False,
+            output=_output_before_stop(expired.stdout, expired.stderr),
         )
     except ChildOutputDecodeError as exc:
         return CheckResult(
@@ -1427,6 +1478,7 @@ def check_test_suite(
             message=f"Test suite output could not be decoded: {exc}",
             duration_seconds=time.monotonic() - start,
             measured=False,
+            output=_output_before_stop(exc.stdout, exc.stderr),
         )
 
     if result.returncode != 0:
@@ -1461,13 +1513,14 @@ def check_typecheck(
 
     try:
         result = run_scrubbed(cmd, cwd=cwd, timeout=timeout)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as expired:
         return CheckResult(
             name=GATE_TYPECHECK,
             passed=False,
             message=f"Typecheck timed out after {timeout}s",
             duration_seconds=time.monotonic() - start,
             measured=False,
+            output=_output_before_stop(expired.stdout, expired.stderr),
         )
     except ChildOutputDecodeError as exc:
         return CheckResult(
@@ -1476,6 +1529,7 @@ def check_typecheck(
             message=f"Typecheck output could not be decoded: {exc}",
             duration_seconds=time.monotonic() - start,
             measured=False,
+            output=_output_before_stop(exc.stdout, exc.stderr),
         )
 
     if result.returncode != 0:
@@ -1510,13 +1564,14 @@ def check_linter(
 
     try:
         result = run_scrubbed(cmd, cwd=cwd, timeout=timeout)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as expired:
         return CheckResult(
             name=GATE_LINT,
             passed=False,
             message=f"Linter timed out after {timeout}s",
             duration_seconds=time.monotonic() - start,
             measured=False,
+            output=_output_before_stop(expired.stdout, expired.stderr),
         )
     except ChildOutputDecodeError as exc:
         return CheckResult(
@@ -1525,6 +1580,7 @@ def check_linter(
             message=f"Linter output could not be decoded: {exc}",
             duration_seconds=time.monotonic() - start,
             measured=False,
+            output=_output_before_stop(exc.stdout, exc.stderr),
         )
 
     if result.returncode != 0:
@@ -1896,14 +1952,42 @@ def check_diff_scope(
             measured=False,
         )
 
+    # #264: the authored scope plus kstrl's own per-component files. The
+    # two lists stay separate all the way into the failure details: an
+    # operator reading "outside allowed scope" must be able to tell what
+    # they authorised from what the harness added on their behalf.
+    #
+    # Deliberately NOT guards.check_violations, which is the same
+    # decision on the same inputs: it takes a set and returns sorted, and
+    # the violation list is truncated to 15 for the retry prompt, so
+    # sorting silently changes WHICH violations the retry agent is shown.
+    # Git's order is the order the operator sees elsewhere; a cosmetic
+    # de-duplication is not worth moving it.
+    effective = [*allowed_paths, *(harness_paths or ())]
     try:
         changed = git.get_diff_names(base_branch, cwd)
+        # #435: name the ref the diff was actually judged against.
+        # get_diff_names resolved it; saying "main" while measuring
+        # origin/main sends the engineer to revert against the wrong tree.
+        base_label = git.resolve_base_ref(base_branch, cwd)
+        # #544: a lockfile is judged through its manifest, from the merge
+        # base the three-dot diff above measured against. Inside the try
+        # because it may read that commit's tree.
+        violations = without_entitled_lockfiles(
+            [f for f in changed if not path_is_allowed(f, effective)],
+            allowed_paths,
+            changed,
+            git.merge_base_ref(base_label, cwd) or None,
+            cwd,
+        )
     except git.GitDiffError as exc:
         # The lenient reader raises for exactly one family: a diff git
         # produced and this process cannot decode (#416). Everything else it
         # still answers with [], which the vacuous-pass branch below handles.
         # Failing closed here rather than falling into that branch is the
-        # point: an undecodable diff is not an empty one.
+        # point: an undecodable diff is not an empty one. #544 routes a
+        # failed read of the merge base's tree here too: the lockfile rule
+        # could not prove anything in scope, so it cleared nothing.
         return CheckResult(
             name="diff_scope",
             passed=False,
@@ -1937,25 +2021,7 @@ def check_diff_scope(
             measured=False,
         )
 
-    # #264: the authored scope plus kstrl's own per-component files. The
-    # two lists stay separate all the way into the failure details: an
-    # operator reading "outside allowed scope" must be able to tell what
-    # they authorised from what the harness added on their behalf.
-    #
-    # Deliberately NOT guards.check_violations, which is the same
-    # decision on the same inputs: it takes a set and returns sorted, and
-    # the violation list is truncated to 15 for the retry prompt, so
-    # sorting silently changes WHICH violations the retry agent is shown.
-    # Git's order is the order the operator sees elsewhere; a cosmetic
-    # de-duplication is not worth moving it.
-    effective = [*allowed_paths, *(harness_paths or ())]
-    violations = [f for f in changed if not path_is_allowed(f, effective)]
-
     if violations:
-        # #435: name the ref the diff was actually judged against.
-        # get_diff_names resolved it; saying "main" while measuring
-        # origin/main sends the engineer to revert against the wrong tree.
-        base_label = git.resolve_base_ref(base_branch, cwd)
         details = _diff_scope_details(
             base_label,
             allowed_paths,

@@ -9,6 +9,10 @@ RunState - files are the record.
 SpecTriageScreen is read-only in v1: blockers already halted the run
 (the banner says so and points at the durable artifact); non-blockers
 never gate, so there is no decision to prompt for.
+
+#433 F11: the triage table fits each row to the terminal and marks what
+it shortened with an ellipsis; the detail pane under it prints the
+highlighted issue whole, wrapped, with its location and suggestion.
 """
 
 from __future__ import annotations
@@ -29,7 +33,7 @@ from kstrl.tui.state import architect_component_id, planned_component_ids
 from kstrl.tui.widgets.context_bar import ContextBar
 from kstrl.tui.widgets.cost_meter import CostMeter
 from kstrl.tui.widgets.dag_table import DagTable
-from kstrl.tui.widgets.header import RunHeader
+from kstrl.tui.widgets.header import RunHeader, meter_width, topbar_header
 from kstrl.tui.widgets.transcript import TranscriptTail
 
 if TYPE_CHECKING:
@@ -124,6 +128,44 @@ def _summary(state: RunState) -> Text | None:
     return text
 
 
+def _shorten(text: str, cells: int) -> str:
+    return text if len(text) <= cells else text[: max(1, cells - 1)] + "…"
+
+
+#: Cells the triage table keeps for itself: padding and the scrollbar.
+_TRIAGE_CHROME = 4
+#: The summary is never shortened below this many cells.
+_MIN_SUMMARY = 20
+
+
+def _triage_widths(
+    issues: list[dict[str, str]], width: int, location_cells: int
+) -> tuple[int, int]:
+    """(location, summary) cells, so the four columns fit ``width``.
+
+    The location gives way first: the summary is what the operator
+    reads, and the detail pane under the table holds both in full.
+    """
+    kind = max((len(issue.get("kind", "")) for issue in issues), default=4)
+    longest = max((len(issue.get("location", "")) for issue in issues), default=8)
+    room = width - _TRIAGE_CHROME - len("severity") - max(kind, 4) - 4 * 2
+    location = max(len("location"), min(location_cells, longest, room - _MIN_SUMMARY))
+    return location, max(8, room - location)
+
+
+def _triage_row(issue: dict[str, str], summary_cells: int, location_cells: int) -> list[Text]:
+    severity = issue.get("severity", "")
+    location = issue.get("location", "")
+    return [
+        Text(severity, style=_SEVERITY_STYLES.get(severity, theme.MUTED)),
+        Text(issue["kind"]) if issue.get("kind") else Text(theme.EMPTY_CELL, style=theme.MUTED),
+        Text(_shorten(location, location_cells), style=theme.MUTED)
+        if location
+        else Text(theme.EMPTY_CELL, style=theme.MUTED),
+        Text(_shorten(issue.get("summary", ""), summary_cells)),
+    ]
+
+
 class DecomposeScreen(Screen[None]):
     BINDINGS = [
         Binding("escape", "app.pop_screen", "Back"),
@@ -142,6 +184,9 @@ class DecomposeScreen(Screen[None]):
         # under the bare word, so tailing the new key found nothing.
         self.transcript_component = ARCHITECT_COMPONENT
         self._following = True
+        #: The run has written its finish record: the transcript is saved,
+        #: not growing, so there is nothing to follow (#433 F8).
+        self._finished = False
 
     def compose(self) -> ComposeResult:
         from textual.containers import Horizontal
@@ -167,6 +212,10 @@ class DecomposeScreen(Screen[None]):
         store = getattr(self.app, "store", None)
         if store is not None:
             self.refresh_state(store.state, store.manifest())
+        run = getattr(self.app, "run_context", None)
+        if run is not None:
+            # Filled now rather than at the next poll (#433 F8).
+            self.feed_transcript(run.transcript_tailer(self.transcript_component).poll())
 
     def refresh_state(
         self,
@@ -180,9 +229,12 @@ class DecomposeScreen(Screen[None]):
         self.transcript_component = architect_component_id(state)
         if not self.ready:
             return
+        if state.finished != self._finished:
+            self._finished = state.finished
+            self.refresh_bindings()
+            self._update_transcript_title()
         try:
-            self.query_one(RunHeader).update_state(state)
-            self.query_one(CostMeter).update_state(state)
+            self._update_topbar(state)
             self.query_one("#attempt-strip", Static).update(_attempt_strip(state))
             self.query_one(DagTable).update_state(state)
             self.query_one("#issues-strip", Static).update(_issue_strip(state))
@@ -202,22 +254,40 @@ class DecomposeScreen(Screen[None]):
         if not self.ready:
             return
         try:
-            self.query_one(RunHeader).update_state(state)
+            self._update_topbar(state)
         except NoMatches:
             # Same teardown race as refresh_state: a timer-driven tick can
             # fire after RunHeader is removed. Drop it.
             return
 
+    def _update_topbar(self, state: RunState) -> None:
+        header = topbar_header(state, self.app, self.size.width)
+        self.query_one(RunHeader).update(header)
+        self.query_one(CostMeter).update_state(state, meter_width(header, self.size.width))
+
     def feed_transcript(self, lines: list[str]) -> None:
-        self.query_one(TranscriptTail).feed_lines(lines)
+        tail = self.query_one(TranscriptTail)
+        before = tail.lines_written
+        tail.feed_lines(lines)
+        if self._finished and tail.lines_written != before:
+            self._update_transcript_title()
+
+    def check_action(self, action: str, _parameters: tuple[object, ...]) -> bool | None:
+        if action == "toggle_follow":
+            return not self._finished
+        return True
 
     def _update_transcript_title(self) -> None:
         title = Text("architect transcript", style="bold")
-        if self._following:
+        if self._finished:
+            lines = self.query_one(TranscriptTail).lines_written
+            title.append(f"  · saved, {lines} line(s)", style=theme.MUTED)
+        elif self._following:
             title.append("  ● following", style=theme.ACCENT)
+            title.append("  (f pauses)", style=theme.MUTED)
         else:
             title.append("  ⏸ paused", style=theme.MUTED)
-        title.append("  (f toggles)", style=theme.MUTED)
+            title.append("  (f follows)", style=theme.MUTED)
         self.query_one(
             "#decompose-transcript-title",
             Static,
@@ -236,7 +306,9 @@ class SpecTriageScreen(Screen[None]):
         Binding("escape", "app.pop_screen", "Back"),
     ]
 
-    COLUMNS = ("severity", "kind", "summary", "location")
+    COLUMNS = ("severity", "kind", "location", "summary")
+    #: The location column is shortened past this many cells.
+    LOCATION_CELLS = 24
 
     def compose(self) -> ComposeResult:
         yield ContextBar("spec triage", "the architect's red-team findings")
@@ -254,14 +326,17 @@ class SpecTriageScreen(Screen[None]):
         table = self.query_one(DataTable)
         table.cursor_type = "row"
         table.zebra_stripes = False
-        for column in self.COLUMNS:
-            table.add_column(column, key=column)
         store = getattr(self.app, "store", None)
         if store is not None:
             self._refresh(store.state)
 
     def on_state_changed(self, message: StateChanged) -> None:
         self._refresh(message.state)
+
+    def on_resize(self) -> None:
+        store = getattr(self.app, "store", None)
+        if store is not None:
+            self._refresh(store.state)
 
     def _refresh(self, state: RunState) -> None:
         if not self.ready:
@@ -292,19 +367,16 @@ class SpecTriageScreen(Screen[None]):
         else:
             banner.display = False
         table = self.query_one(DataTable)
-        table.clear()
+        # Columns too: a column keeps the width of its widest past cell,
+        # so a narrower terminal would still get the old widths.
+        table.clear(columns=True)
+        for column in self.COLUMNS:
+            table.add_column(column, key=column)
+        location_cells, summary_cells = _triage_widths(
+            self._issues, self.size.width, self.LOCATION_CELLS
+        )
         for issue in self._issues:
-            severity = issue.get("severity", "")
-            table.add_row(
-                Text(severity, style=_SEVERITY_STYLES.get(severity, theme.MUTED)),
-                Text(issue["kind"])
-                if issue.get("kind")
-                else Text(theme.EMPTY_CELL, style=theme.MUTED),
-                Text(issue.get("summary", "")),
-                Text(issue["location"])
-                if issue.get("location")
-                else Text(theme.EMPTY_CELL, style=theme.MUTED),
-            )
+            table.add_row(*_triage_row(issue, summary_cells, location_cells))
         if self._issues:
             self._show_detail(0)
         else:
