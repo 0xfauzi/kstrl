@@ -317,6 +317,16 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- `ks retry` keeps every run limit of the run it resumes, or refuses and
+  names the one it would drop (#526). It did this for the cost ceiling
+  only (#436); a token ceiling, adversarial-call cap, agent timeout or
+  component timeout that came from the environment or kstrl.toml was
+  dropped in silence when the retrying shell no longer set it. The launch
+  record now stores every limit the run resolved, `ks retry` takes
+  `--max-total-tokens`, `--max-adversarial-calls`, `--agent-timeout` and
+  `--component-timeout`, and the retry plan prints every limit. A record
+  written before this change still loads; its retry asks for the four
+  limits it did not record, once.
 - `ks factory` and `ks decompose` read `[agent]` in kstrl.toml at
   startup. They read the engineer command, model, reasoning effort and
   type from the flags and the environment only, so a project whose

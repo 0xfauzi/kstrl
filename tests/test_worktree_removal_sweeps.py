@@ -39,6 +39,7 @@ from kstrl.factory import FactoryResult
 from kstrl.manifest import ComponentStatus
 from tests.helpers import integration_harness as harness
 from tests.helpers import procs
+from tests.helpers.run_limits import every_limit_argv
 from tests.test_agent_processes_outlive_run import (
     COMPLETE,
     _factory,
@@ -229,8 +230,9 @@ def _ks_retry(root: Path, monkeypatch: pytest.MonkeyPatch) -> Result:
     monkeypatch.setattr("kstrl.cli.run_factory", lambda *a, **k: FactoryResult(exit_code=0))
     monkeypatch.setattr("kstrl.cli._check_agent_preflight", lambda *a, **k: None)
     monkeypatch.setenv("AGENT_CMD", "echo hi")
+    # No launch record: state every run limit, or the retry refuses (#526).
     return CliRunner().invoke(
-        cli, ["retry", "comp-a", "--root", str(root), "--yes", "--max-cost-usd", "0"]
+        cli, ["retry", "comp-a", "--root", str(root), "--yes", *every_limit_argv()]
     )
 
 

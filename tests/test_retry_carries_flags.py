@@ -32,9 +32,12 @@ import kstrl.cli as cli_mod
 from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryConfig, run_factory
 from kstrl.interaction import PromptRequest, PromptResponse
+from kstrl.launch_record import run_limits
 from kstrl.manifest import ComponentStatus, Manifest
+from kstrl.timeout import TimeoutConfig
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo
+from tests.helpers.run_limits import every_limit_argv, limit_option
 
 #: The flags the original run is launched with in the end-to-end tests.
 #: Every verify command is `true` so Phase 1 fails on the PRD alone.
@@ -255,7 +258,15 @@ class TestRetryRefusesToDropTheCeiling:
         run_id = _failed_run(root, "--max-cost-usd", "5", *RUN_FLAGS)
         (root / ".kstrl" / "runs" / run_id / "launch.json").unlink()
 
-        retried = _ks(root, "retry", "storage", "--max-cost-usd", "7")
+        retried = _ks(
+            root,
+            "retry",
+            "storage",
+            "--max-cost-usd",
+            "7",
+            # No record, so every other run limit is stated too (#526).
+            *every_limit_argv(skip={"max_cost_usd"}),
+        )
         out = retried.stdout + retried.stderr
         assert retried.returncode == 1, out
         assert f"No launch record for run {run_id}" in out
@@ -263,13 +274,13 @@ class TestRetryRefusesToDropTheCeiling:
 
     def test_a_ceiling_that_came_from_env_and_is_gone_is_refused(self, tmp_path: Path) -> None:
         root = _repo(tmp_path)
-        _failed_run(root, *RUN_FLAGS, env=_env(KSTRL_FACTORY_MAX_COST_USD="5"))
+        run_id = _failed_run(root, *RUN_FLAGS, env=_env(KSTRL_FACTORY_MAX_COST_USD="5"))
 
         retried = _ks(root, "retry", "storage")
         out = retried.stdout + retried.stderr
         assert retried.returncode == 2, out
         assert REFUSAL in out
-        assert "ran under a cost ceiling of $5.0" in out
+        assert f"--max-cost-usd: run {run_id} ran under --max-cost-usd 5.0" in out
         assert _status(root, "storage") == ComponentStatus.FAILED.value
 
 
@@ -344,7 +355,11 @@ class TestTheRecordIsTheRunsOwn:
         )
         assert record["runId"] == run_id
         assert record["manifest"] == str((root / "scripts" / "kstrl" / "manifest.json").resolve())
-        assert record["maxCostUsd"] == 5.0
+        assert record["limits"] == {
+            **run_limits(FactoryConfig(), TimeoutConfig()),
+            "max_cost_usd": 5.0,
+        }
+        assert "maxCostUsd" not in record
         assert record["flags"]["max_parallel"] == 1
         assert "yes" not in record["flags"]
 
@@ -413,7 +428,8 @@ def test_the_confirmation_names_every_component_the_retry_reenters(
     ]
     # Quit exits at once, so what is on the output was printed BEFORE the
     # question: the operator sees the ceiling and parallelism first.
-    assert "Cost ceiling: $5.0" in result.output, result.output
+    assert re.search(r"--max-cost-usd:\s*5.0\n", result.output), result.output
+    assert re.search(r"--max-total-tokens:\s*no limit\n", result.output), result.output
     assert re.search(r"Max parallel:\s*1\n", result.output), result.output
 
 
@@ -485,11 +501,19 @@ def test_retry_flags_are_pinned_against_factory() -> None:
         "keep_worktrees_on_failure",
         "force_lock",
         "max_cost_usd",
+        "max_total_tokens",
+        "max_adversarial_calls",
+        "agent_timeout",
+        "component_timeout",
         "max_parallel",
         "yes",
         "ui",
         "no_color",
     }
+    # #526: the retry can state every run limit, spelled as `ks factory` spells it.
+    for name in run_limits(FactoryConfig(), TimeoutConfig()):
+        assert name in retry, f"`ks retry` cannot state the run limit {name!r}"
+        assert factory[name].opts == ["--" + name.replace("_", "-")], name
     for name, reason in NOT_REPLAYED.items():
         assert reason.strip(), name
     # A replayed value goes through JSON and back as one scalar token, so
@@ -503,3 +527,126 @@ def test_retry_flags_are_pinned_against_factory() -> None:
         assert not param.multiple and param.nargs == 1, (
             f"--{name.replace('_', '-')} takes several values, which the launch record cannot carry"
         )
+
+
+#: One environment variable per run limit, so a test can set each limit
+#: somewhere a retry does not replay it (#526).
+LIMIT_ENV = {
+    "max_cost_usd": "KSTRL_FACTORY_MAX_COST_USD",
+    "max_total_tokens": "KSTRL_FACTORY_MAX_TOTAL_TOKENS",
+    "max_adversarial_calls": "KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS",
+    "agent_timeout": "KSTRL_TIMEOUT_AGENT_ITERATION",
+    "component_timeout": "KSTRL_TIMEOUT_COMPONENT",
+}
+
+
+class TestRetryKeepsEveryRunLimit:
+    """#526: every run limit is carried by `ks retry` or refused, not only the cost ceiling."""
+
+    def test_every_run_limit_has_an_environment_case(self) -> None:
+        assert set(LIMIT_ENV) == set(run_limits(FactoryConfig(), TimeoutConfig())), (
+            "a run limit was added to launch_record.run_limits: add its environment "
+            "variable to LIMIT_ENV so the tests below drive it"
+        )
+
+    @pytest.mark.parametrize("name", sorted(LIMIT_ENV))
+    def test_a_limit_from_the_environment_that_is_gone_is_refused(
+        self, tmp_path: Path, name: str
+    ) -> None:
+        root = _repo(tmp_path)
+        run_id = _failed_run(root, *RUN_FLAGS, env=_env(**{LIMIT_ENV[name]: "600"}))
+
+        retried = _ks(root, "retry", "storage")
+        out = retried.stdout + retried.stderr
+        assert retried.returncode == 2, out
+        assert REFUSAL in out
+        assert f"{limit_option(name)}: run {run_id} ran under {limit_option(name)} 600" in out, out
+        others = [other for other in LIMIT_ENV if other != name]
+        assert not any(f"{limit_option(other)}: run" in out for other in others), out
+        # Refused BEFORE the reset: the manifest still says failed.
+        assert _status(root, "storage") == ComponentStatus.FAILED.value
+
+    @pytest.mark.parametrize("name", sorted(LIMIT_ENV))
+    def test_a_limit_stated_on_the_retry_is_kept(self, tmp_path: Path, name: str) -> None:
+        root = _repo(tmp_path)
+        _failed_run(root, *RUN_FLAGS, env=_env(**{LIMIT_ENV[name]: "600"}))
+
+        retried = _ks(root, "retry", "storage", limit_option(name), "700")
+        out = retried.stdout + retried.stderr
+        assert retried.returncode == 1, out
+        resuming = next(ln for ln in out.splitlines() if "Resuming with the flags" in ln)
+        assert f"{limit_option(name)} 700" in resuming, resuming
+        # The stated value reached the factory the retry re-entered.
+        assert "700" in _execution_header(out), out
+
+    def test_every_limit_the_execution_header_states_is_recorded(self, tmp_path: Path) -> None:
+        """A limit the header prints but ``run_limits`` lacks reads `no limit` here."""
+        root = _repo(tmp_path)
+        limits = run_limits(FactoryConfig(), TimeoutConfig())
+        run_id = _failed_run(root, *every_limit_argv("600"), *RUN_FLAGS)
+
+        record = json.loads(
+            (root / ".kstrl" / "runs" / run_id / "launch.json").read_text(encoding="utf-8")
+        )
+        assert record["limits"] == dict.fromkeys(limits, 600)
+        retried = _ks(root, "retry", "storage")
+        out = retried.stdout + retried.stderr
+        assert retried.returncode == 1, out
+        header = _execution_header(out)
+        assert "no limit" not in header, header
+
+    def test_a_record_written_before_526_still_loads(self, tmp_path: Path) -> None:
+        root = _repo(tmp_path)
+        run_id = _failed_run(root, *RUN_FLAGS)
+        path = root / ".kstrl" / "runs" / run_id / "launch.json"
+        record = json.loads(path.read_text(encoding="utf-8"))
+        del record["limits"]
+        record["maxCostUsd"] = 0.0
+        path.write_text(json.dumps(record), encoding="utf-8")
+
+        refused = _ks(root, "retry", "storage")
+        out = refused.stdout + refused.stderr
+        assert refused.returncode == 2, out
+        assert "cannot be read" not in out and "is not the record" not in out, out
+        unknown = [name for name in LIMIT_ENV if name != "max_cost_usd"]
+        for name in unknown:
+            assert (
+                f"{limit_option(name)}: run {run_id} left no launch record of this limit" in out
+            ), out
+        assert "--max-cost-usd: run" not in out, out
+
+        retried = _ks(root, "retry", "storage", *every_limit_argv(skip={"max_cost_usd"}))
+        out = retried.stdout + retried.stderr
+        assert retried.returncode == 1, out
+        assert f"Resuming with the flags of run {run_id}:" in out
+
+    def test_a_recorded_limit_this_version_does_not_know_is_refused(self, tmp_path: Path) -> None:
+        """A record from a newer kstrl names a limit this one lacks: refused, not ignored."""
+        root = _repo(tmp_path)
+        run_id = _failed_run(root, *RUN_FLAGS)
+        path = root / ".kstrl" / "runs" / run_id / "launch.json"
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record["limits"]["max_widgets"] = 3
+        path.write_text(json.dumps(record), encoding="utf-8")
+
+        refused = _ks(root, "retry", "storage")
+        out = refused.stdout + refused.stderr
+        assert refused.returncode == 2, out
+        assert f"--max-widgets: run {run_id} ran under --max-widgets 3" in out, out
+        assert _status(root, "storage") == ComponentStatus.FAILED.value
+
+    @pytest.mark.parametrize(
+        ("option", "value"), [("--max-cost-usd", "-1"), ("--max-total-tokens", "-5")]
+    )
+    def test_a_bad_ceiling_on_the_retry_is_refused_before_anything_changes(
+        self, tmp_path: Path, option: str, value: str
+    ) -> None:
+        root = _repo(tmp_path)
+        _failed_run(root, *RUN_FLAGS)
+
+        refused = _ks(root, "retry", "storage", option, value)
+        out = refused.stdout + refused.stderr
+        assert refused.returncode == 2, out
+        assert f"{option} must be >= 0" in out, out
+        # Refused BEFORE the reset: the manifest still says failed.
+        assert _status(root, "storage") == ComponentStatus.FAILED.value

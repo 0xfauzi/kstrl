@@ -95,7 +95,7 @@ from kstrl.knowledge import (
     distill_facts,
     measure_fact_utilization,
 )
-from kstrl.launch_record import FlagValue, write_launch_record
+from kstrl.launch_record import FlagValue, run_limits, write_launch_record
 from kstrl.linear import LinearConfig, build_linear_sink
 from kstrl.loop import LoopBudget
 from kstrl.manifest import (
@@ -2133,6 +2133,7 @@ def _run_preflights(
     lock_held: bool,
     manifest_path: Path,
     interrupted_branches: Mapping[str, str],
+    timeout_cfg: TimeoutConfig,
 ) -> tuple[SpecDecision, ...] | None:
     """Every pre-spend refusal, cheapest first, and what survives them.
 
@@ -2166,7 +2167,7 @@ def _run_preflights(
             run_id,
             manifest_path,
             factory_config.launch_flags,
-            factory_config.max_cost_usd,
+            run_limits(factory_config, timeout_cfg),
         ),
     ):
         return None
@@ -4410,6 +4411,7 @@ def _run_factory_locked(
         lock_held=lock_held,
         manifest_path=manifest_path,
         interrupted_branches=interrupted_branches,
+        timeout_cfg=timeout_cfg,
     )
     # ``is None`` and not falsiness: a clean run with no decisions binds
     # the empty tuple, which is the normal state for every project that
