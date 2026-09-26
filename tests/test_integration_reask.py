@@ -417,6 +417,18 @@ def test_a_readable_review_is_not_flagged() -> None:
 EXPECTED_REPLY_UNREAD_SITES = {"integration_phase.py": 1, "review.py": 2}
 
 
+def test_a_fail_written_after_the_first_2000_characters_blocks_the_reask() -> None:
+    """The parser keeps 2000 characters of a reply in ``raw_output``. The rule
+    must read the whole reply, or a long unparseable reply that writes a fail
+    late is asked again and the fail is dropped (#480)."""
+    padding = "The reviewer read the repository and every changed file. " * 40
+    assert len(padding) > 2000
+    assert parse_review_output(padding, EXPECTED).reply_unread is True
+    result = parse_review_output(padding + 'IC1 "verdict": "fail" at src/store.py:1', EXPECTED)
+    assert result.infrastructure_error
+    assert result.reply_unread is False
+
+
 def test_reply_unread_is_written_once_and_read_once() -> None:
     assert_census(
         sources=package_sources(),
