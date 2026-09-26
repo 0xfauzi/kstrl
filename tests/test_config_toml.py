@@ -455,6 +455,11 @@ model = "sonnet"
     assert config.model == "opus"
 
 
+#: #562: a STRING_KEYS row whose field takes a closed vocabulary is refused
+#: at load for any other value, so the precedence test writes real ones.
+_VALID_STRING_VALUES: dict[str, tuple[str, str]] = {"agent_type": ("claude", "codex")}
+
+
 @pytest.mark.parametrize(
     ("section", "toml_key", "env_var", "field_name", "is_path"),
     STRING_KEYS,
@@ -484,12 +489,13 @@ def test_every_string_key_follows_the_same_precedence(
     assert getattr(KstrlConfig.from_env(tmp_path), field_name) == unset
     assert getattr(KstrlConfig.from_toml(toml_path, tmp_path), field_name) == unset
 
-    _write_toml(toml_path, f'\n[{section}]\n{toml_key} = "from-toml"\n')
-    from_toml = tmp_path / "from-toml" if is_path else "from-toml"
+    toml_value, env_value = _VALID_STRING_VALUES.get(field_name, ("from-toml", "from-env"))
+    _write_toml(toml_path, f'\n[{section}]\n{toml_key} = "{toml_value}"\n')
+    from_toml = tmp_path / toml_value if is_path else toml_value
     assert getattr(KstrlConfig.load(tmp_path), field_name) == from_toml
 
-    monkeypatch.setenv(env_var, "from-env")
-    from_env = tmp_path / "from-env" if is_path else "from-env"
+    monkeypatch.setenv(env_var, env_value)
+    from_env = tmp_path / env_value if is_path else env_value
     assert getattr(KstrlConfig.load(tmp_path), field_name) == from_env
 
 
