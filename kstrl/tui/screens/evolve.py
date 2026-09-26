@@ -7,6 +7,11 @@ Two tabs over the evolution layer's on-disk records:
 
 The proposals tab and its apply modal went with the proposal generator
 (#217 Slice 1). The screen reads; it writes nothing.
+
+#433 F12: a summary line above the tabs says what the patterns tab found
+and carries the learning-readiness lines ``ks evolve`` prints (built by
+``kstrl.evolve_report``, read off the UI thread). An empty tab says so
+in one sentence instead of showing a bare table header.
 """
 
 from __future__ import annotations
@@ -15,19 +20,62 @@ import math
 from pathlib import Path
 from typing import Any
 
+from rich.console import Group, RenderableType
+from rich.padding import Padding
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
+from textual.message import Message
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static, TabbedContent, TabPane
 
-from kstrl.evolution import EvolutionConfig, EvolutionJournal
+from kstrl.evolution import EvolutionConfig, EvolutionJournal, FailurePattern
 from kstrl.tui import theme
 from kstrl.tui.widgets.config_problem import ConfigProblemBanner
 from kstrl.tui.widgets.context_bar import ContextBar
 
 TREND_ROWS = 14
 _BAR_BLOCKS = "▁▂▃▄▅▆▇"
+
+NO_PATTERNS = (
+    "No recurring failure patterns across recent runs. "
+    "Run more factory sessions to accumulate data."
+)
+NO_TRENDS = "No experiments recorded yet. Run `ks factory` first."
+
+
+def readiness_block(summary: Text, lines: list[str]) -> Group:
+    """The patterns summary, then the readiness lines with a hanging indent.
+
+    ``ks evolve`` indents each line two spaces; a line that wraps keeps
+    that indent here instead of running back to column 0.
+    """
+    parts: list[RenderableType] = [summary, Text("learning readiness", style="bold")]
+    parts.extend(Padding(Text(line.strip(), style=theme.MUTED), (0, 0, 0, 2)) for line in lines)
+    return Group(*parts)
+
+
+class ReadinessReady(Message):
+    """The readiness lines, computed on a worker thread."""
+
+    def __init__(self, lines: list[str]) -> None:
+        super().__init__()
+        self.lines = lines
+
+
+def patterns_summary(patterns: list[FailurePattern], config: EvolutionConfig) -> Text:
+    """One sentence on what the patterns tab holds."""
+    text = Text()
+    if patterns:
+        text.append(f"{len(patterns)} recurring failure pattern(s)", style=f"bold {theme.WARNING}")
+    else:
+        text.append("No recurring failure patterns", style="bold")
+    text.append(
+        f" in the last {config.lookback_runs} runs"
+        f" (a pattern recurs in {config.min_pattern_frequency} or more runs)",
+        style=theme.MUTED,
+    )
+    return text
 
 
 def retry_bar(rate: float) -> str:
@@ -58,10 +106,13 @@ class EvolveScreen(Screen[None]):
         # above, which prefixes "configuration unreadable": the config
         # is fine here and the journal was torn (#333).
         yield Static(id="evolve-repairs")
+        yield Static(id="evolve-summary")
         with TabbedContent(id="evolve-tabs"):
             with TabPane("patterns", id="tab-patterns"):
+                yield Static(NO_PATTERNS, id="patterns-empty", classes="empty-state")
                 yield DataTable(id="patterns-table")
             with TabPane("trends", id="tab-trends"):
+                yield Static(NO_TRENDS, id="trends-empty", classes="empty-state")
                 yield DataTable(id="trends-table")
         yield Footer()
 
@@ -102,12 +153,18 @@ class EvolveScreen(Screen[None]):
         patterns_table.clear()
         trends_table = self.query_one("#trends-table", DataTable)
         trends_table.clear()
+        summary = self.query_one("#evolve-summary", Static)
+        summary.display = config is not None
         if config is None:
             self._show_repairs(None)
+            # The banner says why; "no patterns" would be a claim about a
+            # journal nobody read.
+            self._show_empty_states(read=False)
             return
         journal = EvolutionJournal(config)
         self._show_repairs(journal)
-        for pattern in journal.get_cross_run_patterns():
+        patterns = journal.get_cross_run_patterns(lookback_runs=config.lookback_runs)
+        for pattern in patterns:
             patterns_table.add_row(
                 Text(pattern.check_name, style="bold"),
                 Text(pattern.error_signature),
@@ -117,6 +174,39 @@ class EvolveScreen(Screen[None]):
             )
         for row in journal.get_experiment_trends(last_n=TREND_ROWS):
             trends_table.add_row(*self._trend_cells(row))
+        self._show_empty_states()
+        self._summary = patterns_summary(patterns, config)
+        self.query_one("#evolve-summary", Static).update(self._summary)
+        self.run_worker(
+            lambda: self._readiness_worker(journal, config, patterns, root_dir),
+            thread=True,
+            group="evolve-readiness",
+        )
+
+    def _show_empty_states(self, *, read: bool = True) -> None:
+        for name in ("patterns", "trends"):
+            table = self.query_one(f"#{name}-table", DataTable)
+            table.display = table.row_count > 0
+            self.query_one(f"#{name}-empty", Static).display = read and table.row_count == 0
+
+    def _readiness_worker(
+        self,
+        journal: EvolutionJournal,
+        config: EvolutionConfig,
+        patterns: list[FailurePattern],
+        root_dir: Path,
+    ) -> None:
+        from kstrl.evolve_report import readiness_lines
+
+        try:
+            lines = readiness_lines(journal, config, patterns, root_dir)
+        except Exception as exc:  # noqa: BLE001 - a broken read must not take the screen down
+            lines = [f"  learning readiness not measured: {type(exc).__name__}: {exc}"]
+        self.post_message(ReadinessReady(lines))
+
+    def on_readiness_ready(self, message: ReadinessReady) -> None:
+        summary = self.query_one("#evolve-summary", Static)
+        summary.update(readiness_block(self._summary, message.lines))
 
     def _show_repairs(self, journal: EvolutionJournal | None) -> None:
         """The count of repaired journal writes, or nothing at zero (#333).

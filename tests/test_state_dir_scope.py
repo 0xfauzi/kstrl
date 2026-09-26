@@ -410,7 +410,7 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     # 6: +1 for #464, which reads the progress log for cost evidence.
     "serve.py": 6,
     "statedir.py": 7,
-    "tui/runs.py": 2,
+    "tui/runs.py": 3,  # +1 #433: run_is_live lists the runs dir for the newest run
     "workqueue.py": 2,
 }
 

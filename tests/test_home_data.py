@@ -145,7 +145,7 @@ class TestHomeSummariesPilot:
                 what="the summaries worker to land (summaries never landed)",
             )
             stats = str(stats_widget.content)
-            assert "✓ done 2/2" in stats
+            assert "✓ completed 2/2" in stats
             assert "proposal" not in stats
             row = table.get_row_at(0)  # type: ignore[attr-defined]
             cells = " ".join(str(cell) for cell in row)

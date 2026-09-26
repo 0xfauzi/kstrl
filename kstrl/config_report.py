@@ -187,8 +187,8 @@ UNSET_RENDERINGS: dict[tuple[str, str], str] = {
 
 # Every time and spend limit in the report. At 0 or below each one means
 # no limit, and the row says so rather than printing 0.0 (#467). The hang
-# guards ([timeout] git_operation / subprocess_default, [factory]
-# merge_timeout) are not here: 0 does not mean "no limit" for them.
+# guard ([factory] merge_timeout) is not here: 0 does not mean "no limit"
+# for it.
 NO_LIMIT_KEYS: frozenset[tuple[str, str]] = frozenset(
     {
         ("factory", "max_adversarial_calls"),
@@ -204,9 +204,6 @@ NO_LIMIT_KEYS: frozenset[tuple[str, str]] = frozenset(
         ("knowledge", "distill_timeout_seconds"),
         ("timeout", "agent_iteration"),
         ("timeout", "component_total"),
-        ("timeout", "verification_check"),
-        ("timeout", "review_agent"),
-        ("timeout", "contract_test"),
     }
 )
 

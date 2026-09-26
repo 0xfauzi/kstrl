@@ -204,14 +204,12 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     # 12 since #507 deleted the proposals tab and its three modal tests.
     "tests/test_evolve_screen.py": 12,
     "tests/test_evolve_screen_encoding.py": 1,
-    # Four ``async with evolve_screen(...)``, added by #333. The
-    # decision each one needs: every read after them is of
-    # ``#evolve-repairs``, and ``evolve_screen`` already waits on
-    # ``tests/helpers/tui_screens.py``'s conditions, the last of which
-    # is that ``EvolveScreen.on_mount`` has RETURNED. The repair line is
-    # written inside the ``reload()`` that on_mount's last statement
-    # calls, so it is drawn before any of these reads can run. No pause
-    # is counted and no new settle predicate was needed.
+    # Four ``async with evolve_screen(...)``, added by #333. Every read
+    # after them is of ``#evolve-repairs``, and ``evolve_screen`` waits on
+    # ``tests/helpers/tui_screens.py``'s conditions, the last being that
+    # ``EvolveScreen.on_mount`` has RETURNED. The repair line is written in
+    # the ``reload()`` on_mount ends with, so it is drawn before any of
+    # these reads run. No pause is counted and no new predicate was needed.
     "tests/test_evolve_screen_repairs.py": 4,
     "tests/test_feature_run.py": 5,
     "tests/test_home_data.py": 4,
@@ -230,9 +228,12 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     # construction.
     "tests/test_retry_screen.py": 44,
     "tests/test_settle_helper.py": 47,
+    "tests/test_tui_433_screens.py": 56,
+    # #433 verifier tests: every await is a settle helper or a resize then one.
+    "tests/test_tui_433_verify.py": 11,
     "tests/test_tui_app.py": 23,
     "tests/test_tui_config_guard.py": 13,
-    "tests/test_tui_detail.py": 39,
+    "tests/test_tui_detail.py": 41,  # +2 #433: test_follow_toggle waits on a live run
     "tests/test_tui_embed.py": 52,
     "tests/test_tui_safe_mode.py": 61,
     "tests/test_tui_snapshots.py": 2,

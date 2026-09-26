@@ -19,7 +19,7 @@ from kstrl.tui.messages import StateChanged
 from kstrl.tui.widgets.activity import ActivityFeed
 from kstrl.tui.widgets.component_table import ComponentTable
 from kstrl.tui.widgets.cost_meter import CostMeter
-from kstrl.tui.widgets.header import RunHeader
+from kstrl.tui.widgets.header import RunHeader, meter_width, topbar_header
 from kstrl.tui.widgets.safe_mode_chip import SafeModeBanner
 
 if TYPE_CHECKING:
@@ -103,8 +103,7 @@ class OverviewScreen(Screen[None]):
         if not self.ready:
             return
         try:
-            self.query_one(RunHeader).update_state(state)
-            self.query_one(CostMeter).update_state(state)
+            self._update_topbar(state)
             self.query_one(ComponentTable).update_state(state)
             self.query_one(CheckpointBanner).update_state(
                 state,
@@ -129,12 +128,22 @@ class OverviewScreen(Screen[None]):
         if not self.ready:
             return
         try:
-            self.query_one(RunHeader).update_state(state)
+            self._update_topbar(state)
             self.query_one(ComponentTable).tick_ages(state)
         except NoMatches:
             # Same teardown race as refresh_state: a timer-driven tick can
             # fire after RunHeader is removed. Drop it.
             return
+
+    def _update_topbar(self, state: RunState) -> None:
+        header = topbar_header(state, self.app, self.size.width)
+        self.query_one(RunHeader).update(header)
+        self.query_one(CostMeter).update_state(state, meter_width(header, self.size.width))
+
+    def on_resize(self) -> None:
+        store = getattr(self.app, "store", None)
+        if store is not None:
+            self.refresh_state(store.state)
 
     def on_state_changed(self, message: StateChanged) -> None:
         self.refresh_state(message.state)

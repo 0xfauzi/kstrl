@@ -164,6 +164,9 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "tui/runs.py": 2,
     "tui/session.py": 1,
     "tui/tail.py": 2,
+    # #433 F7: the failed gate's stored output, read as bytes and decoded
+    # with errors="replace", so no locale codec is involved.
+    "tui/widgets/component_detail.py": 1,
     # 4 since #414: the bad-patterns scan's read_text is gone (it reads
     # bytes now, so py_compile does its own PEP 263 decoding). The four
     # left: CLAUDE.md, the self-critique progress log, check_test_adequacy's
@@ -350,6 +353,9 @@ EXPECTED_DECIDED_OUT: tuple[str, ...] = (
     "pipeline.py EvolutionJournal.open",
     "tui/runs.py open",
     "tui/tail.py open",
+    # #433 F7: gate_log_excerpt opens the gate log "rb" to read its tail
+    # and decodes with errors="replace". Binary, so no codec applies.
+    "tui/widgets/component_detail.py open",
 )
 
 

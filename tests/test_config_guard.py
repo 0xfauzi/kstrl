@@ -139,6 +139,10 @@ EXPECTED_FREE_READERS = frozenset(
         "check_kstrl_config",
         "collect_config_problems",
         "load_toml_section",
+        # config_toml.record_reads (#525) parses kstrl.toml so the entry
+        # check can record which names the loaders ask for. It reports on
+        # the file and never resolves a run, so it is not RunEnvelope's.
+        "record_reads",
         "resolve_or_report",
         "run",
     }

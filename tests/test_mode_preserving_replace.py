@@ -147,6 +147,8 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "statedir.py datetime.now(UTC).replace(microsecond=0).isoformat().replace",
     "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
     "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
+    "verify.py text.replace",
+    "verify.py text.replace('\\r\\n', '\\n').replace",
     "workqueue.py parsed.replace",
 )
 

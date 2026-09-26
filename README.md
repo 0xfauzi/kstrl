@@ -338,13 +338,8 @@ ascii = false  # ASCII separators only (no box-drawing characters)
 
 # Timeout limits (seconds; 0 or less disables)
 [timeout]
-git_operation = 30.0              # hang guard, kept when unset; not read today
 agent_iteration = 0.0             # one engineer iteration; 0 = no limit
 component_total = 0.0             # wall clock per component across iterations; 0 = no limit
-verification_check = 0.0          # 0 = no limit; not read today ([verify] subprocess_timeout is the limit that applies)
-review_agent = 0.0                # 0 = no limit; not read today (the reviewer call has no limit)
-contract_test = 0.0               # 0 = no limit; not read today ([contract] timeout is the limit that applies)
-subprocess_default = 60.0         # hang guard, kept when unset; not read today
 scheduler_backstop_margin = 60.0  # extra slack before the scheduler declares a worker dead
 
 # Factory orchestration (Phase 0-3 pipeline)

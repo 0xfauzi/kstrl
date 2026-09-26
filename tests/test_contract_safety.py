@@ -592,11 +592,13 @@ class TestCleanupFailsLoudly:
 
         monkeypatch.setattr(contract_mod, "run_scrubbed", failing_remove)
         with pytest.raises(ContractCleanupError, match="survived removal"):
-            contract_mod._remove_temp_worktree(worktree_path, root)
+            contract_mod._remove_temp_worktree(
+                worktree_path, root, PlainUI(no_color=True), "contract"
+            )
         monkeypatch.undo()
 
         # Real removal still works afterwards.
-        contract_mod._remove_temp_worktree(worktree_path, root)
+        contract_mod._remove_temp_worktree(worktree_path, root, PlainUI(no_color=True), "contract")
         assert not worktree_path.exists()
 
     def test_factory_converts_cleanup_error_to_nonzero_exit(
