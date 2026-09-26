@@ -57,6 +57,11 @@ VALID_CONCERN_CATEGORIES = frozenset(
     }
 )
 
+# The two severities a reviewer concern carries. The parser drops a
+# concern with any other, and the calibration scorer reads a fixture's
+# ``severity_at_least`` against this same set (#564).
+VALID_CONCERN_SEVERITIES = frozenset({ReviewVerdict.FAIL.value, ReviewVerdict.ADVISORY.value})
+
 # R1.1: whitelist of criterion verdicts accepted from the reviewer,
 # compared case-insensitively after stripping. The prompt schema
 # promises pass|fail|advisory; anything else ("Blocked", "n/a", a
@@ -1005,7 +1010,7 @@ def parse_review_output(
             if category not in VALID_CONCERN_CATEGORIES:
                 dropped_concerns += 1
                 continue
-            if severity not in ("fail", "advisory"):
+            if severity not in VALID_CONCERN_SEVERITIES:
                 dropped_concerns += 1
                 continue
             if not explanation:

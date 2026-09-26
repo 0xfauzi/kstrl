@@ -62,6 +62,7 @@ from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.appendio import append_records
 from kstrl.atomicio import atomic_write_json
 from kstrl.calibration_score import (
+    check_fixture_meta,
     render_verification,
     reviewer_caught,
     reviewer_false_positive,
@@ -224,10 +225,9 @@ def split_fixtures(
     for fixture in fixtures:
         if fixture.meta.get("role") != role:
             raise ValueError(f"{fixture.fixture_id} is a {fixture.meta.get('role')!r} fixture")
-        if ("must_detect" in fixture.meta) == ("must_not_flag" in fixture.meta):
-            raise ValueError(
-                f"{fixture.fixture_id} must carry exactly one of must_detect and must_not_flag"
-            )
+        # Before any role call: a fixture no matcher can read would
+        # otherwise be scored after the call was paid for (#564).
+        check_fixture_meta(fixture.meta, fixture.fixture_id)
     ordered = sorted(fixtures, key=lambda f: f.fixture_id)
     positives = [f for f in ordered if not f.negative]
     negatives = [f for f in ordered if f.negative]
