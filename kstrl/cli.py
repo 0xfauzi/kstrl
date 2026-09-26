@@ -3109,7 +3109,8 @@ def factory(
             base_config.prompt_file = default_prompt
 
     # #286: after the fallback above, so it speaks about the file every
-    # worker will actually copy into its worktree.
+    # worker will actually read (#569: from the root checkout, never a
+    # copy in its worktree).
     _check_prompt_preflight(base_config.prompt_file, ui_impl)
 
     # R0.5 (H-15): state saves back to the file it was loaded from.

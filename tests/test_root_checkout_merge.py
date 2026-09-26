@@ -13,6 +13,12 @@ the engineer, and then merges with real git. The census assertion compares
 two sets the run produces, the untracked files in the root checkout and the
 files the branch changes, so a file kstrl starts writing on either side
 later is caught without being named here.
+
+#569 is the same census with ``ks init`` output left uncommitted. kstrl
+used to copy prompt.md, CLAUDE.md and AGENTS.md into the worktree, the
+branch committed them, and the merge refused on the root checkout's
+untracked copies. kstrl now reads them from the root checkout and copies
+only the PRD seed.
 """
 
 from __future__ import annotations
@@ -33,11 +39,11 @@ COMP = "greeter"
 BRANCH = f"kstrl/factory/{COMP}"
 
 #: What a repository whose ``ks init`` output was never committed still
-#: collides on after #545, a disclosed residual: ``_run_component`` copies
-#: these into the worktree when the base lacks them, and the engineer's
-#: ``git add -A`` commits them. Not copying CLAUDE.md reaches ``loop.py``,
-#: which reads it from the worktree.
-UNCOMMITTED_INIT_RESIDUAL = frozenset({"AGENTS.md", "CLAUDE.md", "scripts/kstrl/prompt.md"})
+#: collides on after #569, a disclosed residual: the engineer prompt tells
+#: the engineer to append to the codebase map at its path in the worktree,
+#: the base branch does not track it there, so an engineer that follows
+#: the step creates it and commits it. kstrl writes nothing there itself.
+UNCOMMITTED_INIT_RESIDUAL = frozenset({"scripts/kstrl/codebase_map.md"})
 
 #: What the stub architect returns: one component whose engineer writes
 #: product code and its own feature subtree.
@@ -80,12 +86,20 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _stub_agent(tmp_path: Path, *, rewrite_criteria: bool = False) -> Path:
+def _stub_agent(
+    tmp_path: Path,
+    *,
+    rewrite_criteria: bool = False,
+    prompt_dump: Path | None = None,
+    append_codebase_map: bool = False,
+) -> Path:
     """The architect outside a worktree; inside one, an engineer that marks
     its story done, writes code and its progress log, and commits
     everything with ``git add -A`` the way a real engineer does. With
     ``rewrite_criteria`` it also replaces its story's acceptance criteria,
-    which no engineer may do."""
+    which no engineer may do. With ``prompt_dump`` the engineer writes the
+    prompt it received there. With ``append_codebase_map`` it appends a
+    fact to the codebase map, as the engineer prompt tells it to."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True)
     mark_done = bin_dir / "mark_done.py"
@@ -106,21 +120,24 @@ def _stub_agent(tmp_path: Path, *, rewrite_criteria: bool = False) -> Path:
         """),
         encoding="utf-8",
     )
+    map_fact = "printf 'fact\\n' >> scripts/kstrl/codebase_map.md" if append_codebase_map else ""
     agent = bin_dir / "agent"
     agent.write_text(
         textwrap.dedent(f"""\
             #!/bin/bash
-            cat > /dev/null
+            prompt=$(cat)
             case "$(pwd)" in
               */.kstrl/worktrees/*) ;;
               *) echo '{ARCHITECT_REPLY}'; exit 0 ;;
             esac
             set -e
+            printf '%s\\n' "$prompt" > '{prompt_dump or os.devnull}'
             feature=scripts/kstrl/feature/{COMP}
             '{sys.executable}' '{mark_done}' "$feature/prd.json" {int(rewrite_criteria)}
             mkdir -p src
             echo 'print("hello")' > src/greeter.py
             printf '## Self-Critique\\nnone\\n' >> scripts/kstrl/feature/{COMP}/progress.txt
+            {map_fact}
             git add -A
             git commit -q -m 'feat: US-001 hello'
             echo '<promise>COMPLETE</promise>'
@@ -191,8 +208,14 @@ def _untracked_and_committed(root: Path) -> tuple[set[str], set[str]]:
     return set(untracked), set(committed)
 
 
-def test_a_component_branch_merges_into_the_checkout_kstrl_ran_from(tmp_path: Path) -> None:
-    root = _initialised_project(tmp_path)
+@pytest.mark.parametrize("commit_init", [True, False], ids=["init-committed", "init-uncommitted"])
+def test_a_component_branch_merges_into_the_checkout_kstrl_ran_from(
+    tmp_path: Path, commit_init: bool
+) -> None:
+    """With ``commit_init`` false, what ``ks init`` wrote is untracked in the
+    root checkout, and a file kstrl copied into the worktree would be
+    committed by the branch and refuse the merge (#569)."""
+    root = _initialised_project(tmp_path, commit_init=commit_init)
 
     run = _factory(root, _stub_agent(tmp_path))
     assert run.returncode == 0, run.stdout
@@ -201,6 +224,9 @@ def test_a_component_branch_merges_into_the_checkout_kstrl_ran_from(tmp_path: Pa
     # Both sides are non-empty, so the empty intersection below is a
     # comparison and not two empty sets agreeing.
     assert "scripts/kstrl/manifest.json" in untracked, untracked
+    if not commit_init:
+        # The arm is about these files, so prove they are untracked here.
+        assert {"AGENTS.md", "CLAUDE.md", "scripts/kstrl/prompt.md"} <= untracked, untracked
     assert f"scripts/kstrl/feature/{COMP}/prd.json" in committed, committed
     assert f"scripts/kstrl/feature/{COMP}/progress.txt" in committed, committed
     assert untracked & committed == set(), (
@@ -214,17 +240,77 @@ def test_a_component_branch_merges_into_the_checkout_kstrl_ran_from(tmp_path: Pa
     assert _git(root, "status", "--porcelain", "--untracked-files=no").stdout == ""
 
 
+def test_uncommitted_ks_init_output_does_not_fail_phase_1(tmp_path: Path) -> None:
+    """With ``ks init`` output uncommitted, a file kstrl put in the worktree
+    is committed by the branch and sits outside the component's
+    ``allowedPaths``, so Phase 1's diff_scope failed a component whose
+    engineer did nothing wrong (#569). Every other check passes here."""
+    root = _initialised_project(tmp_path, commit_init=False)
+
+    run = _factory(
+        root,
+        _stub_agent(tmp_path),
+        "--test-command",
+        "true",
+        "--typecheck-command",
+        "true",
+        "--lint-command",
+        "true",
+    )
+
+    (comp,) = Manifest.load(root / "scripts" / "kstrl" / "manifest.json").components
+    assert (comp.status, comp.failed_check) == ("completed", ""), run.stdout
+    assert run.returncode == 0, run.stdout
+
+
+def test_the_engineer_reads_prompt_and_claude_md_from_the_root_checkout(tmp_path: Path) -> None:
+    """kstrl no longer copies prompt.md and CLAUDE.md into the worktree,
+    so the engineer's prompt must still carry both, read from the root
+    checkout where they are uncommitted. The markers are appended after
+    ``ks init``, so the harness DEFAULT_PROMPT fallback cannot supply them.
+    Phase 1 is on so the #261 scrub runs: the stale ``Test`` bullet
+    disagrees with the gate's ``true`` and must be dropped from the
+    prompt, which it is only when the scrub reads the same CLAUDE.md the
+    prompt carries. No exit-code assertion: on a tree that still copies
+    the files, Phase 1 fails the run on diff_scope after the prompt was
+    written, and this test is about the prompt."""
+    root = _initialised_project(tmp_path, commit_init=False)
+    with (root / "scripts" / "kstrl" / "prompt.md").open("a", encoding="utf-8") as f:
+        f.write("\nPROMPT-MARKER-569\n")
+    with (root / "CLAUDE.md").open("a", encoding="utf-8") as f:
+        f.write("\nCLAUDE-MARKER-569\n- **Test**: `pytest STALE-569`\n")
+    dump = tmp_path / "engineer-prompt.txt"
+
+    run = _factory(
+        root,
+        _stub_agent(tmp_path, prompt_dump=dump),
+        "--test-command",
+        "true",
+        "--typecheck-command",
+        "true",
+        "--lint-command",
+        "true",
+    )
+
+    assert dump.is_file(), run.stdout
+    prompt = dump.read_text(encoding="utf-8")
+    assert "PROMPT-MARKER-569" in prompt, prompt[:2000]
+    assert "# Project Context (from CLAUDE.md)" in prompt, prompt[:2000]
+    assert "CLAUDE-MARKER-569" in prompt, prompt[:2000]
+    assert "STALE-569" not in prompt, prompt[:2000]
+
+
 def test_uncommitted_ks_init_output_collides_only_on_the_disclosed_residual(
     tmp_path: Path,
 ) -> None:
-    """The same census over a repository whose ``ks init`` output was never
-    committed. Pinned exactly rather than marked xfail: an xfail would also
-    absorb a NEW colliding file, such as the PRD #545 moved, and still read
-    as expected. The day the residual is fixed this fails, and the set is
-    emptied here."""
+    """The census over an engineer that also appends to the codebase map.
+    Pinned exactly rather than marked xfail: an xfail would also absorb a
+    NEW colliding file, such as the three #569 stopped copying, and still
+    read as expected. The day the residual is fixed this fails, and the
+    set is emptied here."""
     root = _initialised_project(tmp_path, commit_init=False)
 
-    run = _factory(root, _stub_agent(tmp_path))
+    run = _factory(root, _stub_agent(tmp_path, append_codebase_map=True))
     assert run.returncode == 0, run.stdout
 
     untracked, committed = _untracked_and_committed(root)
