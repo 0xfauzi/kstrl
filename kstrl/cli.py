@@ -173,8 +173,8 @@ def _print_execution_order(manifest: Manifest, ui: UI) -> None:
     """The plan's execution order, or why there is none (#531).
 
     A graph that does not validate has no order to print:
-    ``topological_order`` raises on a cycle and a KeyError on an unknown
-    dependency. ``run_factory`` refuses that graph with exit 2 after it has
+    ``topological_order`` raises ValueError on it. ``run_factory`` refuses
+    that graph with exit 2 after it has
     recorded the architect's spend (#257), so this listing must not end
     the command first.
     """
