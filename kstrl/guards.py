@@ -13,9 +13,11 @@ from kstrl.interaction import (
     PromptRequest,
     UiInteractionChannel,
 )
+from kstrl.policy import LOCKFILE_MANIFESTS
 from kstrl.statedir import STATE_DIR_NAME
 
 if TYPE_CHECKING:
+    from collections.abc import Collection
     from pathlib import Path
 
     from kstrl.config import KstrlConfig
@@ -90,6 +92,78 @@ def scope_entry_hazard(entry: str) -> ScopeHazard | None:
     if entry != stripped:
         return "whitespace"
     return None
+
+
+def lockfile_manifest(path: str) -> str | None:
+    """The manifest ``path`` pins, in the same directory, or None when
+    ``path`` is not a lockfile ``policy.LOCKFILE_MANIFESTS`` names."""
+    pure = PurePosixPath(path)
+    manifest = LOCKFILE_MANIFESTS.get(pure.name)
+    return None if manifest is None else str(pure.with_name(manifest))
+
+
+def _lockfile_entitled(
+    path: str,
+    allowed_paths: list[str],
+    changed: Collection[str],
+    at_base: frozenset[str] | None,
+) -> bool:
+    """Whether the component was entitled to change lockfile ``path``.
+
+    See :func:`without_entitled_lockfiles` for the two rules.
+    """
+    manifest = lockfile_manifest(path)
+    if manifest is None:
+        return False
+    if path_is_allowed(manifest, allowed_paths):
+        return True
+    return (
+        at_base is not None
+        and path not in at_base
+        and manifest in at_base
+        and manifest not in changed
+    )
+
+
+def without_entitled_lockfiles(
+    violations: list[str],
+    allowed_paths: list[str],
+    changed: Collection[str],
+    base: str | None,
+    cwd: Path | None,
+) -> list[str]:
+    """``violations`` minus the lockfiles the component was entitled to change.
+
+    #544: a lockfile is judged through the manifest it pins
+    (``policy.LOCKFILE_MANIFESTS``). It is in scope when either:
+
+    - the manifest is in ``allowed_paths``. A component that may change
+      its dependencies may change what the lockfile pins.
+    - the lockfile did not exist at ``base``, the manifest did, and the
+      manifest is not in ``changed``. The toolchain wrote a lockfile for
+      a manifest nobody changed, which is what the engineer's first
+      ``uv run`` does in a project that commits no uv.lock.
+
+    Everything else stays a violation: an existing lockfile changed or
+    deleted while its manifest is out of scope, a lockfile created where
+    no manifest was, and a lockfile created while its manifest changed.
+
+    ``base`` is the commit both scope guards judge from, the merge base
+    that ``git diff base...HEAD`` uses. With None only the first rule can
+    clear anything. The base tree is read only when a lockfile is among
+    the violations, and a failed read raises ``git.GitDiffError`` into
+    the caller's existing handler: this function clears, so when it
+    cannot prove a lockfile entitled it must leave it a violation.
+
+    Order-preserving, because ``verify.check_diff_scope`` truncates the
+    list it is handed and git's order decides what the retry agent sees.
+    """
+    lockfiles = [v for v in violations if lockfile_manifest(v) is not None]
+    if not lockfiles:
+        return violations
+    at_base = git.tracked_files_at(base, cwd) if base is not None else None
+    entitled = {v for v in lockfiles if _lockfile_entitled(v, allowed_paths, changed, at_base)}
+    return [v for v in violations if v not in entitled]
 
 
 def check_violations(
@@ -272,14 +346,18 @@ def enforce_allowed_paths(
             if baseline is not None
             else git.get_changed_files(cwd)
         )
+        # #544: judged from the same commit as Phase 1, the baseline's
+        # merge base. Inside the try because it may read the base tree.
+        violations = without_entitled_lockfiles(
+            check_violations(changed, config.allowed_paths, ignored_paths),
+            config.allowed_paths,
+            changed,
+            baseline.head if baseline is not None else None,
+            cwd,
+        )
     except git.GitDiffError as exc:
         ui.err(f"Allowed-paths enforcement could not read the changed files: {exc}")
         return False, []
-    violations = check_violations(
-        changed,
-        config.allowed_paths,
-        ignored_paths,
-    )
 
     if not violations:
         return True, []

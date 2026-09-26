@@ -1723,8 +1723,8 @@ def _ensure_lockfiles_tracked(root: Path, language: str, is_repo: bool, ui: UI) 
     if not present:
         ui.warn(f"  No lockfile yet ({', '.join(candidates)})")
         ui.info("    Your package manager writes one; create it and commit it")
-        ui.info("    before your first run, or the verify commands write it")
-        ui.info("    mid-iteration and it reads as an out-of-scope edit.")
+        ui.info("    before your first run, or every component writes its own")
+        ui.info("    and each one pins what its toolchain resolved that day.")
         return
 
     for name in present:
