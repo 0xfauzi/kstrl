@@ -55,6 +55,7 @@ from kstrl.agents.base import (
     collect_usage,
     usage_coverage,
 )
+from kstrl.agents.prompt_record import AgentCall, recording_prompts
 from kstrl.atomicio import atomic_write_text
 from kstrl.context import IterationContext, IterationRecord
 from kstrl.divergence import (
@@ -1477,6 +1478,21 @@ class ComponentPipeline:
                 fh.close()
             except OSError:
                 pass
+
+    def _agent_call(self, comp: Component, role: str) -> AgentCall:
+        """Who one phase's agent prompts are recorded for (#532).
+
+        Under ``usage_paths``, not ``run_paths``: the record is evidence a
+        later reader scores, so it survives the progress-log opt-out the
+        way the usage accounting does.
+        """
+        return AgentCall(
+            run_root=self.usage_paths.root,
+            run_id=self.run_id,
+            component=comp.id,
+            role=role,
+            attempt=comp.retries + 1,
+        )
 
     def _phase_started(self, comp: Component, phase: str) -> float:
         """Emit the authoritative phase bracket opener; returns the
@@ -4046,7 +4062,10 @@ class ComponentPipeline:
                 sandbox=self.sandbox_config,
                 read_only=True,
             )
-            with self._phase_transcript(comp.id, "review") as on_line:
+            with (
+                self._phase_transcript(comp.id, "review") as on_line,
+                recording_prompts(self._agent_call(comp, "review")),
+            ):
                 review_result = self.hooks.run_review(
                     review_agent,
                     wt_path / comp.prd_path,
@@ -4409,7 +4428,10 @@ class ComponentPipeline:
                 sandbox=self.sandbox_config,
                 read_only=True,
             )
-            with self._phase_transcript(comp.id, "security") as on_line:
+            with (
+                self._phase_transcript(comp.id, "security") as on_line,
+                recording_prompts(self._agent_call(comp, "security")),
+            ):
                 sec_result = self.hooks.run_security_review(
                     sec_agent,
                     wt_path / comp.prd_path,
@@ -4656,7 +4678,10 @@ class ComponentPipeline:
                 self.base_config.agent_type,
             )
             distill_start = time.monotonic()
-            with self._phase_transcript(comp.id, "distill") as on_line:
+            with (
+                self._phase_transcript(comp.id, "distill") as on_line,
+                recording_prompts(self._agent_call(comp, "distill")),
+            ):
                 written, status, parse_failed = self.hooks.distill_facts(
                     distill_agent,
                     comp,
