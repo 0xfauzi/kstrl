@@ -85,6 +85,9 @@ EXPECTED_JSON_SPELLINGS: dict[str, int] = {
     "atomicio.py": 2,
     "autonomy.py": 2,
     "calibration_baseline.py": 2,
+    # #553: the import, one json.dumps for the ledger line, and the
+    # json.JSONDecodeError it catches from read_json twice. No parse.
+    "ci_state.py": 4,
     "cli.py": 7,
     "context.py": 2,
     "baseline.py": 2,

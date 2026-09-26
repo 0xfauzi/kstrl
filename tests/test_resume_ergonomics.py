@@ -35,6 +35,7 @@ from kstrl.review import ReviewConcern, ReviewResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
 from tests.helpers import gitrepo
+from tests.helpers.run_limits import every_limit_argv
 
 # ---------------------------------------------------------------------------
 # Shared builders (pattern follows tests/test_review_gates.py)
@@ -686,9 +687,8 @@ class TestRetryCli:
                 str(tmp_path),
                 "--yes",
                 # This manifest predates launch records, so the retry
-                # refuses to run uncapped unless told to (#436).
-                "--max-cost-usd",
-                "0",
+                # refuses unless every run limit is stated (#436, #526).
+                *every_limit_argv(),
             ],
         )
         assert result.exit_code == 0, result.output

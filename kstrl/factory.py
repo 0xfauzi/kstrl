@@ -95,7 +95,7 @@ from kstrl.knowledge import (
     distill_facts,
     measure_fact_utilization,
 )
-from kstrl.launch_record import FlagValue, write_launch_record
+from kstrl.launch_record import FlagValue, run_limits, write_launch_record
 from kstrl.linear import LinearConfig, build_linear_sink
 from kstrl.loop import LoopBudget
 from kstrl.manifest import (
@@ -135,7 +135,7 @@ from kstrl.security import (
     run_security_review,
 )
 from kstrl.shutdown import StopController
-from kstrl.statedir import ControlStateError
+from kstrl.statedir import ControlStateError, pre_run_prd_path
 from kstrl.timeout import NO_LIMIT, TimeoutConfig, describe_limit_seconds
 from kstrl.ui.bridge import EventBridgeUI
 from kstrl.verify import (
@@ -267,7 +267,6 @@ class FactoryConfig:
     use_worktrees: bool = True
     single_pr: bool = False
     create_prs: bool = True
-    verify_command: str | None = None
     # Phase 1: mechanical verification
     verify_config: VerifyConfig | None = None
     # R2.3 (CRIT-8): explicit skip sentinel for Phase 1. verify_config=None
@@ -2214,6 +2213,7 @@ def _run_preflights(
     lock_held: bool,
     manifest_path: Path,
     interrupted_branches: Mapping[str, str],
+    timeout_cfg: TimeoutConfig,
 ) -> tuple[SpecDecision, ...] | None:
     """Every pre-spend refusal, cheapest first, and what survives them.
 
@@ -2247,7 +2247,7 @@ def _run_preflights(
             run_id,
             manifest_path,
             factory_config.launch_flags,
-            factory_config.max_cost_usd,
+            run_limits(factory_config, timeout_cfg),
         ),
     ):
         return None
@@ -2603,8 +2603,10 @@ def _run_component(
     # scaffold digests depend on prompt.md copying byte for byte. A byte
     # copy removes the encoding question rather than answering it four
     # times.
+    # The source is the copy the run starts from, which for a planned
+    # component is under .kstrl/plan/ and never at prd_path (#545).
     worktree_prd = worktree_path / prd_path_str
-    prd_source = root_dir / prd_path_str
+    prd_source = pre_run_prd_path(root_dir, component_id, prd_path_str)
     if not worktree_prd.exists() and prd_source.exists():
         worktree_prd.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(prd_source, worktree_prd)
@@ -4493,6 +4495,7 @@ def _run_factory_locked(
         lock_held=lock_held,
         manifest_path=manifest_path,
         interrupted_branches=interrupted_branches,
+        timeout_cfg=timeout_cfg,
     )
     # ``is None`` and not falsiness: a clean run with no decisions binds
     # the empty tuple, which is the normal state for every project that

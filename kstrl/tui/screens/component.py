@@ -29,6 +29,7 @@ from textual.screen import Screen
 from textual.widgets import Footer, Static
 
 from kstrl.tui import theme
+from kstrl.tui.agent_health import agent_health
 from kstrl.tui.messages import StateChanged
 from kstrl.tui.widgets.component_detail import (
     render_component_header,
@@ -110,7 +111,7 @@ class ComponentScreen(Screen[None]):
             self._live = live
             self.refresh_bindings()
             self._update_transcript_title()
-        self.query_one("#component-header", Static).update(render_component_header(comp))
+        self._render_header(comp, live)
         self.query_one(PhaseTimeline).update_state(comp)
         failure = render_failure_detail(comp, getattr(self.app, "root_dir", None))
         failure_widget = self.query_one("#failure-detail", Static)
@@ -120,6 +121,23 @@ class ComponentScreen(Screen[None]):
         self._update_findings(comp)
         manifest_comp = manifest.get_component(self.component_id) if manifest is not None else None
         self.query_one(EvidencePanel).update_state(comp, manifest_comp)
+
+    def _render_header(self, comp: ComponentState, live: bool) -> None:
+        """The header; a live component's carries its agent health (#433 M2).
+
+        Only while the run is unfinished and the component moves: a
+        finished run's heartbeat pid may belong to another process now.
+        """
+        health = agent_health(getattr(self.app, "run_dir", None), comp) if live else None
+        self.query_one("#component-header", Static).update(
+            render_component_header(comp, health=health)
+        )
+
+    def tick_ages(self, state: RunState) -> None:
+        """1 s refresh of the header's ages (the app's age tick)."""
+        comp = state.components.get(self.component_id)
+        if comp is not None and self.ready:
+            self._render_header(comp, not state.finished and comp.status in _MOVING)
 
     def _update_findings(self, comp: ComponentState) -> None:
         findings = self.query_one(FindingsTable)

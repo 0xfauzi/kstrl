@@ -8,6 +8,13 @@ factory` with the same options, so a retry of a run launched with
 ``--max-cost-usd 55 --max-parallel 2`` runs under the same ceiling and
 parallelism rather than under whatever env and kstrl.toml happen to say.
 
+The record also carries the value of every run limit the run resolved
+(:func:`run_limits`), wherever it came from, so `ks retry` can refuse a
+retry that would drop one (#526).
+
+An option `ks factory` no longer has is listed in :data:`REMOVED_OPTIONS`;
+a retry leaves it out of the replay and names it (#539).
+
 The record carries the identity of the run and the manifest it belongs to,
 and the reader refuses a record whose identity does not match. A record
 that is present but cannot be read is a refusal, never an empty read:
@@ -31,7 +38,9 @@ from kstrl.jsonread import read_json
 from kstrl.version import kstrl_version
 
 if TYPE_CHECKING:
+    from kstrl.factory import FactoryConfig
     from kstrl.manifest import Manifest
+    from kstrl.timeout import TimeoutConfig
 
 FlagValue = str | int | float | bool
 
@@ -56,6 +65,15 @@ NOT_REPLAYED: dict[str, str] = {
     "no_color": "display only; retry takes its own --no-color",
 }
 
+#: `ks factory` options that were removed, and why. A launch record written
+#: before the removal still carries the option; a retry leaves it out and
+#: says so, instead of refusing the whole record. Every other name a record
+#: carries must still be an option of `ks factory`.
+REMOVED_OPTIONS: dict[str, str] = {
+    "verify_command": "removed in #539: nothing read it, so the command it named "
+    "never ran; Phase 1 runs --test-command, --typecheck-command and --lint-command",
+}
+
 
 class LaunchRecordError(ValueError):
     """A launch record is present but cannot be used."""
@@ -66,7 +84,25 @@ class LaunchRecord:
     run_id: str
     manifest: str
     flags: tuple[tuple[str, FlagValue], ...]
-    max_cost_usd: float
+    #: The run limits the run resolved, by `ks factory` option name. A
+    #: limit missing here is unknown: the record predates it.
+    limits: tuple[tuple[str, float], ...]
+
+
+def run_limits(factory_config: FactoryConfig, timeouts: TimeoutConfig) -> dict[str, float]:
+    """Every limit a run stops at, by its `ks factory` option name (#526).
+
+    A value above 0 is a limit and 0 or less is none, for every entry. The
+    launch record stores this and `ks retry` refuses to drop any entry, so
+    a limit added here is recorded and kept with no other edit.
+    """
+    return {
+        "max_cost_usd": factory_config.max_cost_usd,
+        "max_total_tokens": factory_config.max_total_tokens,
+        "max_adversarial_calls": factory_config.max_adversarial_calls,
+        "agent_timeout": timeouts.agent_iteration,
+        "component_timeout": timeouts.component_total,
+    }
 
 
 def launch_record_path(root_dir: Path, run_id: str) -> Path:
@@ -89,7 +125,7 @@ def write_launch_record(
     run_id: str,
     manifest_path: Path,
     flags: tuple[tuple[str, FlagValue], ...],
-    max_cost_usd: float,
+    limits: Mapping[str, float],
 ) -> list[str]:
     """Write the record; return why it could not be written, or [] on success."""
     path = launch_record_path(root_dir, run_id)
@@ -101,7 +137,7 @@ def write_launch_record(
                 "runId": run_id,
                 "manifest": str(manifest_path.resolve()),
                 "flags": dict(flags),
-                "maxCostUsd": max_cost_usd,
+                "limits": dict(limits),
                 "kstrlVersion": kstrl_version(),
             },
         )
@@ -129,11 +165,26 @@ def _record_problem(payload: object, run_id: str, manifest_file: Path) -> str | 
     for name, value in flags.items():
         if not _is_flag_value(value):
             return f"flags[{name!r}] is {value!r}, not a string, number or boolean"
+    if "limits" in payload:
+        return _limits_problem(payload["limits"])
+    # A record written before #526 carries the cost ceiling alone.
     ceiling = payload.get("maxCostUsd")
     if isinstance(ceiling, bool) or not isinstance(ceiling, int | float):
         return f"maxCostUsd is {ceiling!r}, not a number"
     if not math.isfinite(ceiling) or ceiling < 0:
         return f"maxCostUsd is {ceiling!r}, not a finite number >= 0"
+    return None
+
+
+def _limits_problem(limits: object) -> str | None:
+    """Why the raw ``limits`` object is unusable, or None when it is usable."""
+    if not isinstance(limits, dict):
+        return "limits is not a JSON object"
+    for name, value in limits.items():
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            return f"limits[{name!r}] is {value!r}, not a number"
+        if not math.isfinite(value):
+            return f"limits[{name!r}] is {value!r}, not a finite number"
     return None
 
 
@@ -171,7 +222,11 @@ def read_launch_record(
         run_id=payload["runId"],
         manifest=payload["manifest"],
         flags=tuple(payload["flags"].items()),
-        max_cost_usd=float(payload["maxCostUsd"]),
+        limits=(
+            tuple(payload["limits"].items())
+            if "limits" in payload
+            else (("max_cost_usd", float(payload["maxCostUsd"])),)
+        ),
     )
 
 

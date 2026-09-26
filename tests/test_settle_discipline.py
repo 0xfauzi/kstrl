@@ -226,9 +226,9 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     # sequence (`mounted`/`drained`/`pilot.press`/`settled`); its only
     # read after them is `request.header`, which OptionsModal holds from
     # construction.
-    "tests/test_retry_screen.py": 44,
+    "tests/test_retry_screen.py": 40,
     "tests/test_settle_helper.py": 47,
-    "tests/test_tui_433_screens.py": 56,
+    "tests/test_tui_433_screens.py": 117,
     # #433 verifier tests: every await is a settle helper or a resize then one.
     "tests/test_tui_433_verify.py": 11,
     "tests/test_tui_app.py": 23,
