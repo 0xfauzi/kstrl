@@ -146,6 +146,7 @@ import signal
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 # Re-exported, not merely used: ``kstrl.procgroup_listing`` was cut out
 # of this file by #209 round 3 for the 800-line ratchet, and every name
@@ -314,7 +315,7 @@ def _refuse_group(pgid: int) -> str:
     return ""
 
 
-def safe_pgid(process: subprocess.Popen[str]) -> int | None:
+def safe_pgid(process: subprocess.Popen[Any]) -> int | None:
     """A child's process-group id, or None when group-signalling is unsafe.
 
     The single copy of the guard ``serve._safe_pgid``,
@@ -425,7 +426,7 @@ def signal_group(pgid: int, sig: int) -> GroupSignal:
     return GroupSignal(True)
 
 
-def signal_process_tree(process: subprocess.Popen[str], sig: signal.Signals) -> None:
+def signal_process_tree(process: subprocess.Popen[Any], sig: signal.Signals) -> None:
     """Signal a child's whole group, falling back to the direct child.
 
     The single copy of a routine ``verify._signal_process_group`` and

@@ -11,6 +11,8 @@ state.
 from __future__ import annotations
 
 import ast
+import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import TypeGuard
@@ -513,3 +515,94 @@ def test_a_rebinding_shape_the_hand_rolled_walk_missed_is_reported(source: str) 
     offenders = _offending_binding("other.py", "kstrl.other", tree)
 
     assert offenders != []
+
+
+# --- #527: the refused output is carried, and nothing else changed -------
+
+
+@pytest.mark.parametrize(
+    ("command", "stdout", "stderr"),
+    [
+        (
+            "python3 -c \"import sys; sys.stdout.buffer.write(b'out kstrl527 \\\\xe9\\\\n'); "
+            "sys.stderr.buffer.write(b'err kstrl527\\\\n')\"",
+            "out kstrl527 \\xe9\n",
+            "err kstrl527\n",
+        ),
+        (
+            "python3 -c \"import sys; sys.stdout.buffer.write(b'out kstrl527\\\\n'); "
+            "sys.stderr.buffer.write(b'err kstrl527 \\\\xe9\\\\n')\"",
+            "out kstrl527\n",
+            "err kstrl527 \\xe9\n",
+        ),
+    ],
+    ids=["bad-stdout", "bad-stderr"],
+)
+def test_the_decode_error_carries_both_streams(
+    tmp_path: Path, command: str, stdout: str, stderr: str
+) -> None:
+    """Whichever stream holds the bad byte, BOTH reach the exception, the
+    bad byte written as an escape. Text mode discarded both (#527)."""
+    with pytest.raises(ChildOutputDecodeError) as excinfo:
+        run_scrubbed(command, cwd=tmp_path, timeout=60.0)
+
+    assert excinfo.value.stdout == stdout
+    assert excinfo.value.stderr == stderr
+
+
+def test_run_scrubbed_decodes_exactly_as_text_mode_did(tmp_path: Path) -> None:
+    """``run_scrubbed`` reads bytes and decodes them itself (#527), so its
+    result must be what CPython's text mode gives for the same child:
+    utf-8, and ``\\r\\n`` and ``\\r`` read as ``\\n``. Measured against a
+    real text-mode run rather than against constants written here."""
+    command = [
+        sys.executable,
+        "-c",
+        "import sys; "
+        "sys.stdout.buffer.write('a\\r\\nb\\rc \\u00e9\\n'.encode('utf-8')); "
+        "sys.stderr.buffer.write(b'x\\r\\ny\\rz\\n')",
+    ]
+    text_mode = subprocess.run(
+        command, cwd=tmp_path, capture_output=True, encoding="utf-8", timeout=60.0, check=False
+    )
+
+    result = run_scrubbed(command, cwd=tmp_path, timeout=60.0)
+
+    assert result.stdout == text_mode.stdout == "a\nb\nc \u00e9\n"
+    assert result.stderr == text_mode.stderr == "x\ny\nz\n"
+
+
+def test_a_timeout_carries_what_the_child_printed_as_text(tmp_path: Path) -> None:
+    """``run_scrubbed`` stands in for a text-mode run, so the timeout it
+    re-raises carries ``str``, the refused byte escaped and ``\\r\\n`` read
+    as ``\\n``, never the raw bytes the drain returned (#527)."""
+    command = [
+        sys.executable,
+        "-c",
+        "import sys, time; "
+        "sys.stdout.buffer.write(b'out kstrl527 \\xff\\r\\n'); sys.stdout.flush(); "
+        "sys.stderr.buffer.write(b'err kstrl527\\n'); sys.stderr.flush(); "
+        "time.sleep(60)",
+    ]
+    with pytest.raises(subprocess.TimeoutExpired) as excinfo:
+        run_scrubbed(command, cwd=tmp_path, timeout=1.0, term_grace=1.0)
+
+    assert excinfo.value.output == "out kstrl527 \\xff\n"
+    assert excinfo.value.stderr == "err kstrl527\n"
+
+
+def test_when_both_streams_are_undecodable_the_error_names_stdout_s_byte(tmp_path: Path) -> None:
+    """Text mode decoded stdout first, so its bad byte is the one the error
+    names; ``run_scrubbed`` decodes in the same order (#527)."""
+    command = [
+        sys.executable,
+        "-c",
+        "import sys; sys.stdout.buffer.write(b'ab\\xe9\\n'); sys.stderr.buffer.write(b'\\xff\\n')",
+    ]
+    with pytest.raises(ChildOutputDecodeError) as excinfo:
+        run_scrubbed(command, cwd=tmp_path, timeout=60.0)
+
+    assert "0xe9" in str(excinfo.value)
+    assert "0xff" not in str(excinfo.value)
+    assert excinfo.value.stdout == "ab\\xe9\n"
+    assert excinfo.value.stderr == "\\xff\n"

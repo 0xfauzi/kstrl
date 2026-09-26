@@ -566,12 +566,14 @@ class Manifest:
     def topological_order(self) -> list[str]:
         """Return component IDs in topological order.
 
-        Raises ValueError if the graph contains cycles.
+        Raises ValueError if the graph does not validate: a cycle, an
+        unknown dependency or a duplicate id. An unknown dependency used
+        to reach the walk below and raise KeyError, which `ks retry` let
+        out as a traceback and exit 1 instead of refusing with 2 (#531).
         """
         dag_errors = self.validate_dag()
-        cycle_errors = [e for e in dag_errors if "cycle" in e.lower()]
-        if cycle_errors:
-            raise ValueError(cycle_errors[0])
+        if dag_errors:
+            raise ValueError(dag_errors[0])
 
         in_degree: dict[str, int] = {c.id: 0 for c in self.components}
         adj: dict[str, list[str]] = {c.id: [] for c in self.components}
