@@ -208,8 +208,9 @@ def component_harness_paths(
     that are not product code: the component PRD (``check_prd_stories``
     re-reads it and only the agent can set ``passes``), the component
     progress log (``check_self_critique`` reads the Self-Critique block
-    out of it), and the codebase map (the engineer prompt tells the
-    agent to append durable facts to it). kstrl knows all three; the
+    out of it), and the codebase map (``ks understand`` writes it, and an
+    engineer prompt older than DEFAULT_PROMPT 1.4.0 tells the agent to
+    append durable facts to it; #585). kstrl knows all three; the
     operator should not have to guess them into ``allowedPaths``.
 
     The list is the carve-out both scope guards apply on top of the

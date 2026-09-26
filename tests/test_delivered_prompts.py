@@ -284,8 +284,8 @@ _ROLES: dict[str, _Role] = {
     "engineer": _Role(
         _engineer,
         frozenset({"DEFAULT_PROMPT", "VERIFY_COMMANDS_PROMPT"}),
-        "0ce37b67c9717479aac69ab7428959cd736e703806d6107715946de28f721428",
-        5145,
+        "893a388672aa4fcc4e5b7855258e7c7746aa0ebb02c3ede44c417c70c53760c7",
+        5346,
     ),
     "gepa-reflection": _Role(
         # The template as run_optimization hands it to gepa. The library

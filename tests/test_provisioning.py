@@ -20,6 +20,7 @@ These tests use real git repos and a real fake-agent subprocess
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -27,6 +28,7 @@ import pytest
 
 from kstrl.config import KstrlConfig
 from kstrl.factory import FactoryConfig, run_factory
+from kstrl.init_cmd import DEFAULT_PROMPT
 from kstrl.manifest import Component, Manifest
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
@@ -188,6 +190,45 @@ class TestWorktreeProvisioning:
         )
         out = capsys.readouterr().out
         assert "falling back to harness DEFAULT_PROMPT" not in out
+
+    def test_every_worktree_path_the_engineer_prompt_names_is_the_components_own(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Every absolute path into the worktree that the shipped engineer
+        prompt names is the component's PRD or its progress log, the two
+        files its branch carries on purpose (#585). The prompt used to name
+        the codebase map there too, and a file the engineer writes at such a
+        path is committed by the branch, which cannot merge while the root
+        checkout holds the same file untracked or locally changed. The set is
+        collected from the rendered prompt, so a new placeholder that
+        resolves into the worktree is caught without being named here. A
+        relative path the prompt names, such as ``AGENTS.md``, is not seen."""
+        root = tmp_path / "repo"
+        _init_repo(root)
+        (root / "scripts" / "kstrl" / "prompt.md").write_text(DEFAULT_PROMPT, encoding="utf-8")
+        monkeypatch.setenv("KSTRL_KNOWLEDGE_ENABLED", "0")
+        dump = tmp_path / "prompt-received.txt"
+
+        result = run_factory(
+            _manifest(),
+            _factory_config(),
+            _base_config(root, f"cat > {dump}; " + COMPLETE_LINE),
+            PlainUI(no_color=True),
+            root,
+        )
+
+        assert result.completed == ["comp-a"]
+        prompt = dump.read_text(encoding="utf-8")
+        found = re.search(
+            re.escape(str(root / ".kstrl" / "worktrees")) + r"/[^/\s`]+/comp-a", prompt
+        )
+        assert found is not None, prompt[:2000]
+        worktree = found.group(0)
+        named = set(re.findall(re.escape(worktree) + r"/[^\s`'\"]+", prompt))
+        feature = f"{worktree}/scripts/kstrl/feature/comp-a"
+        assert named == {f"{feature}/prd.json", f"{feature}/progress.txt"}, sorted(named)
 
 
 class TestDiffScopeRetryContext:

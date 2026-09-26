@@ -289,6 +289,12 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "8040021a09d97598434d08c766495a4185df70b632e3ff4e5e1086b2e56ab30c",
         "1.1.0",
     ),
+    # 1.4.0 (#585): step 10 sends durable codebase facts to the component's
+    # own progress log instead of the shared codebase map, step 4 makes the
+    # map read-only, and step 11 excludes the repository root's AGENTS.md
+    # and CLAUDE.md. The engineer role has no calibration fixture, so this
+    # carries the H3 obligation and no H2 obligation the suite can discharge.
+    #
     # 1.3.0 (#276): step 9 now defers to the VERIFY_COMMANDS_PROMPT block
     # rather than telling the engineer to derive its own typecheck and
     # test commands, and it names lint - a blocking Phase 1 gate the
@@ -303,8 +309,8 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # adversarial-role definition for the engineer phase and is
     # snapshot-protected on the same terms as the role prompts.
     "DEFAULT_PROMPT": (
-        "392eb698daf71d486a9d4573698df3bb2b3ca4be87c178657accc8a66c54f384",
-        "1.3.0",
+        "f5349c9c2fb1ac1b9bfba54c2fde3cbc266f6a8a59deaf355707504273ddc124",
+        "1.4.0",
     ),
     # 1.0.0 (#261): harness-authored instruction text prepended to the
     # engineer prompt every iteration, naming the commands Phase 1 will

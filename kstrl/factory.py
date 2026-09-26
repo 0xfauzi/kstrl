@@ -2643,6 +2643,10 @@ def _run_component(
     # Phase 1 fails the component on diff_scope. They are kstrl's context
     # for the engineer, not the component's change.
     prompt_file = root_dir / prompt_file_str
+    # #585: the codebase map is read from root_dir for the same reason.
+    # The engineer only reads it (DEFAULT_PROMPT >= 1.4.0), and in the
+    # worktree it is missing whenever the base branch does not track it.
+    codebase_map_file = root_dir / codebase_map_file_str
 
     # The scaffold command and the Phase 0 scan. Both stay non-fatal; a
     # failure comes back as a note that is warned once `ui` is bound (#486).
@@ -2724,7 +2728,7 @@ def _run_component(
         prompt_file=prompt_file,
         prd_file=worktree_prd,
         progress_file=worktree_path / component_progress_rel,
-        codebase_map_file=worktree_path / codebase_map_file_str,
+        codebase_map_file=codebase_map_file,
         sleep_seconds=sleep_seconds,
         interactive=interactive,
         allowed_paths=authored_paths,
