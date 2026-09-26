@@ -11,6 +11,7 @@ route question and every argument question. Code reads only the arguments
 that belong to the chosen route.
 """
 
+# ruff: noqa: E501
 from __future__ import annotations
 
 from typing import Any
@@ -83,7 +84,8 @@ ARGS: dict[str, dict[str, Any]] = {
     },
     "target_item": {
         "instructions": "Which waiting item does `command` refer to?",
-        "criteria": {item: None for item in KNOWN["waiting_items"]} | {"not named": "the command names no waiting item"},
+        "criteria": {item: None for item in KNOWN["waiting_items"]}
+        | {"not named": "the command names no waiting item"},
     },
     "component": {
         "instructions": "Which component does `command` name or clearly refer to?",
@@ -108,7 +110,10 @@ ARGS: dict[str, dict[str, Any]] = {
     },
     "serve_action": {
         "instructions": "Does `command` ask ks serve to stop admitting work, or to start again?",
-        "criteria": {"pause": "stop admitting queued work", "resume": "start admitting queued work again"},
+        "criteria": {
+            "pause": "stop admitting queued work",
+            "resume": "start admitting queued work again",
+        },
     },
     "cost_scope": {
         "instructions": "Whose spend does `command` ask about?",

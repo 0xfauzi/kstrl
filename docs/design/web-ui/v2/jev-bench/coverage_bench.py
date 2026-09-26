@@ -13,6 +13,7 @@ request inside, and that threshold reported. Run:
 Appends to coverage_raw.jsonl and prints the sweep.
 """
 
+# ruff: noqa: E501
 from __future__ import annotations
 
 import json
@@ -72,15 +73,25 @@ def main() -> None:
             resp = client.system_one(state={"command": text}, questions=QUESTIONS)
             dt = time.perf_counter() - t0
             raw = resp.model_dump()
-            rec = {"text": text, "outside": outside, "answers": raw["answers"], "usage": raw["usage"], "latency_s": round(dt, 4)}
+            rec = {
+                "text": text,
+                "outside": outside,
+                "answers": raw["answers"],
+                "usage": raw["usage"],
+                "latency_s": round(dt, 4),
+            }
             out.write(json.dumps(rec) + "\n")
             recs.append(rec)
-            print(f"{rec['answers']['outside']['noul']:.2f} {'OUT' if outside else 'in '} form={rec['answers']['form']['choice']:<10} {text!r}")
+            print(
+                f"{rec['answers']['outside']['noul']:.2f} {'OUT' if outside else 'in '} form={rec['answers']['form']['choice']:<10} {text!r}"
+            )
     ins = [r["answers"]["outside"]["noul"] for r in recs if not r["outside"]]
     outs = [r["answers"]["outside"]["noul"] for r in recs if r["outside"]]
     print(f"inside: max {max(ins):.2f}   outside: min {min(outs):.2f}")
     for t in [i / 20 for i in range(1, 20)]:
-        print(f"t={t:.2f} inside judged inside {sum(x < t for x in ins)}/{len(ins)}  outside judged outside {sum(x >= t for x in outs)}/{len(outs)}")
+        print(
+            f"t={t:.2f} inside judged inside {sum(x < t for x in ins)}/{len(ins)}  outside judged outside {sum(x >= t for x in outs)}/{len(outs)}"
+        )
 
 
 if __name__ == "__main__":

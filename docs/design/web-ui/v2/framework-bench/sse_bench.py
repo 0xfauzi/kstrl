@@ -9,6 +9,7 @@ first event, and for each later event the delay between when the server
 scheduled it and when the client read it. Prints one line.
 """
 
+# ruff: noqa: E501
 from __future__ import annotations
 
 import asyncio

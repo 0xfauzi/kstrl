@@ -12,6 +12,7 @@ and the wall-clock latency. Scoring reads raw.jsonl back, so the numbers in
 README.md can be recomputed without new calls.
 """
 
+# ruff: noqa: E501
 from __future__ import annotations
 
 import argparse
@@ -54,7 +55,11 @@ def run_calls(repeat: int) -> None:
                 t0 = time.perf_counter()
                 resp = client.system_one(state=state, questions=qs)
                 dt = time.perf_counter() - t0
-                raw = resp.model_dump() if hasattr(resp, "model_dump") else json.loads(resp.model_dump_json())
+                raw = (
+                    resp.model_dump()
+                    if hasattr(resp, "model_dump")
+                    else json.loads(resp.model_dump_json())
+                )
                 rec = {
                     "id": item["id"],
                     "pass": pass_no,
@@ -85,8 +90,8 @@ def percentile(xs: list[float], p: float) -> float:
 
 
 def _score_item(it: dict[str, Any], r: dict[str, Any]) -> dict[str, Any]:
-    ans = r["answers"]
-    route = ans["route"]["choice"]
+    answers = r["answers"]
+    route = answers["route"]["choice"]
     accepted = [it["route"], *it.get("accept", [])]
     is_lenient = route in accepted
     arg_detail: dict[str, Any] = {}
@@ -94,8 +99,12 @@ def _score_item(it: dict[str, Any], r: dict[str, Any]) -> dict[str, Any]:
         for arg, accepted_values in it.get("args", {}).items():
             if arg not in ROUTE_ARGS[route]:
                 continue
-            got = ans[arg]["choice"]
-            arg_detail[arg] = {"got": got, "ok": got in accepted_values, "conf": round(ans[arg]["confidence"], 3)}
+            got = answers[arg]["choice"]
+            arg_detail[arg] = {
+                "got": got,
+                "ok": got in accepted_values,
+                "conf": round(answers[arg]["confidence"], 3),
+            }
     return {
         "id": r["id"],
         "text": r["text"],
@@ -103,22 +112,28 @@ def _score_item(it: dict[str, Any], r: dict[str, Any]) -> dict[str, Any]:
         "expected": it["route"],
         "accept": it.get("accept", []),
         "got": route,
-        "p_expected": round(ans["route"]["probabilities"].get(it["route"], 0.0), 3),
-        "conf": round(ans["route"]["confidence"], 3),
+        "p_expected": round(answers["route"]["probabilities"].get(it["route"], 0.0), 3),
+        "conf": round(answers["route"]["confidence"], 3),
         "strict": route == it["route"],
         "lenient": is_lenient,
         "args": arg_detail,
         "latency_s": r["latency_s"],
         "input_tokens": r["usage"]["input_tokens"],
-        "top3": sorted(ans["route"]["probabilities"].items(), key=lambda kv: -kv[1])[:3],
+        "top3": sorted(answers["route"]["probabilities"].items(), key=lambda kv: -kv[1])[:3],
     }
 
 
-def _sweep(right_conf: list[float], wrong_conf: list[float]) -> tuple[list[dict[str, Any]], float | None]:
+def _sweep(
+    right_conf: list[float], wrong_conf: list[float]
+) -> tuple[list[dict[str, Any]], float | None]:
     sweep = []
     for t in [i / 20 for i in range(0, 21)]:
         sweep.append(
-            {"t": t, "right_kept": sum(c >= t for c in right_conf), "wrong_kept": sum(c >= t for c in wrong_conf)}
+            {
+                "t": t,
+                "right_kept": sum(c >= t for c in right_conf),
+                "wrong_kept": sum(c >= t for c in wrong_conf),
+            }
         )
     clean = [s["t"] for s in sweep if s["wrong_kept"] == 0]
     return sweep, (min(clean) if clean else None)
@@ -126,7 +141,9 @@ def _sweep(right_conf: list[float], wrong_conf: list[float]) -> tuple[list[dict[
 
 def score() -> dict[str, Any]:
     items = {it["id"]: it for it in json.loads(PHRASINGS.read_text(encoding="utf-8"))["items"]}
-    recs = [json.loads(line) for line in RAW.read_text(encoding="utf-8").splitlines() if line.strip()]
+    recs = [
+        json.loads(line) for line in RAW.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
     per_item = [_score_item(items[r["id"]], r) for r in recs if r["pass"] == 0]
     n = len(per_item)
     nomatch = [it for it in per_item if it["expected"] == "no_match"]
@@ -149,8 +166,12 @@ def score() -> dict[str, Any]:
         "by_kind": {k: round(sum(v) / len(v), 3) for k, v in by_kind.items()},
         "arg_accuracy": round(sum(d["ok"] for d in args) / len(args), 4) if args else None,
         "args_scored": len(args),
-        "nomatch_recall": round(sum(it["got"] == "no_match" for it in nomatch) / len(nomatch), 4) if nomatch else None,
-        "false_nomatch_rate": round(sum(it["got"] == "no_match" for it in others) / len(others), 4) if others else None,
+        "nomatch_recall": round(sum(it["got"] == "no_match" for it in nomatch) / len(nomatch), 4)
+        if nomatch
+        else None,
+        "false_nomatch_rate": round(sum(it["got"] == "no_match" for it in others) / len(others), 4)
+        if others
+        else None,
         "latency_p50_s": round(percentile(lat, 0.5), 3),
         "latency_p95_s": round(percentile(lat, 0.95), 3),
         "latency_max_s": round(max(lat), 3),
@@ -162,7 +183,7 @@ def score() -> dict[str, Any]:
         "lowest_threshold_with_no_wrong_kept": t_clean,
         "items": per_item,
     }
-    RESULTS.write_text(json.dumps(result, indent=1), encoding="utf-8")
+    RESULTS.write_text(json.dumps(result, indent=1) + "\n", encoding="utf-8")
     return result
 
 
@@ -198,7 +219,9 @@ def main() -> None:
     print("\nmisses:")
     for it in res["items"]:
         if not it["lenient"]:
-            print(f"  {it['id']:>3} {it['text']!r}: expected {it['expected']} got {it['got']} conf {it['conf']} top3 {it['top3']}")
+            print(
+                f"  {it['id']:>3} {it['text']!r}: expected {it['expected']} got {it['got']} conf {it['conf']} top3 {it['top3']}"
+            )
     print("\nwrong arguments:")
     for it in res["items"]:
         for arg, d in it["args"].items():

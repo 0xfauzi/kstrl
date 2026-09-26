@@ -18,11 +18,12 @@ for spec in "stdlib:" "starlette+uvicorn:starlette uvicorn" "fastapi+uvicorn:fas
   uv venv -q -p $PY "$WORK/$name" >/dev/null 2>&1
   start=$(python3 -c 'import time;print(time.time())')
   if [ -n "$pkgs" ]; then
+    # shellcheck disable=SC2086  # $pkgs is a space-separated list on purpose
     VIRTUAL_ENV="$WORK/$name" uv pip install -q $pkgs >/dev/null 2>&1
   fi
   end=$(python3 -c 'import time;print(time.time())')
   bytes=$(du -sk "$WORK/$name/lib/python$PY/site-packages" | cut -f1)
-  count=$(ls "$WORK/$name/lib/python$PY/site-packages" | grep -c dist-info || true)
+  count=$(find "$WORK/$name/lib/python$PY/site-packages" -maxdepth 1 -name "*.dist-info" | wc -l | tr -d " ")
   printf '%-20s %6s KB in site-packages  %3s dists  install %.2fs\n' "$name" "$bytes" "$count" "$(echo "$end - $start" | bc)"
 done
 

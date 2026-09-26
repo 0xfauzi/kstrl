@@ -293,10 +293,11 @@ svg { display: block; }
 .bar text { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11px; fill: var(--ink3); }
 .bar.sel rect { stroke: var(--ink); stroke-width: 1.5; }
 .bar-note { font-size: 12px; color: var(--ink2); padding: 6px 2px 0; min-height: 20px; }
-.ticker { background: var(--inset); border-radius: 12px; padding: 10px 12px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; line-height: 18px; color: var(--ink2); overflow: hidden; max-height: 176px; display: flex; flex-direction: column; justify-content: flex-end; }
-.ticker .row { display: grid; grid-template-columns: 62px 78px 1fr; gap: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ticker .row .t { color: var(--ink3); }
-.ticker .row .c { color: var(--ink); }
+.ticker { background: var(--surface); border-radius: 12px; padding: 10px 14px; font-size: 12.5px; line-height: 20px; color: var(--ink2); overflow: hidden; max-height: 176px; display: flex; flex-direction: column; justify-content: flex-end; }
+.ticker .row { display: grid; grid-template-columns: 58px 84px 1fr; gap: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; align-items: baseline; }
+.ticker .row .t { color: var(--ink3); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11.5px; }
+.ticker .row .c { color: var(--ink); font-weight: 500; }
+.ticker .row .m { overflow: hidden; text-overflow: ellipsis; }
 .ticker .row.ok .m { color: var(--pass-ink); }
 .ticker .row.finding .m { color: var(--warn-ink); }
 .ticker .row.start .m { color: var(--accent); }

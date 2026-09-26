@@ -36,7 +36,7 @@ The command panel shows what Jev picked as one row: the route as a short label, 
 
 Confidence is not permission. The measured threshold at which no wrong routing survived on the labelled set is 0.80. At or above it the panel shows the routed action first, ready on Enter. Below it the panel says "Not sure what you mean" and lists the top options from the probability distribution with their percentages; the operator picks one; nothing runs on Enter alone. A route of "nothing here does that" shows as such, with the closest alternatives dimmed under it, so a request the page cannot serve is never quietly served as something else.
 
-One more rule came out of the measurement: an argument Jev fills with high confidence but that was never typed is not trusted. "aprove the merge" filled the target with the comp-c checkpoint at 0.94 confidence, and there were three open items. So a decision whose target does not appear in the typed text opens the decision list, not an item.
+One more rule came out of the measurement: an argument Jev fills with high confidence but that was never typed is not trusted. "aprove the merge" (the typo is the phrasing as typed) filled the target with the comp-c checkpoint at 0.94 confidence, and there were three open items. <!-- codespell:ignore aprove --> So a decision whose target does not appear in the typed text opens the decision list, not an item.
 
 The prototype replays the 86 recorded answers. A typed text that matches a recorded phrasing shows the real route, confidence, alternatives, arguments, latency and token count; any other text shows "not recorded" and the nearest recorded phrasings, so the owner never sees an invented routing.
 
@@ -122,7 +122,7 @@ At 390px the page is the same page, laid out for one hand. The command field doc
 
 ## 10. What the prototype does not do, and what is not measured
 
-The prototype replays recorded Jev answers; it does not call the API. It holds no live event stream; every value comes from the fixtures. Text selection colour, the caret, focus rings and scrollbars are themed; hover states exist; the loading and error states of a real server (a reader that fails, a stream that drops) are not drawn and are a first-slice task. The docked view's persistence is a toast, not a file.
+The prototype replays recorded Jev answers; it does not call the API. It holds no live event stream; every value comes from the fixtures. `selftest.py` drives the prototype's keyboard and command flows in headless Chrome and checks 21 behaviours this document promises (number keys, choice keys, the confirmation and Esc, routing a recorded phrasing, the low-confidence list, the untyped-target rule, making, pinning and removing a view, the component request, the not-recorded label, the theme key, the retry command); all 21 pass on the committed prototype. Text selection colour, the caret, focus rings and scrollbars are themed; hover states exist; the loading and error states of a real server (a reader that fails, a stream that drops) are not drawn and are a first-slice task. The docked view's persistence is a toast, not a file.
 
 Not measured: the routing on a catalogue with hundreds of candidates (the design caps candidate lists at 40 by local substring match before asking Jev, which is a rule, not a result); the routing over a slow connection; how a second operator's phrasings route; whether the 0.80 threshold holds for a later model version (the threshold belongs to `jev-1.13.0` and this catalogue).
 

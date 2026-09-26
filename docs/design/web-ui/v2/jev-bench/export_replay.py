@@ -6,6 +6,7 @@ top alternatives and the arguments the route reads. Nothing in replay.js
 is invented; run this after bench.py. Usage: python3 export_replay.py
 """
 
+# ruff: noqa: E501
 from __future__ import annotations
 
 import json
@@ -26,9 +27,12 @@ def main() -> None:
             raw[r["id"]] = r
     entries = []
     for it in res["items"]:
-        ans = raw[it["id"]]["answers"]
-        route = ans["route"]
-        args = {a: {"value": ans[a]["choice"], "conf": round(ans[a]["confidence"], 2)} for a in ROUTE_ARGS.get(route["choice"], [])}
+        answers = raw[it["id"]]["answers"]
+        route = answers["route"]
+        args = {
+            a: {"value": answers[a]["choice"], "conf": round(answers[a]["confidence"], 2)}
+            for a in ROUTE_ARGS.get(route["choice"], [])
+        }
         top = sorted(route["probabilities"].items(), key=lambda kv: -kv[1])[:4]
         entries.append(
             {
@@ -46,7 +50,14 @@ def main() -> None:
     cov = []
     for line in (HERE / "coverage_raw.jsonl").read_text(encoding="utf-8").splitlines():
         r = json.loads(line)
-        cov.append({"text": r["text"], "outside": round(r["answers"]["outside"]["noul"], 2), "form": r["answers"]["form"]["choice"], "labelled_outside": r["outside"]})
+        cov.append(
+            {
+                "text": r["text"],
+                "outside": round(r["answers"]["outside"]["noul"], 2),
+                "form": r["answers"]["form"]["choice"],
+                "labelled_outside": r["outside"],
+            }
+        )
     body = (
         "// Recorded Jev answers, exported by jev-bench/export_replay.py. Model jev-1.13.0, 2026-09-26.\n"
         "// Nothing here is invented: each entry is one real request and its answer.\n"

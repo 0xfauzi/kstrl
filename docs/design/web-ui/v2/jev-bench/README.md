@@ -49,11 +49,11 @@ By kind, lenient top-1: terse 12 of 12, plain 33 of 36, view 18 of 18, no-match 
 The four misses, with the route confidence:
 
 - "spend on live01" went to `open_run` (0.79); `ask_cost` was second at 0.13. The run id pulled the routing toward opening the run.
-- "whats queued" went to `open_decisions` (0.62); `open_serve` was third at 0.05. "Queued" was read as the operator's queue of decisions, not the serve queue. The catalogue description of `open_serve` should name "queued" plainly; this is a prompt fix and is left as measured.
+- "whats queued" went to `open_decisions` (0.62); `open_serve` was third at 0.05. "Queued" was read as the operator's queue of decisions, not the serve queue. The catalogue description of `open_serve` should name "queued" plainly; this is a prompt fix and is left as measured. <!-- codespell:ignore whats -->
 - "decide later" went to `snooze` (0.74); `decide` was second at 0.17. Deferring a decision and hiding an item are close in meaning, and both are harmless: neither pushes, merges or spends.
 - "cst of live01" (typo) went to `open_run` (0.32); `ask_cost` was second at 0.34 probability, so the two were within 0.02 of each other and the confidence was low.
 
-The three wrong arguments: "approve only, don't run anything" and "aprove the merge" both filled `target_item` with the comp-c checkpoint when no item was named (confidence 0.92 and 0.94, which is the case the design must not trust: a confident guess at a target that was never typed). "list runs sorted by cost" chose `costs` as the data source over `runs` (0.54). The design's answer is that the confirmation step always shows the target it resolved, and that a `decide` whose target was not typed opens the decision list rather than a specific item when more than one is open.
+The three wrong arguments: "approve only, don't run anything" and "aprove the merge" (as typed) both filled `target_item` with the comp-c checkpoint when no item was named (confidence 0.92 and 0.94, which is the case the design must not trust: a confident guess at a target that was never typed). "list runs sorted by cost" chose `costs` as the data source over `runs` (0.54). The design's answer is that the confirmation step always shows the target it resolved, and that a `decide` whose target was not typed opens the decision list rather than a specific item when more than one is open. <!-- codespell:ignore aprove -->
 
 ### Confidence
 

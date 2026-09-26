@@ -5,6 +5,7 @@ bundle, so this follows that one hop and reports the gzipped size of the
 bundle itself. Run: python3 client_size.py
 """
 
+# ruff: noqa: E501
 from __future__ import annotations
 
 import gzip
@@ -38,7 +39,9 @@ def main() -> None:
             body = fetch("https://esm.sh" + p)
             total_raw += len(body)
             total_gz += len(gzip.compress(body, 9))
-        print(f"{name:<22} {total_gz:>7} bytes gz  {total_raw:>8} raw  ({len(paths)} file(s): {', '.join(paths)})")
+        print(
+            f"{name:<22} {total_gz:>7} bytes gz  {total_raw:>8} raw  ({len(paths)} file(s): {', '.join(paths)})"
+        )
 
 
 if __name__ == "__main__":
