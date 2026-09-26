@@ -140,6 +140,35 @@ def test_a_rejected_section_is_not_also_called_unread(
     assert "max_parallel" in problems[0]
 
 
+def test_an_unknown_evolution_key_is_refused_not_warned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``[evolution]`` is the one section whose rejection only warns. A
+    name no loader reads is still refused there: one rule for every
+    section (#525)."""
+    for name in [k for k in os.environ if k.startswith("KSTRL_")]:
+        monkeypatch.delenv(name)
+    (tmp_path / "kstrl.toml").write_text("[evolution]\nlookback_runz = 5\n", encoding="utf-8")
+    warnings: list[str] = []
+    problems = collect_config_problems(tmp_path, warnings.append)
+    assert len(problems) == 1, problems
+    assert "names [evolution] lookback_runz, which no kstrl setting reads" in problems[0]
+    assert warnings == []
+
+
+def test_an_unknown_top_level_value_is_named_without_brackets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A top-level name holding a value is not a section, so the line
+    does not call it ``[max_parallel]``."""
+    for name in [k for k in os.environ if k.startswith("KSTRL_")]:
+        monkeypatch.delenv(name)
+    (tmp_path / "kstrl.toml").write_text("max_parallel = 2\n", encoding="utf-8")
+    problems = collect_config_problems(tmp_path, lambda _message: None)
+    assert len(problems) == 1, problems
+    assert "names max_parallel, which no kstrl setting reads" in problems[0]
+
+
 def test_every_documented_key_at_its_default_passes_the_entry_check(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
