@@ -4501,11 +4501,7 @@ class ComponentPipeline:
             if sec_result.infrastructure_error
             else "Security review failed"
         )
-        self.ui.warn(
-            f"  Phase 2.5 FAILED for {comp.id}: "
-            f"{sec_result.critical_count} critical, "
-            f"{sec_result.high_count} high"
-        )
+        self.ui.warn(f"  Phase 2.5 FAILED for {comp.id}: {sec_result.fail_count} failures")
         ctx = IterationContext.from_json(comp_result.context_json or "{}")
         # as_retry_context is empty for infra results (no findings list);
         # fall back to the notes so the retry prompt still says what
@@ -4530,7 +4526,9 @@ class ComponentPipeline:
                 phase="security",
                 check=("infrastructure" if sec_result.infrastructure_error else "findings"),
                 context_json=ctx.to_json(),
-                signatures=signatures_from_findings("security", sec_result.as_findings()),
+                signatures=signatures_from_findings(
+                    "security", sec_result.as_findings(), sec_result.failing_severities
+                ),
                 failure_count=_gate_failure_count(sec_result),
             ),
         )
