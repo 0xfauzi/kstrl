@@ -64,6 +64,7 @@ from kstrl.config import (
     reconcile_progress_config,
     resolve_config_file,
 )
+from kstrl.config_numbers import LIMIT_FLOAT, LIMIT_INT
 from kstrl.config_report import UI_MODES, build_config_report
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
 from kstrl.contract import ContractMode
@@ -86,8 +87,6 @@ from kstrl.factory import (
     _cli_family,
     _report_preflight,
     run_factory,
-    validate_cost_ceiling,
-    validate_token_ceiling,
 )
 from kstrl.feature_cmd import FeatureParams, run_feature
 from kstrl.git import (
@@ -2440,13 +2439,13 @@ def decompose(
 )
 @click.option(
     "--max-parallel",
-    type=int,
+    type=LIMIT_INT,
     default=None,
     help="Maximum parallel components (default: 4)",
 )
 @click.option(
     "--max-retries",
-    type=int,
+    type=LIMIT_INT,
     default=None,
     help="Maximum retries per component (default: 3)",
 )
@@ -2494,7 +2493,7 @@ def decompose(
 )
 @click.option(
     "--mutation-threshold",
-    type=float,
+    type=LIMIT_FLOAT,
     default=None,
     help="Mutation score threshold percent (default: 50)",
 )
@@ -2547,7 +2546,7 @@ def decompose(
 )
 @click.option(
     "--agent-timeout",
-    type=float,
+    type=LIMIT_FLOAT,
     default=None,
     help="Timeout per agent iteration in seconds; 0 disables "
     "(default: no limit, or KSTRL_TIMEOUT_AGENT_ITERATION / "
@@ -2555,7 +2554,7 @@ def decompose(
 )
 @click.option(
     "--component-timeout",
-    type=float,
+    type=LIMIT_FLOAT,
     default=None,
     help="Timeout per component total in seconds; 0 disables "
     "(default: no limit, or KSTRL_TIMEOUT_COMPONENT / "
@@ -2563,7 +2562,7 @@ def decompose(
 )
 @click.option(
     "--max-adversarial-calls",
-    type=int,
+    type=LIMIT_INT,
     default=None,
     help="Hard cap on adversarial LLM calls (review + security + "
     "distill) per run; 0 = unbounded (default: 0, or "
@@ -2572,7 +2571,7 @@ def decompose(
 )
 @click.option(
     "--max-total-tokens",
-    type=int,
+    type=LIMIT_INT,
     default=None,
     help="Run-level token budget across ALL phases (engineer + review "
     "+ security + distill); 0 = unbounded. Counts CACHE READS at "
@@ -2584,7 +2583,7 @@ def decompose(
 )
 @click.option(
     "--max-cost-usd",
-    type=float,
+    type=LIMIT_FLOAT,
     default=None,
     help="Run-level USD budget across ALL phases; 0 = unbounded. "
     "Checked between engineer iterations and at phase boundaries, "
@@ -2654,7 +2653,7 @@ def decompose(
 @click.option(
     "--sleep",
     "-s",
-    type=float,
+    type=LIMIT_FLOAT,
     default=2.0,
     help="Sleep seconds between iterations",
 )
@@ -2759,22 +2758,14 @@ def factory(
 
     agent = get_agent(effective_cmd, effective_model, effective_reasoning, effective_type)
 
-    # R8 review (#180): budget preflight, deliberately next to the agent
-    # preflight above. The full config is not built until AFTER the
-    # decompose call below, so an unbounding ceiling used to be caught
-    # only once the architect had already spent - the operator paid for
-    # a call under the very ceiling that was supposed to bound it.
-    #
-    # Both sources are checked, because they fail independently: the
-    # file/env value (validated inside load) and the two flags, which
-    # reach run_factory without passing any config loader. The flags are
-    # validated but NOT applied here - applying them early would change
-    # what _collect_toml_notes reports as overridden further down.
+    # R8 review (#180): the budget ceilings are checked before the
+    # decompose call below, so the architect never spends under a ceiling
+    # that bounds nothing. The flags are checked by their click type
+    # (config_numbers.LimitNumber, #571) before this body runs, and the
+    # file and env values inside load. The flags are NOT applied here:
+    # applying them early would change what _collect_toml_notes reports
+    # as overridden further down.
     factory_config = FactoryConfig.load(root_dir)
-    if max_cost_usd is not None:
-        validate_cost_ceiling(max_cost_usd, "--max-cost-usd")
-    if max_total_tokens is not None:
-        validate_token_ceiling(max_total_tokens, "--max-total-tokens")
 
     # Get or create manifest.
     #
@@ -4421,42 +4412,42 @@ def doctor(root: Path | None, as_json: bool, measure: bool) -> None:
 )
 @click.option(
     "--max-cost-usd",
-    type=float,
+    type=LIMIT_FLOAT,
     default=None,
     help="Run-level USD budget for the retry; overrides the value the run "
     "being resumed was launched with. 0 = unbounded.",
 )
 @click.option(
     "--max-total-tokens",
-    type=int,
+    type=LIMIT_INT,
     default=None,
     help="Run-level token budget for the retry; overrides the value the run "
     "being resumed was launched with. 0 = unbounded.",
 )
 @click.option(
     "--max-adversarial-calls",
-    type=int,
+    type=LIMIT_INT,
     default=None,
     help="Cap on adversarial LLM calls for the retry; overrides the value the "
     "run being resumed was launched with. 0 = unbounded.",
 )
 @click.option(
     "--agent-timeout",
-    type=float,
+    type=LIMIT_FLOAT,
     default=None,
     help="Timeout per agent iteration in seconds for the retry; overrides the "
     "value the run being resumed was launched with. 0 disables.",
 )
 @click.option(
     "--component-timeout",
-    type=float,
+    type=LIMIT_FLOAT,
     default=None,
     help="Timeout per component total in seconds for the retry; overrides the "
     "value the run being resumed was launched with. 0 disables.",
 )
 @click.option(
     "--max-parallel",
-    type=int,
+    type=LIMIT_INT,
     default=None,
     help="Maximum parallel components for the retry; overrides the value "
     "the run being resumed was launched with.",

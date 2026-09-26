@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from kstrl import git, licensing
+from kstrl.config_numbers import check_numbers
 
 if TYPE_CHECKING:
     from kstrl.fixtures import FixturesConfig
@@ -714,7 +715,7 @@ class VerifyConfig:
         for env_var, field_name in env_var_to_field.items():
             if env_var in os.environ:
                 setattr(config, field_name, getattr(env, field_name))
-        return config
+        return check_numbers(config)
 
 
 # Engineer prompt mandates the EXACT heading `## Self-Critique`.

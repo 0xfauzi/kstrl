@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl.appendio import JOURNAL_REPAIR_EVENT, append_records
 from kstrl.atomicio import atomic_write_text
+from kstrl.config_numbers import check_numbers
 from kstrl.decompose import (
     AgentOutputTooLarge,
     _extract_json,
@@ -130,7 +131,7 @@ class KnowledgeConfig:
             config.dependency_scope = str(section["dependency_scope"])
 
         _apply_knowledge_env_overrides(config)
-        return config
+        return check_numbers(config)
 
     @classmethod
     def from_env(cls, root_dir: Path | None = None) -> KnowledgeConfig:

@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kstrl import git
+from kstrl.config_numbers import check_numbers
 from kstrl.manifest import Manifest
 from kstrl.timeout import limit_seconds
 from kstrl.verify import DEFAULT_TEST_COMMAND, ChildOutputDecodeError, run_scrubbed
@@ -131,7 +132,7 @@ class ContractConfig:
             config.timeout = float(os.environ["KSTRL_TIMEOUT_CONTRACT"])
         # Re-validate after assignment (env / toml may have introduced typos)
         config.__post_init__()
-        return config
+        return check_numbers(config)
 
 
 def compute_tiers(manifest: Manifest) -> list[list[str]]:

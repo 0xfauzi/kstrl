@@ -92,7 +92,8 @@ class LaunchRecord:
 def run_limits(factory_config: FactoryConfig, timeouts: TimeoutConfig) -> dict[str, float]:
     """Every limit a run stops at, by its `ks factory` option name (#526).
 
-    A value above 0 is a limit and 0 or less is none, for every entry. The
+    A value above 0 is a limit and 0 is none, for every entry; a negative
+    or non-finite value is refused where it is given (#571). The
     launch record stores this and `ks retry` refuses to drop any entry, so
     a limit added here is recorded and kept with no other edit.
     """

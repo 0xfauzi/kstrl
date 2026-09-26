@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from kstrl.appendio import JOURNAL_REPAIR_EVENT, REPAIR_DETAIL, append_records
+from kstrl.config_numbers import check_numbers
 from kstrl.jsonread import read_json
 
 
@@ -650,10 +651,8 @@ class NotifyConfig:
         """Load notify config with precedence: env > toml > defaults."""
         from kstrl.config import load_toml_section, resolve_config_file
 
-        if root_dir is None:
-            root_dir = Path.cwd()
         config = cls()
-        section = load_toml_section(resolve_config_file(root_dir), "notify")
+        section = load_toml_section(resolve_config_file(root_dir or Path.cwd()), "notify")
         if isinstance(section.get("on_complete"), str):
             config.on_complete = section["on_complete"]
         if isinstance(section.get("on_first_failure"), str):
@@ -663,7 +662,7 @@ class NotifyConfig:
         if "hook_timeout" in section:
             config.hook_timeout = float(section["hook_timeout"])
         _apply_notify_env(config)
-        return config
+        return check_numbers(config)
 
 
 def _apply_notify_env(config: NotifyConfig) -> None:

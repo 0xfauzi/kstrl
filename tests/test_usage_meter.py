@@ -4021,9 +4021,11 @@ class TestBudgetConfigErrorReachesTheOperator:
 
         output = _strip_ansi(result.output)
         assert result.exit_code == 2
-        # The preflight names the FLAG, not the generic knob: the
-        # operator has to know which of the three sources to fix.
-        assert "error: --max-cost-usd must be a finite number" in output
+        # The option's own type names the FLAG, not the generic knob: the
+        # operator has to know which of the three sources to fix (#571).
+        assert "Invalid value for '--max-cost-usd': --max-cost-usd must be a finite number" in (
+            output
+        )
         assert "Starting:" not in output
 
 
