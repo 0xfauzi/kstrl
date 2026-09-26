@@ -15,7 +15,6 @@ from kstrl.security import (
     SecurityFinding,
     SecurityMode,
     SecurityResult,
-    _passes_threshold,
     parse_security_output,
     run_security_review,
 )
@@ -172,67 +171,58 @@ class TestParseSecurityOutput:
 
 
 # ---------------------------------------------------------------------------
-# _passes_threshold
+# SecurityResult.fail_count
 # ---------------------------------------------------------------------------
 
 
-class TestPassesThreshold:
-    def _f(self, severity: str) -> SecurityFinding:
-        return SecurityFinding(
-            category="injection",
-            severity=severity,
-            location="x:1",
-            explanation="x",
+class TestFailCount:
+    """#524: the count run_security_review sets ``passed`` from. Hard mode
+    counts every finding at or above ``fail_threshold``; no other mode
+    fails on a finding, so it counts none."""
+
+    def _result(self, mode: str, threshold: str, *severities: str) -> SecurityResult:
+        return SecurityResult(
+            passed=True,
+            mode=mode,
+            fail_threshold=threshold,
+            findings=[
+                SecurityFinding(
+                    category="injection",
+                    severity=severity,
+                    location="x:1",
+                    explanation="x",
+                )
+                for severity in severities
+            ],
         )
 
-    def test_skip_always_passes(self) -> None:
-        assert _passes_threshold(
-            [self._f("critical")],
-            SecurityMode.SKIP.value,
-            "high",
-        )
+    def test_skip_counts_nothing(self) -> None:
+        assert self._result(SecurityMode.SKIP.value, "high", "critical").fail_count == 0
 
-    def test_advisory_always_passes(self) -> None:
-        assert _passes_threshold(
-            [self._f("critical")],
-            SecurityMode.ADVISORY.value,
-            "high",
-        )
+    def test_advisory_counts_nothing(self) -> None:
+        assert self._result(SecurityMode.ADVISORY.value, "high", "critical").fail_count == 0
 
-    def test_hard_passes_when_below_threshold(self) -> None:
-        # threshold=high; medium is below
-        assert _passes_threshold(
-            [self._f("medium")],
-            SecurityMode.HARD.value,
-            "high",
-        )
+    def test_hard_does_not_count_below_threshold(self) -> None:
+        assert self._result(SecurityMode.HARD.value, "high", "medium").fail_count == 0
 
-    def test_hard_fails_at_threshold(self) -> None:
-        assert not _passes_threshold(
-            [self._f("high")],
-            SecurityMode.HARD.value,
-            "high",
-        )
+    def test_hard_counts_at_threshold(self) -> None:
+        assert self._result(SecurityMode.HARD.value, "high", "high").fail_count == 1
 
-    def test_hard_fails_above_threshold(self) -> None:
-        assert not _passes_threshold(
-            [self._f("critical")],
-            SecurityMode.HARD.value,
-            "high",
-        )
+    def test_hard_counts_above_threshold(self) -> None:
+        assert self._result(SecurityMode.HARD.value, "high", "critical").fail_count == 1
 
     def test_hard_with_critical_only_threshold(self) -> None:
-        # threshold=critical; high is below
-        assert _passes_threshold(
-            [self._f("high")],
-            SecurityMode.HARD.value,
-            "critical",
-        )
-        assert not _passes_threshold(
-            [self._f("critical")],
-            SecurityMode.HARD.value,
-            "critical",
-        )
+        assert self._result(SecurityMode.HARD.value, "critical", "high").fail_count == 0
+        assert self._result(SecurityMode.HARD.value, "critical", "critical").fail_count == 1
+
+    def test_an_unknown_severity_or_threshold_is_an_error_not_a_rank(self) -> None:
+        """No default rank (#524): a value outside ``VALID_SEVERITIES``
+        raises instead of ranking as low or as high, which would move the
+        gate with no message."""
+        with pytest.raises(KeyError):
+            _ = self._result(SecurityMode.HARD.value, "high", "severe").fail_count
+        with pytest.raises(KeyError):
+            _ = self._result(SecurityMode.HARD.value, "severe", "critical").fail_count
 
 
 # ---------------------------------------------------------------------------
@@ -388,7 +378,7 @@ class TestRunSecurityReview:
 
     def test_parse_failure_hard_mode_fails(self, tmp_path: Path) -> None:
         """If the agent returns un-parseable output in hard mode, we
-        must NOT silently overwrite passed=False via _passes_threshold
+        must NOT silently overwrite passed=False from the fail count
         on the (empty) findings list."""
         repo = self._setup_repo(tmp_path)
         agent = MockSecurityAgent("garbage that is not JSON at all")

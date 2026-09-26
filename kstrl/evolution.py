@@ -1313,16 +1313,21 @@ def signatures_from_verification(
     return list(signature_counts_from_verification(checks, limit=limit))
 
 
-def signatures_from_findings(phase: str, findings: Iterable[Finding]) -> list[str]:
+def signatures_from_findings(
+    phase: str,
+    findings: Iterable[Finding],
+    gating: frozenset[str] = frozenset({"fail", "critical", "high"}),
+) -> list[str]:
     """Derive signatures from the typed findings that failed a review or
-    security gate: "<phase>:<category>" for every gating finding
-    (severity fail/critical/high) and "<phase>:infrastructure" when the
-    role itself failed to run."""
+    security gate: "<phase>:<category>" for every finding whose severity
+    is in ``gating`` and "<phase>:infrastructure" when the role itself
+    failed to run. Phase 2.5 passes its result's own failing severities,
+    because its ``fail_threshold`` decides which findings failed (#524)."""
     signatures: list[str] = []
     for finding in findings:
         if finding.is_infrastructure_error:
             signatures.append(f"{phase}:infrastructure")
-        elif finding.severity in ("fail", "critical", "high"):
+        elif finding.severity in gating:
             signatures.append(f"{phase}:{finding.category}")
     return list(dict.fromkeys(signatures))[:_MAX_SIGNATURES_PER_CHECK]
 
