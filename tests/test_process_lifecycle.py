@@ -224,6 +224,9 @@ EXPECTED_PROCESS_MODULES: dict[str, tuple[str, ...]] = {
     "retry_plan.py": ("subprocess",),
     "statedir.py": ("subprocess",),
     "timeout.py": ("subprocess",),
+    # #433: `SubprocessError`, caught from `retry_plan.failed_branch_probe`
+    # (the retry scope preview). It creates no child itself.
+    "tui/retry_scope.py": ("subprocess",),
     "tui/screens/home.py": ("subprocess",),
     "tui/screens/retry.py": ("subprocess",),
     # #461: `subprocess.TimeoutExpired`, caught from `verify.run_scrubbed`,

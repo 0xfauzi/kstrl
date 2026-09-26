@@ -33,6 +33,7 @@ from kstrl.prd import PRD
 from kstrl.review import ReviewMode, ReviewResult
 from kstrl.review import run_review as real_run_review
 from kstrl.scope import ComponentScope
+from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
 from tests.helpers import integration_harness as h
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
@@ -169,7 +170,7 @@ class Rig:
             return ComponentResult(comp_id, success=False, iterations=1, error="planted failure")
         # args[1] is the worktree (the root itself without worktrees). The
         # real worker copies the root PRD there; the engineer marks it done.
-        prd = PRD.load(self.root / fix_prd_rel(comp_id))
+        prd = PRD.load(plan_prd_path(self.root, comp_id))
         for story in prd.user_stories:
             story.passes = True
         target = Path(args[1]) / fix_prd_rel(comp_id)

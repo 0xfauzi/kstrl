@@ -102,6 +102,7 @@ CONTROL_FILENAMES: tuple[str, ...] = (
 #: - ``integration`` ``integration_state.py`` the integration review's durable state (#482)
 #: - ``knowledge``  ``knowledge.py`` distilled facts (default root)
 #: - ``logs``       ``cli.py`` feature transcripts, ``serve.py`` launchd logs
+#: - ``plan``       ``decompose.py``, ``integration_fix.py`` the PRD a component starts from
 #: - ``proposals``  ``cli.py`` counts what the deleted proposal generator left (#217)
 #: - ``queue``      ``workqueue.py`` (``QUEUE_DIR_NAME``)
 #: - ``runs``       ``events.py`` event journals and transcripts
@@ -129,6 +130,7 @@ STATE_SUBDIRS: tuple[str, ...] = (
     "integration",
     "knowledge",
     "logs",
+    "plan",
     "proposals",
     "queue",
     "runs",
@@ -193,10 +195,18 @@ STATE_FILES: tuple[str, ...] = (
 #: edited status could close a finding no review closed. It is written only
 #: by the factory between scheduling passes (``integration_phase``,
 #: ``integration_loop``), never while an engineer loop runs.
+#:
+#: ``plan`` (#545) meets both the same way. It holds the PRD each
+#: component starts from, which is the seed of its worktree copy and the
+#: copy Phase 1 compares the engineer's PRD against, so an edited one
+#: changes what a component is judged by. It is written only by
+#: ``decompose`` and the integration loop, before a component's engineer
+#: loop runs.
 STATE_NOT_CARVED: tuple[str, ...] = (
     CONTROL_AUTONOMY,
     CONTROL_INBOX,
     "integration",
+    "plan",
     "proposals",
     "queue",
 )
@@ -207,6 +217,29 @@ _SLUG_RE = re.compile(r"[^a-z0-9]+")
 def state_dir(root_dir: Path) -> Path:
     """Return the in-tree artifact/lock directory for ``root_dir``."""
     return root_dir / STATE_DIR_NAME
+
+
+def plan_prd_path(root_dir: Path, component_id: str) -> Path:
+    """Where kstrl writes the PRD a planned component starts from (#545).
+
+    ``decompose`` and the integration loop write it here, and never at
+    the component's ``prd_path`` in the root checkout: the component
+    branch commits the engineer's copy at ``prd_path``, and an untracked
+    file at that path in the root checkout makes ``git merge`` of the
+    branch refuse to run.
+    """
+    return state_dir(root_dir) / "plan" / component_id / "prd.json"
+
+
+def pre_run_prd_path(root_dir: Path, component_id: str, prd_path: str) -> Path:
+    """The copy of a component's PRD that the run starts from.
+
+    The planned copy when one exists. A manifest whose PRDs the operator
+    wrote, which is ``ks run`` and a hand-built ``--manifest``, has none,
+    and there the PRD at ``prd_path`` in the root checkout is the copy.
+    """
+    planned = plan_prd_path(root_dir, component_id)
+    return planned if planned.exists() else root_dir / prd_path
 
 
 def _same_directory(left: Path, right: Path) -> bool:

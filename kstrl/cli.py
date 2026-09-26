@@ -131,6 +131,7 @@ from kstrl.retry_plan import (
     retry_confirm_header,
 )
 from kstrl.sandbox import SandboxConfig
+from kstrl.security import _SEVERITY_ORDER
 from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.base import UI
@@ -2423,10 +2424,6 @@ def decompose(
     help="Create PRs for completed components (default: on)",
 )
 @click.option(
-    "--verify-command",
-    help="Legacy: single verify command (prefer --test-command etc.)",
-)
-@click.option(
     "--test-command",
     help=f"Test suite command (default: {DEFAULT_TEST_COMMAND!r})",
 )
@@ -2501,7 +2498,7 @@ def decompose(
 )
 @click.option(
     "--security-fail-threshold",
-    type=click.Choice(["critical", "high", "medium", "low"]),
+    type=click.Choice(list(_SEVERITY_ORDER)),
     default=None,
     help="In hard mode, findings at or above this severity block "
     "(default: high - critical+high fail)",
@@ -2658,7 +2655,6 @@ def factory(
     max_parallel: int | None,
     max_retries: int | None,
     create_prs: bool | None,
-    verify_command: str | None,
     test_command: str | None,
     typecheck_command: str | None,
     lint_command: str | None,
@@ -2870,7 +2866,6 @@ def factory(
     if keep_worktrees_on_failure:
         factory_config.keep_worktrees_on_failure = True
     factory_config.single_pr = manifest.single_pr
-    factory_config.verify_command = verify_command
     factory_config.review_agent_cmd = review_agent_cmd
     factory_config.review_model = review_model
     factory_config.progress_log_path = progress_log

@@ -290,6 +290,13 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Removed
 
+- `ks factory --verify-command` (#539). It was stored in
+  `FactoryConfig.verify_command` and no code read it, so the command it named
+  never ran. Phase 1 runs `--test-command`, `--typecheck-command` and
+  `--lint-command`. Passing it now fails before the run starts with click's
+  `No such option` error, which names those three. `ks retry` of a run
+  recorded with it leaves it out and says so.
+
 - `[timeout] git_operation`, `verification_check`, `review_agent`,
   `contract_test` and `subprocess_default`, and `KSTRL_TIMEOUT_GIT`,
   `KSTRL_TIMEOUT_REVIEW` and `KSTRL_TIMEOUT_DEFAULT` (#525). No code read
@@ -316,6 +323,17 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   workflow only (#394).
 
 ### Fixed
+
+- A finished component branch merges into the checkout kstrl ran from
+  (#545). `ks decompose`, `ks factory --spec` and the integration loop
+  wrote each component's starting PRD untracked at
+  `scripts/kstrl/feature/<id>/prd.json` in that checkout, the component
+  branch commits the engineer's copy at the same path, and `git merge`
+  refused. The starting PRD is now written to
+  `.kstrl/plan/<id>/prd.json`, and the worktree seed, the plan-time scope,
+  Phase 1's comparison and the integration loop read it there. A manifest
+  whose PRDs you wrote, which is `ks run` and a hand-built `--manifest`,
+  has no copy there and is read at its `prdPath` as before.
 
 - `ks retry` keeps every run limit of the run it resumes, or refuses and
   names the one it would drop (#526). It did this for the cost ceiling

@@ -108,8 +108,12 @@ Zero transitive dependencies matters. kstrl core runs on rich, click, and
 textual by deliberate choice (`pyproject.toml:33`). GEPA fits as an optional
 extra without weight.
 
-The controls map onto kstrl policy line for line. `max_metric_calls` enforces
-the `max_adversarial_calls` budget rule. `acceptance_criterion` supplies the
+The controls map onto kstrl policy line for line. `max_metric_calls` is the
+`max_adversarial_calls` budget rule, but gepa checks it only before each
+iteration, so on its own it is a threshold: a cap of 3 ran 10 role calls
+(#549). `KstrlGepaAdapter.max_role_calls` refuses the call past it, and a run
+stopped there reports `stopped_at_cap` with the candidates it scored.
+`acceptance_criterion` supplies the
 acceptance number that CLAUDE.md demands. `run_dir` plus `parents` supplies the
 audit trail that H3 requires. `frontier_type="objective"` stops a reviewer gain
 from silently regressing the security reviewer.

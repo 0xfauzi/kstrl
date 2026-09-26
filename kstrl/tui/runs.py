@@ -82,7 +82,21 @@ def factory_lock_held(root_dir: Path) -> bool:
     """Non-blocking probe of the run-level flock. True = a factory run
     holds it right now. POSIX-only; returns False where fcntl is
     unavailable (mirrors the factory's own degradation)."""
-    lock_path = root_dir / ".kstrl" / "factory.lock"
+    return lock_held(factory_lock_path(root_dir))
+
+
+def factory_lock_path(root_dir: Path) -> Path:
+    """Where the factory holds its run lock and writes its pid."""
+    return root_dir / ".kstrl" / "factory.lock"
+
+
+def lock_held(lock_path: Path) -> bool:
+    """Whether some process holds the flock on ``lock_path`` right now.
+
+    The factory lock and the ``ks serve`` daemon lock (#433 M1) are both
+    held for their owner's whole lifetime, so this, not the pid written
+    into the file, is what says the owner is still running.
+    """
     if not lock_path.exists():
         return False
     try:
@@ -121,12 +135,20 @@ def run_is_live(run_dir: Path, root_dir: Path) -> bool:
         return True
     if run_kind(run_dir.name) != "factory" or not factory_lock_held(root_dir):
         return False
+    return newest_factory_run_id(root_dir) == run_dir.name
+
+
+def newest_factory_run_id(root_dir: Path) -> str:
+    """The newest factory run's id by its name, or "" when none is listed.
+
+    A held factory lock belongs to this run: the lock records no run id.
+    """
     try:
         names = [d.name for d in (root_dir / ".kstrl" / "runs").iterdir()]
     except OSError:
-        return False
+        return ""
     factory = [name for name in names if run_kind(name) == "factory"]
-    return max(factory, key=run_sort_key, default="") == run_dir.name
+    return max(factory, key=run_sort_key, default="")
 
 
 def discover_runs(
