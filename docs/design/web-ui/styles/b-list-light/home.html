@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Home</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>:root{
+  --canvas:#f8f9fb; --raised:#f0f2f6; --hover:#ffffff; --sel:#ffffff;
+  --line:#dce0e7; --line-soft:#e6e9ef; --line-strong:#c5cbd5;
+  --t1:#171a21; --t2:#535c69; --t3:#657080;
+  --accent:#594ccb; --accent-ink:#ffffff; --accent-soft:rgba(89,76,203,.12);
+  --ok:#176a3a; --bad:#b32631; --wait:#755600; --run:#205bac; --run-rgb:32,91,172; --park:#76408d; --queued:#9aa2ae;
+  --btn:#ffffff; --btn-line:#c5cbd5; --btn-hover:#f0f2f6;
+  --code:#ffffff; --code-line:#dce0e7; --add:#176a3a; --del:#b32631; --add-bg:rgba(23,106,58,.08); --del-bg:rgba(179,38,49,.08);
+  --focus:#594ccb; --scheme:light;
+}
+*{box-sizing:border-box}
+html{font-size:13px;-webkit-text-size-adjust:100%;color-scheme:var(--scheme)}
+body{margin:0;background:var(--canvas);color:var(--t1);font-family:"Inter",system-ui,sans-serif;line-height:20px;letter-spacing:-.006em;font-variant-numeric:tabular-nums;font-feature-settings:"cv11","ss01"}
+::selection{background:var(--accent-soft);color:var(--t1)}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:4px}
+*{scrollbar-color:var(--line) transparent;scrollbar-width:thin;caret-color:var(--accent)}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--line);border:3px solid var(--canvas);border-radius:6px}
+a{color:inherit;text-decoration:none}
+a.link{color:var(--t2);text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line)}
+a.link:hover{color:var(--t1)}
+code,.mono,kbd{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px;font-variant-ligatures:none;letter-spacing:0}
+b{font-weight:600}
+.t2{color:var(--t2)} .t3{color:var(--t3)}
+
+/* shell */
+.shell{display:grid;grid-template-columns:200px minmax(0,1fr);min-height:100vh}
+.side{border-right:1px solid var(--line);padding:14px 10px;display:flex;flex-direction:column;gap:18px;background:var(--raised)}
+.side .brand{display:flex;align-items:center;gap:10px;padding:4px 8px;font-weight:600}
+.side .brand .mark{width:18px;height:18px;border-radius:5px;background:var(--accent);display:inline-block}
+.side .brand .proj{color:var(--t2);font-weight:500}
+.side nav{display:flex;flex-direction:column;gap:1px}
+.side nav .group{color:var(--t3);font-size:12px;padding:6px 8px 4px;font-weight:500}
+.side nav a{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;color:var(--t2);font-weight:500;line-height:18px}
+.side nav a:hover{background:var(--hover);color:var(--t1)}
+.side nav a.on{background:var(--hover);color:var(--t1)}
+.side nav a .n{margin-left:auto;color:var(--t3);font-size:12px}
+.side nav a .n.hot{color:var(--t1);background:var(--accent-soft);border-radius:4px;padding:0 6px;line-height:18px}
+
+.main{min-width:0}
+.top{height:44px;display:flex;align-items:center;gap:14px;padding:0 24px;border-bottom:1px solid var(--line);color:var(--t2);white-space:nowrap;overflow:hidden}
+.top .crumb b{color:var(--t1);font-weight:500}
+.top .crumb .sep{color:var(--t3);margin:0 6px}
+.top .status{display:flex;gap:14px;margin-left:auto;align-items:center}
+.top .status .dotword{color:var(--t2)}
+.top .readout{display:flex;align-items:center;gap:10px;color:var(--t2)}
+.top .readout b{color:var(--t1);font-weight:500}
+.top .cmd{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 8px;border:1px solid var(--line);border-radius:6px;color:var(--t2);background:var(--canvas)}
+.top .cmd kbd{font-size:11px;line-height:16px;color:var(--t3);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+.top .clock{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--t2);border:1px solid var(--line);border-radius:4px;padding:1px 7px}
+.page{padding:24px 24px 40px;max-width:1240px}
+h1{font-size:18px;line-height:26px;font-weight:600;letter-spacing:-.014em;margin:0}
+.sub{color:var(--t2);margin:2px 0 0}
+.head{margin-bottom:22px}
+
+/* meter */
+.meter{display:inline-block;width:72px;height:4px;background:var(--line);border-radius:2px;vertical-align:middle;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--accent)}
+
+/* sections: a title row, then rows */
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 440px;gap:40px;align-items:start}
+.sec{margin-bottom:28px}
+.sec .st{display:flex;align-items:baseline;gap:8px;padding:0 0 6px;border-bottom:1px solid var(--line);font-weight:500}
+.sec .st .n{color:var(--t3);font-weight:400}
+.sec .st .r{margin-left:auto;color:var(--t3);font-weight:400;font-size:12px}
+.sec .st .r a{color:var(--t2)}
+.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line-soft)}
+.row .l1{display:flex;align-items:center;gap:8px;font-weight:500}
+.row .l2{color:var(--t2);padding-left:16px;margin-top:1px}
+.row.sel{background:var(--sel);margin:0 -12px;padding:10px 12px;border-radius:6px;border-bottom-color:transparent;box-shadow:inset 0 0 0 1px var(--line)}
+.row .act{white-space:nowrap}
+
+/* state: a dot, always with a word */
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--queued);flex:none;vertical-align:0}
+.dot.passed{background:var(--ok)} .dot.failed{background:var(--bad)} .dot.waiting{background:var(--wait)}
+.dot.running{background:var(--run);animation:pulse 1.8s cubic-bezier(.2,.8,.2,1) infinite}
+.dot.parked{background:var(--park)} .dot.queued{background:var(--queued)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(var(--run-rgb),.45)}70%{box-shadow:0 0 0 6px rgba(var(--run-rgb),0)}100%{box-shadow:0 0 0 0 rgba(var(--run-rgb),0)}}
+@media (prefers-reduced-motion:reduce){.dot.running{animation:none}}
+.dotword{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--btn-line);border-radius:6px;background:var(--btn);color:var(--t1);font:inherit;font-weight:500;cursor:pointer;line-height:26px}
+.btn:hover{background:var(--btn-hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.danger{color:var(--bad)}
+.btn.quiet{background:transparent;border-color:transparent;color:var(--t2)}
+.btn.quiet:hover{background:var(--hover);color:var(--t1)}
+
+/* delivery */
+.main-at{padding:10px 0;border-bottom:1px solid var(--line-soft)}
+.grp{color:var(--t3);font-size:12px;padding:10px 0 4px}
+.pr{display:grid;grid-template-columns:150px 64px minmax(0,1fr);gap:12px;padding:7px 0;border-bottom:1px solid var(--line-soft);align-items:start}
+.pr .why{color:var(--t2);font-size:12px;line-height:17px}
+
+/* tables */
+table.data{width:100%;border-collapse:collapse}
+table.data th{text-align:left;font-weight:500;color:var(--t3);font-size:12px;padding:6px 8px 6px 0;border-bottom:1px solid var(--line)}
+table.data td{padding:8px 8px 8px 0;border-bottom:1px solid var(--line-soft);vertical-align:top}
+table.data th.num,table.data td.num{text-align:right;white-space:nowrap}
+table.data tr.sel td{background:var(--sel)}
+table.data tr.sel td:first-child{border-radius:6px 0 0 6px;padding-left:8px}
+table.data tr.sel td:last-child{border-radius:0 6px 6px 0}
+table.data .note{color:var(--t2);padding-left:20px}
+.expand{padding:12px 0 4px 24px;color:var(--t2);max-width:76ch;border-bottom:1px solid var(--line-soft)}
+.expand b{color:var(--t1)}
+
+/* checkpoint */
+.cols-cp{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:40px;align-items:start}
+.kv{display:grid;grid-template-columns:132px minmax(0,1fr);gap:0}
+.kv>div{padding:8px 0;border-bottom:1px solid var(--line-soft)}
+.kv>div:nth-child(odd){color:var(--t2)}
+.finding{display:grid;grid-template-columns:64px 72px 200px minmax(0,1fr);gap:12px;padding:8px 0;border-bottom:1px solid var(--line-soft);align-items:start}
+.sev{display:inline-block;font-size:11px;line-height:18px;padding:0 6px;border-radius:4px;border:1px solid var(--line);color:var(--t2)}
+.sev.advisory{color:var(--wait);border-color:var(--wait)} .sev.low{color:var(--run);border-color:var(--run)}
+.diff{border:1px solid var(--line-soft);border-radius:8px;background:var(--code);overflow:auto;margin-top:8px}
+.diff pre{margin:0;padding:12px 14px;font-family:"JetBrains Mono",monospace;font-size:12px;line-height:19px;font-variant-ligatures:none}
+.diff .file{color:var(--t1);font-weight:500;display:block;margin-top:8px}
+.diff .file:first-child{margin-top:0}
+.diff .hunk{color:var(--t3);display:block}
+.diff .add{color:var(--add);background:var(--add-bg);display:block} .diff .del{color:var(--del);background:var(--del-bg);display:block}
+.diff .more{color:var(--t3);display:block;margin-top:6px}
+.choices{position:sticky;top:24px}
+.choice{padding:12px 0;border-bottom:1px solid var(--line-soft)}
+.choice .ctl{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.choice .pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.choice .pair .btn{margin-bottom:8px}
+.choice .does{color:var(--t2)}
+.choice .does+.does{margin-top:6px}
+.choice .does b{color:var(--t1)}
+.choice .does .who{color:var(--t1);font-weight:500}
+
+/* phone */
+.bottom-bar{display:none}
+@media (max-width:600px){
+  .shell{grid-template-columns:minmax(0,1fr)}
+  .side{display:none}
+  .top{height:auto;padding:10px 16px;flex-wrap:wrap;gap:6px 12px;white-space:normal}
+  .top .status{margin-left:0;flex-wrap:wrap;gap:6px 12px;width:100%}
+  .top .status .hide-sm{display:none}
+  .page{padding:16px 16px 84px}
+  .cols,.cols-cp{grid-template-columns:minmax(0,1fr);gap:0}
+  .row{grid-template-columns:minmax(0,1fr)}
+  .row .act{padding-left:16px}
+  .pr{grid-template-columns:minmax(0,1fr)}
+  .pr .why{margin-top:-2px}
+  table.data,table.data tbody,table.data tr,table.data td{display:block}
+  table.data thead{display:none}
+  table.data tr{padding:8px 0;border-bottom:1px solid var(--line-soft)}
+  table.data td{border:0;padding:1px 0;text-align:left}
+  table.data td.num{text-align:left}
+  table.data td[data-label]::before{content:attr(data-label) " ";color:var(--t3)}
+  table.data td:empty{display:none}
+  table.data tr.sel td{background:transparent}
+  table.data tr.sel{background:var(--sel);margin:0 -8px;padding:8px;border-radius:6px}
+  .expand{padding-left:0}
+  .choices{position:static}
+  .finding{grid-template-columns:64px 72px minmax(0,1fr)}
+  .finding>span:last-child{grid-column:1/4}
+  .kv{grid-template-columns:minmax(0,1fr)}
+  .kv>div:nth-child(odd){padding-bottom:0;border-bottom:0}
+  .choice .pair{grid-template-columns:minmax(0,1fr)}
+  .bottom-bar{display:flex;position:fixed;left:0;right:0;bottom:0;height:64px;background:var(--raised);border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
+  .bottom-bar a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:2px;font-size:11px;line-height:14px;color:var(--t2);font-weight:500}
+  .bottom-bar a.on{color:var(--t1)}
+  .bottom-bar a .count{font-size:11px;line-height:16px;background:var(--accent);color:var(--accent-ink);border-radius:8px;padding:0 6px;min-width:18px;text-align:center}
+  .bottom-bar a .count-space{height:16px}
+}
+</style></head>
+<body><div class="shell">
+<aside class="side">
+  <div class="brand"><span class="mark"></span>kstrl <span class="proj">snippetvault</span></div>
+  <nav aria-label="views"><a class="on" href="#">Home</a><a href="#">Runs</a><a href="#">Decisions<span class="n hot">2</span></a><a href="#">Failures<span class="n hot">1</span></a><a href="#">Serve queue</a><a href="#">Config</a><a href="#">Learning</a><div class="group">Start</div><a href="#">Start a run</a><a href="#">Initialise a project</a></nav>
+</aside><div class="main">
+<header class="top">
+  <span class="crumb"><b>snippetvault</b><span class='sep'>/</span>Home</span>
+  <span class="status">
+    <span class="dotword hide-sm"><span class="dot passed"></span>kstrl.toml valid</span>
+    <span class="dotword hide-sm"><span class="dot passed"></span>safe mode off</span>
+    <span class="dotword hide-sm"><span class="dot running"></span>ks serve running</span>
+    <span class="readout"><b>$19.24</b> of $78.00 <span class="meter"><i style="width:25%"></i></span> 25%</span>
+    <span class="clock">1:03:42</span>
+    <a class="cmd hide-sm" href="#">Commands <kbd>⌘K</kbd></a>
+  </span>
+</header><main class="page">
+<div class="head"><h1>snippetvault</h1><p class="sub">three things need you · one run live · ks serve running</p></div>
+<div class="cols">
+  <div>
+    <section class="sec"><div class="st">Needs you<span class="n">3</span><span class="r"><a href="#">2 decisions</a> · <a href="#">1 failure</a></span></div><div class="row"><div><div class="l1"><span class="dot parked"></span>client-commands is waiting for merge approval</div><div class="l2">merge gate · run 8d80e8 · raised 2s ago · the branch holds reviewed work; nothing is pushed until you decide</div></div><div class="act"><a class="btn primary" href="#">Decide</a></div></div><div class="row"><div><div class="l1"><span class="dot waiting"></span>The integration loop stopped without a clean verdict</div><div class="l2">halted run · run fda682 · raised 2s ago · integration-fix-1 failed review and the fix budget (1) is spent</div></div><div class="act"><a class="btn" href="#">Decide</a></div></div><div class="row"><div><div class="l1"><span class="dot failed"></span>client-commands failed at verify: Tests failed (exit code 1)</div><div class="l2">run fail01 · 2 attempts · failed 17:14 today · a retry is available and its scope is known</div></div><div class="act"><a class="btn" href="#">Review retry</a></div></div></section>
+    <section class="sec"><div class="st">Active<span class="n">3</span></div><div class="row"><div><div class="l1"><span class="dot running"></span>factory live01 · running · 3 of 6 components</div><div class="l2">http-app · engineer · iteration 3 of 10 · last output 8s ago · worker alive, checked 2s ago · elapsed 1:03:42</div><div class="l2" style="margin-top:4px"><b>$19.24</b> of $78.00 cap <span class="meter"><i style="width:25%"></i></span> 25%</div></div><div class="act"><a class="btn" href="#">Open board</a></div></div><div class="row"><div><div class="l1"><span class="dot running"></span>ks serve · running · snippetvault slice 3: export and import</div><div class="l2">runs live01 above · last output 8s ago · daemon alive, checked 2s ago</div></div><div class="act"><a class="btn quiet" href="#">Queue</a></div></div><div class="row"><div><div class="l1"><span class="dot queued"></span>ks serve · queued 1st · snippetvault slice 4: sharing</div><div class="l2">starts when live01 finishes and every admission check passes</div></div><div class="act"></div></div></section>
+  </div>
+  <div><section class="sec"><div class="st">Delivery<span class="r">is main green after the merges</span></div><div class="main-at"><b>main is at <code>cea97b4</code></b> <span class="t3">·</span> <span class="dotword"><span class="dot waiting"></span>CI unknown</span> <span class="t2">· gh api failed (4): HTTP 401: Bad credentials · read 2s ago</span></div><div class="grp">run live01 · running · integration: no review recorded for this run</div><div class="pr"><span>PR #3 <span class="t2">storage</span></span><code>cea97b4</code><span><span class="dotword"><span class="dot waiting"></span>unknown</span><div class="why">gh api failed (4): HTTP 401: Bad credentials · read 2s ago</div></span></div><div class="pr"><span>PR #2 <span class="t2">snippet-rules</span></span><code>23dd9ac</code><span><span class="dotword"><span class="dot failed"></span>failed</span><div class="why">check &quot;test&quot; failed · read 2s ago</div></span></div><div class="pr"><span>PR #1 <span class="t2">token-crypto</span></span><code>4d74d12</code><span><span class="dotword"><span class="dot passed"></span>passed</span><div class="why">7 checks passed · read 2s ago</div></span></div><div class="grp">run 8d80e8 · completed 2d ago · release ref 4c4706b · integration: no review recorded for this run</div><div class="pr"><span>PR #9 <span class="t2">client-commands</span></span><code>4c4706b</code><span><span class="dotword"><span class="dot queued"></span>not read yet</span><div class="why">ks serve refreshes CI on its own · <a class="link" href="#">read now</a></div></span></div><div class="pr"><span>PR #8 <span class="t2">client-http</span></span><code>4ab99ae</code><span><span class="dotword"><span class="dot passed"></span>passed</span><div class="why">7 checks passed · read 0s ago</div></span></div></section></div>
+</div>
+<section class="sec"><div class="st">History<span class="n">9 runs</span><span class="r">percentages round up · select a row to read its whole note</span></div><table class="data"><thead><tr><th>Run</th><th>Kind</th><th>State</th><th class=num>Last event</th><th class=num>Components</th><th class=num>Tokens</th><th class=num>Cost</th><th>Note</th></tr></thead><tbody><tr><td data-label="run"><code>live01</code></td><td data-label="kind">factory</td><td data-label="state"><span class="dotword"><span class="dot running"></span>running</span></td><td class="num t2" data-label="last event">2s</td><td class="num" data-label="components">3 of 6</td><td class="num" data-label="tokens">14.37M</td><td class="num" data-label="cost">$19.24 of $78.00 · 25%</td><td class="note"></td></tr><tr><td data-label="run"><code>fail01</code></td><td data-label="kind">factory</td><td data-label="state"><span class="dotword"><span class="dot failed"></span>failed</span></td><td class="num t2" data-label="last event">2s</td><td class="num" data-label="components">0 of 1, 1 failed</td><td class="num" data-label="tokens">2.41M</td><td class="num" data-label="cost">$3.74 of $20.00 · 19%</td><td class="note">current: see needs you</td></tr><tr><td data-label="run"><code>8d80e8</code></td><td data-label="kind">factory</td><td data-label="state"><span class="dotword"><span class="dot passed"></span>completed</span></td><td class="num t2" data-label="last event">2d</td><td class="num" data-label="components">2 of 2</td><td class="num" data-label="tokens">18.51M</td><td class="num" data-label="cost">$19.30 of $35.00 · 56%</td><td class="note"></td></tr><tr class=sel><td data-label="run"><code>1490e8</code></td><td data-label="kind">factory</td><td data-label="state"><span class="dotword"><span class="dot waiting"></span>unknown</span></td><td class="num t2" data-label="last event">2d</td><td class="num" data-label="components">0 of 2</td><td class="num" data-label="tokens">·</td><td class="num" data-label="cost">·</td><td class="note">Refusing to run: stale component branches found</td></tr><tr><td data-label="run"><code>7ad3ae</code></td><td data-label="kind">factory</td><td data-label="state"><span class="dotword"><span class="dot failed"></span>failed</span></td><td class="num t2" data-label="last event">2d</td><td class="num" data-label="components">0 of 2, 1 failed</td><td class="num" data-label="tokens">8.02M</td><td class="num" data-label="cost">$10.37 of $45.00 · 24%</td><td class="note">superseded by 8d80e8</td></tr><tr><td data-label="run"><code>4965fb</code></td><td data-label="kind">factory</td><td data-label="state"><span class="dotword"><span class="dot passed"></span>completed</span></td><td class="num t2" data-label="last event">3d</td><td class="num" data-label="components">6 of 6</td><td class="num" data-label="tokens">35.60M</td><td class="num" data-label="cost">$42.35 of $78.00 · 55%</td><td class="note"></td></tr><tr><td data-label="run"><code>e3e393</code></td><td data-label="kind">factory</td><td data-label="state"><span class="dotword"><span class="dot waiting"></span>unknown</span></td><td class="num t2" data-label="last event">3d</td><td class="num" data-label="components">0 of 6</td><td class="num" data-label="tokens">·</td><td class="num" data-label="cost">·</td><td class="note">Refusing to run: stale component branches found</td></tr><tr><td data-label="run"><code>22f40e</code></td><td data-label="kind">factory</td><td data-label="state"><span class="dotword"><span class="dot waiting"></span>unknown</span></td><td class="num t2" data-label="last event">3d</td><td class="num" data-label="components">0 of 6</td><td class="num" data-label="tokens">1.22M</td><td class="num" data-label="cost">$1.64 of $78.00 · 3%</td><td class="note">Disallowed changes detected</td></tr><tr><td data-label="run"><code>db9df0</code></td><td data-label="kind">decompose</td><td data-label="state"><span class="dotword"><span class="dot passed"></span>completed</span></td><td class="num t2" data-label="last event">3d</td><td class="num" data-label="components">6 planned</td><td class="num" data-label="tokens">342.4k</td><td class="num" data-label="cost">$1.47 · no cap</td><td class="note"></td></tr></tbody></table><div class="expand"><b>1490e8 · unknown</b> <span class="t3">(no finish record; last event 2d ago)</span><br>Refusing to run: stale component branches found: branch <code>kstrl/factory/client-http</code> (component client-http) already exists with commits not merged into <code>main</code>; refusing to silently reuse it. Merge it or delete it (<code>git branch -D kstrl/factory/client-http</code>) and re-run.</div></section></main></div></div><nav class="bottom-bar" aria-label="views"><a class="on" href="#"><span class="count-space"></span>Home</a><a href="#"><span class="count-space"></span>Runs</a><a href="#"><span class="count">2</span>Decide</a><a href="#"><span class="count-space"></span>Failures</a><a href="#"><span class="count-space"></span>More</a></nav></body></html>

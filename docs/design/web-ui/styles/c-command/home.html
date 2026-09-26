@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Home</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>:root{
+  --canvas:#13141c; --raised:#20212c; --raised-2:#292b38;
+  --line:#383a49; --line-strong:#505366; --line-soft:#2a2c39;
+  --t1:#f7f7fb; --t2:#bfc2d2; --t3:#969aaa;
+  --accent:#d7a8ff; --accent-ink:#13141c; --accent-soft:rgba(215,168,255,.14);
+  --ok:#8dddab; --bad:#ff9097; --wait:#eac879; --run:#9dc8ff; --park:#e0b1e8; --queued:#6c7080;
+  --add-bg:rgba(141,221,171,.10); --del-bg:rgba(255,144,151,.10);
+}
+*{box-sizing:border-box}
+html{font-size:13px;-webkit-text-size-adjust:100%;color-scheme:dark}
+body{margin:0;background:var(--canvas);color:var(--t1);font-family:"Geist",system-ui,sans-serif;line-height:19px;font-variant-numeric:tabular-nums}
+::selection{background:var(--accent-soft);color:var(--t1)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+*{scrollbar-color:var(--line) transparent;scrollbar-width:thin;caret-color:var(--accent)}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--line);border:3px solid var(--canvas);border-radius:6px}
+a{color:inherit;text-decoration:none}
+a.link{color:var(--t2);text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line-strong)}
+code,.mono{font-family:"Geist Mono",ui-monospace,monospace;font-size:12px;font-variant-ligatures:none}
+kbd{font-family:"Geist Mono",ui-monospace,monospace;font-size:11px;line-height:18px;color:var(--t2);background:var(--raised-2);border-radius:4px;padding:0 5px;white-space:nowrap}
+b{font-weight:600}
+.t2{color:var(--t2)} .t3{color:var(--t3)}
+
+/* top strip */
+.strip{height:44px;display:flex;align-items:center;gap:20px;padding:0 24px;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+.strip .brand{display:flex;align-items:center;gap:8px;font-weight:600}
+.strip .brand .mark{width:16px;height:16px;border-radius:4px;background:var(--accent)}
+.strip .tabs{display:flex;gap:2px}
+.strip .tabs a{padding:3px 8px;border-radius:6px;color:var(--t2);font-weight:500}
+.strip .tabs a.on{background:var(--raised);color:var(--t1)}
+.strip .tabs a .n{color:var(--t3);margin-left:5px}
+.strip .tabs a .n.hot{color:var(--accent)}
+.strip .right{margin-left:auto;display:flex;align-items:center;gap:16px;color:var(--t2)}
+.strip .right b{color:var(--t1);font-weight:500}
+.strip .clock{font-family:"Geist Mono",monospace;font-size:12px;color:var(--t2)}
+
+/* the command field */
+.wrap{max-width:1320px;padding:20px 24px 48px;margin:0 auto}
+.cmd{display:flex;align-items:center;gap:12px;height:46px;padding:0 16px;border:1px solid var(--line);border-radius:10px;background:var(--raised);font-size:15px;color:var(--t3)}
+.cmd .caret{width:2px;height:20px;background:var(--accent);border-radius:1px;animation:blink 1.1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.cmd .caret{animation:none}}
+.cmd .right{margin-left:auto;display:flex;gap:10px;align-items:center}
+.hints{display:flex;gap:14px;padding:8px 4px 0;color:var(--t3);font-size:12px}
+.hints span{display:inline-flex;gap:6px;align-items:center}
+h1{font-size:21px;line-height:28px;font-weight:600;letter-spacing:-.012em;margin:0}
+.sub{color:var(--t2);margin:2px 0 0}
+.head{margin:22px 0 14px}
+
+/* layout: lists left, action rail right */
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:28px;align-items:start;margin-top:20px}
+.rail{position:sticky;top:20px;border:1px solid var(--line);border-radius:12px;background:var(--raised);padding:6px;box-shadow:0 20px 48px rgba(0,0,0,.33)}
+.rail .rt{padding:8px 10px 6px;color:var(--t3);font-size:12px}
+.rail .rt b{color:var(--t1);font-weight:500;display:block;font-size:13px;margin-bottom:2px;white-space:normal}
+.rail a{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;color:var(--t1)}
+.rail a:hover,.rail a.on{background:var(--raised-2)}
+.rail a kbd{margin-left:auto}
+.rail .does{padding:2px 10px 8px;color:var(--t2);font-size:12px;line-height:17px}
+.rail .does b{color:var(--t1)}
+.rail hr{border:0;border-top:1px solid var(--line-soft);margin:4px 0}
+
+/* sections and rows */
+.sec{margin-bottom:22px}
+.sec .st{display:flex;align-items:baseline;gap:8px;padding:0 8px 6px;color:var(--t3);font-size:12px;font-weight:500}
+.sec .st .r{margin-left:auto;font-weight:400}
+.sec .st .r a{color:var(--t2)}
+.row{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:start;padding:8px 8px;border-radius:8px;border-bottom:1px solid var(--line-soft)}
+.row:hover{background:var(--raised)}
+.row.on{background:var(--raised-2);border-bottom-color:transparent}
+.row .l1{font-weight:500}
+.row .l1 .kind{color:var(--t3);font-weight:400;margin-left:6px}
+.row .l2{color:var(--t2)}
+.row .end{display:flex;align-items:center;gap:8px;white-space:nowrap;color:var(--t3);padding-top:1px}
+.row .end .w{font-size:12px}
+
+/* state icons: a 16px tile with a drawn glyph, always beside a word */
+.ico{width:16px;height:16px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;flex:none;margin-top:1px}
+.ico svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ico.passed{color:var(--ok);background:rgba(141,221,171,.14)} .ico.failed{color:var(--bad);background:rgba(255,144,151,.14)}
+.ico.waiting{color:var(--wait);background:rgba(234,200,121,.14)} .ico.running{color:var(--run);background:rgba(157,200,255,.14)}
+.ico.parked{color:var(--park);background:rgba(224,177,232,.14)} .ico.queued{color:var(--t3);background:rgba(150,154,170,.14)}
+.state{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+
+/* delivery and history */
+.main-at{padding:8px 8px;border-bottom:1px solid var(--line-soft)}
+.grp{color:var(--t3);font-size:12px;padding:10px 8px 4px}
+.pr{display:grid;grid-template-columns:22px 150px 70px minmax(0,1fr) auto;gap:10px;padding:7px 8px;border-bottom:1px solid var(--line-soft);align-items:start;border-radius:8px}
+.pr:hover{background:var(--raised)}
+.pr .why{color:var(--t2);font-size:12px;line-height:17px}
+.pr kbd{justify-self:end}
+table.data{width:100%;border-collapse:collapse}
+table.data th{text-align:left;font-weight:500;color:var(--t3);font-size:12px;padding:4px 8px;border-bottom:1px solid var(--line-soft)}
+table.data td{padding:7px 8px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+table.data th.num,table.data td.num{text-align:right;white-space:nowrap}
+table.data tr.on td{background:var(--raised-2)}
+table.data tr.on td:first-child{border-radius:8px 0 0 8px} table.data tr.on td:last-child{border-radius:0 8px 8px 0}
+table.data .note{color:var(--t2)}
+.expand{padding:10px 8px 4px 38px;color:var(--t2);max-width:78ch;border-bottom:1px solid var(--line-soft)}
+.expand b{color:var(--t1)}
+.meter{display:inline-block;width:80px;height:4px;background:var(--line);border-radius:2px;vertical-align:middle;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--accent)}
+
+/* checkpoint */
+.cp{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:28px;align-items:start;margin-top:8px}
+.cp .side{position:sticky;top:20px}
+.kv{display:grid;grid-template-columns:120px minmax(0,1fr)}
+.kv>div{padding:7px 8px;border-bottom:1px solid var(--line-soft)}
+.kv>div:nth-child(odd){color:var(--t3)}
+.acts{border:1px solid var(--line);border-radius:12px;background:var(--raised);padding:6px;box-shadow:0 20px 48px rgba(0,0,0,.33)}
+.act{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;padding:8px 10px;border-radius:8px}
+.act:hover,.act.on{background:var(--raised-2)}
+.act .lab{font-weight:500}
+.act .lab.primary{color:var(--accent)} .act .lab.danger{color:var(--bad)}
+.act .does{grid-column:1/3;color:var(--t2);font-size:12px;line-height:17px}
+.act .does b{color:var(--t1)}
+.finding{display:grid;grid-template-columns:22px 58px 66px minmax(0,1fr);gap:10px;padding:8px;border-bottom:1px solid var(--line-soft);align-items:start;border-radius:8px}
+.finding:hover{background:var(--raised)}
+.finding .where{display:block;color:var(--t3);margin-top:2px}
+.sev{display:inline-block;font-size:11px;line-height:18px;padding:0 6px;border-radius:4px;background:var(--raised-2);color:var(--t2)}
+.sev.advisory{color:var(--wait)} .sev.low{color:var(--run)}
+.diff{border:1px solid var(--line);border-radius:10px;background:var(--raised);overflow:auto;margin:0 8px}
+.diff pre{margin:0;padding:12px 14px;font-family:"Geist Mono",monospace;font-size:12px;line-height:19px;font-variant-ligatures:none}
+.diff .file{color:var(--t1);font-weight:500;display:block;margin-top:8px}
+.diff .file:first-child{margin-top:0}
+.diff .hunk{color:var(--t3);display:block}
+.diff .add{color:var(--ok);background:var(--add-bg);display:block} .diff .del{color:var(--bad);background:var(--del-bg);display:block}
+.diff .more{color:var(--t3);display:block;margin-top:6px}
+
+/* the action bar at the foot of the page */
+.foot{position:fixed;left:0;right:0;bottom:0;height:44px;display:flex;align-items:center;gap:16px;padding:0 24px;background:var(--raised);border-top:1px solid var(--line);color:var(--t2)}
+.foot .cur{display:flex;align-items:center;gap:14px;min-width:0;overflow:hidden;white-space:nowrap}
+.foot .cur span{display:inline-flex;gap:6px;align-items:center}
+.foot .r{margin-left:auto;display:flex;gap:18px;align-items:center;white-space:nowrap}
+.foot .r span{display:inline-flex;gap:8px;align-items:center}
+.foot .r .primary{color:var(--t1);font-weight:500}
+.foot .sep{width:1px;height:18px;background:var(--line-strong)}
+</style></head>
+<body>
+<header class="strip">
+  <span class="brand"><span class="mark"></span>kstrl <span class="t2">snippetvault</span></span>
+  <nav class="tabs" aria-label="views"><a class="on" href="#">Home</a><a href="#">Runs</a><a href="#">Decisions<span class="n hot">2</span></a><a href="#">Failures<span class="n hot">1</span></a><a href="#">Serve queue</a><a href="#">Config</a><a href="#">Learning</a></nav>
+  <span class="right">
+    <span class="state"><span class="ico passed" aria-hidden="true"><svg viewBox="0 0 12 12"><polyline points='2.5,6.5 5,9 9.5,3.5'/></svg></span>kstrl.toml valid</span>
+    <span class="state"><span class="ico passed" aria-hidden="true"><svg viewBox="0 0 12 12"><polyline points='2.5,6.5 5,9 9.5,3.5'/></svg></span>safe mode off</span>
+    <span class="state"><span class="ico running" aria-hidden="true"><svg viewBox="0 0 12 12"><path d='M4 2.5l5 3.5-5 3.5z'/></svg></span>ks serve running</span>
+    <span><b>$19.24</b> of $78.00 · 25%</span>
+    <span class="clock">1:03:42</span>
+  </span>
+</header><main class="wrap">
+
+<div class="cmd" role="search"><span class="caret"></span>Find a run, decision or action<span class="right"><kbd>⌘K</kbd></span></div>
+<div class="hints"><span><kbd>↑</kbd><kbd>↓</kbd> select</span><span><kbd>⏎</kbd> open</span><span><kbd>Esc</kbd> close</span><span class="t3">the lists below stay whole while the field is empty</span></div>
+<div class="head"><h1>snippetvault</h1><p class="sub">three things need you · one run live · ks serve running</p></div>
+<div class="grid">
+  <div>
+    <section class="sec"><div class="st">Needs you <span>3</span><span class="r"><a href="#">2 decisions</a> · <a href="#">1 failure</a></span></div><div class="row on"><span class="ico parked" aria-hidden="true"><svg viewBox="0 0 12 12"><circle cx='6' cy='4' r='2.2'/><path d='M2 10.5c.6-2.2 2-3.2 4-3.2s3.4 1 4 3.2'/></svg></span><div><div class="l1">client-commands is waiting for merge approval<span class="kind">merge gate</span></div><div class="l2">merge gate · run 8d80e8 · raised 2s ago · the branch holds reviewed work; nothing is pushed until you decide</div></div><span class="end"><span class="w">Decide</span><kbd>⏎</kbd></span></div><div class="row"><span class="ico waiting" aria-hidden="true"><svg viewBox="0 0 12 12"><path d='M6 1.8v2.4M6 9.8h0'/><circle cx='6' cy='6' r='4.6'/></svg></span><div><div class="l1">The integration loop stopped without a clean verdict<span class="kind">halted run</span></div><div class="l2">halted run · run fda682 · raised 2s ago · integration-fix-1 failed review and the fix budget (1) is spent</div></div><span class="end"><span class="w">Decide</span><kbd>⏎</kbd></span></div><div class="row"><span class="ico failed" aria-hidden="true"><svg viewBox="0 0 12 12"><path d='M3 3l6 6M9 3l-6 6'/></svg></span><div><div class="l1">client-commands failed at verify: Tests failed (exit code 1)<span class="kind">failed run</span></div><div class="l2">run fail01 · 2 attempts · failed 17:14 today · a retry is available and its scope is known</div></div><span class="end"><span class="w">Review retry</span><kbd>⏎</kbd></span></div></section>
+    <section class="sec"><div class="st">Active <span>3</span></div><div class="row"><span class="ico running" aria-hidden="true"><svg viewBox="0 0 12 12"><path d='M4 2.5l5 3.5-5 3.5z'/></svg></span><div><div class="l1">factory live01 · running · 3 of 6 components<span class="kind">factory run</span></div><div class="l2">http-app · engineer · iteration 3 of 10 · last output 8s ago · worker alive, checked 2s ago · elapsed 1:03:42</div><div class="l2" style="margin-top:3px"><b>$19.24</b> of $78.00 cap <span class="meter"><i style="width:25%"></i></span> 25%</div></div><span class="end"><span class="w">Open board</span><kbd>⏎</kbd></span></div><div class="row"><span class="ico running" aria-hidden="true"><svg viewBox="0 0 12 12"><path d='M4 2.5l5 3.5-5 3.5z'/></svg></span><div><div class="l1">ks serve · running · snippetvault slice 3: export and import<span class="kind">daemon</span></div><div class="l2">runs live01 above · last output 8s ago · daemon alive, checked 2s ago</div></div><span class="end"><span class="w">Queue</span><kbd>⏎</kbd></span></div><div class="row"><span class="ico queued" aria-hidden="true"><svg viewBox="0 0 12 12"><path d='M2.5 4h7M2.5 6.5h7M2.5 9h4'/></svg></span><div><div class="l1">ks serve · queued 1st · snippetvault slice 4: sharing<span class="kind">queued</span></div><div class="l2">starts when live01 finishes and every admission check passes</div></div><span class="end"></span></div></section>
+    <section class="sec"><div class="st">Delivery<span class="r">is main green after the merges</span></div><div class="main-at"><b>main is at <code>cea97b4</code></b> <span class="t3">·</span> <span class="state"><span class="ico waiting" aria-hidden="true"><svg viewBox="0 0 12 12"><path d='M6 1.8v2.4M6 9.8h0'/><circle cx='6' cy='6' r='4.6'/></svg></span>CI unknown</span> <span class="t2">· gh api failed (4): HTTP 401: Bad credentials · read 2s ago</span></div><div class="grp">run live01 · running · integration: no review recorded for this run</div><div class="pr"><span class="ico waiting" aria-hidden="true"><svg viewBox="0 0 12 12"><path d='M6 1.8v2.4M6 9.8h0'/><circle cx='6' cy='6' r='4.6'/></svg></span><span>PR #3 <span class="t2">storage</span></span><code>cea97b4</code><span>unknown<div class="why">gh api failed (4): HTTP 401: Bad credentials · read 2s ago</div></span><kbd>⏎</kbd></div><div class="pr"><span class="ico failed" aria-hidden="true"><svg viewBox="0 0 12 12"><path d='M3 3l6 6M9 3l-6 6'/></svg></span><span>PR #2 <span class="t2">snippet-rules</span></span><code>23dd9ac</code><span>failed<div class="why">check &quot;test&quot; failed · read 2s ago</div></span><kbd>⏎</kbd></div><div class="pr"><span class="ico passed" aria-hidden="true"><svg viewBox="0 0 12 12"><polyline points='2.5,6.5 5,9 9.5,3.5'/></svg></span><span>PR #1 <span class="t2">token-crypto</span></span><code>4d74d12</code><span>passed<div class="why">7 checks passed · read 2s ago</div></span><kbd>⏎</kbd></div><div class="grp">run 8d80e8 · completed 2d ago · release ref 4c4706b · integration: no review recorded for this run</div><div class="pr"><span class="ico queued" aria-hidden="true"><svg viewBox="0 0 12 12"><path d='M2.5 4h7M2.5 6.5h7M2.5 9h4'/></svg></span><span>PR #9 <span class="t2">client-commands</span></span><code>4c4706b</code><span>not read yet<div class="why">ks serve refreshes CI on its own · <a class="link" href="#">read now</a></div></span><kbd>⏎</kbd></div><div class="pr"><span class="ico passed" aria-hidden="true"><svg viewBox="0 0 12 12"><polyline points='2.5,6.5 5,9 9.5,3.5'/></svg></span><span>PR #8 <span class="t2">client-http</span></span><code>4ab99ae</code><span>passed<div class="why">7 checks passed · read 0s ago</div></span><kbd>⏎</kbd></div></section>
+    <section class="sec"><div class="st">History <span>9 runs</span><span class="r">percentages round up · select a row to read its whole note</span></div><table class="data"><thead><tr><th>Run</th><th>Kind</th><th>State</th><th class=num>Last event</th><th class=num>Components</th><th class=num>Tokens</th><th class=num>Cost</th><th>Note</th></tr></thead><tbody><tr><td><code>live01</code></td><td>factory</td><td><span class="state"><span class="ico running" aria-hidden="true"><svg viewBox="0 0 12 12"><path d='M4 2.5l5 3.5-5 3.5z'/></svg></span>running</span></td><td class="num t2">2s</td><td class="num">3 of 6</td><td class="num">14.37M</td><td class="num">$19.24 of $78.00 · 25%</td><td class="note"></td></tr><tr><td><code>fail01</code></td><td>factory</td><td><span class="state"><span class="ico failed" aria-hidden="true"><svg viewBox="0 0 12 12"><path d='M3 3l6 6M9 3l-6 6'/></svg></span>failed</span></td><td class="num t2">2s</td><td class="num">0 of 1, 1 failed</td><td class="num">2.41M</td><td class="num">$3.74 of $20.00 · 19%</td><td class="note">current: see needs you</td></tr><tr><td><code>8d80e8</code></td><td>factory</td><td><span class="state"><span class="ico passed" aria-hidden="true"><svg viewBox="0 0 12 12"><polyline points='2.5,6.5 5,9 9.5,3.5'/></svg></span>completed</span></td><td class="num t2">2d</td><td class="num">2 of 2</td><td class="num">18.51M</td><td class="num">$19.30 of $35.00 · 56%</td><td class="note"></td></tr><tr class=on><td><code>1490e8</code></td><td>factory</td><td><span class="state"><span class="ico waiting" aria-hidden="true"><svg viewBox="0 0 12 12"><path d='M6 1.8v2.4M6 9.8h0'/><circle cx='6' cy='6' r='4.6'/></svg></span>unknown</span></td><td class="num t2">2d</td><td class="num">0 of 2</td><td class="num">·</td><td class="num">·</td><td class="note">Refusing to run: stale component branches found</td></tr><tr><td><code>7ad3ae</code></td><td>factory</td><td><span class="state"><span class="ico failed" aria-hidden="true"><svg viewBox="0 0 12 12"><path d='M3 3l6 6M9 3l-6 6'/></svg></span>failed</span></td><td class="num t2">2d</td><td class="num">0 of 2, 1 failed</td><td class="num">8.02M</td><td class="num">$10.37 of $45.00 · 24%</td><td class="note">superseded by 8d80e8</td></tr><tr><td><code>4965fb</code></td><td>factory</td><td><span class="state"><span class="ico passed" aria-hidden="true"><svg viewBox="0 0 12 12"><polyline points='2.5,6.5 5,9 9.5,3.5'/></svg></span>completed</span></td><td class="num t2">3d</td><td class="num">6 of 6</td><td class="num">35.60M</td><td class="num">$42.35 of $78.00 · 55%</td><td class="note"></td></tr><tr><td><code>e3e393</code></td><td>factory</td><td><span class="state"><span class="ico waiting" aria-hidden="true"><svg viewBox="0 0 12 12"><path d='M6 1.8v2.4M6 9.8h0'/><circle cx='6' cy='6' r='4.6'/></svg></span>unknown</span></td><td class="num t2">3d</td><td class="num">0 of 6</td><td class="num">·</td><td class="num">·</td><td class="note">Refusing to run: stale component branches found</td></tr><tr><td><code>22f40e</code></td><td>factory</td><td><span class="state"><span class="ico waiting" aria-hidden="true"><svg viewBox="0 0 12 12"><path d='M6 1.8v2.4M6 9.8h0'/><circle cx='6' cy='6' r='4.6'/></svg></span>unknown</span></td><td class="num t2">3d</td><td class="num">0 of 6</td><td class="num">1.22M</td><td class="num">$1.64 of $78.00 · 3%</td><td class="note">Disallowed changes detected</td></tr><tr><td><code>db9df0</code></td><td>decompose</td><td><span class="state"><span class="ico passed" aria-hidden="true"><svg viewBox="0 0 12 12"><polyline points='2.5,6.5 5,9 9.5,3.5'/></svg></span>completed</span></td><td class="num t2">3d</td><td class="num">6 planned</td><td class="num">342.4k</td><td class="num">$1.47 · no cap</td><td class="note"></td></tr></tbody></table><div class="expand"><b>1490e8 · unknown</b> <span class="t3">(no finish record; last event 2d ago)</span><br>Refusing to run: stale component branches found: branch <code>kstrl/factory/client-http</code> (component client-http) already exists with commits not merged into <code>main</code>; refusing to silently reuse it. Merge it or delete it (<code>git branch -D kstrl/factory/client-http</code>) and re-run.</div></section>
+  </div>
+
+<aside class="rail" aria-label="actions for the selected row">
+  <div class="rt"><b>client-commands is waiting for merge approval</b>merge gate · run 8d80e8</div>
+  <a class="on" href="#">Decide<kbd>⏎</kbd></a>
+  <div class="does">Opens the decision with what is known and the four choices. Nothing happens until you choose.</div>
+  <a href="#">Open run 8d80e8<kbd>⌘O</kbd></a>
+  <a href="#">Open branch<kbd>⌘B</kbd></a>
+  <hr>
+  <a href="#">Snooze 24 hours<kbd>⌘S</kbd></a>
+  <div class="does">Hides this item for 24 hours; it returns to this list after that. ks serve admits no new work while a merge is parked.</div>
+</aside>
+</div></main><footer class="foot"><span class="cur"><span><kbd>↑</kbd><kbd>↓</kbd> move between rows</span><span><kbd>⏎</kbd> the row's first action</span><span><kbd>Tab</kbd> next section</span></span>
+<span class="r"><span>All actions for the selected row <kbd>⌘K</kbd></span></span></footer></body></html>
