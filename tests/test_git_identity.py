@@ -180,6 +180,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # shared branch, both into repositories built through
     # `tests.helpers.gitrepo.set_identity`.
     "tests/test_merge_gate_park.py": 2,
+    # #584: one base commit, into the repository `_repo` builds through
+    # `tests.helpers.gitrepo.set_identity`. The engineer's commit is the
+    # `ENGINEER` string it imports from test_merge_gate_park.
+    "tests/test_merge_has_one_recorder.py": 1,
     "tests/test_resume_reclaims_own_branch.py": 5,
     "tests/test_retry_carries_flags.py": 1,
     # #498: one base commit, into the repository `_repo` builds through

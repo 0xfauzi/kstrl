@@ -427,11 +427,15 @@ def recorded_merges(root_dir: Path, manifest: Manifest | None) -> tuple[tuple[st
     Two sources, because #442 writes the sha to two places and neither
     holds every merge. The ``pr_merged`` events of every run under
     ``.kstrl/runs/`` hold the merges earlier manifests recorded, which a
-    later decompose replaced. The manifest holds the merges a restarted
-    run confirmed by re-polling a parked PR, which set ``merge_sha``
-    without emitting ``pr_merged``. A run directory with no
-    ``events.jsonl`` has no merges; one whose stream cannot be read
-    raises ``OSError`` or ``UnicodeDecodeError``.
+    later decompose replaced. The manifest holds merges that no run's
+    stream holds: a run with ``[factory] progress_log_enabled = false``
+    writes no ``events.jsonl`` at all, and before #584 a restarted run
+    that confirmed a parked PR by re-polling set ``merge_sha`` without
+    emitting ``pr_merged``. Since #584 both paths that confirm a merge
+    record it through ``ComponentPipeline._record_merge``, so a run that
+    writes a stream holds every merge its manifest does. A run
+    directory with no ``events.jsonl`` has no merges; one whose stream
+    cannot be read raises ``OSError`` or ``UnicodeDecodeError``.
     """
     found: list[tuple[str, str]] = []
     for run_dir in reversed(run_dirs_newest_first(root_dir)):
