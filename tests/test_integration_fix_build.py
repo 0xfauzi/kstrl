@@ -20,7 +20,6 @@ from kstrl.integration_fix import fix_prd_rel
 from kstrl.integration_state import state_payload_errors
 from kstrl.manifest import Component, Manifest
 from kstrl.scope import RunScope
-from kstrl.statedir import plan_prd_path
 from tests.helpers import integration_harness as h
 from tests.helpers import integration_loop as lp
 from tests.helpers.gitrepo import git_in
@@ -75,7 +74,7 @@ def test_a_crash_after_the_manifest_append_is_reconciled_on_resume(tmp_path: Pat
         lp.run_loop(root, lp.Rig(root, lp.ScriptedReviewer(base, [lp.IC2_FAIL])))
 
     assert lp.manifest_ids(root) == ["comp-a", "comp-b", lp.FIX_1]
-    assert plan_prd_path(root, lp.FIX_1).is_file()
+    assert lp.planned_prd(root, lp.FIX_1).is_file()
 
     reviewer = lp.ScriptedReviewer(base, [{}])
     rig = lp.Rig(root, reviewer)
@@ -97,7 +96,7 @@ def test_the_fix_prd_is_not_written_where_the_fix_branch_commits_it(tmp_path: Pa
     with patch("kstrl.integration_loop._make_visible", side_effect=_crash), pytest.raises(_Crash):
         lp.run_loop(root, lp.Rig(root, lp.ScriptedReviewer(base, [lp.IC2_FAIL])))
 
-    assert plan_prd_path(root, lp.FIX_1).is_file()
+    assert lp.planned_prd(root, lp.FIX_1).is_file()
     assert not (root / fix_prd_rel(lp.FIX_1)).exists()
 
 

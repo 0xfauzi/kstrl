@@ -197,11 +197,11 @@ STATE_FILES: tuple[str, ...] = (
 #: ``integration_loop``), never while an engineer loop runs.
 #:
 #: ``plan`` (#545) meets both the same way. It holds the PRD each
-#: component starts from, which is the seed of its worktree copy and the
-#: copy Phase 1 compares the engineer's PRD against, so an edited one
-#: changes what a component is judged by. It is written only by
-#: ``decompose`` and the integration loop, before a component's engineer
-#: loop runs.
+#: component starts from, one directory per plan id (#568), which is the
+#: seed of its worktree copy and the copy Phase 1 compares the engineer's
+#: PRD against, so an edited one changes what a component is judged by.
+#: It is written only by ``decompose`` and the integration loop, before a
+#: component's engineer loop runs.
 STATE_NOT_CARVED: tuple[str, ...] = (
     CONTROL_AUTONOMY,
     CONTROL_INBOX,
@@ -219,7 +219,7 @@ def state_dir(root_dir: Path) -> Path:
     return root_dir / STATE_DIR_NAME
 
 
-def plan_prd_path(root_dir: Path, component_id: str) -> Path:
+def plan_prd_path(root_dir: Path, component_id: str, *, plan_id: str) -> Path:
     """Where kstrl writes the PRD a planned component starts from (#545).
 
     ``decompose`` and the integration loop write it here, and never at
@@ -227,19 +227,34 @@ def plan_prd_path(root_dir: Path, component_id: str) -> Path:
     branch commits the engineer's copy at ``prd_path``, and an untracked
     file at that path in the root checkout makes ``git merge`` of the
     branch refuse to run.
+
+    ``plan_id`` names the decompose, or the run that built an integration
+    fix, and the manifest records it on the component (#568). It is a
+    directory of its own so that a later decompose that reuses a
+    component id writes beside this copy rather than over it, and a
+    manifest can only ever address the copies its own plan wrote. An
+    empty ``plan_id`` raises: it would name a path no plan owns.
     """
-    return state_dir(root_dir) / "plan" / component_id / "prd.json"
+    if not plan_id:
+        raise ValueError(f"component '{component_id}' has no plan id, so it has no planned PRD")
+    return state_dir(root_dir) / "plan" / plan_id / component_id / "prd.json"
 
 
-def pre_run_prd_path(root_dir: Path, component_id: str, prd_path: str) -> Path:
+def pre_run_prd_path(root_dir: Path, component_id: str, prd_path: str, *, plan_id: str) -> Path:
     """The copy of a component's PRD that the run starts from.
 
-    The planned copy when one exists. A manifest whose PRDs the operator
-    wrote, which is ``ks run`` and a hand-built ``--manifest``, has none,
-    and there the PRD at ``prd_path`` in the root checkout is the copy.
+    The one reader of the planned copy (#568). A component the manifest
+    gives a ``plan_id`` starts from the copy that plan wrote, and nothing
+    else: if that copy is missing or unreadable, the caller's load fails
+    and the caller refuses. A component with no ``plan_id`` is one whose
+    PRD the operator wrote, which is ``ks run`` and a hand-built
+    ``--manifest``, and there the PRD at ``prd_path`` in the root
+    checkout is the copy. Neither case looks at the other's file, so a
+    planned copy another decompose wrote is never read.
     """
-    planned = plan_prd_path(root_dir, component_id)
-    return planned if planned.exists() else root_dir / prd_path
+    if plan_id:
+        return plan_prd_path(root_dir, component_id, plan_id=plan_id)
+    return root_dir / prd_path
 
 
 def _same_directory(left: Path, right: Path) -> bool:

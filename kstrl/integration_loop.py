@@ -213,10 +213,10 @@ def _build_fix(
     if error:
         return _stop(run, record, OUTCOME_RED, f"the fix's state entry was not written: {error}")
     try:
-        write_fix_prd(run.root_dir, component_id, prd)
+        write_fix_prd(run.root_dir, component_id, run.run_id, prd)
     except OSError as exc:
         return _stop(run, record, OUTCOME_RED, f"the fix PRD was not written: {exc}")
-    comp = append_fix_component(run.manifest, run.manifest_path, component_id, ids)
+    comp = append_fix_component(run.manifest, run.manifest_path, component_id, ids, run.run_id)
     refusal = _make_visible(run, comp)
     if refusal:
         return _stop(run, record, OUTCOME_RED, refusal)

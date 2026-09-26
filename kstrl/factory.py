@@ -2512,6 +2512,7 @@ def _run_component(
     base_branch: str = "main",
     verify_config: VerifyConfig | None = None,
     attempt: int = 1,
+    plan_id: str = "",
 ) -> ComponentResult:
     """Run a single component's implementation loop.
 
@@ -2625,9 +2626,10 @@ def _run_component(
     # copy removes the encoding question rather than answering it four
     # times.
     # The source is the copy the run starts from, which for a planned
-    # component is under .kstrl/plan/ and never at prd_path (#545).
+    # component is under .kstrl/plan/<plan_id>/ and never at prd_path
+    # (#545, #568).
     worktree_prd = worktree_path / prd_path_str
-    prd_source = pre_run_prd_path(root_dir, component_id, prd_path_str)
+    prd_source = pre_run_prd_path(root_dir, component_id, prd_path_str, plan_id=plan_id)
     if not worktree_prd.exists() and prd_source.exists():
         worktree_prd.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(prd_source, worktree_prd)
@@ -4871,6 +4873,7 @@ def _run_factory_locked(
                             base_branch=pipeline.component_base(comp.id),
                             verify_config=engineer_verify,
                             attempt=comp.retries + 1,
+                            plan_id=comp.plan_id,
                             redirect_output=False,  # type: ignore[misc]
                             live_line=functools.partial(
                                 ui.stream_line,
@@ -4895,6 +4898,7 @@ def _run_factory_locked(
                                 base_branch=pipeline.component_base(comp.id),  # type: ignore[misc]
                                 verify_config=engineer_verify,
                                 attempt=comp.retries + 1,
+                                plan_id=comp.plan_id,
                             ),
                         )
                     running_futures[future] = comp.id
