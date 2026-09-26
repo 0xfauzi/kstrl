@@ -208,8 +208,9 @@ def component_harness_paths(
     that are not product code: the component PRD (``check_prd_stories``
     re-reads it and only the agent can set ``passes``), the component
     progress log (``check_self_critique`` reads the Self-Critique block
-    out of it), and the codebase map (the engineer prompt tells the
-    agent to append durable facts to it). kstrl knows all three; the
+    out of it), and the codebase map (``ks understand`` writes it, and an
+    engineer prompt older than DEFAULT_PROMPT 1.4.0 tells the agent to
+    append durable facts to it; #585). kstrl knows all three; the
     operator should not have to guess them into ``allowedPaths``.
 
     The list is the carve-out both scope guards apply on top of the
@@ -564,6 +565,24 @@ def validate_agent_type(value: str | None, source: str) -> None:
     )
 
 
+def _budget_usd(value: object, source: str) -> float | None:
+    """``[agent] budget_usd`` or ``KSTRL_AGENT_BUDGET_USD`` as a ceiling.
+
+    ``""`` and 0 mean no ceiling and return None; README documents both.
+    Anything else is read as a number or refused, never dropped: before
+    #583 ``lots`` in the environment, and a string, bool or array in
+    kstrl.toml, read as no ceiling. ``float`` quotes a string it cannot
+    read, which is how the entry check names the key or the variable;
+    ``check_numbers`` then refuses a negative or non-finite one (#571).
+    """
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        raise ConfigError(f"{source} must be a number, got {value!r}")
+    if value == "":
+        return None
+    number = float(value)
+    return None if number == 0 else number
+
+
 def _apply_toml_overrides(
     config: KstrlConfig,
     toml_path: Path,
@@ -584,11 +603,9 @@ def _apply_toml_overrides(
             setattr(config, field_name, _resolve_path(value, root_dir) if is_path else value)
     validate_agent_type(config.agent_type, "[agent] type")
 
-    # 0 is "no ceiling" and leaves the field None. Any other number lands,
-    # so check_numbers refuses a negative one rather than dropping it (#571).
-    budget = section_table(data, "agent", toml_path).get("budget_usd")
-    if isinstance(budget, (int, float)) and not isinstance(budget, bool) and budget != 0:
-        config.agent_budget_usd = float(budget)
+    budget = section_table(data, "agent", toml_path).get("budget_usd", "")
+    if (ceiling := _budget_usd(budget, "[agent] budget_usd")) is not None:
+        config.agent_budget_usd = ceiling
 
     run = section_table(data, "run", toml_path)
     if "max_iterations" in run:
@@ -643,13 +660,9 @@ def _apply_env_overrides(config: KstrlConfig, root_dir: Path) -> None:
         config.kstrl_branch_explicit = True
     if "KSTRL_AUTO_CHECKOUT" in os.environ:
         config.auto_checkout = _parse_bool(os.environ.get("KSTRL_AUTO_CHECKOUT"))
-    if "KSTRL_AGENT_BUDGET_USD" in os.environ:
-        try:
-            budget_value = float(os.environ["KSTRL_AGENT_BUDGET_USD"])
-        except ValueError:
-            budget_value = 0.0
-        if budget_value != 0:
-            config.agent_budget_usd = budget_value
+    budget = os.environ.get("KSTRL_AGENT_BUDGET_USD", "")
+    if (ceiling := _budget_usd(budget, "KSTRL_AGENT_BUDGET_USD")) is not None:
+        config.agent_budget_usd = ceiling
     if "KSTRL_UI" in os.environ:
         config.ui_mode = os.environ["KSTRL_UI"]
     if "NO_COLOR" in os.environ:

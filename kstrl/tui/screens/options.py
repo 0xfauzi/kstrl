@@ -19,11 +19,13 @@ from typing import TYPE_CHECKING
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Label
+from textual.widgets import Button, Label, Static
 
 if TYPE_CHECKING:
+    from rich.console import RenderableType
+
     from kstrl.interaction import PromptRequest
 
 MAX_KEYED_OPTIONS = 9
@@ -37,15 +39,21 @@ class OptionsModal(ModalScreen[int | None]):
         *[Binding(str(n + 1), f"decide({n})", show=False) for n in range(MAX_KEYED_OPTIONS)],
     ]
 
-    def __init__(self, request: PromptRequest) -> None:
+    def __init__(self, request: PromptRequest, detail: RenderableType | None = None) -> None:
         super().__init__()
         self.request = request
+        #: What the question is about, shown under it and scrolled when
+        #: taller than the screen allows (#433 H3); None shows the question alone.
+        self.detail = detail
 
     def compose(self) -> ComposeResult:
         dialog = Vertical(id="options-dialog")
         dialog.border_title = self.request.kind.value
         with dialog:
             yield Label(Text(self.request.header), id="options-question")
+            if self.detail is not None:
+                with VerticalScroll(id="options-detail"):
+                    yield Static(self.detail)
             with Horizontal(id="options-buttons"):
                 for index, option in enumerate(self.request.options):
                     label = option.split(" (")[0]

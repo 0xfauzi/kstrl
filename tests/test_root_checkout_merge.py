@@ -19,6 +19,13 @@ used to copy prompt.md, CLAUDE.md and AGENTS.md into the worktree, the
 branch committed them, and the merge refused on the root checkout's
 untracked copies. kstrl now reads them from the root checkout and copies
 only the PRD seed.
+
+#585 is the codebase map. The engineer prompt told the engineer to append
+its facts to the map at its path in the worktree; with ``ks init`` output
+uncommitted the base branch does not track it there, so the branch created
+it and the merge refused. The engineer now reads the root checkout's map
+and writes its facts to its own progress log, and the stub here follows
+the prompt it receives rather than a path this file names.
 """
 
 from __future__ import annotations
@@ -38,12 +45,43 @@ from tests.helpers.procs import kill_group
 COMP = "greeter"
 BRANCH = f"kstrl/factory/{COMP}"
 
-#: What a repository whose ``ks init`` output was never committed still
-#: collides on after #569, a disclosed residual: the engineer prompt tells
-#: the engineer to append to the codebase map at its path in the worktree,
-#: the base branch does not track it there, so an engineer that follows
-#: the step creates it and commits it. kstrl writes nothing there itself.
-UNCOMMITTED_INIT_RESIDUAL = frozenset({"scripts/kstrl/codebase_map.md"})
+#: What the engineer that follows the prompt records as a durable fact.
+FACT = "FACT-585"
+
+#: Appended to the root checkout's codebase map after ``ks init`` and never
+#: committed, so only a read of the root checkout's copy can see it.
+MAP_MARKER = "MAP-MARKER-585"
+
+#: The engineer's side of the prompt, run by the stub with the prompt on
+#: stdin. It reads the file step 4 names into ``argv[1]`` (or writes
+#: ``ABSENT``) and appends the fact to the file step 10 names. Each is the
+#: first backquoted absolute path in that step's text, so the stub goes
+#: wherever the prompt sends it and this file names neither path.
+FOLLOW_PROMPT = """\
+import re
+import sys
+from pathlib import Path
+
+prompt = sys.stdin.read()
+task = prompt[prompt.index("## Your Task (one iteration)"):]
+
+
+def step(n):
+    start = task.index(f"\\n{n}. ")
+    return task[start : task.index(f"\\n{n + 1}. ", start)]
+
+
+def named_path(text):
+    return Path(next(p for p in re.findall(r"`([^`]+)`", text) if p.startswith("/")))
+
+
+seen = named_path(step(4))
+Path(sys.argv[1]).write_text(
+    seen.read_text(encoding="utf-8") if seen.is_file() else "ABSENT\\n", encoding="utf-8"
+)
+with named_path(step(10)).open("a", encoding="utf-8") as f:
+    f.write(sys.argv[2] + "\\n")
+"""
 
 #: What the stub architect returns: one component whose engineer writes
 #: product code and its own feature subtree.
@@ -91,15 +129,16 @@ def _stub_agent(
     *,
     rewrite_criteria: bool = False,
     prompt_dump: Path | None = None,
-    append_codebase_map: bool = False,
+    map_seen: Path | None = None,
 ) -> Path:
     """The architect outside a worktree; inside one, an engineer that marks
     its story done, writes code and its progress log, and commits
     everything with ``git add -A`` the way a real engineer does. With
     ``rewrite_criteria`` it also replaces its story's acceptance criteria,
     which no engineer may do. With ``prompt_dump`` the engineer writes the
-    prompt it received there. With ``append_codebase_map`` it appends a
-    fact to the codebase map, as the engineer prompt tells it to."""
+    prompt it received there. With ``map_seen`` it also follows steps 4
+    and 10 of that prompt (``FOLLOW_PROMPT``): what it read at step 4 goes
+    to ``map_seen``, and ``FACT`` goes where step 10 says."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(parents=True)
     mark_done = bin_dir / "mark_done.py"
@@ -120,7 +159,13 @@ def _stub_agent(
         """),
         encoding="utf-8",
     )
-    map_fact = "printf 'fact\\n' >> scripts/kstrl/codebase_map.md" if append_codebase_map else ""
+    follow = bin_dir / "follow_prompt.py"
+    follow.write_text(FOLLOW_PROMPT, encoding="utf-8")
+    follow_steps = (
+        f"printf '%s\\n' \"$prompt\" | '{sys.executable}' '{follow}' '{map_seen}' {FACT}"
+        if map_seen is not None
+        else ""
+    )
     agent = bin_dir / "agent"
     agent.write_text(
         textwrap.dedent(f"""\
@@ -137,7 +182,7 @@ def _stub_agent(
             mkdir -p src
             echo 'print("hello")' > src/greeter.py
             printf '## Self-Critique\\nnone\\n' >> scripts/kstrl/feature/{COMP}/progress.txt
-            {map_fact}
+            {follow_steps}
             git add -A
             git commit -q -m 'feat: US-001 hello'
             echo '<promise>COMPLETE</promise>'
@@ -300,22 +345,56 @@ def test_the_engineer_reads_prompt_and_claude_md_from_the_root_checkout(tmp_path
     assert "STALE-569" not in prompt, prompt[:2000]
 
 
-def test_uncommitted_ks_init_output_collides_only_on_the_disclosed_residual(
-    tmp_path: Path,
+@pytest.mark.parametrize("commit_init", [True, False], ids=["init-committed", "init-uncommitted"])
+def test_the_fact_an_engineer_records_merges_with_its_branch(
+    tmp_path: Path, commit_init: bool
 ) -> None:
-    """The census over an engineer that also appends to the codebase map.
-    Pinned exactly rather than marked xfail: an xfail would also absorb a
-    NEW colliding file, such as the three #569 stopped copying, and still
-    read as expected. The day the residual is fixed this fails, and the
-    set is emptied here."""
-    root = _initialised_project(tmp_path, commit_init=False)
+    """The census over an engineer that follows the prompt's step 10. With
+    ``ks init`` output uncommitted, step 10 used to send the fact to the
+    codebase map in the worktree, which the base branch does not track, so
+    the branch created the map and ``git merge`` refused on the root
+    checkout's untracked copy (#585). The fact now lands in the component's
+    own progress log: in the branch diff, which is what the knowledge
+    distiller reads, and on the base branch once the branch merges."""
+    root = _initialised_project(tmp_path, commit_init=commit_init)
 
-    run = _factory(root, _stub_agent(tmp_path, append_codebase_map=True))
+    run = _factory(root, _stub_agent(tmp_path, map_seen=tmp_path / "map-seen.txt"))
     assert run.returncode == 0, run.stdout
 
     untracked, committed = _untracked_and_committed(root)
-    assert f"scripts/kstrl/feature/{COMP}/prd.json" in committed, committed
-    assert untracked & committed == UNCOMMITTED_INIT_RESIDUAL, sorted(untracked & committed)
+    # Both sides are non-empty, so the empty intersection is a comparison.
+    assert "scripts/kstrl/manifest.json" in untracked, untracked
+    assert f"scripts/kstrl/feature/{COMP}/progress.txt" in committed, committed
+    assert untracked & committed == set(), sorted(untracked & committed)
+    assert FACT in _git(root, "diff", f"main...{BRANCH}").stdout
+
+    merge = _git(root, "merge", "--no-edit", BRANCH)
+    assert merge.returncode == 0, merge.stdout + merge.stderr
+    holders = _git(root, "grep", "-l", FACT, "HEAD").stdout.splitlines()
+    assert holders == [f"HEAD:scripts/kstrl/feature/{COMP}/progress.txt"], holders
+
+
+@pytest.mark.parametrize("commit_init", [True, False], ids=["init-committed", "init-uncommitted"])
+def test_the_engineer_reads_the_codebase_map_from_the_root_checkout(
+    tmp_path: Path, commit_init: bool
+) -> None:
+    """Step 4's map is the root checkout's, the file ``ks understand``
+    writes and the architect reads. In the worktree it is missing while
+    ``ks init`` output is uncommitted, and it lacks an edit the operator
+    has not committed. With the root map edited and uncommitted, the
+    branch must also still merge: a branch that changed the map would be
+    refused on the operator's local change."""
+    root = _initialised_project(tmp_path, commit_init=commit_init)
+    with (root / "scripts" / "kstrl" / "codebase_map.md").open("a", encoding="utf-8") as f:
+        f.write(f"\n{MAP_MARKER}\n")
+    map_seen = tmp_path / "map-seen.txt"
+
+    run = _factory(root, _stub_agent(tmp_path, map_seen=map_seen))
+    assert run.returncode == 0, run.stdout
+
+    assert MAP_MARKER in map_seen.read_text(encoding="utf-8")
+    merge = _git(root, "merge", "--no-edit", BRANCH)
+    assert merge.returncode == 0, merge.stdout + merge.stderr
 
 
 @pytest.mark.parametrize("rewrite", [False, True])

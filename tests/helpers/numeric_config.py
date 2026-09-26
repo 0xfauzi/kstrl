@@ -16,9 +16,12 @@ and never to be the "no kstrl setting reads" refusal.
 from __future__ import annotations
 
 import dataclasses
+import os
 import typing
+from collections.abc import Iterable
+from pathlib import Path
 
-from kstrl.config_preflight import ConfigSection, config_sections
+from kstrl.config_preflight import REJECTIONS, ConfigSection, config_sections
 
 #: (class, field) -> (section, key), where the key is not the field name
 #: in the class's one section.
@@ -68,3 +71,81 @@ def class_name(section: ConfigSection) -> str:
 def toml_door(section: ConfigSection, name: str) -> tuple[str, str]:
     """The kstrl.toml (section, key) that sets field ``name``."""
     return TOML_KEYS.get((class_name(section), name), (section.sections[0], name))
+
+
+#: The values an environment variable is set to while the census looks
+#: for the numeric field it lands in. Three, because a probe equal to a
+#: field's default cannot show that it landed.
+ENV_PROBES = ("1", "2", "3")
+
+
+def _loaded_numbers(
+    sections: list[ConfigSection],
+    census: list[tuple[ConfigSection, dataclasses.Field[object]]],
+    root: Path,
+) -> dict[tuple[int, str], object]:
+    """Each census field's value, keyed by (section index, field name), from
+    every loader in ``sections`` that does not refuse the environment."""
+    values: dict[tuple[int, str], object] = {}
+    for index, section in enumerate(sections):
+        try:
+            config = section.loader(root)
+        except REJECTIONS:
+            continue
+        for s, f in census:
+            if s is section:
+                values[(index, f.name)] = getattr(config, f.name)
+    return values
+
+
+def _probe_hits(
+    name: str,
+    sections: list[ConfigSection],
+    census: list[tuple[ConfigSection, dataclasses.Field[object]]],
+    root: Path,
+    baseline: dict[tuple[int, str], object],
+) -> set[tuple[int, str]]:
+    """The (section index, field name) keys ``name`` sets: each key whose
+    value equals a probe while ``name`` holds it, and differs without it."""
+    hits: set[tuple[int, str]] = set()
+    for probe in ENV_PROBES:
+        os.environ[name] = probe
+        try:
+            loaded = _loaded_numbers(sections, census, root)
+        finally:
+            del os.environ[name]
+        hits.update(
+            key
+            for key, value in loaded.items()
+            if value == float(probe) and baseline.get(key) != value
+        )
+    return hits
+
+
+def env_number_doors(
+    names: Iterable[str],
+    sections: list[ConfigSection],
+    root: Path,
+) -> list[tuple[str, ConfigSection, dataclasses.Field[object]]]:
+    """(variable, section, field) for every variable in ``names`` that sets
+    a numeric field of a loader in ``sections`` (#583).
+
+    Found by setting it, not by reading the loader: a variable is a door
+    to a field when some probe in :data:`ENV_PROBES` makes the loaded
+    field equal that number and the field's value without the variable
+    does not. The caller unsets every name in ``names`` first (through
+    ``monkeypatch``, so an exported value is restored afterwards); each
+    probe is removed again before the next is set.
+    """
+    census = [(s, f) for s in sections for f in numeric_fields(s.loader.__self__)]  # type: ignore[attr-defined]
+    baseline = _loaded_numbers(sections, census, root)
+    doors: list[tuple[str, ConfigSection, dataclasses.Field[object]]] = []
+    for name in sorted(names):
+        hits = _probe_hits(name, sections, census, root, baseline)
+        doors.extend(
+            (name, section, f)
+            for index, section in enumerate(sections)
+            for s, f in census
+            if s is section and (index, f.name) in hits
+        )
+    return doors

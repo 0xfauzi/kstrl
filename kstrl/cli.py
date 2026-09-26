@@ -1129,7 +1129,7 @@ def _run_structural_override_notices(loaded: FactoryConfig) -> list[str]:
 
 
 @cli.command()
-@click.argument("max_iterations", type=int, default=10)
+@click.argument("max_iterations", type=LIMIT_INT, default=10)
 @click.option(
     "--root",
     type=click.Path(path_type=Path),
@@ -1162,7 +1162,7 @@ def _run_structural_override_notices(loaded: FactoryConfig) -> list[str]:
 @click.option(
     "--sleep",
     "-s",
-    type=float,
+    type=LIMIT_FLOAT,
     default=2.0,
     help="Sleep seconds between iterations",
 )
@@ -1392,7 +1392,7 @@ def init(directory: Path, ui: str, no_color: bool, upgrade_prompts: bool) -> Non
 
 
 @cli.command()
-@click.argument("max_iterations", type=int, default=10)
+@click.argument("max_iterations", type=LIMIT_INT, default=10)
 @click.option(
     "--root",
     type=click.Path(path_type=Path),
@@ -1425,7 +1425,7 @@ def init(directory: Path, ui: str, no_color: bool, upgrade_prompts: bool) -> Non
 @click.option(
     "--sleep",
     "-s",
-    type=float,
+    type=LIMIT_FLOAT,
     default=2.0,
     help="Sleep seconds between iterations",
 )
@@ -1809,7 +1809,7 @@ def _understand_core(
 )
 @click.option(
     "--understand-iterations",
-    type=int,
+    type=LIMIT_INT,
     help="Iterations for the feature understanding phase",
 )
 @click.option(
@@ -1834,7 +1834,7 @@ def _understand_core(
 @click.option(
     "--sleep",
     "-s",
-    type=float,
+    type=LIMIT_FLOAT,
     default=2.0,
     help="Sleep seconds between iterations",
 )
@@ -1859,13 +1859,13 @@ def _understand_core(
 )
 @click.option(
     "--repair-max-runs",
-    type=int,
+    type=LIMIT_INT,
     default=5,
     help="Maximum auto repair runs after a failed implementation",
 )
 @click.option(
     "--repair-iterations",
-    type=int,
+    type=LIMIT_INT,
     default=5,
     help="Iterations per repair run",
 )

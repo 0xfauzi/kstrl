@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from collections.abc import Iterator
@@ -43,6 +44,7 @@ from kstrl.tui.dispatch import initial_screens_for_kind
 from kstrl.tui.screens.options import OptionsModal
 from kstrl.tui.screens.retry import RetryScreen
 from tests.helpers.fakegh import put_gh_on_path
+from tests.helpers.rendered import flat
 from tests.helpers.settle import drained, mounted, settled
 from tests.test_ci_state import FAKE_GH, FIXTURES
 
@@ -63,7 +65,7 @@ LIMIT_ENV = (
     "KSTRL_TIMEOUT_COMPONENT",
 )
 SIZES = [(120, 36), (80, 24)]
-DROPPED = "--verify-command, removed in #539"
+DROPPED = "--verify-command is no longer an option. The command it named never ran."
 
 
 def _home(root: Path) -> KstrlTuiApp:
@@ -440,28 +442,29 @@ class TestRetry:
             await settled(
                 pilot, lambda: isinstance(app.screen, OptionsModal), what="the confirmation"
             )
-            header = cast(OptionsModal, app.screen).request.header
-            assert f"not replayed: {DROPPED}" in header, header
-            assert "--verify-command" not in header.split("runs under:")[1].splitlines()[0]
+            body = await mounted(pilot, lambda: app.screen, "#options-detail Static")
+            scope = flat(body)
+            assert re.search(r"not replayed\s+" + re.escape(DROPPED), scope), scope
+            runs_under = next(ln for ln in scope.splitlines() if ln.startswith("runs under"))
+            assert "--verify-command" not in runs_under, runs_under
             await pilot.press("escape")
             await settled(pilot, lambda: app.screen.query("#retry-detail"), what="the queue")
-            assert DROPPED in str(detail.content), str(detail.content)
+            assert DROPPED in flat(detail), flat(detail)
 
     async def test_the_cli_command_names_a_recorded_flag_it_does_not_replay(
         self, tmp_path: Path, no_limit_env: None
     ) -> None:
         """The same line when only `ks retry` can carry the retry: a recorded
-        --max-parallel is a flag this screen cannot carry."""
-        _failed_manifest(tmp_path, (("verify_command", "uv run pytest"), ("max_parallel", 1)))
+        --max-retries is a flag this screen cannot carry."""
+        _failed_manifest(tmp_path, (("verify_command", "uv run pytest"), ("max_retries", 5)))
         app = _home(tmp_path)
         async with app.run_test(size=(120, 36)) as pilot:
             await mounted(pilot, lambda: app.screen, "#home-runs")
             app.push_screen(RetryScreen())
             detail = cast(Static, await mounted(pilot, lambda: app.screen, "#retry-detail"))
-            await settled(
-                pilot, lambda: "ks retry comp-a" in str(detail.content), what="the CLI command"
-            )
-            assert f"not replayed: {DROPPED}" in str(detail.content), str(detail.content)
+            await settled(pilot, lambda: "ks retry comp-a" in flat(detail), what="the CLI command")
+            text = flat(detail)
+            assert re.search(r"not replayed\s+" + re.escape(DROPPED), text), text
             assert app.screen.check_action("retry_selected", ()) is False
 
 
