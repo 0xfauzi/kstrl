@@ -253,6 +253,24 @@ def _opt(name: str) -> str:
 
 
 @dataclass(frozen=True)
+class UnkeptLimit:
+    """A run limit a retry refuses to drop (#526), as data (#433 G1).
+
+    The TUI names the options and the command that can carry them from
+    this, never from the refusal's wording.
+    """
+
+    #: The ``run_limits`` key, e.g. ``max_total_tokens``.
+    name: str
+    #: What the resumed run ran under; None when its launch record does not say.
+    ran_under: float | None
+
+    @property
+    def option(self) -> str:
+        return _opt(self.name)
+
+
+@dataclass(frozen=True)
 class ResumePlan:
     """What a retry re-enters `ks factory` with (#436)."""
 
@@ -269,13 +287,12 @@ class ResumePlan:
     dropped: tuple[str, ...]
 
 
-def _ceiling_problems(
-    run_id: str,
+def _unkept_limits(
     record: LaunchRecord | None,
     resolved: Mapping[str, float],
     stated: Collection[str],
-) -> list[str]:
-    """Why the retry must refuse over its run limits, or [] when it may run.
+) -> tuple[UnkeptLimit, ...]:
+    """The run limits the retry would drop, or () when it may run.
 
     A limit the retry states on its own command line, or resolves above 0,
     is kept. Otherwise the retry refuses when the run it resumes ran under
@@ -284,22 +301,29 @@ def _ceiling_problems(
     ``run_limits``, so a limit added there is covered here unedited (#526).
     """
     ran_under = dict(record.limits) if record is not None else {}
-    problems: list[str] = []
+    unkept: list[UnkeptLimit] = []
     for name in {**ran_under, **resolved}:
         if name in stated or resolved.get(name, 0) > 0:
             continue
         if name not in ran_under:
-            problems.append(
-                f"{_opt(name)}: run {run_id or '(none)'} left no launch record of this "
-                "limit, so the value it ran under is unknown, and the environment and "
-                "kstrl.toml set none"
-            )
+            unkept.append(UnkeptLimit(name, None))
         elif ran_under[name] > 0:
-            problems.append(
-                f"{_opt(name)}: run {run_id} ran under {_opt(name)} {ran_under[name]}, and "
-                "this retry resolves none: the limit came from the environment or "
-                "kstrl.toml, which no longer set it"
-            )
+            unkept.append(UnkeptLimit(name, ran_under[name]))
+    return tuple(unkept)
+
+
+def _ceiling_problems(run_id: str, unkept: tuple[UnkeptLimit, ...]) -> list[str]:
+    """Why the retry must refuse over its run limits, one line per limit."""
+    problems = [
+        f"{limit.option}: run {run_id or '(none)'} left no launch record of this "
+        "limit, so the value it ran under is unknown, and the environment and "
+        "kstrl.toml set none"
+        if limit.ran_under is None
+        else f"{limit.option}: run {run_id} ran under {limit.option} {limit.ran_under}, and "
+        "this retry resolves none: the limit came from the environment or "
+        "kstrl.toml, which no longer set it"
+        for limit in unkept
+    ]
     return [*problems, _LIMIT_REMEDY] if problems else []
 
 
@@ -313,14 +337,15 @@ def plan_resume(
     max_parallel: int | None,
     keep_worktrees_on_failure: bool,
     limits: Mapping[str, float | None] | None = None,
-) -> tuple[ResumePlan | None, list[str]]:
+) -> tuple[ResumePlan | None, list[str], tuple[UnkeptLimit, ...]]:
     """The flags a retry replays and the limits it runs under, or why it refuses.
 
     Changes nothing, so a refusal leaves the manifest, branch and worktree
     exactly as the failed run left them. The retry's own options win over
     the recorded ones, the same way a flag wins over env and kstrl.toml.
     ``limits`` holds the retry's own values for the run limits other than
-    the cost ceiling, by option name; None is "not given".
+    the cost ceiling, by option name; None is "not given". The third
+    element is the limits a refusal names, as data (#433 G1).
     """
     overrides: dict[str, FlagValue] = {
         name: value
@@ -341,7 +366,7 @@ def plan_resume(
         argv = flags_argv(command, flags)
     except LaunchRecordError as exc:
         path = launch_record_path(root_dir, manifest.run_id)
-        return None, [str(exc), f"delete {path} to retry without the recorded flags"]
+        return None, [str(exc), f"delete {path} to retry without the recorded flags"], ()
     loaded = FactoryConfig.load(root_dir)
     resolved = {
         name: float(flags.get(name, value))
@@ -351,9 +376,9 @@ def plan_resume(
     # here too so a bad value is refused before prepare_retry changes anything.
     validate_cost_ceiling(resolved["max_cost_usd"], "--max-cost-usd")
     validate_token_ceiling(int(resolved["max_total_tokens"]), "--max-total-tokens")
-    problems = _ceiling_problems(manifest.run_id, record, resolved, overrides.keys())
-    if problems:
-        return None, problems
+    unkept = _unkept_limits(record, resolved, overrides.keys())
+    if unkept:
+        return None, _ceiling_problems(manifest.run_id, unkept), unkept
     plan = ResumePlan(
         run_id=manifest.run_id,
         carried=record is not None,
@@ -362,7 +387,7 @@ def plan_resume(
         max_parallel=int(flags.get("max_parallel", loaded.max_parallel)),
         dropped=dropped,
     )
-    return plan, []
+    return plan, [], ()
 
 
 def limits_line(plan: ResumePlan) -> str:

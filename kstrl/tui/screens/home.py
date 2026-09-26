@@ -67,7 +67,7 @@ from kstrl.tui.operator_queue import DECISION, OperatorQueue
 from kstrl.tui.run_status import RUN_STATE_STYLE, state_word
 from kstrl.tui.runs import RunRef, discover_runs
 from kstrl.tui.widgets.component_table import ComponentTable
-from kstrl.tui.widgets.cost_meter import format_tokens
+from kstrl.tui.widgets.cost_meter import at_least, cost_against_cap, format_tokens
 from kstrl.tui.widgets.run_table import RunTable
 from kstrl.tui.widgets.safe_mode_chip import SafeModeChip
 
@@ -159,19 +159,25 @@ def _last_run(stats: HomeStats, narrow: bool = False) -> Text:
     else:
         # The same four words as the run table (#433 F4).
         glyph, color = RUN_STATE_STYLE[state_word(last.outcome)]
-        text.append("last run ", style=theme.MUTED)
+        if not narrow:
+            # At 80 columns the words give way so the spend, its cap and
+            # ks serve's state fit beside the safe-mode chip (#433 G9).
+            text.append("last run ", style=theme.MUTED)
         text.append(f"{glyph} {state_word(last.outcome)}", style=f"bold {color}")
         text.append(
             f" {last.components_done}/{last.components_total}",
             style="bold",
         )
-        marker = "+" if last.tokens_lower_bound else ""
         if last.total_tokens and not narrow:
             text.append(" · ", style=theme.MUTED)
-            text.append(f"{format_tokens(last.total_tokens)}{marker} tok")
+            text.append(
+                f"{at_least(format_tokens(last.total_tokens), last.tokens_lower_bound)} tok"
+            )
         if last.cost_usd:
             text.append(" · ", style=theme.MUTED)
-            text.append(f"${last.cost_usd:.2f}{marker}")
+            text.append_text(
+                cost_against_cap(last.cost_usd, last.max_cost_usd, last.cost_lower_bound)
+            )
     return text
 
 
@@ -334,7 +340,7 @@ class HomeScreen(Screen[None]):
 
     def _history_notes(self) -> dict[str, str]:
         return {
-            run_id: history_note(run_id, summary.state, self._queue)
+            run_id: history_note(run_id, summary.state, self._queue, summary.reason)
             for run_id, summary in self._summaries.items()
         }
 
@@ -502,6 +508,7 @@ class HomeScreen(Screen[None]):
                 f" · {summary.components_done}/{summary.components_total} components",
                 style=theme.MUTED,
             )
+            # No reason here: run_reason above already says it in full.
             note = history_note(run_id, summary.state, self._queue)
             if note:
                 line.append(f" · {note}", style=f"bold {theme.MUTED}")

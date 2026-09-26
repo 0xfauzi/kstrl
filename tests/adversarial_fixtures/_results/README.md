@@ -239,3 +239,28 @@ scored:
 Against the 20260925-211436 capture of the same prompt, refusals fell
 from 23 of 27 to 7 of 27. Every clean-twin failure in this file is a
 refusal, not a false positive.
+
+## The 2026-09-26 integration captures (#480, INTEGRATION_CRITERIA_PROMPT 1.1.0 and 1.2.0)
+
+`baseline-20260926-065920.json` recaptures the two integration roles at `34a72b8`
+(INTEGRATION_CRITERIA_PROMPT 1.1.0, haiku, three runs per fixture): `integration`
+0.33, `integration_clean` 0.58. It is the same prompt and code as
+`baseline-20260925-235341.json` (0.47, 0.75), so the difference is run-to-run
+variance. 13 of 27 runs were refused on the reply's shape: in 5 the reviewer
+judged the repository's prd.json stories or specification rules instead of
+IC1 to IC5, in 3 it folded the five into one story, in 3 it returned only some
+of them, in 1 it returned none, and in 1 it split IC1 into two criteria. Of
+the 14 scored runs one was wrong (`int-d1-stored-rows`: IC2 passed because no
+rule had been tightened yet).
+
+`baseline-20260926-090303.json` is the same capture at INTEGRATION_CRITERIA_PROMPT 1.2.0:
+`integration` 0.73, `integration_clean` 0.92, 2 of 27 refused on the reply's
+shape (`int-d1-stored-rows` once with no verdicts, `int-d4-decision-criterion`
+once judging the prd.json stories US-001 and US-002). `integration` meets its
+floor of 0.65. `integration_clean` does not meet its floor of 1.0: one
+`int-d5-predates-feature-clean` run opened a `test_quality` concern.
+`int-d1-stored-rows` failed IC2 in 2 of its 3 runs, one of them citing only
+`snippets.py`, so it scored 1 of 3.
+
+The replies were kept outside the repository: they are model output, and
+the repository's hooks reject some of their characters.

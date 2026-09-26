@@ -356,3 +356,54 @@ def test_the_enrolled_criteria_reach_the_reviewer(
     ev = json.loads(evidence[0].read_text(encoding="utf-8"))
     for n in range(1, 6):
         assert ev["stories"][n - 1]["criterion"] == f"H3 marker criterion {n} for {base}"
+
+
+#: The sentence every integration story ends with (#480, criteria 1.2.0).
+#: The 1.1.0 captures refused 20 of 54 replies because the reviewer judged
+#: the repository's prd.json or specification rules as its stories, folded
+#: IC1 to IC5 into one story, or left out the stories that passed.
+STORY_FRAME = (
+    "This story gets its own verdict, pass included; the specification and the prd.json "
+    "files in the repository are evidence for it, not stories of this review."
+)
+
+#: IC3's criterion before the frame, unchanged from 1.1.0.
+IC3_CRITERION = (
+    "A value or rule that more than one component depends on is defined once and imported "
+    "by the others, unless the specification states them as separate rules that share a "
+    "value, in which case separate definitions are correct and are not a defect."
+)
+
+
+def _prd_blocks(prompt: str) -> dict[str, str]:
+    """Each story's block of the PRD section the reviewer was sent, by id."""
+    start = prompt.index(":BEGIN PRD (acceptance criteria to verify)>>>")
+    end = prompt.index(":END PRD>>>", start)
+    blocks: dict[str, str] = {}
+    for chunk in prompt[start:end].split("\n### ")[1:]:
+        story_id, _, rest = chunk.partition(":")
+        blocks[story_id.strip()] = rest
+    return blocks
+
+
+def test_every_story_the_reviewer_is_sent_is_framed_as_a_story_of_this_review(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    base, _head = h.merged_feature(root)
+    reviewer = h.FakeReviewer(json.dumps(h.review_payload(root, base)))
+
+    h.run_factory_over(root, reviewer)
+
+    blocks = _prd_blocks(reviewer.prompts[0])
+    assert sorted(blocks) == ["IC1", "IC2", "IC3", "IC4", "IC5"]
+    for story_id, block in blocks.items():
+        assert block.count(STORY_FRAME) == 1, f"{story_id} lacks the story frame"
+    # IC2 fails a read path that re-applies new-input checks today, with no
+    # rule tightened yet: 1.1.0 was passed on "those rules have not changed".
+    assert "No rule has to have been tightened yet for this to fail." in blocks["IC2"]
+    assert "constructor, validator or parser that enforces a rule for new input" in blocks["IC2"]
+    # The separate-rules exception stays scoped to what the specification
+    # states, and IC3 gains no other sentence: a blanket pass for equal
+    # values would hide the planted duplicate in int-d3-separate-rules.
+    assert blocks["IC3"] == f" One definition per shared rule\n- {IC3_CRITERION} {STORY_FRAME}\n"

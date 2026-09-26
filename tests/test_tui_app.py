@@ -218,8 +218,9 @@ class TestRenderHelpers:
         state = self._state(tmp_path)
         assert state.unreported_calls > 0  # fixture includes unreported
         plain = render_cost_meter(state).plain
-        assert "+" in plain
-        assert "lower bound" in plain
+        # #433 G7: the lower bound reads "≥" before the figure; the legend
+        # that explained a trailing "+" is gone.
+        assert "≥" in plain
         assert "%" in plain  # cap percentage present
 
     def test_cost_meter_without_unreported(self, tmp_path: Path) -> None:
@@ -233,7 +234,7 @@ class TestRenderHelpers:
             "factory-20260720-170000.000000-clean",
         )
         plain = render_cost_meter(state).plain
-        assert "lower bound" not in plain
+        assert "≥" not in plain
 
 
 class TestCostMeterPerAxisLowerBound:
@@ -285,8 +286,7 @@ class TestCostMeterPerAxisLowerBound:
         plain = render_cost_meter(
             self._state(token_calls=2, cost_calls=1, gap=True),
         ).plain
-        assert "$5.00+" in plain
-        assert "lower bound" in plain
+        assert "≥$5.00" in plain
         assert "cost" in plain
 
     def test_the_covered_token_axis_stays_unmarked(self) -> None:
@@ -296,10 +296,8 @@ class TestCostMeterPerAxisLowerBound:
         plain = render_cost_meter(
             self._state(token_calls=2, cost_calls=1, gap=True),
         ).plain
-        assert "1.0k tok" in plain
-        assert "1.0k+" not in plain
-        assert "% of 100.0k token cap" in plain
-        assert "%+ of 100.0k token cap" not in plain
+        assert "1.0k tok · 1% of 100.0k token cap" in plain
+        assert "≥1.0k" not in plain
 
     def test_the_cap_percentage_is_marked_too(self) -> None:
         """The percentage is what an operator reads as headroom; leaving
@@ -307,7 +305,7 @@ class TestCostMeterPerAxisLowerBound:
         plain = render_cost_meter(
             self._state(token_calls=2, cost_calls=1, gap=True),
         ).plain
-        assert "50%+ of $10.00 cost cap" in plain
+        assert "≥50% of $10.00 cost cap" in plain
 
     def test_the_marker_needs_no_budget_coverage_event(self) -> None:
         """The usage events alone carry the fact; the run-scoped event is
@@ -315,22 +313,21 @@ class TestCostMeterPerAxisLowerBound:
         plain = render_cost_meter(
             self._state(token_calls=2, cost_calls=1, gap=False),
         ).plain
-        assert "$5.00+" in plain
+        assert "≥$5.00" in plain
 
     def test_a_tokenless_axis_marks_tokens_only(self) -> None:
         plain = render_cost_meter(
             self._state(token_calls=0, cost_calls=2, gap=False),
         ).plain
-        assert "1.0k+ tok" in plain
+        assert "≥1.0k tok" in plain
         assert "$5.00 " in plain
-        assert "lower bound (tokens)" in plain
+        assert "≥$5.00" not in plain
 
     def test_full_coverage_says_nothing(self) -> None:
         plain = render_cost_meter(
             self._state(token_calls=2, cost_calls=2, gap=False),
         ).plain
-        assert "+" not in plain
-        assert "lower bound" not in plain
+        assert "≥" not in plain
 
     def test_no_price_is_invented_for_the_uncovered_calls(self) -> None:
         """Standing constraint on this PR, extended to the dashboard: the
@@ -343,4 +340,4 @@ class TestCostMeterPerAxisLowerBound:
         # the uncovered calls would be a third.
         import re
 
-        assert re.findall(r"\$[0-9.]+\+?", plain) == ["$5.00+", "$10.00"]
+        assert re.findall(r"≥?\$[0-9.]+", plain) == ["≥$5.00", "$10.00"]

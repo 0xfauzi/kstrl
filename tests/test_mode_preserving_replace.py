@@ -133,6 +133,9 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "decompose.py comp_id.replace",
     "decompose.py comp_id.replace('-', ' ').replace",
     "doctor.py now.isoformat().replace",
+    # #433 inc3: str.replace spelling a slug as words, here and in the four
+    # tui/ rows below, except inbox.py's `moment`, a datetime's tzinfo.
+    "evolve_report.py name.replace",
     "gateparse.py TOOL_PARSERS[chosen]",
     "gateparse.py TOOL_PARSERS[name]",
     "inbox.py datetime.now(UTC).replace",
@@ -151,6 +154,10 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "statedir.py datetime.now(UTC).replace(microsecond=0).isoformat().replace",
     "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
     "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
+    "tui/inbox_consequences.py str(kind).replace",
+    "tui/screens/decompose.py key.replace",
+    "tui/screens/inbox.py key.replace",
+    "tui/screens/inbox.py moment.replace",
     "verify.py text.replace",
     "verify.py text.replace('\\r\\n', '\\n').replace",
     "workqueue.py parsed.replace",

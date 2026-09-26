@@ -19,7 +19,7 @@ import os
 import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from dataclasses import fields as dataclass_fields
 from pathlib import Path
 from typing import Any
@@ -34,6 +34,9 @@ class ConfigRow:
     key: str
     value: str  # pre-formatted via format_config_value
     source: str  # flag | env | toml | default
+    #: The value as the config screen shows it (``operator_value``). Not
+    #: compared: it is a rendering of ``value``, not a second fact.
+    shown: str = field(default="", compare=False)
 
 
 @dataclass(frozen=True)
@@ -110,13 +113,20 @@ def show_sections() -> list[tuple[str, list[tuple[str, str]]]]:
     ]
 
 
+#: The values every ``--ui`` flag accepts (#565). "gum" is the retired
+#: renderer's name and reads as rich. ``[ui] ui_mode`` and ``KSTRL_UI``
+#: are not refused at load: :func:`normalize_ui_mode` also reads "off",
+#: "no" and "0" as plain and any other value as auto.
+UI_MODES: tuple[str, ...] = ("auto", "rich", "plain", "gum")
+
+
 def normalize_ui_mode(value: str) -> str:
     normalized = (value or "auto").strip().lower()
     if normalized == "gum":
         return "rich"
     if normalized in {"plain", "off", "no", "0"}:
         return "plain"
-    if normalized not in {"auto", "rich", "plain"}:
+    if normalized not in UI_MODES:
         return "auto"
     return normalized
 
@@ -221,6 +231,31 @@ def format_row_value(section: str, key: str, value: Any) -> str:
     if (section, key) in NO_LIMIT_KEYS and value <= 0:
         return NO_LIMIT
     return format_config_value(value)
+
+
+def operator_value(section: str, key: str, value: Any) -> str:
+    """The value as the config screen shows it: never a Python repr (#433 G4).
+
+    ``ks config show`` keeps ``format_row_value``'s reprs, which paste into
+    kstrl.toml; the screen says ``unset``, ``yes``, ``no``, ``none``.
+    """
+    if value is None and (section, key) in UNSET_RENDERINGS:
+        return UNSET_RENDERINGS[(section, key)]
+    if (section, key) in NO_LIMIT_KEYS and value <= 0:
+        return NO_LIMIT
+    return _plain(value)
+
+
+def _plain(value: Any) -> str:
+    if value is None:
+        return "unset"
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, str):
+        return value or "empty"
+    if isinstance(value, list | tuple | set | frozenset):
+        return ", ".join(_plain(item) for item in value) or "none"
+    return str(value)
 
 
 def kstrl_config_defaults(root_dir: Path) -> KstrlConfig:
@@ -385,6 +420,7 @@ def _base_rows(resolved: KstrlConfig, sources: dict[str, str]) -> list[ConfigRow
             key=toml_key,
             value=format_row_value(section, toml_key, getattr(resolved, field_name)),
             source=sources[field_name],
+            shown=operator_value(section, toml_key, getattr(resolved, field_name)),
         )
         for section, keys in show_sections()
         for toml_key, field_name in keys
@@ -414,6 +450,7 @@ def _phase_rows(
                 key=field_name,
                 value=format_row_value(section, field_name, value),
                 source=source,
+                shown=operator_value(section, field_name, value),
             )
         )
     return rows

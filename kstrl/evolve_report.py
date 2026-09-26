@@ -14,10 +14,18 @@ instrument is for.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from kstrl.evolution import EvolutionConfig, EvolutionJournal, FailurePattern
+
+
+def _counts(
+    journal: EvolutionJournal, evo_config: EvolutionConfig
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    util = journal.get_fact_utilization(lookback_runs=evo_config.lookback_runs)
+    concern = journal.get_concern_hit_rate(lookback_runs=evo_config.lookback_runs)
+    return util, concern
 
 
 def readiness_lines(
@@ -34,8 +42,7 @@ def readiness_lines(
     """
     from kstrl.distill_readiness import distill_parse_failure_line
 
-    util = journal.get_fact_utilization(lookback_runs=evo_config.lookback_runs)
-    concern = journal.get_concern_hit_rate(lookback_runs=evo_config.lookback_runs)
+    util, concern = _counts(journal, evo_config)
     superseded_only = sum(1 for pattern in patterns if pattern.superseded_only)
     by_category = ", ".join(
         f"{name} {count}" for name, count in sorted(concern["by_category"].items())
@@ -53,3 +60,42 @@ def readiness_lines(
         # event stream, not the journal; that module's docstring says why.
         distill_parse_failure_line(root_dir, evo_config.lookback_runs),
     ]
+
+
+def operator_readiness_lines(
+    journal: EvolutionJournal,
+    evo_config: EvolutionConfig,
+    patterns: list[FailurePattern],
+    root_dir: Path,
+) -> list[str]:
+    """The same numbers in the evolve screen's words: no field names (#433 G5).
+
+    The recurring count is left out when it is zero: the patterns tab
+    already says nothing recurred, and saying it twice was the defect.
+    """
+    from kstrl.distill_readiness import distill_parse_failure_line
+
+    util, concern = _counts(journal, evo_config)
+    lines = []
+    if patterns:
+        superseded_only = sum(1 for pattern in patterns if pattern.superseded_only)
+        lines.append(
+            f"recurring failure signatures: {len(patterns)} "
+            f"({superseded_only} only on superseded attempts)"
+        )
+    by_category = ", ".join(
+        f"{name.replace('_', ' ')} {count}"
+        for name, count in sorted(concern["by_category"].items())
+    )
+    lines.append(
+        f"knowledge facts: measured on {util['measured']} component(s), not measured on "
+        f"{util['unmeasured']}; {util['referenced']} referenced, "
+        f"in {util['runs_with_referenced']} run(s)"
+    )
+    lines.append(
+        f"review and security concerns: on {concern['with_concern']} of "
+        f"{concern['components']} component(s)"
+        + (f"; by category: {by_category}" if by_category else "")
+    )
+    lines.append(distill_parse_failure_line(root_dir, evo_config.lookback_runs).strip())
+    return lines

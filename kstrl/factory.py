@@ -238,22 +238,26 @@ def validate_token_ceiling(value: int, source: str) -> int:
 #: R10.3: the two settings [factory] claim_agreement accepts.
 VALID_CLAIM_AGREEMENT = ("advisory", "block")
 
+#: #562: the settings [factory] review_mode accepts, taken from the
+#: ReviewMode that Phase 2 parses the field with
+#: (``pipeline._phase_review``), so load and use cannot disagree.
+VALID_REVIEW_MODES = tuple(mode.value for mode in ReviewMode)
 
-def _validate_claim_agreement(value: str, source: str) -> str:
-    """Reject an unrecognised claim mode at load time.
 
-    ``review_mode`` next door is validated only when the pipeline builds
-    a ``ReviewMode`` from it, deep inside Phase 2, which turns a typo in
-    kstrl.toml into a crash several minutes and one agent run later.
-    This one fails where the value is read, in the shape
-    ``AdequacyConfig.__post_init__`` uses. Silently treating an
-    unrecognised value as "advisory" would be worse than either: the
-    operator would believe a gate was blocking when it was not.
+def _validate_choice(value: str, source: str, accepted: tuple[str, ...]) -> str:
+    """Reject a value outside ``accepted`` where it is read.
+
+    Used for ``claim_agreement`` and ``review_mode``. Before #562
+    ``review_mode`` was checked only when Phase 2 built a ``ReviewMode``
+    from it, so a typo in kstrl.toml ran and paid for the engineer and
+    then crashed with a traceback. Raising here turns the same typo into
+    a ``config_preflight`` refusal before any agent call. Silently
+    treating an unrecognised value as a default would be worse than
+    either: the operator would believe a gate was set when it was not.
     """
-    if value not in VALID_CLAIM_AGREEMENT:
+    if value not in accepted:
         raise ValueError(
-            f"invalid {source} {value!r}; expected "
-            + " or ".join(repr(v) for v in VALID_CLAIM_AGREEMENT)
+            f"invalid {source} {value!r}; expected " + " or ".join(repr(v) for v in accepted)
         )
     return value
 
@@ -468,10 +472,12 @@ class FactoryConfig:
         # R10.3: catch a bad claim mode wherever the config is
         # built, not only in load(). A FactoryConfig assembled from CLI
         # flags or in a test goes through here too.
-        _validate_claim_agreement(
+        _validate_choice(
             self.claim_agreement,
             "[factory] claim_agreement",
+            VALID_CLAIM_AGREEMENT,
         )
+        _validate_choice(self.review_mode, "[factory] review_mode", VALID_REVIEW_MODES)
         _validate_max_rounds(self.integration_max_rounds, "[factory] integration_max_rounds")
 
     @classmethod
@@ -524,9 +530,10 @@ class FactoryConfig:
             # operator as "from kstrl.toml" when it came from the
             # environment - a false provenance claim in the one place
             # they look to find out where a setting came from.
-            claim_agreement=_validate_claim_agreement(
+            claim_agreement=_validate_choice(
                 os.environ.get("KSTRL_FACTORY_CLAIM_AGREEMENT", "advisory"),
                 "KSTRL_FACTORY_CLAIM_AGREEMENT",
+                VALID_CLAIM_AGREEMENT,
             ),
         )
 
@@ -556,11 +563,16 @@ class FactoryConfig:
         if "create_prs" in section:
             config.create_prs = bool(section["create_prs"])
         if "review_mode" in section:
-            config.review_mode = str(section["review_mode"])
+            config.review_mode = _validate_choice(
+                str(section["review_mode"]),
+                "[factory] review_mode",
+                VALID_REVIEW_MODES,
+            )
         if "claim_agreement" in section:
-            config.claim_agreement = _validate_claim_agreement(
+            config.claim_agreement = _validate_choice(
                 str(section["claim_agreement"]),
                 "[factory] claim_agreement",
+                VALID_CLAIM_AGREEMENT,
             )
         if "merge_timeout" in section:
             config.merge_timeout = float(section["merge_timeout"])
@@ -662,9 +674,10 @@ class FactoryConfig:
             "KSTRL_FACTORY_CONVERGENCE_ATTEMPTS",
         )
         if "KSTRL_FACTORY_CLAIM_AGREEMENT" in os.environ:
-            config.claim_agreement = _validate_claim_agreement(
+            config.claim_agreement = _validate_choice(
                 os.environ["KSTRL_FACTORY_CLAIM_AGREEMENT"],
                 "KSTRL_FACTORY_CLAIM_AGREEMENT",
+                VALID_CLAIM_AGREEMENT,
             )
         return config
 
