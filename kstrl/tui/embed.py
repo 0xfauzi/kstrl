@@ -194,12 +194,15 @@ def run_factory_embedded(
     *,
     poll_interval: float = 0.2,
     architect_usage: UsageTotals | None = None,
+    architect_run_id: str = "",
 ) -> int:
     """`ks factory --tui`: the same run, rendered in the dashboard.
 
     ``architect_usage`` carries the architect's spend the way the plain path
     does (#257); without it the ceiling would bound one fewer role in
     the TUI than on a terminal, for no reason an operator could see.
+    ``architect_run_id`` names the run holding that architect's records,
+    as on the plain path (#587).
     """
     from kstrl.factory import run_factory
 
@@ -216,6 +219,7 @@ def run_factory_embedded(
             run_id=ctx.run_id,
             notify_capture_output=True,
             architect_usage=architect_usage,
+            architect_run_id=architect_run_id,
         ).exit_code
 
     return run_embedded(

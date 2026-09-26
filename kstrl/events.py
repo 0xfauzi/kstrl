@@ -133,6 +133,14 @@ class RunStarted(Event):
     type: ClassVar[str] = "factory_started"
     project: str = ""
     components: int = 0
+    #: The process that ran this run. `ks serve` charges a decompose run to
+    #: the launch whose child process this is (#587). 0 in a stream
+    #: written before #587.
+    pid: int = 0
+    #: The run that holds this factory run's architect records. `ks factory
+    #: --spec` runs its architect as a decompose run of its own (#567) and
+    #: names it here (#587). "" when this run decomposed nothing.
+    architect_run_id: str = ""
 
 
 @dataclass(frozen=True, kw_only=True)
