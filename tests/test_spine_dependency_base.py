@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import textwrap
 from pathlib import Path
 from typing import Any
@@ -199,9 +200,23 @@ def _statuses(tmp_path: Path) -> dict[str, str]:
     return {c.id: c.status for c in final.components}
 
 
-def _without_gh(monkeypatch: pytest.MonkeyPatch) -> None:
-    kept = [p for p in os.environ["PATH"].split(os.pathsep) if not (Path(p) / "gh").exists()]
+def _without_gh(monkeypatch: pytest.MonkeyPatch, shims: Path) -> None:
+    """PATH with no gh on it and every other tool still reachable. A CI
+    runner keeps gh and git in the same /usr/bin, so dropping gh's
+    directory alone drops git with it: link that directory's other
+    executables into ``shims`` first."""
+    shims.mkdir()
+    kept: list[str] = [str(shims)]
+    for entry in os.environ["PATH"].split(os.pathsep):
+        folder = Path(entry)
+        if not (folder / "gh").exists():
+            kept.append(entry)
+            continue
+        for tool in folder.iterdir():
+            if tool.name != "gh" and not (shims / tool.name).exists():
+                (shims / tool.name).symlink_to(tool)
     monkeypatch.setenv("PATH", os.pathsep.join(kept))
+    assert shutil.which("gh") is None
 
 
 @pytest.mark.parametrize("create_prs", [False, True], ids=["no_prs", "no_gh"])
@@ -213,7 +228,7 @@ def test_dependent_worktree_holds_its_dependency_code(
     """Under --no-prs, and with PRs on but no gh, nothing merges a into the
     base, so b's branch must take a's branch itself."""
     if create_prs:
-        _without_gh(monkeypatch)
+        _without_gh(monkeypatch, tmp_path / "shims")
     root, manifest, _ = _project(tmp_path, {"a": [], "b": ["a"]})
 
     _run(tmp_path, root, manifest, monkeypatch, create_prs=create_prs)
