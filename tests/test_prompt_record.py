@@ -529,12 +529,33 @@ class TestTheSeam:
             (3, "third"),
         ]
 
+    def test_records_are_returned_in_call_order_past_nine_calls(self, tmp_path: Path) -> None:
+        """An engineer attempt makes one call per iteration, and file names sort
+        c1, c10, c11, ..., c2, so the reader must order by the number."""
+        call = _call(tmp_path)
+        with recording_prompts(call):
+            for n in range(1, 12):
+                record_prompt(f"prompt {n}", agent_cli="custom")
+
+        records = read_prompt_records(call.run_root, run_id="factory-x", component="comp-a")
+
+        assert [(r.call, r.prompt) for r in records] == [(n, f"prompt {n}") for n in range(1, 12)]
+
     def test_outside_a_scope_nothing_is_written(self, tmp_path: Path) -> None:
         with recording_prompts(None):
             list(CustomAgent("cat > /dev/null; echo ok").run("p", cwd=tmp_path, timeout=30))
         list(CustomAgent("cat > /dev/null; echo ok").run("p", cwd=tmp_path, timeout=30))
 
         assert not list(tmp_path.rglob("*.json"))
+
+    def test_a_call_after_the_scope_closes_is_not_recorded(self, tmp_path: Path) -> None:
+        call = _call(tmp_path)
+        with recording_prompts(call):
+            assert record_prompt("inside", agent_cli="custom") is not None
+
+        assert record_prompt("after", agent_cli="custom") is None
+        records = read_prompt_records(call.run_root, run_id="factory-x", component="comp-a")
+        assert [r.prompt for r in records] == ["inside"]
 
     def test_an_unknown_agent_cli_is_refused(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="unknown agent_cli"):
