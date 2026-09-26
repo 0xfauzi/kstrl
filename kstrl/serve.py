@@ -735,8 +735,9 @@ class RunSpend:
         Zero calls does NOT mean zero spend, which is why the fallback is
         the pessimistic one. Three separate cases land on it and all
         three deserve it: a blocker halt, which exits `ks factory` before
-        any run directory exists so the decompose bill is nowhere on disk
-        to charge; an adapter that reports no usage; and a resume that
+        the factory run's directory exists, so the decompose bill is only
+        in the decompose run the architect ran as (#567), a kind
+        ``owned_run_spend`` does not charge; an adapter that reports no usage; and a resume that
         ran no architect at all. Naming the role keeps the day's total
         labelled a floor rather than estimated (#186 F3).
         """

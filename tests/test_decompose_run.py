@@ -15,6 +15,7 @@ from kstrl.commandrun import open_command_run
 from kstrl.decompose import SpecBlockerError, decompose_spec
 from kstrl.reducer import load_run_state
 from kstrl.ui.plain import PlainUI
+from tests.helpers.prompt_calls import architect_call
 from tests.test_decompose import VALID_DECOMPOSE_OUTPUT, MockDecomposeAgent
 
 MINOR_ISSUE_OUTPUT = json.dumps(
@@ -131,6 +132,7 @@ def _decompose(
             root_dir=tmp_path,
             bus=run.bus,
             transcript=run.transcript_writer(ARCHITECT_COMPONENT),
+            prompt_call=run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
         )
     finally:
         run.close()
@@ -285,6 +287,7 @@ class TestDecomposeRun:
             agent=MockDecomposeAgent(MINOR_ISSUE_OUTPUT),  # type: ignore[arg-type]
             ui=PlainUI(no_color=True, file=io.StringIO()),
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
         assert len(manifest.components) == 2
         assert not (tmp_path / ".kstrl" / "runs").exists()
@@ -525,6 +528,7 @@ class TestReportingNeverReplacesTheHalt:
                 agent=MeteringAgent(BLOCKER_OUTPUT),  # type: ignore[arg-type]
                 ui=BrokenPipeUI(no_color=True, file=io.StringIO()),
                 root_dir=tmp_path,
+                prompt_call=architect_call(tmp_path),
             )
 
     def test_a_broken_pipe_does_not_swallow_a_success(
@@ -542,6 +546,7 @@ class TestReportingNeverReplacesTheHalt:
             agent=MeteringAgent(MINOR_ISSUE_OUTPUT),  # type: ignore[arg-type]
             ui=BrokenPipeUI(no_color=True, file=io.StringIO()),
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
         assert len(manifest.components) == 2
 

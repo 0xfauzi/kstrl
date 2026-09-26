@@ -2331,9 +2331,9 @@ def _report_architect_usage(
     )
 
 
-def _for_attempt(call: AgentCall | None, attempt: int) -> AgentCall | None:
+def _for_attempt(call: AgentCall, attempt: int) -> AgentCall:
     """The architect's record identity for one decompose attempt (#532)."""
-    return None if call is None else dataclasses.replace(call, attempt=attempt)
+    return dataclasses.replace(call, attempt=attempt)
 
 
 def _decompose_spec_impl(
@@ -2348,7 +2348,7 @@ def _decompose_spec_impl(
     *,
     bus: EventBus | None = None,
     transcript: Callable[[str], None] | None = None,
-    prompt_call: AgentCall | None = None,
+    prompt_call: AgentCall,
 ) -> Manifest:
     """Decompose a spec into components and generate PRDs.
 
@@ -2370,7 +2370,8 @@ def _decompose_spec_impl(
             (the run's transcript file); terminal streaming through
             ``ui`` is unchanged either way.
         prompt_call: Who the architect's prompt is recorded for (#532),
-            with each attempt's number put in; None records nothing.
+            with each attempt's number put in. Required (#567): every
+            caller is inside a run, and the run is what the record names.
 
     Returns:
         Manifest with generated components and PRD files
@@ -2940,7 +2941,7 @@ def decompose_spec(
     *,
     bus: EventBus | None = None,
     transcript: Callable[[str], None] | None = None,
-    prompt_call: AgentCall | None = None,
+    prompt_call: AgentCall,
 ) -> Manifest:
     """Run decomposition, guaranteeing a ``RunCompleted`` and a usage
     capture on every exit.

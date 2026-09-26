@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from kstrl import factory
 from kstrl.agents import prompt_record
 from kstrl.agents.base import (
     ARCHITECT_COMPONENT,
@@ -45,6 +46,8 @@ from kstrl.agents.prompt_record import (
 from kstrl.atomicio import atomic_write_json
 from kstrl.cli import cli
 from kstrl.init_cmd import gitignore_block, run_init
+from kstrl.runid import run_kind
+from kstrl.safemode import safe_mode_reasons
 from kstrl.ui.plain import PlainUI
 from kstrl.version import kstrl_version
 from tests.helpers import gitrepo
@@ -165,6 +168,29 @@ def _initialised_project(tmp_path: Path, *, review: bool = True) -> Path:
         text = text.replace("[security]\n", '[security]\nmode = "advisory"\n', 1)
         toml.write_text(text, encoding="utf-8")
     return root
+
+
+def _spec_project(tmp_path: Path, *, initialised: bool = False) -> Path:
+    """A repository `ks decompose` and `ks factory --spec` accept: a build
+    manifest, its language's ignores, and a spec. ``initialised`` also runs
+    `ks init`, which `ks factory` needs for the engineer's prompt file."""
+    root = tmp_path / "project"
+    root.mkdir()
+    git("init", "-q", "-b", "main", cwd=root)
+    gitrepo.set_identity(root)
+    (root / "pyproject.toml").write_text('[project]\nname = "demo"\nversion = "0.1.0"\n')
+    (root / ".gitignore").write_text(gitignore_block("Python"), encoding="utf-8")
+    (root / "spec.md").write_text("# Spec\n\nBuild a thing.\n", encoding="utf-8")
+    if initialised:
+        assert run_init(root, PlainUI(no_color=True, file=io.StringIO())) == 0
+    git("add", "-A", cwd=root)
+    git("commit", "-q", "-m", "seed", cwd=root)
+    return root
+
+
+def _on_disk(root: Path) -> list[Path]:
+    """Every prompt record under the project, whichever run holds it."""
+    return sorted(root.glob(".kstrl/runs/*/prompts/*/*.json"))
 
 
 def _ks_run(root: Path, agent: str, monkeypatch: pytest.MonkeyPatch) -> str:
@@ -397,6 +423,144 @@ class TestCommandRunsRecordTheirPrompts:
         )
 
 
+ONE_COMPONENT = {
+    "components": [
+        {
+            "id": "thing",
+            "title": "The thing",
+            "description": "Build the thing",
+            "dependencies": [],
+            "allowedPaths": ["work.txt", "scripts/kstrl/feature/thing/"],
+            "userStories": [
+                {
+                    "id": "US-001",
+                    "title": "Do the thing",
+                    "acceptanceCriteria": ["it is done"],
+                    "priority": 1,
+                    "passes": False,
+                    "notes": "",
+                }
+            ],
+        }
+    ],
+    "spec_issues": [],
+    "decisions": [],
+}
+
+
+def _architect_then_engineer(capdir: Path, payload: Path, marker: Path) -> str:
+    """Saves each stdin. The FIRST call is the architect's and answers with
+    ``payload``; every later call commits one file and completes."""
+    capdir.mkdir(parents=True, exist_ok=True)
+    return (
+        f'f=$(mktemp {shlex.quote(str(capdir))}/call.XXXXXX); cat > "$f"; '
+        f"if [ ! -f {shlex.quote(str(marker))} ]; then "
+        f"touch {shlex.quote(str(marker))}; cat {shlex.quote(str(payload))}; exit 0; fi; "
+        "[ -f work.txt ] || { echo x > work.txt; git add work.txt; "
+        "git commit -qm work >/dev/null 2>&1; }; "
+        f"printf '%s\\n' {shlex.quote(COMPLETE)}"
+    )
+
+
+class TestFactorySpecRecordsTheArchitect:
+    """#567: `ks factory --spec` decomposes before its factory run exists."""
+
+    def _factory_spec(self, root: Path, agent: str, *extra: str) -> str:
+        result = CliRunner().invoke(
+            cli,
+            [
+                "factory",
+                "--spec",
+                str(root / "spec.md"),
+                "--project-name",
+                "demo",
+                "--root",
+                str(root),
+                "--agent-cmd",
+                agent,
+                "--ui",
+                "plain",
+                "--no-color",
+                "--yes",
+                "--no-tui",
+                *extra,
+            ],
+        )
+        return f"exit={result.exit_code}\n{result.output}"
+
+    def test_a_failed_decompose_records_every_architect_attempt(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Three attempts, no JSON: the command fails, and each prompt the
+        CLI received is on disk under the decompose run the architect ran
+        as. That run is a decompose run, so safe mode does not read it as a
+        factory run with no event stream."""
+        sentinel = _no_paid_cli(tmp_path, monkeypatch)
+        root = _spec_project(tmp_path)
+        capdir = tmp_path / "captured"
+
+        output = self._factory_spec(root, _capturing_agent(capdir, reply="not json"))
+
+        assert len(_on_disk(root)) == 3, output
+        run_root = _only_run(root)
+        records = read_prompt_records(run_root, run_id=run_root.name, component=ARCHITECT_COMPONENT)
+        assert not sentinel.exists()
+        assert output.startswith("exit=1\n"), output
+        assert run_kind(run_root.name) == "decompose"
+        assert (run_root / "events.jsonl").is_file()
+        assert Counter(r.prompt for r in records) == _delivered(capdir), output
+        assert [(r.role, r.attempt, r.call) for r in records] == [
+            (ARCHITECT_ROLE, n, 1) for n in (1, 2, 3)
+        ]
+        assert safe_mode_reasons(root) == []
+
+    def test_every_call_of_a_whole_run_is_recorded(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The architect decomposes, then the factory builds the component:
+        every prompt the CLI received is on disk, the architect's in the
+        decompose run and the engineer's in the factory run."""
+        sentinel = _no_paid_cli(tmp_path, monkeypatch)
+        root = _spec_project(tmp_path, initialised=True)
+        capdir = tmp_path / "captured"
+        payload = tmp_path / "decompose.json"
+        payload.write_text(json.dumps(ONE_COMPONENT), encoding="utf-8")
+        agent = _architect_then_engineer(capdir, payload, tmp_path / "marker")
+
+        output = self._factory_spec(root, agent, "--no-verify", "--no-prs")
+
+        dirs = list((root / ".kstrl" / "runs").iterdir())
+        assert sorted(run_kind(d.name) for d in dirs) == ["decompose", "factory"], output
+        runs = {run_kind(d.name): d for d in dirs}
+        records = _all_records(runs["decompose"]) + _all_records(runs["factory"])
+        assert not sentinel.exists()
+        assert Counter(r.prompt for r in records) == _delivered(capdir), output
+        assert [r.role for r in _all_records(runs["decompose"])] == [ARCHITECT_ROLE]
+        assert "engineer" in {r.role for r in _all_records(runs["factory"])}, output
+        # The architect's run is closed before the factory's opens: its
+        # stream holds its own events and none of the factory's.
+        events = (runs["decompose"] / "events.jsonl").read_text(encoding="utf-8").splitlines()
+        assert {json.loads(line)["run_id"] for line in events} == {runs["decompose"].name}
+
+    def test_the_architect_is_recorded_with_the_progress_log_off(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The record is evidence, as it is for the factory's own roles: the
+        progress-log opt-out turns off the event stream, not the record."""
+        _no_paid_cli(tmp_path, monkeypatch)
+        monkeypatch.setenv("KSTRL_FACTORY_PROGRESS_LOG_ENABLED", "0")
+        root = _spec_project(tmp_path)
+        capdir = tmp_path / "captured"
+
+        output = self._factory_spec(root, _capturing_agent(capdir, reply="not json"))
+
+        assert len(_on_disk(root)) == 3, output
+        run_root = _only_run(root)
+        assert not (run_root / "events.jsonl").exists()
+        records = read_prompt_records(run_root, run_id=run_root.name, component=ARCHITECT_COMPONENT)
+        assert Counter(r.prompt for r in records) == _delivered(capdir), output
+
+
 class TestTheIntegrationReviewRecordsItsPrompt:
     def test_the_integration_reviewer_s_prompt_is_recorded(self, tmp_path: Path) -> None:
         """The real integration round over a merged feature, with the
@@ -542,8 +706,6 @@ class TestTheSeam:
         assert [(r.call, r.prompt) for r in records] == [(n, f"prompt {n}") for n in range(1, 12)]
 
     def test_outside_a_scope_nothing_is_written(self, tmp_path: Path) -> None:
-        with recording_prompts(None):
-            list(CustomAgent("cat > /dev/null; echo ok").run("p", cwd=tmp_path, timeout=30))
         list(CustomAgent("cat > /dev/null; echo ok").run("p", cwd=tmp_path, timeout=30))
 
         assert not list(tmp_path.rglob("*.json"))
@@ -556,6 +718,12 @@ class TestTheSeam:
         assert record_prompt("after", agent_cli="custom") is None
         records = read_prompt_records(call.run_root, run_id="factory-x", component="comp-a")
         assert [r.prompt for r in records] == ["inside"]
+
+    def test_an_engineer_call_with_no_run_id_is_refused(self, tmp_path: Path) -> None:
+        """#567: a worker with no run id has no run to record under, so its
+        call fails before the CLI spawns instead of going out unrecorded."""
+        with pytest.raises(ValueError, match="has no run id"):
+            factory._engineer_call(tmp_path, "", "comp-a", 1)
 
     def test_an_unknown_agent_cli_is_refused(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="unknown agent_cli"):

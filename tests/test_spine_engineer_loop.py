@@ -88,6 +88,7 @@ class TestEngineerLoopPlumbing:
             None,  # reasoning
             None,  # agent_type
             0.0,  # sleep_seconds
+            run_id="test-run",
         )
 
         assert result.success is True
@@ -160,6 +161,7 @@ class TestEngineerLoopPlumbing:
             None,  # reasoning
             None,  # agent_type
             0.0,  # sleep_seconds
+            run_id="test-run",
         )
 
         assert (worktree / PRD_REL).read_text(encoding="utf-8") == edited
@@ -243,6 +245,7 @@ def _run(
         codebase_scan_config_dict=CODEBASE_SCAN_CONFIG,
         knowledge_prefix=KNOWLEDGE_MARKER,
         decisions_prefix=f"{DECISIONS_MARKER}\n\n- encoding: utf-8, named at every read",
+        run_id="test-run",
     )
 
 

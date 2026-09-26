@@ -56,6 +56,7 @@ from kstrl.verify import (
 )
 from tests.helpers import gitrepo
 from tests.helpers.component_prd import PASSING_STORY, write_component_prd
+from tests.helpers.prompt_calls import architect_call
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -325,6 +326,7 @@ class TestExcludeRejectionFlowsThroughRetryLoop:
             agent=agent,
             ui=PlainUI(no_color=True),
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
 
         assert len(agent.prompts) == 2
