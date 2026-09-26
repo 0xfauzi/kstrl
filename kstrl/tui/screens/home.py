@@ -370,7 +370,7 @@ class HomeScreen(Screen[None]):
             shown_rows = [active_cells(item, narrow=narrow) for item in moving[:SECTION_ROWS]]
             cells = fit_rows(shown_rows, width, flex=3)
             for index, values in enumerate(cells):
-                active.add_row(*values, key=f"active:{index}")
+                active.add_row(*values, key=f"active-{index}")
         active.display = bool(moving)
         active.styles.height = min(len(moving), SECTION_ROWS)
         self.query_one("#home-delivery", Static).update(delivery_text(queue, width))
