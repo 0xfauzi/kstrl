@@ -26,7 +26,7 @@ from kstrl.config_report import build_config_report
 from kstrl.findings import Finding
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.interaction import CheckpointContext, PromptKind, PromptRequest
-from kstrl.manifest import ComponentStatus, Manifest, park_dedupe_key
+from kstrl.manifest import Component, ComponentStatus, Manifest, park_dedupe_key
 from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.screens.checkpoint import CheckpointModal
 from kstrl.tui.screens.component import ComponentScreen
@@ -121,6 +121,48 @@ class TestRetryScope:
             await pilot.press("escape")
             await settled(pilot, lambda: "retry scope" in flat(detail), what="the scope pane")
             _assert_hanging(shown(detail), "starts at", SCOPE_LABELS)
+
+    async def test_a_scope_taller_than_the_screen_scrolls_under_the_question(
+        self, tmp_path: Path, no_limit_env: None
+    ) -> None:
+        """H3: the confirmation's detail is capped, so a long scope scrolls
+        and neither the question nor the buttons leave an 80x24 screen."""
+        _failed_manifest(tmp_path, (("verify_command", "uv run pytest"),))
+        manifest_file = tmp_path / "scripts" / "kstrl" / "manifest.json"
+        manifest = Manifest.load(manifest_file)
+        for n in range(8):
+            manifest.components.append(
+                Component(
+                    id=f"comp-x{n}",
+                    title="X",
+                    description="",
+                    dependencies=[],
+                    prd_path="p.json",
+                    branch_name=f"kstrl/comp-x{n}",
+                    status=ComponentStatus.FAILED.value,
+                )
+            )
+        manifest.save(manifest_file)
+        app = _home(tmp_path)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _open_retry(app, pilot)
+            await settled(
+                pilot,
+                lambda: app.screen.check_action("retry_selected", ()) is True,
+                what="r to be offered once the carry is read",
+            )
+            await pilot.press("r")
+            body = await mounted(pilot, lambda: app.screen, "#options-detail Static")
+            await settled(pilot, lambda: body.content_region.width, what="the scope laid out")
+            scroll = app.screen.query_one("#options-detail")
+            assert scroll.virtual_size.height > scroll.region.height, (
+                scroll.virtual_size,
+                scroll.region,
+            )
+            question = app.screen.query_one("#options-question")
+            assert 0 <= question.region.y < 24, question.region
+            for button in app.screen.query(Button):
+                assert 0 <= button.region.y < 24, (button.label, button.region)
 
     async def test_the_confirmation_is_the_scope_the_pane_shows(
         self, tmp_path: Path, no_limit_env: None
@@ -394,6 +436,7 @@ class TestCheckpoint:
             assert re.search(r"Retry\s+the engineer runs comp-c again", text), text
             assert "Uses one retry; with none left, comp-c fails as on Reject." in text, text
             assert re.search(r"Approve\s+pushes kstrl/factory/comp-c", text), text
+            assert "or unpushed without gh." in text, text
             for button in app.screen.query(Button):
                 assert 0 <= button.region.y < size[1], (button.label, button.region)
 

@@ -83,11 +83,12 @@ def _findings_block(title: str, findings: tuple[object, ...]) -> Group:
 #: engineer's context, PENDING with one more retry used while retries remain,
 #: else FAILED; Approve goes on to ``_phase_pr``, which pushes the branch,
 #: opens the PR and merges it, and the component is COMPLETED only on a
-#: confirmed merge (R0.2). tests/test_pipeline.py pins the first two
+#: confirmed merge (R0.2); with no gh, ``_phase_pr`` returns NO_GH and the
+#: component completes with nothing pushed. tests/test_pipeline.py pins the first two
 #: (test_checkpoint_reject_fails_component, test_checkpoint_retry_consumes_a_retry).
 CHOICE_EFFECTS = {
-    "Approve": "pushes {branch}, opens its PR and merges it; {cid} completes only once "
-    "the merge is confirmed.",
+    "Approve": "pushes {branch} and merges its PR; {cid} completes once the merge is "
+    "confirmed, or unpushed without gh.",
     "Reject": "{cid} fails and its dependents are skipped; nothing is pushed.",
     "Retry": "the engineer runs {cid} again with a note that a human reviewer asked for "
     "changes; no reason is passed on. Uses one retry; with none left, {cid} fails as on Reject.",
