@@ -154,6 +154,8 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # shape, for the quote-and-accent-on-one-path regression test.
     "tests/test_policy_envelope.py": 8,
     "tests/test_pr_outcomes.py": 3,
+    # #531: one commit per fixture repo, after set_identity.
+    "tests/test_prelaunch_refusal_exit.py": 1,
     "tests/test_progress_scope.py": 9,
     "tests/test_prompt_upgrade.py": 1,
     "tests/test_provisioning.py": 2,
