@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 
 from kstrl.factory import FactoryConfig, validate_cost_ceiling, validate_token_ceiling
 from kstrl.launch_record import (
+    REMOVED_OPTIONS,
     FlagValue,
     LaunchRecord,
     LaunchRecordError,
@@ -117,6 +118,22 @@ def preview_retry(manifest: Manifest, component_id: str) -> RetryPreview:
     )
 
 
+def failed_branch_probe(root_dir: Path, branch: str) -> int:
+    """The exit code of ``git rev-parse --verify --quiet refs/heads/<branch>``.
+
+    :func:`prepare_retry` deletes the failed branch only when this is 0,
+    and the TUI's retry scope preview (#433) calls this same probe, so
+    the preview cannot describe a different test than the one the retry
+    makes. OSError and a timeout propagate, as they always did here.
+    """
+    return subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
+        cwd=root_dir,
+        capture_output=True,
+        timeout=30,
+    ).returncode
+
+
 def prepare_retry(
     manifest: Manifest,
     component_id: str,
@@ -172,13 +189,7 @@ def prepare_retry(
         )
         ui.info(f"Removed the failed attempt's evidence worktree: {evidence_worktree}")
     if failed_branch and not manifest.single_pr:
-        branch_exists = subprocess.run(
-            ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{failed_branch}"],
-            cwd=root_dir,
-            capture_output=True,
-            timeout=30,
-        )
-        if branch_exists.returncode == 0:
+        if failed_branch_probe(root_dir, failed_branch) == 0:
             deleted = subprocess.run(
                 ["git", "branch", "-D", failed_branch],
                 cwd=root_dir,
@@ -254,6 +265,8 @@ class ResumePlan:
     #: Every run limit the retry runs under, by option name (#526).
     limits: tuple[tuple[str, float], ...]
     max_parallel: int
+    #: Recorded flags left out because `ks factory` no longer has them (#539).
+    dropped: tuple[str, ...]
 
 
 def _ceiling_problems(
@@ -321,7 +334,9 @@ def plan_resume(
     }
     try:
         record = read_launch_record(root_dir, manifest, manifest_file)
-        flags = dict(record.flags) if record is not None else {}
+        recorded = dict(record.flags) if record is not None else {}
+        dropped = tuple(name for name in recorded if name in REMOVED_OPTIONS)
+        flags = {name: value for name, value in recorded.items() if name not in REMOVED_OPTIONS}
         flags.update(overrides)
         argv = flags_argv(command, flags)
     except LaunchRecordError as exc:
@@ -345,8 +360,16 @@ def plan_resume(
         argv=tuple(argv),
         limits=tuple(resolved.items()),
         max_parallel=int(flags.get("max_parallel", loaded.max_parallel)),
+        dropped=dropped,
     )
     return plan, []
+
+
+def limits_line(plan: ResumePlan) -> str:
+    """Every run limit the retry runs under, on one line, spelled as the
+    options that set them (#526), so the TUI states what the CLI prints."""
+    set_ = [f"{_opt(name)} {value:g}" for name, value in plan.limits if value > 0]
+    return ", ".join(set_) if set_ else "no run limit"
 
 
 def print_resume_plan(ui: UI, plan: ResumePlan) -> None:
@@ -359,6 +382,8 @@ def print_resume_plan(ui: UI, plan: ResumePlan) -> None:
             f"No launch record for run {plan.run_id or '(none)'}: "
             "the flags of the run being resumed are not carried over"
         )
+    for name in plan.dropped:
+        ui.warn(f"Not replayed from run {plan.run_id}: {_opt(name)}, {REMOVED_OPTIONS[name]}")
     for name, value in plan.limits:
         ui.kv(_opt(name), str(value) if value > 0 else NO_LIMIT)
     ui.kv("Max parallel", str(plan.max_parallel))

@@ -136,7 +136,7 @@ from kstrl.security import (
     run_security_review,
 )
 from kstrl.shutdown import StopController
-from kstrl.statedir import ControlStateError
+from kstrl.statedir import ControlStateError, pre_run_prd_path
 from kstrl.timeout import NO_LIMIT, TimeoutConfig, describe_limit_seconds
 from kstrl.ui.bridge import EventBridgeUI
 from kstrl.verify import (
@@ -268,7 +268,6 @@ class FactoryConfig:
     use_worktrees: bool = True
     single_pr: bool = False
     create_prs: bool = True
-    verify_command: str | None = None
     # Phase 1: mechanical verification
     verify_config: VerifyConfig | None = None
     # R2.3 (CRIT-8): explicit skip sentinel for Phase 1. verify_config=None
@@ -1591,6 +1590,87 @@ def _setup_worktree(
             lock_fp.close()
 
 
+def _dependency_branches(manifest: Manifest, comp: Component) -> list[str]:
+    """The branches of ``comp``'s dependencies whose code is not in the base (#543).
+
+    A dependency that merged (``_has_merged``) is already in the base the
+    worktree is cut from, which is how per-component PR mode gives a
+    dependent its dependency's code. Under ``create_prs=False``, or with
+    no gh, a COMPLETED dependency's code exists only on its own branch.
+    In single_pr mode a dependency shares ``comp``'s branch and is
+    already in it.
+    """
+    branches: list[str] = []
+    for dep_id in comp.dependencies:
+        dep = manifest.get_component(dep_id)
+        if dep is None or _has_merged(dep) or dep.branch_name in (comp.branch_name, *branches):
+            continue
+        branches.append(dep.branch_name)
+    return branches
+
+
+def _merge_dependency_branches(worktree_path: Path, branches: list[str]) -> None:
+    """Merge each dependency branch into the component's worktree (#543).
+
+    The same ``git.merge_branch`` the deferred-merge contract phase uses to
+    put a tier's branches together. A merge that fails is raised: the
+    component cannot start from a tree that holds its dependencies' code,
+    and starting it without that code is the defect this exists to remove.
+    The worktree is already registered for the pass-end cleanup, which
+    removes it with ``--force`` (or keeps it, conflict and all, as the
+    failure's evidence under ``keep_worktrees_on_failure``).
+    """
+    for branch in branches:
+        if not git.merge_branch(branch, worktree_path):
+            raise RuntimeError(
+                f"could not merge dependency branch '{branch}' into {worktree_path}: "
+                f"`git merge --no-edit -- {branch}` failed (it conflicts with "
+                f"another dependency's change, or the branch no longer exists)"
+            )
+
+
+def _judged_base(worktree_path: Path, base_branch: str, holds_unmerged_work: bool) -> str:
+    """What a freshly cut component branch is judged against (#543).
+
+    The base branch, unless the worktree holds code the base lacks: then
+    the commit the worktree starts at, so ``<base>...HEAD`` measures the
+    component's own change and not its dependencies' or its single_pr
+    predecessors'. Raises when HEAD cannot be read, because judging the
+    change against the base branch instead would count that code again.
+    """
+    if not holds_unmerged_work:
+        return base_branch
+    head = git.get_head_sha(worktree_path)
+    if head is None:
+        raise RuntimeError(f"could not read HEAD in {worktree_path} to record the component's base")
+    return head
+
+
+def _start_from_dependencies(
+    manifest: Manifest,
+    comp: Component,
+    worktree_path: Path,
+    bases: dict[str, str],
+    *,
+    fresh_from_base: bool,
+) -> None:
+    """Put ``comp``'s dependencies' code in its new worktree and record its base (#543).
+
+    ``bases`` is the run's ``RunState.component_bases``. It is written once
+    per branch: a retry that keeps the branch keeps the base it was cut
+    at, so an earlier attempt's commits are still judged, and a retry
+    that recreates the branch (``fresh_from_base``) records it again.
+    """
+    branches = _dependency_branches(manifest, comp)
+    _merge_dependency_branches(worktree_path, branches)
+    if fresh_from_base or comp.id not in bases:
+        bases[comp.id] = _judged_base(
+            worktree_path,
+            manifest.base_branch,
+            bool(branches) or manifest.single_pr,
+        )
+
+
 def _cleanup_worktree(component_id: str, root_dir: Path, run_id: str) -> WorktreeSweep:
     """Kill what is still running in a component's worktree, then remove it.
 
@@ -2544,8 +2624,10 @@ def _run_component(
     # scaffold digests depend on prompt.md copying byte for byte. A byte
     # copy removes the encoding question rather than answering it four
     # times.
+    # The source is the copy the run starts from, which for a planned
+    # component is under .kstrl/plan/ and never at prd_path (#545).
     worktree_prd = worktree_path / prd_path_str
-    prd_source = root_dir / prd_path_str
+    prd_source = pre_run_prd_path(root_dir, component_id, prd_path_str)
     if not worktree_prd.exists() and prd_source.exists():
         worktree_prd.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(prd_source, worktree_prd)
@@ -4495,6 +4577,16 @@ def _run_factory_locked(
                     run_id,
                     fresh_from_base=fresh_from_base,
                 )
+                # #543: registered before the merge below, so a merge that
+                # fails leaves a worktree the pass-end cleanup removes.
+                run_state.worktree_paths[comp.id] = wt_path
+                _start_from_dependencies(
+                    manifest,
+                    comp,
+                    wt_path,
+                    run_state.component_bases,
+                    fresh_from_base=fresh_from_base,
+                )
             else:
                 wt_path = root_dir
             run_state.worktree_paths[comp.id] = wt_path
@@ -4776,7 +4868,7 @@ def _run_factory_locked(
                             # ends at token_budget by construction (see
                             # above) and a positional extra silently
                             # lands on redirect_output.
-                            base_branch=manifest.base_branch,
+                            base_branch=pipeline.component_base(comp.id),
                             verify_config=engineer_verify,
                             attempt=comp.retries + 1,
                             redirect_output=False,  # type: ignore[misc]
@@ -4800,7 +4892,7 @@ def _run_factory_locked(
                                 *args,
                                 # Same unprovable-*args limitation the
                                 # inline branch annotates above.
-                                base_branch=manifest.base_branch,  # type: ignore[misc]
+                                base_branch=pipeline.component_base(comp.id),  # type: ignore[misc]
                                 verify_config=engineer_verify,
                                 attempt=comp.retries + 1,
                             ),

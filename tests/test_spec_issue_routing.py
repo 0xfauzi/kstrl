@@ -32,6 +32,7 @@ from kstrl.decompose import (
 from kstrl.knowledge import _read_prd_text
 from kstrl.prd import _OPTIONAL_KEYS, PRD, PROMPT_EXCLUDED_KEYS, prd_text_for_prompt
 from kstrl.security import SecurityConfig, SecurityMode, run_security_review
+from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
 from tests.conftest import make_review_repo
 from tests.helpers.component_prd import write_component_prd
@@ -185,7 +186,7 @@ def _payload(*issues: dict[str, str], components: list[dict[str, Any]] | None = 
 
 
 def _prd_path(tmp_path: Path, comp_id: str) -> Path:
-    return tmp_path / "scripts" / "kstrl" / "feature" / comp_id / "prd.json"
+    return plan_prd_path(tmp_path, comp_id)
 
 
 def _summaries(tmp_path: Path, comp_id: str) -> list[tuple[str, str]]:

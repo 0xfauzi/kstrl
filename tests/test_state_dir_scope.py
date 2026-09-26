@@ -209,6 +209,7 @@ class TestStateDirCarveOut:
             ".kstrl/proposals/prop-001.md",
             ".kstrl/proposals/evil.json",
             ".kstrl/integration/state.json",
+            ".kstrl/plan/comp-a/prd.json",
         ):
             assert not path_is_allowed(visible, entries), visible
 
@@ -409,7 +410,7 @@ _EXPECTED_STATE_DIR_SPELLINGS: dict[str, int] = {
     "reducer.py": 3,
     # 6: +1 for #464, which reads the progress log for cost evidence.
     "serve.py": 6,
-    "statedir.py": 7,
+    "statedir.py": 8,  # +1 #545: plan_prd_path joins the plan directory
     "tui/runs.py": 3,  # +1 #433: run_is_live lists the runs dir for the newest run
     "workqueue.py": 2,
 }
@@ -584,7 +585,16 @@ class TestNothingTheLoopRunsWritesTheUncarvedEntries:
     #: itself, the two command entry points that drive it, the proposal
     #: writer, and the GitHub intake that admits work.
     WRITERS = frozenset(
-        {"kstrl.workqueue", "kstrl.serve", "kstrl.cli", "kstrl.evolution", "kstrl.intake_github"}
+        {
+            "kstrl.workqueue",
+            "kstrl.serve",
+            "kstrl.cli",
+            "kstrl.evolution",
+            "kstrl.intake_github",
+            # #545: the two writers of .kstrl/plan/.
+            "kstrl.decompose",
+            "kstrl.integration_fix",
+        }
     )
 
     def test_the_loop_cannot_reach_a_writer_of_an_uncarved_entry(self) -> None:

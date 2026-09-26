@@ -257,6 +257,7 @@ ks autonomy promote             Raise the autonomy level by one.
 ks autonomy replay              Replay the ladder's thresholds over recorded run history.
 ks autonomy status              Show the current level, its flag bundle, and what promotion needs.
 ks check                        Run the mechanical checks against a tree and print the measurement.
+ks ci poll                      Read the CI state of every recorded merge commit and record it.
 ks config show                  Print the fully resolved config with the source of each value.
 ks dash                         Live dashboard over a factory run (observe-only).
 ks decompose                    Decompose a spec into components and generate PRDs.

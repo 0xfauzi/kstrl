@@ -34,7 +34,8 @@ NAMES = frozenset({"update_cell", "update_cell_at"})
 
 #: path under kstrl/tui -> how many times the file mentions either name.
 EXPECTED_MENTIONS: dict[str, int] = {
-    "widgets/component_table.py": 2,
+    # 3 since #433 M2: tick_ages also refreshes the agent column.
+    "widgets/component_table.py": 3,
     "widgets/dag_table.py": 1,
     "widgets/run_table.py": 1,
 }
