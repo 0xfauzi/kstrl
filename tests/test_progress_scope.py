@@ -285,7 +285,7 @@ class TestProgressPathInsideAllowedPaths:
             tmp_path,
             "kstrl/factory/hmac",
         )
-        rel_prd = prd_path.relative_to(tmp_path).as_posix()
+        rel_prd = f"{FEATURE_DIR}/prd.json"
         allowed = PRD.load(prd_path).allowed_paths
         assert allowed == ARCHITECT_ALLOWED_PATHS
 
@@ -350,7 +350,7 @@ class TestProgressPathInsideAllowedPaths:
             tmp_path,
             "kstrl/factory/hmac",
         )
-        rel_prd = prd_path.relative_to(tmp_path).as_posix()
+        rel_prd = f"{FEATURE_DIR}/prd.json"
         allowed = PRD.load(prd_path).allowed_paths
         assert allowed == ARCHITECT_ALLOWED_PATHS
         base = _base_config(tmp_path)

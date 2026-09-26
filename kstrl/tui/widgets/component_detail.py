@@ -26,10 +26,11 @@ from rich.padding import Padding
 from rich.text import Text
 
 from kstrl.tui import theme
-from kstrl.tui.run_status import age_phrase
+from kstrl.tui.run_status import age_phrase, component_took
 
 if TYPE_CHECKING:
     from kstrl.reducer import ComponentState
+    from kstrl.tui.agent_health import AgentHealth
 
 #: The most output lines shown under a failed gate.
 EXCERPT_LINES = 8
@@ -57,7 +58,7 @@ def gate_log_excerpt(path: str, lines: int = EXCERPT_LINES) -> list[str] | None:
     return kept
 
 
-def _moving_detail(comp: ComponentState, now: float) -> list[str]:
+def _moving_detail(comp: ComponentState, now: float, health: AgentHealth | None) -> list[str]:
     parts = [comp.phase] if comp.phase else []
     if comp.iteration:
         limit = f"/{comp.max_iterations}" if comp.max_iterations else ""
@@ -65,6 +66,10 @@ def _moving_detail(comp: ComponentState, now: float) -> list[str]:
     parts.append(f"attempt {max(comp.attempt, 1)}")
     if comp.last_event_ts:
         parts.append(f"last event {age_phrase(now - comp.last_event_ts)} ago")
+    if health is not None:
+        # Q6 (#433 M2): the agent's own output and its process, apart
+        # from the event age above.
+        parts.append(health.text())
     return parts
 
 
@@ -73,11 +78,15 @@ def _stopped_detail(comp: ComponentState) -> list[str]:
     if comp.carried and comp.status != "pending":
         parts.append("carried from an earlier run; not run in this one")
     elif comp.started_ts and comp.last_event_ts:
-        parts.append(f"took {age_phrase(comp.last_event_ts - comp.started_ts)}")
+        parts.append(f"took {age_phrase(component_took(comp))}")
     return parts
 
 
-def render_component_header(comp: ComponentState, now: float | None = None) -> Text:
+def render_component_header(
+    comp: ComponentState,
+    now: float | None = None,
+    health: AgentHealth | None = None,
+) -> Text:
     clock = time.time() if now is None else now
     glyph, color = theme.status_glyph(comp.status)
     header = Text()
@@ -86,7 +95,7 @@ def render_component_header(comp: ComponentState, now: float | None = None) -> T
         header.append(f"  {comp.title}", style="bold")
     header.append(f"  {glyph} {comp.status}", style=f"bold {color}")
     moving = comp.status in _MOVING
-    parts = _moving_detail(comp, clock) if moving else _stopped_detail(comp)
+    parts = _moving_detail(comp, clock, health) if moving else _stopped_detail(comp)
     if parts:
         header.append("  " + " · ".join(parts), style=theme.MUTED)
     return header

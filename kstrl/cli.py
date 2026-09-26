@@ -131,6 +131,7 @@ from kstrl.retry_plan import (
     retry_confirm_header,
 )
 from kstrl.sandbox import SandboxConfig
+from kstrl.security import _SEVERITY_ORDER
 from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.base import UI
@@ -2501,7 +2502,7 @@ def decompose(
 )
 @click.option(
     "--security-fail-threshold",
-    type=click.Choice(["critical", "high", "medium", "low"]),
+    type=click.Choice(list(_SEVERITY_ORDER)),
     default=None,
     help="In hard mode, findings at or above this severity block "
     "(default: high - critical+high fail)",
@@ -4400,6 +4401,34 @@ def doctor(root: Path | None, as_json: bool, measure: bool) -> None:
     "being resumed was launched with. 0 = unbounded.",
 )
 @click.option(
+    "--max-total-tokens",
+    type=int,
+    default=None,
+    help="Run-level token budget for the retry; overrides the value the run "
+    "being resumed was launched with. 0 = unbounded.",
+)
+@click.option(
+    "--max-adversarial-calls",
+    type=int,
+    default=None,
+    help="Cap on adversarial LLM calls for the retry; overrides the value the "
+    "run being resumed was launched with. 0 = unbounded.",
+)
+@click.option(
+    "--agent-timeout",
+    type=float,
+    default=None,
+    help="Timeout per agent iteration in seconds for the retry; overrides the "
+    "value the run being resumed was launched with. 0 disables.",
+)
+@click.option(
+    "--component-timeout",
+    type=float,
+    default=None,
+    help="Timeout per component total in seconds for the retry; overrides the "
+    "value the run being resumed was launched with. 0 disables.",
+)
+@click.option(
     "--max-parallel",
     type=int,
     default=None,
@@ -4431,6 +4460,10 @@ def retry(
     keep_worktrees_on_failure: bool,
     force_lock: bool,
     max_cost_usd: float | None,
+    max_total_tokens: int | None,
+    max_adversarial_calls: int | None,
+    agent_timeout: float | None,
+    component_timeout: float | None,
     max_parallel: int | None,
     yes: bool,
     ui: str,
@@ -4443,10 +4476,12 @@ def retry(
     starts fresh from the base branch; the failed attempt's findings
     stay in the evolution journal), then re-enters `ks factory` with the
     same manifest and the options the run being resumed was launched
-    with, read from its launch record (#436). --max-cost-usd,
-    --max-parallel and --keep-worktrees-on-failure given here win over
-    the recorded ones. A retry that would run with no cost ceiling
-    because none carried over is refused before anything is changed.
+    with, read from its launch record (#436). --max-parallel,
+    --keep-worktrees-on-failure and every run limit option given here win
+    over the recorded ones. A retry that would drop a run limit the run
+    it resumes ran under (cost, tokens, adversarial calls, agent and
+    component timeouts), or cannot tell whether it did, is refused before
+    anything is changed (#526).
     """
     root_dir = root.resolve() if root else Path.cwd()
     force_rich = os.environ.get("GUM_FORCE") == "1"
@@ -4476,6 +4511,12 @@ def retry(
         max_cost_usd=max_cost_usd,
         max_parallel=max_parallel,
         keep_worktrees_on_failure=keep_worktrees_on_failure,
+        limits={
+            "max_total_tokens": max_total_tokens,
+            "max_adversarial_calls": max_adversarial_calls,
+            "agent_timeout": agent_timeout,
+            "component_timeout": component_timeout,
+        },
     )
     if plan is None:
         _report_preflight(ui_impl, RESUME_REFUSAL, problems)

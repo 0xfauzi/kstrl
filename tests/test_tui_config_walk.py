@@ -400,9 +400,10 @@ _GUARDED_OFF_THE_EVENT_LOOP = {
 #: that half is covered by the derived helper set and by
 #: ``test_the_walk_derives_the_helper_set_rather_than_listing_it``.
 EXPECTED_LOADER_SPELLINGS: dict[str, int] = {
-    # #433: the home header's needs-you counts, on the summary worker
-    # thread; InboxConfig's load sits in a `try: ... except Exception`.
-    "tui/home_data.py": 2,  # InboxConfig.load, and Manifest.load
+    # #433: home's needs-you rows, on the summary worker thread;
+    # InboxConfig's load sits in a `try: ... except Exception`. Moved
+    # from tui/home_data.py with the counters these rows replaced.
+    "tui/operator_queue.py": 2,  # InboxConfig.load, and Manifest.load
     "tui/screens/evolve.py": 2,  # the banner's load, and EvolutionConfig's
     "tui/screens/inbox.py": 2,  # the banner's load, and InboxConfig's
     "tui/screens/init_wizard.py": 1,  # the banner's load
