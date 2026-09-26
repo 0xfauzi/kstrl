@@ -200,9 +200,9 @@ To stop it failing components, set `[divergence] mode = "advisory"` (the default
 
 ## Phase 2.5: security review failed (hard mode)
 
-**Symptom**: `Phase 2.5 FAILED for <comp_id>: N critical, M high`
+**Symptom**: `Phase 2.5 FAILED for <comp_id>: N failures`
 
-**Diagnose**: same logic as Phase 2, but the findings are typed against the security taxonomy. Each finding has `category`, `severity`, `location`, `explanation`, `suggestion`.
+**Diagnose**: same logic as Phase 2, but the findings are typed against the security taxonomy. Each finding has `category`, `severity`, `location`, `explanation`, `suggestion`. N is the number of findings at or above `[security] fail_threshold` (default `high`), the same number the `review_result` event records as `fail_count`.
 
 **Resolve**:
 

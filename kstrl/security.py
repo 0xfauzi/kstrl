@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 
 
 class SecurityMode(StrEnum):
-    HARD = "hard"  # block on critical findings
+    HARD = "hard"  # block on findings at or above fail_threshold
     ADVISORY = "advisory"  # surface findings but never block
     SKIP = "skip"  # skip the phase entirely
 
@@ -71,7 +71,11 @@ SECURITY_CATEGORY_MAP: dict[str, dict[str, str]] = {
 
 VALID_CATEGORIES = frozenset(SECURITY_CATEGORY_MAP.keys())
 
-VALID_SEVERITIES = frozenset({"critical", "high", "medium", "low"})
+# Rank of each severity. ``VALID_SEVERITIES`` is its key set, so the
+# parser and the fail count read one vocabulary (#524).
+_SEVERITY_ORDER = {"critical": 3, "high": 2, "medium": 1, "low": 0}
+
+VALID_SEVERITIES = frozenset(_SEVERITY_ORDER)
 
 
 def category_owasp(category: str) -> str:
@@ -128,6 +132,9 @@ class SecurityResult:
     # no reviewer ran (mode=skip). Flows onto every Finding as a
     # ``model:<id>`` tag and into the PR body.
     reviewer_model: str = ""
+    # #524: the ``[security] fail_threshold`` this result was judged
+    # against, stamped by run_security_review. ``fail_count`` reads it.
+    fail_threshold: str = "high"
 
     @property
     def coverage_refused(self) -> bool:
@@ -192,17 +199,28 @@ class SecurityResult:
         return "\n".join(lines)
 
     @property
-    def critical_count(self) -> int:
-        return sum(1 for f in self.findings if f.severity == "critical")
-
-    @property
-    def high_count(self) -> int:
-        return sum(1 for f in self.findings if f.severity == "high")
-
-    @property
     def fail_count(self) -> int:
-        """Critical and high findings: the two the log line names."""
-        return self.critical_count + self.high_count
+        """The findings that decide ``passed`` (#524). In hard mode, every
+        finding at or above ``fail_threshold``; outside hard mode, none,
+        because advisory never fails on a finding. run_security_review
+        sets ``passed`` from this count, and the log line, the
+        ``review_result`` event and the #233 convergence reading all read
+        it, so no reader can count a different set."""
+        return sum(1 for f in self.findings if self._fails(f.severity))
+
+    @property
+    def failing_severities(self) -> frozenset[str]:
+        """The severities that fail this result, by the rule ``fail_count``
+        uses. The journal's failure signatures read it, so the categories
+        journaled are the ones that failed the gate (#524)."""
+        return frozenset(s for s in _SEVERITY_ORDER if self._fails(s))
+
+    def _fails(self, severity: str) -> bool:
+        # Indexed, never .get with a default rank: an unknown severity or
+        # threshold is an error, not a rank.
+        if self.mode != SecurityMode.HARD.value:
+            return False
+        return _SEVERITY_ORDER[severity] >= _SEVERITY_ORDER[self.fail_threshold]
 
     @property
     def advisory_count(self) -> int:
@@ -270,8 +288,8 @@ class SecurityConfig:
     agent_type: str | None = None
     model: str | None = None
     timeout_seconds: float = 0.0
-    # Severity threshold above which findings cause the phase to fail
-    # in HARD mode. Default "high" means critical+high fail the phase.
+    # In HARD mode a finding at or above this severity fails the phase
+    # (SecurityResult.fail_count). Default "high": critical and high.
     fail_threshold: str = "high"
 
     def __post_init__(self) -> None:
@@ -585,25 +603,6 @@ def parse_security_output(
     )
 
 
-_SEVERITY_ORDER = {"critical": 3, "high": 2, "medium": 1, "low": 0}
-
-
-def _passes_threshold(
-    findings: list[SecurityFinding],
-    mode: str,
-    fail_threshold: str,
-) -> bool:
-    """Decide whether the result passes given the mode and threshold."""
-    if mode == SecurityMode.SKIP.value:
-        return True
-    if mode == SecurityMode.ADVISORY.value:
-        return True
-    # HARD mode: fail if any finding meets or exceeds the threshold.
-    threshold_rank = _SEVERITY_ORDER.get(fail_threshold, 2)  # default "high"
-    blocking = [f for f in findings if _SEVERITY_ORDER.get(f.severity, 0) >= threshold_rank]
-    return not blocking
-
-
 def apply_coverage_check(
     result: SecurityResult,
     actual: git.DiffStat,
@@ -716,24 +715,23 @@ def run_security_review(
             duration_seconds=time.monotonic() - start,
             infrastructure_error=True,
             reviewer_model=reviewer_model,
+            fail_threshold=config.fail_threshold,
         )
 
     raw_output = _select_agent_output(agent, output_lines)
     result = parse_security_output(raw_output, mode, debug_dir=debug_dir)
     result.reviewer_model = reviewer_model
+    result.fail_threshold = config.fail_threshold
     if result.infrastructure_error:
         # Parsing failed - we have no usable findings list, so don't
-        # let _passes_threshold overwrite passed=False with True. In
+        # let the fail count overwrite passed=False with True. In
         # hard mode this is a block; in advisory it surfaces as a
         # warning but lets the pipeline continue.
         if mode != SecurityMode.HARD.value:
             result.passed = True
     else:
-        result.passed = _passes_threshold(
-            result.findings,
-            mode,
-            config.fail_threshold,
-        )
+        # #524: the verdict IS the fail count, so the two cannot disagree.
+        result.passed = result.fail_count == 0
 
     apply_coverage_check(result, actual_diffstat, mode)
     result.duration_seconds = time.monotonic() - start
@@ -742,7 +740,6 @@ def run_security_review(
     coverage_note = " (UNVERIFIED COVERAGE)" if result.diffstat_disagreement else ""
     ui.info(
         f"  Security review {status}{coverage_note}: "
-        f"{result.critical_count} critical, {result.high_count} high, "
-        f"{len(result.findings)} total"
+        f"{result.fail_count} fail, {result.advisory_count} advisory"
     )
     return result

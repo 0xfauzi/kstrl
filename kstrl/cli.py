@@ -2465,7 +2465,8 @@ def decompose(
     "--security-mode",
     type=click.Choice(["hard", "advisory", "skip"]),
     default=None,
-    help="Phase 2.5 security review: hard (block on critical+high), "
+    help="Phase 2.5 security review: hard (block on findings at or above "
+    "--security-fail-threshold), "
     "advisory (warn only), skip (default - opt in explicitly)",
 )
 @click.option(
