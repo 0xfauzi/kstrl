@@ -359,6 +359,13 @@ def plan_resume(
     return plan, []
 
 
+def limits_line(plan: ResumePlan) -> str:
+    """Every run limit the retry runs under, on one line, spelled as the
+    options that set them (#526), so the TUI states what the CLI prints."""
+    set_ = [f"{_opt(name)} {value:g}" for name, value in plan.limits if value > 0]
+    return ", ".join(set_) if set_ else "no run limit"
+
+
 def print_resume_plan(ui: UI, plan: ResumePlan) -> None:
     """Say, before the confirmation and before any spend, what the retry runs under."""
     if plan.carried:

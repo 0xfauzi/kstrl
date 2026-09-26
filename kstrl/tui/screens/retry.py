@@ -39,6 +39,7 @@ from kstrl.launch import FactoryLaunch
 from kstrl.retry_plan import (
     RESUME_REFUSAL,
     RetryError,
+    limits_line,
     plan_resume,
     prepare_retry,
     preview_retry,
@@ -491,8 +492,7 @@ def _runs_under(root: Path, manifest: Manifest, manifest_file: Path) -> tuple[st
     problem = _carry_problem(plan, problems)
     if problem is not None or plan is None:
         return "", problem or "no resume plan"
-    ceiling = f"${plan.max_cost_usd:g} cost ceiling" if plan.max_cost_usd > 0 else "no cost ceiling"
-    return f"{ceiling}, {plan.max_parallel} in parallel", ""
+    return f"{limits_line(plan)}, {plan.max_parallel} in parallel", ""
 
 
 def _read_failure_queue(root: Path) -> list[FailureEntry]:

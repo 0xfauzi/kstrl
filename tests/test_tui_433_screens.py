@@ -622,11 +622,15 @@ class TestOperatorQueue:
 
 class TestRetryScope:
     def _failed(self, tmp_path: Path) -> Path:
-        from kstrl.launch_record import write_launch_record
+        from kstrl.factory import FactoryConfig
+        from kstrl.launch_record import run_limits, write_launch_record
+        from kstrl.timeout import TimeoutConfig
 
         run_id = "factory-20260101-000000.000000-scope1"
         manifest_file = _save_manifest(tmp_path, run_id=run_id, api="failed")
-        assert write_launch_record(tmp_path, run_id, manifest_file, (), 0.0) == []
+        # Every run limit off, so the retry states them all (#526).
+        limits = dict.fromkeys(run_limits(FactoryConfig(), TimeoutConfig()), 0.0)
+        assert write_launch_record(tmp_path, run_id, manifest_file, (), limits) == []
         return manifest_file
 
     async def test_the_sweep_warning_prepare_retry_prints_reaches_the_screen(

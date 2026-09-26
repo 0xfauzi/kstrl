@@ -146,7 +146,7 @@ class TestRetryScreen:
         # An uncapped launch record, so the scope is known and offered.
         run_id = "factory-20260101-000000.000000-changed"
         manifest_file = self._failed_manifest(tmp_path, run_id=run_id)
-        assert write_launch_record(tmp_path, run_id, manifest_file, (), 0.0) == []
+        assert write_launch_record(tmp_path, run_id, manifest_file, (), _limits(0.0)) == []
         app = _home_app(tmp_path)
         specs: list[Any] = []
         app.start_session = lambda spec: specs.append(spec) or FakeSession(tmp_path)
@@ -343,7 +343,7 @@ async def test_the_confirmation_names_the_failed_component_it_leaves_out(tmp_pat
     manifest = Manifest.load(manifest_file)
     manifest.run_id = run_id
     manifest.save(manifest_file)
-    assert write_launch_record(tmp_path, run_id, manifest_file, (), 0.0) == []
+    assert write_launch_record(tmp_path, run_id, manifest_file, (), _limits(0.0)) == []
     app = _home_app(tmp_path)
     async with app.run_test(size=(130, 40)) as pilot:
         app.push_screen(RetryScreen())
