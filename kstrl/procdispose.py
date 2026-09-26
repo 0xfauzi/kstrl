@@ -95,7 +95,7 @@ from __future__ import annotations
 
 import subprocess
 from contextlib import suppress
-from typing import IO
+from typing import IO, Any, AnyStr
 
 #: Children the kill did not reach, kept REFERENCED so they can still be
 #: reaped. The module docstring's #309 round 2 section is why this exists
@@ -104,13 +104,13 @@ from typing import IO
 #: for a read that completed before the child was abandoned, almost all
 #: of it CPython's ``_fileobj2output`` holding the listing it had already
 #: buffered, against ~300 bytes for one abandoned before writing.
-_ABANDONED: list[subprocess.Popen[str]] = []
+_ABANDONED: list[subprocess.Popen[Any]] = []
 
 
 def drain_or_abandon(
-    process: subprocess.Popen[str],
+    process: subprocess.Popen[AnyStr],
     grace: float,
-) -> tuple[str, str]:
+) -> tuple[AnyStr | str, AnyStr | str]:
     """Kill the child, drain its pipes under a deadline, then LET GO.
 
     The disposal for a caller that OWNS the pipes: nothing else is
@@ -120,8 +120,10 @@ def drain_or_abandon(
     measured rather than stylistic - see that docstring.
 
     Returns whatever was drained, or ``("", "")`` when the grace expired
-    with the pipes still held. Three callers wanted exactly that pair
-    and each wrote it out for itself, which is #326: ``verify`` and
+    with the pipes still held. A bytes-mode child drains to bytes, and the
+    fallback is ``str`` either way, which is what the return type says:
+    ``verify.run_scrubbed`` reads bytes (#527). Three callers wanted
+    exactly that pair and each wrote it out for itself, which is #326: ``verify`` and
     ``serve`` set it in an ``except`` branch and then dropped the child
     with no register and no close.
 
@@ -214,7 +216,7 @@ def reap_or_abandon(
         _register_if_unreaped(process)
 
 
-def _register_if_unreaped(process: subprocess.Popen[str]) -> None:
+def _register_if_unreaped(process: subprocess.Popen[Any]) -> None:
     """The half of a disposal that runs however the wait ended.
 
     The guard stays OUTSIDE :func:`_register_abandoned` rather than
@@ -228,7 +230,7 @@ def _register_if_unreaped(process: subprocess.Popen[str]) -> None:
         _register_abandoned(process)
 
 
-def _release_pipes(process: subprocess.Popen[str]) -> None:
+def _release_pipes(process: subprocess.Popen[Any]) -> None:
     """Close our ends of the pipes to a child we are done with.
 
     A second close is a no-op, so the branch where ``communicate``
@@ -252,7 +254,7 @@ def _release_pipes(process: subprocess.Popen[str]) -> None:
         close_quietly(pipe)
 
 
-def close_quietly(pipe: IO[str] | None) -> None:
+def close_quietly(pipe: IO[Any] | None) -> None:
     """Close our end of a pipe, and never let the close be a failure.
 
     ``suppress(Exception)`` rather than a named tuple of error types,
@@ -282,7 +284,7 @@ def close_quietly(pipe: IO[str] | None) -> None:
         pipe.close()
 
 
-def _register_abandoned(process: subprocess.Popen[str]) -> None:
+def _register_abandoned(process: subprocess.Popen[Any]) -> None:
     """Keep an uncollected child reachable until something can reap it.
 
     TWO registers, because they sweep at different rates and neither
