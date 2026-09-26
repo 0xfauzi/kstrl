@@ -45,6 +45,7 @@ from kstrl.agents.prompt_record import (
 )
 from kstrl.atomicio import atomic_write_json
 from kstrl.cli import cli
+from kstrl.events import RunPaths
 from kstrl.init_cmd import gitignore_block, run_init
 from kstrl.runid import run_kind
 from kstrl.safemode import safe_mode_reasons
@@ -508,6 +509,8 @@ class TestFactorySpecRecordsTheArchitect:
         assert output.startswith("exit=1\n"), output
         assert run_kind(run_root.name) == "decompose"
         assert (run_root / "events.jsonl").is_file()
+        transcript = RunPaths.for_run(root, run_root.name).engineer_log(ARCHITECT_COMPONENT)
+        assert "not json" in transcript.read_text(encoding="utf-8"), output
         assert Counter(r.prompt for r in records) == _delivered(capdir), output
         assert [(r.role, r.attempt, r.call) for r in records] == [
             (ARCHITECT_ROLE, n, 1) for n in (1, 2, 3)
