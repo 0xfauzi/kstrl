@@ -8,10 +8,10 @@ agent adapter as a real subprocess). No ``unittest.mock`` anywhere.
 Proven by the artifacts, not by call records:
 - worktree in: the agent's own ``pwd`` capture shows it ran inside the
   provisioned worktree, on the component branch;
-- provisioning: the per-component PRD and the prompt template (both
-  gitignored, so absent from a fresh worktree) were copied in, and the
-  prompt the agent RECEIVED is the template with ``$prd_path``
-  substituted to the worktree's PRD copy;
+- provisioning: the per-component PRD (gitignored, so absent from a
+  fresh worktree) was copied in, the prompt template was read from the
+  root and NOT copied (#569), and the prompt the agent RECEIVED is the
+  template with ``$prd_path`` substituted to the worktree's PRD copy;
 - result out: the agent's commit lands on the component branch and
   ``_run_component`` reports success with the true iteration count.
 """
@@ -96,9 +96,10 @@ class TestEngineerLoopPlumbing:
         assert result.error is None
 
         # PRD copy present, byte-identical to the root's per-component
-        # PRD; prompt copy present likewise.
+        # PRD. The prompt template is read from the root and never copied
+        # in (#569); "Read the PRD at" below is its text reaching the agent.
         assert (worktree / PRD_REL).read_text() == ((root / PRD_REL).read_text())
-        assert (worktree / PROMPT_REL).read_text() == ((root / PROMPT_REL).read_text())
+        assert not (worktree / PROMPT_REL).exists()
 
         # Worktree in: the agent subprocess really ran inside the
         # provisioned worktree, on the component branch.

@@ -115,9 +115,9 @@ def polled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     replies.mkdir()
     monkeypatch.setenv("FAKE_GH_DIR", str(replies))
     for sha, name in ((SHA_PASSED, "passed.json"), (SHA_FAILED, "failed.json")):
-        (replies / f"{sha}.json").write_text(
-            (FIXTURES / name).read_text(encoding="utf-8"), encoding="utf-8"
-        )
+        # gh prints the array of pages under --paginate --slurp (#570).
+        page = json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+        (replies / f"{sha}.json").write_text(json.dumps([page]), encoding="utf-8")
     (replies / f"{SHA_UNKNOWN}.fail").write_text(GH_REFUSAL, encoding="utf-8")
     root = tmp_path / "project"
     root.mkdir()

@@ -199,7 +199,7 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     # is a table cell the drained wait has already painted.
     "tests/test_carried_component_state.py": 4,
     "tests/test_config_guard_survey.py": 4,
-    "tests/test_config_screen.py": 36,
+    "tests/test_config_screen.py": 37,
     "tests/test_decompose_screens.py": 32,
     # 12 since #507 deleted the proposals tab and its three modal tests.
     "tests/test_evolve_screen.py": 12,
@@ -223,7 +223,7 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     # #433 inc3's two refusal tests read only after `drained`.
     "tests/test_retry_screen.py": 46,
     "tests/test_settle_helper.py": 47,
-    "tests/test_tui_433_screens.py": 119,
+    "tests/test_tui_433_screens.py": 120,
     # #433 verifier tests: every await is a settle helper or a resize then one.
     "tests/test_tui_433_verify.py": 11,
     "tests/test_tui_433_inc3.py": 62,  # #433 inc3 and inc4: settle helpers, or a push then one
