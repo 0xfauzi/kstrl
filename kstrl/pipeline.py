@@ -111,7 +111,7 @@ from kstrl.runenvelope import RunEnvelope
 from kstrl.runstate import RunState
 from kstrl.scope import RunScope
 from kstrl.security import SecurityConfig, SecurityMode, SecurityResult
-from kstrl.statedir import ControlStateError
+from kstrl.statedir import ControlStateError, pre_run_prd_path
 from kstrl.verify import (
     SCOPE_UNREADABLE_CHECK,
     CheckResult,
@@ -3330,7 +3330,7 @@ class ComponentPipeline:
             # the snapshot does NOT provide: the stories, criteria and
             # fixtures Phase 1 still has to read from the live file
             # (#269). Outside every worktree, so not agent-writable.
-            pre_run_prd_path=self.root_dir / comp.prd_path,
+            pre_run_prd_path=pre_run_prd_path(self.root_dir, comp.id, comp.prd_path),
             fixtures_config=self.fixtures_config,
             policy_config=self.run_envelope.policy,
             adequacy_config=self.run_envelope.adequacy,
