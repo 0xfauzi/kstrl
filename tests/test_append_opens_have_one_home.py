@@ -266,7 +266,9 @@ ALLOWED_APPEND_OPENS: dict[str, tuple[Reason, str]] = {
     "serve.py:factory_lock_held": (Reason.LOCK_FILE, "reads whether the run lock is held"),
     "serve.py:serve_lock": (Reason.LOCK_FILE, "the daemon's own lock"),
     "statedir.py:control_lock": (Reason.LOCK_FILE, "the control-directory lock"),
-    "tui/runs.py:factory_lock_held": (Reason.LOCK_FILE, "the TUI's copy of the same read"),
+    # #433 M1: the probe moved out of factory_lock_held so the ks serve
+    # daemon's lock is probed by the same code.
+    "tui/runs.py:lock_held": (Reason.LOCK_FILE, "the TUI's copy of the same read"),
     "workqueue.py:queue_lock": (Reason.LOCK_FILE, "the queue lock"),
     "agents/logging.py:LoggingAgent.run": (Reason.TEXT_LOG, "the agent transcript"),
     "commandrun.py:CommandRun.transcript_writer": (Reason.TEXT_LOG, "a command transcript"),

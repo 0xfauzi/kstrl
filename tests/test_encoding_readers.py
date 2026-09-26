@@ -161,7 +161,12 @@ EXPECTED_READ_SPELLINGS: dict[str, int] = {
     "serve.py": 5,
     "statedir.py": 1,
     "tui/embed.py": 1,
+    # #433 F9: the bounded "rb" read of a review file, and the
+    # disposition word OPEN = "open", which is not a read.
+    "tui/integration_view.py": 2,
     "tui/runs.py": 2,
+    # #433 M1: the pid ks serve writes into its lock file.
+    "tui/serve_view.py": 1,
     "tui/session.py": 1,
     "tui/tail.py": 2,
     # #433 F7: the failed gate's stored output, read as bytes and decoded
@@ -272,6 +277,7 @@ EXPECTED_CLEARED_READS: tuple[str, ...] = (
     "statedir.py open(lock_path, 'a+', encoding='utf-8')",
     "tui/embed.py open(run_paths.root / 'orchestrator.log', 'a', buffering=1, encoding='",
     "tui/runs.py open(lock_path, 'a+', encoding='utf-8')",
+    "tui/serve_view.py path.read_text(encoding='utf-8', errors='replace')",
     "tui/session.py open(run_paths.root / 'orchestrator.log', 'a', buffering=1, encoding='",
     "verify.py (root / 'CLAUDE.md').read_text(encoding='utf-8')",
     "verify.py full.read_text(encoding='utf-8', errors='replace')",
@@ -351,6 +357,9 @@ EXPECTED_DECIDED_OUT: tuple[str, ...] = (
     "atomicio.py os.open",
     "factory.py EvolutionJournal.open",
     "pipeline.py EvolutionJournal.open",
+    # #433 F9: a review file is read "rb" under a size bound and parsed
+    # by jsonread, which decodes. Binary, so no codec applies.
+    "tui/integration_view.py open",
     "tui/runs.py open",
     "tui/tail.py open",
     # #433 F7: gate_log_excerpt opens the gate log "rb" to read its tail

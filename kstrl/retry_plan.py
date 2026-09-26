@@ -117,6 +117,22 @@ def preview_retry(manifest: Manifest, component_id: str) -> RetryPreview:
     )
 
 
+def failed_branch_probe(root_dir: Path, branch: str) -> int:
+    """The exit code of ``git rev-parse --verify --quiet refs/heads/<branch>``.
+
+    :func:`prepare_retry` deletes the failed branch only when this is 0,
+    and the TUI's retry scope preview (#433) calls this same probe, so
+    the preview cannot describe a different test than the one the retry
+    makes. OSError and a timeout propagate, as they always did here.
+    """
+    return subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
+        cwd=root_dir,
+        capture_output=True,
+        timeout=30,
+    ).returncode
+
+
 def prepare_retry(
     manifest: Manifest,
     component_id: str,
@@ -172,13 +188,7 @@ def prepare_retry(
         )
         ui.info(f"Removed the failed attempt's evidence worktree: {evidence_worktree}")
     if failed_branch and not manifest.single_pr:
-        branch_exists = subprocess.run(
-            ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{failed_branch}"],
-            cwd=root_dir,
-            capture_output=True,
-            timeout=30,
-        )
-        if branch_exists.returncode == 0:
+        if failed_branch_probe(root_dir, failed_branch) == 0:
             deleted = subprocess.run(
                 ["git", "branch", "-D", failed_branch],
                 cwd=root_dir,
@@ -347,6 +357,13 @@ def plan_resume(
         max_parallel=int(flags.get("max_parallel", loaded.max_parallel)),
     )
     return plan, []
+
+
+def limits_line(plan: ResumePlan) -> str:
+    """Every run limit the retry runs under, on one line, spelled as the
+    options that set them (#526), so the TUI states what the CLI prints."""
+    set_ = [f"{_opt(name)} {value:g}" for name, value in plan.limits if value > 0]
+    return ", ".join(set_) if set_ else "no run limit"
 
 
 def print_resume_plan(ui: UI, plan: ResumePlan) -> None:

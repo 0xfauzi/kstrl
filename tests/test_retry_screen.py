@@ -143,7 +143,10 @@ class TestRetryScreen:
         self,
         tmp_path: Path,
     ) -> None:
-        manifest_file = self._failed_manifest(tmp_path)
+        # An uncapped launch record, so the scope is known and offered.
+        run_id = "factory-20260101-000000.000000-changed"
+        manifest_file = self._failed_manifest(tmp_path, run_id=run_id)
+        assert write_launch_record(tmp_path, run_id, manifest_file, (), _limits(0.0)) == []
         app = _home_app(tmp_path)
         specs: list[Any] = []
         app.start_session = lambda spec: specs.append(spec) or FakeSession(tmp_path)
@@ -207,18 +210,17 @@ class TestRetryScreen:
                 await mounted(pilot, lambda: app.screen, "#retry-table")
                 await drained(pilot, app.screen, what="on_mount to run")
                 await pilot.press("r")
+                # Increment 2 (#433): the scope is worked out BEFORE a
+                # confirmation is offered, so a relaunch the TUI cannot
+                # carry is refused at r and no modal opens.
                 await settled(
                     pilot,
-                    lambda: not isinstance(app.screen, RetryScreen),
-                    what="r to open the retry confirmation",
+                    lambda: (
+                        _notified(app, RESUME_REFUSAL) or not isinstance(app.screen, RetryScreen)
+                    ),
+                    what="r to refuse the uncarryable ceiling",
                 )
-                assert isinstance(app.screen, OptionsModal)
-                await pilot.press("1")  # Start retry
-                await settled(
-                    pilot,
-                    lambda: _notified(app, RESUME_REFUSAL) or specs,
-                    what="the confirmation to refuse the uncarryable ceiling",
-                )
+                assert isinstance(app.screen, RetryScreen)
                 assert specs == []
                 assert _notified(app, RESUME_REFUSAL)
                 assert _notified(app, "ks retry")
@@ -289,18 +291,17 @@ class TestRetryScreen:
                 await mounted(pilot, lambda: app.screen, "#retry-table")
                 await drained(pilot, app.screen, what="on_mount to run")
                 await pilot.press("r")
+                # Increment 2 (#433): the scope is worked out BEFORE a
+                # confirmation is offered, so a relaunch the TUI cannot
+                # carry is refused at r and no modal opens.
                 await settled(
                     pilot,
-                    lambda: not isinstance(app.screen, RetryScreen),
-                    what="r to open the retry confirmation",
+                    lambda: (
+                        _notified(app, RESUME_REFUSAL) or not isinstance(app.screen, RetryScreen)
+                    ),
+                    what="r to refuse the uncarryable flags",
                 )
-                assert isinstance(app.screen, OptionsModal)
-                await pilot.press("1")  # Start retry
-                await settled(
-                    pilot,
-                    lambda: _notified(app, RESUME_REFUSAL) or specs,
-                    what="the confirmation to refuse the uncarryable flags",
-                )
+                assert isinstance(app.screen, RetryScreen)
                 assert specs == []
                 assert _notified(app, RESUME_REFUSAL)
             mock_prepare.assert_not_called()
@@ -337,6 +338,12 @@ async def test_the_confirmation_names_the_failed_component_it_leaves_out(tmp_pat
             )
         ],
     ).save(manifest_file)
+    # An uncapped launch record, so the scope is known and offered (#433).
+    run_id = "factory-20260101-000000.000000-leave"
+    manifest = Manifest.load(manifest_file)
+    manifest.run_id = run_id
+    manifest.save(manifest_file)
+    assert write_launch_record(tmp_path, run_id, manifest_file, (), _limits(0.0)) == []
     app = _home_app(tmp_path)
     async with app.run_test(size=(130, 40)) as pilot:
         app.push_screen(RetryScreen())
