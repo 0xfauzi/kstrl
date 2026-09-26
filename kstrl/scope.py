@@ -51,6 +51,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal
 
+from kstrl.config import relative_to_root
 from kstrl.prd import PRD
 from kstrl.statedir import pre_run_prd_path
 
@@ -199,14 +200,16 @@ class ComponentScope:
         run_flag = list(base_config.allowed_paths) or None
         authored: list[str] | None = None
         error: str | None = None
+        source = pre_run_prd_path(root_dir, comp.id, comp.prd_path, plan_id=comp.plan_id)
+        shown = relative_to_root(source, root_dir)
         try:
-            prd = PRD.load(pre_run_prd_path(root_dir, comp.id, comp.prd_path))
+            prd = PRD.load(source)
         except FileNotFoundError as exc:
-            error = f"pre-run PRD not found ({comp.prd_path}): {exc}"
+            error = f"pre-run PRD not found ({shown}): {exc}"
         except OSError as exc:
-            error = f"pre-run PRD could not be read ({comp.prd_path}): {exc}"
+            error = f"pre-run PRD could not be read ({shown}): {exc}"
         except ValueError as exc:
-            error = f"pre-run PRD failed to parse ({comp.prd_path}): {exc}"
+            error = f"pre-run PRD failed to parse ({shown}): {exc}"
         else:
             authored = list(prd.allowed_paths or ()) or None
 

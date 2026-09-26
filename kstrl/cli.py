@@ -36,9 +36,11 @@ from click.core import ParameterSource
 from kstrl import __version__, baseline, baseline_report
 from kstrl.agents import (
     AGENT_TYPE_ALIASES,
+    VALID_AGENT_TYPES,
     ClaudeCodeAgent,
     ClaudeSdkAgent,
     CodexAgent,
+    canonical_agent_type,
     get_agent,
 )
 from kstrl.agents.base import (
@@ -52,6 +54,7 @@ from kstrl.agents.base import (
 from kstrl.agents.liveness import CLAUDE_FAMILY, PROBE_ENV_VAR, probe_family
 from kstrl.agents.logging import LoggingAgent
 from kstrl.agents.prompt_record import recording_prompts
+from kstrl.autonomy import DEMOTION_TRIGGER_LABELS
 from kstrl.breaker import BreakerConfig
 from kstrl.commandrun import CommandRun, open_command_run
 from kstrl.config import (
@@ -61,8 +64,9 @@ from kstrl.config import (
     reconcile_progress_config,
     resolve_config_file,
 )
-from kstrl.config_report import build_config_report
+from kstrl.config_report import UI_MODES, build_config_report
 from kstrl.config_report import normalize_ui_mode as _normalize_ui_mode
+from kstrl.contract import ContractMode
 from kstrl.decompose import SpecBlockerError, decompose_spec
 from kstrl.events import (
     ArtifactWritten,
@@ -76,6 +80,7 @@ from kstrl.events import (
     RunStarted,
 )
 from kstrl.factory import (
+    VALID_REVIEW_MODES,
     BudgetConfigError,
     FactoryConfig,
     _cli_family,
@@ -133,12 +138,14 @@ from kstrl.retry_plan import (
     retry_confirm_header,
 )
 from kstrl.sandbox import SandboxConfig
-from kstrl.security import _SEVERITY_ORDER
+from kstrl.security import _SEVERITY_ORDER, SecurityMode
+from kstrl.serve import LAUNCHD_MODES
 from kstrl.shutdown import StopController, install_signal_handlers
 from kstrl.timeout import TimeoutConfig
 from kstrl.ui.base import UI
 from kstrl.verify import DEFAULT_LINT_COMMAND, DEFAULT_TEST_COMMAND
 from kstrl.version import stamp_label
+from kstrl.workqueue import ItemState
 
 
 def _load_manifest_or_exit(path: Path, ui: UI) -> Manifest:
@@ -296,6 +303,27 @@ def _reject_blank_project_name(
 # the CLI and get_agent previously kept separate tables and disagreed
 # about "claude".
 _AGENT_TYPE_ALIASES = AGENT_TYPE_ALIASES
+
+
+class _AgentTypeChoice(click.Choice[str]):
+    """``--agent-type``: the values ``[agent] type`` and ``KSTRL_AGENT_TYPE`` accept (#565).
+
+    ``--help`` lists ``VALID_AGENT_TYPES``, ``claude`` and ``claude-code``
+    both, because both are accepted and both are in use. The check is
+    ``canonical_agent_type``, the one ``validate_agent_type`` and
+    ``get_agent`` use, so the flag also takes the spellings they take:
+    any case, surrounding space, and "" for auto. The value is passed on
+    as typed, as the config doors pass theirs. ``launch_record`` checks a
+    replayed value through this type as well.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(VALID_AGENT_TYPES, case_sensitive=False)
+
+    def convert(self, value: Any, param: click.Parameter | None, ctx: click.Context | None) -> str:
+        if isinstance(value, str) and canonical_agent_type(value) is not None:
+            return value
+        return super().convert(value, param, ctx)
 
 
 def _agent_preflight(
@@ -1155,7 +1183,7 @@ def _run_structural_override_notices(loaded: FactoryConfig) -> list[str]:
 )
 @click.option(
     "--ui",
-    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    type=click.Choice(UI_MODES),
     default="auto",
     help="UI mode",
 )
@@ -1337,7 +1365,7 @@ def run(
 @click.argument("directory", type=click.Path(path_type=Path), default=".")
 @click.option(
     "--ui",
-    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    type=click.Choice(UI_MODES),
     default="auto",
     help="UI mode",
 )
@@ -1418,7 +1446,7 @@ def init(directory: Path, ui: str, no_color: bool, upgrade_prompts: bool) -> Non
 )
 @click.option(
     "--ui",
-    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    type=click.Choice(UI_MODES),
     default="auto",
     help="UI mode",
 )
@@ -1848,7 +1876,7 @@ def _understand_core(
 )
 @click.option(
     "--ui",
-    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    type=click.Choice(UI_MODES),
     default="auto",
     help="UI mode",
 )
@@ -2218,13 +2246,13 @@ def feature(
 )
 @click.option(
     "--agent-type",
-    type=click.Choice(["auto", "claude-code", "claude-sdk", "codex"]),
+    type=_AgentTypeChoice(),
     default="auto",
     help="Agent type",
 )
 @click.option(
     "--ui",
-    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    type=click.Choice(UI_MODES),
     default="auto",
     help="UI mode",
 )
@@ -2472,7 +2500,7 @@ def decompose(
 )
 @click.option(
     "--review-mode",
-    type=click.Choice(["hard", "advisory", "skip"]),
+    type=click.Choice(VALID_REVIEW_MODES),
     default=None,
     help="Phase 2 review: hard (block), advisory (warn), skip (default: hard)",
 )
@@ -2486,7 +2514,7 @@ def decompose(
 )
 @click.option(
     "--security-mode",
-    type=click.Choice(["hard", "advisory", "skip"]),
+    type=click.Choice([mode.value for mode in SecurityMode]),
     default=None,
     help="Phase 2.5 security review: hard (block on findings at or above "
     "--security-fail-threshold), "
@@ -2509,7 +2537,7 @@ def decompose(
 )
 @click.option(
     "--contract-check",
-    type=click.Choice(["tier", "final", "skip"]),
+    type=click.Choice([mode.value for mode in ContractMode]),
     default=None,
     help="Phase 3 contract testing: tier (per-tier), final (end-only), skip (default: tier)",
 )
@@ -2619,7 +2647,7 @@ def decompose(
 )
 @click.option(
     "--agent-type",
-    type=click.Choice(["auto", "claude-code", "claude-sdk", "codex"]),
+    type=_AgentTypeChoice(),
     default="auto",
     help="Agent type",
 )
@@ -2632,7 +2660,7 @@ def decompose(
 )
 @click.option(
     "--ui",
-    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    type=click.Choice(UI_MODES),
     default="auto",
     help="UI mode",
 )
@@ -3172,10 +3200,10 @@ def config_group() -> None:
 @click.option("--agent-cmd", help="Override [agent] command")
 @click.option("--model", "-m", help="Override [agent] model")
 @click.option("--reasoning", help="Override [agent] reasoning_effort")
-@click.option("--agent-type", help="Override [agent] type")
+@click.option("--agent-type", type=_AgentTypeChoice(), help="Override [agent] type")
 @click.option(
     "--ui",
-    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    type=click.Choice(UI_MODES),
     default="auto",
     help="Override [ui] ui_mode",
 )
@@ -3595,7 +3623,7 @@ def dash(root: Path | None, run_id: str | None, poll: float) -> None:
 )
 @click.option(
     "--ui",
-    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    type=click.Choice(UI_MODES),
     default="auto",
     help="UI mode",
 )
@@ -4139,7 +4167,7 @@ def _check_needs_diff(
 @click.option(
     "--format",
     "output_format",
-    type=click.Choice([baseline.FORMAT_HUMAN, baseline.FORMAT_MARKDOWN]),
+    type=click.Choice(baseline.OUTPUT_FORMATS),
     # None, not "human", so an explicit --format human can be told apart from
     # the default and refused alongside the other flags that would do nothing.
     default=None,
@@ -4153,7 +4181,7 @@ def _check_needs_diff(
 )
 @click.option(
     "--ui",
-    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    type=click.Choice(UI_MODES),
     default="auto",
     help="UI mode",
 )
@@ -4441,7 +4469,7 @@ def doctor(root: Path | None, as_json: bool, measure: bool) -> None:
 )
 @click.option(
     "--ui",
-    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    type=click.Choice(UI_MODES),
     default="auto",
     help="UI mode",
 )
@@ -4578,7 +4606,7 @@ def retry(
 )
 @click.option(
     "--ui",
-    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    type=click.Choice(UI_MODES),
     default="auto",
     help="UI mode",
 )
@@ -4810,7 +4838,7 @@ _autonomy_root_option = click.option(
 )
 _autonomy_ui_option = click.option(
     "--ui",
-    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    type=click.Choice(UI_MODES),
     default="auto",
     help="UI mode",
 )
@@ -4982,15 +5010,7 @@ def autonomy_promote(
 @click.option("--reason", required=True, help="Why the level is being revoked")
 @click.option(
     "--trigger",
-    type=click.Choice(
-        [
-            "policy_violation",
-            "calibration_regression",
-            "health_breach",
-            "human_rejected_auto_merge",
-            "manual",
-        ]
-    ),
+    type=click.Choice(DEMOTION_TRIGGER_LABELS),
     default="manual",
     help="Which trigger fired",
 )
@@ -5176,7 +5196,7 @@ _inbox_root_option = click.option(
 )
 _inbox_ui_option = click.option(
     "--ui",
-    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    type=click.Choice(UI_MODES),
     default="auto",
     help="UI mode",
 )
@@ -5590,7 +5610,7 @@ _queue_root_option = click.option(
 )
 _queue_ui_option = click.option(
     "--ui",
-    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    type=click.Choice(UI_MODES),
     default="auto",
     help="UI mode",
 )
@@ -5703,9 +5723,8 @@ def queue_add(
     "--state",
     "states",
     multiple=True,
-    help=(
-        "Filter by state (repeatable): queued/leased/running/done/failed/poison/awaiting_approval"
-    ),
+    type=click.Choice([state.value for state in ItemState]),
+    help="Filter by state (repeatable)",
 )
 @_queue_root_option
 @_queue_ui_option
@@ -6055,7 +6074,7 @@ _signals_root_option = click.option(
 )
 _signals_ui_option = click.option(
     "--ui",
-    type=click.Choice(["auto", "rich", "plain", "gum"]),
+    type=click.Choice(UI_MODES),
     default="auto",
     help="UI mode",
 )
@@ -6284,7 +6303,7 @@ def learn_repair(ui: str, no_color: bool) -> None:
 )
 @click.option(
     "--plist-mode",
-    type=click.Choice(["keepalive", "interval"]),
+    type=click.Choice(LAUNCHD_MODES),
     default="keepalive",
     help="keepalive: one long-lived daemon; interval: `--once` on a timer",
 )

@@ -58,6 +58,9 @@ from kstrl import calibration, calibration_baseline
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.calibration_score import (
     _acceptable_categories,
+    allowed_paths_errors,
+    architect_detect_errors,
+    refuse_unreadable,
     render_verification,
     reviewer_caught,
     reviewer_false_positive,
@@ -473,11 +476,15 @@ def architect_caught(
     family, so an exact-label demand grades taxonomy vocabulary, not
     detection), and (when ``blocker_or_major == True``) at least one
     issue is blocker or major severity. Whether the exact labels were
-    used is reported in the detail as a non-gating signal.
+    used is reported in the detail as a non-gating signal. All three
+    fields are required and read through ``architect_detect_errors``
+    first, so a misspelt or mistyped one is refused, never defaulted
+    (#564).
     """
-    min_count = requirement.get("spec_issues_min", 1)
-    required_kinds = list(requirement.get("must_include_kind", []))
-    must_be_major_or_blocker = requirement.get("blocker_or_major", False)
+    refuse_unreadable(architect_detect_errors("must_detect", requirement))
+    min_count = requirement["spec_issues_min"]
+    required_kinds = list(requirement["must_include_kind"])
+    must_be_major_or_blocker = requirement["blocker_or_major"]
     actual_kinds = {i.kind for i in issues}
     caught = (
         len(issues) >= min_count
@@ -541,13 +548,18 @@ def architect_allowed_paths_caught(
       this prefix.
     - ``includes_feature_subtree`` (bool): each component's
       ``allowedPaths`` must include ``scripts/kstrl/feature/<id>/``.
+
+    Every field is required and read through ``allowed_paths_errors``
+    first, so a misspelt one is refused instead of skipping its check
+    (#564). The ``.get`` reads below are of the architect's OUTPUT.
     """
+    refuse_unreadable(allowed_paths_errors("must_emit_allowed_paths", requirement))
     components = decompose_output.get("components", [])
 
-    if requirement.get("non_halting") and not components:
+    if requirement["non_halting"] and not components:
         return False, "architect halted (returned components=[]); expected components"
 
-    if requirement.get("every_component_has_allowed_paths"):
+    if requirement["every_component_has_allowed_paths"]:
         for c in components:
             if not isinstance(c, dict):
                 continue
@@ -555,7 +567,7 @@ def architect_allowed_paths_caught(
             if not ap:
                 return False, (f"component {c.get('id', '?')} missing allowedPaths (got {ap!r})")
 
-    forbidden = requirement.get("excludes_harness_internals", [])
+    forbidden = requirement["excludes_harness_internals"]
     if forbidden:
         for c in components:
             if not isinstance(c, dict):
@@ -571,7 +583,7 @@ def architect_allowed_paths_caught(
                             f"{entry!r} is inside {forbid!r}"
                         )
 
-    test_root = requirement.get("includes_test_root_prefix")
+    test_root = requirement["includes_test_root_prefix"]
     if test_root:
         for c in components:
             if not isinstance(c, dict):
@@ -583,7 +595,7 @@ def architect_allowed_paths_caught(
                     f"prefix {test_root!r} in allowedPaths={entries!r}"
                 )
 
-    if requirement.get("includes_feature_subtree"):
+    if requirement["includes_feature_subtree"]:
         for c in components:
             if not isinstance(c, dict):
                 continue

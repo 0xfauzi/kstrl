@@ -642,7 +642,12 @@ class TestDecomposeSpec:
         # manifest's prdPath, which the component branch commits (#545)
         assert manifest.components[0].prd_path == "scripts/kstrl/feature/database/prd.json"
         assert not (tmp_path / manifest.components[0].prd_path).exists()
-        db_prd = plan_prd_path(tmp_path, "database")
+        # #568: one plan id for the decompose, on every component, and the
+        # directory the planned copies are under.
+        plan_id = manifest.components[0].plan_id
+        assert plan_id
+        assert [c.plan_id for c in manifest.components] == [plan_id, plan_id]
+        db_prd = plan_prd_path(tmp_path, "database", plan_id=plan_id)
         assert db_prd.exists()
         prd = PRD.load(db_prd)
         assert len(prd.user_stories) == 1
@@ -1629,7 +1634,7 @@ class TestPrdValidationInsideRetryLoop:
         assert "PREVIOUS ATTEMPT FAILED" in agent.prompts[1]
         assert "notes" in agent.prompts[1]
         assert len(manifest.components) == 1
-        prd_path = plan_prd_path(tmp_path, "comp-a")
+        prd_path = plan_prd_path(tmp_path, "comp-a", plan_id=manifest.components[0].plan_id)
         assert prd_path.exists()
         assert PRD.load(prd_path).user_stories[0].id == "US-001"
 
@@ -1679,6 +1684,8 @@ class TestPrdValidationInsideRetryLoop:
             root_dir: Path,
             branch_name: str,
             spec_issues: Sequence[dict[str, str]] = (),
+            *,
+            plan_id: str,
         ) -> Path:
             calls.append(str(comp_data["id"]))
             if len(calls) == 2:
@@ -1688,6 +1695,7 @@ class TestPrdValidationInsideRetryLoop:
                 root_dir,
                 branch_name,
                 spec_issues,
+                plan_id=plan_id,
             )
 
         monkeypatch.setattr(decompose_mod, "_generate_component_prd", flaky_generate)
@@ -1708,7 +1716,7 @@ class TestPrdValidationInsideRetryLoop:
         assert list(tmp_path.rglob("prd.json")) == []
         assert not (tmp_path / "scripts" / "kstrl" / "feature").exists()
         # #545: the directories created for the planned copy go too.
-        assert not plan_prd_path(tmp_path, "database").parent.parent.exists()
+        assert not (tmp_path / ".kstrl" / "plan").exists()
         assert not (tmp_path / "scripts" / "kstrl" / "manifest.json").exists()
         # The audit artifact is deliberately kept.
         assert (tmp_path / "scripts" / "kstrl" / "spec-issues.json").exists()
