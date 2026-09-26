@@ -15,6 +15,7 @@ import kstrl.cli as cli_mod
 from kstrl.manifest import Component, ComponentStatus, Manifest
 from kstrl.retry_plan import prepare_retry, preview_retry
 from kstrl.ui.plain import PlainUI
+from tests.helpers.run_limits import every_limit_argv
 from tests.test_retry_carries_flags import _RecordingChannel
 
 
@@ -272,8 +273,8 @@ class TestTheRetryCommandPrintsWhatItLeavesOut:
                 component_id,
                 "--root",
                 str(tmp_path),
-                "--max-cost-usd",
-                "0",
+                # No launch record: state every run limit, or the retry refuses (#526).
+                *every_limit_argv(),
                 "--ui",
                 "plain",
                 "--no-color",

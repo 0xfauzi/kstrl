@@ -317,6 +317,17 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Fixed
 
+- `ks retry` keeps every run limit of the run it resumes, or refuses and
+  names the one it would drop (#526). It did this for the cost ceiling
+  only (#436); a token ceiling, adversarial-call cap, agent timeout or
+  component timeout that came from the environment or kstrl.toml was
+  dropped in silence when the retrying shell no longer set it. The launch
+  record now stores every limit the run resolved, `ks retry` takes
+  `--max-total-tokens`, `--max-adversarial-calls`, `--agent-timeout` and
+  `--component-timeout`, and the retry plan prints every limit. A record
+  written before this change still loads; its retry asks for the four
+  limits it did not record, once.
+
 - The global playbook ledger no longer accepts an append its own fold
   refuses (#529). `append_ops` folds the ledger and checks the new ops
   with the fold's own rules while it holds the append lock, so a second
