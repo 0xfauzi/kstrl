@@ -25,10 +25,14 @@ import signal
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from kstrl.findings import Finding
 from kstrl.procgroup import signal_group
 from kstrl.verify import ChildOutputDecodeError, run_scrubbed
+
+if TYPE_CHECKING:
+    from kstrl.ui.base import UI
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +124,17 @@ def sweep_findings(sweep: WorktreeSweep, phase: str) -> list[Finding]:
             )
         )
     return findings
+
+
+def warn_sweep(sweep: WorktreeSweep, ui: UI, phase: str) -> None:
+    """One warning line per survivor, and one for a census that failed (#528).
+
+    For the worktrees whose sweep has no component to hold a finding: the
+    contract and integration temp worktrees, and the evidence worktree a
+    retry removes. A factory run writes every warning to its events.jsonl.
+    """
+    for finding in sweep_findings(sweep, phase):
+        ui.warn(f"  {ORPHAN_CATEGORY} ({phase}): {finding.explanation}")
 
 
 def _describe(s: Survivor) -> str:

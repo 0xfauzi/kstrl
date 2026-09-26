@@ -200,9 +200,9 @@ To stop it failing components, set `[divergence] mode = "advisory"` (the default
 
 ## Phase 2.5: security review failed (hard mode)
 
-**Symptom**: `Phase 2.5 FAILED for <comp_id>: N critical, M high`
+**Symptom**: `Phase 2.5 FAILED for <comp_id>: N failures`
 
-**Diagnose**: same logic as Phase 2, but the findings are typed against the security taxonomy. Each finding has `category`, `severity`, `location`, `explanation`, `suggestion`.
+**Diagnose**: same logic as Phase 2, but the findings are typed against the security taxonomy. Each finding has `category`, `severity`, `location`, `explanation`, `suggestion`. N is the number of findings at or above `[security] fail_threshold` (default `high`), the same number the `review_result` event records as `fail_count`.
 
 **Resolve**:
 
@@ -328,11 +328,16 @@ recreated, kstrl kills the process group of every process whose working
 directory is inside that worktree. One found at the end of an attempt or
 at the run's cleanup is recorded on the component as an `orphan_process`
 finding naming its pid and command; one found when a stale worktree is
-pruned or a worktree is recreated for a retry is logged as a warning. A
-shell you opened inside a component worktree while a run is going counts
-as one of those processes. If the census cannot run (`lsof` missing, or
-listing nothing), the finding says so instead of reporting a clean
-worktree.
+pruned or a worktree is recreated for a retry is logged as a warning.
+The same kill runs before kstrl removes any other worktree it created
+(#528): a Phase 3 contract worktree, the integration review's worktree,
+and the failed attempt's evidence worktree that `ks retry` removes. No
+component owns those, so each process found there is named in a warning
+line, `orphan_process (contract)`, `(integration)` or `(retry)`, which a
+factory run also writes to its events.jsonl. A shell you opened inside
+any of these worktrees counts as one of those processes. If the census
+cannot run (`lsof` missing, or listing nothing), the finding or the
+warning says so instead of reporting a clean worktree.
 
 What a resume counts (#463). A retry count carries across runs on the
 manifest, and a Ctrl-C does not reset it. A run that reached its summary

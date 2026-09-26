@@ -281,9 +281,9 @@ class TestReviewCounts:
         events = _events(root)
         event = _review_event(events, security=True)
         rows = _reviewer_rows(events, "security")
-        assert (event.fail_count, event.advisory_count) == (1, 1)
+        # Advisory mode fails on no finding, so every row is advisory (#524).
+        assert (event.passed, event.fail_count, event.advisory_count) == (True, 0, 2)
         assert event.fail_count + event.advisory_count == len(rows) == 2
-        assert event.fail_count == sum(1 for r in rows if r.severity in ("critical", "high"))
 
 
 class TestMergeGateEvidence:
