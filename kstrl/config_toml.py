@@ -226,15 +226,70 @@ def load_toml_section(toml_path: Path, section: str) -> dict[str, Any]:
     a syntax error OR a non-utf-8 byte, see :func:`load_toml_document` -
     so every loader behaves consistently. ``OSError`` is NOT normalized
     into that, so a caller reading this file without the entry check in
-    front of it catches both. Sub-section keys that are not
-    dicts (e.g. someone
-    wrote ``factory = "hi"`` instead of ``[factory]``) return ``{}``
-    rather than crashing later in the per-key cast.
+    front of it catches both. A section written as a value
+    (``factory = "hi"`` instead of ``[factory]``) raises
+    :class:`ConfigError` through :func:`section_table`.
     """
     if not toml_path.exists():
         return {}
-    data = load_toml_document(toml_path)
-    section_data = data.get(section, {})
-    if not isinstance(section_data, dict):
-        return {}
-    return section_data
+    return section_table(load_toml_document(toml_path), section, toml_path)
+
+
+def section_table(document: dict[str, Any], section: str, toml_path: Path) -> dict[str, Any]:
+    """The ``[section]`` table of a parsed kstrl.toml, or ``{}`` when absent.
+
+    Raises :class:`ConfigError` when the name holds a value rather than a
+    table (``learning = false`` where ``[learning]`` belongs): returning
+    ``{}`` for it loaded the defaults in silence (#525).
+    """
+    value = document.get(section, {})
+    if not isinstance(value, dict):
+        raise ConfigError(
+            f"{toml_path} sets {section} = {value!r}, but kstrl reads [{section}] "
+            f"as a table; write it as a [{section}] section with its keys under it"
+        )
+    return value
+
+
+class RecordedTable(dict[str, Any]):
+    """A parsed kstrl.toml table that records every name a reader asks for.
+
+    The loaders ask by name (``in``, ``[]``, ``get``), so a name nobody
+    asked for is a name no loader reads (#525). Iteration is not a
+    question about one name and records nothing.
+    """
+
+    def __init__(self, table: dict[str, Any]) -> None:
+        super().__init__(table)
+        self.asked: set[str] = set()
+
+    def __contains__(self, key: object) -> bool:
+        if isinstance(key, str):
+            self.asked.add(key)
+        return super().__contains__(key)
+
+    def __getitem__(self, key: str) -> Any:
+        self.asked.add(key)
+        return super().__getitem__(key)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        self.asked.add(key)
+        return super().get(key, default)
+
+
+def record_reads(path: Path) -> RecordedTable:
+    """Parse ``path`` and serve it, for the rest of the current
+    :func:`toml_parse_scope`, as a :class:`RecordedTable` whose tables
+    are recorded too."""
+    scope = _PARSE_SCOPE.get()
+    if scope is None:
+        raise LookupError("record_reads is only meaningful inside toml_parse_scope")
+    document = load_toml_document(path)
+    recorded = RecordedTable(
+        {
+            name: RecordedTable(value) if isinstance(value, dict) else value
+            for name, value in document.items()
+        }
+    )
+    scope[path] = recorded
+    return recorded

@@ -12,15 +12,15 @@ from kstrl.timeout import TimeoutConfig, run_with_timeout
 class TestTimeoutConfig:
     def test_defaults(self) -> None:
         config = TimeoutConfig()
-        assert config.git_operation == 30.0
         assert config.agent_iteration == 0.0
         assert config.component_total == 0.0
+        assert config.scheduler_backstop_margin == 60.0
 
     def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("KSTRL_TIMEOUT_GIT", "10")
+        monkeypatch.setenv("KSTRL_TIMEOUT_BACKSTOP_MARGIN", "10")
         monkeypatch.setenv("KSTRL_TIMEOUT_AGENT_ITERATION", "900")
         config = TimeoutConfig.from_env()
-        assert config.git_operation == 10.0
+        assert config.scheduler_backstop_margin == 10.0
         assert config.agent_iteration == 900.0
 
 

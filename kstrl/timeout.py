@@ -11,13 +11,8 @@ from typing import Any
 # Field name -> environment variable, shared by from_env and load so the
 # two surfaces cannot drift.
 _ENV_VARS: dict[str, str] = {
-    "git_operation": "KSTRL_TIMEOUT_GIT",
     "agent_iteration": "KSTRL_TIMEOUT_AGENT_ITERATION",
     "component_total": "KSTRL_TIMEOUT_COMPONENT",
-    "verification_check": "KSTRL_TIMEOUT_VERIFY",
-    "review_agent": "KSTRL_TIMEOUT_REVIEW",
-    "contract_test": "KSTRL_TIMEOUT_CONTRACT",
-    "subprocess_default": "KSTRL_TIMEOUT_DEFAULT",
     "scheduler_backstop_margin": "KSTRL_TIMEOUT_BACKSTOP_MARGIN",
 }
 
@@ -51,19 +46,14 @@ class TimeoutConfig:
     work limits default to 0: a limit the operator did not set does not
     end a run (#467).
 
-    ``git_operation`` and ``subprocess_default`` keep their defaults
-    because they are hang guards, not work limits. Neither they nor
-    ``verification_check``, ``review_agent`` or ``contract_test`` is read
-    by any code path today.
+    Every field here has a reader. #525 removed five that had none
+    (``git_operation``, ``verification_check``, ``review_agent``,
+    ``contract_test``, ``subprocess_default``): ``ks init`` scaffolded
+    them and ``ks config show`` printed them as limits nothing enforced.
     """
 
-    git_operation: float = 30.0
     agent_iteration: float = 0.0
     component_total: float = 0.0
-    verification_check: float = 0.0
-    review_agent: float = 0.0
-    contract_test: float = 0.0
-    subprocess_default: float = 60.0
     # Extra slack the factory scheduler grants a worker past
     # component_total before declaring the component dead: workers need
     # time for worktree setup, phase hand-offs, and the SIGTERM->SIGKILL
