@@ -30,6 +30,7 @@ from kstrl.launch_record import (
 )
 from kstrl.manifest import ComponentStatus
 from kstrl.timeout import NO_LIMIT
+from kstrl.worktree_sweep import sweep_worktree, warn_sweep
 
 if TYPE_CHECKING:
     import click
@@ -150,8 +151,10 @@ def prepare_retry(
     # fresh attempt; remove them so provisioning and the stale-branch
     # preflight start clean. In single_pr mode every component shares
     # one branch carrying completed components' commits - never delete
-    # it here.
+    # it here. #528: what still runs in the evidence worktree (a server
+    # started while looking at the failure) is killed and named first.
     if evidence_worktree and Path(evidence_worktree).exists():
+        warn_sweep(sweep_worktree(Path(evidence_worktree)), ui, "retry")
         subprocess.run(
             ["git", "worktree", "remove", "--force", evidence_worktree],
             cwd=root_dir,
