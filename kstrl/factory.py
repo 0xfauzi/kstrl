@@ -267,7 +267,6 @@ class FactoryConfig:
     use_worktrees: bool = True
     single_pr: bool = False
     create_prs: bool = True
-    verify_command: str | None = None
     # Phase 1: mechanical verification
     verify_config: VerifyConfig | None = None
     # R2.3 (CRIT-8): explicit skip sentinel for Phase 1. verify_config=None

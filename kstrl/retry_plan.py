@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 
 from kstrl.factory import FactoryConfig, validate_cost_ceiling, validate_token_ceiling
 from kstrl.launch_record import (
+    REMOVED_OPTIONS,
     FlagValue,
     LaunchRecord,
     LaunchRecordError,
@@ -254,6 +255,8 @@ class ResumePlan:
     #: Every run limit the retry runs under, by option name (#526).
     limits: tuple[tuple[str, float], ...]
     max_parallel: int
+    #: Recorded flags left out because `ks factory` no longer has them (#539).
+    dropped: tuple[str, ...]
 
 
 def _ceiling_problems(
@@ -321,7 +324,9 @@ def plan_resume(
     }
     try:
         record = read_launch_record(root_dir, manifest, manifest_file)
-        flags = dict(record.flags) if record is not None else {}
+        recorded = dict(record.flags) if record is not None else {}
+        dropped = tuple(name for name in recorded if name in REMOVED_OPTIONS)
+        flags = {name: value for name, value in recorded.items() if name not in REMOVED_OPTIONS}
         flags.update(overrides)
         argv = flags_argv(command, flags)
     except LaunchRecordError as exc:
@@ -345,6 +350,7 @@ def plan_resume(
         argv=tuple(argv),
         limits=tuple(resolved.items()),
         max_parallel=int(flags.get("max_parallel", loaded.max_parallel)),
+        dropped=dropped,
     )
     return plan, []
 
@@ -359,6 +365,8 @@ def print_resume_plan(ui: UI, plan: ResumePlan) -> None:
             f"No launch record for run {plan.run_id or '(none)'}: "
             "the flags of the run being resumed are not carried over"
         )
+    for name in plan.dropped:
+        ui.warn(f"Not replayed from run {plan.run_id}: {_opt(name)}, {REMOVED_OPTIONS[name]}")
     for name, value in plan.limits:
         ui.kv(_opt(name), str(value) if value > 0 else NO_LIMIT)
     ui.kv("Max parallel", str(plan.max_parallel))

@@ -435,7 +435,7 @@ def test_the_confirmation_names_every_component_the_retry_reenters(
 
 def test_retry_flags_are_pinned_against_factory() -> None:
     """Every `ks factory` option is accepted by retry, replayed, or listed as never replayed."""
-    from kstrl.launch_record import NOT_REPLAYED
+    from kstrl.launch_record import NOT_REPLAYED, REMOVED_OPTIONS
 
     factory = {p.name: p for p in cli_mod.cli.commands["factory"].params}
     retry = {p.name: p for p in cli_mod.cli.commands["retry"].params}
@@ -443,7 +443,6 @@ def test_retry_flags_are_pinned_against_factory() -> None:
     replayed = {
         "max_retries",
         "create_prs",
-        "verify_command",
         "test_command",
         "typecheck_command",
         "lint_command",
@@ -515,6 +514,12 @@ def test_retry_flags_are_pinned_against_factory() -> None:
         assert name in retry, f"`ks retry` cannot state the run limit {name!r}"
         assert factory[name].opts == ["--" + name.replace("_", "-")], name
     for name, reason in NOT_REPLAYED.items():
+        assert reason.strip(), name
+    # #539: a removed option is gone from `ks factory`, and a record that
+    # still carries it is dropped by the retry, not refused as unknown.
+    for name, reason in REMOVED_OPTIONS.items():
+        assert name not in factory, f"{name} is in REMOVED_OPTIONS but `ks factory` has it"
+        assert name not in NOT_REPLAYED, name
         assert reason.strip(), name
     # A replayed value goes through JSON and back as one scalar token, so
     # a Path, multiple=True or nargs>1 option cannot be replayed.
@@ -648,5 +653,59 @@ class TestRetryKeepsEveryRunLimit:
         out = refused.stdout + refused.stderr
         assert refused.returncode == 2, out
         assert f"{option} must be >= 0" in out, out
+        # Refused BEFORE the reset: the manifest still says failed.
+        assert _status(root, "storage") == ComponentStatus.FAILED.value
+
+
+class TestVerifyCommandIsGone:
+    """#539: `--verify-command` was stored and read by nothing, so it was removed."""
+
+    def test_factory_refuses_it_and_names_the_three_commands(self, tmp_path: Path) -> None:
+        root = _repo(tmp_path)
+        marker = tmp_path / "verify-command-ran"
+
+        result = _factory(root, "--verify-command", f"touch {marker}", *RUN_FLAGS)
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert "No such option '--verify-command'" in result.stderr, result.stderr
+        for option in ("--test-command", "--typecheck-command", "--lint-command"):
+            assert f"'{option}'" in result.stderr, result.stderr
+        # Refused before anything ran: no run was started.
+        assert not marker.exists()
+        assert _manifest(root).run_id == ""
+        assert _status(root, "storage") == ComponentStatus.PENDING.value
+
+    def test_a_record_that_carries_it_still_retries(self, tmp_path: Path) -> None:
+        root = _repo(tmp_path)
+        run_id = _failed_run(root, *RUN_FLAGS)
+        path = root / ".kstrl" / "runs" / run_id / "launch.json"
+        record = json.loads(path.read_text(encoding="utf-8"))
+        # What a run launched before #539 with --verify-command recorded.
+        record["flags"]["verify_command"] = "uv run pytest"
+        path.write_text(json.dumps(record), encoding="utf-8")
+
+        retried = _ks(root, "retry", "storage")
+        out = retried.stdout + retried.stderr
+        # Reached the factory, where `storage` fails its PRD again.
+        assert retried.returncode == 1, out
+        resuming = next(ln for ln in out.splitlines() if "Resuming with the flags" in ln)
+        assert "--verify-command" not in resuming, resuming
+        assert "--max-parallel 1" in resuming, resuming
+        assert f"Not replayed from run {run_id}: --verify-command, removed in #539" in out, out
+
+    def test_a_record_that_carries_an_unknown_option_is_still_refused(self, tmp_path: Path) -> None:
+        """Only a name in REMOVED_OPTIONS is dropped; any other unknown name is refused."""
+        root = _repo(tmp_path)
+        run_id = _failed_run(root, *RUN_FLAGS)
+        path = root / ".kstrl" / "runs" / run_id / "launch.json"
+        record = json.loads(path.read_text(encoding="utf-8"))
+        # What a record from a newer kstrl with an option this one lacks looks like.
+        record["flags"]["widget_command"] = "true"
+        path.write_text(json.dumps(record), encoding="utf-8")
+
+        refused = _ks(root, "retry", "storage")
+        out = refused.stdout + refused.stderr
+        assert refused.returncode == 2, out
+        assert "`ks factory` has no option for 'widget_command'" in out, out
+        assert "Not replayed from run" not in out, out
         # Refused BEFORE the reset: the manifest still says failed.
         assert _status(root, "storage") == ComponentStatus.FAILED.value
