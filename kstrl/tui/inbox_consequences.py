@@ -22,7 +22,9 @@ the decision, and for most kinds nobody does:
 
 The TUI records the decision only. ``ks inbox approve`` and
 ``ks inbox reject`` on a park also start ``ks factory``; this screen does
-not, and the approve sentence says so first (#433 advice 2.2).
+not. The item's own text (``pipeline.PARK_DETAIL``) says what the shell
+commands do, labelled as the shell's, so the sentences here say only what
+this screen does (#433 K1).
 """
 
 from __future__ import annotations
@@ -91,11 +93,11 @@ def _park(item: InboxItem, component_status: str | None, snooze_hours: float) ->
             offered=(snooze,), withheld=f"approve and reject are not offered: {why}"
         )
     approve = (
-        "records approval only; nothing merges until the next ks factory run. That run "
-        f"pushes and merges {cid}'s branch if its head is still {head[:12]}; otherwise "
-        f"{cid} fails and nothing is pushed. From the shell, ks inbox approve also starts that run."
+        "records approval only; nothing merges until the next ks factory run on this "
+        f"manifest. That run pushes and merges {cid}'s branch if its head is still "
+        f"{head[:12]}; otherwise {cid} fails and nothing is pushed."
         if head
-        else "records approval only. The next ks factory run fails "
+        else "records approval only. The next ks factory run on this manifest fails "
         f"{cid}: the park recorded no commit to merge, so nothing is pushed."
     )
     return Consequences(
@@ -103,8 +105,8 @@ def _park(item: InboxItem, component_status: str | None, snooze_hours: float) ->
             (APPROVE, approve),
             (
                 REJECT,
-                "records rejection with your reason only. The next ks factory run marks "
-                f"{cid} failed as rejected by a person and skips its dependents.",
+                "records rejection with your reason only. The next ks factory run on this "
+                f"manifest marks {cid} failed as rejected by a person and skips its dependents.",
             ),
             snooze,
         ),

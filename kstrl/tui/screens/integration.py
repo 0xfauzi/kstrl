@@ -14,6 +14,7 @@ which the table cells shorten.
 
 from __future__ import annotations
 
+from rich.console import Group
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -42,22 +43,20 @@ def _fit(text: str, width: int) -> str:
     return text if len(text) <= width else text[: max(1, width - 1)] + "…"
 
 
-def rounds_text(review: IntegrationReview, width: int = 0) -> Text:
-    """One line per round; with ``width``, each reason is cut to fit it."""
-    text = Text()
-    for index, entry in enumerate(review.rounds):
-        if index:
-            text.append("\n")
+def rounds_text(review: IntegrationReview) -> Group:
+    """One row per round, its whole reason wrapped under itself, so each
+    round's counts can be checked against the findings list (#433 K7)."""
+    rows = []
+    for entry in review.rounds:
         word, color = OUTCOME_WORDS.get(entry.outcome, (entry.outcome, theme.WARNING))
-        head = f"round {entry.number} "
-        text.append(head, style=theme.MUTED)
-        text.append(word, style=f"bold {color}")
-        if entry.reason:
-            room = width - len(head) - len(word) - 2 if width else len(entry.reason)
-            text.append(f"  {_fit(entry.reason, max(8, room))}", style=theme.MUTED)
-    if review.state_problem:
-        text.append(f"\ndispositions unknown: {review.state_problem}", style=theme.WARNING)
-    return text
+        label = Text(f"round {entry.number} ", style=theme.MUTED)
+        label.append(word, style=f"bold {color}")
+        rows.append((label, Text(" ".join(entry.reason.split()), style=theme.MUTED)))
+    problem = review.state_problem
+    return Group(
+        theme.label_rows(rows),
+        *([Text(f"dispositions unknown: {problem}", style=theme.WARNING)] if problem else []),
+    )
 
 
 def _source(finding: FindingDisposition) -> str:
@@ -113,12 +112,9 @@ class IntegrationScreen(Screen[None]):
     def on_resize(self) -> None:
         # Below 30 rows the gaps go, so the detail pane keeps some height.
         self.set_class(self.size.height < 30, "tiny")
-        rounds = rounds_text(self.review, max(40, self.size.width) - 4)
-        self.query_one("#integration-rounds", Static).update(rounds)
 
     def on_mount(self) -> None:
-        rounds = rounds_text(self.review, self._width() - 4)
-        self.query_one("#integration-rounds", Static).update(rounds)
+        self.query_one("#integration-rounds", Static).update(rounds_text(self.review))
         self._fill_criteria()
         self._fill_findings()
         first = self.query_one("#integration-findings", DataTable)

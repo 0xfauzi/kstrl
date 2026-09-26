@@ -138,14 +138,15 @@ if TYPE_CHECKING:
 # review summary string. Bounded so a huge diff cannot flood the modal.
 CHECKPOINT_DIFF_CHAR_LIMIT = 20_000
 
-#: The merge-gate park's inbox item text, which the TUI inbox shows as it
-#: is: plain words, no config key and no markup (#433 H7).
+#: The merge-gate park's inbox item text, which ``ks inbox show`` and the TUI
+#: inbox print as it is; what the shell commands do is the shell's (#433 H7, K1).
 PARK_DETAIL = (
     "Merge approval is required and no prompt was available to ask for it, so "
     "nothing was pushed and no PR was opened. The branch holds the reviewed "
-    "work. ks inbox approve <id> pushes it, opens the PR, merges it and "
-    "continues the run; ks inbox reject <id> --comment ... fails the "
-    "component and skips its dependents."
+    "work. From the shell, ks inbox approve <id> records approval and starts "
+    "the ks factory run that pushes the branch, opens the PR, merges it and "
+    "continues; ks inbox reject <id> --comment ... records rejection and "
+    "starts the run that fails the component and skips its dependents."
 )
 
 

@@ -8,10 +8,12 @@ evidence, each shown with its own state:
   and the run's ``release_ref`` from ``factory_completed`` (#442);
 - the CI state of each merge commit, from the ledger ``ks ci poll``
   writes (#553, ``ci_state.read_ci_ledger``). The TUI never asks the
-  network. A commit the ledger has not read says so and names the
-  command that reads it; every reading says how long ago it was taken,
-  so a stale one is visible. Only ``passed`` is green: unknown, absent
-  and an unreadable ledger never are.
+  network. A commit the ledger has not read says so and names what reads
+  it: ``ks serve`` after each cycle (#570) and ``ks ci poll`` now; every
+  reading says how long ago it was taken, so a stale one is visible.
+  Only ``passed`` is green: unknown, absent and an unreadable ledger
+  never are. A line wider than the screen wraps under itself, never cut,
+  so gh's whole reason for an unknown reading is on screen (#433 K3).
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from rich.console import Console
 from rich.text import Text
 
 from kstrl.ci_state import CiLedger, CiState, read_ci_ledger
@@ -39,8 +42,12 @@ from kstrl.tui.run_status import age_phrase
 if TYPE_CHECKING:
     from kstrl.reducer import RunState
 
-#: What a merge commit the ledger has no reading of says (#433 G11).
-NO_CI_READING = "no CI reading - run ks ci poll"
+#: What a merge commit the ledger has no reading of says (#433 G11, K4).
+NO_CI_READING = "CI not read yet"
+#: What reads it, said after ``NO_CI_READING``: serve refreshes CI after each cycle (#570).
+CI_READERS = "ks serve reads it after each cycle; ks ci poll reads it now"
+#: How far a wrapped line's continuation sits in from its start.
+CONTINUATION = "    "
 #: Why a Delivery shows no CI until its ledger has been read.
 CI_NOT_READ = "the CI ledger was not read"
 #: The most merge commits listed one per line; the rest share one line.
@@ -213,7 +220,7 @@ def _ci_of(merge: Merge, delivery: Delivery, now: float) -> tuple[CiState | None
         return CiState.UNKNOWN, [delivery.ci_problem]
     reading = delivery.ci.latest(merge.merge_sha)
     if reading is None:
-        return None, []
+        return None, [CI_READERS]
     return reading.state, [_read_ago(reading.observed_at, now), reading.reason]
 
 
@@ -222,11 +229,7 @@ def _ci_word(state: CiState | None) -> str:
 
 
 def ci_line(merge: Merge, delivery: Delivery, now: float) -> Text:
-    """``merged PR #8 4ab99ae  CI passed · read 5m ago · 7 checks passed``.
-
-    The reason is last, so a narrow screen cuts it and not the state or
-    how old the reading is.
-    """
+    """``merged PR #8 4ab99ae  CI passed · read 5m ago · 7 checks passed``."""
     text = Text("merged ", style=f"bold {theme.MUTED}")
     text.append(f"PR #{merge.pr_number}" if merge.pr_number else merge.component_id)
     if merge.merge_sha:
@@ -248,10 +251,21 @@ def _more_line(rest: tuple[Merge, ...], delivery: Delivery, now: float) -> Text:
     return text
 
 
+def wrapped(line: Text, width: int) -> list[Text]:
+    """``line`` whole in ``width`` cells: as it is when it fits, otherwise
+    wrapped with every line after the first ``CONTINUATION`` in (#433 K3)."""
+    if line.cell_len <= width:
+        return [line]
+    parts = list(line.wrap(Console(), max(1, width - len(CONTINUATION))))
+    for part in parts:
+        part.rstrip()
+    return [parts[0], *(Text(CONTINUATION) + part for part in parts[1:])]
+
+
 def merge_lines(delivery: Delivery, now: float, width: int) -> list[Text]:
-    """One line per merge commit with its CI (#433 G11), each cut to
-    ``width`` cells with an ellipsis. Past ``MERGE_LINES`` commits the
-    rest are counted by state on the last line."""
+    """One line per merge commit with its CI (#433 G11), wrapped under
+    itself to ``width`` cells rather than cut (K3). Past ``MERGE_LINES``
+    commits the rest are counted by state on the last line."""
     if not delivery.merges:
         lines = [Text("merged ", style=f"bold {theme.MUTED}")]
         lines[0].append("none recorded in this run", style=theme.MUTED)
@@ -260,6 +274,4 @@ def merge_lines(delivery: Delivery, now: float, width: int) -> list[Text]:
         lines = [ci_line(m, delivery, now) for m in shown] + [_more_line(rest, delivery, now)]
     else:
         lines = [ci_line(merge, delivery, now) for merge in delivery.merges]
-    for line in lines:
-        line.truncate(max(1, width), overflow="ellipsis")
-    return lines
+    return [part for line in lines for part in wrapped(line, max(1, width))]
