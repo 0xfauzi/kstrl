@@ -3518,6 +3518,41 @@ def _render_status(
             ]
             for path in evidence:
                 ui_impl.kv("  evidence", str(path))
+    _render_ci(ui_impl, root_dir, manifest)
+
+
+def _render_ci(ui_impl: UI, root_dir: Path | None, manifest: Manifest) -> None:
+    """The recorded CI state of every merge commit kstrl produced (#570).
+
+    Reads the ledger ``ks serve`` and ``ks ci poll`` write; no network.
+    A commit never read, and every commit when the record cannot be
+    read, shows as unknown with the reason, never as passed.
+    """
+    if root_dir is None:
+        return
+    from kstrl.ci_state import read_ci_ledger, recorded_merges
+
+    try:
+        merges = recorded_merges(root_dir, manifest)
+        ledger = read_ci_ledger(root_dir)
+    except (OSError, ValueError) as exc:
+        ui_impl.info("")
+        ui_impl.err(f"CI: unknown, the record could not be read: {type(exc).__name__}: {exc}")
+        return
+    if not merges:
+        return
+    ui_impl.info("")
+    ui_impl.info("CI (merge commits)")
+    for component_id, sha in merges:
+        reading = ledger.latest(sha)
+        shown = (
+            f"{sha[:12]}  unknown: never read"
+            if reading is None
+            else f"{sha[:12]}  {reading.state}: {reading.reason} (read {reading.observed_at})"
+        )
+        ui_impl.kv(f"  {component_id}", shown)
+    if ledger.dropped:
+        ui_impl.kv("  ledger", f"{ledger.dropped} line(s) could not be read")
 
 
 @cli.command()
@@ -6170,10 +6205,12 @@ def signals_ls(root: Path | None, ui: str, no_color: bool) -> None:
 def ci_group() -> None:
     """Read and record the CI state of the commits kstrl merges produced (#553).
 
-    Asks GitHub, through gh, for the checks on every merge commit the
-    manifest records, and appends what it read, with the time, to a
-    ledger in the control directory. A state kstrl could not read is
-    recorded as unknown, never as passed.
+    Asks GitHub, through gh, for the checks on every merge commit kstrl
+    recorded (the manifest and every run's pr_merged events), and
+    appends what it read, with the time, to a ledger in the control
+    directory. `ks serve` reads the commits that are due after every
+    cycle, and `ks status` shows the newest reading of each. A state
+    kstrl could not read is recorded as unknown, never as passed.
     """
 
 
@@ -6194,7 +6231,7 @@ def ci_poll(manifest_path: Path | None, root: Path | None, ui: str, no_color: bo
     Exit 1 when any commit's CI failed or could not be read: both need
     the operator. Exit 0 when every commit passed or is still running.
     """
-    from kstrl.ci_state import CiState, poll_ci
+    from kstrl.ci_state import CiState, poll_ci, recorded_merges
 
     root_dir = (root or Path.cwd()).resolve()
     ui_impl = _autonomy_ui(ui, no_color)
@@ -6204,9 +6241,9 @@ def ci_poll(manifest_path: Path | None, root: Path | None, ui: str, no_color: bo
         ui_impl.info("Run `ks factory` first, or pass --manifest.")
         sys.exit(2)
     manifest = _load_manifest_or_exit(path, ui_impl)
-    merged = [(comp.id, comp.merge_sha) for comp in manifest.components if comp.merge_sha]
+    merged = recorded_merges(root_dir, manifest)
     if not merged:
-        ui_impl.ok(f"No merge commits recorded in {path}.")
+        ui_impl.ok(f"No merge commits recorded in {path} or in any run under {root_dir}.")
         sys.exit(0)
     readings = poll_ci(root_dir, [sha for _, sha in merged])
     ui_impl.section("CI")
