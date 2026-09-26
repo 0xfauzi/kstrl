@@ -12,6 +12,9 @@ The record also carries the value of every run limit the run resolved
 (:func:`run_limits`), wherever it came from, so `ks retry` can refuse a
 retry that would drop one (#526).
 
+An option `ks factory` no longer has is listed in :data:`REMOVED_OPTIONS`;
+a retry leaves it out of the replay and names it (#539).
+
 The record carries the identity of the run and the manifest it belongs to,
 and the reader refuses a record whose identity does not match. A record
 that is present but cannot be read is a refusal, never an empty read:
@@ -60,6 +63,15 @@ NOT_REPLAYED: dict[str, str] = {
     "tui": "retry runs on the terminal it was started from",
     "ui": "display only; retry takes its own --ui",
     "no_color": "display only; retry takes its own --no-color",
+}
+
+#: `ks factory` options that were removed, and why. A launch record written
+#: before the removal still carries the option; a retry leaves it out and
+#: says so, instead of refusing the whole record. Every other name a record
+#: carries must still be an option of `ks factory`.
+REMOVED_OPTIONS: dict[str, str] = {
+    "verify_command": "removed in #539: nothing read it, so the command it named "
+    "never ran; Phase 1 runs --test-command, --typecheck-command and --lint-command",
 }
 
 

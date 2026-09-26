@@ -18,6 +18,8 @@ an unrelated object counts as a reader.
 from __future__ import annotations
 
 import ast
+import dataclasses
+import importlib
 from collections.abc import Iterable, Mapping
 
 import pytest
@@ -99,6 +101,53 @@ def test_every_kstrl_toml_key_sets_a_field_some_code_reads() -> None:
         "a kstrl.toml key sets a field no code in kstrl/ reads, so an operator "
         "can set it and change nothing. Wire a reader, or remove the field, its "
         "scaffold line and its documentation."
+    )
+
+
+#: Config dataclass fields nothing reads yet, by class and field name. The
+#: census below must equal this exactly, for the reason UNREAD_BY_DESIGN does.
+UNREAD_FIELDS_BY_DESIGN: dict[tuple[str, str], str] = {
+    ("LearningConfig", "consume"): UNREAD_BY_DESIGN[("learning", "consume")],
+}
+
+
+def config_classes() -> list[type]:
+    """Every dataclass defined at the top of a kstrl/ module whose name ends in Config."""
+    found: list[type] = []
+    for source in astwalk.package_sources():
+        for node in astwalk.parsed(source).body:
+            if isinstance(node, ast.ClassDef) and node.name.endswith("Config"):
+                cls = getattr(importlib.import_module(astwalk.module_name(source)), node.name)
+                if isinstance(cls, type) and dataclasses.is_dataclass(cls):
+                    found.append(cls)
+    return found
+
+
+def test_every_config_dataclass_field_is_read_by_some_code() -> None:
+    """#539: a field no kstrl.toml key sets is outside the census above.
+
+    `ks factory --verify-command` set ``FactoryConfig.verify_command``,
+    which no code read and no key set. This census enumerates the fields
+    of every config dataclass, so a field only a CLI flag sets is counted.
+    """
+    from kstrl.factory import FactoryConfig
+
+    classes = config_classes()
+    assert FactoryConfig in classes and len(classes) >= 25, [c.__name__ for c in classes]
+    fields = {
+        (cls.__name__, field.name): field.name
+        for cls in classes
+        for field in dataclasses.fields(cls)
+    }
+    trees = [
+        astwalk.parsed(source)
+        for source in astwalk.package_sources()
+        if astwalk.label(source) not in REPORTERS
+    ]
+    assert unread(fields, trees) == set(UNREAD_FIELDS_BY_DESIGN), (
+        "a config dataclass field is read by no code in kstrl/, so the flag, key "
+        "or variable that sets it changes nothing. Wire a reader, or remove the "
+        "field and whatever sets it."
     )
 
 

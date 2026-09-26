@@ -290,6 +290,13 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Removed
 
+- `ks factory --verify-command` (#539). It was stored in
+  `FactoryConfig.verify_command` and no code read it, so the command it named
+  never ran. Phase 1 runs `--test-command`, `--typecheck-command` and
+  `--lint-command`. Passing it now fails before the run starts with click's
+  `No such option` error, which names those three. `ks retry` of a run
+  recorded with it leaves it out and says so.
+
 - `[timeout] git_operation`, `verification_check`, `review_agent`,
   `contract_test` and `subprocess_default`, and `KSTRL_TIMEOUT_GIT`,
   `KSTRL_TIMEOUT_REVIEW` and `KSTRL_TIMEOUT_DEFAULT` (#525). No code read
