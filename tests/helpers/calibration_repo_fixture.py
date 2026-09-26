@@ -27,6 +27,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from kstrl.calibration_score import (
+    FixtureMetaError,
+    check_fixture_meta,
+    refuse_unreadable,
+    reuse_errors,
+)
 from kstrl.decompose import build_decompose_prompt
 
 #: Root of every calibration fixture, security and reviewer fixtures
@@ -94,14 +100,23 @@ class RepoSpecFixture:
 
     @property
     def arms(self) -> tuple[Arm, ...]:
-        return tuple(
+        arms = tuple(
             Arm(
                 name=str(entry["arm"]),
                 fixture_id=str(entry["fixture_id"]),
-                expect_module_named=bool(entry["expect_module_named"]),
+                expect_module_named=entry["expect_module_named"],
             )
             for entry in self.meta["arms"]
         )
+        # ``bool("false")`` is True, so a quoted flag used to grade the
+        # repo_absent arm as reuse (#564).
+        for index, arm in enumerate(arms):
+            if not isinstance(arm.expect_module_named, bool):
+                raise FixtureMetaError(
+                    f"{self.fixture_id}: arms[{index}].expect_module_named: must be true "
+                    f"or false, got {arm.expect_module_named!r}"
+                )
+        return arms
 
 
 def load_fixtures(subdir: str, suffix: str) -> list[tuple[Path, dict[str, Any]]]:
@@ -111,6 +126,11 @@ def load_fixtures(subdir: str, suffix: str) -> list[tuple[Path, dict[str, Any]]]
     B2): security, reviewer-concern and spec fixtures alike. Moved here
     from tests/test_calibration.py, which now imports it, rather than
     kept as two implementations of the same glob-plus-meta-lookup.
+
+    Every meta is read by :func:`kstrl.calibration_score.check_fixture_meta`
+    as it loads, so one no matcher can read is refused here, naming its
+    file and field, before any test is collected or any agent is called
+    (#564).
     """
     base = FIXTURES_DIR / subdir
     fixtures: list[tuple[Path, dict[str, Any]]] = []
@@ -122,6 +142,7 @@ def load_fixtures(subdir: str, suffix: str) -> list[tuple[Path, dict[str, Any]]]
         if not meta_path.exists():
             continue
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        check_fixture_meta(meta, meta_path.relative_to(FIXTURES_DIR).as_posix())
         fixtures.append((artifact, meta))
     return fixtures
 
@@ -249,6 +270,7 @@ def names_existing_module(
     every rejected-option field removed first (#401 addendum A2), so
     naming the module only as an alternative it rejected does not count.
     """
+    refuse_unreadable(reuse_errors("must_reuse", must_reuse))
     blob = json.dumps(_without_rejected_options(decompose_output), sort_keys=True)
     for marker in must_reuse["module_markers"]:
         if str(marker) in blob:

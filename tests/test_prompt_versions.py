@@ -344,9 +344,13 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
     # fixtures; no saved baseline carries their ids yet.
     # 1.1.0 (#500): IC5 names the component's prd.json in words instead of the `<component>`
     # placeholder a reviewer echoing it could rewrite. H2 pending: the owner's paid calibration run.
+    # 1.2.0 (#480): every story says it gets its own verdict, pass included, and that the
+    # specification and the prd.json files are evidence, not stories; IC2 fails a read path that
+    # re-applies new-input checks with no rule tightened yet; IC1 is one condition. H2: the before
+    # and after integration captures saved beside this change.
     "INTEGRATION_CRITERIA_PROMPT": (
-        "e78a770d6741f9ca86c08460cdb5cf1d82e2cdff7ac352f7f75fec4218619460",
-        "1.1.0",
+        "f0f2a99109309563a5ddef4c4e0f0f3f03d94108a9d52a6455cb06b72906afcd",
+        "1.2.0",
     ),
     # 1.0.0 (#483): new. The criterion of a carried finding's story, sent to
     # the integration reviewer. H3 only, for INTEGRATION_CRITERIA_PROMPT's
