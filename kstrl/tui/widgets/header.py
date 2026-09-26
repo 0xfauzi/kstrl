@@ -59,7 +59,8 @@ def app_live(app: object) -> bool | None:
     root = getattr(app, "root_dir", None)
     if run is None or not isinstance(root, Path):
         return None
-    if getattr(run, "handle", None) is not None:
+    handle = getattr(run, "handle", None)
+    if handle is not None and not handle.done():
         return True
     return run_is_live(run.run_dir, root)
 

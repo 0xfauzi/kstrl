@@ -69,7 +69,18 @@ class TestHome:
         async with app.run_test(size=(120, 36)) as pilot:
             table = cast(DataTable[Any], await mounted(pilot, lambda: app.screen, "#home-runs"))
             screen = cast(HomeScreen, app.screen)
-            await settled(pilot, lambda: screen._summaries, what="the summaries to land")
+            # Column widths from update_width=True are applied on the
+            # table's next idle, not in update_cell; settling on the
+            # summaries alone read the widths before that idle ran.
+            await settled(
+                pilot,
+                lambda: (
+                    screen._summaries
+                    and not table._updated_cells
+                    and not table._require_update_dimensions
+                ),
+                what="the summaries to land and the widths to be applied",
+            )
             assert _cells_fit(table) == []
 
     def test_every_command_key_is_one_keypress(self) -> None:

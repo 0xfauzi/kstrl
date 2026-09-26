@@ -52,7 +52,9 @@ def attention_line(stats: HomeStats) -> Text:
     if stats.failed_components:
         parts.append((f"{_plural(stats.failed_components, 'failed component')} (3)", theme.ERROR))
     if not parts:
-        if stats.inbox_open is None and stats.failed_components is None:
+        # "Nothing is waiting" is a claim about BOTH sources; a count that
+        # could not be read (None) is not a zero (#433 E3).
+        if stats.inbox_open is None or stats.failed_components is None:
             return text
         text.append("  nothing is waiting on you", style=theme.MUTED)
         return text

@@ -104,7 +104,14 @@ class SummaryCache:
             signature = _run_stream_signature(ref)
             hit = self._cache.get(ref.run_id)
             if hit is not None and hit[0] == signature:
-                out[ref.run_id] = hit[1]
+                # Liveness is not in the signature: a run that dies writes
+                # nothing, so a summary cached while it was live would say
+                # "running" for ever. Re-derive the word from the cached
+                # state (no re-fold) on every refresh (#433 F4).
+                cached_state = self._states.get(ref.run_id)
+                summary = hit[1] if cached_state is None else summarize_state(ref, cached_state)
+                self._cache[ref.run_id] = (signature, summary)
+                out[ref.run_id] = summary
                 continue
             state = fold_run(ref)
             summary = summarize_state(ref, state)
@@ -185,12 +192,17 @@ def open_inbox_count(root_dir: Path) -> int | None:
 
 
 def failed_component_count(root_dir: Path) -> int | None:
-    """Failed components in the manifest the retry screen reads."""
+    """Failed components in the manifest the retry screen reads.
+
+    0 when there is no manifest: nothing can be retried, which is a
+    count, not a failure to read. None only when a manifest exists and
+    cannot be read, so the home line makes no claim about it.
+    """
     from kstrl.manifest import Manifest
 
     manifest_file = root_dir / "scripts" / "kstrl" / "manifest.json"
     if not manifest_file.exists():
-        return None
+        return 0
     try:
         manifest = Manifest.load(manifest_file)
     except (OSError, ValueError):
