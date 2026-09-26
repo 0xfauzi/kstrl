@@ -600,6 +600,23 @@ def test_a_cap_below_the_validation_set_is_refused_before_any_call(tmp_path: Pat
     assert not (tmp_path / "run").exists()
 
 
+def test_a_cap_equal_to_the_validation_set_runs_and_is_not_a_refusal(tmp_path: Path) -> None:
+    """The refusal is for a cap strictly below the validation set. A cap
+    equal to it scores the seed on every validation fixture, and gepa then
+    stops on its own: nothing was refused, so stopped_at_cap is false."""
+    reviewer = MarkerReviewer()
+    report_path = _optimize(tmp_path, reviewer, ScriptedReflection(REVIEWER_PROMPT), 2)
+
+    assert len(reviewer.prompts) == 2
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["max_metric_calls"] == 2
+    assert report["role_calls"] == 2
+    assert report["stopped_at_cap"] is False
+    assert len(report["candidates"]) == 1
+    assert report["candidates"][0]["prompt"] == REVIEWER_PROMPT
+    assert report["candidates"][0]["val_score"] == 0.5
+
+
 class _RaisingRunner(CannedRunner):
     """A role runner whose every call raises after it is recorded."""
 
