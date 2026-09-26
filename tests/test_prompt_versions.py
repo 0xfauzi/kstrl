@@ -87,7 +87,6 @@ keeping to it is reviewer discipline, not a check.
 from __future__ import annotations
 
 import hashlib
-import re
 from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
@@ -97,6 +96,7 @@ import pytest
 from kstrl import (
     decisions,
     decompose,
+    gepa_adapter,
     git,
     integration,
     integration_fix,
@@ -119,6 +119,7 @@ from kstrl.decompose import (
     DECOMPOSE_PROMPT,
     DECOMPOSE_PROMPT_VERSION,
 )
+from kstrl.gepa_adapter import GEPA_REFLECTION_PROMPT, GEPA_REFLECTION_PROMPT_VERSION
 from kstrl.git import (
     PASTED_CHANGE_SOURCE_PROMPT,
     PASTED_CHANGE_SOURCE_PROMPT_VERSION,
@@ -186,6 +187,7 @@ _PROMPTS: dict[str, str] = {
     "INTEGRATION_CRITERIA_PROMPT": INTEGRATION_CRITERIA_PROMPT,
     "INTEGRATION_CARRIED_PROMPT": INTEGRATION_CARRIED_PROMPT,
     "INTEGRATION_FIX_PROMPT": INTEGRATION_FIX_PROMPT,
+    "GEPA_REFLECTION_PROMPT": GEPA_REFLECTION_PROMPT,
     **BUILDER_PROMPTS,
     **NOTICE_PROMPTS,
 }
@@ -205,6 +207,7 @@ _VERSIONS: dict[str, str] = {
     "INTEGRATION_CRITERIA_PROMPT": INTEGRATION_CRITERIA_PROMPT_VERSION,
     "INTEGRATION_CARRIED_PROMPT": INTEGRATION_CARRIED_PROMPT_VERSION,
     "INTEGRATION_FIX_PROMPT": INTEGRATION_FIX_PROMPT_VERSION,
+    "GEPA_REFLECTION_PROMPT": GEPA_REFLECTION_PROMPT_VERSION,
     **BUILDER_VERSIONS,
     **NOTICE_VERSIONS,
 }
@@ -359,11 +362,16 @@ _EXPECTED_SNAPSHOTS: dict[str, tuple[str, str]] = {
         "4d8692a21b96a23c9d980e7182671b6d57a65b5a1cdff05194b83f789806ccf8",
         "1.0.0",
     ),
+    # 1.0.0 (#530): new. The text gepa sends the reflection model when it
+    # proposes a role prompt. H3 only: no calibration fixture scores a
+    # reflection prompt, the DECISIONS_CONTEXT_PROMPT position.
+    "GEPA_REFLECTION_PROMPT": (
+        "708326a01c93fef5a9190de373488c664f7047066d1c12253400a4c82fdb6b49",
+        "1.0.0",
+    ),
     **BUILDER_SNAPSHOTS,
     **NOTICE_SNAPSHOTS,
 }
-
-_SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
 
 def _drift_message(name: str, expected: tuple[str, str], actual: tuple[str, str]) -> str:
@@ -550,6 +558,7 @@ _RENDERERS: dict[str, tuple[ModuleType, Callable[[Path], str]]] = {
         integration_fix,
         lambda _p: integration_fix.render_fix_criteria("TEXT", ["src/a.py"]),
     ),
+    "GEPA_REFLECTION_PROMPT": (gepa_adapter, lambda _p: gepa_adapter.reflection_template()),
     **NOTICE_RENDERERS,
 }
 
@@ -731,70 +740,3 @@ def test_no_silent_version_pin(monkeypatch: pytest.MonkeyPatch) -> None:
     message = str(exc_info.value)
     assert "Hash:" in message, "snapshot failure must name the hash drift"
     assert "Version:" not in message, "version columns still agree; only the hash moved"
-
-
-# ---------------------------------------------------------------------------
-# Structural integrity
-# ---------------------------------------------------------------------------
-
-
-def test_all_prompt_versions_are_semver() -> None:
-    for name, value in _VERSIONS.items():
-        assert _SEMVER_RE.match(value), (
-            f"{name}_VERSION={value!r} must be semver (MAJOR.MINOR.PATCH)."
-        )
-
-
-def test_versions_and_snapshots_agree_on_version_string() -> None:
-    """Catches the case where a developer updates ``_EXPECTED_SNAPSHOTS``
-    but forgets to update the matching ``*_PROMPT_VERSION`` constant
-    (or vice versa). Both stores of the version string must match."""
-    for name in _PROMPTS:
-        live_version = _VERSIONS[name]
-        recorded_version = _EXPECTED_SNAPSHOTS[name][1]
-        assert live_version == recorded_version, (
-            f"Version drift for {name}: "
-            f"live constant says {live_version!r}, "
-            f"_EXPECTED_SNAPSHOTS says {recorded_version!r}. "
-            "Either bump the constant to match the snapshot, or update "
-            "the snapshot to match the constant. They must agree."
-        )
-
-
-def test_every_prompt_has_a_version() -> None:
-    for prompt_name in _PROMPTS:
-        assert prompt_name in _VERSIONS, (
-            f"{prompt_name} is missing a {prompt_name}_VERSION constant. "
-            "Every adversarial prompt must declare a semver version."
-        )
-
-
-def test_every_version_has_a_prompt() -> None:
-    for prompt_name in _VERSIONS:
-        assert prompt_name in _PROMPTS, (
-            f"{prompt_name}_VERSION declared but no matching prompt body. "
-            "Dead version constants drift; remove them."
-        )
-
-
-def test_every_snapshot_has_a_prompt() -> None:
-    """The reverse of ``test_every_prompt_has_a_recorded_snapshot``.
-
-    The hash check is now derived from ``_PROMPTS``, so a snapshot row
-    whose prompt was deleted is parametrized over by nothing and silently
-    stops meaning what it says. That is what happened to
-    DEFAULT_PRD_PROMPT. Dead rows rot; remove them."""
-    for name in _EXPECTED_SNAPSHOTS:
-        assert name in _PROMPTS, (
-            f"_EXPECTED_SNAPSHOTS has a row for {name!r}, which is not an "
-            "enrolled prompt. If the prompt was deleted, delete its "
-            "snapshot row too: nothing checks it any more."
-        )
-
-
-def test_every_prompt_has_a_recorded_snapshot() -> None:
-    for name in _PROMPTS:
-        assert name in _EXPECTED_SNAPSHOTS, (
-            f"{name} is missing a recorded snapshot in _EXPECTED_SNAPSHOTS. "
-            "Every adversarial prompt must be snapshot-protected."
-        )

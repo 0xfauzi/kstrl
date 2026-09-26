@@ -170,7 +170,9 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "pr.py git push --delete -- origin branch": 2,
     "retry_plan.py git worktree remove --force evidence_worktree": 1,
     "retry_plan.py git worktree prune": 1,
-    "retry_plan.py git rev-parse --verify --quiet f'refs/heads/{failed_branch}'": 1,
+    # #433: the probe moved into failed_branch_probe, which the TUI's
+    # retry scope preview calls too; its parameter is `branch`.
+    "retry_plan.py git rev-parse --verify --quiet f'refs/heads/{branch}'": 1,
     "retry_plan.py git branch -D failed_branch": 1,
     "statedir.py git -C str(root_dir) remote get-url origin": 1,
     "tui/screens/home.py git rev-parse --abbrev-ref HEAD": 1,

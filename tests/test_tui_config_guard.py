@@ -75,6 +75,9 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "decisions.py": 1,  # DecisionRegisterError, added by #332
     "decompose.py": 1,
     "factory.py": 3,  # one subclass, two bare raises
+    # #530: three bare raises in ReflectionModel, the spent budget, a
+    # timed-out reflection call and an empty reply.
+    "gepa_adapter.py": 3,
     "git.py": 1,
     "inbox.py": 1,
     # Two since #231: IntakeError (the subclass), plus a bare raise in

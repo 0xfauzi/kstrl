@@ -136,6 +136,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # `tests.helpers.gitrepo.set_identity`.
     "tests/test_language_ignores.py": 5,
     "tests/test_launch_session.py": 1,
+    # #544: three `git commit` sites (`_seed`, `_commit_all` and the
+    # deletion test), every one into a repository `_seed` put through
+    # `tests.helpers.gitrepo.set_identity`.
+    "tests/test_lockfile_scope.py": 3,
     "tests/test_loop.py": 2,
     "tests/test_notify.py": 1,
     # #152 simplify pass: the five real commits this file used to make
@@ -211,6 +215,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_stale_base_ref.py": 10,
     "tests/test_state_dir_scope.py": 2,
     "tests/test_timeout_enforcement.py": 3,
+    # PR #552 verifier: one base commit, into the repository the branch-probe
+    # test builds with `git_in` and `set_identity` before committing.
+    "tests/test_tui_433_verify552.py": 1,
     # Prose, not commits: assertion strings checking what
     # `run_scrubbed`'s rendered command STARTS WITH or what a mocked
     # call log CONTAINS, plus a docstring paragraph. Nothing here spawns

@@ -382,7 +382,7 @@ into a run, so there was nothing for the new path to be measured against.
 
 ## 9. Unlocks, with the number measured on 2026-09-22
 
-Each row is a measured fact, not work still to do.
+Each row is a measured fact, not work still to do. Since it was measured, #509 built the global playbook store (`kstrl/playbook.py`), so the first row is no longer unbuilt, and #530 built the no-spend GEPA seam (`kstrl/gepa_adapter.py`); the GEPA row's unlock still gates any paid optimization.
 
 | Not built | Unlocks when | Measured today | Shape it must have |
 |---|---|---|---|

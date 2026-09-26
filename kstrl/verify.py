@@ -46,7 +46,7 @@ from kstrl.gateparse import (
     parse_gate_output,
     validate_tool,
 )
-from kstrl.guards import path_is_allowed
+from kstrl.guards import path_is_allowed, without_entitled_lockfiles
 from kstrl.jsonread import read_json
 from kstrl.parsers import (
     ParsedOutput,
@@ -1952,14 +1952,42 @@ def check_diff_scope(
             measured=False,
         )
 
+    # #264: the authored scope plus kstrl's own per-component files. The
+    # two lists stay separate all the way into the failure details: an
+    # operator reading "outside allowed scope" must be able to tell what
+    # they authorised from what the harness added on their behalf.
+    #
+    # Deliberately NOT guards.check_violations, which is the same
+    # decision on the same inputs: it takes a set and returns sorted, and
+    # the violation list is truncated to 15 for the retry prompt, so
+    # sorting silently changes WHICH violations the retry agent is shown.
+    # Git's order is the order the operator sees elsewhere; a cosmetic
+    # de-duplication is not worth moving it.
+    effective = [*allowed_paths, *(harness_paths or ())]
     try:
         changed = git.get_diff_names(base_branch, cwd)
+        # #435: name the ref the diff was actually judged against.
+        # get_diff_names resolved it; saying "main" while measuring
+        # origin/main sends the engineer to revert against the wrong tree.
+        base_label = git.resolve_base_ref(base_branch, cwd)
+        # #544: a lockfile is judged through its manifest, from the merge
+        # base the three-dot diff above measured against. Inside the try
+        # because it may read that commit's tree.
+        violations = without_entitled_lockfiles(
+            [f for f in changed if not path_is_allowed(f, effective)],
+            allowed_paths,
+            changed,
+            git.merge_base_ref(base_label, cwd) or None,
+            cwd,
+        )
     except git.GitDiffError as exc:
         # The lenient reader raises for exactly one family: a diff git
         # produced and this process cannot decode (#416). Everything else it
         # still answers with [], which the vacuous-pass branch below handles.
         # Failing closed here rather than falling into that branch is the
-        # point: an undecodable diff is not an empty one.
+        # point: an undecodable diff is not an empty one. #544 routes a
+        # failed read of the merge base's tree here too: the lockfile rule
+        # could not prove anything in scope, so it cleared nothing.
         return CheckResult(
             name="diff_scope",
             passed=False,
@@ -1993,25 +2021,7 @@ def check_diff_scope(
             measured=False,
         )
 
-    # #264: the authored scope plus kstrl's own per-component files. The
-    # two lists stay separate all the way into the failure details: an
-    # operator reading "outside allowed scope" must be able to tell what
-    # they authorised from what the harness added on their behalf.
-    #
-    # Deliberately NOT guards.check_violations, which is the same
-    # decision on the same inputs: it takes a set and returns sorted, and
-    # the violation list is truncated to 15 for the retry prompt, so
-    # sorting silently changes WHICH violations the retry agent is shown.
-    # Git's order is the order the operator sees elsewhere; a cosmetic
-    # de-duplication is not worth moving it.
-    effective = [*allowed_paths, *(harness_paths or ())]
-    violations = [f for f in changed if not path_is_allowed(f, effective)]
-
     if violations:
-        # #435: name the ref the diff was actually judged against.
-        # get_diff_names resolved it; saying "main" while measuring
-        # origin/main sends the engineer to revert against the wrong tree.
-        base_label = git.resolve_base_ref(base_branch, cwd)
         details = _diff_scope_details(
             base_label,
             allowed_paths,
