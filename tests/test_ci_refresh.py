@@ -180,6 +180,23 @@ class TestServeRefreshesWithoutACommand:
         assert code == 0, out
         assert "CI state not refreshed: IsADirectoryError" in out, out
 
+    def test_a_merge_in_both_the_manifest_and_a_run_stream_is_read_once(
+        self, tmp_path: Path, gh_dir: Path
+    ) -> None:
+        # The ordinary case: #442 writes the sha to the manifest AND to the
+        # run's pr_merged event, so the two sources name the same commit.
+        root = _project(tmp_path, {"comp-a": SHA_PASSED})
+        _earlier_run_merged(root, "comp-a", SHA_PASSED)
+        _serve_root(root)
+        _answer(gh_dir, SHA_PASSED, _fixture("passed.json"))
+
+        code, out = _serve_once(root)
+
+        assert code == 0, out
+        graphql = [c for c in _calls(gh_dir) if c[:2] == ["api", "graphql"]]
+        assert len(graphql) == 1, graphql
+        assert [r.sha for r in read_ci_ledger(root).readings] == [SHA_PASSED], out
+
 
 class TestStatusShowsTheRecordedState:
     def test_each_merge_commit_shows_its_state_reason_and_read_time(self, tmp_path: Path) -> None:
