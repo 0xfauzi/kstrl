@@ -33,6 +33,7 @@ import click
 import pytest
 from click.testing import CliRunner, Result
 
+from kstrl.agents import ClaudeCodeAgent, ClaudeSdkAgent, CodexAgent, canonical_agent_type
 from kstrl.cli import cli
 from kstrl.config_preflight import collect_config_problems
 from kstrl.workqueue import ItemState
@@ -144,3 +145,47 @@ def test_queue_ls_state_takes_exactly_the_item_states(tmp_path: Path, state: str
     else:
         assert result.exit_code == 0, result.output
         assert "Queue is empty." in result.output, result.output
+
+
+#: What the agent preflight says for each canonical type when no agent is
+#: installed: the message names the agent the spelling selects.
+_NOT_INSTALLED = {
+    "claude-code": "claude not found in PATH",
+    "claude-sdk": "claude-agent-sdk is not installed",
+    "codex": "codex not found in PATH",
+    "custom": 'Agent type "custom" is configured but no agent command is set',
+    "auto": "No agent available",
+}
+
+_AGENT_SPELLINGS = [
+    spelling
+    for value in CLOSED[("KstrlConfig", "agent_type")].accepted
+    for spelling in dict.fromkeys([value, value.upper(), f" {value} "])
+]
+
+
+@pytest.mark.parametrize("command", ["decompose", "factory"])
+@pytest.mark.parametrize("spelling", _AGENT_SPELLINGS)
+def test_an_accepted_agent_type_selects_its_agent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str, spelling: str
+) -> None:
+    """A spelling the flag accepts reaches the agent it names, not only the body.
+
+    With no agent installed, the preflight refuses with a message that
+    names the agent the spelling selected, so ``" CODEX "`` must be
+    reported as codex, never as an unknown type or as another agent.
+    """
+    for adapter in (ClaudeCodeAgent, ClaudeSdkAgent, CodexAgent):
+        monkeypatch.setattr(adapter, "is_available", staticmethod(lambda: False))
+    spec = tmp_path / "spec.md"
+    spec.write_text("# spec\n", encoding="utf-8")
+    args = [command, "--agent-type", spelling, "--spec", str(spec), "--root", str(tmp_path)]
+    if command == "decompose":
+        args += ["--project-name", "p"]
+
+    result = CliRunner().invoke(cli, args)
+
+    expected = _NOT_INSTALLED[canonical_agent_type(spelling) or "unknown"]
+    assert result.exit_code == 2, result.output
+    assert expected in result.output, result.output
+    assert "Unknown agent type" not in result.output, result.output
