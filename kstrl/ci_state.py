@@ -11,14 +11,19 @@ Four states and no fifth. ``unknown`` is every reading kstrl could not
 make: ``gh`` missing, unauthenticated, timed out or exiting non-zero; a
 reply that is not JSON or not the shape asked for; GitHub reporting
 errors, no repository, no commit, an object that is not a commit, or no
-checks; a check list longer than the one page read; and any single
+checks; pages whose entries do not add up to the count GitHub
+reported; and any single
 entry outside the vocabulary below. None of those is ever ``passed``.
 Every entry is validated before any entry is counted, and one entry
 that cannot be read makes the whole reading unknown, because the unread
 entry could be the failing one.
 
-One GraphQL call per commit rather than the two REST lists. GitHub keeps
-check runs (Actions and apps) and commit statuses (older integrations)
+One ``gh api graphql --paginate --slurp`` per commit rather than the
+two REST lists. ``gh`` follows ``pageInfo`` and prints every page as one
+JSON array, so a commit with more than one page of checks is read
+completely (#570); the fold counts the nodes of every page against
+``totalCount`` and a shortfall is unknown, never a partial passed.
+GitHub keeps check runs (Actions and apps) and commit statuses (older integrations)
 in two systems, and ``statusCheckRollup.contexts`` returns both in one
 list, so a failing status beside passing check runs is seen. The
 rollup's own ``state`` is not requested: kstrl folds the entries with
@@ -30,6 +35,11 @@ the tables below, so there is one definition of passed, not two. REST
 Every reading carries the sha and ``observed_at`` (UTC, the format of
 ``Component.completed_at``), so a reader can tell how old a ``running``
 is. The ledger is append-only and the newest line per sha wins.
+
+Which commits (#570): :func:`recorded_merges`, every ``pr_merged``
+event of every run plus the manifest. When, without a command:
+``ks serve`` calls :func:`refresh_ci` after every cycle, and
+:func:`refresh_due` says which commits it reads again.
 """
 
 from __future__ import annotations
@@ -44,9 +54,12 @@ from pathlib import Path
 from typing import Any
 
 from kstrl.appendio import append_records
+from kstrl.events import PrMerged, parse_event_line
 from kstrl.intake_github import run_gh
 from kstrl.jsonread import read_json
+from kstrl.manifest import Manifest
 from kstrl.pr_state import GH_POLL_TIMEOUT
+from kstrl.reducer import run_dirs_newest_first
 from kstrl.statedir import CONTROL_CI_CHECKS, control_file, ensure_control_state
 
 #: Every reason is clipped to this many characters before it reaches the
@@ -58,9 +71,10 @@ CI_SCHEMA_VERSION = 1
 #: The one query. Its text is also the query the fixtures under
 #: ``tests/fixtures/ci/`` were captured with.
 CI_QUERY = (
-    "query($owner: String!, $repo: String!, $oid: GitObjectID!) {"
+    "query($owner: String!, $repo: String!, $oid: GitObjectID!, $endCursor: String) {"
     " repository(owner: $owner, name: $repo) { object(oid: $oid) { ... on Commit {"
-    " statusCheckRollup { contexts(first: 100) { totalCount nodes { __typename"
+    " statusCheckRollup { contexts(first: 100, after: $endCursor) { totalCount"
+    " pageInfo { hasNextPage endCursor } nodes { __typename"
     " ... on CheckRun { name status conclusion }"
     " ... on StatusContext { context state } } } } } } } }"
 )
@@ -229,13 +243,12 @@ def _entry_state(index: int, node: Any) -> tuple[CiState, str]:
     raise _Unreadable(f"{where}: type {kind!r} is not one kstrl reads")
 
 
-def _entry_states(document: Any) -> list[tuple[CiState, str]]:
-    """Every entry's state, or :class:`_Unreadable` for the first thing
-    in the reply that cannot be read. Nothing is counted until all of it
-    has been read."""
-    if isinstance(document, dict) and "errors" in document:
-        raise _Unreadable(f"GitHub answered with errors: {document['errors']!r}")
-    data = _field(document, "data", "the reply")
+def _page_contexts(page: Any) -> tuple[int, list[Any]]:
+    """(totalCount, nodes) for one page of the reply, or
+    :class:`_Unreadable`. A commit with no rollup is (0, [])."""
+    if isinstance(page, dict) and "errors" in page:
+        raise _Unreadable(f"GitHub answered with errors: {page['errors']!r}")
+    data = _field(page, "data", "the reply")
     repository = _field(data, "repository", "data")
     if repository is None:
         raise _Unreadable("GitHub found no repository for this checkout")
@@ -246,7 +259,7 @@ def _entry_states(document: Any) -> list[tuple[CiState, str]]:
         raise _Unreadable("the object with this sha is not a commit")
     rollup = commit["statusCheckRollup"]
     if rollup is None:
-        return []
+        return 0, []
     contexts = _field(rollup, "contexts", "statusCheckRollup")
     total = _field(contexts, "totalCount", "contexts")
     nodes = _field(contexts, "nodes", "contexts")
@@ -254,19 +267,37 @@ def _entry_states(document: Any) -> list[tuple[CiState, str]]:
         raise _Unreadable(f"contexts: totalCount is {total!r}, not an integer")
     if not isinstance(nodes, list):
         raise _Unreadable("contexts: nodes is not a list")
+    return total, nodes
+
+
+def _entry_states(pages: Any) -> list[tuple[CiState, str]]:
+    """Every entry's state across every page, or :class:`_Unreadable`
+    for the first thing in the reply that cannot be read. Nothing is
+    counted until all of it has been read."""
+    if not isinstance(pages, list):
+        raise _Unreadable("gh's reply is not a list of pages")
+    if not pages:
+        raise _Unreadable("gh returned no pages")
+    read = [_page_contexts(page) for page in pages]
+    totals = {total for total, _ in read}
+    if len(totals) != 1:
+        raise _Unreadable(f"the pages disagree on the check count: {sorted(totals)}")
+    total = totals.pop()
+    nodes = [node for _, page_nodes in read for node in page_nodes]
     if len(nodes) != total:
         raise _Unreadable(f"read {len(nodes)} of {total} checks")
     return [_entry_state(index, node) for index, node in enumerate(nodes)]
 
 
-def classify_reply(document: Any) -> tuple[CiState, str, int]:
-    """(state, reason, checks counted) for one parsed reply. Pure.
+def classify_reply(pages: Any) -> tuple[CiState, str, int]:
+    """(state, reason, checks counted) for one parsed reply, the list of
+    pages ``gh --paginate --slurp`` prints. Pure.
 
     Failed wins over running, running over passed, and passed needs at
     least one entry: a commit with no checks is unknown.
     """
     try:
-        states = _entry_states(document)
+        states = _entry_states(pages)
     except _Unreadable as exc:
         return CiState.UNKNOWN, _clip(str(exc)), 0
     if not states:
@@ -298,6 +329,8 @@ def read_ci_state(sha: str, cwd: Path) -> CiReading:
         [
             "api",
             "graphql",
+            "--paginate",
+            "--slurp",
             "-F",
             "owner={owner}",
             "-F",
@@ -368,3 +401,105 @@ def poll_ci(root_dir: Path, shas: Sequence[str]) -> tuple[CiReading, ...]:
     payload = "".join(json.dumps(reading.to_dict()) + "\n" for reading in readings)
     append_records(control_file(root_dir, CONTROL_CI_CHECKS), payload, repair="", lock=True)
     return readings
+
+
+# --- which commits, and when to read them again (#570) ----------------------
+
+
+def _merges_in_run(events_path: Path) -> list[tuple[str, str]]:
+    """(component id, merge sha) for every ``pr_merged`` event in one
+    run's stream that recorded a sha. The read and the decode sit
+    outside any ``try``, as in :func:`read_ci_ledger`: an unreadable
+    stream is a refusal, never a run with no merges."""
+    text = events_path.read_bytes().decode("utf-8")
+    merges: list[tuple[str, str]] = []
+    for line in text.splitlines():
+        event = parse_event_line(line)
+        if isinstance(event, PrMerged) and event.merge_sha:
+            merges.append((event.component, event.merge_sha))
+    return merges
+
+
+def recorded_merges(root_dir: Path, manifest: Manifest | None) -> tuple[tuple[str, str], ...]:
+    """(component id, sha) for every merge commit kstrl recorded, each
+    sha once, oldest first.
+
+    Two sources, because #442 writes the sha to two places and neither
+    holds every merge. The ``pr_merged`` events of every run under
+    ``.kstrl/runs/`` hold the merges earlier manifests recorded, which a
+    later decompose replaced. The manifest holds the merges a restarted
+    run confirmed by re-polling a parked PR, which set ``merge_sha``
+    without emitting ``pr_merged``. A run directory with no
+    ``events.jsonl`` has no merges; one whose stream cannot be read
+    raises ``OSError`` or ``UnicodeDecodeError``.
+    """
+    found: list[tuple[str, str]] = []
+    for run_dir in reversed(run_dirs_newest_first(root_dir)):
+        events_path = run_dir / "events.jsonl"
+        if events_path.is_file():
+            found.extend(_merges_in_run(events_path))
+    if manifest is not None:
+        found.extend((comp.id, comp.merge_sha) for comp in manifest.components if comp.merge_sha)
+    seen: set[str] = set()
+    merges: list[tuple[str, str]] = []
+    for component_id, sha in found:
+        if sha not in seen:
+            seen.add(sha)
+            merges.append((component_id, sha))
+    return tuple(merges)
+
+
+def _parse_utc(observed_at: str) -> datetime | None:
+    """``observed_at`` as an aware time, or ``None``. ``%z`` reads the
+    trailing ``Z`` as UTC."""
+    try:
+        return datetime.strptime(observed_at, "%Y-%m-%dT%H:%M:%S%z")
+    except ValueError:
+        return None
+
+
+def refresh_due(readings: Sequence[CiReading], now: datetime) -> bool:
+    """Whether an unattended refresh reads this commit again.
+
+    ``readings`` are this commit's, oldest first. Never read: yes.
+    Newest reading passed or failed: no; ``ks ci poll`` still re-reads
+    it. Otherwise (running or unknown) yes once the time since the
+    newest reading is at least the time between the first reading and
+    the newest. That doubles the gap each time: a commit is read at
+    most about log2(age / poll interval) + 2 times, so a commit that is
+    never going to settle (no CI configured, a check that never
+    reports) costs a handful of calls, not one per poll forever, and a
+    commit that settles is seen within twice its CI's duration. A read
+    time that does not parse is read again rather than trusted.
+    """
+    if not readings:
+        return True
+    latest = readings[-1]
+    if latest.state in (CiState.PASSED, CiState.FAILED):
+        return False
+    first_at = _parse_utc(readings[0].observed_at)
+    latest_at = _parse_utc(latest.observed_at)
+    if first_at is None or latest_at is None:
+        return True
+    return now - latest_at >= latest_at - first_at
+
+
+def refresh_ci(root_dir: Path, *, now: datetime | None = None) -> tuple[CiReading, ...]:
+    """Read every recorded merge commit :func:`refresh_due` says is due,
+    and record what was read. ``ks serve`` calls this after each cycle.
+
+    Raises whatever its reads and its append raise; the caller decides
+    what an unrecorded refresh means. The manifest is the default one
+    under ``root_dir``; a missing one leaves the run streams as the
+    only source.
+    """
+    manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
+    manifest = Manifest.load(manifest_path) if manifest_path.exists() else None
+    ledger = read_ci_ledger(root_dir)
+    moment = now or datetime.now(UTC)
+    due = [
+        sha
+        for _, sha in recorded_merges(root_dir, manifest)
+        if refresh_due([r for r in ledger.readings if r.sha == sha], moment)
+    ]
+    return poll_ci(root_dir, due) if due else ()

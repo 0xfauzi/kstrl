@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl.appendio import JOURNAL_REPAIR_EVENT, REPAIR_DETAIL, append_records
+from kstrl.config_numbers import check_numbers
 from kstrl.manifest import ADVERSARIAL_BUDGET_CHECK, ComponentStatus
 from kstrl.observability import read_progress_events
 from kstrl.verify import SCOPE_UNREADABLE_CHECK, SCOPE_UNREADABLE_ERROR_PREFIX
@@ -719,7 +720,7 @@ class EvolutionConfig:
         config.retired_keys = tuple(key for key in RETIRED_EVOLUTION_KEYS if key in section)
         _apply_env_overrides(config, root_dir)
         _resolve_relative_paths(config, root_dir)
-        return config
+        return check_numbers(config)
 
     @classmethod
     def load_or_none(

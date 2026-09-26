@@ -429,7 +429,8 @@ class TestOperatorQueue:
             runs = cast(DataTable[Any], app.screen.query_one("#home-runs"))
             old_note = str(runs.get_cell(OLD, "note"))
             assert old_note == "superseded by new002", old_note
-            assert app.screen.focused is needs
+            # _place_focus's focus() is deferred: it lands after the rows do.
+            await settled(pilot, lambda: app.screen.focused is needs, what="focus on needs-you")
             await pilot.press("enter")
             await settled(
                 pilot, lambda: isinstance(app.screen, InboxScreen), what="enter to open the inbox"
@@ -679,6 +680,11 @@ class TestRetryScope:
             app.push_screen(RetryScreen())
             await mounted(pilot, lambda: app.screen, "#retry-table")
             await drained(pilot, app.screen, what="the retry screen's on_mount")
+            await settled(
+                pilot,
+                lambda: app.screen.check_action("retry_selected", ()) is True,
+                what="r to be offered once the carry is read",
+            )
             await pilot.press("r")
             await settled(
                 pilot, lambda: isinstance(app.screen, OptionsModal), what="the scope modal"
@@ -707,6 +713,11 @@ class TestRetryScope:
             app.push_screen(RetryScreen())
             await mounted(pilot, lambda: app.screen, "#retry-table")
             await drained(pilot, app.screen, what="the retry screen's on_mount")
+            await settled(
+                pilot,
+                lambda: app.screen.check_action("retry_selected", ()) is True,
+                what="r to be offered once the carry is read",
+            )
             await pilot.press("r")
             await settled(
                 pilot,

@@ -71,6 +71,7 @@ from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.atomicio import atomic_write_json
+from kstrl.config_numbers import check_numbers
 from kstrl.jsonread import read_json
 from kstrl.manifest import ADVERSARIAL_BUDGET_CHECK, Component, ComponentStatus, Manifest
 from kstrl.observability import read_progress_events
@@ -384,14 +385,16 @@ class ServeConfig:
         # semantics: int() of an int is that int, of a string parses it.
         open_prs = int(os.environ.get("KSTRL_SERVE_MAX_OPEN_PRS", open_prs))
 
-        return cls(
-            poll_interval_seconds=poll,
-            daily_budget_usd=budget,
-            max_consecutive_poison=poison,
-            caffeinate=caffeinate,
-            factory_timeout_seconds=timeout,
-            allow_uncovered_cost=uncovered,
-            max_open_prs=open_prs,
+        return check_numbers(
+            cls(
+                poll_interval_seconds=poll,
+                daily_budget_usd=budget,
+                max_consecutive_poison=poison,
+                caffeinate=caffeinate,
+                factory_timeout_seconds=timeout,
+                allow_uncovered_cost=uncovered,
+                max_open_prs=open_prs,
+            )
         )
 
 
@@ -4187,6 +4190,28 @@ def _run_id_from_manifest(manifest_path: Path) -> str:
     return run_id if isinstance(run_id, str) else ""
 
 
+def _refresh_ci(root_dir: Path, obs: ServeObserver) -> None:
+    """Re-read the CI state of the merge commits that are due (#570).
+
+    After every cycle, so it never runs while a factory run does, and
+    in ``--once`` too, so an interval-mode LaunchAgent refreshes on each
+    firing. Which commits are due is ``kstrl.ci_state.refresh_due``.
+    Nothing gates on the record, so a refresh that could not read or
+    write it is reported and the daemon carries on: the ledger then
+    holds no new reading, and every surface shows the commit as it
+    last read, with that read's time.
+    """
+    from kstrl.ci_state import refresh_ci
+
+    try:
+        readings = refresh_ci(root_dir)
+    except Exception as exc:  # noqa: BLE001 - a refresh must never stop the daemon
+        obs.err(f"CI state not refreshed: {type(exc).__name__}: {exc}")
+        return
+    for reading in readings:
+        obs.info(f"  CI {reading.sha[:12]} {reading.state}: {reading.reason}")
+
+
 def serve(
     root_dir: Path,
     *,
@@ -4229,6 +4254,7 @@ def serve(
             pr_count_streak=pr_count_streak,
         )
         _save_pr_count_streak(pr_count_streak, root_dir, obs)
+        _refresh_ci(root_dir, obs)
         return result
 
     with serve_lock(root_dir):

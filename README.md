@@ -338,7 +338,7 @@ auto_checkout = true  # check the branch out automatically
 [ui]
 ascii = false  # ASCII separators only (no box-drawing characters)
 
-# Timeout limits (seconds; 0 or less disables)
+# Timeout limits (seconds; 0 disables)
 [timeout]
 agent_iteration = 0.0             # one engineer iteration; 0 = no limit
 component_total = 0.0             # wall clock per component across iterations; 0 = no limit
