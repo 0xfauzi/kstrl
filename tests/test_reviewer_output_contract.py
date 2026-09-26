@@ -40,8 +40,13 @@ CONTRACT_SENTENCES = (
     '"stories" holds exactly one entry for each story in the PRD section at the '
     "bottom of this prompt, and no other entry.",
     f'Each story there begins with a line "{HEADING_FORM}".',
+    'Copy that story id into "storyId" as it is written there,',
+    'give each of the story\'s acceptance criteria exactly one entry in "criteria", '
+    "including a criterion that passes.",
     "Never merge stories into one entry, and never leave out a story because it passed.",
     'is evidence for your verdicts and never an entry of its own in "stories".',
+    "each written as the file's path from the repository root and its lines "
+    "(path/to/file.py:42-58).",
     "A module, class or function name alone is not a citation.",
     "When the evidence is in more than one file, such as a call in one file into a "
     "function defined in another, cite each of those files.",
