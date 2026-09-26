@@ -20,7 +20,10 @@ that de-brittles the architect's ``must_include_kind`` matching.
 
 from __future__ import annotations
 
+import pytest
+
 from kstrl import calibration
+from kstrl.calibration_score import FixtureMetaError
 from kstrl.decompose import SpecIssue
 from kstrl.review import (
     CriterionReview,
@@ -103,6 +106,7 @@ class TestSecurityMatcher:
             {
                 "category": "injection",
                 "severity_at_least": "high",
+                "evidence_path_contains": "src/users.py",
             },
         )
         assert not caught
@@ -121,6 +125,7 @@ class TestSecurityMatcher:
             {
                 "category": "injection",
                 "severity_at_least": "high",
+                "evidence_path_contains": "src/users.py",
             },
         )
         assert not caught
@@ -144,9 +149,10 @@ class TestSecurityMatcher:
         )
         assert not caught
 
-    def test_path_optional_when_not_required(self) -> None:
-        """``evidence_path_contains`` is optional. Omitting it means
-        the matcher accepts any location."""
+    def test_a_requirement_without_evidence_path_is_refused(self) -> None:
+        """``evidence_path_contains`` is required (#564). A block without it
+        used to accept a finding at any location, so a misspelt key
+        switched the path gate off and the fixture scored as caught."""
         result = _security_result(
             SecurityFinding(
                 category="injection",
@@ -155,14 +161,14 @@ class TestSecurityMatcher:
                 explanation="...",
             ),
         )
-        caught, _ = security_caught(
-            result,
-            {
-                "category": "injection",
-                "severity_at_least": "high",
-            },
-        )
-        assert caught
+        with pytest.raises(FixtureMetaError, match=r"must_detect\.evidence_path_contains: missing"):
+            security_caught(
+                result,
+                {
+                    "category": "injection",
+                    "severity_at_least": "high",
+                },
+            )
 
     def test_first_matching_finding_wins(self) -> None:
         """When multiple findings match, the first one is returned. This
@@ -187,6 +193,7 @@ class TestSecurityMatcher:
             {
                 "category": "injection",
                 "severity_at_least": "high",
+                "evidence_path_contains": "src/users.py",
             },
         )
         assert caught
@@ -213,6 +220,7 @@ class TestSecurityMatcher:
             {
                 "category": "injection",
                 "severity_at_least": "high",
+                "evidence_path_contains": "src/users.py",
             },
         )
         assert caught
@@ -225,6 +233,7 @@ class TestSecurityMatcher:
             {
                 "category": "injection",
                 "severity_at_least": "high",
+                "evidence_path_contains": "src/users.py",
             },
         )
         assert not caught
@@ -248,6 +257,7 @@ class TestSecurityMatcher:
             {
                 "category": "injection",
                 "severity_at_least": "high",
+                "evidence_path_contains": "src/users.py",
             },
         )
         assert not caught
@@ -273,6 +283,7 @@ class TestReviewerMatcher:
             {
                 "category": "dead_code",
                 "severity_at_least": "fail",
+                "evidence_path_contains": "src/parser.py",
             },
         )
         assert caught
@@ -292,6 +303,7 @@ class TestReviewerMatcher:
             {
                 "category": "dead_code",
                 "severity_at_least": "fail",
+                "evidence_path_contains": "src/parser.py",
             },
         )
         assert not caught
@@ -310,13 +322,14 @@ class TestReviewerMatcher:
             {
                 "category": "dead_code",
                 "severity_at_least": "fail",
+                "evidence_path_contains": "src/parser.py",
             },
         )
         assert not caught
 
-    def test_advisory_severity_accepted_when_no_floor(self) -> None:
-        """When the fixture does not require ``severity_at_least=fail``,
-        an advisory concern is acceptable."""
+    def test_advisory_floor_accepts_an_advisory_concern(self) -> None:
+        """``severity_at_least: advisory`` accepts a concern of either
+        severity; only ``fail`` restricts the match to blocking ones."""
         result = _review_result(
             ReviewConcern(
                 category="dead_code",
@@ -325,8 +338,24 @@ class TestReviewerMatcher:
                 explanation="...",
             ),
         )
-        caught, _ = reviewer_caught(result, {"category": "dead_code"})
+        caught, _ = reviewer_caught(
+            result,
+            {
+                "category": "dead_code",
+                "severity_at_least": "advisory",
+                "evidence_path_contains": "src/parser.py",
+            },
+        )
         assert caught
+
+    def test_a_requirement_without_a_floor_is_refused(self) -> None:
+        """A block with no ``severity_at_least`` used to accept an advisory
+        concern where the fixture meant ``fail`` (#564)."""
+        with pytest.raises(FixtureMetaError, match=r"must_detect\.severity_at_least: missing"):
+            reviewer_caught(
+                _review_result(),
+                {"category": "dead_code", "evidence_path_contains": "src/parser.py"},
+            )
 
     def test_path_filter_applied(self) -> None:
         result = _review_result(
@@ -356,7 +385,14 @@ class TestReviewerMatcher:
 
     def test_no_match_against_empty_concerns(self) -> None:
         result = _review_result()
-        caught, detail = reviewer_caught(result, {"category": "dead_code"})
+        caught, detail = reviewer_caught(
+            result,
+            {
+                "category": "dead_code",
+                "severity_at_least": "advisory",
+                "evidence_path_contains": "src/parser.py",
+            },
+        )
         assert not caught
         assert detail == ""
 
@@ -400,6 +436,7 @@ class TestArchitectMatcher:
             {
                 "spec_issues_min": 2,
                 "must_include_kind": [],
+                "blocker_or_major": False,
             },
         )
         assert not caught
@@ -420,6 +457,7 @@ class TestArchitectMatcher:
             {
                 "spec_issues_min": 2,
                 "must_include_kind": ["undefined_failure_mode", "missing_detail"],
+                "blocker_or_major": False,
             },
         )
         assert caught
@@ -457,6 +495,7 @@ class TestArchitectMatcher:
             {
                 "spec_issues_min": 2,
                 "must_include_kind": ["contradiction"],
+                "blocker_or_major": False,
             },
         )
         assert not caught
@@ -474,6 +513,7 @@ class TestArchitectMatcher:
             {
                 "spec_issues_min": 1,
                 "must_include_kind": ["undefined_failure_mode"],
+                "blocker_or_major": False,
             },
         )
         assert caught
@@ -509,7 +549,7 @@ class TestArchitectMatcher:
         )
         assert caught
 
-    def test_required_kinds_field_optional(self) -> None:
+    def test_an_empty_kind_list_requires_no_kind(self) -> None:
         """When ``must_include_kind`` is empty, the matcher passes
         regardless of which kinds appear."""
         issues = [
@@ -520,25 +560,29 @@ class TestArchitectMatcher:
             issues,
             {
                 "spec_issues_min": 1,
+                "must_include_kind": [],
+                "blocker_or_major": False,
             },
         )
         assert caught
 
     def test_no_match_against_empty_issues(self) -> None:
-        caught, detail = architect_caught([], {"spec_issues_min": 1})
+        caught, detail = architect_caught(
+            [],
+            {"spec_issues_min": 1, "must_include_kind": [], "blocker_or_major": False},
+        )
         assert not caught
         assert "got 0 issues" in detail
 
-    def test_default_min_count_is_one(self) -> None:
-        """When ``spec_issues_min`` is omitted, at least one issue is
-        still required."""
+    def test_a_requirement_missing_its_fields_is_refused(self) -> None:
+        """An omitted field used to default (a minimum of one issue, no
+        kind, no severity demand), so a misspelt key made the fixture
+        easier to catch (#564). Every field is now required."""
         issues = [SpecIssue(kind="ambiguity", severity="major", summary="...")]
-        caught, _ = architect_caught(issues, {})
-        assert caught
-
-        empty: list[SpecIssue] = []
-        caught_empty, _ = architect_caught(empty, {})
-        assert not caught_empty
+        with pytest.raises(FixtureMetaError) as refused:
+            architect_caught(issues, {})
+        for name in ("spec_issues_min", "must_include_kind", "blocker_or_major"):
+            assert f"must_detect.{name}: missing" in str(refused.value)
 
 
 # ---------------------------------------------------------------------------
@@ -639,6 +683,7 @@ class TestCategoryAnyOf:
             {
                 "category_any_of": ["broken_crypto", "information_disclosure"],
                 "severity_at_least": "medium",
+                "evidence_path_contains": "src/webhooks/signing.py",
             },
         )
         assert caught
@@ -658,6 +703,7 @@ class TestCategoryAnyOf:
             {
                 "category_any_of": ["broken_crypto", "information_disclosure"],
                 "severity_at_least": "medium",
+                "evidence_path_contains": "src/webhooks/signing.py",
             },
         )
         assert not caught
@@ -676,6 +722,7 @@ class TestCategoryAnyOf:
             {
                 "category_any_of": ["broken_crypto", "information_disclosure"],
                 "severity_at_least": "high",
+                "evidence_path_contains": "src/webhooks/signing.py",
             },
         )
         assert not caught
@@ -713,6 +760,7 @@ class TestCategoryAnyOf:
             {
                 "category_any_of": ["dead_code", "scope_creep"],
                 "severity_at_least": "fail",
+                "evidence_path_contains": "src/x.py",
             },
         )
         assert caught
@@ -790,9 +838,10 @@ class TestSecurityFalsePositive:
         assert not is_fp
         assert detail == ""
 
-    def test_default_floor_is_high(self) -> None:
-        """With no severity_at_least, a medium forbidden finding is below
-        the default 'high' floor and does not count."""
+    def test_a_requirement_without_a_floor_is_refused(self) -> None:
+        """A block with no ``severity_at_least`` used to take ``high``
+        (#564). Every saved negative states ``medium``, so a dropped key
+        silently raised the floor and scored a medium finding as clean."""
         result = _security_result(
             SecurityFinding(
                 category="injection",
@@ -801,7 +850,8 @@ class TestSecurityFalsePositive:
                 explanation="...",
             ),
         )
-        assert not security_false_positive(result, {"categories": ["injection"]})[0]
+        with pytest.raises(FixtureMetaError, match=r"must_not_flag\.severity_at_least: missing"):
+            security_false_positive(result, {"categories": ["injection"]})
 
 
 class TestReviewerFalsePositive:
