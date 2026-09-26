@@ -29,7 +29,7 @@ one refuses ``-1`` and, for a float, ``nan`` and ``inf``.
 Layer 4, the environment (#583): every variable kstrl reads
 (``tests/test_env_vars_documented.py``) that sets a numeric field, found
 by setting it, must be refused by the real entry check when set to
-``lots``, ``nan`` or (unless signed) ``-1``. Before #583
+``lots``, ``nan``, ``inf`` or (unless signed) ``-1``. Before #583
 ``KSTRL_AGENT_BUDGET_USD=lots`` read as no ceiling.
 
 Four blind spots, strict xfails below: a loader that drops a bad number
@@ -441,7 +441,7 @@ class TestEveryNumericEnvironmentVariable:
     The variables are every name ``tests/test_env_vars_documented.py``
     finds in ``kstrl/``; the ones that set a numeric field are found by
     setting them (``env_number_doors``). Each must be refused by the real
-    entry check, in one line naming it, when set to ``lots``, ``nan`` or
+    entry check, in one line naming it, when set to ``lots``, ``nan``, ``inf`` or
     (unless the field is signed) ``-1``. Before #583,
     ``KSTRL_AGENT_BUDGET_USD=lots`` read as no ceiling.
     """
@@ -457,7 +457,7 @@ class TestEveryNumericEnvironmentVariable:
     ) -> None:
         offenders: dict[str, list[str]] = {}
         for var, _section, field in _env_doors(tmp_path, monkeypatch):
-            for value in ["lots", "nan"] + ([] if field.metadata.get("signed") else ["-1"]):
+            for value in ["lots", "nan", "inf"] + ([] if field.metadata.get("signed") else ["-1"]):
                 monkeypatch.setenv(var, value)
                 lines = _lines(tmp_path, "")
                 monkeypatch.delenv(var)
