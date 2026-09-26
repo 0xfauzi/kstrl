@@ -77,7 +77,8 @@ EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     # One subclass, four bare raises. #543 added two: a dependency branch
     # that will not merge into a dependent's worktree, and a HEAD that
     # cannot be read when recording what the dependent is judged against.
-    "factory.py": 5,
+    # #566 added one: a single_pr retry with no recorded start commit.
+    "factory.py": 6,
     # #530: three bare raises in ReflectionModel, the spent budget, a
     # timed-out reflection call and an empty reply.
     "gepa_adapter.py": 3,
