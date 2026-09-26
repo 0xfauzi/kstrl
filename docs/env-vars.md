@@ -60,17 +60,12 @@ to run and tell you which section, key and value to fix.
 
 ## TimeoutConfig (`[timeout]`)
 
-All values are seconds; 0 or less disables that limit. When a limit on how long kstrl's work may take is not set, there is no limit (#467): every work limit here and in `[verify]`, `[security]`, `[contract]` and `[knowledge]` defaults to 0. The run header and `ks config show` print an unset limit as `no limit`. A hang guard is different: it bounds a stuck tool rather than long work, so it keeps its default when unset.
+All values are seconds; 0 or less disables that limit. When a limit on how long kstrl's work may take is not set, there is no limit (#467): every work limit here and in `[verify]`, `[security]`, `[contract]` and `[knowledge]` defaults to 0. The run header and `ks config show` print an unset limit as `no limit`.
 
 | Env var | Type | Default | Notes |
 |---|---|---|---|
-| `KSTRL_TIMEOUT_GIT` | float | 30 | Hang guard. Not read by any code path today |
 | `KSTRL_TIMEOUT_AGENT_ITERATION` | float | 0 (no limit) | One engineer iteration |
 | `KSTRL_TIMEOUT_COMPONENT` | float | 0 (no limit) | Wall clock per component across iterations |
-| `KSTRL_TIMEOUT_VERIFY` | float | 0 (no limit) | Each Phase 1 check subprocess. The limit that applies is `VerifyConfig.subprocess_timeout`, which reads the same variable; `[timeout] verification_check` is not read |
-| `KSTRL_TIMEOUT_REVIEW` | float | 0 (no limit) | Not read by any code path today: the Phase 2 reviewer call has no limit |
-| `KSTRL_TIMEOUT_CONTRACT` | float | 0 (no limit) | Phase 3 contract test run. The limit that applies is `ContractConfig.timeout`, which reads the same variable; `[timeout] contract_test` is not read |
-| `KSTRL_TIMEOUT_DEFAULT` | float | 60 | Hang guard. Not read by any code path today |
 | `KSTRL_TIMEOUT_BACKSTOP_MARGIN` | float | 60 | Extra slack before the scheduler declares a worker dead. Applies only when `component_total` is set |
 
 With no work limit, an agent that hangs without output holds its component slot until Ctrl-C or `[serve] factory_timeout_seconds`. It spends nothing while idle.

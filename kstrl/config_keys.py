@@ -45,10 +45,9 @@ STRING_KEYS: tuple[tuple[str, str, str, str, bool], ...] = (
 )
 
 #: kstrl.toml sections renamed by #395. Consulted once at command entry;
-#: a retired name REFUSES rather than being silently ignored the way an
-#: unknown one is (tests/test_config_toml.py::test_from_toml_ignores_unknown_keys
-#: pins that silence for names we never used). No alias layer: two
-#: spellings live forever and the old one never dies.
+#: a retired name is refused with the name to use instead, where an
+#: unknown one is refused as a name no setting reads (#525). No alias
+#: layer: two spellings live forever and the old one never dies.
 RETIRED_SECTIONS: dict[str, str] = {"feedforward": "codebase_scan"}
 
 #: (section, key) renamed by #395, mapped to the new KEY name.

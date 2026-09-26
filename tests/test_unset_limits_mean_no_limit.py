@@ -8,8 +8,8 @@ reviewers 600 s and 300 s, and the verify, contract and mutation runs
 documents as "disabled", reached ``subprocess`` as ``timeout=0``, which
 means "already expired": a gate configured with no limit failed at once.
 
-The hang guards (``[timeout] git_operation`` and ``subprocess_default``,
-``[factory] merge_timeout``) keep their defaults and are pinned here too.
+The hang guard (``[factory] merge_timeout``) keeps its default and is
+pinned here too.
 
 Every test drives a real entry point: the engineer loop, the real
 ``run_mechanical_verification`` over a real git repository, the real
@@ -367,15 +367,10 @@ UNSET_LIMITS = (
     ("knowledge", "distill_timeout_seconds"),
     ("timeout", "agent_iteration"),
     ("timeout", "component_total"),
-    ("timeout", "verification_check"),
-    ("timeout", "review_agent"),
-    ("timeout", "contract_test"),
 )
 
-#: The hang guards, which keep their defaults.
+#: The hang guard, which keeps its default.
 HANG_GUARDS = {
-    ("timeout", "git_operation"): "30.0",
-    ("timeout", "subprocess_default"): "60.0",
     ("factory", "merge_timeout"): "300.0",
 }
 

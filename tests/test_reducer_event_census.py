@@ -54,12 +54,16 @@ DELIBERATELY_IGNORED: dict[str, str] = {
     "fact_utilization_measured": "knowledge measurement; no status meaning",
     "iteration_completed": "iteration_started already carries the counter the board shows",
     "journal_repair": "a marker that the journal was repaired; describes the file",
-    "log": "operator narration, rendered by the activity feed, not the reducer",
+    "log": (
+        "operator narration, rendered by the activity feed; _note_error_log keeps the "
+        "latest error lines as RunState.error_block text (#433) and moves no status"
+    ),
     "phase_skipped": "recorded in the findings stream; the component's status is unchanged",
     "review_divergence": "a blocking divergence fails the component, which is folded",
     "review_result": "phase only: _infer_phase maps it to a phase string; status is not folded",
     "verification_result": (
-        "phase only: _infer_phase maps it to a phase string; status is not folded"
+        "phase only: _infer_phase maps it to a phase string, and _fold_gate_detail "
+        "copies its failures and gate_logs into phase_history (#433); status is not folded"
     ),
 }
 

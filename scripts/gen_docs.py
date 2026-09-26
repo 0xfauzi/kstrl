@@ -512,15 +512,8 @@ KEY_DESCRIPTIONS: dict[tuple[str, str], str] = {
     ("git", "branch"): "branch override; empty = use PRD branchName",
     ("git", "auto_checkout"): "check the branch out automatically",
     ("ui", "ascii"): "ASCII separators only (no box-drawing characters)",
-    ("timeout", "git_operation"): "hang guard, kept when unset; not read today",
     ("timeout", "agent_iteration"): "one engineer iteration; 0 = no limit",
     ("timeout", "component_total"): "wall clock per component across iterations; 0 = no limit",
-    ("timeout", "verification_check"): "0 = no limit; not read today ([verify] "
-    "subprocess_timeout is the limit that applies)",
-    ("timeout", "review_agent"): "0 = no limit; not read today (the reviewer call has no limit)",
-    ("timeout", "contract_test"): "0 = no limit; not read today ([contract] timeout "
-    "is the limit that applies)",
-    ("timeout", "subprocess_default"): "hang guard, kept when unset; not read today",
     (
         "timeout",
         "scheduler_backstop_margin",

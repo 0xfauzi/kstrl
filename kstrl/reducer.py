@@ -94,6 +94,14 @@ class ComponentState:
     #: one the run started it in and nothing in this run has moved it.
     #: A per-run count (the home screen's run row) skips these (#448).
     carried: bool = False
+    #: The ts of this run's first event for the component other than its
+    #: scope record, so a finished component can say how long it took
+    #: rather than how long ago it stopped (#433 F5). 0.0 while carried.
+    started_ts: float = 0.0
+    #: The latest verification_result's failures and gate_logs, held until
+    #: the phase_completed that closes the same phase takes them into its
+    #: phase_history entry (#433 F7). Empty once attached.
+    pending_gate: dict[str, Any] = field(default_factory=dict)
 
     @property
     def tokens_are_lower_bound(self) -> bool:
@@ -183,6 +191,10 @@ class RunState:
     spec_issues: list[dict[str, str]] = field(default_factory=list)
     # {"label", "path", "component"} per artifact_written.
     artifacts: list[dict[str, str]] = field(default_factory=list)
+    #: The run's most recent error narration: an unindented error line
+    #: and the indented detail lines that follow it (#433 F4). A run that
+    #: stopped without a finish record usually said why here first.
+    error_block: list[str] = field(default_factory=list)
 
     @property
     def kind(self) -> str:
@@ -307,6 +319,65 @@ def _note_run_identity(state: RunState, event: ev.Event) -> None:
         state.kstrl_version = event.kstrl_version
 
 
+#: The most detail lines one error block keeps after its headline.
+MAX_ERROR_DETAIL_LINES = 4
+
+
+def _note_error_log(state: RunState, event: ev.Event) -> None:
+    """Keep the latest error headline and its detail lines (#433 F4).
+
+    The factory writes a refusal as one unindented line followed by
+    indented detail lines (``Refusing to run: stale component branches
+    found`` then one ``  branch ...`` line per branch). An unindented
+    line starts a new block; an indented one extends the current block.
+    Only the text is kept; a log line never moves a status.
+    """
+    if not isinstance(event, ev.Log) or event.severity != "error":
+        return
+    text = event.text.rstrip()
+    if not text.strip():
+        return
+    if text[:1].isspace() and state.error_block:
+        if len(state.error_block) <= MAX_ERROR_DETAIL_LINES:
+            state.error_block.append(text.strip())
+        return
+    state.error_block = [text.strip()]
+
+
+def _note_component_span(comp: ComponentState, event: ev.Event) -> None:
+    """The first event this run wrote for the component, scope record aside."""
+    if comp.started_ts or not event.ts or isinstance(event, ev.ComponentScopeResolved):
+        return
+    comp.started_ts = event.ts
+
+
+def _fold_gate_detail(comp: ComponentState, event: ev.Event) -> None:
+    """Attach a failed gate's cause to the phase that reported it (#433 F7).
+
+    ``verification_result`` names what failed (``failures``) and where the
+    gate's own output was written (``gate_logs``, #462). It arrives just
+    before the ``phase_completed`` that closes the same phase, so it is
+    held on the component and moved into that phase's history entry.
+    Status is not touched: the phase and component events decide it.
+    """
+    if isinstance(event, ev.VerificationResultEvent):
+        comp.pending_gate = {
+            "phase": event.phase or "verify",
+            "failures": [str(item) for item in event.failures],
+            "gate_logs": [str(item) for item in event.gate_logs],
+        }
+        return
+    pending = comp.pending_gate
+    if not pending or not isinstance(event, ev.PhaseCompleted):
+        return
+    if event.phase != pending["phase"] or not comp.phase_history:
+        return
+    comp.pending_gate = {}
+    if pending["failures"] or pending["gate_logs"]:
+        comp.phase_history[-1]["failures"] = pending["failures"]
+        comp.phase_history[-1]["gate_logs"] = pending["gate_logs"]
+
+
 def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispatch
     """Fold one event into ``state`` (mutates in place)."""
     if isinstance(event, ev.UnknownEvent):
@@ -322,6 +393,7 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
             state.started_ts = event.ts
         state.last_event_ts = max(state.last_event_ts, event.ts)
     _note_run_identity(state, event)
+    _note_error_log(state, event)
 
     if isinstance(event, ev.RunStarted):
         state.project = event.project or state.project
@@ -416,6 +488,7 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
     comp.carried = isinstance(event, ev.ComponentScopeResolved)
     if event.ts:
         comp.last_event_ts = max(comp.last_event_ts, event.ts)
+    _note_component_span(comp, event)
 
     if not comp.phase_explicit:
         inferred = _infer_phase(event)
@@ -540,6 +613,7 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
         comp.status = _STATUS_AFTER_CHECKPOINT.get(event.decision, comp.status)
     elif isinstance(event, ev.BudgetExceeded):
         comp.error = _budget_halt_error(event)
+    _fold_gate_detail(comp, event)
 
 
 def fold(events: Iterable[ev.Event], run_id: str = "") -> RunState:

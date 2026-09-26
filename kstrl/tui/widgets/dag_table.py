@@ -13,6 +13,7 @@ clear()+rebuild per poll (spike finding 3).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from rich.text import Text
@@ -49,19 +50,57 @@ def compute_tiers(components: dict[str, tuple[str, ...]]) -> dict[str, int]:
     return tiers
 
 
+#: Cells the table keeps for itself: its padding and the scrollbar.
+_TABLE_CHROME = 4
+#: A title shorter than this is dropped rather than shown as a stub.
+_MIN_TITLE = 8
+
+
+@dataclass(frozen=True)
+class _Fit:
+    """How many cells the title and the deps text may use."""
+
+    title: int
+    deps: int
+
+
+def fit_columns(comps: list[ComponentState], width: int) -> _Fit:
+    """Room for each row's title and deps so the table fits ``width``.
+
+    At 80 columns the component-and-title column pushed deps past the
+    edge and the table scrolled sideways (#433 F1). The title gives way
+    first, since the id names the component; then the deps text.
+    """
+    ids = max((len(comp.component_id) for comp in comps), default=0)
+    deps = max((len(", ".join(comp.deps)) for comp in comps), default=0)
+    fixed = len("cycle!") + len("prd") + len(COLUMNS) * 2 + _TABLE_CHROME
+    room = width - fixed - max(ids, len("component"))
+    deps_cells = max(len("deps"), min(deps, room))
+    title = room - deps_cells - 2
+    return _Fit(title=title if title >= _MIN_TITLE else 0, deps=deps_cells)
+
+
+def _shorten(text: str, cells: int) -> str:
+    return text if len(text) <= cells else text[: max(1, cells - 1)] + "…"
+
+
 def _row_values(
     comp: ComponentState,
     tier: int,
     prd_written: bool,
+    fit: _Fit | None = None,
 ) -> tuple[Text | str, ...]:
     name = Text(comp.component_id)
-    if comp.title:
-        name.append(f"  {comp.title}", style=theme.MUTED)
+    if comp.title and (fit is None or fit.title):
+        title = comp.title if fit is None else _shorten(comp.title, fit.title)
+        name.append(f"  {title}", style=theme.MUTED)
     if tier == _CYCLE_TIER:
         tier_cell = Text("cycle!", style=f"bold {theme.WARNING}", justify="right")
     else:
         tier_cell = Text(str(tier), justify="right")
     deps = ", ".join(comp.deps)
+    if fit is not None:
+        deps = _shorten(deps, fit.deps)
     return (
         name,
         tier_cell,
@@ -76,8 +115,24 @@ class DagTable(DataTable[Text | str]):
     def on_mount(self) -> None:
         self.cursor_type = "row"
         self.zebra_stripes = False
+        self._laid_out_for = 0
+        self._add_columns()
+
+    def _add_columns(self) -> None:
         for column in COLUMNS:
             self.add_column(column, key=column)
+
+    def _screen_width(self) -> int:
+        width = self.app.size.width if self.is_attached else 0
+        return width or 120
+
+    def _relayout(self, width: int) -> None:
+        """Columns only widen on update, so a new width is a rebuild."""
+        if width == self._laid_out_for:
+            return
+        self.clear(columns=True)
+        self._add_columns()
+        self._laid_out_for = width
 
     def update_state(self, state: RunState) -> None:
         # The architect's own pseudo-row is filtered out; a COMPONENT the
@@ -92,6 +147,9 @@ class DagTable(DataTable[Text | str]):
         tiers = compute_tiers(deps_map)
         prds = {a["component"] for a in state.artifacts if a.get("label") == "prd"}
         desired = [cid for cid in order if cid in state.components]
+        width = self._screen_width()
+        self._relayout(width)
+        fit = fit_columns([state.components[cid] for cid in desired], width)
         current = [str(key.value) for key in self.rows]
 
         # A rewritten event stream can replace the plan. Remove rows that
@@ -107,9 +165,12 @@ class DagTable(DataTable[Text | str]):
             comp = state.components.get(cid)
             if comp is None:
                 continue
-            values = _row_values(comp, tiers.get(cid, 0), cid in prds)
-            if cid in self.rows:
-                for key, value in zip(COLUMNS, values, strict=True):
-                    self.update_cell(cid, key, value)
-            else:
-                self.add_row(*values, key=cid)
+            self._write_row(cid, _row_values(comp, tiers.get(cid, 0), cid in prds, fit))
+
+    def _write_row(self, cid: str, values: tuple[Text | str, ...]) -> None:
+        """Update the row in place, widening each column, or add it."""
+        if cid not in self.rows:
+            self.add_row(*values, key=cid)
+            return
+        for key, value in zip(COLUMNS, values, strict=True):
+            self.update_cell(cid, key, value, update_width=True)
