@@ -101,10 +101,13 @@ _CURRENT: ContextVar[AgentCall | None] = ContextVar("kstrl_agent_call", default=
 
 
 @contextmanager
-def recording_prompts(call: AgentCall | None) -> Iterator[None]:
+def recording_prompts(call: AgentCall) -> Iterator[None]:
     """Record every agent call made inside this block as ``call``.
 
-    ``None`` is the explicit "not inside a run" and records nothing.
+    A scope always carries an identity (#567). A call made outside a run
+    opens no scope at all; ``None`` was accepted here until #567, and a
+    scope opened with it recorded nothing while looking recorded to
+    ``tests/test_prompt_record_census.py``.
     """
     token = _CURRENT.set(call)
     try:

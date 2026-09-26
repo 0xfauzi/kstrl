@@ -492,6 +492,7 @@ class TestTheRegisterReachesTheEngineer:
             "claude",
             0.0,
             decisions_prefix="## Architect Decisions\n\n- **[decided]** utf-8 it is\n",
+            run_id="test-run",
         )
         prefix = seen["context_prefix"]
         assert isinstance(prefix, str)

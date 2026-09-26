@@ -273,6 +273,7 @@ def _factory_guard(tmp: Path) -> str:
             sleep_seconds=0.0,
             scope=scope,
             redirect_output=False,
+            run_id="test-run",
         )
     return result.error or "<no error>"
 

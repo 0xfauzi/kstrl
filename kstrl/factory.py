@@ -2447,18 +2447,20 @@ def _report_operator_files(base_config: KstrlConfig, root_dir: Path, ui: UI) -> 
         ui.warn(f"  {subject}: {message}")
 
 
-def _engineer_call(
-    usage_dir_str: str | None, run_id: str, component_id: str, attempt: int
-) -> AgentCall | None:
+def _engineer_call(root_dir: Path, run_id: str, component_id: str, attempt: int) -> AgentCall:
     """Who the engineer's prompts are recorded for (#532).
 
-    The accounting directory is the run directory, and the factory always
-    passes it; None is a direct caller outside a run, which records nothing.
+    The run directory is ``RunPaths.for_run(root_dir, run_id)``, the same
+    directory the factory hands the worker as its accounting directory.
+    An empty ``run_id`` is a call outside any run, and it is refused
+    rather than left unrecorded (#567).
     """
-    if usage_dir_str is None:
-        return None
+    if not run_id:
+        raise ValueError(
+            f"engineer call for {component_id!r} has no run id to record its prompt under"
+        )
     return AgentCall(
-        run_root=Path(usage_dir_str),
+        run_root=RunPaths.for_run(root_dir, run_id).root,
         run_id=run_id,
         component=component_id,
         role="engineer",
@@ -2803,7 +2805,7 @@ def _run_component(
     try:
         for note in setup_notes:
             ui.warn(note)
-        with recording_prompts(_engineer_call(usage_dir_str, run_id, component_id, attempt)):
+        with recording_prompts(_engineer_call(root_dir, run_id, component_id, attempt)):
             result = run_loop(
                 config,
                 ui,
