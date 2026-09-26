@@ -90,7 +90,9 @@ EXPECTED_TEXT_MODE_SPAWNS: dict[str, int] = {
     "agents/proc.py": 1,
     "breaker.py": 1,
     "doctor.py": 1,
-    "factory.py": 4,
+    # 5: #566 moved the fresh-retry reset from a bytes-mode `git branch -D`
+    # to a text-mode `git worktree add -B`.
+    "factory.py": 5,
     # 26: 23 after #435, +1 for #465's `branch_sha`, +1 for #459's `ignored_paths`,
     # +1 for #500's `tracked_files_at`.
     "git.py": 26,
@@ -117,6 +119,7 @@ EXPECTED_CLEARED_SPAWNS: tuple[str, ...] = (
     # codespell:ignore-next-line
     "doctor.py subprocess.run(['git', 'ls-files', '-z'], cwd=root, capture_output=Tru",
     "factory.py subprocess.run(['git', 'branch', '-D', branch], cwd=root_dir, capture_",
+    "factory.py subprocess.run(['git', 'worktree', 'add', '-B', branch_name, str(workt",
     "factory.py subprocess.run(['git', 'worktree', 'add', str(worktree_path), '-b', br",
     "factory.py subprocess.run(['git', 'worktree', 'add', str(worktree_path), branch_n",
     "factory.py subprocess.run(['git', 'worktree', 'list', '--porcelain', '-z'], cwd=r",
@@ -190,7 +193,9 @@ EXPECTED_LENIENT_SPAWNS: tuple[str, ...] = (
 #: ``str``.
 EXPECTED_BYTES_MODE_SPAWNS: dict[str, int] = {
     "doctor.py": 1,
-    "factory.py": 9,
+    # 8: #566 deleted the fresh-retry `git branch -D branch_name`, which
+    # took no encoding; its replacement decodes as utf-8.
+    "factory.py": 8,
     # 7: `merge_base_ref`'s `git merge-base` stdout, hoisted here from
     # `verify.py` by the #435 fix-round, still decoded by hand.
     "git.py": 7,

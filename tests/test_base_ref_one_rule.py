@@ -128,7 +128,8 @@ EXPECTED_REF_OPERAND_ARGVS: dict[str, int] = {
     "factory.py git worktree list --porcelain -z": 1,
     "factory.py git rev-parse --verify --quiet f'refs/heads/{branch}'": 1,
     "factory.py git merge-base --is-ancestor branch base_ref": 1,
-    "factory.py git branch -D branch_name": 1,
+    # #566: `git branch -D branch_name` became this reset in one command.
+    "factory.py git worktree add -B branch_name str(worktree_path) recut_at or base_ref": 1,
     "factory.py git worktree add str(worktree_path) branch_name": 1,
     "factory.py git worktree remove --force str(entry)": 1,
     "factory.py git branch -D branch": 1,
