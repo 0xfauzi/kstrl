@@ -367,7 +367,8 @@ BLIND_SITES: tuple[tuple[str, str, str, str], ...] = (
     (
         "kstrl/pipeline.py",
         "ComponentPipeline._security_failure",
-        "signatures_from_findings('security', sec_result.as_findings())",
+        "signatures_from_findings('security', sec_result.as_findings(), "
+        "sec_result.failing_severities)",
         "composed at run time, as _review_failure above",
     ),
     (

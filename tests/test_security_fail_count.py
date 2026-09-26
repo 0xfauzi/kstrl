@@ -24,6 +24,7 @@ from typing import Any
 
 import pytest
 
+from kstrl.evolution import FINDINGS_SUPERSEDED_EVENT
 from kstrl.factory import ComponentResult
 from kstrl.observability import read_progress_events
 from kstrl.pipeline import Transition
@@ -173,14 +174,17 @@ def _drive(
 def test_a_failure_below_high_reaches_the_event_and_the_convergence_reading(
     tmp_path: Path,
 ) -> None:
-    """``fail_threshold = "medium"``: attempts failing on three, then one,
-    medium finding. Before #524 both readers recorded 0 for both."""
+    """``fail_threshold = "medium"``: attempts failing on three medium
+    findings beside one low one, then on one medium finding. Before #524
+    both readers recorded 0 for both. The low finding keeps the count
+    apart from the number of findings, so a log line that counts every
+    finding says 4 and fails."""
     transitions, rows, root, text = _drive(
-        tmp_path, "medium", [["medium", "medium", "medium"], ["medium"]]
+        tmp_path, "medium", [["medium", "medium", "medium", "low"], ["medium"]]
     )
     assert transitions == [Transition.RETRYING, Transition.RETRYING]
     assert [(r["passed"], r["fail_count"], r["advisory_count"]) for r in rows] == [
-        (False, 3, 0),
+        (False, 3, 1),
         (False, 1, 0),
     ]
     assert _journaled_counts(root) == [(1, 3), (2, 1)]
@@ -194,3 +198,21 @@ def test_a_pass_above_the_finding_reports_no_failure(tmp_path: Path) -> None:
     transitions, rows, _, _ = _drive(tmp_path, "critical", [["high"]])
     assert transitions == [Transition.COMPLETED]
     assert [(r["passed"], r["fail_count"], r["advisory_count"]) for r in rows] == [(True, 0, 1)]
+
+
+@pytest.mark.usefixtures("_no_real_diff")
+def test_a_failure_below_high_journals_the_categories_that_failed(tmp_path: Path) -> None:
+    """``fail_threshold = "medium"``: the journal's failure signatures name
+    the category that failed the gate. Before, they were chosen by a fixed
+    critical-plus-high rule, so a medium failure journaled only the
+    error-text fallback ``security:security-review-failed``."""
+    _, _, root, _ = _drive(tmp_path, "medium", [["medium", "low"]])
+    rows = [
+        json.loads(line)
+        for line in (root / ".kstrl" / "evolution.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    signatures = [
+        r["failure_signatures"] for r in rows if r.get("event_type") == FINDINGS_SUPERSEDED_EVENT
+    ]
+    assert signatures == [["security:injection"]]

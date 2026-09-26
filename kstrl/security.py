@@ -206,10 +206,21 @@ class SecurityResult:
         sets ``passed`` from this count, and the log line, the
         ``review_result`` event and the #233 convergence reading all read
         it, so no reader can count a different set."""
+        return sum(1 for f in self.findings if self._fails(f.severity))
+
+    @property
+    def failing_severities(self) -> frozenset[str]:
+        """The severities that fail this result, by the rule ``fail_count``
+        uses. The journal's failure signatures read it, so the categories
+        journaled are the ones that failed the gate (#524)."""
+        return frozenset(s for s in _SEVERITY_ORDER if self._fails(s))
+
+    def _fails(self, severity: str) -> bool:
+        # Indexed, never .get with a default rank: an unknown severity or
+        # threshold is an error, not a rank.
         if self.mode != SecurityMode.HARD.value:
-            return 0
-        rank = _SEVERITY_ORDER[self.fail_threshold]
-        return sum(1 for f in self.findings if _SEVERITY_ORDER[f.severity] >= rank)
+            return False
+        return _SEVERITY_ORDER[severity] >= _SEVERITY_ORDER[self.fail_threshold]
 
     @property
     def advisory_count(self) -> int:

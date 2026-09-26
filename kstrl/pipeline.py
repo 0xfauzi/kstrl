@@ -4526,7 +4526,9 @@ class ComponentPipeline:
                 phase="security",
                 check=("infrastructure" if sec_result.infrastructure_error else "findings"),
                 context_json=ctx.to_json(),
-                signatures=signatures_from_findings("security", sec_result.as_findings()),
+                signatures=signatures_from_findings(
+                    "security", sec_result.as_findings(), sec_result.failing_severities
+                ),
                 failure_count=_gate_failure_count(sec_result),
             ),
         )
