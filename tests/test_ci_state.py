@@ -303,6 +303,12 @@ UNREADABLE: list[tuple[str, dict[str, Any] | str | None]] = [
     ("reply-is-not-json", "gh: this is not JSON"),
     ("reply-is-a-list", "[]"),
     ("graphql-errors", {"errors": [{"message": "Something went wrong"}], "data": None}),
+    # GitHub can answer with partial data AND errors: the errors win even
+    # when the data beside them reads as seven passing checks.
+    (
+        "graphql-errors-beside-passing-data",
+        {**_fixture("passed.json"), "errors": [{"message": "Resource not accessible"}]},
+    ),
     ("no-repository", {"data": {"repository": None}}),
     ("no-commit", _fixture("no-commit.json")),
     ("not-a-commit", _fixture("not-a-commit.json")),
