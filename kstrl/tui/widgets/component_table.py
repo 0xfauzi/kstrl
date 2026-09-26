@@ -31,13 +31,15 @@ Design decisions from the critique:
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rich.text import Text
 from textual.widgets import DataTable
 
 from kstrl.tui import theme
-from kstrl.tui.run_status import age_phrase, failed_cause
+from kstrl.tui.agent_health import agent_health
+from kstrl.tui.run_status import age_phrase, component_took, failed_cause
 from kstrl.tui.widgets.cost_meter import format_tokens
 
 if TYPE_CHECKING:
@@ -45,6 +47,9 @@ if TYPE_CHECKING:
 
 FULL_COLUMNS = ("", "component", "status", "phase", "try", "iter", "time", "tokens", "cost")
 COMPACT_COLUMNS = ("", "component", "status", "phase", "time", "cost")
+#: Added after ``phase`` while a component is moving in an unfinished
+#: run: its last output and its process (#433 M2).
+AGENT_COLUMN = "agent"
 #: Kept for callers that index the full layout.
 COLUMNS = FULL_COLUMNS
 
@@ -63,25 +68,20 @@ _MOVING = ("running", "verifying")
 _TERMINAL = ("completed", "failed", "merge_pending", "awaiting_approval")
 
 
-def _age(ts: float, now: float) -> str:
-    if ts <= 0:
-        return theme.EMPTY_CELL
-    seconds = max(0, int(now - ts))
-    if seconds < 60:
-        return f"{seconds}s"
-    if seconds < 3600:
-        return f"{seconds // 60}m{seconds % 60:02d}s"
-    return f"{seconds // 3600}h{(seconds % 3600) // 60:02d}m"
-
-
 def time_cell_text(comp: ComponentState, now: float) -> str:
-    """How long a finished component took; how long ago a moving one spoke."""
+    """How long a component took, or has taken so far while it moves.
+
+    One meaning for the whole column. It used to hold a duration on a
+    finished row and ``21s ago`` (the last event's age) on a running one,
+    under the one header ``time`` (#433). How recently a running agent
+    wrote is the ``agent`` column's job now, labelled ``output``.
+    """
     if comp.carried or not comp.started_ts:
         return theme.EMPTY_CELL
     if comp.status in _MOVING:
-        return f"{_age(comp.last_event_ts, now)} ago"
+        return age_phrase(now - comp.started_ts)
     if comp.status in _TERMINAL:
-        return age_phrase(comp.last_event_ts - comp.started_ts)
+        return age_phrase(component_took(comp))
     return theme.EMPTY_CELL
 
 
@@ -150,11 +150,23 @@ def _time(comp: ComponentState, now: float) -> Text:
     return _dim(value) if value == theme.EMPTY_CELL else _num(value)
 
 
+def _agent_cell(
+    comp: ComponentState, state: RunState, run_dir: Path | None, now: float, short: bool
+) -> Text:
+    if state.finished or comp.status not in _MOVING:
+        return _dim(theme.EMPTY_CELL)
+    health = agent_health(run_dir, comp, now)
+    style = theme.ERROR if health.process == "exited" else theme.MUTED
+    return Text(health.text(short=short), style=style)
+
+
 def _cells(
     comp: ComponentState,
     state: RunState,
     now: float,
     phase_width: int,
+    run_dir: Path | None = None,
+    short: bool = False,
 ) -> dict[str, Text]:
     glyph, color = theme.status_glyph(comp.status)
     name = Text(comp.component_id)
@@ -170,6 +182,7 @@ def _cells(
         "time": _time(comp, now),
         "tokens": _tokens(comp),
         "cost": _cost(comp),
+        "agent": _agent_cell(comp, state, run_dir, now, short),
     }
 
 
@@ -188,6 +201,15 @@ def _fixed_width(columns: tuple[str, ...], cells: list[dict[str, Text]]) -> int:
         widest = max((cell[key].cell_len for cell in cells), default=0)
         total += max(widest, len(column)) + 2
     return total
+
+
+def _columns_for(state: RunState, compact: bool) -> tuple[str, ...]:
+    """The layout for the width, with ``agent`` while anything moves."""
+    columns: tuple[str, ...] = COMPACT_COLUMNS if compact else FULL_COLUMNS
+    if state.finished or not any(c.status in _MOVING for c in state.components.values()):
+        return columns
+    at = columns.index("phase") + 1
+    return (*columns[:at], AGENT_COLUMN, *columns[at:])
 
 
 class ComponentTable(DataTable[Text | str]):
@@ -226,17 +248,23 @@ class ComponentTable(DataTable[Text | str]):
         width = self.app.size.width if self.is_attached else 0
         return width or 120
 
+    def _run_dir(self) -> Path | None:
+        run_dir = getattr(self.app, "run_dir", None) if self.is_attached else None
+        return run_dir if isinstance(run_dir, Path) else None
+
     def update_state(self, state: RunState) -> None:
         now = time.time()
         width = self._screen_width()
-        columns = COMPACT_COLUMNS if width < COMPACT_BELOW else FULL_COLUMNS
+        compact = width < COMPACT_BELOW
+        columns = _columns_for(state, compact)
+        run_dir = self._run_dir()
         order = state.plan_order or sorted(state.components)
         comps = [state.components[cid] for cid in order if cid in state.components]
-        rough = [_cells(comp, state, now, 200) for comp in comps]
+        rough = [_cells(comp, state, now, 200, run_dir, compact) for comp in comps]
         phase_width = max(MIN_PHASE_WIDTH, width - _TABLE_CHROME - _fixed_width(columns, rough))
         self._set_columns(columns, phase_width)
         for comp in comps:
-            cells = _cells(comp, state, now, phase_width)
+            cells = _cells(comp, state, now, phase_width, run_dir, compact)
             values = [cells[_key(column)] for column in columns]
             if comp.component_id in self.rows:
                 for column, value in zip(columns, values, strict=True):
@@ -245,10 +273,17 @@ class ComponentTable(DataTable[Text | str]):
                 self.add_row(*values, key=comp.component_id)
 
     def tick_ages(self, state: RunState) -> None:
-        """1s label-only refresh of the time column."""
+        """1s label-only refresh of the time and agent columns."""
         if "time" not in self._columns_shown:
             return
         now = time.time()
+        agent = AGENT_COLUMN in self._columns_shown
+        run_dir = self._run_dir() if agent else None
+        short = "tokens" not in self._columns_shown
         for comp_id, comp in state.components.items():
-            if comp_id in self.rows:
-                self.update_cell(comp_id, "time", _time(comp, now), update_width=True)
+            if comp_id not in self.rows:
+                continue
+            self.update_cell(comp_id, "time", _time(comp, now), update_width=True)
+            if agent:
+                cell = _agent_cell(comp, state, run_dir, now, short)
+                self.update_cell(comp_id, AGENT_COLUMN, cell, update_width=True)

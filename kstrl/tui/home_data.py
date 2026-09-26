@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kstrl.reducer import RunState, fold, read_run_dir
+from kstrl.tui.operator_queue import OperatorQueue, build_queue
 from kstrl.tui.run_status import state_word
 from kstrl.tui.runs import RunRef
 
@@ -40,6 +41,8 @@ class HomeStats:
     #: Manifest components in the failed state, the ones retry can act on;
     #: None when there is no readable manifest.
     failed_components: int | None = None
+    #: Every home section (#433 increment 2); None until the worker lands.
+    queue: OperatorQueue | None = None
 
 
 def fold_run(ref: RunRef) -> RunState:
@@ -168,6 +171,28 @@ def gather_stats(
         last=summaries.get(newest_run_id),
         inbox_open=open_inbox_count(root_dir),
         failed_components=failed_component_count(root_dir),
+    )
+
+
+def gather_home(
+    summaries: dict[str, RunSummary],
+    refs: list[RunRef],
+    cache: SummaryCache,
+    root_dir: Path,
+    now: float,
+) -> HomeStats:
+    """Stats and the operator queue from ONE read of each source.
+
+    The counts on the needs-you title come from the same rows the section
+    lists, so the title and the rows cannot disagree.
+    """
+    states = {ref.run_id: state for ref in refs if (state := cache.state_for(ref.run_id))}
+    queue = build_queue(root_dir, refs, summaries, states, now)
+    return HomeStats(
+        last=summaries.get(refs[0].run_id) if refs else None,
+        inbox_open=queue.decisions,
+        failed_components=queue.failures,
+        queue=queue,
     )
 
 

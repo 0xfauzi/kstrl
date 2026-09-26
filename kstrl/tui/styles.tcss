@@ -182,8 +182,11 @@ ConfigProblemBanner {
     padding: 0 1;
 }
 
+/* auto: with an attempt label per try the strip wraps at 80 columns
+ * rather than losing the latest attempt past the edge (#433). */
 #phase-timeline {
-    height: 1;
+    height: auto;
+    max-height: 4;
     margin: 1 2 0 2;
 }
 
@@ -321,13 +324,15 @@ CheckpointModal {
 }
 
 /* ---- home shell ---------------------------------------------------------- */
-/* Control-room layout: 2-line surface header, runs beside the
- * launcher, and the highlighted run's live board filling the rest -
- * the same no-dead-space rule as the overview's activity feed. */
+/* #433 increment 2: an operator queue. A 2-line header (masthead, then
+ * the safe-mode chip, the last run and ks serve), then needs you, active,
+ * delivery and history, in that order. HomeScreen.on_resize sets .narrow
+ * below 160 columns (the launcher column gives way to one line of keys)
+ * and .short below 45 rows (the selected run's board is left out). */
 
 #home-header {
     dock: top;
-    height: 3;
+    height: 2;
     background: $surface;
 }
 
@@ -341,13 +346,43 @@ CheckpointModal {
     padding: 0 1;
 }
 
-#home-attention {
+#home-masthead {
+    height: 1;
+    padding: 0 1;
+}
+
+#home-stats {
     width: 1fr;
     height: 1;
 }
 
-/* #433: below 100 columns the launcher column gives way to one line of
- * keys (HomeScreen.on_resize sets .narrow); ^p lists every command. */
+.home-section-title {
+    height: 1;
+    padding: 0 1;
+    margin-top: 1;
+}
+
+.home-section {
+    height: auto;
+    max-height: 4;
+    background: $background;
+    padding: 0 1;
+}
+
+#home-delivery {
+    height: auto;
+    max-height: 4;
+    padding: 0 1;
+    margin-top: 1;
+}
+
+/* Below 30 rows every line is a row of the queue: no gaps. */
+HomeScreen.tiny .home-section-title,
+HomeScreen.tiny #home-delivery,
+HomeScreen.tiny #home-columns {
+    margin-top: 0;
+}
+
 #home-keys {
     display: none;
     height: 1;
@@ -362,19 +397,14 @@ HomeScreen.narrow #home-keys {
     display: block;
 }
 
-#home-masthead {
-    height: 1;
-    padding: 0 1;
-}
-
-#home-stats {
-    height: 1;
-    padding: 0 1;
+HomeScreen.short #home-preview-title,
+HomeScreen.short #home-preview {
+    display: none;
 }
 
 #home-columns {
-    height: auto;
-    max-height: 45%;
+    height: 1fr;
+    min-height: 4;
     margin-top: 1;
 }
 
@@ -388,15 +418,14 @@ HomeScreen.narrow #home-keys {
 }
 
 #home-runs-title, #home-commands-title {
-    height: 2;
+    height: 1;
     padding: 0 1;
     color: $text-muted;
     text-style: bold;
-    border-bottom: solid $panel;
 }
 
 #home-runs {
-    height: auto;
+    height: 1fr;
     background: $background;
 }
 
@@ -412,12 +441,11 @@ HomeScreen.narrow #home-keys {
 }
 
 #home-preview-title {
-    height: 2;
+    height: 1;
     margin-top: 1;
     padding: 0 1;
     color: $text-muted;
     text-style: bold;
-    border-bottom: solid $panel;
 }
 
 #home-preview {
@@ -582,11 +610,15 @@ HomeScreen.narrow #home-keys {
 
 #retry-table {
     height: 1fr;
+    min-height: 3;
     background: $background;
 }
 
+/* auto: the detail carries the failure's evidence and, after r, the
+ * retry's whole scope (#433). */
 #retry-detail {
-    height: 6;
+    height: auto;
+    max-height: 60%;
     padding: 1 2;
     background: $surface;
 }
@@ -829,4 +861,46 @@ QuitModal {
 #inbox-detail {
     height: 1fr;
     padding: 1 1 0 1;
+}
+
+/* ---- delivery row + integration review (#433 F9, M3) --------------------- */
+
+/* The run overview's pinned summary: integration verdicts, merges and
+ * main's CI, one line each, under the board. Hidden for kinds that
+ * deliver nothing (decompose, understand). */
+#delivery-row {
+    height: auto;
+    max-height: 3;
+    padding: 0 2;
+    background: $surface;
+}
+
+#integration-rounds {
+    height: auto;
+    max-height: 4;
+    padding: 0 2;
+}
+
+.panel-title {
+    height: 1;
+    margin-top: 1;
+    padding: 0 2;
+}
+
+#integration-criteria {
+    height: auto;
+    max-height: 7;
+    padding: 0 1;
+}
+
+#integration-findings {
+    height: auto;
+    max-height: 9;
+    padding: 0 1;
+}
+
+#integration-detail {
+    height: 1fr;
+    padding: 1 2;
+    background: $surface;
 }

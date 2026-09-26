@@ -1,5 +1,9 @@
 """Text the home screen renders, kept out of the screen module (#433).
 
+Increment 2 made home an operator queue (``operator_queue``): the
+sections below the masthead are needs you, active, delivery and history,
+in that order, and each helper here renders one of them.
+
 - ``attention_line``: what is waiting on the operator, counted, with the
   key that opens it (E3). Before, the operator had to open the inbox to
   learn whether anything was in it.
@@ -22,13 +26,21 @@ from kstrl.tui.run_status import RUN_STATE_STYLE, RUNNING, run_reason
 if TYPE_CHECKING:
     from kstrl.reducer import RunState
     from kstrl.tui.home_data import HomeStats, RunSummary
+    from kstrl.tui.operator_queue import ActiveRow, NeedsYouRow, OperatorQueue
     from kstrl.tui.runs import RunRef
+    from kstrl.tui.serve_view import ServeState
 
 #: One key per launcher command, each a single keypress.
 COMMAND_KEYS = "1234567890"
 
 #: Below this width the launcher column gives way to ``command_strip``.
-NARROW_BELOW = 100
+#: The queue sections need the width more than the launcher does, so the
+#: column shows only on a wide terminal (#433 increment 2).
+NARROW_BELOW = 160
+
+#: The most rows the needs-you and active tables show; the title counts
+#: the rest.
+SECTION_ROWS = 4
 
 
 class _Command(Protocol):
@@ -56,9 +68,10 @@ def attention_line(stats: HomeStats) -> Text:
         # could not be read (None) is not a zero (#433 E3).
         if stats.inbox_open is None or stats.failed_components is None:
             return text
-        text.append("  nothing is waiting on you", style=theme.MUTED)
+        text.append("needs you: ", style=f"bold {theme.MUTED}")
+        text.append("nothing is waiting on you", style=theme.MUTED)
         return text
-    text.append("  needs you: ", style="bold")
+    text.append("needs you: ", style="bold")
     for index, (label, style) in enumerate(parts):
         if index:
             text.append(" · ", style=theme.MUTED)
@@ -96,3 +109,101 @@ def preview_status(ref: RunRef | None, summary: RunSummary | None, state: RunSta
     if reason:
         line.append(f" · {reason}", style=theme.MUTED)
     return line
+
+
+def _fit(text: str, width: int) -> str:
+    return text if len(text) <= width else text[: max(1, width - 1)] + "…"
+
+
+def section_title(name: str, count: int, shown: int) -> Text:
+    text = Text(name, style=f"bold {theme.MUTED}")
+    if count > shown:
+        text.append(f"  {count}, {shown} shown", style=theme.MUTED)
+    return text
+
+
+def needs_cells(row: NeedsYouRow, width: int) -> tuple[Text, Text, Text]:
+    """(glyph, what, action) for one needs-you row."""
+    from kstrl.tui.operator_queue import DECISION
+
+    decision = row.kind == DECISION
+    color = theme.WARNING if decision else theme.ERROR
+    glyph = Text("◆" if decision else "✗", style=f"bold {color}")
+    action = Text(row.action, style=theme.ACCENT)
+    what = Text(_fit(row.what, max(20, width - action.cell_len - 10)))
+    return glyph, what, action
+
+
+def active_cells(row: ActiveRow, width: int) -> tuple[Text, Text, Text, Text]:
+    """(glyph, source and id, state, detail) for one active row."""
+    from kstrl.tui.serve_view import short_item_id
+
+    serve = row.source == "ks serve"
+    label = short_item_id(row.label) if serve else theme.short_run_id(row.label)
+    source = Text(f"{row.source} ", style=theme.STEEL if serve else theme.MUTED)
+    source.append(label, style="bold")
+    queued = row.state.startswith("queued")
+    glyph = Text("○" if queued else "●", style=theme.MUTED if queued else f"bold {theme.ACCENT}")
+    state = Text(row.state, style=theme.MUTED if queued else theme.ACCENT)
+    room = max(16, width - source.cell_len - state.cell_len - 10)
+    return glyph, source, state, Text(_fit(row.detail, room), style=theme.MUTED)
+
+
+def serve_phrase(serve: ServeState | None) -> Text:
+    """``ks serve running (pid 4242)``, ``not running``, or nothing."""
+    from kstrl.tui.serve_view import RUNNING
+
+    text = Text()
+    if serve is None:
+        return text
+    text.append("ks serve ", style=theme.MUTED)
+    if serve.daemon == RUNNING:
+        text.append(f"running (pid {serve.daemon_pid})", style=theme.ACCENT)
+    else:
+        text.append(serve.daemon, style=theme.MUTED if serve.daemon != "unknown" else theme.WARNING)
+    if serve.problem:
+        text.append(f" · {serve.problem}", style=theme.WARNING)
+    return text
+
+
+def active_empty(queue: OperatorQueue | None) -> Text:
+    text = Text("active", style=f"bold {theme.MUTED}")
+    if queue is None:
+        text.append("  reading...", style=theme.MUTED)
+    elif not queue.active:
+        text.append("  nothing is running", style=theme.MUTED)
+    return text
+
+
+def delivery_text(queue: OperatorQueue | None, width: int) -> Text:
+    """The newest finished factory run's integration, merges and CI (Q7, Q8)."""
+    from kstrl.tui.delivery import integration_summary, merge_summary
+
+    text = Text("delivery", style=f"bold {theme.MUTED}")
+    if queue is None:
+        text.append("  reading...", style=theme.MUTED)
+        return text
+    delivery = queue.delivery
+    if delivery is None:
+        text.append("  no finished factory run yet", style=theme.MUTED)
+        return text
+    text.append(f"  run {theme.short_run_id(delivery.run_id)}", style=theme.MUTED)
+    text.append("\n  ")
+    text.append_text(integration_summary(delivery.integration, short=width < 110))
+    text.append("\n  ")
+    text.append_text(merge_summary(delivery, short=width < 110))
+    return text
+
+
+def history_note(run_id: str, word: str, queue: OperatorQueue | None) -> str:
+    """Why a failed run is history: its successor, or that it is current."""
+    from kstrl.tui.run_status import FAILED
+
+    if word != FAILED or queue is None:
+        return ""
+    successor = queue.superseded.get(run_id)
+    if successor:
+        return f"superseded by {theme.short_run_id(successor)}"
+    if any(row.run_id == run_id for row in queue.needs_you):
+        return "current: see needs you"
+    return ""

@@ -85,6 +85,7 @@ def render_header(
     *,
     live: bool | None = None,
     compact: bool = False,
+    serve_note: str = "",
 ) -> Text:
     """Brand, project, the run's state word, elapsed, last event age.
 
@@ -109,6 +110,9 @@ def render_header(
         # Q6: a run in flight says how long ago it last wrote (#433).
         quiet = age_phrase(time.time() - state.last_event_ts)
         text.append(f"  last event {quiet} ago", style=theme.MUTED)
+    if serve_note:
+        # M1 (#433): work ks serve runs or holds that this TUI did not start.
+        text.append(f"  {serve_note}", style=f"bold {theme.STEEL}")
     return text
 
 
@@ -120,13 +124,14 @@ TOPBAR_PADDING = 6
 COMPACT_TOPBAR_BELOW = 100
 
 
-def topbar_header(state: RunState, app: object, total_width: int) -> Text:
+def topbar_header(state: RunState, app: object, total_width: int, serve_note: str = "") -> Text:
     """The header for a run screen's topbar at ``total_width`` columns."""
     return render_header(
         state,
         app_project(app),
         live=None if state.finished else app_live(app),
         compact=total_width < COMPACT_TOPBAR_BELOW,
+        serve_note=serve_note,
     )
 
 

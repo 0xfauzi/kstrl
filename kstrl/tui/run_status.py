@@ -71,6 +71,21 @@ def age_phrase(seconds: float) -> str:
     return f"{seconds // 86400}d"
 
 
+def component_took(comp: ComponentState) -> float:
+    """How long a component took in this run, in seconds.
+
+    The span between its first and last event, or the sum of the phase
+    durations it recorded when that is larger. The phase durations are
+    measured by the phase itself; the span is only as good as the event
+    timestamps, and a stream written after the fact (or in one burst)
+    makes it 0 while the engineer phase alone says 312 s (#433: the
+    detail header read "took 0s" over a strip reading "engineer 312s").
+    """
+    span = comp.last_event_ts - comp.started_ts if comp.started_ts else 0.0
+    phases = sum(float(entry.get("duration_seconds") or 0.0) for entry in comp.phase_history)
+    return max(span, phases, 0.0)
+
+
 def _running_detail(comp: ComponentState) -> str:
     parts = [comp.component_id]
     if comp.phase:
