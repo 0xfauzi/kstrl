@@ -27,10 +27,12 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from kstrl import events as ev
 from kstrl.cli import cli
 from kstrl.reducer import load_run_state
-from kstrl.runid import run_kind
+from kstrl.runid import mint_run_id, run_kind
 from kstrl.serve import (
+    SPAWNED_RUN_KIND,
     RunOutcome,
     ServeConfig,
     SpendLedger,
@@ -270,6 +272,32 @@ class TestAHaltedArchitectIsCharged:
         assert len(decompose_runs) == 2
         recorded = [load_run_state(root, rid)[0].cost_usd for rid in decompose_runs]
         assert recorded == [ARCHITECT_COST, ARCHITECT_COST]
+        assert SpendLedger(root).read().spent_usd == pytest.approx(ARCHITECT_COST)
+
+    def test_a_foreign_factory_run_in_the_window_does_not_hide_the_architect(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A factory run from another process lands in the launch window and
+        names no architect run. The launch's own architect still halted, so
+        its decompose run is still charged: what leaves a decompose run
+        uncharged is a factory run NAMING it, not any factory run existing."""
+        _priced_claude(tmp_path, monkeypatch, BLOCKER)
+        root = _spec_project(tmp_path)
+        _queue(root, "halts")
+
+        def with_a_foreign_factory_run(**kwargs: object) -> RunOutcome:
+            run_id = mint_run_id(SPAWNED_RUN_KIND)
+            run_dir = root / ".kstrl" / "runs" / run_id
+            run_dir.mkdir(parents=True)
+            bus = ev.EventBus(ev.JsonlSink(run_dir / "events.jsonl"), run_id=run_id)
+            bus.emit(ev.RunStarted(project="other", components=1, pid=os.getpid()))
+            bus.close()
+            return subprocess_factory_runner(**kwargs, caffeinate=False)  # type: ignore[arg-type]
+
+        serve_cycle(root, config=_config(), runner=with_a_foreign_factory_run)
+
+        runs = _runs(root)
+        assert (len(runs["factory"]), len(runs["decompose"])) == (1, 1), runs
         assert SpendLedger(root).read().spent_usd == pytest.approx(ARCHITECT_COST)
 
 
