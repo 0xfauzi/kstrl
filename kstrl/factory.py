@@ -44,6 +44,8 @@ from kstrl.config import (
     component_progress_path,
     relative_to_root,
 )
+from kstrl.config_numbers import BudgetConfigError as BudgetConfigError
+from kstrl.config_numbers import check_number, check_numbers
 from kstrl.context import IterationContext
 from kstrl.contract import (
     ContractCleanupError,
@@ -177,62 +179,6 @@ IN_LOOP_SCOPE_VIOLATION_PROMPT = (
     "{harness_paths}. "
     "Do not widen allowedPaths."
 )
-
-
-class BudgetConfigError(ValueError):
-    """A budget ceiling was configured with a value that cannot bound
-    anything.
-
-    Raised rather than coerced because these are SAFETY limits and every
-    bad value fails in a different silent direction: ``nan`` makes
-    ``max_cost_usd > 0`` false, so the ceiling disables itself while
-    reading as configured; a negative value disables it the same way;
-    ``inf`` produces a ceiling that is enabled and can never be reached.
-    All three are indistinguishable from "off" at the moment they
-    matter, which is the failure mode a budget cap must never have.
-    """
-
-
-def validate_cost_ceiling(value: float, source: str) -> float:
-    """A cost ceiling must be finite and non-negative. 0 means unbounded.
-
-    Public because the CLI has to reject a bad ``--max-cost-usd`` in
-    preflight, before the architect spends a call - the flag reaches
-    ``run_factory`` without passing any config loader.
-    """
-    import math
-
-    if not math.isfinite(value):
-        raise BudgetConfigError(
-            f"{source} must be a finite number, got {value!r}; use 0 to "
-            "disable the ceiling. A non-finite ceiling silently stops "
-            "bounding anything."
-        )
-    if value < 0:
-        raise BudgetConfigError(
-            f"{source} must be >= 0, got {value!r}; use 0 to disable the "
-            "ceiling rather than a negative value, which disables it "
-            "without saying so."
-        )
-    return value
-
-
-def validate_token_ceiling(value: int, source: str) -> int:
-    """A token ceiling must be non-negative. 0 means unbounded.
-
-    The same defect as :func:`validate_cost_ceiling`, in the knob that
-    predates it: ``max_total_tokens = -5`` made ``max_total_tokens > 0``
-    false, so the ceiling disabled itself while still reading as
-    configured - measured, not assumed. Only the finiteness check is
-    absent, because this one is an int.
-    """
-    if value < 0:
-        raise BudgetConfigError(
-            f"{source} must be >= 0, got {value!r}; use 0 to disable the "
-            "ceiling rather than a negative value, which disables it "
-            "without saying so."
-        )
-    return value
 
 
 #: R10.3: the two settings [factory] claim_agreement accepts.
@@ -491,11 +437,11 @@ class FactoryConfig:
             retry_delay=float(os.environ.get("FACTORY_RETRY_DELAY", "5.0")),
             merge_timeout=float(os.environ.get("FACTORY_MERGE_TIMEOUT", "300.0")),
             max_adversarial_calls=int(os.environ.get("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS", "0")),
-            max_total_tokens=validate_token_ceiling(
+            max_total_tokens=check_number(
                 int(os.environ.get("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "0")),
                 "KSTRL_FACTORY_MAX_TOTAL_TOKENS",
             ),
-            max_cost_usd=validate_cost_ceiling(
+            max_cost_usd=check_number(
                 float(os.environ.get("KSTRL_FACTORY_MAX_COST_USD", "0")),
                 "KSTRL_FACTORY_MAX_COST_USD",
             ),
@@ -581,12 +527,12 @@ class FactoryConfig:
         if "max_adversarial_calls" in section:
             config.max_adversarial_calls = int(section["max_adversarial_calls"])
         if "max_total_tokens" in section:
-            config.max_total_tokens = validate_token_ceiling(
+            config.max_total_tokens = check_number(
                 int(section["max_total_tokens"]),
                 "[factory] max_total_tokens",
             )
         if "max_cost_usd" in section:
-            config.max_cost_usd = validate_cost_ceiling(
+            config.max_cost_usd = check_number(
                 float(section["max_cost_usd"]),
                 "[factory] max_cost_usd",
             )
@@ -631,11 +577,11 @@ class FactoryConfig:
         if "KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS" in os.environ:
             config.max_adversarial_calls = int(os.environ["KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS"])
         if "KSTRL_FACTORY_MAX_TOTAL_TOKENS" in os.environ:
-            config.max_total_tokens = validate_token_ceiling(
+            config.max_total_tokens = check_number(
                 int(os.environ["KSTRL_FACTORY_MAX_TOTAL_TOKENS"]), "KSTRL_FACTORY_MAX_TOTAL_TOKENS"
             )
         if "KSTRL_FACTORY_MAX_COST_USD" in os.environ:
-            config.max_cost_usd = validate_cost_ceiling(
+            config.max_cost_usd = check_number(
                 float(os.environ["KSTRL_FACTORY_MAX_COST_USD"]), "KSTRL_FACTORY_MAX_COST_USD"
             )
         if "KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE" in os.environ:
@@ -679,7 +625,7 @@ class FactoryConfig:
                 "KSTRL_FACTORY_CLAIM_AGREEMENT",
                 VALID_CLAIM_AGREEMENT,
             )
-        return config
+        return check_numbers(config)
 
 
 def _validate_max_rounds(value: object, source: str) -> int:
@@ -3835,8 +3781,8 @@ def run_factory(
     # path), which bypasses those. Re-check at the boundary: a safety
     # limit that only holds when you came in through the front door is
     # not a safety limit.
-    validate_cost_ceiling(factory_config.max_cost_usd, "max_cost_usd")
-    validate_token_ceiling(factory_config.max_total_tokens, "max_total_tokens")
+    check_number(factory_config.max_cost_usd, "max_cost_usd")
+    check_number(factory_config.max_total_tokens, "max_total_tokens")
 
     try:
         run_lock = _acquire_run_lock(

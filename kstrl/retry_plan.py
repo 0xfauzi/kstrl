@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.factory import FactoryConfig, validate_cost_ceiling, validate_token_ceiling
+from kstrl.factory import FactoryConfig
 from kstrl.launch_record import (
     REMOVED_OPTIONS,
     FlagValue,
@@ -372,10 +372,6 @@ def plan_resume(
         name: float(flags.get(name, value))
         for name, value in run_limits(loaded, TimeoutConfig.load(root_dir)).items()
     }
-    # The two limits `ks factory` validates in its budget preflight, checked
-    # here too so a bad value is refused before prepare_retry changes anything.
-    validate_cost_ceiling(resolved["max_cost_usd"], "--max-cost-usd")
-    validate_token_ceiling(int(resolved["max_total_tokens"]), "--max-total-tokens")
     unkept = _unkept_limits(record, resolved, overrides.keys())
     if unkept:
         return None, _ceiling_problems(manifest.run_id, unkept), unkept

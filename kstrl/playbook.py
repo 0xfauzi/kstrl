@@ -77,6 +77,7 @@ from typing import Any
 
 from kstrl.appendio import append_terminated, appending
 from kstrl.config import ConfigError, _parse_bool, load_toml_section, resolve_config_file
+from kstrl.config_numbers import check_numbers
 from kstrl.decisions import enum_field_error, required_field_error
 from kstrl.jsonread import read_json
 from kstrl.statedir import CONTROL_APP_NAME, xdg_state_home
@@ -649,8 +650,12 @@ class LearningConfig:
         try:
             section = load_toml_section(resolve_config_file(root_dir), "learning")
         except (OSError, ConfigError):
-            return cls(contribute=False, consume=_env_bool(_CONSUME_ENV, cls().consume))
-        return cls(
-            contribute=_env_bool(_CONTRIBUTE_ENV, _toml_bool(section, "contribute", True)),
-            consume=_env_bool(_CONSUME_ENV, _toml_bool(section, "consume", True)),
+            return check_numbers(
+                cls(contribute=False, consume=_env_bool(_CONSUME_ENV, cls().consume))
+            )
+        return check_numbers(
+            cls(
+                contribute=_env_bool(_CONTRIBUTE_ENV, _toml_bool(section, "contribute", True)),
+                consume=_env_bool(_CONSUME_ENV, _toml_bool(section, "consume", True)),
+            )
         )

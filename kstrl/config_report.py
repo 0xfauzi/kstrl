@@ -533,8 +533,12 @@ def build_config_report(
             for name, _, _ in phase_sections
             if phase_resolved[name] is None or phase_noenv[name] is None
         )
+        # Resolved sections only: a rejected one renders no rows, and its
+        # table can be the reason it was rejected (#571: a nan in it).
         phase_toml_keys = {
-            name: set(load_toml_section(toml_path, name).keys()) for name, _, _ in phase_sections
+            name: set(load_toml_section(toml_path, name).keys())
+            for name, _, _ in phase_sections
+            if name not in unresolved
         }
 
     defaults_base = kstrl_config_defaults(root_dir)

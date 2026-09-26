@@ -61,6 +61,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl.atomicio import atomic_write_json
+from kstrl.config_numbers import check_numbers
 from kstrl.jsonread import read_json
 from kstrl.statedir import (
     CONTROL_AUTONOMY,
@@ -808,11 +809,13 @@ class AutonomyConfig:
             demote_calibration = os.environ["KSTRL_AUTONOMY_DEMOTE_ON_CALIBRATION"] == "1"
         if "KSTRL_AUTONOMY_DEMOTE_ON_HEALTH" in os.environ:
             demote_health = os.environ["KSTRL_AUTONOMY_DEMOTE_ON_HEALTH"] == "1"
-        return cls(
-            enabled=enabled,
-            max_level=max_level,
-            demote_on_calibration_regression=demote_calibration,
-            demote_on_health_breach=demote_health,
+        return check_numbers(
+            cls(
+                enabled=enabled,
+                max_level=max_level,
+                demote_on_calibration_regression=demote_calibration,
+                demote_on_health_breach=demote_health,
+            )
         )
 
     def __post_init__(self) -> None:
