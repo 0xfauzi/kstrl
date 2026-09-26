@@ -30,6 +30,7 @@ from kstrl.decompose import (
     route_spec_issues,
 )
 from kstrl.knowledge import _read_prd_text
+from kstrl.manifest import Manifest
 from kstrl.prd import _OPTIONAL_KEYS, PRD, PROMPT_EXCLUDED_KEYS, prd_text_for_prompt
 from kstrl.security import SecurityConfig, SecurityMode, run_security_review
 from kstrl.statedir import plan_prd_path
@@ -186,7 +187,10 @@ def _payload(*issues: dict[str, str], components: list[dict[str, Any]] | None = 
 
 
 def _prd_path(tmp_path: Path, comp_id: str) -> Path:
-    return plan_prd_path(tmp_path, comp_id)
+    """The planned copy, under the plan id the manifest records (#568)."""
+    comp = Manifest.load(tmp_path / "scripts" / "kstrl" / "manifest.json").get_component(comp_id)
+    assert comp is not None, comp_id
+    return plan_prd_path(tmp_path, comp_id, plan_id=comp.plan_id)
 
 
 def _summaries(tmp_path: Path, comp_id: str) -> list[tuple[str, str]]:

@@ -13,6 +13,7 @@ from typing import Any
 from kstrl.atomicio import atomic_write_json
 from kstrl.findings import Finding
 from kstrl.jsonread import read_json_file
+from kstrl.manifest_keys import COMPONENT_OPTIONAL_KEYS, COMPONENT_REQUIRED_KEYS, plan_id_errors
 from kstrl.names import validate_branch_name, validate_component_id
 
 #: ``Component.failed_check`` for a component a hard-mode adversarial
@@ -119,6 +120,8 @@ def _validate_component_fields(comp: dict[str, Any], prefix: str) -> list[str]:
                 f"must be one of: {', '.join(COMPONENT_STATUS_VALUES)}"
             )
 
+    errors.extend(plan_id_errors(comp, prefix))
+
     first = comp.get("firstAttempt", 1)
     if isinstance(first, bool) or not isinstance(first, int) or first < 1:
         errors.append(f"{prefix}.firstAttempt: must be an integer of at least 1")
@@ -138,6 +141,12 @@ class Component:
     branch_name: str
     status: str = ComponentStatus.PENDING.value
     error: str = ""
+    # #568: the plan whose copy of this component's PRD the run starts
+    # from, ``.kstrl/plan/<plan_id>/<id>/prd.json``. Set by ``decompose``
+    # and by the integration loop for a fix. "" means the operator wrote
+    # the PRD, which is ``ks run`` and a hand-built manifest, and the run
+    # starts from the file at ``prd_path``. See ``statedir.pre_run_prd_path``.
+    plan_id: str = ""
     retries: int = 0
     # #463: the first attempt the run in flight answers for. Every run sets
     # it to retries + 1 at its start, except one resuming a run that never
@@ -306,6 +315,7 @@ class Manifest:
                 branch_name=c["branchName"],
                 status=c.get("status", ComponentStatus.PENDING.value),
                 error=c.get("error", ""),
+                plan_id=c.get("planId", ""),
                 retries=c.get("retries", 0),
                 first_attempt=c.get("firstAttempt", 1),
                 pr_number=c.get("prNumber"),
@@ -375,6 +385,7 @@ class Manifest:
                     "branchName": c.branch_name,
                     "status": c.status,
                     "error": c.error,
+                    "planId": c.plan_id,
                     "retries": c.retries,
                     "firstAttempt": c.first_attempt,
                     "prNumber": c.pr_number,
@@ -456,34 +467,7 @@ class Manifest:
             errors.append("components must be an array")
             return errors
 
-        component_required = {"id", "title", "description", "dependencies", "prdPath", "branchName"}
-        component_optional = {
-            "status",
-            "error",
-            "retries",
-            "firstAttempt",
-            "prNumber",
-            "prUrl",
-            "mergeSha",
-            "linearIssueId",
-            "linearIssueIdentifier",
-            "startedAt",
-            "completedAt",
-            "durationSeconds",
-            "iterationCount",
-            "verificationPassed",
-            "reviewPassed",
-            "reviewFindings",
-            "findings",
-            "scaffold",
-            "failedPhase",
-            "failedCheck",
-            "evidenceWorktree",
-            "evidenceDebugDir",
-            "journalOffsetStart",
-            "journalOffsetEnd",
-        }
-        component_all = component_required | component_optional
+        component_all = COMPONENT_REQUIRED_KEYS | COMPONENT_OPTIONAL_KEYS
 
         for i, comp in enumerate(components):
             prefix = f"components[{i}]"
@@ -493,7 +477,7 @@ class Manifest:
                 continue
 
             comp_keys = set(comp.keys())
-            comp_missing = component_required - comp_keys
+            comp_missing = COMPONENT_REQUIRED_KEYS - comp_keys
             comp_extra = comp_keys - component_all
             if comp_missing:
                 errors.append(f"{prefix}: missing keys: {', '.join(sorted(comp_missing))}")

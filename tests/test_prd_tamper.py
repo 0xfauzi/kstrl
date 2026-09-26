@@ -196,13 +196,24 @@ class TestPrdTamper:
 
     # -- the uncovered cases, stated rather than implied ---------------------
 
-    def test_no_pre_run_copy_skips_the_comparison(self, tmp_path: Path) -> None:
-        """Nothing to compare against. A missing root copy is a harness
-        or operator condition - the root tree is outside every worktree,
-        so an agent cannot arrange it."""
+    @pytest.mark.parametrize("state", ["missing", "unparseable"])
+    def test_a_pre_run_copy_that_will_not_load_fails_closed(
+        self, tmp_path: Path, state: str
+    ) -> None:
+        """#568: the run read the pre-run copy at plan time, so one that
+        will not load here went missing or changed during the run. An
+        empty comparison would pass a PRD nobody compared; the check
+        refuses instead, naming the copy."""
         wt = tmp_path / "wt"
         _write_prd(wt / PRD_REL, AUTHORED)
-        assert self._error(tmp_path, wt) is None
+        if state == "unparseable":
+            (tmp_path / PRD_REL).parent.mkdir(parents=True)
+            (tmp_path / PRD_REL).write_text("{not json", encoding="utf-8")
+        result = check_prd_stories(wt / PRD_REL, tmp_path / PRD_REL)
+        assert result.passed is False
+        assert result.message.startswith(
+            f"The PRD this run started from, {tmp_path / PRD_REL}, could not be read"
+        )
 
     def test_an_unreadable_worktree_copy_fails_on_the_load(
         self,
