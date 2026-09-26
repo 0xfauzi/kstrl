@@ -662,16 +662,10 @@ DEFAULT_KSTRL_TOML = """\
 # lookback_runs = 10
 
 # Timeouts in seconds. Unset or 0 means no limit, which is the default for
-# every work limit. git_operation and subprocess_default are hang guards and
-# keep their defaults.
+# every work limit.
 [timeout]
-# git_operation = 30.0             # hang guard
 # agent_iteration = 0.0            # per agent iteration; 0 = no limit
 # component_total = 0.0            # wall clock per component; 0 = no limit
-# verification_check = 0.0
-# review_agent = 0.0
-# contract_test = 0.0
-# subprocess_default = 60.0        # hang guard
 # scheduler_backstop_margin = 60.0
 
 # Work queue (R8.6): what `ks queue` manages and `ks serve` drains.

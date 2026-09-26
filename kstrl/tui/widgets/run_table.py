@@ -3,9 +3,14 @@
 One row per discovered run, newest first. Stable polls update cells in
 place; structural changes rebuild the row order while retaining the
 selected run. Ref-only columns (kind, liveness, age) render immediately;
-the folded summary columns (comps, tok, cost) render the honest dim dot
-until the D2 worker posts SummariesReady, and keep R3.1's "+" lower-bound
-marker whenever the run had unreported calls.
+the folded summary columns (state, comps, tok, cost) render the honest dim
+dot until the D2 worker posts SummariesReady, and keep R3.1's "+"
+lower-bound marker whenever the run had unreported calls.
+
+#433: the state column says a word (tui.run_status) instead of leaving a
+glyph to carry it, and every cell update widens its column. A cell that
+starts as the one-character dot and later holds ``18.51M`` kept the
+dot's width, so the table showed ``18.`` and ``$19.`` (F1).
 """
 
 from __future__ import annotations
@@ -17,13 +22,14 @@ from rich.text import Text
 from textual.widgets import DataTable
 
 from kstrl.tui import theme
+from kstrl.tui.run_status import RUN_STATE_STYLE, RUNNING
 from kstrl.tui.widgets.cost_meter import format_tokens
 
 if TYPE_CHECKING:
     from kstrl.tui.home_data import RunSummary
     from kstrl.tui.runs import RunRef
 
-COLUMNS = ("", "run", "kind", "age", "comps", "tok", "cost")
+COLUMNS = ("", "run", "kind", "state", "age", "comps", "tok", "cost")
 
 
 def _age(mtime: float, now: float) -> str:
@@ -41,14 +47,19 @@ def _dot() -> Text:
     return Text(theme.EMPTY_CELL, style=theme.MUTED, justify="right")
 
 
-def _status_cell(ref: RunRef, summary: RunSummary | None) -> Text:
+def _state_of(ref: RunRef, summary: RunSummary | None) -> str:
+    """The run's state word, or "" while its summary is still folding."""
     if ref.live:
-        return Text("●", style=f"bold {theme.ACCENT}")
-    if summary is not None and summary.outcome == "failed":
-        return Text("✗", style=f"bold {theme.ERROR}")
-    if ref.completed:
-        return Text("✓", style=f"bold {theme.SUCCESS}")
-    return Text(theme.EMPTY_CELL, style=theme.MUTED)
+        return RUNNING
+    return summary.state if summary is not None else ""
+
+
+def _state_cells(ref: RunRef, summary: RunSummary | None) -> tuple[Text, Text]:
+    word = _state_of(ref, summary)
+    if not word:
+        return Text(theme.EMPTY_CELL, style=theme.MUTED), Text(theme.EMPTY_CELL, style=theme.MUTED)
+    glyph, color = RUN_STATE_STYLE[word]
+    return Text(glyph, style=f"bold {color}"), Text(word, style=color)
 
 
 def _summary_cells(summary: RunSummary | None) -> tuple[Text, Text, Text]:
@@ -76,10 +87,12 @@ def _row_values(
     summary: RunSummary | None,
     now: float,
 ) -> tuple[Text | str, ...]:
+    glyph, word = _state_cells(ref, summary)
     return (
-        _status_cell(ref, summary),
+        glyph,
         Text(theme.short_run_id(ref.run_id), style="bold"),
         Text(ref.kind or "run", style=theme.MUTED),
+        word,
         Text(_age(ref.mtime, now), style=theme.MUTED, justify="right"),
         *_summary_cells(summary),
     )
@@ -113,7 +126,7 @@ class RunTable(DataTable[Text | str]):
                     values,
                     strict=True,
                 ):
-                    self.update_cell(ref.run_id, key, value)
+                    self.update_cell(ref.run_id, key, value, update_width=True)
             else:
                 self.add_row(*values, key=ref.run_id)
         if order_changed and selected in desired:

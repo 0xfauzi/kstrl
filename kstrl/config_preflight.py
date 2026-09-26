@@ -49,6 +49,15 @@ would have missed both of the failures measured on #272.
 
 The per-section ``from_env()`` / ``load(root_dir)`` convention is
 untouched: this module is a caller of it, not a replacement for it.
+
+NAMES NO LOADER READS
+---------------------
+The same argument decides which names are known (#525). During the
+check the document is served as a ``config_toml.RecordedTable``, which
+records every name a loader asks for; a name in the file that no loader
+asked for is refused, as is a section written as a value. So the known
+names are whatever the loaders read, and a key added to a loader is
+known without a second list to update.
 """
 
 from __future__ import annotations
@@ -62,13 +71,13 @@ from typing import Any, TypeVar
 
 from kstrl.config import (
     ConfigError,
-    load_toml_document,
     load_toml_section,
     resolve_config_file,
     toml_parse_scope,
 )
 from kstrl.config_keys import RETIRED_ENV_VARS, RETIRED_KEYS, RETIRED_SECTIONS
 from kstrl.config_report import environ_lock, scrubbed_environ
+from kstrl.config_toml import RecordedTable, record_reads
 
 #: Exceptions a loader raises for input the operator has to fix, and the
 #: complete set of them: these loaders read a file and coerce values, so
@@ -323,17 +332,21 @@ def collect_config_problems(
         # so an absent file reads as the empty document.
         if toml_path.exists():
             try:
-                document = load_toml_document(toml_path)
+                document = record_reads(toml_path)
             except OSError as exc:
                 raise ConfigError(f"{toml_path} could not be read: {exc}") from exc
         else:
-            document = {}
+            document = RecordedTable({})
         problems.extend(retired_name_problems(document, toml_path))
 
+        # Names another line already reports: a retired section, and every
+        # section of a rejected loader, which stopped asking part way.
+        reported = set(RETIRED_SECTIONS)
         for section in config_sections():
             try:
                 section.loader(root_dir)
             except REJECTIONS as exc:
+                reported.update(section.sections)
                 # Same rule as every other catcher of this tuple: a
                 # RuntimeError kstrl did not define is our defect, and
                 # listing it under "configuration problems" blames the
@@ -346,19 +359,54 @@ def collect_config_problems(
                     problems.append(detail)
                 else:
                     warn(f"{detail} - continuing without it")
+        problems.extend(unread_name_problems(document, toml_path, reported))
+    return problems
+
+
+def unread_name_problems(
+    document: RecordedTable,
+    toml_path: Path,
+    reported: set[str],
+) -> list[str]:
+    """Every kstrl.toml name no loader asked for, and every section
+    written as a value (#525).
+
+    A name in ``reported`` is skipped: another line already names it.
+    """
+    problems: list[str] = []
+    for name, value in dict.items(document):
+        if name in reported:
+            continue
+        if name not in document.asked:
+            label = f"[{name}]" if isinstance(value, dict) else name
+            problems.append(
+                f"{toml_path} names {label}, which no kstrl setting reads. "
+                "Remove it or correct the spelling; kstrl will not guess."
+            )
+        elif not isinstance(value, RecordedTable):
+            problems.append(
+                f"{toml_path} sets {name} = {value!r}, but kstrl reads [{name}] "
+                f"as a table; write it as a [{name}] section with its keys under it"
+            )
+        else:
+            problems.extend(
+                f"{toml_path} names [{name}] {key}, which no kstrl setting reads. "
+                "Remove it or correct the spelling; kstrl will not guess."
+                for key in value
+                if key not in value.asked
+            )
     return problems
 
 
 def retired_name_problems(document: Mapping[str, Any], toml_path: Path) -> list[str]:
     """Every retired kstrl.toml name and environment variable in play.
 
-    #395 renamed a set of configuration names. An unknown TOML name is
-    silently ignored by design, so a straight rename would leave an
-    operator's existing file parsing, doing nothing, and a blocking gate
-    reverting to advisory with no message. That is a silent semantic
-    substitution, so a retired name is REFUSED by name instead, and the
-    message says what to rename it to. No alias layer: two spellings
-    live forever and the old one never dies.
+    #395 renamed a set of configuration names. A straight rename would
+    leave an operator's existing file parsing, doing nothing, and a
+    blocking gate reverting to advisory. So a retired name is REFUSED by
+    name, and the message says what to rename it to, which the generic
+    refusal of :func:`unread_name_problems` cannot. No alias layer: two
+    spellings live forever and the old one never dies.
     """
     problems: list[str] = []
     for old, new in RETIRED_SECTIONS.items():

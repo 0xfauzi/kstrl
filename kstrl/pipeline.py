@@ -3244,7 +3244,8 @@ class ComponentPipeline:
     ) -> tuple[str, ...]:
         """Write each failed gate's output to disk; return the paths (#462).
 
-        One file per failed test / typecheck / lint gate, at
+        One file per failed test / typecheck / lint gate, including one
+        that timed out or printed bytes that are not utf-8 (#527), at
         ``.kstrl/debug/<run>/<component>/attempt-<n>/<check>.log``: the
         directory the failure summary, ``ks status`` and the TUI retry
         screen already name as the component's raw outputs, split by

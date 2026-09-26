@@ -727,7 +727,8 @@ def run_loop(
         if branch:
             if not git.checkout_branch(branch, ui, cwd, source):
                 ui.err(f"Failed to checkout branch: {branch}")
-                return LoopResult(completed=False, iterations=0, exit_code=1)
+                # A refusal before iteration 1 exits 2 (#452, #531).
+                return LoopResult(completed=False, iterations=0, exit_code=2)
         elif branch == "":
             ui.info("Branch: KSTRL_BRANCH is set but empty; skipping branch checkout")
         else:
@@ -763,7 +764,8 @@ def run_loop(
         # attributable to the agent.
         guard_baseline = _guard_baseline(cwd, guard_base_ref, ui)
         if guard_baseline is None:
-            return LoopResult(completed=False, iterations=0, exit_code=1)
+            # A refusal before iteration 1 exits 2 (#452, #531).
+            return LoopResult(completed=False, iterations=0, exit_code=2)
     else:
         ui.info("ALLOWED_PATHS is empty; enforcement disabled")
 

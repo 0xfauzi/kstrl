@@ -42,7 +42,7 @@ BAD_DOCUMENT = "[evolution\nlookback_runs = 5\n"
 #: TypeError for it, not ValueError, which is why the entry check's
 #: REJECTIONS names TypeError and why a hand-written
 #: ``(OSError, ValueError)`` guard is not equivalent to it.
-ARRAY_FOR_A_NUMBER = '[timeout]\ngit_operation = ["30"]\n'
+ARRAY_FOR_A_NUMBER = '[timeout]\nagent_iteration = ["30"]\n'
 ARRAY_FOR_A_RUN_NUMBER = '[run]\nmax_iterations = ["3"]\n'
 
 

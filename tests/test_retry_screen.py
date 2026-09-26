@@ -130,7 +130,7 @@ class TestRetryScreen:
                 what="the retry screen's on_mount to run",
             )
             detail = str(detail_widget.content)
-            assert "nothing to retry" in detail
+            assert "Nothing to retry" in detail
 
     async def test_confirmation_does_not_overwrite_changed_manifest(
         self,

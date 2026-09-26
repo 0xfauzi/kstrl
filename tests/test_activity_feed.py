@@ -34,10 +34,13 @@ class TestSpecIssueLines:
         assert theme.WARNING in styles
         assert theme.ERROR not in styles
 
-    def test_long_summary_truncated(self) -> None:
+    def test_long_summary_printed_whole(self) -> None:
+        """#433 F11: a spec issue is the operator's to read. It was cut at
+        90 characters and the feed does not scroll sideways, so the rest
+        of the sentence was unreachable; the feed now wraps instead."""
         line = humanize(ev.SpecIssueRecorded(severity="major", summary="x" * 200))
         assert line is not None
-        assert "x" * 200 not in line.plain
+        assert "x" * 200 in line.plain
 
     def test_unknown_severity_is_named(self) -> None:
         line = humanize(ev.SpecIssueRecorded(severity="future", summary="s"))

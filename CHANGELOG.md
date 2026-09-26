@@ -166,6 +166,14 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Changed
 
+- A kstrl.toml name that no setting reads is refused before anything
+  starts (#525). A misspelled key or section, and a section written as a
+  value (`learning = false` for `[learning]`), used to load in silence and
+  leave the defaults in force. Every command's entry check, `ks config
+  show` and `ks doctor` now name it. The known names are the ones the
+  loaders ask for, recorded while the check runs, so there is no second
+  list of keys.
+
 - Build output git does not ignore is named before anything spends
   (#459). On a greenfield repository `ks init` runs before the build
   manifest exists, so it wrote no language ignores, and the bytecode
@@ -282,6 +290,14 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Removed
 
+- `[timeout] git_operation`, `verification_check`, `review_agent`,
+  `contract_test` and `subprocess_default`, and `KSTRL_TIMEOUT_GIT`,
+  `KSTRL_TIMEOUT_REVIEW` and `KSTRL_TIMEOUT_DEFAULT` (#525). No code read
+  them: `ks init` scaffolded them and `ks config show` printed them as
+  limits that nothing enforced. A kstrl.toml that still sets one is
+  refused by name. `KSTRL_TIMEOUT_VERIFY` and `KSTRL_TIMEOUT_CONTRACT`
+  remain, read by `[verify]` and `[contract]`.
+
 - The `sense dampener` pull-request workflow, which ran this repository's own
   test suite a second time to compare a branch against
   `scripts/kstrl/sense-baseline.json`. That baseline records no signatures, so
@@ -300,6 +316,17 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   workflow only (#394).
 
 ### Fixed
+
+- The global playbook ledger no longer accepts an append its own fold
+  refuses (#529). `append_ops` folds the ledger and checks the new ops
+  with the fold's own rules while it holds the append lock, so a second
+  ADD of one id, an op on an unknown id, and two writers racing on one id
+  are refused before anything is written. A line is committed by its
+  newline: the tail a writer killed mid-write leaves is not folded, and
+  the next append voids it. `ks learn repair` voids every line the fold
+  refuses in a ledger that is already refused, appending one VOID line
+  per voided line that names it by number and SHA-256 and carries the
+  fold's reason; the voided bytes stay in the file.
 
 - `ks factory` and `ks decompose` read `[agent]` in kstrl.toml at
   startup. They read the engineer command, model, reasoning effort and

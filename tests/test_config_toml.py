@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import re
 from pathlib import Path
 
@@ -397,7 +398,16 @@ prompt = "{abs_prompt}"
     assert config.prompt_file == abs_prompt
 
 
-def test_from_toml_ignores_unknown_keys(tmp_path: Path) -> None:
+def test_from_toml_leaves_unknown_names_to_the_entry_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The loader reads the names it knows and passes over the rest;
+    the entry check is what names the rest (#525). Before #525 this test
+    pinned the silence itself."""
+    from kstrl.config_preflight import collect_config_problems
+
+    for name in [k for k in os.environ if k.startswith("KSTRL_")]:
+        monkeypatch.delenv(name)
     toml_path = tmp_path / "kstrl.toml"
     _write_toml(
         toml_path,
@@ -412,6 +422,10 @@ foo = "bar"
     )
     config = KstrlConfig.from_toml(toml_path, tmp_path)
     assert config.agent_type == "claude"
+    problems = collect_config_problems(tmp_path, lambda _message: None)
+    assert len(problems) == 2, problems
+    assert "names [agent] unknown_field, which no kstrl setting reads" in problems[0]
+    assert "names [unknown_section], which no kstrl setting reads" in problems[1]
 
 
 # ---------------------------------------------------------------------------
