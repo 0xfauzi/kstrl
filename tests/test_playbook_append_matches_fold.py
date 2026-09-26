@@ -425,3 +425,24 @@ def test_learn_repair_voids_every_refused_line_and_the_playbook_reads_again(
 def test_repair_leaves_a_missing_ledger_missing(xdg: Path) -> None:
     assert repair_ledger() == ()
     assert not playbook_dir().exists()
+
+
+def test_learn_repair_refuses_a_ledger_it_cannot_repair_and_writes_nothing(
+    xdg: Path, tmp_path: Path
+) -> None:
+    """#529: a VOID that names its line by the wrong digest is refused
+    even by the collecting fold, so ``ks learn repair`` cannot void it.
+    It must say so and exit 2, not crash, and it must write nothing."""
+    add = _line(Op(OpKind.ADD, "L1", AT, lesson=_lesson("L1")))
+    wrong = _void(line=1, sha256=hashlib.sha256(b"other").hexdigest())
+    playbook_dir().mkdir(parents=True)
+    ledger_path().write_bytes(_ledger_lines(add, json.dumps(wrong)))
+    before = ledger_path().read_bytes()
+
+    proc = _ks(tmp_path, xdg, "learn", "repair", "--ui", "plain")
+
+    output = proc.stdout + proc.stderr
+    assert proc.returncode == 2, output
+    assert "could not be repaired" in output, output
+    assert "digest" in output, output
+    assert ledger_path().read_bytes() == before
