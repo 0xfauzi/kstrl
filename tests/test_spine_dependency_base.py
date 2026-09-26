@@ -439,3 +439,28 @@ def test_reviewers_are_told_the_commit_the_dependent_started_at(
     for text in b_prompts:
         assert a_tip in text
         assert main_tip not in text
+
+
+# Saves every prompt this component's agent is handed (stdin) outside the
+# worktree. The distiller runs the same agent command as the engineer.
+_SAVE_PROMPT = 'cat > "$ENGINEER_LOG.prompt.$comp.$$"'
+
+
+def test_the_distiller_is_handed_the_dependents_own_diff_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The diff phase builds the one diff the knowledge distiller reads
+    (and the HITL excerpt and the PR body). For b it must hold b's change
+    only: judged from the base branch it would hand the distiller a's
+    change as b's, and the distiller would write facts for b about a's code."""
+    root, manifest, _ = _project(tmp_path, {"a": [], "b": ["a"]})
+
+    _run(tmp_path, root, manifest, monkeypatch, extra=_SAVE_PROMPT, create_prs=False)
+
+    assert _statuses(tmp_path) == {"a": "completed", "b": "completed"}
+    b_prompts = [p.read_text() for p in tmp_path.glob("engineer.log.prompt.b.*")]
+    assert any("diff --git a/b.txt b/b.txt" in text for text in b_prompts), (
+        "no prompt handed to b's agent held b's diff, so the distiller never ran"
+    )
+    assert not [text for text in b_prompts if "diff --git a/a.txt b/a.txt" in text]
