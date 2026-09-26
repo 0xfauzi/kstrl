@@ -105,7 +105,7 @@ class LimitNumber(click.ParamType[Any, Any]):
         try:
             return check_number(number, source)
         except BudgetConfigError as exc:
-            self.fail(str(exc), param, ctx)
+            raise click.BadParameter(str(exc), ctx=ctx, param=param) from exc
 
 
 #: The click types of every numeric option of `ks factory` and `ks retry`.

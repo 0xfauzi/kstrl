@@ -384,3 +384,42 @@ class TestTheConfigReportSurvivesARefusedSection:
         report = build_config_report(root)
 
         assert report.unresolved == unresolved
+
+
+class TestTheTomlDoorLooksInsideTablesAndArrays:
+    """``section_table`` refuses a nan or inf nested in a table or an array.
+
+    No loader reads a nested number today, so Layer 1 cannot see this door
+    reaching inside a value; it is pinned here so a nested numeric setting
+    added later is refused before any loader coerces it (#571).
+    """
+
+    @pytest.mark.parametrize(
+        ("value", "source"),
+        [
+            ({"inner": [1.0, float("nan")]}, "probe.inner"),
+            ([1.0, float("inf")], "probe"),
+            ({"inner": {"deeper": float("-inf")}}, "probe.inner.deeper"),
+        ],
+        ids=["array-in-table", "array", "table-in-table"],
+    )
+    def test_a_nested_non_finite_value_is_refused(
+        self, tmp_path: object, value: object, source: str
+    ) -> None:
+        from pathlib import Path
+
+        from kstrl.config_toml import section_table
+
+        document = {"timeout": {"probe": value}}
+        with pytest.raises(BudgetConfigError) as caught:
+            section_table(document, "timeout", Path(str(tmp_path)) / "kstrl.toml")
+        assert str(caught.value).startswith(f"{source} must be a finite number, got ")
+
+    def test_nested_finite_values_and_strings_pass(self, tmp_path: object) -> None:
+        from pathlib import Path
+
+        from kstrl.config_toml import section_table
+
+        document = {"timeout": {"probe": {"inner": [1.0, -2.0, "nan"]}}}
+        table = section_table(document, "timeout", Path(str(tmp_path)) / "kstrl.toml")
+        assert table == {"probe": {"inner": [1.0, -2.0, "nan"]}}
