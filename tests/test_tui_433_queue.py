@@ -361,7 +361,10 @@ class TestDelivery:
 
 class TestAgentHealth:
     def _comp(self, pid: int) -> ComponentState:
-        return ComponentState(component_id="api", status="running", heartbeat_pid=pid)
+        # A heartbeat 5 s old: its pid is still evidence (HEARTBEAT_FRESH_SECONDS).
+        return ComponentState(
+            component_id="api", status="running", heartbeat_pid=pid, last_heartbeat_ts=NOW - 5
+        )
 
     def test_no_heartbeat_is_process_unknown_never_alive(self, tmp_path: Path) -> None:
         health = agent_health(tmp_path, self._comp(0), NOW, probe=lambda _pid: True)

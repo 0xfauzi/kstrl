@@ -18,6 +18,14 @@ LAST fix whose ``findings`` list names that id. There is no dismissal
 record anywhere in kstrl, so "dismissed" is never shown. A finding this
 run opened that state.json no longer carries (a later feature replaced
 the binding) is shown as ``unknown`` with the reason, never as open.
+
+The id alone is not the key across features: a new feature's state
+starts empty and numbers its findings from IF-1 again
+(``integration_state.fresh_state``, ``next_finding_ids``). So state.json
+is read for this run only when its ``featureBaseSha`` is the one this
+run's rounds reviewed, and a finding this run OPENED is joined only to a
+record whose history says this run opened it. Anything else is
+``unknown``: the record belongs to another feature.
 """
 
 from __future__ import annotations
@@ -39,6 +47,9 @@ UNKNOWN = "unknown"
 
 #: state.json's status word for an open finding is the disposition word.
 _STATUS_TO_DISPOSITION = {"closed": FIXED, "handoff": HANDED_OFF, OPEN: OPEN}
+
+#: Why a finding this run opened is not joined to state.json's record.
+_REUSED_ID = "state.json's record of this id was opened by another run (a later feature reused it)"
 
 #: Largest evidence file read; a review file is a few kilobytes.
 _MAX_FILE_BYTES = 4 * 1024 * 1024
@@ -242,14 +253,20 @@ def read_integration_review(
     files = review_files(run_dir)
     if not files:
         return None
-    rounds, criteria, unreadable, seen = _read_rounds(files)
+    rounds, criteria, unreadable, seen, feature_base = _read_rounds(files)
     from kstrl.integration_state import state_path as integration_state_path
 
     state_path = integration_state_path(root_dir)
     state, state_problem = _read_object(state_path)
     if state is None and not state_path.exists():
         state_problem = "no .kstrl/integration/state.json"
+    other = _other_feature(state, feature_base)
+    if other:
+        state, state_problem = None, other
     recorded = _state_findings(state)
+    elsewhere = _opened_elsewhere(recorded, seen, run_dir.name)
+    for finding_id in elsewhere:
+        del recorded[finding_id]
     for finding_id, entry in recorded.items():
         if finding_id not in seen and _history_names_run(entry, run_dir.name):
             seen[finding_id] = entry
@@ -258,7 +275,11 @@ def read_integration_review(
             finding_id,
             recorded.get(finding_id) or seen[finding_id],
             _disposition(
-                finding_id, recorded.get(finding_id), state, state_problem, fix_status or {}
+                finding_id,
+                recorded.get(finding_id),
+                state,
+                _REUSED_ID if finding_id in elsewhere else state_problem,
+                fix_status or {},
             ),
         )
         for finding_id in sorted(seen, key=_finding_order)
@@ -272,6 +293,38 @@ def read_integration_review(
     )
 
 
+def _other_feature(state: Mapping[str, Any] | None, feature_base: str) -> str:
+    """Why state.json is another feature's, or "" when it may be this run's."""
+    state_base = _text(state.get("featureBaseSha")) if state is not None else ""
+    if not state_base or not feature_base or state_base == feature_base:
+        return ""
+    return (
+        f"state.json now records another feature (base {state_base[:7]}; "
+        f"this run reviewed base {feature_base[:7]})"
+    )
+
+
+def _opened_elsewhere(
+    recorded: Mapping[str, Mapping[str, Any]],
+    seen: Mapping[str, Mapping[str, Any]],
+    run_id: str,
+) -> list[str]:
+    """Ids this run opened whose state record another run opened."""
+    found = []
+    for finding_id, entry in seen.items():
+        record = recorded.get(finding_id)
+        if not entry or record is None:
+            continue
+        opened_by = [
+            item.get("runId")
+            for item in record.get("history") or []
+            if isinstance(item, Mapping) and item.get("event") == "opened"
+        ]
+        if opened_by and run_id not in opened_by:
+            found.append(finding_id)
+    return found
+
+
 def _read_rounds(
     files: list[Path],
 ) -> tuple[
@@ -279,12 +332,15 @@ def _read_rounds(
     tuple[CriterionVerdict, ...],
     list[str],
     dict[str, Mapping[str, Any]],
+    str,
 ]:
-    """Each round's outcome, the newest verdicts, and every IF id named."""
+    """Each round's outcome, the newest verdicts, every IF id named, and
+    the newest feature base a round recorded."""
     rounds: list[ReviewRound] = []
     criteria: tuple[CriterionVerdict, ...] = ()
     unreadable: list[str] = []
     seen: dict[str, Mapping[str, Any]] = {}
+    feature_base = ""
     for path in files:
         payload, problem = _read_object(path)
         if payload is None:
@@ -293,11 +349,12 @@ def _read_rounds(
             continue
         outcome = _text(payload.get("outcome")) or UNKNOWN
         rounds.append(ReviewRound(_review_number(path), outcome, _text(payload.get("reason"))))
+        feature_base = _text(payload.get("featureBaseSha")) or feature_base
         criteria = _criteria(payload) or criteria
         for finding_id, entry in _opened_ids(payload):
             # A bare id (closed, stillOpen) never replaces a full entry.
             seen[finding_id] = entry or seen.get(finding_id, {})
-    return rounds, criteria, unreadable, seen
+    return rounds, criteria, unreadable, seen, feature_base
 
 
 def _finding(

@@ -22,6 +22,12 @@ the factory writes its own pid into ``.kstrl/factory.lock``. When the two
 agree and the lock is held, the item's run is the newest factory run,
 which is the run the lock belongs to (``runs.discover_runs`` attributes
 it the same way). Otherwise the run is shown as not recorded.
+
+An item stays under ``running/`` (or ``leased/``) when the daemon dies
+with it: only the next daemon's reaper (``serve.reap_leases``) moves it.
+So an in-flight item is shown as in flight only while the daemon holds
+its flock or the item's lease holder is still alive, the reaper's own
+test; otherwise it is ``interrupted``, never ``running``.
 """
 
 from __future__ import annotations
@@ -32,6 +38,8 @@ from pathlib import Path
 RUNNING = "running"
 NOT_RUNNING = "not running"
 UNKNOWN = "unknown"
+#: An in-flight item whose daemon and lease holder are both gone.
+INTERRUPTED = "interrupted"
 
 _IN_FLIGHT = ("leased", "running")
 _SHOWN = ("running", "leased", "queued")
@@ -41,7 +49,7 @@ _SHOWN = ("running", "leased", "queued")
 class ServeItem:
     item_id: str
     title: str
-    #: queued | leased | running.
+    #: queued | leased | running | interrupted.
     state: str
     #: 1-based place in the run order for a queued item, else 0.
     position: int = 0
@@ -75,6 +83,18 @@ def _read_pid(path: Path) -> int:
     except OSError:
         return 0
     return int(text) if text.isdigit() else 0
+
+
+def _lease_holder_alive(lease_pid: int, lease_host: str) -> bool:
+    """``serve._pid_alive``'s rule: a lease from another host counts as
+    alive, because its pid cannot be probed from here."""
+    import socket
+
+    from kstrl.procgroup import pid_is_alive
+
+    if lease_host and lease_host != socket.gethostname():
+        return True
+    return pid_is_alive(lease_pid)
 
 
 def _daemon(queue_dir: Path) -> tuple[str, int]:
@@ -111,6 +131,12 @@ def read_serve_state(
     position = 0
     for item in found:
         state = str(item.state)
+        if (
+            state in _IN_FLIGHT
+            and daemon != RUNNING
+            and not _lease_holder_alive(item.lease_pid, item.lease_host)
+        ):
+            state = INTERRUPTED
         run_id = ""
         if state in _IN_FLIGHT and lock_pid and item.lease_pid == lock_pid:
             run_id = newest_factory_run_id

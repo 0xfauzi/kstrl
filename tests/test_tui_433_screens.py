@@ -591,6 +591,34 @@ class TestOperatorQueue:
             cell = str(table.get_cell("comp-b", "agent"))
             assert cell.startswith("output ") and cell.endswith(" · alive"), cell
 
+    async def test_a_poll_does_not_move_the_needs_you_cursor(self, tmp_path: Path) -> None:
+        """PR #552 verifier: every home poll (2 s) rebuilt the needs-you
+        table with ``clear(columns=True)``, which puts the cursor back on
+        row 0, so enter after a poll opened the first row, not the
+        operator's."""
+        box = Inbox(tmp_path, InboxConfig())
+        box.add(ItemKind.HALTED_RUN, "first", dedupe_key="one")
+        box.add(ItemKind.HALTED_RUN, "second", dedupe_key="two")
+        app = _home(tmp_path)
+        async with app.run_test(size=(120, 36)) as pilot:
+            needs = cast(DataTable[Any], await mounted(pilot, lambda: app.screen, "#home-needs"))
+            await settled(pilot, lambda: needs.row_count == 2, what="the needs-you rows")
+            screen = cast(HomeScreen, app.screen)
+            await settled(pilot, lambda: screen.focused is needs, what="focus on needs you")
+            await pilot.press("down")
+            await settled(pilot, lambda: needs.cursor_row == 1, what="the cursor on row 2")
+            wanted = str(list(needs.rows)[1].value).partition(":")[2]
+            screen._stats = None
+            screen.refresh_runs()
+            await settled(pilot, lambda: screen._stats is not None, what="one more poll")
+            assert needs.cursor_row == 1
+            await pilot.press("enter")
+            await settled(pilot, lambda: isinstance(app.screen, InboxScreen), what="the inbox")
+            inbox = cast(InboxScreen, app.screen)
+            await settled(pilot, lambda: inbox._selected() is not None, what="the inbox rows")
+            selected = inbox._selected()
+            assert selected is not None and selected.id == wanted
+
 
 class TestRetryScope:
     def _failed(self, tmp_path: Path) -> Path:

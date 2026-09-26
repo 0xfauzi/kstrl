@@ -165,6 +165,9 @@ def active_cells(row: ActiveRow, *, narrow: bool = False) -> list[Text]:
     queued = row.state.startswith("queued")
     glyph = Text("○" if queued else "●", style=theme.MUTED if queued else f"bold {theme.ACCENT}")
     state = Text(row.state, style=theme.MUTED if queued else theme.ACCENT)
+    if row.state == "interrupted":
+        # Not moving: its daemon and lease holder are gone (serve_view).
+        glyph, state = Text("▲", style=theme.WARNING), Text(row.state, style=theme.WARNING)
     detail = row.short_detail if narrow and row.short_detail else row.detail
     return [glyph, source, state, Text(detail, style=theme.MUTED)]
 

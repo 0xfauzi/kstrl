@@ -37,7 +37,7 @@ from kstrl.tui.agent_health import agent_health
 from kstrl.tui.delivery import Delivery, merges_of, read_delivery
 from kstrl.tui.integration_view import review_files
 from kstrl.tui.run_status import FAILED, failed_cause, run_reason
-from kstrl.tui.serve_view import ServeState, read_serve_state
+from kstrl.tui.serve_view import INTERRUPTED, ServeState, read_serve_state
 from kstrl.tui.theme import short_run_id
 
 if TYPE_CHECKING:
@@ -365,6 +365,11 @@ def _serve_rows(serve: ServeState | None) -> list[ActiveRow]:
         if item.state == "queued":
             state = f"queued #{item.position}"
             detail = item.title
+        elif item.state == INTERRUPTED:
+            state = INTERRUPTED
+            detail = (
+                f"{item.title} · ks serve and its lease holder are gone; the next ks serve reaps it"
+            )
         else:
             state = "running" if item.state == "running" else "starting"
             run = f"run {short_run_id(item.run_id)}" if item.run_id else "run not recorded"
@@ -452,10 +457,13 @@ def _open_inbox_items(root_dir: Path) -> tuple[list[InboxItem], str]:
         config = InboxConfig.load(root_dir)
         if not config.enabled:
             return [], INBOX_DISABLED
-        box = Inbox(root_dir, config)
-        if box.scan().unreadable:
+        # One read decides both: ``open_items`` scans again and returns []
+        # when that second read fails, which would count as nothing waiting.
+        scan = Inbox(root_dir, config).scan()
+        if scan.unreadable:
             return [], INBOX_UNREADABLE
-        return box.open_items(), ""
+        items = sorted(scan.folded_items(), key=lambda item: item.sort_key())
+        return [item for item in items if item.is_open], ""
     except Exception:  # noqa: BLE001 - home must render whatever the inbox holds
         return [], INBOX_UNREADABLE
 

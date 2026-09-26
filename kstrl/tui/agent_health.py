@@ -17,6 +17,14 @@ Two signals, kept apart because they fail differently:
   reports, and the label says "worker". No heartbeat means "process
   unknown", never "alive".
 
+  The pid is evidence only while its heartbeat is fresh: within
+  ``HEARTBEAT_FRESH_SECONDS``, three heartbeat periods. The heartbeat
+  stops when the engineer worker returns, and in pool mode the review
+  and security phases then run in the parent while
+  ``ProcessPoolExecutor`` keeps that worker for another component; a
+  crashed run's pid can be reused. A stale heartbeat's pid is not
+  probed and reads "process unknown".
+
 Cost, measured on the harness laptop: four ``stat`` calls and one
 ``kill(pid, 0)`` per running component, no subprocess. It is called on
 the 1 s age tick only for components that are running in a run that has
@@ -32,6 +40,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kstrl.commandrun import HEARTBEAT_INTERVAL_SECONDS
 from kstrl.procgroup import pid_is_alive
 from kstrl.tui.run_status import age_phrase
 
@@ -41,6 +50,10 @@ if TYPE_CHECKING:
 ALIVE = "alive"
 EXITED = "exited"
 UNKNOWN = "unknown"
+
+#: How long a heartbeat's pid still says which process runs the agent:
+#: two missed beats of ``commandrun.start_heartbeat``'s period.
+HEARTBEAT_FRESH_SECONDS = 3 * HEARTBEAT_INTERVAL_SECONDS
 
 #: The transcripts an agent writes while it runs, per phase.
 OUTPUT_LOGS = ("engineer.log", "review.log", "security.log", "distill.log")
@@ -103,6 +116,6 @@ def agent_health(
     )
     age = max(0.0, clock - mtime) if mtime is not None else None
     pid = comp.heartbeat_pid
-    if pid <= 0:
+    if pid <= 0 or clock - comp.last_heartbeat_ts > HEARTBEAT_FRESH_SECONDS:
         return AgentHealth(output_age=age, process=UNKNOWN)
     return AgentHealth(output_age=age, process=ALIVE if probe(pid) else EXITED, pid=pid)

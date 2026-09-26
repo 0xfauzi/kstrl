@@ -195,6 +195,9 @@ class HomeScreen(Screen[None]):
         self._queue: OperatorQueue | None = None
         self._stats: HomeStats | None = None
         self._focus_placed = False
+        #: The identity of each active row on screen, in row order; the
+        #: row keys are positions.
+        self._active_shown: list[str] = []
 
     def compose(self) -> ComposeResult:
         with Vertical(id="home-header"):
@@ -334,7 +337,15 @@ class HomeScreen(Screen[None]):
     def _render_queue(self) -> None:
         width = self.size.width or 120
         queue = self._queue
+        self._render_needs(queue, width)
+        self._render_active(queue, width)
+        self.query_one("#home-delivery", Static).update(delivery_text(queue, width))
+
+    def _render_needs(self, queue: OperatorQueue | None, width: int) -> None:
         needs: DataTable[Text | str] = self.query_one("#home-needs", DataTable)
+        # The rebuild below puts the cursor on row 0; every poll runs it,
+        # so the operator's row is found again by its identity.
+        needs_at = _row_at_cursor(needs, [str(key.value) for key in needs.rows])
         needs.clear(columns=True)
         rows = queue.needs_you if queue is not None else ()
         if rows:
@@ -343,6 +354,7 @@ class HomeScreen(Screen[None]):
             cells = fit_rows([needs_cells(row) for row in shown], width, flex=1)
             for row, values in zip(shown, cells, strict=True):
                 needs.add_row(*values, key=f"{row.kind}:{row.key}")
+            _put_cursor(needs, [f"{row.kind}:{row.key}" for row in shown], needs_at)
         needs.display = bool(rows)
         # An explicit height, not auto: a table whose rows land in the
         # frame it is shown in was laid out at height 0 at 80x24.
@@ -355,9 +367,13 @@ class HomeScreen(Screen[None]):
                     (f"  {len(rows) - SECTION_ROWS} more in the inbox or retry", theme.MUTED),
                 )
             )
+
+    def _render_active(self, queue: OperatorQueue | None, width: int) -> None:
         active: DataTable[Text | str] = self.query_one("#home-active", DataTable)
+        active_at = _row_at_cursor(active, self._active_shown)
         active.clear(columns=True)
         moving = queue.active if queue is not None else ()
+        self._active_shown = [f"{item.source}:{item.label}" for item in moving[:SECTION_ROWS]]
         title = (
             active_empty(queue)
             if not moving
@@ -371,9 +387,9 @@ class HomeScreen(Screen[None]):
             cells = fit_rows(shown_rows, width, flex=3)
             for index, values in enumerate(cells):
                 active.add_row(*values, key=f"active-{index}")
+            _put_cursor(active, self._active_shown, active_at)
         active.display = bool(moving)
         active.styles.height = min(len(moving), SECTION_ROWS)
-        self.query_one("#home-delivery", Static).update(delivery_text(queue, width))
 
     def on_screen_resume(self) -> None:
         # Whatever path popped back here, the observed run is done
@@ -587,6 +603,18 @@ class HomeScreen(Screen[None]):
                 "argument resolution lives there and opens the same "
                 "embedded dashboard",
             )
+
+
+def _row_at_cursor(table: DataTable[Text | str], identities: list[str]) -> str:
+    """The identity of the row under the cursor, "" when there is none."""
+    row = table.cursor_row
+    return identities[row] if table.row_count and 0 <= row < len(identities) else ""
+
+
+def _put_cursor(table: DataTable[Text | str], identities: list[str], wanted: str) -> None:
+    """Back on the row the operator was on, when it is still listed."""
+    if wanted and wanted in identities:
+        table.move_cursor(row=identities.index(wanted), animate=False)
 
 
 def attention_line_for(queue: OperatorQueue | None) -> Text:

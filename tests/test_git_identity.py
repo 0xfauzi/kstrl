@@ -210,6 +210,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_stale_base_ref.py": 10,
     "tests/test_state_dir_scope.py": 2,
     "tests/test_timeout_enforcement.py": 3,
+    # PR #552 verifier: one base commit, into the repository the branch-probe
+    # test builds with `git_in` and `set_identity` before committing.
+    "tests/test_tui_433_verify552.py": 1,
     # Prose, not commits: assertion strings checking what
     # `run_scrubbed`'s rendered command STARTS WITH or what a mocked
     # call log CONTAINS, plus a docstring paragraph. Nothing here spawns
