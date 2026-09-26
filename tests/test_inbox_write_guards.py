@@ -59,6 +59,8 @@ EXPECTED_CONSTRUCTIONS = (
     "factory.py kstrl.inbox.Inbox",
     "pipeline.py kstrl.inbox.Inbox",
     "serve.py kstrl.inbox.Inbox",
+    # #433 E3: home counts open items. It only scans; it mutates nothing.
+    "tui/home_data.py kstrl.inbox.Inbox",
     "tui/screens/inbox.py kstrl.inbox.Inbox",
 )
 
@@ -74,6 +76,7 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     "factory.py": 1,
     "pipeline.py": 4,
     "serve.py": 2,
+    "tui/home_data.py": 1,
     "tui/screens/inbox.py": 1,
 }
 
@@ -179,6 +182,8 @@ EXPECTED_CONFIG_LOADS: dict[str, Disposition] = {
     "decisions.py::resolve_escalation_items": _GUARDED,
     "factory.py::_open_health_breach_items": _GUARDED,
     "serve.py::_file_inbox_item": _GUARDED,
+    # #433 E3: the home count; a load it cannot make renders no count.
+    "tui/home_data.py::open_inbox_count": _GUARDED,
     "serve.py::check_inbox_cap": Disposition(
         guarded=False,
         reason=(

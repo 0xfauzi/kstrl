@@ -13,6 +13,12 @@ later is not a decision.
 Requeue is deliberately CLI-only (``ks inbox retry``): it mutates the
 manifest, and a keystroke away from a component reset is the kind of
 thing that should cost one more deliberate step.
+
+#433 E1: approve, reject and snooze are in the footer only while an open
+item is selected; an empty inbox offered all three. The table is hidden
+while it has no rows, leaving the one sentence that says the inbox is
+clear. With no root given, the screen reads the app's root, like every
+other home screen, rather than the process's working directory.
 """
 
 from __future__ import annotations
@@ -22,7 +28,6 @@ from typing import Any
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static
 
@@ -32,6 +37,7 @@ from kstrl.tui.widgets.config_problem import ConfigProblemBanner
 from kstrl.tui.widgets.context_bar import ContextBar
 
 _PRIORITY_STYLE = {"high": "bold red", "normal": "", "low": "dim"}
+_DECISIONS = frozenset({"approve", "reject", "snooze"})
 
 
 def priority_marker(priority: str) -> Text:
@@ -56,7 +62,7 @@ class InboxScreen(Screen[None]):
         super().__init__()
         from pathlib import Path
 
-        self._root = Path(root_dir) if root_dir else Path.cwd()
+        self._root_arg = Path(root_dir) if root_dir else None
         self._show_decided = False
         self._items: list[InboxItem] = []
 
@@ -64,10 +70,20 @@ class InboxScreen(Screen[None]):
     def compose(self) -> ComposeResult:
         yield ContextBar("inbox")
         yield ConfigProblemBanner()
-        with Horizontal():
-            yield DataTable(id="inbox-table")
-            yield Static("", id="inbox-detail")
+        # List above detail. Side by side, the table was given no width
+        # and rendered one cell wide, so the list of items could not be
+        # seen at any terminal size (#433 E1).
+        yield DataTable(id="inbox-table")
+        yield Static("", id="inbox-detail")
         yield Footer()
+
+    @property
+    def _root(self) -> Any:
+        from pathlib import Path
+
+        if self._root_arg is not None:
+            return self._root_arg
+        return getattr(self.app, "root_dir", None) or Path.cwd()
 
     def on_mount(self) -> None:
         table = self.query_one("#inbox-table", DataTable)
@@ -111,6 +127,7 @@ class InboxScreen(Screen[None]):
                 f"{item.title}{repeat}",
                 "" if item.is_open else str(item.status),
             )
+        table.display = bool(self._items)
         self._render_detail()
 
     def action_toggle_decided(self) -> None:
@@ -125,6 +142,7 @@ class InboxScreen(Screen[None]):
         return self._items[row]
 
     def _render_detail(self) -> None:
+        self.refresh_bindings()
         detail = self.query_one("#inbox-detail", Static)
         item = self._selected()
         if item is None:
@@ -161,6 +179,13 @@ class InboxScreen(Screen[None]):
 
     def on_data_table_row_highlighted(self, _event: object) -> None:
         self._render_detail()
+
+    def check_action(self, action: str, _parameters: tuple[object, ...]) -> bool | None:
+        """Decisions are offered only for a selected item that is open."""
+        if action in _DECISIONS:
+            item = self._selected()
+            return item is not None and item.is_open
+        return True
 
     # -- actions -----------------------------------------------------------
     def _decide(self, action: str, comment: str = "") -> None:

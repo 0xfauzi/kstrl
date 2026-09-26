@@ -13,19 +13,31 @@ them would put every homogeneity/config warning in the feed. Anything
 worth narrating gets a typed event instead - which is why R8's
 coverage gap is fed from ``BudgetCoverage`` and not from the
 ``BUDGET COVERAGE:`` warning line that accompanies it.
+
+#433 F11: lines wrap instead of running off the right edge, and a spec
+issue is printed whole. A cause (an error, a failed phase's detail, a
+retry reason) is kept to ``CAUSE_CHARS`` with an ellipsis; the
+component's detail screen holds the full text.
 """
 
 from __future__ import annotations
 
 import time
 
+from rich.table import Table
 from rich.text import Text
-from textual.widgets import RichLog
 
 from kstrl import events as ev
 from kstrl.tui import theme
+from kstrl.tui.widgets.reflow_log import ReflowLog
 
 MAX_FEED_LINES = 500
+#: The most characters of one cause the feed prints.
+CAUSE_CHARS = 240
+
+
+def _cause(text: str) -> str:
+    return text if len(text) <= CAUSE_CHARS else text[: CAUSE_CHARS - 1] + "…"
 
 
 def _stamp(ts: float) -> str:
@@ -65,7 +77,7 @@ def humanize(event: ev.Event) -> Text | None:  # noqa: C901 - flat dispatch
         if event.duration_seconds:
             line.append(f" in {event.duration_seconds:.0f}s", style=theme.MUTED)
         if event.detail and not event.passed:
-            line.append(f" · {event.detail[:80]}", style=theme.MUTED)
+            line.append(f" · {_cause(event.detail)}", style=theme.MUTED)
     elif isinstance(event, ev.FindingRecorded):
         if event.category == "phase_skipped":
             return None  # bookkeeping, not news
@@ -88,7 +100,7 @@ def humanize(event: ev.Event) -> Text | None:  # noqa: C901 - flat dispatch
         line.append(comp, style=f"bold {theme.ERROR}")
         line.append(" failed", style=theme.ERROR)
         if event.error:
-            line.append(f" · {event.error[:100]}", style=theme.MUTED)
+            line.append(f" · {_cause(event.error)}", style=theme.MUTED)
     elif isinstance(event, ev.CircuitBreakerTripped):
         line.append("⊘ ", style=f"bold {theme.ERROR}")
         line.append(comp, style="bold")
@@ -98,7 +110,7 @@ def humanize(event: ev.Event) -> Text | None:  # noqa: C901 - flat dispatch
         line.append(comp, style="bold")
         line.append(f" retrying (attempt {event.attempt})", style=theme.MUTED)
         if event.reason:
-            line.append(f" · {event.reason[:80]}", style=theme.MUTED)
+            line.append(f" · {_cause(event.reason)}", style=theme.MUTED)
     elif isinstance(event, ev.PrCreated):
         line.append("⇡ ", style=theme.STEEL)
         line.append(comp, style="bold")
@@ -143,7 +155,7 @@ def humanize(event: ev.Event) -> Text | None:  # noqa: C901 - flat dispatch
             f"[{severity}] ",
             style=theme.ERROR if severe else theme.WARNING,
         )
-        line.append(event.summary[:90])
+        line.append(event.summary)
         if event.location:
             line.append(f" at {event.location}", style=theme.MUTED)
     elif isinstance(event, ev.ArtifactWritten):
@@ -191,18 +203,34 @@ def humanize(event: ev.Event) -> Text | None:  # noqa: C901 - flat dispatch
     return line
 
 
-class ActivityFeed(RichLog):
+class ActivityFeed(ReflowLog):
     def __init__(self, **kwargs: object) -> None:
         super().__init__(
             max_lines=MAX_FEED_LINES,
-            wrap=False,
             highlight=False,
             auto_scroll=True,
-            **kwargs,  # type: ignore[arg-type]
+            **kwargs,
         )
 
     def feed_events(self, batch: list[ev.Event]) -> None:
         for event in batch:
             line = humanize(event)
             if line is not None:
-                self.write(line)
+                self.write_source(hanging(line))
+
+
+#: Cells of the ``HH:MM:SS  `` stamp every feed line starts with.
+STAMP_CELLS = 10
+
+
+def hanging(line: Text) -> Table:
+    """The line as stamp | body, so a wrapped body stays under the body.
+
+    With plain wrapping a long finding location continued at column 0,
+    under the timestamps, and the stamp column stopped reading as one.
+    """
+    grid = Table.grid(expand=True)
+    grid.add_column(width=STAMP_CELLS, no_wrap=True)
+    grid.add_column(ratio=1)
+    grid.add_row(line[:STAMP_CELLS], line[STAMP_CELLS:])
+    return grid

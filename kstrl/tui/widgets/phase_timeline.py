@@ -20,10 +20,16 @@ if TYPE_CHECKING:
     from kstrl.reducer import ComponentState
 
 
+def _no_phases(comp: ComponentState) -> str:
+    """A carried component will get no phases in this run (#433 F10)."""
+    carried = comp.carried and comp.status != "pending"
+    return "no phases in this run" if carried else "no phases yet"
+
+
 def render_timeline(comp: ComponentState) -> Text:
     text = Text()
     if not comp.phase_history and not comp.phase:
-        text.append("no phases yet", style=theme.MUTED)
+        text.append(_no_phases(comp), style=theme.MUTED)
         return text
     for entry in comp.phase_history:
         passed = bool(entry.get("passed"))
