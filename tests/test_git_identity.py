@@ -122,6 +122,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # tests.helpers.gitrepo.set_identity. The third count is prose: the
     # module docstring names "git" and "commit" in one string.
     "tests/test_feature_base.py": 3,
+    # #599: `_initialised_project` makes one seed commit, into the repository
+    # it has just put through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_feature_operator_context_e2e.py": 1,
     "tests/test_feature_verification.py": 1,
     "tests/test_feature_verification_attribution.py": 1,
     "tests/test_git_identity_helper.py": 5,
