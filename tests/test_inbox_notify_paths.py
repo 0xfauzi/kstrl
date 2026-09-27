@@ -7,24 +7,31 @@ demotion and everything ``ks serve`` files opened items that
 ``Inbox.add`` itself, on the branch that opens a new item, through
 ``kstrl.inbox_notify.push_opened_item``.
 
-Each test drives a real entry point (``ks decompose`` as a subprocess,
-``python -m kstrl.calibration compare`` in process, the factory's
-outcome fold, one ``ks serve`` poll, ``run_factory``) with the hook set
-through ``KSTRL_NOTIFY_ON_INBOX_ITEM`` to a command that appends one
-line per firing, and asserts on those lines.
+Each behavioural test drives a real entry point (``ks decompose`` as a
+subprocess, ``python -m kstrl.calibration compare`` in process, the
+factory's outcome fold, one ``ks serve`` poll, ``run_factory``) and
+asserts on the lines a command appended, one per firing. Most set the
+hook through ``KSTRL_NOTIFY_ON_INBOX_ITEM``; the pipeline test passes it
+directly as ``NotifyConfig(on_inbox_item=...)``, and the kstrl.toml test
+sets it in the project's own ``[notify]`` section instead of the
+environment.
 
 The rule under test: fire when ``add`` OPENS an item, never on an
-occurrence bump of a still-open one. ``ks serve`` re-files the same
-condition every poll, so firing on a bump would page once a minute.
+occurrence bump of a still-open one, and never for a repeat filed while
+the row is still snoozed. ``ks serve`` re-files the same condition every
+poll, so firing on a bump would page once a minute.
 
-The census at the bottom ties every ``Inbox.add`` site in ``kstrl/`` to
-the test here that drives it, reusing the walk
-``tests/test_inbox_write_guards.py`` already owns, so a seventh filing
-path fails until someone writes its test. What it does NOT see, stated
-rather than left implicit: an item built through ``cls(...)`` or
+Two censuses close the bottom of the file. The first ties every
+``Inbox.add`` call site in ``kstrl/`` to the test above that drives it,
+reusing the walk ``tests/test_inbox_write_guards.py`` already owns: a
+new filing path makes it fail until its test is added to
+``FILING_PATHS``. The second walks every ``InboxItem`` construction in
+``kstrl/`` and asserts the only one is inside ``Inbox.add``, so nothing
+can open an item without going through the push. What it does NOT see,
+stated rather than left implicit: an item built through ``cls(...)`` or
 ``dataclasses.replace`` rather than by the name ``InboxItem``.
 ``InboxItem.from_dict`` is the one ``cls(...)`` today, and it is the
-read side.
+read side; that gap is pinned below as a disclosed blind spot.
 """
 
 from __future__ import annotations
@@ -151,6 +158,23 @@ def test_serve_filing_fires_the_inbox_hook_once_per_opened_item(
     assert len(first) == 1 and first[0]
     overruns = inbox_items(tmp_path, ItemKind.BUDGET_OVERRUN)
     assert [i.occurrences for i in overruns] == [2]
+    assert _lines(lines) == ["inbox_budget_overrun|"]
+
+
+def test_a_snoozed_items_repeat_opens_a_fresh_row_but_does_not_push(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A repeat filed while the row is still snoozed must not page again."""
+    lines = tmp_path / "hook.txt"
+    _hook_into(monkeypatch, lines)
+    _corrupt_ledger(tmp_path)
+
+    first = _poll(tmp_path)
+    Inbox(tmp_path, InboxConfig()).snooze(first[0], actor="op", hours=24)
+    second = _poll(tmp_path)
+
+    assert len(first) == 1 and first[0]
+    assert len(second) == 1 and second[0] and second[0] != first[0]
     assert _lines(lines) == ["inbox_budget_overrun|"]
 
 
@@ -307,12 +331,94 @@ def test_every_inbox_add_site_is_driven_by_a_path_test() -> None:
     assert all(callable(getattr(module, name, None)) for name in FILING_PATHS.values())
 
 
+INBOX_ITEM = "kstrl.inbox.InboxItem"
+
+#: Two disjuncts, one control each: a local shadow (the bare leaf name,
+#: which needs no resolution) and an aliased import or a rebind (which
+#: resolves only through ``Bindings``). ``set()`` on both was the miss:
+#: the old census matched only the leaf name.
+CONTROL_LOCAL_ITEM = """
+class InboxItem:
+    pass
+
+def build():
+    return InboxItem(id="x")
+"""
+
+CONTROL_ALIAS_ITEM = """
+from kstrl.inbox import InboxItem as Item
+
+def build():
+    return Item(id="x")
+"""
+
+CONTROL_REBIND_ITEM = """
+from kstrl.inbox import InboxItem
+
+Make = InboxItem
+
+def build():
+    return Make(id="x")
+"""
+
+#: Disclosed and out of scope for the census below: a classmethod's
+#: ``cls(...)``. ``cls`` is a parameter, not an assignment ``bindings``
+#: walks, so neither disjunct resolves it. ``InboxItem.from_dict`` is
+#: the one ``cls(...)`` today, and it is the read side.
+CONTROL_CLS_ITEM = """
+class InboxItem:
+    @classmethod
+    def from_dict(cls, data):
+        return cls(id=data["id"])
+"""
+
+
+def _is_inbox_item(node: ast.AST, table: astwalk.Bindings) -> bool:
+    """A call that constructs ``InboxItem``.
+
+    FLAGGING, so it may over-match. Two disjuncts: the bare leaf name,
+    which is how ``inbox.py`` spells its own class, and the resolved
+    origin, which is how an aliased import or a rebind spells it.
+    """
+    if not isinstance(node, ast.Call):
+        return False
+    return astwalk.leaf_name(node.func) == "InboxItem" or table.resolve(node.func) == INBOX_ITEM
+
+
+def _inbox_item_sites(tree: ast.Module, module: str = "") -> list[tuple[str, ast.Call]]:
+    table = astwalk.bindings(tree, module=module)
+    found: list[tuple[str, ast.Call]] = []
+    for scope, qualified in astwalk.scopes(tree):
+        for node in astwalk.own_nodes(scope):
+            if _is_inbox_item(node, table):
+                assert isinstance(node, ast.Call)
+                found.append((qualified, node))
+    return found
+
+
 def test_items_are_opened_only_in_inbox_add() -> None:
     """An ``InboxItem`` built anywhere but ``Inbox.add`` would bypass the push."""
     found: set[str] = set()
     for source in astwalk.package_sources():
-        for scope, qualified in astwalk.scopes(astwalk.parsed(source)):
-            for node in astwalk.own_nodes(scope):
-                if isinstance(node, ast.Call) and astwalk.leaf_name(node.func) == "InboxItem":
-                    found.add(f"{astwalk.label(source)}::{qualified}")
+        tree = astwalk.parsed(source)
+        for qualified, _ in _inbox_item_sites(tree, astwalk.module_name(source)):
+            found.add(f"{astwalk.label(source)}::{qualified}")
     assert found == {"inbox.py::Inbox.add"}
+
+
+@pytest.mark.parametrize(
+    "control",
+    [CONTROL_LOCAL_ITEM, CONTROL_ALIAS_ITEM, CONTROL_REBIND_ITEM],
+    ids=["local", "alias", "rebind"],
+)
+def test_the_inbox_item_net_fires(control: str) -> None:
+    """One control per disjunct: a construction the census must not miss."""
+    assert len(_inbox_item_sites(astwalk.parse(control))) == 1
+
+
+@pytest.mark.xfail(strict=True, raises=AssertionError)
+def test_a_cls_construction_is_a_disclosed_blind_spot() -> None:
+    astwalk.blind_spot(
+        lambda source: bool(_inbox_item_sites(astwalk.parse(source))),
+        CONTROL_CLS_ITEM,
+    )

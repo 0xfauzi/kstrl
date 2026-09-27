@@ -494,7 +494,7 @@ Invalid mode or threshold raises ValueError (Phase B8). The default mode is `ski
 
 ## NotifyConfig (`[notify]`)
 
-Run-milestone shell hooks (R3.2), each condition fired at most once per run. The hook command runs via the shell with `KSTRL_NOTIFY_EVENT` (`run_complete` | `first_failure` | `merge_pending` | `inbox_<kind>`), `KSTRL_NOTIFY_RUN_ID`, `KSTRL_NOTIFY_PROJECT`, `KSTRL_NOTIFY_COMPONENT` and `KSTRL_NOTIFY_DETAIL` set in its environment.
+Run-milestone shell hooks (R3.2). `on_complete` and `on_first_failure` each fire at most once per run; `on_inbox_item` fires once per opened item, not once per run (see below). The hook command runs via the shell with `KSTRL_NOTIFY_EVENT` (`run_complete` | `first_failure` | `merge_pending` | `inbox_<kind>`), `KSTRL_NOTIFY_RUN_ID`, `KSTRL_NOTIFY_PROJECT`, `KSTRL_NOTIFY_COMPONENT` and `KSTRL_NOTIFY_DETAIL` set in its environment.
 
 | Env var | Type | Default |
 |---|---|---|
@@ -503,7 +503,7 @@ Run-milestone shell hooks (R3.2), each condition fired at most once per run. The
 | `KSTRL_NOTIFY_ON_INBOX_ITEM` | str | unset (hook disabled) |
 | `KSTRL_NOTIFY_HOOK_TIMEOUT` | float | 30 |
 
-`on_inbox_item` (R8.3) fires when an inbox item that `notifiable()` selects (an action-required kind or a demotion notice) is opened, whichever path files it: a factory run, an architect escalation, an autonomy demotion or `ks serve`. Within one factory run it fires at most once per item kind; outside a factory run it fires once per opened item. It never fires for a repeat of an item that is still open, because `ks serve` files the same condition again on every poll. A hook fired outside a factory run has its output discarded, because the process filing the item may not own the terminal, so a terminal bell does not ring from those paths. It is deliberately NOT a reuse of `on_first_failure`: a failing component fires the failure hook and raises an inbox item for the same event, so one shared command would page twice for one thing. Leave it empty unless you want per-item pushes; see `[inbox]` above for an ntfy.sh example.
+`on_inbox_item` (R8.3) fires when an inbox item that `notifiable()` selects (an action-required kind or a demotion notice) is opened, whichever path files it: a factory run, an architect escalation, an autonomy demotion or `ks serve`. The split is by filing path, not by whether a factory run is under way: the pipeline's own filing passes its run-scoped hooks and fires at most once per item kind within that run; every other path, including an escalation, demotion or health breach raised while a run is active, builds its own hooks per call, fires once per opened item, and leaves `KSTRL_NOTIFY_PROJECT` empty. It never fires for a repeat of an item that is still open or still snoozed, because `ks serve` files the same condition again on every poll. A hook fired through that fallback has its output discarded, because the process filing the item may not own the terminal, so a terminal bell does not ring from those paths. It is deliberately NOT a reuse of `on_first_failure`: a failing component fires the failure hook and raises an inbox item for the same event, so one shared command would page twice for one thing. Leave it empty unless you want per-item pushes; see `[inbox]` above for an ntfy.sh example.
 
 ## LinearConfig (`[linear]`)
 

@@ -629,7 +629,7 @@ class Inbox:
         self._append(item)
         from kstrl.inbox_notify import push_opened_item
 
-        push_opened_item(self, item, notify)
+        push_opened_item(self, item, notify, existing)
         return item
 
     def _decide(
