@@ -61,7 +61,9 @@ sections. Vagueness here becomes a defect later.
 - **Do not**, listing the specific mistakes a weaker model would make here.
 - **Acceptance**, the exact commands that must pass.
 - **Plants**, the mutations the verifier will apply, each naming the file, the
-  edit, and the test that must go red.
+  edit, and the end-to-end test that must go red. A unit test is not a valid
+  target: only end-to-end tests are committed, so a plant a unit test catches
+  is a plant nothing on main catches.
 
 ## Lane shapes
 
@@ -102,6 +104,10 @@ Rules that came from getting these wrong:
   point does not make an assertion fail, it makes it never run.
 - The verifier designs at least one mutation of its own that a plausible wrong
   implementation would survive. Several real defects were found only this way.
+- A plant names an end-to-end test. The implementer may write unit tests to
+  verify its own work, but they are scratch: run, then deleted before the
+  commit. If no end-to-end test would go red under the plant, the lane builds
+  one; "caught by a unit test" is not an outcome.
 
 ## The simplify pass
 

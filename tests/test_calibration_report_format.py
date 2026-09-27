@@ -1,25 +1,22 @@
 """The v2 baseline format as a contract between its two halves (#421).
 
-`kstrl/calibration_baseline.py` is now BOTH halves of the document: its
+`kstrl/calibration_baseline.py` is BOTH halves of the document: its
 `fixture_entry` and `baseline_document` are the only places a v2 document
 key is written, and its `load_baseline` is the only place one is read back.
 `kstrl/calibration.py` computes values from per-run RECORDS and calls the
 two writer functions - it never spells a document key itself. This file
-pins what keeps that design from drifting apart in silence:
+pins what keeps that design from drifting apart in silence, at the level
+of the real CLI and the real checked-in baselines:
 
-- the reader REFUSES a v2 entry whose run counts are absent, non-integer or
-  negative, instead of reading an absent or negative count as zero or as a
-  count of its own. Zero is the fail-open direction: `compare_baselines`
-  reports `newly_missed` only for a fixture the OLD baseline detected, so
-  an old baseline that reads as zero passes the comparison having compared
-  against nothing (Group A1);
-- the reader REFUSES a v1 entry whose `caught` is absent or not a boolean,
-  the same fail-open one format version over (Group A2);
-- the reader REFUSES a fixture entry whose `role`/`fixture_id` is absent,
-  empty or not a string, instead of coercing with `str(...)` (Group A3);
-- `kstrl.calibration.main` REFUSES an OLD baseline with no detected
-  fixture before comparing: such a baseline bounds nothing, so a
-  comparison against it always passes (Group A4);
+- `python -m kstrl.calibration compare` REFUSES (exit 2, no traceback,
+  no PASS) an OLD baseline whose run counts are absent or null, whose
+  `format_version`, `runs_per_fixture` or `role` is null, whose v1
+  `caught` is absent, or that detected nothing and so bounds nothing
+  (#421 Groups A1-A4). Zero is the fail-open direction: `compare_baselines`
+  reports `newly_missed` only for a fixture the OLD baseline detected;
+- every checked-in baseline under `tests/adversarial_fixtures/_results/`
+  still loads, carries a boolean `caught` where it is v1, and detects at
+  least one fixture;
 - `save_report` writes bytes this file pins, so nothing above can have
   moved a document key or a value;
 - the writer never spells a string the reader owns, so a rename in the
@@ -59,10 +56,6 @@ from tests.helpers.astwalk import (
 WRITER = KSTRL_PACKAGE / "calibration.py"
 READER = KSTRL_PACKAGE / "calibration_baseline.py"
 RESULTS_DIR = REPO_ROOT / "tests" / "adversarial_fixtures" / "_results"
-
-#: Spelled here as literals on purpose. A guard that reads the constants it
-#: is guarding would go quiet with them.
-RUN_COUNT_KEYS = ("runs_total", "runs_errored", "runs_detected")
 
 PINNED_RECORDS: list[dict[str, Any]] = [
     {
@@ -188,77 +181,14 @@ PINNED_DOCUMENT = """{
 """
 
 
-def _v2_document() -> dict[str, Any]:
-    return {
-        "format_version": 2,
-        "model": "haiku",
-        "timestamp": "20260901-000000",
-        "runs_per_fixture": 3,
-        "fixtures": [
-            {
-                "role": "security",
-                "fixture_id": "sec-a",
-                "category": "injection",
-                "cwe": "CWE-89",
-                "runs_total": 3,
-                "runs_errored": 0,
-                "runs_detected": 3,
-            }
-        ],
-    }
-
-
 def _write(path: Path, document: dict[str, Any]) -> Path:
     path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
     return path
 
 
-class TestV2RunCountsAreRequired:
-    @pytest.mark.parametrize("key", RUN_COUNT_KEYS)
-    def test_a_missing_run_count_is_refused(self, tmp_path: Path, key: str) -> None:
-        document = _v2_document()
-        del document["fixtures"][0][key]
-        path = _write(tmp_path / "baseline-20260901-000000.json", document)
-        with pytest.raises(ValueError) as caught:
-            load_baseline(path)
-        message = str(caught.value)
-        assert key in message
-        assert "sec-a" in message
-        assert str(path) in message
-
-    @pytest.mark.parametrize("key", RUN_COUNT_KEYS)
-    @pytest.mark.parametrize("value", ["3", True, 3.5, None])
-    def test_a_non_integer_run_count_is_refused(
-        self, tmp_path: Path, key: str, value: object
-    ) -> None:
-        document = _v2_document()
-        document["fixtures"][0][key] = value
-        path = _write(tmp_path / "baseline-20260901-000000.json", document)
-        with pytest.raises(ValueError) as caught:
-            load_baseline(path)
-        assert key in str(caught.value)
-        assert "sec-a" in str(caught.value)
-
-    @pytest.mark.parametrize("key", RUN_COUNT_KEYS)
-    def test_zero_is_a_legal_value_when_the_key_is_present(self, tmp_path: Path, key: str) -> None:
-        document = _v2_document()
-        document["fixtures"][0][key] = 0
-        path = _write(tmp_path / "baseline-20260901-000000.json", document)
-        loaded = load_baseline(path)
-        assert getattr(loaded.fixtures[0], key) == 0
-
-    @pytest.mark.parametrize("key", RUN_COUNT_KEYS)
-    def test_a_negative_run_count_is_refused(self, tmp_path: Path, key: str) -> None:
-        """#421 Group A1: `runs_detected = -1` used to print a `-0.33`
-        detection rate and pass. -1 IS an int, so this is a distinct case
-        from `test_a_non_integer_run_count_is_refused`."""
-        document = _v2_document()
-        document["fixtures"][0][key] = -1
-        path = _write(tmp_path / "baseline-20260901-000000.json", document)
-        with pytest.raises(ValueError) as caught:
-            load_baseline(path)
-        assert key in str(caught.value)
-        assert "sec-a" in str(caught.value)
+class TestCheckedInBaselines:
+    """The real baselines under `tests/adversarial_fixtures/_results/`,
+    re-derived over every checked-in file rather than assumed."""
 
     def test_every_checked_in_baseline_still_loads(self) -> None:
         """Ten baselines were checked in at 5db5cee and all ten load. A
@@ -267,91 +197,6 @@ class TestV2RunCountsAreRequired:
         assert len(found) >= 10
         for path in found:
             assert load_baseline(path).fixtures
-
-
-class TestDocumentIntsAreStrict:
-    """#421 Group A1: `format_version` and `runs_per_fixture` read through
-    the same one-integer-read the run counts do (altitude.md Finding 1):
-    a null used to raise `TypeError`, which the compare CLI's
-    `except ValueError` does not catch, so it reached the terminal as a
-    traceback (exit 1, the regression code) instead of exit 2."""
-
-    def test_absent_runs_per_fixture_defaults_to_one(self, tmp_path: Path) -> None:
-        document = _v2_document()
-        del document["runs_per_fixture"]
-        path = _write(tmp_path / "baseline-20260901-000000.json", document)
-        assert load_baseline(path).runs_per_fixture == 1
-
-    def test_absent_format_version_takes_the_v1_branch(self, tmp_path: Path) -> None:
-        # Deleting format_version takes the v1 branch, which has no run
-        # counts, so this row is about the int read accepting absence
-        # (default 1), not about damaging a v2 document.
-        document = _v2_document()
-        del document["format_version"]
-        document["fixtures"][0]["caught"] = True
-        path = _write(tmp_path / "baseline-20260901-000000.json", document)
-        loaded = load_baseline(path)
-        assert loaded.format_version == 1
-        assert loaded.fixtures[0].runs_detected == 1
-
-    @pytest.mark.parametrize("key", ["format_version", "runs_per_fixture"])
-    @pytest.mark.parametrize("value", ["2", True, 2.5, None])
-    def test_a_non_integer_is_refused(self, tmp_path: Path, key: str, value: object) -> None:
-        document = _v2_document()
-        document[key] = value
-        path = _write(tmp_path / "baseline-20260901-000000.json", document)
-        with pytest.raises(ValueError) as caught:
-            load_baseline(path)
-        assert key in str(caught.value)
-
-    @pytest.mark.parametrize("key", ["format_version", "runs_per_fixture"])
-    def test_a_negative_value_is_refused(self, tmp_path: Path, key: str) -> None:
-        document = _v2_document()
-        document[key] = -1
-        path = _write(tmp_path / "baseline-20260901-000000.json", document)
-        with pytest.raises(ValueError) as caught:
-            load_baseline(path)
-        assert key in str(caught.value)
-
-
-class TestV1CaughtIsRequired:
-    """#421 Group A2: reuse.md F1 reproduces the exact #421 symptom on a
-    v1 baseline. `caught` is v1's one count-bearing field; it used to be
-    read with a falsy default, so an entry that lost it read as "not
-    detected" instead of being refused."""
-
-    def _v1_document(self) -> dict[str, Any]:
-        return {
-            "model": "haiku",
-            "timestamp": "20260527-000000",
-            "fixtures": [{"role": "security", "fixture_id": "sec-a", "caught": True}],
-        }
-
-    def test_absent_caught_is_refused(self, tmp_path: Path) -> None:
-        document = self._v1_document()
-        del document["fixtures"][0]["caught"]
-        path = _write(tmp_path / "baseline-20260527-000000.json", document)
-        with pytest.raises(ValueError) as caught:
-            load_baseline(path)
-        assert "caught" in str(caught.value)
-        assert "sec-a" in str(caught.value)
-
-    @pytest.mark.parametrize("value", [None, "true", 1])
-    def test_a_non_boolean_caught_is_refused(self, tmp_path: Path, value: object) -> None:
-        document = self._v1_document()
-        document["fixtures"][0]["caught"] = value
-        path = _write(tmp_path / "baseline-20260527-000000.json", document)
-        with pytest.raises(ValueError) as caught:
-            load_baseline(path)
-        assert "caught" in str(caught.value)
-
-    @pytest.mark.parametrize("value", [True, False])
-    def test_a_boolean_caught_is_accepted(self, tmp_path: Path, value: bool) -> None:
-        document = self._v1_document()
-        document["fixtures"][0]["caught"] = value
-        path = _write(tmp_path / "baseline-20260527-000000.json", document)
-        loaded = load_baseline(path)
-        assert loaded.fixtures[0].runs_detected == (1 if value else 0)
 
     def test_no_checked_in_v1_baseline_would_be_refused(self) -> None:
         """All 18 checked-in v1 entries carry a boolean `caught`,
@@ -367,50 +212,6 @@ class TestV1CaughtIsRequired:
                 v1_checked += 1
                 assert isinstance(entry.get("caught"), bool), (path, entry)
         assert v1_checked >= 18
-
-    def test_a_v2_shaped_entry_that_lost_format_version_is_refused(self, tmp_path: Path) -> None:
-        """reuse.md F2: a v2 document that lost `format_version` used to be
-        read as v1 and score every role 0.00. Its entries carry run counts
-        and no `caught`, so the v1 branch now refuses it."""
-        document = _v2_document()
-        del document["format_version"]
-        path = _write(tmp_path / "baseline-20260901-000000.json", document)
-        with pytest.raises(ValueError) as caught:
-            load_baseline(path)
-        assert "caught" in str(caught.value)
-        assert "sec-a" in str(caught.value)
-
-
-class TestRoleAndFixtureIdAreRequiredStrings:
-    """#421 Group A3: `str(...)` used to coerce first, so `{"role": null}`
-    loaded as the truthy string `"None"` (reuse.md F4)."""
-
-    @pytest.mark.parametrize("key", ["role", "fixture_id"])
-    @pytest.mark.parametrize("value", [None, "", "   ", 123])
-    def test_a_bad_role_or_fixture_id_is_refused(
-        self, tmp_path: Path, key: str, value: object
-    ) -> None:
-        document = _v2_document()
-        document["fixtures"][0][key] = value
-        path = _write(tmp_path / "baseline-20260901-000000.json", document)
-        with pytest.raises(ValueError):
-            load_baseline(path)
-
-    def test_a_missing_role_or_fixture_id_is_refused(self, tmp_path: Path) -> None:
-        document = _v2_document()
-        del document["fixtures"][0]["role"]
-        path = _write(tmp_path / "baseline-20260901-000000.json", document)
-        with pytest.raises(ValueError):
-            load_baseline(path)
-
-
-class TestOldBaselineMustBoundSomething:
-    """#421 Group A4: `compare_baselines` reports `newly_missed` only for
-    a fixture the OLD baseline detected, so an OLD baseline that detected
-    nothing passes the comparison having compared against nothing. The
-    refusal lives in `kstrl.calibration.main`, not in the reader - see
-    the CLI-level rows in `TestCompareRefusesAHoledBaseline` for the
-    end-to-end form."""
 
     def test_no_checked_in_baseline_would_be_refused_as_bounding_nothing(self) -> None:
         """Every real baseline has at least one detected fixture,

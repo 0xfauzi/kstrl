@@ -19,8 +19,8 @@ from kstrl.feedforward import (
     extract_public_interfaces,
 )
 from tests.helpers import astwalk
+from tests.helpers.context_sweeps import section
 from tests.helpers.feedforward_prompts import NOTICE_PROMPTS
-from tests.test_context import section
 from tests.test_feedforward import _deep_repo, _deep_repo_with_conventions
 
 # ---------------------------------------------------------------------------

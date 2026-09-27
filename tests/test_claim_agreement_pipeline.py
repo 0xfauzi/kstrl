@@ -31,8 +31,8 @@ from kstrl.manifest import Component
 from kstrl.pipeline import Transition
 from kstrl.prd import PRD
 from kstrl.review import ReviewResult
+from tests.helpers.claim_agreement import _criterion, _prd, _review, _story, _write_prd
 from tests.helpers.replay import failing_run
-from tests.test_claim_agreement import _criterion, _prd, _review, _story, _write_prd
 from tests.test_pipeline import (
     _component,
     _factory_config,

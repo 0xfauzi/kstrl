@@ -47,6 +47,7 @@ from kstrl.appendio import append_records
 from kstrl.atomicio import atomic_write_text
 from kstrl.config_numbers import check_numbers
 from kstrl.jsonread import read_json
+from kstrl.observability import NotifyHooks
 from kstrl.statedir import CONTROL_INBOX, control_file, control_lock, ensure_control_state
 
 INBOX_SCHEMA_VERSION = 1
@@ -580,6 +581,7 @@ class Inbox:
         dedupe_key: str = "",
         evidence: dict[str, Any] | None = None,
         priority: Priority | None = None,
+        notify: NotifyHooks | None = None,
     ) -> InboxItem:
         """Record an exception, collapsing repeats onto one item.
 
@@ -625,6 +627,9 @@ class Inbox:
             last_seen_at=_iso(now),
         )
         self._append(item)
+        from kstrl.inbox_notify import push_opened_item
+
+        push_opened_item(self, item, notify, existing)
         return item
 
     def _decide(

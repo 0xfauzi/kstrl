@@ -41,7 +41,7 @@ from tests.helpers.astwalk import (
 EXPECTED_SEEN: tuple[str, ...] = (
     "licensing.py:162 urllib.request.urlopen",
     "linear.py:320 urllib.request.urlopen",
-    "signals.py:557 urllib.request.urlopen",
+    "signals.py:556 urllib.request.urlopen",
 )
 
 EXPECTED_UNDECIDED: tuple[str, ...] = (

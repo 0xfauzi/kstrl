@@ -689,11 +689,14 @@ class TestKnowledgeTelemetrySurvivesATornTail:
     """``record_dependency_scope_gap``, written by ``build_knowledge_context``.
 
     No lock, and the reason was read in the source rather than assumed.
-    ``build_knowledge_context`` has one caller, ``factory._submit_args``,
-    which is a closure the scheduler loop calls on the orchestrator
-    thread BEFORE ``executor.submit``, so no worker process ever reaches
-    this writer; the run-level ``factory.lock`` excludes a second
-    orchestrator on the same root.
+    ``build_knowledge_context`` reaches this writer from one caller,
+    ``factory._submit_args``, which is a closure the scheduler loop calls
+    on the orchestrator thread BEFORE ``executor.submit``, so no worker
+    process ever reaches this writer; the run-level ``factory.lock``
+    excludes a second orchestrator on the same root. Its other caller,
+    ``feature_cmd._feature_knowledge_prefix`` (#599), builds a
+    one-component manifest with no dependencies, which excludes no
+    dependency and so never writes here.
 
     A repair ROW here rather than the inbox's bare pad, because nothing
     counts these rows against anything: this reader has no production

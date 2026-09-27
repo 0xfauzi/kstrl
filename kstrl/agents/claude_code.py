@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from kstrl.agents.base import UsageRecord
+from kstrl.agents.base import TOOL_RESULT_PREFIX, UsageRecord
 from kstrl.agents.proc import DeadlineStreamer, timeout_message
 from kstrl.agents.prompt_record import record_prompt
 from kstrl.jsonread import read_json
@@ -33,6 +33,11 @@ class ClaudeCodeAgent:
     so tool calls (file reads, edits, bash commands) are visible during
     execution rather than only showing the final text response.
     """
+
+    #: This adapter tags every tool-output line with TOOL_RESULT_PREFIX
+    #: (#598); kstrl.agents.base.model_output_text reads this attribute
+    #: before deciding whether to filter an agent's lines by that prefix.
+    marks_tool_output = True
 
     def __init__(
         self,
@@ -108,7 +113,7 @@ class ClaudeCodeAgent:
         """
         self._final_message = None
         self._saw_result = False
-        accumulated_text: list[str] = []
+        assistant_text: list[str] = []
         started = time.monotonic()
         result_event_line: str | None = None
 
@@ -166,10 +171,12 @@ class ClaudeCodeAgent:
                     break
 
                 # Parse stream-json events
-                for display_line in _parse_stream_event(raw_line):
-                    if display_line.strip():
-                        accumulated_text.append(display_line)
-                    yield display_line
+                yield from _parse_stream_event(raw_line)
+                # Collected separately, at parse time, from the raw event
+                # rather than filtered out of the mixed display lines
+                # above (#598): a tool call's own display line is never a
+                # candidate for final_message in the first place.
+                assistant_text.extend(_assistant_text_blocks(raw_line))
 
             if streamer.timed_out:
                 self._usage_records.append(
@@ -193,9 +200,14 @@ class ClaudeCodeAgent:
             )
         )
 
-        # Set final_message from accumulated text if not already set by result event
-        if self._final_message is None and accumulated_text:
-            self._final_message = accumulated_text[-1]
+        # Set final_message from the assistant's own text blocks if not
+        # already set by a result event. Neither a tool call's announcement
+        # line nor its result is ever a candidate (#598): loop.py matches
+        # the completion marker against final_message, and a Bash command's
+        # own text (a heredoc, say) can embed that marker on one of its
+        # lines.
+        if self._final_message is None and assistant_text:
+            self._final_message = assistant_text[-1]
 
     @property
     def final_message(self) -> str | None:
@@ -301,6 +313,39 @@ def _extract_result_text(raw_line: str) -> str | None:
     return None
 
 
+def _assistant_text_blocks(raw_line: str) -> list[str]:
+    """The assistant's own ``text`` blocks in one stream-json event.
+
+    Used only for the ``final_message`` fallback (#598). Collected
+    directly from the raw event at parse time rather than filtered out of
+    the mixed display-line accumulator ``run`` yields: a tool call's
+    display line (``[Bash] ...``) is never a candidate for final_message
+    in the first place, so there is nothing to filter it back out of.
+    ``loop.py`` matches the completion marker against ``final_message``,
+    and a Bash command's own text - a heredoc, say - can embed that
+    marker on one of its lines.
+
+    A line that is not JSON at all mirrors ``_parse_stream_event``'s own
+    "not JSON - yield as-is" fallback: there is no tool-call structure to
+    exclude it from, so it stays a candidate exactly as it did before
+    this function existed.
+    """
+    try:
+        evt = read_json(raw_line)
+    except (json.JSONDecodeError, ValueError):
+        return [raw_line]
+    if evt.get("type") != "assistant":
+        return []
+    message = evt.get("message", {})
+    texts: list[str] = []
+    for block in message.get("content", []):
+        if block.get("type") == "text":
+            text = block.get("text", "").strip()
+            if text:
+                texts.append(text)
+    return texts
+
+
 def _parse_stream_event(raw_line: str) -> Iterator[str]:
     """Parse a single stream-json event line into human-readable output.
 
@@ -329,24 +374,69 @@ def _parse_stream_event(raw_line: str) -> Iterator[str]:
                 text = block.get("text", "").strip()
                 if text:
                     yield text
+            else:
+                # A block type this parser does not specifically handle
+                # (thinking, redacted_thinking, or one Claude Code starts
+                # emitting later) is rendered as a visible placeholder
+                # instead of vanishing with no trace (#598): the census in
+                # tests/test_claude_stream_blocks.py fails when a new
+                # fixture block type has no disposition decided for it,
+                # but nothing short of this placeholder would have shown
+                # an operator that a block was ever dropped.
+                yield TOOL_RESULT_PREFIX + f"[unrendered {block_type} block]"
 
-    elif event_type == "tool_result":
-        # Tool result - show a summary, not the full content
-        content = evt.get("content", "")
-        if isinstance(content, list):
-            for item in content:
-                if isinstance(item, dict) and item.get("type") == "text":
-                    text = item.get("text", "")
-                    # Only show first 200 chars of tool results to avoid flooding
-                    if len(text) > 200:
-                        text = text[:200] + "..."
-                    if text.strip():
-                        yield text
-        elif isinstance(content, str) and content.strip():
-            text = content[:200] + "..." if len(content) > 200 else content
-            yield text
+    elif event_type == "user":
+        yield from _format_user_event(evt)
 
-    # Skip result (duplicates assistant text), system, rate_limit_event, etc.
+    # Skip result (duplicates assistant text), system, rate_limit_event,
+    # and a user event's text blocks and string content.
+
+
+def _format_user_event(evt: dict[str, Any]) -> Iterator[str]:
+    """The tool results a ``user`` event carries, as display lines.
+
+    Claude Code delivers a tool's output as a ``tool_result`` block inside
+    a ``user`` event (#598). The event's ``text`` blocks and a string
+    ``content`` are the operator's input or injected context, not the
+    agent's output, so they yield nothing.
+    """
+    message = evt.get("message")
+    if not isinstance(message, dict):
+        return
+    content = message.get("content")
+    if not isinstance(content, list):
+        return
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "tool_result":
+            yield from _format_tool_result(block.get("content"))
+
+
+def _format_tool_result(content: object) -> Iterator[str]:
+    """A ``tool_result`` block's ``content`` as display lines.
+
+    ``content`` is a string or a list whose ``text`` items are rendered;
+    every other item (``image``, ``tool_reference``) yields nothing. Each
+    text item is capped at 200 characters BEFORE it is split into lines,
+    and every line starts with ``TOOL_RESULT_PREFIX``, so no consumer can
+    read a tool's output as the agent's own words.
+    """
+    if isinstance(content, str):
+        texts = [content]
+    elif isinstance(content, list):
+        texts = [
+            item["text"]
+            for item in content
+            if isinstance(item, dict)
+            and item.get("type") == "text"
+            and isinstance(item.get("text"), str)
+        ]
+    else:
+        return
+    for text in texts:
+        capped = text[:200] + "..." if len(text) > 200 else text
+        for line in capped.splitlines():
+            if line.strip():
+                yield TOOL_RESULT_PREFIX + line
 
 
 def _format_tool_use(tool_name: str, tool_input: dict[str, Any]) -> Iterator[str]:
