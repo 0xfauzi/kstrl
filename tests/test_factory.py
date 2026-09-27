@@ -795,7 +795,14 @@ class TestEvolutionRecording:
     ) -> None:
         """The retrieval failure used to be a bare `except: pass` - it
         strips the engineer's whole prefix, so it must be loud, and the
-        run must not be scored as if facts had been injected."""
+        run must not be scored as if facts had been injected.
+
+        #599 A3 moved this call, and the try/except around it, off
+        `factory._submit_args` and onto the shared
+        `knowledge.retrieve_knowledge_context` (also called by
+        `feature_cmd`); the patch target moves with it, onto the
+        function that actually raises rather than the module that used
+        to import it directly."""
         root, manifest = self._knowledge_project(tmp_path)
         base = _make_base_config(root)
         buf = io.StringIO()
@@ -810,7 +817,7 @@ class TestEvolutionRecording:
                 return_value=ComponentResult("a", success=True, iterations=1),
             ),
             patch("kstrl.git.get_diff_content", return_value="some diff"),
-            patch("kstrl.factory.build_knowledge_context", boom),
+            patch("kstrl.knowledge.build_knowledge_context", boom),
             patch(
                 "kstrl.factory.distill_facts",
                 return_value=(0, "none", False),
