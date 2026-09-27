@@ -33,7 +33,14 @@ DEFAULT_TRANSCRIPT_TAGS = frozenset({"AI"})
 class Prompter(Protocol):
     """The interactive sub-surface of the UI protocol."""
 
-    def choose(self, header: str, options: list[str], default: int = 0) -> int: ...
+    def choose(self, header: str, options: list[str], default: int = 0) -> int:
+        """The chosen index. May raise ``EOFError`` or
+        ``KeyboardInterrupt`` when the prompt is interrupted (end of
+        input or Ctrl-C) - both ``PlainUI`` and ``RichUI`` do.
+        ``UiInteractionChannel.request`` catches either around this call
+        and reports ``answered=False``; ``NullPrompter`` below never
+        raises, since it never prompts at all."""
+        ...
 
     def can_prompt(self) -> bool: ...
 
