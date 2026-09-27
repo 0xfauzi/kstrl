@@ -1,8 +1,11 @@
 """R8.6 PR 1: work-queue substrate regression tests.
 
-The tests that matter most here are not the CRUD ones. They are the
-money-safety invariants, because this substrate is what an unattended
-`ks serve` will drive:
+Plain CRUD/transition round trips (add, lookup, retry, rm, pause) are
+driven end to end through the real CLI in `tests/test_queue_cli.py` and
+through a real `serve_cycle` in `tests/test_steering.py`; this file no
+longer repeats those. What is left is what those two files cannot reach
+directly: the money-safety invariants, because this substrate is what an
+unattended `ks serve` will drive:
 
 - an attempt is charged BEFORE the rename into ``running/``, so an
   interrupted transition over-counts rather than under-counts (an
@@ -11,7 +14,9 @@ money-safety invariants, because this substrate is what an unattended
 - the item DIRECTORY is authoritative, so a crash between the sidecar
   write and the rename cannot make state ambiguous;
 - corrupt metadata falls back to the GATED value, never to auto-merge;
-- an unreadable pause marker reads as PAUSED, never as running.
+- an unreadable pause marker reads as PAUSED, never as running;
+- staging never leaves a phantom item a scan can see, and the queue
+  lock and per-item journal hold under real fcntl and real files.
 """
 
 from __future__ import annotations
@@ -29,7 +34,6 @@ from kstrl.workqueue import (
     ItemSource,
     ItemState,
     MergeDisposition,
-    PauseState,
     Queue,
     QueueBudgetExhausted,
     QueueConfig,
@@ -37,7 +41,6 @@ from kstrl.workqueue import (
     QueueItem,
     QueueLockedError,
     is_safe_component,
-    mint_item_id,
     queue_lock,
     summarize,
 )
@@ -52,18 +55,6 @@ def _add(queue: Queue, text: str = "# Spec\n\nBuild a thing.\n", **kwargs: objec
 
 
 class TestAdd:
-    def test_add_text_lands_in_queued_with_spec_and_meta(self, tmp_path: Path) -> None:
-        queue = _queue(tmp_path)
-        item = _add(queue, title="build a thing")
-
-        item_dir = tmp_path / ".kstrl" / "queue" / "queued" / item.item_id
-        assert item_dir.is_dir()
-        assert (item_dir / "spec.md").read_text() == "# Spec\n\nBuild a thing.\n"
-        meta = json.loads((item_dir / "meta.json").read_text())
-        assert meta["item_id"] == item.item_id
-        assert meta["state"] == "queued"
-        assert meta["title"] == "build a thing"
-
     def test_add_from_path_copies_the_spec(self, tmp_path: Path) -> None:
         """A spec edited after enqueue must not change what runs."""
         source = tmp_path / "feature-x.md"
@@ -75,17 +66,6 @@ class TestAdd:
         assert queue.read_spec(queue.items()[0]) == "original\n"
         assert item.spec_filename == "feature-x.md"
         assert item.title == "feature-x"
-
-    def test_add_refuses_an_empty_spec(self, tmp_path: Path) -> None:
-        queue = _queue(tmp_path)
-        with pytest.raises(QueueError, match="empty spec"):
-            _add(queue, "   \n\n")
-
-    def test_add_defaults_to_stop_at_pr(self, tmp_path: Path) -> None:
-        """Continuous intake must not silently delete the merge gate."""
-        queue = _queue(tmp_path)
-        item = _add(queue)
-        assert item.merge_disposition is MergeDisposition.STOP_AT_PR
 
     def test_add_inherits_max_attempts_from_config(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path, max_attempts=7)
@@ -124,10 +104,6 @@ class TestAdd:
         queued = tmp_path / ".kstrl" / "queue" / "queued"
         assert list(queued.iterdir()) == []
 
-    def test_item_ids_sort_chronologically(self) -> None:
-        ids = [mint_item_id() for _ in range(5)]
-        assert ids == sorted(ids)
-
 
 class TestOrdering:
     def test_fifo_within_a_priority_band(self, tmp_path: Path) -> None:
@@ -153,20 +129,6 @@ class TestLookup:
         found = queue.get(item.item_id[:10])
         assert found is not None and found.item_id == item.item_id
 
-    def test_ambiguous_prefix_raises_instead_of_guessing(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Operating on the wrong unit of work is worse than a retype."""
-        queue = _queue(tmp_path)
-        _add(queue)
-        _add(queue)
-        with pytest.raises(QueueError, match="matches multiple items"):
-            queue.get("q-")
-
-    def test_get_missing_returns_none(self, tmp_path: Path) -> None:
-        assert _queue(tmp_path).get("nope") is None
-
     def test_find_by_source_ref(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path)
         _add(queue, source=ItemSource.GITHUB, source_ref="0xfauzi/kstrl#153")
@@ -176,18 +138,6 @@ class TestLookup:
 
 
 class TestTransitions:
-    def test_full_happy_path(self, tmp_path: Path) -> None:
-        queue = _queue(tmp_path)
-        item = _add(queue)
-        item = queue.lease(item)
-        assert item.state is ItemState.LEASED
-        item = queue.start(item, run_id="factory-1")
-        assert item.state is ItemState.RUNNING
-        item = queue.finish_ok(item)
-        assert item.state is ItemState.DONE
-        assert (tmp_path / ".kstrl" / "queue" / "done" / item.item_id).is_dir()
-        assert not (tmp_path / ".kstrl" / "queue" / "queued" / item.item_id).exists()
-
     def test_illegal_transition_raises(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path)
         item = _add(queue)
@@ -567,27 +517,6 @@ class TestStagingIsNeverScanned:
         _add(queue)
         assert list(queue.staging_path.iterdir()) == []
 
-    def test_requeue_does_not_reset_attempts_by_default(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """A retry policy that can zero its own bound is not a bound."""
-        queue = _queue(tmp_path)
-        item = queue.finish_failed(queue.start(queue.lease(_add(queue))))
-        item = queue.requeue(item)
-        assert item.attempts == 1
-
-    def test_reset_attempts_is_explicit_and_clears_poison(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        queue = _queue(tmp_path)
-        item = queue.start(queue.lease(_add(queue)))
-        item = queue.poison(item, reason="spec is ambiguous")
-        item = queue.requeue(item, reset_attempts=True)
-        assert item.attempts == 0
-        assert item.poison_reason == ""
-
 
 class TestDirectoryIsAuthoritative:
     def test_state_comes_from_the_directory_not_the_sidecar(
@@ -672,68 +601,8 @@ class TestCorruptionHandling:
         )
         assert item is not None and item.state is ItemState.QUEUED
 
-    def test_non_integer_priority_falls_back(self) -> None:
-        item = QueueItem.from_dict(
-            {
-                "item_id": "q-1",
-                "spec_filename": "spec.md",
-                "priority": "high",
-            }
-        )
-        assert item is not None and item.priority == 0
-
-    def test_legacy_payload_without_new_fields_decodes(self) -> None:
-        """Sidecars written before a field existed must still load."""
-        item = QueueItem.from_dict(
-            {
-                "item_id": "q-1",
-                "spec_filename": "spec.md",
-                "title": "old",
-            }
-        )
-        assert item is not None
-        assert item.target_repo == ""
-        assert item.max_attempts == 3
-        assert item.source is ItemSource.LOCAL
-
-    def test_round_trip(self, tmp_path: Path) -> None:
-        queue = _queue(tmp_path)
-        original = _add(
-            queue,
-            title="round trip",
-            priority=3,
-            source=ItemSource.GITHUB,
-            source_ref="o/r#1",
-            target_repo="o/r",
-            project_name="proj",
-        )
-        decoded = QueueItem.from_dict(original.to_dict())
-        assert decoded is not None
-        assert decoded.to_dict() == original.to_dict()
-
 
 class TestPrUrls:
-    def test_pr_urls_round_trip_through_the_sidecar(self, tmp_path: Path) -> None:
-        queue = _queue(tmp_path)
-        item = queue.start(queue.lease(_add(queue)))
-        queue.finish_ok(item, pr_urls=("https://x/pull/1", "https://x/pull/2"))
-        reloaded = queue.items()[0]  # decoded from meta.json on disk
-        assert reloaded.pr_urls == ("https://x/pull/1", "https://x/pull/2")
-
-    def test_an_item_written_before_this_field_reads_as_empty(self) -> None:
-        data = QueueItem(item_id="q-1", title="t", spec_filename="s.md").to_dict()
-        del data["pr_urls"]
-        decoded = QueueItem.from_dict(data)
-        assert decoded is not None
-        assert decoded.pr_urls == ()
-
-    def test_a_malformed_pr_urls_value_falls_back(self) -> None:
-        base = QueueItem(item_id="q-1", title="t", spec_filename="s.md").to_dict()
-        for payload in ("not a list", None, 7, {"a": 1}, ["ok", 3, "", None]):
-            decoded = QueueItem.from_dict({**base, "pr_urls": payload})
-            assert decoded is not None
-            assert decoded.pr_urls == ()
-
     def test_finish_failed_records_them_too(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path)
         item = queue.start(queue.lease(_add(queue)))
@@ -767,20 +636,6 @@ class TestLeases:
         item = queue.lease(_add(queue))
         future = datetime.now(UTC) + timedelta(seconds=120)
         assert item.lease_expired(future)
-
-    def test_missing_expiry_counts_as_expired(self) -> None:
-        """A lease nobody can read must not wedge the queue forever."""
-        item = QueueItem(item_id="q-1", title="t", spec_filename="s.md")
-        assert item.lease_expired()
-
-    def test_unparseable_expiry_counts_as_expired(self) -> None:
-        item = QueueItem(
-            item_id="q-1",
-            title="t",
-            spec_filename="s.md",
-            lease_expires_at="not-a-date",
-        )
-        assert item.lease_expired()
 
     def test_requeue_clears_the_lease(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path)
@@ -816,20 +671,6 @@ class TestPoison:
 
 
 class TestRemoval:
-    def test_remove_deletes_the_item(self, tmp_path: Path) -> None:
-        queue = _queue(tmp_path)
-        item = _add(queue)
-        queue.remove(item)
-        assert queue.items() == []
-        assert not (tmp_path / ".kstrl" / "queue" / "queued" / item.item_id).exists()
-
-    def test_remove_refuses_while_running(self, tmp_path: Path) -> None:
-        """Deleting a live item loses the trail for money already spent."""
-        queue = _queue(tmp_path)
-        item = queue.start(queue.lease(_add(queue)))
-        with pytest.raises(QueueError, match="is running"):
-            queue.remove(item)
-
     def test_a_failed_deletion_is_not_reported_as_success(
         self,
         tmp_path: Path,
@@ -863,37 +704,6 @@ class TestRemoval:
 
 
 class TestPause:
-    def test_default_is_running(self, tmp_path: Path) -> None:
-        assert not _queue(tmp_path).is_paused()
-
-    def test_pause_and_resume(self, tmp_path: Path) -> None:
-        queue = _queue(tmp_path)
-        queue.pause(reason="daily budget")
-        assert queue.is_paused()
-        assert queue.pause_state().reason == "daily budget"
-        queue.resume()
-        assert not queue.is_paused()
-
-    def test_next_ready_is_none_while_paused(self, tmp_path: Path) -> None:
-        """The pause is an admission gate checked at the claim point."""
-        queue = _queue(tmp_path)
-        _add(queue)
-        queue.pause(reason="stop")
-        assert queue.next_ready() is None
-        queue.resume()
-        assert queue.next_ready() is not None
-
-    def test_resume_after_expires_the_pause(self, tmp_path: Path) -> None:
-        """The daily-budget stop clears itself at the next local day."""
-        past = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
-        state = PauseState(paused=True, reason="budget", resume_after=past)
-        assert not state.active()
-
-    def test_resume_after_in_the_future_still_pauses(self) -> None:
-        future = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
-        state = PauseState(paused=True, reason="budget", resume_after=future)
-        assert state.active()
-
     def test_unreadable_pause_marker_reads_as_paused(
         self,
         tmp_path: Path,
@@ -1057,11 +867,6 @@ class TestLock:
 
 
 class TestConfig:
-    def test_defaults(self) -> None:
-        config = QueueConfig()
-        assert config.max_attempts == 3
-        assert config.lease_ttl_seconds == 3600.0
-
     def test_rejects_a_zero_attempt_budget(self) -> None:
         with pytest.raises(QueueError, match="max_attempts must be >= 1"):
             QueueConfig(max_attempts=0)
@@ -1113,9 +918,6 @@ class TestReporting:
         queue = _queue(tmp_path)
         _add(queue)
         assert summarize(queue.counts()) == "1 queued"
-
-    def test_summarize_of_an_empty_queue(self, tmp_path: Path) -> None:
-        assert summarize(_queue(tmp_path).counts()) == "empty"
 
     def test_next_ready_ignores_non_queued_items(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path)

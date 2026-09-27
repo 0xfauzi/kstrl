@@ -2,8 +2,8 @@
 name instead of being silently ignored.
 
 An unknown kstrl.toml key is ignored by design
-(``tests/test_config_toml.py::test_from_toml_ignores_unknown_keys`` pins
-that silence for names kstrl never used). A RENAMED key is a different
+(``tests/test_config_preflight.py::TestConfigToml`` pins that an unknown
+name reaches ``collect_config_problems`` rather than the loader). A RENAMED key is a different
 thing: the old spelling parses fine, does nothing, and a blocking gate
 reverts to advisory with no message. So a retired name is REFUSED,
 before the command body runs, and the message says what to rename it

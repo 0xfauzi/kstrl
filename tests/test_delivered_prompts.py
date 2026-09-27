@@ -98,6 +98,7 @@ from tests.helpers.builder_prompts import BUILDER_RENDER_EXEMPT
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.feedforward_prompts import NOTICE_PROMPTS
 from tests.helpers.prompt_calls import architect_call
+from tests.helpers.recording_agent import RecordingAgent
 from tests.test_prompt_versions import (
     _MARKER_HEAD,
     _MARKER_TAIL,
@@ -107,7 +108,6 @@ from tests.test_prompt_versions import (
     _run_and_capture_prompt,
     _sha256,
 )
-from tests.test_review_payload import RecordingAgent
 from tests.test_verify_command_contract import _engineer_prompt
 
 # ---------------------------------------------------------------------------

@@ -70,6 +70,9 @@ _DOMAIN_BASE = "RuntimeError"
 #: because separating them by shape is the guessing #324 costs.
 EXPECTED_RUNTIMEERROR_SPELLINGS: dict[str, int] = {
     "autonomy.py": 1,
+    # One bare raise: `_resolve_factory_run_lock` refuses a handed
+    # `_RunLock` whose own `release()` has already run (#597 fix round).
+    "cli.py": 1,
     "config_preflight.py": 2,  # the rule itself, and its docstring
     "contract.py": 1,
     "decisions.py": 1,  # DecisionRegisterError, added by #332

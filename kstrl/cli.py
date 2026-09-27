@@ -84,8 +84,11 @@ from kstrl.factory import (
     VALID_REVIEW_MODES,
     BudgetConfigError,
     FactoryConfig,
+    FactoryLockHeldError,
+    _acquire_run_lock,
     _cli_family,
     _report_preflight,
+    _RunLock,
     run_factory,
 )
 from kstrl.feature_cmd import FeatureParams, run_feature
@@ -134,6 +137,7 @@ from kstrl.retry_plan import (
     prepare_retry,
     preview_retry,
     print_resume_plan,
+    print_retry_plan,
     retry_confirm_header,
 )
 from kstrl.sandbox import SandboxConfig
@@ -160,6 +164,57 @@ def _load_manifest_or_exit(path: Path, ui: UI) -> Manifest:
     except (OSError, ValueError) as exc:
         ui.err(f"Failed to load manifest {path}: {exc}")
         sys.exit(2)
+
+
+#: The ``click`` meta key under which `ks retry` and `ks inbox approve` hand
+#: `ks factory` the run lock they took before changing anything (#597).
+#: ``meta`` is one dict shared by every context in the chain.
+_HANDED_RUN_LOCK = "kstrl.handed_run_lock"
+
+
+def _inbox_run_lock(root_dir: Path, ui_impl: UI, *, not_done: str, then: str) -> _RunLock:
+    """The run lock, taken before an inbox command changes anything, or exit 2 (#597).
+
+    A live factory run saves its whole in-memory manifest, so a requeue
+    written under it is undone at its next save. A merge decision, once
+    recorded, is applied by whichever run picks it up next, not only one
+    this command starts (measured, #596 item 2's D2): a decision recorded
+    under a live run's lock would sit un-applied until some later run
+    happened to pick it up, which is why this takes the lock before
+    recording anything rather than after. `ks inbox` has no --force-lock,
+    so the refusal names only waiting.
+    """
+    try:
+        return _acquire_run_lock(root_dir, ui_impl, force=False)
+    except FactoryLockHeldError:
+        ui_impl.err(
+            f"{not_done}: a factory run holds the run lock on this root. Nothing was changed."
+        )
+        ui_impl.info(then)
+        sys.exit(2)
+
+
+def _resolve_factory_run_lock(
+    ctx: click.Context, root_dir: Path, ui_impl: UI, force_lock: bool
+) -> _RunLock:
+    """The lock `ks factory` runs under: handed in by a caller, or newly acquired (#597).
+
+    `ks retry` and `ks inbox approve` on a parked merge take the lock
+    themselves and hand it on through ``ctx.meta``, so this never acquires
+    a second time in the same process (flock refuses that even within one
+    process); a handed lock whose own ``release()`` has already run is
+    #597's own defect one level up, so that is refused rather than
+    silently re-acquired. This checks ``released``, not ``fp is None``:
+    a ``--force-lock`` lock and the no-fcntl degrade also have
+    ``fp=None`` while still legitimate to hand on, so ``fp`` alone cannot
+    tell a forced or degraded lock from a released one. Its own function
+    so the boolean checks below cost nothing against `factory`'s own
+    cognitive-complexity ratchet.
+    """
+    handed = ctx.meta.get(_HANDED_RUN_LOCK)
+    if handed is not None and (not isinstance(handed, _RunLock) or handed.released):
+        raise RuntimeError(f"a released run lock was handed to `ks factory`: {handed!r}")
+    return handed or _acquire_run_lock(root_dir, ui_impl, force=force_lock)
 
 
 def _format_component_status(status: str | None) -> str:
@@ -1021,6 +1076,12 @@ class _KstrlGroup(click.Group):
     Exit code 2 with an ``error:`` line: a configuration the entry check
     rejects is a command that cannot run, which is what 2 means on every
     command (#452).
+
+    ``FactoryLockHeldError`` is the same contract (#597): a command that
+    takes the run lock before its first change (`ks retry`, and
+    ``decompose_spec`` under `ks decompose` and `ks factory --spec`) is
+    refused here with nothing changed. The message keeps ``--force-lock``,
+    which `ks serve` reads to classify the refusal as lock contention.
     """
 
     command_class = _KstrlCommand
@@ -1035,6 +1096,9 @@ class _KstrlGroup(click.Group):
             click.echo(f"error: {exc}", err=True)
             sys.exit(2)
         except BudgetConfigError as exc:
+            click.echo(f"error: {exc}", err=True)
+            sys.exit(2)
+        except FactoryLockHeldError as exc:
             click.echo(f"error: {exc}", err=True)
             sys.exit(2)
 
@@ -2231,6 +2295,12 @@ def feature(
     help="Use a single branch for all components",
 )
 @click.option(
+    "--force-lock",
+    is_flag=True,
+    help="Proceed even if another kstrl invocation holds "
+    ".kstrl/factory.lock (may corrupt the other run's state)",
+)
+@click.option(
     "--agent-cmd",
     help="Custom agent command (prompt piped to stdin)",
 )
@@ -2273,6 +2343,7 @@ def decompose(
     project_name: str,
     base_branch: str | None,
     single_pr: bool,
+    force_lock: bool,
     agent_cmd: str | None,
     model: str | None,
     reasoning: str | None,
@@ -2328,6 +2399,7 @@ def decompose(
                 bus=command_run.bus,
                 transcript=command_run.transcript_writer(ARCHITECT_COMPONENT),
                 prompt_call=command_run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
+                force_lock=force_lock,
             )
             core_ui.ok(f"Decomposed into {len(manifest.components)} components")
             return 0
@@ -2780,420 +2852,434 @@ def factory(
     # architect ran as (#567). `ks serve` charges that run when no factory
     # run of the launch names it (#587). The factory run names it with
     # ``architect_run_id``, so the spend is counted once either way.
-    architect_usage = UsageTotals()
-    architect_run_id = ""
-    if manifest_path:
-        try:
-            manifest = Manifest.load(manifest_path)
-        except Exception as exc:
-            ui_impl.err(f"Failed to load manifest: {exc}")
-            sys.exit(2)
-    else:
-        assert spec is not None
-        if not project_name:
-            ui_impl.err("--project-name is required with --spec")
-            sys.exit(2)
-        _refuse_without_build_manifest(root_dir, ui_impl)
+    # #597: `ks factory` takes the run lock before its first change, above
+    # the manifest load and before the architect spends anything on
+    # --spec, and holds it across the confirmation below (cli.py:3132,
+    # lane #594's own lines). See ``_resolve_factory_run_lock`` for the
+    # handed-vs-acquired resolution.
+    run_lock: _RunLock = _resolve_factory_run_lock(ctx, root_dir, ui_impl, force_lock)
 
-        # Read BEFORE the work, and sliced from there afterwards, the
-        # same way `decompose_spec` reports it - so the two derivations
-        # of "what the architect spent" cannot disagree, and neither
-        # rests on an invariant about who else touched this agent.
-        usage_before = usage_cursor(agent)
-        # #567: the architect runs as a decompose run of its own, the way
-        # `ks decompose` and the dashboard's decompose launch run it, so
-        # its prompt records, events and transcript have a run to live
-        # in. Not the factory's run: that directory would exist for the
-        # whole architect call with no event stream, and a factory-kind
-        # run with no stream is what safe mode reports as "could not
-        # read run" (measured on a failed decompose).
-        architect_run = open_command_run(
-            ui_impl,
-            root_dir,
-            ARCHITECT_RUN_KIND,
-            component=ARCHITECT_COMPONENT,
-        )
-        architect_run_id = architect_run.run_id
-        try:
-            manifest = decompose_spec(
-                spec_path=spec,
-                project_name=project_name,
-                # The --manifest path above is untouched: a manifest
-                # already carries its own base_branch. Only the --spec
-                # path has a flag to resolve, and detection is the
-                # default rather than the literal "main" (#259).
-                base_branch=resolve_base_branch(base_branch, root_dir),
-                single_pr=single_pr,
-                agent=agent,
-                ui=ui_impl,
-                root_dir=root_dir,
-                bus=architect_run.bus,
-                transcript=architect_run.transcript_writer(ARCHITECT_COMPONENT),
-                prompt_call=architect_run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
+    try:
+        architect_usage = UsageTotals()
+        architect_run_id = ""
+        if manifest_path:
+            try:
+                manifest = Manifest.load(manifest_path)
+            except Exception as exc:
+                ui_impl.err(f"Failed to load manifest: {exc}")
+                sys.exit(2)
+        else:
+            assert spec is not None
+            if not project_name:
+                ui_impl.err("--project-name is required with --spec")
+                sys.exit(2)
+            _refuse_without_build_manifest(root_dir, ui_impl)
+
+            # Read BEFORE the work, and sliced from there afterwards, the
+            # same way `decompose_spec` reports it - so the two derivations
+            # of "what the architect spent" cannot disagree, and neither
+            # rests on an invariant about who else touched this agent.
+            usage_before = usage_cursor(agent)
+            # #567: the architect runs as a decompose run of its own, the way
+            # `ks decompose` and the dashboard's decompose launch run it, so
+            # its prompt records, events and transcript have a run to live
+            # in. Not the factory's run: that directory would exist for the
+            # whole architect call with no event stream, and a factory-kind
+            # run with no stream is what safe mode reports as "could not
+            # read run" (measured on a failed decompose).
+            architect_run = open_command_run(
+                ui_impl,
+                root_dir,
+                ARCHITECT_RUN_KIND,
+                component=ARCHITECT_COMPONENT,
             )
-        except SpecBlockerError as exc:
-            # Architect halted: it escalated a question only the owner
-            # can answer (#260). Surface it and exit cleanly. The user
-            # answers, edits the spec and re-runs, iterating against the
-            # persisted artifacts (R1.7).
-            ui_impl.err(str(exc))
-            for line in exc.artifact_lines():
-                ui_impl.info(line)
-            sys.exit(2)
-        except ValueError as exc:
-            ui_impl.err(str(exc))
-            sys.exit(1)
-        finally:
-            architect_run.close()
-        architect_usage = collect_usage(agent, since=usage_before)
+            architect_run_id = architect_run.run_id
+            try:
+                manifest = decompose_spec(
+                    spec_path=spec,
+                    project_name=project_name,
+                    # The --manifest path above is untouched: a manifest
+                    # already carries its own base_branch. Only the --spec
+                    # path has a flag to resolve, and detection is the
+                    # default rather than the literal "main" (#259).
+                    base_branch=resolve_base_branch(base_branch, root_dir),
+                    single_pr=single_pr,
+                    agent=agent,
+                    ui=ui_impl,
+                    root_dir=root_dir,
+                    bus=architect_run.bus,
+                    transcript=architect_run.transcript_writer(ARCHITECT_COMPONENT),
+                    prompt_call=architect_run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
+                    force_lock=force_lock,
+                    run_lock=run_lock,
+                )
+            except SpecBlockerError as exc:
+                # Architect halted: it escalated a question only the owner
+                # can answer (#260). Surface it and exit cleanly. The user
+                # answers, edits the spec and re-runs, iterating against the
+                # persisted artifacts (R1.7).
+                ui_impl.err(str(exc))
+                for line in exc.artifact_lines():
+                    ui_impl.info(line)
+                sys.exit(2)
+            except ValueError as exc:
+                ui_impl.err(str(exc))
+                sys.exit(1)
+            finally:
+                architect_run.close()
+            architect_usage = collect_usage(agent, since=usage_before)
 
-    # Build configs (R2.1). Resolution order for every phase config:
-    # explicit CLI flag > env > kstrl.toml > dataclass default. The
-    # loaders handle env-over-toml-over-default; flags use None
-    # sentinels so "not passed" is distinguishable from "passed the
-    # default value", and an explicitly-passed flag is applied on top.
-    from kstrl.contract import ContractConfig
-    from kstrl.feedforward import CodebaseScanConfig
-    from kstrl.security import SecurityConfig
-    from kstrl.verify import VerifyConfig
+        # Build configs (R2.1). Resolution order for every phase config:
+        # explicit CLI flag > env > kstrl.toml > dataclass default. The
+        # loaders handle env-over-toml-over-default; flags use None
+        # sentinels so "not passed" is distinguishable from "passed the
+        # default value", and an explicitly-passed flag is applied on top.
+        from kstrl.contract import ContractConfig
+        from kstrl.feedforward import CodebaseScanConfig
+        from kstrl.security import SecurityConfig
+        from kstrl.verify import VerifyConfig
 
-    toml_notes: list[str] = []
+        toml_notes: list[str] = []
 
-    # factory_config was loaded in the budget preflight above.
-    _collect_toml_notes(
-        toml_notes,
-        "factory",
-        factory_config,
-        FactoryConfig.from_env(),
-        flag_overridden={
-            name
-            for name, passed in (
-                ("max_parallel", max_parallel is not None),
-                ("max_retries", max_retries is not None),
-                ("create_prs", create_prs is not None),
-                ("review_mode", review_mode is not None),
-                ("max_adversarial_calls", max_adversarial_calls is not None),
-                ("max_total_tokens", max_total_tokens is not None),
-                ("max_cost_usd", max_cost_usd is not None),
-                ("pause_before_pr_merge", pause_before_pr_merge is not None),
-                ("use_worktrees", no_worktrees),
-                ("keep_worktrees_on_failure", keep_worktrees_on_failure),
-                # The manifest is authoritative for single_pr, so a toml
-                # value never becomes effective in this command.
-                ("single_pr", True),
-            )
-            if passed
-        },
-    )
-    if max_parallel is not None:
-        factory_config.max_parallel = max_parallel
-    if max_retries is not None:
-        factory_config.max_retries = max_retries
-    if create_prs is not None:
-        factory_config.create_prs = create_prs
-    if review_mode is not None:
-        factory_config.review_mode = review_mode
-    if max_adversarial_calls is not None:
-        factory_config.max_adversarial_calls = max_adversarial_calls
-    if max_total_tokens is not None:
-        factory_config.max_total_tokens = max_total_tokens
-    if max_cost_usd is not None:
-        factory_config.max_cost_usd = max_cost_usd
-    if pause_before_pr_merge is not None:
-        factory_config.pause_before_pr_merge = pause_before_pr_merge
-        # #195: passing the flag either way is an explicit operator
-        # request, so the ladder may not lower it. This is also what
-        # makes `ks serve` honour a stop_at_pr item at L3: its child
-        # always gets one of --pause-before-pr-merge /
-        # --no-pause-before-pr-merge (serve.subprocess_factory_runner).
-        factory_config.explicit_fields |= {"pause_before_pr_merge"}
-    if no_worktrees:
-        factory_config.use_worktrees = False
-    if keep_worktrees_on_failure:
-        factory_config.keep_worktrees_on_failure = True
-    factory_config.single_pr = manifest.single_pr
-    factory_config.review_agent_cmd = review_agent_cmd
-    factory_config.review_model = review_model
-    factory_config.progress_log_path = progress_log
-    if progress_log is not None:
-        # An explicit --progress-log path is an explicit opt-in; it wins
-        # over a toml/env progress_log_enabled = false.
-        factory_config.progress_log_enabled = True
-    factory_config.force_lock = force_lock
-    # #436: what `ks retry` replays; see kstrl/launch_record.py.
-    factory_config.launch_flags = replayable_flags(ctx)
-    # R2.3: --no-verify is an explicit skip sentinel that run_factory
-    # honors; verify_config=None alone would substitute default checks.
-    factory_config.skip_verification = no_verify
-
-    v_config: VerifyConfig | None = None
-    if not no_verify:
-        v_config = VerifyConfig.load(root_dir)
+        # factory_config was loaded in the budget preflight above.
         _collect_toml_notes(
             toml_notes,
-            "verify",
-            v_config,
-            VerifyConfig.from_env(),
+            "factory",
+            factory_config,
+            FactoryConfig.from_env(),
             flag_overridden={
                 name
                 for name, passed in (
-                    ("test_command", test_command is not None),
-                    ("typecheck_command", typecheck_command is not None),
-                    ("lint_command", lint_command is not None),
-                    ("dead_code_cleanup", dead_code_cleanup is not None),
-                    ("dead_code_command", dead_code_command is not None),
-                    ("mutation_testing", mutation_testing is not None),
-                    ("mutation_threshold", mutation_threshold is not None),
+                    ("max_parallel", max_parallel is not None),
+                    ("max_retries", max_retries is not None),
+                    ("create_prs", create_prs is not None),
+                    ("review_mode", review_mode is not None),
+                    ("max_adversarial_calls", max_adversarial_calls is not None),
+                    ("max_total_tokens", max_total_tokens is not None),
+                    ("max_cost_usd", max_cost_usd is not None),
+                    ("pause_before_pr_merge", pause_before_pr_merge is not None),
+                    ("use_worktrees", no_worktrees),
+                    ("keep_worktrees_on_failure", keep_worktrees_on_failure),
+                    # The manifest is authoritative for single_pr, so a toml
+                    # value never becomes effective in this command.
+                    ("single_pr", True),
                 )
                 if passed
             },
         )
-        if test_command is not None:
-            v_config.test_command = test_command
-        if typecheck_command is not None:
-            v_config.typecheck_command = typecheck_command
-        if lint_command is not None:
-            v_config.lint_command = lint_command
-        if dead_code_cleanup is not None:
-            v_config.dead_code_cleanup = dead_code_cleanup
-        if dead_code_command is not None:
-            v_config.dead_code_command = dead_code_command
-        if mutation_testing is not None:
-            v_config.mutation_testing = mutation_testing
-        if mutation_threshold is not None:
-            v_config.mutation_threshold = mutation_threshold
+        if max_parallel is not None:
+            factory_config.max_parallel = max_parallel
+        if max_retries is not None:
+            factory_config.max_retries = max_retries
+        if create_prs is not None:
+            factory_config.create_prs = create_prs
+        if review_mode is not None:
+            factory_config.review_mode = review_mode
+        if max_adversarial_calls is not None:
+            factory_config.max_adversarial_calls = max_adversarial_calls
+        if max_total_tokens is not None:
+            factory_config.max_total_tokens = max_total_tokens
+        if max_cost_usd is not None:
+            factory_config.max_cost_usd = max_cost_usd
+        if pause_before_pr_merge is not None:
+            factory_config.pause_before_pr_merge = pause_before_pr_merge
+            # #195: passing the flag either way is an explicit operator
+            # request, so the ladder may not lower it. This is also what
+            # makes `ks serve` honour a stop_at_pr item at L3: its child
+            # always gets one of --pause-before-pr-merge /
+            # --no-pause-before-pr-merge (serve.subprocess_factory_runner).
+            factory_config.explicit_fields |= {"pause_before_pr_merge"}
+        if no_worktrees:
+            factory_config.use_worktrees = False
+        if keep_worktrees_on_failure:
+            factory_config.keep_worktrees_on_failure = True
+        factory_config.single_pr = manifest.single_pr
+        factory_config.review_agent_cmd = review_agent_cmd
+        factory_config.review_model = review_model
+        factory_config.progress_log_path = progress_log
+        if progress_log is not None:
+            # An explicit --progress-log path is an explicit opt-in; it wins
+            # over a toml/env progress_log_enabled = false.
+            factory_config.progress_log_enabled = True
+        factory_config.force_lock = force_lock
+        # #436: what `ks retry` replays; see kstrl/launch_record.py.
+        factory_config.launch_flags = replayable_flags(ctx)
+        # R2.3: --no-verify is an explicit skip sentinel that run_factory
+        # honors; verify_config=None alone would substitute default checks.
+        factory_config.skip_verification = no_verify
 
-    s_config = SecurityConfig.load(root_dir)
-    _collect_toml_notes(
-        toml_notes,
-        "security",
-        s_config,
-        SecurityConfig.from_env(),
-        flag_overridden={
-            name
-            for name, passed in (
-                ("mode", security_mode is not None),
-                ("agent_cmd", security_agent_cmd is not None),
-                ("model", security_model is not None),
-                ("fail_threshold", security_fail_threshold is not None),
+        v_config: VerifyConfig | None = None
+        if not no_verify:
+            v_config = VerifyConfig.load(root_dir)
+            _collect_toml_notes(
+                toml_notes,
+                "verify",
+                v_config,
+                VerifyConfig.from_env(),
+                flag_overridden={
+                    name
+                    for name, passed in (
+                        ("test_command", test_command is not None),
+                        ("typecheck_command", typecheck_command is not None),
+                        ("lint_command", lint_command is not None),
+                        ("dead_code_cleanup", dead_code_cleanup is not None),
+                        ("dead_code_command", dead_code_command is not None),
+                        ("mutation_testing", mutation_testing is not None),
+                        ("mutation_threshold", mutation_threshold is not None),
+                    )
+                    if passed
+                },
             )
-            if passed
-        },
-    )
-    if security_mode is not None:
-        s_config.mode = security_mode
-    if security_agent_cmd is not None:
-        s_config.agent_cmd = security_agent_cmd
-    if security_model is not None:
-        s_config.model = security_model
-    if security_fail_threshold is not None:
-        s_config.fail_threshold = security_fail_threshold
+            if test_command is not None:
+                v_config.test_command = test_command
+            if typecheck_command is not None:
+                v_config.typecheck_command = typecheck_command
+            if lint_command is not None:
+                v_config.lint_command = lint_command
+            if dead_code_cleanup is not None:
+                v_config.dead_code_cleanup = dead_code_cleanup
+            if dead_code_command is not None:
+                v_config.dead_code_command = dead_code_command
+            if mutation_testing is not None:
+                v_config.mutation_testing = mutation_testing
+            if mutation_threshold is not None:
+                v_config.mutation_threshold = mutation_threshold
 
-    # --test-command historically flowed through to contract testing
-    # when --contract-test-cmd was absent; both are explicit CLI input,
-    # so either beats env/toml.
-    cli_contract_cmd = contract_test_cmd or test_command
-    contract_resolved = ContractConfig.load(root_dir)
-    _collect_toml_notes(
-        toml_notes,
-        "contract",
-        contract_resolved,
-        ContractConfig.from_env(),
-        flag_overridden={
-            name
-            for name, passed in (
-                ("mode", contract_check is not None),
-                ("test_command", cli_contract_cmd is not None),
+        s_config = SecurityConfig.load(root_dir)
+        _collect_toml_notes(
+            toml_notes,
+            "security",
+            s_config,
+            SecurityConfig.from_env(),
+            flag_overridden={
+                name
+                for name, passed in (
+                    ("mode", security_mode is not None),
+                    ("agent_cmd", security_agent_cmd is not None),
+                    ("model", security_model is not None),
+                    ("fail_threshold", security_fail_threshold is not None),
+                )
+                if passed
+            },
+        )
+        if security_mode is not None:
+            s_config.mode = security_mode
+        if security_agent_cmd is not None:
+            s_config.agent_cmd = security_agent_cmd
+        if security_model is not None:
+            s_config.model = security_model
+        if security_fail_threshold is not None:
+            s_config.fail_threshold = security_fail_threshold
+
+        # --test-command historically flowed through to contract testing
+        # when --contract-test-cmd was absent; both are explicit CLI input,
+        # so either beats env/toml.
+        cli_contract_cmd = contract_test_cmd or test_command
+        contract_resolved = ContractConfig.load(root_dir)
+        _collect_toml_notes(
+            toml_notes,
+            "contract",
+            contract_resolved,
+            ContractConfig.from_env(),
+            flag_overridden={
+                name
+                for name, passed in (
+                    ("mode", contract_check is not None),
+                    ("test_command", cli_contract_cmd is not None),
+                )
+                if passed
+            },
+        )
+        if contract_check is not None:
+            contract_resolved.mode = contract_check
+        if cli_contract_cmd is not None:
+            contract_resolved.test_command = cli_contract_cmd
+        # mode == "skip" keeps the historical contract of passing no config.
+        c_config: ContractConfig | None = (
+            contract_resolved if contract_resolved.mode != "skip" else None
+        )
+
+        ff_config = CodebaseScanConfig.load(root_dir)
+        _collect_toml_notes(
+            toml_notes,
+            "codebase_scan",
+            ff_config,
+            CodebaseScanConfig.from_env(),
+            flag_overridden=set(),
+        )
+
+        # Evolution config is consumed inside run_factory via
+        # EvolutionJournal.open; swept here only for the NOTE lines, and by
+        # a helper because a failed load must not cost the run. The helper
+        # says why this section and not its five raising siblings.
+        _collect_evolution_notes(toml_notes, root_dir, ui_impl)
+
+        # R0.1: TimeoutConfig is the single source for timeout values.
+        timeout_config = TimeoutConfig.load(root_dir)
+        _collect_toml_notes(
+            toml_notes,
+            "timeout",
+            timeout_config,
+            TimeoutConfig.from_env(),
+            flag_overridden={
+                name
+                for name, passed in (
+                    ("agent_iteration", agent_timeout is not None),
+                    ("component_total", component_timeout is not None),
+                )
+                if passed
+            },
+        )
+        if agent_timeout is not None:
+            timeout_config.agent_iteration = agent_timeout
+        if component_timeout is not None:
+            timeout_config.component_total = component_timeout
+
+        factory_config.verify_config = v_config
+        factory_config.security_config = s_config
+        factory_config.contract_config = c_config
+        factory_config.codebase_scan_config = ff_config
+        factory_config.timeout_config = timeout_config
+
+        # Display summary and confirm (resolved values, not raw flags)
+        ui_impl.section("Factory Plan")
+        ui_impl.kv("Project", manifest.project_name)
+        ui_impl.kv("Components", str(len(manifest.components)))
+        ui_impl.kv("Base branch", manifest.base_branch)
+        ui_impl.kv("Single PR", "yes" if manifest.single_pr else "no")
+        ui_impl.kv("Max parallel", str(factory_config.max_parallel))
+        ui_impl.kv("Create PRs", "yes" if factory_config.create_prs else "no")
+
+        # R2.1 behavior change: kstrl.toml sections that used to be silently
+        # ignored now take effect. Surface every value a toml section moved
+        # away from the CLI default so existing setups see the change.
+        for note in toml_notes:
+            ui_impl.info(note)
+
+        _print_execution_order(manifest, ui_impl)
+
+        _factory_channel = UiInteractionChannel(ui_impl)
+        if not yes and _factory_channel.can_prompt():
+            response = _factory_channel.request(
+                PromptRequest(
+                    kind=PromptKind.CONFIRM,
+                    header="Proceed with factory execution?",
+                    options=("Start", "Quit"),
+                    default=0,
+                )
             )
-            if passed
-        },
-    )
-    if contract_check is not None:
-        contract_resolved.mode = contract_check
-    if cli_contract_cmd is not None:
-        contract_resolved.test_command = cli_contract_cmd
-    # mode == "skip" keeps the historical contract of passing no config.
-    c_config: ContractConfig | None = (
-        contract_resolved if contract_resolved.mode != "skip" else None
-    )
+            # #594: only an answered Start starts a paid run. An interrupted
+            # or unanswered confirm quits, exactly as Quit does.
+            if not response.answered or response.choice != 0:
+                ui_impl.info("Factory not started.")
+                sys.exit(0)
 
-    ff_config = CodebaseScanConfig.load(root_dir)
-    _collect_toml_notes(
-        toml_notes,
-        "codebase_scan",
-        ff_config,
-        CodebaseScanConfig.from_env(),
-        flag_overridden=set(),
-    )
+        kstrl_dir = root_dir / "scripts" / "kstrl"
+        base_config = KstrlConfig.load(root_dir)
+        if _use_cli_value(ctx, "agent_cmd"):
+            base_config.agent_cmd = agent_cmd
+        if _use_cli_value(ctx, "model"):
+            base_config.model = model
+        if _use_cli_value(ctx, "reasoning"):
+            base_config.model_reasoning_effort = reasoning
+        if _use_cli_value(ctx, "agent_type"):
+            base_config.agent_type = agent_type
+        if _use_cli_value(ctx, "sleep"):
+            base_config.sleep_seconds = sleep
+        base_config.ui_mode = "plain"
+        base_config.no_color = True
 
-    # Evolution config is consumed inside run_factory via
-    # EvolutionJournal.open; swept here only for the NOTE lines, and by
-    # a helper because a failed load must not cost the run. The helper
-    # says why this section and not its five raising siblings.
-    _collect_evolution_notes(toml_notes, root_dir, ui_impl)
+        # R2.4 mirror for the factory path (measured 2026-07-20 on the first
+        # real factory run): without this, a toml alias like type = "claude"
+        # reaches get_agent RAW in every engineer worker and silently falls
+        # through to the codex default - and _cli_family misreads the
+        # engineer family, inverting the R7.1 reviewer rotation.
+        _check_agent_preflight(base_config, ui_impl)
 
-    # R0.1: TimeoutConfig is the single source for timeout values.
-    timeout_config = TimeoutConfig.load(root_dir)
-    _collect_toml_notes(
-        toml_notes,
-        "timeout",
-        timeout_config,
-        TimeoutConfig.from_env(),
-        flag_overridden={
-            name
-            for name, passed in (
-                ("agent_iteration", agent_timeout is not None),
-                ("component_total", component_timeout is not None),
-            )
-            if passed
-        },
-    )
-    if agent_timeout is not None:
-        timeout_config.agent_iteration = agent_timeout
-    if component_timeout is not None:
-        timeout_config.component_total = component_timeout
+        # --no-verify leaves no reader, so there is nothing to reconcile.
+        if v_config is not None:
+            # R8 review: the progress log's writer ([paths] progress) and its
+            # reader ([verify] progress_file_path) default to the same
+            # derivation, so they agree until exactly ONE is set - and then the
+            # self-critique check inspects a file the engineer never wrote and
+            # fails for a reason the operator cannot see from either setting.
+            # The reconciliation lives in config.py (and is applied in ONE path
+            # domain, review finding 3) so a test can exercise the same wiring
+            # this command runs.
+            mismatch = reconcile_progress_config(base_config, v_config, root_dir)
+            if mismatch is not None:
+                ui_impl.warn(mismatch)
 
-    factory_config.verify_config = v_config
-    factory_config.security_config = s_config
-    factory_config.contract_config = c_config
-    factory_config.codebase_scan_config = ff_config
-    factory_config.timeout_config = timeout_config
+        # Ensure prompt file exists
+        if not base_config.prompt_file.exists():
+            default_prompt = kstrl_dir / "prompt.md"
+            if default_prompt.exists():
+                base_config.prompt_file = default_prompt
 
-    # Display summary and confirm (resolved values, not raw flags)
-    ui_impl.section("Factory Plan")
-    ui_impl.kv("Project", manifest.project_name)
-    ui_impl.kv("Components", str(len(manifest.components)))
-    ui_impl.kv("Base branch", manifest.base_branch)
-    ui_impl.kv("Single PR", "yes" if manifest.single_pr else "no")
-    ui_impl.kv("Max parallel", str(factory_config.max_parallel))
-    ui_impl.kv("Create PRs", "yes" if factory_config.create_prs else "no")
+        # #286: after the fallback above, so it speaks about the file every
+        # worker will actually read (#569: from the root checkout, never a
+        # copy in its worktree).
+        _check_prompt_preflight(base_config.prompt_file, ui_impl)
 
-    # R2.1 behavior change: kstrl.toml sections that used to be silently
-    # ignored now take effect. Surface every value a toml section moved
-    # away from the CLI default so existing setups see the change.
-    for note in toml_notes:
-        ui_impl.info(note)
-
-    _print_execution_order(manifest, ui_impl)
-
-    _factory_channel = UiInteractionChannel(ui_impl)
-    if not yes and _factory_channel.can_prompt():
-        response = _factory_channel.request(
-            PromptRequest(
-                kind=PromptKind.CONFIRM,
-                header="Proceed with factory execution?",
-                options=("Start", "Quit"),
-                default=0,
+        # R0.5 (H-15): state saves back to the file it was loaded from.
+        # --manifest /custom.json persists to /custom.json; --spec runs keep
+        # the default scripts/kstrl/manifest.json that decompose wrote.
+        use_tui = (
+            tui
+            if tui is not None
+            else (
+                sys.stdout.isatty()
+                and sys.stdin.isatty()
+                and os.environ.get("KSTRL_NO_TUI") != "1"
+                and _normalize_ui_mode(ui) != "plain"
             )
         )
-        # #594: only an answered Start starts a paid run. An interrupted
-        # or unanswered confirm quits, exactly as Quit does.
-        if not response.answered or response.choice != 0:
-            ui_impl.info("Factory not started.")
-            sys.exit(0)
+        if use_tui:
+            if not (sys.stdout.isatty() and sys.stdin.isatty()):
+                click.echo(
+                    "--tui requires an interactive terminal; use --no-tui "
+                    "for non-interactive execution.",
+                    err=True,
+                )
+                sys.exit(2)
+            # PR F: embedded dashboard. The pre-execution confirm already
+            # happened on the plain terminal (plan decision: no
+            # modal-before-app); everything from here renders in Textual.
+            from kstrl.tui.embed import run_factory_embedded
 
-    kstrl_dir = root_dir / "scripts" / "kstrl"
-    base_config = KstrlConfig.load(root_dir)
-    if _use_cli_value(ctx, "agent_cmd"):
-        base_config.agent_cmd = agent_cmd
-    if _use_cli_value(ctx, "model"):
-        base_config.model = model
-    if _use_cli_value(ctx, "reasoning"):
-        base_config.model_reasoning_effort = reasoning
-    if _use_cli_value(ctx, "agent_type"):
-        base_config.agent_type = agent_type
-    if _use_cli_value(ctx, "sleep"):
-        base_config.sleep_seconds = sleep
-    base_config.ui_mode = "plain"
-    base_config.no_color = True
-
-    # R2.4 mirror for the factory path (measured 2026-07-20 on the first
-    # real factory run): without this, a toml alias like type = "claude"
-    # reaches get_agent RAW in every engineer worker and silently falls
-    # through to the codex default - and _cli_family misreads the
-    # engineer family, inverting the R7.1 reviewer rotation.
-    _check_agent_preflight(base_config, ui_impl)
-
-    # --no-verify leaves no reader, so there is nothing to reconcile.
-    if v_config is not None:
-        # R8 review: the progress log's writer ([paths] progress) and its
-        # reader ([verify] progress_file_path) default to the same
-        # derivation, so they agree until exactly ONE is set - and then the
-        # self-critique check inspects a file the engineer never wrote and
-        # fails for a reason the operator cannot see from either setting.
-        # The reconciliation lives in config.py (and is applied in ONE path
-        # domain, review finding 3) so a test can exercise the same wiring
-        # this command runs.
-        mismatch = reconcile_progress_config(base_config, v_config, root_dir)
-        if mismatch is not None:
-            ui_impl.warn(mismatch)
-
-    # Ensure prompt file exists
-    if not base_config.prompt_file.exists():
-        default_prompt = kstrl_dir / "prompt.md"
-        if default_prompt.exists():
-            base_config.prompt_file = default_prompt
-
-    # #286: after the fallback above, so it speaks about the file every
-    # worker will actually read (#569: from the root checkout, never a
-    # copy in its worktree).
-    _check_prompt_preflight(base_config.prompt_file, ui_impl)
-
-    # R0.5 (H-15): state saves back to the file it was loaded from.
-    # --manifest /custom.json persists to /custom.json; --spec runs keep
-    # the default scripts/kstrl/manifest.json that decompose wrote.
-    use_tui = (
-        tui
-        if tui is not None
-        else (
-            sys.stdout.isatty()
-            and sys.stdin.isatty()
-            and os.environ.get("KSTRL_NO_TUI") != "1"
-            and _normalize_ui_mode(ui) != "plain"
-        )
-    )
-    if use_tui:
-        if not (sys.stdout.isatty() and sys.stdin.isatty()):
-            click.echo(
-                "--tui requires an interactive terminal; use --no-tui "
-                "for non-interactive execution.",
-                err=True,
+            sys.exit(
+                run_factory_embedded(
+                    manifest,
+                    factory_config,
+                    base_config,
+                    root_dir,
+                    manifest_path,
+                    architect_usage=architect_usage,
+                    architect_run_id=architect_run_id,
+                    run_lock=run_lock,
+                )
             )
-            sys.exit(2)
-        # PR F: embedded dashboard. The pre-execution confirm already
-        # happened on the plain terminal (plan decision: no
-        # modal-before-app); everything from here renders in Textual.
-        from kstrl.tui.embed import run_factory_embedded
 
-        sys.exit(
-            run_factory_embedded(
+        stop = StopController()
+        uninstall = install_signal_handlers(stop)
+        try:
+            result = run_factory(
                 manifest,
                 factory_config,
                 base_config,
+                ui_impl,
                 root_dir,
-                manifest_path,
+                manifest_path=manifest_path,
+                stop=stop,
                 architect_usage=architect_usage,
                 architect_run_id=architect_run_id,
+                run_lock=run_lock,
             )
-        )
-
-    stop = StopController()
-    uninstall = install_signal_handlers(stop)
-    try:
-        result = run_factory(
-            manifest,
-            factory_config,
-            base_config,
-            ui_impl,
-            root_dir,
-            manifest_path=manifest_path,
-            stop=stop,
-            architect_usage=architect_usage,
-            architect_run_id=architect_run_id,
-        )
+        finally:
+            uninstall()
+        sys.exit(result.exit_code)
     finally:
-        uninstall()
-    sys.exit(result.exit_code)
+        run_lock.release()
 
 
 # Display structure for the KstrlConfig-backed kstrl.toml sections:
@@ -4569,7 +4655,9 @@ def retry(
     over the recorded ones. A retry that would drop a run limit the run
     it resumes ran under (cost, tokens, adversarial calls, agent and
     component timeouts), or cannot tell whether it did, is refused before
-    anything is changed (#526).
+    anything is changed (#526). Nothing is changed until the confirmation
+    is answered Start and the run lock is taken; a live run's lock is a
+    refusal (exit 2), and the lock is held into the run (#597).
     """
     root_dir = root.resolve() if root else Path.cwd()
     force_rich = os.environ.get("GUM_FORCE") == "1"
@@ -4587,7 +4675,7 @@ def retry(
     manifest = _load_manifest_or_exit(manifest_file, ui_impl)
 
     try:
-        preview_retry(manifest, component_id)
+        preview = preview_retry(manifest, component_id)
     except ValueError as exc:
         ui_impl.err(str(exc))
         sys.exit(2)
@@ -4610,13 +4698,7 @@ def retry(
         _report_preflight(ui_impl, RESUME_REFUSAL, problems)
         sys.exit(2)
 
-    try:
-        preview = prepare_retry(manifest, component_id, manifest_file, root_dir, ui_impl)
-    except ValueError as exc:
-        ui_impl.err(str(exc))
-        sys.exit(2)
-    except RetryError:
-        sys.exit(2)
+    print_retry_plan(ui_impl, preview, manifest_file)
     print_resume_plan(ui_impl, plan)
 
     _retry_channel = UiInteractionChannel(ui_impl)
@@ -4629,29 +4711,51 @@ def retry(
                 default=0,
             )
         )
-        if response.answered and response.choice != 0:
+        if not response.answered or response.choice != 0:
             sys.exit(0)
 
-    # Re-enter through `ks factory` itself, so config assembly, preflights
-    # and the Execution header are the factory's own and cannot drift.
-    argv = option_argv(
-        factory,
-        {
-            "manifest_path": str(manifest_file),
-            "root": str(root_dir),
-            "yes": True,
-            "tui": False,
-            "ui": ui,
-            "no_color": no_color,
-            "progress_log": str(progress_log) if progress_log is not None else None,
-            "force_lock": force_lock,
-        },
-    )
-    factory_ctx = factory.make_context(
-        "factory", [*argv, *plan.argv], parent=click.get_current_context()
-    )
-    with factory_ctx:
-        factory.invoke(factory_ctx)
+    run_lock = _acquire_run_lock(root_dir, ui_impl, force=force_lock)
+    try:
+        # Re-read under the lock: a run may have saved while the question was open.
+        manifest = _load_manifest_or_exit(manifest_file, ui_impl)
+        try:
+            if preview_retry(manifest, component_id) != preview:
+                ui_impl.err(
+                    f"{manifest_file} changed while the confirmation was open, so "
+                    f"nothing was changed; run `ks retry {component_id}` again to see "
+                    "the new plan"
+                )
+                sys.exit(2)
+            prepare_retry(manifest, component_id, manifest_file, root_dir, ui_impl)
+        except ValueError as exc:
+            ui_impl.err(str(exc))
+            sys.exit(2)
+        except RetryError:
+            sys.exit(2)
+
+        # Re-enter through `ks factory` itself, so config assembly, preflights
+        # and the Execution header are the factory's own and cannot drift.
+        argv = option_argv(
+            factory,
+            {
+                "manifest_path": str(manifest_file),
+                "root": str(root_dir),
+                "yes": True,
+                "tui": False,
+                "ui": ui,
+                "no_color": no_color,
+                "progress_log": str(progress_log) if progress_log is not None else None,
+                "force_lock": force_lock,
+            },
+        )
+        factory_ctx = factory.make_context(
+            "factory", [*argv, *plan.argv], parent=click.get_current_context()
+        )
+        factory_ctx.meta[_HANDED_RUN_LOCK] = run_lock
+        with factory_ctx:
+            factory.invoke(factory_ctx)
+    finally:
+        run_lock.release()
 
 
 @cli.command()
@@ -5501,7 +5605,9 @@ def _decide_parked_merge_if_parked(
     records the decision as it always has. For a park it never returns:
     it refuses (exit 2) or hands over to `ks factory`, which exits
     with the run's own code. Every refusal happens before the decision is
-    recorded, so a refused command changes nothing.
+    recorded, so a refused command changes nothing: the run lock is taken
+    before the manifest is read and handed to the run, so a live run's
+    lock is a refusal here rather than after the decision (#597, #596).
     """
     from kstrl.inbox import InboxError
 
@@ -5510,82 +5616,93 @@ def _decide_parked_merge_if_parked(
     if item is None or not item.dedupe_key.startswith(MERGE_GATE_PARK_KEY):
         return
     ui_impl = _autonomy_ui(ui, no_color)
+    said = {"approve": "approved", "reject": "rejected"}[action]
     manifest_file = root_dir / "scripts" / "kstrl" / "manifest.json"
     if not manifest_file.exists():
         ui_impl.err(f"No manifest at {manifest_file}")
         sys.exit(2)
-    manifest = _load_manifest_or_exit(manifest_file, ui_impl)
-    comp = manifest.get_component(item.component)
-    if comp is None or comp.status != ComponentStatus.AWAITING_APPROVAL.value:
-        where = comp.status if comp is not None else "not in the manifest"
-        ui_impl.err(
-            f"{item.id[:8]}: component '{item.component}' is {where}, not awaiting "
-            f"approval in {manifest_file}; there is no parked merge to {action}"
-        )
-        sys.exit(2)
-    plan, problems, _unkept = plan_resume(
+    run_lock = _inbox_run_lock(
         root_dir,
-        manifest,
-        manifest_file,
-        factory,
-        max_cost_usd=None,
-        max_parallel=None,
-        keep_worktrees_on_failure=False,
+        ui_impl,
+        not_done=f"{item.id[:8]} was not {said}",
+        then="When that run has finished, re-run this command: the decision is applied "
+        "by the run it starts.",
     )
-    if plan is None:
-        _report_preflight(ui_impl, RESUME_REFUSAL, problems)
-        sys.exit(2)
-    serve_parked = _serve_parked(root_dir, manifest.run_id, ui_impl)
     try:
-        if action == "approve":
-            box.approve(item.id, actor=_actor(), comment=comment)
-        else:
-            box.reject(item.id, actor=_actor(), comment=comment)
-    except InboxError as exc:
-        ui_impl.err(str(exc))
-        sys.exit(2)
-    said = {"approve": "approved", "reject": "rejected"}[action]
-    ui_impl.ok(f"{said} {item.id[:8]}: {item.title}")
-    print_resume_plan(ui_impl, plan)
-    argv = option_argv(
-        factory,
-        {
-            "manifest_path": str(manifest_file),
-            "root": str(root_dir),
-            "yes": True,
-            "tui": False,
-            "ui": ui,
-            "no_color": no_color,
-        },
-    )
-    factory_ctx = factory.make_context(
-        "factory", [*argv, *plan.argv], parent=click.get_current_context()
-    )
-    from kstrl.serve import run_dir_names
-
-    runs_before = run_dir_names(root_dir)
-    try:
-        with factory_ctx:
-            factory.invoke(factory_ctx)
-    except SystemExit as exc:
-        # `ks factory` always leaves through sys.exit with the run's own
-        # code. Settle the queue item serve parked on this run (#464),
-        # then exit with that code.
-        from kstrl.serve import settle_approval_run
-        from kstrl.workqueue import Queue, QueueConfig
-
-        settle_approval_run(
+        manifest = _load_manifest_or_exit(manifest_file, ui_impl)
+        comp = manifest.get_component(item.component)
+        if comp is None or comp.status != ComponentStatus.AWAITING_APPROVAL.value:
+            where = comp.status if comp is not None else "not in the manifest"
+            ui_impl.err(
+                f"{item.id[:8]}: component '{item.component}' is {where}, not awaiting "
+                f"approval in {manifest_file}; there is no parked merge to {action}"
+            )
+            sys.exit(2)
+        plan, problems, _unkept = plan_resume(
             root_dir,
-            Queue(root_dir, QueueConfig.load(root_dir)),
-            parked_run_id=manifest.run_id,
-            returncode=exc.code if isinstance(exc.code, int) else 1,
-            actor=_actor(),
-            observer=_ServeUiObserver(ui_impl),
+            manifest,
+            manifest_file,
+            factory,
+            max_cost_usd=None,
+            max_parallel=None,
+            keep_worktrees_on_failure=False,
         )
-        raise
+        if plan is None:
+            _report_preflight(ui_impl, RESUME_REFUSAL, problems)
+            sys.exit(2)
+        serve_parked = _serve_parked(root_dir, manifest.run_id, ui_impl)
+        try:
+            if action == "approve":
+                box.approve(item.id, actor=_actor(), comment=comment)
+            else:
+                box.reject(item.id, actor=_actor(), comment=comment)
+        except InboxError as exc:
+            ui_impl.err(str(exc))
+            sys.exit(2)
+        ui_impl.ok(f"{said} {item.id[:8]}: {item.title}")
+        print_resume_plan(ui_impl, plan)
+        argv = option_argv(
+            factory,
+            {
+                "manifest_path": str(manifest_file),
+                "root": str(root_dir),
+                "yes": True,
+                "tui": False,
+                "ui": ui,
+                "no_color": no_color,
+            },
+        )
+        factory_ctx = factory.make_context(
+            "factory", [*argv, *plan.argv], parent=click.get_current_context()
+        )
+        factory_ctx.meta[_HANDED_RUN_LOCK] = run_lock
+        from kstrl.serve import run_dir_names
+
+        runs_before = run_dir_names(root_dir)
+        try:
+            with factory_ctx:
+                factory.invoke(factory_ctx)
+        except SystemExit as exc:
+            # `ks factory` always leaves through sys.exit with the run's own
+            # code. Settle the queue item serve parked on this run (#464),
+            # then exit with that code.
+            from kstrl.serve import settle_approval_run
+            from kstrl.workqueue import Queue, QueueConfig
+
+            settle_approval_run(
+                root_dir,
+                Queue(root_dir, QueueConfig.load(root_dir)),
+                parked_run_id=manifest.run_id,
+                returncode=exc.code if isinstance(exc.code, int) else 1,
+                actor=_actor(),
+                observer=_ServeUiObserver(ui_impl),
+            )
+            raise
+        finally:
+            if serve_parked:
+                _charge_serve_for_approval_run(root_dir, runs_before, ui_impl)
     finally:
-        if serve_parked:
-            _charge_serve_for_approval_run(root_dir, runs_before, ui_impl)
+        run_lock.release()
 
 
 @inbox_group.command(name="snooze")
@@ -5620,7 +5737,8 @@ def inbox_retry(
 
     A real round-trip, not a status change: the component is reset to
     PENDING in the manifest (with its dependents un-skipped), so the next
-    `ks factory` run picks it up.
+    `ks factory` run picks it up. Refused with nothing changed while a
+    factory run holds the run lock, whose next save would undo it (#597).
     """
     root_dir, box = _inbox_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -5635,20 +5753,34 @@ def inbox_retry(
     if not manifest_path.exists():
         ui_impl.err(f"No manifest at {manifest_path}")
         sys.exit(2)
-    manifest = _load_manifest_or_exit(manifest_path, ui_impl)
+    # #597: the read, the reset, the save and the resolve all happen under
+    # the run lock, so a live run cannot undo the requeue at its next save.
+    run_lock = _inbox_run_lock(
+        root_dir,
+        ui_impl,
+        not_done=f"{item.component} was not requeued",
+        then=(
+            "When that run has finished, re-run this command, or run "
+            f"`ks retry {item.component}` to requeue it and run it at once."
+        ),
+    )
     try:
-        reset = manifest.reset_for_retry(item.component)
-    except (ValueError, KeyError) as exc:
-        ui_impl.err(f"Could not requeue {item.component}: {exc}")
-        if item.dedupe_key.startswith(MERGE_GATE_PARK_KEY):
-            ui_impl.info(
-                f"It is parked at the merge gate: `ks inbox approve {item.id[:8]}` "
-                f"merges its reviewed branch, `ks inbox reject {item.id[:8]} "
-                "--comment ...` fails it."
-            )
-        sys.exit(2)
-    manifest.save(manifest_path)
-    box.resolve(item.id, actor=_actor(), comment="requeued via ks inbox retry")
+        manifest = _load_manifest_or_exit(manifest_path, ui_impl)
+        try:
+            reset = manifest.reset_for_retry(item.component)
+        except (ValueError, KeyError) as exc:
+            ui_impl.err(f"Could not requeue {item.component}: {exc}")
+            if item.dedupe_key.startswith(MERGE_GATE_PARK_KEY):
+                ui_impl.info(
+                    f"It is parked at the merge gate: `ks inbox approve {item.id[:8]}` "
+                    f"merges its reviewed branch, `ks inbox reject {item.id[:8]} "
+                    "--comment ...` fails it."
+                )
+            sys.exit(2)
+        manifest.save(manifest_path)
+        box.resolve(item.id, actor=_actor(), comment="requeued via ks inbox retry")
+    finally:
+        run_lock.release()
     ui_impl.ok(
         f"Requeued {item.component} (reset: {', '.join(reset) or item.component}); "
         "run `ks factory` to pick it up."

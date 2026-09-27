@@ -10,10 +10,10 @@ columns fill when the worker has folded the runs.
 (``retry_scope``): where it starts, what it resets, the worktree and
 branch it removes, what it keeps and what the relaunch runs under. The
 confirmation is offered only when every part is known. On confirm,
-``prepare_retry`` does the real mutation and its narration is shown,
-warnings first: a process the #537 sweep killed in the evidence worktree
-used to go to a discarded buffer. The factory then relaunches through
-the D6 session seam.
+``print_retry_plan`` and ``prepare_retry`` narrate the plan and the real
+mutation, shown together, warnings first: a process the #537 sweep
+killed in the evidence worktree used to go to a discarded buffer. The
+factory then relaunches through the D6 session seam.
 
 #433 E2: with nothing to retry the screen says so once, in one sentence,
 shows no empty table, and does not offer ``r``.
@@ -38,7 +38,13 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static
 
 from kstrl.interaction import PromptKind, PromptRequest
-from kstrl.retry_plan import RESUME_REFUSAL, RetryError, prepare_retry, preview_retry
+from kstrl.retry_plan import (
+    RESUME_REFUSAL,
+    RetryError,
+    prepare_retry,
+    preview_retry,
+    print_retry_plan,
+)
 from kstrl.tui import theme
 from kstrl.tui.home_view import fit_rows
 from kstrl.tui.messages import FailuresRead, ScopeRead
@@ -133,7 +139,7 @@ def scope_text(scope: RetryScope) -> Group:
 
 
 def narration_lines(narration: str) -> list[str]:
-    """``prepare_retry``'s narration, blank lines dropped."""
+    """``print_retry_plan`` and ``prepare_retry``'s combined narration, blank lines dropped."""
     return [line.rstrip() for line in narration.splitlines() if line.strip()]
 
 
@@ -431,14 +437,10 @@ class RetryScreen(Screen[None]):
         # so a process the sweep killed in the evidence worktree was never
         # shown here. It is kept and shown, warnings first.
         narration = io.StringIO()
+        narrator = PlainUI(no_color=True, file=narration)
+        print_retry_plan(narrator, latest_preview, latest_file)
         try:
-            prepare_retry(
-                latest,
-                component_id,
-                latest_file,
-                self._root_dir(),
-                PlainUI(no_color=True, file=narration),
-            )
+            prepare_retry(latest, component_id, latest_file, self._root_dir(), narrator)
         except (OSError, ValueError, RetryError, subprocess.SubprocessError) as exc:
             said = "\n".join(narration_lines(narration.getvalue()))
             self.app.notify(f"retry failed: {exc}\n{said}".rstrip(), severity="error", timeout=30)
