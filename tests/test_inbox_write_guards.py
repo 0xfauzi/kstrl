@@ -58,6 +58,9 @@ EXPECTED_CONSTRUCTIONS = (
     "decisions.py kstrl.inbox.Inbox",
     "factory.py kstrl.inbox.Inbox",
     "pipeline.py kstrl.inbox.Inbox",
+    # #602: the L1 plan gate reads its item (_find) and records a decision
+    # given at the prompt (_record).
+    "plan_gate.py kstrl.inbox.Inbox",
     "serve.py kstrl.inbox.Inbox",
     # #433: home's needs-you rows list open items. It scans and reads;
     # it mutates nothing. Moved from tui/home_data.py, whose counter it
@@ -77,6 +80,7 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     "decisions.py": 2,
     "factory.py": 1,
     "pipeline.py": 4,
+    "plan_gate.py": 2,
     "serve.py": 2,
     "tui/operator_queue.py": 1,
     "tui/screens/inbox.py": 1,
@@ -123,6 +127,9 @@ EXPECTED_MUTATIONS: dict[str, Disposition] = {
     "pipeline.py::ComponentPipeline._inbox_add::add": _GUARDED,
     "pipeline.py::ComponentPipeline._inbox_resolve::resolve": _GUARDED,
     "pipeline.py::ComponentPipeline._inbox_resolve_component::resolve": _GUARDED,
+    "plan_gate.py::_record::add": _GUARDED,
+    "plan_gate.py::_record::approve": _GUARDED,
+    "plan_gate.py::_record::reject": _GUARDED,
     "serve.py::_file_inbox_item::add": _GUARDED,
     "tui/screens/inbox.py::InboxScreen._decide::approve": _GUARDED,
     "tui/screens/inbox.py::InboxScreen._decide::reject": _GUARDED,

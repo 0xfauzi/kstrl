@@ -216,6 +216,8 @@ EXPECTED_PLAN_PRD_PATH_SPELLINGS = {
 #: ``STATE_SUBDIRS``, ``STATE_NOT_CARVED``, the join in ``plan_prd_path``,
 #: and three TUI titles that are not paths.
 EXPECTED_PLAN_LITERALS = {
+    # #602: PLAN_KIND, the plan gate's checkpoint event kind. Not a path.
+    "plan_gate.py::<module>": 1,
     "statedir.py::<module>": 2,
     "statedir.py::plan_prd_path": 1,
     "tui/screens/decompose.py::plan_title": 1,

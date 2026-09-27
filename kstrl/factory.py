@@ -122,6 +122,7 @@ from kstrl.operator_context import (
     operator_file_spec,
 )
 from kstrl.pipeline import ComponentPipeline, PipelineHooks, _iso_now
+from kstrl.plan_gate import run_plan_gate
 from kstrl.policy import PolicyConfig
 from kstrl.pr import create_prs_in_order, create_single_pr
 from kstrl.release import RELEASE_REF_RULE, ReleaseInputs, release_ref_from, release_withheld
@@ -3744,6 +3745,25 @@ def _has_merged(comp: Component) -> bool:
     return comp.status == ComponentStatus.COMPLETED.value and bool(comp.pr_url)
 
 
+def _plan_gated(
+    decisions: tuple[SpecDecision, ...] | None,
+    pipeline: ComponentPipeline,
+    ladder: _LadderOutcome | None,
+) -> tuple[SpecDecision, ...] | int:
+    """The preflights' decisions, or the exit code that ends the run.
+
+    2 when a preflight refused (``decisions is None``), and then the plan
+    gate asks nothing. Otherwise the #602 plan gate runs on the CLAMPED
+    bundle, after every pre-spend refusal and before the feature base is
+    stamped and parked merges are applied, so a plan nobody approved
+    pushes, merges and runs nothing: its park is 1 and a rejection 2.
+    """
+    if decisions is None:
+        return 2
+    stop = run_plan_gate(pipeline, ladder.bundle if ladder is not None else None)
+    return decisions if stop is None else stop
+
+
 def _stamp_feature_base(manifest: Manifest, manifest_path: Path, root_dir: Path, ui: UI) -> None:
     """Record the commit this feature starts from, once (#481).
 
@@ -4568,24 +4588,27 @@ def _run_factory_locked(
         )
     _warn_unsandboxable_reviewers(ui, review_selection, security_selection)
 
-    run_decisions = _run_preflights(
-        manifest,
-        run_scope,
-        root_dir,
-        factory_config,
-        run_id,
-        ui,
-        lock_held=lock_held,
-        manifest_path=manifest_path,
-        interrupted_branches=interrupted_branches,
-        timeout_cfg=timeout_cfg,
+    run_decisions = _plan_gated(
+        _run_preflights(
+            manifest,
+            run_scope,
+            root_dir,
+            factory_config,
+            run_id,
+            ui,
+            lock_held=lock_held,
+            manifest_path=manifest_path,
+            interrupted_branches=interrupted_branches,
+            timeout_cfg=timeout_cfg,
+        ),
+        pipeline,
+        ladder,
     )
-    # ``is None`` and not falsiness: a clean run with no decisions binds
-    # the empty tuple, which is the normal state for every project that
-    # predates #260, and treating that as a refusal would stop the
-    # factory on every one of them.
-    if run_decisions is None:
-        factory_result.exit_code = 2
+    # An int is the exit code of a refusal or of the #602 plan gate. Not
+    # falsiness: a clean run with no decisions binds the empty tuple, which
+    # is the normal state for every project that predates #260.
+    if isinstance(run_decisions, int):
+        factory_result.exit_code = run_decisions
         return factory_result
     # #481: after the refusals (a refused run stamps nothing) and the
     # worktree preflight's fetch, and before the merge decisions below,
