@@ -45,6 +45,6 @@
   "by": "Claude",
   "at": "2026-09-27T20:55:00Z",
   "via": "Claude Code",
-  "note": "The generated files now end as the kstrl repository's commit hooks leave them (no trailing whitespace, one newline at the end), so committing them does not alter them. Every card was rendered in both themes before and after: only Marks changed, in its one reworded line. Two names the spell check read as typos are renamed, a class in Settings and a variable in Chrome's script, and the section name Settings mistypes on purpose is marked as deliberate. The only words a reader sees change are ones the kstrl repository retired (#395): a check that did not run, not a sensor (brand book, Marks, during a run), and nested loops, not control loops."
+  "note": "The generated files now end as the kstrl repository's commit hooks leave them (no trailing whitespace, one newline at the end), so committing them does not alter them. Every card was rendered in both themes before and after: only Marks changed, in its one reworded line. Two names the spell check read as typos are renamed, a class in Settings and a variable in Chrome's script, and the section name Settings mistypes on purpose is marked as deliberate. The only words a reader sees change are the ones the kstrl repository retired in #395, in the brand book, the Marks card and two sections, now said as kstrl says them."
  }
 }

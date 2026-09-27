@@ -7,7 +7,7 @@ whose tokens are `kstrl/tui/theme.py`. Those rules are for a terminal and stay a
 the graphical app and does not change them.
 
 The system is published as a Design System artifact at https://claude.ai/artifact/5d4LkaTZBHTrxmyKMCCqNX
-(private to its owner). `system/project/` is byte for byte what that artifact serves, version 43.
+(private to its owner). `system/project/` is byte for byte what that artifact serves, version 44.
 
 ## What is here
 
