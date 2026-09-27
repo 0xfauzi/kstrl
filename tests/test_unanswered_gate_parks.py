@@ -4,25 +4,36 @@ The defect: with ``pause_before_pr_merge`` on, ``_phase_checkpoint``
 returned ``NOT_PROMPTED`` when the channel said it could prompt and the
 request then came back unanswered (a TUI that detached mid-prompt), and
 mapped any choice outside the three options to ``APPROVED``.
-``process_result`` special-cases only ``PARKED``, so both reached
-``_phase_pr`` and the component was pushed, opened and merged.
-``PlainUI.choose`` made it reachable from a terminal: end of input or
-Ctrl-C returned the default option, which is Approve at the merge gate
-and Start at ``ks factory``'s confirm.
+``process_result`` special-cased ``REJECTED``, ``PARKED`` and ``RETRY``
+by name and let anything else - including that stray ``NOT_PROMPTED`` -
+reach ``_phase_pr``, which pushes, opens and merges. ``PlainUI.choose``
+made it reachable from a terminal: end of input or Ctrl-C returned the
+default option, which is Approve at the merge gate and Start at ``ks
+factory``'s confirm. ``RichUI``, which auto mode picks on a TTY, let the
+same interrupt escape the run entirely: it raised ``EOFError`` or
+``KeyboardInterrupt`` out of ``choose`` uncaught, past the channel, past
+the pipeline, filing no inbox item.
 
 The fix: an unanswered or out-of-range answer parks through the same
 code as the non-interactive gate (one merge_gate item carrying the
-parked commit, ``checkpoint_resolved decision=parked decided_by=inbox``),
-``PlainUI.choose`` reports an interrupted prompt as an index outside the
-options so the channel says ``answered=False``, and ``ks factory``
-starts only on an answered Start.
+parked commit, ``checkpoint_resolved decision=parked decided_by=inbox``).
+``UiInteractionChannel.request`` catches an interrupted prompt -
+``EOFError`` or ``KeyboardInterrupt``, from ``PlainUI`` or ``RichUI``
+alike - around the call to ``choose`` and reports ``answered=False``,
+rather than ``PlainUI`` swallowing it into an out-of-range index itself.
+``process_result`` now allow-lists ``APPROVED`` (gate on) and
+``NOT_PROMPTED`` (gate off) as the only decisions that reach
+``_phase_pr``; anything else parks or refuses and is logged. ``ks
+factory`` starts only on an answered Start.
 
-Four layers: the pipeline driven through ``process_result`` with each
-way an answer can go missing; a census of every return of
-``_phase_checkpoint`` plus an enumeration of every answer shape through
-``process_result``; the real ``run_embedded`` with a TUI that dies or
-exits while the gate waits; and the real ``ks`` CLI on a pseudo-terminal
-that is the child's controlling terminal, answered with end of input.
+Five layers: the pipeline driven through ``process_result`` with each
+way an answer can go missing, plus the allow-list at the consumer;
+a package-wide census of every ``PromptRequest`` construction and its
+enrolled unanswered path, plus a census of every return
+``_phase_checkpoint`` itself names; the real ``run_embedded`` with a TUI
+that dies or exits while the gate waits; the real ``ks`` CLI on a
+pseudo-terminal that is the child's controlling terminal, answered with
+end of input; and the feature review gate, answered the same way.
 """
 
 from __future__ import annotations
@@ -65,6 +76,20 @@ from kstrl.pipeline import (
 )
 from kstrl.tui import embed
 from kstrl.ui.plain import PlainUI
+from kstrl.ui.rich_ui import RichUI
+from tests.helpers.astwalk import (
+    Sites,
+    assert_sites,
+    blind_spot,
+    calls_to,
+    label,
+    module_name,
+    package_sources,
+    parse,
+    parsed,
+    resolved_calls,
+    scope_of,
+)
 from tests.helpers.prompt_calls import offline_run
 from tests.test_feature_cmd import StubAgent, _params
 from tests.test_merge_gate_park import (
@@ -118,10 +143,21 @@ class _TtyPlain(PlainUI):
         return True
 
 
+class _TtyRich(RichUI):
+    """The real RichUI, reporting stdin as a terminal (#594 A2: the auto
+    mode picks this on a TTY, and it let an interrupted prompt escape
+    the run - PlainUI's -1 sentinel never touched it)."""
+
+    def can_prompt(self) -> bool:
+        return True
+
+
 class _Gate:
     """One component driven through the real process_result with the gate on."""
 
-    def __init__(self, root: Path, *, ui: PlainUI | None = None, interaction: Any = None) -> None:
+    def __init__(
+        self, root: Path, *, ui: PlainUI | RichUI | None = None, interaction: Any = None
+    ) -> None:
         root.mkdir(parents=True, exist_ok=True)
         self.root = root
         self.log = io.StringIO()
@@ -201,6 +237,23 @@ class TestAnUnansweredGateParks:
 
         monkeypatch.setattr(builtins, "input", _raise)
         gate = _Gate(tmp_path, ui=_TtyPlain(no_color=True, file=io.StringIO()))
+        _assert_parked(gate, gate.run())
+
+    @pytest.mark.parametrize("interrupt", [EOFError, KeyboardInterrupt])
+    def test_an_interrupted_rich_prompt_parks(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interrupt: type[BaseException]
+    ) -> None:
+        """#594 A2: auto mode picks RichUI on a TTY, and unlike PlainUI it
+        raised the interrupt straight out of ``choose`` - past
+        ``UiInteractionChannel``, past the pipeline, filing no inbox
+        item at all. Same assertion as the plain-UI case above; the
+        difference this test exists for is which UI raises."""
+
+        def _raise(*args: object, **kwargs: object) -> str:
+            raise interrupt
+
+        monkeypatch.setattr("kstrl.ui.rich_ui.Prompt.ask", _raise)
+        gate = _Gate(tmp_path, ui=_TtyRich(no_color=True, file=io.StringIO()))
         _assert_parked(gate, gate.run())
 
     def test_an_answered_approve_still_merges(self, tmp_path: Path) -> None:
@@ -349,7 +402,10 @@ class TestTheGateCensus:
 #: unanswered path nobody decided.
 EXPECTED_PROMPT_SITES = {
     "cli.py::factory": "exits without starting the run (#594)",
-    "cli.py::retry": "exits without starting the retry (lane #597)",
+    # At this head cli.py:4632 still starts the retry on an unanswered
+    # confirm - `if response.answered and response.choice != 0`. Lane
+    # #597 (PR #605) owns that site and makes it refuse.
+    "cli.py::retry": "starts on an unanswered confirm at this head; #597 makes it refuse",
     "feature_cmd.py::run_feature": "refuses: quit to amend",
     "guards.py::enforce_allowed_paths": "quits",
     "loop.py::run_loop": "continues: an iteration pause is not a gate",
@@ -358,56 +414,116 @@ EXPECTED_PROMPT_SITES = {
     "tui/screens/retry.py::RetryScreen.on_scope_read": "a dismissed modal starts nothing",
 }
 
-KSTRL_PACKAGE = PIPELINE_SOURCE.parent
+#: The target `calls_to`/`resolved_calls` resolve against: the fully
+#: dotted origin `PromptRequest` imports from, everywhere in kstrl/.
+PROMPT_REQUEST_TARGET = frozenset({"kstrl.interaction.PromptRequest"})
+
+#: `Sites.undecided` for the walk above, package-wide. Not specific to
+#: this target - `test_network_timeouts.py` pins the identical four rows
+#: for `urllib.request.urlopen` - because neither callee has a name the
+#: AST can spell: `TOOL_PARSERS[key](...)` is a subscript, and
+#: `initial_screens_for_kind(...)()` calls the RESULT of a call, so its
+#: own callee is an `ast.Call`, not a `Name` or `Attribute`.
+EXPECTED_UNDECIDED_PROMPT_SITES: tuple[str, ...] = (
+    "gateparse.py:112 TOOL_PARSERS[chosen]",
+    "gateparse.py:114 TOOL_PARSERS[name]",
+    "tui/app.py:390 initial_screens_for_kind(kind, observe_only=True)",
+    "tui/app.py:462 initial_screens_for_kind(kind, observe_only=False)",
+)
+
+#: `Sites.seen` for the walk above, re-derived by RUNNING it rather than
+#: typed from a design document (reading a pin is not running a guard).
+EXPECTED_SEEN_PROMPT_SITES: tuple[str, ...] = (
+    "cli.py:3082 kstrl.interaction.PromptRequest",
+    "cli.py:4625 kstrl.interaction.PromptRequest",
+    "feature_cmd.py:384 kstrl.interaction.PromptRequest",
+    "guards.py:382 kstrl.interaction.PromptRequest",
+    "loop.py:999 kstrl.interaction.PromptRequest",
+    "pipeline.py:4960 kstrl.interaction.PromptRequest",
+    "tui/screens/inbox.py:333 kstrl.interaction.PromptRequest",
+    "tui/screens/retry.py:389 kstrl.interaction.PromptRequest",
+)
 
 
-def _refuse_an_aliased_import(tree: ast.Module, rel: str) -> None:
-    """The census keys on the name `PromptRequest`; an alias would hide a site."""
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom):
-            aliased = [a.asname for a in node.names if a.name == "PromptRequest" and a.asname]
-            assert aliased == [], (
-                f"{rel}: PromptRequest imported as {aliased}; the census keys on the name"
-            )
+def _prompt_request_sites() -> tuple[Counter[str], Sites]:
+    """Every `PromptRequest(...)` construction in kstrl/, by file and
+    enclosing scope, plus the package-wide `Sites` the walk could not
+    decide.
 
+    Resolved through `calls_to`/`resolved_calls`'s shared `Bindings`
+    table rather than a bare name match, so a call reached through a
+    rebound name (`_Ask = PromptRequest; _Ask(...)`), an attribute bound
+    to it (`self.mk = PromptRequest; self.mk()`), or
+    `getattr(kstrl.interaction, "PromptRequest")(...)` is caught the
+    same as a direct spelling - and an aliased import
+    (`from kstrl.interaction import PromptRequest as P`) resolves
+    through the same table, so it needs no separate refusal. The four
+    helpers this replaces (`_refuse_an_aliased_import`, `_called_name`,
+    `_count_prompt_calls`, `_prompt_sites`) matched only the spelled
+    callee `PromptRequest`: the reuse reviewer planted `_Ask =
+    PromptRequest` plus an unenrolled confirm on a copy of `cli.py` and
+    the old census stayed green.
 
-def _called_name(node: ast.Call) -> str:
-    func = node.func
-    return func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
-
-
-def _count_prompt_calls(
-    node: ast.AST, scope: tuple[str, ...], rel: str, found: Counter[str]
-) -> None:
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            _count_prompt_calls(child, (*scope, child.name), rel, found)
-            continue
-        if isinstance(child, ast.Call) and _called_name(child) == "PromptRequest":
-            found[f"{rel}::{'.'.join(scope) or '<module>'}"] += 1
-        _count_prompt_calls(child, scope, rel, found)
-
-
-def _prompt_sites() -> Counter[str]:
-    """Every `PromptRequest(...)` call in kstrl/, by file and enclosing scope.
-
-    Not seen: a call through a name rebound from it (`P = PromptRequest`)
-    and a request copied with `dataclasses.replace`. An aliased import is
-    refused rather than missed.
+    Not seen: a `PromptRequest` copied through `dataclasses.replace`,
+    which calls `replace`, not `PromptRequest` -
+    `TestTheDisclosedLimit` below pins that as a strict xfail.
     """
     found: Counter[str] = Counter()
-    for path in sorted(KSTRL_PACKAGE.rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        rel = path.relative_to(KSTRL_PACKAGE).as_posix()
-        _refuse_an_aliased_import(tree, rel)
-        _count_prompt_calls(tree, (), rel, found)
-    return found
+    combined = Sites()
+    for source in package_sources():
+        tree = parsed(source)
+        rel = label(source)
+        module = module_name(source)
+        owner = scope_of(tree)
+        combined = combined + calls_to(tree, PROMPT_REQUEST_TARGET, where=rel, module=module)
+        for node, _origin in resolved_calls(tree, PROMPT_REQUEST_TARGET, module=module):
+            found[f"{rel}::{owner.get(id(node), '<module>')}"] += 1
+    return found, combined.sorted()
+
+
+def _prompt_request_seen(source: str) -> bool:
+    """Does the walk resolve `source` as constructing a `PromptRequest`?"""
+    sites = calls_to(parse(source), PROMPT_REQUEST_TARGET, where="<probe>", module="<probe>")
+    return bool(sites.seen)
 
 
 class TestEveryPromptStatesItsUnansweredPath:
     def test_every_prompt_site_is_enrolled(self) -> None:
-        sites = _prompt_sites()
+        sites, _combined = _prompt_request_sites()
         assert dict(sites) == dict.fromkeys(EXPECTED_PROMPT_SITES, 1), dict(sites)
+
+    def test_the_walk_names_every_site_it_could_not_decide(self) -> None:
+        _sites, combined = _prompt_request_sites()
+        assert_sites(
+            combined,
+            seen=EXPECTED_SEEN_PROMPT_SITES,
+            undecided=EXPECTED_UNDECIDED_PROMPT_SITES,
+            message=(
+                "a PromptRequest call site, or a site the walk cannot decide, "
+                "changed. If it is a real site, give it a row in "
+                "EXPECTED_PROMPT_SITES."
+            ),
+        )
+
+
+class TestTheDisclosedLimit:
+    """The one miss `_prompt_request_sites` discloses, with a test behind
+    it - CLAUDE.md's rule that `assert hits(...) == []` is not a control
+    on its own."""
+
+    @pytest.mark.xfail(
+        strict=True,
+        raises=AssertionError,
+        reason="dataclasses.replace calls `replace`, not `PromptRequest`",
+    )
+    def test_a_prompt_copied_through_dataclasses_replace_is_missed(self) -> None:
+        source = (
+            "import dataclasses\n"
+            "from kstrl.interaction import PromptRequest\n"
+            "def f(req: PromptRequest) -> PromptRequest:\n"
+            "    return dataclasses.replace(req, default=1)\n"
+        )
+        blind_spot(_prompt_request_seen, source)
 
 
 class _StandInApp:

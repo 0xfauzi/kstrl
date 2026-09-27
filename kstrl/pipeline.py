@@ -87,6 +87,7 @@ from kstrl.interaction import (
     InteractionChannel,
     PromptKind,
     PromptRequest,
+    PromptResponse,
     UiInteractionChannel,
 )
 from kstrl.loop import UNENFORCEABLE_CALLS
@@ -448,8 +449,14 @@ class DistillPhaseResult:
 class CheckpointDecision(Enum):
     """E6 human-in-the-loop checkpoint outcome."""
 
-    # The gate is off (pause_before_pr_merge false). Never returned while
-    # the gate is on (#594).
+    # `_phase_checkpoint` itself never returns this while its own gate
+    # (pause_before_pr_merge) is on - the guard at its top returns this
+    # and nothing else runs. `PipelineOutcome.checkpoint`, the field
+    # `process_result` sets it into, is a DIFFERENT claim: that field
+    # keeps this value whenever `create_prs` is off or `single_pr` is on
+    # (pipeline.py:3091-3093), because `_phase_checkpoint` is never even
+    # called then - regardless of whether the gate itself is on (#594
+    # simplify round, B2).
     NOT_PROMPTED = "not_prompted"
     APPROVED = "approved"
     # R8.3: nobody answered the gate (no interactive UI, or #594 a prompt
@@ -458,6 +465,19 @@ class CheckpointDecision(Enum):
     PARKED = "parked"
     REJECTED = "rejected"
     RETRY = "retry"
+
+
+def _unanswered_choice_note(response: PromptResponse) -> str:
+    """``, choice=N``, only when there is a real answer to report.
+
+    ``response.choice`` is always ``req.default`` (index 0, Approve)
+    whenever ``answered`` is False, so a message that logs it
+    unconditionally reads as though the gate had chosen Approve (#594
+    simplify round, A4). A free function rather than an inline
+    conditional in the caller: `_phase_checkpoint` sits at the
+    complexipy ceiling already, and a branch here does not add to it.
+    """
+    return f", choice={response.choice}" if response.answered else ""
 
 
 class PrDisposition(Enum):
@@ -3096,97 +3116,18 @@ class ComponentPipeline:
                 diff_text=diff.diff,
                 review=review,
             )
-            if checkpoint == CheckpointDecision.REJECTED:
-                return PipelineOutcome(
-                    transition=self.fail(
-                        comp,
-                        "Rejected at HITL checkpoint",
-                        phase="pr",
-                        check="hitl_reject",
-                        # THE RULE FOR ALL THREE CHECKPOINT BRANCHES,
-                        # stated here and pointed at from the other two.
-                        # Without an explicit `signatures=` the PHASE
-                        # becomes the check name, and `pr` is the row
-                        # that holds push, create and merge plumbing -
-                        # infrastructure since #315, which throws the
-                        # whole run out of the autonomy ladder's
-                        # evidence. So: a branch that carries a VERDICT
-                        # about the change must name it, and a branch
-                        # that carries no verdict must not. A person
-                        # looking at the change and refusing it is the
-                        # most decisive verdict about the factory's
-                        # judgement there is; it reached the journal as
-                        # `pr:rejected-at-hitl-checkpoint`.
-                        #
-                        # The phase stays "pr" because that is the
-                        # vocabulary these branches have always used and
-                        # `failed_phase` is written to the manifest.
-                        # Note it is not where this happens:
-                        # `_phase_started(comp, "pr")` fires below all
-                        # three branches, so by the module's own
-                        # accounting the checkpoint precedes the phase
-                        # it is filed under. Renaming it is a separate
-                        # decision, and #339 review declined to make it
-                        # here because the three branches need three
-                        # different categories, so no one phase name can
-                        # serve them. The mechanism that would remove
-                        # the literals entirely is keying the fallback
-                        # on `check` rather than `phase` - the branches
-                        # already carry hitl_reject / merge_gate /
-                        # hitl_retry - and that is blocked on
-                        # factory.py.
-                        signatures=["review:hitl-rejected"],
-                    ),
-                    verify=verify,
-                    diff=diff,
-                    review=review,
-                    security=security,
-                    distill=distill,
-                    checkpoint=checkpoint,
-                )
-            if checkpoint == CheckpointDecision.PARKED:
-                # R8.3: the gate could not be answered, so the merge does
-                # NOT happen. #465: and it is not a failure either. The
-                # component waits with its reviewed branch, its
-                # dependents wait with it, and the merge_gate item
-                # _phase_checkpoint filed is the question.
-                return PipelineOutcome(
-                    transition=self._park_awaiting_approval(comp),
-                    verify=verify,
-                    diff=diff,
-                    review=review,
-                    security=security,
-                    distill=distill,
-                    checkpoint=checkpoint,
-                )
-            if checkpoint == CheckpointDecision.RETRY:
-                ctx = IterationContext.from_json(
-                    comp_result.context_json or "{}",
-                )
-                ctx.add_checkpoint_request(
-                    "Human reviewer requested changes at PR checkpoint",
-                    attempt=comp.retries + 1,
-                )
-                return PipelineOutcome(
-                    transition=self.retry_or_fail(
-                        comp,
-                        "Retry requested at HITL checkpoint",
-                        ctx.to_json(),
-                        phase="pr",
-                        check="hitl_retry",
-                        # #339: a human asking for changes is a verdict
-                        # ON the change, so it names one. Same rule as
-                        # hitl_reject above, and it had the same defect
-                        # until this round.
-                        signatures=["review:hitl-changes-requested"],
-                    ),
-                    verify=verify,
-                    diff=diff,
-                    review=review,
-                    security=security,
-                    distill=distill,
-                    checkpoint=checkpoint,
-                )
+            refusal = self._checkpoint_refusal(
+                comp,
+                checkpoint,
+                comp_result,
+                verify=verify,
+                diff=diff,
+                review=review,
+                security=security,
+                distill=distill,
+            )
+            if refusal is not None:
+                return refusal
 
             t0 = self._phase_started(comp, "pr")
             pr = self._phase_pr(comp)
@@ -4861,6 +4802,126 @@ class ComponentPipeline:
             self.ui.warn(f"  Knowledge utilization measurement failed: {exc}")
             return FactUtilization(reason=f"{type(exc).__name__}: {exc}")
 
+    def _checkpoint_refusal(
+        self,
+        comp: Component,
+        checkpoint: CheckpointDecision,
+        comp_result: ComponentResult,
+        *,
+        verify: VerifyPhaseResult,
+        diff: DiffPhaseResult,
+        review: ReviewPhaseResult,
+        security: SecurityPhaseResult,
+        distill: DistillPhaseResult,
+    ) -> PipelineOutcome | None:
+        """The checkpoint's non-PR routing, extracted from
+        ``process_result`` so the allow-list guard below does not add to
+        that function's already-over-ceiling complexity (#594 simplify
+        round, A3). ``None`` means proceed to ``_phase_pr``; anything
+        else is the terminal outcome for this pass.
+
+        ALLOW-LIST, not the deny-list this replaces. ``process_result``
+        used to special-case ``REJECTED``, ``PARKED`` and ``RETRY`` by
+        name and let anything else - including a producer defect in
+        ``_phase_checkpoint`` returning some other decision - fall
+        through to ``_phase_pr`` unreviewed. Only an answered Approve
+        (``APPROVED``) or the gate being off (``NOT_PROMPTED``) proceeds
+        now; everything else parks or refuses, and an unrecognised
+        decision is logged rather than silently merged.
+        """
+        outcome_fields: dict[str, Any] = {
+            "verify": verify,
+            "diff": diff,
+            "review": review,
+            "security": security,
+            "distill": distill,
+            "checkpoint": checkpoint,
+        }
+        if checkpoint == CheckpointDecision.REJECTED:
+            return PipelineOutcome(
+                transition=self.fail(
+                    comp,
+                    "Rejected at HITL checkpoint",
+                    phase="pr",
+                    check="hitl_reject",
+                    # THE RULE FOR ALL THREE CHECKPOINT BRANCHES,
+                    # stated here and pointed at from the other two.
+                    # Without an explicit `signatures=` the PHASE
+                    # becomes the check name, and `pr` is the row
+                    # that holds push, create and merge plumbing -
+                    # infrastructure since #315, which throws the
+                    # whole run out of the autonomy ladder's
+                    # evidence. So: a branch that carries a VERDICT
+                    # about the change must name it, and a branch
+                    # that carries no verdict must not. A person
+                    # looking at the change and refusing it is the
+                    # most decisive verdict about the factory's
+                    # judgement there is; it reached the journal as
+                    # `pr:rejected-at-hitl-checkpoint`.
+                    #
+                    # The phase stays "pr" because that is the
+                    # vocabulary these branches have always used and
+                    # `failed_phase` is written to the manifest.
+                    # Note it is not where this happens:
+                    # `_phase_started(comp, "pr")` fires below all
+                    # three branches, so by the module's own
+                    # accounting the checkpoint precedes the phase
+                    # it is filed under. Renaming it is a separate
+                    # decision, and #339 review declined to make it
+                    # here because the three branches need three
+                    # different categories, so no one phase name can
+                    # serve them. The mechanism that would remove
+                    # the literals entirely is keying the fallback
+                    # on `check` rather than `phase` - the branches
+                    # already carry hitl_reject / merge_gate /
+                    # hitl_retry - and that is blocked on
+                    # factory.py.
+                    signatures=["review:hitl-rejected"],
+                ),
+                **outcome_fields,
+            )
+        if checkpoint == CheckpointDecision.PARKED:
+            # R8.3: the gate could not be answered, so the merge does
+            # NOT happen. #465: and it is not a failure either. The
+            # component waits with its reviewed branch, its
+            # dependents wait with it, and the merge_gate item
+            # _phase_checkpoint filed is the question.
+            return PipelineOutcome(transition=self._park_awaiting_approval(comp), **outcome_fields)
+        if checkpoint == CheckpointDecision.RETRY:
+            ctx = IterationContext.from_json(comp_result.context_json or "{}")
+            ctx.add_checkpoint_request(
+                "Human reviewer requested changes at PR checkpoint",
+                attempt=comp.retries + 1,
+            )
+            return PipelineOutcome(
+                transition=self.retry_or_fail(
+                    comp,
+                    "Retry requested at HITL checkpoint",
+                    ctx.to_json(),
+                    phase="pr",
+                    check="hitl_retry",
+                    # #339: a human asking for changes is a verdict
+                    # ON the change, so it names one. Same rule as
+                    # hitl_reject above, and it had the same defect
+                    # until this round.
+                    signatures=["review:hitl-changes-requested"],
+                ),
+                **outcome_fields,
+            )
+        if checkpoint in (CheckpointDecision.APPROVED, CheckpointDecision.NOT_PROMPTED):
+            return None
+        # #594 A3: a decision none of the three branches above name, and
+        # not an answered Approve or the gate off either - a producer
+        # defect in `_phase_checkpoint`. Park it the same way an
+        # unanswered gate does, rather than falling through to
+        # `_phase_pr` unreviewed, and say so.
+        self.ui.warn(
+            f"  the merge gate for {comp.id} returned an unrecognised "
+            f"decision ({checkpoint!r}); parking it for approval "
+            f"(see `ks inbox ls`)"
+        )
+        return PipelineOutcome(transition=self._park_awaiting_approval(comp), **outcome_fields)
+
     def _phase_checkpoint(
         self,
         comp: Component,
@@ -4954,7 +5015,8 @@ class ComponentPipeline:
                 return decision
             self.ui.warn(
                 f"  the merge gate for {comp.id} got no answer "
-                f"(answered={response.answered}, choice={response.choice}); "
+                f"(answered={response.answered}"
+                f"{_unanswered_choice_note(response)}); "
                 f"parking it for approval (see `ks inbox ls`)"
             )
         else:

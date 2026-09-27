@@ -168,10 +168,11 @@ class PlainUI:
     def choose(self, header: str, options: list[str], default: int = 0) -> int:
         """Interactive choice, returns selected index.
 
-        Returns -1, an index outside ``options``, when the prompt is
-        interrupted (end of input or Ctrl-C). ``UiInteractionChannel``
-        reports that as ``answered=False``, so an interrupted prompt is
-        never read as the default option (#594)."""
+        Raises ``EOFError`` or ``KeyboardInterrupt`` when the prompt is
+        interrupted (end of input or Ctrl-C): ``UiInteractionChannel``
+        catches both around this call and reports ``answered=False``, so
+        an interrupted prompt is never read as the default option (#594).
+        """
         if not self.can_prompt():
             return default
 
@@ -181,25 +182,22 @@ class PlainUI:
             self._print(f"  {marker} {i + 1}. {opt}")
 
         while True:
+            choice = input(f"Select option [{default + 1}]: ").strip()
+            if not choice:
+                return default
+
             try:
-                choice = input(f"Select option [{default + 1}]: ").strip()
-                if not choice:
-                    return default
+                idx = int(choice) - 1
+                if 0 <= idx < len(options):
+                    return idx
+            except ValueError:
+                # Try matching by first word
+                choice_lower = choice.lower().split()[0]
+                for i, opt in enumerate(options):
+                    if opt.lower().startswith(choice_lower):
+                        return i
 
-                try:
-                    idx = int(choice) - 1
-                    if 0 <= idx < len(options):
-                        return idx
-                except ValueError:
-                    # Try matching by first word
-                    choice_lower = choice.lower().split()[0]
-                    for i, opt in enumerate(options):
-                        if opt.lower().startswith(choice_lower):
-                            return i
-
-                self._print(self._color(f"Invalid choice. Enter 1-{len(options)}", "red"))
-            except (EOFError, KeyboardInterrupt):
-                return -1
+            self._print(self._color(f"Invalid choice. Enter 1-{len(options)}", "red"))
 
     def can_prompt(self) -> bool:
         """Check if interactive prompts are available."""
