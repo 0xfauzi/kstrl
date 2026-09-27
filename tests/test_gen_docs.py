@@ -222,7 +222,9 @@ class TestExampleProjectContract:
         needs nothing from the network (measured with an empty cache).
 
         The variables that point uv at another project or environment are
-        removed, so the check can only judge the example's own lock."""
+        removed, so the check can only judge the example's own lock. UV_FROZEN
+        is removed too: with it set, `uv lock --check` only validates the file
+        and exits 0 on a stale lock."""
         import os
         import shutil
         import subprocess
@@ -232,7 +234,7 @@ class TestExampleProjectContract:
         env = {
             k: v
             for k, v in os.environ.items()
-            if k not in ("VIRTUAL_ENV", "UV_PROJECT", "UV_PROJECT_ENVIRONMENT")
+            if k not in ("VIRTUAL_ENV", "UV_PROJECT", "UV_PROJECT_ENVIRONMENT", "UV_FROZEN")
         }
         example = REPO_ROOT / "examples" / "uv-python"
         result = subprocess.run(
