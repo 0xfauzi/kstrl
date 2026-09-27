@@ -311,6 +311,28 @@ class TestFeatureEngineerReadsOperatorContext:
         assert all(FACT_CLAIM not in text for texts in run.prompts.values() for text in texts)
         assert MEMORY_LINE in run.only("implement")
 
+    def test_knowledge_disabled_in_kstrl_toml_sends_no_fact(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The switch an operator writes in ``kstrl.toml`` binds the feature
+        path as it binds the factory: ``KnowledgeConfig.load`` reads the
+        ``[knowledge]`` section, and ``KnowledgeConfig.from_env`` would not.
+        The environment test above cannot tell the two apart."""
+        monkeypatch.delenv("KSTRL_KNOWLEDGE_ENABLED", raising=False)
+        root = _initialised_project(tmp_path)
+        toml = root / "kstrl.toml"
+        text = toml.read_text(encoding="utf-8")
+        assert text.count("[knowledge]\n") == 1
+        toml.write_text(
+            text.replace("[knowledge]\n", "[knowledge]\nenabled = false\n"), encoding="utf-8"
+        )
+
+        run = _run_feature(tmp_path, monkeypatch, root)
+
+        assert run.exit_code == 0, run.output
+        assert all(FACT_CLAIM not in text for texts in run.prompts.values() for text in texts)
+        assert MEMORY_LINE in run.only("implement")
+
     def test_a_knowledge_failure_is_warned_and_every_loop_still_runs(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
