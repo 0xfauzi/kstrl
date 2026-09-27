@@ -204,17 +204,17 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     # 12 since #507 deleted the proposals tab and its three modal tests.
     "tests/test_evolve_screen.py": 12,
     "tests/test_evolve_screen_encoding.py": 1,
-    # Four ``async with evolve_screen(...)``, added by #333. Every read
-    # after them is of ``#evolve-repairs``, and ``evolve_screen`` waits on
-    # ``tests/helpers/tui_screens.py``'s conditions, the last being that
-    # ``EvolveScreen.on_mount`` has RETURNED. The repair line is written in
-    # the ``reload()`` on_mount ends with, so it is drawn before any of
-    # these reads run. No pause is counted and no new predicate was needed.
+    # Four ``async with evolve_screen(...)``, added by #333. Every read after them is of
+    # ``#evolve-repairs``, and ``evolve_screen`` waits on ``tests/helpers/tui_screens.py``'s
+    # conditions, the last being that ``EvolveScreen.on_mount`` has RETURNED. The repair line is
+    # written in the ``reload()`` on_mount ends with, so it is drawn before any of these reads
+    # run. No pause is counted and no new predicate was needed.
     "tests/test_evolve_screen_repairs.py": 4,
     "tests/test_feature_run.py": 5,
     "tests/test_home_data.py": 4,
     "tests/test_home_shell.py": 52,
     "tests/test_inbox.py": 4,
+    "tests/test_inbox_waivers.py": 5,  # #595: the TUI test; run_test, mounted and settled only
     "tests/test_init_wizard.py": 47,
     "tests/test_launch_session.py": 39,
     # TestRetryScreen split out of test_launch_session.py (#436 B1). Every await is

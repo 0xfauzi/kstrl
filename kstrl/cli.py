@@ -5364,6 +5364,15 @@ def inbox_show(
     sys.exit(0)
 
 
+#: The past tense `_decide_and_report` prints. f"{action}d" printed "rejectd".
+_DECIDED = {
+    "approve": "approved",
+    "reject": "rejected",
+    "snooze": "snoozed",
+    "resolve": "resolved",
+}
+
+
 def _decide_and_report(
     action: str,
     item_id: str,
@@ -5374,6 +5383,7 @@ def _decide_and_report(
     hours: float | None = None,
 ) -> None:
     from kstrl.inbox import InboxError
+    from kstrl.waivers import approval_effect
 
     _root_dir, box = _inbox_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -5389,7 +5399,11 @@ def _decide_and_report(
     except InboxError as exc:
         ui_impl.err(str(exc))
         sys.exit(2)
-    ui_impl.ok(f"{action}d {item.id[:8]}: {item.title}")
+    ui_impl.ok(f"{_DECIDED[action]} {item.id[:8]}: {item.title}")
+    # #595: say what the approval does, quoting the finding it covers.
+    effect = approval_effect(item) if action == "approve" else None
+    if effect:
+        ui_impl.info(f"  {effect}")
     sys.exit(0)
 
 

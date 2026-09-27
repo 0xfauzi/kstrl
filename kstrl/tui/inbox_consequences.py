@@ -14,9 +14,15 @@ the decision, and for most kinds nobody does:
   a park exists. The decision acts only while the component is still
   AWAITING_APPROVAL; for any other status neither approve nor reject has
   an effect, so neither is offered.
+- A policy exception or test adequacy item is read by
+  ``kstrl/waivers.py`` when the next run starts (#595). Approved: that
+  run records the one finding the item covers as waived instead of
+  failing on it. Rejected: nothing is waived. The sentences come from
+  ``waivers.approval_effect`` and ``waivers.REJECTION_EFFECT``, which the
+  shell's ``ks inbox approve`` prints too.
 - Every other kind is record-only: a grep for the approved and rejected
-  statuses outside ``kstrl/inbox.py`` finds only the park consumer.
-  Approve and reject close the item and nothing else.
+  statuses outside ``kstrl/inbox.py`` finds only the park consumer and
+  the waiver reader. Approve and reject close the item and nothing else.
 - Snooze hides any item until ``snooze_hours`` pass; it returns by the
   clock (``InboxItem.is_open``), and nothing else changes.
 
@@ -33,6 +39,7 @@ from dataclasses import dataclass
 
 from kstrl.inbox import InboxItem, ItemKind
 from kstrl.manifest import MERGE_GATE_PARK_KEY, ComponentStatus
+from kstrl.waivers import REJECTION_EFFECT, approval_effect
 
 APPROVE = "approve"
 REJECT = "reject"
@@ -125,6 +132,15 @@ def consequences(
     """
     if _is_park(item):
         return _park(item, component_status, snooze_hours)
+    effect = approval_effect(item)
+    if effect is not None:
+        return Consequences(
+            offered=(
+                (APPROVE, effect),
+                (REJECT, REJECTION_EFFECT),
+                _snooze(item, snooze_hours, "Nothing else changes."),
+            ),
+        )
     record_only = f"closes this item; no kstrl step reads a {kind_label(item.kind)} decision."
     return Consequences(
         offered=(

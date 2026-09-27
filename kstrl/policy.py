@@ -61,6 +61,9 @@ ENFORCEMENT_MACHINERY_PATHS: tuple[str, ...] = (
     "**/kstrl/fixtures.py",
     "**/kstrl/autonomy.py",
     "**/kstrl/statedir.py",
+    # #595: decides whether an approved inbox item turns a blocking
+    # policy or adequacy finding into a pass.
+    "**/kstrl/waivers.py",
     # R8.2 / R8.9 control-plane state. Live copies live under XDG
     # (outside the tree); these legacy in-tree paths stay in the halt
     # set so a diff cannot recreate agent-editable control files.
@@ -377,8 +380,14 @@ def classify_license(
 def _scan_secrets(
     added_lines: Sequence[tuple[str, str]],
     patterns: Sequence[str],
-) -> set[str]:
-    """Return paths whose added lines match any secret pattern.
+) -> dict[str, set[str]]:
+    """Map each path whose added lines match a secret pattern to those lines' hashes.
+
+    Each hash is the first 12 hex characters of the line's sha256, so
+    two different secrets in one file are two different findings (#595:
+    an approval covers the finding's explanation, which lists them). A
+    48-bit prefix of a line's hash lets someone confirm a guess at a
+    low-entropy secret; the plaintext line is in the branch's diff anyway.
 
     A pattern that will not compile is a policy misconfiguration, raised
     as :class:`PolicyConfigError` so the check fails closed rather than
@@ -390,12 +399,11 @@ def _scan_secrets(
             compiled.append(re.compile(pattern))
         except re.error as exc:
             raise PolicyConfigError(f"invalid secret_pattern {pattern!r}: {exc}") from exc
-    hits: set[str] = set()
+    hits: dict[str, set[str]] = {}
     for path, line in added_lines:
-        for regex in compiled:
-            if regex.search(line):
-                hits.add(path)
-                break
+        if any(regex.search(line) for regex in compiled):
+            digest = hashlib.sha256(line.encode("utf-8")).hexdigest()[:12]
+            hits.setdefault(path, set()).add(digest)
     return hits
 
 
@@ -532,10 +540,10 @@ def evaluate_policy(
     added_lines = parse_added_lines(diff_text)
     new_dependencies = parse_new_dependencies(added_lines)
     if not config.deps_allow_new and new_dependencies:
+        # Every name, untruncated: an approval of this finding covers its
+        # explanation, so a name left out would be approved unseen (#595).
         names = sorted({name for name, _v in new_dependencies})
-        shown = ", ".join(names[:20])
-        if len(names) > 20:
-            shown += f", ... (+{len(names) - 20} more)"
+        shown = ", ".join(names)
         violations.append(
             PolicyViolation(
                 category="deps_allow_new",
@@ -552,7 +560,13 @@ def evaluate_policy(
             PolicyViolation(
                 category="secret_pattern",
                 location=", ".join(sorted(secret_hits)[:5]),
-                explanation=("Possible secrets in added lines: " + ", ".join(sorted(secret_hits))),
+                explanation=(
+                    "Possible secrets in added lines: "
+                    + ", ".join(
+                        f"{path}#{','.join(sorted(secret_hits[path]))}"
+                        for path in sorted(secret_hits)
+                    )
+                ),
                 suggestion=(
                     "Remove the credential and rotate it; load secrets from the "
                     "environment instead."

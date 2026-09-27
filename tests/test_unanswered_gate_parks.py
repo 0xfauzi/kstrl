@@ -459,7 +459,7 @@ EXPECTED_SEEN_PROMPT_SITES: tuple[str, ...] = (
     "feature_cmd.py:493 kstrl.interaction.PromptRequest",
     "guards.py:382 kstrl.interaction.PromptRequest",
     "loop.py:610 kstrl.interaction.PromptRequest",
-    "pipeline.py:4963 kstrl.interaction.PromptRequest",
+    "pipeline.py:5015 kstrl.interaction.PromptRequest",
     "tui/screens/inbox.py:333 kstrl.interaction.PromptRequest",
     "tui/screens/retry.py:389 kstrl.interaction.PromptRequest",
 )

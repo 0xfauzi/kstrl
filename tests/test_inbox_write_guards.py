@@ -76,7 +76,10 @@ EXPECTED_CONSTRUCTION_COUNTS = {
     "cli.py": 1,
     "decisions.py": 2,
     "factory.py": 1,
-    "pipeline.py": 4,
+    # #595: was 4. +1: ComponentPipeline.snapshot_waivers builds the
+    # lazy inbox to read the approvals once at run start; it mutates
+    # nothing and catches _park_decision's tuple.
+    "pipeline.py": 5,
     "serve.py": 2,
     "tui/operator_queue.py": 1,
     "tui/screens/inbox.py": 1,

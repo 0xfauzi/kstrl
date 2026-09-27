@@ -73,6 +73,11 @@ ATTEMPT_TAG_PREFIX = "attempt:"
 # is no reviewing model to attribute them to.
 MODEL_TAG_PREFIX = "model:"
 
+# #595: a blocking policy or adequacy finding an approved inbox item
+# covers exactly is kept, re-emitted as advisory and tagged with the
+# approving item's id. kstrl/waivers.py writes it; the PR body reads it.
+WAIVER_TAG_PREFIX = "waiver:"
+
 
 @dataclass(frozen=True)
 class Finding:
@@ -388,6 +393,14 @@ def finding_attempt(finding: Finding) -> int | None:
                 return int(tag[len(ATTEMPT_TAG_PREFIX) :])
             except ValueError:
                 return None
+    return None
+
+
+def finding_waiver(finding: Finding) -> str | None:
+    """The id of the inbox approval that waived this finding, or None (#595)."""
+    for tag in finding.tags:
+        if tag.startswith(WAIVER_TAG_PREFIX):
+            return tag[len(WAIVER_TAG_PREFIX) :] or None
     return None
 
 
