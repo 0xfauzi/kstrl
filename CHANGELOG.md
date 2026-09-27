@@ -79,8 +79,9 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   daemon both name the actor in a refusal. See
   [`docs/continuous-intake.md`](docs/continuous-intake.md) (#188).
 - A memory file: `scripts/kstrl/memory.md`, operator-authored standing
-  feedback read into every factory engineer prompt and every `ks run`
-  prompt (`ks feature` and `ks understand` do not read it). `ks init`
+  feedback read into every engineer prompt of `ks factory`, `ks run`,
+  `ks retry`, `ks serve` and `ks feature` (`ks understand` does not read
+  it). `ks init`
   scaffolds it; the path is `[paths] memory` in `kstrl.toml` or
   `KSTRL_MEMORY_FILE`. It is loaded AFTER the retry context and before
   the `CLAUDE.md` prepend, and that position is the feature: the retry
@@ -323,6 +324,17 @@ stage, runtime feedback, and an earned-autonomy ladder). See
   workflow only (#394).
 
 ### Fixed
+
+- `ks feature`'s engineer reads the knowledge facts,
+  `scripts/kstrl/golden-patterns.md` and `scripts/kstrl/memory.md`
+  (#599). Its understand, implement and repair loops called `run_loop`
+  with no context prefix, so the operator's patterns and standing
+  corrections reached every factory engineer and no feature engineer,
+  and a memory file cut to its budget was never reported. The factory's
+  assembly of that prefix is now one function,
+  `factory.engineer_context_prefix`, which `ks feature` calls before each
+  loop, and `ks feature` prints the same once-per-run notice about both
+  files.
 
 - A finished component branch merges into the checkout kstrl ran from
   (#545). `ks decompose`, `ks factory --spec` and the integration loop
@@ -829,9 +841,9 @@ stage, runtime feedback, and an earned-autonomy ladder). See
 
 ### Added
 
-- Golden patterns: an operator-authored file, injected into every factory
-  engineer prompt and every `ks run` prompt (`ks feature` and
-  `ks understand` do not read it). `ks init` scaffolds
+- Golden patterns: an operator-authored file, injected into every
+  engineer prompt of `ks factory`, `ks run`, `ks retry`, `ks serve` and
+  `ks feature` (`ks understand` does not read it). `ks init` scaffolds
   `scripts/kstrl/golden-patterns.md` and you write what a good change
   looks like in this repository, with a file to copy from for each
   pattern. The distiller records what happened and feedforward computes

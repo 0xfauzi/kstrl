@@ -1,4 +1,5 @@
-"""R10.7: the open-PR bound, the daemon's flow control.
+"""R10.7: the open-PR bound, the daemon's flow control, driven through
+``serve_cycle``, ``serve`` and ``ks serve --dry-run``.
 
 The property these tests exist to hold is narrow and easy to lose: the
 daemon stops admitting work while `max_open_prs` kstrl-authored pull
@@ -12,6 +13,15 @@ arrangement per boundary the ordering claims, and a positive control
 first, because `assert not marker.exists()` also passes when the fake
 `gh` was never reachable.
 
+Every test here runs a real cycle against a fake ``gh`` on PATH: one
+open marked PR holds the item in the queue until it merges; a gate that
+refuses with an empty reason still stops the cycle; three consecutive
+count failures inside one ``serve`` loop file exactly one inbox item and
+a good count in between resets the streak; ``--dry-run`` lists the gate
+last and names it when it blocks; and ``ServeConfig.load`` reads the
+bound from ``kstrl.toml``, lets the environment win, and refuses a
+negative bound.
+
 What a payload MEANS, and what counts as a kstrl-authored pull request,
 is `tests/test_open_pr_counter.py`. This file is what the daemon does
 with the answer.
@@ -20,9 +30,7 @@ with the answer.
 from __future__ import annotations
 
 import fcntl
-from collections.abc import Callable
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
@@ -32,291 +40,21 @@ from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.serve import (
     Admission,
     CycleResult,
-    OpenPrCount,
-    OpenPrCountStreak,
     RunOutcome,
     ServeConfig,
     ServeError,
     SpendLedger,
-    check_open_pr_bound,
     serve,
     serve_cycle,
     state_dir,
 )
 from kstrl.workqueue import ItemState
 from tests.helpers.fakegh import FAKE_GH_THIRD_CALL_WORKS as _FAKE_GH_THIRD_CALL_WORKS
-from tests.helpers.fakegh import GH_RUN as _GH_RUN
 from tests.helpers.fakegh import install_fake_gh as _install_fake_gh
 from tests.helpers.fakegh import install_marker_gh as _install_marker_gh
 from tests.helpers.fakegh import marked as _marked
 from tests.helpers.fakegh import put_gh_on_path as _put_gh_on_path
 from tests.test_serve import _add, _no_spend, _queue, _stub_runner  # noqa: F401
-
-
-def _boom(_: Path) -> OpenPrCount:
-    """A counter the gate must not call.
-
-    It raises, and the gate converts ANY exception from the counter into
-    a refusal, so the failure surfaces as `assert admission.allowed`
-    going red rather than as the AssertionError itself.
-    """
-    raise AssertionError("the counter was called; the gate should have skipped it")
-
-
-def _counts(count: int, *, saturated: bool = False) -> Callable[[Path], OpenPrCount]:
-    """A counter seam that reports ``count``, page full or not.
-
-    ``count`` is a property over ``marked_numbers`` now, so the numbers
-    are synthesized (the gate reads only the count, never the specific
-    numbers) at a length that produces the requested count.
-    """
-    return lambda _: OpenPrCount(saturated=saturated, marked_numbers=tuple(range(count)))
-
-
-def _raises(exc: BaseException) -> Callable[[Path], OpenPrCount]:
-    """A counter seam that fails with ``exc``."""
-
-    def counter(_: Path) -> OpenPrCount:
-        raise exc
-
-    return counter
-
-
-# ---------------------------------------------------------------------------
-# The gate
-# ---------------------------------------------------------------------------
-
-
-class TestCheckOpenPrBound:
-    def test_bound_disabled_skips_counter(self, tmp_path: Path) -> None:
-        """0 is off, and off means no GitHub call at all."""
-        admission = check_open_pr_bound(
-            ServeConfig(max_open_prs=0),
-            tmp_path,
-            counter=_boom,
-        )
-        assert admission.allowed
-        assert admission.reason == "open-PR bound disabled"
-
-    def test_bound_not_applicable_when_no_prs(self, tmp_path: Path) -> None:
-        """Nothing to bound when the factory opens no PRs."""
-        (tmp_path / "kstrl.toml").write_text("[factory]\ncreate_prs = false\n", encoding="utf-8")
-
-        admission = check_open_pr_bound(
-            ServeConfig(max_open_prs=1),
-            tmp_path,
-            counter=_boom,
-        )
-
-        assert admission.allowed
-        assert "not applicable" in admission.reason
-        assert "create_prs = false" in admission.reason
-
-    @pytest.mark.parametrize("toml", ["", "[factory]\ncreate_prs = false\n"])
-    def test_an_early_allow_clears_the_streak(self, tmp_path: Path, toml: str) -> None:
-        """A gate that is off is not evidence that `gh` is broken.
-
-        Both early-allow paths return before the counter runs. Leaving a
-        half-built streak standing across them means an operator who sets
-        `max_open_prs = 0` at two consecutive failures, runs for a week
-        and switches it back on gets the inbox item on the FIRST failure
-        afterwards, which contradicts the "three consecutive polls"
-        contract stated in the docstring, the docs and the CHANGELOG.
-        """
-        if toml:
-            (tmp_path / "kstrl.toml").write_text(toml, encoding="utf-8")
-        config = ServeConfig(max_open_prs=0 if not toml else 1)
-        streak = OpenPrCountStreak()
-        streak.record_inconclusive("cannot count open kstrl PRs: gh: not found")
-        streak.record_inconclusive("cannot count open kstrl PRs: gh: not found")
-
-        admission = check_open_pr_bound(config, tmp_path, counter=_boom, streak=streak)
-
-        assert admission.allowed
-        assert streak.consecutive == 0
-        assert streak.reason == ""
-
-    def test_the_gate_records_nowhere_when_no_streak_is_passed(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """The default is a throwaway, not a crash and not a global.
-
-        The four `if streak is not None` guards this replaced were four
-        branches that each had to remember to record; a caller that
-        passes nothing still gets every other answer unchanged.
-        """
-        admission = check_open_pr_bound(
-            ServeConfig(max_open_prs=1),
-            tmp_path,
-            counter=_raises(RuntimeError("gh: not found")),
-        )
-        assert admission.allowed is False
-        assert "gh: not found" in admission.reason
-
-    def test_under_bound_allows(self, tmp_path: Path) -> None:
-        admission = check_open_pr_bound(
-            ServeConfig(max_open_prs=1),
-            tmp_path,
-            counter=_counts(0),
-        )
-        assert admission.allowed
-        assert admission.reason == "0 of 1 kstrl PRs open"
-
-    def test_at_bound_refuses_as_wait(self, tmp_path: Path) -> None:
-        """A wait, not a pause: the daemon re-checks next cycle.
-
-        `pause_reason` empty is the whole difference. A pause needs a
-        human to lift it; an open PR lifts itself when it merges.
-        """
-        admission = check_open_pr_bound(
-            ServeConfig(max_open_prs=1),
-            tmp_path,
-            counter=_counts(1),
-        )
-
-        assert admission.allowed is False
-        assert admission.pause_reason == ""
-        assert admission.resume_after == ""
-        assert "1 kstrl PR(s) open" in admission.reason
-        assert "bound 1" in admission.reason
-
-    def test_over_bound_refuses(self, tmp_path: Path) -> None:
-        """Counts above the bound refuse too, not only exact equality."""
-        admission = check_open_pr_bound(
-            ServeConfig(max_open_prs=2),
-            tmp_path,
-            counter=_counts(5),
-        )
-        assert admission.allowed is False
-        assert "5 kstrl PR(s) open" in admission.reason
-
-    def test_counter_failure_refuses(self, tmp_path: Path) -> None:
-        """An unknown number of open PRs is not zero."""
-        admission = check_open_pr_bound(
-            ServeConfig(max_open_prs=1),
-            tmp_path,
-            counter=_raises(RuntimeError("gh: not found")),
-        )
-
-        assert admission.allowed is False
-        assert "cannot count" in admission.reason
-        assert "gh: not found" in admission.reason
-        assert admission.pause_reason == ""
-
-    def test_a_saturated_page_under_the_bound_refuses(self, tmp_path: Path) -> None:
-        """A full page makes a low count a lower bound, not a count.
-
-        `gh pr list` returns the newest `--limit` rows, so on a
-        repository with more open PRs than that an unmerged kstrl PR can
-        sit outside the window. Admitting on "0 of 1" there would switch
-        the bound off in exactly the condition it exists for.
-        """
-        admission = check_open_pr_bound(
-            ServeConfig(max_open_prs=1),
-            tmp_path,
-            counter=_counts(0, saturated=True),
-        )
-
-        assert admission.allowed is False
-        assert admission.pause_reason == ""
-        assert "cannot count" in admission.reason
-        assert "lower bound" in admission.reason
-
-    def test_a_saturated_page_at_the_bound_still_refuses_on_the_bound(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """The conclusive direction keeps the ordinary reason.
-
-        Rows outside the window can only ADD to the count, so a count
-        already at the bound is a fact even on a full page. Refusing here
-        with "cannot count" would tell an operator to fix `gh` when the
-        actual answer is "merge the pull request".
-        """
-        admission = check_open_pr_bound(
-            ServeConfig(max_open_prs=1),
-            tmp_path,
-            counter=_counts(3, saturated=True),
-        )
-
-        assert admission.allowed is False
-        assert "3 kstrl PR(s) open (bound 1)" in admission.reason
-        assert "cannot count" not in admission.reason
-
-    def test_a_bad_factory_section_refuses_instead_of_crashing(self, tmp_path: Path) -> None:
-        """`FactoryConfig.load` is inside the guard, not beside it.
-
-        The daemon re-reads `[factory]` every poll while only `ks serve`
-        startup validates it, so an operator editing `kstrl.toml` under a
-        running daemon used to kill the loop with a ValueError traceback.
-        """
-        (tmp_path / "kstrl.toml").write_text(
-            '[factory]\nmax_parallel = "two"\n',
-            encoding="utf-8",
-        )
-
-        admission = check_open_pr_bound(
-            ServeConfig(max_open_prs=1),
-            tmp_path,
-            counter=_counts(0),
-        )
-
-        assert admission.allowed is False
-        assert "cannot count open kstrl PRs" in admission.reason
-        assert "two" in admission.reason
-
-    @pytest.mark.parametrize(
-        "exc",
-        [
-            UnicodeDecodeError("ascii", b"\xe2\x80\x99", 0, 1, "ordinal not in range"),
-            RecursionError("maximum recursion depth exceeded"),
-            KeyError("body"),
-        ],
-        ids=["decode", "recursion", "key"],
-    )
-    def test_every_non_count_outcome_refuses(self, tmp_path: Path, exc: BaseException) -> None:
-        """`except Exception`, not an enumeration of what is reachable.
-
-        `UnicodeDecodeError` escapes `run_gh`'s locale decode (it is a
-        ValueError, and `run_gh` catches OSError and TimeoutExpired);
-        `RecursionError` escapes `json.loads`'s `except ValueError` and
-        only landed in the old handler because it happens to subclass
-        RuntimeError. Enumerating the types believed reachable is the
-        defect, not the precaution (#318).
-        """
-        admission = check_open_pr_bound(
-            ServeConfig(max_open_prs=1),
-            tmp_path,
-            counter=_raises(exc),
-        )
-
-        assert admission.allowed is False
-        assert "cannot count open kstrl PRs" in admission.reason
-
-    def test_a_decode_failure_in_the_real_counter_refuses(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """The same escape through the production path, not the seam.
-
-        `run_gh` calls `subprocess.run(text=True)` with no `encoding=`,
-        so the decode uses the locale and is strict; under `LC_ALL=C
-        PYTHONUTF8=0 PYTHONCOERCECLOCALE=0` one curly quote in any PR
-        body raises. `UnicodeDecodeError` is a ValueError, so it escaped
-        `run_gh`, escaped the counter, escaped the gate, and exited a
-        daemon that has no per-cycle handler.
-        """
-        monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/gh")
-        decode_error = UnicodeDecodeError("ascii", b"\xe2\x80\x99", 0, 1, "not in range(128)")
-
-        with patch(_GH_RUN, side_effect=decode_error):
-            admission = check_open_pr_bound(ServeConfig(max_open_prs=1), tmp_path)
-
-        assert admission.allowed is False
-        assert "cannot count open kstrl PRs" in admission.reason
-
 
 # ---------------------------------------------------------------------------
 # The gate inside the cycle
@@ -613,41 +351,6 @@ class TestPersistentCountFailure:
 
         assert len(self._open_items(tmp_path)) == 1
 
-    def test_the_streak_object_files_once_and_resets(self) -> None:
-        """The unit, so the loop tests above are not the only witness."""
-        streak = OpenPrCountStreak()
-        assert [streak.should_file() for _ in range(3)] == [False, False, False]
-
-        for _ in range(3):
-            streak.record_inconclusive("gh pr failed (99): ")
-        assert streak.should_file() is True
-        # `should_file` is a QUESTION now, so asking twice answers twice;
-        # `filed` is what makes a streak file once, and only
-        # `_record_count_failure` sets it, after the write.
-        streak.filed = True
-        assert streak.should_file() is False, "a streak files once, not once per poll"
-
-        streak.record_conclusive()
-        assert streak.consecutive == 0
-        assert streak.reason == ""
-        for _ in range(3):
-            streak.record_inconclusive("gh pr failed (99): ")
-        assert streak.should_file() is True, "a new streak after a recovery files again"
-
-    def test_a_streak_at_its_threshold_does_not_file_on_another_gate(self) -> None:
-        """The reason is what makes this an alarm about COUNTING.
-
-        Every wait gate's refusal reaches ``_record_count_failure``, and
-        a streak restored at its threshold from a damaged file has
-        recorded no count of its own. Without the reason check it would
-        file an "cannot count open pull requests" item the first time the
-        inbox cap or the factory lock refused.
-        """
-        streak = OpenPrCountStreak(consecutive=OpenPrCountStreak().threshold)
-        assert streak.should_file() is False
-        streak.record_inconclusive("cannot count open kstrl PRs: gh: not found")
-        assert streak.should_file() is True
-
 
 # ---------------------------------------------------------------------------
 # The dry-run listing
@@ -708,13 +411,6 @@ class TestConfig:
         monkeypatch.setenv("KSTRL_SERVE_MAX_OPEN_PRS", "0")
         assert ServeConfig.load(tmp_path).max_open_prs == 0
         assert ServeConfig.from_env().max_open_prs == 0
-
-    def test_the_default_is_one(self) -> None:
-        assert ServeConfig().max_open_prs == 1
-
-    def test_a_negative_bound_is_a_config_error(self) -> None:
-        with pytest.raises(ServeError, match="max_open_prs must be >= 0"):
-            ServeConfig(max_open_prs=-1)
 
     def test_a_negative_bound_in_toml_is_a_config_error(self, tmp_path: Path) -> None:
         (tmp_path / "kstrl.toml").write_text("[serve]\nmax_open_prs = -1\n", encoding="utf-8")

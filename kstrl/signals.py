@@ -109,8 +109,7 @@ class SignalsConfig:
     tracker's bearer token, read at call time by ``fetch_bugsink`` - the
     same shape ``LinearConfig.token_env`` uses and for the same reason:
     ``kstrl.toml`` is a tracked file gitleaks scans, so there is no
-    ``token`` field here at all, checked by
-    ``tests/test_signals_absence.py``.
+    ``token`` field here at all.
 
     ``new_issue_events`` and ``repeat_growth_events`` are advisory
     thresholds that only ever choose a label

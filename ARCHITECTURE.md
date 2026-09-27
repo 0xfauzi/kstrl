@@ -75,7 +75,7 @@ Codebase scan is distinct from the knowledge prefix: codebase scan is
 LLM from prior components' verified work and re-validated on read.
 
 The engineer's prompt carries the context blocks in one order, and the
-order is one literal tuple in `factory._run_component` rather than a
+order is one literal tuple in `factory.engineer_context_prefix` rather than a
 sequence of appends: distilled knowledge, the operator's golden patterns
 (`scripts/kstrl/golden-patterns.md`, written by hand and read verbatim
 from the repo root, never from the component's worktree), the architect's
@@ -86,9 +86,12 @@ output for this attempt, and memory is the operator's standing correction
 to how that output should be acted on, so it is read after it. `run_loop`
 then prepends the whole prefix to `CLAUDE.md` plus the templated prompt,
 which puts memory between the retry context and `CLAUDE.md`. Both
-operator files reach every factory engineer prompt and every `ks run`
-prompt; `ks feature` and `ks understand` call `run_loop` without a
-context prefix and get none of these blocks.
+operator files reach every engineer prompt of `ks factory`, `ks run`,
+`ks retry`, `ks serve` and `ks feature`. `ks feature` builds its prefix
+through the same function, with the knowledge facts and without the
+decisions, codebase scan and retry blocks, which that path does not
+have. `ks understand` calls `run_loop` without a context prefix and gets
+none of these blocks.
 
 ### Phases 1-3: Verification
 

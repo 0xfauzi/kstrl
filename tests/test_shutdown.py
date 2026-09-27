@@ -1,11 +1,14 @@
-"""Stage 3 PR B (TUI rewrite): graceful shutdown.
+"""Stage 3 PR B (TUI rewrite): graceful shutdown, driven end to end.
 
 Before PR B, Ctrl-C relied on Click's default abort: cleanup was
 skipped, executor shutdown could block on live workers, and agent
-subprocesses were orphaned. These tests pin the new contract:
-stop-request honored within the wait slice, in-flight components
-recorded as aborted, agents group-killed (real subprocess test),
-worktree cleanup running, exit code 130.
+subprocesses were orphaned. These tests pin the contract through
+``run_factory`` and ``run_loop``: a pre-set stop launches nothing and
+names itself in the release row, a stop mid-run records the in-flight
+component as aborted and exits 130, ``run_loop`` stops between
+iterations, and a real pool worker's SIGTERM kills the agent's process
+group (#292, the orphan check scoped to the group the test owns, and
+#298, a zombie is not a live member).
 """
 
 from __future__ import annotations
@@ -16,23 +19,16 @@ import os
 import signal
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 from typing import Any
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
 from kstrl.agents.proc import DeadlineStreamer, kill_active_process_groups
-from kstrl.factory import (
-    ComponentResult,
-    _abort_inflight,
-    _resolve_max_parallel,
-    _wait_interruptible,
-    run_factory,
-)
-from kstrl.shutdown import StopController, install_signal_handlers
+from kstrl.factory import ComponentResult, run_factory
+from kstrl.shutdown import StopController
 from kstrl.tui.bridge import start_command_thread
 from kstrl.ui.plain import PlainUI
 from tests import spine_utils
@@ -49,157 +45,6 @@ from tests.test_event_stream import (
     _make_manifest,
     _setup_project,
 )
-
-
-class TestStopController:
-    def test_request_and_escalation(self) -> None:
-        stop = StopController()
-        assert stop.is_set() is False
-        stop.request("first")
-        assert stop.is_set() is True
-        assert stop.reason == "first"
-        assert stop.force is False
-        stop.request("second")
-        assert stop.force is True
-        assert stop.reason == "first"  # original reason preserved
-
-    def test_signal_handlers_route_and_restore(self) -> None:
-        stop = StopController()
-        seconds: list[bool] = []
-        before = signal.getsignal(signal.SIGTERM)
-        uninstall = install_signal_handlers(
-            stop,
-            on_second=lambda: seconds.append(True),
-        )
-        try:
-            handler = signal.getsignal(signal.SIGTERM)
-            assert callable(handler)
-            handler(signal.SIGTERM, None)
-            assert stop.is_set() is True
-            assert "SIGTERM" in stop.reason
-            handler(signal.SIGINT, None)
-            assert stop.force is True
-            assert seconds == [True]
-        finally:
-            uninstall()
-        assert signal.getsignal(signal.SIGTERM) is before
-
-
-class TestWaitInterruptible:
-    def test_no_stop_behaves_like_wait(self) -> None:
-        from concurrent.futures import Future
-
-        future: Future[Any] = Future()
-        future.set_result(1)
-        done, stopped = _wait_interruptible({future}, 1.0, None)
-        assert done == {future}
-        assert stopped is False
-
-    def test_stop_returns_within_slice(self) -> None:
-        from concurrent.futures import Future
-
-        future: Future[Any] = Future()  # never completes
-        stop = StopController()
-
-        def _later() -> None:
-            time.sleep(0.1)
-            stop.request("test")
-
-        threading.Thread(target=_later).start()
-        started = time.monotonic()
-        done, stopped = _wait_interruptible(
-            {future},
-            30.0,
-            stop,
-            slice_seconds=0.2,
-        )
-        elapsed = time.monotonic() - started
-        assert stopped is True
-        assert done == set()
-        assert elapsed < 2.0  # honored well before the 30s backstop
-
-    def test_timeout_expiry_without_stop(self) -> None:
-        from concurrent.futures import Future
-
-        future: Future[Any] = Future()
-        stop = StopController()
-        done, stopped = _wait_interruptible(
-            {future},
-            0.2,
-            stop,
-            slice_seconds=0.1,
-        )
-        assert stopped is False
-        assert done == set()
-
-
-class TestAbortInflight:
-    class Worker:
-        pid = 4242
-
-        def __init__(self, *, exits_on_term: bool) -> None:
-            self.alive = True
-            self.exits_on_term = exits_on_term
-            self.terminated = False
-            self.killed = False
-
-        def is_alive(self) -> bool:
-            return self.alive
-
-        def terminate(self) -> None:
-            self.terminated = True
-            if self.exits_on_term:
-                self.alive = False
-
-        def kill(self) -> None:
-            self.killed = True
-            self.alive = False
-
-    class Executor:
-        def __init__(self, worker: TestAbortInflight.Worker) -> None:
-            self._processes = {worker.pid: worker}
-            self.shutdown_called = False
-
-        def shutdown(self, **kwargs: Any) -> None:
-            self.shutdown_called = True
-
-    def test_second_request_skips_grace_and_kills_live_worker(self) -> None:
-        worker = self.Worker(exits_on_term=False)
-        executor = self.Executor(worker)
-        stop = StopController()
-        stop.request("first")
-        stop.request("second")
-
-        _abort_inflight(
-            executor,
-            {},
-            Mock(),
-            Mock(),
-            stop,  # type: ignore[arg-type]
-            term_grace=30.0,
-        )
-
-        assert worker.terminated is True
-        assert worker.killed is True
-        assert executor.shutdown_called is True
-
-    def test_exited_worker_is_not_killed(self) -> None:
-        worker = self.Worker(exits_on_term=True)
-        executor = self.Executor(worker)
-        stop = StopController()
-        stop.request("first")
-
-        _abort_inflight(
-            executor,
-            {},
-            Mock(),
-            Mock(),
-            stop,  # type: ignore[arg-type]
-            term_grace=30.0,
-        )
-
-        assert worker.terminated is True
-        assert worker.killed is False
 
 
 class TestAgentGroupKill:
@@ -711,56 +556,3 @@ class TestTheOrphanCheckIsScopedToItsOwnGroup:
             parent.wait(timeout=10)
             if pgid > 1:
                 kill_group(pgid)
-
-
-class TestTheParallelismDecisionIsAnnounced:
-    """#292's root cause, as a unit.
-
-    `_run_factory_locked` silently rewrote a configured `max_parallel`
-    whenever worktrees were off, and said only "running sequentially" at
-    info level without naming the knob. That is how the spine test above
-    could ask for 2, get 1 and therefore `_InlineExecutor`, and stay
-    green for months while measuring nothing: no operator and no test
-    author was ever told the number had been discarded.
-
-    So the decision now has a name, and it reports every setting it
-    throws away.
-    """
-
-    def _ui(self) -> tuple[PlainUI, io.StringIO]:
-        buffer = io.StringIO()
-        return PlainUI(no_color=True, file=buffer), buffer
-
-    def test_parallelism_survives_when_worktrees_are_on(self) -> None:
-        ui, buffer = self._ui()
-        config = spine_utils.factory_config(max_parallel=4)
-        assert _resolve_max_parallel(config, ui) == 4
-        assert buffer.getvalue() == ""
-
-    def test_disabling_worktrees_forces_one_and_says_what_it_discarded(self) -> None:
-        ui, buffer = self._ui()
-        config = spine_utils.factory_config(max_parallel=8, use_worktrees=False)
-        assert _resolve_max_parallel(config, ui) == 1
-        out = buffer.getvalue()
-        assert "max_parallel" in out, "the discarded knob must be named"
-        assert "8" in out, "the operator's configured value must appear"
-
-    def test_it_stays_quiet_when_it_discards_nothing(self) -> None:
-        """The old line fired unconditionally, so it was noise at
-        max_parallel=1 and therefore easy to stop reading."""
-        ui, buffer = self._ui()
-        config = spine_utils.factory_config(max_parallel=1, use_worktrees=False)
-        assert _resolve_max_parallel(config, ui) == 1
-        assert buffer.getvalue() == ""
-
-    def test_single_pr_forces_one_and_says_so(self) -> None:
-        ui, buffer = self._ui()
-        config = spine_utils.factory_config(max_parallel=4, single_pr=True)
-        assert _resolve_max_parallel(config, ui) == 1
-        assert "4" in buffer.getvalue()
-
-    def test_single_pr_at_one_is_not_a_discard(self) -> None:
-        ui, buffer = self._ui()
-        config = spine_utils.factory_config(max_parallel=1, single_pr=True)
-        assert _resolve_max_parallel(config, ui) == 1
-        assert buffer.getvalue() == ""

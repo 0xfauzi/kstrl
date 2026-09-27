@@ -8,9 +8,12 @@ deleted before the run fell back to the root copy with no message.
 
 Now the manifest records a ``planId`` on every component a plan wrote, the
 planned copy lives under that id, and ``pre_run_prd_path`` reads the planned
-copy only for a component that names one. The end-to-end tests drive the
-real ``ks decompose`` and ``ks factory`` with a stub agent; the census below
-keeps every read of the plan directory going through ``pre_run_prd_path``.
+copy only for a component that names one. Three tests drive the real
+``ks decompose`` and ``ks factory`` through a subprocess with a stub agent;
+the census below keeps every read of the plan directory going through
+``pre_run_prd_path``, and a strict xfail records the name the walk cannot
+fold. The ``pre_run_prd_path`` / ``plan_prd_path`` and ``planId`` schema
+unit tests this file once held were removed.
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ from typing import Any
 import pytest
 
 from kstrl.manifest import Component, Manifest
-from kstrl.statedir import plan_prd_path, pre_run_prd_path
+from kstrl.statedir import pre_run_prd_path
 from tests.helpers.astwalk import (
     assert_census,
     blind_spot,
@@ -186,70 +189,6 @@ def test_a_later_decompose_writes_beside_an_earlier_one(tmp_path: Path) -> None:
     assert one.plan_id and two.plan_id and one.plan_id != two.plan_id
     for comp in (one, two):
         assert pre_run_prd_path(root, comp.id, comp.prd_path, plan_id=comp.plan_id).is_file()
-
-
-class TestTheOneReader:
-    def test_no_plan_id_reads_prd_path_even_beside_a_planned_copy(self, tmp_path: Path) -> None:
-        planned = plan_prd_path(tmp_path, "comp", plan_id="plan-1")
-        planned.parent.mkdir(parents=True)
-        planned.write_text("{}", encoding="utf-8")
-        assert pre_run_prd_path(tmp_path, "comp", "x/prd.json", plan_id="") == (
-            tmp_path / "x" / "prd.json"
-        )
-
-    def test_a_plan_id_never_falls_back_to_prd_path(self, tmp_path: Path) -> None:
-        (tmp_path / "x").mkdir()
-        (tmp_path / "x" / "prd.json").write_text("{}", encoding="utf-8")
-        assert pre_run_prd_path(tmp_path, "comp", "x/prd.json", plan_id="plan-1") == (
-            plan_prd_path(tmp_path, "comp", plan_id="plan-1")
-        )
-
-    def test_an_empty_plan_id_names_no_planned_copy(self, tmp_path: Path) -> None:
-        with pytest.raises(ValueError, match="no plan id"):
-            plan_prd_path(tmp_path, "comp", plan_id="")
-
-    def test_ks_run_has_no_plan(self, tmp_path: Path) -> None:
-        manifest = Manifest.from_prd(Path("scripts/kstrl/prd.json"), "kstrl/x")
-        assert [c.plan_id for c in manifest.components] == [""]
-
-
-class TestTheManifestCarriesThePlan:
-    def _raw(self, **extra: Any) -> dict[str, Any]:
-        comp = {
-            "id": "comp",
-            "title": "t",
-            "description": "d",
-            "dependencies": [],
-            "prdPath": "scripts/kstrl/feature/comp/prd.json",
-            "branchName": "kstrl/factory/comp",
-            **extra,
-        }
-        return {
-            "version": "1",
-            "specFile": "spec.md",
-            "projectName": "p",
-            "baseBranch": "main",
-            "singlePr": False,
-            "components": [comp],
-        }
-
-    def test_plan_id_round_trips(self, tmp_path: Path) -> None:
-        path = tmp_path / "m.json"
-        path.write_text(json.dumps(self._raw(planId="plan-1")), encoding="utf-8")
-        loaded = Manifest.load(path)
-        assert loaded.components[0].plan_id == "plan-1"
-        loaded.save(path)
-        assert json.loads(path.read_text(encoding="utf-8"))["components"][0]["planId"] == "plan-1"
-
-    def test_an_absent_plan_id_is_no_plan(self, tmp_path: Path) -> None:
-        path = tmp_path / "m.json"
-        path.write_text(json.dumps(self._raw()), encoding="utf-8")
-        assert Manifest.load(path).components[0].plan_id == ""
-
-    @pytest.mark.parametrize("value", ["../x", "a/b", "Plan", 5])
-    def test_a_plan_id_that_is_not_one_path_segment_is_refused(self, value: object) -> None:
-        errors = Manifest.validate_schema(self._raw(planId=value))
-        assert any(e.startswith("components[0].planId:") for e in errors), errors
 
 
 # --- the census: one reader of the plan directory ---------------------------

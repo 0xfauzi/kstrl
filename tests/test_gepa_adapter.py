@@ -23,7 +23,8 @@ import pytest
 
 import tests.test_calibration as tc
 from kstrl import calibration_score, gepa_adapter
-from kstrl.agents.base import UsageRecord
+from kstrl.agents.base import TOOL_RESULT_PREFIX, UsageRecord
+from kstrl.agents.claude_code import ClaudeCodeAgent
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.gepa_adapter import (
     GEPA_REFLECTION_PROMPT,
@@ -38,6 +39,13 @@ from kstrl.review import REVIEWER_PROMPT
 from kstrl.security import SECURITY_PROMPT
 from tests.helpers.calibration_repo_fixture import load_fixtures
 from tests.helpers.localeenv import ascii_child_env
+from tests.test_claude_stream_blocks import (
+    _install_fake_claude,
+    _result,
+    _text,
+    _tool_result,
+    _tool_use,
+)
 
 #: The line the scripted reflection model appends to the seed prompt. The
 #: scripted reviewer catches a planted defect only when its prompt holds it.
@@ -471,6 +479,50 @@ def test_reflection_model_reads_a_multi_line_reply_whole(tmp_path: Path) -> None
     model = ReflectionModel(agent=agent, cwd=tmp_path, timeout=60.0, max_calls=1)
 
     assert model("revise this") == "```\nnew instructions\n```"
+
+
+def test_reflection_model_keeps_a_pipe_prefixed_row_from_a_custom_agent(
+    tmp_path: Path,
+) -> None:
+    """A CustomAgent-style adapter never marks its own lines as tool
+    output (#598): a reply whose own text happens to start with the
+    tool-result prefix reaches gepa whole, not filtered.
+
+    Filtering unconditionally was the defect: two reviewers drove a real
+    CustomAgent through ReflectionModel with a reply holding an indented
+    markdown table, and the table's own row (starting with two spaces)
+    came back deleted, because nothing marks a CustomAgent's lines as
+    tool output in the first place."""
+    reply = "\n".join(["```", TOOL_RESULT_PREFIX + "score each finding", "```"])
+    agent = _LastLineAgent(reply)
+    model = ReflectionModel(agent=agent, cwd=tmp_path, timeout=60.0, max_calls=1)
+
+    assert model("revise this") == reply
+
+
+def test_reflection_model_ignores_tool_result_lines_from_claude_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ClaudeCodeAgent DOES mark its tool-output lines (#598), unlike
+    _LastLineAgent above: driven through a real fake-claude subprocess,
+    its tool output is filtered out of gepa's reply. The empty result
+    event forces final_message to fail _instructions parsing, so the
+    fallback (the filtered join) is what gepa actually reads; it keeps
+    the tool-call announcement line, which is the model's own words."""
+    events = [
+        _tool_use("toolu_1", "Bash", {"command": "cat old-prompt.md"}),
+        _tool_result("toolu_1", "old instructions"),
+        _text("```\nnew instructions\n```"),
+        _result(""),
+    ]
+    _install_fake_claude(tmp_path, monkeypatch, [json.dumps(e) for e in events])
+    agent = ClaudeCodeAgent()
+    model = ReflectionModel(agent=agent, cwd=tmp_path, timeout=60.0, max_calls=1)
+
+    reply = model("revise this")
+
+    assert "old instructions" not in reply
+    assert reply == "[Bash] cat old-prompt.md\n```\nnew instructions\n```"
 
 
 class _TimedOutAgent(_ScriptedAgent):

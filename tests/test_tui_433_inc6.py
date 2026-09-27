@@ -8,6 +8,7 @@ kstrl's own writers (``EventBus``, ``Manifest``, ``Inbox``, ``Queue``,
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any, cast
@@ -36,11 +37,36 @@ from tests.test_tui_433_inc5 import (
     _live_run_with_serve_item,
     _open_retry,
 )
-from tests.test_tui_433_queue import _finding, _integration_state, _review
 
 HEAD = "87c3e2efbe2c4d0a9b1e"
 #: A round's review with as many criteria as the e3 build's, so the tables fill.
 FIVE_CRITERIA = {"criteria": [{"storyId": f"IC{n}", "verdict": "fail"} for n in range(1, 6)]}
+
+
+def _review(root: Path, run_id: str, number: int, **payload: object) -> None:
+    directory = root / ".kstrl" / "runs" / run_id / "integration"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"review-{number}.json").write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _integration_state(
+    root: Path, findings: list[dict[str, object]], fixes: list[dict[str, object]]
+) -> None:
+    path = root / ".kstrl" / "integration" / "state.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"findings": findings, "fixes": fixes}), encoding="utf-8")
+
+
+def _finding(fid: str, status: str, text: str, run_id: str = "r") -> dict[str, object]:
+    return {
+        "id": fid,
+        "status": status,
+        "kind": "criterion",
+        "storyId": "IC1",
+        "text": text,
+        "locations": [],
+        "history": [{"runId": run_id, "event": "opened"}],
+    }
 
 
 def _one_line(text: str) -> str:

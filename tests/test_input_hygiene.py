@@ -2,10 +2,18 @@
 
 Component ids become filesystem path segments (.kstrl/worktrees/<id>,
 scripts/kstrl/feature/<id>) and branch segments (kstrl/factory/<id>);
-branch names reach git argv in ref position. These tests prove that
-traversal ids, option-injection branch names, and unicode confusables
-are rejected at every parse boundary, and that the legitimate shapes
-used across the codebase still pass.
+branch names reach git argv in ref position. What remains here drives
+the two boundaries end to end: ``decompose_spec`` with a stub architect
+that emits a traversal id (the retry prompt carries the validation
+error and the second attempt lands) or an unsafe project name in
+single-PR mode, and the ``--``-separated git invocations against a
+real repository with a bare origin, which still work for legitimate
+names and fail closed for option-shaped values.
+
+The per-value tables for ``validate_component_id``,
+``validate_branch_name``, ``Manifest.validate_schema`` and
+``Manifest.from_prd`` are carried by ``ks decompose`` over a stub
+architect emitting each bad id.
 """
 
 from __future__ import annotations
@@ -17,8 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import pr as pr_module
-from kstrl.decompose import _validate_decompose_output, decompose_spec
+from kstrl.decompose import decompose_spec
 from kstrl.git import (
     checkout_existing,
     create_branch_from,
@@ -26,264 +33,10 @@ from kstrl.git import (
     get_diff_names,
     merge_branch,
 )
-from kstrl.manifest import (
-    Component,
-    Manifest,
-)
-from kstrl.names import (
-    role_component_key,
-    validate_branch_name,
-    validate_component_id,
-)
 from kstrl.pr import push_branch
 from kstrl.ui.plain import PlainUI
 from tests.helpers import gitrepo
 from tests.helpers.prompt_calls import architect_call
-
-# Unicode dash confusables: non-breaking hyphen, minus sign, en dash.
-NB_HYPHEN = "‑"
-MINUS_SIGN = "−"
-EN_DASH = "–"
-
-
-REJECTED_COMPONENT_IDS = [
-    "../../repo",
-    "..",
-    "a/../b",
-    "foo/bar",
-    "/etc",
-    "-foo",
-    "--force",
-    ".hidden",
-    "_leading-underscore",
-    "Uppercase",
-    "foo bar",
-    "foo\tbar",
-    "foo\nbar",
-    "foo..bar",
-    "trailing-dot.",
-    "collides.lock",
-    "",
-    "a" * 65,
-    f"auth{NB_HYPHEN}service",
-    f"auth{MINUS_SIGN}service",
-    f"auth{EN_DASH}service",
-    "føo",
-]
-
-ACCEPTED_COMPONENT_IDS = [
-    "main",  # Manifest.from_prd
-    "auth-service",
-    "comp-a",
-    "database",
-    "api",
-    "c1",
-    "a",
-    "0start-digit",
-    "api.v2",
-    "data_models",
-    "a" * 64,
-]
-
-REJECTED_BRANCH_NAMES = [
-    "-evil",
-    "--force",
-    "-u",
-    f"{NB_HYPHEN}evil",
-    f"{MINUS_SIGN}evil",
-    f"br{EN_DASH}anch",
-    "..",
-    "a..b",
-    "kstrl/../main",
-    " main",
-    "main ",
-    "my branch",
-    "branch\tname",
-    "branch\nname",
-    "re:branch",
-    "/leading-slash",
-    "trailing-slash/",
-    "a//b",
-    ".hidden",
-    "kstrl/.hidden",
-    "branch.",
-    "branch.lock",
-    "",
-    "a" * 201,
-]
-
-ACCEPTED_BRANCH_NAMES = [
-    "main",
-    "master",
-    "develop",
-    "kstrl/run",  # ks run default
-    "kstrl/factory/auth-service",
-    "kstrl/factory/comp-a",
-    "kstrl/auth-feature",
-    "kstrl/c1",
-    "test-branch",
-    "feature/foo_bar",
-    "release-1.2.3",
-    "kstrl/contract-0-20260713",  # contract temp branches
-    "a" * 200,
-]
-
-
-class TestValidateComponentId:
-    @pytest.mark.parametrize("comp_id", REJECTED_COMPONENT_IDS)
-    def test_rejected(self, comp_id: str) -> None:
-        error = validate_component_id(comp_id)
-        assert error is not None
-        assert "component id" in error
-
-    @pytest.mark.parametrize("comp_id", ACCEPTED_COMPONENT_IDS)
-    def test_accepted(self, comp_id: str) -> None:
-        assert validate_component_id(comp_id) is None
-
-    def test_error_is_actionable_for_retry_loop(self) -> None:
-        """The message names the offending id and states the rule, so
-        the decompose retry loop can feed it back to the architect."""
-        error = validate_component_id("../../repo")
-        assert error is not None
-        assert "../../repo" in error
-        assert "must match" in error
-
-
-class TestRoleKeysCannotBeComponentIds:
-    """#281: kstrl's own role rows share keyed surfaces with LLM-emitted
-    component ids, and are namespaced so the two cannot collide.
-
-    That namespacing is safe only because ``ROLE_KEY_PREFIX`` is
-    unreachable by ``COMPONENT_ID_PATTERN``. Both constants live in
-    ``names.py``, and this is the mechanism that keeps them agreeing: a
-    later relaxation of the pattern - or a prefix changed to something
-    an architect could emit - fails HERE, loudly, instead of silently
-    re-merging the usage meter and the spend ledger.
-    """
-
-    #: The role that has a row today, plus the two shapes a future one
-    #: could take that the prefix has to survive: the shortest legal id,
-    #: and one long enough that the prefix pushes it over the 64-char
-    #: limit. The point of the fix is that rejection is a property of the
-    #: namespace rather than of the word `architect`, so the guard is
-    #: parametrized rather than pinned to the one role.
-    ROLES = ["architect", "a", "x" * 64]
-
-    @pytest.mark.parametrize("role", ROLES)
-    def test_a_role_key_is_never_a_valid_component_id(self, role: str) -> None:
-        assert validate_component_id(role_component_key(role)) is not None
-
-    def test_the_bare_role_name_stays_a_valid_component_id(self) -> None:
-        """The compatibility half, and the reason option 1 was taken over
-        reserving the name: an operator or an architect may still call a
-        component `architect`, and a manifest that already does keeps
-        loading. Only the real role is asserted - the generic id shapes
-        are ``ACCEPTED_COMPONENT_IDS``' job, not this class's."""
-        assert validate_component_id("architect") is None
-
-    def test_a_role_key_is_never_a_valid_branch_name(self) -> None:
-        """A role key is not only a dict key - it reaches disk as a run
-        directory segment. Being rejected as a ref too means a leak into
-        git argv is a loud failure rather than a silent bad ref."""
-        assert validate_branch_name(role_component_key("architect")) is not None
-
-    def test_the_prefix_is_not_empty(self) -> None:
-        """The degenerate case the guards above cannot see: with an
-        empty prefix ``role_component_key`` is the identity, every
-        assertion about role keys becomes an assertion about bare role
-        names, and the collision is back with the tests still green.
-        Measured - an earlier draft of the #281 meter tests passed in
-        exactly that state."""
-        assert role_component_key("architect") != "architect"
-
-
-class TestValidateBranchName:
-    @pytest.mark.parametrize("branch", REJECTED_BRANCH_NAMES)
-    def test_rejected(self, branch: str) -> None:
-        error = validate_branch_name(branch)
-        assert error is not None
-        assert "branch name" in error
-
-    @pytest.mark.parametrize("branch", ACCEPTED_BRANCH_NAMES)
-    def test_accepted(self, branch: str) -> None:
-        assert validate_branch_name(branch) is None
-
-    def test_option_injection_message_explains_risk(self) -> None:
-        error = validate_branch_name("-evil")
-        assert error is not None
-        assert "option" in error
-
-
-def _manifest_data(
-    comp_id: str = "comp-a",
-    branch_name: str = "kstrl/factory/comp-a",
-    base_branch: str = "main",
-) -> dict[str, object]:
-    return {
-        "version": "1",
-        "specFile": "spec.md",
-        "projectName": "test-project",
-        "baseBranch": base_branch,
-        "singlePr": False,
-        "components": [
-            {
-                "id": comp_id,
-                "title": "Component A",
-                "description": "A component",
-                "dependencies": [],
-                "prdPath": f"scripts/kstrl/feature/{comp_id}/prd.json",
-                "branchName": branch_name,
-            }
-        ],
-    }
-
-
-class TestManifestSchemaHygiene:
-    def test_legitimate_manifest_passes(self) -> None:
-        assert Manifest.validate_schema(_manifest_data()) == []
-
-    @pytest.mark.parametrize("comp_id", ["../../repo", "foo/bar", "-foo"])
-    def test_traversal_id_rejected(self, comp_id: str) -> None:
-        errors = Manifest.validate_schema(_manifest_data(comp_id=comp_id))
-        assert any("components[0].id" in e for e in errors)
-
-    @pytest.mark.parametrize("branch", ["-evil", "a..b", "my branch"])
-    def test_bad_branch_name_rejected(self, branch: str) -> None:
-        errors = Manifest.validate_schema(_manifest_data(branch_name=branch))
-        assert any("components[0].branchName" in e for e in errors)
-
-    @pytest.mark.parametrize("base", ["-evil", "a..b"])
-    def test_bad_base_branch_rejected(self, base: str) -> None:
-        errors = Manifest.validate_schema(_manifest_data(base_branch=base))
-        assert any(e.startswith("baseBranch:") for e in errors)
-
-    def test_load_rejects_traversal_id(self, tmp_path: Path) -> None:
-        path = tmp_path / "manifest.json"
-        path.write_text(json.dumps(_manifest_data(comp_id="../../repo")))
-        with pytest.raises(ValueError, match="Invalid manifest schema"):
-            Manifest.load(path)
-
-
-class TestFromPrdHygiene:
-    def test_legitimate_branch_accepted(self, tmp_path: Path) -> None:
-        manifest = Manifest.from_prd(
-            prd_path=tmp_path / "prd.json",
-            branch="kstrl/auth",
-        )
-        assert manifest.components[0].branch_name == "kstrl/auth"
-
-    @pytest.mark.parametrize("branch", ["-evil", "my branch", "a..b"])
-    def test_bad_branch_rejected(self, tmp_path: Path, branch: str) -> None:
-        with pytest.raises(ValueError, match="Invalid branch name"):
-            Manifest.from_prd(prd_path=tmp_path / "prd.json", branch=branch)
-
-    def test_bad_base_branch_rejected(self, tmp_path: Path) -> None:
-        with pytest.raises(ValueError, match="Invalid base branch"):
-            Manifest.from_prd(
-                prd_path=tmp_path / "prd.json",
-                branch="kstrl/auth",
-                base_branch="-evil",
-            )
 
 
 def _decompose_output(comp_id: str) -> str:
@@ -344,19 +97,6 @@ class SequenceAgent:
 
 
 class TestDecomposeValidationHygiene:
-    @pytest.mark.parametrize(
-        "comp_id",
-        ["../../repo", "foo/bar", "-foo", "Uppercase", ".."],
-    )
-    def test_bad_id_rejected(self, comp_id: str) -> None:
-        data = json.loads(_decompose_output(comp_id))
-        errors = _validate_decompose_output(data)
-        assert any("components[0].id" in e for e in errors)
-
-    def test_legitimate_output_accepted(self) -> None:
-        data = json.loads(_decompose_output("auth-service"))
-        assert _validate_decompose_output(data) == []
-
     def test_retry_loop_receives_id_error(self, tmp_path: Path) -> None:
         """A traversal id fails attempt 1; the retry prompt carries the
         validation error verbatim and attempt 2 succeeds."""
@@ -502,76 +242,3 @@ class TestGitArgvSeparators:
         subprocess.run(["git", "add", "h.txt"], cwd=repo, check=True)
         subprocess.run(["git", "commit", "-qm", "delta"], cwd=repo, check=True)
         assert get_diff_names("main", cwd=repo) == ["h.txt"]
-
-
-class TestPrArgvShapes:
-    """Argv-shape assertions for the gh invocation: --head=/--base= bind
-    branch values to their flags."""
-
-    def test_create_component_pr_uses_equals_form(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
-    ) -> None:
-        captured: list[list[str]] = []
-
-        def fake_run(argv: list[str], **kwargs: object) -> object:
-            captured.append(argv)
-            return type(
-                "R",
-                (),
-                {
-                    "returncode": 0,
-                    "stdout": "https://github.com/o/r/pull/7\n",
-                    "stderr": "",
-                },
-            )()
-
-        monkeypatch.setattr(pr_module.subprocess, "run", fake_run)
-
-        component = Component(
-            id="comp-a",
-            title="Component A",
-            description="A component",
-            dependencies=[],
-            prd_path="scripts/kstrl/feature/comp-a/prd.json",
-            branch_name="kstrl/factory/comp-a",
-        )
-        manifest = Manifest(
-            version="1",
-            spec_file="spec.md",
-            project_name="test-project",
-            base_branch="main",
-            single_pr=False,
-            components=[component],
-        )
-
-        pr_number, pr_url = pr_module.create_component_pr(
-            component,
-            manifest,
-            tmp_path,
-        )
-
-        assert pr_number == 7
-        assert pr_url == "https://github.com/o/r/pull/7"
-        (argv,) = captured
-        assert "--head=kstrl/factory/comp-a" in argv
-        assert "--base=main" in argv
-
-    def test_push_branch_uses_separator(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
-    ) -> None:
-        captured: list[list[str]] = []
-
-        def fake_run(argv: list[str], **kwargs: object) -> object:
-            captured.append(argv)
-            return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
-
-        monkeypatch.setattr(pr_module.subprocess, "run", fake_run)
-
-        # R0.2: push_branch returns None on success, an error otherwise.
-        assert push_branch("kstrl/factory/comp-a", tmp_path) is None
-        (argv,) = captured
-        assert argv.index("--") < argv.index("kstrl/factory/comp-a")

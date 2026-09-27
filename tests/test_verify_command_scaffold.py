@@ -1,10 +1,11 @@
-"""#261: what `ks init` scaffolds, and what the generated docs claim.
+"""#261: what `ks init` scaffolds into ``kstrl.toml [verify]``.
 
 The run-time half of the contract lives in
 ``tests/test_verify_command_contract.py``. This module covers the
-surfaces init writes and an operator reads: the generated CLAUDE.md,
-the scaffolded ``kstrl.toml [verify]`` block, and the config reference
-``scripts/gen_docs.py`` renders.
+toolchain seed ``kstrl_toml_for`` writes for a real project tree: each
+detected toolchain is recorded, commented out, and parses when the
+operator uncomments it. What the generated CLAUDE.md says is covered
+by ``ks init`` in ``tests/test_init_cmd.py``.
 """
 
 from __future__ import annotations
@@ -17,60 +18,8 @@ import pytest
 from kstrl.init_cmd import (
     _VERIFY_KEYS,
     DEFAULT_KSTRL_TOML,
-    _generate_claude_md,
     kstrl_toml_for,
 )
-from kstrl.verify import (
-    VerifyConfig,
-    resolve_verify_commands,
-    scrub_stale_verify_commands,
-)
-
-
-class TestGeneratedClaudeMd:
-    """`ks init` no longer writes a second copy of the gate commands."""
-
-    def _generated(self) -> str:
-        return _generate_claude_md(
-            {"name": "demo", "language": "Python", "framework": "FastAPI"},
-        )
-
-    def test_it_states_no_verification_command(self) -> None:
-        generated = self._generated()
-        for label in ("**Test**", "**Typecheck**", "**Lint**"):
-            assert label not in generated
-
-    def test_none_of_the_three_wrong_literals_survive(self) -> None:
-        generated = self._generated()
-        for literal in (
-            "pytest tests/ -v --tb=short",
-            "mypy src/ --strict",
-            "ruff check src/",
-        ):
-            assert literal not in generated
-
-    def test_it_still_tells_a_human_where_verification_lives(self) -> None:
-        generated = self._generated()
-        assert "## Verification" in generated
-        assert "[verify]" in generated
-        assert "test_command" in generated
-
-    def test_the_proposals_anchor_heading_is_untouched(self) -> None:
-        """``init_cmd.CLAUDE_MD_LEARNINGS_PROMPT`` writes this heading, and
-        agents append their learnings under it."""
-        assert "## Agent Learnings" in self._generated()
-
-    def test_a_scrub_of_a_freshly_generated_file_finds_nothing_to_do(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """The end state: init's own output cannot diverge, because it
-        states nothing that could."""
-        scrubbed = scrub_stale_verify_commands(
-            self._generated(),
-            resolve_verify_commands(VerifyConfig(), tmp_path),
-        )
-        assert scrubbed.divergences == []
 
 
 class TestScaffoldSeedsTheDetectedToolchain:

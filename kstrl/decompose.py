@@ -20,6 +20,7 @@ from kstrl.agents.base import (
     ARCHITECT_ROLE,
     Agent,
     collect_usage,
+    model_output_text,
     print_usage_rollup,
     usage_cursor,
 )
@@ -678,7 +679,7 @@ def _select_agent_output(agent: Any, output_lines: list[str]) -> str:
     that pass the result through :func:`_extract_json` (e.g. via a
     domain-specific parser) from codex's prompt-echo behavior.
     """
-    streamed = "\n".join(output_lines)
+    streamed = model_output_text(agent, output_lines)
     final = getattr(agent, "final_message", None)
     if not final:
         return streamed
@@ -707,7 +708,7 @@ def _extract_agent_json(agent: Any, output_lines: list[str]) -> Any:
 
     Raises :class:`ValueError` if neither candidate parses.
     """
-    streamed = "\n".join(output_lines)
+    streamed = model_output_text(agent, output_lines)
     final = getattr(agent, "final_message", None)
 
     candidates: list[str] = []
