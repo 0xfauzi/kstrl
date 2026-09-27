@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from kstrl.agents.base import UsageRecord
+from kstrl.agents.base import TOOL_RESULT_PREFIX, UsageRecord, model_output_lines
 from kstrl.agents.proc import DeadlineStreamer, timeout_message
 from kstrl.agents.prompt_record import record_prompt
 from kstrl.jsonread import read_json
@@ -193,9 +193,12 @@ class ClaudeCodeAgent:
             )
         )
 
-        # Set final_message from accumulated text if not already set by result event
-        if self._final_message is None and accumulated_text:
-            self._final_message = accumulated_text[-1]
+        # Set final_message from accumulated text if not already set by
+        # result event. A tool's output is never the agent's final message
+        # (#598): loop.py matches the completion marker against it.
+        own_lines = model_output_lines(accumulated_text)
+        if self._final_message is None and own_lines:
+            self._final_message = own_lines[-1]
 
     @property
     def final_message(self) -> str | None:
@@ -330,23 +333,58 @@ def _parse_stream_event(raw_line: str) -> Iterator[str]:
                 if text:
                     yield text
 
-    elif event_type == "tool_result":
-        # Tool result - show a summary, not the full content
-        content = evt.get("content", "")
-        if isinstance(content, list):
-            for item in content:
-                if isinstance(item, dict) and item.get("type") == "text":
-                    text = item.get("text", "")
-                    # Only show first 200 chars of tool results to avoid flooding
-                    if len(text) > 200:
-                        text = text[:200] + "..."
-                    if text.strip():
-                        yield text
-        elif isinstance(content, str) and content.strip():
-            text = content[:200] + "..." if len(content) > 200 else content
-            yield text
+    elif event_type == "user":
+        yield from _format_user_event(evt)
 
-    # Skip result (duplicates assistant text), system, rate_limit_event, etc.
+    # Skip result (duplicates assistant text), system, rate_limit_event,
+    # thinking blocks, and a user event's text blocks and string content.
+
+
+def _format_user_event(evt: dict[str, Any]) -> Iterator[str]:
+    """The tool results a ``user`` event carries, as display lines.
+
+    Claude Code delivers a tool's output as a ``tool_result`` block inside
+    a ``user`` event (#598). The event's ``text`` blocks and a string
+    ``content`` are the operator's input or injected context, not the
+    agent's output, so they yield nothing.
+    """
+    message = evt.get("message")
+    if not isinstance(message, dict):
+        return
+    content = message.get("content")
+    if not isinstance(content, list):
+        return
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "tool_result":
+            yield from _format_tool_result(block.get("content"))
+
+
+def _format_tool_result(content: object) -> Iterator[str]:
+    """A ``tool_result`` block's ``content`` as display lines.
+
+    ``content`` is a string or a list whose ``text`` items are rendered;
+    every other item (``image``, ``tool_reference``) yields nothing. Each
+    text item is capped at 200 characters BEFORE it is split into lines,
+    and every line starts with ``TOOL_RESULT_PREFIX``, so no consumer can
+    read a tool's output as the agent's own words.
+    """
+    if isinstance(content, str):
+        texts = [content]
+    elif isinstance(content, list):
+        texts = [
+            item["text"]
+            for item in content
+            if isinstance(item, dict)
+            and item.get("type") == "text"
+            and isinstance(item.get("text"), str)
+        ]
+    else:
+        return
+    for text in texts:
+        capped = text[:200] + "..." if len(text) > 200 else text
+        for line in capped.splitlines():
+            if line.strip():
+                yield TOOL_RESULT_PREFIX + line
 
 
 def _format_tool_use(tool_name: str, tool_input: dict[str, Any]) -> Iterator[str]:

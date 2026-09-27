@@ -127,7 +127,7 @@ def _make_workspace_guard(workspace: Path) -> Any:
 
 def _render_content_blocks(blocks: Any, sdk: Any) -> None:
     """Mirror the claude_code adapter's display conventions."""
-    from kstrl.agents.claude_code import _format_tool_use
+    from kstrl.agents.claude_code import _format_tool_result, _format_tool_use
 
     for block in blocks:
         if isinstance(block, sdk.TextBlock):
@@ -139,18 +139,8 @@ def _render_content_blocks(blocks: Any, sdk: Any) -> None:
             for line in _format_tool_use(block.name, tool_input):
                 _emit(line)
         elif isinstance(block, sdk.ToolResultBlock):
-            content = block.content
-            if isinstance(content, str) and content.strip():
-                text = content[:200] + "..." if len(content) > 200 else content
-                _emit(text)
-            elif isinstance(content, list):
-                for item in content:
-                    if isinstance(item, dict) and item.get("type") == "text":
-                        text = str(item.get("text", ""))
-                        if len(text) > 200:
-                            text = text[:200] + "..."
-                        if text.strip():
-                            _emit(text)
+            for line in _format_tool_result(block.content):
+                _emit(line)
 
 
 def _emit_result_message(message: Any) -> None:
@@ -263,8 +253,16 @@ async def _drive(config: dict[str, Any], sdk: Any) -> int:
 
 def _render_message(message: Any, sdk: Any) -> None:
     """Render one non-result SDK message as display lines."""
-    if isinstance(message, (sdk.AssistantMessage, sdk.UserMessage)):
+    if isinstance(message, sdk.AssistantMessage):
         _render_content_blocks(message.content, sdk)
+    elif isinstance(message, sdk.UserMessage) and isinstance(message.content, list):
+        # Only a user message's tool results are rendered: its text and a
+        # string content are the operator's input or injected context,
+        # never the agent's words (#598).
+        _render_content_blocks(
+            [block for block in message.content if isinstance(block, sdk.ToolResultBlock)],
+            sdk,
+        )
     elif isinstance(message, sdk.RateLimitEvent):
         info = getattr(message, "rate_limit_info", None)
         _emit(f"[rate-limit] {info}")

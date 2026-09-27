@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Protocol
@@ -23,6 +23,19 @@ CEILING_AXES: Final[Mapping[str, str]] = {
     "max_cost_usd": "cost",
     "max_total_tokens": "token",
 }
+
+#: Every line an adapter yields for a tool's OUTPUT starts with this (#598).
+#: The Claude Code adapter yields the agent's text as whole stripped blocks
+#: and a tool call as "[Name] ...", so none of the agent's own lines it
+#: yields starts with whitespace. The SDK runner prints a multi-line text
+#: block and the process boundary splits it, so there an indented line of
+#: the agent's own text that starts with this prefix is read as tool output.
+TOOL_RESULT_PREFIX: Final = "  | "
+
+
+def model_output_lines(lines: Iterable[str]) -> list[str]:
+    """``lines`` without the tool-output lines: what the model itself said."""
+    return [line for line in lines if not line.startswith(TOOL_RESULT_PREFIX)]
 
 
 @dataclass(frozen=True)

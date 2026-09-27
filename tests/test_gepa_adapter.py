@@ -23,7 +23,7 @@ import pytest
 
 import tests.test_calibration as tc
 from kstrl import calibration_score, gepa_adapter
-from kstrl.agents.base import UsageRecord
+from kstrl.agents.base import TOOL_RESULT_PREFIX, UsageRecord
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
 from kstrl.gepa_adapter import (
     GEPA_REFLECTION_PROMPT,
@@ -468,6 +468,20 @@ def test_reflection_model_reads_a_multi_line_reply_whole(tmp_path: Path) -> None
     """A fenced reply streamed over several lines reaches gepa whole, not as
     the closing fence line an agent reports as its final message."""
     agent = _LastLineAgent("```\nnew instructions\n```")
+    model = ReflectionModel(agent=agent, cwd=tmp_path, timeout=60.0, max_calls=1)
+
+    assert model("revise this") == "```\nnew instructions\n```"
+
+
+def test_reflection_model_ignores_tool_result_lines(tmp_path: Path) -> None:
+    """A tool's output streamed before the reply never reaches gepa (#598).
+
+    The agent cats the old prompt, whose fenced block would otherwise be
+    the first fence gepa's extractor finds in the joined stream."""
+    tool_output = "\n".join(
+        TOOL_RESULT_PREFIX + line for line in ("```", "old instructions", "```")
+    )
+    agent = _LastLineAgent(tool_output + "\n```\nnew instructions\n```")
     model = ReflectionModel(agent=agent, cwd=tmp_path, timeout=60.0, max_calls=1)
 
     assert model("revise this") == "```\nnew instructions\n```"
