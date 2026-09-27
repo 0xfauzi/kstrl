@@ -852,7 +852,10 @@ def record_dependency_scope_gap(
     the ORCHESTRATOR process: ``factory._submit_args`` calls it on the
     scheduler thread before ``executor.submit``, so it is never reached
     from a worker, and the run-level ``factory.lock`` excludes a second
-    orchestrator on the same root.
+    orchestrator on the same root. Its other caller,
+    ``feature_cmd._feature_knowledge_prefix`` (#599), passes a
+    one-component manifest with no dependencies, so no dependency is
+    excluded and that path never reaches this writer.
 
     The ``"a+b"`` open widens what can fail - a telemetry log this
     process can write but not read is refused rather than appended to

@@ -47,9 +47,9 @@ deliver it. It CLEARS, so it is written to flag: a tuple it cannot find,
 a second binding of the name, a shape it cannot read back, all fail
 rather than counting zero deliveries and agreeing with an empty answer.
 
-LAYER 3 is the census over ``context_prefix``, which closes the five
-documents that say ``ks feature`` and ``ks understand`` read neither
-file.
+LAYER 3 is the census over ``context_prefix``: every module that names
+it is known. Where each ``run_loop`` call gets its prefix from is stated
+per call site in ``tests/test_run_loop_callers_state_context.py`` (#599).
 
 Every layer is proved to still fire before it is believed. Layer 1 and
 layer 3 carry an ``assert_census`` control; layers 2 and 2b have
@@ -91,11 +91,12 @@ WORKER = "factory.py"
 
 #: The function in it that builds the prompt, and the local it builds the
 #: prompt ORDER in. Both named once, so the guard's failure says which
-#: name it went looking for.
-WORKER_SCOPE = "_run_component"
+#: name it went looking for. ``_run_component`` until #599 moved the
+#: assembly into this one function, which ``ks feature`` also calls.
+WORKER_SCOPE = "engineer_context_prefix"
 ORDER_LOCAL = "parts"
 
-#: The hand edits in ``kstrl/factory.py`` one new row costs, as a LIST
+#: The hand edits one new row costs, as a LIST
 #: with the count DERIVED from it. Round 2 of the review found the same
 #: remedy written out as five in three places, all of them missing the
 #: one edit that puts the block in front of the engineer, and the count
@@ -106,13 +107,20 @@ ORDER_LOCAL = "parts"
 #:
 #: Each row is ``(anchor, what to do)``. The anchor is the identifier a
 #: reader can grep for, which is also what the docstring test looks up.
+#: Seven are in ``kstrl/factory.py``; the last is in
+#: ``kstrl/feature_cmd.py`` (#599).
 WORKER_EDITS: tuple[tuple[str, str], ...] = (
     ("import", "the import of the kind constant"),
     (WORKER_SCOPE, f"the {WORKER_SCOPE} parameter carrying the configured path"),
     ("load_operator_file", "the load_operator_file call"),
     (ORDER_LOCAL, f"the {ORDER_LOCAL} entry that puts the block in the prompt order"),
+    ("_run_component", "the _run_component parameter that forwards the path"),
     ("_path_relative_to_root", "the _path_relative_to_root hoist in the parent"),
     ("_submit_args", "the _submit_args positional slot"),
+    (
+        "_feature_context_prefix",
+        "the argument feature_cmd._feature_context_prefix passes from base_config",
+    ),
 )
 
 #: The count as a WORD, derived, because the two docstrings this guard
@@ -144,12 +152,14 @@ EXPECTED_LOADER_SPELLINGS: dict[str, int] = {
 }
 
 #: Every place in ``kstrl/`` that spells ``context_prefix``: the
-#: parameter and its two uses in ``loop.py``, and the local plus the
-#: keyword in ``factory.py``. Nothing else, and that is the whole of
-#: layer 3. See :meth:`TestEveryRowReachesAPrompt.
-#: test_no_other_command_hands_run_loop_a_prefix`.
+#: parameter and its two uses in ``loop.py``; the local, the keyword and
+#: its value in ``factory.py::_run_component``; and the keyword at each
+#: of the three ``run_loop`` calls in ``feature_cmd.py`` (#599). See
+#: :meth:`TestEveryRowReachesAPrompt.
+#: test_every_module_that_names_context_prefix_is_known`.
 EXPECTED_PREFIX_SPELLINGS: dict[str, int] = {
-    "factory.py": 4,
+    "factory.py": 3,
+    "feature_cmd.py": 3,
     "loop.py": 3,
 }
 
@@ -409,8 +419,8 @@ class TestEveryRowReachesAPrompt:
             message=(
                 "The set of places that get hold of the operator-file loader changed. "
                 "If this is a new operator file reaching an engineer prompt, it needs "
-                f"an OPERATOR_FILES row and the {len(WORKER_EDITS)} hand edits in "
-                f"{WORKER} that OperatorFileKind's docstring lists: {EDITS_SENTENCE}. "
+                f"an OPERATOR_FILES row and the {len(WORKER_EDITS)} hand edits "
+                f"that OperatorFileKind's docstring lists: {EDITS_SENTENCE}. "
                 "If it is something else, add it to EXPECTED_LOADER_SPELLINGS with a "
                 "reason."
             ),
@@ -442,7 +452,7 @@ class TestEveryRowReachesAPrompt:
             "every OperatorFileKind row must be LOADED exactly once in "
             f"{WORKER}, and only declared rows may. A row added to OPERATOR_FILES "
             "reaches the parent notice and KstrlConfig.validate through _rows, and "
-            f"reaches NO prompt until {WORKER} pays all {len(WORKER_EDITS)} of: "
+            f"reaches NO prompt until it pays all {len(WORKER_EDITS)} of: "
             f"{EDITS_SENTENCE}. Found: {counts}"
         )
 
@@ -472,25 +482,18 @@ class TestEveryRowReachesAPrompt:
             f"are: {EDITS_SENTENCE}. Delivered: {counts}"
         )
 
-    def test_no_other_command_hands_run_loop_a_prefix(self) -> None:
-        """Layer 3, and it closes five documents at once.
+    def test_every_module_that_names_context_prefix_is_known(self) -> None:
+        """Layer 3: the census of the NAME ``context_prefix``.
 
-        README.md, ``docs/env-vars.md``, ``docs/runbook.md``,
-        CHANGELOG.md and ARCHITECTURE.md all say ``ks feature`` and
-        ``ks understand`` read neither operator file. Round 1 (nit 10)
-        found the claim true and held by nothing: the four ``run_loop``
-        call sites outside ``factory.py`` pass no ``context_prefix``, and
-        ``tests/test_understand_run.py``'s ``_fake_run_loop`` accepts the
-        keyword without recording it, so even that seam is blind.
-
-        A census of the NAME rather than a walk of the call sites,
-        because a block cannot reach ``run_loop`` under any spelling
-        without it: it is the parameter's name. ``feature_cmd.py`` and
-        ``cli.py`` do not appear here, and the day either of them gains a
-        ``context_prefix=`` it does, whatever it puts in it. Combined
-        with layer 1 that is the closure: no operator file is loaded
-        outside ``factory.py``, and no prefix is handed to ``run_loop``
-        outside it either.
+        A block cannot reach ``run_loop`` under any spelling without it:
+        it is the parameter's name. So a module that starts handing
+        ``run_loop`` a prefix moves this dict whatever it puts in it.
+        Until #599 the census held ``factory.py`` and ``loop.py`` only,
+        which pinned ``ks feature``'s engineer to reading no operator
+        file; ``feature_cmd.py`` now names it once per ``run_loop`` call.
+        Which source each call site takes its prefix from is stated per
+        site, and refused when it changes, in
+        ``tests/test_run_loop_callers_state_context.py``.
         """
         assert_census(
             sources=package_sources(),
@@ -498,10 +501,13 @@ class TestEveryRowReachesAPrompt:
             expected=EXPECTED_PREFIX_SPELLINGS,
             control="run_loop(config, context_prefix=block)\n",
             message=(
-                "A module other than factory.py and loop.py names context_prefix. If "
-                "ks feature or ks understand is being given one, five documents say "
-                "they read neither operator file and all five are now wrong; fix them "
-                "in the same change."
+                "The set of modules that name context_prefix changed. A new module "
+                "handing run_loop a prefix must build it with "
+                "factory.engineer_context_prefix and be enrolled in "
+                "tests/test_run_loop_callers_state_context.py; README.md, "
+                "docs/env-vars.md, docs/runbook.md, ARCHITECTURE.md and CHANGELOG.md "
+                "say which commands read the operator files, so update them in the "
+                "same change."
             ),
         )
 

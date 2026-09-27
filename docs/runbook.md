@@ -524,8 +524,8 @@ the correction belongs in `scripts/kstrl/memory.md`, not in another PR
 comment. A comment steers one change; a line in that file is read into every
 subsequent engineer prompt of every run that reads it at all, after the retry
 context, so it steers those runs until you remove it. Which runs those are is
-the paragraph below: `ks factory`, `ks retry` and `ks run`, and not
-`ks feature` or `ks understand`.
+the paragraph below: `ks factory`, `ks retry`, `ks run`, `ks serve` and
+`ks feature`, and not `ks understand`.
 
 What belongs in it: permanent scope exclusions ("never touch the migrations
 directory"), areas whose findings are known false positives, and review
@@ -550,8 +550,8 @@ content of the `## Guidance` section and drops anything after that section
 first, so your newest standing corrections are the ones that survive and
 pruning the oldest lines from the top of `## Guidance` is what preserves
 them. Both the prompt and the terminal warning say which section and
-direction. `ks factory`, `ks retry` and `ks run` read it; `ks feature` and
-`ks understand` do not.
+direction. `ks factory`, `ks retry`, `ks run`, `ks serve` and `ks feature`
+read it; `ks understand` does not.
 
 **The polled steering channel** (`[intake_github] steer_enabled`, off by
 default): with issue intake also configured, a comment `/memory <text>` on

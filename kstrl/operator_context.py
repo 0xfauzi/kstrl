@@ -26,12 +26,15 @@ has just been writing to, so reading the operator's file from there let
 one component's agent choose what the next component's agent is told,
 with no filter and a header asserting the operator wrote it.
 
-The residual, stated rather than implied: three shapes hand the agent
-the repo root as its working tree, and in all three an agent there can
+The residual, stated rather than implied: four shapes hand the agent
+the repo root as its working tree, and in all four an agent there can
 edit this file. ``ks run`` forces ``use_worktrees=False``
 (``kstrl/cli.py``); so does ``ks factory --no-worktrees``; so does
-``[factory] use_worktrees = false`` in ``kstrl.toml``. The last two are
-the ones worth naming, because they are the MULTI-COMPONENT case:
+``[factory] use_worktrees = false`` in ``kstrl.toml``; and
+``feature_cmd.run_feature`` runs every ``ks feature`` loop with the repo
+root as ``cwd``, so its understand or implement loop can write the file
+and the next loop reads it (#599). The two factory settings are the
+ones worth naming, because they are the MULTI-COMPONENT case:
 ``run_factory`` hands ``root_dir`` to every component as its worktree,
 so component A's agent can write ``scripts/kstrl/golden-patterns.md`` in
 the root and components B and C read it, unfiltered, under a header
@@ -178,14 +181,17 @@ class OperatorFileKind:
     the ``[paths]`` key and the budget off the row.
 
     THE WORKER'S PROMPT BLOCK IS THE THIRD AND IT IS HAND-ORDERED, on
-    purpose. ``factory._run_component`` names each kind itself, and a new
-    row costs SIX hand edits in ``kstrl/factory.py``, which is the list
-    and not the number: the import of the kind constant, the
-    ``_run_component`` parameter carrying the configured path, the
-    ``load_operator_file`` call, THE ENTRY IN THE ``parts`` TUPLE that
-    puts the block in front of the engineer, the
-    ``_path_relative_to_root`` hoist in the parent, and the positional
-    slot in ``_submit_args``. Round 1 of R10.9's review is the reason
+    purpose. ``factory.engineer_context_prefix`` names each kind itself,
+    and a new row costs EIGHT hand edits, seven in ``kstrl/factory.py``
+    and one in ``kstrl/feature_cmd.py``, which is the list and not the
+    number: the import of the kind constant, the
+    ``engineer_context_prefix`` parameter carrying the configured path,
+    the ``load_operator_file`` call, THE ENTRY IN THE ``parts`` TUPLE
+    that puts the block in front of the engineer, the ``_run_component``
+    parameter that forwards the path, the ``_path_relative_to_root``
+    hoist in the parent, the positional slot in ``_submit_args``, and
+    the argument ``_feature_context_prefix`` passes from ``base_config``
+    (#599). Round 1 of R10.9's review is the reason
     this paragraph exists: the earlier wording claimed a row reached the
     worker too, which would have made a third row validated, warned
     about, and injected into no prompt at all, with nothing failing.
@@ -281,7 +287,7 @@ MEMORY = OperatorFileKind(
 )
 
 #: Declaration order, which is what :func:`_rows` walks. NOT the prompt
-#: order: ``factory._run_component`` owns that and pins it as one literal
+#: order: ``factory.engineer_context_prefix`` owns that and pins it as one literal
 #: tuple, because where memory sits relative to the retry context is the
 #: mechanism R10.9 is (the operator's standing correction is read after
 #: the controller's output for this attempt, not before it).
@@ -635,9 +641,9 @@ def _rows(
     R10.9 added the memory row without changing either function.
 
     IT DOES NOT REACH THE ENGINEER'S PROMPT. That is
-    ``factory._run_component``, which names each kind by hand and costs
-    SIX edits per row, one of them the entry in the ``parts`` tuple that
-    is the prompt order; :class:`OperatorFileKind` lists all six and
+    ``factory.engineer_context_prefix``, which names each kind by hand,
+    and a row costs EIGHT edits, one of them the entry in the ``parts``
+    tuple that is the prompt order; :class:`OperatorFileKind` lists all eight and
     names the test that refuses a row which has not paid them. An earlier
     wording of this sentence claimed the worker too, which is a guard
     closed over one surface reading as closed over all of them, and the

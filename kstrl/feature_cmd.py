@@ -68,6 +68,7 @@ from kstrl.events import (
     RunPlan,
     RunStarted,
 )
+from kstrl.factory import _report_operator_files, engineer_context_prefix
 from kstrl.feature_verify import (
     baseline_skip_reason,
     report_verification,
@@ -79,7 +80,9 @@ from kstrl.interaction import (
     PromptRequest,
     UiInteractionChannel,
 )
+from kstrl.knowledge import KnowledgeConfig, build_knowledge_context
 from kstrl.loop import run_loop
+from kstrl.manifest import Component, Manifest
 from kstrl.timeout import TimeoutConfig
 
 if TYPE_CHECKING:
@@ -200,6 +203,75 @@ def _build_repair_prd(
     return repair_path
 
 
+def _feature_knowledge_prefix(params: FeatureParams, root_dir: Path, ui: UI) -> str:
+    """The knowledge facts for a feature loop, as the factory ranks them.
+
+    The feature is one component with no dependencies, so the manifest is
+    built in memory and never written: ``build_knowledge_context`` reads
+    component ids and dependencies off it and nothing else. Core facts
+    are those written under the feature's own name or citing a path in
+    the PRD's own ``allowedPaths``, which is what ``fact_scope.
+    authored_paths`` gives a factory component. ``--implementation-
+    allowed-paths`` is a run-wide override and says nothing about which
+    facts are core, so it is not passed.
+
+    A retrieval failure is non-fatal and never silent, as in
+    ``factory._submit_args``: the engineer runs without facts and the
+    operator is told why.
+    """
+    config = KnowledgeConfig.load(root_dir)
+    if not config.enabled:
+        return ""
+    component = Component(
+        id=params.feature_name,
+        title=params.feature_name,
+        description="",
+        dependencies=[],
+        prd_path=str(params.prd_path),
+        branch_name=params.prd_doc.branch_name,
+    )
+    manifest = Manifest(
+        version="1",
+        spec_file="",
+        project_name=params.feature_name,
+        base_branch="",
+        single_pr=False,
+        components=[component],
+    )
+    try:
+        return build_knowledge_context(
+            manifest,
+            component,
+            config.knowledge_root,
+            config,
+            allowed_paths=params.prd_doc.allowed_paths,
+            worktree=root_dir,
+        )
+    except Exception as exc:  # noqa: BLE001 - non-fatal, never silent
+        ui.warn(f"  Knowledge retrieval failed for {params.feature_name}: {exc}")
+        return ""
+
+
+def _feature_context_prefix(
+    params: FeatureParams, base_config: KstrlConfig, root_dir: Path, ui: UI
+) -> str | None:
+    """The engineer's context for one feature loop, through the factory's assembly.
+
+    Read at each ``run_loop`` call rather than once per run: the review
+    gate between the understand and implement loops is where an operator
+    may add a line to ``memory.md``, and the next loop must read it.
+    """
+    return engineer_context_prefix(
+        root_dir,
+        golden_patterns_file=base_config.golden_patterns_file,
+        memory_file=base_config.memory_file,
+        knowledge_prefix=_feature_knowledge_prefix(params, root_dir, ui),
+        decisions_prefix="",  # no architect decisions register on this path
+        codebase_scan_prefix="",  # no Phase 0 codebase scan on this path
+        retry_block="",  # the repair PRD carries the failure; there is no IterationContext
+    )
+
+
 def run_feature(
     params: FeatureParams,
     base_config: KstrlConfig,
@@ -269,6 +341,10 @@ def run_feature(
     emit(RunStarted(project=params.feature_name, components=1, pid=os.getpid()))
     emit(RunPlan(components=({"id": component, "title": f"Feature: {component}", "deps": []},)))
     emit(ComponentStarted(component=component))
+    # #599: the operator's files are reported once per run, as the factory
+    # reports them; every loop below then reads them through the same
+    # assembly the factory engineer does.
+    _report_operator_files(base_config, root_dir, ui)
 
     # Feature understanding phase
     understand_config = copy.deepcopy(base_config)
@@ -304,6 +380,7 @@ def run_feature(
                 ui,
                 understand_agent,
                 root_dir,
+                context_prefix=_feature_context_prefix(params, base_config, root_dir, ui),
                 timeouts=timeouts,
                 breaker_config=breaker_config,
                 bus=bus,
@@ -468,6 +545,7 @@ def run_feature(
                 ui,
                 run_agent,
                 root_dir,
+                context_prefix=_feature_context_prefix(params, base_config, root_dir, ui),
                 timeouts=timeouts,
                 breaker_config=breaker_config,
                 bus=bus,
@@ -594,6 +672,7 @@ def run_feature(
                     ui,
                     repair_agent,
                     root_dir,
+                    context_prefix=_feature_context_prefix(params, base_config, root_dir, ui),
                     timeouts=timeouts,
                     breaker_config=breaker_config,
                     bus=bus,

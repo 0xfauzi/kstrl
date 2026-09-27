@@ -2428,6 +2428,76 @@ def _retry_block(previous_context_json: str | None) -> str:
     return formatted if formatted.strip() else ""
 
 
+def engineer_context_prefix(
+    root_dir: Path,
+    *,
+    golden_patterns_file: Path | str,
+    memory_file: Path | str,
+    knowledge_prefix: str,
+    decisions_prefix: str,
+    codebase_scan_prefix: str,
+    retry_block: str,
+) -> str | None:
+    """The block ``run_loop`` puts in front of every engineer prompt, or None.
+
+    The one assembly of the engineer's context, called by
+    ``_run_component`` for every factory engineer and by
+    ``feature_cmd._feature_context_prefix`` for every ``ks feature`` loop
+    (#599). Before #599 this body sat inside ``_run_component``, and
+    ``ks feature`` called ``run_loop`` with no prefix at all, so its
+    engineer read neither operator file nor any knowledge fact.
+
+    Every argument after ``root_dir`` is keyword-only with no default, so
+    each caller states in its own source which blocks it has; "" means
+    the caller has none of that block. None when every block is empty,
+    which is what ``run_loop`` reads as no prefix.
+    """
+    # R10.8 and R10.9: the operator's own files, one call each through
+    # the one resolver. Resolved by `operator_file_spec` against the REPO
+    # ROOT and never against a component worktree: the worktree is the
+    # tree the agent has been writing to, so reading it there would let
+    # one component choose what the next component is told, unfiltered
+    # and under a header saying the operator wrote it (review round 1,
+    # S3). The same function resolves the parent's once-per-run notice,
+    # so the two cannot read different files (review round 2,
+    # should-fix 2). "" when absent, empty, or an unedited `ks init`
+    # scaffold.
+    golden_patterns = load_operator_file(
+        operator_file_spec(GOLDEN_PATTERNS, root_dir, golden_patterns_file)
+    )
+    memory = load_operator_file(operator_file_spec(MEMORY, root_dir, memory_file))
+
+    # ONE literal tuple, so the ORDER is a value a reader can see and a
+    # test can pin rather than a property of statement sequence. Every
+    # block reaches the engineer the same way and differs only in where
+    # it was built, so adding one is a row here and not a branch; the
+    # retry context was an `if` appending to this list until R10.9, and a
+    # second `if` would have made "memory is last" true by accident.
+    #
+    # Repo-standing first (knowledge, then the operator's patterns), then
+    # run-level (the architect's decisions), then tree-computed
+    # (codebase scan), then attempt-level (the retry context), then MEMORY.
+    # Memory is last on purpose: the retry context is the controller's
+    # output for this attempt, and memory is the operator's standing
+    # correction to how that output should be acted on, so it is read
+    # after it (#230). `run_loop` then prepends this whole prefix to
+    # CLAUDE.md plus the templated prompt, so the memory block also sits
+    # before `# Project Context (from CLAUDE.md)`.
+    parts: list[str] = [
+        block
+        for block in (
+            knowledge_prefix,
+            golden_patterns,
+            decisions_prefix,
+            codebase_scan_prefix,
+            retry_block,
+            memory,
+        )
+        if block
+    ]
+    return "\n\n".join(parts) if parts else None
+
+
 def _report_operator_files(base_config: KstrlConfig, root_dir: Path, ui: UI) -> None:
     """Print each ``(subject, message)`` the operator's files produce, once.
 
@@ -2658,52 +2728,15 @@ def _run_component(
         component_deps,
     )
 
-    # R10.8 and R10.9: the operator's own files, one call each through
-    # the one resolver. Resolved by `operator_file_spec` against the REPO
-    # ROOT and never against `worktree_path`: the worktree is the tree
-    # this agent has been writing to, so reading it there would let one
-    # component choose what the next component is told, unfiltered and
-    # under a header saying the operator wrote it (review round 1, S3).
-    # The same function resolves the parent's once-per-run notice, so the
-    # two cannot read different files (review round 2, should-fix 2). ""
-    # when absent, empty, or an unedited `ks init` scaffold.
-    golden_patterns = load_operator_file(
-        operator_file_spec(GOLDEN_PATTERNS, root_dir, golden_patterns_file_str)
+    context_prefix = engineer_context_prefix(
+        root_dir,
+        golden_patterns_file=golden_patterns_file_str,
+        memory_file=memory_file_str,
+        knowledge_prefix=knowledge_prefix,
+        decisions_prefix=decisions_prefix,
+        codebase_scan_prefix=codebase_scan_prefix,
+        retry_block=_retry_block(previous_context_json),
     )
-    memory = load_operator_file(operator_file_spec(MEMORY, root_dir, memory_file_str))
-
-    # Build context prefix from previous retries
-    context_prefix: str | None = None
-    # ONE literal tuple, so the ORDER is a value a reader can see and a
-    # test can pin rather than a property of statement sequence. Every
-    # block reaches the engineer the same way and differs only in where
-    # it was built, so adding one is a row here and not a branch; the
-    # retry context was an `if` appending to this list until R10.9, and a
-    # second `if` would have made "memory is last" true by accident.
-    #
-    # Repo-standing first (knowledge, then the operator's patterns), then
-    # run-level (the architect's decisions), then tree-computed
-    # (codebase scan), then attempt-level (the retry context), then MEMORY.
-    # Memory is last on purpose: the retry context is the controller's
-    # output for this attempt, and memory is the operator's standing
-    # correction to how that output should be acted on, so it is read
-    # after it (#230). `run_loop` then prepends this whole prefix to
-    # CLAUDE.md plus the templated prompt, so the memory block also sits
-    # before `# Project Context (from CLAUDE.md)`.
-    parts: list[str] = [
-        block
-        for block in (
-            knowledge_prefix,
-            golden_patterns,
-            decisions_prefix,
-            codebase_scan_prefix,
-            _retry_block(previous_context_json),
-            memory,
-        )
-        if block
-    ]
-    if parts:
-        context_prefix = "\n\n".join(parts)
 
     # R2.3 (CRIT-8): max_iterations, interactive, and allowed_paths come
     # from the invoking config via _submit_args. They were previously
