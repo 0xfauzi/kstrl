@@ -33,8 +33,11 @@ eleven rows and ``config`` still has ten. The two documentation surfaces
 are what this file is about (S8 is the finding that a tenth row dropped
 out of ``ks config`` and the generated README), and they import at call
 time from ``config_keys``, so they see it. The three loaders do not, and
-do not need to: ``tests/test_config_toml.py`` is parametrized over
-``STRING_KEYS`` and covers every row through all three doors.
+do not need to: ``tests/test_config_preflight.py::TestConfigToml`` is
+parametrized over ``STRING_KEYS`` and covers every row through all three
+doors. The two censuses that tie the table to the dataclass (every row
+names a real field; every Path field has a row) live at the end of this
+file since the loader unit tests were folded away.
 :func:`test_the_re_export_is_the_same_object` is the separate claim, and
 it is about the OBJECT: one table read under two names, so the rows the
 loaders overlay and the rows the documentation prints cannot diverge.
@@ -42,7 +45,9 @@ loaders overlay and the rows the documentation prints cannot diverge.
 
 from __future__ import annotations
 
+import dataclasses
 import importlib.util
+import re
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -137,3 +142,64 @@ class TestTheTwoNamesAreOneTable:
         the module docstring says which surfaces the fixture above
         therefore reaches."""
         assert config_mod.STRING_KEYS is config_keys.STRING_KEYS
+
+
+# ---------------------------------------------------------------------------
+# The table against the dataclass, both directions (moved from the folded
+# tests/test_config_toml.py; these are censuses, not loader unit tests).
+# ---------------------------------------------------------------------------
+
+
+def test_every_string_key_names_a_real_field() -> None:
+    """STRING_KEYS drives ``setattr``, and ``setattr`` on a typo invents an
+    attribute rather than raising: the overlay would then silently write
+    to a field nothing reads. Dataclass fields, not ``hasattr``, because
+    an earlier row's typo would already have created the attribute."""
+    declared = {f.name for f in dataclasses.fields(config_mod.KstrlConfig)}
+    assert declared >= {name for _s, _k, _e, name, _p in STRING_KEYS}
+
+
+#: A field whose ANNOTATION mentions Path, wherever in it the word sits.
+#: ``startswith("Path")`` was the round-1 predicate and it CLEARS on
+#: anything else, which is the wrong direction for a census: review round
+#: 1 measured it (mutation R21) by deleting the ``codebase_map`` row and
+#: quoting the annotation as ``"Path"``, and this guard PASSED in
+#: isolation while a behaviour test caught the plant. ``Path | None``
+#: and a quoted forward reference both match now.
+_MENTIONS_PATH = re.compile(r"\bPath\b")
+
+
+def _path_fields(cls: type) -> set[str]:
+    return {f.name for f in dataclasses.fields(cls) if _MENTIONS_PATH.search(str(f.type))}
+
+
+def test_every_path_field_has_a_string_keys_row() -> None:
+    """The census in the other direction, which is the likelier defect: a
+    new ``Path`` field on KstrlConfig with no row gets no kstrl.toml key,
+    no env var and no anchoring against the root, and nothing fails.
+    Equality rather than containment, so a Path field deliberately left
+    out of the overlay has to be named here instead of quietly dropping
+    out. ``f.type`` is the annotation string, since the module declares
+    ``from __future__ import annotations``."""
+    path_fields = _path_fields(config_mod.KstrlConfig)
+    assert path_fields, "the walk found no Path fields at all, so it proves nothing"
+    assert path_fields == {name for _s, _k, _e, name, is_path in STRING_KEYS if is_path}
+
+
+def test_the_path_field_walk_sees_the_spellings_it_claims_to() -> None:
+    """The control the round-1 predicate had none of.
+
+    A census that CLEARS has to be shown matching every shape it says it
+    covers, because a narrowing turns a resolution into a clearing and
+    deletes the mechanism. Four shapes, one of which (the quoted
+    annotation) is what made R21 pass.
+    """
+
+    @dataclasses.dataclass
+    class Probe:
+        plain: Path = Path("a")
+        optional: Path | None = None
+        quoted: "Path" = Path("b")  # noqa: UP037
+        not_a_path: str = ""
+
+    assert _path_fields(Probe) == {"plain", "optional", "quoted"}

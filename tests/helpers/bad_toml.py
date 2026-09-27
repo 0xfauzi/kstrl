@@ -49,8 +49,8 @@ NON_UTF8_TOML = b'[agent]\nname = "\xe9"\n'
 #: ``sys.get_int_max_str_digits()`` then returns 0. There is no digit
 #: count that fails in that configuration, so the fault does not exist
 #: to be tested and its cases skip rather than fail. Measured: without
-#: this, ``PYTHONINTMAXSTRDIGITS=0 pytest tests/test_config_toml.py``
-#: was 3 failed / 23 passed.
+#: this, ``PYTHONINTMAXSTRDIGITS=0 pytest tests/test_config_preflight.py``
+#: (then tests/test_config_toml.py) was 3 failed / 23 passed.
 INT_LIMIT_ENABLED = sys.get_int_max_str_digits() != 0
 
 #: Valid utf-8, valid TOML grammar, and still unparseable: an integer
@@ -92,9 +92,10 @@ _NEST_DEPTH = sys.getrecursionlimit() + 100
 DEEP_NEST_TOML = b"a = " + b"[" * _NEST_DEPTH + b"]" * _NEST_DEPTH + b"\n"
 
 #: What the loader's catch-all says, IMPORTED from the production
-#: constant rather than restated. ``tests/test_config_toml.py`` asserts
-#: on this string's ABSENCE from the specific handlers' messages, which
-#: is half of how the handler order is pinned - and an absence assertion
+#: constant rather than restated. ``tests/test_config_preflight.py``
+#: asserts on this string's ABSENCE from the specific handlers' messages
+#: through the CLI, which is half of how the handler order is pinned -
+#: and an absence assertion
 #: against a stale literal passes vacuously instead of failing. Same
 #: reason ``agents.proc.TIMEOUT_MESSAGE_PREFIX`` is imported by its tests
 #: rather than repeated in them.
