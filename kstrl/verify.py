@@ -39,6 +39,7 @@ from kstrl.adequacy import (
 )
 from kstrl.atomicio import atomic_write_text
 from kstrl.config import component_progress_path, relative_to_root
+from kstrl.failure_excerpt import failure_excerpt
 from kstrl.findings import Finding
 from kstrl.gateparse import (
     GATE_LINT,
@@ -1432,6 +1433,11 @@ def _failed_gate_result(
     evidence that the tool ran.
     """
     parsed.command = cmd
+    if not parsed.failures and not parsed.recognised:
+        # #622: no parser read this output, so raw_summary is its last 3-5
+        # lines. The excerpt keeps the lines around each location inside
+        # the worktree instead, and the tail stays when there is none.
+        parsed.raw_summary = failure_excerpt(output, cwd) or parsed.raw_summary
     for failure in parsed.failures:
         # eslint's default formatter prints ABSOLUTE paths, so without
         # this the engineer is handed a path rooted in kstrl's throwaway
