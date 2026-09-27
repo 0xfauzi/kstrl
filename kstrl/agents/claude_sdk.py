@@ -56,6 +56,13 @@ logger = logging.getLogger(__name__)
 # runner emits them at line start on their own lines.
 USAGE_PREFIX = "KSTRL-SDK-USAGE "
 RESULT_PREFIX = "KSTRL-SDK-RESULT "
+#: Every display element the runner prints crosses this way (#598): the
+#: runner JSON-encodes the element's text and the adapter decodes it back,
+#: so an element with embedded newlines (a multi-line Bash command, say)
+#: stays ONE physical line on the pipe. Printed raw, the pipe's own
+#: line-splitting would turn one element into several - one of which
+#: could be the bare completion marker, or forge a KSTRL-SDK-RESULT line.
+DISPLAY_PREFIX = "KSTRL-SDK-DISPLAY "
 
 
 class ClaudeSdkAgent:
@@ -65,6 +72,12 @@ class ClaudeSdkAgent:
     remain the default (the SDK is an optional dependency - install the
     ``sdk`` extra).
     """
+
+    #: This adapter's lines carry TOOL_RESULT_PREFIX for a tool's output
+    #: (#598), by way of the runner's shared claude_code formatters;
+    #: kstrl.agents.base.model_output_text reads this attribute before
+    #: deciding whether to filter an agent's lines by that prefix.
+    marks_tool_output = True
 
     def __init__(
         self,
@@ -181,6 +194,9 @@ class ClaudeSdkAgent:
                 if line.startswith(RESULT_PREFIX):
                     result_payload = _parse_contract_line(line, RESULT_PREFIX)
                     continue
+                if line.startswith(DISPLAY_PREFIX):
+                    yield _parse_display_line(line)
+                    continue
                 yield line
 
             if streamer.timed_out:
@@ -233,6 +249,27 @@ def _parse_contract_line(
     if not isinstance(payload, dict):
         return None
     return payload
+
+
+def _parse_display_line(line: str) -> str:
+    """Decode one DISPLAY_PREFIX line back into its original display text.
+
+    The runner JSON-encodes every display element before printing it
+    (#598) so an element with embedded newlines - a multi-line Bash
+    command, say - crosses the pipe as ONE physical line; unprefixed
+    printing would let the pipe's own line-splitting turn one element
+    into several, one of which could be the bare completion marker.
+    A malformed payload (both sides of this contract live in this
+    package) falls back to the raw suffix rather than dropping the line:
+    display output is the record the engineer log depends on, unlike the
+    usage/result records above, which the meter may drop.
+    """
+    payload = line[len(DISPLAY_PREFIX) :]
+    try:
+        decoded = read_json(payload)
+    except (json.JSONDecodeError, ValueError):
+        return payload
+    return decoded if isinstance(decoded, str) else payload
 
 
 def _usage_record_from_payload(
