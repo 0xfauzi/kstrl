@@ -1,0 +1,57 @@
+<!-- @dsCard group="_test" height=300 width=600 -->
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><style>
+  .leakwrap .k-chip { font-size:20px; }
+  body { margin:0; background:var(--canvas); font:14px var(--font-agent); color:var(--text); }
+  .p-tsz { font:15px/20px var(--font-agent); } .p-tlh { font:13px/20px var(--font-agent); } .p-tw { font:var(--t-label); font-weight:700; }
+  .p-tls { font:var(--t-title); letter-spacing:.05em; } .p-tvm { font:var(--t-label); } .p-tvm .v-measure { font-size:12px; }
+  .p-types { font:var(--t-body); } .p-tsz2 { font-size:12px; } .p-tl1 { font:13px/1 var(--font-agent); width:70px; }
+  .p-tvl { font:13px/19px var(--font-agent); } .p-tvl .v-measure { display:inline-block; }
+  .p-bl { display:flex; gap:8px; align-items:flex-start; }
+  .p-faint { color:var(--text-2); opacity:.45; }
+  .p-tiny { width:18px; height:18px; }
+  .p-noring:focus { outline:none; }
+  .p-spin { animation:p-spin 1s linear infinite; background:#ff0000; }
+  @keyframes p-spin { to { transform:rotate(360deg); } }
+  .p-weak:focus-visible, .p-weak:focus { outline:2px solid var(--line); outline-offset:2px; }
+  .k-tile { width:120px; height:40px; background:var(--window); }
+  .p-wide { width:300px; }
+  .grow { margin:0 4px; }
+  .p-arrow::after { content:"\2192"; }
+  .p-well { background:var(--raised); border-radius:10px; padding:4px 6px; }
+  .p-dash::after { content:""; display:block; border-top:1px dotted var(--line); }
+  .p-dots i { background:var(--fail); }
+  .p-pill { background:var(--selected); border-radius:8px; padding:0 6px; }
+  .p-ground { position:fixed; left:0; top:0; right:0; bottom:0; z-index:-1; background:var(--window); }
+  .p-kpaint .k-chip { background:var(--fail); }
+  .p-inkextra { box-shadow:0 0 0 2px var(--fail); }
+  .p-rulecol { border-bottom:1px solid var(--fail); }
+  .p-rule2 { border-bottom:2px solid var(--line); }
+  .c-ink { background:var(--fail); color:var(--window); border-radius:var(--radius-lg); padding:14px 16px; }
+</style></head><body>
+  <p class="p-faint">faint text that should fail contrast</p>
+  <button class="p-tiny">x</button>
+  <button class="p-noring" style="width:80px;height:32px">no ring</button>
+  <div class="k-tile"><div class="p-wide">overflowing child</div></div>
+  <button class="p-weak" style="width:80px;height:32px">weak ring</button>
+  <span class="fail">reserved class</span>
+  <button disabled style="width:80px;height:32px">off</button>
+  <div role="button" style="width:80px;height:32px">no tabindex</div>
+  <span>open with ⌘K</span>
+  <span style="font-family:Georgia">unshipped family</span>
+  <div class="c-tile" style="height:400px">tall tile</div>
+  <span class="p-arrow">next</span>
+  <div class="k-field-box p-faintedge" style="width:120px;height:32px;background:var(--raised);box-shadow:inset 0 0 0 1px var(--line)"></div>
+  <div class="p-collide" style="display:flex;width:60px"><span style="flex:none;width:20px;white-space:nowrap">review</span><span style="white-space:nowrap">security</span></div>
+  <div class="p-trunc" style="width:60px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">a sentence too long for its box</div>
+  <div class="p-spin" style="width:10px;height:10px"></div>
+<div class="leakwrap"><span class="k-chip">leak</span><span class="k-chip" style="letter-spacing:.2em">leak2</span></div>
+<p style="width:110px;font-size:14px">search-index-rebuilds-nightly</p>
+<p class="p-flag" style="width:9ch;margin:0;font:13px/20px var(--font-measure);white-space:pre-wrap">abc --flag</p>
+<div class="p-ground"></div>
+<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;width:560px"><span class="p-well">well</span><span class="p-dash">dash</span><span class="k-typing p-dots" aria-hidden="true"><i></i><i></i><i></i></span><span data-illustration="phone"><span class="p-pill">pill</span></span><span style="background:var(--selected);border-radius:4px">inline</span><span class="p-rule2">rule</span><span class="p-rulecol">rulecol</span><span class="p-kpaint"><span class="k-chip">kpaint</span></span><span class="c-ink p-inkextra">ink+</span></div>
+<div class="p-types"><p class="p-tsz">fifteen</p><p class="p-tlh">loose small</p><p class="p-tw">heavy label</p><p class="p-tls">wide title</p><p class="p-tvm">caption on <span class="v-measure">dur-fast</span></p><p><span class="p-tsz2" style="display:block">size only</span></p><p class="p-tl1">two lines of it</p><p class="p-tvl">off leading, <span class="v-measure">inherited</span></p></div>
+<svg width="120" height="20" viewBox="0 0 120 20" aria-hidden="true"><text x="123" y="14" text-anchor="end" style="font:var(--t-measure-small); font-weight:400; fill:var(--text-2)">3px past the edge</text></svg>
+<div class="c-two" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;width:420px;margin-top:8px"><div class="c-tile" style="padding:12px"><div style="height:80px"></div></div><div class="c-tile" style="padding:12px"><span>one short line</span></div></div>
+<div class="p-bl"><span class="ty-body">top name</span><span class="ty-label">top caption</span></div>
+</body></html>

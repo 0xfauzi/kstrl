@@ -200,4 +200,7 @@ ignore-words-list = "crasher,critcial,excetra,missable,nd,pre-empt,unparseable"
 # pytest truncates its short-summary lines to the terminal width, which
 # cuts the exception name off mid-word - the very behaviour those
 # fixtures exist to pin. Spell-correcting a capture would falsify it.
-skip = "uv.lock,*/package-lock.json,.git,tests/tool_output/*"
+# design/prototype/kstrl-prototype.html inlines its fonts as base64, and
+# short runs of base64 read as misspelt words; its prose is written in
+# design/tools and checked there.
+skip = "uv.lock,*/package-lock.json,.git,tests/tool_output/*,design/prototype/kstrl-prototype.html"

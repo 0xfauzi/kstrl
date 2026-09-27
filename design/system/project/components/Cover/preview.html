@@ -1,0 +1,52 @@
+<!-- @dsCard height=288 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>kstrl</title>
+<style>
+  html, body { margin:0; height:100%; }
+  body { background:var(--canvas); color:var(--text); overflow:hidden; }
+  .cover { position:relative; width:960px; height:288px; overflow:hidden; }
+  .art { position:absolute; top:0; left:480px; width:480px; height:288px; overflow:hidden; }
+  .art svg { display:block; width:480px; height:288px; }
+  .you { fill:var(--you); }
+  .ink { fill:var(--text); }
+  .work { fill:var(--work); }
+  .pass { fill:var(--pass); }
+  .win { fill:var(--line-strong); }
+  .cap { fill:var(--window); }
+  .cap-cut { fill:var(--you-tint); }
+  .words { position:absolute; left:32px; bottom:32px; max-width:440px; }
+  .name { margin:0; font-family:var(--font-human); font-size:120px; line-height:.9; font-weight:400; letter-spacing:-.01em; color:var(--text); }
+  .tag { margin:14px 0 0 4px; font:var(--t-body); color:var(--text-2); }
+</style>
+</head>
+<body>
+<div class="cover">
+<div class="art" aria-hidden="true">
+<svg viewBox="0 0 480 288" width="480" height="288">
+<!--
+  blocks      you 160x232 bled off the top (rufous, the identity) · text 112x112 (the light ink) · work 112x56 · pass 48x48 small (a state) · line-strong 176x224 bled off the right (the window) - about 30% of 960x288
+  arrangement one tall rufous slab with satellites, bottoms on one line 32 above the edge, gutters 16, corners radius-lg 14 and radius-md 10
+  pattern     keycaps, from "command first: one input reaches everything": 24px caps at radius-sm 6 on a 32 pitch, three rows over the raised block, two cut into the rufous slab
+  scales      sides in 8 multiples; gutter space-4; pitch space-8; corners radius-lg, radius-md, radius-sm
+-->
+<rect class="you" x="16" y="-16" width="160" height="248" rx="14"/>
+<rect class="ink" x="192" y="120" width="112" height="112" rx="14"/>
+<rect class="work" x="192" y="48" width="112" height="56" rx="10"/>
+<rect class="pass" x="128" y="240" width="48" height="16" rx="6"/>
+<rect class="win" x="320" y="32" width="176" height="224" rx="14"/>
+<rect class="cap" x="336" y="48" width="24" height="24" rx="6"/><rect class="cap" x="368" y="48" width="24" height="24" rx="6"/><rect class="cap" x="400" y="48" width="24" height="24" rx="6"/><rect class="cap" x="432" y="48" width="24" height="24" rx="6"/>
+<rect class="cap" x="336" y="80" width="24" height="24" rx="6"/><rect class="you" x="368" y="80" width="24" height="24" rx="6"/><rect class="cap" x="400" y="80" width="24" height="24" rx="6"/><rect class="cap" x="432" y="80" width="24" height="24" rx="6"/>
+<rect class="cap" x="336" y="112" width="56" height="24" rx="6"/><rect class="cap" x="400" y="112" width="24" height="24" rx="6"/><rect class="cap" x="432" y="112" width="24" height="24" rx="6"/>
+<rect class="cap-cut" x="40" y="176" width="24" height="24" rx="6"/><rect class="cap-cut" x="72" y="176" width="56" height="24" rx="6"/>
+</svg>
+</div>
+<div class="words">
+<h1 class="name" data-wordmark>kstrl</h1>
+<p class="tag">Agents build. Something else measures. You decide.</p>
+</div>
+</div>
+</body>
+</html>

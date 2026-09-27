@@ -5,6 +5,7 @@
 - **Language**: Python (FastAPI / pytest / uv toolchain)
 - **Project**: kstrl - a software factory for AI coding agents, built as a loop that closes on independent measurement rather than on the agent's own report
 - **Layout**: `kstrl/` is the canonical factory implementation and the only Python package.
+- **Design**: `design/` is the design system for the proposed graphical app (tokens, components, the frames of every screen) and the tools that build and check it. Start at `design/README.md`. It does not govern the Textual TUI, whose rules are `DESIGN.md` and `kstrl/tui/theme.py`.
 
 ## Verification commands
 
@@ -12,6 +13,7 @@
 - **Calibration (opt-in, real LLMs)**: `KSTRL_RUN_CALIBRATION=1 uv run pytest tests/test_calibration.py -v`
 - **Typecheck**: `uv run mypy kstrl/ --strict`
 - **Lint**: `uv run ruff check kstrl/ tests/`
+- **Design system** (only when `design/` changes): `sh design/tools/check_all.sh`, with the tools' own requirements (`design/tools/requirements.txt`)
 
 Note on mypy scope: `pyproject.toml` declares `[tool.mypy] files = ["kstrl"]` so `uv run mypy` (no args) also checks `kstrl/`, keeping it in lockstep with the factory's smart-default typecheck command.
 

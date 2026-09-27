@@ -1,0 +1,99 @@
+<!-- @dsCard group="Frames (proposal)" height=800 width=1280 page subtitle="16 · A feature run: understood, waiting for your go-ahead" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Feature run</title>
+<style>
+  html, body { margin:0; }
+  .scr { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
+  .map { position:relative; min-height:0; }
+  .map > svg { display:block; font-family:var(--font-agent); }
+
+  /* shared language (Stage/Grid): title row, zoom, tabs, chips, rings, checks, tiles */
+  .top { position:absolute; left:32px; right:32px; top:16px; }
+
+  .two { position:absolute; left:32px; right:32px; top:70px; bottom:14px; display:grid; grid-template-columns:minmax(0,1fr) 420px; gap:14px; }
+
+  .uh { display:flex; justify-content:space-between; align-items:baseline; }
+  .uh .f { font:var(--t-measure-small); font-weight:400; color:var(--text-3); }
+  .sec2 { padding:12px 0; border-bottom:1px solid var(--line); }
+  .sec2:last-child { border-bottom:0; }
+  .sh3 { font:var(--t-body); font-weight:600; margin-bottom:8px; }
+  .kvs { display:grid; grid-template-columns:1fr 1fr; gap:8px 24px; }
+  .kv span { display:block; font:var(--t-label); font-weight:400; color:var(--text-3); }
+  .kv b { font:var(--t-measure); font-weight:500; }
+  .cv { display:grid; grid-template-columns:18px 40px 1fr; align-items:baseline; font:var(--t-small); padding:3px 0; } .cv > .k-mk { align-self:center; }
+  .cv .v-measure { font:var(--t-measure-small); font-weight:400; color:var(--text-3); }
+  .rk { margin:0; font:var(--t-body); }
+  .side { display:flex; flex-direction:column; gap:14px; min-height:0; }
+
+  .gch { margin-top:10px; }
+  .kh { display:flex; align-items:center; gap:7px; }
+  .kind { font:var(--t-small); font-weight:600; color:var(--you); }
+
+  .not .say { margin:8px 0 0; font:var(--t-statement); letter-spacing:var(--t-statement-ls); }
+  .not .sub { margin:8px 0 0; font:var(--t-label); font-weight:400; opacity:.75; }
+  .bl { flex:1; }
+  .br { display:grid; grid-template-columns:18px 80px 1fr; align-items:baseline; font:var(--t-small); margin-top:6px; } .br > .k-mk { align-self:center; }
+  .br b { font:var(--t-measure); font-weight:500; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="you" viewBox="0 0 16 16"><path d="M8 1.5 14.5 8 8 14.5 1.5 8Z"/></symbol>
+<symbol id="work" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-opacity=".35" stroke-width="2"/><path d="M8 2.5A5.5 5.5 0 0 1 13.5 8" fill="none" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="wait" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-width="1.5" stroke-dasharray="2.2 2.2"/></symbol>
+<symbol id="fail" viewBox="0 0 16 16"><path d="M4 4 12 12M12 4 4 12" fill="none" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="pass" viewBox="0 0 16 16"><path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="skip" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-width="1.5"/><path d="M4.2 11.8 11.8 4.2" stroke-width="1.5"/></symbol>
+<symbol id="landed" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M4.8 8.3 7 10.5 11.3 5.8" fill="none" stroke="var(--window)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</defs></svg>
+<div class="scr">
+  <header class="k-header">
+    <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb" aria-current="page">bulk-delete</button></li></ol></nav>
+
+    <span class="grow"></span>
+    <span class="k-live">live · last event 1m ago</span>
+    <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
+    <button class="k-ask" aria-label="Ask or do anything"><span>Ask or do anything</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span></button>
+  </header>
+  <div class="map">
+    <div class="top k-titlerow"><h1 class="k-title"><span class="k-title-name">bulk-delete</span><span class="k-title-meta">ks feature · understood in 4 iterations, 6m · waiting for you to start</span></h1><div class="k-titletools"><div class="k-tabs" role="tablist" aria-label="View"><span class="k-tabs-bar" aria-hidden="true"></span><button class="k-tab" role="tab" aria-selected="true" tabindex="0">Understand</button><button class="k-tab" role="tab" aria-selected="false" tabindex="-1">Implement</button><button class="k-tab" role="tab" aria-selected="false" tabindex="-1">Repairs</button></div></div></div>
+    <div class="two">
+      <div class="k-tile us k-tile-hero">
+        <div class="uh"><span class="k-label">What the engineer understood</span><span class="v-measure f">scripts/kstrl/feature/bulk-delete/understand.md</span></div>
+        <div class="sec2"><div class="sh3">Quick facts</div><div class="kvs"><div class="kv"><span>PRD</span><b>scripts/kstrl/feature/bulk-delete/prd.json</b></div><div class="kv"><span>Branch</span><b>feature/bulk-delete</b></div><div class="kv"><span>Stories</span><b>BD-1, BD-2, BD-3</b></div><div class="kv"><span>Entry points</span><b>snip/cli.py delete, Store.delete</b></div><div class="kv"><span>Data touched</span><b>snippets table, search index</b></div><div class="kv"><span>Tests</span><b>uv run pytest tests/test_store.py</b></div></div></div>
+        <div class="sec2"><div class="sh3">Story coverage · 3 of 3</div><div class="cv"><span class="k-mk sm pass"></span><span class="v-measure">BD-1</span><span>Delete several snippets with one command</span></div><div class="cv"><span class="k-mk sm pass"></span><span class="v-measure">BD-2</span><span>Ask before deleting more than ten</span></div><div class="cv"><span class="k-mk sm pass"></span><span class="v-measure">BD-3</span><span>Remove each from the search index in the same transaction</span></div></div>
+        <div class="sec2"><div class="sh3">Risks it found</div>
+          <p class="rk">Store.delete removes one row and a trigger removes its index row. A bulk delete through executemany would skip the trigger, so the index must be cleaned in the same transaction.</p></div>
+        <div class="sec2"><div class="sh3">Open questions it left</div><p class="rk">None.</p></div>
+      </div>
+      <div class="side">
+        <div class="k-tile k-tile-ask gate">
+          <div class="kh"><span class="k-mk sm you"></span><span class="kind">Start implementing?</span></div>
+          <div class="gch"><div class="k-choices" role="radiogroup" aria-label="Start implementing?"><div class="k-choice" role="radio" aria-checked="true" tabindex="0"><span class="k-choice-title">Start implementation</span><span class="k-keys"><span class="k-key">↵</span></span><span class="k-choice-then">Up to 3 iterations, one per story, in your checkout on feature/bulk-delete. If it does not finish, up to 5 repair runs of 5 iterations follow.</span></div><div class="k-choice" role="radio" aria-checked="false" tabindex="-1"><span class="k-choice-title">Quit to amend</span><span class="k-keys"><span class="k-key">esc</span></span><span class="k-choice-then">Edit understand.md, then run ks feature again. Nothing has changed in your code.</span></div></div></div>
+        </div>
+        <div class="k-tile k-tile-ink not">
+          <div class="k-label">This is not a factory run</div>
+          <p class="say">No reviewer, no security check, no commit, no pull request. You are the reviewer.</p>
+          <p class="sub">It reads CLAUDE.md and the engineer prompt, not your guidance or kstrl’s facts. Verify reports at the start, after implementing and after each repair, and never stops anything.</p>
+        </div>
+        <div class="k-tile bl">
+          <div class="k-label">Before it starts · a report, not a gate</div>
+          <div class="br"><span class="k-mk sm pass"></span><span>tests</span><b>212 passed</b></div>
+          <div class="br"><span class="k-mk sm pass"></span><span>typecheck</span><b>clean</b></div>
+          <div class="br"><span class="k-mk sm pass"></span><span>lint</span><b>clean</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="k-needs">
+    <span class="k-needs-label">Needs you</span>
+    <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Start bulk-delete?</b><span class="k-need-sub">understanding done · 1m</span></button>
+
+    <span class="k-needs-hint">For work that needs review, a commit and a PR, add a spec to the queue instead.</span>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,123 @@
+<!-- @dsCard group="Frames (proposal)" height=800 width=1280 page subtitle="10 · Receipt: what a finished spec delivered, and what to know about it" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Receipt: search</title>
+<style>
+  html, body { margin:0; }
+  .scr { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
+  .map { position:relative; min-height:0; }
+  .map > svg { display:block; font-family:var(--font-agent); }
+
+  /* shared language (Stage/Grid): title row, zoom, tabs, chips, rings, checks, tiles */
+  .top { position:absolute; left:32px; right:32px; top:16px; }
+
+  .rc { position:absolute; left:32px; right:32px; top:70px; bottom:14px; display:grid; grid-template-columns:minmax(0,1fr) 452px; gap:14px; }
+
+  .asked { margin:8px 0 0; font:var(--t-intent-xl); letter-spacing:var(--t-intent-xl-ls); max-width:30em; }
+  .more { font:var(--t-small); color:var(--text-3); margin-top:6px; }
+  .lnk { color:var(--text); text-decoration:underline; text-decoration-color:var(--line-strong); text-underline-offset:3px; }
+  .prs { margin-top:6px; }
+  .pr { display:grid; grid-template-columns:18px minmax(0,1fr) 54px 34px 12px 40px; column-gap:10px; align-items:baseline; padding:8px 0; border-bottom:1px solid var(--line); }
+  .pr > .k-mk:first-child { grid-row:1 / 3; align-self:center; } .pr > .ci, .pr > .flag, .pr > span:empty { align-self:center; }
+  .pr:last-child { border-bottom:0; }
+  .pn { font:var(--t-body); font-weight:600; }
+  .pds { grid-column:2 / -1; font:var(--t-small); color:var(--text-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tries, .prn { font:var(--t-measure-small); font-weight:400; color:var(--text-3); text-align:right; }
+  .prn { color:var(--text-2); }
+  .flag { justify-self:end; }
+  .side { display:flex; flex-direction:column; gap:14px; min-height:0; }
+
+  .one .say { margin:10px 0 0; font:var(--t-statement); letter-spacing:var(--t-statement-ls); }
+  .of { display:flex; align-items:center; gap:12px; margin-top:14px; font:var(--t-small); opacity:.8; }
+  .of span:first-child { flex:1; }
+  .k-button-inverse { flex:none; }
+  .two2 { display:grid; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); gap:14px; }
+
+  .big2 { display:flex; align-items:baseline; gap:8px; margin-top:6px; }
+  .big2 b { font:var(--t-stat-sm); letter-spacing:var(--t-stat-sm-ls); }
+  .big2 b small { font:var(--t-measure); font-weight:500; letter-spacing:var(--t-measure-ls); color:var(--text-3); margin-left:1px; }
+  .big2 span { font:var(--t-label); font-weight:400; color:var(--text-3); }
+  .rs { display:block; margin-top:10px; }
+  .nw { white-space:nowrap; }
+  .rs .base { stroke:var(--line); stroke-width:1; }
+  .rs .run { fill:var(--selected); stroke:var(--line-strong); stroke-width:1; }
+  .rs .ym { fill:var(--you); }
+  .rsl { display:flex; justify-content:space-between; font:var(--t-measure-small); font-weight:400; color:var(--text-3); margin-top:2px; }
+  .tmt p, .cit p { margin:8px 0 0; font:var(--t-small); color:var(--text-2); }
+  .bars { margin-top:10px; display:flex; flex-direction:column; gap:6px; }
+  .bars div { display:grid; grid-template-columns:64px 1fr 48px; align-items:center; gap:8px; font:var(--t-label); font-weight:400; color:var(--text-2); }
+  .bars em { font:var(--t-measure-small); font-weight:400; color:var(--text); text-align:right; }
+  .sq { margin-top:12px; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="you" viewBox="0 0 16 16"><path d="M8 1.5 14.5 8 8 14.5 1.5 8Z"/></symbol>
+<symbol id="work" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-opacity=".35" stroke-width="2"/><path d="M8 2.5A5.5 5.5 0 0 1 13.5 8" fill="none" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="wait" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-width="1.5" stroke-dasharray="2.2 2.2"/></symbol>
+<symbol id="fail" viewBox="0 0 16 16"><path d="M4 4 12 12M12 4 4 12" fill="none" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="pass" viewBox="0 0 16 16"><path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="skip" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-width="1.5"/><path d="M4.2 11.8 11.8 4.2" stroke-width="1.5"/></symbol>
+<symbol id="landed" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M4.8 8.3 7 10.5 11.3 5.8" fill="none" stroke="var(--window)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</defs></svg>
+<div class="scr">
+  <header class="k-header">
+    <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb" aria-current="page">search</button></li></ol></nav>
+    <span class="k-conds"><span>L2 · merges wait for you</span><span><span class="k-mk sm pass"></span>all checks ran</span><span><span class="k-mk sm pass"></span>CI passing</span></span>
+    <span class="grow"></span>
+    <span class="k-live">not live · last event 22:31</span>
+    <span class="k-spend">≥$42.46 <small>of $40.00 today</small></span>
+    <button class="k-ask" aria-label="Ask or do anything"><span>Ask or do anything</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span></button>
+  </header>
+  <div class="map">
+    <div class="top k-titlerow"><h1 class="k-title"><span class="k-title-human">search</span><span class="k-title-meta">finished 22:31 · 7 of 7 merged · <span class="v-measure">≥$33.20</span></span></h1><div class="k-titletools"><div class="k-tabs" role="tablist" aria-label="View"><span class="k-tabs-bar" aria-hidden="true"></span><button class="k-tab" role="tab" aria-selected="false" tabindex="-1">Graph</button><button class="k-tab" role="tab" aria-selected="false" tabindex="-1">Text</button><button class="k-tab" role="tab" aria-selected="true" tabindex="0">Receipt</button></div><div class="k-seg" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="0">Spec</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Part</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Step</button></div></div></div>
+    <div class="rc">
+      <div class="k-tile got k-tile-hero">
+        <div class="k-label">You asked for</div>
+        <p class="asked">“People can find a snippet by the words in its title or its body.”</p>
+        <div class="more">and 4 more sentences, with 3 decisions the architect made · <span class="lnk">Text view</span></div>
+        <div class="k-label" style="margin-top:22px">What was built, in the order it merged</div>
+        <div class="prs"><div class="pr"><span class="k-mk sm landed"></span><b class="pn">search-schema</b><span class="tries">1 try</span><span class="prn">#48</span><span class="k-mk sm pass ci" role="img" aria-label="CI passed"></span><span></span><span class="pds">Stores each snippet’s searchable text in its own table.</span></div><div class="pr"><span class="k-mk sm landed"></span><b class="pn">search-index</b><span class="tries">1 try</span><span class="prn">#49</span><span class="k-mk sm pass ci" role="img" aria-label="CI passed"></span><span class="k-ref k-ref-ink flag">IF-1</span><span class="pds">Keeps a full-text index of titles and bodies, updated on every save and delete.</span></div><div class="pr"><span class="k-mk sm landed"></span><b class="pn">search-query</b><span class="tries">3 tries</span><span class="prn">#50</span><span class="k-mk sm pass ci" role="img" aria-label="CI passed"></span><span class="k-ref k-ref-ink flag">IF-1</span><span class="pds">Runs a search against the index and returns the matches with their scores.</span></div><div class="pr"><span class="k-mk sm landed"></span><b class="pn">search-rank</b><span class="tries">1 try</span><span class="prn">#51</span><span class="k-mk sm pass ci" role="img" aria-label="CI passed"></span><span></span><span class="pds">Orders the matches by BM25, SQLite FTS5’s built-in ranking.</span></div><div class="pr"><span class="k-mk sm landed"></span><b class="pn">search-highlight</b><span class="tries">3 tries</span><span class="prn">#52</span><span class="k-mk sm pass ci" role="img" aria-label="CI passed"></span><span></span><span class="pds">Marks where the words matched in each result.</span></div><div class="pr"><span class="k-mk sm landed"></span><b class="pn">search-api</b><span class="tries">1 try</span><span class="prn">#53</span><span class="k-mk sm pass ci" role="img" aria-label="CI passed"></span><span></span><span class="pds">Answers GET /search?q= with the matches as JSON.</span></div><div class="pr"><span class="k-mk sm landed"></span><b class="pn">search-cli</b><span class="tries">1 try</span><span class="prn">#54</span><span class="k-mk sm work ci" role="img" aria-label="CI running"></span><span></span><span class="pds">Prints the ten best matches with their titles, the words highlighted.</span></div></div>
+      </div>
+      <div class="side">
+        <div class="k-tile k-tile-ink k-ink one k-tile-hero">
+          <div class="k-label">One thing to know · integration review, 22:28</div>
+          <p class="say">Accents are folded two ways. <span class="v-token">search-index</span> stores “Ærø” as one word and <span class="v-token">search-query</span> searches for another.</p>
+          <div class="of"><span>Recorded only: blocking is off, so nothing was built from it.</span><button class="k-button k-button-inverse k-button-sm">Write a follow-up spec</button></div>
+        </div>
+        <div class="two2">
+          <div class="k-tile tmt">
+            <div class="k-label">It needed you 4 times</div>
+            <div class="big2"><b>2h 51m</b><span>start to last merge</span></div>
+            <svg class="rs" viewBox="0 0 404 30" width="404" height="30" aria-hidden="true"><line x1="0" y1="21" x2="404" y2="21" class="base"/><rect x="0.0" y="15" width="61.4" height="12" rx="4" class="run"/><rect x="70.9" y="15" width="231.5" height="12" rx="4" class="run"/><path d="M70.9 2 L75.9 7 L70.9 12 L65.9 7Z" class="ym"/><rect x="311.9" y="15" width="56.7" height="12" rx="4" class="run"/><path d="M311.9 2 L316.9 7 L311.9 12 L306.9 7Z" class="ym"/><rect x="373.3" y="15" width="18.9" height="12" rx="4" class="run"/><path d="M373.3 2 L378.3 7 L373.3 12 L368.3 7Z" class="ym"/><rect x="394.5" y="15" width="9.5" height="12" rx="4" class="run"/><path d="M394.5 2 L399.5 7 L394.5 12 L389.5 7Z" class="ym"/></svg>
+            <div class="rsl"><span>19:40</span><span>22:31</span></div>
+            <p>8 answers in 4 visits: 7 approvals and 1 retry. Each visit started the next run. The longest wait: <span class="nw">search-highlight</span>, stopped for 47m.</p>
+          </div>
+        </div>
+        <div class="two2">
+          <div class="k-tile sp">
+            <div class="k-label">Cost</div>
+            <div class="big2"><b>≥$33.20</b></div>
+            <div class="bars"><div><span>engineers</span><i class="k-bar" style="--k-bar:100%"></i><em>$24.10</em></div><div><span>checkers</span><i class="k-bar" style="--k-bar:29.9%"></i><em>$7.20</em></div><div><span>the rest</span><i class="k-bar" style="--k-bar:7.9%"></i><em>$1.90</em></div></div>
+          </div>
+          <div class="k-tile cit">
+            <div class="k-label">CI on what merged</div>
+            <div class="big2"><b>6<small>/7</small></b><span>passed</span></div>
+            <div class="sq"><div class="k-steps" aria-hidden="true"><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="now"><i class="k-step-bar"></i></span></div></div>
+            <p>#54 still running</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="k-needs">
+    <span class="k-needs-label">Needs you</span>
+    <span class="k-needs-none">Nothing from search</span>
+
+    <span class="k-needs-hint">The day finished over its budget, so ks serve paused the queue until midnight.</span>
+  </div>
+</div>
+</body>
+</html>

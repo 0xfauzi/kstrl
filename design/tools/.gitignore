@@ -1,0 +1,5 @@
+# everything the build and the checks write besides the system itself
+out/
+__pycache__/
+audit_all.txt
+audit_m.py

@@ -1,0 +1,566 @@
+/* ---- Foundations -------------------------------------------------------
+   Focus: a 2px ring in `focus`, 2px off the element, drawn by outline so it never shifts layout.
+   On an ink surface the ring is `focus-on-ink`. Selection (where you are) is a different thing: a
+   2px `text` ring, see Tile. Reduced motion: nothing moves or scales; colour changes stay, shortened.
+   Hidden means hidden: a component's own display (grid, flex) must not bring back an element marked hidden. */
+[hidden] { display:none !important; } [data-fit-hidden] { display:none !important; }
+/* text never ends on one word alone: the browser moves a word down from the line above instead (a caption is still written to
+   fit). Set once on the root and inherited, so it reaches every wrapping line, whatever element holds it. */
+:root { text-wrap:pretty; }
+:is(.k-ink, .k-tile-ink) { --k-focus: var(--focus-on-ink); }
+:where(.k-button, .k-seg-item, .k-tab, .k-toggle, .k-field-input, .k-choice, .k-row, .k-need, .k-crumb, .k-ask, .k-cmd-act):focus-visible,
+:where(.k-button, .k-seg-item, .k-tab, .k-toggle, .k-field-input, .k-choice, .k-row, .k-need, .k-crumb, .k-ask, .k-cmd-act)[data-state~="focus"] {
+  outline:2px solid var(--k-focus, var(--focus)); outline-offset:2px; }
+:where(.k-button, .k-seg-item, .k-tab, .k-toggle, .k-choice, .k-row, .k-need, .k-crumb, .k-ask, .k-cmd-act):focus:not(:focus-visible) { outline:none; }
+
+/* ---- Keycap ------------------------------------------------------------
+   Not interactive. 20px tall, 18px as k-key-sm (and inside a small button); legend in measure 11px/500.
+   Geist Mono draws every legend except the modifier symbols; those are masks (k-kg-cmd, -opt, -ctrl) on a
+   0.72em box, stroked at Geist Mono's own 500 stem (Command slightly lighter, see glyph_svg.py), each with role=img and a spoken name. */
+.k-key { display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; min-width:20px; height:20px; padding:0 5px;
+  border-radius:var(--radius-sm); background:var(--raised); box-shadow:inset 0 0 0 1px var(--line-strong);
+  font:var(--t-measure-small); line-height:1; color:var(--text-2); letter-spacing:var(--t-measure-small-ls); white-space:nowrap; flex:none; }
+.k-key-sm { height:18px; min-width:18px; padding:0 4px; }
+.k-keys { display:inline-flex; gap:4px; flex:none; }
+/* In a sentence: 18px keys, 3px apart, centred on the lowercase of the line they sit in. */
+.k-keys-inline { display:inline-flex; gap:3px; vertical-align:middle; margin:0 1px; }
+.k-keys-inline .k-key { height:18px; min-width:18px; padding:0 4px; }
+.k-kg { display:block; flex:none; width:.72em; height:.72em; background:currentColor;
+  -webkit-mask-position:center; mask-position:center; -webkit-mask-size:contain; mask-size:contain; -webkit-mask-repeat:no-repeat; mask-repeat:no-repeat; }
+.k-kg-cmd { -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 12 12%22%3E%3Cpath d=%22M4.3 4.3V2.65A1.65 1.65 0 1 0 2.65 4.3H9.35A1.65 1.65 0 1 0 7.7 2.65V9.35A1.65 1.65 0 1 0 9.35 7.7H2.65A1.65 1.65 0 1 0 4.3 9.35Z%22 fill=%22none%22 stroke=%22%23000%22 stroke-width=%221.4%22/%3E%3C/svg%3E"); mask-image:url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 12 12%22%3E%3Cpath d=%22M4.3 4.3V2.65A1.65 1.65 0 1 0 2.65 4.3H9.35A1.65 1.65 0 1 0 7.7 2.65V9.35A1.65 1.65 0 1 0 9.35 7.7H2.65A1.65 1.65 0 1 0 4.3 9.35Z%22 fill=%22none%22 stroke=%22%23000%22 stroke-width=%221.4%22/%3E%3C/svg%3E"); }
+.k-kg-opt { -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 12 12%22%3E%3Cpath d=%22M0.8 1H4.4L7.6 11H11.2M7.3 1H11.2%22 fill=%22none%22 stroke=%22%23000%22 stroke-width=%221.6%22 stroke-linejoin=%22miter%22/%3E%3C/svg%3E"); mask-image:url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 12 12%22%3E%3Cpath d=%22M0.8 1H4.4L7.6 11H11.2M7.3 1H11.2%22 fill=%22none%22 stroke=%22%23000%22 stroke-width=%221.6%22 stroke-linejoin=%22miter%22/%3E%3C/svg%3E"); }
+.k-kg-ctrl { -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 12 12%22%3E%3Cpath d=%22M1.8 6.6 6 1.45 10.2 6.6%22 fill=%22none%22 stroke=%22%23000%22 stroke-width=%221.6%22 stroke-linejoin=%22miter%22/%3E%3C/svg%3E"); mask-image:url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 12 12%22%3E%3Cpath d=%22M1.8 6.6 6 1.45 10.2 6.6%22 fill=%22none%22 stroke=%22%23000%22 stroke-width=%221.6%22 stroke-linejoin=%22miter%22/%3E%3C/svg%3E"); }
+
+/* ---- Button ------------------------------------------------------------
+   Sizes: md 32px (14px inline padding, 13.5px label), sm 28px (10px, 12.5px). Radius md 10px, sm 6px.
+   Kinds: neutral (default), primary (the one action you are about to take), quiet, danger (the one
+   destructive action in a panel), inverse (on an ink tile). */
+.k-button { position:relative; display:inline-flex; align-items:center; justify-content:center; gap:8px; box-sizing:border-box;
+  height:32px; padding:0 14px; border:0; border-radius:var(--radius-md); margin:0;
+  font:var(--t-body); font-weight:600; line-height:1; letter-spacing:var(--t-body-ls); white-space:nowrap; text-decoration:none; cursor:pointer;
+  background:var(--raised); color:var(--text); box-shadow:inset 0 0 0 1px var(--line-strong);
+  transition:background-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
+  -webkit-tap-highlight-color:transparent; user-select:none; }
+.k-button:hover, .k-button[data-state~="hover"] { background:var(--selected); }
+.k-button:active, .k-button[data-state~="press"] { background:var(--line); transition-duration:0s; }
+.k-button .k-mk { margin-left:-2px; }
+.k-button .k-keys { margin-right:-6px; }
+.k-button .k-key { height:20px; }
+
+.k-button-primary { background:var(--you); color:var(--you-ink); box-shadow:none; }
+.k-button-primary:hover, .k-button-primary[data-state~="hover"] { background:var(--you-hover); }
+.k-button-primary:active, .k-button-primary[data-state~="press"] { background:var(--you-press); }
+.k-button-primary .k-key { background:transparent; color:var(--you-ink); box-shadow:inset 0 0 0 1px var(--you-ink); }
+
+.k-button-quiet { background:transparent; box-shadow:none; color:var(--text-2); }
+.k-button-quiet:hover, .k-button-quiet[data-state~="hover"] { background:var(--raised); color:var(--text); }
+.k-button-quiet:active, .k-button-quiet[data-state~="press"] { background:var(--selected); color:var(--text); }
+
+.k-button-danger { color:var(--fail); }
+/* fail on line is 4.28:1 (day), so a pressed danger button stays on selected (4.65:1) and turns its edge fail instead. */
+.k-button-danger:active, .k-button-danger[data-state~="press"] { background:var(--selected); box-shadow:inset 0 0 0 1px var(--fail); }
+.k-button-danger .k-key { color:var(--text-2); }
+
+.k-button-inverse { background:var(--window); color:var(--text); box-shadow:none; }
+.k-button-inverse:hover, .k-button-inverse[data-state~="hover"] { background:var(--raised); }
+.k-button-inverse:active, .k-button-inverse[data-state~="press"] { background:var(--selected); }
+
+.k-button-sm { height:28px; padding:0 10px; gap:6px; border-radius:var(--radius-sm); font-size:var(--t-small-size); }
+
+/* Block: fills its container, as in a stack of actions. Label at the start, keys at the end, so every label in the stack lines up. */
+.k-button-block { display:flex; width:100%; justify-content:flex-start; }
+.k-button-block .k-keys { margin-left:auto; }
+.k-button-sm .k-key { height:18px; min-width:18px; padding:0 4px; } /* the k-key-sm size */
+.k-button-sm .k-keys { margin-right:-4px; gap:3px; }
+
+/* Disabled: never rufous, never a hover. Uses aria-disabled so it stays focusable and can say why. */
+.k-button[aria-disabled="true"], .k-button:disabled { background:var(--raised); color:var(--text-3); box-shadow:inset 0 0 0 1px var(--line); cursor:not-allowed; }
+.k-button[aria-disabled="true"] .k-key, .k-button:disabled .k-key { background:transparent; color:var(--text-3); box-shadow:inset 0 0 0 1px var(--line); }
+.k-button-quiet[aria-disabled="true"] { background:transparent; box-shadow:none; }
+
+/* Busy: the label stays (so the width holds) but is hidden; the work arc turns in its place. */
+.k-button[aria-busy="true"] { cursor:progress; }
+.k-button[aria-busy="true"] > :not(.k-spin) { visibility:hidden; }
+.k-spin { position:absolute; inset:0; margin:auto; width:16px; height:16px; display:none; }
+.k-button[aria-busy="true"] .k-spin { display:block; }
+.k-spin::before { content:""; position:absolute; inset:0; border-radius:50%; border:2px solid currentColor; opacity:.3; }
+.k-spin::after { content:""; position:absolute; inset:0; border-radius:50%; border:2px solid transparent; border-top-color:currentColor; border-right-color:currentColor;
+  animation:k-turn 900ms linear infinite; }
+@keyframes k-turn { to { transform:rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .k-button, .k-button-primary, .k-button-quiet, .k-button-inverse { transition-duration:1ms; }
+  .k-spin::after { animation:none; }
+}
+
+/* Keycap on an ink tile */
+:is(.k-ink, .k-tile-ink) .k-key { background:transparent; color:var(--window); box-shadow:inset 0 0 0 1px var(--window); }
+
+/* ---- Segmented control ---------------------------------------------------
+   An exclusive choice among 2 to 5 short options (the zoom levels, Stage or Grid, a setting's values).
+   role=radiogroup, items role=radio. Track 32px: 3px padding around 26px items. The thumb is one
+   element that slides between items; items only change colour. */
+.k-seg { position:relative; display:inline-flex; width:max-content; flex:none; gap:2px; padding:3px; border-radius:var(--radius-md); background:var(--selected); isolation:isolate; }
+.k-seg-thumb { position:absolute; top:3px; bottom:3px; left:0; width:0; border-radius:7px; background:var(--thumb); box-shadow:var(--shadow-card); z-index:0;
+  transition:transform var(--dur-base) var(--ease-standard), width var(--dur-base) var(--ease-standard); }
+/* Until the script has measured and placed it, the thumb does not draw (a 0-width box would still paint its 1px shadow ring). */
+.k-seg:not(.k-seg-js) .k-seg-thumb { display:none; }
+.k-seg-item { position:relative; z-index:1; display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; height:26px; padding:0 13px; border:0; margin:0;
+  border-radius:7px; background:transparent; font:var(--t-small); font-weight:500; line-height:1; color:var(--text-2); white-space:nowrap; cursor:pointer;
+  transition:color var(--dur-fast) var(--ease-standard); outline-offset:1px; }
+.k-seg-item:hover, .k-seg-item[data-state~="hover"] { color:var(--text); }
+.k-seg-item[aria-checked="true"] { color:var(--text); font-weight:600; }
+.k-seg-item[aria-checked="true"]:not(.k-seg-js *) { background:var(--thumb); box-shadow:var(--shadow-card); }
+.k-seg-item[aria-disabled="true"] { color:var(--text-3); cursor:not-allowed; }
+/* Small: a 28px track (2px padding around 24px items), 12px labels, for dense rows such as a setting's values.
+   Radii stay concentric in both sizes: track = item + padding (10 = 7 + 3, 8 = 6 + 2). */
+.k-seg-sm { padding:2px; border-radius:8px; }
+.k-seg-sm .k-seg-thumb { top:2px; bottom:2px; border-radius:6px; }
+.k-seg-sm .k-seg-item { height:24px; padding:0 10px; border-radius:6px; font-size:var(--t-label-size); }
+
+/* ---- Tabs ----------------------------------------------------------------
+   Two or three views of the same thing (Graph and Text, Stage and Grid, Log Notes Prompt).
+   role=tablist, items role=tab. 28px tall; a 2px text underline marks the selected tab and slides. */
+.k-tabs { position:relative; display:inline-flex; width:max-content; flex:none; gap:12px; }
+.k-tabs-bar { position:absolute; left:0; bottom:0; height:2px; width:0; background:var(--text); border-radius:1px;
+  transition:transform var(--dur-base) var(--ease-standard), width var(--dur-base) var(--ease-standard); }
+.k-tab { position:relative; display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; height:28px; min-width:24px; padding:0 2px; border:0; margin:0; background:transparent;
+  font:var(--t-small); font-weight:500; line-height:1; color:var(--text-3); cursor:pointer; white-space:nowrap; border-radius:4px;
+  transition:color var(--dur-fast) var(--ease-standard); }
+.k-tab:hover, .k-tab[data-state~="hover"] { color:var(--text-2); }
+.k-tab[aria-selected="true"] { color:var(--text); font-weight:600; }
+/* A straight 2px bar (a pseudo-element, not an inset shadow, which would follow the tab radius and curve). */
+.k-tab[aria-selected="true"]:not(.k-tabs-js *)::after { content:""; position:absolute; left:0; right:0; bottom:0; height:2px; border-radius:1px; background:var(--text); }
+
+/* Until the script places it, the underline does not draw. */
+.k-tabs:not(.k-tabs-js) .k-tabs-bar { display:none; }
+
+/* Vertical (aria-orientation="vertical"): the sections of one long page, one shown at a time (Settings' groups). A column of
+   full-width tabs, 32px, 4px apart, the label in text-2 and a count at the end in measure; the bar is 2px on the left edge,
+   20px tall, and slides between tabs. Up and Down move. */
+.k-tabs-v { display:flex; flex-direction:column; width:auto; gap:4px; }
+.k-tabs-v .k-tabs-bar { top:0; bottom:auto; width:2px; height:0;
+  transition:transform var(--dur-base) var(--ease-standard), height var(--dur-base) var(--ease-standard); }
+.k-tabs-v .k-tab { justify-content:space-between; gap:12px; width:100%; height:32px; padding:0 10px 0 12px; color:var(--text-2); text-align:left; }
+.k-tabs-v .k-tab:hover, .k-tabs-v .k-tab[data-state~="hover"] { color:var(--text); }
+.k-tabs-v .k-tab[aria-selected="true"]:not(.k-tabs-js *)::after { left:0; right:auto; top:6px; bottom:auto; width:2px; height:20px; }
+.k-tab-count { font:var(--t-measure-small); font-weight:400; line-height:1; color:var(--text-3); }
+
+/* ---- Toggle --------------------------------------------------------------
+   On or off, applied when saved. role=switch on a button; the word beside it always says the state.
+   Hit area 40x24 around a 32x18 track. On is ink, never rufous: switching a setting on is not an ask. */
+.k-toggle { display:inline-flex; align-items:center; gap:8px; box-sizing:border-box; min-height:24px; padding:0; border:0; margin:0; background:transparent; cursor:pointer;
+  font:var(--t-small); font-weight:500; line-height:1; color:var(--text-2); border-radius:12px; }
+.k-toggle-track { position:relative; width:32px; height:18px; border-radius:9px; background:var(--selected); box-shadow:inset 0 0 0 1px var(--line-input); flex:none; margin:3px 4px;
+  transition:background-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard); }
+.k-toggle-knob { position:absolute; top:3px; left:3px; width:12px; height:12px; border-radius:6px; background:var(--text-3);
+  transition:transform var(--dur-base) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard); }
+.k-toggle:hover .k-toggle-track, .k-toggle[data-state~="hover"] .k-toggle-track { box-shadow:inset 0 0 0 1px var(--text-3); }
+.k-toggle[aria-checked="true"] .k-toggle-track { background:var(--text); box-shadow:none; }
+.k-toggle[aria-checked="true"] .k-toggle-knob { transform:translateX(14px); background:var(--window); }
+.k-toggle[aria-checked="true"] { color:var(--text); }
+/* Both words share one cell, so the control is as wide as "off" in either state and the track never moves under the pointer. */
+.k-toggle-word { display:inline-grid; line-height:var(--t-small-lh); } /* the step's own line box, so a 13px label beside the toggle, centred the same way, shares its baseline */
+.k-toggle-word > span { grid-area:1 / 1; }
+.k-toggle[aria-checked="true"] .k-toggle-off, .k-toggle:not([aria-checked="true"]) .k-toggle-on { visibility:hidden; }
+.k-toggle[aria-disabled="true"] { cursor:not-allowed; color:var(--text-3); }
+.k-toggle[aria-disabled="true"] .k-toggle-track { background:var(--raised); box-shadow:inset 0 0 0 1px var(--line); }
+.k-toggle[aria-disabled="true"] .k-toggle-knob { background:var(--line-strong); }
+
+/* ---- Field ---------------------------------------------------------------
+   One value: a command, a number, a path. 32px, raised, 1px line-input edge (the only thing that shows where it is at night). Measure voice for values
+   kstrl runs or counts (k-field-measure); agent voice for words. The ring shows on any focus, pointer too. */
+.k-field { display:flex; flex-direction:column; gap:6px; min-width:0; width:100%; }
+.k-field-box { display:flex; align-items:center; gap:6px; box-sizing:border-box; height:32px; padding:0 10px; border-radius:var(--radius-sm);
+  background:var(--raised); box-shadow:inset 0 0 0 1px var(--line-input); transition:box-shadow var(--dur-fast) var(--ease-standard); }
+.k-field-box:hover, .k-field-box[data-state~="hover"] { box-shadow:inset 0 0 0 1px var(--text-3); }
+.k-field-input { flex:1; min-width:0; width:100%; height:100%; padding:0; border:0; margin:0; background:transparent; color:var(--text); font:var(--t-body); }
+.k-field-input::placeholder { color:var(--text-3); opacity:1; }
+.k-field-measure .k-field-input { font:var(--t-measure); }
+.k-field-affix { font:var(--t-measure); color:var(--text-3); flex:none; }
+.k-field-box:focus-within, .k-field-box[data-state~="focus"] { outline:2px solid var(--focus); outline-offset:2px; }
+.k-field-input:focus, .k-field-input:focus-visible { outline:none; }
+.k-field-input[data-state~="focus"] { outline:none; }
+/* Area: several lines of your words (a spec, an answer, guidance) in the human voice at intent (19/26), in a textarea. It grows
+   with what you write (the page's rows are the least it shows) and has no drag grip; the box, edge and focus ring are the field's. */
+.k-field-area .k-field-box { height:auto; align-items:stretch; padding:8px 10px; }
+.k-field-area .k-field-input { display:block; height:auto; resize:none; field-sizing:content; font:var(--t-intent); }
+.k-field[data-invalid="true"] .k-field-box { box-shadow:inset 0 0 0 1px var(--fail); }
+.k-field-msg { display:flex; align-items:flex-start; gap:6px; font:var(--t-label); font-weight:400; color:var(--text-2); }
+.k-field-msg .k-mk { flex:none; margin-top:2px; }
+.k-field-msg .v-measure { color:var(--text); }
+.k-field[data-locked="true"] .k-field-box, .k-field[data-locked="true"] .k-field-box:hover { background:transparent; box-shadow:inset 0 0 0 1px var(--line); }
+.k-field[data-locked="true"] .k-field-input { color:var(--text-2); cursor:text; }
+
+/* Words for assistive technology only (a step's state, a mark's meaning): present to a screen reader, never drawn. */
+.k-sr { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
+
+/* ---- Tile ----------------------------------------------------------------
+   The surface of the map and of the pages beside it: window on canvas, radius-xl, shadow-card, 18px 20px.
+   Kinds: ink (the one loud tile on a screen) and idle (nothing is happening: no fill, a dashed line-input edge).
+   State edges are 1.5px, inset, and compose with the selection ring: ask (you), alert (fail), work (work).
+   Selection, and keyboard focus on a selectable tile, is one 2px text ring 2px off: where you are is never rufous. */
+.k-tile { --k-edge: 0 0 0 0 transparent; position:relative; display:flex; flex-direction:column; box-sizing:border-box; min-width:0; min-height:0; padding:18px 20px; border-radius:var(--radius-xl);
+  background:var(--window); color:var(--text); box-shadow:var(--shadow-card), var(--k-edge); }
+.k-tile-ink { background:var(--text); color:var(--window); }
+/* the dashed border takes 1px, so the padding gives it back and content lines up with every other tile */
+.k-tile-idle { background:transparent; border:1px dashed var(--line-input); padding:17px 19px; box-shadow:var(--k-edge); }
+/* Sizes: dense for a grid of six or more or a narrow column (14 by 16, and radius-lg: radius follows size), hero for a stage's lead
+   tile (24 by 28). An idle tile gives its 1px border back. */
+.k-tile-dense { padding:14px 16px; border-radius:var(--radius-lg); } .k-tile-dense.k-tile-idle { padding:13px 15px; }
+.k-tile-hero { padding:24px 28px; } .k-tile-hero.k-tile-idle { padding:23px 27px; }
+/* Flush: the content pads itself (a log that scrolls to the tile's edges, a board of columns). */
+.k-tile-flush { padding:0; }
+/* Cell: one cell of a grid of runs (the Part level's tries by stations), two short lines at 50px; radius-md. */
+.k-tile-cell { padding:6px 10px; border-radius:var(--radius-md); } .k-tile-cell.k-tile-idle { padding:5px 9px; }
+.k-tile-ask { --k-edge: inset 0 0 0 1.5px var(--you); }
+.k-tile-alert { --k-edge: inset 0 0 0 1.5px var(--fail); }
+.k-tile-work { --k-edge: inset 0 0 0 1.5px var(--work); }
+.k-tile-selected, .k-tile:focus-visible, .k-tile[data-state~="focus"] { outline:2px solid var(--text); outline-offset:2px; }
+.k-tile:not(.k-tile-selected):focus:not(:focus-visible) { outline:none; }
+
+/* Well: a record set into a tile (evidence, a log excerpt, a command to run, a configuration). raised, radius-md (radius follows
+   size), one padding. A well sits in a tile: on the canvas it would be a tile, and a well in a well is one level too many. */
+.k-well { display:block; box-sizing:border-box; min-width:0; padding:10px 12px; border-radius:var(--radius-md); background:var(--raised); color:var(--text); }
+/* a record that failed its check: the tile's alert edge, 1.5px fail, inset, always with a mark and a word */
+.k-well-alert { box-shadow:inset 0 0 0 1.5px var(--fail); }
+/* code, a command or a configuration, in measure (13/20), one k-well-line per line. A line too long for the well wraps at a
+   space and hangs 2 characters in, so a continuation never reads as a new line; nothing is cut and nothing scrolls out of sight. */
+.k-well-code { font:var(--t-measure); }
+.k-well-line { display:block; white-space:pre-wrap; padding-left:2ch; text-indent:-2ch; }
+
+/* Meter: how much of a whole is used (the queue's cap, a context budget, today's spend against its cap). The same bar as a step,
+   5px and fully round, so a meter and a step sequence side by side read as one language: the used part in text-3 on a selected
+   track. The page sets the share as --k-meter (0% to 100%) and says the numbers beside it; the meter never stands alone. */
+.k-meter { display:block; box-sizing:border-box; min-width:0; height:5px; border-radius:2.5px; background:var(--selected); overflow:hidden; }
+.k-meter > i { display:block; height:100%; width:var(--k-meter, 0%); max-width:100%; border-radius:inherit; background:var(--text-3); }
+/* Bar: one magnitude in a bar chart (spend by phase, by role). Anchored at its baseline with a 4px rounded data end; 8px, text-3.
+   Bars in one chart share one scale, set by the page as --k-bar against the largest; the value is written beside it. */
+.k-bar { display:block; height:8px; width:var(--k-bar, 0%); min-width:2px; max-width:100%; border-radius:0 4px 4px 0; background:var(--text-3); }
+
+/* Ref: a passage of your words that something points at, and the tag that points (a decision, a question, a finding).
+   The passage is a <mark>: selected, a 2px line-strong underline, cloned across lines so every line of it reads as marked.
+   The tag is a 16px pill in measure: a number or a short id, matched to what it points at by that id and nothing else. */
+.k-hl { background:var(--selected); color:inherit; border-radius:4px; padding:1px 3px; box-shadow:inset 0 -2px 0 var(--line-strong); -webkit-box-decoration-break:clone; box-decoration-break:clone; }
+.k-hl-ask { background:var(--you-tint); box-shadow:inset 0 -2px 0 var(--you); }
+.k-ref { display:inline-block; box-sizing:border-box; min-width:16px; height:16px; padding:0 5px; border-radius:8px; font:var(--t-measure-small); font-weight:600; text-align:center; white-space:nowrap; color:var(--text-2); background:var(--raised); box-shadow:inset 0 0 0 1px var(--line-strong); vertical-align:middle; }
+/* it points at a question waiting for you */
+.k-ref-ask { color:var(--you-ink); background:var(--you); box-shadow:none; }
+/* it points at the ink tile's statement (the one loud tile), so it wears the ink */
+.k-ref-ink { color:var(--window); background:var(--text); box-shadow:none; }
+
+/* Dot: a small accent that is not one of the eight marks, always beside the word that says it: a fast check's result (tests,
+   typecheck), how a channel reaches you, a notice that only informs. One size, 6px, so the ring still reads as a ring. */
+.k-dot { display:inline-block; flex:none; box-sizing:border-box; width:6px; height:6px; border-radius:50%; background:var(--text-3); vertical-align:middle; }
+.k-dot-fail { background:var(--fail); }
+/* it interrupts you */
+.k-dot-ink { background:var(--text); }
+/* it waits quietly */
+.k-dot-ring { background:transparent; box-shadow:inset 0 0 0 1.5px var(--text-3); }
+/* it does not reach you */
+.k-dot-none { background:var(--selected); }
+
+/* A label names what a tile or a number is. 12px text-3; on ink, window at 72%. */
+.k-label { display:block; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:is(.k-ink, .k-tile-ink) .k-label { color:var(--window); opacity:.72; }
+
+/* ---- Chip ------------------------------------------------------------------
+   Names the agent working, beside its work. 18px, 11px/600, radius 5. A maker (engineer, architect, distiller) is work
+   on work-tint; a checker (reviewer, security) is ink; you are rufous. No chip when no agent is working. */
+.k-chip { display:inline-flex; align-items:center; box-sizing:border-box; height:18px; padding:0 7px; border-radius:5px; flex:none;
+  font:var(--t-micro); line-height:1; letter-spacing:var(--t-micro-ls); white-space:nowrap; color:var(--work); background:var(--work-tint); }
+.k-chip-checker { color:var(--window); background:var(--text); }
+.k-chip-you { color:var(--you-ink); background:var(--you); }
+:is(.k-ink, .k-tile-ink) .k-chip-checker { color:var(--text); background:var(--window); }
+
+/* ---- Stat ------------------------------------------------------------------
+   A measured number, large, with its unit or denominator small beside it and its label above. Measure voice. */
+.k-stat { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.k-stat-value { display:block; font:var(--t-stat); letter-spacing:var(--t-stat-ls); white-space:nowrap; }
+.k-stat-value small { font:var(--t-measure); font-weight:500; line-height:1; letter-spacing:var(--t-measure-ls); color:var(--text-3); margin-left:4px; }
+.k-stat-sm .k-stat-value { font:var(--t-stat-sm); letter-spacing:var(--t-stat-sm-ls); }
+.k-stat-sm .k-stat-value small { font-size:var(--t-measure-inline-size); margin-left:3px; }
+:is(.k-ink, .k-tile-ink) .k-stat-value small { color:var(--window); opacity:.72; }
+
+/* ---- Ring ------------------------------------------------------------------
+   Iterations: one turn is the part's iteration limit; finished iterations in text-3, the running one in work, the rest
+   selected. Drawn by the helper as three arcs; an iteration finishing moves both arcs over dur-ring. */
+.k-ring { display:block; flex:none; }
+.k-ring circle { fill:none; transition:stroke-dasharray var(--dur-ring) var(--ease-standard), stroke-dashoffset var(--dur-ring) var(--ease-standard); }
+.k-ring-track { stroke:var(--selected); }
+.k-ring-done { stroke:var(--text-3); }
+.k-ring-now { stroke:var(--work); }
+
+/* ---- Steps -----------------------------------------------------------------
+   A line of stations (Build, Check, Your approval, Merge) or checks (verify, review, security, distill), one segment each.
+   done text-3, now text (kstrl itself is running it), work (an agent is), you, fail, and the rest selected. Four of those
+   are within 1.12:1 of each other in lightness by day, so colour never works alone: a labelled step carries its mark,
+   the working step its stripe, and an unlabelled line sits beside a mark and a word that say the state. */
+.k-steps { display:grid; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); gap:3px; list-style:none; margin:0; padding:0; }
+.k-step { display:block; min-width:0; }
+.k-step-bar { display:block; height:5px; border-radius:2.5px; background:var(--selected); }
+.k-step[data-step="done"] .k-step-bar { background:var(--text-3); }
+.k-step[data-step="now"] .k-step-bar { background:var(--text); }
+.k-step[data-step="work"] .k-step-bar { background:repeating-linear-gradient(135deg, var(--work) 0 2px, var(--work-tint) 2px 4px); box-shadow:inset 0 0 0 1px var(--work); }
+.k-step[data-step="you"] .k-step-bar { background:var(--you); }
+.k-step[data-step="fail"] .k-step-bar { background:var(--fail); }
+.k-steps-labeled { gap:6px; }
+.k-steps-labeled .k-step-bar { height:6px; border-radius:3px; }
+.k-step-label { display:flex; align-items:center; gap:3px; margin-top:6px; font:var(--t-label); font-weight:400; color:var(--text-3); white-space:nowrap; }
+.k-step-label .k-mk { flex:none; }
+.k-step[data-step="done"] .k-step-label { color:var(--text-2); }
+.k-step:is([data-step="now"], [data-step="work"], [data-step="you"], [data-step="fail"]) .k-step-label { color:var(--text); font-weight:600; }
+/* Four labelled steps need 296px (the widest, "security" at 600 with its mark, is 70.5px; 6px gaps). Narrower, the labels
+   leave the drawing (screen readers still read them) and one line names the step that matters now, with its mark and word. */
+.k-steps-wrap { container-type:inline-size; min-width:0; }
+.k-steps-status { display:none; align-items:center; gap:5px; margin:7px 0 0; font:var(--t-label); font-weight:600; color:var(--text); white-space:nowrap; }
+.k-steps-status .k-mk { flex:none; }
+.k-steps-status span:last-child { font-weight:400; color:var(--text-2); }
+@container (max-width: 299.98px) {
+  .k-steps-labeled .k-step-label { position:absolute; width:1px; height:1px; margin:-1px; overflow:hidden; clip-path:inset(50%); }
+  .k-steps-status { display:flex; }
+}
+
+/* ---- Fresh and arrive --------------------------------------------------------
+   What changed is marked where it changed, fading over dur-fresh, linear (a fade that measures time), and the only motion
+   besides ticking ages and the typing dots. Both keyframes have only a start, so they end on the element's own style:
+   nothing snaps at the end. k-fresh is for a value with no ground of its own; k-arrive for an item with one. An ask arrives
+   from 20% you over you-tint, the strongest start at which its text stays at 4.5:1 in both themes (measured).
+   A script adds the class on the change and removes it on animationend. */
+.k-fresh { border-radius:4px; animation:k-fresh var(--dur-fresh) var(--ease-linear); }
+@keyframes k-fresh { from { background-color:var(--selected); box-shadow:0 0 0 3px var(--selected); } }
+.k-arrive { animation:k-arrive var(--dur-fresh) var(--ease-linear); }
+/* A still picture of a moment (a frame, a specimen) shows the mark a quarter of the way through its fade, paused. */
+:is(.k-fresh, .k-arrive)[data-state~="still"] { animation-delay:calc(var(--dur-fresh) * -.25); animation-play-state:paused; }
+@keyframes k-arrive { from { background-color:var(--k-arrive, var(--selected)); } }
+
+/* ---- Typing ---------------------------------------------------------------------
+   While an agent's output is growing: three 4px work dots, each brightening in turn over dur-typing. */
+.k-typing { display:inline-flex; align-items:center; gap:3px; height:8px; flex:none; }
+.k-typing i { width:4px; height:4px; border-radius:2px; background:var(--work); opacity:.35; animation:k-typing var(--dur-typing) var(--ease-linear) infinite; }
+.k-typing i:nth-child(2) { animation-delay:calc(var(--dur-typing) / 6); }
+.k-typing i:nth-child(3) { animation-delay:calc(var(--dur-typing) / 3); }
+@keyframes k-typing { 0%, 60%, 100% { opacity:.35; } 30% { opacity:1; } }
+
+/* ---- Needs-you item --------------------------------------------------------------
+   One thing waiting on you, in the strip at the foot of every screen: its mark, what to do, and why now. A button that
+   lands on the thing. Asks are you-tint with a 1px you edge; a stopped part is raised. */
+.k-need { display:inline-grid; grid-template-columns:auto auto; column-gap:8px; align-items:center; box-sizing:border-box; min-height:44px; padding:6px 12px;
+  border:0; margin:0; border-radius:var(--radius-md); background:var(--raised); color:var(--text); font:var(--t-body); text-align:left; cursor:pointer;
+  transition:background-color var(--dur-fast) var(--ease-standard); }
+.k-need > .k-mk { grid-row:1 / span 2; }
+.k-need b { font-weight:600; white-space:nowrap; }
+.k-need-sub { grid-column:2; font:var(--t-label); font-weight:400; color:var(--text-2); white-space:nowrap; }
+.k-need:hover, .k-need[data-state~="hover"] { background:var(--selected); }
+.k-need-ask { background:var(--you-tint); box-shadow:inset 0 0 0 1px var(--you); --k-arrive:color-mix(in srgb, var(--you) 20%, var(--you-tint)); }
+.k-need-ask:hover, .k-need-ask[data-state~="hover"] { background:color-mix(in srgb, var(--you) 10%, var(--you-tint)); }
+/* More: what did not fit, counted, landing on the inbox. No mark, so one column. */
+.k-need-more { grid-template-columns:auto; } .k-need-more .k-need-sub { grid-column:1; }
+
+/* ---- Notice ------------------------------------------------------------------------
+   An ask arriving while you work elsewhere. Only asks get one; it never dismisses itself and never approves: Review lands
+   where the evidence is, Later leaves it in Needs you. It does not take focus (it is announced politely); F6 moves focus to
+   its first action, and esc there means Later. Enters on dur-enter, ease-enter; leaves on dur-exit, ease-exit. */
+.k-notice { position:relative; box-sizing:border-box; width:372px; max-width:100%; padding:16px 18px; border-radius:var(--radius-lg); background:var(--window); color:var(--text);
+  box-shadow:var(--shadow-panel); }
+.k-notice-head { display:flex; align-items:center; gap:7px; font:var(--t-label); font-weight:600; color:var(--text-2); }
+.k-notice-ask .k-notice-kind { color:var(--you); }
+.k-notice-age { margin-left:auto; font:var(--t-measure-small); font-weight:400; color:var(--text-3); white-space:nowrap; }
+.k-notice-title { margin:8px 0 0; font:var(--t-input); font-weight:600; letter-spacing:var(--t-input-ls); }
+.k-notice-body { margin:4px 0 0; font:var(--t-small); color:var(--text-2); }
+.k-notice-actions { display:flex; align-items:center; gap:8px; margin-top:14px; }
+.k-notice-foot { margin-left:auto; font:var(--t-label); font-weight:400; color:var(--text-3); white-space:nowrap; }
+/* Compact: the notice as a page shows it rather than as it arrives (the Notifications page, what reaches you in the app):
+   head, title and body, no actions; padding 10 by 12 and radius-md (radius follows size), title 13.5, body 12. */
+.k-notice-compact { width:auto; padding:10px 12px; border-radius:var(--radius-md); }
+.k-notice-compact .k-notice-title { margin-top:4px; font:var(--t-body); font-weight:600; }
+.k-notice-compact .k-notice-body { margin-top:2px; font:var(--t-label); font-weight:400; }
+.k-notice[data-motion="enter"] { animation:k-notice-in var(--dur-enter) var(--ease-enter) both; }
+.k-notice[data-motion="exit"] { animation:k-notice-out var(--dur-exit) var(--ease-exit) both; }
+@keyframes k-notice-in { from { opacity:0; transform:translateY(8px); } }
+@keyframes k-notice-out { to { opacity:0; transform:translateY(4px); } }
+@keyframes k-notice-in-still { from { opacity:0; } }
+@keyframes k-notice-out-still { to { opacity:0; } }
+
+/* ---- Choice ------------------------------------------------------------------------
+   One of a few decisions in a list, each with its keys and, under it, its consequence, written before you take it. A radio
+   group: arrows move the choice, and the one action button (or the command window's action bar) always names the chosen
+   decision; each decision's own keys act on it directly. Rest is a plain row; hover raised; chosen you-tint with a 1px you
+   edge and its title in you, because a decision is yours. A destructive decision's title is fail. */
+.k-choices { display:grid; gap:4px; }
+/* In two columns (an inbox item's four ways out), each rest choice takes a line hairline so the cells read apart. */
+.k-choices-grid { grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; }
+.k-choices-grid .k-choice { align-content:start; padding:12px 14px; box-shadow:inset 0 0 0 1px var(--line); }
+.k-choices-grid .k-choice[aria-checked="true"] { box-shadow:inset 0 0 0 1px var(--you); }
+.k-choice { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:12px; row-gap:4px; align-items:center; box-sizing:border-box; width:100%;
+  padding:10px 12px; border:0; margin:0; border-radius:var(--radius-md); background:transparent; color:var(--text); text-align:left;
+  font:var(--t-body); cursor:pointer; transition:background-color var(--dur-fast) var(--ease-standard); }
+.k-choice-title { font-weight:600; }
+.k-choice-then { grid-column:1 / -1; font:var(--t-small); color:var(--text-2); }
+.k-choice:hover, .k-choice[data-state~="hover"] { background:var(--raised); }
+.k-choice[aria-checked="true"] { background:var(--you-tint); box-shadow:inset 0 0 0 1px var(--you); }
+.k-choice[aria-checked="true"] .k-choice-title { color:var(--you); }
+.k-choice-danger .k-choice-title, .k-choice-danger[aria-checked="true"] .k-choice-title { color:var(--fail); }
+.k-choice[aria-disabled="true"] { cursor:not-allowed; } .k-choice[aria-disabled="true"] .k-choice-title, .k-choice[aria-disabled="true"] .k-choice-then { color:var(--text-3); }
+
+/* ---- Row -----------------------------------------------------------------------------
+   One item in a list (the inbox, the queue, the command window): its mark, a title and one line, and a measured fact at the
+   end. 44px at least. Hover raised, selected selected; a selected ask is you-tint with a 1px you edge. */
+.k-row { display:grid; grid-template-columns:20px minmax(0,1fr) auto; column-gap:10px; align-items:baseline; align-content:center; box-sizing:border-box; width:100%; min-height:44px;
+  padding:7px 10px; border:0; margin:0; border-radius:var(--radius-sm); background:transparent; color:var(--text); text-align:left; font:var(--t-body);
+  cursor:pointer; transition:background-color var(--dur-fast) var(--ease-standard); }
+.k-row-title { display:block; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.k-row-sub { display:block; font:var(--t-label); font-weight:400; color:var(--text-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.k-row-meta { font:var(--t-measure-small); font-weight:400; color:var(--text-3); white-space:nowrap; }
+/* The title, the meta and a ? mark share the title's baseline; a status mark and keycaps are boxes, centred on the row. */
+.k-row > .k-mk, .k-row > .k-row-meta:has(> .k-keys) { align-self:center; }
+.k-row > .k-dot { align-self:center; justify-self:center; } /* a notice: a dot in the mark's column, centred in it */
+.k-row:hover, .k-row[data-state~="hover"] { background:var(--raised); }
+.k-row[aria-selected="true"] { background:var(--selected); }
+.k-row-ask[aria-selected="true"] { background:var(--you-tint); box-shadow:inset 0 0 0 1px var(--you); }
+/* Closed: already decided. The title steps down to 500 in text-2; the mark says how it closed. */
+.k-row-closed .k-row-title { font-weight:500; color:var(--text-2); }
+/* Unavailable (aria-disabled): the same step down, and the meta says when it will be available. It stays selectable, so the
+   detail beside it can say why. */
+.k-row[aria-disabled="true"] { cursor:default; } .k-row[aria-disabled="true"] .k-row-title { font-weight:500; color:var(--text-2); }
+
+/* ---- Part card ----------------------------------------------------------------------
+   A part on the Spec level: mark and name, who is working (a chip) or the state in a word, its line, one sentence, and its
+   tries. radius-lg; state edges are 1px at this size; selected (and focused) is the tile's 2px text ring. */
+.k-card { --k-edge: 0 0 0 0 transparent; position:relative; display:flex; flex-direction:column; box-sizing:border-box; padding:10px 14px; border-radius:var(--radius-lg);
+  background:var(--window); color:var(--text); box-shadow:var(--shadow-card), var(--k-edge); }
+.k-card-work { --k-edge: inset 0 0 0 1px var(--work); }
+.k-card-ask { background:var(--you-tint); --k-edge: inset 0 0 0 1px var(--you); }
+.k-card-stop { --k-edge: inset 0 0 0 1px var(--fail); }
+/* Waiting on another part, or skipped because one failed: nothing is happening, so no fill and the idle tile's dashed edge.
+   A skipped part's name and sentence go to text-3; its mark and the word "skipped" say why. */
+.k-card-idle { background:transparent; border:1px dashed var(--line-input); padding:9px 13px; box-shadow:var(--k-edge); }
+.k-card-skip .k-card-name, .k-card-skip .k-card-sub { color:var(--text-3); }
+.k-card-selected, .k-card:focus-visible, .k-card[data-state~="focus"] { outline:2px solid var(--text); outline-offset:2px; }
+.k-card:not(.k-card-selected):focus:not(:focus-visible) { outline:none; }
+.k-card-head { display:flex; align-items:baseline; gap:8px; min-height:20px; }
+.k-card-head > .k-mk, .k-card-head > .k-card-who:has(.k-chip) { align-self:center; }
+.k-card-name { font-weight:600; white-space:nowrap; }
+.k-card-who { margin-left:auto; font:var(--t-label); font-weight:400; color:var(--text-3); white-space:nowrap; display:inline-flex; }
+.k-card .k-steps { margin:9px 0 7px; }
+.k-card-sub { display:flex; align-items:center; gap:7px; min-height:18px; font:var(--t-small); color:var(--text-2); white-space:nowrap; }
+.k-card-meta { display:flex; align-items:center; gap:8px; margin-top:4px; font:var(--t-measure-small); font-weight:400; color:var(--text-3); white-space:nowrap; }
+.k-card-meta .k-keys { margin-left:auto; }
+/* Tries as dots: 7px; a ring for the try running now (work), filled fail for a try that failed, a line ring for the rest. */
+.k-tries { display:inline-flex; gap:3px; }
+.k-try { width:7px; height:7px; border-radius:4px; box-shadow:inset 0 0 0 1.5px var(--line-input); }
+.k-try-now { box-shadow:inset 0 0 0 1.5px var(--work); }
+.k-try-fail { background:var(--fail); box-shadow:none; }
+
+/* ---- Header -----------------------------------------------------------------------
+   The 56px band at the top of every screen. Left: the logo, then where you are, each level a crumb that zooms back out to
+   it (the last is the level you are on). At the top level only, the standing conditions. Right: whether the view is live,
+   today's spend, and the ask field, which opens the command window. */
+.k-header { display:flex; align-items:center; gap:14px; height:56px; box-sizing:border-box; padding:0 24px; border-bottom:1px solid var(--line);
+  white-space:nowrap; overflow:hidden; font:var(--t-body); color:var(--text); }
+.k-header .k-logo { width:18px; height:18px; flex:none; }
+.k-crumbs { display:flex; align-items:center; gap:4px; min-width:0; margin:0; padding:0; list-style:none; }
+.k-crumbs li { display:flex; align-items:center; gap:4px; }
+.k-crumbs li + li::before { content:"›"; color:var(--text-3); padding:0 4px; }
+.k-crumb { display:inline-flex; align-items:center; height:28px; padding:0 6px; border:0; margin:0; border-radius:var(--radius-sm); background:transparent;
+  font:inherit; color:var(--text); cursor:pointer; transition:background-color var(--dur-fast) var(--ease-standard); }
+.k-crumb:hover, .k-crumb[data-state~="hover"] { background:var(--raised); }
+.k-crumb[aria-current="page"] { cursor:default; background:transparent; }
+.k-crumb-root { font-weight:600; }
+.k-conds { display:flex; align-items:center; gap:14px; margin-left:10px; font:var(--t-small); color:var(--text-2); }
+.k-conds > span { display:inline-flex; align-items:center; gap:6px; }
+.k-live { font:var(--t-measure-inline); color:var(--text-3); }
+.k-spend { font:var(--t-measure-inline); color:var(--text); } .k-spend small { font-size:var(--t-measure-inline-size); color:var(--text-3); }
+.k-ask { display:flex; align-items:center; gap:8px; box-sizing:border-box; height:32px; min-width:200px; padding:0 8px 0 12px; border:0; margin:0;
+  border-radius:var(--radius-md); background:var(--raised); color:var(--text-3); font:var(--t-body); text-align:left; cursor:text;
+  transition:background-color var(--dur-fast) var(--ease-standard); }
+.k-ask:hover, .k-ask[data-state~="hover"] { background:var(--selected); }
+.k-ask .k-keys { margin-left:auto; }
+/* Narrow: the words go first (kFit), and the field keeps its keycaps and its name (aria-label). */
+.k-ask:has(> [data-fit-hidden]) { min-width:0; padding:0 8px; }
+
+/* ---- Title row -------------------------------------------------------------------------
+   Under the header: what this screen is and one line of measured facts, then its tools on the right (a hint, its views,
+   the zoom). A spec's title is in your words (human voice); a part's is its name. When the row is too narrow the facts
+   wrap under the title; the tools never move. */
+.k-titlerow { display:flex; align-items:center; justify-content:space-between; gap:24px; min-height:40px; }
+.k-title { display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 14px; min-width:0; margin:0; font-weight:400; }
+.k-title-human { font:var(--t-intent-xl); letter-spacing:var(--t-intent-xl-ls); }
+.k-title-name { font:var(--t-page-title); letter-spacing:var(--t-page-title-ls); }
+.k-title .k-chip { align-self:center; }
+.k-title-meta { font:var(--t-small); color:var(--text-2); white-space:nowrap; }
+.k-titletools { display:flex; align-items:center; gap:18px; flex:none; }
+.k-hint { display:inline-flex; align-items:center; gap:6px; font:var(--t-label); font-weight:400; color:var(--text-3); white-space:nowrap; }
+
+/* ---- Needs-you strip ----------------------------------------------------------------------
+   The 72px band at the foot of every screen: its label, what waits on you (k-need), and a hint for this screen. */
+.k-needs { display:flex; align-items:center; gap:12px; height:72px; box-sizing:border-box; padding:0 24px; border-top:1px solid var(--line); }
+/* With nothing waiting, the label and the words beside it are text on one baseline; the line is centred in the bar. With asks, the
+   44px asks lead and the row is centred on them. */
+.k-needs:not(:has(> .k-need)) { align-items:baseline; flex-wrap:wrap; align-content:center; }
+.k-needs-label { width:72px; flex:none; font:var(--t-label); color:var(--text-3); }
+.k-needs-none { font:var(--t-body); color:var(--text-2); }
+.k-needs-hint { margin-left:auto; font:var(--t-small); color:var(--text-3); white-space:nowrap; }
+
+/* ---- Command window ------------------------------------------------------------------
+   Opened with Cmd K over any level, which dims behind it with scrim. Three rows: the query (56px), the body (a list, and the
+   answer or the chosen item's detail beside it), and the action bar (44px), which names the action ↵ runs, with its
+   consequence or the standing condition on the left. The query keeps focus the whole time: arrows move the list's active row
+   (aria-activedescendant), ↵ runs, esc closes. Focus is the query row's 2px focus underline and a rufous caret. */
+.k-scrim { position:absolute; inset:0; background:var(--scrim); }
+.k-cmd { position:relative; display:grid; grid-template-rows:56px minmax(0,1fr) 44px; box-sizing:border-box; border-radius:var(--radius-lg);
+  background:var(--window); color:var(--text); box-shadow:var(--shadow-window); overflow:hidden; font:var(--t-body); }
+.k-cmd-input { display:flex; align-items:center; gap:12px; padding:0 16px; border-bottom:1px solid var(--line); transition:box-shadow var(--dur-fast) var(--ease-standard); }
+.k-cmd-input:focus-within { box-shadow:inset 0 -2px 0 var(--focus); }
+.k-cmd-input .k-logo { width:18px; height:18px; flex:none; }
+.k-cmd-q { flex:1; min-width:0; height:100%; padding:0; border:0; margin:0; background:transparent; color:var(--text); caret-color:var(--you); font:var(--t-input); }
+.k-cmd-q::placeholder { color:var(--text-3); opacity:1; }
+.k-cmd-q:focus { outline:none; }
+.k-cmd-context { display:inline-flex; align-items:center; height:24px; padding:0 8px; border-radius:var(--radius-sm); background:var(--raised); color:var(--text-2); font:var(--t-label); font-weight:400; white-space:nowrap; flex:none; }
+.k-cmd-body { display:grid; grid-template-columns:var(--k-cmd-list, 340px) minmax(0,1fr); min-height:0; }
+.k-cmd-list { padding:8px; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; min-height:0; }
+.k-cmd-sec { display:flex; justify-content:space-between; padding:10px 8px 6px; font:var(--t-label); color:var(--text-3); }
+.k-cmd-list .k-row { cursor:default; }
+/* Moving the pointer over a row makes it the active row, so a hover of its own would be a second highlight. */
+.k-cmd-list .k-row:hover:not([aria-selected="true"]) { background:transparent; }
+.k-cmd-q-mark { width:16px; text-align:center; color:var(--text-3); }
+.k-cmd-detail { border-left:1px solid var(--line); padding:16px 16px 0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; min-height:0; }
+.k-cmd-head { margin:0 0 8px; font:var(--t-input); font-weight:600; }
+.k-cmd-text { margin:0; font:var(--t-body); } .k-cmd-text + .k-cmd-text { margin-top:8px; }
+/* An answer names the records it came from, as measure chips. */
+.k-cmd-srcs { display:flex; flex-wrap:wrap; gap:6px; margin-top:14px; }
+.k-cmd-src { font:var(--t-measure-small); color:var(--text-2); background:var(--raised); box-shadow:inset 0 0 0 1px var(--line); border-radius:var(--radius-sm); padding:0 6px; white-space:nowrap; }
+.k-cmd-bar { display:flex; align-items:center; gap:12px; padding:0 12px 0 16px; border-top:1px solid var(--line); font:var(--t-small); color:var(--text-2); white-space:nowrap; }
+.k-cmd-bar-note { display:inline-flex; align-items:center; gap:6px; min-width:0; overflow:hidden; }
+.k-cmd-act { display:inline-flex; align-items:center; gap:8px; height:28px; padding:0 6px; border:0; margin:0; border-radius:var(--radius-sm); background:transparent;
+  font:inherit; color:var(--text); cursor:pointer; transition:background-color var(--dur-fast) var(--ease-standard); }
+.k-cmd-act:first-of-type { margin-left:auto; }
+.k-cmd-act:hover, .k-cmd-act[data-state~="hover"] { background:var(--raised); }
+.k-cmd-act-primary { color:var(--you); font-weight:600; }
+/* Unavailable: text-3, no hover; the note on the left says when it will be available. */
+.k-cmd-act[aria-disabled="true"] { color:var(--text-3); cursor:not-allowed; } .k-cmd-act[aria-disabled="true"]:hover { background:transparent; }
+.k-cmd-act[aria-disabled="true"] .k-key { background:transparent; color:var(--text-3); box-shadow:inset 0 0 0 1px var(--line); }
+/* Opens on dur-enter, ease-enter (from 98% and transparent), closes on dur-exit, ease-exit; the scrim fades with it. */
+.k-cmd[data-motion="enter"] { animation:k-cmd-in var(--dur-enter) var(--ease-enter) both; }
+.k-cmd[data-motion="exit"] { animation:k-cmd-out var(--dur-exit) var(--ease-exit) both; }
+.k-scrim[data-motion="enter"] { animation:k-scrim-in var(--dur-enter) var(--ease-enter) both; }
+.k-scrim[data-motion="exit"] { animation:k-scrim-out var(--dur-exit) var(--ease-exit) both; }
+@keyframes k-cmd-in { from { opacity:0; transform:scale(.98); } }
+@keyframes k-cmd-out { to { opacity:0; transform:scale(.98); } }
+@keyframes k-cmd-in-still { from { opacity:0; } }
+@keyframes k-cmd-out-still { to { opacity:0; } }
+@keyframes k-scrim-in { from { opacity:0; } }
+@keyframes k-scrim-out { to { opacity:0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .k-seg-thumb, .k-tabs-bar, .k-tabs-v .k-tabs-bar, .k-toggle-knob, .k-toggle-track { transition-duration:1ms; }
+  .k-seg-item, .k-tab, .k-field-box { transition-duration:1ms; }
+  .k-ring circle { transition-duration:1ms; }
+  .k-fresh, .k-arrive { animation-timing-function:step-end; }
+  .k-typing i { animation:none; } .k-typing i:nth-child(2) { opacity:.6; } .k-typing i:nth-child(3) { opacity:.9; }
+  .k-notice[data-motion="enter"] { animation-name:k-notice-in-still; } .k-notice[data-motion="exit"] { animation-name:k-notice-out-still; }
+  .k-need, .k-choice, .k-row { transition-duration:1ms; }
+  .k-crumb, .k-ask { transition-duration:1ms; }
+  .k-cmd-input, .k-cmd-act { transition-duration:1ms; }
+  .k-cmd[data-motion="enter"] { animation-name:k-cmd-in-still; } .k-cmd[data-motion="exit"] { animation-name:k-cmd-out-still; }
+}

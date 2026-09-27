@@ -1,0 +1,179 @@
+<!-- @dsCard group="Surfaces" height=616 width=1328 subtitle="The three bands every screen has: header, title row, Needs you" -->
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Chrome</title><style>
+  html, body { margin:0; }
+  body { background:var(--canvas); color:var(--text); font:var(--t-body); -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; }
+  .c-wrap { padding:24px; display:grid; gap:14px; }
+  .c-tile { background:var(--window); border-radius:var(--radius-xl); box-shadow:var(--shadow-card); padding:18px 20px; min-width:0; }
+  .c-lab { font:var(--t-label); font-weight:400; color:var(--text-3); margin-bottom:12px; }
+  .c-two { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:14px; }
+  .c-three { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:14px; }
+  .c-row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .c-cap { font:var(--t-label); font-weight:400; color:var(--text-3); }
+  .c-note { font:var(--t-label); font-weight:400; color:var(--text-3); margin-top:12px; }
+  .c-anat { position:relative; }
+  .c-dl { stroke:var(--text-3); stroke-width:1; shape-rendering:crispEdges; }
+  .c-dt { fill:var(--text-2); font:var(--t-measure-small); font-weight:400; }
+  .c-grid { display:grid; align-items:center; row-gap:10px; }
+  .c-gh { font:var(--t-label); font-weight:400; color:var(--text-3); }
+  .c-gr { font:var(--t-small); color:var(--text-2); }
+  .c-ink { background:var(--text); color:var(--window); border-radius:var(--radius-lg); padding:14px 16px; }
+  /* a patch of the app's ground inside a card, for a component shown where it lives (a band, a notice, a window) */
+  .c-stage { background:var(--canvas); border-radius:var(--radius-lg); box-shadow:inset 0 0 0 1px var(--line); }
+  /* a token or command named in a caption is one word: it never breaks at its hyphen */
+  :is(.c-lab, .c-cap, .c-note) .v-measure { white-space:nowrap; }
+
+  /* a screen does not grow: when the title row wraps its facts (768, the Spec level: +17px) the body row gives the height back */
+  .shell { position:relative; display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px auto minmax(0,1fr) 72px; height:248px; max-width:100%; overflow:hidden; }
+  .tr { padding:16px 32px 0; }
+  .body { display:flex; align-items:center; gap:24px; min-width:0; padding:0 32px; }
+  .body .c-cap { flex:1; min-width:0; margin:0; }
+  .body .k-seg { flex:none; }
+  .rules { display:grid; grid-template-columns:120px minmax(0,1fr); gap:10px 16px; margin:0; font:var(--t-small); } .rules dt { color:var(--text-2); } .rules dd { margin:0; max-width:820px; }
+  .rules .v-measure { white-space:nowrap; }
+</style></head><body>
+<div class="c-wrap">
+<div class="c-stage shell" id="shell">
+  <header class="k-header" id="hd"><svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb" aria-current="page">search-query</button></li></ol></nav><span class="k-conds" hidden data-fit-drop="1"><span>L2 · merges wait for you</span><span><span class="k-mk sm pass"></span>all checks ran</span><span><span class="k-mk sm pass"></span>CI passing</span></span><span class="grow"></span><span class="k-live" data-fit-drop="3">live · last event 3s ago</span><span class="k-spend">≥$31.10 <small data-fit-drop="2">of $40.00 today</small></span><button class="k-ask" id="ask0" aria-label="Ask or do anything"><span data-fit-drop="4">Ask or do anything</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span></button></header>
+  <div class="tr"><div class="k-titlerow"><h1 class="k-title" id="ttl"><span class="k-title-name">search-query</span><span class="k-chip k-chip-checker">reviewer</span><span class="k-title-meta">try 3 of 4 · checking · <span class="v-measure">≥$9.20</span></span></h1><div class="k-titletools"><div class="k-tabs" id="views" hidden role="tablist" aria-label="View"><span class="k-tabs-bar" aria-hidden="true"></span><button class="k-tab" role="tab" aria-selected="true" tabindex="0">Graph</button><button class="k-tab" role="tab" aria-selected="false" tabindex="-1">Text</button></div><div class="k-seg" id="zoom" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Spec</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="0">Part</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Step</button></div></div></div></div>
+  <div class="body"><p class="c-cap" id="where" aria-live="polite">A crumb zooms back out to its level, and the last is where you are. Try a crumb, the zoom, a need, or a narrower screen (the width in px).</p><div id="width" class="k-seg k-seg-sm" role="radiogroup" aria-label="Screen width"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="true" tabindex="0">1280</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">1024</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">768</button></div></div>
+  <div class="k-needs" id="needs"><span class="k-needs-label">Needs you</span><button class="k-need k-need-ask" data-need="approve" data-fit-drop="5"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button><button class="k-need" data-need="stopped" data-fit-drop="4"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button><button class="k-need k-need-more" data-fit-more hidden><b>1 more</b><span class="k-need-sub">in the inbox</span></button><span class="k-needs-hint" data-fit-drop="1">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span></div>
+</div>
+<div class="c-tile"><div class="c-lab">The three bands</div>
+  <dl class="rules">
+    <dt>Header, 56</dt><dd>The logo; where you are, each level a crumb that zooms back out to it (the last is <span class="v-measure">aria-current</span>); one level in (a spec, the inbox, settings), the standing conditions, which the Factory level shows as tiles instead; then whether the view is live, today’s spend (a floor, so <span class="v-measure">≥</span>) and the ask field, which opens the command window, as <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> does from anywhere.</dd>
+    <dt>Title row</dt><dd>What this screen is, in the voice that owns it: a spec in your words, a part by its name with the agent working on it; then one line of measured facts. On the right, its views and the zoom, which moves with the crumbs.</dd>
+    <dt>Needs you, 72</dt><dd>What waits on you, each a button that lands on it (an approval opens with its evidence; a stopped part on its Part level), and one hint for this screen.</dd>
+    <dt>Narrower</dt><dd>The header and Needs you stay one line and give way in order. The header drops the standing conditions, then the cap after today’s spend, then the live text, then the ask field’s words (its keycaps stay). Needs you drops its hint, then needs from the right, into a count that lands on the inbox. The title row wraps its facts under the title. The crumbs and the spend always stay.</dd>
+    <dt>Edges</dt><dd>The header and Needs you pad 24; the title row and everything under it sit at 32, a step in from the bands around them.</dd>
+  </dl></div>
+</div>
+<script>
+/* Anatomy overlay: measures the real element and draws dimension lines in an SVG, so every number shown is what renders.
+   anat(host, target, specs): specs are {kind:'h'|'w'|'gap'|'pad'|'note', ...}. Lines 1px text-3, end ticks 5px, labels measure-small (11px) at 400 in text-2. */
+function anat(host, target, specs){
+  var H = host.getBoundingClientRect(), T = target.getBoundingClientRect();
+  var ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('class', 'c-anat-svg'); svg.setAttribute('width', H.width); svg.setAttribute('height', H.height); svg.setAttribute('aria-hidden', 'true');
+  svg.style.position = 'absolute'; svg.style.left = '0'; svg.style.top = '0'; svg.style.overflow = 'visible';
+  function el(n, a){ var e = document.createElementNS(ns, n); for (var k in a) e.setAttribute(k, a[k]); svg.appendChild(e); return e; }
+  function line(x1, y1, x2, y2){ el('line', {x1:x1, y1:y1, x2:x2, y2:y2, 'class':'c-dl'}); }
+  function text(x, y, s, anchor){ var t = el('text', {x:x, y:y, 'class':'c-dt', 'text-anchor':anchor || 'middle'}); t.textContent = s; }
+  function rel(r){ return {l:r.left - H.left, t:r.top - H.top, r:r.right - H.left, b:r.bottom - H.top, w:r.width, h:r.height}; }
+  var t = rel(T);
+  specs.forEach(function(s){
+    var r = s.of ? rel(s.of.getBoundingClientRect()) : t, v;
+    if (s.kind === 'h') { var x = r.l - 16; line(x, r.t, x, r.b); line(x - 3, r.t, x + 3, r.t); line(x - 3, r.b, x + 3, r.b); text(x - 8, (r.t + r.b) / 2 + 3.5, s.label || Math.round(r.h) + '', 'end'); }
+    if (s.kind === 'hr') { var xr = r.r + 14; line(xr, r.t, xr, r.b); line(xr - 3, r.t, xr + 3, r.t); line(xr - 3, r.b, xr + 3, r.b); text(xr + 8, (r.t + r.b) / 2 + 3.5, s.label || Math.round(r.h) + '', 'start'); }
+    if (s.kind === 'w') { var y = r.b + 16; line(r.l, y, r.r, y); line(r.l, y - 3, r.l, y + 3); line(r.r, y - 3, r.r, y + 3); text((r.l + r.r) / 2, y + 14, s.label || Math.round(r.w) + ''); }
+    if (s.kind === 'pad') { var y2 = r.t - 12, p = s.value; line(r.l, y2, r.l + p, y2); line(r.l, y2 - 3, r.l, y2 + 3); line(r.l + p, y2 - 3, r.l + p, y2 + 3); text(r.l + p / 2, y2 - 6, s.label || p + ''); }
+    if (s.kind === 'gap') { var a = rel(s.a.getBoundingClientRect()), b = rel(s.b.getBoundingClientRect()), y3 = t.b + 14; line(a.r, y3, b.l, y3); line(a.r, y3 - 3, a.r, y3 + 3); line(b.l, y3 - 3, b.l, y3 + 3); text((a.r + b.l) / 2, y3 + 14, s.label || Math.round(b.l - a.r) + ''); }
+    if (s.kind === 'note') { var nx = t.r + (s.dx || 28), ny = t.t + (s.row || 0) * 16 + 4; if (s.lead) { line(t.r - 2, t.t + 3, nx - 6, ny - 3.5); } text(nx, ny, s.label, 'start'); }
+  });
+  host.appendChild(svg);
+}
+
+// Everything below measures rendered text (thumbs, bars, filmstrips, anatomy), so it runs once the web fonts have loaded:
+// measured earlier, it would size to the fallback font (a thumb 4 to 6px too wide was the measured result).
+(document.fonts ? document.fonts.ready : Promise.resolve()).then(function(){
+
+// Segmented control: role=radiogroup. Arrow keys move and select (wrapping, skipping disabled), Home/End jump; Tab enters on the checked item.
+function kSeg(root, onChange){
+  root.classList.add('k-seg-js');
+  var thumb=root.querySelector('.k-seg-thumb'), items=[].slice.call(root.querySelectorAll('.k-seg-item'));
+  function enabled(){ return items.filter(function(i){ return i.getAttribute('aria-disabled')!=='true'; }); }
+  function place(it, animate){ if(!animate){ thumb.style.transition='none'; } thumb.style.width=it.offsetWidth+'px'; thumb.style.transform='translateX('+it.offsetLeft+'px)'; if(!animate){ void thumb.offsetWidth; thumb.style.transition=''; } }
+  function current(){ return items.filter(function(i){ return i.getAttribute('aria-checked')==='true'; })[0]; }
+  // A font that finishes loading later changes every item's width: re-place without animating. (Not a ResizeObserver on the
+  // items: the 500 to 600 weight change on select resizes them by a fraction of a pixel and would cancel the slide.)
+  if(document.fonts){ document.fonts.addEventListener('loadingdone', function(){ var c=current(); if(c) place(c,false); }); }
+  // quiet: set the state without the slide and without telling onChange (a caller restoring or preparing a control).
+  function select(it, focus, quiet){ if(it.getAttribute('aria-disabled')==='true') return; items.forEach(function(i){ var on=i===it; i.setAttribute('aria-checked', on?'true':'false'); i.tabIndex=on?0:-1; }); place(it,!quiet); if(focus) it.focus(); if(onChange && !quiet) onChange(it); }
+  items.forEach(function(i){
+    i.addEventListener('click', function(){ select(i,false); });
+    i.addEventListener('keydown', function(e){ var en=enabled(), k=en.indexOf(i), t=null;
+      if(e.key==='ArrowRight'||e.key==='ArrowDown') t=en[(k+1)%en.length]; else if(e.key==='ArrowLeft'||e.key==='ArrowUp') t=en[(k-1+en.length)%en.length];
+      else if(e.key==='Home') t=en[0]; else if(e.key==='End') t=en[en.length-1];
+      if(t){ e.preventDefault(); select(t,true); } });
+  });
+  var cur=items.filter(function(i){ return i.getAttribute('aria-checked')==='true'; })[0]||enabled()[0];
+  items.forEach(function(i){ i.tabIndex=i===cur?0:-1; }); place(cur,false);
+  return {select:select, items:items, place:place};
+}
+
+// Tabs: role=tablist. Arrow keys move focus and select (automatic activation: views are cheap to show), Home/End jump.
+// Left and Right, or Up and Down when the list is aria-orientation="vertical".
+function kTabs(root, onChange){
+  root.classList.add('k-tabs-js');
+  var bar=root.querySelector('.k-tabs-bar'), tabs=[].slice.call(root.querySelectorAll('.k-tab'));
+  var vertical=root.getAttribute('aria-orientation')==='vertical', next=vertical?'ArrowDown':'ArrowRight', prev=vertical?'ArrowUp':'ArrowLeft';
+  // Horizontal: the bar is the tab's width along the bottom. Vertical: 20px tall on the left edge, centred on the tab.
+  function place(t, animate){ if(!animate){ bar.style.transition='none'; }
+    if(vertical){ bar.style.height='20px'; bar.style.transform='translateY('+(t.offsetTop+(t.offsetHeight-20)/2)+'px)'; }
+    else { bar.style.width=t.offsetWidth+'px'; bar.style.transform='translateX('+t.offsetLeft+'px)'; }
+    if(!animate){ void bar.offsetWidth; bar.style.transition=''; } }
+  if(document.fonts){ document.fonts.addEventListener('loadingdone', function(){ var c=tabs.filter(function(x){ return x.getAttribute('aria-selected')==='true'; })[0]; if(c) place(c,false); }); }
+  function select(t, focus, quiet){ tabs.forEach(function(x){ var on=x===t; x.setAttribute('aria-selected', on?'true':'false'); x.tabIndex=on?0:-1; var p=x.getAttribute('aria-controls'); if(p){ var el=document.getElementById(p); if(el) el.hidden=!on; } }); place(t,!quiet); if(focus) t.focus(); if(onChange && !quiet) onChange(t); }
+  tabs.forEach(function(t){
+    t.addEventListener('click', function(){ select(t,false); });
+    t.addEventListener('keydown', function(e){ var k=tabs.indexOf(t), n=null;
+      if(e.key===next) n=tabs[(k+1)%tabs.length]; else if(e.key===prev) n=tabs[(k-1+tabs.length)%tabs.length]; else if(e.key==='Home') n=tabs[0]; else if(e.key==='End') n=tabs[tabs.length-1];
+      if(n){ e.preventDefault(); select(n,true); } });
+  });
+  var cur=tabs.filter(function(t){ return t.getAttribute('aria-selected')==='true'; })[0]||tabs[0];
+  tabs.forEach(function(t){ t.tabIndex=t===cur?0:-1; }); place(cur,false);
+  return {select:select, tabs:tabs, place:place};
+}
+
+// Fit: a band that must stay one line (the header, the Needs strip) gives way in a stated order. Children with
+// data-fit-drop="N" are set aside (data-fit-hidden) in ascending N until the band fits; an element hidden for its own
+// reason (hidden) is left alone. A need set aside is counted on the band's more item (data-fit-more), which lands on the
+// inbox. Runs on resize, when fonts land, and when the caller says the content changed (update).
+function kFit(row){
+  var more=row.querySelector('[data-fit-more]');
+  function over(){ return row.scrollWidth > row.clientWidth + 0.5; }
+  function update(){
+    var items=[].slice.call(row.querySelectorAll('[data-fit-drop]')).sort(function(a,b){ return a.dataset.fitDrop-b.dataset.fitDrop; });
+    items.forEach(function(i){ i.removeAttribute('data-fit-hidden'); }); if(more) more.hidden=true;
+    var set=0;
+    for(var k=0; k<items.length && over(); k++){ if(items[k].hidden) continue; items[k].setAttribute('data-fit-hidden', '');
+      if(more && items[k].classList.contains('k-need')){ set++; more.hidden=false; more.querySelector('b').textContent=set+' more'; } } }
+  if(window.ResizeObserver) new ResizeObserver(function(){ update(); }).observe(row);
+  if(document.fonts) document.fonts.addEventListener('loadingdone', update);
+  update(); return {update:update};
+}
+
+  var P={"search-query": {"step": "review, try 3", "part": "<span class=\"k-title-name\">search-query</span><span class=\"k-chip k-chip-checker\">reviewer</span><span class=\"k-title-meta\">try 3 of 4 \u00b7 checking \u00b7 <span class=\"v-measure\">\u2265$9.20</span></span>", "stepTitle": "<span class=\"k-title-name\">search-query</span><span class=\"k-chip k-chip-checker\">reviewer</span><span class=\"k-title-meta\">try 3 of 4 \u00b7 review \u00b7 started 21:12</span>"}, "search-highlight": {"step": "engineer, try 2", "part": "<span class=\"k-title-name\">search-highlight</span><span class=\"k-title-meta\">stopped on try 2 of 4 \u00b7 no progress \u00b7 <span class=\"v-measure\">\u2265$3.22</span></span>", "stepTitle": "<span class=\"k-title-name\">search-highlight</span><span class=\"k-chip\">engineer</span><span class=\"k-title-meta\">try 2 of 4 \u00b7 engineer \u00b7 20:41 to 21:03 \u00b7 stopped</span>"}}, TOP=["<span class=\"k-title-human\">snippetvault</span><span class=\"k-title-meta\">3 specs built this week \u00b7 1 building \u00b7 2 queued</span>", "<span class=\"k-title-human\">search</span><span class=\"k-title-meta\">7 parts \u00b7 3 of 4 slots in use \u00b7 <span class=\"v-measure\">\u2265$21.84</span> since 19:40</span>"], LV=["Factory", "Spec", "Part", "Step"];
+  var hd=document.getElementById('hd'), ttl=document.getElementById('ttl'), where=document.getElementById('where'), views=document.getElementById('views');
+  var st={level:2, part:'search-query'}, quiet=false, viewsInit=false;
+  var fitHd=kFit(hd), fitN=kFit(document.getElementById('needs'));
+  function names(s){ return ['snippetvault', 'search', s.part, P[s.part].step].slice(0, s.level+1); }
+  // Crumbs are updated in place, never rebuilt: the crumb you pressed keeps focus as it becomes the current one.
+  function crumbs(s){ var ol=hd.querySelector('.k-crumbs'), want=names(s), lis=[].slice.call(ol.children);
+    lis.forEach(function(li, i){ if(i>=want.length) li.remove(); });
+    want.forEach(function(n, i){ var li=ol.children[i];
+      if(!li){ li=document.createElement('li'); var b=document.createElement('button'); b.className='k-crumb'+(i===0?' k-crumb-root':''); li.appendChild(b); ol.appendChild(li); }
+      var b=li.firstChild; if(b.textContent!==n) b.textContent=n; if(i===want.length-1) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current'); }); }
+  function go(s, said){ var from=st.level; st=s; crumbs(s);
+    hd.querySelector('.k-conds').hidden = s.level!==1;
+    ttl.innerHTML = s.level<2 ? TOP[s.level] : (s.level===2 ? P[s.part].part : P[s.part].stepTitle);
+    views.hidden = s.level!==1; if(!views.hidden && !viewsInit){ viewsInit=true; kTabs(views); }
+    quiet=true; zoom.select(zoom.items[s.level], false); quiet=false;
+    fitHd.update();
+    where.textContent = said || ((s.level<from ? 'Zoomed out to ' : 'Zoomed in to ')+LV[s.level]+': '+names(s)[s.level]+'.'); }
+  var zoom=kSeg(document.getElementById('zoom'), function(it){ if(quiet) return; var l=zoom.items.indexOf(it); if(l!==st.level) go({level:l, part:st.part}); });
+  hd.addEventListener('click', function(e){ var b=e.target.closest('.k-crumb'); if(!b||b.hasAttribute('aria-current')) return;
+    go({level:[].indexOf.call(hd.querySelectorAll('.k-crumb'), b), part:st.part}); });
+  document.getElementById('needs').addEventListener('click', function(e){ var b=e.target.closest('.k-need'); if(!b) return;
+    if(b.dataset.need==='stopped') go({level:2, part:'search-highlight'}, 'Landed on search-highlight, at the Part level, where its tries and the breaker’s reason are.');
+    else if(b.dataset.need==='approve') where.textContent='The approval for search-index opens over this screen with its evidence: it is the command window, in its approval form. Nothing is approved from the strip.';
+    else where.textContent='The rest wait in the inbox.'; });
+  var widths=['', '1024px', '768px'], shell=document.getElementById('shell');
+  kSeg(document.getElementById('width'), function(it){ var i=[].indexOf.call(it.parentNode.querySelectorAll('.k-seg-item'), it); shell.style.width=widths[i]; });
+  function ask(){ where.textContent='The ask field and ⌘K open the command window over this screen. It has its own card, CommandWindow.'; }
+  document.getElementById('ask0').addEventListener('click', ask);
+  document.addEventListener('keydown', function(e){ if((e.metaKey||e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase()==='k'){ e.preventDefault(); document.getElementById('ask0').focus(); ask(); } });
+
+});
+</script>
+</body></html>

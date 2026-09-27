@@ -1,0 +1,6 @@
+# The design tools run on Python 3.11 with these, outside kstrl's own dependencies (pip install -r requirements.txt).
+# Measured versions: every number the checks assert was taken with them and Playwright's Chromium 1194.
+playwright==1.63.0
+pillow==12.3.0
+fonttools==4.66.0   # the audit's glyph check reads the shipped fonts
+brotli==1.2.0       # fontTools needs it to read woff2
