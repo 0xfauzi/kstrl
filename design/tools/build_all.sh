@@ -12,5 +12,6 @@ python3 wire_frames.py > /dev/null || { echo "FAILED wire_frames"; exit 1; }
 # the prototype-only frames (screens drawn at 21:40 that are not cards), then the prototype, which joins every frame
 # drawn at 21:40 into one page (it reads out/static, where wiring kept the cards as drawn)
 python3 gen_proto_parts.py > /dev/null || { echo "FAILED gen_proto_parts"; exit 1; }
+python3 gen_proto_step.py > /dev/null || { echo "FAILED gen_proto_step"; exit 1; }
 python3 build_prototype.py > /dev/null || { echo "FAILED build_prototype"; exit 1; }
 echo built

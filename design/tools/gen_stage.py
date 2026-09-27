@@ -78,10 +78,6 @@ stage_css = BASE_CSS + """
   .sofar { margin-top:auto; font:var(--t-label); font-weight:400; color:var(--text-3); }
   .sofar b { font:var(--t-measure); font-weight:600; color:var(--text); }
 """
-out = page('<!-- @dsCard group="Frames (proposal)" height=800 width=1280 page subtitle="3a · Step level, Stage: the agent speaking takes the stage" -->',
-           'Step level: Stage', ['search', 'being built'], 3, stage_body, stage_css, NEEDS)
-out = out.replace('<span class="k-live">live · last event 3s ago</span>', '<span class="k-live">live · last event 2s ago</span>').replace('≥$31.10 <small>of $40.00 today</small>', '≥$19.40 <small>of $40.00 today</small>')
-Path('../system/project/components/Map3Step/preview.html').write_text(out)
 
 # ------------------------------------------------------------------ Grid
 dag = '''<svg class="dag" viewBox="0 0 480 190" width="480" height="190" aria-hidden="true">
@@ -149,9 +145,15 @@ grid_css = BASE_CSS + """
   .il { display:flex; align-items:center; gap:7px; font:var(--t-small); margin-top:10px; }
   .il em { font-style:normal; margin-left:auto; font:var(--t-label); font-weight:400; color:var(--text-3); }
 """
-out = page('<!-- @dsCard group="Frames (proposal)" height=800 width=1280 page subtitle="3b · Step level, Grid: the run at a glance, every agent a tile" -->',
-           'Step level: Grid', ['search', 'being built'], 3, grid_body, grid_css, NEEDS)
-out = out.replace('<span class="k-live">live · last event 3s ago</span>', '<span class="k-live">live · last event 2s ago</span>').replace('≥$31.10 <small>of $40.00 today</small>', '≥$19.40 <small>of $40.00 today</small>')
-d = Path('../system/project/components/Map3StepGrid'); d.mkdir(parents=True, exist_ok=True)
-(d / 'preview.html').write_text(out)
-print('ok')
+
+if __name__ == '__main__':
+    out = page('<!-- @dsCard group="Frames (proposal)" height=800 width=1280 page subtitle="3a · Step level, Stage: the agent speaking takes the stage" -->',
+               'Step level: Stage', ['search', 'being built'], 3, stage_body, stage_css, NEEDS)
+    out = out.replace('<span class="k-live">live · last event 3s ago</span>', '<span class="k-live">live · last event 2s ago</span>').replace('≥$31.10 <small>of $40.00 today</small>', '≥$19.40 <small>of $40.00 today</small>')
+    Path('../system/project/components/Map3Step/preview.html').write_text(out)
+    out = page('<!-- @dsCard group="Frames (proposal)" height=800 width=1280 page subtitle="3b · Step level, Grid: the run at a glance, every agent a tile" -->',
+               'Step level: Grid', ['search', 'being built'], 3, grid_body, grid_css, NEEDS)
+    out = out.replace('<span class="k-live">live · last event 3s ago</span>', '<span class="k-live">live · last event 2s ago</span>').replace('≥$31.10 <small>of $40.00 today</small>', '≥$19.40 <small>of $40.00 today</small>')
+    d = Path('../system/project/components/Map3StepGrid'); d.mkdir(parents=True, exist_ok=True)
+    (d / 'preview.html').write_text(out)
+    print('ok')

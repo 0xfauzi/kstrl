@@ -34,6 +34,9 @@ SCREENS: dict[str, tuple[str, str, str]] = {
     'part-search-api': ('ProtoPart-search-api', 'The map', 'Part: search-api'),
     'part-search-cli': ('ProtoPart-search-cli', 'The map', 'Part: search-cli'),
     'step-query-review-2': ('Map3Reviewer', 'The map', 'Step: search-query, review on try 2'),
+    'step-stage':       ('ProtoStage', 'The map', 'Step: search being built, Stage'),
+    'step-grid':        ('ProtoGrid', 'The map', 'Step: search being built, Grid'),
+    'agent-search-rank': ('ProtoAgent-search-rank', 'The map', 'Step: search-rank, its engineer'),
     'inbox':            ('Inbox', 'Pages', 'Inbox'),
     'queue':            ('Queue', 'Pages', 'Queue'),
     'trust':            ('Trust', 'Pages', 'Trust'),
@@ -51,10 +54,15 @@ START = 'factory'
 # link as (kind, selector within the screen, nth match, target, label). kinds: crumb, tab, need, ask, open. A target
 # is a screen or an overlay. A label names a link that is not a button already (a tile, a card, a cell).
 PARTS = ['search-schema', 'search-index', 'search-query', 'search-rank', 'search-highlight', 'search-api', 'search-cli']
-# The zoom's Part is the part you were last on (search-query, selected on the Spec level, until you open another), and
-# its Step is that part's open step where one is drawn; where none is, Step does nothing.
+# The zoom's Part is the part you were last on (search-query, selected on the Spec level, until you open another).
+# Its Step is, from a part, that part's open step where one is drawn (where none is, Step does nothing), and from the
+# Factory or the Spec level the Step level of the whole spec: Stage or Grid, whichever you left.
 ZOOM = ['factory', '@spec', '@part', '@step']
-STEP_OF = {'part-search-query': 'step-query-review-2'}
+ZOOM_TOP = ['factory', '@spec', '@part', '@stage']
+STEP_OF = {'part-search-query': 'step-query-review-2', 'part-search-rank': 'agent-search-rank'}
+# a step screen belongs to a part: showing it makes that part the zoom's Part
+PART_OF = {'step-query-review-2': 'part-search-query', 'agent-search-rank': 'part-search-rank'}
+STAGE = ('crumb', '.k-header .k-crumb', 2, '@stage', None)
 NEED = ('need', '.k-needs .k-need', 0, 'approve', None)
 STOPPED = ('open', '.k-needs .k-need', 1, 'part-search-highlight', None)
 ROOT = ('crumb', '.k-header .k-crumb', 0, 'factory', None)
@@ -68,16 +76,16 @@ def part_links(extra: list) -> dict:
 
 
 LINKS: dict[str, dict] = {
-    'factory': {'level': 0, 'zoom': ZOOM, 'links': BAND + [
+    'factory': {'level': 0, 'zoom': ZOOM_TOP, 'links': BAND + [
         ('open', '.k-tile.hero', 0, 'spec-graph', 'Open search, the spec being built'),
         ('open', '.k-tile.nx', 0, 'queue', 'Open the queue'),
         ('open', '.k-tile.c', 0, 'trust', 'Open Trust'),
         ('open', '.k-tile.c', 3, 'learning', 'Open Learning'),
     ]},
-    'spec-graph': {'level': 1, 'zoom': ZOOM, 'tab': 0, 'select': '.pc.k-card', 'links': [ROOT] + BAND + [ASK,
+    'spec-graph': {'level': 1, 'zoom': ZOOM_TOP, 'tab': 0, 'select': '.pc.k-card', 'links': [ROOT] + BAND + [ASK,
         ('tab', '.k-titletools .k-tab', 1, 'spec-text', None)] +
         [('open', '.pc.k-card', n, f'part-{p}', None) for n, p in enumerate(PARTS)]},
-    'spec-text': {'level': 1, 'zoom': ZOOM, 'tab': 1, 'links': [ROOT] + BAND + [ASK,
+    'spec-text': {'level': 1, 'zoom': ZOOM_TOP, 'tab': 1, 'links': [ROOT] + BAND + [ASK,
         ('tab', '.k-titletools .k-tab', 0, 'spec-graph', None)] +
         [('open', '.pts .pt', n, f'part-{p}', f'Open {p}') for n, p in enumerate(PARTS)]},
     'part-search-query': part_links([
@@ -85,7 +93,7 @@ LINKS: dict[str, dict] = {
         ('open', '.steps .k-button', 2, 'spec-text', None)]),
     'part-search-schema': part_links([]),
     'part-search-index': part_links([('window', '.steps .k-button', 0, 'approve', None)]),
-    'part-search-rank': part_links([]),
+    'part-search-rank': part_links([('open', '.steps .k-button', 0, 'agent-search-rank', None)]),
     'part-search-highlight': part_links([]),
     'part-search-api': part_links([
         ('open', '.steps .k-button', 0, 'part-search-index', None),
@@ -97,6 +105,17 @@ LINKS: dict[str, dict] = {
         ('open', '.steps .k-button', 2, 'part-search-api', None)]),
     'step-query-review-2': {'level': 3, 'zoom': ZOOM, 'links': [ROOT, SPEC] + BAND + [
         ('crumb', '.k-header .k-crumb', 2, 'part-search-query', None)]},
+    'step-stage': {'level': 3, 'zoom': ZOOM_TOP, 'tab': 0, 'links': [ROOT, SPEC] + BAND + [
+        ('tab', '.k-titletools .k-tab', 1, 'step-grid', None),
+        ('open', '.tiles > .k-tile', 0, 'agent-search-rank', 'Open search-rank’s engineer')] +
+        [('open', '.rest .il', n, f'part-{p}', f'Open {p}') for n, p in enumerate(['search-schema', 'search-index', 'search-highlight', 'search-api', 'search-cli'])]},
+    'step-grid': {'level': 3, 'zoom': ZOOM_TOP, 'tab': 1, 'links': [ROOT, SPEC] + BAND + [
+        ('tab', '.k-titletools .k-tab', 0, 'step-stage', None),
+        ('open', '.bento .ag', 0, 'agent-search-rank', 'Open search-rank’s engineer'),
+        ('open', '.bento .ag', 2, 'part-search-index', 'Open search-index'),
+        ('open', '.bento .ag', 3, 'part-search-highlight', 'Open search-highlight')] +
+        [('open', '.wait .il', n, f'part-{p}', f'Open {p}') for n, p in enumerate(['search-schema', 'search-api', 'search-cli'])]},
+    'agent-search-rank': {'level': 3, 'zoom': ZOOM, 'links': [ROOT, SPEC, STAGE] + BAND},
     'inbox': {'links': [ROOT]},
     'queue': {'links': [ROOT] + BAND},
     'trust': {'links': [ROOT] + BAND},
@@ -105,7 +124,7 @@ LINKS: dict[str, dict] = {
     'notify-one': {'tab': 0, 'links': [ROOT] + BAND + [('tab', '.k-titletools .k-tab', 1, 'notify-every', None)]},
     'notify-every': {'tab': 1, 'links': [ROOT] + BAND + [('tab', '.k-titletools .k-tab', 0, 'notify-one', None)]},
 }
-GROUPS = {'spec': ['spec-graph', 'spec-text'], 'part': [f'part-{p}' for p in ['search-query'] + [q for q in PARTS if q != 'search-query']]}
+GROUPS = {'spec': ['spec-graph', 'spec-text'], 'stage': ['step-stage', 'step-grid'], 'part': [f'part-{p}' for p in ['search-query'] + [q for q in PARTS if q != 'search-query']]}
 
 
 # ---------------------------------------------------------------------------------------------------------------- parts
@@ -177,14 +196,14 @@ var cur=null, hist=[], mem={}, ctl={}, open=null, opener=null, closing=false, sa
 for(var g in W.groups) mem[g]=W.groups[g][0];
 function scr(id){ return document.querySelector('[data-screen="'+id+'"]'); }
 function resolve(t){ if(t==='@step') return W.stepOf[mem.part]||null; return t && t.charAt(0)==='@' ? mem[t.slice(1)] : t; }
-function remember(id){ for(var g in W.groups){ if(W.groups[g].indexOf(id)>=0) mem[g]=id; } }
+function remember(id){ for(var g in W.groups){ if(W.groups[g].indexOf(id)>=0) mem[g]=id; } if(W.partOf[id]) mem.part=W.partOf[id]; }
 function nth(s, sel, n){ return s.querySelectorAll(sel)[n]||null; }
 // A screen's controls are set up the first time it shows, when it has a layout to measure.
 function init(id){
   if(ctl[id]) return ctl[id];
   var s=scr(id), c=W.screens[id], o={mute:false}; ctl[id]=o;
   if(c.zoom){ o.zoom=kSeg(s.querySelector('.k-seg[aria-label="Zoom level"]'), function(it){ if(o.mute) return;
-    var j=o.zoom.items.indexOf(it), t=resolve(c.zoom[j]);
+    var j=o.zoom.items.indexOf(it); if(j===c.level) return; var t=resolve(c.zoom[j]);
     if(t && t!==id) go(t, {kind:'zoom', from:c.level, to:j});
     else if(!t){ o.mute=true; o.zoom.select(o.zoom.items[c.level], true, true); o.mute=false; } }); }
   var tl=s.querySelector('.k-titletools .k-tabs'), tabbed=c.links.filter(function(l){ return l[0]==='tab'; }).length;
@@ -294,10 +313,12 @@ def build() -> None:
         for target in [l[3] for l in c['links']] + list(c.get('zoom') or []):
             t = target[1:] if target.startswith('@') else target
             assert t in SCREENS or t in OVERLAYS or t in GROUPS or t == 'step', f'{sid}: {target} is not drawn'
+    for step, part in PART_OF.items():
+        assert step in SCREENS and part in SCREENS, (step, part)
     for part, step in STEP_OF.items():
         assert part in SCREENS and step in SCREENS, (part, step)
     # opening a tile: data-go and a name, applied at load (the frame's markup stays the frame's)
-    w = {'start': START, 'groups': GROUPS, 'stepOf': STEP_OF, 'screens': screens, 'missing': []}
+    w = {'start': START, 'groups': GROUPS, 'stepOf': STEP_OF, 'partOf': PART_OF, 'screens': screens, 'missing': []}
     options = []
     for where in ('The map', 'Pages'):
         opts = ''.join(f'<option value="{sid}">{n}</option>' for sid, (_, wh, n) in SCREENS.items() if wh == where)
