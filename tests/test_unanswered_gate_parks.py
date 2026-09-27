@@ -65,7 +65,7 @@ from kstrl.interaction import (
     QueueInteractionChannel,
     UiInteractionChannel,
 )
-from kstrl.loop import LoopResult
+from kstrl.loop import LoopResult, run_loop
 from kstrl.pipeline import (
     CheckpointDecision,
     ComponentPipeline,
@@ -214,6 +214,7 @@ class TestAnUnansweredGateParks:
         gate = _Gate(tmp_path, interaction=_FakeChannel(answered=False, choice=0))
         _assert_parked(gate, gate.run())
         assert "got no answer" in gate.log.getvalue(), gate.log.getvalue()
+        assert "choice=" not in gate.log.getvalue(), gate.log.getvalue()
 
     def test_a_choice_outside_the_options_parks_and_is_logged(self, tmp_path: Path) -> None:
         gate = _Gate(tmp_path, interaction=_FakeChannel(answered=True, choice=7))
@@ -435,7 +436,7 @@ EXPECTED_PROMPT_SITES = {
     "cli.py::retry": "starts on an unanswered confirm at this head; #597 makes it refuse",
     "feature_cmd.py::run_feature": "refuses: quit to amend",
     "guards.py::enforce_allowed_paths": "quits",
-    "loop.py::run_loop": "continues: an iteration pause is not a gate",
+    "loop.py::_resolve_iteration_pause": "stops the run, same as Quit, when nobody answers",
     "pipeline.py::ComponentPipeline._phase_checkpoint": "parks for the inbox (#594)",
     "tui/screens/inbox.py::InboxScreen.action_reject": "a dismissed modal decides nothing",
     "tui/screens/retry.py::RetryScreen.on_scope_read": "a dismissed modal starts nothing",
@@ -465,7 +466,7 @@ EXPECTED_SEEN_PROMPT_SITES: tuple[str, ...] = (
     "cli.py:4625 kstrl.interaction.PromptRequest",
     "feature_cmd.py:384 kstrl.interaction.PromptRequest",
     "guards.py:382 kstrl.interaction.PromptRequest",
-    "loop.py:999 kstrl.interaction.PromptRequest",
+    "loop.py:610 kstrl.interaction.PromptRequest",
     "pipeline.py:4972 kstrl.interaction.PromptRequest",
     "tui/screens/inbox.py:333 kstrl.interaction.PromptRequest",
     "tui/screens/retry.py:389 kstrl.interaction.PromptRequest",
@@ -755,3 +756,43 @@ class TestAnInterruptedFeatureGateStartsNothing:
         # the interrupted gate must not start.
         assert len(loops) == 1, f"{len(loops)} engineer loops ran"
         assert "Amend the understand file" in stream.getvalue(), stream.getvalue()
+
+
+class TestTheIterationPauseIsNotConsent:
+    """#594 D1: the loop's own pause, not the merge gate. Unanswered
+    stops it like Quit; a channel that cannot prompt is unchanged."""
+
+    def _config(self, tmp_path: Path) -> KstrlConfig:
+        d = tmp_path / "scripts" / "kstrl"
+        d.mkdir(parents=True)
+        (d / "prompt.md").write_text("test prompt")
+        (d / "prd.json").write_text('{"branchName": "test", "userStories": []}')
+        config = KstrlConfig(
+            max_iterations=3,
+            prompt_file=d / "prompt.md",
+            prd_file=d / "prd.json",
+            sleep_seconds=0,
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
+        )
+        config.interactive = True
+        return config
+
+    def _run(self, tmp_path: Path, *, can_prompt: bool) -> LoopResult:
+        return run_loop(
+            self._config(tmp_path),
+            PlainUI(no_color=True),
+            StubAgent(),
+            tmp_path,
+            interaction=_FakeChannel(answered=False, choice=0, can_prompt=can_prompt),
+        )
+
+    def test_an_unanswered_pause_stops_the_run_like_quit(self, tmp_path: Path) -> None:
+        result = self._run(tmp_path, can_prompt=True)
+        assert (result.completed, result.exit_code, result.iterations) == (False, 0, 1), (
+            "the loop ran a further, unconsented iteration"
+        )
+
+    def test_a_channel_that_cannot_prompt_keeps_going(self, tmp_path: Path) -> None:
+        result = self._run(tmp_path, can_prompt=False)
+        assert result.iterations == 3, "non-interactive path changed"
