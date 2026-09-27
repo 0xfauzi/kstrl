@@ -503,7 +503,7 @@ Run-milestone shell hooks (R3.2), each condition fired at most once per run. The
 | `KSTRL_NOTIFY_ON_INBOX_ITEM` | str | unset (hook disabled) |
 | `KSTRL_NOTIFY_HOOK_TIMEOUT` | float | 30 |
 
-`on_inbox_item` (R8.3) fires once per inbox item *kind* raised during a run, and is deliberately NOT a reuse of `on_first_failure`: a failing component fires the failure hook and raises an inbox item for the same event, so one shared command would page twice for one thing. Leave it empty unless you want per-item pushes; see `[inbox]` above for an ntfy.sh example.
+`on_inbox_item` (R8.3) fires when an inbox item that `notifiable()` selects (an action-required kind or a demotion notice) is opened, whichever path files it: a factory run, an architect escalation, an autonomy demotion or `ks serve`. Within one factory run it fires at most once per item kind; outside a factory run it fires once per opened item. It never fires for a repeat of an item that is still open, because `ks serve` files the same condition again on every poll. A hook fired outside a factory run has its output discarded, because the process filing the item may not own the terminal, so a terminal bell does not ring from those paths. It is deliberately NOT a reuse of `on_first_failure`: a failing component fires the failure hook and raises an inbox item for the same event, so one shared command would page twice for one thing. Leave it empty unless you want per-item pushes; see `[inbox]` above for an ntfy.sh example.
 
 ## LinearConfig (`[linear]`)
 
