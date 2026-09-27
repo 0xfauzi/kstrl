@@ -7,7 +7,7 @@ whose tokens are `kstrl/tui/theme.py`. Those rules are for a terminal and stay a
 the graphical app and does not change them.
 
 The system is published as a Design System artifact at https://claude.ai/artifact/5d4LkaTZBHTrxmyKMCCqNX
-(private to its owner). `system/project/` is byte for byte what that artifact serves, version 41.
+(private to its owner). `system/project/` is byte for byte what that artifact serves, version 42.
 
 ## What is here
 
@@ -43,11 +43,11 @@ frame you are building. Then:
   `tokens.json`. An app generates the same variables; `tools/render.py` shows how (its `style` is a complete replica).
 - Done means what the brand book's "Definition of done" says, and `tools/check_all.sh` passes.
 
-The app itself is tracked in the operator UI issue on GitHub (it replaces #433 and #592): a local web page served by kstrl (`ks web`, and `ks serve` while it runs), with
-a checkpoint answered through a file-backed channel and today's park as the fallback, as the owner decided on #592.
-Its framework is not chosen, and where this system's navigation departs from that plan is listed there for the owner.
-`Map6Approve`'s README describes today's in-process channel, including why a detach while it is open matters
-(`pipeline.py:4960-4971`); it changes with the file-backed channel.
+The app itself is tracked in #610, which replaces #433 and #592. It is a local web page served by kstrl (`ks web`,
+and `ks serve` while it runs), and a checkpoint is answered through a file-backed channel with today's park as the
+fallback, as the owner decided on #592. Its framework is not chosen, and where this system's navigation departs from
+that plan is listed in #610 for the owner. `Map6Approve`'s README describes today's in-process channel, including why
+a detach while it is open matters (`pipeline.py:4960-4971`); it changes with the file-backed channel.
 
 ## Building and checking
 
