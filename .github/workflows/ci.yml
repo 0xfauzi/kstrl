@@ -22,8 +22,17 @@ concurrency:
 
 jobs:
   test:
-    # Fast tier: everything except the real-git spine tier (R4.2).
+    # Fast tier: everything except the real-git spine tier (R4.2), split
+    # across two runners by recorded test durations (pytest-split reads
+    # tests/.test_durations, committed, so the split is deterministic and
+    # a test missing from the file gets the default duration). Measured
+    # 2026-09-27: one runner at -n 4 took 5.7 min; the cost of two is two
+    # runners' minutes, stated in the PR that added the matrix.
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [1, 2]
     # A hang bound, not a speed target. Measured on this job, the ten runs
     # before 2026-09-25 22:10 UTC took 11 to 15 minutes, and two were
     # cancelled at the old 15-minute bound with no test failing.
@@ -66,15 +75,19 @@ jobs:
         # coverage data into the one .coverage the next step stashes.
         run: >
           uv run pytest tests/ -q --tb=short -m "not spine"
-          -n 4 --dist loadfile --cov=kstrl --cov-report=
+          -n 4 --dist loadfile
+          --splits 2 --group ${{ matrix.group }}
+          --durations-path tests/.test_durations
+          --splitting-algorithm least_duration
+          --cov=kstrl --cov-report=
 
       - name: Stash coverage data
-        run: mv .coverage coverage-fast
+        run: mv .coverage coverage-fast-${{ matrix.group }}
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: coverage-fast
-          path: coverage-fast
+          name: coverage-fast-${{ matrix.group }}
+          path: coverage-fast-${{ matrix.group }}
           retention-days: 1
 
   spine:
@@ -150,14 +163,15 @@ jobs:
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: coverage-fast
+          pattern: coverage-fast-*
+          merge-multiple: true
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: coverage-spine
 
       - name: Combine tiers
-        run: uv run coverage combine coverage-fast coverage-spine
+        run: uv run coverage combine coverage-fast-1 coverage-fast-2 coverage-spine
 
       - name: Coverage summary
         run: |
