@@ -12,8 +12,9 @@ import sys
 import threading
 import time
 from collections import Counter
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Protocol, TextIO
@@ -1304,14 +1305,20 @@ class _RunLock:
     may safely prune state left by previous runs. ``held=False`` means we
     are running WITHOUT exclusion (Windows/no-fcntl degrade, or
     ``--force-lock``): stale-state cleanup must be skipped because another
-    live invocation may own it.
+    live invocation may own it. ``released`` is separate from ``fp is
+    None``: a forced or no-fcntl lock also has ``fp=None`` while still
+    legitimate to hand to `ks factory`, so ``released`` is the only field
+    that says whether ``release()`` has run on this handle (#597).
     """
 
     fp: IO[str] | None
     held: bool
+    released: bool = False
 
     def release(self) -> None:
         if self.fp is None:
+            self.held = False
+            self.released = True
             return
         try:
             import fcntl
@@ -1321,6 +1328,8 @@ class _RunLock:
             pass
         self.fp.close()
         self.fp = None
+        self.held = False
+        self.released = True
 
 
 def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:
@@ -1398,6 +1407,27 @@ def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:
     except OSError:
         pass
     return _RunLock(fp=fp, held=True)
+
+
+@contextmanager
+def held_or_acquired_run_lock(
+    run_lock: _RunLock | None, root_dir: Path, ui: UI, force: bool
+) -> Iterator[_RunLock]:
+    """Use ``run_lock`` if the caller already holds one; acquire and release our own otherwise.
+
+    `ks factory --spec` takes the lock before it calls ``decompose_spec``
+    (#597) and keeps holding it after this returns, so a caller passing
+    its own lock keeps owning it: this never releases one it did not
+    acquire. `ks decompose`'s own case passes None and gets a lock this
+    acquires and releases around exactly the block it wraps.
+    """
+    owns = run_lock is None
+    lock = run_lock if run_lock is not None else _acquire_run_lock(root_dir, ui, force=force)
+    try:
+        yield lock
+    finally:
+        if owns:
+            lock.release()
 
 
 def _remove_stale_index_lock(root_dir: Path, component_id: str) -> None:
@@ -3771,6 +3801,7 @@ def run_factory(
     notify_capture_output: bool = False,
     architect_usage: UsageTotals | None = None,
     architect_run_id: str = "",
+    run_lock: _RunLock | None = None,
 ) -> FactoryResult:
     """Run the factory orchestrator with 3-phase verification.
 
@@ -3802,6 +3833,12 @@ def run_factory(
     (#567), and the run's ``factory_started`` event carries it (#587): an
     operator follows it to the prompts and transcript, and `ks serve`
     reads it to leave that run uncharged, since this run carries its spend.
+
+    ``run_lock`` is the run lock a caller already took on this root, so it
+    could change state under it before the run starts (`ks retry`, and
+    `ks inbox approve` on a parked merge, #597). It is used instead of a
+    second acquire, which flock refuses even inside one process, and it
+    is released here at the end like one taken here.
     """
     # The ceilings are validated at every CONFIG path, but a FactoryConfig
     # can also be constructed programmatically (tests, embedders, the SDK
@@ -3811,17 +3848,18 @@ def run_factory(
     check_number(factory_config.max_cost_usd, "max_cost_usd")
     check_number(factory_config.max_total_tokens, "max_total_tokens")
 
-    try:
-        run_lock = _acquire_run_lock(
-            root_dir,
-            ui,
-            force=factory_config.force_lock,
-        )
-    except FactoryLockHeldError as exc:
-        ui.err(str(exc))
-        refused = FactoryResult()
-        refused.exit_code = 2
-        return refused
+    if run_lock is None:
+        try:
+            run_lock = _acquire_run_lock(
+                root_dir,
+                ui,
+                force=factory_config.force_lock,
+            )
+        except FactoryLockHeldError as exc:
+            ui.err(str(exc))
+            refused = FactoryResult()
+            refused.exit_code = 2
+            return refused
     try:
         return _run_factory_locked(
             manifest,

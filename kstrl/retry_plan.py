@@ -3,10 +3,12 @@
 ``preview_retry`` answers "what WOULD a retry do" without touching
 anything - the retry screen renders it in its confirm modal.
 ``prepare_retry`` is the real mutation: reset statuses, remove the
-failed attempt's worktree and branch, save the manifest. Narration
-stays byte-identical to the original command; the only behavior
-change is RetryError instead of sys.exit so a TUI caller can surface
-the failure without the process dying.
+failed attempt's worktree and branch, save the manifest; the "Retry
+plan" section it used to print is now :func:`print_retry_plan`'s (#597),
+called by each caller first, so the two calls together narrate what
+``prepare_retry`` alone used to. The only behavior change from the
+original command is RetryError instead of sys.exit so a TUI caller can
+surface the failure without the process dying.
 """
 
 from __future__ import annotations
@@ -118,6 +120,23 @@ def preview_retry(manifest: Manifest, component_id: str) -> RetryPreview:
     )
 
 
+def print_retry_plan(ui: UI, preview: RetryPreview, manifest_file: Path) -> None:
+    """The ``Retry plan`` section, printed from a preview (#597).
+
+    ``ks retry`` prints it before its confirmation, and before it takes the
+    run lock, so it is read from :func:`preview_retry`'s copy: nothing may
+    change until the operator has answered and the lock is held.
+    """
+    ui.section("Retry plan")
+    ui.kv("Component", preview.component_id)
+    ui.kv(
+        "Cascade-skipped dependents reset",
+        ", ".join(preview.reset_dependents) if preview.reset_dependents else "(none)",
+    )
+    _print_not_in_retry(ui, preview.not_in_retry)
+    ui.kv("Manifest", str(manifest_file))
+
+
 def failed_branch_probe(root_dir: Path, branch: str) -> int:
     """The exit code of ``git rev-parse --verify --quiet refs/heads/<branch>``.
 
@@ -143,28 +162,27 @@ def prepare_retry(
 ) -> RetryPreview:
     """Mutate the manifest for a retry and clean up the failed attempt.
 
-    Verbatim move of the cli.retry block: reset statuses, narrate the
-    plan, remove the kept evidence worktree, delete the failed branch
-    (never in single_pr mode - the shared branch carries completed
+    Reset statuses, remove the kept evidence worktree, delete the failed
+    branch (never in single_pr mode - the shared branch carries completed
     components' commits), save. ValueError propagates from
     reset_for_retry; a branch-delete failure raises RetryError after
-    narrating the manual fix.
+    narrating the manual fix. `ks retry` holds the run lock (#597) before
+    calling this and has already printed :func:`print_retry_plan`, so
+    this narrates only what it removes; the TUI retry screen calls this
+    without holding it (disclosed, UI work deferred - the only
+    ``unguarded`` row in ``tests/test_manifest_write_sites.py``).
+
+    The return value matches ``preview_retry``'s on the same manifest and
+    is otherwise unused by either caller; it exists so
+    ``test_preview_and_prepare_return_the_same_list`` can assert the two
+    agree.
     """
     comp = manifest.get_component(component_id)
     evidence_worktree = comp.evidence_worktree if comp else ""
     failed_branch = comp.branch_name if comp else ""
 
     reset_dependents = manifest.reset_for_retry(component_id)
-
-    ui.section("Retry plan")
-    ui.kv("Component", component_id)
-    ui.kv(
-        "Cascade-skipped dependents reset",
-        ", ".join(reset_dependents) if reset_dependents else "(none)",
-    )
     not_in_retry = _not_in_retry(manifest)
-    _print_not_in_retry(ui, not_in_retry)
-    ui.kv("Manifest", str(manifest_file))
 
     # The failed attempt's worktree and branch are superseded by the
     # fresh attempt; remove them so provisioning and the stale-branch
