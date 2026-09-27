@@ -247,6 +247,9 @@ class TestRunLockRelease:
                 "tui": False,
                 "ui": "plain",
                 "no_color": True,
+                # CI has no agent CLI on PATH; without this the agent
+                # preflight exits 2 before the handed lock is looked at.
+                "agent_cmd": "true",
             },
         )
         ctx = cli_mod.factory.make_context("factory", argv)
