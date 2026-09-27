@@ -6567,7 +6567,7 @@ def serve(
         # Printed rather than installed: writing into ~/Library/LaunchAgents
         # and running launchctl are outward-facing acts an operator should
         # perform deliberately, and the docs walk through them.
-        from kstrl.serve import launchd_log_dir, render_launchd_plist
+        from kstrl.serve import install_path_dirs, launchd_log_dir, render_launchd_plist
 
         # launchd creates the log FILE but not its directory, and a
         # missing directory makes the job fail to spawn with nothing in
@@ -6585,6 +6585,7 @@ def serve(
                     root_dir,
                     mode=plist_mode,
                     interval_minutes=plist_interval,
+                    extra_path=install_path_dirs(os.environ.get("PATH", "")),
                     factory_timeout_seconds=(ServeConfig.load(root_dir).factory_timeout_seconds),
                 ),
                 nl=False,

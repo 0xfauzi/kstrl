@@ -4511,7 +4511,7 @@ def launchd_plist_dict(
         "/sbin",
     ]
     if extra_path:
-        path_parts.insert(0, extra_path)
+        path_parts[:0] = extra_path.split(":")
     deduped: list[str] = []
     for part in path_parts:
         if part and part not in deduped:
@@ -4545,6 +4545,23 @@ def launchd_plist_dict(
         assert isinstance(env, dict)
         env[REQUIRE_TIMEOUT_ENV] = "1"
     return plist
+
+
+def install_path_dirs(path: str) -> str:
+    """The entries of ``path`` a LaunchAgent can use, joined for ``PATH`` (#623).
+
+    ``ks serve --print-plist`` passes the PATH of the shell the operator
+    runs it in, so a queued run finds the toolchains that shell finds
+    (``~/.cargo/bin``, ``~/go/bin``, an nvm directory). Only absolute
+    directories that exist are kept: a relative entry would resolve
+    against the job's ``WorkingDirectory``, the project root, where a
+    checked-in file could stand in for a tool.
+    """
+    kept: list[str] = []
+    for part in path.split(":"):
+        if os.path.isabs(part) and os.path.isdir(part) and part not in kept:
+            kept.append(part)
+    return ":".join(kept)
 
 
 def render_launchd_plist(

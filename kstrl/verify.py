@@ -91,7 +91,38 @@ SCRUB_ENV_ALLOWED_NAMES: frozenset[str] = frozenset(
         "CI",
         "XDG_CACHE_HOME",
         "XDG_DATA_HOME",
+        # #623: what a non-Python toolchain reads to find itself and to
+        # trust a TLS-intercepting proxy. Paths and settings, not secrets.
+        # Measured: with NODE_EXTRA_CA_CERTS dropped, a Node `fetch` behind
+        # such a proxy failed SELF_SIGNED_CERT_IN_CHAIN inside the gate and
+        # returned 200 outside it.
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "NODE_EXTRA_CA_CERTS",
+        "REQUESTS_CA_BUNDLE",
+        "CURL_CA_BUNDLE",
+        "GIT_SSL_CAINFO",
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "RUSTUP_TOOLCHAIN",
+        "CARGO_TARGET_DIR",
+        "GOPATH",
+        "GOMODCACHE",
+        "GOFLAGS",
+        "GOPRIVATE",
+        "JAVA_HOME",
+        "NO_PROXY",
+        "no_proxy",
     }
+)
+
+#: #623: proxy variables whose VALUE may carry a credential
+#: (``http://user:pass@host``). The sensitive-fragment filter reads names
+#: only, so it cannot see one. Such a variable passes only when its value
+#: holds no ``@``; the operator who wants a credentialed proxy to reach the
+#: project's commands names the variable in ``[verify] env_passthrough``.
+SCRUB_ENV_URL_NAMES: frozenset[str] = frozenset(
+    {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy", "GOPROXY"}
 )
 SCRUB_ENV_ALLOWED_PREFIXES: tuple[str, ...] = ("LC_", "UV_", "PYTHON")
 
@@ -107,11 +138,27 @@ _SCRUB_ENV_SENSITIVE_FRAGMENTS: tuple[str, ...] = (
 )
 
 
-def scrubbed_subprocess_env() -> dict[str, str]:
-    """Allowlist-filtered copy of ``os.environ`` for verification subprocesses."""
+def _scrub_admits(name: str, value: str) -> bool:
+    """Whether the built-in allowlist lets ``name`` through with ``value``."""
+    if name in SCRUB_ENV_URL_NAMES:
+        return "@" not in value
+    return name in SCRUB_ENV_ALLOWED_NAMES or name.startswith(SCRUB_ENV_ALLOWED_PREFIXES)
+
+
+def scrubbed_subprocess_env(passthrough: Collection[str] = ()) -> dict[str, str]:
+    """Allowlist-filtered copy of ``os.environ`` for verification subprocesses.
+
+    ``passthrough`` is ``[verify] env_passthrough``: exact names, or
+    prefixes written with a trailing ``*``. A name it admits passes even
+    when the built-in allowlist would drop it, and the sensitive-fragment
+    filter still applies to it (#623).
+    """
+    exact = {entry for entry in passthrough if not entry.endswith("*")}
+    prefixes = tuple(entry[:-1] for entry in passthrough if entry.endswith("*"))
     env: dict[str, str] = {}
     for name, value in os.environ.items():
-        if name not in SCRUB_ENV_ALLOWED_NAMES and not name.startswith(SCRUB_ENV_ALLOWED_PREFIXES):
+        chosen = name in exact or name.startswith(prefixes)
+        if not chosen and not _scrub_admits(name, value):
             continue
         if any(frag in name for frag in _SCRUB_ENV_SENSITIVE_FRAGMENTS):
             continue
@@ -199,6 +246,7 @@ def run_scrubbed(
     timeout: float | None,
     term_grace: float = _SCRUB_TERM_GRACE_SECONDS,
     extra_env: Mapping[str, str] | None = None,
+    passthrough: Collection[str] = (),
 ) -> subprocess.CompletedProcess[str]:
     """Run a verification subprocess: scrubbed env, own process group.
 
@@ -220,6 +268,11 @@ def run_scrubbed(
     points ``COVERAGE_FILE`` at a throwaway directory so pytest-cov's
     data file cannot land in the tree being measured; see that function
     for the alternative (``--cov-config``) this rejects and why.
+
+    ``passthrough`` is the operator's ``[verify] env_passthrough``, handed
+    to :func:`scrubbed_subprocess_env`, which still drops a name carrying a
+    sensitive fragment (#623). The three gates pass it; every other caller
+    gets the built-in allowlist only.
 
     ``timeout=None`` waits with no deadline: that is what a work limit the
     operator did not set means (#467). Callers turn a configured value into
@@ -247,7 +300,7 @@ def run_scrubbed(
     grandchild does routinely, and it runs once per verification command
     per iteration rather than once per timed-out run.
     """
-    env = scrubbed_subprocess_env()
+    env = scrubbed_subprocess_env(passthrough)
     if extra_env:
         env.update(extra_env)
     # BYTES mode, decoded below (#527). In text mode CPython decodes inside
@@ -572,6 +625,34 @@ def _fast_iteration_checks_from_env(raw: str) -> list[str]:
     return validate_fast_iteration_checks(names, "KSTRL_VERIFY_FAST_ITERATION_CHECKS")
 
 
+#: One ``[verify] env_passthrough`` entry: an environment variable name, or
+#: a name prefix ending in ``*``. A bare ``*`` is refused: it would pass the
+#: whole environment, which is what the scrub exists to prevent (#623).
+_ENV_PASSTHROUGH_ENTRY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\*?")
+
+
+def validate_env_passthrough(value: object, source: str) -> list[str]:
+    """``value`` as a list of passthrough entries, or ValueError naming ``source``."""
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"{source} must be a list of environment variable names, got {value!r}")
+    bad = [item for item in value if not _ENV_PASSTHROUGH_ENTRY_RE.fullmatch(item)]
+    if bad:
+        raise ValueError(
+            f"{source} has entries that are not a variable name or a NAME* prefix: {bad}"
+        )
+    return list(value)
+
+
+def _env_passthrough_from_toml(value: object) -> list[str]:
+    return validate_env_passthrough(value, "[verify] env_passthrough")
+
+
+def _env_passthrough_from_env(raw: str) -> list[str]:
+    """Comma-separated. Blank parts are dropped, so "" is the empty list."""
+    names = [part.strip() for part in raw.split(",") if part.strip()]
+    return validate_env_passthrough(names, "KSTRL_VERIFY_ENV_PASSTHROUGH")
+
+
 #: Every live ``[verify]`` toml key and how its value is coerced onto the
 #: dataclass. A table rather than a per-key ``if``: the chain it replaced
 #: was fourteen near-identical branches, and its cyclomatic complexity
@@ -600,6 +681,7 @@ _VERIFY_TOML_FIELDS: tuple[tuple[str, Callable[[Any], object]], ...] = (
     ("self_critique_min_bullets", int),
     ("progress_file_path", _optional_str),
     ("fast_iteration_checks", _fast_iteration_checks_from_toml),
+    ("env_passthrough", _env_passthrough_from_toml),
 )
 
 
@@ -646,6 +728,11 @@ class VerifyConfig:
     # handed to the next iteration's prompt. Empty (the default) is off.
     # A list, never a tuple: scripts/gen_docs.py probes list defaults.
     fast_iteration_checks: list[str] = field(default_factory=list)
+    # #623: environment variables the verification commands receive on top
+    # of the built-in allowlist, still filtered by the sensitive-name
+    # fragments. Exact names, or prefixes ending in "*". Empty (the
+    # default) adds nothing.
+    env_passthrough: list[str] = field(default_factory=list)
 
     @classmethod
     def from_env(cls) -> VerifyConfig:
@@ -672,6 +759,9 @@ class VerifyConfig:
             progress_file_path=os.environ.get("KSTRL_VERIFY_PROGRESS_FILE"),
             fast_iteration_checks=_fast_iteration_checks_from_env(
                 os.environ.get("KSTRL_VERIFY_FAST_ITERATION_CHECKS", ""),
+            ),
+            env_passthrough=_env_passthrough_from_env(
+                os.environ.get("KSTRL_VERIFY_ENV_PASSTHROUGH", ""),
             ),
         )
 
@@ -711,6 +801,7 @@ class VerifyConfig:
             "KSTRL_VERIFY_SELF_CRITIQUE_MIN_BULLETS": "self_critique_min_bullets",
             "KSTRL_VERIFY_PROGRESS_FILE": "progress_file_path",
             "KSTRL_VERIFY_FAST_ITERATION_CHECKS": "fast_iteration_checks",
+            "KSTRL_VERIFY_ENV_PASSTHROUGH": "env_passthrough",
         }
         for env_var, field_name in env_var_to_field.items():
             if env_var in os.environ:
@@ -1464,6 +1555,7 @@ def check_test_suite(
     command: str | None = None,
     timeout: float | None = None,
     tool: str | None = None,
+    passthrough: Collection[str] = (),
 ) -> CheckResult:
     """Run the project's test suite independently.
 
@@ -1474,7 +1566,7 @@ def check_test_suite(
     cmd = resolve_test_command(command)
 
     try:
-        result = run_scrubbed(cmd, cwd=cwd, timeout=timeout)
+        result = run_scrubbed(cmd, cwd=cwd, timeout=timeout, passthrough=passthrough)
     except subprocess.TimeoutExpired as expired:
         return CheckResult(
             name=GATE_TEST,
@@ -1519,13 +1611,14 @@ def check_typecheck(
     command: str | None = None,
     timeout: float | None = None,
     tool: str | None = None,
+    passthrough: Collection[str] = (),
 ) -> CheckResult:
     """Run typecheck independently. See ``check_test_suite`` for ``tool``."""
     start = time.monotonic()
     cmd = resolve_typecheck_command(command, cwd)
 
     try:
-        result = run_scrubbed(cmd, cwd=cwd, timeout=timeout)
+        result = run_scrubbed(cmd, cwd=cwd, timeout=timeout, passthrough=passthrough)
     except subprocess.TimeoutExpired as expired:
         return CheckResult(
             name=GATE_TYPECHECK,
@@ -1570,13 +1663,14 @@ def check_linter(
     command: str | None = None,
     timeout: float | None = None,
     tool: str | None = None,
+    passthrough: Collection[str] = (),
 ) -> CheckResult:
     """Run linter independently. See ``check_test_suite`` for ``tool``."""
     start = time.monotonic()
     cmd = resolve_lint_command(command)
 
     try:
-        result = run_scrubbed(cmd, cwd=cwd, timeout=timeout)
+        result = run_scrubbed(cmd, cwd=cwd, timeout=timeout, passthrough=passthrough)
     except subprocess.TimeoutExpired as expired:
         return CheckResult(
             name=GATE_LINT,
@@ -1634,14 +1728,34 @@ def run_fast_checks(worktree_path: Path, config: VerifyConfig) -> VerificationRe
     checks: list[CheckResult] = []
     if GATE_TEST in selected:
         checks.append(
-            check_test_suite(worktree_path, config.test_command, timeout, config.test_tool)
+            check_test_suite(
+                worktree_path,
+                config.test_command,
+                timeout,
+                config.test_tool,
+                passthrough=config.env_passthrough,
+            )
         )
     if GATE_TYPECHECK in selected:
         checks.append(
-            check_typecheck(worktree_path, config.typecheck_command, timeout, config.typecheck_tool)
+            check_typecheck(
+                worktree_path,
+                config.typecheck_command,
+                timeout,
+                config.typecheck_tool,
+                passthrough=config.env_passthrough,
+            )
         )
     if GATE_LINT in selected:
-        checks.append(check_linter(worktree_path, config.lint_command, timeout, config.lint_tool))
+        checks.append(
+            check_linter(
+                worktree_path,
+                config.lint_command,
+                timeout,
+                config.lint_tool,
+                passthrough=config.env_passthrough,
+            )
+        )
     return VerificationResult(passed=all(check.passed for check in checks), checks=checks)
 
 
@@ -5215,6 +5329,7 @@ def run_mechanical_verification(
             config.test_command,
             limit_seconds(config.subprocess_timeout),
             config.test_tool,
+            passthrough=config.env_passthrough,
         )
     )
 
@@ -5224,6 +5339,7 @@ def run_mechanical_verification(
             config.typecheck_command,
             limit_seconds(config.subprocess_timeout),
             config.typecheck_tool,
+            passthrough=config.env_passthrough,
         )
     )
 
@@ -5233,6 +5349,7 @@ def run_mechanical_verification(
             config.lint_command,
             limit_seconds(config.subprocess_timeout),
             config.lint_tool,
+            passthrough=config.env_passthrough,
         )
     )
 

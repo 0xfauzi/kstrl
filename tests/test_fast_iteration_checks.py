@@ -45,6 +45,7 @@ _ENV = (
     "KSTRL_VERIFY_TYPECHECK_CMD",
     "KSTRL_VERIFY_TEST_CMD",
     "KSTRL_TIMEOUT_VERIFY",
+    "KSTRL_VERIFY_ENV_PASSTHROUGH",
 )
 
 
@@ -193,6 +194,25 @@ def test_off_by_default_runs_nothing_and_changes_no_prompt(tmp_path: Path) -> No
     assert agent.prompts[0] == agent.prompts[1] == agent.prompts[2]
     assert _lint_runs(tmp_path) == 0
     assert readings == [[], [], []]
+
+
+def test_the_between_iteration_gate_receives_the_operator_passthrough(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#623: the gate run between iterations gets the same environment
+    Phase 1 gives it, including ``[verify] env_passthrough``."""
+    monkeypatch.setenv("APP_DATABASE_URL", "postgres://localhost/test")
+    verify_toml = (
+        """lint_command = 'echo ran >> lint_runs.txt; test -n "$APP_DATABASE_URL"'\n"""
+        'fast_iteration_checks = ["linter"]\n'
+        'env_passthrough = ["APP_DATABASE_URL"]\n'
+    )
+    config, verify = _project(tmp_path, verify_toml, iterations=2)
+
+    readings = _run(tmp_path, config, verify, _ScriptedAgent())
+
+    assert _lint_runs(tmp_path) == 2
+    assert readings == [[], []]
 
 
 def test_a_completed_iteration_is_not_measured(tmp_path: Path) -> None:
