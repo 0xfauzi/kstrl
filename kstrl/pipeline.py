@@ -501,6 +501,9 @@ class PrPhaseResult:
     disposition: PrDisposition
     pr_url: str = ""
     error: str = ""
+    #: The failed_check a FAILED disposition records (#601: a PR closed
+    #: without merging is ``pr_closed``, which the ladder reads).
+    check: str = "pr_flow"
 
 
 @dataclass(frozen=True)
@@ -2490,14 +2493,14 @@ class ComponentPipeline:
             fresh_base=True,
         )
 
-    def _fail_pr_flow(self, comp: Component, error: str) -> Transition:
+    def _fail_pr_flow(self, comp: Component, error: str, *, check: str) -> Transition:
         """VERIFYING -> FAILED on a push/create/merge failure (R0.2:
         COMPLETED requires a CONFIRMED merge)."""
         comp.status = ComponentStatus.FAILED.value
         comp.error = error
         comp.completed_at = _iso_now()
         comp.failed_phase = "pr"
-        comp.failed_check = "pr_flow"
+        comp.failed_check = check
         # Spelled out with keywords, and read that way. #339: this
         # is the third caller of the funnel and the only one that is
         # not `fail` / `retry_or_fail`, so no `signatures=` is ever
@@ -2634,7 +2637,7 @@ class ComponentPipeline:
                         self.manifest.base_branch,
                         self.root_dir,
                     )
-                    self._record_merge(comp, merge_state.merge_sha)
+                    self._record_merge(comp, merge_state.merge_sha, merge_state.head_sha)
                     comp.status = ComponentStatus.COMPLETED.value
                     comp.error = ""
                     self.component_failure_signatures.pop(comp.id, None)
@@ -2692,7 +2695,7 @@ class ComponentPipeline:
                     )
         self.manifest.save(self.manifest_path)
 
-    def _record_merge(self, comp: Component, merge_sha: str) -> None:
+    def _record_merge(self, comp: Component, merge_sha: str, head_sha: str) -> None:
         """Record a confirmed merge of ``comp``'s PR: the one place (#584).
 
         Both paths that confirm a merge call this: ``_phase_pr`` when this
@@ -2704,10 +2707,15 @@ class ComponentPipeline:
         GitHub published no commit, and then both records say "": a
         commit an earlier merge of this component recorded is not this
         merge's commit.
+
+        #601: ``head_sha`` is the PR head GitHub merged ("" when it
+        reported none). It goes on ``factory_result.merged``, the one list
+        the autonomy ladder counts merges from.
         """
         from kstrl.pr import pr_number_from_url
 
         comp.merge_sha = merge_sha
+        self.factory_result.merged[comp.id] = head_sha
         self.manifest.save(self.manifest_path)
         self.bus.emit(
             ev.PrMerged(
@@ -2796,7 +2804,7 @@ class ComponentPipeline:
         else:
             # A conflict too: the re-run doctrine re-runs the engineer,
             # and an approval is not a request for that. `ks retry` is.
-            self._fail_pr_flow(comp, pr.error or "PR flow failed")
+            self._fail_pr_flow(comp, pr.error or "PR flow failed", check=pr.check)
 
     # ------------------------------------------------------------------
     # Phase chain
@@ -3163,7 +3171,7 @@ class ComponentPipeline:
                 )
             if pr.disposition == PrDisposition.FAILED:
                 return PipelineOutcome(
-                    transition=self._fail_pr_flow(comp, pr.error),
+                    transition=self._fail_pr_flow(comp, pr.error, check=pr.check),
                     verify=verify,
                     diff=diff,
                     review=review,
@@ -3508,6 +3516,9 @@ class ComponentPipeline:
                 )
             )
 
+        # #601: the commit every later gate judges. The ladder counts a
+        # merge clean only when GitHub merged exactly this commit.
+        comp.judged_sha = git.branch_sha(comp.branch_name, self.root_dir) or ""
         return DiffPhaseResult(diff=shared_diff)
 
     def _divergence_failure(
@@ -5123,8 +5134,9 @@ class ComponentPipeline:
                 disposition=PrDisposition.FAILED,
                 pr_url=outcome.pr_url,
                 error=outcome.error or "PR flow failed",
+                check="pr_closed" if outcome.closed else "pr_flow",
             )
-        self._record_merge(comp, outcome.merge_sha)
+        self._record_merge(comp, outcome.merge_sha, outcome.merged_head_sha)
         return PrPhaseResult(
             disposition=PrDisposition.MERGED,
             pr_url=outcome.pr_url,

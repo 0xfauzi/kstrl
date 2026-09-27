@@ -60,7 +60,7 @@ class TestPersistence:
     def test_round_trip(self, tmp_path: Path) -> None:
         state = _eligible_state()
         state.promote(actor="human", ack="evidence reviewed")
-        state.record_merged_component()
+        state.record_merged_component(human_edited=False)
         state.save(tmp_path)
         loaded = AutonomyState.load(tmp_path)
         assert loaded.level == state.level
@@ -525,6 +525,7 @@ class TestRunOutcomesReachState:
     """A run must actually move the ladder's counters (not just in tests)."""
 
     def test_successful_run_records_evidence(self, tmp_path: Path) -> None:
+        """A create_prs=False run is decisive and merges nothing (#601)."""
         _run_factory_with_autonomy(
             tmp_path,
             AutonomyLevel.L1_SUPERVISED,
@@ -533,8 +534,8 @@ class TestRunOutcomesReachState:
         )
         reloaded = AutonomyState.load(tmp_path)
         assert reloaded.decisive_runs_at_level == 1
-        assert reloaded.components_merged_at_level == 1
-        assert reloaded.clean_merges_at_level == 1
+        assert reloaded.components_merged_at_level == 0
+        assert reloaded.clean_merges_at_level == 0
 
     def test_evidence_accumulates_across_runs(self, tmp_path: Path) -> None:
         for _ in range(3):

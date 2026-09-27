@@ -287,6 +287,8 @@ class ReplayReport:
                 *(f"  - {entry}" for entry in self.would_demote),
                 "",
                 f"Final level after replay: L{self.final_level}",
+                "L3 is not predictable from this file: it records no edits, so",
+                "  no replayed merge counts toward the clean-merge streak.",
                 "",
             ]
         )
@@ -334,7 +336,10 @@ def replay(runs: list[RunRecord]) -> ReplayReport:
             continue
         state.record_decisive_run()
         for _ in range(run.completed):
-            state.record_merged_component()
+            # #601: experiments.tsv records neither whether a completion
+            # was a merge nor whether a human edited it, so no replayed
+            # merge can count as clean and L3 is never predicted from it.
+            state.record_merged_component(human_edited=True)
         # A run whose components failed review is the closest proxy the
         # recorded history has for a judgement-quality regression. Real
         # demotion triggers (policy violation, calibration regression,

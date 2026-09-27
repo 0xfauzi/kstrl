@@ -140,6 +140,12 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # this file's `isolated_repo` put through
     # `tests.helpers.gitrepo.set_identity`.
     "tests/test_language_ignores.py": 5,
+    # #601: five `git commit` spellings, all into the repository
+    # `tests.spine_utils.init_kstrl_repo` put through
+    # `tests.helpers.gitrepo.set_identity`: the config commit, the engineer
+    # and stub-gh shell strings, the checkpoint test's worktree commit, and
+    # the module docstring's prose.
+    "tests/test_ladder_merge_evidence.py": 5,
     "tests/test_launch_session.py": 1,
     # #544: three `git commit` sites (`_seed`, `_commit_all` and the
     # deletion test), every one into a repository `_seed` put through

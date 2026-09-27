@@ -586,10 +586,11 @@ Calibration detection delta is captured by the opt-in calibration suite into
 a results directory rather than once per factory run, so there is no per-run
 series; a regression there already demotes through
 `DemotionTrigger.CALIBRATION_REGRESSION` in `kstrl/calibration_ladder.py`.
-Human-edit rate is not recorded anywhere: `AutonomyState.record_merged_component(human_edited=...)`
-in `kstrl/autonomy.py` has exactly one caller in the tree and it is
-`tests/test_autonomy_ladder.py`, so production always records a merge as
-clean.
+Human-edit rate has no per-run series. Since #601 each merge the factory
+confirms is recorded on the ladder as clean or edited: clean only when the PR
+head GitHub merged (`headRefOid`) is the commit the diff phase judged, and
+edited when they differ or either is unknown. That feeds the L3 clean-merge
+streak; nothing trends it.
 
 **Why.** Demotion triggers need trend detection over run metrics, and the
 operator needs an evidence surface. The journal and `experiments.tsv` record
