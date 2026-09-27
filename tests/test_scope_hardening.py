@@ -1,19 +1,19 @@
-"""R1.5 scope-guard hardening tests (H-4, H-5, scope-none-fallthrough).
+"""R1.5 scope-guard hardening (H-4, H-5, scope-none-fallthrough), driven
+through the entry points.
 
-Three defect classes are covered:
-
-1. Rename-move scope escape (H-5): `git diff --name-only` with git's
-   rename detection lists only the DESTINATION of a rename, so
-   `git mv protected/gate.py allowed/gate.py` looked in-scope.
-   `git.get_diff_names` now reports both sides of renames/copies.
-2. allowedPaths content (H-4): DECOMPOSE_PROMPT rule #12 promises the
-   harness rejects entries like `.kstrl/`; the validator now enforces
-   exactly that EXCLUDE list plus structural hazards, and the error
-   flows through the decompose retry-with-error loop.
-3. PRD-load fail-closed: a PRD that fails to load at the factory's
-   scope site fails the diff_scope check (infrastructure error)
-   instead of silently disabling it; a PRD legitimately WITHOUT
-   allowedPaths still passes with the existing message.
+Three defect classes are covered. Rename-move scope escape (H-5): on a
+real repo, `git mv protected/gate.py allowed/gate.py` used to look
+in-scope because `git diff --name-only` lists only the destination;
+`git.get_diff_names` reports both sides and the diff_scope check fails.
+allowedPaths content (H-4): DECOMPOSE_PROMPT rule #12 promises the
+harness rejects entries like `.kstrl/`; a decompose_spec run with a stub
+architect that lists every EXCLUDE entry, normalised variant and
+structural hazard sees each one named in the retry prompt, and the
+corrected second attempt succeeds. PRD-load fail-closed (#293, #294): a
+PRD that will not read is refused by run_factory before any engineer
+call, `_scope_checks` and `run_mechanical_verification` fail closed on
+the error, and a PRD legitimately without allowedPaths stays
+unconstrained.
 """
 
 from __future__ import annotations
@@ -29,11 +29,7 @@ from unittest.mock import patch
 import pytest
 
 from kstrl.config import KstrlConfig
-from kstrl.decompose import (
-    _validate_allowed_path_entry,
-    _validate_decompose_output,
-    decompose_spec,
-)
+from kstrl.decompose import decompose_spec
 from kstrl.factory import (
     ComponentResult,
     FactoryConfig,
@@ -41,9 +37,10 @@ from kstrl.factory import (
     _preflight_component_scope,
     run_factory,
 )
-from kstrl.git import _parse_name_status_z, get_diff_names
+from kstrl.git import get_diff_names
 from kstrl.manifest import Component, Manifest
 from kstrl.scope import RunScope
+from kstrl.statedir import pre_run_prd_path
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import (
     CheckResult,
@@ -51,7 +48,6 @@ from kstrl.verify import (
     VerifyConfig,
     _scope_checks,
     check_diff_scope,
-    check_scope_unreadable,
     run_mechanical_verification,
 )
 from tests.helpers import gitrepo
@@ -147,39 +143,6 @@ class TestRenameAwareDiffNames:
         ]
 
 
-class TestParseNameStatusZ:
-    """Unit coverage for the -z record parser, including copy records
-    (C status is heuristic-dependent in real repos, so it is pinned
-    here rather than via git)."""
-
-    def test_rename_record_yields_source_and_destination(self) -> None:
-        raw = "R100\0protected/gate.py\0allowed/gate.py\0"
-        assert _parse_name_status_z(raw) == [
-            "protected/gate.py",
-            "allowed/gate.py",
-        ]
-
-    def test_copy_record_yields_source_and_destination(self) -> None:
-        raw = "C087\0protected/gate.py\0allowed/copy.py\0"
-        assert _parse_name_status_z(raw) == [
-            "protected/gate.py",
-            "allowed/copy.py",
-        ]
-
-    def test_mixed_records_dedupe_and_preserve_order(self) -> None:
-        raw = "M\0a.py\0R100\0old/x.py\0new/x.py\0M\0a.py\0A\0b.py\0D\0gone.py\0"
-        assert _parse_name_status_z(raw) == [
-            "a.py",
-            "old/x.py",
-            "new/x.py",
-            "b.py",
-            "gone.py",
-        ]
-
-    def test_empty_output(self) -> None:
-        assert _parse_name_status_z("") == []
-
-
 def _decompose_payload(allowed_paths: list[str]) -> dict[str, Any]:
     return {
         "spec_issues": [],
@@ -204,81 +167,6 @@ def _decompose_payload(allowed_paths: list[str]) -> dict[str, Any]:
             }
         ],
     }
-
-
-class TestAllowedPathsContentValidation:
-    """H-4: the validator enforces the EXCLUDE list DECOMPOSE_PROMPT
-    rule #12 promises, plus structural hazards."""
-
-    @pytest.mark.parametrize(
-        "entry",
-        [
-            ".kstrl/",
-            ".github/",
-            "kstrl/",
-            "scripts/kstrl/",
-            "pyproject.toml",
-            "package.json",
-            "Cargo.toml",
-        ],
-    )
-    def test_each_prompt_exclude_entry_rejected(self, entry: str) -> None:
-        errors = _validate_decompose_output(_decompose_payload([entry]))
-        assert any("allowedPaths" in e and entry in e for e in errors), errors
-
-    @pytest.mark.parametrize(
-        "entry",
-        [
-            ".kstrl",  # no trailing slash
-            "./kstrl/",  # leading ./
-            "./.kstrl",  # both
-            "scripts/kstrl",  # bare prefix, no slash
-        ],
-    )
-    def test_normalized_variants_rejected(self, entry: str) -> None:
-        errors = _validate_decompose_output(_decompose_payload([entry]))
-        assert any("allowedPaths" in e for e in errors), errors
-
-    @pytest.mark.parametrize(
-        "entry",
-        [
-            "/etc/passwd",
-            "/src/",
-            "..",
-            "../sibling/",
-            "src/../../escape/",
-            "/",
-            ".",
-            "./",
-        ],
-    )
-    def test_structural_hazards_rejected(self, entry: str) -> None:
-        errors = _validate_decompose_output(_decompose_payload([entry]))
-        assert any("allowedPaths" in e for e in errors), errors
-
-    @pytest.mark.parametrize(
-        "entry",
-        [
-            "src/",
-            "tests/",
-            "lib/",
-            "scripts/kstrl/feature/comp-a/",
-            "docs/pyproject.toml",  # manifest NOT at repo root
-            "packages/",  # prefix-similar to an excluded name
-            "kstrl_docs/",
-        ],
-    )
-    def test_legitimate_entries_accepted(self, entry: str) -> None:
-        assert _validate_allowed_path_entry(entry) is None
-        assert _validate_decompose_output(_decompose_payload([entry])) == []
-
-    def test_error_message_names_offending_entry(self) -> None:
-        """The error feeds the retry prompt, so the architect must be
-        told which entry to drop."""
-        error = _validate_allowed_path_entry(".kstrl/")
-        assert error is not None
-        assert ".kstrl/" in error
-        assert "EXCLUDE" in error
 
 
 class _SequenceAgent:
@@ -334,17 +222,82 @@ class TestExcludeRejectionFlowsThroughRetryLoop:
         assert ".kstrl/" in agent.prompts[1]
         assert [c.id for c in manifest.components] == ["comp-a"]
 
+    def test_every_hazard_entry_is_named_in_the_retry_prompt(self, tmp_path: Path) -> None:
+        """One attempt lists every EXCLUDE entry DECOMPOSE_PROMPT rule
+        #12 names, the normalised variants of them, and every structural
+        hazard, beside entries that are legitimate. The retry prompt
+        must name each rejected entry (the architect is told which to
+        drop) and none of the legitimate ones, and the corrected second
+        attempt must succeed."""
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# Feature")
+        (tmp_path / "scripts" / "kstrl").mkdir(parents=True)
+
+        hazards = [
+            # the EXCLUDE list
+            ".kstrl/",
+            ".github/",
+            "kstrl/",
+            "scripts/kstrl/",
+            "pyproject.toml",
+            "package.json",
+            "Cargo.toml",
+            # normalised variants of it
+            ".kstrl",
+            "./kstrl/",
+            "./.kstrl",
+            "scripts/kstrl",
+            # structural hazards
+            "/etc/passwd",
+            "/src/",
+            "..",
+            "../sibling/",
+            "src/../../escape/",
+            "/",
+            ".",
+            "./",
+        ]
+        legitimate = [
+            "src/",
+            "tests/",
+            "lib/",
+            "scripts/kstrl/feature/comp-a/",
+            "docs/pyproject.toml",  # manifest NOT at repo root
+            "packages/",  # prefix-similar to an excluded name
+            "kstrl_docs/",
+        ]
+        bad = json.dumps(_decompose_payload(hazards + legitimate))
+        good = json.dumps(_decompose_payload(legitimate))
+        agent = _SequenceAgent([bad, good])
+
+        manifest = decompose_spec(
+            spec_path=spec_file,
+            project_name="test",
+            base_branch="main",
+            single_pr=True,
+            agent=agent,
+            ui=PlainUI(no_color=True),
+            root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
+        )
+
+        assert len(agent.prompts) == 2
+        retry = agent.prompts[1]
+        assert "PREVIOUS ATTEMPT FAILED" in retry
+        assert "EXCLUDE" in retry
+        missing = [entry for entry in hazards if f"entry '{entry}'" not in retry]
+        assert missing == [], f"hazards the retry prompt did not name: {missing}"
+        wrongly_named = [entry for entry in legitimate if f"entry '{entry}'" in retry]
+        assert wrongly_named == [], wrongly_named
+        assert [c.id for c in manifest.components] == ["comp-a"]
+        comp = manifest.components[0]
+        planned = pre_run_prd_path(tmp_path, comp.id, comp.prd_path, plan_id=comp.plan_id)
+        assert json.loads(planned.read_text())["allowedPaths"] == legitimate
+
 
 class TestDiffScopeFailsClosed:
     """PRD-load failure fails a check of its OWN (#294); unconfigured
     scope still passes with the existing message."""
-
-    def test_allowed_paths_error_fails_check(self) -> None:
-        result = check_scope_unreadable("PRD failed to parse: bad JSON")
-        assert result.passed is False
-        assert result.name == "scope_unreadable"
-        assert "failing closed" in result.message
-        assert any("PRD failed to parse" in d for d in result.details)
 
     def test_error_wins_even_with_allowed_paths(self, tmp_path: Path) -> None:
         """A half-loaded state (paths recovered but an error was

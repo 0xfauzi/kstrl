@@ -453,7 +453,6 @@ EXPECTED_PS_COMMAND_SPELLINGS: dict[str, int] = {
     # round 3, when the two liveness ps-failure tests moved out of this
     # file to sit with their count twins, taking a "ps failed" assertion
     # with them.
-    "tests/test_procgroup_members.py": 2,
     "tests/test_process_scoping.py": 2,  # two assertions on those messages
     "tests/test_serve.py": 6,  # the fake's argv, plus five assertions
 }

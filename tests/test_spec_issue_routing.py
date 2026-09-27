@@ -37,6 +37,7 @@ from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
 from tests.conftest import make_review_repo
 from tests.helpers.component_prd import write_component_prd
+from tests.helpers.prd_payload import _make_prd_payload
 from tests.helpers.prompt_calls import architect_call
 from tests.test_decompose import (
     MockDecomposeAgent,
@@ -44,7 +45,6 @@ from tests.test_decompose import (
     _run_decompose,
     _with_ids,
 )
-from tests.test_prd_allowed_paths import _make_prd_payload
 from tests.test_review_payload import RecordingAgent
 
 # Component names in the shape the architect really produces. The first

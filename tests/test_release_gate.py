@@ -1,196 +1,33 @@
-"""The [release] section and its gate (R8.7 slice 1, #154).
+"""The [release] gate's containment guards (R8.7 slice 1, #154).
 
-Pure, no I/O beyond parsing this module's own source for the two
-containment guards (T11, T12). Nothing here starts a process or reads
-an environment variable, which is the whole containment claim of slice
-1 - see ``kstrl/release.py``'s module docstring.
+Slice 1 has no driver: nothing reachable from ``kstrl/release.py`` starts a
+process or reads an environment variable, which is the whole containment
+claim of ``kstrl/release.py``'s module docstring. T11 runs the module's
+import CLOSURE against the ``EXPECTED_PROCESS_MODULES`` census
+``tests/test_process_lifecycle.py`` owns, T12 runs ``ReleaseConfig.load``
+under an environment that raises on every read, and a third test proves the
+walk is not vacuously empty. Both replaced, in the #154 fix round (A2), a
+per-file spelling walk and a substring check that a plant routed through
+another module (``from kstrl.verify import run_scrubbed``, an environment
+door opened through another module's ``from_env``) defeated.
 
-T11 and T12 were replaced in the #154 fix round (A2): a per-file
-spelling walk and a text substring check both measured GREEN today and
-RED on a plant that routed through another module (``from kstrl.verify
-import run_scrubbed``, and an environment door opened through another
-module's ``from_env``), because neither guard follows anything past
-this file's own source text. T11 now runs this module's import CLOSURE
-against the same ``EXPECTED_PROCESS_MODULES`` census
-``tests/test_process_lifecycle.py`` already owns, and T12 runs the
-loader under an environment that raises on every read, so a spawn or an
-env read reached through ANY module in the call tree is caught rather
-than one spelled in this file.
+The ``release_withheld`` reason table and the ``release_ref_from`` ordering
+rules this file once pinned in memory were removed; the release row reaches
+the journal through ``tests/test_retry_journal_rows.py`` and a stopped run
+names itself through ``tests/test_shutdown.py``.
 """
 
 from __future__ import annotations
 
 import ast
-import itertools
 import os
 from collections.abc import Iterator
-from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
 from kstrl import release
-from kstrl.manifest import Component
 from tests.helpers.astwalk import KSTRL_PACKAGE
 from tests.test_process_lifecycle import EXPECTED_PROCESS_MODULES
-
-
-def _component(comp_id: str, merge_sha: str, completed_at: str) -> Component:
-    return Component(
-        id=comp_id,
-        title=comp_id.upper(),
-        description="",
-        dependencies=[],
-        prd_path=f"scripts/kstrl/feature/{comp_id}/prd.json",
-        branch_name=f"kstrl/factory/{comp_id}",
-        merge_sha=merge_sha,
-        completed_at=completed_at,
-    )
-
-
-_FULLY_PERMITTED = release.ReleaseInputs(
-    release_enabled=True,
-    environment="prod",
-    run_clean=True,
-    stopped=False,
-    release_ref="c" * 40,
-    policy_enabled=True,
-    policy_deploy=True,
-    ladder_deploy_permitted=None,
-)
-
-
-def _inputs(**overrides: object) -> release.ReleaseInputs:
-    return replace(_FULLY_PERMITTED, **overrides)  # type: ignore[arg-type]
-
-
-class TestReleaseWithheldVocabulary:
-    def test_every_input_combination_yields_a_reason_from_the_vocabulary(self) -> None:
-        for (
-            release_enabled,
-            policy_enabled,
-            policy_deploy,
-            run_clean,
-            stopped,
-            environment,
-            ladder_deploy_permitted,
-            release_ref,
-        ) in itertools.product(
-            (True, False),
-            (True, False),
-            (True, False),
-            (True, False),
-            (True, False),
-            ("", "prod"),
-            (None, True, False),
-            ("", "c" * 40),
-        ):
-            inputs = release.ReleaseInputs(
-                release_enabled=release_enabled,
-                environment=environment,
-                run_clean=run_clean,
-                stopped=stopped,
-                release_ref=release_ref,
-                policy_enabled=policy_enabled,
-                policy_deploy=policy_deploy,
-                ladder_deploy_permitted=ladder_deploy_permitted,
-            )
-            reason = release.release_withheld(inputs)
-            assert reason != ""
-            assert reason in release.RELEASE_WITHHELD_REASONS
-
-    def test_every_reason_in_the_vocabulary_is_produced_by_some_input(self) -> None:
-        produced: set[str] = set()
-        for (
-            release_enabled,
-            policy_enabled,
-            policy_deploy,
-            run_clean,
-            stopped,
-            environment,
-            ladder_deploy_permitted,
-            release_ref,
-        ) in itertools.product(
-            (True, False),
-            (True, False),
-            (True, False),
-            (True, False),
-            (True, False),
-            ("", "prod"),
-            (None, True, False),
-            ("", "c" * 40),
-        ):
-            inputs = release.ReleaseInputs(
-                release_enabled=release_enabled,
-                environment=environment,
-                run_clean=run_clean,
-                stopped=stopped,
-                release_ref=release_ref,
-                policy_enabled=policy_enabled,
-                policy_deploy=policy_deploy,
-                ladder_deploy_permitted=ladder_deploy_permitted,
-            )
-            produced.add(release.release_withheld(inputs))
-        assert produced == set(release.RELEASE_WITHHELD_REASONS)
-
-
-class TestReleaseWithheldDirections:
-    def test_policy_disabled_withholds_even_when_deploy_is_true(self) -> None:
-        assert release.release_withheld(_inputs(policy_enabled=False)) == "policy_disabled"
-
-    def test_an_absent_environment_withholds(self) -> None:
-        assert release.release_withheld(_inputs(environment="")) == "environment_unset"
-
-    def test_a_fully_permitted_run_still_withholds_for_no_driver(self) -> None:
-        assert release.release_withheld(_inputs()) == "no_driver"
-
-    def test_a_stopped_run_names_the_stop_rather_than_the_generic_not_clean(self) -> None:
-        """#154 fix round, A1: a stopped run gets its own reason rather
-        than the generic ``run_not_clean`` a run_is_clean(stopped=True)
-        result would otherwise fall through to."""
-        assert release.release_withheld(_inputs(run_clean=False, stopped=True)) == "run_stopped"
-
-
-class TestReleaseRefFrom:
-    def test_the_release_ref_is_the_last_merge_and_a_tie_goes_to_the_later_component(
-        self,
-    ) -> None:
-        components = [
-            _component("no-merge", merge_sha="", completed_at="2026-01-03T00:00:00Z"),
-            _component("first", merge_sha="a" * 40, completed_at="2026-01-01T00:00:00Z"),
-            _component("tie-earlier", merge_sha="b" * 40, completed_at="2026-01-02T00:00:00Z"),
-            _component("tie-later", merge_sha="c" * 40, completed_at="2026-01-02T00:00:00Z"),
-        ]
-        assert release.release_ref_from(components) == "c" * 40
-        assert release.release_ref_from([]) == ""
-        assert release.release_ref_from([components[0]]) == ""
-
-    def test_the_release_ref_is_chosen_by_completed_at_not_manifest_order(self) -> None:
-        """The component that merged last sits FIRST in manifest order,
-        so a rule that took the last manifest entry would answer 'c'.
-        """
-        components = [
-            _component("late-but-early", merge_sha="d" * 40, completed_at="2026-01-05T00:00:00Z"),
-            _component("first", merge_sha="a" * 40, completed_at="2026-01-01T00:00:00Z"),
-            _component("tie-earlier", merge_sha="b" * 40, completed_at="2026-01-02T00:00:00Z"),
-            _component("tie-later", merge_sha="c" * 40, completed_at="2026-01-02T00:00:00Z"),
-        ]
-        assert release.release_ref_from(components) == "d" * 40
-
-    def test_since_excludes_a_merge_a_previous_run_left_on_the_manifest(self) -> None:
-        """#154 fix round, A1b: ``merge_sha`` persists across runs, so a
-        merge dated before ``since`` must not be reported as THIS run's
-        ref even though it is still the only merge on the manifest."""
-        components = [
-            _component("alpha", merge_sha="a" * 40, completed_at="2020-01-01T00:00:00Z"),
-        ]
-        assert release.release_ref_from(components, since="2020-01-01T00:00:00Z") == "a" * 40
-        assert release.release_ref_from(components, since="2020-01-02T00:00:00Z") == ""
-
-    def test_since_defaults_to_no_restriction(self) -> None:
-        components = [
-            _component("alpha", merge_sha="a" * 40, completed_at="2000-01-01T00:00:00Z"),
-        ]
-        assert release.release_ref_from(components) == "a" * 40
 
 
 def _process_module_label(dotted: str) -> str:

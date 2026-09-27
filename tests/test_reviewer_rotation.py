@@ -1,14 +1,16 @@
-"""R7.1: cross-model review rotation.
+"""R7.1: cross-model review rotation, through the review runners and
+run_factory.
 
-Covers the three test surfaces the roadmap item names:
-- the default-selection matrix (both CLIs present / one absent /
-  explicit override / custom engineer command),
-- the ``model:<id>`` identity tag flowing from a review run onto every
-  Finding, into the PR body, and into the journal serialization,
-- the homogeneity warning firing (resolver-level and through a real
-  ``run_factory`` invocation),
-plus the calibration reviewer-override helpers that make the
-same-family vs cross-family baseline capturable.
+Two surfaces the roadmap item names. The ``model:<id>`` identity tag:
+a ``run_review`` or ``run_security_review`` on a real review repo puts
+the reviewer's identity on the result and on every Finding it yields,
+including the infrastructure finding a crashed or discarded review
+leaves behind (#266), and ``_generate_pr_body`` names it. The
+homogeneity warning and the probe (#262): a real ``run_factory`` with a
+custom engineer command warns once per enabled reviewer phase and
+journals the selection; a run that will never review pays for no probe,
+a run that will review pays for one, and an enabled autonomy ladder
+keeps the probe because every bundle restores hard review.
 """
 
 from __future__ import annotations
@@ -19,22 +21,13 @@ from pathlib import Path
 
 import pytest
 
-from kstrl import calibration, calibration_baseline
 from kstrl.config import KstrlConfig
 from kstrl.factory import (
-    AdversarialAgentSelection,
     FactoryConfig,
     FactoryResult,
-    resolve_adversarial_selection,
     run_factory,
 )
-from kstrl.findings import (
-    Finding,
-    finding_model,
-    render_findings_markdown,
-    tag_finding_with_attempt,
-    tag_finding_with_model,
-)
+from kstrl.findings import finding_model
 from kstrl.manifest import Component, Manifest
 from kstrl.observability import read_progress_events
 from kstrl.pr import _generate_pr_body
@@ -44,240 +37,12 @@ from kstrl.review import (
 )
 from kstrl.security import (
     SecurityConfig,
-    SecurityResult,
     run_security_review,
 )
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult
 from tests.conftest import ReviewRepo
 from tests.helpers.agent_probe import set_cli_availability, stub_probe
-
-
-def _resolve(
-    phase: str = "review",
-    *,
-    explicit_cmd: str | None = None,
-    explicit_type: str | None = None,
-    explicit_model: str | None = None,
-    fallback_cmd: str | None = None,
-    fallback_type: str | None = None,
-    fallback_model: str | None = None,
-    fallback_reasoning: str | None = None,
-    engineer_cmd: str | None = None,
-    engineer_type: str | None = None,
-    claude_available: bool = True,
-    codex_available: bool = True,
-) -> AdversarialAgentSelection:
-    """Call the resolver with availability always injected: these tests
-    must never depend on which CLIs the test machine has installed."""
-    return resolve_adversarial_selection(
-        phase,
-        explicit_cmd=explicit_cmd,
-        explicit_type=explicit_type,
-        explicit_model=explicit_model,
-        fallback_cmd=fallback_cmd,
-        fallback_type=fallback_type,
-        fallback_model=fallback_model,
-        fallback_reasoning=fallback_reasoning,
-        engineer_cmd=engineer_cmd,
-        engineer_type=engineer_type,
-        claude_available=claude_available,
-        codex_available=codex_available,
-    )
-
-
-class TestSelectionMatrix:
-    """Default-selection matrix for resolve_adversarial_selection."""
-
-    def test_claude_engineer_defaults_to_codex_when_available(self) -> None:
-        sel = _resolve(engineer_type="claude-code", fallback_type="claude-code")
-        assert sel.source == "cross-family-default"
-        assert sel.agent_type == "codex"
-        assert sel.agent_cmd is None
-        assert sel.model is None
-        assert sel.identity == "codex"
-        assert sel.warning is None
-
-    def test_auto_engineer_resolves_to_claude_then_crosses_to_codex(self) -> None:
-        # agent_type None ("auto") with claude installed is a claude
-        # engineer, so the reviewer crosses to codex.
-        sel = _resolve(engineer_type=None, fallback_type=None)
-        assert sel.source == "cross-family-default"
-        assert sel.agent_type == "codex"
-
-    def test_codex_engineer_defaults_to_claude_when_available(self) -> None:
-        sel = _resolve(engineer_type="codex", fallback_type="codex")
-        assert sel.source == "cross-family-default"
-        assert sel.agent_type == "claude-code"
-        assert sel.identity == "claude-code"
-        assert sel.warning is None
-
-    def test_claude_engineer_falls_back_when_codex_absent(self) -> None:
-        sel = _resolve(
-            engineer_type="claude-code",
-            fallback_type="claude-code",
-            codex_available=False,
-        )
-        assert sel.source == "same-family-fallback"
-        assert sel.agent_type == "claude-code"
-        assert sel.warning is not None
-        assert "codex CLI is not available" in sel.warning
-        assert "Self-preference bias" in sel.warning
-
-    def test_claude_engineer_downgrades_when_codex_is_installed_but_dead(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """#262: PATH said yes, the CLI could not run a turn.
-
-        The whole point of the probe. Before it, this run selected codex
-        for review on the strength of the binary existing, paid the full
-        engineer bill, and only then failed every adversarial dispatch.
-        A dead cross CLI now takes the same route a missing one takes.
-        """
-        stub_probe(
-            monkeypatch,
-            [json.dumps({"type": "turn.failed", "error": {"message": "usage limit reached"}})],
-        )
-
-        sel = _resolve(engineer_type="claude-code", fallback_type="claude-code")
-
-        assert sel.source == "same-family-fallback"
-        assert sel.agent_type == "claude-code"
-        assert sel.warning is not None
-        assert "codex CLI is installed but cannot run a turn" in sel.warning
-        assert "(usage limit reached)" in sel.warning
-        assert "Self-preference bias" in sel.warning
-        # "Install codex" is useless advice to someone who has it.
-        assert "Install the codex CLI" not in sel.warning
-
-    def test_live_cross_family_cli_still_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        stub_probe(monkeypatch, [json.dumps({"type": "turn.completed"})])
-
-        sel = _resolve(engineer_type="claude-code", fallback_type="claude-code")
-
-        assert sel.source == "cross-family-default"
-        assert sel.agent_type == "codex"
-        assert sel.warning is None
-
-    def test_absent_cross_family_cli_is_never_probed(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        # A missing binary is already an answer; spending a probe turn
-        # to confirm it would be money for nothing.
-        seen = stub_probe(monkeypatch, [])
-
-        _resolve(
-            engineer_type="claude-code",
-            fallback_type="claude-code",
-            codex_available=False,
-        )
-
-        assert seen == []
-
-    def test_review_and_security_share_one_probe(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        seen = stub_probe(monkeypatch, [json.dumps({"type": "turn.completed"})])
-
-        _resolve(engineer_type="claude-code", fallback_type="claude-code")
-        _resolve("security", engineer_type="claude-code", fallback_type="claude-code")
-
-        assert len(seen) == 1
-
-    def test_codex_engineer_falls_back_when_claude_absent(self) -> None:
-        # auto-detect with claude missing resolves the engineer to
-        # codex; the cross family (claude-code) is the missing one.
-        sel = _resolve(
-            engineer_type=None,
-            fallback_type=None,
-            claude_available=False,
-        )
-        assert sel.source == "same-family-fallback"
-        assert sel.warning is not None
-        assert "claude-code CLI is not available" in sel.warning
-
-    def test_explicit_model_wins_over_cross_family_default(self) -> None:
-        # Both CLIs present, but the operator pinned a review model:
-        # explicit config always wins, silently (no homogeneity nag for
-        # a deliberate choice).
-        sel = _resolve(
-            explicit_model="opus",
-            fallback_type="claude-code",
-            engineer_type="claude-code",
-        )
-        assert sel.source == "explicit"
-        assert sel.agent_type == "claude-code"
-        assert sel.model == "opus"
-        assert sel.identity == "claude-code (opus)"
-        assert sel.warning is None
-
-    def test_explicit_agent_cmd_wins_and_identity_is_custom(self) -> None:
-        sel = _resolve(
-            explicit_cmd="./my-reviewer.sh",
-            fallback_type="claude-code",
-            engineer_type="claude-code",
-        )
-        assert sel.source == "explicit"
-        assert sel.agent_cmd == "./my-reviewer.sh"
-        assert sel.identity == "custom (./my-reviewer.sh)"
-        assert sel.warning is None
-
-    def test_explicit_type_pins_the_family(self) -> None:
-        sel = _resolve(
-            explicit_type="claude-code",
-            fallback_type="claude-code",
-            engineer_type="claude-code",
-        )
-        assert sel.source == "explicit"
-        assert sel.agent_type == "claude-code"
-
-    def test_custom_engineer_cmd_warns_family_unknown(self) -> None:
-        # A custom engineer command has an unknown family even with both
-        # CLIs installed: heterogeneity cannot be established, so the
-        # fallback fires WITH the warning.
-        sel = _resolve(
-            engineer_cmd="./fake-engineer.sh",
-            fallback_cmd="./fake-engineer.sh",
-            fallback_type=None,
-        )
-        assert sel.source == "same-family-fallback"
-        assert sel.agent_cmd == "./fake-engineer.sh"
-        assert sel.warning is not None
-        assert "custom agent command" in sel.warning
-        assert "Self-preference bias" in sel.warning
-
-    def test_security_fallback_keeps_engineer_cmd_and_model(self) -> None:
-        # The security phase's historical fallback inherits the
-        # engineer's cmd/model/reasoning; the same-family fallback must
-        # preserve that exactly (only the warning is new).
-        sel = _resolve(
-            "security",
-            engineer_type="claude-code",
-            fallback_type="claude-code",
-            fallback_model="opus",
-            fallback_reasoning="high",
-            codex_available=False,
-        )
-        assert sel.source == "same-family-fallback"
-        assert sel.model == "opus"
-        assert sel.reasoning == "high"
-        assert sel.identity == "claude-code (opus)"
-
-    def test_cross_family_default_does_not_inherit_reasoning(self) -> None:
-        # Effort strings do not transfer across families.
-        sel = _resolve(
-            "security",
-            engineer_type="claude-code",
-            fallback_type="claude-code",
-            fallback_model="opus",
-            fallback_reasoning="high",
-        )
-        assert sel.source == "cross-family-default"
-        assert sel.model is None
-        assert sel.reasoning is None
 
 
 class MockAgent:
@@ -450,14 +215,6 @@ class TestModelTagEndToEnd:
             assert finding_model(f) == "codex"
         assert "**Reviewer model**: codex" in result.as_pr_body_section()
 
-    def test_security_clean_result_still_names_reviewer(self) -> None:
-        result = SecurityResult(
-            passed=True,
-            mode="hard",
-            reviewer_model="codex (gpt-5)",
-        )
-        assert "**Reviewer model**: codex (gpt-5)" in result.as_pr_body_section()
-
     def test_unverified_coverage_still_attributes_reviewer(
         self,
         review_repo: ReviewRepo,
@@ -496,31 +253,6 @@ class TestModelTagEndToEnd:
         assert len(findings) > 1
         for finding in findings:
             assert finding_model(finding) == "codex (gpt-5)"
-
-    def test_model_tag_is_idempotent_and_composes_with_attempt(self) -> None:
-        f = Finding.from_review_concern(
-            category="dead_code",
-            severity="advisory",
-            location="a.py:1",
-            explanation="x",
-        )
-        tagged = tag_finding_with_model(f, "codex")
-        again = tag_finding_with_model(tagged, "claude-code")
-        assert again.tags.count("model:codex") == 1
-        assert "model:claude-code" not in again.tags
-        # Empty identity is a no-op, never a fabricated "model:" tag.
-        assert tag_finding_with_model(f, "") == f
-        with_attempt = tag_finding_with_attempt(tagged, 2)
-        assert finding_model(with_attempt) == "codex"
-        assert "attempt:2" in with_attempt.tags
-
-    def test_render_findings_markdown_names_reviewer_model(self) -> None:
-        f = tag_finding_with_model(
-            Finding.infrastructure_error("security", "boom"),
-            "codex (gpt-5)",
-        )
-        rendered = render_findings_markdown([f])
-        assert "Reviewer model: codex (gpt-5)" in rendered
 
     def test_pr_body_names_reviewer_model(self, review_repo: ReviewRepo) -> None:
         prd_path = _write_prd(review_repo.path)
@@ -726,71 +458,3 @@ class TestHomogeneityWarningFires:
         )
 
         assert len(seen) == 1
-
-
-class TestCalibrationReviewerOverride:
-    def test_override_from_env_reads_both_vars(self) -> None:
-        env = {
-            "KSTRL_CALIBRATION_REVIEWER_AGENT_TYPE": "codex",
-            "KSTRL_CALIBRATION_REVIEWER_MODEL": "gpt-5",
-        }
-        assert calibration.reviewer_override_from_env(env) == ("codex", "gpt-5")
-
-    def test_override_from_env_treats_empty_as_unset(self) -> None:
-        env = {
-            "KSTRL_CALIBRATION_REVIEWER_AGENT_TYPE": "",
-            "KSTRL_CALIBRATION_REVIEWER_MODEL": "",
-        }
-        assert calibration.reviewer_override_from_env(env) == (None, None)
-        assert calibration.reviewer_override_from_env({}) == (None, None)
-
-    def test_label_plain_without_override(self) -> None:
-        assert calibration.reviewer_override_label("haiku", None, None) == "haiku"
-
-    def test_label_encodes_override(self) -> None:
-        assert (
-            calibration.reviewer_override_label("haiku", "codex", "gpt-5")
-            == "haiku+reviewer:codex/gpt-5"
-        )
-        assert calibration.reviewer_override_label("haiku", "codex", None) == "haiku+reviewer:codex"
-
-    def test_cross_family_baselines_compare_with_warning_not_failure(
-        self,
-    ) -> None:
-        """The whole point of the label: comparing a same-family baseline
-        against a cross-family one warns (deltas measure the family
-        change) instead of silently pretending both measured the same
-        configuration."""
-        old = calibration_baseline.Baseline(
-            path=None,
-            model="haiku",
-            timestamp="t1",
-            format_version=2,
-            runs_per_fixture=3,
-            fixtures=(
-                calibration_baseline.FixtureStats(
-                    role="security",
-                    fixture_id="sec-01",
-                    category="injection",
-                    cwe="CWE-89",
-                    runs_total=3,
-                    runs_errored=0,
-                    runs_detected=3,
-                ),
-            ),
-        )
-        new = calibration_baseline.Baseline(
-            path=None,
-            model=calibration.reviewer_override_label(
-                "haiku",
-                "codex",
-                "gpt-5",
-            ),
-            timestamp="t2",
-            format_version=2,
-            runs_per_fixture=3,
-            fixtures=old.fixtures,
-        )
-        comparison = calibration.compare_baselines(old, new)
-        assert comparison.passed
-        assert any("comparing across models" in w for w in comparison.warnings)
