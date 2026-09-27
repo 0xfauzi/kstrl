@@ -29,7 +29,7 @@ from kstrl.verify import VerificationResult
 from tests.conftest import make_review_repo
 from tests.helpers import integration_harness as h
 from tests.helpers.component_prd import write_component_prd
-from tests.test_review_payload import RecordingAgent
+from tests.helpers.recording_agent import RecordingAgent
 
 #: The heading the contract says every story of the PRD section begins with.
 HEADING_FORM = "### <story id>: <title>"
