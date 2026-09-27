@@ -454,8 +454,9 @@ class CheckpointDecision(Enum):
     # and nothing else runs. `PipelineOutcome.checkpoint`, the field
     # `process_result` sets it into, is a DIFFERENT claim: that field
     # keeps this value whenever `create_prs` is off or `single_pr` is on
-    # (pipeline.py:3091-3093), because `_phase_checkpoint` is never even
-    # called then - regardless of whether the gate itself is on (#594
+    # (the `create_prs and not single_pr` guard in `process_result`),
+    # because `_phase_checkpoint` is never even called then -
+    # regardless of whether the gate itself is on (#594
     # simplify round, B2).
     NOT_PROMPTED = "not_prompted"
     APPROVED = "approved"
@@ -4912,15 +4913,26 @@ class ComponentPipeline:
             return None
         # #594 A3: a decision none of the three branches above name, and
         # not an answered Approve or the gate off either - a producer
-        # defect in `_phase_checkpoint`. Park it the same way an
-        # unanswered gate does, rather than falling through to
-        # `_phase_pr` unreviewed, and say so.
+        # defect in `_phase_checkpoint`. No merge_gate inbox item was
+        # filed for this path (only `_phase_checkpoint`'s park block
+        # files one), so parking here would either fail with a
+        # misleading "no open merge_gate inbox item" or park against a
+        # stale item from an earlier run of this component. Refuse
+        # instead, rather than falling through to `_phase_pr`
+        # unreviewed, and say so.
         self.ui.warn(
             f"  the merge gate for {comp.id} returned an unrecognised "
-            f"decision ({checkpoint!r}); parking it for approval "
-            f"(see `ks inbox ls`)"
+            f"decision ({checkpoint!r}); refusing it (nothing was pushed)"
         )
-        return PipelineOutcome(transition=self._park_awaiting_approval(comp), **outcome_fields)
+        return PipelineOutcome(
+            transition=self.fail(
+                comp,
+                f"Unrecognised merge-gate decision {checkpoint!r}; nothing was pushed",
+                phase="pr",
+                check="merge_gate",
+            ),
+            **outcome_fields,
+        )
 
     def _phase_checkpoint(
         self,

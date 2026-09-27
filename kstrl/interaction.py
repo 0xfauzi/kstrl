@@ -19,7 +19,7 @@ nobody answered - no one was there to ask, the resolver detached, the
 prompt was interrupted, or the choice was out of range. It is never
 consent: the merge gate and ``ks factory``'s own confirm treat it as a
 refusal (#594). ``ks retry``'s confirm does not yet - at this head it
-still starts on an unanswered prompt; a lane #597 owns fixes that site.
+still starts on an unanswered prompt; lane #597 (PR #605) owns that site.
 """
 
 from __future__ import annotations

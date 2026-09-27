@@ -265,6 +265,33 @@ class TestAnUnansweredGateParks:
         assert gate.merge_gate_items() == []
 
 
+class TestAnUnrecognisedDecisionRefuses:
+    """#594 simplify round, blocker 1: `_checkpoint_refusal`'s fall-through
+    used to park a decision none of REJECTED/PARKED/RETRY/APPROVED/
+    NOT_PROMPTED name - a producer defect in `_phase_checkpoint` - through
+    `_park_awaiting_approval`. But no merge_gate item is filed on that path
+    (only `_phase_checkpoint`'s own park block files one), so the park
+    either failed with "no open merge_gate inbox item" - the wrong cause -
+    or, if an older item for the same component happened to share its
+    dedupe key, parked against that stale item's `head_sha`. It refuses
+    instead: nothing was pushed, and the component is failed, not parked."""
+
+    def test_an_unrecognised_decision_refuses_rather_than_parks(self, tmp_path: Path) -> None:
+        gate = _Gate(tmp_path)
+        gate.pipeline._phase_checkpoint = (  # type: ignore[method-assign]
+            lambda *a, **k: "bogus_decision"
+        )
+        outcome = gate.run()
+        assert outcome.transition == Transition.FAILED, outcome.transition
+        assert outcome.transition != Transition.AWAITING_APPROVAL, outcome.transition
+        assert gate.entered_pr == [], "_phase_pr was entered on an unrecognised decision"
+        assert gate.merge_gate_items() == [], gate.merge_gate_items()
+        comp = gate.manifest.get_component("comp-a")
+        assert comp is not None
+        assert comp.status == "failed", comp.status
+        assert "Unrecognised merge-gate decision" in (comp.error or ""), comp.error
+
+
 class TestAnInterruptedPromptIsNotAnAnswer:
     """The contract lane #597's `ks retry` confirm relies on."""
 
@@ -439,7 +466,7 @@ EXPECTED_SEEN_PROMPT_SITES: tuple[str, ...] = (
     "feature_cmd.py:384 kstrl.interaction.PromptRequest",
     "guards.py:382 kstrl.interaction.PromptRequest",
     "loop.py:999 kstrl.interaction.PromptRequest",
-    "pipeline.py:4960 kstrl.interaction.PromptRequest",
+    "pipeline.py:4972 kstrl.interaction.PromptRequest",
     "tui/screens/inbox.py:333 kstrl.interaction.PromptRequest",
     "tui/screens/retry.py:389 kstrl.interaction.PromptRequest",
 )
