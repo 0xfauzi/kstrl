@@ -337,8 +337,11 @@ def cmaps() -> dict:
     return _CM
 
 def card_path(comp: str) -> Path:
+    """A test fixture, a prototype-only frame (out/static/Proto*, drawn for the prototype), or a card of the system."""
     f = Path('audit_fixtures') / comp / 'preview.html'
-    return f if f.exists() else ROOT / 'components' / comp / 'preview.html'
+    if f.exists(): return f
+    if comp.startswith('Proto'): return Path('out/static') / f'{comp}.html'
+    return ROOT / 'components' / comp / 'preview.html'
 
 def render(comp: str, theme: str) -> dict:
     src = card_path(comp).read_text()

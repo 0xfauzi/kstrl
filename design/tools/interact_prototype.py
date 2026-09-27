@@ -60,7 +60,8 @@ with sync_playwright() as p:
     # ---- the static references, through the design system's own pipeline
     ref = br.new_page(viewport={'width': 1280, 'height': 800})
     W = json.loads(re.search(r'var W=(\{.*?\});\n', PAGE).group(1))
-    frames = dict(re.findall(r"'([a-z0-9-]+)':\s+\('(\w+)', '(?:The map|Pages)'", Path('build_prototype.py').read_text()))
+    from build_prototype import SCREENS
+    frames = {sid: frame for sid, (frame, _, _) in SCREENS.items()}
     refs = {}
     for sid, frame in frames.items():
         src = Path(f'out/static/{frame}.html').read_text().replace('<head>', '<head>' + render.style, 1).replace('<html', f'<html data-theme="{THEME}"', 1)
@@ -115,7 +116,7 @@ with sync_playwright() as p:
             el = f'[data-screen="{sid}"] {sel} >> nth={n}'
             pg.click(el); pg.wait_for_timeout(450)
             want = W['groups'].get(target[1:], [None])[0] if target.startswith('@') else target
-            if kind in ('need', 'ask'):
+            if kind in ('need', 'ask', 'window'):
                 got = pg.evaluate("[...document.querySelectorAll('[data-overlay]')].filter(o=>!o.hidden).map(o=>o.dataset.overlay).join(',')")
                 ok = got == target and pg.evaluate("!!document.activeElement.closest('[role=dialog]')")
                 check(f'{sid}: {kind} opens the {target} window over it, focus inside', ok and shown() == sid, got)
@@ -123,6 +124,19 @@ with sync_playwright() as p:
                 check(f'{sid}: esc closes it, focus back on what opened it', pg.evaluate("[...document.querySelectorAll('[data-overlay]')].every(o=>o.hidden)") and pg.evaluate(f"document.activeElement===document.querySelectorAll('[data-screen=\"{sid}\"] {sel}')[{n}]"))
             else:
                 check(f'{sid}: {kind} {sel} #{n} lands on {want}', shown() == want, shown())
+    # ---- the zoom follows the part you were on, and Step does nothing where no step is drawn
+    def zoom(label: str) -> None:
+        pg.click(f'[data-screen]:not([hidden]) .k-seg[aria-label="Zoom level"] .k-seg-item >> text={label}'); pg.wait_for_timeout(450)
+    load('spec-graph'); zoom('Part')
+    check('zoom Part from the Spec level opens search-query, the selected part', shown() == 'part-search-query', shown())
+    load('part-search-rank'); pg.click('[data-screen="part-search-rank"] .k-header .k-crumb >> nth=1'); pg.wait_for_timeout(350)
+    sel = pg.evaluate("[...document.querySelectorAll('[data-screen=spec-graph] .pc.k-card')].filter(k=>k.classList.contains('k-card-selected')).map(k=>k.querySelector('.k-card-name').textContent+(k.querySelector('.k-card-meta .k-keys')?' ↵':'')+' '+k.tabIndex)")
+    check('back on the Spec level, the selection is on search-rank, with its ↵ and the one tab stop', sel == ['search-rank ↵ 0'], str(sel))
+    zoom('Part'); check('zoom Part now opens search-rank', shown() == 'part-search-rank', shown())
+    zoom('Step'); z = pg.evaluate("document.querySelector('[data-screen]:not([hidden]) .k-seg-item[aria-checked=true]').textContent")
+    check('zoom Step on search-rank does nothing (its step is not drawn), and the zoom stays on Part', shown() == 'part-search-rank' and z == 'Part', f'{shown()} {z}')
+    load('part-search-query'); zoom('Step')
+    check('zoom Step on search-query opens its open step, the review on try 2', shown() == 'step-query-review-2', shown())
     # ---- the screen menu, used as a person would
     load('factory')
     pg.select_option('#proto-index', 'settings'); pg.wait_for_timeout(350)

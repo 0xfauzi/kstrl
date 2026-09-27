@@ -27,6 +27,12 @@ SCREENS: dict[str, tuple[str, str, str]] = {
     'spec-graph':       ('Map1Spec', 'The map', 'Spec: search, as a graph'),
     'spec-text':        ('Map4Plan', 'The map', 'Spec: search, as text'),
     'part-search-query': ('Map2Part', 'The map', 'Part: search-query'),
+    'part-search-schema': ('ProtoPart-search-schema', 'The map', 'Part: search-schema'),
+    'part-search-index': ('ProtoPart-search-index', 'The map', 'Part: search-index'),
+    'part-search-rank': ('ProtoPart-search-rank', 'The map', 'Part: search-rank'),
+    'part-search-highlight': ('ProtoPart-search-highlight', 'The map', 'Part: search-highlight'),
+    'part-search-api': ('ProtoPart-search-api', 'The map', 'Part: search-api'),
+    'part-search-cli': ('ProtoPart-search-cli', 'The map', 'Part: search-cli'),
     'step-query-review-2': ('Map3Reviewer', 'The map', 'Step: search-query, review on try 2'),
     'inbox':            ('Inbox', 'Pages', 'Inbox'),
     'queue':            ('Queue', 'Pages', 'Queue'),
@@ -44,47 +50,62 @@ START = 'factory'
 # Per screen: zoom (four screens, or None where the level has no zoom), level, tab (its own view), then every other
 # link as (kind, selector within the screen, nth match, target, label). kinds: crumb, tab, need, ask, open. A target
 # is a screen or an overlay. A label names a link that is not a button already (a tile, a card, a cell).
-ZOOM = ['factory', '@spec', 'part-search-query', 'step-query-review-2']
+PARTS = ['search-schema', 'search-index', 'search-query', 'search-rank', 'search-highlight', 'search-api', 'search-cli']
+# The zoom's Part is the part you were last on (search-query, selected on the Spec level, until you open another), and
+# its Step is that part's open step where one is drawn; where none is, Step does nothing.
+ZOOM = ['factory', '@spec', '@part', '@step']
+STEP_OF = {'part-search-query': 'step-query-review-2'}
 NEED = ('need', '.k-needs .k-need', 0, 'approve', None)
+STOPPED = ('open', '.k-needs .k-need', 1, 'part-search-highlight', None)
 ROOT = ('crumb', '.k-header .k-crumb', 0, 'factory', None)
+SPEC = ('crumb', '.k-header .k-crumb', 1, '@spec', None)
 ASK = ('ask', '.k-header .k-ask', 0, 'question', None)
+BAND = [NEED, STOPPED]
+
+
+def part_links(extra: list) -> dict:
+    return {'level': 2, 'zoom': ZOOM, 'links': [ROOT, SPEC] + BAND + extra}
+
+
 LINKS: dict[str, dict] = {
-    'factory': {'level': 0, 'zoom': ZOOM, 'links': [
-        NEED,
+    'factory': {'level': 0, 'zoom': ZOOM, 'links': BAND + [
         ('open', '.k-tile.hero', 0, 'spec-graph', 'Open search, the spec being built'),
         ('open', '.k-tile.nx', 0, 'queue', 'Open the queue'),
         ('open', '.k-tile.c', 0, 'trust', 'Open Trust'),
         ('open', '.k-tile.c', 3, 'learning', 'Open Learning'),
     ]},
-    'spec-graph': {'level': 1, 'zoom': ZOOM, 'tab': 0, 'links': [
-        ROOT, NEED, ASK,
-        ('tab', '.k-titletools .k-tab', 1, 'spec-text', None),
-        ('open', '.pc.k-card', 2, 'part-search-query', 'Open search-query'),
-    ]},
-    'spec-text': {'level': 1, 'zoom': ZOOM, 'tab': 1, 'links': [
-        ROOT, NEED, ASK,
-        ('tab', '.k-titletools .k-tab', 0, 'spec-graph', None),
-    ]},
-    'part-search-query': {'level': 2, 'zoom': ZOOM, 'links': [
-        ROOT, NEED,
-        ('crumb', '.k-header .k-crumb', 1, '@spec', None),
+    'spec-graph': {'level': 1, 'zoom': ZOOM, 'tab': 0, 'select': '.pc.k-card', 'links': [ROOT] + BAND + [ASK,
+        ('tab', '.k-titletools .k-tab', 1, 'spec-text', None)] +
+        [('open', '.pc.k-card', n, f'part-{p}', None) for n, p in enumerate(PARTS)]},
+    'spec-text': {'level': 1, 'zoom': ZOOM, 'tab': 1, 'links': [ROOT] + BAND + [ASK,
+        ('tab', '.k-titletools .k-tab', 0, 'spec-graph', None)] +
+        [('open', '.pts .pt', n, f'part-{p}', f'Open {p}') for n, p in enumerate(PARTS)]},
+    'part-search-query': part_links([
         ('open', '.cell.k-tile-selected', 0, 'step-query-review-2', 'Open try 2, review'),
-        ('open', '.steps .k-button', 2, 'spec-text', None),
-    ]},
-    'step-query-review-2': {'level': 3, 'zoom': ZOOM, 'links': [
-        ROOT, NEED,
-        ('crumb', '.k-header .k-crumb', 1, '@spec', None),
-        ('crumb', '.k-header .k-crumb', 2, 'part-search-query', None),
-    ]},
+        ('open', '.steps .k-button', 2, 'spec-text', None)]),
+    'part-search-schema': part_links([]),
+    'part-search-index': part_links([('window', '.steps .k-button', 0, 'approve', None)]),
+    'part-search-rank': part_links([]),
+    'part-search-highlight': part_links([]),
+    'part-search-api': part_links([
+        ('open', '.steps .k-button', 0, 'part-search-index', None),
+        ('open', '.steps .k-button', 1, 'part-search-query', None),
+        ('open', '.steps .k-button', 2, 'part-search-rank', None)]),
+    'part-search-cli': part_links([
+        ('open', '.steps .k-button', 0, 'spec-text', None),
+        ('open', '.steps .k-button', 1, 'part-search-highlight', None),
+        ('open', '.steps .k-button', 2, 'part-search-api', None)]),
+    'step-query-review-2': {'level': 3, 'zoom': ZOOM, 'links': [ROOT, SPEC] + BAND + [
+        ('crumb', '.k-header .k-crumb', 2, 'part-search-query', None)]},
     'inbox': {'links': [ROOT]},
-    'queue': {'links': [ROOT, NEED]},
-    'trust': {'links': [ROOT, NEED]},
-    'learning': {'links': [ROOT, NEED]},
-    'settings': {'links': [ROOT, NEED]},
-    'notify-one': {'tab': 0, 'links': [ROOT, NEED, ('tab', '.k-titletools .k-tab', 1, 'notify-every', None)]},
-    'notify-every': {'tab': 1, 'links': [ROOT, NEED, ('tab', '.k-titletools .k-tab', 0, 'notify-one', None)]},
+    'queue': {'links': [ROOT] + BAND},
+    'trust': {'links': [ROOT] + BAND},
+    'learning': {'links': [ROOT] + BAND},
+    'settings': {'links': [ROOT] + BAND},
+    'notify-one': {'tab': 0, 'links': [ROOT] + BAND + [('tab', '.k-titletools .k-tab', 1, 'notify-every', None)]},
+    'notify-every': {'tab': 1, 'links': [ROOT] + BAND + [('tab', '.k-titletools .k-tab', 0, 'notify-one', None)]},
 }
-GROUPS = {'spec': ['spec-graph', 'spec-text']}
+GROUPS = {'spec': ['spec-graph', 'spec-text'], 'part': [f'part-{p}' for p in ['search-query'] + [q for q in PARTS if q != 'search-query']]}
 
 
 # ---------------------------------------------------------------------------------------------------------------- parts
@@ -146,6 +167,8 @@ PAGE_CSS = """
   [data-overlay] { display:contents; }
   /* a tile, card or cell that opens a screen: the system's own focus ring, and a pointer */
   [data-go] { cursor:pointer; }
+  /* a link that is not a tile or a card (a part's name on the Spec level's text) takes the focus ring every control has */
+  [data-go]:not(.k-tile):not(.k-card):focus-visible { outline:2px solid var(--focus); outline-offset:2px; border-radius:var(--radius-sm); }
 """
 
 RUNTIME = r"""
@@ -153,7 +176,7 @@ var W=__W__;
 var cur=null, hist=[], mem={}, ctl={}, open=null, opener=null, closing=false, said=document.querySelector('[data-said]');
 for(var g in W.groups) mem[g]=W.groups[g][0];
 function scr(id){ return document.querySelector('[data-screen="'+id+'"]'); }
-function resolve(t){ return t && t.charAt(0)==='@' ? mem[t.slice(1)] : t; }
+function resolve(t){ if(t==='@step') return W.stepOf[mem.part]||null; return t && t.charAt(0)==='@' ? mem[t.slice(1)] : t; }
 function remember(id){ for(var g in W.groups){ if(W.groups[g].indexOf(id)>=0) mem[g]=id; } }
 function nth(s, sel, n){ return s.querySelectorAll(sel)[n]||null; }
 // A screen's controls are set up the first time it shows, when it has a layout to measure.
@@ -161,16 +184,25 @@ function init(id){
   if(ctl[id]) return ctl[id];
   var s=scr(id), c=W.screens[id], o={mute:false}; ctl[id]=o;
   if(c.zoom){ o.zoom=kSeg(s.querySelector('.k-seg[aria-label="Zoom level"]'), function(it){ if(o.mute) return;
-    var j=o.zoom.items.indexOf(it), t=resolve(c.zoom[j]); if(t && t!==id) go(t, {kind:'zoom', from:c.level, to:j}); }); }
+    var j=o.zoom.items.indexOf(it), t=resolve(c.zoom[j]);
+    if(t && t!==id) go(t, {kind:'zoom', from:c.level, to:j});
+    else if(!t){ o.mute=true; o.zoom.select(o.zoom.items[c.level], true, true); o.mute=false; } }); }
   var tl=s.querySelector('.k-titletools .k-tabs'), tabbed=c.links.filter(function(l){ return l[0]==='tab'; }).length;
   if(tl && tabbed===tl.querySelectorAll('.k-tab').length-1){ o.tabs=kTabs(tl, function(t){ if(o.mute) return;
     var j=o.tabs.tabs.indexOf(t), hit=c.links.filter(function(l){ return l[0]==='tab' && l[2]===j; })[0];
     if(hit) go(resolve(hit[3]), {kind:'tabs', from:c.tab, to:j}); }); }
   c.links.forEach(function(l){ var el=nth(s, l[1], l[2]); if(!el){ W.missing.push(id+': '+l[1]+' #'+l[2]); return; }
     if(l[0]==='crumb') el.addEventListener('click', function(){ go(resolve(l[3]), {kind:'crumb', index:l[2]}); });
-    else if(l[0]==='need' || l[0]==='ask') el.addEventListener('click', function(){ show(l[3], el); });
+    else if(l[0]==='need' || l[0]==='ask' || l[0]==='window') el.addEventListener('click', function(){ show(l[3], el); });
     else if(l[0]==='open'){ el.addEventListener('click', function(){ go(resolve(l[3]), {kind:'open', el:el}); }); } });
+  // a screen whose cards are selected: focus and selection are one thing on the map (Tile), so focusing a card selects it
+  if(c.select) s.addEventListener('focusin', function(e){ var k=e.target.closest && e.target.closest(c.select); if(k) choose(id, k); });
   return o; }
+// move the selection to a card: its class, the one tab stop, and the ↵ that says what Enter does
+function choose(id, card){ var s=scr(id), c=W.screens[id], all=[].slice.call(s.querySelectorAll(c.select)), was=all.filter(function(k){ return k.classList.contains('k-card-selected'); })[0];
+  if(!card || card===was) return; var hint=was && was.querySelector('.k-card-meta .k-keys');
+  all.forEach(function(k){ k.classList.toggle('k-card-selected', k===card); k.tabIndex=k===card?0:-1; });
+  if(hint) card.querySelector('.k-card-meta').appendChild(hint); }
 function settle(id){ var o=ctl[id], c=W.screens[id]; if(!o) return;
   if(o.zoom) o.zoom.select(o.zoom.items[c.level], false, true);
   if(o.tabs) o.tabs.select(o.tabs.tabs[c.tab], false, true); }
@@ -180,6 +212,7 @@ function go(t, via, back){
   if(open || !t || t===cur) return;
   var from=cur; if(from){ settle(from); scr(from).hidden=true; if(!back) hist.push({id:from, el:via.el||document.activeElement}); }
   scr(t).hidden=false; cur=t; remember(t); var o=init(t); settle(t);
+  var c0=W.screens[t]; if(c0.select){ var pick=c0.links.filter(function(l){ return l[0]==='open' && l[1]===c0.select && l[3]===mem.part; })[0]; if(pick) choose(t, nth(scr(t), pick[1], pick[2])); }
   if(via.kind==='zoom' && o.zoom){ o.zoom.place(o.zoom.items[via.from], false); o.mute=true; o.zoom.select(o.zoom.items[via.to], true); o.mute=false; }
   else if(via.kind==='tabs' && o.tabs){ o.tabs.place(o.tabs.tabs[via.from], false); o.mute=true; o.tabs.select(o.tabs.tabs[via.to], true); o.mute=false; }
   else if(via.kind==='crumb'){ nth(scr(t), '.k-header .k-crumb', via.index).focus(); }
@@ -257,12 +290,14 @@ def build() -> None:
     for sid, (frame, where, name) in SCREENS.items():
         c = LINKS[sid]
         screens[sid] = {'name': name, 'where': where, 'level': c.get('level'), 'tab': c.get('tab'), 'zoom': c.get('zoom'),
-                        'links': [list(l) for l in c['links']]}
+                        'select': c.get('select'), 'links': [list(l) for l in c['links']]}
         for target in [l[3] for l in c['links']] + list(c.get('zoom') or []):
             t = target[1:] if target.startswith('@') else target
-            assert t in SCREENS or t in OVERLAYS or t in GROUPS, f'{sid}: {target} is not drawn'
+            assert t in SCREENS or t in OVERLAYS or t in GROUPS or t == 'step', f'{sid}: {target} is not drawn'
+    for part, step in STEP_OF.items():
+        assert part in SCREENS and step in SCREENS, (part, step)
     # opening a tile: data-go and a name, applied at load (the frame's markup stays the frame's)
-    w = {'start': START, 'groups': GROUPS, 'screens': screens, 'missing': []}
+    w = {'start': START, 'groups': GROUPS, 'stepOf': STEP_OF, 'screens': screens, 'missing': []}
     options = []
     for where in ('The map', 'Pages'):
         opts = ''.join(f'<option value="{sid}">{n}</option>' for sid, (_, wh, n) in SCREENS.items() if wh == where)

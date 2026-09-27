@@ -641,6 +641,8 @@
   [data-overlay] { display:contents; }
   /* a tile, card or cell that opens a screen: the system's own focus ring, and a pointer */
   [data-go] { cursor:pointer; }
+  /* a link that is not a tile or a card (a part's name on the Spec level's text) takes the focus ring every control has */
+  [data-go]:not(.k-tile):not(.k-card):focus-visible { outline:2px solid var(--focus); outline-offset:2px; border-radius:var(--radius-sm); }
 
 /* factory */
 .scr:where([data-screen="factory"]) { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
@@ -785,6 +787,258 @@
 :where([data-screen="part-search-query"]) .f3 .cl { margin:6px 0 0; font:var(--t-body); }
 :where([data-screen="part-search-query"]) .acts { display:flex; flex-direction:column; gap:6px; margin-top:14px; }
 :where([data-screen="part-search-query"]) .f3 .tf { margin-top:auto; padding-top:8px; }
+/* part-search-schema */
+.scr:where([data-screen="part-search-schema"]) { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
+:where([data-screen="part-search-schema"]) .map { position:relative; min-height:0; }
+:where([data-screen="part-search-schema"]) .map > svg { display:block; font-family:var(--font-agent); }
+:where([data-screen="part-search-schema"]) .top { position:absolute; left:32px; right:32px; top:16px; }
+:where([data-screen="part-search-schema"]) .ttl .k-chip { align-self:center; margin-left:-4px; }
+:where([data-screen="part-search-schema"]) .pd { position:absolute; left:32px; right:32px; top:60px; font:var(--t-body); color:var(--text-2); display:flex; align-items:baseline; gap:22px; white-space:nowrap; }
+:where([data-screen="part-search-schema"]) .pd .ctx { display:flex; gap:16px; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="part-search-schema"]) .pd .ctx > span { display:inline-flex; gap:6px; align-items:baseline; }
+:where([data-screen="part-search-schema"]) .pd .ctx > span > .k-mk { align-self:center; }
+:where([data-screen="part-search-schema"]) .pd .ctx > span:not(:last-child) { color:var(--text-2); }
+:where([data-screen="part-search-schema"]) .grid { position:absolute; left:0; top:0; width:1280px; height:520px; }
+:where([data-screen="part-search-schema"]) .top { z-index:1; }
+:where([data-screen="part-search-schema"]) .ch { position:absolute; height:40px; padding:0 10px; box-sizing:border-box; display:flex; flex-direction:column; justify-content:center; border-bottom:1px solid var(--line); }
+:where([data-screen="part-search-schema"]) .ch b { font:var(--t-small); font-weight:600; }
+:where([data-screen="part-search-schema"]) .ch span { font:var(--t-micro); font-weight:400; color:var(--text-3); }
+:where([data-screen="part-search-schema"]) .rl { position:absolute; width:64px; display:flex; align-items:center; font:var(--t-measure-inline); color:var(--text-3); }
+:where([data-screen="part-search-schema"]) .cell { position:absolute; }
+:where([data-screen="part-search-schema"]) .cell .a { display:flex; align-items:center; gap:6px; font:var(--t-measure); color:var(--text); }
+:where([data-screen="part-search-schema"]) .cell .b { font:var(--t-measure-small); font-weight:400; color:var(--text-3); margin-top:1px; white-space:nowrap; }
+:where([data-screen="part-search-schema"]) .gnone { position:absolute; }
+:where([data-screen="part-search-schema"]) .gl { stroke:var(--line-strong); stroke-width:1; stroke-dasharray:1 3; }
+:where([data-screen="part-search-schema"]) .lt { margin:auto 0 auto 4px; font:var(--t-small); color:var(--text-3); }
+:where([data-screen="part-search-schema"]) .ret { position:absolute; inset:0; pointer-events:none; }
+:where([data-screen="part-search-schema"]) .rp { fill:none; stroke:var(--fail); stroke-width:1.5; opacity:.8; }
+:where([data-screen="part-search-schema"]) .rh { fill:var(--fail); }
+:where([data-screen="part-search-schema"]) .rt { fill:var(--text-3); font:var(--t-micro); font-weight:400; }
+:where([data-screen="part-search-schema"]) .steps { position:absolute; left:32px; right:32px; top:402px; bottom:14px; display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; }
+:where([data-screen="part-search-schema"]) .f1 { grid-column:1 / span 2; }
+:where([data-screen="part-search-schema"]) .f1 .sh { display:flex; align-items:center; gap:10px; font:var(--t-label); font-weight:400; opacity:.8; }
+:where([data-screen="part-search-schema"]) .f1 .sev { margin-top:auto; font:var(--t-measure-small); font-weight:600; letter-spacing:var(--t-measure-small-ls); opacity:.7; }
+:where([data-screen="part-search-schema"]) .f1 .say { margin:6px 0 0; font:var(--t-statement); letter-spacing:var(--t-statement-ls); max-width:34ch; }
+:where([data-screen="part-search-schema"]) .f1 .src { margin-top:12px; font:var(--t-measure-inline); opacity:.65; }
+:where([data-screen="part-search-schema"]) .sev2 { font:var(--t-measure-small); font-weight:600; color:var(--text-2); letter-spacing:var(--t-measure-small-ls); }
+:where([data-screen="part-search-schema"]) .sev2 span { font-weight:400; color:var(--text-3); letter-spacing:0; margin-left:6px; }
+:where([data-screen="part-search-schema"]) .f2 p { margin:10px 0 0; font:var(--t-input); letter-spacing:var(--t-input-ls); }
+:where([data-screen="part-search-schema"]) .k-tile .tf { margin-top:auto; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="part-search-schema"]) .f3 .cl { margin:6px 0 0; font:var(--t-body); }
+:where([data-screen="part-search-schema"]) .acts { display:flex; flex-direction:column; gap:6px; margin-top:14px; }
+:where([data-screen="part-search-schema"]) .f3 .tf { margin-top:auto; padding-top:8px; }
+:where([data-screen="part-search-schema"]) .f2 .acts { margin-top:auto; padding-top:10px; }
+:where([data-screen="part-search-schema"]) .dh { display:flex; align-items:center; gap:6px; }
+/* part-search-index */
+.scr:where([data-screen="part-search-index"]) { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
+:where([data-screen="part-search-index"]) .map { position:relative; min-height:0; }
+:where([data-screen="part-search-index"]) .map > svg { display:block; font-family:var(--font-agent); }
+:where([data-screen="part-search-index"]) .top { position:absolute; left:32px; right:32px; top:16px; }
+:where([data-screen="part-search-index"]) .ttl .k-chip { align-self:center; margin-left:-4px; }
+:where([data-screen="part-search-index"]) .pd { position:absolute; left:32px; right:32px; top:60px; font:var(--t-body); color:var(--text-2); display:flex; align-items:baseline; gap:22px; white-space:nowrap; }
+:where([data-screen="part-search-index"]) .pd .ctx { display:flex; gap:16px; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="part-search-index"]) .pd .ctx > span { display:inline-flex; gap:6px; align-items:baseline; }
+:where([data-screen="part-search-index"]) .pd .ctx > span > .k-mk { align-self:center; }
+:where([data-screen="part-search-index"]) .pd .ctx > span:not(:last-child) { color:var(--text-2); }
+:where([data-screen="part-search-index"]) .grid { position:absolute; left:0; top:0; width:1280px; height:520px; }
+:where([data-screen="part-search-index"]) .top { z-index:1; }
+:where([data-screen="part-search-index"]) .ch { position:absolute; height:40px; padding:0 10px; box-sizing:border-box; display:flex; flex-direction:column; justify-content:center; border-bottom:1px solid var(--line); }
+:where([data-screen="part-search-index"]) .ch b { font:var(--t-small); font-weight:600; }
+:where([data-screen="part-search-index"]) .ch span { font:var(--t-micro); font-weight:400; color:var(--text-3); }
+:where([data-screen="part-search-index"]) .rl { position:absolute; width:64px; display:flex; align-items:center; font:var(--t-measure-inline); color:var(--text-3); }
+:where([data-screen="part-search-index"]) .cell { position:absolute; }
+:where([data-screen="part-search-index"]) .cell .a { display:flex; align-items:center; gap:6px; font:var(--t-measure); color:var(--text); }
+:where([data-screen="part-search-index"]) .cell .b { font:var(--t-measure-small); font-weight:400; color:var(--text-3); margin-top:1px; white-space:nowrap; }
+:where([data-screen="part-search-index"]) .gnone { position:absolute; }
+:where([data-screen="part-search-index"]) .gl { stroke:var(--line-strong); stroke-width:1; stroke-dasharray:1 3; }
+:where([data-screen="part-search-index"]) .lt { margin:auto 0 auto 4px; font:var(--t-small); color:var(--text-3); }
+:where([data-screen="part-search-index"]) .ret { position:absolute; inset:0; pointer-events:none; }
+:where([data-screen="part-search-index"]) .rp { fill:none; stroke:var(--fail); stroke-width:1.5; opacity:.8; }
+:where([data-screen="part-search-index"]) .rh { fill:var(--fail); }
+:where([data-screen="part-search-index"]) .rt { fill:var(--text-3); font:var(--t-micro); font-weight:400; }
+:where([data-screen="part-search-index"]) .steps { position:absolute; left:32px; right:32px; top:402px; bottom:14px; display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; }
+:where([data-screen="part-search-index"]) .f1 { grid-column:1 / span 2; }
+:where([data-screen="part-search-index"]) .f1 .sh { display:flex; align-items:center; gap:10px; font:var(--t-label); font-weight:400; opacity:.8; }
+:where([data-screen="part-search-index"]) .f1 .sev { margin-top:auto; font:var(--t-measure-small); font-weight:600; letter-spacing:var(--t-measure-small-ls); opacity:.7; }
+:where([data-screen="part-search-index"]) .f1 .say { margin:6px 0 0; font:var(--t-statement); letter-spacing:var(--t-statement-ls); max-width:34ch; }
+:where([data-screen="part-search-index"]) .f1 .src { margin-top:12px; font:var(--t-measure-inline); opacity:.65; }
+:where([data-screen="part-search-index"]) .sev2 { font:var(--t-measure-small); font-weight:600; color:var(--text-2); letter-spacing:var(--t-measure-small-ls); }
+:where([data-screen="part-search-index"]) .sev2 span { font-weight:400; color:var(--text-3); letter-spacing:0; margin-left:6px; }
+:where([data-screen="part-search-index"]) .f2 p { margin:10px 0 0; font:var(--t-input); letter-spacing:var(--t-input-ls); }
+:where([data-screen="part-search-index"]) .k-tile .tf { margin-top:auto; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="part-search-index"]) .f3 .cl { margin:6px 0 0; font:var(--t-body); }
+:where([data-screen="part-search-index"]) .acts { display:flex; flex-direction:column; gap:6px; margin-top:14px; }
+:where([data-screen="part-search-index"]) .f3 .tf { margin-top:auto; padding-top:8px; }
+:where([data-screen="part-search-index"]) .f2 .acts { margin-top:auto; padding-top:10px; }
+:where([data-screen="part-search-index"]) .dh { display:flex; align-items:center; gap:6px; }
+/* part-search-rank */
+.scr:where([data-screen="part-search-rank"]) { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
+:where([data-screen="part-search-rank"]) .map { position:relative; min-height:0; }
+:where([data-screen="part-search-rank"]) .map > svg { display:block; font-family:var(--font-agent); }
+:where([data-screen="part-search-rank"]) .top { position:absolute; left:32px; right:32px; top:16px; }
+:where([data-screen="part-search-rank"]) .ttl .k-chip { align-self:center; margin-left:-4px; }
+:where([data-screen="part-search-rank"]) .pd { position:absolute; left:32px; right:32px; top:60px; font:var(--t-body); color:var(--text-2); display:flex; align-items:baseline; gap:22px; white-space:nowrap; }
+:where([data-screen="part-search-rank"]) .pd .ctx { display:flex; gap:16px; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="part-search-rank"]) .pd .ctx > span { display:inline-flex; gap:6px; align-items:baseline; }
+:where([data-screen="part-search-rank"]) .pd .ctx > span > .k-mk { align-self:center; }
+:where([data-screen="part-search-rank"]) .pd .ctx > span:not(:last-child) { color:var(--text-2); }
+:where([data-screen="part-search-rank"]) .grid { position:absolute; left:0; top:0; width:1280px; height:520px; }
+:where([data-screen="part-search-rank"]) .top { z-index:1; }
+:where([data-screen="part-search-rank"]) .ch { position:absolute; height:40px; padding:0 10px; box-sizing:border-box; display:flex; flex-direction:column; justify-content:center; border-bottom:1px solid var(--line); }
+:where([data-screen="part-search-rank"]) .ch b { font:var(--t-small); font-weight:600; }
+:where([data-screen="part-search-rank"]) .ch span { font:var(--t-micro); font-weight:400; color:var(--text-3); }
+:where([data-screen="part-search-rank"]) .rl { position:absolute; width:64px; display:flex; align-items:center; font:var(--t-measure-inline); color:var(--text-3); }
+:where([data-screen="part-search-rank"]) .cell { position:absolute; }
+:where([data-screen="part-search-rank"]) .cell .a { display:flex; align-items:center; gap:6px; font:var(--t-measure); color:var(--text); }
+:where([data-screen="part-search-rank"]) .cell .b { font:var(--t-measure-small); font-weight:400; color:var(--text-3); margin-top:1px; white-space:nowrap; }
+:where([data-screen="part-search-rank"]) .gnone { position:absolute; }
+:where([data-screen="part-search-rank"]) .gl { stroke:var(--line-strong); stroke-width:1; stroke-dasharray:1 3; }
+:where([data-screen="part-search-rank"]) .lt { margin:auto 0 auto 4px; font:var(--t-small); color:var(--text-3); }
+:where([data-screen="part-search-rank"]) .ret { position:absolute; inset:0; pointer-events:none; }
+:where([data-screen="part-search-rank"]) .rp { fill:none; stroke:var(--fail); stroke-width:1.5; opacity:.8; }
+:where([data-screen="part-search-rank"]) .rh { fill:var(--fail); }
+:where([data-screen="part-search-rank"]) .rt { fill:var(--text-3); font:var(--t-micro); font-weight:400; }
+:where([data-screen="part-search-rank"]) .steps { position:absolute; left:32px; right:32px; top:402px; bottom:14px; display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; }
+:where([data-screen="part-search-rank"]) .f1 { grid-column:1 / span 2; }
+:where([data-screen="part-search-rank"]) .f1 .sh { display:flex; align-items:center; gap:10px; font:var(--t-label); font-weight:400; opacity:.8; }
+:where([data-screen="part-search-rank"]) .f1 .sev { margin-top:auto; font:var(--t-measure-small); font-weight:600; letter-spacing:var(--t-measure-small-ls); opacity:.7; }
+:where([data-screen="part-search-rank"]) .f1 .say { margin:6px 0 0; font:var(--t-statement); letter-spacing:var(--t-statement-ls); max-width:34ch; }
+:where([data-screen="part-search-rank"]) .f1 .src { margin-top:12px; font:var(--t-measure-inline); opacity:.65; }
+:where([data-screen="part-search-rank"]) .sev2 { font:var(--t-measure-small); font-weight:600; color:var(--text-2); letter-spacing:var(--t-measure-small-ls); }
+:where([data-screen="part-search-rank"]) .sev2 span { font-weight:400; color:var(--text-3); letter-spacing:0; margin-left:6px; }
+:where([data-screen="part-search-rank"]) .f2 p { margin:10px 0 0; font:var(--t-input); letter-spacing:var(--t-input-ls); }
+:where([data-screen="part-search-rank"]) .k-tile .tf { margin-top:auto; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="part-search-rank"]) .f3 .cl { margin:6px 0 0; font:var(--t-body); }
+:where([data-screen="part-search-rank"]) .acts { display:flex; flex-direction:column; gap:6px; margin-top:14px; }
+:where([data-screen="part-search-rank"]) .f3 .tf { margin-top:auto; padding-top:8px; }
+:where([data-screen="part-search-rank"]) .f2 .acts { margin-top:auto; padding-top:10px; }
+:where([data-screen="part-search-rank"]) .dh { display:flex; align-items:center; gap:6px; }
+/* part-search-highlight */
+.scr:where([data-screen="part-search-highlight"]) { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
+:where([data-screen="part-search-highlight"]) .map { position:relative; min-height:0; }
+:where([data-screen="part-search-highlight"]) .map > svg { display:block; font-family:var(--font-agent); }
+:where([data-screen="part-search-highlight"]) .top { position:absolute; left:32px; right:32px; top:16px; }
+:where([data-screen="part-search-highlight"]) .ttl .k-chip { align-self:center; margin-left:-4px; }
+:where([data-screen="part-search-highlight"]) .pd { position:absolute; left:32px; right:32px; top:60px; font:var(--t-body); color:var(--text-2); display:flex; align-items:baseline; gap:22px; white-space:nowrap; }
+:where([data-screen="part-search-highlight"]) .pd .ctx { display:flex; gap:16px; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="part-search-highlight"]) .pd .ctx > span { display:inline-flex; gap:6px; align-items:baseline; }
+:where([data-screen="part-search-highlight"]) .pd .ctx > span > .k-mk { align-self:center; }
+:where([data-screen="part-search-highlight"]) .pd .ctx > span:not(:last-child) { color:var(--text-2); }
+:where([data-screen="part-search-highlight"]) .grid { position:absolute; left:0; top:0; width:1280px; height:520px; }
+:where([data-screen="part-search-highlight"]) .top { z-index:1; }
+:where([data-screen="part-search-highlight"]) .ch { position:absolute; height:40px; padding:0 10px; box-sizing:border-box; display:flex; flex-direction:column; justify-content:center; border-bottom:1px solid var(--line); }
+:where([data-screen="part-search-highlight"]) .ch b { font:var(--t-small); font-weight:600; }
+:where([data-screen="part-search-highlight"]) .ch span { font:var(--t-micro); font-weight:400; color:var(--text-3); }
+:where([data-screen="part-search-highlight"]) .rl { position:absolute; width:64px; display:flex; align-items:center; font:var(--t-measure-inline); color:var(--text-3); }
+:where([data-screen="part-search-highlight"]) .cell { position:absolute; }
+:where([data-screen="part-search-highlight"]) .cell .a { display:flex; align-items:center; gap:6px; font:var(--t-measure); color:var(--text); }
+:where([data-screen="part-search-highlight"]) .cell .b { font:var(--t-measure-small); font-weight:400; color:var(--text-3); margin-top:1px; white-space:nowrap; }
+:where([data-screen="part-search-highlight"]) .gnone { position:absolute; }
+:where([data-screen="part-search-highlight"]) .gl { stroke:var(--line-strong); stroke-width:1; stroke-dasharray:1 3; }
+:where([data-screen="part-search-highlight"]) .lt { margin:auto 0 auto 4px; font:var(--t-small); color:var(--text-3); }
+:where([data-screen="part-search-highlight"]) .ret { position:absolute; inset:0; pointer-events:none; }
+:where([data-screen="part-search-highlight"]) .rp { fill:none; stroke:var(--fail); stroke-width:1.5; opacity:.8; }
+:where([data-screen="part-search-highlight"]) .rh { fill:var(--fail); }
+:where([data-screen="part-search-highlight"]) .rt { fill:var(--text-3); font:var(--t-micro); font-weight:400; }
+:where([data-screen="part-search-highlight"]) .steps { position:absolute; left:32px; right:32px; top:402px; bottom:14px; display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; }
+:where([data-screen="part-search-highlight"]) .f1 { grid-column:1 / span 2; }
+:where([data-screen="part-search-highlight"]) .f1 .sh { display:flex; align-items:center; gap:10px; font:var(--t-label); font-weight:400; opacity:.8; }
+:where([data-screen="part-search-highlight"]) .f1 .sev { margin-top:auto; font:var(--t-measure-small); font-weight:600; letter-spacing:var(--t-measure-small-ls); opacity:.7; }
+:where([data-screen="part-search-highlight"]) .f1 .say { margin:6px 0 0; font:var(--t-statement); letter-spacing:var(--t-statement-ls); max-width:34ch; }
+:where([data-screen="part-search-highlight"]) .f1 .src { margin-top:12px; font:var(--t-measure-inline); opacity:.65; }
+:where([data-screen="part-search-highlight"]) .sev2 { font:var(--t-measure-small); font-weight:600; color:var(--text-2); letter-spacing:var(--t-measure-small-ls); }
+:where([data-screen="part-search-highlight"]) .sev2 span { font-weight:400; color:var(--text-3); letter-spacing:0; margin-left:6px; }
+:where([data-screen="part-search-highlight"]) .f2 p { margin:10px 0 0; font:var(--t-input); letter-spacing:var(--t-input-ls); }
+:where([data-screen="part-search-highlight"]) .k-tile .tf { margin-top:auto; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="part-search-highlight"]) .f3 .cl { margin:6px 0 0; font:var(--t-body); }
+:where([data-screen="part-search-highlight"]) .acts { display:flex; flex-direction:column; gap:6px; margin-top:14px; }
+:where([data-screen="part-search-highlight"]) .f3 .tf { margin-top:auto; padding-top:8px; }
+:where([data-screen="part-search-highlight"]) .f2 .acts { margin-top:auto; padding-top:10px; }
+:where([data-screen="part-search-highlight"]) .dh { display:flex; align-items:center; gap:6px; }
+/* part-search-api */
+.scr:where([data-screen="part-search-api"]) { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
+:where([data-screen="part-search-api"]) .map { position:relative; min-height:0; }
+:where([data-screen="part-search-api"]) .map > svg { display:block; font-family:var(--font-agent); }
+:where([data-screen="part-search-api"]) .top { position:absolute; left:32px; right:32px; top:16px; }
+:where([data-screen="part-search-api"]) .ttl .k-chip { align-self:center; margin-left:-4px; }
+:where([data-screen="part-search-api"]) .pd { position:absolute; left:32px; right:32px; top:60px; font:var(--t-body); color:var(--text-2); display:flex; align-items:baseline; gap:22px; white-space:nowrap; }
+:where([data-screen="part-search-api"]) .pd .ctx { display:flex; gap:16px; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="part-search-api"]) .pd .ctx > span { display:inline-flex; gap:6px; align-items:baseline; }
+:where([data-screen="part-search-api"]) .pd .ctx > span > .k-mk { align-self:center; }
+:where([data-screen="part-search-api"]) .pd .ctx > span:not(:last-child) { color:var(--text-2); }
+:where([data-screen="part-search-api"]) .grid { position:absolute; left:0; top:0; width:1280px; height:520px; }
+:where([data-screen="part-search-api"]) .top { z-index:1; }
+:where([data-screen="part-search-api"]) .ch { position:absolute; height:40px; padding:0 10px; box-sizing:border-box; display:flex; flex-direction:column; justify-content:center; border-bottom:1px solid var(--line); }
+:where([data-screen="part-search-api"]) .ch b { font:var(--t-small); font-weight:600; }
+:where([data-screen="part-search-api"]) .ch span { font:var(--t-micro); font-weight:400; color:var(--text-3); }
+:where([data-screen="part-search-api"]) .rl { position:absolute; width:64px; display:flex; align-items:center; font:var(--t-measure-inline); color:var(--text-3); }
+:where([data-screen="part-search-api"]) .cell { position:absolute; }
+:where([data-screen="part-search-api"]) .cell .a { display:flex; align-items:center; gap:6px; font:var(--t-measure); color:var(--text); }
+:where([data-screen="part-search-api"]) .cell .b { font:var(--t-measure-small); font-weight:400; color:var(--text-3); margin-top:1px; white-space:nowrap; }
+:where([data-screen="part-search-api"]) .gnone { position:absolute; }
+:where([data-screen="part-search-api"]) .gl { stroke:var(--line-strong); stroke-width:1; stroke-dasharray:1 3; }
+:where([data-screen="part-search-api"]) .lt { margin:auto 0 auto 4px; font:var(--t-small); color:var(--text-3); }
+:where([data-screen="part-search-api"]) .ret { position:absolute; inset:0; pointer-events:none; }
+:where([data-screen="part-search-api"]) .rp { fill:none; stroke:var(--fail); stroke-width:1.5; opacity:.8; }
+:where([data-screen="part-search-api"]) .rh { fill:var(--fail); }
+:where([data-screen="part-search-api"]) .rt { fill:var(--text-3); font:var(--t-micro); font-weight:400; }
+:where([data-screen="part-search-api"]) .steps { position:absolute; left:32px; right:32px; top:402px; bottom:14px; display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; }
+:where([data-screen="part-search-api"]) .f1 { grid-column:1 / span 2; }
+:where([data-screen="part-search-api"]) .f1 .sh { display:flex; align-items:center; gap:10px; font:var(--t-label); font-weight:400; opacity:.8; }
+:where([data-screen="part-search-api"]) .f1 .sev { margin-top:auto; font:var(--t-measure-small); font-weight:600; letter-spacing:var(--t-measure-small-ls); opacity:.7; }
+:where([data-screen="part-search-api"]) .f1 .say { margin:6px 0 0; font:var(--t-statement); letter-spacing:var(--t-statement-ls); max-width:34ch; }
+:where([data-screen="part-search-api"]) .f1 .src { margin-top:12px; font:var(--t-measure-inline); opacity:.65; }
+:where([data-screen="part-search-api"]) .sev2 { font:var(--t-measure-small); font-weight:600; color:var(--text-2); letter-spacing:var(--t-measure-small-ls); }
+:where([data-screen="part-search-api"]) .sev2 span { font-weight:400; color:var(--text-3); letter-spacing:0; margin-left:6px; }
+:where([data-screen="part-search-api"]) .f2 p { margin:10px 0 0; font:var(--t-input); letter-spacing:var(--t-input-ls); }
+:where([data-screen="part-search-api"]) .k-tile .tf { margin-top:auto; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="part-search-api"]) .f3 .cl { margin:6px 0 0; font:var(--t-body); }
+:where([data-screen="part-search-api"]) .acts { display:flex; flex-direction:column; gap:6px; margin-top:14px; }
+:where([data-screen="part-search-api"]) .f3 .tf { margin-top:auto; padding-top:8px; }
+:where([data-screen="part-search-api"]) .f2 .acts { margin-top:auto; padding-top:10px; }
+:where([data-screen="part-search-api"]) .dh { display:flex; align-items:center; gap:6px; }
+/* part-search-cli */
+.scr:where([data-screen="part-search-cli"]) { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
+:where([data-screen="part-search-cli"]) .map { position:relative; min-height:0; }
+:where([data-screen="part-search-cli"]) .map > svg { display:block; font-family:var(--font-agent); }
+:where([data-screen="part-search-cli"]) .top { position:absolute; left:32px; right:32px; top:16px; }
+:where([data-screen="part-search-cli"]) .ttl .k-chip { align-self:center; margin-left:-4px; }
+:where([data-screen="part-search-cli"]) .pd { position:absolute; left:32px; right:32px; top:60px; font:var(--t-body); color:var(--text-2); display:flex; align-items:baseline; gap:22px; white-space:nowrap; }
+:where([data-screen="part-search-cli"]) .pd .ctx { display:flex; gap:16px; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="part-search-cli"]) .pd .ctx > span { display:inline-flex; gap:6px; align-items:baseline; }
+:where([data-screen="part-search-cli"]) .pd .ctx > span > .k-mk { align-self:center; }
+:where([data-screen="part-search-cli"]) .pd .ctx > span:not(:last-child) { color:var(--text-2); }
+:where([data-screen="part-search-cli"]) .grid { position:absolute; left:0; top:0; width:1280px; height:520px; }
+:where([data-screen="part-search-cli"]) .top { z-index:1; }
+:where([data-screen="part-search-cli"]) .ch { position:absolute; height:40px; padding:0 10px; box-sizing:border-box; display:flex; flex-direction:column; justify-content:center; border-bottom:1px solid var(--line); }
+:where([data-screen="part-search-cli"]) .ch b { font:var(--t-small); font-weight:600; }
+:where([data-screen="part-search-cli"]) .ch span { font:var(--t-micro); font-weight:400; color:var(--text-3); }
+:where([data-screen="part-search-cli"]) .rl { position:absolute; width:64px; display:flex; align-items:center; font:var(--t-measure-inline); color:var(--text-3); }
+:where([data-screen="part-search-cli"]) .cell { position:absolute; }
+:where([data-screen="part-search-cli"]) .cell .a { display:flex; align-items:center; gap:6px; font:var(--t-measure); color:var(--text); }
+:where([data-screen="part-search-cli"]) .cell .b { font:var(--t-measure-small); font-weight:400; color:var(--text-3); margin-top:1px; white-space:nowrap; }
+:where([data-screen="part-search-cli"]) .gnone { position:absolute; }
+:where([data-screen="part-search-cli"]) .gl { stroke:var(--line-strong); stroke-width:1; stroke-dasharray:1 3; }
+:where([data-screen="part-search-cli"]) .lt { margin:auto 0 auto 4px; font:var(--t-small); color:var(--text-3); }
+:where([data-screen="part-search-cli"]) .ret { position:absolute; inset:0; pointer-events:none; }
+:where([data-screen="part-search-cli"]) .rp { fill:none; stroke:var(--fail); stroke-width:1.5; opacity:.8; }
+:where([data-screen="part-search-cli"]) .rh { fill:var(--fail); }
+:where([data-screen="part-search-cli"]) .rt { fill:var(--text-3); font:var(--t-micro); font-weight:400; }
+:where([data-screen="part-search-cli"]) .steps { position:absolute; left:32px; right:32px; top:402px; bottom:14px; display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; }
+:where([data-screen="part-search-cli"]) .f1 { grid-column:1 / span 2; }
+:where([data-screen="part-search-cli"]) .f1 .sh { display:flex; align-items:center; gap:10px; font:var(--t-label); font-weight:400; opacity:.8; }
+:where([data-screen="part-search-cli"]) .f1 .sev { margin-top:auto; font:var(--t-measure-small); font-weight:600; letter-spacing:var(--t-measure-small-ls); opacity:.7; }
+:where([data-screen="part-search-cli"]) .f1 .say { margin:6px 0 0; font:var(--t-statement); letter-spacing:var(--t-statement-ls); max-width:34ch; }
+:where([data-screen="part-search-cli"]) .f1 .src { margin-top:12px; font:var(--t-measure-inline); opacity:.65; }
+:where([data-screen="part-search-cli"]) .sev2 { font:var(--t-measure-small); font-weight:600; color:var(--text-2); letter-spacing:var(--t-measure-small-ls); }
+:where([data-screen="part-search-cli"]) .sev2 span { font-weight:400; color:var(--text-3); letter-spacing:0; margin-left:6px; }
+:where([data-screen="part-search-cli"]) .f2 p { margin:10px 0 0; font:var(--t-input); letter-spacing:var(--t-input-ls); }
+:where([data-screen="part-search-cli"]) .k-tile .tf { margin-top:auto; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="part-search-cli"]) .f3 .cl { margin:6px 0 0; font:var(--t-body); }
+:where([data-screen="part-search-cli"]) .acts { display:flex; flex-direction:column; gap:6px; margin-top:14px; }
+:where([data-screen="part-search-cli"]) .f3 .tf { margin-top:auto; padding-top:8px; }
+:where([data-screen="part-search-cli"]) .f2 .acts { margin-top:auto; padding-top:10px; }
+:where([data-screen="part-search-cli"]) .dh { display:flex; align-items:center; gap:6px; }
 /* step-query-review-2 */
 .scr:where([data-screen="step-query-review-2"]) { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
 :where([data-screen="step-query-review-2"]) .map { position:relative; min-height:0; }
@@ -1096,7 +1350,7 @@
     <span class="proto-name">kstrl</span><span class="proto-when">search being built · 21:40 · ≥$31.10 today</span>
     <span class="grow"></span>
     <button class="k-button k-button-sm" id="proto-back" type="button">Back <span class="k-keys"><span class="k-key k-key-sm">esc</span></span></button>
-    <label class="proto-go" for="proto-index">Screen <select id="proto-index"><optgroup label="The map"><option value="factory">Factory</option><option value="spec-graph">Spec: search, as a graph</option><option value="spec-text">Spec: search, as text</option><option value="part-search-query">Part: search-query</option><option value="step-query-review-2">Step: search-query, review on try 2</option></optgroup><optgroup label="Pages"><option value="inbox">Inbox</option><option value="queue">Queue</option><option value="trust">Trust</option><option value="learning">Learning</option><option value="settings">Settings</option><option value="notify-one">Notifications: one event</option><option value="notify-every">Notifications: every event</option></optgroup></select></label>
+    <label class="proto-go" for="proto-index">Screen <select id="proto-index"><optgroup label="The map"><option value="factory">Factory</option><option value="spec-graph">Spec: search, as a graph</option><option value="spec-text">Spec: search, as text</option><option value="part-search-query">Part: search-query</option><option value="part-search-schema">Part: search-schema</option><option value="part-search-index">Part: search-index</option><option value="part-search-rank">Part: search-rank</option><option value="part-search-highlight">Part: search-highlight</option><option value="part-search-api">Part: search-api</option><option value="part-search-cli">Part: search-cli</option><option value="step-query-review-2">Step: search-query, review on try 2</option></optgroup><optgroup label="Pages"><option value="inbox">Inbox</option><option value="queue">Queue</option><option value="trust">Trust</option><option value="learning">Learning</option><option value="settings">Settings</option><option value="notify-one">Notifications: one event</option><option value="notify-every">Notifications: every event</option></optgroup></select></label>
   </div>
   <div class="proto-fit"><div class="proto-stage">
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
@@ -1320,6 +1574,368 @@
           <button class="k-button k-button-block">Open decision 1 in the plan</button>
         </div>
         <div class="tf">Guidance goes into memory.md, which try 4 reads.</div>
+      </div>
+    </div>
+  </div>
+  <div class="k-needs">
+    <span class="k-needs-label">Needs you</span>
+    <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
+    <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
+    
+    <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
+  </div>
+</div>
+<div class="scr" data-screen="part-search-schema" hidden>
+  <header class="k-header">
+    <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb" aria-current="page">search-schema</button></li></ol></nav>
+    
+    <span class="grow"></span>
+    <span class="k-live">live · last event 3s ago</span>
+    <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
+    <button class="k-ask" aria-label="Ask or do anything"><span>Ask or do anything</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span></button>
+  </header>
+  <div class="map">
+    <div class="top k-titlerow"><h1 class="k-title"><span class="k-title-name">search-schema</span><span class="k-title-meta">merged #48 · 1 try · <span class="v-measure">≥$2.18</span></span></h1><div class="k-titletools"><div class="k-seg" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Spec</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="0">Part</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Step</button></div></div></div>
+    <div class="pd"><span>Adds the full-text table that search reads, and its migration.</span>
+      <span class="ctx"><span>needs nothing: the first part</span><span><span class="k-mk sm work"></span>needed by 4 parts, started when it merged</span></span></div>
+<div class="grid">
+<div class="ch" style="left:99px;top:100px;width:238px"><b>Build</b><span>the engineer, every 2 s</span></div>
+<div class="ch" style="left:343px;top:100px;width:144px"><b>Verify</b><span>tests, lint, scope</span></div>
+<div class="ch" style="left:493px;top:100px;width:170px"><b>Review</b><span>a reviewer agent</span></div>
+<div class="ch" style="left:669px;top:100px;width:144px"><b>Security</b><span>a security agent</span></div>
+<div class="ch" style="left:819px;top:100px;width:144px"><b>Distill</b><span>records facts</span></div>
+<div class="ch" style="left:969px;top:100px;width:144px"><b>Your approval</b><span>you, at L2</span></div>
+<div class="ch" style="left:1119px;top:100px;width:126px"><b>Merge</b><span>PR and CI</span></div>
+<div class="rl" style="left:32px;top:140px;height:50px">try 1</div>
+<div class="k-tile k-tile-cell cell" style="left:99px;top:140px;width:238px;height:50px"><div class="a">5 iterations</div><div class="b">18m</div></div>
+<div class="k-tile k-tile-cell cell" style="left:343px;top:140px;width:144px;height:50px"><div class="a"><span class="k-mk sm pass"></span>12 passed</div><div class="b">31s</div></div>
+<div class="k-tile k-tile-cell cell" style="left:493px;top:140px;width:170px;height:50px"><div class="a"><span class="k-mk sm pass"></span>0 blocking</div><div class="b">52s</div></div>
+<div class="k-tile k-tile-cell cell" style="left:669px;top:140px;width:144px;height:50px"><div class="a"><span class="k-mk sm pass"></span>0 findings</div><div class="b">44s</div></div>
+<div class="k-tile k-tile-cell cell" style="left:819px;top:140px;width:144px;height:50px"><div class="a">1 fact</div><div class="b">29s</div></div>
+<div class="k-tile k-tile-cell cell" style="left:969px;top:140px;width:144px;height:50px"><div class="a"><span class="k-mk sm pass"></span>approved</div><div class="b">20:10</div></div>
+<div class="k-tile k-tile-cell k-tile-selected cell" style="left:1119px;top:140px;width:126px;height:50px"><div class="a"><span class="k-mk sm landed"></span>#48 merged</div><div class="b">20:12</div></div>
+</div>
+    <div class="steps">
+      <div class="k-tile k-tile-ink f1 k-tile-hero">
+        <div class="sh"><span>merge · #48</span><span class="grow"></span><span>CI passing on a41c9e2</span></div>
+        <div class="sev">merged at 20:12</div>
+        <p class="say">You approved it at 20:10 and it merged two minutes later. The four parts that needed it started at once.</p>
+        <div class="src">#48 · a41c9e2 · 20:12</div>
+      </div>
+      <div class="k-tile f2">
+        <div class="sev2">the distiller recorded <span>1 fact</span></div>
+        <p>search_fts is an FTS5 table whose rowid is the snippet’s id.</p>
+        <div class="tf">every part after it reads this</div>
+      </div>
+      <div class="k-tile f3">
+        <div class="k-label">Its one try</div>
+        <p class="cl">5 iterations, every check agreed the first time.</p>
+        <div class="acts">
+          <button class="k-button k-button-block">Read the review log<span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">L</span></span></button>
+          <button class="k-button k-button-block">Open #48</button>
+        </div>
+        <div class="tf">Nothing here waits for you.</div>
+      </div>
+    </div>
+  </div>
+  <div class="k-needs">
+    <span class="k-needs-label">Needs you</span>
+    <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
+    <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
+    
+    <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
+  </div>
+</div>
+<div class="scr" data-screen="part-search-index" hidden>
+  <header class="k-header">
+    <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb" aria-current="page">search-index</button></li></ol></nav>
+    
+    <span class="grow"></span>
+    <span class="k-live">live · last event 3s ago</span>
+    <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
+    <button class="k-ask" aria-label="Ask or do anything"><span>Ask or do anything</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span></button>
+  </header>
+  <div class="map">
+    <div class="top k-titlerow"><h1 class="k-title"><span class="k-title-name">search-index</span><span class="k-title-meta">your approval · waiting 12m · 1 try · <span class="v-measure">≥$4.34</span></span></h1><div class="k-titletools"><div class="k-seg" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Spec</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="0">Part</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Step</button></div></div></div>
+    <div class="pd"><span>Keeps a full-text index of snippet titles and bodies, updated on every save and delete.</span>
+      <span class="ctx"><span><span class="k-mk sm landed"></span>needs search-schema, merged</span><span><span class="k-mk sm wait"></span>needed by search-api</span></span></div>
+<div class="grid">
+<div class="ch" style="left:99px;top:100px;width:238px"><b>Build</b><span>the engineer, every 2 s</span></div>
+<div class="ch" style="left:343px;top:100px;width:144px"><b>Verify</b><span>tests, lint, scope</span></div>
+<div class="ch" style="left:493px;top:100px;width:170px"><b>Review</b><span>a reviewer agent</span></div>
+<div class="ch" style="left:669px;top:100px;width:144px"><b>Security</b><span>a security agent</span></div>
+<div class="ch" style="left:819px;top:100px;width:144px"><b>Distill</b><span>records facts</span></div>
+<div class="ch" style="left:969px;top:100px;width:144px"><b>Your approval</b><span>you, at L2</span></div>
+<div class="ch" style="left:1119px;top:100px;width:126px"><b>Merge</b><span>PR and CI</span></div>
+<div class="rl" style="left:32px;top:140px;height:50px">try 1</div>
+<div class="k-tile k-tile-cell cell" style="left:99px;top:140px;width:238px;height:50px"><div class="a">10 iterations</div><div class="b">1h 12m</div></div>
+<div class="k-tile k-tile-cell cell" style="left:343px;top:140px;width:144px;height:50px"><div class="a"><span class="k-mk sm pass"></span>31 passed</div><div class="b">41s</div></div>
+<div class="k-tile k-tile-cell cell" style="left:493px;top:140px;width:170px;height:50px"><div class="a"><span class="k-mk sm pass"></span>0 blocking</div><div class="b">2 advisory · 80s</div></div>
+<div class="k-tile k-tile-cell cell" style="left:669px;top:140px;width:144px;height:50px"><div class="a"><span class="k-mk sm pass"></span>0 findings</div><div class="b">52s</div></div>
+<div class="k-tile k-tile-cell cell" style="left:819px;top:140px;width:144px;height:50px"><div class="a">2 facts</div><div class="b">38s</div></div>
+<div class="k-tile k-tile-cell k-tile-ask k-tile-selected cell" style="left:969px;top:140px;width:144px;height:50px"><div class="a"><span class="k-mk sm you"></span>waiting</div><div class="b">since 21:28</div></div>
+<div class="k-tile k-tile-cell k-tile-idle cell" style="left:1119px;top:140px;width:126px;height:50px"></div>
+</div>
+    <div class="steps">
+      <div class="k-tile k-tile-ink f1 k-tile-hero">
+        <div class="sh"><span>your approval · waiting 12m</span><span class="grow"></span><span>L2 · every merge waits for you</span></div>
+        <div class="sev">every check agreed</div>
+        <p class="say">31 tests passed, and neither review nor security found anything that blocks.</p>
+        <div class="src">3 stories claimed done · +412 −18 · 5 files</div>
+      </div>
+      <div class="k-tile f2">
+        <div class="sev2">error_handling <span>search/index.py:52</span></div>
+        <p>A failed reindex is logged and skipped, so the index can fall behind the table.</p>
+        <div class="tf">advisory · 1 more finding · neither blocks</div>
+      </div>
+      <div class="k-tile f3">
+        <div class="k-label">Your decision</div>
+        <p class="cl">Approve, retry, reject, or leave it waiting. Each choice says what it does before you take it.</p>
+        <div class="acts">
+          <button class="k-button k-button-block">Open the approval<span class="k-keys"><span class="k-key">↵</span></span></button>
+        </div>
+        <div class="tf">Opening it approves nothing.</div>
+      </div>
+    </div>
+  </div>
+  <div class="k-needs">
+    <span class="k-needs-label">Needs you</span>
+    <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
+    <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
+    
+    <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
+  </div>
+</div>
+<div class="scr" data-screen="part-search-rank" hidden>
+  <header class="k-header">
+    <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb" aria-current="page">search-rank</button></li></ol></nav>
+    
+    <span class="grow"></span>
+    <span class="k-live">live · last event 3s ago</span>
+    <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
+    <button class="k-ask" aria-label="Ask or do anything"><span>Ask or do anything</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span></button>
+  </header>
+  <div class="map">
+    <div class="top k-titlerow"><h1 class="k-title"><span class="k-title-name">search-rank</span><span class="k-chip">engineer</span><span class="k-title-meta">try 1 of 4 · iteration 9 of up to 10</span></h1><div class="k-titletools"><div class="k-seg" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Spec</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="0">Part</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Step</button></div></div></div>
+    <div class="pd"><span>Orders the matches by relevance.</span>
+      <span class="ctx"><span><span class="k-mk sm landed"></span>needs search-schema, merged</span><span><span class="k-mk sm wait"></span>needed by search-api</span><span>decision 2: BM25, SQLite FTS5’s built-in ranking</span></span></div>
+<div class="grid">
+<div class="ch" style="left:99px;top:100px;width:238px"><b>Build</b><span>the engineer, every 2 s</span></div>
+<div class="ch" style="left:343px;top:100px;width:144px"><b>Verify</b><span>tests, lint, scope</span></div>
+<div class="ch" style="left:493px;top:100px;width:170px"><b>Review</b><span>a reviewer agent</span></div>
+<div class="ch" style="left:669px;top:100px;width:144px"><b>Security</b><span>a security agent</span></div>
+<div class="ch" style="left:819px;top:100px;width:144px"><b>Distill</b><span>records facts</span></div>
+<div class="ch" style="left:969px;top:100px;width:144px"><b>Your approval</b><span>you, at L2</span></div>
+<div class="ch" style="left:1119px;top:100px;width:126px"><b>Merge</b><span>PR and CI</span></div>
+<div class="rl" style="left:32px;top:140px;height:50px">try 1</div>
+<div class="k-tile k-tile-cell k-tile-work k-tile-selected cell" style="left:99px;top:140px;width:238px;height:50px"><div class="a"><span class="k-mk sm work"></span>iteration 9</div><div class="b">of up to 10 · 1h 28m</div></div>
+<div class="k-tile k-tile-cell k-tile-idle cell" style="left:343px;top:140px;width:144px;height:50px"></div>
+<div class="k-tile k-tile-cell k-tile-idle cell" style="left:493px;top:140px;width:170px;height:50px"></div>
+<div class="k-tile k-tile-cell k-tile-idle cell" style="left:669px;top:140px;width:144px;height:50px"></div>
+<div class="k-tile k-tile-cell k-tile-idle cell" style="left:819px;top:140px;width:144px;height:50px"></div>
+<div class="k-tile k-tile-cell k-tile-idle cell" style="left:969px;top:140px;width:144px;height:50px"></div>
+<div class="k-tile k-tile-cell k-tile-idle cell" style="left:1119px;top:140px;width:126px;height:50px"></div>
+</div>
+    <div class="steps">
+      <div class="k-tile k-tile-ink f1 k-tile-hero">
+        <div class="sh"><span>engineer · try 1 · iteration 9 · output 6s ago</span><span class="grow"></span><span>no spend counted until a phase ends</span></div>
+        <div class="sev">its latest words</div>
+        <p class="say">Titles now count twice as much as bodies in bm25(). The ranking tests pass; running the whole suite.</p>
+        <div class="src">engineer.log · iteration 9</div>
+      </div>
+      <div class="k-tile f2">
+        <div class="sev2">fast checks after each iteration</div>
+        <p>Tests failed after iterations 1 to 5 and passed from 6 on. Typecheck passed throughout.</p>
+        <div class="tf">with fast_iteration_checks on: tests, typecheck</div>
+      </div>
+      <div class="k-tile f3">
+        <div class="k-label">What it has claimed</div>
+        <p class="cl">1 of 2 stories done: ranking by BM25.</p>
+        <div class="acts">
+          <button class="k-button k-button-block">Open its log<span class="k-keys"><span class="k-key">↵</span></span></button>
+          <button class="k-button k-button-block">Tell the engineers…<span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">G</span></span></button>
+        </div>
+        <div class="tf">Guidance reaches its next try, not this one.</div>
+      </div>
+    </div>
+  </div>
+  <div class="k-needs">
+    <span class="k-needs-label">Needs you</span>
+    <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
+    <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
+    
+    <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
+  </div>
+</div>
+<div class="scr" data-screen="part-search-highlight" hidden>
+  <header class="k-header">
+    <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb" aria-current="page">search-highlight</button></li></ol></nav>
+    
+    <span class="grow"></span>
+    <span class="k-live">live · last event 3s ago</span>
+    <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
+    <button class="k-ask" aria-label="Ask or do anything"><span>Ask or do anything</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span></button>
+  </header>
+  <div class="map">
+    <div class="top k-titlerow"><h1 class="k-title"><span class="k-title-name">search-highlight</span><span class="k-title-meta">stopped on try 2 of 4 · no progress · <span class="v-measure">≥$3.22</span></span></h1><div class="k-titletools"><div class="k-seg" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Spec</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="0">Part</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Step</button></div></div></div>
+    <div class="pd"><span>Marks the matching words in each result’s title and body.</span>
+      <span class="ctx"><span><span class="k-mk sm landed"></span>needs search-schema, merged</span><span><span class="k-mk sm skip"></span>needed by search-cli, now skipped</span></span></div>
+<div class="grid">
+<div class="ch" style="left:99px;top:100px;width:238px"><b>Build</b><span>the engineer, every 2 s</span></div>
+<div class="ch" style="left:343px;top:100px;width:144px"><b>Verify</b><span>tests, lint, scope</span></div>
+<div class="ch" style="left:493px;top:100px;width:170px"><b>Review</b><span>a reviewer agent</span></div>
+<div class="ch" style="left:669px;top:100px;width:144px"><b>Security</b><span>a security agent</span></div>
+<div class="ch" style="left:819px;top:100px;width:144px"><b>Distill</b><span>records facts</span></div>
+<div class="ch" style="left:969px;top:100px;width:144px"><b>Your approval</b><span>you, at L2</span></div>
+<div class="ch" style="left:1119px;top:100px;width:126px"><b>Merge</b><span>PR and CI</span></div>
+<div class="rl" style="left:32px;top:140px;height:50px">try 1</div>
+<div class="k-tile k-tile-cell cell" style="left:99px;top:140px;width:238px;height:50px"><div class="a">6 iterations</div><div class="b">28m</div></div>
+<div class="k-tile k-tile-cell cell" style="left:343px;top:140px;width:144px;height:50px"><div class="a"><span class="k-mk sm pass"></span>24 passed</div><div class="b">33s</div></div>
+<div class="k-tile k-tile-cell k-tile-alert cell" style="left:493px;top:140px;width:170px;height:50px"><div class="a"><span class="k-mk sm fail"></span>3 blocking</div><div class="b">58s</div></div>
+<svg class="gnone" style="left:669px;top:140px" width="144" height="50" aria-hidden="true"><line class="gl" x1="10" x2="134" y1="25.5" y2="25.5"/></svg>
+<svg class="gnone" style="left:819px;top:140px" width="144" height="50" aria-hidden="true"><line class="gl" x1="10" x2="134" y1="25.5" y2="25.5"/></svg>
+<svg class="gnone" style="left:969px;top:140px" width="144" height="50" aria-hidden="true"><line class="gl" x1="10" x2="134" y1="25.5" y2="25.5"/></svg>
+<svg class="gnone" style="left:1119px;top:140px" width="126" height="50" aria-hidden="true"><line class="gl" x1="10" x2="116" y1="25.5" y2="25.5"/></svg>
+<div class="rl" style="left:32px;top:204px;height:50px">try 2</div>
+<div class="k-tile k-tile-cell k-tile-alert k-tile-selected cell" style="left:99px;top:204px;width:238px;height:50px"><div class="a"><span class="k-mk sm fail"></span>stopped</div><div class="b">no progress in 4, 5, 6</div></div>
+<svg class="gnone" style="left:343px;top:204px" width="144" height="50" aria-hidden="true"><line class="gl" x1="10" x2="134" y1="25.5" y2="25.5"/></svg>
+<svg class="gnone" style="left:493px;top:204px" width="170" height="50" aria-hidden="true"><line class="gl" x1="10" x2="160" y1="25.5" y2="25.5"/></svg>
+<svg class="gnone" style="left:669px;top:204px" width="144" height="50" aria-hidden="true"><line class="gl" x1="10" x2="134" y1="25.5" y2="25.5"/></svg>
+<svg class="gnone" style="left:819px;top:204px" width="144" height="50" aria-hidden="true"><line class="gl" x1="10" x2="134" y1="25.5" y2="25.5"/></svg>
+<svg class="gnone" style="left:969px;top:204px" width="144" height="50" aria-hidden="true"><line class="gl" x1="10" x2="134" y1="25.5" y2="25.5"/></svg>
+<svg class="gnone" style="left:1119px;top:204px" width="126" height="50" aria-hidden="true"><line class="gl" x1="10" x2="116" y1="25.5" y2="25.5"/></svg>
+<div class="rl" style="left:32px;top:268px;height:50px">try 3</div>
+<div class="k-tile k-tile-cell k-tile-idle cell left" style="left:99px;top:268px;width:1146px;height:50px"><p class="lt">not run · the breaker fails a part at once rather than spend its last two tries on the same prompt</p></div>
+<svg class="ret" viewBox="0 0 1280 520" width="1280" height="520" aria-hidden="true"><defs><marker id="part-search-highlight-ra2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0.5 7 4 0 7.5Z" class="rh"/></marker></defs><path d="M578.0 190 V197.0 H86 V229.0 H97" class="rp" marker-end="url(#part-search-highlight-ra2)"/><text x="588.0" y="201.0" class="rt">sent back with its 3 blocking findings</text></svg>
+</div>
+    <div class="steps">
+      <div class="k-tile k-tile-ink f1 k-tile-hero">
+        <div class="sh"><span>engineer · try 2 · stopped at 21:03</span><span class="grow"></span><span>the no-progress breaker</span></div>
+        <div class="sev">why it stopped</div>
+        <p class="say">Iterations 4, 5 and 6 left the code and the test results unchanged.</p>
+        <div class="src">events.jsonl · manifest.json</div>
+      </div>
+      <div class="k-tile f2">
+        <div class="sev2">its last words <span>engineer.log</span></div>
+        <p>Overlapping matches (“sea” inside “search”) still render as two spans.</p>
+        <div class="tf">it did not find a fix inside this part’s scope</div>
+      </div>
+      <div class="k-tile f3">
+        <div class="k-label">What you can do</div>
+        <p class="cl">Retry it, with guidance first if the same prompt would stop the same way.</p>
+        <div class="acts">
+          <button class="k-button k-button-block" aria-disabled="true">Retry search-highlight</button>
+          <button class="k-button k-button-block">Tell the engineers…<span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">G</span></span></button>
+        </div>
+        <div class="tf">Retry opens when this run ends: it needs the factory lock the run holds.</div>
+      </div>
+    </div>
+  </div>
+  <div class="k-needs">
+    <span class="k-needs-label">Needs you</span>
+    <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
+    <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
+    
+    <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
+  </div>
+</div>
+<div class="scr" data-screen="part-search-api" hidden>
+  <header class="k-header">
+    <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb" aria-current="page">search-api</button></li></ol></nav>
+    
+    <span class="grow"></span>
+    <span class="k-live">live · last event 3s ago</span>
+    <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
+    <button class="k-ask" aria-label="Ask or do anything"><span>Ask or do anything</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span></button>
+  </header>
+  <div class="map">
+    <div class="top k-titlerow"><h1 class="k-title"><span class="k-title-name">search-api</span><span class="k-title-meta">waiting · needs 3 parts · not started</span></h1><div class="k-titletools"><div class="k-seg" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Spec</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="0">Part</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Step</button></div></div></div>
+    <div class="pd"><span>Answers GET /search?q= with the matches as JSON.</span>
+      <span class="ctx"><span><span class="k-mk sm wait"></span>needs search-index, search-query and search-rank</span><span><span class="k-mk sm skip"></span>needed by search-cli, now skipped</span></span></div>
+<div class="grid">
+<div class="ch" style="left:99px;top:100px;width:238px"><b>Build</b><span>the engineer, every 2 s</span></div>
+<div class="ch" style="left:343px;top:100px;width:144px"><b>Verify</b><span>tests, lint, scope</span></div>
+<div class="ch" style="left:493px;top:100px;width:170px"><b>Review</b><span>a reviewer agent</span></div>
+<div class="ch" style="left:669px;top:100px;width:144px"><b>Security</b><span>a security agent</span></div>
+<div class="ch" style="left:819px;top:100px;width:144px"><b>Distill</b><span>records facts</span></div>
+<div class="ch" style="left:969px;top:100px;width:144px"><b>Your approval</b><span>you, at L2</span></div>
+<div class="ch" style="left:1119px;top:100px;width:126px"><b>Merge</b><span>PR and CI</span></div>
+<div class="rl" style="left:32px;top:140px;height:50px">try 1</div>
+<div class="k-tile k-tile-cell k-tile-idle cell left" style="left:99px;top:140px;width:1146px;height:50px"><p class="lt">not started · it starts once search-index, search-query and search-rank have merged</p></div>
+</div>
+    <div class="steps">
+      <div class="k-tile k-tile-ink f1 k-tile-hero">
+        <div class="sh"><span>waiting · not started</span><span class="grow"></span><span>3 parts to merge first</span></div>
+        <div class="sev">what it waits for</div>
+        <p class="say">The nearest of the three is search-index, and it waits for you.</p>
+        <div class="src">manifest.json · dependencies</div>
+      </div>
+      <div class="k-tile k-tile-ask f2">
+        <div class="dh"><span class="k-mk sm you"></span><div class="sev2">search-index <span>your approval · 12m</span></div></div>
+        <p>Every check agreed. It waits for your decision.</p>
+        <div class="acts"><button class="k-button k-button-block">Open search-index</button></div>
+      </div>
+      <div class="k-tile f3">
+        <div class="k-label">Still being built</div>
+        <p class="cl">search-query is in review on try 3; search-rank is on iteration 9.</p>
+        <div class="acts">
+          <button class="k-button k-button-block">Open search-query</button>
+          <button class="k-button k-button-block">Open search-rank</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="k-needs">
+    <span class="k-needs-label">Needs you</span>
+    <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
+    <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
+    
+    <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
+  </div>
+</div>
+<div class="scr" data-screen="part-search-cli" hidden>
+  <header class="k-header">
+    <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb" aria-current="page">search-cli</button></li></ol></nav>
+    
+    <span class="grow"></span>
+    <span class="k-live">live · last event 3s ago</span>
+    <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
+    <button class="k-ask" aria-label="Ask or do anything"><span>Ask or do anything</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span></button>
+  </header>
+  <div class="map">
+    <div class="top k-titlerow"><h1 class="k-title"><span class="k-title-name">search-cli</span><span class="k-title-meta">skipped · search-highlight stopped</span></h1><div class="k-titletools"><div class="k-seg" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Spec</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="0">Part</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Step</button></div></div></div>
+    <div class="pd"><span>Prints the best matches in the terminal, with their titles, the matching words highlighted.</span>
+      <span class="ctx"><span><span class="k-mk sm fail"></span>needs search-highlight, stopped</span><span><span class="k-mk sm wait"></span>needs search-api, waiting</span><span>decision 3: the ten best</span></span></div>
+<div class="grid">
+<div class="ch" style="left:99px;top:100px;width:238px"><b>Build</b><span>the engineer, every 2 s</span></div>
+<div class="ch" style="left:343px;top:100px;width:144px"><b>Verify</b><span>tests, lint, scope</span></div>
+<div class="ch" style="left:493px;top:100px;width:170px"><b>Review</b><span>a reviewer agent</span></div>
+<div class="ch" style="left:669px;top:100px;width:144px"><b>Security</b><span>a security agent</span></div>
+<div class="ch" style="left:819px;top:100px;width:144px"><b>Distill</b><span>records facts</span></div>
+<div class="ch" style="left:969px;top:100px;width:144px"><b>Your approval</b><span>you, at L2</span></div>
+<div class="ch" style="left:1119px;top:100px;width:126px"><b>Merge</b><span>PR and CI</span></div>
+<div class="rl" style="left:32px;top:140px;height:50px">try 1</div>
+<div class="k-tile k-tile-cell k-tile-idle cell left" style="left:99px;top:140px;width:1146px;height:50px"><p class="lt">skipped · it needs search-highlight, which stopped at 21:03</p></div>
+</div>
+    <div class="steps">
+      <div class="k-tile k-tile-ink f1 k-tile-hero">
+        <div class="sh"><span>skipped</span><span class="grow"></span><span>nothing ran</span></div>
+        <div class="sev">why</div>
+        <p class="say">search-highlight stopped, and search-cli needs it. Retrying search-highlight resets search-cli too.</p>
+        <div class="src">component_skipped · events.jsonl</div>
+      </div>
+      <div class="k-tile f2">
+        <div class="sev2">from the plan <span>decision 3</span></div>
+        <p>The ten best matches: ten fit on one terminal screen with their titles.</p>
+        <div class="acts"><button class="k-button k-button-block">Open decision 3 in the plan</button></div>
+      </div>
+      <div class="k-tile f3">
+        <div class="k-label">What it needs</div>
+        <p class="cl">search-highlight to be retried and merge, and search-api to be built.</p>
+        <div class="acts">
+          <button class="k-button k-button-block">Open search-highlight</button>
+          <button class="k-button k-button-block">Open search-api</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1865,7 +2481,7 @@ function kTabs(root, onChange){
 
 (document.fonts ? document.fonts.ready : Promise.resolve()).then(function(){
 
-var W={"start": "factory", "groups": {"spec": ["spec-graph", "spec-text"]}, "screens": {"factory": {"name": "Factory", "where": "The map", "level": 0, "tab": null, "zoom": ["factory", "@spec", "part-search-query", "step-query-review-2"], "links": [["need", ".k-needs .k-need", 0, "approve", null], ["open", ".k-tile.hero", 0, "spec-graph", "Open search, the spec being built"], ["open", ".k-tile.nx", 0, "queue", "Open the queue"], ["open", ".k-tile.c", 0, "trust", "Open Trust"], ["open", ".k-tile.c", 3, "learning", "Open Learning"]]}, "spec-graph": {"name": "Spec: search, as a graph", "where": "The map", "level": 1, "tab": 0, "zoom": ["factory", "@spec", "part-search-query", "step-query-review-2"], "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["need", ".k-needs .k-need", 0, "approve", null], ["ask", ".k-header .k-ask", 0, "question", null], ["tab", ".k-titletools .k-tab", 1, "spec-text", null], ["open", ".pc.k-card", 2, "part-search-query", "Open search-query"]]}, "spec-text": {"name": "Spec: search, as text", "where": "The map", "level": 1, "tab": 1, "zoom": ["factory", "@spec", "part-search-query", "step-query-review-2"], "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["need", ".k-needs .k-need", 0, "approve", null], ["ask", ".k-header .k-ask", 0, "question", null], ["tab", ".k-titletools .k-tab", 0, "spec-graph", null]]}, "part-search-query": {"name": "Part: search-query", "where": "The map", "level": 2, "tab": null, "zoom": ["factory", "@spec", "part-search-query", "step-query-review-2"], "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["need", ".k-needs .k-need", 0, "approve", null], ["crumb", ".k-header .k-crumb", 1, "@spec", null], ["open", ".cell.k-tile-selected", 0, "step-query-review-2", "Open try 2, review"], ["open", ".steps .k-button", 2, "spec-text", null]]}, "step-query-review-2": {"name": "Step: search-query, review on try 2", "where": "The map", "level": 3, "tab": null, "zoom": ["factory", "@spec", "part-search-query", "step-query-review-2"], "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["need", ".k-needs .k-need", 0, "approve", null], ["crumb", ".k-header .k-crumb", 1, "@spec", null], ["crumb", ".k-header .k-crumb", 2, "part-search-query", null]]}, "inbox": {"name": "Inbox", "where": "Pages", "level": null, "tab": null, "zoom": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null]]}, "queue": {"name": "Queue", "where": "Pages", "level": null, "tab": null, "zoom": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["need", ".k-needs .k-need", 0, "approve", null]]}, "trust": {"name": "Trust", "where": "Pages", "level": null, "tab": null, "zoom": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["need", ".k-needs .k-need", 0, "approve", null]]}, "learning": {"name": "Learning", "where": "Pages", "level": null, "tab": null, "zoom": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["need", ".k-needs .k-need", 0, "approve", null]]}, "settings": {"name": "Settings", "where": "Pages", "level": null, "tab": null, "zoom": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["need", ".k-needs .k-need", 0, "approve", null]]}, "notify-one": {"name": "Notifications: one event", "where": "Pages", "level": null, "tab": 0, "zoom": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["need", ".k-needs .k-need", 0, "approve", null], ["tab", ".k-titletools .k-tab", 1, "notify-every", null]]}, "notify-every": {"name": "Notifications: every event", "where": "Pages", "level": null, "tab": 1, "zoom": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["need", ".k-needs .k-need", 0, "approve", null], ["tab", ".k-titletools .k-tab", 0, "notify-one", null]]}}, "missing": []};
+var W={"start": "factory", "groups": {"spec": ["spec-graph", "spec-text"], "part": ["part-search-query", "part-search-schema", "part-search-index", "part-search-rank", "part-search-highlight", "part-search-api", "part-search-cli"]}, "stepOf": {"part-search-query": "step-query-review-2"}, "screens": {"factory": {"name": "Factory", "where": "The map", "level": 0, "tab": null, "zoom": ["factory", "@spec", "@part", "@step"], "select": null, "links": [["need", ".k-needs .k-need", 0, "approve", null], ["open", ".k-needs .k-need", 1, "part-search-highlight", null], ["open", ".k-tile.hero", 0, "spec-graph", "Open search, the spec being built"], ["open", ".k-tile.nx", 0, "queue", "Open the queue"], ["open", ".k-tile.c", 0, "trust", "Open Trust"], ["open", ".k-tile.c", 3, "learning", "Open Learning"]]}, "spec-graph": {"name": "Spec: search, as a graph", "where": "The map", "level": 1, "tab": 0, "zoom": ["factory", "@spec", "@part", "@step"], "select": ".pc.k-card", "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["need", ".k-needs .k-need", 0, "approve", null], ["open", ".k-needs .k-need", 1, "part-search-highlight", null], ["ask", ".k-header .k-ask", 0, "question", null], ["tab", ".k-titletools .k-tab", 1, "spec-text", null], ["open", ".pc.k-card", 0, "part-search-schema", null], ["open", ".pc.k-card", 1, "part-search-index", null], ["open", ".pc.k-card", 2, "part-search-query", null], ["open", ".pc.k-card", 3, "part-search-rank", null], ["open", ".pc.k-card", 4, "part-search-highlight", null], ["open", ".pc.k-card", 5, "part-search-api", null], ["open", ".pc.k-card", 6, "part-search-cli", null]]}, "spec-text": {"name": "Spec: search, as text", "where": "The map", "level": 1, "tab": 1, "zoom": ["factory", "@spec", "@part", "@step"], "select": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["need", ".k-needs .k-need", 0, "approve", null], ["open", ".k-needs .k-need", 1, "part-search-highlight", null], ["ask", ".k-header .k-ask", 0, "question", null], ["tab", ".k-titletools .k-tab", 0, "spec-graph", null], ["open", ".pts .pt", 0, "part-search-schema", "Open search-schema"], ["open", ".pts .pt", 1, "part-search-index", "Open search-index"], ["open", ".pts .pt", 2, "part-search-query", "Open search-query"], ["open", ".pts .pt", 3, "part-search-rank", "Open search-rank"], ["open", ".pts .pt", 4, "part-search-highlight", "Open search-highlight"], ["open", ".pts .pt", 5, "part-search-api", "Open search-api"], ["open", ".pts .pt", 6, "part-search-cli", "Open search-cli"]]}, "part-search-query": {"name": "Part: search-query", "where": "The map", "level": 2, "tab": null, "zoom": ["factory", "@spec", "@part", "@step"], "select": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["crumb", ".k-header .k-crumb", 1, "@spec", null], ["need", ".k-needs .k-need", 0, "approve", null], ["open", ".k-needs .k-need", 1, "part-search-highlight", null], ["open", ".cell.k-tile-selected", 0, "step-query-review-2", "Open try 2, review"], ["open", ".steps .k-button", 2, "spec-text", null]]}, "part-search-schema": {"name": "Part: search-schema", "where": "The map", "level": 2, "tab": null, "zoom": ["factory", "@spec", "@part", "@step"], "select": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["crumb", ".k-header .k-crumb", 1, "@spec", null], ["need", ".k-needs .k-need", 0, "approve", null], ["open", ".k-needs .k-need", 1, "part-search-highlight", null]]}, "part-search-index": {"name": "Part: search-index", "where": "The map", "level": 2, "tab": null, "zoom": ["factory", "@spec", "@part", "@step"], "select": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["crumb", ".k-header .k-crumb", 1, "@spec", null], ["need", ".k-needs .k-need", 0, "approve", null], ["open", ".k-needs .k-need", 1, "part-search-highlight", null], ["window", ".steps .k-button", 0, "approve", null]]}, "part-search-rank": {"name": "Part: search-rank", "where": "The map", "level": 2, "tab": null, "zoom": ["factory", "@spec", "@part", "@step"], "select": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["crumb", ".k-header .k-crumb", 1, "@spec", null], ["need", ".k-needs .k-need", 0, "approve", null], ["open", ".k-needs .k-need", 1, "part-search-highlight", null]]}, "part-search-highlight": {"name": "Part: search-highlight", "where": "The map", "level": 2, "tab": null, "zoom": ["factory", "@spec", "@part", "@step"], "select": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["crumb", ".k-header .k-crumb", 1, "@spec", null], ["need", ".k-needs .k-need", 0, "approve", null], ["open", ".k-needs .k-need", 1, "part-search-highlight", null]]}, "part-search-api": {"name": "Part: search-api", "where": "The map", "level": 2, "tab": null, "zoom": ["factory", "@spec", "@part", "@step"], "select": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["crumb", ".k-header .k-crumb", 1, "@spec", null], ["need", ".k-needs .k-need", 0, "approve", null], ["open", ".k-needs .k-need", 1, "part-search-highlight", null], ["open", ".steps .k-button", 0, "part-search-index", null], ["open", ".steps .k-button", 1, "part-search-query", null], ["open", ".steps .k-button", 2, "part-search-rank", null]]}, "part-search-cli": {"name": "Part: search-cli", "where": "The map", "level": 2, "tab": null, "zoom": ["factory", "@spec", "@part", "@step"], "select": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["crumb", ".k-header .k-crumb", 1, "@spec", null], ["need", ".k-needs .k-need", 0, "approve", null], ["open", ".k-needs .k-need", 1, "part-search-highlight", null], ["open", ".steps .k-button", 0, "spec-text", null], ["open", ".steps .k-button", 1, "part-search-highlight", null], ["open", ".steps .k-button", 2, "part-search-api", null]]}, "step-query-review-2": {"name": "Step: search-query, review on try 2", "where": "The map", "level": 3, "tab": null, "zoom": ["factory", "@spec", "@part", "@step"], "select": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["crumb", ".k-header .k-crumb", 1, "@spec", null], ["need", ".k-needs .k-need", 0, "approve", null], ["open", ".k-needs .k-need", 1, "part-search-highlight", null], ["crumb", ".k-header .k-crumb", 2, "part-search-query", null]]}, "inbox": {"name": "Inbox", "where": "Pages", "level": null, "tab": null, "zoom": null, "select": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null]]}, "queue": {"name": "Queue", "where": "Pages", "level": null, "tab": null, "zoom": null, "select": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["need", ".k-needs .k-need", 0, "approve", null], ["open", ".k-needs .k-need", 1, "part-search-highlight", null]]}, "trust": {"name": "Trust", "where": "Pages", "level": null, "tab": null, "zoom": null, "select": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["need", ".k-needs .k-need", 0, "approve", null], ["open", ".k-needs .k-need", 1, "part-search-highlight", null]]}, "learning": {"name": "Learning", "where": "Pages", "level": null, "tab": null, "zoom": null, "select": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["need", ".k-needs .k-need", 0, "approve", null], ["open", ".k-needs .k-need", 1, "part-search-highlight", null]]}, "settings": {"name": "Settings", "where": "Pages", "level": null, "tab": null, "zoom": null, "select": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["need", ".k-needs .k-need", 0, "approve", null], ["open", ".k-needs .k-need", 1, "part-search-highlight", null]]}, "notify-one": {"name": "Notifications: one event", "where": "Pages", "level": null, "tab": 0, "zoom": null, "select": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["need", ".k-needs .k-need", 0, "approve", null], ["open", ".k-needs .k-need", 1, "part-search-highlight", null], ["tab", ".k-titletools .k-tab", 1, "notify-every", null]]}, "notify-every": {"name": "Notifications: every event", "where": "Pages", "level": null, "tab": 1, "zoom": null, "select": null, "links": [["crumb", ".k-header .k-crumb", 0, "factory", null], ["need", ".k-needs .k-need", 0, "approve", null], ["open", ".k-needs .k-need", 1, "part-search-highlight", null], ["tab", ".k-titletools .k-tab", 0, "notify-one", null]]}}, "missing": []};
 var cur=null, hist=[], mem={}, ctl={}, open=null, opener=null, closing=false, said=document.querySelector('[data-said]');
 for(var g in W.groups) mem[g]=W.groups[g][0];
   Object.keys(W.screens).forEach(function(id){ var s=scr(id); W.screens[id].links.forEach(function(l){ if(l[0]!=='open') return;
@@ -1873,7 +2489,7 @@ for(var g in W.groups) mem[g]=W.groups[g][0];
     if(!/^(BUTTON|A)$/.test(el.tagName)){ el.tabIndex=0; el.setAttribute('role', 'link'); if(l[4]) el.setAttribute('aria-label', l[4]); } }); });
 
 function scr(id){ return document.querySelector('[data-screen="'+id+'"]'); }
-function resolve(t){ return t && t.charAt(0)==='@' ? mem[t.slice(1)] : t; }
+function resolve(t){ if(t==='@step') return W.stepOf[mem.part]||null; return t && t.charAt(0)==='@' ? mem[t.slice(1)] : t; }
 function remember(id){ for(var g in W.groups){ if(W.groups[g].indexOf(id)>=0) mem[g]=id; } }
 function nth(s, sel, n){ return s.querySelectorAll(sel)[n]||null; }
 // A screen's controls are set up the first time it shows, when it has a layout to measure.
@@ -1881,16 +2497,25 @@ function init(id){
   if(ctl[id]) return ctl[id];
   var s=scr(id), c=W.screens[id], o={mute:false}; ctl[id]=o;
   if(c.zoom){ o.zoom=kSeg(s.querySelector('.k-seg[aria-label="Zoom level"]'), function(it){ if(o.mute) return;
-    var j=o.zoom.items.indexOf(it), t=resolve(c.zoom[j]); if(t && t!==id) go(t, {kind:'zoom', from:c.level, to:j}); }); }
+    var j=o.zoom.items.indexOf(it), t=resolve(c.zoom[j]);
+    if(t && t!==id) go(t, {kind:'zoom', from:c.level, to:j});
+    else if(!t){ o.mute=true; o.zoom.select(o.zoom.items[c.level], true, true); o.mute=false; } }); }
   var tl=s.querySelector('.k-titletools .k-tabs'), tabbed=c.links.filter(function(l){ return l[0]==='tab'; }).length;
   if(tl && tabbed===tl.querySelectorAll('.k-tab').length-1){ o.tabs=kTabs(tl, function(t){ if(o.mute) return;
     var j=o.tabs.tabs.indexOf(t), hit=c.links.filter(function(l){ return l[0]==='tab' && l[2]===j; })[0];
     if(hit) go(resolve(hit[3]), {kind:'tabs', from:c.tab, to:j}); }); }
   c.links.forEach(function(l){ var el=nth(s, l[1], l[2]); if(!el){ W.missing.push(id+': '+l[1]+' #'+l[2]); return; }
     if(l[0]==='crumb') el.addEventListener('click', function(){ go(resolve(l[3]), {kind:'crumb', index:l[2]}); });
-    else if(l[0]==='need' || l[0]==='ask') el.addEventListener('click', function(){ show(l[3], el); });
+    else if(l[0]==='need' || l[0]==='ask' || l[0]==='window') el.addEventListener('click', function(){ show(l[3], el); });
     else if(l[0]==='open'){ el.addEventListener('click', function(){ go(resolve(l[3]), {kind:'open', el:el}); }); } });
+  // a screen whose cards are selected: focus and selection are one thing on the map (Tile), so focusing a card selects it
+  if(c.select) s.addEventListener('focusin', function(e){ var k=e.target.closest && e.target.closest(c.select); if(k) choose(id, k); });
   return o; }
+// move the selection to a card: its class, the one tab stop, and the ↵ that says what Enter does
+function choose(id, card){ var s=scr(id), c=W.screens[id], all=[].slice.call(s.querySelectorAll(c.select)), was=all.filter(function(k){ return k.classList.contains('k-card-selected'); })[0];
+  if(!card || card===was) return; var hint=was && was.querySelector('.k-card-meta .k-keys');
+  all.forEach(function(k){ k.classList.toggle('k-card-selected', k===card); k.tabIndex=k===card?0:-1; });
+  if(hint) card.querySelector('.k-card-meta').appendChild(hint); }
 function settle(id){ var o=ctl[id], c=W.screens[id]; if(!o) return;
   if(o.zoom) o.zoom.select(o.zoom.items[c.level], false, true);
   if(o.tabs) o.tabs.select(o.tabs.tabs[c.tab], false, true); }
@@ -1900,6 +2525,7 @@ function go(t, via, back){
   if(open || !t || t===cur) return;
   var from=cur; if(from){ settle(from); scr(from).hidden=true; if(!back) hist.push({id:from, el:via.el||document.activeElement}); }
   scr(t).hidden=false; cur=t; remember(t); var o=init(t); settle(t);
+  var c0=W.screens[t]; if(c0.select){ var pick=c0.links.filter(function(l){ return l[0]==='open' && l[1]===c0.select && l[3]===mem.part; })[0]; if(pick) choose(t, nth(scr(t), pick[1], pick[2])); }
   if(via.kind==='zoom' && o.zoom){ o.zoom.place(o.zoom.items[via.from], false); o.mute=true; o.zoom.select(o.zoom.items[via.to], true); o.mute=false; }
   else if(via.kind==='tabs' && o.tabs){ o.tabs.place(o.tabs.tabs[via.from], false); o.mute=true; o.tabs.select(o.tabs.tabs[via.to], true); o.mute=false; }
   else if(via.kind==='crumb'){ nth(scr(t), '.k-header .k-crumb', via.index).focus(); }
