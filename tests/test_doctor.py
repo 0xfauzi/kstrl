@@ -408,6 +408,170 @@ def test_the_refusals_carry_the_same_json_envelope_as_check(tmp_path: Path) -> N
     assert not (root / ".kstrl").exists()  # it refused before measuring anything
 
 
+# --- #628: what doctor says about a repository that is not Python ---------
+
+#: The `[verify]` block the #618 reproducer leaves on its Rust fixture:
+#: the three commands `ks init` seeds for Rust, uncommented.
+RUST_VERIFY = (
+    "[verify]\n"
+    'test_command = "cargo test"\n'
+    'typecheck_command = "cargo check"\n'
+    'lint_command = "cargo clippy -- -D warnings"\n'
+)
+
+#: The unit test sits inline in `#[cfg(test)]`, where `cargo new` code
+#: keeps it, so no tracked PATH reads as a test while `cargo test` runs one.
+PRICING_RS = (
+    "pub fn apply_discount(cents: u64, percent: u64) -> u64 {\n"
+    "    cents - cents * percent / 100\n"
+    "}\n"
+    "#[cfg(test)]\n"
+    "mod tests {\n"
+    "    use super::*;\n"
+    "    #[test]\n"
+    "    fn ten_percent() { assert_eq!(apply_discount(1000, 10), 900); }\n"
+    "}\n"
+)
+
+
+def rust_repo(tmp_path: Path, *, python_helper: bool = False, contract: str = "") -> Path:
+    """The #618 Rust fixture, built without cargo: doctor runs no command.
+
+    ``python_helper`` adds the one tracked `scripts/tool.py` with a public
+    function that turned the #618 source_root row to a plain ok.
+    ``contract``, when set, is written as `[contract] test_command`.
+    """
+    root = tmp_path / "rustapp"
+    root.mkdir()
+    git_in(root, "init", "-q", "-b", "main")
+    set_identity(root)
+    git_in(root, "remote", "add", "origin", "https://github.com/acme/rustapp.git")
+    (root / "Cargo.toml").write_text(
+        '[package]\nname = "rustapp"\nversion = "0.1.0"\nedition = "2021"\n', encoding="utf-8"
+    )
+    (root / ".gitignore").write_text(gitignore_block("Rust"), encoding="utf-8")
+    contract_block = f'\n[contract]\ntest_command = "{contract}"\n' if contract else ""
+    (root / "kstrl.toml").write_text(RUST_VERIFY + contract_block, encoding="utf-8")
+    src = root / "src"
+    src.mkdir()
+    (src / "main.rs").write_text('fn main() {\n    println!("hi");\n}\n', encoding="utf-8")
+    (src / "lib.rs").write_text("pub mod pricing;\n", encoding="utf-8")
+    (src / "pricing.rs").write_text(PRICING_RS, encoding="utf-8")
+    if python_helper:
+        (root / "scripts").mkdir()
+        (root / "scripts" / "tool.py").write_text(
+            "def release_notes(tag: str) -> str:\n    return tag\n", encoding="utf-8"
+        )
+    git_in(root, "add", "-A")
+    git_in(root, "commit", "-q", "-m", "initial")
+    return root
+
+
+def doctor_rows(root: Path) -> dict[str, dict[str, str]]:
+    """Every row of `ks doctor --json`, by name."""
+    result = run_doctor(root, "--json")
+    assert result.exit_code == 0, result.output
+    return {check["name"]: check for check in json.loads(result.stdout)["checks"]}
+
+
+def test_test_root_on_a_rust_repo_does_not_claim_the_test_command_has_nothing_to_run(
+    tmp_path: Path,
+) -> None:
+    """The row counts tracked PATHS by the adequacy rule; `cargo test` runs
+    the inline module anyway. The warning stays, because the adequacy gate
+    really does see no test file: only the claim about the command goes."""
+    test_root = doctor_rows(rust_repo(tmp_path))["test_root"]
+    assert test_root["status"] == "warn"
+    assert "adequacy" in test_root["detail"]
+    assert "nothing to run" not in test_root["detail"]
+
+
+def test_source_root_on_a_rust_repo_names_the_language_and_not_issue_378(tmp_path: Path) -> None:
+    """#378 is closed and was about Python layouts; the cause here is the
+    language, and the deferred reader for other languages is #200."""
+    source_root = doctor_rows(rust_repo(tmp_path))["source_root"]
+    assert source_root["status"] == "warn"
+    assert "reads Python only" in source_root["detail"]
+    assert "(.rs: 3)" in source_root["detail"]
+    assert "#378" not in source_root["fix"]
+    assert "#200" in source_root["fix"]
+
+
+def test_source_root_on_a_rust_repo_with_one_python_helper_is_not_plain_ok(
+    tmp_path: Path,
+) -> None:
+    source_root = doctor_rows(rust_repo(tmp_path, python_helper=True))["source_root"]
+    assert source_root["status"] == "warn"
+    assert "summarises 1 Python file(s)" in source_root["detail"]
+    assert "3 of 4 tracked source files are not Python (.rs: 3)" in source_root["detail"]
+
+
+def config_show_contract_test_command(root: Path) -> tuple[str, str]:
+    """The value and source `ks config show` prints for `[contract] test_command`."""
+    result = CliRunner().invoke(cli, ["config", "show", "--root", str(root)])
+    assert result.exit_code == 0, result.output
+    section = result.stdout.split("\n[contract]\n", 1)[1].split("\n\n", 1)[0]
+    match = re.search(r"^  test_command = (.+)  \((.+)\)$", section, re.MULTILINE)
+    assert match is not None, section
+    return ast.literal_eval(match.group(1)), match.group(2)
+
+
+def test_verify_commands_shows_the_resolved_contract_command(tmp_path: Path) -> None:
+    """Phase 3's command, value and source, exactly as `ks config show`
+    resolves it, in the report and in the report file. Read from that
+    command rather than pinned, so a change to how `[contract]` resolves
+    moves both sides together. A `uv run` command with no pyproject.toml
+    warns, as the Phase 1 half of the row already does."""
+    root = rust_repo(tmp_path)
+    command, source = config_show_contract_test_command(root)
+    result = run_doctor(root, "--json")
+    assert result.exit_code == 0, result.output
+    document = json.loads(result.stdout)
+    row = {check["name"]: check for check in document["checks"]}["verify_commands"]
+    assert (
+        f"Phase 3 will run `{command}` on merged tiers ([contract] test_command, {source})"
+        in row["detail"]
+    )
+    assert row["status"] == ("warn" if command.split()[:2] == ["uv", "run"] else "ok")
+    written = json.loads(Path(document["report_path"]).read_text(encoding="utf-8"))
+    assert written["checks"] == document["checks"]
+    assert "[contract] test_command" in run_doctor(root).output
+
+
+def test_verify_commands_shows_a_contract_command_set_in_kstrl_toml(tmp_path: Path) -> None:
+    """An operator's own `[contract] test_command` reaches the row with the
+    source `ks config show` gives it, so the row cannot be a guess at the
+    default value or a hard-coded source word."""
+    root = rust_repo(tmp_path, contract="cargo test --workspace")
+    command, source = config_show_contract_test_command(root)
+    assert command == "cargo test --workspace"
+    row = doctor_rows(root)["verify_commands"]
+    assert row["status"] == "ok"
+    assert (
+        f"Phase 3 will run `cargo test --workspace` on merged tiers "
+        f"([contract] test_command, {source})"
+    ) in row["detail"]
+
+
+def test_doctor_on_a_python_repo_is_unchanged(tmp_path: Path) -> None:
+    """The control: on the Python fixture every row is still ok, and
+    source_root and test_root say what they said before #628."""
+    document = json.loads(run_doctor(ready_repo(tmp_path), "--json").stdout)
+    rows = {check["name"]: check for check in document["checks"]}
+    assert document["verdict"] == "ready"
+    assert {name: row["status"] for name, row in rows.items()} == dict.fromkeys(
+        EXPECTED_CHECK_NAMES, "ok"
+    )
+    assert rows["source_root"]["detail"] == (
+        "the codebase scan summarises 1 file(s) of a 30-file budget from source root(s): demo"
+    )
+    assert rows["test_root"]["detail"] == "1 tracked test path(s), e.g. tests/test_core.py"
+    assert rows["verify_commands"]["detail"].startswith(
+        "Phase 1 will run test `uv run pytest`, typecheck `uv run mypy .`, "
+        "lint `uv run ruff check .`; "
+    )
+
+
 # --- #452 item 10: the report names no Python module ---------------------
 
 #: Every module and package name under kstrl/, longest first so the
