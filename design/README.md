@@ -84,6 +84,17 @@ and does nothing; the page's own screen menu reaches every drawn screen, includi
 something not drawn (⌘K's answers, a tile of a finished spec). Screens are added by drawing them as frames first,
 then adding them to `SCREENS` and `LINKS`.
 
+It has 23 screens. The published cards drawn at 21:40 (Factory, the Spec level as graph and text, search-query's
+Part level and its try-2 review, Notifications, Inbox, Queue, Trust, Learning, Settings, and the approval and
+question windows), and prototype frames drawn for it at the same moment: the Part level of the six other parts
+(`gen_proto_parts.py`), the Step level as Stage and Grid and search-rank's engineer (`gen_proto_step.py`), and Spend
+and Health (`gen_proto_pages.py`). Prototype frames are audited like cards (`audit.py Proto...`) but are not cards.
+
+Not drawn at 21:40, so their controls do nothing: the views other than the first on Inbox, Learning, Trust,
+Settings, Spend, Health and a step (Log, Notes, Prompt); the steps of search-schema, search-index and
+search-highlight, and search-query's review on try 3; the command window's other answers; the receipts of the
+specs built earlier this week.
+
 ## Publishing a change to the artifact
 
 The artifact is a Design System type: its content is the files under `project/`. Publish the changed files with the

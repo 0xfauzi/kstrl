@@ -44,6 +44,8 @@ SCREENS: dict[str, tuple[str, str, str]] = {
     'settings':         ('Settings', 'Pages', 'Settings'),
     'notify-one':       ('Notify2Paths', 'Pages', 'Notifications: one event'),
     'notify-every':     ('Notify3Channels', 'Pages', 'Notifications: every event'),
+    'spend':            ('ProtoSpend', 'Pages', 'Spend'),
+    'health':           ('ProtoHealth', 'Pages', 'Health'),
 }
 # overlay: (the frame it is drawn in, the frame drawn under it)
 OVERLAYS = {'approve': ('Map6Approve', 'Map1Spec'), 'question': ('Map5Question', 'Map1Spec')}
@@ -80,6 +82,8 @@ LINKS: dict[str, dict] = {
         ('open', '.k-tile.hero', 0, 'spec-graph', 'Open search, the spec being built'),
         ('open', '.k-tile.nx', 0, 'queue', 'Open the queue'),
         ('open', '.k-tile.c', 0, 'trust', 'Open Trust'),
+        ('open', '.k-tile.c', 1, 'spend', 'Open Spend'),
+        ('open', '.k-tile.c', 2, 'health', 'Open Health'),
         ('open', '.k-tile.c', 3, 'learning', 'Open Learning'),
     ]},
     'spec-graph': {'level': 1, 'zoom': ZOOM_TOP, 'tab': 0, 'select': '.pc.k-card', 'links': [ROOT] + BAND + [ASK,
@@ -123,7 +127,13 @@ LINKS: dict[str, dict] = {
     'settings': {'links': [ROOT] + BAND},
     'notify-one': {'tab': 0, 'links': [ROOT] + BAND + [('tab', '.k-titletools .k-tab', 1, 'notify-every', None)]},
     'notify-every': {'tab': 1, 'links': [ROOT] + BAND + [('tab', '.k-titletools .k-tab', 0, 'notify-one', None)]},
+    'spend': {'links': [ROOT] + BAND},
+    'health': {'links': [ROOT] + BAND},
 }
+# the header's spend opens Spend from every screen (the brand book's table of pages); on Spend itself it stays put
+for _sid, _c in LINKS.items():
+    if _sid != 'spend':
+        _c['links'] = _c['links'] + [('open', '.k-header .k-spend', 0, 'spend', 'Open Spend')]
 GROUPS = {'spec': ['spec-graph', 'spec-text'], 'stage': ['step-stage', 'step-grid'], 'part': [f'part-{p}' for p in ['search-query'] + [q for q in PARTS if q != 'search-query']]}
 
 

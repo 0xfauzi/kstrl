@@ -7,18 +7,23 @@ CAP, TODAY = 40.0, 42.46
 W = 520
 def px(v: float) -> float: return v / 48 * W      # axis to $48 so the overshoot shows
 segs = [('export, its last run, 00:12', 9.26), ('search, 5 runs, 19:40 to 22:31', 33.20)]
-x0 = 0.0; bar = []
-for i, (lab, v) in enumerate(segs):
-    w = px(v) - (2 if i < len(segs) - 1 else 0)
-    bar.append(f'<rect x="{x0:.1f}" y="30" width="{w:.1f}" height="14" rx="4" class="{"s1" if i == 0 else "s2"}"/>')
-    x0 += px(v)
-cx = px(CAP)
-svg = (f'<svg class="tb" viewBox="0 0 {W} 64" width="{W}" height="64" aria-hidden="true">'
-       f'<rect x="0" y="30" width="{W}" height="14" rx="4" class="trk"/>' + ''.join(bar) +
-       f'<line x1="{cx:.1f}" y1="20" x2="{cx:.1f}" y2="54" class="cap"/><text x="{cx:.1f}" y="14" text-anchor="middle" class="capl">$40.00 daily budget</text>'
-       f'<text x="0" y="62" class="ax">$0</text><text x="{px(9.26)+4:.1f}" y="62" class="ax2">search started here, at $9.26</text></svg>')
+def spend_bar(segs: list[tuple[str, float]], started_at: float) -> str:
+    """Today's spend as stacked segments against the daily budget, on an axis to $48 so an overshoot shows."""
+    x0 = 0.0; bar = []
+    for i, (lab, v) in enumerate(segs):
+        w = px(v) - (2 if i < len(segs) - 1 else 0)
+        bar.append(f'<rect x="{x0:.1f}" y="30" width="{w:.1f}" height="14" rx="4" class="{"s1" if i == 0 else "s2"}"/>')
+        x0 += px(v)
+    cx = px(CAP)
+    return (f'<svg class="tb" viewBox="0 0 {W} 64" width="{W}" height="64" aria-hidden="true">'
+            f'<rect x="0" y="30" width="{W}" height="14" rx="4" class="trk"/>' + ''.join(bar) +
+            f'<line x1="{cx:.1f}" y1="20" x2="{cx:.1f}" y2="54" class="cap"/><text x="{cx:.1f}" y="14" text-anchor="middle" class="capl">$40.00 daily budget</text>'
+            f'<text x="0" y="62" class="ax">$0</text><text x="{px(started_at)+4:.1f}" y="62" class="ax2">search started here, at ${started_at:.2f}</text></svg>')
+svg = spend_bar(segs, 9.26)
 week = [('snippets', 41.20, 'Mon'), ('search', 33.20, 'Wed'), ('sharing', 17.40, 'Tue'), ('export', 11.90, 'Tue to Wed'), ('markdown-export', 8.80, 'Tue, poisoned')]
-wk = ''.join(f'<div class="wr"><span class="wn">{n}</span><span class="wb"><i class="k-bar" style="--k-bar:{v/41.2*100:.1f}%"></i></span><b>${v:.2f}</b><em>{d}</em></div>' for n, v, d in week)
+def week_rows(week: list[tuple[str, float, str]]) -> str:
+    return ''.join(f'<div class="wr"><span class="wn">{n}</span><span class="wb"><i class="k-bar" style="--k-bar:{v/41.2*100:.1f}%"></i></span><b>${v:.2f}</b><em>{d}</em></div>' for n, v, d in week)
+wk = week_rows(week)
 limits = [
   ('Daily budget', '[serve] daily_budget_usd', '$40.00', 'Checked before each spec starts. At the cap the queue pauses until midnight.'),
   ('Per run', '[factory] max_cost_usd', 'not set', 'Checked between phases. At the cap the part fails and the rest are not started.'),
@@ -101,9 +106,10 @@ css = """
   .cov p { margin:6px 0 0; font:var(--t-small); color:var(--text-2); }
   .t3n { color:var(--text-3) !important; margin-top:auto !important; }
 """
-out = page('<!-- @dsCard group="Frames (proposal)" height=800 width=1280 page subtitle="12 · Spend: today against the budget, the limits, how sure the numbers are" -->',
-           'Spend', ['Spend'], 0, body, css, FOOT)
-out = out.replace('<span class="k-live">live · last event 3s ago</span>', '<span class="k-live">not live · last event 22:31</span>').replace('≥$31.10 <small>of $40.00 today</small>', '≥$42.46 <small>of $40.00 today</small>')
-d = Path('../system/project/components/Spend'); d.mkdir(parents=True, exist_ok=True)
-(d / 'preview.html').write_text(out)
-print('ok')
+if __name__ == '__main__':
+    out = page('<!-- @dsCard group="Frames (proposal)" height=800 width=1280 page subtitle="12 · Spend: today against the budget, the limits, how sure the numbers are" -->',
+               'Spend', ['Spend'], 0, body, css, FOOT)
+    out = out.replace('<span class="k-live">live · last event 3s ago</span>', '<span class="k-live">not live · last event 22:31</span>').replace('≥$31.10 <small>of $40.00 today</small>', '≥$42.46 <small>of $40.00 today</small>')
+    d = Path('../system/project/components/Spend'); d.mkdir(parents=True, exist_ok=True)
+    (d / 'preview.html').write_text(out)
+    print('ok')

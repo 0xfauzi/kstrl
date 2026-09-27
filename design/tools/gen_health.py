@@ -30,7 +30,7 @@ def chart(vals: list[float], fmt, W: int = 356, H: int = 170) -> tuple[str, dict
         cls = 'pt'
         if i >= len(vals) - 3 and v > u2: cls = 'pt br'
         o.append(f'<circle cx="{X(i):.1f}" cy="{Y(v):.1f}" r="{4 if "br" in cls else 2.5}" class="{cls}"/>')
-    o.append(f'<text x="0" y="{H-4}" class="ax">19 runs ago</text><text x="{X(len(vals)-1)+5:.1f}" y="{H-4}" text-anchor="end" class="ax">latest</text></svg>')
+    o.append(f'<text x="0" y="{H-4}" class="ax">{len(vals)} runs ago</text><text x="{X(len(vals)-1)+5:.1f}" y="{H-4}" text-anchor="end" class="ax">latest</text></svg>')
     return ''.join(o), dict(mean=mean, sd=sd, u2=u2, u3=u3, last=vals[-1], breach='1 point beyond 3 sigma' if one_point else ('2 of 3 beyond 2 sigma' if two_of_three else ''), fmt=fmt)
 
 retry = [0.14, 0.20, 0.10, 0.25, 0.17, 0.12, 0.22, 0.18, 0.15, 0.20, 0.13, 0.19, 0.24, 0.16, 0.21, 0.11, 0.36, 0.29, 0.43]
@@ -38,15 +38,18 @@ cost = [3.90, 4.40, 3.10, 4.80, 4.20, 3.60, 4.10, 5.20, 3.80, 4.50, 3.70, 4.30, 
 infra = [0, 0, 0.10, 0, 0, 0, 0, 0.05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 charts = [('Parts sent back', 'retry_rate', retry, lambda v: f'{v:.2f}'), ('Cost per merged part', 'cost_per_merged_component', cost, lambda v: f'${v:.2f}'),
           ('Infrastructure errors', 'infrastructure_error_rate', infra, lambda v: f'{v:.2f}')]
-tiles = []
-facts = {}
-for title, key, vals, fmt in charts:
-    svg, s = chart(vals, fmt)
-    facts[key] = s
-    br = s['breach']
-    state = f'<span class="brk"><span class="k-mk sm fail"></span>{br}</span>' if br else '<span class="okk"><span class="k-mk sm pass"></span>within its limits</span>'
-    tiles.append(f'''<div class="k-tile ch {'k-tile-alert' if br else ''}"><div class="chh"><span class="k-label">{title}</span><span class="key">{key}</span></div>
+def chart_tiles(charts: list) -> tuple[list[str], dict]:
+    tiles = []
+    facts = {}
+    for title, key, vals, fmt in charts:
+        svg, s = chart(vals, fmt)
+        facts[key] = s
+        br = s['breach']
+        state = f'<span class="brk"><span class="k-mk sm fail"></span>{br}</span>' if br else '<span class="okk"><span class="k-mk sm pass"></span>within its limits</span>'
+        tiles.append(f'''<div class="k-tile ch {'k-tile-alert' if br else ''}"><div class="chh"><span class="k-label">{title}</span><span class="key">{key}</span></div>
       <div class="chv"><span class="k-stat-value">{fmt(s['last'])}</span><span class="lim2">latest · limits {fmt(s['u2'])} and {fmt(s['u3'])}</span></div>{svg}<div class="chs">{state}</div></div>''')
+    return tiles, facts
+tiles, facts = chart_tiles(charts)
 r = facts['retry_rate']
 body = '    ' + top('<span class="nm">Health</span>', 'is the factory working as it usually does? · 19 runs of history', None, ['Health', 'Readiness'], 0) + f'''
     <div class="hg">
@@ -107,10 +110,11 @@ css = """
   .dh { display:flex; align-items:baseline; gap:8px; margin-top:6px; }
   .dh span:last-child { font:var(--t-small); color:var(--text-3); }
 """
-out = page('<!-- @dsCard group="Frames (proposal)" height=800 width=1280 page subtitle="14 · Health: is the factory working as it usually does?" -->',
-           'Health', ['Health'], 0, body, css, FOOT)
-out = out.replace('<span class="k-live">live · last event 3s ago</span>', '<span class="k-live">not live · last event 22:31</span>').replace('≥$31.10 <small>of $40.00 today</small>', '≥$42.46 <small>of $40.00 today</small>')
-d = Path('../system/project/components/Health'); d.mkdir(parents=True, exist_ok=True)
-(d / 'preview.html').write_text(out)
-print('retry_rate: mean %.3f sd %.3f u2 %.3f u3 %.3f last3 %s breach=%r' % (r['mean'], r['sd'], r['u2'], r['u3'], retry[-3:], r['breach']))
-for k, s in facts.items(): print(k, 'breach:', repr(s['breach']))
+if __name__ == '__main__':
+    out = page('<!-- @dsCard group="Frames (proposal)" height=800 width=1280 page subtitle="14 · Health: is the factory working as it usually does?" -->',
+               'Health', ['Health'], 0, body, css, FOOT)
+    out = out.replace('<span class="k-live">live · last event 3s ago</span>', '<span class="k-live">not live · last event 22:31</span>').replace('≥$31.10 <small>of $40.00 today</small>', '≥$42.46 <small>of $40.00 today</small>')
+    d = Path('../system/project/components/Health'); d.mkdir(parents=True, exist_ok=True)
+    (d / 'preview.html').write_text(out)
+    print('retry_rate: mean %.3f sd %.3f u2 %.3f u3 %.3f last3 %s breach=%r' % (r['mean'], r['sd'], r['u2'], r['u3'], retry[-3:], r['breach']))
+    for k, s in facts.items(): print(k, 'breach:', repr(s['breach']))
