@@ -136,6 +136,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_init_cmd.py": 3,
     "tests/test_input_hygiene.py": 4,
     "tests/test_instance_safety.py": 2,
+    # #602: `_answerable_repo`'s one commit, into a repository
+    # `tests.test_merge_gate_park._repo` already put through
+    # `tests.helpers.gitrepo.set_identity`.
+    "tests/test_l1_plan_gate.py": 1,
     # #459: five `git commit` spellings, every one into a repository
     # this file's `isolated_repo` put through
     # `tests.helpers.gitrepo.set_identity`.
