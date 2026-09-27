@@ -39,6 +39,7 @@ from __future__ import annotations
 import ast
 import json
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -176,6 +177,45 @@ def test_a_snoozed_items_repeat_opens_a_fresh_row_but_does_not_push(
     assert len(first) == 1 and first[0]
     assert len(second) == 1 and second[0] and second[0] != first[0]
     assert _lines(lines) == ["inbox_budget_overrun|"]
+
+
+def test_a_lapsed_snoozed_items_repeat_pages_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A repeat filed once the earlier row's snooze has lapsed must page again."""
+    lines = tmp_path / "hook.txt"
+    _hook_into(monkeypatch, lines)
+    _corrupt_ledger(tmp_path)
+
+    first = _poll(tmp_path)
+    box = Inbox(tmp_path, InboxConfig())
+    box.snooze(first[0], actor="op", hours=24)
+    stored = box.get(first[0])
+    assert stored is not None
+    stored.snooze_until = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    box._append(stored)
+    second = _poll(tmp_path)
+
+    assert len(first) == 1 and first[0]
+    assert len(second) == 1 and second[0] and second[0] != first[0]
+    assert _lines(lines) == ["inbox_budget_overrun|", "inbox_budget_overrun|"]
+
+
+def test_an_approved_items_repeat_pages_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A repeat filed once the earlier row was approved must page again."""
+    lines = tmp_path / "hook.txt"
+    _hook_into(monkeypatch, lines)
+    _corrupt_ledger(tmp_path)
+
+    first = _poll(tmp_path)
+    Inbox(tmp_path, InboxConfig()).approve(first[0], actor="op")
+    second = _poll(tmp_path)
+
+    assert len(first) == 1 and first[0]
+    assert len(second) == 1 and second[0] and second[0] != first[0]
+    assert _lines(lines) == ["inbox_budget_overrun|", "inbox_budget_overrun|"]
 
 
 def test_pipeline_fires_once_per_kind_and_not_on_a_repeat(tmp_path: Path) -> None:
