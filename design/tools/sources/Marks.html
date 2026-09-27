@@ -1,0 +1,27 @@
+<!-- @dsCard group="Foundations" height=150 subtitle="Status marks: drawn shapes, one per meaning" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Marks</title>
+<style>
+  html, body { margin:0; }
+  .g { display:grid; grid-template-columns:repeat(8, minmax(0,1fr)); background:var(--window); color:var(--text); font:13px/18px var(--font-agent); min-height:150px; align-items:start; }
+  .c { padding:22px 12px; text-align:center; }
+  .n { margin-top:10px; font-weight:600; }
+  .d { color:var(--text-2); font-size:12px; line-height:16px; margin-top:2px; }
+</style>
+</head>
+<body>
+<div class="g">
+  <div class="c"><span class="k-mk lg you"></span><div class="n">needs you</div><div class="d">an ask</div></div>
+  <div class="c"><span class="k-mk lg work"></span><div class="n">working</div><div class="d">an agent, now</div></div>
+  <div class="c"><span class="k-mk lg wait"></span><div class="n">waiting</div><div class="d">on a dependency</div></div>
+  <div class="c"><span class="k-mk lg pass"></span><div class="n">agreed</div><div class="d">a measurement passed</div></div>
+  <div class="c"><span class="k-mk lg fail"></span><div class="n">disagreed</div><div class="d">failed or stopped</div></div>
+  <div class="c"><span class="k-mk lg landed"></span><div class="n">merged</div><div class="d">on main</div></div>
+  <div class="c"><span class="k-mk lg skip"></span><div class="n">skipped</div><div class="d">a dependency failed</div></div>
+  <div class="c"><span class="k-mk lg absent"></span><div class="n">not measured</div><div class="d">a sensor did not run</div></div>
+</div>
+</body>
+</html>

@@ -1,0 +1,14 @@
+Proposal, step level, one agent: what `↵` on an agent in Stage or Grid opens. Everything the agent has written in this try, at reading size, with the structure kstrl records about it beside the text.
+
+**Why this shape.** The log is the agent's own account, so it takes the width and follows the end while you are at the end. The latest thing the agent wrote is set large, as on the Stage, and older text steps down to `text-2`. Tool calls sit between the prose as `measure` rows: a tool name, then its argument. Beside the log is what kstrl measured: each iteration's duration and the fast checks run after it, plus the stories as the agent has marked them. The agent says "Both test files pass" in the log; the fast checks after iteration 8 are the measurement of that claim.
+
+**Tabs.** Log is `engineer.log`. Notes is the agent's `progress.txt` in the worktree, where it writes its per-story entries and the `## Self-Critique` block. Prompt is exactly what it was sent, per call (`prompts/<part>/engineer-a<try>-c<call>.json`).
+
+**Built on**: `.kstrl/runs/<run>/components/<part>/engineer.log`; `engineer.jsonl` (`iteration_started`, and `iteration_completed` with `duration_seconds` and `fast_checks_failed`); `phase_started.attempt` in `events.jsonl` for the try; `prd.json` `passes` for the stories. Guidance goes into `scripts/kstrl/memory.md`, which is read once when a try starts (it is part of the try's fixed context prefix), so the running try does not see it.
+
+**Limits, stated on the screen or here:**
+- The log has no times and no iteration markers. Agent lines go straight to the file, and the "Iteration N / M" section goes only to `engineer.jsonl`. So the iteration list is drawn beside the log, never inside it.
+- The log is appended across tries with no separator. From try 2 on, the view shows the whole file and says the tries are not marked in it.
+- Tool calls are reduced to `[Tool] argument`: file names only for Read, Edit and Write, and Bash commands cut at 120 characters. What a command printed is not recorded. Measured with Claude Code 2.1.283: a tool's result arrives as a block inside a `user` event, and `_parse_stream_event` in `kstrl/agents/claude_code.py` only reads top-level `tool_result` events, so a probe running `echo kstrl-probe-42` produced exactly two log lines, `[Bash] echo kstrl-probe-42` and the agent's reply.
+- Fast checks between iterations are off by default (`fast_iteration_checks` is empty). This frame assumes a project that turns on tests and typecheck. With them off, the dots and the failure words are absent.
+- A reviewer, security or distiller agent has the same view over `review.log`, `security.log` or `distill.log`, which have the same limits. Their structured output (findings with severity and location) is what the Part level shows.

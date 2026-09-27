@@ -1,0 +1,712 @@
+<!-- @dsCard group="Frames (proposal)" height=800 width=1280 page subtitle="5 · Approving: the claim beside what measured it" -->
+<!doctype html>
+<html lang="en" data-wired-frames="A">
+<head>
+<meta charset="utf-8">
+<title>Frame 3: approving a merge</title>
+<style>
+  html, body { margin:0; }
+
+  /* the frame's screens and windows: one screen shows at a time; a window's box is the screen's while it is open */
+  .scr[hidden], [data-overlay][hidden] { display:none; }
+  [data-overlay] { display:contents; }
+
+/* Map1Spec */
+.scr:where([data-screen="Map1Spec"]) { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
+:where([data-screen="Map1Spec"]) .map { position:relative; min-height:0; }
+:where([data-screen="Map1Spec"]) .map > svg { display:block; font-family:var(--font-agent); }
+:where([data-screen="Map1Spec"]) .top { position:absolute; left:32px; right:32px; top:16px; }
+:where([data-screen="Map1Spec"]) .graph { position:absolute; left:0; top:66px; width:1280px; height:520px; }
+:where([data-screen="Map1Spec"]) .edges { position:absolute; inset:0; }
+:where([data-screen="Map1Spec"]) .e { fill:none; stroke-width:1.5; }
+:where([data-screen="Map1Spec"]) .e.ok { stroke:var(--line-strong); }
+:where([data-screen="Map1Spec"]) .e.wait { stroke:var(--text-3); stroke-dasharray:3 4; }
+:where([data-screen="Map1Spec"]) .e.broken { stroke:var(--fail); stroke-dasharray:3 4; }
+:where([data-screen="Map1Spec"]) .eh { fill:var(--text-3); }
+:where([data-screen="Map1Spec"]) .ehb { fill:var(--fail); }
+:where([data-screen="Map1Spec"]) .pc { position:absolute; width:236px; height:108px; }
+:where([data-screen="Map1Spec"]) .strip { position:absolute; left:32px; right:32px; bottom:16px; display:flex; align-items:center; gap:16px; font:var(--t-label); font-weight:400; color:var(--text-2); border-top:1px solid var(--line); padding-top:12px; }
+:where([data-screen="Map1Spec"]) .strip .sl { color:var(--text-3); }
+:where([data-screen="Map1Spec"]) .strip .leg { width:360px; flex:none; }
+:where([data-screen="Map1Spec"]) .strip .cnt2 { display:inline-flex; gap:6px; align-items:center; }
+/* Map0Factory */
+.scr:where([data-screen="Map0Factory"]) { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
+:where([data-screen="Map0Factory"]) .map { position:relative; min-height:0; }
+:where([data-screen="Map0Factory"]) .map > svg { display:block; font-family:var(--font-agent); }
+:where([data-screen="Map0Factory"]) .top { position:absolute; left:32px; right:32px; top:16px; }
+:where([data-screen="Map0Factory"]) .bento { position:absolute; left:32px; right:32px; top:70px; bottom:14px; display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); grid-template-rows:1fr 1fr 164px; gap:14px; }
+:where([data-screen="Map0Factory"]) .built { grid-row:1 / span 2; }
+:where([data-screen="Map0Factory"]) .bs { display:grid; grid-template-columns:96px 1fr; column-gap:14px; align-items:center; padding:18px 0; border-bottom:1px solid var(--line); }
+:where([data-screen="Map0Factory"]) .tot { margin-top:auto; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="Map0Factory"]) .tot b { font:var(--t-measure); font-weight:600; color:var(--text); }
+:where([data-screen="Map0Factory"]) .bs .gw { display:flex; justify-content:center; }
+:where([data-screen="Map0Factory"]) .n { font:var(--t-intent); }
+:where([data-screen="Map0Factory"]) .r { display:flex; gap:6px; align-items:center; font:var(--t-small); color:var(--text-2); margin-top:2px; }
+:where([data-screen="Map0Factory"]) .mm { font:var(--t-measure-small); font-weight:400; color:var(--text-3); margin-top:3px; }
+:where([data-screen="Map0Factory"]) .hero { grid-column:2 / span 2; grid-row:1 / span 2; }
+:where([data-screen="Map0Factory"]) .hh { display:flex; justify-content:space-between; align-items:center; }
+:where([data-screen="Map0Factory"]) .hint2 { display:inline-flex; gap:6px; align-items:center; font:var(--t-label); font-weight:400; color:var(--text-2); }
+:where([data-screen="Map0Factory"]) .sn { font:var(--t-intent-display); margin-top:6px; letter-spacing:var(--t-intent-display-ls); }
+:where([data-screen="Map0Factory"]) .sub { font:var(--t-small); color:var(--text-3); margin-top:2px; }
+:where([data-screen="Map0Factory"]) .dagw { flex:1; display:flex; align-items:center; justify-content:center; }
+:where([data-screen="Map0Factory"]) .dag .e { fill:none; stroke:var(--text-3); stroke-width:1.5; stroke-dasharray:3 4; }
+:where([data-screen="Map0Factory"]) .dag .e.ok { stroke:var(--line-strong); stroke-dasharray:none; }
+:where([data-screen="Map0Factory"]) .dag .e.bad { stroke:var(--fail); }
+:where([data-screen="Map0Factory"]) .dag .n.m { fill:var(--pass); }
+:where([data-screen="Map0Factory"]) .dag .n.p { fill:var(--canvas); stroke:var(--text-3); stroke-width:1.5; stroke-dasharray:2 2; }
+:where([data-screen="Map0Factory"]) .dag .n.s { fill:var(--window); stroke:var(--text-3); stroke-width:1.5; }
+:where([data-screen="Map0Factory"]) .dag .n.w { fill:var(--work-tint); stroke:var(--work); stroke-width:1.5; }
+:where([data-screen="Map0Factory"]) .dag .n.y { fill:var(--you-tint); stroke:var(--you); stroke-width:1.5; }
+:where([data-screen="Map0Factory"]) .dag .n.f { fill:var(--window); stroke:var(--fail); stroke-width:1.5; }
+:where([data-screen="Map0Factory"]) .dag .mk.y { fill:var(--you); }
+:where([data-screen="Map0Factory"]) .dag .mk.f { stroke:var(--fail); stroke-width:1.8; stroke-linecap:round; fill:none; }
+:where([data-screen="Map0Factory"]) .dag .nt { fill:var(--work); font:var(--t-small); font-weight:600; }
+:where([data-screen="Map0Factory"]) .dag .nt.y { fill:var(--you); }
+:where([data-screen="Map0Factory"]) .dag .nt.f { fill:var(--fail); }
+:where([data-screen="Map0Factory"]) .dag .lt { fill:var(--text-3); font:var(--t-measure-small); font-weight:400; }
+:where([data-screen="Map0Factory"]) .stats { display:grid; grid-template-columns:repeat(4, 1fr); border-top:1px solid var(--line); padding-top:14px; }
+:where([data-screen="Map0Factory"]) .stats b { display:block; font:var(--t-stat-sm); letter-spacing:var(--t-stat-sm-ls); }
+:where([data-screen="Map0Factory"]) .stats b small { font:var(--t-measure); font-weight:500; letter-spacing:var(--t-measure-ls); color:var(--text-3); margin-left:1px; }
+:where([data-screen="Map0Factory"]) .stats span { font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="Map0Factory"]) .nx { grid-column:4; grid-row:1 / span 2; }
+:where([data-screen="Map0Factory"]) .qi { padding:10px 0; border-bottom:1px solid var(--line); }
+:where([data-screen="Map0Factory"]) .qi .qh { display:flex; align-items:baseline; justify-content:space-between; }
+:where([data-screen="Map0Factory"]) .qi .pr { font:var(--t-measure-small); font-weight:400; color:var(--text-3); }
+:where([data-screen="Map0Factory"]) .qi .ex { font:var(--t-intent-sm); color:var(--text-2); margin-top:1px; text-wrap:balance; }
+:where([data-screen="Map0Factory"]) .gates { margin-top:12px; }
+:where([data-screen="Map0Factory"]) .gates .gh { font:var(--t-label); font-weight:400; color:var(--text-3); margin-bottom:5px; }
+:where([data-screen="Map0Factory"]) .g { display:grid; grid-template-columns:18px 1fr auto; column-gap:6px; align-items:baseline; font:var(--t-small); }
+:where([data-screen="Map0Factory"]) .g > .k-mk { align-self:center; }
+:where([data-screen="Map0Factory"]) .g .v { font:var(--t-measure-small); font-weight:400; color:var(--text-3); }
+:where([data-screen="Map0Factory"]) .c .row { display:flex; align-items:baseline; gap:10px; margin-top:8px; }
+:where([data-screen="Map0Factory"]) .c .row .k-mk { align-self:center; width:18px; height:18px; }
+:where([data-screen="Map0Factory"]) .c .w { font:var(--t-small); color:var(--text-2); }
+:where([data-screen="Map0Factory"]) .c .bw { font:var(--t-title); letter-spacing:var(--t-title-ls); }
+:where([data-screen="Map0Factory"]) .c .ts { font:var(--t-small); color:var(--text-2); margin-top:8px; }
+:where([data-screen="Map0Factory"]) .c .tf { margin-top:auto; font:var(--t-micro); font-weight:400; color:var(--text-3); }
+:where([data-screen="Map0Factory"]) .c .mm { margin-top:6px; }
+:where([data-screen="Map0Factory"]) .tk { margin-top:10px; }
+:where([data-screen="Map0Factory"]) .c .tk + .ts { margin-top:6px; }
+:where([data-screen="Map0Factory"]) .gl .ge { fill:none; stroke:var(--line-strong); stroke-width:1.2; }
+:where([data-screen="Map0Factory"]) .gl .gn.m { fill:var(--pass); }
+:where([data-screen="Map0Factory"]) .bar { margin-top:10px; }
+/* Map4Plan */
+.scr:where([data-screen="Map4Plan"]) { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
+:where([data-screen="Map4Plan"]) .map { position:relative; min-height:0; }
+:where([data-screen="Map4Plan"]) .map > svg { display:block; font-family:var(--font-agent); }
+:where([data-screen="Map4Plan"]) .top { position:absolute; left:32px; right:32px; top:16px; }
+:where([data-screen="Map4Plan"]) .two { position:absolute; left:32px; right:32px; top:70px; bottom:14px; display:grid; grid-template-columns:minmax(0,1fr) 392px; gap:14px; }
+:where([data-screen="Map4Plan"]) .doc .file { font:var(--t-measure-inline); color:var(--text-3); margin-bottom:16px; }
+:where([data-screen="Map4Plan"]) .doc p { margin:0 0 14px; font:var(--t-intent); max-width:31em; }
+:where([data-screen="Map4Plan"]) .doc .code { font:var(--t-measure-code); }
+:where([data-screen="Map4Plan"]) .pinm { margin-left:4px; vertical-align:3px; }
+:where([data-screen="Map4Plan"]) .made { margin-top:auto; border-top:1px solid var(--line); padding-top:14px; }
+:where([data-screen="Map4Plan"]) .pts { display:grid; grid-template-columns:repeat(4, max-content); gap:8px 30px; margin-top:10px; font:var(--t-small); }
+:where([data-screen="Map4Plan"]) .pt { display:inline-flex; align-items:center; gap:6px; }
+:where([data-screen="Map4Plan"]) .side { display:flex; flex-direction:column; gap:10px; min-height:0; }
+:where([data-screen="Map4Plan"]) .side > .k-label { margin:2px 0 0 4px; }
+:where([data-screen="Map4Plan"]) .d .dh { display:flex; align-items:center; gap:6px; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="Map4Plan"]) .d .dh .k-ref { margin:0 2px 0 0; vertical-align:0; }
+:where([data-screen="Map4Plan"]) .d .chg { color:var(--text-2); }
+:where([data-screen="Map4Plan"]) .d .q { font:var(--t-small); color:var(--text-2); margin-top:6px; }
+:where([data-screen="Map4Plan"]) .d .r { font:var(--t-body); font-weight:600; margin-top:2px; }
+:where([data-screen="Map4Plan"]) .d .why { font:var(--t-small); color:var(--text-2); margin-top:3px; }
+:where([data-screen="Map4Plan"]) .d .alt { font:var(--t-label); font-weight:400; color:var(--text-3); margin-top:5px; }
+:where([data-screen="Map4Plan"]) .nq { flex:1; }
+:where([data-screen="Map4Plan"]) .nq p { margin:6px 0 0; font:var(--t-small); color:var(--text-2); }
+/* Map2Part */
+.scr:where([data-screen="Map2Part"]) { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
+:where([data-screen="Map2Part"]) .map { position:relative; min-height:0; }
+:where([data-screen="Map2Part"]) .map > svg { display:block; font-family:var(--font-agent); }
+:where([data-screen="Map2Part"]) .top { position:absolute; left:32px; right:32px; top:16px; }
+:where([data-screen="Map2Part"]) .ttl .k-chip { align-self:center; margin-left:-4px; }
+:where([data-screen="Map2Part"]) .pd { position:absolute; left:32px; right:32px; top:60px; font:var(--t-body); color:var(--text-2); display:flex; align-items:baseline; gap:22px; white-space:nowrap; }
+:where([data-screen="Map2Part"]) .pd .ctx { display:flex; gap:16px; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="Map2Part"]) .pd .ctx > span { display:inline-flex; gap:6px; align-items:baseline; }
+:where([data-screen="Map2Part"]) .pd .ctx > span > .k-mk { align-self:center; }
+:where([data-screen="Map2Part"]) .pd .ctx > span:not(:last-child) { color:var(--text-2); }
+:where([data-screen="Map2Part"]) .grid { position:absolute; left:0; top:0; width:1280px; height:520px; }
+:where([data-screen="Map2Part"]) .top { z-index:1; }
+:where([data-screen="Map2Part"]) .ch { position:absolute; height:40px; padding:0 10px; box-sizing:border-box; display:flex; flex-direction:column; justify-content:center; border-bottom:1px solid var(--line); }
+:where([data-screen="Map2Part"]) .ch b { font:var(--t-small); font-weight:600; }
+:where([data-screen="Map2Part"]) .ch span { font:var(--t-micro); font-weight:400; color:var(--text-3); }
+:where([data-screen="Map2Part"]) .rl { position:absolute; width:64px; display:flex; align-items:center; font:var(--t-measure-inline); color:var(--text-3); }
+:where([data-screen="Map2Part"]) .cell { position:absolute; }
+:where([data-screen="Map2Part"]) .cell .a { display:flex; align-items:center; gap:6px; font:var(--t-measure); color:var(--text); }
+:where([data-screen="Map2Part"]) .cell .b { font:var(--t-measure-small); font-weight:400; color:var(--text-3); margin-top:1px; white-space:nowrap; }
+:where([data-screen="Map2Part"]) .gnone { position:absolute; }
+:where([data-screen="Map2Part"]) .gl { stroke:var(--line-strong); stroke-width:1; stroke-dasharray:1 3; }
+:where([data-screen="Map2Part"]) .lt { margin:auto 0 auto 4px; font:var(--t-small); color:var(--text-3); }
+:where([data-screen="Map2Part"]) .ret { position:absolute; inset:0; pointer-events:none; }
+:where([data-screen="Map2Part"]) .rp { fill:none; stroke:var(--fail); stroke-width:1.5; opacity:.8; }
+:where([data-screen="Map2Part"]) .rh { fill:var(--fail); }
+:where([data-screen="Map2Part"]) .rt { fill:var(--text-3); font:var(--t-micro); font-weight:400; }
+:where([data-screen="Map2Part"]) .steps { position:absolute; left:32px; right:32px; top:402px; bottom:14px; display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; }
+:where([data-screen="Map2Part"]) .f1 { grid-column:1 / span 2; }
+:where([data-screen="Map2Part"]) .f1 .sh { display:flex; align-items:center; gap:10px; font:var(--t-label); font-weight:400; opacity:.8; }
+:where([data-screen="Map2Part"]) .f1 .sev { margin-top:auto; font:var(--t-measure-small); font-weight:600; letter-spacing:var(--t-measure-small-ls); opacity:.7; }
+:where([data-screen="Map2Part"]) .f1 .say { margin:6px 0 0; font:var(--t-statement); letter-spacing:var(--t-statement-ls); max-width:34ch; }
+:where([data-screen="Map2Part"]) .f1 .src { margin-top:12px; font:var(--t-measure-inline); opacity:.65; }
+:where([data-screen="Map2Part"]) .sev2 { font:var(--t-measure-small); font-weight:600; color:var(--text-2); letter-spacing:var(--t-measure-small-ls); }
+:where([data-screen="Map2Part"]) .sev2 span { font-weight:400; color:var(--text-3); letter-spacing:0; margin-left:6px; }
+:where([data-screen="Map2Part"]) .f2 p { margin:10px 0 0; font:var(--t-input); letter-spacing:var(--t-input-ls); }
+:where([data-screen="Map2Part"]) .k-tile .tf { margin-top:auto; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="Map2Part"]) .f3 .cl { margin:6px 0 0; font:var(--t-body); }
+:where([data-screen="Map2Part"]) .acts { display:flex; flex-direction:column; gap:6px; margin-top:14px; }
+:where([data-screen="Map2Part"]) .f3 .tf { margin-top:auto; padding-top:8px; }
+/* Map3Reviewer */
+.scr:where([data-screen="Map3Reviewer"]) { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
+:where([data-screen="Map3Reviewer"]) .map { position:relative; min-height:0; }
+:where([data-screen="Map3Reviewer"]) .map > svg { display:block; font-family:var(--font-agent); }
+:where([data-screen="Map3Reviewer"]) .top { position:absolute; left:32px; right:32px; top:16px; }
+:where([data-screen="Map3Reviewer"]) .ttl .k-chip { align-self:center; margin-left:-4px; }
+:where([data-screen="Map3Reviewer"]) .two { position:absolute; left:32px; right:32px; top:70px; bottom:14px; display:grid; grid-template-columns:minmax(0,1fr) 400px; gap:14px; }
+:where([data-screen="Map3Reviewer"]) .vt { gap:10px; }
+:where([data-screen="Map3Reviewer"]) .sh { display:flex; align-items:baseline; gap:10px; margin-bottom:4px; }
+:where([data-screen="Map3Reviewer"]) .sh .v-measure { font:var(--t-measure-small); font-weight:400; color:var(--text-3); }
+:where([data-screen="Map3Reviewer"]) .sh b { font:var(--t-body); font-weight:600; }
+:where([data-screen="Map3Reviewer"]) .claim { font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="Map3Reviewer"]) .vd { font:var(--t-label); font-weight:600; color:var(--text-2); }
+:where([data-screen="Map3Reviewer"]) .vd.bad { color:var(--text); }
+:where([data-screen="Map3Reviewer"]) .cr { display:grid; grid-template-columns:18px 1fr; column-gap:8px; padding:4px 0; font:var(--t-small); }
+:where([data-screen="Map3Reviewer"]) .cr .k-mk { margin-top:2px; }
+:where([data-screen="Map3Reviewer"]) .cr.c-ok .ct { color:var(--text-2); }
+:where([data-screen="Map3Reviewer"]) .cr.c-no .ct { font-weight:600; color:var(--text); }
+:where([data-screen="Map3Reviewer"]) .cx p { margin:3px 0 0; color:var(--text-2); font:var(--t-small); }
+:where([data-screen="Map3Reviewer"]) .cx .sg span { font:var(--t-micro); font-weight:400; color:var(--text-3); margin-right:6px; }
+:where([data-screen="Map3Reviewer"]) .on { margin-top:auto; padding-top:10px; border-top:1px solid var(--line); }
+:where([data-screen="Map3Reviewer"]) .on p { margin:4px 0 0; font:var(--t-body); }
+:where([data-screen="Map3Reviewer"]) .side { display:flex; flex-direction:column; gap:14px; min-height:0; }
+:where([data-screen="Map3Reviewer"]) .hd2 .say { margin:8px 0 0; font:var(--t-statement); letter-spacing:var(--t-statement-ls); }
+:where([data-screen="Map3Reviewer"]) .hd2 .sub { margin:10px 0 0; font:var(--t-small); opacity:.75; }
+:where([data-screen="Map3Reviewer"]) .dr { display:grid; grid-template-columns:62px 1fr 16px; align-items:baseline; margin-top:8px; font:var(--t-small); color:var(--text-3); }
+:where([data-screen="Map3Reviewer"]) .dr > :is(.k-mk, .k-dot, .k-ring, .k-chip, .k-button, .k-keys) { align-self:center; }
+:where([data-screen="Map3Reviewer"]) .dr b { font:var(--t-measure); font-weight:500; color:var(--text); }
+:where([data-screen="Map3Reviewer"]) .df p, :where([data-screen="Map3Reviewer"]) .cn p { margin:8px 0 0; font:var(--t-small); color:var(--text-2); }
+:where([data-screen="Map3Reviewer"]) .cc { margin-top:8px; }
+:where([data-screen="Map3Reviewer"]) .cc .v-measure { font:var(--t-measure-small); font-weight:400; color:var(--text-3); }
+:where([data-screen="Map3Reviewer"]) .cc p { margin:2px 0 0 !important; color:var(--text) !important; }
+:where([data-screen="Map3Reviewer"]) .cn { flex:1; }
+:where([data-screen="Map3Reviewer"]) .hint2 { margin-top:auto !important; color:var(--text-3) !important; padding-top:10px; }
+/* window: approve */
+:where([data-overlay="approve"]) .ov { position:absolute; left:0; right:0; margin:0 auto; }
+:where([data-overlay="approve"]) .lab2 { font:var(--t-label); color:var(--text-3); margin:14px 0 6px; }
+:where([data-overlay="approve"]) .said { font:var(--t-body); }
+:where([data-overlay="approve"]) .ov.a { top:64px; width:1000px; height:660px; }
+:where([data-overlay="approve"]) .ov.a .k-cmd-body { grid-template-columns:minmax(0,1fr) 380px; }
+:where([data-overlay="approve"]) .evd { padding:16px 20px 0; overflow:hidden; }
+:where([data-overlay="approve"]) .evd h2 { margin:0; font:var(--t-title); letter-spacing:var(--t-title-ls); }
+:where([data-overlay="approve"]) .evd .desc { color:var(--text-2); margin-top:2px; }
+:where([data-overlay="approve"]) .stories { display:grid; grid-template-columns:52px minmax(0,1fr) auto; column-gap:10px; row-gap:6px; font:var(--t-body); align-items:baseline; }
+:where([data-overlay="approve"]) .stories .v-measure { font:var(--t-measure-inline); color:var(--text-3); }
+:where([data-overlay="approve"]) .stories .c { font:var(--t-label); font-weight:400; color:var(--text-2); display:flex; gap:5px; align-items:center; }
+:where([data-overlay="approve"]) .meas { display:grid; grid-template-columns:16px 72px minmax(0,1fr); column-gap:8px; row-gap:5px; align-items:baseline; }
+:where([data-overlay="approve"]) .meas > .k-mk { align-self:center; }
+:where([data-overlay="approve"]) .meas .v { font:var(--t-measure); color:var(--text-2); }
+:where([data-overlay="approve"]) .fnd { display:grid; grid-template-columns:104px minmax(0,1fr); column-gap:8px; font:var(--t-small); margin-bottom:6px; align-items:baseline; }
+:where([data-overlay="approve"]) .fnd .sev { font:var(--t-measure-small); font-weight:600; color:var(--text-2); }
+:where([data-overlay="approve"]) .fnd .loc { font:var(--t-measure-small); font-weight:400; color:var(--text-3); display:block; }
+:where([data-overlay="approve"]) .dec { border-left:1px solid var(--line); padding:16px 16px 0; overflow:hidden; }
+:where([data-overlay="approve"]) .sec2 { display:flex; justify-content:space-between; align-items:baseline; padding:8px 12px; font:var(--t-small); color:var(--text-2); }
+/* window: question */
+:where([data-overlay="question"]) .ov { position:absolute; left:0; right:0; margin:0 auto; }
+:where([data-overlay="question"]) .lab2 { font:var(--t-label); color:var(--text-3); margin:14px 0 6px; }
+:where([data-overlay="question"]) .said { font:var(--t-body); }
+:where([data-overlay="question"]) .ov.q { top:72px; width:900px; height:640px; }
+:where([data-overlay="question"]) .ov.q .k-cmd-body { --k-cmd-list:340px; }
+:where([data-overlay="question"]) .ov.q .k-cmd-detail h2 { margin:0; font:var(--t-title); letter-spacing:var(--t-title-ls); }
+:where([data-overlay="question"]) .tries { display:grid; grid-template-columns:44px 16px 1fr; row-gap:4px; column-gap:8px; font:var(--t-small); }
+:where([data-overlay="question"]) .tries .v-measure { font:var(--t-measure-inline); color:var(--text-3); }
+:where([data-overlay="question"]) .lgt { margin:0; font:var(--t-small); }
+:where([data-overlay="question"]) .lgs { display:block; font:var(--t-measure-inline); color:var(--text-3); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="you" viewBox="0 0 16 16"><path d="M8 1.5 14.5 8 8 14.5 1.5 8Z"/></symbol>
+<symbol id="work" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-opacity=".35" stroke-width="2"/><path d="M8 2.5A5.5 5.5 0 0 1 13.5 8" fill="none" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="wait" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-width="1.5" stroke-dasharray="2.2 2.2"/></symbol>
+<symbol id="fail" viewBox="0 0 16 16"><path d="M4 4 12 12M12 4 4 12" fill="none" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="pass" viewBox="0 0 16 16"><path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="skip" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-width="1.5"/><path d="M4.2 11.8 11.8 4.2" stroke-width="1.5"/></symbol>
+<symbol id="landed" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M4.8 8.3 7 10.5 11.3 5.8" fill="none" stroke="var(--window)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</defs></svg>
+<div class="scr" data-screen="Map1Spec">
+  <header class="k-header">
+    <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb" aria-current="page">search</button></li></ol></nav>
+    <span class="k-conds"><span>L2 · merges wait for you</span><span><span class="k-mk sm pass"></span>all checks ran</span><span><span class="k-mk sm pass"></span>CI passing</span></span>
+    <span class="grow"></span>
+    <span class="k-live">live · last event 3s ago</span>
+    <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
+    <button class="k-ask" aria-label="Ask or do anything"><span>Ask or do anything</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span></button>
+  </header>
+  <div class="map">
+    <div class="top k-titlerow"><h1 class="k-title"><span class="k-title-human">search</span><span class="k-title-meta">7 parts · 3 of 4 slots in use · <span class="v-measure">≥$21.84</span> since 19:40</span></h1><div class="k-titletools"><div class="k-tabs" role="tablist" aria-label="View"><span class="k-tabs-bar" aria-hidden="true"></span><button class="k-tab" role="tab" aria-selected="true" tabindex="0">Graph</button><button class="k-tab" role="tab" aria-selected="false" tabindex="-1">Text</button></div><div class="k-seg" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="0">Spec</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Part</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Step</button></div></div></div>
+    <div class="graph">
+<svg class="edges" viewBox="0 0 1280 520" width="1280" height="520" aria-hidden="true"><defs><marker id="Map1Spec-ea" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0.5 7 4 0 7.5Z" class="eh"/></marker><marker id="Map1Spec-eb" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0.5 7 4 0 7.5Z" class="ehb"/></marker></defs><path d="M288 262.0 C325.0 262.0, 325.0 79.0, 362 79.0" class="e ok" marker-end="url(#Map1Spec-ea)"/><path d="M288 262.0 C325.0 262.0, 325.0 201.0, 362 201.0" class="e ok" marker-end="url(#Map1Spec-ea)"/><path d="M288 262.0 C325.0 262.0, 325.0 323.0, 362 323.0" class="e ok" marker-end="url(#Map1Spec-ea)"/><path d="M288 262.0 C325.0 262.0, 325.0 445.0, 362 445.0" class="e ok" marker-end="url(#Map1Spec-ea)"/><path d="M602 79.0 C639.0 79.0, 639.0 262.0, 676 262.0" class="e wait" marker-end="url(#Map1Spec-ea)"/><path d="M602 201.0 C639.0 201.0, 639.0 262.0, 676 262.0" class="e wait" marker-end="url(#Map1Spec-ea)"/><path d="M602 323.0 C639.0 323.0, 639.0 262.0, 676 262.0" class="e wait" marker-end="url(#Map1Spec-ea)"/><path d="M916 262.0 C953.0 262.0, 953.0 262.0, 990 262.0" class="e wait" marker-end="url(#Map1Spec-ea)"/><path d="M602 445.0 C796.0 445.0, 796.0 294, 990 294" class="e broken" marker-end="url(#Map1Spec-eb)"/></svg>
+    <div class="pc k-card" style="left:52px;top:208px" aria-label="search-schema, merged at 20:12, CI passing"><div class="k-card-head"><span class="k-mk landed"></span><span class="k-card-name">search-schema</span><span class="k-card-who">merged #48</span></div><div class="k-steps" aria-hidden="true"><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="done"><i class="k-step-bar"></i></span></div><div class="k-card-sub">merged at 20:12, CI passing</div><div class="k-card-meta"><span>1 try · ≥$2.18</span></div></div>
+    <div class="pc k-card k-card-ask" style="left:366px;top:25px" aria-label="search-index, every check agreed · 12m"><div class="k-card-head"><span class="k-mk you"></span><span class="k-card-name">search-index</span><span class="k-card-who">your approval</span></div><div class="k-steps" aria-hidden="true"><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="you"><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span></div><div class="k-card-sub">every check agreed · 12m</div><div class="k-card-meta"><span>1 try · ≥$4.34</span></div></div>
+    <div class="pc k-card k-card-work k-card-selected" tabindex="0" style="left:366px;top:147px" aria-label="search-query, in review for 1m 12s"><div class="k-card-head"><span class="k-mk work"></span><span class="k-card-name">search-query</span><span class="k-card-who"><span class="k-chip k-chip-checker">reviewer</span></span></div><div class="k-steps" aria-hidden="true"><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="work"><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span></div><div class="k-card-sub">in review for 1m 12s</div><div class="k-card-meta"><span class="k-tries" aria-hidden="true"><i class="k-try k-try-fail"></i><i class="k-try k-try-fail"></i><i class="k-try k-try-now"></i><i class="k-try"></i></span><span>try 3 of 4 · ≥$9.20</span><span class="k-keys"><span class="k-key k-key-sm">↵</span></span></div></div>
+    <div class="pc k-card k-card-work" style="left:366px;top:269px" aria-label="search-rank, iteration 9 of up to 10"><div class="k-card-head"><span class="k-mk work"></span><span class="k-card-name">search-rank</span><span class="k-card-who"><span class="k-chip">engineer</span></span></div><div class="k-steps" aria-hidden="true"><span class="k-step" data-step="work"><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span></div><div class="k-card-sub"><span class="k-fresh" data-state="still">iteration 9</span> of up to 10</div><div class="k-card-meta"><span class="k-tries" aria-hidden="true"><i class="k-try k-try-now"></i><i class="k-try"></i><i class="k-try"></i><i class="k-try"></i></span><span>try 1 of 4</span></div></div>
+    <div class="pc k-card k-card-stop" style="left:366px;top:391px" aria-label="search-highlight, 3 iterations changed nothing"><div class="k-card-head"><span class="k-mk fail"></span><span class="k-card-name">search-highlight</span><span class="k-card-who">stopped</span></div><div class="k-steps" aria-hidden="true"><span class="k-step" data-step="fail"><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span></div><div class="k-card-sub">3 iterations changed nothing</div><div class="k-card-meta"><span class="k-tries" aria-hidden="true"><i class="k-try k-try-fail"></i><i class="k-try k-try-fail"></i><i class="k-try"></i><i class="k-try"></i></span><span>try 2 of 4 · ≥$3.22</span></div></div>
+    <div class="pc k-card k-card-idle" style="left:680px;top:208px" aria-label="search-api, needs 3 parts · 0 merged"><div class="k-card-head"><span class="k-mk wait"></span><span class="k-card-name">search-api</span><span class="k-card-who">waiting</span></div><div class="k-steps" aria-hidden="true"><span class="k-step" data-step=""><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span></div><div class="k-card-sub">needs 3 parts · 0 merged</div><div class="k-card-meta"><span>not started</span></div></div>
+    <div class="pc k-card k-card-idle k-card-skip" style="left:994px;top:208px" aria-label="search-cli, search-highlight stopped"><div class="k-card-head"><span class="k-mk skip"></span><span class="k-card-name">search-cli</span><span class="k-card-who">skipped</span></div><div class="k-steps" aria-hidden="true"><span class="k-step" data-step=""><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span></div><div class="k-card-sub">search-highlight stopped</div><div class="k-card-meta"><span>reset if you retry it</span></div></div>
+    </div>
+    <div class="strip">
+      <span class="sl">The line, left to right on every card</span>
+      <span class="leg"><div class="k-steps-wrap"><ol class="k-steps k-steps-labeled" aria-hidden="true"><li class="k-step" data-step="done"><i class="k-step-bar"></i><span class="k-step-label">Build</span></li><li class="k-step" data-step="done"><i class="k-step-bar"></i><span class="k-step-label">Check</span></li><li class="k-step" data-step="done"><i class="k-step-bar"></i><span class="k-step-label">Your approval</span></li><li class="k-step" data-step="done"><i class="k-step-bar"></i><span class="k-step-label">Merge</span></li></ol></div></span>
+      <span class="grow"></span>
+      <span class="cnt2"><span class="k-mk sm landed"></span>1 merged</span><span class="cnt2"><span class="k-mk sm you"></span>1 waiting for you</span><span class="cnt2"><span class="k-mk sm work"></span>2 in progress</span><span class="cnt2"><span class="k-mk sm fail"></span>1 stopped</span><span class="cnt2"><span class="k-mk sm wait"></span>1 waiting</span><span class="cnt2"><span class="k-mk sm skip"></span>1 skipped</span>
+    </div>
+  </div>
+  <div class="k-needs">
+    <span class="k-needs-label">Needs you</span>
+    <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
+    <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
+    
+    <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
+  </div>
+<div data-overlay="approve">
+  <div class="k-scrim"></div>
+  <div class="k-cmd ov a" role="dialog" aria-modal="true" aria-label="Approve search-index">
+    <div class="k-cmd-input"><span class="k-keys"><span class="k-key">←</span></span><input class="k-cmd-q" value="Approve search-index?" aria-label="Ask or do anything"><span class="k-cmd-context">your approval · waiting 12m</span></div>
+    <div class="k-cmd-body">
+      <div class="evd">
+        <h2>search-index</h2>
+        <div class="desc">Keeps a full-text index of snippet titles and bodies, updated on every save and delete.</div>
+        <div class="lab2">What the engineer says it did · 3 stories</div>
+        <div class="stories">
+          <span class="v-measure">US-1</span><span>Index a snippet's title and body when it is saved</span><span class="c">claims done</span>
+          <span class="v-measure">US-2</span><span>Remove a snippet from the index when it is deleted</span><span class="c">claims done</span>
+          <span class="v-measure">US-3</span><span>Fold case and accents before indexing</span><span class="c">claims done</span>
+        </div>
+        <div class="lab2">What was measured by something that did not write it</div>
+        <div class="k-well"><div class="meas">
+          <span class="k-mk pass"></span><span>verify</span><span class="v">31 passed · typecheck · lint · scope</span>
+          <span class="k-mk pass"></span><span>review</span><span class="v">0 blocking · 2 advisory</span>
+          <span class="k-mk pass"></span><span>security</span><span class="v">0 findings</span>
+          <span class="k-mk pass"></span><span>distill</span><span class="v">2 facts recorded</span>
+        </div></div>
+        <div class="lab2">Advisory findings · they do not block</div>
+        <div class="fnd"><span class="sev">error_handling</span><span>A failed reindex is logged and skipped, so the index can fall behind the table without anyone knowing.<span class="loc">search/index.py:52</span></span></div>
+        <div class="fnd"><span class="sev">test_quality</span><span>The accent test covers é and ü but no combining characters.<span class="loc">tests/test_index.py:88</span></span></div>
+      </div>
+      <div class="dec">
+        <div class="lab2" style="margin-top:0">What each choice does</div>
+        <div class="k-choices" role="radiogroup" aria-label="Your decision on search-index"><div class="k-choice" role="radio" aria-checked="true" tabindex="0"><span class="k-choice-title">Approve</span><span class="k-keys"><span class="k-key">↵</span></span><span class="k-choice-then">Pushes kstrl/factory/search-index and merges its PR. search-index is done once the merge is confirmed.</span></div><div class="k-choice" role="radio" aria-checked="false" tabindex="-1"><span class="k-choice-title">Retry</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">↵</span></span><span class="k-choice-then">The engineer runs it again, told that a person asked for changes. Your own words are not passed on. Uses 1 of 3 retries.</span></div><div class="k-choice k-choice-danger" role="radio" aria-checked="false" tabindex="-1"><span class="k-choice-title">Reject</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">⌫</span></span><span class="k-choice-then">search-index fails and search-api is skipped. Nothing is pushed.</span></div><div class="k-choice" role="radio" aria-checked="false" tabindex="-1"><span class="k-choice-title">Later</span><span class="k-keys"><span class="k-key">esc</span></span><span class="k-choice-then">It keeps waiting here. Nothing times out.</span></div></div>
+        <div class="lab2">One level down</div>
+        <div class="sec2"><span>Open the diff</span><span class="v-measure">+412 −18 · 5 files</span></div>
+        <div class="sec2"><span>Spend on this part</span><span class="v-measure">≥$4.34 · ≥301k tok</span></div>
+      </div>
+    </div>
+    <div class="k-cmd-bar"><span class="k-cmd-bar-note"><span class="k-mk sm you"></span><span>L2 · every merge waits for your approval</span></span><button class="k-cmd-act k-cmd-act-primary">Approve and merge <span class="k-keys"><span class="k-key">↵</span></span></button></div>
+  </div>
+</div>
+</div>
+<div class="scr" data-screen="Map0Factory" hidden>
+  <header class="k-header">
+    <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root" aria-current="page">snippetvault</button></li></ol></nav>
+    
+    <span class="grow"></span>
+    <span class="k-live">live · last event 3s ago</span>
+    <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
+    <button class="k-ask" aria-label="Ask or do anything"><span>Ask or do anything</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span></button>
+  </header>
+  <div class="map">
+    <div class="top k-titlerow"><h1 class="k-title"><span class="k-title-human">snippetvault</span><span class="k-title-meta">3 specs built this week · 1 building · 2 queued</span></h1><div class="k-titletools"><div class="k-seg" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="true" tabindex="0">Factory</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Spec</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Part</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Step</button></div></div></div>
+    <div class="bento">
+      <div class="k-tile built"><div class="k-label">Built this week</div>
+        <div class="bs"><div class="gw"><svg viewBox="0 0 84 50" width="84" height="50" class="gl" aria-hidden="true"><path d="M6.5 25.0 C42.0 25.0, 42.0 25.0, 77.5 25.0" class="ge ok"/><circle cx="6.5" cy="25.0" r="4.5" class="gn m"/><circle cx="77.5" cy="25.0" r="4.5" class="gn m"/></svg></div><div><div class="n">export</div><div class="r"><span class="k-mk sm landed"></span>2 of 2 merged</div><div class="mm">$11.90 · Wednesday</div></div></div>
+        <div class="bs"><div class="gw"><svg viewBox="0 0 84 50" width="84" height="50" class="gl" aria-hidden="true"><path d="M6.5 25.0 C42.0 25.0, 42.0 15.5, 77.5 15.5" class="ge ok"/><path d="M6.5 25.0 C42.0 25.0, 42.0 34.5, 77.5 34.5" class="ge ok"/><circle cx="6.5" cy="25.0" r="4.5" class="gn m"/><circle cx="77.5" cy="15.5" r="4.5" class="gn m"/><circle cx="77.5" cy="34.5" r="4.5" class="gn m"/></svg></div><div><div class="n">sharing</div><div class="r"><span class="k-mk sm landed"></span>3 of 3 merged</div><div class="mm">$17.40 · Tuesday</div></div></div>
+        <div class="bs"><div class="gw"><svg viewBox="0 0 84 50" width="84" height="50" class="gl" aria-hidden="true"><path d="M6.5 15.5 C18.3 15.5, 18.3 15.5, 30.2 15.5" class="ge ok"/><path d="M6.5 34.5 C18.3 34.5, 18.3 15.5, 30.2 15.5" class="ge ok"/><path d="M6.5 34.5 C18.3 34.5, 18.3 34.5, 30.2 34.5" class="ge ok"/><path d="M30.2 15.5 C42.0 15.5, 42.0 25.0, 53.8 25.0" class="ge ok"/><path d="M30.2 34.5 C42.0 34.5, 42.0 25.0, 53.8 25.0" class="ge ok"/><path d="M53.8 25.0 C65.7 25.0, 65.7 25.0, 77.5 25.0" class="ge ok"/><circle cx="6.5" cy="15.5" r="4.5" class="gn m"/><circle cx="6.5" cy="34.5" r="4.5" class="gn m"/><circle cx="30.2" cy="15.5" r="4.5" class="gn m"/><circle cx="30.2" cy="34.5" r="4.5" class="gn m"/><circle cx="53.8" cy="25.0" r="4.5" class="gn m"/><circle cx="77.5" cy="25.0" r="4.5" class="gn m"/></svg></div><div><div class="n">snippets</div><div class="r"><span class="k-mk sm landed"></span>6 of 6 merged</div><div class="mm">$41.20 · Monday</div></div></div>
+        <div class="tot"><b>11</b> parts merged · <b>$70.50</b></div>
+      </div>
+      <div class="k-tile k-tile-selected hero k-tile-hero">
+        <div class="hh"><span class="k-label">Building</span><span class="hint2"><span class="k-keys"><span class="k-key">↵</span></span> open</span></div>
+        <div class="sn">search</div>
+        <div class="sub">started by ks serve from the queue at 19:40 · run 7c21d0</div>
+        <div class="dagw"><svg class="dag" viewBox="0 0 500 196" width="500" height="196" aria-hidden="true">
+  <path d="M62 98 C112 98 112 26 162 26 M62 98 C112 98 112 74 162 74 M62 98 C112 98 112 122 162 122 M62 98 C112 98 112 170 162 170" class="e ok"/>
+  <path d="M318 26 C366 26 366 98 402 98 M318 74 C366 74 366 98 402 98 M318 122 C366 122 366 98 402 98" class="e"/><path d="M416 98 H452" class="e"/>
+  <path d="M318 170 C400 170 440 136 461 110" class="e bad"/>
+  <circle cx="54" cy="98" r="8" class="n m"/>
+  <rect x="162" y="13" width="156" height="26" rx="13" class="n y"/><path d="M180 20.5 L186.5 26 L180 31.5 L173.5 26Z" class="mk y"/><text x="193" y="30.5" class="nt y">search-index</text>
+  <rect x="162" y="61" width="156" height="26" rx="13" class="n w"/><text x="176" y="78.5" class="nt">search-query</text>
+  <rect x="162" y="109" width="156" height="26" rx="13" class="n w"/><text x="176" y="126.5" class="nt">search-rank</text>
+  <rect x="162" y="157" width="156" height="26" rx="13" class="n f"/><path d="M175.5 165.5 L184.5 174.5 M184.5 165.5 L175.5 174.5" class="mk f"/><text x="193" y="174.5" class="nt f">search-highlight</text>
+  <circle cx="409" cy="98" r="7" class="n p"/><circle cx="460" cy="102" r="7" class="n s"/><path d="M455.5 106.5 L464.5 97.5" class="n s"/>
+  <text x="42" y="125" class="lt">schema</text><text x="398" y="125" class="lt">api</text><text x="452" y="129" class="lt">cli</text>
+</svg></div>
+        <div class="stats"><div><b>1<small>/7</small></b><span>parts merged</span></div><div><b>2</b><span>agents working</span></div><div><b>1</b><span>stopped</span></div><div><b>≥$21.84</b><span>counted</span></div></div>
+      </div>
+      <div class="k-tile k-tile-idle nx">
+        <div class="k-label">Next in the queue</div>
+        <div class="qi"><div class="qh"><span class="n">tags</span><span class="pr">1st · local</span></div><div class="ex">“Snippets can carry tags, and search can filter by them.”</div></div>
+        <div class="qi"><div class="qh"><span class="n">import</span><span class="pr">2nd · GitHub #31</span></div><div class="ex">“Import snippets from a GitHub gist by its URL.”</div></div>
+        <div class="gates">
+          <div class="gh">Before tags starts, ks serve checks in order</div>
+          <div class="g"><span class="k-mk sm pass"></span><span>queue not paused</span><span class="v"></span></div>
+          <div class="g"><span class="k-mk sm pass"></span><span>no poisoned streak</span><span class="v">0 of 3</span></div>
+          <div class="g"><span class="k-mk sm pass"></span><span>daily budget</span><span class="v">$8.90 left</span></div>
+          <div class="g"><span class="k-mk sm pass"></span><span>inbox not full</span><span class="v">3 of 50</span></div>
+          <div class="g"><span class="k-mk sm work"></span><span>search finishes</span><span class="v">1 spec at a time</span></div>
+          <div class="g"><span class="k-mk sm you"></span><span>no merge parked</span><span class="v">search-index</span></div>
+          <div class="g"><span class="k-mk sm pass"></span><span>open pull requests</span><span class="v">0 of 1</span></div>
+        </div>
+      </div>
+      <div class="k-tile c"><div class="k-label">Trust</div><div class="row"><span class="k-stat-value">L2</span><span class="w">every merge waits for you</span></div><div class="tk"><div class="k-steps" aria-hidden="true"><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step="done"><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span><span class="k-step" data-step=""><i class="k-step-bar"></i></span></div></div><div class="ts">9 of 15 clean merges toward L3</div><div class="tf">thresholds are placeholders · promote in a terminal</div></div>
+      <div class="k-tile c"><div class="k-label">Spend today</div><div class="row"><span class="k-stat-value">≥$31.10<small>of $40.00</small></span></div><span class="k-meter bar" aria-hidden="true" style="--k-meter:78%"><i></i></span><div class="ts">At $40.00, ks serve pauses the queue until midnight.</div></div>
+      <div class="k-tile c"><div class="k-label">Main</div><div class="row"><span class="k-mk pass"></span><span class="bw">CI passing</span></div><div class="mm">a41c9e2 · #48 search-schema · 20:12</div><div class="ts">Every check ran in the last finished run. Safe mode is off.</div></div>
+      <div class="k-tile c"><div class="k-label">Learning</div><div class="row"><span class="k-stat-value">42<small>facts</small></span></div><div class="ts"><span class="v-measure">≥27</span> referenced in engineers’ work.</div><div class="ts" style="margin-top:4px">ks evolve: 1 failure recurs in 3 runs, missing benchmark tests.</div></div>
+    </div>
+  </div>
+  <div class="k-needs">
+    <span class="k-needs-label">Needs you</span>
+    <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
+    <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
+    
+    <span class="k-needs-hint">Select a spec and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
+  </div>
+</div>
+<div class="scr" data-screen="Map4Plan" hidden>
+  <header class="k-header">
+    <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb" aria-current="page">search</button></li></ol></nav>
+    <span class="k-conds"><span>L2 · merges wait for you</span><span><span class="k-mk sm pass"></span>all checks ran</span><span><span class="k-mk sm pass"></span>CI passing</span></span>
+    <span class="grow"></span>
+    <span class="k-live">live · last event 3s ago</span>
+    <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
+    <button class="k-ask" aria-label="Ask or do anything"><span>Ask or do anything</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span></button>
+  </header>
+  <div class="map">
+    <div class="top k-titlerow"><h1 class="k-title"><span class="k-title-human">search</span><span class="k-title-meta">7 parts · 3 of 4 slots in use · <span class="v-measure">≥$21.84</span> since 19:40</span></h1><div class="k-titletools"><div class="k-tabs" role="tablist" aria-label="View"><span class="k-tabs-bar" aria-hidden="true"></span><button class="k-tab" role="tab" aria-selected="false" tabindex="-1">Graph</button><button class="k-tab" role="tab" aria-selected="true" tabindex="0">Text</button></div><div class="k-seg" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="0">Spec</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Part</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Step</button></div></div></div>
+    <div class="two">
+      <div class="k-tile doc k-tile-hero">
+        <div class="file">specs/search.md · your words</div>
+        <p>People can find a snippet by the words in its title or its body.</p>
+        <p>Matching ignores case and accents, so “Café” finds “cafe”.</p>
+        <p>Results come back <mark class="k-hl">fast, even for a large collection</mark><span class="k-ref pinm">1</span>, ranked <mark class="k-hl">by relevance</mark><span class="k-ref pinm">2</span>.</p>
+        <p><span class="code">snip search &lt;words&gt;</span> prints <mark class="k-hl">the best matches</mark><span class="k-ref pinm">3</span> with their titles, with the matching words highlighted.</p>
+        <p>The API answers <span class="code">GET /search?q=</span> with the matches as JSON.</p>
+        <div class="made"><div class="k-label">The architect made 7 parts from it</div><div class="pts"><span class="pt"><span class="k-mk sm landed"></span>search-schema</span><span class="pt"><span class="k-mk sm you"></span>search-index</span><span class="pt"><span class="k-mk sm work"></span>search-query</span><span class="pt"><span class="k-mk sm work"></span>search-rank</span><span class="pt"><span class="k-mk sm fail"></span>search-highlight</span><span class="pt"><span class="k-mk sm wait"></span>search-api</span><span class="pt"><span class="k-mk sm skip"></span>search-cli</span></div></div>
+      </div>
+      <div class="side">
+        <div class="k-label">The architect decided 3 things your spec left open</div>
+        <div class="k-tile d k-tile-dense"><div class="dh"><span class="k-ref pinm">1</span><span>applies to search-query</span><span class="grow"></span><span class="chg">change</span></div>
+          <div class="q">How fast is fast, and for how large a collection?</div><div class="r">Under 100 ms for 10,000 snippets.</div><div class="why">The spec gives no number; 10,000 is the largest collection in the test fixtures.</div><div class="alt">Considered: no bound, measured only.</div></div>
+        <div class="k-tile d k-tile-dense"><div class="dh"><span class="k-ref pinm">2</span><span>applies to search-rank</span><span class="grow"></span><span class="chg">change</span></div>
+          <div class="q">What does relevance mean?</div><div class="r">BM25, SQLite FTS5’s built-in ranking.</div><div class="why">FTS5 is already a dependency, and BM25 needs no tuning.</div><div class="alt">Considered: newest first.</div></div>
+        <div class="k-tile d k-tile-dense"><div class="dh"><span class="k-ref pinm">3</span><span>applies to search-cli</span><span class="grow"></span><span class="chg">change</span></div>
+          <div class="q">How many matches is “the best matches”?</div><div class="r">The ten best.</div><div class="why">Ten fit on one terminal screen with their titles.</div><div class="alt">Considered: all matches, paged.</div></div>
+        <div class="k-tile k-tile-idle nq k-tile-dense"><div class="k-label">Questions for you</div><p>None. When the architect cannot decide something, the run does not start and the question waits here.</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="k-needs">
+    <span class="k-needs-label">Needs you</span>
+    <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
+    <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
+    
+    <span class="k-needs-hint">To change a decision, change the sentence it came from. The next run plans the spec again.</span>
+  </div>
+</div>
+<div class="scr" data-screen="Map2Part" hidden>
+  <header class="k-header">
+    <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb" aria-current="page">search-query</button></li></ol></nav>
+    
+    <span class="grow"></span>
+    <span class="k-live">live · last event 3s ago</span>
+    <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
+    <button class="k-ask" aria-label="Ask or do anything"><span>Ask or do anything</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span></button>
+  </header>
+  <div class="map">
+    <div class="top k-titlerow"><h1 class="k-title"><span class="k-title-name">search-query</span><span class="k-chip k-chip-checker">reviewer</span><span class="k-title-meta">try 3 of 4 · checking · <span class="v-measure">≥$9.20</span></span></h1><div class="k-titletools"><div class="k-seg" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Spec</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="0">Part</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Step</button></div></div></div>
+    <div class="pd"><span>Runs a search against the index and returns the matches with their scores.</span>
+      <span class="ctx"><span><span class="k-mk sm landed"></span>needs search-schema, merged</span><span><span class="k-mk sm wait"></span>needed by search-api</span><span>decision 1: under 100 ms for 10,000 snippets</span></span></div>
+<div class="grid">
+<div class="ch" style="left:99px;top:100px;width:238px"><b>Build</b><span>the engineer, every 2 s</span></div>
+<div class="ch" style="left:343px;top:100px;width:144px"><b>Verify</b><span>tests, lint, scope</span></div>
+<div class="ch" style="left:493px;top:100px;width:170px"><b>Review</b><span>a reviewer agent</span></div>
+<div class="ch" style="left:669px;top:100px;width:144px"><b>Security</b><span>a security agent</span></div>
+<div class="ch" style="left:819px;top:100px;width:144px"><b>Distill</b><span>records facts</span></div>
+<div class="ch" style="left:969px;top:100px;width:144px"><b>Your approval</b><span>you, at L2</span></div>
+<div class="ch" style="left:1119px;top:100px;width:126px"><b>Merge</b><span>PR and CI</span></div>
+<div class="rl" style="left:32px;top:140px;height:50px">try 1</div>
+<div class="k-tile k-tile-cell cell" style="left:99px;top:140px;width:238px;height:50px"><div class="a">7 iterations</div><div class="b">34m</div></div>
+<div class="k-tile k-tile-cell cell" style="left:343px;top:140px;width:144px;height:50px"><div class="a"><span class="k-mk sm pass"></span>28 passed</div><div class="b">39s</div></div>
+<div class="k-tile k-tile-cell k-tile-alert cell" style="left:493px;top:140px;width:170px;height:50px"><div class="a"><span class="k-mk sm fail"></span>5 blocking</div><div class="b">71s</div></div>
+<svg class="gnone" style="left:669px;top:140px" width="144" height="50" aria-hidden="true"><line class="gl" x1="10" x2="134" y1="25.5" y2="25.5"/></svg>
+<svg class="gnone" style="left:819px;top:140px" width="144" height="50" aria-hidden="true"><line class="gl" x1="10" x2="134" y1="25.5" y2="25.5"/></svg>
+<svg class="gnone" style="left:969px;top:140px" width="144" height="50" aria-hidden="true"><line class="gl" x1="10" x2="134" y1="25.5" y2="25.5"/></svg>
+<svg class="gnone" style="left:1119px;top:140px" width="126" height="50" aria-hidden="true"><line class="gl" x1="10" x2="116" y1="25.5" y2="25.5"/></svg>
+<div class="rl" style="left:32px;top:204px;height:50px">try 2</div>
+<div class="k-tile k-tile-cell cell" style="left:99px;top:204px;width:238px;height:50px"><div class="a">5 iterations</div><div class="b">26m</div></div>
+<div class="k-tile k-tile-cell cell" style="left:343px;top:204px;width:144px;height:50px"><div class="a"><span class="k-mk sm pass"></span>30 passed</div><div class="b">40s</div></div>
+<div class="k-tile k-tile-cell k-tile-alert k-tile-selected cell" style="left:493px;top:204px;width:170px;height:50px"><div class="a"><span class="k-mk sm fail"></span>2 blocking</div><div class="b">64s</div></div>
+<svg class="gnone" style="left:669px;top:204px" width="144" height="50" aria-hidden="true"><line class="gl" x1="10" x2="134" y1="25.5" y2="25.5"/></svg>
+<svg class="gnone" style="left:819px;top:204px" width="144" height="50" aria-hidden="true"><line class="gl" x1="10" x2="134" y1="25.5" y2="25.5"/></svg>
+<svg class="gnone" style="left:969px;top:204px" width="144" height="50" aria-hidden="true"><line class="gl" x1="10" x2="134" y1="25.5" y2="25.5"/></svg>
+<svg class="gnone" style="left:1119px;top:204px" width="126" height="50" aria-hidden="true"><line class="gl" x1="10" x2="116" y1="25.5" y2="25.5"/></svg>
+<div class="rl" style="left:32px;top:268px;height:50px">try 3</div>
+<div class="k-tile k-tile-cell cell" style="left:99px;top:268px;width:238px;height:50px"><div class="a">4 iterations</div><div class="b">24m</div></div>
+<div class="k-tile k-tile-cell cell" style="left:343px;top:268px;width:144px;height:50px"><div class="a"><span class="k-mk sm pass"></span>31 passed</div><div class="b">41s</div></div>
+<div class="k-tile k-tile-cell k-tile-work cell" style="left:493px;top:268px;width:170px;height:50px"><div class="a"><span class="k-mk sm work"></span>reviewing</div><div class="b">started 1m ago</div></div>
+<div class="k-tile k-tile-cell k-tile-idle cell" style="left:669px;top:268px;width:144px;height:50px"></div>
+<div class="k-tile k-tile-cell k-tile-idle cell" style="left:819px;top:268px;width:144px;height:50px"></div>
+<div class="k-tile k-tile-cell k-tile-idle cell" style="left:969px;top:268px;width:144px;height:50px"></div>
+<div class="k-tile k-tile-cell k-tile-idle cell" style="left:1119px;top:268px;width:126px;height:50px"></div>
+<div class="rl" style="left:32px;top:332px;height:50px">try 4</div>
+<div class="k-tile k-tile-cell k-tile-idle cell left" style="left:99px;top:332px;width:1146px;height:50px"><p class="lt">one try left · if review still fails, search-query stops and waits for you</p></div>
+<svg class="ret" viewBox="0 0 1280 520" width="1280" height="520" aria-hidden="true"><defs><marker id="Map2Part-ra2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0.5 7 4 0 7.5Z" class="rh"/></marker></defs><path d="M578.0 190 V197.0 H86 V229.0 H97" class="rp" marker-end="url(#Map2Part-ra2)"/><text x="588.0" y="201.0" class="rt">sent back with its 5 blocking findings</text><path d="M578.0 254 V261.0 H86 V293.0 H97" class="rp" marker-end="url(#Map2Part-ra2)"/><text x="588.0" y="265.0" class="rt">sent back with the 2 still failing</text></svg>
+</div>
+    <div class="steps">
+      <div class="k-tile k-tile-ink f1 k-tile-hero">
+        <div class="sh"><span class="k-chip k-chip-checker">reviewer</span><span>try 2 · review · 64s</span><span class="grow"></span><span>2 blocking, both also found in try 1</span></div>
+        <div class="sev">blocking · US-3, criterion 3</div>
+        <p class="say">No test measures the 100 ms bound. The engineer’s benchmark runs on 100 snippets, not 10,000.</p>
+        <div class="src">criterion 3 · tests/test_query.py</div>
+      </div>
+      <div class="k-tile f2">
+        <div class="sev2">blocking · US-2 <span>search/query.py:41</span></div>
+        <p>Quoted phrases are split into words, so “exact phrase” matches the words in any order.</p>
+        <div class="tf">also found in try 1</div>
+      </div>
+      <div class="k-tile f3">
+        <div class="k-label">The engineer said, before this review</div>
+        <p class="cl">All 3 stories are done.</p>
+        <div class="acts">
+          <button class="k-button k-button-block">Tell the engineers…<span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">G</span></span></button>
+          <button class="k-button k-button-block">Read the review log<span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">L</span></span></button>
+          <button class="k-button k-button-block">Open decision 1 in the plan</button>
+        </div>
+        <div class="tf">Guidance goes into memory.md, which try 4 reads.</div>
+      </div>
+    </div>
+  </div>
+  <div class="k-needs">
+    <span class="k-needs-label">Needs you</span>
+    <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
+    <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
+    
+    <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
+  </div>
+</div>
+<div class="scr" data-screen="Map3Reviewer" hidden>
+  <header class="k-header">
+    <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb">search-query</button></li><li><button class="k-crumb" aria-current="page">review, try 2</button></li></ol></nav>
+    
+    <span class="grow"></span>
+    <span class="k-live">live · last event 3s ago</span>
+    <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
+    <button class="k-ask" aria-label="Ask or do anything"><span>Ask or do anything</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span></button>
+  </header>
+  <div class="map">
+    <div class="top k-titlerow"><h1 class="k-title"><span class="k-title-name">search-query</span><span class="k-chip k-chip-checker">reviewer</span><span class="k-title-meta">try 2 of 4 · review · 21:15, 64s · sent back</span></h1><div class="k-titletools"><span class="k-hint">esc back</span><div class="k-tabs" role="tablist" aria-label="View"><span class="k-tabs-bar" aria-hidden="true"></span><button class="k-tab" role="tab" aria-selected="true" tabindex="0">Verdict</button><button class="k-tab" role="tab" aria-selected="false" tabindex="-1">Log</button><button class="k-tab" role="tab" aria-selected="false" tabindex="-1">Prompt</button></div><div class="k-seg" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Spec</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Part</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="0">Step</button></div></div></div>
+    <div class="two">
+      <div class="k-tile vt k-tile-hero">
+        <div class="k-label">Its verdict, criterion by criterion</div>
+        <div class="k-well sy">
+          <div class="sh"><span class="v-measure">US-1</span><b>Match words in a title or a body</b><span class="grow"></span>
+            <span class="claim">engineer: done</span><span class="vd ">reviewer: met</span></div>
+          <div class="cr c-ok"><span class="k-mk sm pass"></span><div><div class="ct">A word returns every snippet with it in the title or the body</div></div></div><div class="cr c-ok"><span class="k-mk sm pass"></span><div><div class="ct">Matching ignores case and accents</div></div></div>
+        </div><div class="k-well k-well-alert sy">
+          <div class="sh"><span class="v-measure">US-2</span><b>Quoted phrases match exactly</b><span class="grow"></span>
+            <span class="claim">engineer: done</span><span class="vd bad">reviewer: 1 of 1 not met</span></div>
+          <div class="cr c-no"><span class="k-mk sm fail"></span><div><div class="ct">A quoted phrase matches only those words, in that order</div><div class="cx"><p>The phrase is split into words at query.py:41, so “exact phrase” matches the words in any order.</p><p class="sg"><span>suggests</span>Pass the phrase to FTS5 as one quoted string.</p></div></div></div>
+        </div><div class="k-well k-well-alert sy">
+          <div class="sh"><span class="v-measure">US-3</span><b>Answer in under 100 ms for 10,000 snippets</b><span class="grow"></span>
+            <span class="claim">engineer: done</span><span class="vd bad">reviewer: 1 of 2 not met</span></div>
+          <div class="cr c-no"><span class="k-mk sm fail"></span><div><div class="ct">Results come back in under 100 ms for 10,000 snippets</div><div class="cx"><p>No test measures the bound. The only benchmark, in tests/test_query.py, builds 100 snippets.</p><p class="sg"><span>suggests</span>Build 10,000 in a fixture and assert the time.</p></div></div></div><div class="cr c-ok"><span class="k-mk sm pass"></span><div><div class="ct">Each match comes back with its score</div></div></div>
+        </div>
+        <div class="on"><div class="k-label">Its summary</div><p>US-1 is solid. US-2 and US-3 are marked done but not met; the missing benchmark is the larger gap.</p></div>
+      </div>
+      <div class="side">
+        <div class="k-tile k-tile-ink hd2">
+          <div class="k-label">Claim against measurement</div>
+          <p class="say">The engineer marked all 3 stories done. The reviewer found 2 criteria not met.</p>
+          <p class="sub">Both disagreements are filed as findings. The review failed, so search-query goes back for try 3 with them.</p>
+        </div>
+        <div class="k-tile df">
+          <div class="k-label">Did it read the right change?</div>
+          <div class="dr"><span>it saw</span><b>4 files · +212 −31</b></div>
+          <div class="dr"><span>git says</span><b>4 files · +212 −31</b><span class="k-mk sm pass"></span></div>
+          <p>kstrl checks the diffstat a reviewer reports against git. In hard mode a mismatch voids the review.</p>
+        </div>
+        <div class="k-tile cn">
+          <div class="k-label">Also noted, not blocking</div>
+          <div class="cc"><span class="v-measure">test_quality</span><p>The benchmark times building the index together with the query.</p></div>
+          <p class="hint2">It says it searched exhaustively. That is its own claim; nothing checks it.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="k-needs">
+    <span class="k-needs-label">Needs you</span>
+    <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
+    <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
+    
+    <span class="k-needs-hint">Log is review.log: the git commands it ran, then its verdict as JSON.</span>
+  </div>
+</div>
+<div data-overlay="question" hidden>
+  <div class="k-scrim"></div>
+  <div class="k-cmd ov q" role="dialog" aria-modal="true" aria-label="Ask kstrl">
+    <div class="k-cmd-input"><svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><input class="k-cmd-q" placeholder="Ask or do anything" aria-label="Ask or do anything" role="combobox" aria-expanded="true" aria-controls="cmd-list" aria-autocomplete="list" aria-activedescendant="cmd-r0" autocomplete="off" spellcheck="false"><span class="k-keys"><span class="k-key">esc</span></span></div>
+    <div class="k-cmd-body">
+      <div class="k-cmd-list" role="listbox" id="cmd-list" aria-label="Answers and actions">
+        <div class="k-cmd-sec" role="presentation">Answer from the run records</div>
+        <div class="k-row" role="option" id="cmd-r0" aria-selected="true"><span class="k-cmd-q-mark" aria-hidden="true">?</span><span class="k-row-title">Why did search-highlight stop?</span><span class="k-row-meta"></span></div>
+        <div class="k-cmd-sec" role="presentation">Do something about it</div>
+        <div class="k-row" role="option" id="cmd-r1" aria-selected="false" aria-disabled="true"><span></span><span class="k-row-title">Retry search-highlight</span><span class="k-row-meta">after this run</span></div>
+        <div class="k-row" role="option" id="cmd-r2" aria-selected="false"><span></span><span class="k-row-title">Add guidance for the engineers</span><span class="k-row-meta"><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">G</span></span></span></div>
+        <div class="k-row" role="option" id="cmd-r3" aria-selected="false"><span></span><span class="k-row-title">Open the engineer’s log</span><span class="k-row-meta"><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">O</span></span></span></div>
+        <div class="k-cmd-sec" role="presentation">Other questions about search</div>
+        <div class="k-row" role="option" id="cmd-r4" aria-selected="false"><span class="k-cmd-q-mark" aria-hidden="true">?</span><span class="k-row-title">What is waiting on me?</span><span class="k-row-meta"></span></div>
+        <div class="k-row" role="option" id="cmd-r5" aria-selected="false"><span class="k-cmd-q-mark" aria-hidden="true">?</span><span class="k-row-title">What has this run cost, by phase?</span><span class="k-row-meta"></span></div>
+        <div class="k-row" role="option" id="cmd-r6" aria-selected="false"><span class="k-cmd-q-mark" aria-hidden="true">?</span><span class="k-row-title">What did the architect decide?</span><span class="k-row-meta"></span></div>
+        <div class="k-row" role="option" id="cmd-r7" aria-selected="false"><span class="k-cmd-q-mark" aria-hidden="true">?</span><span class="k-row-title">What runs next, and why not yet?</span><span class="k-row-meta"></span></div>
+        <div class="k-row" role="option" id="cmd-r8" aria-selected="false"><span class="k-cmd-q-mark" aria-hidden="true">?</span><span class="k-row-title">Is anything not being checked?</span><span class="k-row-meta"></span></div>
+      </div>
+      <div class="k-cmd-detail">
+        <h2>search-highlight stopped at 21:03</h2>
+        <div class="lab2">Why</div>
+        <div class="said">The no-progress breaker failed it on try 2 of 4: iterations 4, 5 and 6 left both the code and the test results unchanged. It fails a part at once rather than spend its last two tries on the same prompt and the same tree.</div>
+        <div class="lab2">Its tries · <span class="v-measure">≥$3.22</span></div>
+        <div class="tries">
+          <span class="v-measure">try 1</span><span class="k-mk sm fail"></span><span>review: 3 blocking findings, sent back with them</span>
+          <span class="v-measure">try 2</span><span class="k-mk sm fail"></span><span>engineer: iterations 4, 5 and 6 left the code and tests unchanged</span>
+        </div>
+        <div class="lab2">The engineer’s last words</div>
+        <div class="k-well"><p class="lgt">Overlapping matches ("sea" inside "search") still render as two spans. I have not found a way to merge them without changing the tokenizer, which is outside this part’s scope.</p><span class="v-measure lgs">engineer.log · iteration 6</span></div>
+        <div class="lab2">What stopping it did</div>
+        <div class="said">search-cli was skipped, because it needs search-highlight. Once this run ends, a retry starts both again.</div>
+        <div class="k-cmd-srcs" aria-label="Sources"><span class="k-cmd-src">events.jsonl</span><span class="k-cmd-src">manifest.json</span><span class="k-cmd-src">engineer.log</span></div>
+      </div>
+    </div>
+    <div class="k-cmd-bar"><span class="k-cmd-bar-note">Answers come from the run records</span><button class="k-cmd-act k-cmd-act-primary">Go to search-highlight <span class="k-keys"><span class="k-key">↵</span></span></button></div>
+  </div>
+</div>
+<div class="k-sr" aria-live="polite" data-said></div>
+<script>
+
+// Segmented control: role=radiogroup. Arrow keys move and select (wrapping, skipping disabled), Home/End jump; Tab enters on the checked item.
+function kSeg(root, onChange){
+  root.classList.add('k-seg-js');
+  var thumb=root.querySelector('.k-seg-thumb'), items=[].slice.call(root.querySelectorAll('.k-seg-item'));
+  function enabled(){ return items.filter(function(i){ return i.getAttribute('aria-disabled')!=='true'; }); }
+  function place(it, animate){ if(!animate){ thumb.style.transition='none'; } thumb.style.width=it.offsetWidth+'px'; thumb.style.transform='translateX('+it.offsetLeft+'px)'; if(!animate){ void thumb.offsetWidth; thumb.style.transition=''; } }
+  function current(){ return items.filter(function(i){ return i.getAttribute('aria-checked')==='true'; })[0]; }
+  // A font that finishes loading later changes every item's width: re-place without animating. (Not a ResizeObserver on the
+  // items: the 500 to 600 weight change on select resizes them by a fraction of a pixel and would cancel the slide.)
+  if(document.fonts){ document.fonts.addEventListener('loadingdone', function(){ var c=current(); if(c) place(c,false); }); }
+  // quiet: set the state without the slide and without telling onChange (a caller restoring or preparing a control).
+  function select(it, focus, quiet){ if(it.getAttribute('aria-disabled')==='true') return; items.forEach(function(i){ var on=i===it; i.setAttribute('aria-checked', on?'true':'false'); i.tabIndex=on?0:-1; }); place(it,!quiet); if(focus) it.focus(); if(onChange && !quiet) onChange(it); }
+  items.forEach(function(i){
+    i.addEventListener('click', function(){ select(i,false); });
+    i.addEventListener('keydown', function(e){ var en=enabled(), k=en.indexOf(i), t=null;
+      if(e.key==='ArrowRight'||e.key==='ArrowDown') t=en[(k+1)%en.length]; else if(e.key==='ArrowLeft'||e.key==='ArrowUp') t=en[(k-1+en.length)%en.length];
+      else if(e.key==='Home') t=en[0]; else if(e.key==='End') t=en[en.length-1];
+      if(t){ e.preventDefault(); select(t,true); } });
+  });
+  var cur=items.filter(function(i){ return i.getAttribute('aria-checked')==='true'; })[0]||enabled()[0];
+  items.forEach(function(i){ i.tabIndex=i===cur?0:-1; }); place(cur,false);
+  return {select:select, items:items, place:place};
+}
+
+
+// Tabs: role=tablist. Arrow keys move focus and select (automatic activation: views are cheap to show), Home/End jump.
+// Left and Right, or Up and Down when the list is aria-orientation="vertical".
+function kTabs(root, onChange){
+  root.classList.add('k-tabs-js');
+  var bar=root.querySelector('.k-tabs-bar'), tabs=[].slice.call(root.querySelectorAll('.k-tab'));
+  var vertical=root.getAttribute('aria-orientation')==='vertical', next=vertical?'ArrowDown':'ArrowRight', prev=vertical?'ArrowUp':'ArrowLeft';
+  // Horizontal: the bar is the tab's width along the bottom. Vertical: 20px tall on the left edge, centred on the tab.
+  function place(t, animate){ if(!animate){ bar.style.transition='none'; }
+    if(vertical){ bar.style.height='20px'; bar.style.transform='translateY('+(t.offsetTop+(t.offsetHeight-20)/2)+'px)'; }
+    else { bar.style.width=t.offsetWidth+'px'; bar.style.transform='translateX('+t.offsetLeft+'px)'; }
+    if(!animate){ void bar.offsetWidth; bar.style.transition=''; } }
+  if(document.fonts){ document.fonts.addEventListener('loadingdone', function(){ var c=tabs.filter(function(x){ return x.getAttribute('aria-selected')==='true'; })[0]; if(c) place(c,false); }); }
+  function select(t, focus, quiet){ tabs.forEach(function(x){ var on=x===t; x.setAttribute('aria-selected', on?'true':'false'); x.tabIndex=on?0:-1; var p=x.getAttribute('aria-controls'); if(p){ var el=document.getElementById(p); if(el) el.hidden=!on; } }); place(t,!quiet); if(focus) t.focus(); if(onChange && !quiet) onChange(t); }
+  tabs.forEach(function(t){
+    t.addEventListener('click', function(){ select(t,false); });
+    t.addEventListener('keydown', function(e){ var k=tabs.indexOf(t), n=null;
+      if(e.key===next) n=tabs[(k+1)%tabs.length]; else if(e.key===prev) n=tabs[(k-1+tabs.length)%tabs.length]; else if(e.key==='Home') n=tabs[0]; else if(e.key==='End') n=tabs[tabs.length-1];
+      if(n){ e.preventDefault(); select(n,true); } });
+  });
+  var cur=tabs.filter(function(t){ return t.getAttribute('aria-selected')==='true'; })[0]||tabs[0];
+  tabs.forEach(function(t){ t.tabIndex=t===cur?0:-1; }); place(cur,false);
+  return {select:select, tabs:tabs, place:place};
+}
+
+// Everything below measures rendered text, so it runs once the web fonts have loaded.
+(document.fonts ? document.fonts.ready : Promise.resolve()).then(function(){
+
+// The frame's wiring. W: every screen drawn at this moment and what each of its controls leads to (null: static).
+var W={"start": "Map1Spec", "open": "approve", "memory": {"spec": "Map1Spec"}, "groups": {"spec": ["Map1Spec", "Map4Plan"]}, "screens": {"Map1Spec": {"say": "Spec level, as a graph: search", "level": 1, "tab": 0, "zoom": ["Map0Factory", "@spec", "Map2Part", "Map3Reviewer"], "crumbs": ["Map0Factory", null], "tabs": ["Map1Spec", "Map4Plan"], "needs": ["approve", null], "ask": "question"}, "Map0Factory": {"say": "Factory level: snippetvault", "level": 0, "tab": null, "zoom": ["Map0Factory", "@spec", "Map2Part", "Map3Reviewer"], "crumbs": [null], "tabs": null, "needs": ["approve", null], "ask": null}, "Map4Plan": {"say": "Spec level, as text: search", "level": 1, "tab": 1, "zoom": ["Map0Factory", "@spec", "Map2Part", "Map3Reviewer"], "crumbs": ["Map0Factory", null], "tabs": ["Map1Spec", "Map4Plan"], "needs": ["approve", null], "ask": "question"}, "Map2Part": {"say": "Part level: search-query", "level": 2, "tab": null, "zoom": ["Map0Factory", "@spec", "Map2Part", "Map3Reviewer"], "crumbs": ["Map0Factory", "@spec", null], "tabs": null, "needs": ["approve", null], "ask": null}, "Map3Reviewer": {"say": "Step level: search-query, review, try 2", "level": 3, "tab": null, "zoom": ["Map0Factory", "@spec", "Map2Part", "Map3Reviewer"], "crumbs": ["Map0Factory", "@spec", "Map2Part", null], "tabs": null, "needs": ["approve", null], "ask": null}}};
+var cur=W.start, mem=W.memory, ctl={}, open=null, opener=null, closing=false, said=document.querySelector('[data-said]');
+function scr(id){ return document.querySelector('[data-screen="'+id+'"]'); }
+function resolve(t){ return t && t.charAt(0)==='@' ? mem[t.slice(1)] : t; }
+function remember(id){ for(var g in W.groups){ if(W.groups[g].indexOf(id)>=0) mem[g]=id; } }
+// A screen's controls are set up the first time it is shown, when it has a layout to measure.
+function init(id){
+  if(ctl[id]) return ctl[id];
+  var s=scr(id), c=W.screens[id], o={mute:false}; ctl[id]=o;
+  if(c.zoom){ o.zoom=kSeg(s.querySelector('.k-seg[aria-label="Zoom level"]'), function(it){ if(o.mute) return;
+    var j=o.zoom.items.indexOf(it), t=resolve(c.zoom[j]); if(t && t!==id) go(t, {kind:'zoom', from:c.level, to:j}); }); }
+  if(c.tabs){ o.tabs=kTabs(s.querySelector('.k-titletools .k-tabs'), function(t){ if(o.mute) return;
+    var j=o.tabs.tabs.indexOf(t), g=resolve(c.tabs[j]); if(g && g!==id) go(g, {kind:'tabs', from:c.tab, to:j}); }); }
+  [].forEach.call(s.querySelectorAll('.k-header .k-crumb'), function(b, i){ var t=c.crumbs[i];
+    if(t) b.addEventListener('click', function(){ go(resolve(t), {kind:'crumb', index:i}); }); });
+  [].forEach.call(s.querySelectorAll('.k-needs .k-need'), function(b, i){ var t=c.needs && c.needs[i];
+    if(t) b.addEventListener('click', function(){ show(t, b); }); });
+  var ask=s.querySelector('.k-ask'); if(c.ask) ask.addEventListener('click', function(){ show(c.ask, ask); });
+  return o; }
+// Put a screen's zoom and views back on its own level and view, without a slide (it is being left, or has just appeared).
+function settle(id){ var o=ctl[id], c=W.screens[id]; if(!o) return;
+  if(o.zoom) o.zoom.select(o.zoom.items[c.level], false, true);
+  if(o.tabs) o.tabs.select(o.tabs.tabs[c.tab], false, true); }
+// Move to another screen of this moment. The control you used is in the new screen too: it slides from where it was
+// to where it now is, and it keeps focus, so the keyboard carries on from the same place.
+function go(t, via){
+  if(open) return;
+  var from=cur; settle(from); scr(from).hidden=true; scr(t).hidden=false; cur=t; remember(t);
+  var o=init(t); settle(t);
+  if(via.kind==='zoom' && o.zoom){ o.zoom.place(o.zoom.items[via.from], false); o.mute=true; o.zoom.select(o.zoom.items[via.to], true); o.mute=false; }
+  else if(via.kind==='tabs' && o.tabs){ o.tabs.place(o.tabs.tabs[via.from], false); o.mute=true; o.tabs.select(o.tabs.tabs[via.to], true); o.mute=false; }
+  else if(via.kind==='crumb'){ scr(t).querySelectorAll('.k-header .k-crumb')[via.index].focus(); }
+  said.textContent=W.screens[t].say; }
+// The command window over the screen you are on: the page under it is inert; Tab stays inside; esc or the scrim closes
+// it and focus goes back to what opened it, or to the ask field when that is gone (CommandWindow).
+function ov(name){ return document.querySelector('[data-overlay="'+name+'"]'); }
+function under(on){ [].forEach.call(scr(cur).children, function(ch){ if(!ch.hasAttribute('data-overlay')) ch.inert=on; }); }
+function show(name, from){
+  if(open && !closing){ var q0=ov(open).querySelector('.k-cmd-q'); q0.focus(); q0.select(); return; }
+  var o=ov(name), s=scr(cur); if(o.parentNode!==s) s.appendChild(o);
+  o.hidden=false; open=name; closing=false; opener=from||null; under(true);
+  var win=o.querySelector('.k-cmd'), sc=o.querySelector('.k-scrim'); win.dataset.motion='enter'; sc.dataset.motion='enter';
+  // once it has arrived it rests as drawn: a finished animation left in place keeps the window on its own layer
+  win.addEventListener('animationend', function(){ if(win.dataset.motion==='enter'){ delete win.dataset.motion; delete sc.dataset.motion; } }, {once:true});
+  o.querySelector('.k-cmd-q').focus(); }
+function hide(){
+  if(!open || closing) return; closing=true;
+  var o=ov(open), win=o.querySelector('.k-cmd'), sc=o.querySelector('.k-scrim'), done=false;
+  win.dataset.motion='exit'; sc.dataset.motion='exit';
+  var ms=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dur-exit'))||200;
+  function end(){ if(done) return; done=true; o.hidden=true; delete win.dataset.motion; delete sc.dataset.motion; under(false); open=null; closing=false;
+    var back=opener && document.contains(opener) && !opener.closest('[hidden]') ? opener : scr(cur).querySelector('.k-ask'); back.focus(); }
+  win.addEventListener('animationend', end, {once:true}); setTimeout(end, ms+80); }
+[].forEach.call(document.querySelectorAll('[data-overlay]'), function(o){
+  o.querySelector('.k-scrim').addEventListener('click', hide);
+  o.addEventListener('keydown', function(e){
+    if(e.key==='Tab'){ var f=[].filter.call(o.querySelectorAll('input, button, [tabindex="0"]'), function(x){ return !x.closest('[hidden]') && !x.disabled; });
+      var i=f.indexOf(document.activeElement); e.preventDefault(); f[(i + (e.shiftKey ? f.length-1 : 1) + f.length) % f.length].focus(); } }); });
+// esc is the document's while a window is open: a frame that opens with its window showing has focus on nothing yet.
+document.addEventListener('keydown', function(e){ if(open && e.key==='Escape'){ e.preventDefault(); hide(); return; }
+  if((e.metaKey||e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase()==='k'){
+  var a=W.screens[cur].ask; if(open){ e.preventDefault(); show(open); } else if(a){ e.preventDefault(); show(a, document.activeElement); } } });
+init(cur);
+if(W.open){ open=W.open; under(true); }
+
+});
+</script>
+</body>
+</html>

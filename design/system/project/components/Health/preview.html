@@ -1,0 +1,101 @@
+<!-- @dsCard group="Frames (proposal)" height=800 width=1280 page subtitle="14 · Health: is the factory working as it usually does?" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Health</title>
+<style>
+  html, body { margin:0; }
+  .scr { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
+  .map { position:relative; min-height:0; }
+  .map > svg { display:block; font-family:var(--font-agent); }
+
+  /* shared language (Stage/Grid): title row, zoom, tabs, chips, rings, checks, tiles */
+  .top { position:absolute; left:32px; right:32px; top:16px; }
+
+  .hg { position:absolute; left:32px; right:32px; top:70px; bottom:14px; display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); grid-template-rows:minmax(0,1fr) 220px; gap:14px; }
+
+  
+  .chh { display:flex; justify-content:space-between; align-items:baseline; }
+  .key { font:var(--t-measure-small); font-weight:400; color:var(--text-3); }
+  .chv { display:flex; align-items:baseline; gap:10px; margin-top:6px; }
+  .lim2 { font:var(--t-label); font-weight:400; color:var(--text-3); }
+  .cc { display:block; margin-top:10px; }
+  .cc .base { stroke:var(--line); }
+  .cc .lim { stroke:var(--line-strong); stroke-width:1; }
+  .cc .lm { stroke:var(--line); stroke-width:1; }
+  .cc .ll { fill:var(--text-3); font:var(--t-measure-small); font-weight:400; }
+  .cc .win { fill:var(--selected); opacity:.6; }
+  .cc .ln { fill:none; stroke:var(--text-2); stroke-width:1.5; stroke-linejoin:round; }
+  .cc .pt { fill:var(--text-2); stroke:var(--window); stroke-width:1.5; }
+  .cc .pt.br { fill:var(--fail); }
+  .cc .ax { fill:var(--text-3); font:var(--t-measure-small); font-weight:400; }
+  .chs { margin-top:auto; font:var(--t-small); }
+  .chs > span { display:inline-flex; align-items:center; gap:6px; }
+  .brk { color:var(--text); font-weight:600; } .okk { color:var(--text-2); }
+
+  .why .say { margin:10px 0 0; font:var(--t-statement); letter-spacing:var(--t-statement-ls); }
+  .why .sub { margin:10px 0 0; font:var(--t-small); opacity:.75; }
+  .why .v-measure { font:var(--t-measure-small); font-weight:400; }
+
+  .sr, .dw { display:grid; grid-template-columns:18px 1fr; column-gap:8px; margin-top:12px; }
+  .sr b, .dw b { font:var(--t-body); font-weight:600; }
+  .dw b { font:var(--t-measure); font-weight:600; }
+  .sr p, .dw p { margin:2px 0 0; font:var(--t-small); color:var(--text-2); }
+  .ft { margin:auto 0 0; font:var(--t-label); font-weight:400; color:var(--text-3); }
+  .dh { display:flex; align-items:baseline; gap:8px; margin-top:6px; }
+  .dh span:last-child { font:var(--t-small); color:var(--text-3); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="you" viewBox="0 0 16 16"><path d="M8 1.5 14.5 8 8 14.5 1.5 8Z"/></symbol>
+<symbol id="work" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-opacity=".35" stroke-width="2"/><path d="M8 2.5A5.5 5.5 0 0 1 13.5 8" fill="none" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="wait" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-width="1.5" stroke-dasharray="2.2 2.2"/></symbol>
+<symbol id="fail" viewBox="0 0 16 16"><path d="M4 4 12 12M12 4 4 12" fill="none" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="pass" viewBox="0 0 16 16"><path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="skip" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-width="1.5"/><path d="M4.2 11.8 11.8 4.2" stroke-width="1.5"/></symbol>
+<symbol id="landed" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M4.8 8.3 7 10.5 11.3 5.8" fill="none" stroke="var(--window)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</defs></svg>
+<div class="scr">
+  <header class="k-header">
+    <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb" aria-current="page">Health</button></li></ol></nav>
+    <span class="k-conds"><span>L2 · merges wait for you</span><span><span class="k-mk sm pass"></span>all checks ran</span><span><span class="k-mk sm pass"></span>CI passing</span></span>
+    <span class="grow"></span>
+    <span class="k-live">not live · last event 22:31</span>
+    <span class="k-spend">≥$42.46 <small>of $40.00 today</small></span>
+    <button class="k-ask" aria-label="Ask or do anything"><span>Ask or do anything</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span></button>
+  </header>
+  <div class="map">
+    <div class="top k-titlerow"><h1 class="k-title"><span class="k-title-name">Health</span><span class="k-title-meta">is the factory working as it usually does? · 19 runs of history</span></h1><div class="k-titletools"><div class="k-tabs" role="tablist" aria-label="View"><span class="k-tabs-bar" aria-hidden="true"></span><button class="k-tab" role="tab" aria-selected="true" tabindex="0">Health</button><button class="k-tab" role="tab" aria-selected="false" tabindex="-1">Readiness</button></div></div></div>
+    <div class="hg">
+      <div class="k-tile ch k-tile-alert"><div class="chh"><span class="k-label">Parts sent back</span><span class="key">retry_rate</span></div>
+      <div class="chv"><span class="k-stat-value">0.43</span><span class="lim2">latest · limits 0.26 and 0.31</span></div><svg class="cc" viewBox="0 0 356 170" width="356" height="170" aria-hidden="true"><line x1="0" y1="154" x2="356" y2="154" class="base"/><line x1="0" y1="102.2" x2="300" y2="102.2" class="lm"/><line x1="0" y1="75.7" x2="300" y2="75.7" class="lim"/><text x="304" y="79.2" class="ll">2 sigma</text><line x1="0" y1="62.4" x2="300" y2="62.4" class="lim"/><text x="304" y="65.9" class="ll">3 sigma</text><rect x="255.2" y="4" width="41.8" height="150" rx="5" class="win"/><polyline points="6.0,112.1 21.9,94.2 37.8,124.1 53.7,79.2 69.6,103.2 85.4,118.1 101.3,88.2 117.2,100.2 133.1,109.1 149.0,94.2 164.9,115.1 180.8,97.2 196.7,82.2 212.6,106.2 228.4,91.2 244.3,121.1 260.2,46.4 276.1,67.3 292.0,25.4" class="ln"/><circle cx="6.0" cy="112.1" r="2.5" class="pt"/><circle cx="21.9" cy="94.2" r="2.5" class="pt"/><circle cx="37.8" cy="124.1" r="2.5" class="pt"/><circle cx="53.7" cy="79.2" r="2.5" class="pt"/><circle cx="69.6" cy="103.2" r="2.5" class="pt"/><circle cx="85.4" cy="118.1" r="2.5" class="pt"/><circle cx="101.3" cy="88.2" r="2.5" class="pt"/><circle cx="117.2" cy="100.2" r="2.5" class="pt"/><circle cx="133.1" cy="109.1" r="2.5" class="pt"/><circle cx="149.0" cy="94.2" r="2.5" class="pt"/><circle cx="164.9" cy="115.1" r="2.5" class="pt"/><circle cx="180.8" cy="97.2" r="2.5" class="pt"/><circle cx="196.7" cy="82.2" r="2.5" class="pt"/><circle cx="212.6" cy="106.2" r="2.5" class="pt"/><circle cx="228.4" cy="91.2" r="2.5" class="pt"/><circle cx="244.3" cy="121.1" r="2.5" class="pt"/><circle cx="260.2" cy="46.4" r="4" class="pt br"/><circle cx="276.1" cy="67.3" r="4" class="pt br"/><circle cx="292.0" cy="25.4" r="4" class="pt br"/><text x="0" y="166" class="ax">19 runs ago</text><text x="297.0" y="166" text-anchor="end" class="ax">latest</text></svg><div class="chs"><span class="brk"><span class="k-mk sm fail"></span>1 point beyond 3 sigma</span></div></div><div class="k-tile ch "><div class="chh"><span class="k-label">Cost per merged part</span><span class="key">cost_per_merged_component</span></div>
+      <div class="chv"><span class="k-stat-value">$4.74</span><span class="lim2">latest · limits $5.25 and $5.79</span></div><svg class="cc" viewBox="0 0 356 170" width="356" height="170" aria-hidden="true"><line x1="0" y1="154" x2="356" y2="154" class="base"/><line x1="0" y1="61.6" x2="300" y2="61.6" class="lm"/><line x1="0" y1="37.5" x2="300" y2="37.5" class="lim"/><text x="304" y="41.5" class="ll">2 sigma</text><line x1="0" y1="25.4" x2="300" y2="25.4" class="lim"/><text x="304" y="28.5" class="ll">3 sigma</text><rect x="255.2" y="4" width="41.8" height="150" rx="5" class="win"/><polyline points="6.0,67.5 21.9,56.4 37.8,85.2 53.7,47.5 69.6,60.8 85.4,74.1 101.3,63.0 117.2,38.6 133.1,69.7 149.0,54.2 164.9,71.9 180.8,58.6 196.7,45.3 212.6,65.3 228.4,76.3 244.3,51.9 260.2,60.8 276.1,40.8 292.0,48.8" class="ln"/><circle cx="6.0" cy="67.5" r="2.5" class="pt"/><circle cx="21.9" cy="56.4" r="2.5" class="pt"/><circle cx="37.8" cy="85.2" r="2.5" class="pt"/><circle cx="53.7" cy="47.5" r="2.5" class="pt"/><circle cx="69.6" cy="60.8" r="2.5" class="pt"/><circle cx="85.4" cy="74.1" r="2.5" class="pt"/><circle cx="101.3" cy="63.0" r="2.5" class="pt"/><circle cx="117.2" cy="38.6" r="2.5" class="pt"/><circle cx="133.1" cy="69.7" r="2.5" class="pt"/><circle cx="149.0" cy="54.2" r="2.5" class="pt"/><circle cx="164.9" cy="71.9" r="2.5" class="pt"/><circle cx="180.8" cy="58.6" r="2.5" class="pt"/><circle cx="196.7" cy="45.3" r="2.5" class="pt"/><circle cx="212.6" cy="65.3" r="2.5" class="pt"/><circle cx="228.4" cy="76.3" r="2.5" class="pt"/><circle cx="244.3" cy="51.9" r="2.5" class="pt"/><circle cx="260.2" cy="60.8" r="2.5" class="pt"/><circle cx="276.1" cy="40.8" r="2.5" class="pt"/><circle cx="292.0" cy="48.8" r="2.5" class="pt"/><text x="0" y="166" class="ax">19 runs ago</text><text x="297.0" y="166" text-anchor="end" class="ax">latest</text></svg><div class="chs"><span class="okk"><span class="k-mk sm pass"></span>within its limits</span></div></div><div class="k-tile ch "><div class="chh"><span class="k-label">Infrastructure errors</span><span class="key">infrastructure_error_rate</span></div>
+      <div class="chv"><span class="k-stat-value">0.00</span><span class="lim2">latest · limits 0.06 and 0.09</span></div><svg class="cc" viewBox="0 0 356 170" width="356" height="170" aria-hidden="true"><line x1="0" y1="154" x2="356" y2="154" class="base"/><line x1="0" y1="141.9" x2="300" y2="141.9" class="lm"/><line x1="0" y1="74.2" x2="300" y2="74.2" class="lim"/><text x="304" y="77.7" class="ll">2 sigma</text><line x1="0" y1="40.4" x2="300" y2="40.4" class="lim"/><text x="304" y="43.9" class="ll">3 sigma</text><rect x="255.2" y="4" width="41.8" height="150" rx="5" class="win"/><polyline points="6.0,154.0 21.9,154.0 37.8,25.4 53.7,154.0 69.6,154.0 85.4,154.0 101.3,154.0 117.2,89.7 133.1,154.0 149.0,154.0 164.9,154.0 180.8,154.0 196.7,154.0 212.6,154.0 228.4,154.0 244.3,154.0 260.2,154.0 276.1,154.0 292.0,154.0" class="ln"/><circle cx="6.0" cy="154.0" r="2.5" class="pt"/><circle cx="21.9" cy="154.0" r="2.5" class="pt"/><circle cx="37.8" cy="25.4" r="2.5" class="pt"/><circle cx="53.7" cy="154.0" r="2.5" class="pt"/><circle cx="69.6" cy="154.0" r="2.5" class="pt"/><circle cx="85.4" cy="154.0" r="2.5" class="pt"/><circle cx="101.3" cy="154.0" r="2.5" class="pt"/><circle cx="117.2" cy="89.7" r="2.5" class="pt"/><circle cx="133.1" cy="154.0" r="2.5" class="pt"/><circle cx="149.0" cy="154.0" r="2.5" class="pt"/><circle cx="164.9" cy="154.0" r="2.5" class="pt"/><circle cx="180.8" cy="154.0" r="2.5" class="pt"/><circle cx="196.7" cy="154.0" r="2.5" class="pt"/><circle cx="212.6" cy="154.0" r="2.5" class="pt"/><circle cx="228.4" cy="154.0" r="2.5" class="pt"/><circle cx="244.3" cy="154.0" r="2.5" class="pt"/><circle cx="260.2" cy="154.0" r="2.5" class="pt"/><circle cx="276.1" cy="154.0" r="2.5" class="pt"/><circle cx="292.0" cy="154.0" r="2.5" class="pt"/><text x="0" y="166" class="ax">19 runs ago</text><text x="297.0" y="166" text-anchor="end" class="ax">latest</text></svg><div class="chs"><span class="okk"><span class="k-mk sm pass"></span>within its limits</span></div></div>
+      <div class="k-tile k-tile-ink why k-tile-hero">
+        <div class="k-label">What a breach does</div>
+        <p class="say">It files a notice, and that is all.</p>
+        <p class="sub">Trust drops on a breach only if <span class="v-measure">demote_on_health_breach</span> is on. It is off here, as it is by default.</p>
+      </div>
+      <div class="k-tile smt">
+        <div class="k-label">Safe mode</div>
+        <div class="sr"><span class="k-mk sm fail"></span><div><b>The queue is paused</b><p>Daily budget reached. It clears itself at 00:00.</p></div></div>
+        <p class="ft">A report, not a switch: it turns nothing off, and clears when its reason does.</p>
+      </div>
+      <div class="k-tile dr">
+        <div class="k-label">Ready for kstrl · ks doctor</div>
+        <div class="dh"><span class="k-stat-value">9<small>/10</small></span><span>checks pass</span></div>
+        <div class="dw"><span class="k-mk sm absent"></span><div><b>git_clean</b><p>2 uncommitted files. Each part is built from the last commit, so none of this reaches an engineer. Commit or stash it.</p></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="k-needs">
+    <span class="k-needs-label">Needs you</span>
+    <button class="k-need"><span class="k-mk fail"></span><b>Daily budget reached</b><span class="k-need-sub">the queue resumes at 00:00 · tags is next</span></button>
+    
+    <span class="k-needs-hint">Limits come from this project’s own runs: every run but the last 3, at least 8 of them.</span>
+  </div>
+</div>
+</body>
+</html>
