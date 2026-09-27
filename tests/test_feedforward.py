@@ -91,7 +91,7 @@ class TestExtractPublicInterfaces:
         # #378: an empty body and an absent section read the same to the
         # engineer, so the body now says why instead of being "".
         result = extract_public_interfaces(tmp_path)
-        assert "no Python source root found" in result
+        assert "read from Python source only" in result
         assert ": class " not in result and ": def " not in result
 
     def test_extract_public_interfaces_skips_test_files(self, tmp_path: Path) -> None:
@@ -132,8 +132,10 @@ class TestBuildDependencyGraph:
         subdir.mkdir()
         (subdir / "code.py").write_text("import os\n")
 
+        # #626: no edge is one line saying what was read, never "".
         result = build_dependency_graph(tmp_path)
-        assert result == ""
+        assert result.startswith("(none: "), result
+        assert "1 .py files were parsed" in result, result
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +206,7 @@ class TestBuildCodebaseScanContext:
         config = CodebaseScanConfig(enabled=True)
         result = build_codebase_scan_context(tmp_path, config)
         assert "## Public interfaces" in result
-        assert "no Python source root found" in result
+        assert "read from Python source only" in result
         assert "## Module map" not in result
         assert "## Conventions" not in result
 
@@ -405,7 +407,8 @@ def test_a_graph_with_nothing_to_say_is_not_a_graph_that_did_not_fit(tmp_path: P
     context = build_codebase_scan_context(tmp_path, CodebaseScanConfig(max_context_tokens=1000))
 
     assert "## Public interfaces" in context
-    assert "## Dependency graph" not in context
+    # #626: a graph with no edge is a notice, not an absent section.
+    assert section(context, "## Dependency graph").startswith("(none: "), context
     assert "did not fit" not in context
 
 
