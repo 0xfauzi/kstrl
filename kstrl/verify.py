@@ -2571,6 +2571,28 @@ def _after_waivers(
     return blocking, advisories, details
 
 
+def _test_adequacy_message(
+    finding_count: int,
+    blocking_mode: bool,
+    still_blocking: list[Finding],
+    advisories: list[Finding],
+    waived: list[str],
+    refusals: list[str],
+) -> str:
+    """#595: mirror ``check_policy_envelope`` - say "satisfied after
+    waivers" rather than "[blocking]" once nothing is still blocking, and
+    count a remaining advisory rather than discard it.
+    """
+    mode = "blocking" if blocking_mode else "advisory"
+    if not still_blocking and waived:
+        message = "test adequacy satisfied after waivers"
+    else:
+        message = f"{finding_count} test-adequacy finding(s) [{mode}]"
+    if advisories:
+        message += f"; {len(advisories)} advisory(ies)"
+    return message + waiver_note(waived, refusals)
+
+
 def _check_licenses(
     new_dependencies: list[tuple[str, str]],
     config: PolicyConfig,
@@ -2740,14 +2762,12 @@ def check_test_adequacy(
             message=(f"test adequacy: {len(sources)} changed test file(s), no weakening signals"),
             duration_seconds=time.monotonic() - start,
         )
-    still_blocking, _advisories, details = _after_waivers(findings, refusals)
-    mode = "blocking" if blocking else "advisory"
+    still_blocking, advisories, details = _after_waivers(findings, refusals)
     return CheckResult(
         name="test_adequacy",
         passed=not still_blocking,
-        message=(
-            f"{len(adequacy_findings)} test-adequacy finding(s) [{mode}]"
-            + waiver_note(waived, refusals)
+        message=_test_adequacy_message(
+            len(adequacy_findings), blocking, still_blocking, advisories, waived, refusals
         ),
         details=details,
         findings=findings,

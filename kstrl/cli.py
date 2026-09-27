@@ -5364,15 +5364,6 @@ def inbox_show(
     sys.exit(0)
 
 
-#: The past tense `_decide_and_report` prints. f"{action}d" printed "rejectd".
-_DECIDED = {
-    "approve": "approved",
-    "reject": "rejected",
-    "snooze": "snoozed",
-    "resolve": "resolved",
-}
-
-
 def _decide_and_report(
     action: str,
     item_id: str,
@@ -5399,7 +5390,10 @@ def _decide_and_report(
     except InboxError as exc:
         ui_impl.err(str(exc))
         sys.exit(2)
-    ui_impl.ok(f"{_DECIDED[action]} {item.id[:8]}: {item.title}")
+    # item.status is the past-tense ItemStatus itself (a StrEnum), so this
+    # prints "approved"/"rejected"/"snoozed"/"resolved" without a second
+    # table that has to be kept in step with the first.
+    ui_impl.ok(f"{item.status} {item.id[:8]}: {item.title}")
     # #595: say what the approval does, quoting the finding it covers.
     effect = approval_effect(item) if action == "approve" else None
     if effect:
@@ -5552,14 +5546,13 @@ def _decide_parked_merge_if_parked(
     serve_parked = _serve_parked(root_dir, manifest.run_id, ui_impl)
     try:
         if action == "approve":
-            box.approve(item.id, actor=_actor(), comment=comment)
+            decided = box.approve(item.id, actor=_actor(), comment=comment)
         else:
-            box.reject(item.id, actor=_actor(), comment=comment)
+            decided = box.reject(item.id, actor=_actor(), comment=comment)
     except InboxError as exc:
         ui_impl.err(str(exc))
         sys.exit(2)
-    said = {"approve": "approved", "reject": "rejected"}[action]
-    ui_impl.ok(f"{said} {item.id[:8]}: {item.title}")
+    ui_impl.ok(f"{decided.status} {item.id[:8]}: {item.title}")
     print_resume_plan(ui_impl, plan)
     argv = option_argv(
         factory,

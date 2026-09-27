@@ -2808,10 +2808,20 @@ class ComponentPipeline:
             component=comp.id,
         )
 
-    def _waivers_for(self, comp: Component) -> Waivers | None:
-        if self._approvals is None:
-            return None
-        return self._approvals.for_scope(self._waiver_scope(comp))
+    def _waivers_for(self, comp: Component) -> Waivers:
+        """This run's approvals for ``comp``, or an unconsulted snapshot.
+
+        ``self._approvals`` is None only when ``snapshot_waivers`` was
+        never called for this pipeline - a bug here, not ``ks check``'s
+        legitimate ``waivers=None`` (it calls the checks directly and
+        never reaches this method). Defaulting to unconsulted keeps that
+        bug from reading as "nothing waived silently": the check still
+        says why.
+        """
+        approvals = self._approvals or ApprovalSnapshot(
+            unconsulted_reason="snapshot_waivers was not called before this check"
+        )
+        return approvals.for_scope(self._waiver_scope(comp))
 
     def _merge_approved(self, comp: Component, decision: InboxItem) -> None:
         """Push, open and merge the branch exactly as the gate parked it.
@@ -3421,33 +3431,45 @@ class ComponentPipeline:
                     finding.category.startswith(POLICY_CATEGORY_PREFIX)
                     and finding.severity != "advisory"
                 ):
+                    # #595 B2: the waiver_key is part of the dedupe key, not
+                    # just category, so a same-category repeat with
+                    # different evidence opens a second item instead of
+                    # overwriting the one the operator is about to read.
+                    evidence = self._waivable_evidence(comp, finding)
                     self._inbox_add(
                         ItemKind.POLICY_EXCEPTION,
                         f"{comp.id}: {finding.category}",
                         detail=finding.explanation,
                         component=comp.id,
-                        dedupe_key=f"policy:{comp.id}:{finding.category}",
-                        evidence=self._waivable_evidence(comp, finding),
+                        dedupe_key=(
+                            f"policy:{comp.id}:{finding.category}:{evidence['waiver_key']}"
+                        ),
+                        evidence=evidence,
                     )
                 # R8.5: same rule, same reason. A BLOCKING adequacy
                 # finding stopped the change and needs a human to decide
                 # whether the suite may weaken here; an ADVISORY one is
                 # recorded in the finding stream and stops there, because
                 # the inbox is a queue of decisions, not of notes. The
-                # dedupe key is category + location so the same file
-                # failing the same way across retries collapses onto one
-                # item instead of fanning out.
+                # dedupe key is category + location + waiver_key (#595
+                # B2) so the same file failing the same way across
+                # retries collapses onto one item, and a same-category,
+                # same-location repeat with different evidence does not.
                 elif (
                     finding.category.startswith(ADEQUACY_CATEGORY_PREFIX)
                     and finding.severity != "advisory"
                 ):
+                    evidence = self._waivable_evidence(comp, finding)
                     self._inbox_add(
                         ItemKind.TEST_ADEQUACY,
                         f"{comp.id}: {finding.category}",
                         detail=finding.explanation,
                         component=comp.id,
-                        dedupe_key=(f"adequacy:{comp.id}:{finding.category}:{finding.location}"),
-                        evidence=self._waivable_evidence(comp, finding),
+                        dedupe_key=(
+                            f"adequacy:{comp.id}:{finding.category}:{finding.location}:"
+                            f"{evidence['waiver_key']}"
+                        ),
+                        evidence=evidence,
                     )
         self.bus.emit(
             ev.VerificationResultEvent(

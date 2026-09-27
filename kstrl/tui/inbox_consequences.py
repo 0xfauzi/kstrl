@@ -17,12 +17,17 @@ the decision, and for most kinds nobody does:
 - A policy exception or test adequacy item is read by
   ``kstrl/waivers.py`` when the next run starts (#595). Approved: that
   run records the one finding the item covers as waived instead of
-  failing on it. Rejected: nothing is waived. The sentences come from
-  ``waivers.approval_effect`` and ``waivers.REJECTION_EFFECT``, which the
-  shell's ``ks inbox approve`` prints too.
-- Every other kind is record-only: a grep for the approved and rejected
-  statuses outside ``kstrl/inbox.py`` finds only the park consumer and
-  the waiver reader. Approve and reject close the item and nothing else.
+  failing on it. Rejected: nothing is waived. ``waivers.approval_effect``
+  is the approve sentence, and the shell's ``ks inbox approve`` prints it
+  too; ``waivers.REJECTION_EFFECT`` is this screen's own sentence only -
+  ``ks inbox reject`` does not print it.
+- Every other kind is record-only: a grep for ``ItemStatus.APPROVED`` and
+  ``ItemStatus.REJECTED`` outside ``kstrl/inbox.py`` finds only the park
+  consumer (``kstrl/pipeline.py``) and the waiver reader
+  (``kstrl/waivers.py``); a plain-text grep for "approved"/"rejected"
+  also matches unrelated enums (``ComponentStatus``,
+  ``CheckpointDecision``) and comments. Approve and reject close the item
+  and nothing else.
 - Snooze hides any item until ``snooze_hours`` pass; it returns by the
   clock (``InboxItem.is_open``), and nothing else changes.
 

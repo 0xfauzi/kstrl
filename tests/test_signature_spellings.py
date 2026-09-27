@@ -127,7 +127,6 @@ EXPECTED_SPELLINGS: frozenset[tuple[str, str]] = frozenset(
         ("kstrl/pipeline.py", "policy"),
         # #595: finding tags an inbox approval writes on a policy or
         # adequacy finding. A tag is not a failure signature.
-        ("kstrl/waivers.py", "waived_severity"),
         ("kstrl/waivers.py", "waiver"),
         ("kstrl/waivers.py", "waiver_refused"),
     }

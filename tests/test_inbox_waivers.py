@@ -105,6 +105,7 @@ SECRET_TOML = "[policy]\nenabled = true\npaths_deny = []\n"
 ADEQUACY_TOML = '[adequacy]\nenabled = true\nlayer0 = "block"\n'
 
 DENIED = _engineer("mkdir -p secrets && printf 'k\\n' > secrets/key.txt")
+OTHER_DENIED = _engineer("mkdir -p secrets && printf 'j\\n' > secrets/other.txt")
 TWO_DENIED = _engineer(
     "mkdir -p secrets && printf 'k\\n' > secrets/key.txt && printf 'j\\n' > secrets/other.txt"
 )
@@ -335,6 +336,10 @@ def test_an_approved_item_waives_its_finding_on_retry(tmp_path: Path, kind: Item
         # `ks inbox approve` said what the approval does, quoting the finding.
         assert f"approved {item.id[:8]}" in said[item.id], said[item.id]
         assert "waives this one finding" in said[item.id], said[item.id]
+        # #595 B1: no promise of "every ks factory or ks retry run" - only
+        # a reproduced (same category, location, explanation) finding.
+        assert "reproduces it exactly" in said[item.id], said[item.id]
+        assert "every ks factory or ks retry run" not in said[item.id], said[item.id]
         assert item.detail in said[item.id], said[item.id]
     comp = _component(root)
     assert comp.status == "completed", out
@@ -386,6 +391,39 @@ def test_an_approval_does_not_cover_a_different_denied_path(tmp_path: Path) -> N
     assert any(
         "covers a different policy_paths_deny finding" in f for f in _verification_failures(root)
     )
+
+
+def test_a_repeat_with_different_evidence_opens_a_second_item_not_a_replacement(
+    tmp_path: Path,
+) -> None:
+    """#595 B2: the dedupe key was category-only, so a same-category repeat
+    with different evidence overwrote the item the operator was about to
+    read, and approving it then waived whatever was on disk last, not
+    what was shown. The key now includes the waiver_key, so a repeat with
+    different evidence opens its own item instead.
+    """
+    root, env = _failed_run(tmp_path, POLICY_TOML, DENIED)
+    (item_a,) = _open(root, ItemKind.POLICY_EXCEPTION)
+    assert item_a.evidence["location"] == "secrets/key.txt"
+
+    # A retry with different evidence, same category, before item_a is approved.
+    code, out = _retry(root, {**env, "AGENT_CMD": OTHER_DENIED})
+    assert code == 1, out
+
+    items = _open(root, ItemKind.POLICY_EXCEPTION)
+    assert len(items) == 2, items
+    assert {i.evidence["location"] for i in items} == {"secrets/key.txt", "secrets/other.txt"}
+    assert item_a.id in {i.id for i in items}, "item A must survive unreplaced"
+
+    _decide(root, env, "approve", item_a.id)
+
+    # Approving A must not waive B: B is still the last thing on disk.
+    code, out = _retry(root, {**env, "AGENT_CMD": OTHER_DENIED})
+
+    assert code == 1, out
+    (finding,) = _gated(root, "policy_")
+    assert (finding.location, finding.severity) == ("secrets/other.txt", "high")
+    assert f"waiver_refused:{item_a.id}" in finding.tags
 
 
 def test_an_approval_does_not_cover_a_second_secret_in_the_same_file(tmp_path: Path) -> None:
@@ -471,6 +509,39 @@ def test_an_approval_filed_before_waivers_existed_is_refused(tmp_path: Path) -> 
     (finding,) = _gated(root, "policy_")
     assert (finding.severity, f"waiver_refused:{item.id}" in finding.tags) == ("high", True)
     assert any("no evidence.waiver_key" in f for f in _verification_failures(root))
+
+
+def test_an_approval_with_a_malformed_waiver_key_says_records_approval_only(
+    tmp_path: Path,
+) -> None:
+    """#595 B3: ``approval_effect`` must refuse exactly what the gate refuses.
+
+    A hand-edited (or future-writer) item can carry a present but
+    malformed ``waiver_key`` - not 64 hex characters - that the old
+    ``approval_effect`` never checked, so it printed "waives this one
+    finding" for evidence the gate was always going to refuse. The gate
+    itself stays closed either way; only the shell's sentence is at risk.
+    """
+    root, env = _failed_run(tmp_path, POLICY_TOML, DENIED)
+    (item,) = _open(root, ItemKind.POLICY_EXCEPTION)
+    # A repeat refreshes an open item's evidence with a malformed key.
+    Inbox(root, InboxConfig.load(root)).add(
+        ItemKind.POLICY_EXCEPTION,
+        item.title,
+        component=COMP,
+        dedupe_key=item.dedupe_key,
+        evidence={**item.evidence, "waiver_key": "not-a-hex-digest"},
+    )
+    out = _decide(root, env, "approve", item.id)
+    assert "records approval only" in out, out
+    assert "waives this one finding" not in out, out
+
+    code, out = _retry(root, env)
+
+    assert code == 1, out
+    (finding,) = _gated(root, "policy_")
+    assert (finding.severity, f"waiver_refused:{item.id}" in finding.tags) == ("high", True)
+    assert any("not a 64-character hex digest" in f for f in _verification_failures(root))
 
 
 def test_an_approval_of_the_enforcement_machinery_halt_is_refused(tmp_path: Path) -> None:

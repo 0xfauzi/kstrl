@@ -134,8 +134,8 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_inbox.py": 1,
     "tests/test_inbox_resolves_on_completion.py": 1,
     # #595: the stub engineer's `git commit` in the repository `_repo`
-    # puts through `tests.helpers.gitrepo.set_identity`, plus the module
-    # docstring's mention of the word.
+    # puts through `tests.helpers.gitrepo.set_identity`, plus `_repo`'s
+    # own seed commit (`gitrepo.git_in(root, "commit", "-q", "-m", "init")`).
     "tests/test_inbox_waivers.py": 2,
     "tests/test_init_cmd.py": 3,
     "tests/test_input_hygiene.py": 4,

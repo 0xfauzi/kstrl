@@ -21,8 +21,10 @@ allowed". This module is how a later run reads that decision.
 - **The effect.** :func:`apply_waivers` runs inside the check, before the
   check decides ``passed``, so the check stays the only place a finding
   becomes blocking. A matched finding is kept and re-emitted as
-  ``advisory`` with a ``waiver:<item id>`` tag, a ``waived_severity:``
-  tag and an explanation suffix naming the approval.
+  ``advisory`` with a ``waiver:<item id>`` tag and an explanation suffix
+  naming the approval. Not every refusal adds a tag: an unconsulted
+  snapshot (the inbox itself could not be read) leaves a finding
+  untagged and says so only in the check's message.
 - **Fail closed.** Every path that cannot prove an approval covers a
   finding leaves the finding blocking, as it was before this module,
   and says why: a ``waiver_refused:<item id>`` tag on the finding and a
@@ -64,7 +66,6 @@ WAIVABLE: dict[ItemKind, str] = {
 #: approval of one is refused, never applied.
 NON_WAIVABLE_CATEGORIES = frozenset({f"{POLICY_CATEGORY_PREFIX}enforcement_machinery"})
 
-WAIVED_SEVERITY_TAG_PREFIX = "waived_severity:"
 WAIVER_REFUSED_TAG_PREFIX = "waiver_refused:"
 
 #: What rejecting a waivable item does, for the CLI and the TUI.
@@ -162,7 +163,7 @@ class ApprovalSnapshot:
                 )
                 continue
             assert isinstance(category, str)
-            key = str(item.evidence["waiver_key"])
+            key = item.evidence["waiver_key"]
             by_key[key] = Waiver(item.id, category, item.decided_by, item.decided_at)
         return Waivers(scope, by_key, tuple(refused))
 
@@ -191,8 +192,14 @@ def load_approvals(inbox: Inbox) -> ApprovalSnapshot:
     return ApprovalSnapshot(approved=approved)
 
 
-def _refusal(item: InboxItem, scope: WaiverScope) -> str:
-    """Why an approved item is not applied, or "" when it is valid for ``scope``."""
+def _evidence_refusal(item: InboxItem) -> str:
+    """Why ``item``'s own evidence refuses a waiver, scope aside.
+
+    Scope-free: everything :func:`_refusal` can decide without a run to
+    check the key against. :func:`approval_effect` uses exactly this half
+    - the shell and the TUI have no scope, only the item - so what they
+    print and what the gate does are the same check, not two.
+    """
     tag = f"approval {item.id[:8]}"
     evidence = item.evidence
     prefix = WAIVABLE[item.kind]
@@ -209,13 +216,23 @@ def _refusal(item: InboxItem, scope: WaiverScope) -> str:
     for name in ("location", "explanation"):
         if not isinstance(evidence.get(name), str):
             return f"{tag}: evidence.{name} is not a string"
+    return ""
+
+
+def _refusal(item: InboxItem, scope: WaiverScope) -> str:
+    """Why an approved item is not applied, or "" when it is valid for ``scope``."""
+    reason = _evidence_refusal(item)
+    if reason:
+        return reason
+    tag = f"approval {item.id[:8]}"
+    evidence = item.evidence
     recomputed = waiver_key(
         scope,
-        category=category,
-        location=str(evidence["location"]),
-        explanation=str(evidence["explanation"]),
+        category=evidence["category"],
+        location=evidence["location"],
+        explanation=evidence["explanation"],
     )
-    if recomputed != key:
+    if recomputed != evidence["waiver_key"]:
         return (
             f"{tag}: evidence.waiver_key does not match this run's project "
             f"{scope.project!r}, spec {scope.spec_file!r}, plan {scope.plan_id!r} and "
@@ -245,8 +262,11 @@ def apply_waivers(
         if not _waivable(finding):
             out.append(finding)
             continue
+        # NON_WAIVABLE_CATEGORIES is not rechecked here: _evidence_refusal
+        # already keeps a non-overridable category out of by_key, in
+        # for_scope, so a match can never be one.
         match = waivers.by_key.get(waivers.scope.key(finding))
-        if match is not None and finding.category not in NON_WAIVABLE_CATEGORIES:
+        if match is not None:
             out.append(_waive(finding, match))
             waived.append(match.item_id)
             continue
@@ -265,11 +285,7 @@ def _waive(finding: Finding, match: Waiver) -> Finding:
             f"{finding.explanation} [waived by inbox approval {match.item_id[:8]} "
             f"({match.decided_by} at {match.decided_at})]"
         ),
-        tags=finding.tags
-        + (
-            f"{WAIVER_TAG_PREFIX}{match.item_id}",
-            f"{WAIVED_SEVERITY_TAG_PREFIX}{finding.severity}",
-        ),
+        tags=finding.tags + (f"{WAIVER_TAG_PREFIX}{match.item_id}",),
     )
 
 
@@ -290,8 +306,6 @@ def _refuse(finding: Finding, waivers: Waivers) -> tuple[Finding, list[str]]:
             )
     if waivers.unconsulted_reason:
         reasons.append(f"approvals were not consulted: {waivers.unconsulted_reason}")
-    if not tags:
-        return finding, reasons
     return replace(finding, tags=finding.tags + tuple(tags)), reasons
 
 
@@ -306,21 +320,21 @@ def waiver_note(waived: Sequence[str], refusals: Sequence[str]) -> str:
 
 
 def approval_effect(item: InboxItem) -> str | None:
-    """What approving ``item`` does, or None for a kind no step waives."""
+    """What approving ``item`` does, or None for a kind no step waives.
+
+    #595 B3: the same check as the gate's, ``_evidence_refusal`` - this
+    function adds no checks of its own, so the shell and the TUI cannot
+    say "waives" about evidence the gate itself would refuse.
+    """
     if item.kind not in WAIVABLE:
         return None
-    evidence = item.evidence
-    category = evidence.get("category")
-    explanation = evidence.get("explanation")
-    if category in NON_WAIVABLE_CATEGORIES:
-        return f"records approval only: {category} is non-overridable, so no run applies it."
-    if "waiver_key" not in evidence or not isinstance(explanation, str):
-        return (
-            "records approval only: this item was filed before an approval could waive "
-            "a finding, so no run applies it."
-        )
+    reason = _evidence_refusal(item)
+    if reason:
+        return f"records approval only: {reason}"
+    explanation = item.evidence["explanation"]
     return (
-        f"waives this one finding for {item.component} in every ks factory or ks retry run "
-        f"that starts after now: {explanation!r}. Any other finding still fails, and "
-        f"ks inbox reject {item.id[:8]} withdraws the waiver."
+        f"waives this one finding for {item.component}: {explanation!r}. It applies when "
+        "the next run reproduces it exactly (same category, location and explanation); a "
+        "regenerated change that reads differently is a new finding. Any other finding "
+        f"still fails, and ks inbox reject {item.id[:8]} withdraws the waiver."
     )

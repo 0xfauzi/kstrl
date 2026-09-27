@@ -194,9 +194,8 @@ def await_sites(tree: ast.Module) -> int:
 EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/helpers/settle.py": 3,
     "tests/helpers/tui_screens.py": 5,
-    # One ``async with app.run_test`` and three settle-helper awaits
-    # (mounted, settled, drained), added by #448. Every read after them
-    # is a table cell the drained wait has already painted.
+    # One ``async with app.run_test`` and three settle-helper awaits (mounted, settled, drained),
+    # added by #448. Every read after them is a table cell the drained wait has already painted.
     "tests/test_carried_component_state.py": 4,
     "tests/test_config_guard_survey.py": 4,
     "tests/test_config_screen.py": 37,
@@ -204,11 +203,12 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     # 12 since #507 deleted the proposals tab and its three modal tests.
     "tests/test_evolve_screen.py": 12,
     "tests/test_evolve_screen_encoding.py": 1,
-    # Four ``async with evolve_screen(...)``, added by #333. Every read after them is of
-    # ``#evolve-repairs``, and ``evolve_screen`` waits on ``tests/helpers/tui_screens.py``'s
-    # conditions, the last being that ``EvolveScreen.on_mount`` has RETURNED. The repair line is
-    # written in the ``reload()`` on_mount ends with, so it is drawn before any of these reads
-    # run. No pause is counted and no new predicate was needed.
+    # Four ``async with evolve_screen(...)``, added by #333. Every read
+    # after them is of ``#evolve-repairs``, and ``evolve_screen`` waits on
+    # ``tests/helpers/tui_screens.py``'s conditions, the last being that
+    # ``EvolveScreen.on_mount`` has RETURNED. The repair line is written in
+    # the ``reload()`` on_mount ends with, so it is drawn before any of
+    # these reads run. No pause is counted and no new predicate was needed.
     "tests/test_evolve_screen_repairs.py": 4,
     "tests/test_feature_run.py": 5,
     "tests/test_home_data.py": 4,

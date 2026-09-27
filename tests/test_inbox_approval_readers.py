@@ -57,14 +57,20 @@ RECORD_ONLY: dict[ItemKind, str] = {
 #: how many times. A new row is a new reader: name it in APPROVAL_READERS
 #: or NOT_AN_INBOX_READER before adding it here.
 EXPECTED_APPROVED_READS: dict[str, int] = {
+    "pipeline.py::<module>": 1,
     "pipeline.py::ComponentPipeline._checkpoint_refusal": 1,
     "pipeline.py::ComponentPipeline._phase_checkpoint": 1,
     "pipeline.py::ComponentPipeline.apply_merge_decisions": 1,
     "waivers.py::load_approvals": 1,
 }
 
-#: Rows of the census that read some other vocabulary's APPROVED.
+#: Rows of the census that read (or, for the module row, define) some
+#: other vocabulary's APPROVED.
 NOT_AN_INBOX_READER: dict[str, str] = {
+    "pipeline.py::<module>": (
+        'CheckpointDecision.APPROVED = "approved": the enum member definition itself, '
+        "not a read of it"
+    ),
     "pipeline.py::ComponentPipeline._checkpoint_refusal": (
         "CheckpointDecision.APPROVED: the interactive pre-PR checkpoint's answer"
     ),
@@ -78,15 +84,28 @@ CONTROL_COMPARE = 'if item.status == "approved":\n    pass\n'
 
 
 def _reads_approved(node: ast.AST) -> list[ast.AST]:
-    """The nodes under ``node`` that test for the approved status."""
+    """The nodes under ``node`` that could test for the approved status.
+
+    Over-matches on purpose. The narrower version - only a ``.APPROVED``
+    attribute or a lowercase ``"approved"`` constant, and only as a
+    direct operand of an ``ast.Compare`` - missed an ``in (...)`` tuple,
+    a ``match``/``case`` pattern, a ``.name ==`` comparison against the
+    uppercase member name, and a bare ``ItemStatus("approved")`` call: a
+    clearing guard must flag when it is not sure a site is unrelated
+    (CLAUDE.md), not require the exact shape of a comparison. So this
+    matches any ``APPROVED`` attribute access and any string constant
+    equal to "approved" in either case, wherever each sits.
+    """
     found: list[ast.AST] = []
     for child in astwalk.all_nodes(node):
         if isinstance(child, ast.Attribute) and child.attr == "APPROVED":
             found.append(child)
-        elif isinstance(child, ast.Compare):
-            for operand in (child.left, *child.comparators):
-                if isinstance(operand, ast.Constant) and operand.value == "approved":
-                    found.append(operand)
+        elif (
+            isinstance(child, ast.Constant)
+            and isinstance(child.value, str)
+            and child.value.lower() == "approved"
+        ):
+            found.append(child)
     return found
 
 
