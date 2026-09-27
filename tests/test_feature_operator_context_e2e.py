@@ -268,13 +268,21 @@ class TestFeatureEngineerReadsOperatorContext:
             < prompt.index(CLAUDE_MD)
         )
 
-    def test_a_memory_line_written_between_loops_reaches_the_next_loop(
+    def test_a_memory_line_the_agent_writes_mid_run_reaches_the_next_loop(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The prefix is built at each loop, not once per run. The stub
-        appends a line to memory.md when it sees the implement prompt, the
-        way an operator edits the file at the review gate; the repair loop
-        must read it and the understand loop, which ran before, cannot."""
+        """A DISCLOSED RESIDUAL, not a review-gate guarantee: ``ks feature``
+        has no reviewer and ``--implementation-auto-run`` skips the human
+        checkpoint too, so nothing on this path hands an OPERATOR a chance
+        to edit ``memory.md`` between loops. The per-loop rebuild exists for
+        parity with ``ks run``, which re-reads the operator files on every
+        attempt regardless of a review gate (#599's coordinator decision).
+        What that parity delivers here is narrower: the stub appends a line
+        to memory.md when it sees the implement prompt, standing in for the
+        AGENT writing to its own memory file mid-run, and the repair loop
+        must read it while the understand loop, which ran before the write,
+        cannot. A later change that closes this channel (building the
+        prefix once per run, say) must change this test on purpose."""
         run = _run_feature(
             tmp_path,
             monkeypatch,
@@ -359,12 +367,18 @@ class TestFeatureEngineerReadsOperatorContext:
         """The chmod test above raises ``PermissionError``, an ``OSError``, so
         a handler narrowed to ``OSError`` would pass it. Retrieval is
         swapped for one that raises ``RuntimeError``; the run must still
-        warn at each loop and finish."""
+        warn at each loop and finish.
+
+        #599 A3 moved the try/except that catches this off
+        ``feature_cmd`` and onto ``knowledge.retrieve_knowledge_context``,
+        shared with the factory; the patch target moves with it, onto
+        the function that actually raises rather than the caller that
+        used to import it."""
 
         def failing_retrieval(*_args: object, **_kwargs: object) -> str:
             raise RuntimeError("PROBE-RETRIEVAL-ERROR")
 
-        monkeypatch.setattr("kstrl.feature_cmd.build_knowledge_context", failing_retrieval)
+        monkeypatch.setattr("kstrl.knowledge.build_knowledge_context", failing_retrieval)
 
         run = _run_feature(tmp_path, monkeypatch, _initialised_project(tmp_path))
 
@@ -402,3 +416,18 @@ class TestFeatureEngineerReadsOperatorContext:
             in prompt
         ), prompt
         assert STALE_CLAIM not in prompt
+
+    def test_an_injected_fact_is_recorded(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """#599 A3: a feature run that injects a fact records that it did.
+        ``ks feature`` has no ``ComponentPipeline``, so it has nothing
+        like ``pipeline.record_injected_knowledge`` to call the way the
+        factory does; this is the audit trail it has instead, and every
+        loop that actually retrieves knowledge writes one, the same
+        obligation CLAUDE.md states for every adversarial decision:
+        an injection is worth recording, not left silent."""
+        run = _run_feature(tmp_path, monkeypatch, _initialised_project(tmp_path))
+
+        assert run.exit_code == 0, run.output
+        assert run.output.count("Knowledge recorded for demo") == 2, run.output

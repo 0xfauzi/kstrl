@@ -806,6 +806,54 @@ def build_knowledge_context(
     return "\n".join(parts).rstrip() + "\n"
 
 
+def retrieve_knowledge_context(
+    manifest: Manifest,
+    component: Component,
+    config: KnowledgeConfig,
+    *,
+    allowed_paths: Sequence[str] | None,
+    worktree: Path,
+    on_failure: Callable[[Exception], None],
+    dependency_paths: Mapping[str, Sequence[str]] | None = None,
+) -> str | None:
+    """The non-fatal, never-silent retrieval policy every engineer-loop
+    caller shares (#599 A3).
+
+    ``factory._submit_args`` and ``feature_cmd._feature_knowledge_prefix``
+    duplicated this exact policy - disabled or a raised exception both
+    mean "the engineer runs with no facts", warned through ``on_failure``
+    on the exception, never on the disabled path (disabled is the
+    operator's own choice, not a degradation to report) - and the
+    feature copy dropped the distinction entirely, calling
+    ``build_knowledge_context`` (which already returns ``""`` when
+    disabled, at the check this duplicated a second time) with no
+    caller left able to tell "off" from "on and empty" apart. Callers
+    that need that distinction, such as the factory's fact-utilization
+    measurement, read it off THIS function's return: ``None`` for
+    disabled-or-failed, the built string otherwise (which may itself be
+    ``""`` - a real empty result, a cold knowledge store, not an
+    absence).
+
+    Never raises: knowledge is a hint the engineer's prompt carries, not
+    a gate any run depends on.
+    """
+    if not config.enabled:
+        return None
+    try:
+        return build_knowledge_context(
+            manifest,
+            component,
+            config.knowledge_root,
+            config,
+            allowed_paths=allowed_paths,
+            dependency_paths=dependency_paths,
+            worktree=worktree,
+        )
+    except Exception as exc:  # noqa: BLE001 - non-fatal, never silent
+        on_failure(exc)
+        return None
+
+
 # ---------------------------------------------------------------------------
 # E8 telemetry: surface "direct scope hid these facts" so silent quality
 # regressions become visible.

@@ -80,7 +80,7 @@ from kstrl.interaction import (
     PromptRequest,
     UiInteractionChannel,
 )
-from kstrl.knowledge import KnowledgeConfig, build_knowledge_context
+from kstrl.knowledge import KnowledgeConfig, retrieve_knowledge_context
 from kstrl.loop import run_loop
 from kstrl.manifest import Component, Manifest
 from kstrl.timeout import TimeoutConfig
@@ -215,13 +215,14 @@ def _feature_knowledge_prefix(params: FeatureParams, root_dir: Path, ui: UI) -> 
     allowed-paths`` is a run-wide override and says nothing about which
     facts are core, so it is not passed.
 
-    A retrieval failure is non-fatal and never silent, as in
-    ``factory._submit_args``: the engineer runs without facts and the
-    operator is told why.
+    Retrieval itself, the disabled/failed policy and the injected-
+    knowledge record all come from ``knowledge.retrieve_knowledge_
+    context``, the one helper ``factory._submit_args`` also calls (#599
+    A3): this function used to duplicate that policy by hand AND skip
+    the record, so a feature run injected facts with no record of what
+    it injected.
     """
     config = KnowledgeConfig.load(root_dir)
-    if not config.enabled:
-        return ""
     component = Component(
         id=params.feature_name,
         title=params.feature_name,
@@ -238,18 +239,38 @@ def _feature_knowledge_prefix(params: FeatureParams, root_dir: Path, ui: UI) -> 
         single_pr=False,
         components=[component],
     )
-    try:
-        return build_knowledge_context(
-            manifest,
-            component,
-            config.knowledge_root,
-            config,
-            allowed_paths=params.prd_doc.allowed_paths,
-            worktree=root_dir,
-        )
-    except Exception as exc:  # noqa: BLE001 - non-fatal, never silent
-        ui.warn(f"  Knowledge retrieval failed for {params.feature_name}: {exc}")
-        return ""
+    injected = retrieve_knowledge_context(
+        manifest,
+        component,
+        config,
+        allowed_paths=params.prd_doc.allowed_paths,
+        worktree=root_dir,
+        on_failure=lambda exc: ui.warn(
+            f"  Knowledge retrieval failed for {params.feature_name}: {exc}"
+        ),
+    )
+    _record_feature_knowledge(params, ui, injected)
+    return injected or ""
+
+
+def _record_feature_knowledge(params: FeatureParams, ui: UI, injected: str | None) -> None:
+    """The audit-trail record #599 A3 asks for: every injection is
+    written down, never a silent code path.
+
+    ``ks feature`` has no ``ComponentPipeline``, so it has nothing like
+    ``pipeline.record_injected_knowledge`` to freeze a per-attempt value
+    into; printing once per loop, the way ``on_failure`` above already
+    reports a failed attempt, is what it has instead. Silent on
+    ``None``: disabled is the operator's own choice, not a degradation
+    to report, and a failed attempt is already named by ``on_failure``
+    - this names what an ACTUAL retrieval returned, not every call.
+    """
+    if injected is None:
+        return
+    if injected:
+        ui.info(f"  Knowledge recorded for {params.feature_name}: {len(injected)} chars injected")
+    else:
+        ui.info(f"  Knowledge recorded for {params.feature_name}: no facts to inject")
 
 
 def _feature_context_prefix(
@@ -257,9 +278,20 @@ def _feature_context_prefix(
 ) -> str | None:
     """The engineer's context for one feature loop, through the factory's assembly.
 
-    Read at each ``run_loop`` call rather than once per run: the review
-    gate between the understand and implement loops is where an operator
-    may add a line to ``memory.md``, and the next loop must read it.
+    Read at each ``run_loop`` call rather than once per run, for parity
+    with ``ks run``: ``factory._run_component`` re-reads the operator
+    files on every attempt regardless of whether a review gate sits
+    between them, and #599 asked for that behaviour, not a new cadence.
+    ``ks feature`` has no review gate at all (no reviewer runs on this
+    path, and ``--implementation-auto-run`` skips the human checkpoint
+    too), so nothing here hands an operator a chance to edit
+    ``memory.md`` between loops the way the factory's cadence assumes.
+    What the per-loop rebuild actually delivers on this path is
+    disclosed in ``TestFeatureEngineerReadsOperatorContext.
+    test_a_memory_line_the_agent_writes_mid_run_reaches_the_next_loop``:
+    a write the AGENT ITSELF makes to its own ``memory.md`` while a run
+    is in progress. A change that closes that channel (building the
+    prefix once per run, say) must change that test on purpose.
     """
     return engineer_context_prefix(
         root_dir,

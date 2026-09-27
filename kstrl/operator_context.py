@@ -182,15 +182,16 @@ class OperatorFileKind:
 
     THE WORKER'S PROMPT BLOCK IS THE THIRD AND IT IS HAND-ORDERED, on
     purpose. ``factory.engineer_context_prefix`` names each kind itself,
-    and a new row costs EIGHT hand edits, seven in ``kstrl/factory.py``
-    and one in ``kstrl/feature_cmd.py``, which is the list and not the
+    and a new row costs NINE hand edits, which is the list and not the
     number: the import of the kind constant, the
     ``engineer_context_prefix`` parameter carrying the configured path,
     the ``load_operator_file`` call, THE ENTRY IN THE ``parts`` TUPLE
     that puts the block in front of the engineer, the ``_run_component``
-    parameter that forwards the path, the ``_path_relative_to_root``
-    hoist in the parent, the positional slot in ``_submit_args``, and
-    the argument ``_feature_context_prefix`` passes from ``base_config``
+    parameter that forwards the path, the keyword argument
+    ``_run_component`` passes into ``engineer_context_prefix`` for it,
+    the ``_path_relative_to_root`` hoist in the parent, the positional
+    slot in ``_submit_args``, and the argument
+    ``_feature_context_prefix`` passes from ``base_config``
     (#599). Round 1 of R10.9's review is the reason
     this paragraph exists: the earlier wording claimed a row reached the
     worker too, which would have made a third row validated, warned
@@ -642,8 +643,8 @@ def _rows(
 
     IT DOES NOT REACH THE ENGINEER'S PROMPT. That is
     ``factory.engineer_context_prefix``, which names each kind by hand,
-    and a row costs EIGHT edits, one of them the entry in the ``parts``
-    tuple that is the prompt order; :class:`OperatorFileKind` lists all eight and
+    and a row costs NINE edits, one of them the entry in the ``parts``
+    tuple that is the prompt order; :class:`OperatorFileKind` lists all nine and
     names the test that refuses a row which has not paid them. An earlier
     wording of this sentence claimed the worker too, which is a guard
     closed over one surface reading as closed over all of them, and the

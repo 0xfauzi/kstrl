@@ -93,10 +93,10 @@ from kstrl.interaction import InteractionChannel
 from kstrl.jsonread import read_json
 from kstrl.knowledge import (
     KnowledgeConfig,
-    build_knowledge_context,
     current_run_id,
     distill_facts,
     measure_fact_utilization,
+    retrieve_knowledge_context,
 )
 from kstrl.launch_record import FlagValue, run_limits, write_launch_record
 from kstrl.linear import LinearConfig, build_linear_sink
@@ -4648,29 +4648,25 @@ def _run_factory_locked(
         ctx_json = run_state.component_contexts.get(comp.id)
         engineer_usage = pipeline.engineer_usage_totals()
         scope = pipeline.run_scope.for_component(comp.id)
-        knowledge_prefix = ""
-        if knowledge_config.enabled:
-            try:
-                knowledge_prefix = build_knowledge_context(
-                    manifest,
-                    comp,
-                    knowledge_config.knowledge_root,
-                    knowledge_config,
-                    allowed_paths=authored_paths(scope),
-                    dependency_paths=paths_by_component(manifest, pipeline.run_scope),
-                    worktree=wt_path,
-                )
-            except Exception as exc:  # noqa: BLE001 - non-fatal, never silent
-                # Non-fatal, but NOT a metrics detail: the engineer runs
-                # without any of its facts when this fires. That is a
-                # real degradation of the run, and it used to be a bare
-                # `except: pass` that said nothing (#191).
-                ui.warn(f"  Knowledge retrieval failed for {comp.id}: {exc}")
-                pipeline.record_injected_knowledge(comp.id, None)
-            else:
-                pipeline.record_injected_knowledge(comp.id, knowledge_prefix)
-        else:
-            pipeline.record_injected_knowledge(comp.id, None)
+
+        def _warn_knowledge_failure(exc: Exception, comp_id: str = comp.id) -> None:
+            # Non-fatal, but NOT a metrics detail: the engineer runs
+            # without any of its facts when this fires. That is a real
+            # degradation of the run, and it used to be a bare
+            # `except: pass` that said nothing (#191).
+            ui.warn(f"  Knowledge retrieval failed for {comp_id}: {exc}")
+
+        injected_knowledge = retrieve_knowledge_context(
+            manifest,
+            comp,
+            knowledge_config,
+            allowed_paths=authored_paths(scope),
+            dependency_paths=paths_by_component(manifest, pipeline.run_scope),
+            worktree=wt_path,
+            on_failure=_warn_knowledge_failure,
+        )
+        pipeline.record_injected_knowledge(comp.id, injected_knowledge)
+        knowledge_prefix = injected_knowledge or ""
         return (
             comp.id,
             comp.prd_path,

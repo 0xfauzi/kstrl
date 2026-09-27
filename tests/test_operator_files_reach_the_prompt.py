@@ -107,7 +107,7 @@ ORDER_LOCAL = "parts"
 #:
 #: Each row is ``(anchor, what to do)``. The anchor is the identifier a
 #: reader can grep for, which is also what the docstring test looks up.
-#: Seven are in ``kstrl/factory.py``; the last is in
+#: Eight are in ``kstrl/factory.py``; the last is in
 #: ``kstrl/feature_cmd.py`` (#599).
 WORKER_EDITS: tuple[tuple[str, str], ...] = (
     ("import", "the import of the kind constant"),
@@ -115,6 +115,10 @@ WORKER_EDITS: tuple[tuple[str, str], ...] = (
     ("load_operator_file", "the load_operator_file call"),
     (ORDER_LOCAL, f"the {ORDER_LOCAL} entry that puts the block in the prompt order"),
     ("_run_component", "the _run_component parameter that forwards the path"),
+    (
+        "_run_component",
+        "the keyword argument _run_component passes into engineer_context_prefix",
+    ),
     ("_path_relative_to_root", "the _path_relative_to_root hoist in the parent"),
     ("_submit_args", "the _submit_args positional slot"),
     (
@@ -124,9 +128,11 @@ WORKER_EDITS: tuple[tuple[str, str], ...] = (
 )
 
 #: The count as a WORD, derived, because the two docstrings this guard
-#: checks are prose. A seventh edit fails on the KeyError here rather
-#: than by leaving "six" in a sentence that now lists seven things.
-EDIT_COUNT_WORD: str = {4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight"}[len(WORKER_EDITS)]
+#: checks are prose. A ninth edit fails on the KeyError here rather
+#: than by leaving "eight" in a sentence that now lists nine things.
+EDIT_COUNT_WORD: str = {4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine"}[
+    len(WORKER_EDITS)
+]
 
 #: What a reader is told when a row has not paid for delivery.
 EDITS_SENTENCE = "; ".join(what for _anchor, what in WORKER_EDITS)
@@ -544,8 +550,13 @@ class TestTheRemedyIsWrittenWhereAnAuthorReadsIt:
     def test_the_docstrings_list_every_edit_this_guard_counts(self) -> None:
         """Each anchor in ``WORKER_EDITS`` appears in the row docstring,
         and the count is spelled as the word ``EDIT_COUNT_WORD``
-        derives. A seventh edit therefore fails here until the sentence
-        is rewritten, rather than leaving "six" over a list of seven."""
+        derives, in the phrase "<word> hand edits" rather than as a bare
+        word. A ninth edit therefore fails here until the sentence is
+        rewritten, rather than leaving "eight" over a list of nine: a
+        bare-word check would still pass, because an earlier sentence in
+        this same docstring names an unrelated numeral for a different
+        reason, and a dropped row that happens to retarget the derived
+        word onto that numeral would read as present."""
         doc = OperatorFileKind.__doc__ or ""
 
         missing = [anchor for anchor, _what in WORKER_EDITS if anchor not in doc]
@@ -554,10 +565,13 @@ class TestTheRemedyIsWrittenWhereAnAuthorReadsIt:
             f"It does not name: {missing}. Every edit this guard counts has to be in "
             "it, or the remedy it prints sends somebody into a shape it refuses."
         )
-        assert EDIT_COUNT_WORD in doc.lower(), (
-            f"the docstring must say {EDIT_COUNT_WORD!r}, which is derived from "
-            f"WORKER_EDITS ({len(WORKER_EDITS)} rows). A hand-counted numeral in this "
-            "sentence is exactly what went stale in round 1."
+        assert f"{EDIT_COUNT_WORD} hand edits" in doc.lower(), (
+            f"the docstring must say {EDIT_COUNT_WORD!r} hand edits, which is derived "
+            f"from WORKER_EDITS ({len(WORKER_EDITS)} rows). A hand-counted numeral in "
+            "this sentence is exactly what went stale in round 1, and a bare-word "
+            "check is exactly what let it stay stale: this docstring's own history "
+            "names other numerals in nearby sentences, so the count word alone is not "
+            "enough to prove the CURRENT count was written down."
         )
 
     def test_the_loop_docstring_names_the_edit_that_delivers(self) -> None:
