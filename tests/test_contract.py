@@ -84,9 +84,7 @@ class TestContractConfig:
     def test_defaults(self) -> None:
         config = ContractConfig()
         assert config.mode == ContractMode.TIER.value
-        # #276: the Phase 1 constant, not a copy of the string. The
-        # "these are one fact" assertion lives in
-        # tests/test_engineer_verify_instructions.py.
+        # #276: the Phase 1 constant, not a copy of the string.
         assert config.test_command == DEFAULT_TEST_COMMAND
         assert config.timeout == 0.0
 

@@ -206,7 +206,7 @@ def _engineer_prompt(
     to the harness DEFAULT_PROMPT. The stub body is right for the
     assembly tests here; the fallback is what an un-customised project
     actually runs, and is what tests/test_engineer_verify_instructions.py
-    asserts against.
+    drives through `ks feature` and `ks understand`.
     """
     config = _project(root, scaffold_prompt=scaffold_prompt)
     agent = _PromptCapturingAgent()
