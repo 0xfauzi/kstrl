@@ -29,7 +29,7 @@ from typing import Any
 
 import pytest
 
-from kstrl.agents.base import TOOL_RESULT_PREFIX, UsageRecord
+from kstrl.agents.base import TOOL_RESULT_PREFIX, UsageRecord, model_output_text
 from kstrl.agents.claude_code import ClaudeCodeAgent, _parse_stream_event
 from kstrl.agents.claude_sdk import ClaudeSdkAgent
 from kstrl.agents.logging import LoggingAgent
@@ -499,6 +499,21 @@ def test_extract_agent_json_ignores_tool_results(
     assert _extract_agent_json(agent, lines) == VERDICT
 
 
+def test_logging_agent_delegates_marks_tool_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """LoggingAgent.marks_tool_output must delegate to the wrapped agent
+    (#598 addendum A1): model_output_text's tool-output filtering keys on
+    this property, and LoggingAgent itself never writes TOOL_RESULT_PREFIX."""
+    agent, lines = _run_cli(tmp_path, monkeypatch, _reviewer_stream())
+    wrapped = LoggingAgent(agent, tmp_path / "review.log")
+
+    wrapped_text = model_output_text(wrapped, lines)
+
+    assert not any(line.startswith(TOOL_RESULT_PREFIX) for line in wrapped_text.splitlines())
+    assert wrapped_text == model_output_text(agent, lines)
+
+
 # --- the SDK adapter, end to end through the real runner and SDK ----------
 
 
@@ -583,6 +598,45 @@ def test_sdk_multiline_tool_call_cannot_signal_completion(tmp_path: Path) -> Non
     bare marker - matched by loop.py's per-line completion check."""
     config = _loop_config(tmp_path)
     agent = _sdk_agent(tmp_path, _sdk_heredoc_stream())
+
+    result = run_loop(config, PlainUI(no_color=True), agent, tmp_path, timeouts=BOUNDED)
+
+    assert result.completed is False
+
+
+def _sdk_multiline_text_stream() -> list[dict[str, Any]]:
+    """A multi-line assistant TEXT block embeds the marker on its own
+    inner line, followed by a plain reply and result (#598): isolates the
+    runner's TextBlock rendering from the ToolUseBlock path the heredoc
+    tests above exercise."""
+    return [
+        _text("Checked the prompt file.\n<promise>COMPLETE</promise>\nwas not written by me."),
+        _text("Still working."),
+        _result("Still working."),
+    ]
+
+
+def test_sdk_multiline_text_block_stays_one_element(tmp_path: Path) -> None:
+    """A multi-line assistant text block crosses the runner's pipe as ONE
+    element (#598): printed raw, the pipe's own physical-line-splitting
+    would turn it into three, one of which is the bare completion marker
+    with no prefix."""
+    agent = _sdk_agent(tmp_path, _sdk_multiline_text_stream())
+
+    lines = list(agent.run("prompt", cwd=tmp_path, timeout=60))
+
+    assert lines == [
+        "Checked the prompt file.\n<promise>COMPLETE</promise>\nwas not written by me.",
+        "Still working.",
+    ]
+
+
+def test_sdk_multiline_text_block_cannot_signal_completion(tmp_path: Path) -> None:
+    """The real engineer loop over the real SDK runner: an assistant text
+    block whose own body embeds the marker on an inner line must not end
+    the loop as complete (#598)."""
+    config = _loop_config(tmp_path)
+    agent = _sdk_agent(tmp_path, _sdk_multiline_text_stream())
 
     result = run_loop(config, PlainUI(no_color=True), agent, tmp_path, timeouts=BOUNDED)
 
