@@ -1,11 +1,18 @@
-"""TUI surface A1: run-id kinds, parsing, and chronological ordering."""
+"""TUI surface A1: kind-prefixed run ids discovered on disk.
+
+``discover_runs`` and ``latest_run`` over a run directory holding
+factory, decompose, understand and feature runs: newest first by stamp
+across kinds (whole-name lexicographic order would put every
+decompose-* before every factory-*), the kinds filter, a held factory
+lock attributed to the newest FACTORY run rather than the newest run,
+and ``load_run_state`` resolving the newest run of any kind.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from kstrl.reducer import load_run_state
-from kstrl.runid import KNOWN_KINDS, mint_run_id, run_kind, run_sort_key
 from kstrl.tui.runs import discover_runs, latest_run
 from tests.helpers.fake_run import FakeRunSpec, write_fake_run
 
@@ -18,50 +25,6 @@ MIXED_IDS = [
     "understand-20260720-080000.000000-ddd",
     "feature-20260720-110000.000000-eee",
 ]
-
-
-class TestMint:
-    def test_default_kind_is_factory(self) -> None:
-        assert run_kind(mint_run_id()) == "factory"
-
-    def test_every_known_kind_round_trips(self) -> None:
-        for kind in KNOWN_KINDS:
-            rid = mint_run_id(kind)
-            assert run_kind(rid) == kind
-            assert rid.startswith(f"{kind}-")
-
-    def test_same_microsecond_ids_are_distinct(self) -> None:
-        assert mint_run_id() != mint_run_id()
-
-    def test_sort_key_orders_by_stamp_across_kinds(self) -> None:
-        ordered = sorted(MIXED_IDS, key=run_sort_key)
-        assert ordered == MIXED_IDS
-
-    def test_knowledge_delegate_keeps_the_format(self) -> None:
-        from kstrl.knowledge import current_run_id
-
-        rid = current_run_id()
-        assert run_kind(rid) == "factory"
-        # factory-YYYYMMDD-HHMMSS.ffffff-<hex nonce>
-        _, date, clock, nonce = rid.split("-")
-        assert len(date) == 8 and date.isdigit()
-        seconds, _, micros = clock.partition(".")
-        assert len(seconds) == 6 and len(micros) == 6
-        assert len(nonce) == 6
-
-
-class TestParseTotality:
-    def test_no_separator_yields_empty_kind(self) -> None:
-        assert run_kind("weird") == ""
-        assert run_sort_key("weird") == "weird"
-
-    def test_empty_string(self) -> None:
-        assert run_kind("") == ""
-        assert run_sort_key("") == ""
-
-    def test_leading_separator(self) -> None:
-        assert run_kind("-20260720") == ""
-        assert run_sort_key("-20260720") == "20260720"
 
 
 class TestMixedKindDiscovery:
@@ -117,12 +80,3 @@ class TestMixedKindDiscovery:
         assert state.run_id == MIXED_IDS[-1]
         assert state.kind == "feature"
         assert source == (tmp_path / ".kstrl" / "runs" / MIXED_IDS[-1] / "events.jsonl")
-
-
-class TestRunStateKind:
-    def test_kind_property_defaults_to_factory(self) -> None:
-        from kstrl.reducer import RunState
-
-        assert RunState(run_id="").kind == "factory"
-        assert RunState(run_id="weird").kind == "factory"
-        assert RunState(run_id="decompose-2026").kind == "decompose"

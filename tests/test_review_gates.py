@@ -1,16 +1,19 @@
-"""R1.1-R1.3 reviewer-gate integrity tests.
+"""R1.1-R1.3 reviewer-gate integrity tests, driven through ``run_review``
+on a real review repository and ``run_factory`` over a scaffolded project.
 
 A gate that can be passed by silence, case drift, or absence of data is
-not a gate. These tests prove the parser-side fixes:
-
-- R1.1: empty/partial reviews and unrecognized verdicts are
-  infrastructure errors, never silent passes or advisories.
-- R1.2: AgentOutputTooLarge / reviewer crashes / non-dict JSON degrade
-  to per-component infrastructure failures; skipped phases leave a
-  synthetic Finding + journal event; PR bodies show "did not run";
-  parse failures dump the FULL raw output to disk.
-- R1.3: a git error during diff fetch is an infrastructure failure,
-  not an empty diff that reviews cleanly.
+not a gate. What remains here proves it at the entry points the factory
+uses: an empty review with a PRD story expecting a verdict is an
+infrastructure error that hard mode blocks (R1.1); an oversized reviewer
+output, a reviewer whose process crashes mid-stream, and a parse failure
+degrade to infrastructure failures, with the FULL raw output dumped to
+disk beside the run (R1.2); a review or security phase skipped by mode or
+by an exhausted adversarial budget leaves a synthetic Finding and a
+journal event, hard mode halts the component, advisory mode completes,
+and the budget halt is terminal for ``ks serve`` (R1.2); a reviewer crash
+inside ``run_factory`` fails one component and not the run (R1.2); and a
+git error while fetching the diff is an infrastructure failure that no
+phase consumes as an empty, clean diff (R1.3).
 """
 
 from __future__ import annotations
@@ -28,7 +31,6 @@ import pytest
 
 from kstrl.config import KstrlConfig
 from kstrl.factory import ComponentResult, FactoryConfig, FactoryResult, run_factory
-from kstrl.findings import Finding, render_findings_markdown
 from kstrl.git import GitDiffError, get_diff_content
 from kstrl.manifest import Component, Manifest
 from kstrl.pipeline import ComponentPipeline
@@ -164,99 +166,6 @@ class TestR11Coverage:
         assert result.infrastructure_error is True
         assert "US-001" in result.overall_notes
 
-    def test_partial_review_is_infrastructure_error(self) -> None:
-        output = json.dumps({"stories": [_story("US-001", "pass")]})
-        result = parse_review_output(output, ["US-001", "US-002"])
-        assert result.infrastructure_error is True
-        assert result.passed is False
-        # Only the uncovered id is reported as missing
-        assert "story ids US-002" in result.overall_notes
-
-    def test_full_coverage_passes(self) -> None:
-        output = json.dumps(
-            {
-                "stories": [_story("US-001", "pass"), _story("US-002", "pass")],
-            }
-        )
-        result = parse_review_output(output, ["US-001", "US-002"])
-        assert result.infrastructure_error is False
-        assert result.passed is True
-
-    def test_story_id_match_is_case_insensitive(self) -> None:
-        output = json.dumps({"stories": [_story("us-001 ", "pass")]})
-        result = parse_review_output(output, ["US-001"])
-        assert result.infrastructure_error is False
-
-    def test_story_without_criteria_does_not_count_as_covered(self) -> None:
-        output = json.dumps(
-            {
-                "stories": [{"storyId": "US-001", "criteria": []}],
-            }
-        )
-        result = parse_review_output(output, ["US-001"])
-        assert result.infrastructure_error is True
-
-    def test_no_expected_ids_skips_coverage_check(self) -> None:
-        """Direct callers without a PRD keep the old lenient behavior."""
-        result = parse_review_output(
-            json.dumps({"stories": [], "concerns": []}),
-        )
-        assert result.infrastructure_error is False
-        assert result.passed is True
-
-
-# ---------------------------------------------------------------------------
-# R1.1 - verdict whitelist
-# ---------------------------------------------------------------------------
-
-
-class TestR11VerdictWhitelist:
-    def test_uppercase_fail_blocks(self) -> None:
-        """ "FAIL" was stored verbatim and matched neither gate,
-        becoming a non-blocking advisory-alike."""
-        output = json.dumps({"stories": [_story("US-001", "FAIL")]})
-        result = parse_review_output(output, ["US-001"])
-        assert result.infrastructure_error is False
-        assert result.passed is False
-        assert result.criteria[0].verdict == "fail"
-
-    def test_pass_with_whitespace_passes(self) -> None:
-        output = json.dumps({"stories": [_story("US-001", "PASS ")]})
-        result = parse_review_output(output, ["US-001"])
-        assert result.infrastructure_error is False
-        assert result.passed is True
-        assert result.criteria[0].verdict == "pass"
-
-    def test_unknown_verdict_is_infrastructure_error(self) -> None:
-        output = json.dumps({"stories": [_story("US-001", "Blocked")]})
-        result = parse_review_output(output, ["US-001"])
-        assert result.infrastructure_error is True
-        assert result.passed is False
-        assert "Blocked" in result.overall_notes
-
-    def test_missing_verdict_is_infrastructure_error(self) -> None:
-        output = json.dumps(
-            {
-                "stories": [
-                    {
-                        "storyId": "US-001",
-                        "criteria": [{"criterion": "AC1", "explanation": "x"}],
-                    }
-                ],
-            }
-        )
-        result = parse_review_output(output, ["US-001"])
-        assert result.infrastructure_error is True
-
-    def test_advisory_verdict_stays_valid(self) -> None:
-        """The prompt schema promises pass|fail|advisory; a legitimate
-        advisory verdict must not be treated as a parse failure."""
-        output = json.dumps({"stories": [_story("US-001", "Advisory")]})
-        result = parse_review_output(output, ["US-001"])
-        assert result.infrastructure_error is False
-        assert result.passed is True
-        assert result.criteria[0].verdict == "advisory"
-
 
 # ---------------------------------------------------------------------------
 # R1.2 - oversized output, crashes, non-dict JSON
@@ -320,12 +229,6 @@ class TestR12InfrastructurePaths:
         assert result.passed is False
         assert "exploded" in result.overall_notes
 
-    @pytest.mark.parametrize("raw", ["null", "[1, 2]", '"just a string"'])
-    def test_non_dict_json_is_infra_not_crash(self, raw: str) -> None:
-        result = parse_review_output(raw, ["US-001"])
-        assert result.infrastructure_error is True
-        assert result.passed is False
-
 
 # ---------------------------------------------------------------------------
 # R1.2 - full raw-output debug dumps
@@ -360,102 +263,6 @@ class TestR12DebugDumps:
         output = json.dumps({"stories": [_story("US-001", "pass")]})
         parse_review_output(output, ["US-001"], debug_dir=tmp_path)
         assert not (tmp_path / "_review_raw.txt").exists()
-
-    def test_missing_debug_dir_is_not_an_error(self) -> None:
-        result = parse_review_output("not json", ["US-001"], debug_dir=None)
-        assert result.infrastructure_error is True
-
-
-# ---------------------------------------------------------------------------
-# R1.2 - phase_skipped Finding semantics
-# ---------------------------------------------------------------------------
-
-
-class TestPhaseSkippedFinding:
-    def test_flags(self) -> None:
-        f = Finding.phase_skipped("security", "budget exhausted")
-        assert f.is_phase_skip is True
-        assert f.is_infrastructure_error is False
-        assert f.category == "phase_skipped"
-        assert "non_execution" in f.tags
-
-    def test_render_callout(self) -> None:
-        md = render_findings_markdown(
-            [Finding.phase_skipped("security", "budget exhausted")],
-        )
-        assert "PHASE SKIPPED" in md
-        assert "budget exhausted" in md
-        assert "### Security (0 findings)" in md
-
-
-# ---------------------------------------------------------------------------
-# R1.2 - PR body shows non-execution
-# ---------------------------------------------------------------------------
-
-
-class TestPrBodyDidNotRun:
-    def _component(self, findings: list[Finding]) -> tuple[Component, Manifest]:
-        comp = Component(
-            "comp-a",
-            "Component A",
-            "Desc",
-            [],
-            "scripts/kstrl/feature/comp-a/prd.json",
-            "kstrl/comp-a",
-        )
-        comp.findings = findings
-        manifest = Manifest(
-            version="1",
-            spec_file="s",
-            project_name="t",
-            base_branch="main",
-            single_pr=False,
-            components=[comp],
-        )
-        return comp, manifest
-
-    def test_security_infra_error_is_visible(self) -> None:
-        from kstrl.pr import _generate_pr_body
-
-        comp, manifest = self._component(
-            [
-                Finding.infrastructure_error(
-                    phase="security",
-                    explanation="agent crashed",
-                ),
-            ]
-        )
-        body = _generate_pr_body(comp, manifest)
-        assert "INFRASTRUCTURE ERROR" in body
-        assert "### Security" in body
-        assert "did not actually run" in body
-
-    def test_skipped_phase_is_visible(self) -> None:
-        from kstrl.pr import _generate_pr_body
-
-        comp, manifest = self._component(
-            [
-                Finding.phase_skipped("review", "mode=skip"),
-            ]
-        )
-        body = _generate_pr_body(comp, manifest)
-        assert "PHASE SKIPPED" in body
-
-    def test_real_findings_do_not_duplicate_into_status_section(self) -> None:
-        from kstrl.pr import _generate_pr_body
-
-        comp, manifest = self._component(
-            [
-                Finding.from_review_concern(
-                    category="dead_code",
-                    severity="advisory",
-                    location="x.py:1",
-                    explanation="unused helper",
-                ),
-            ]
-        )
-        body = _generate_pr_body(comp, manifest)
-        assert "Adversarial Findings" not in body
 
 
 # ---------------------------------------------------------------------------

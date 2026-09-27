@@ -229,7 +229,9 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/test_tui_433_inc4.py": 47,
     "tests/test_tui_433_inc5.py": 59,
     "tests/test_tui_433_inc6.py": 33,
-    "tests/test_tui_app.py": 23,
+    # +6: the overview pilot reads the painted header and cost meter
+    # through settled() and mounted() (the render-helper units folded in).
+    "tests/test_tui_app.py": 29,
     "tests/test_tui_config_guard.py": 13,
     "tests/test_tui_detail.py": 41,  # +2 #433: test_follow_toggle waits on a live run
     "tests/test_tui_embed.py": 52,

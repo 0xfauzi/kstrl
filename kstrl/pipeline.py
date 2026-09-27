@@ -80,7 +80,6 @@ from kstrl.inbox import (
     InboxItem,
     ItemKind,
     ItemStatus,
-    notifiable,
 )
 from kstrl.interaction import (
     CheckpointContext,
@@ -2299,7 +2298,7 @@ class ComponentPipeline:
                 self._inbox = Inbox(self.root_dir, self.inbox_config)
             if self._inbox_disabled:
                 return
-            item = self._inbox.add(
+            self._inbox.add(
                 kind,
                 title,
                 detail=detail,
@@ -2307,16 +2306,8 @@ class ComponentPipeline:
                 run_id=self.run_id,
                 dedupe_key=dedupe_key,
                 evidence=evidence or {},
+                notify=self.notify,
             )
-            # One-way push: only items that actually want a human reach
-            # the hook, and only when the operator asked for it. Without
-            # this the [inbox] notify knob was a documented no-op.
-            if self._inbox.config.notify_action_required and notifiable([item]):
-                self.notify.fire_inbox_item(
-                    str(item.kind),
-                    item.title,
-                    component_id=component,
-                )
         except (OSError, TypeError, ValueError, ControlStateError) as exc:
             # ControlStateError is a RuntimeError: Inbox._append takes
             # the control lock on every write, and the (OSError,
