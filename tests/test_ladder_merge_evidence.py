@@ -50,6 +50,7 @@ from tests.spine_utils import (
 
 HTTP = "http"
 BAD = "bad"
+WEB = "web"
 APPROVE, REJECT = 0, 1
 
 #: `pr create` remembers the head branch. `pr merge` plays GitHub: with
@@ -400,6 +401,24 @@ class TestAHumanRejectionAtL3Demotes:
         assert [t.trigger for t in state.history] == ["policy_violation"]
         assert state.history[-1].evidence["components"] == [BAD]
         assert state.history[-1].evidence["human_rejected"] == [HTTP]
+
+    def test_a_rejection_recorded_in_an_earlier_run_does_not_demote_a_later_one(
+        self, tmp_path: Path
+    ) -> None:
+        comps = (HTTP, WEB)
+        root = _project(tmp_path, AutonomyLevel.L3_ENVELOPED_AUTO, toml=POLICY, comps=comps)
+        _run(root, human=_Human({HTTP: REJECT}), explicit_pause=True)
+        assert AutonomyState.load(root).level == int(AutonomyLevel.L2_GATED_MERGE)
+        path = root / "scripts" / "kstrl" / "manifest.json"
+        manifest = Manifest.load(path)
+        manifest.components.append(component(WEB))
+        manifest.save(path)
+        assert AutonomyState(level=int(AutonomyLevel.L3_ENVELOPED_AUTO)).save(root) is None
+        _run(root, human=_Human({WEB: APPROVE}), explicit_pause=True)
+        state = AutonomyState.load(root)
+        assert state.level == int(AutonomyLevel.L3_ENVELOPED_AUTO)
+        assert state.history == []
+        assert state.components_merged_at_level == 1
 
 
 def test_the_replay_predicts_promotion_from_rows_with_real_merge_evidence(tmp_path: Path) -> None:
