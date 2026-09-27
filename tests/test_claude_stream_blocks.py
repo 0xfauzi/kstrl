@@ -48,7 +48,11 @@ FIXTURE = Path(__file__).parent / "fixtures" / "claude_stream" / "blocks.jsonl"
 DISPOSITION: dict[tuple[str, str | None], str] = {
     ("assistant", "text"): "render",
     ("assistant", "tool_use"): "render",
-    ("assistant", "thinking"): "skip",
+    # A block type this parser does not specifically handle (#598) still
+    # renders: a fixed placeholder, not the skip a truly non-model event
+    # (system, rate_limit_event, result) gets, so an unhandled type is
+    # visible instead of vanishing with no trace.
+    ("assistant", "thinking"): "render",
     ("user", "tool_result"): "render",
     ("user", "text"): "skip",
     ("user", "<str>"): "skip",
@@ -60,6 +64,7 @@ DISPOSITION: dict[tuple[str, str | None], str] = {
 #: What ``ClaudeCodeAgent.run`` yields over the fixture. Literals on
 #: purpose: computing them with the code under test would test nothing.
 EXPECTED = [
+    "  | [unrendered thinking block]",
     "[Bash] echo kstrl-probe-42",
     "  | kstrl-probe-42",
     "[Bash] uv run pytest -q",
@@ -101,7 +106,9 @@ def _pairs(event: dict[str, Any]) -> set[tuple[str, str | None]]:
 
 
 def _has_text_item(event: dict[str, Any]) -> bool:
-    """An assistant text or tool_use block, or a tool_result holding text."""
+    """An assistant text or tool_use block, any block type the parser does
+    not specifically handle (its placeholder always renders - #598), or a
+    tool_result holding text."""
     message = event.get("message")
     content = message.get("content") if isinstance(message, dict) else None
     if not isinstance(content, list):
@@ -113,6 +120,8 @@ def _has_text_item(event: dict[str, Any]) -> bool:
             inner = block["content"]
             if isinstance(inner, str) or any(item["type"] == "text" for item in inner):
                 return True
+        else:
+            return True
     return False
 
 
@@ -258,6 +267,19 @@ def _marker_stream() -> list[dict[str, Any]]:
         _text("Still working."),
         _result("Still working."),
     ]
+
+
+#: A Bash command whose own text embeds the marker on one of its lines
+#: (a heredoc writing the marker to a file) - the tool never runs, so
+#: this is only ever the announcement line, never a tool result.
+HEREDOC_COMMAND = "cat > expected.txt <<'EOF'\n<promise>COMPLETE</promise>\nEOF"
+
+
+def _heredoc_stream() -> list[dict[str, Any]]:
+    """A multi-line tool call, no result event and no assistant text
+    after it: the only candidate for the final_message fallback is the
+    tool call's own announcement line (#598)."""
+    return [_tool_use("toolu_1", "Bash", {"command": HEREDOC_COMMAND})]
 
 
 def _reviewer_stream() -> list[dict[str, Any]]:
@@ -437,13 +459,28 @@ def test_tool_result_cannot_signal_completion(
     assert result.completed is False
 
 
+def test_heredoc_tool_call_cannot_signal_completion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real engineer loop, no result event: a Bash command whose own
+    text embeds the marker (a heredoc) must not end the loop as complete
+    through the final_message fallback (#598)."""
+    config = _loop_config(tmp_path)
+    _install_fake_claude(tmp_path, monkeypatch, [json.dumps(e) for e in _heredoc_stream()])
+
+    result = run_loop(config, PlainUI(no_color=True), ClaudeCodeAgent(), tmp_path, timeouts=BOUNDED)
+
+    assert result.completed is False
+
+
 def test_final_message_never_tool_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """No result event and no assistant text: the final_message fallback
-    is the last line the agent itself produced, never the tool's."""
+    is None, never a tool call's announcement or its result (#598) - the
+    fallback is collected only from the assistant's own text blocks."""
     agent, lines = _run_cli(tmp_path, monkeypatch, _marker_stream()[:2])
 
     assert lines[-1] == TOOL_RESULT_PREFIX + COMPLETION_MARKER
-    assert agent.final_message == f"[Bash] {GREP_COMMAND}"
+    assert agent.final_message is None
 
 
 def test_select_agent_output_ignores_tool_results(
@@ -509,6 +546,43 @@ def test_sdk_tool_result_cannot_signal_completion(tmp_path: Path) -> None:
     the marker must not end the loop as complete."""
     config = _loop_config(tmp_path)
     agent = _sdk_agent(tmp_path, _marker_stream())
+
+    result = run_loop(config, PlainUI(no_color=True), agent, tmp_path, timeouts=BOUNDED)
+
+    assert result.completed is False
+
+
+def _sdk_heredoc_stream() -> list[dict[str, Any]]:
+    """A multi-line Bash announcement, then a normal reply and result:
+    isolates the runner's own pipe-splitting defect (#598) from the
+    unrelated no-result-event fallback path the CLI test exercises."""
+    return [
+        _tool_use("toolu_1", "Bash", {"command": HEREDOC_COMMAND}),
+        _text("Still working."),
+        _result("Still working."),
+    ]
+
+
+def test_sdk_multiline_tool_call_stays_one_element(tmp_path: Path) -> None:
+    """A multi-line Bash announcement crosses the runner's pipe as ONE
+    element (#598): printed raw, the pipe's own physical-line-splitting
+    would turn it into several, one of which is the bare completion
+    marker with no prefix."""
+    agent = _sdk_agent(tmp_path, _sdk_heredoc_stream())
+
+    lines = list(agent.run("prompt", cwd=tmp_path, timeout=60))
+
+    assert lines == [f"[Bash] {HEREDOC_COMMAND}", "Still working."]
+
+
+def test_sdk_multiline_tool_call_cannot_signal_completion(tmp_path: Path) -> None:
+    """The real engineer loop over the real SDK runner: a Bash command
+    whose own text embeds the marker must not end the loop as complete
+    (#598). Before the fix, the runner printed the announcement raw, the
+    pipe split it into separate physical lines, and one of them was the
+    bare marker - matched by loop.py's per-line completion check."""
+    config = _loop_config(tmp_path)
+    agent = _sdk_agent(tmp_path, _sdk_heredoc_stream())
 
     result = run_loop(config, PlainUI(no_color=True), agent, tmp_path, timeouts=BOUNDED)
 

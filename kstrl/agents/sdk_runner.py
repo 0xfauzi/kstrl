@@ -34,7 +34,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from kstrl.agents.claude_sdk import RESULT_PREFIX, USAGE_PREFIX
+from kstrl.agents.claude_sdk import DISPLAY_PREFIX, RESULT_PREFIX, USAGE_PREFIX
 from kstrl.jsonread import read_json
 
 # Runner exit codes (informational; the adapter keys on output lines).
@@ -51,12 +51,29 @@ _GUARDED_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
 _PATH_KEYS = ("file_path", "notebook_path")
 
 
-def _emit(line: str) -> None:
+def _emit_raw(line: str) -> None:
+    """Print one line that is ALREADY a single physical line: a
+    USAGE_PREFIX or RESULT_PREFIX record, whose own JSON encoding already
+    escapes any newline inside it."""
     print(line, flush=True)
 
 
+def _emit(text: str) -> None:
+    """Print one display element, DISPLAY_PREFIX-tagged and JSON-encoded
+    so it survives the pipe as ONE physical line (#598).
+
+    ``text`` can hold embedded newlines (a multi-line Bash command, say);
+    printed raw, the pipe's own line-splitting would turn it into several
+    lines on the adapter side, one of which could be the bare completion
+    marker with no prefix, or forge a KSTRL-SDK-RESULT line. Every call
+    site that used to print display text directly gets this encoding for
+    free, because none of them names ``print`` itself any more.
+    """
+    _emit_raw(DISPLAY_PREFIX + json.dumps(text))
+
+
 def _emit_result(payload: dict[str, Any]) -> None:
-    _emit(RESULT_PREFIX + json.dumps(payload))
+    _emit_raw(RESULT_PREFIX + json.dumps(payload))
 
 
 def _read_config() -> dict[str, Any]:
@@ -146,7 +163,7 @@ def _render_content_blocks(blocks: Any, sdk: Any) -> None:
 def _emit_result_message(message: Any) -> None:
     """Emit the typed ResultMessage as the two contract records."""
     usage = message.usage if isinstance(message.usage, dict) else {}
-    _emit(
+    _emit_raw(
         USAGE_PREFIX
         + json.dumps(
             {

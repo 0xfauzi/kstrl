@@ -61,7 +61,7 @@ from kstrl.agents.base import (
     Agent,
     UsageTotals,
     collect_usage,
-    model_output_lines,
+    model_output_text,
     usage_cursor,
 )
 from kstrl.agents.proc import TIMEOUT_MESSAGE_PREFIX
@@ -452,7 +452,7 @@ class ReflectionModel:
         # last output line for others (kstrl.agents.custom), so it is used
         # only when gepa can read instructions out of it.
         final = self.agent.final_message
-        reply = final if final and _instructions(final) else "\n".join(model_output_lines(lines))
+        reply = final if final and _instructions(final) else model_output_text(self.agent, lines)
         if not _instructions(reply):
             # gepa evaluates what its extractor reads out of the reply as
             # the new prompt, so a reply with no instructions in it would
