@@ -15,8 +15,11 @@ gate, factory/retry confirms, evolve apply). Each becomes a
   their non-interactive defaults so a dead TUI can never hang a run.
 
 ``PromptResponse.answered`` is the load-bearing bit: ``False`` means
-"nobody was there to ask" and maps onto today's NOT_PROMPTED /
-skip-the-gate semantics at every call site.
+nobody answered - no one was there to ask, the resolver detached, the
+prompt was interrupted, or the choice was out of range. It is never
+consent: the merge gate and ``ks factory``'s own confirm treat it as a
+refusal (#594). ``ks retry``'s confirm does not yet - at this head it
+still starts on an unanswered prompt; lane #597 (PR #605) owns that site.
 """
 
 from __future__ import annotations
@@ -76,7 +79,7 @@ class PromptRequest:
 class PromptResponse:
     request_id: str
     choice: int
-    answered: bool  # False = non-interactive default (NOT_PROMPTED)
+    answered: bool  # False = nobody answered; never consent (#594)
 
 
 class InteractionChannel(Protocol):
@@ -101,7 +104,19 @@ class UiInteractionChannel:
                 choice=req.default,
                 answered=False,
             )
-        choice = self._ui.choose(req.header, list(req.options), req.default)
+        try:
+            choice = self._ui.choose(req.header, list(req.options), req.default)
+        except (EOFError, KeyboardInterrupt):
+            # #594 A2: an interrupted prompt is unanswered, not a choice.
+            # Caught HERE rather than inside each ``UI.choose`` so a
+            # prompter that lets the interrupt through - ``RichUI`` did,
+            # raising it past this channel, past the pipeline, filing no
+            # inbox item - degrades the same way ``PlainUI`` does.
+            return PromptResponse(
+                request_id=req.request_id,
+                choice=req.default,
+                answered=False,
+            )
         if isinstance(choice, bool) or not 0 <= choice < len(req.options):
             return PromptResponse(
                 request_id=req.request_id,
