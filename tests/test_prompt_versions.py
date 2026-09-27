@@ -165,7 +165,7 @@ from tests.helpers.feedforward_prompts import (
     NOTICE_SNAPSHOTS,
     NOTICE_VERSIONS,
 )
-from tests.test_review_payload import RecordingAgent
+from tests.helpers.recording_agent import RecordingAgent
 
 
 def _sha256(text: str) -> str:
