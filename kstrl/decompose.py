@@ -88,6 +88,7 @@ SPEC_ISSUE_APPLIES_COMPONENT = "component"
 SPEC_ISSUE_APPLIES_SPEC = "spec"
 
 if TYPE_CHECKING:
+    from kstrl.factory import _RunLock
     from kstrl.ui.base import UI
 
 
@@ -2356,6 +2357,7 @@ def _decompose_spec_impl(
     transcript: Callable[[str], None] | None = None,
     prompt_call: AgentCall,
     force_lock: bool = False,
+    run_lock: _RunLock | None = None,
 ) -> Manifest:
     """Decompose a spec into components and generate PRDs.
 
@@ -2379,6 +2381,14 @@ def _decompose_spec_impl(
         prompt_call: Who the architect's prompt is recorded for (#532),
             with each attempt's number put in. Required (#567): every
             caller is inside a run, and the run is what the record names.
+        force_lock: Passed to ``_acquire_run_lock`` when this call takes
+            its own lock (``run_lock`` is None); ignored otherwise, since
+            a caller that already holds one decided ``force`` itself.
+        run_lock: A lock the caller already holds (#597), e.g. `ks
+            factory --spec`, which takes it before this call so the
+            architect's spend and the manifest write share one acquire.
+            None (the `ks decompose` command's own case) means this call
+            takes and releases its own lock around the manifest write.
 
     Returns:
         Manifest with generated components and PRD files
@@ -2860,12 +2870,14 @@ def _decompose_spec_impl(
         manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
         # #597: a live factory run owns this manifest and saves its whole
         # in-memory copy, so the manifest and the register are written under
-        # the run lock. A held lock raises FactoryLockHeldError here, inside
-        # the cleanup scope, so a refused decompose leaves no PRDs behind.
-        from kstrl.factory import _acquire_run_lock
+        # the run lock. `ks factory --spec` already holds it (acquired
+        # before this call, ahead of the architect's spend, #597); `ks
+        # decompose` has no caller's lock and takes its own here. Either
+        # way a held lock raises FactoryLockHeldError inside the cleanup
+        # scope, so a refused decompose leaves no PRDs behind.
+        from kstrl.factory import held_or_acquired_run_lock
 
-        run_lock = _acquire_run_lock(root_dir, ui, force=force_lock)
-        try:
+        with held_or_acquired_run_lock(run_lock, root_dir, ui, force_lock):
             manifest.save(manifest_path)
             ui.ok(f"Manifest saved: {manifest_path}")
             # AFTER the manifest, never before: the register binds engineers
@@ -2881,8 +2893,6 @@ def _decompose_spec_impl(
                 ),
                 required=True,
             )
-        finally:
-            run_lock.release()
     except BaseException:
         for prd_file in written_prds:
             try:
@@ -2965,9 +2975,12 @@ def decompose_spec(
     transcript: Callable[[str], None] | None = None,
     prompt_call: AgentCall,
     force_lock: bool = False,
+    run_lock: _RunLock | None = None,
 ) -> Manifest:
     """Run decomposition, guaranteeing a ``RunCompleted`` and a usage
     capture on every exit.
+
+    ``run_lock``: see :func:`_decompose_spec_impl` (#597).
 
     #257: the capture sits in a ``finally`` because the blocker halt is
     the COMMON outcome on a first spec, and it is the path where the
@@ -2999,6 +3012,7 @@ def decompose_spec(
             transcript=transcript,
             prompt_call=prompt_call,
             force_lock=force_lock,
+            run_lock=run_lock,
         )
     except SpecBlockerError:
         # Blocker halts are deliberately finalized at the audit site so

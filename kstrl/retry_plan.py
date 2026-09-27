@@ -3,10 +3,12 @@
 ``preview_retry`` answers "what WOULD a retry do" without touching
 anything - the retry screen renders it in its confirm modal.
 ``prepare_retry`` is the real mutation: reset statuses, remove the
-failed attempt's worktree and branch, save the manifest. Narration
-stays byte-identical to the original command; the only behavior
-change is RetryError instead of sys.exit so a TUI caller can surface
-the failure without the process dying.
+failed attempt's worktree and branch, save the manifest; the "Retry
+plan" section it used to print is now :func:`print_retry_plan`'s (#597),
+called by each caller first, so the two calls together narrate what
+``prepare_retry`` alone used to. The only behavior change from the
+original command is RetryError instead of sys.exit so a TUI caller can
+surface the failure without the process dying.
 """
 
 from __future__ import annotations
@@ -164,9 +166,16 @@ def prepare_retry(
     branch (never in single_pr mode - the shared branch carries completed
     components' commits), save. ValueError propagates from
     reset_for_retry; a branch-delete failure raises RetryError after
-    narrating the manual fix. The caller holds the run lock (#597) and
-    has already printed :func:`print_retry_plan`, so this narrates only
-    what it removes.
+    narrating the manual fix. `ks retry` holds the run lock (#597) before
+    calling this and has already printed :func:`print_retry_plan`, so
+    this narrates only what it removes; the TUI retry screen calls this
+    without holding it (disclosed, UI work deferred - the only
+    ``unguarded`` row in ``tests/test_manifest_write_sites.py``).
+
+    The return value matches ``preview_retry``'s on the same manifest and
+    is otherwise unused by either caller; it exists so
+    ``test_preview_and_prepare_return_the_same_list`` can assert the two
+    agree.
     """
     comp = manifest.get_component(component_id)
     evidence_worktree = comp.evidence_worktree if comp else ""

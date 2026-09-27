@@ -10,10 +10,10 @@ columns fill when the worker has folded the runs.
 (``retry_scope``): where it starts, what it resets, the worktree and
 branch it removes, what it keeps and what the relaunch runs under. The
 confirmation is offered only when every part is known. On confirm,
-``prepare_retry`` does the real mutation and its narration is shown,
-warnings first: a process the #537 sweep killed in the evidence worktree
-used to go to a discarded buffer. The factory then relaunches through
-the D6 session seam.
+``print_retry_plan`` and ``prepare_retry`` narrate the plan and the real
+mutation, shown together, warnings first: a process the #537 sweep
+killed in the evidence worktree used to go to a discarded buffer. The
+factory then relaunches through the D6 session seam.
 
 #433 E2: with nothing to retry the screen says so once, in one sentence,
 shows no empty table, and does not offer ``r``.
@@ -139,7 +139,7 @@ def scope_text(scope: RetryScope) -> Group:
 
 
 def narration_lines(narration: str) -> list[str]:
-    """``prepare_retry``'s narration, blank lines dropped."""
+    """``print_retry_plan`` and ``prepare_retry``'s combined narration, blank lines dropped."""
     return [line.rstrip() for line in narration.splitlines() if line.strip()]
 
 

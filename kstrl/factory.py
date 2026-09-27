@@ -12,8 +12,9 @@ import sys
 import threading
 import time
 from collections import Counter
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Protocol, TextIO
@@ -1312,6 +1313,7 @@ class _RunLock:
 
     def release(self) -> None:
         if self.fp is None:
+            self.held = False
             return
         try:
             import fcntl
@@ -1321,6 +1323,7 @@ class _RunLock:
             pass
         self.fp.close()
         self.fp = None
+        self.held = False
 
 
 def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:
@@ -1398,6 +1401,27 @@ def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:
     except OSError:
         pass
     return _RunLock(fp=fp, held=True)
+
+
+@contextmanager
+def held_or_acquired_run_lock(
+    run_lock: _RunLock | None, root_dir: Path, ui: UI, force: bool
+) -> Iterator[_RunLock]:
+    """Use ``run_lock`` if the caller already holds one; acquire and release our own otherwise.
+
+    `ks factory --spec` takes the lock before it calls ``decompose_spec``
+    (#597) and keeps holding it after this returns, so a caller passing
+    its own lock keeps owning it: this never releases one it did not
+    acquire. `ks decompose`'s own case passes None and gets a lock this
+    acquires and releases around exactly the block it wraps.
+    """
+    owns = run_lock is None
+    lock = run_lock if run_lock is not None else _acquire_run_lock(root_dir, ui, force=force)
+    try:
+        yield lock
+    finally:
+        if owns:
+            lock.release()
 
 
 def _remove_stale_index_lock(root_dir: Path, component_id: str) -> None:
