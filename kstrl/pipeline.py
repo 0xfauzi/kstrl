@@ -158,6 +158,17 @@ def _iso_now() -> str:
 #: How a retry this run carried from an interrupted run is marked (#463).
 CARRIED_REASON_PREFIX = "carried from run "
 
+#: The two ``Component.failed_check`` values that say a human turned a
+#: merge candidate down: rejected at the merge gate (interactively or
+#: with ``ks inbox reject``), or its PR closed without merging while
+#: kstrl waited (#601). One owner: ``kstrl.factory``'s
+#: ``HUMAN_REJECTION_CHECKS`` reads these rather than re-spelling them,
+#: so renaming either check here cannot silently switch off the L3
+#: rejection demotion (a second spelling was exactly how that failed
+#: open before).
+HITL_REJECT_CHECK = "hitl_reject"
+PR_CLOSED_CHECK = "pr_closed"
+
 
 def _carried_reason(prior_run_id: str, reason: str) -> str:
     """``reason`` marked as carried from ``prior_run_id``, once (#463)."""
@@ -2494,8 +2505,10 @@ class ComponentPipeline:
         )
 
     def _fail_pr_flow(self, comp: Component, error: str, *, check: str) -> Transition:
-        """VERIFYING -> FAILED on a push/create/merge failure (R0.2:
-        COMPLETED requires a CONFIRMED merge)."""
+        """VERIFYING -> FAILED on a push/create/merge failure, or a merge-pending
+        PR GitHub reports closed unmerged (R0.2: COMPLETED requires a CONFIRMED
+        merge). ``check`` names which: ``"pr_flow"`` or ``PR_CLOSED_CHECK``
+        (#601) - no default, every caller states which it observed."""
         comp.status = ComponentStatus.FAILED.value
         comp.error = error
         comp.completed_at = _iso_now()
@@ -2674,7 +2687,7 @@ class ComponentPipeline:
                         evidence={"pr_number": pr_number},
                     )
                     comp.failed_phase = "pr"
-                    comp.failed_check = "pr_closed"
+                    comp.failed_check = PR_CLOSED_CHECK
                     self.component_failure_signatures[comp.id] = [
                         "pr:closed-without-merge",
                     ]
@@ -2709,8 +2722,8 @@ class ComponentPipeline:
         merge's commit.
 
         #601: ``head_sha`` is the PR head GitHub merged ("" when it
-        reported none). It goes on ``factory_result.merged``, the one list
-        the autonomy ladder counts merges from.
+        reported none). It goes on ``factory_result.merged``, the one dict
+        (component id -> head sha) the autonomy ladder counts merges from.
         """
         from kstrl.pr import pr_number_from_url
 
@@ -2754,7 +2767,7 @@ class ComponentPipeline:
                     comp,
                     f"Rejected at the merge gate: {decision.decision_comment}",
                     phase="pr",
-                    check="hitl_reject",
+                    check=HITL_REJECT_CHECK,
                     signatures=["review:hitl-rejected"],
                 )
             else:
@@ -4846,7 +4859,7 @@ class ComponentPipeline:
                     comp,
                     "Rejected at HITL checkpoint",
                     phase="pr",
-                    check="hitl_reject",
+                    check=HITL_REJECT_CHECK,
                     # THE RULE FOR ALL THREE CHECKPOINT BRANCHES,
                     # stated here and pointed at from the other two.
                     # Without an explicit `signatures=` the PHASE
@@ -5057,7 +5070,14 @@ class ComponentPipeline:
         )
         evidence: dict[str, Any] = {
             "branch": comp.branch_name,
-            "head_sha": git.branch_sha(comp.branch_name, self.root_dir) or "",
+            # #601: the diff phase already recorded this same commit onto
+            # ``comp.judged_sha`` (``git.branch_sha`` again here would be a
+            # second owner of "what the branch was at" for one park - kstrl
+            # never commits to a component branch after the diff phase, so
+            # the two reads can only differ if something outside it moved
+            # the branch, which is exactly the drift this evidence exists
+            # to catch in ``_merge_approved``).
+            "head_sha": comp.judged_sha,
         }
         # #450: the review_result event's counts, read from the same
         # properties. Absent when the review produced no reading, so a
@@ -5134,9 +5154,9 @@ class ComponentPipeline:
                 disposition=PrDisposition.FAILED,
                 pr_url=outcome.pr_url,
                 error=outcome.error or "PR flow failed",
-                check="pr_closed" if outcome.closed else "pr_flow",
+                check=PR_CLOSED_CHECK if outcome.closed else "pr_flow",
             )
-        self._record_merge(comp, outcome.merge_sha, outcome.merged_head_sha)
+        self._record_merge(comp, outcome.merge_sha, outcome.head_sha)
         return PrPhaseResult(
             disposition=PrDisposition.MERGED,
             pr_url=outcome.pr_url,

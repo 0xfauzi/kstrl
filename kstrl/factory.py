@@ -121,7 +121,13 @@ from kstrl.operator_context import (
     operator_file_notices,
     operator_file_spec,
 )
-from kstrl.pipeline import ComponentPipeline, PipelineHooks, _iso_now
+from kstrl.pipeline import (
+    HITL_REJECT_CHECK,
+    PR_CLOSED_CHECK,
+    ComponentPipeline,
+    PipelineHooks,
+    _iso_now,
+)
 from kstrl.policy import PolicyConfig
 from kstrl.pr import create_prs_in_order, create_single_pr
 from kstrl.release import RELEASE_REF_RULE, ReleaseInputs, release_ref_from, release_withheld
@@ -3643,13 +3649,13 @@ def _record_health_breaches(
 #: The failed_check values that say a human turned a merge candidate
 #: down: rejected at the merge gate (interactively or with ``ks inbox
 #: reject``), or its PR closed without merging while kstrl waited (#601).
-HUMAN_REJECTION_CHECKS = ("hitl_reject", "pr_closed")
+#: Read from ``kstrl.pipeline``, the one place that spells them, so a
+#: rename there cannot silently switch off the L3 rejection demotion.
+HUMAN_REJECTION_CHECKS = (HITL_REJECT_CHECK, PR_CLOSED_CHECK)
 
 
-def _record_merges(
-    state: AutonomyState, manifest: Manifest, merged: dict[str, str]
-) -> dict[str, list[str]]:
-    """Count each merge this run confirmed; return the parts by verdict.
+def _classify_merges(manifest: Manifest, merged: dict[str, str]) -> dict[str, str]:
+    """One verdict per merged component id: ``"clean"``, ``"edited"`` or ``"head unknown"``.
 
     A merge is clean only when the PR head GitHub merged is the commit
     the diff phase judged (``Component.judged_sha``). A commit pushed to
@@ -3657,34 +3663,49 @@ def _record_merges(
     makes them differ. When either commit is unknown the merge counts as
     edited: a promotion input must not be satisfied by what kstrl could
     not observe (#601).
+
+    Pure (no state mutation) so ``kstrl.evolution``'s journal writer can
+    call it to size the ``merged``/``clean_merged`` TSV columns from the
+    same classification the live ladder uses, rather than a second
+    definition of "clean" that could drift from this one.
     """
     judged = {comp.id: comp.judged_sha for comp in manifest.components}
-    verdicts: dict[str, list[str]] = {"clean": [], "edited": [], "head unknown": []}
+    result: dict[str, str] = {}
     for comp_id, head_sha in merged.items():
         judged_sha = judged.get(comp_id, "")
         if not judged_sha or not head_sha:
-            verdict = "head unknown"
+            result[comp_id] = "head unknown"
         elif judged_sha == head_sha:
-            verdict = "clean"
+            result[comp_id] = "clean"
         else:
-            verdict = "edited"
+            result[comp_id] = "edited"
+    return result
+
+
+def _record_merges(
+    state: AutonomyState, manifest: Manifest, merged: dict[str, str]
+) -> dict[str, list[str]]:
+    """Count each merge this run confirmed; return the parts by verdict."""
+    by_id = _classify_merges(manifest, merged)
+    verdicts: dict[str, list[str]] = {"clean": [], "edited": [], "head unknown": []}
+    for comp_id, verdict in by_id.items():
         state.record_merged_component(human_edited=verdict != "clean")
         verdicts[verdict].append(comp_id)
     return verdicts
 
 
 def _human_rejections(
-    manifest: Manifest, factory_result: FactoryResult, run_level: AutonomyLevel | None
+    manifest: Manifest, factory_result: FactoryResult, run_level: AutonomyLevel
 ) -> list[str]:
     """The parts a human turned down in a run operating at L3 or above.
 
     ``run_level`` is the run's clamped level, not the stored one: a
     stored L3 clamped to L2 ran an L2 gate, and a rejection there is the
-    gate working, not evidence against L3 (#601). None means the ladder
-    is on and the run resolved no level, which is a defect, not L1.
+    gate working, not evidence against L3 (#601). Required: the only
+    caller runs inside ``if ladder is not None:``, and the ladder is None
+    only when autonomy is disabled, so a resolved level always exists
+    here.
     """
-    if run_level is None:
-        raise RuntimeError("autonomy is enabled but the run resolved no ladder level")
     if run_level < AutonomyLevel.L3_ENVELOPED_AUTO:
         return []
     by_id = {comp.id: comp for comp in manifest.components}
@@ -3706,11 +3727,14 @@ def _demote_once(
     run_id: str,
     ui: UI,
     bus: EventBus,
-) -> bool:
-    """Fire at most one demotion for this run; True when one was fired.
+) -> None:
+    """Fire at most one demotion for this run.
 
     A policy violation wins and carries any human rejection on its
-    evidence, so one run never drops two levels (#601).
+    evidence, so one run never drops two levels (#601). Whether one fires
+    is always ``bool(violations or rejected)``, the caller's own inputs,
+    so this returns nothing rather than a bool that would only restate
+    them back.
     """
     if violations:
         evidence: dict[str, Any] = {"components": violations, "run_id": run_id}
@@ -3726,7 +3750,7 @@ def _demote_once(
             bus=bus,
             state=state,
         )
-        return True
+        return
     if rejected:
         apply_demotion(
             root_dir,
@@ -3738,8 +3762,12 @@ def _demote_once(
             bus=bus,
             state=state,
         )
-        return True
-    return False
+        return
+
+
+def _would_demote(violations: list[str], rejected: list[str]) -> bool:
+    """Whether ``_demote_once`` would fire: either input on its own is enough."""
+    return bool(violations or rejected)
 
 
 def _evidence_line(
@@ -3764,7 +3792,7 @@ def _record_autonomy_outcome(
     manifest: Manifest,
     factory_result: FactoryResult,
     autonomy_config: AutonomyConfig,
-    run_level: AutonomyLevel | None,
+    run_level: AutonomyLevel,
     bus: EventBus,
     run_id: str,
     ui: UI,
@@ -3830,11 +3858,13 @@ def _record_autonomy_outcome(
     ]
     if violations:
         state.record_policy_violation(len(violations))
-    demoted = _demote_once(
+    rejected = _human_rejections(manifest, factory_result, run_level)
+    demoted = _would_demote(violations, rejected)
+    _demote_once(
         root_dir,
         state,
         violations=sorted(violations),
-        rejected=_human_rejections(manifest, factory_result, run_level),
+        rejected=rejected,
         run_id=run_id,
         ui=ui,
         bus=bus,
@@ -4596,7 +4626,6 @@ def _run_factory_locked(
     # orderings that are load-bearing: the bus and its sinks exist by
     # now, and `_adversarial_phase_gates` above read the CONFIGURED
     # review_mode rather than the bundle's, exactly as before.
-    autonomy_active = autonomy_config.enabled
     if ladder is not None:
         factory_config.pause_before_pr_merge = ladder.bundle.pause_before_pr_merge
         factory_config.review_mode = ladder.bundle.review_mode
@@ -5582,14 +5611,14 @@ def _run_factory_locked(
     # and the promised automatic demotion never fires - the state machine
     # would be real but inert. Runs INSIDE the factory lock, before it is
     # released, so two runs cannot interleave read-modify-write.
-    if autonomy_active:
+    if ladder is not None:
         try:
             _record_autonomy_outcome(
                 root_dir=root_dir,
                 manifest=manifest,
                 factory_result=factory_result,
                 autonomy_config=autonomy_config,
-                run_level=ladder.level if ladder is not None else None,
+                run_level=ladder.level,
                 bus=bus,
                 run_id=run_id,
                 ui=ui,

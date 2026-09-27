@@ -75,7 +75,7 @@ class PrOutcome:
     merge_sha: str = ""
     #: #601: the PR head GitHub merged ("" when it reported none), which
     #: the autonomy ladder compares with the commit kstrl's gates judged.
-    merged_head_sha: str = ""
+    head_sha: str = ""
     #: #601: the PR was closed without merging.
     closed: bool = False
 
@@ -362,7 +362,7 @@ def _merge_and_wait(
             merged=True,
             error=fetch_error,
             merge_sha=confirmation.merge_sha,
-            merged_head_sha=confirmation.head_sha,
+            head_sha=confirmation.head_sha,
         )
 
     if confirmation.state == "closed":
@@ -443,7 +443,7 @@ def push_create_and_merge_pr(
                 pr_url=component.pr_url,
                 merged=True,
                 merge_sha=view.merge_sha,
-                merged_head_sha=view.head_sha,
+                head_sha=view.head_sha,
             )
         if view is not None and view.state == "CLOSED":
             return PrOutcome(

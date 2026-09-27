@@ -38,7 +38,7 @@ from kstrl.manifest import Manifest
 from kstrl.review import CriterionReview, ReviewResult
 from kstrl.ui.plain import PlainUI
 from tests.helpers.executables import write_executable
-from tests.helpers.replay import run_record, write_runs
+from tests.helpers.replay import clean_run, run_record, write_runs
 from tests.spine_utils import (
     base_config,
     component,
@@ -197,13 +197,20 @@ def _run(
     create_prs: bool = True,
     explicit_pause: bool = False,
     comps: tuple[str, ...] = (HTTP,),
+    merge_timeout: float = 2.0,
 ) -> str:
-    """One `run_factory` over the saved manifest (a fresh one on the first run); its output."""
+    """One `run_factory` over the saved manifest (a fresh one on the first run); its output.
+
+    ``merge_timeout`` only matters to a run that deliberately leaves a
+    merge unconfirmed (``GH_VIEW_STATE=OPEN``): the default is the same
+    2.0s ``tests.spine_utils.factory_config`` bakes in, and a caller that
+    wants that wait short passes a smaller one (#601).
+    """
     path = root / "scripts" / "kstrl" / "manifest.json"
     manifest = (
         Manifest.load(path) if path.exists() else make_manifest([component(c) for c in comps])
     )
-    config = factory_config(create_prs=create_prs)
+    config = factory_config(create_prs=create_prs, merge_timeout=merge_timeout)
     if explicit_pause:
         config.pause_before_pr_merge = True
         config.explicit_fields = frozenset({"pause_before_pr_merge"})
@@ -290,7 +297,7 @@ class TestTheCleanStreak:
     ) -> None:
         root = _project(tmp_path, AutonomyLevel.L2_GATED_MERGE, clean=14, decisive=8)
         monkeypatch.setenv("GH_VIEW_STATE", "OPEN")
-        _run(root, human=_Human({HTTP: APPROVE}))
+        _run(root, human=_Human({HTTP: APPROVE}), merge_timeout=0.1)
         comp = Manifest.load(root / "scripts" / "kstrl" / "manifest.json").get_component(HTTP)
         assert comp is not None and comp.status == "merge_pending", comp
         monkeypatch.delenv("GH_VIEW_STATE")
@@ -328,6 +335,25 @@ class TestAHumanRejectionAtL3Demotes:
             if str(i.kind) == "demotion_notice"
         ]
         assert len(notices) == 1
+
+    def test_a_rejection_through_the_inbox_at_l3_demotes(self, tmp_path: Path) -> None:
+        """The inbox-reject path (``apply_merge_decisions``, pipeline.py:2757)
+        writes the same ``HITL_REJECT_CHECK`` the interactive checkpoint does
+        (pipeline.py:4849). No other test in this module drives this path, so
+        a rename of either site alone would switch off the L3 rejection
+        demotion with every other ladder test still green (#601 review).
+        """
+        root = _project(tmp_path, AutonomyLevel.L3_ENVELOPED_AUTO, toml=POLICY)
+        _run(root, explicit_pause=True)  # nobody to ask: parks at the gate
+        box = Inbox(root, InboxConfig.load(root))
+        items = [item for item in box.open_items() if str(item.kind) == "merge_gate"]
+        assert len(items) == 1, [str(i.kind) for i in box.open_items()]
+        box.reject(items[0].id, actor="operator", comment="no")
+        _run(root, explicit_pause=True)
+        state = AutonomyState.load(root)
+        assert state.level == int(AutonomyLevel.L2_GATED_MERGE)
+        assert [t.trigger for t in state.history] == ["human_rejected_auto_merge"]
+        assert state.history[-1].evidence["components"] == [HTTP]
 
     def test_a_pr_closed_while_its_merge_waited_at_l3_demotes(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -376,8 +402,80 @@ class TestAHumanRejectionAtL3Demotes:
         assert state.history[-1].evidence["human_rejected"] == [HTTP]
 
 
-def test_the_replay_does_not_predict_l3_from_rows_without_edit_evidence(tmp_path: Path) -> None:
-    """25 clean one-merge runs: the replay may predict L2 but never L3."""
+def test_the_replay_predicts_promotion_from_rows_with_real_merge_evidence(tmp_path: Path) -> None:
+    """25 real clean one-merge runs: the replay counts a genuine clean streak (#601).
+
+    Before the fix every row here would have been read through ``completed``
+    with ``human_edited`` forced True, so the streak could never grow and L3
+    was unreachable from any history. ``clean_run`` writes real
+    ``merged``/``clean_merged`` evidence, so this is no longer capped.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    write_runs(root, [clean_run(i) for i in range(1, 26)])
+    result = subprocess.run(
+        [sys.executable, "-m", "kstrl", "autonomy", "replay", "--root", str(root)],
+        cwd=root,
+        capture_output=True,
+        encoding="utf-8",
+        timeout=120,
+    )
+    out = result.stdout + result.stderr
+    assert result.returncode == 0, out
+    assert "Final level after replay: L3" in out, out
+    assert "L2 -> L3" in out, out
+    assert "not fully predictable" not in out, out
+
+
+def test_a_run_completed_without_a_pr_does_not_predict_a_merge_in_the_replay(
+    tmp_path: Path,
+) -> None:
+    """25 completions with no merge (#601's original defect): the replay stays at L1.
+
+    Before the fix, ``completed`` WAS the merge count, so this exact history
+    (a ``--no-prs`` project, say) promoted past L1. Recorded with real
+    ``merged=0`` evidence, not an old-format row - the replay must not treat
+    a completion as a merge even when it can see there was none.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    write_runs(
+        root,
+        [
+            run_record(
+                run_id=f"r{i}",
+                timestamp=f"2026-09-{i:02d}T00:00:00Z",
+                merged=0,
+                clean_merged=0,
+            )
+            for i in range(1, 26)
+        ],
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "kstrl", "autonomy", "replay", "--root", str(root)],
+        cwd=root,
+        capture_output=True,
+        encoding="utf-8",
+        timeout=120,
+    )
+    out = result.stdout + result.stderr
+    assert result.returncode == 0, out
+    assert "Final level after replay: L1" in out, out
+    assert "L1 -> L2" not in out, out
+
+
+def test_the_replay_does_not_predict_merges_from_a_row_that_predates_the_evidence(
+    tmp_path: Path,
+) -> None:
+    """A pre-#601 row (no merged/clean_merged columns) predicts nothing, not zero silently.
+
+    ``run_record`` defaults ``merged``/``clean_merged`` to None: this is the
+    exact shape a file written before this pair of columns existed has, once
+    ``experiment_rows`` reads it. 25 such rows, each with ``completed=1``,
+    must not promote (the old defect) AND the report must disclose that L2,
+    L3 and L4 are not fully predictable from them, rather than staying
+    silent about the runs it could not count.
+    """
     root = tmp_path / "repo"
     root.mkdir()
     write_runs(
@@ -393,6 +491,5 @@ def test_the_replay_does_not_predict_l3_from_rows_without_edit_evidence(tmp_path
     )
     out = result.stdout + result.stderr
     assert result.returncode == 0, out
-    assert "Final level after replay: L2" in out, out
-    assert "L3 is not predictable from this file" in out, out
-    assert "L2 -> L3" not in out, out
+    assert "Final level after replay: L1" in out, out
+    assert "not fully predictable from this file: 25 recorded run(s)" in out, out
