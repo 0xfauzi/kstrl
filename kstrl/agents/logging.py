@@ -54,6 +54,12 @@ class LoggingAgent:
         return self._agent.final_message
 
     @property
+    def marks_tool_output(self) -> bool:
+        """Delegate to the wrapped agent (#598), the way ``final_message``
+        does: LoggingAgent itself never writes ``TOOL_RESULT_PREFIX``."""
+        return bool(getattr(self._agent, "marks_tool_output", False))
+
+    @property
     def usage_records(self) -> list[UsageRecord]:
         """R3.1: forward the wrapped agent's usage records."""
         records = getattr(self._agent, "usage_records", None)
