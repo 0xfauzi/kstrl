@@ -1,39 +1,31 @@
 """A gate that was asked and not answered is not consent (#594).
 
-The defect: with ``pause_before_pr_merge`` on, ``_phase_checkpoint``
-returned ``NOT_PROMPTED`` when the channel said it could prompt and the
-request then came back unanswered (a TUI that detached mid-prompt), and
-mapped any choice outside the three options to ``APPROVED``.
-``process_result`` special-cased ``REJECTED``, ``PARKED`` and ``RETRY``
-by name and let anything else - including that stray ``NOT_PROMPTED`` -
-reach ``_phase_pr``, which pushes, opens and merges. ``PlainUI.choose``
-made it reachable from a terminal: end of input or Ctrl-C returned the
-default option, which is Approve at the merge gate and Start at ``ks
-factory``'s confirm. ``RichUI``, which auto mode picks on a TTY, let the
-same interrupt escape the run entirely: it raised ``EOFError`` or
-``KeyboardInterrupt`` out of ``choose`` uncaught, past the channel, past
-the pipeline, filing no inbox item.
+The defect: with ``pause_before_pr_merge`` on, ``_phase_checkpoint`` returned ``NOT_PROMPTED``
+when the channel said it could prompt and the request then came back unanswered (a TUI that
+detached mid-prompt), and mapped any choice outside the three options to ``APPROVED``.
+``process_result`` special-cased ``REJECTED``, ``PARKED`` and ``RETRY`` by name and let
+anything else - including that stray ``NOT_PROMPTED`` - reach ``_phase_pr``, which pushes,
+opens and merges. ``PlainUI.choose`` made it reachable from a terminal: end of input or Ctrl-C
+returned the default option, which is Approve at the merge gate and Start at ``ks factory``'s
+confirm. ``RichUI``, which auto mode picks on a TTY, let the same interrupt escape the run
+entirely: it raised ``EOFError`` or ``KeyboardInterrupt`` out of ``choose`` uncaught, past the
+channel, past the pipeline, filing no inbox item.
 
-The fix: an unanswered or out-of-range answer parks through the same
-code as the non-interactive gate (one merge_gate item carrying the
-parked commit, ``checkpoint_resolved decision=parked decided_by=inbox``).
-``UiInteractionChannel.request`` catches an interrupted prompt -
-``EOFError`` or ``KeyboardInterrupt``, from ``PlainUI`` or ``RichUI``
-alike - around the call to ``choose`` and reports ``answered=False``,
-rather than ``PlainUI`` swallowing it into an out-of-range index itself.
-``process_result`` now allow-lists ``APPROVED`` (gate on) and
-``NOT_PROMPTED`` (gate off) as the only decisions that reach
-``_phase_pr``; anything else parks or refuses and is logged. ``ks
-factory`` starts only on an answered Start.
+The fix: an unanswered or out-of-range answer parks through the same code as the
+non-interactive gate (one merge_gate item carrying the parked commit, ``checkpoint_resolved
+decision=parked decided_by=inbox``). ``UiInteractionChannel.request`` catches an interrupted
+prompt - ``EOFError`` or ``KeyboardInterrupt``, from ``PlainUI`` or ``RichUI`` alike - around
+the call to ``choose`` and reports ``answered=False``, rather than ``PlainUI`` swallowing it
+into an out-of-range index itself. ``process_result`` now allow-lists ``APPROVED`` (gate on)
+and ``NOT_PROMPTED`` (gate off) as the only decisions that reach ``_phase_pr``; anything else
+parks or refuses and is logged. ``ks factory`` starts only on an answered Start.
 
-Five layers: the pipeline driven through ``process_result`` with each
-way an answer can go missing, plus the allow-list at the consumer;
-a package-wide census of every ``PromptRequest`` construction and its
-enrolled unanswered path, plus a census of every return
-``_phase_checkpoint`` itself names; the real ``run_embedded`` with a TUI
-that dies or exits while the gate waits; the real ``ks`` CLI on a
-pseudo-terminal that is the child's controlling terminal, answered with
-end of input; and the feature review gate, answered the same way.
+Five layers: the pipeline driven through ``process_result`` with each way an answer can go
+missing, plus the allow-list at the consumer; a package-wide census of every ``PromptRequest``
+construction and its enrolled unanswered path, plus a census of every return
+``_phase_checkpoint`` itself names; the real ``run_embedded`` with a TUI that dies or exits
+while the gate waits; the real ``ks`` CLI on a pseudo-terminal that is the child's controlling
+terminal, answered with end of input; and the feature review gate, answered the same way.
 """
 
 from __future__ import annotations
@@ -778,21 +770,25 @@ class TestTheIterationPauseIsNotConsent:
         config.interactive = True
         return config
 
-    def _run(self, tmp_path: Path, *, can_prompt: bool) -> LoopResult:
-        return run_loop(
+    def _run(self, tmp_path: Path, *, can_prompt: bool) -> tuple[LoopResult, str]:
+        log = io.StringIO()
+        result = run_loop(
             self._config(tmp_path),
-            PlainUI(no_color=True),
+            PlainUI(no_color=True, file=log),
             StubAgent(),
             tmp_path,
             interaction=_FakeChannel(answered=False, choice=0, can_prompt=can_prompt),
         )
+        return result, log.getvalue()
 
     def test_an_unanswered_pause_stops_the_run_like_quit(self, tmp_path: Path) -> None:
-        result = self._run(tmp_path, can_prompt=True)
+        result, out = self._run(tmp_path, can_prompt=True)
         assert (result.completed, result.exit_code, result.iterations) == (False, 0, 1), (
             "the loop ran a further, unconsented iteration"
         )
+        assert "Iteration pause was interrupted" in out, out
 
     def test_a_channel_that_cannot_prompt_keeps_going(self, tmp_path: Path) -> None:
-        result = self._run(tmp_path, can_prompt=False)
+        result, out = self._run(tmp_path, can_prompt=False)
         assert result.iterations == 3, "non-interactive path changed"
+        assert "Iteration pause was interrupted" not in out, out
