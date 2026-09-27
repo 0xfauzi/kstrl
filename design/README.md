@@ -43,9 +43,11 @@ frame you are building. Then:
   `tokens.json`. An app generates the same variables; `tools/render.py` shows how (its `style` is a complete replica).
 - Done means what the brand book's "Definition of done" says, and `tools/check_all.sh` passes.
 
-Not settled, and not this directory's to decide: the app's stack (web or desktop), and how it talks to a running
-factory. The approval needs a live channel; `Map6Approve`'s README records why the app must never detach while it is
-open (`pipeline.py:4960-4971`).
+The app itself is tracked in the operator UI issue on GitHub (it replaces #433 and #592): a local web page served by kstrl (`ks web`, and `ks serve` while it runs), with
+a checkpoint answered through a file-backed channel and today's park as the fallback, as the owner decided on #592.
+Its framework is not chosen, and where this system's navigation departs from that plan is listed there for the owner.
+`Map6Approve`'s README describes today's in-process channel, including why a detach while it is open matters
+(`pipeline.py:4960-4971`); it changes with the file-backed channel.
 
 ## Building and checking
 
@@ -54,7 +56,7 @@ Every command runs from `tools/`.
 
 | command | what it does |
 |---|---|
-| `sh build_all.sh` | regenerates every card into `system/project`, then wires the frames that share a moment (`wire_frames.py`, last) |
+| `sh build_all.sh` | regenerates every card into `system/project`, wires the frames that share a moment (`wire_frames.py`), builds the prototype, and last applies the repository's whitespace hooks to what it wrote (`tidy.py`) |
 | `python3 audit.py <Card>` | audits one card in both themes; `--selftest` proves every check against a planted failure and a clean control |
 | `sh audit_all.sh` | rebuilds, then audits every card; detail in `audit_all.txt` |
 | `sh render_all.sh <dir>` | renders every card, both themes, to PNGs (and the HTML the interaction tests drive, in `out/render`) |
@@ -73,6 +75,12 @@ The generated files are committed, so a reader needs no build. A change is made 
 generated file: `build_all.sh` overwrites them. Commit the regenerated `system/project` with the change, and check
 that `sh check_all.sh` passes first.
 
+The repository's pre-commit hooks pass on every file here (`pre-commit run --files $(git ls-files design)`), with
+one exception they do not see: `prototype/kstrl-prototype.html` is 563 KiB, over check-added-large-files' 500 KB, and
+that hook looks only at files being added. `tools/ruff.toml` applies kstrl's lint rules to the tools without the
+layout ones and keeps the formatter off them: their strings are their output, the reason `pyproject.toml` gives for
+exempting the prompt bodies. CI runs nothing in this directory; `check_all.sh` is its gate.
+
 ## The prototype
 
 `prototype/kstrl-prototype.html` is published at https://claude.ai/artifact/U4fcVPTsLoZFyb6xnUoeDG (private to its
@@ -83,6 +91,10 @@ every screen drawn at 21:40, each scoped to itself, with one script that moves b
 and does nothing; the page's own screen menu reaches every drawn screen, including those the app reaches through
 something not drawn (⌘K's answers, a tile of a finished spec). Screens are added by drawing them as frames first,
 then adding them to `SCREENS` and `LINKS`.
+
+Opened straight from disk it would render in quirks mode, because it has no doctype. To open it locally, run
+`python3 interact_prototype.py` (or `night`) in `tools/`: it first writes the page as the viewer serves it to
+`tools/out/prototype/prototype-day.html` (`-night.html`), then tests it.
 
 It has 23 screens. The published cards drawn at 21:40 (Factory, the Spec level as graph and text, search-query's
 Part level and its try-2 review, Notifications, Inbox, Queue, Trust, Learning, Settings, and the approval and

@@ -1,11 +1,15 @@
 """Which element a pointer at the centre of each control actually hits, in the STATIC frames (out/static)."""
 from __future__ import annotations
+
 import sys
 from pathlib import Path
+
 sys.argv = [sys.argv[0]]
-import render
 from playwright.sync_api import sync_playwright
+
+import render
 from browsers import launch
+
 OUT = Path('out/render/_px'); OUT.mkdir(parents=True, exist_ok=True)
 JS = """()=>[...document.querySelectorAll('.k-crumb, .k-seg-item, .k-tab, .k-need, .k-ask, button, [role=radio], [role=tab], input')].map(e=>{
   const r=e.getBoundingClientRect(); if(!r.width) return null; const h=document.elementFromPoint(r.left+r.width/2, r.top+r.height/2);

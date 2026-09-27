@@ -2,6 +2,7 @@
 it beside the text (its iterations and fast checks, its stories). gen_agent.py draws search-index's engineer at 20:46
 with it (the Map3Agent frame); gen_proto_step.py draws search-rank's at 21:40, for the prototype."""
 from __future__ import annotations
+
 from level_common import ring, top
 
 

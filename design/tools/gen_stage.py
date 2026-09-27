@@ -1,14 +1,17 @@
 """Step level, two modes of the same moment (20:46, four agents): Stage and Grid."""
 from __future__ import annotations
+
 from pathlib import Path
-from level_common import page, ring, checks, top
+
+from level_common import checks, page, ring, top
+
 
 def TOP(on: int, hint: str = '') -> str:
     return '    ' + top('<span class="v-human">search</span>', '4 agents working · 20:46', 3, ['Stage', 'Grid'], on, hint)
 NEEDS = '''  <div class="k-needs">
     <span class="k-needs-label">Needs you</span>
     <span class="k-needs-none">Nothing right now</span>
-    
+
     <span class="k-needs-hint"><span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> on an agent opens everything it has written · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> ask</span>
   </div>'''
 BASE_CSS = """

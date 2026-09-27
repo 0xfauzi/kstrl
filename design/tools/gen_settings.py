@@ -1,12 +1,16 @@
 """Settings: kstrl.toml by the decision each setting governs, with its source and what it does, and the problems kstrl would refuse to start on."""
 from __future__ import annotations
+
 import re
 from pathlib import Path
+
 from level_common import page, top
 
 groups = [('How work is checked', 9, True), ('How much runs at once', 6, False), ('Money', 4, False), ('Trust', 5, False), ('The queue', 7, False),
           ('Notifications', 7, False), ('What engineers read', 8, False), ('The agent', 5, False), ('Everything else', 116, False)]
-from comp import seg as _seg, vtabs, keys
+from comp import keys, vtabs
+from comp import seg as _seg
+
 nav = vtabs([(g, n) for g, n, _ in groups], next(i for i, (_, _, on) in enumerate(groups) if on), 'Setting groups', 'settings', ids='sg')
 def seg(opts, on, label): return _seg(opts, on, label, sm=True)
 def field(v, label):
@@ -41,14 +45,14 @@ body = '    ' + top('<span class="nm">Settings</span>', 'kstrl.toml · 29 sectio
       <div class="side">
         <div class="k-tile k-tile-alert prob">
           <div class="kh"><span class="k-mk sm fail"></span><span class="pk">1 problem · every command refuses to start</span></div>
-          <div class="pc"><span class="v-measure">[verfy] typecheck_command</span><p>No kstrl setting reads this. Did you mean <span class="v-measure">[verify]</span>?</p></div>
+          <div class="pc"><span class="v-measure">[verfy] typecheck_command</span><p>No kstrl setting reads this. Did you mean <span class="v-measure">[verify]</span>?</p></div><!-- a mistyped section on purpose; codespell:ignore verfy -->
           <button class="k-button k-button-sm">Rename to <span class="v-measure">[verify]</span></button>
         </div>
         <div class="k-tile envt">
           <div class="k-label">Set by the environment</div>
           <div class="pc"><span class="v-measure">FACTORY_MAX_PARALLEL=8</span><p>Set where kstrl was started, and it wins over kstrl.toml, which says 4.</p></div>
         </div>
-        <div class="k-tile sav">
+        <div class="k-tile saves">
           <div class="k-label">Saving</div>
           <p>Changes are written to kstrl.toml at the repository root. Before writing, the same checks every command runs are applied, so a value that would stop kstrl cannot be saved.</p>
           <p>kstrl reads the file again at the next command or run. A running spec keeps the values it started with.</p>
@@ -81,8 +85,8 @@ css = """
   .pc p { margin:3px 0 0; font:var(--t-small); color:var(--text-2); }
 .prob .k-button { align-self:flex-start; margin-top:12px; }
 
-  .sav { flex:1; }
-  .sav p { margin:8px 0 0; font:var(--t-small); color:var(--text-2); }
+  .saves { flex:1; }
+  .saves p { margin:8px 0 0; font:var(--t-small); color:var(--text-2); }
   .t3n { color:var(--text-3) !important; margin-top:auto !important; }
 """
 out = page('<!-- @dsCard group="Frames (proposal)" height=800 width=1280 page subtitle="17 · Settings: kstrl.toml by what each setting decides" -->',

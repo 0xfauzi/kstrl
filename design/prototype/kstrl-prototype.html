@@ -1361,8 +1361,8 @@
 :where([data-screen="settings"]) .prob .k-button .v-measure {  }
 :where([data-screen="settings"]) .pc p { margin:3px 0 0; font:var(--t-small); color:var(--text-2); }
 :where([data-screen="settings"]) .prob .k-button { align-self:flex-start; margin-top:12px; }
-:where([data-screen="settings"]) .sav { flex:1; }
-:where([data-screen="settings"]) .sav p { margin:8px 0 0; font:var(--t-small); color:var(--text-2); }
+:where([data-screen="settings"]) .saves { flex:1; }
+:where([data-screen="settings"]) .saves p { margin:8px 0 0; font:var(--t-small); color:var(--text-2); }
 :where([data-screen="settings"]) .t3n { color:var(--text-3) !important; margin-top:auto !important; }
 /* notify-one */
 .scr:where([data-screen="notify-one"]) { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
@@ -1567,7 +1567,7 @@
 <div class="scr" data-screen="factory" hidden>
   <header class="k-header">
     <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root" aria-current="page">snippetvault</button></li></ol></nav>
-    
+
     <span class="grow"></span>
     <span class="k-live">live · last event 3s ago</span>
     <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
@@ -1625,7 +1625,7 @@
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Select a spec and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
   </div>
 </div>
@@ -1661,7 +1661,7 @@
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
   </div>
 </div>
@@ -1702,14 +1702,14 @@
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">To change a decision, change the sentence it came from. The next run plans the spec again.</span>
   </div>
 </div>
 <div class="scr" data-screen="part-search-query" hidden>
   <header class="k-header">
     <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb" aria-current="page">search-query</button></li></ol></nav>
-    
+
     <span class="grow"></span>
     <span class="k-live">live · last event 3s ago</span>
     <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
@@ -1783,14 +1783,14 @@
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
   </div>
 </div>
 <div class="scr" data-screen="part-search-schema" hidden>
   <header class="k-header">
     <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb" aria-current="page">search-schema</button></li></ol></nav>
-    
+
     <span class="grow"></span>
     <span class="k-live">live · last event 3s ago</span>
     <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
@@ -1844,14 +1844,14 @@
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
   </div>
 </div>
 <div class="scr" data-screen="part-search-index" hidden>
   <header class="k-header">
     <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb" aria-current="page">search-index</button></li></ol></nav>
-    
+
     <span class="grow"></span>
     <span class="k-live">live · last event 3s ago</span>
     <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
@@ -1904,14 +1904,14 @@
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
   </div>
 </div>
 <div class="scr" data-screen="part-search-rank" hidden>
   <header class="k-header">
     <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb" aria-current="page">search-rank</button></li></ol></nav>
-    
+
     <span class="grow"></span>
     <span class="k-live">live · last event 3s ago</span>
     <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
@@ -1965,14 +1965,14 @@
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
   </div>
 </div>
 <div class="scr" data-screen="part-search-highlight" hidden>
   <header class="k-header">
     <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb" aria-current="page">search-highlight</button></li></ol></nav>
-    
+
     <span class="grow"></span>
     <span class="k-live">live · last event 3s ago</span>
     <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
@@ -2037,14 +2037,14 @@
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
   </div>
 </div>
 <div class="scr" data-screen="part-search-api" hidden>
   <header class="k-header">
     <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb" aria-current="page">search-api</button></li></ol></nav>
-    
+
     <span class="grow"></span>
     <span class="k-live">live · last event 3s ago</span>
     <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
@@ -2091,14 +2091,14 @@
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
   </div>
 </div>
 <div class="scr" data-screen="part-search-cli" hidden>
   <header class="k-header">
     <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb" aria-current="page">search-cli</button></li></ol></nav>
-    
+
     <span class="grow"></span>
     <span class="k-live">live · last event 3s ago</span>
     <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
@@ -2145,14 +2145,14 @@
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
   </div>
 </div>
 <div class="scr" data-screen="step-query-review-2" hidden>
   <header class="k-header">
     <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb">search-query</button></li><li><button class="k-crumb" aria-current="page">review, try 2</button></li></ol></nav>
-    
+
     <span class="grow"></span>
     <span class="k-live">live · last event 3s ago</span>
     <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
@@ -2202,14 +2202,14 @@
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Log is review.log: the git commands it ran, then its verdict as JSON.</span>
   </div>
 </div>
 <div class="scr" data-screen="step-stage" hidden>
   <header class="k-header">
     <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb" aria-current="page">being built</button></li></ol></nav>
-    
+
     <span class="grow"></span>
     <span class="k-live">live · last event 3s ago</span>
     <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
@@ -2252,14 +2252,14 @@
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint"><span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> on an agent opens everything it has written · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
   </div>
 </div>
 <div class="scr" data-screen="step-grid" hidden>
   <header class="k-header">
     <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb" aria-current="page">being built</button></li></ol></nav>
-    
+
     <span class="grow"></span>
     <span class="k-live">live · last event 3s ago</span>
     <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
@@ -2300,14 +2300,14 @@
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint"><span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> on an agent opens everything it has written · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
   </div>
 </div>
 <div class="scr" data-screen="agent-search-rank" hidden>
   <header class="k-header">
     <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb">being built</button></li><li><button class="k-crumb" aria-current="page">search-rank</button></li></ol></nav>
-    
+
     <span class="grow"></span>
     <span class="k-live">live · last event 3s ago</span>
     <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
@@ -2348,7 +2348,7 @@
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Notes is its progress.txt · Prompt is exactly what it was sent, per call</span>
   </div>
 </div>
@@ -2403,7 +2403,7 @@
     <span class="kh"><span class="k-keys"><span class="k-key">↑</span><span class="k-key">↓</span></span> move</span>
     <span class="kh"><span class="k-keys"><span class="k-key">↵</span></span> the first action</span>
     <span class="kh"><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> every action and question</span>
-    
+
     <span class="k-needs-hint">Oldest first within each group. A repeat of an open item adds to it rather than filing a new one.</span>
   </div>
 </div>
@@ -2466,7 +2466,7 @@ Pinned snippets keep their order.</textarea></div></div>
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Pausing stops new specs starting. search keeps running.</span>
   </div>
 </div>
@@ -2509,7 +2509,7 @@ Pinned snippets keep their order.</textarea></div></div>
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
   </div>
 </div>
@@ -2550,14 +2550,14 @@ Pinned snippets keep their order.</textarea></div></div>
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">A /memory comment on a kstrl pull request also adds a line to your guidance.</span>
   </div>
 </div>
 <div class="scr" data-screen="settings" hidden>
   <header class="k-header">
     <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb" aria-current="page">Settings</button></li></ol></nav>
-    
+
     <span class="grow"></span>
     <span class="k-live">live · last event 3s ago</span>
     <span class="k-spend">≥$31.10 <small>of $40.00 today</small></span>
@@ -2574,14 +2574,14 @@ Pinned snippets keep their order.</textarea></div></div>
       <div class="side">
         <div class="k-tile k-tile-alert prob">
           <div class="kh"><span class="k-mk sm fail"></span><span class="pk">1 problem · every command refuses to start</span></div>
-          <div class="pc"><span class="v-measure">[verfy] typecheck_command</span><p>No kstrl setting reads this. Did you mean <span class="v-measure">[verify]</span>?</p></div>
+          <div class="pc"><span class="v-measure">[verfy] typecheck_command</span><p>No kstrl setting reads this. Did you mean <span class="v-measure">[verify]</span>?</p></div><!-- a mistyped section on purpose; codespell:ignore verfy -->
           <button class="k-button k-button-sm">Rename to <span class="v-measure">[verify]</span></button>
         </div>
         <div class="k-tile envt">
           <div class="k-label">Set by the environment</div>
           <div class="pc"><span class="v-measure">FACTORY_MAX_PARALLEL=8</span><p>Set where kstrl was started, and it wins over kstrl.toml, which says 4.</p></div>
         </div>
-        <div class="k-tile sav">
+        <div class="k-tile saves">
           <div class="k-label">Saving</div>
           <p>Changes are written to kstrl.toml at the repository root. Before writing, the same checks every command runs are applied, so a value that would stop kstrl cannot be saved.</p>
           <p>kstrl reads the file again at the next command or run. A running spec keeps the values it started with.</p>
@@ -2594,7 +2594,7 @@ Pinned snippets keep their order.</textarea></div></div>
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
   </div>
 </div>
@@ -2650,7 +2650,7 @@ Pinned snippets keep their order.</textarea></div></div>
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
   </div>
 </div>
@@ -2694,7 +2694,7 @@ Pinned snippets keep their order.</textarea></div></div>
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
   </div>
 </div>
@@ -2740,7 +2740,7 @@ Pinned snippets keep their order.</textarea></div></div>
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Spend is counted when a phase ends, so a running part’s cost appears in steps.</span>
   </div>
 </div>
@@ -2781,7 +2781,7 @@ Pinned snippets keep their order.</textarea></div></div>
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Limits come from this project’s own runs: every run but the last 3, at least 8 of them.</span>
   </div>
 </div>

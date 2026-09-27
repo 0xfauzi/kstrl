@@ -1,8 +1,11 @@
 """Queue: work waiting, running and finished, laid out by kstrl's own queue states, with adding a spec beside it. 21:40."""
 from __future__ import annotations
+
 from pathlib import Path
-from level_common import page, top
+
 from comp import steps
+from level_common import page, top
+
 
 def qcard(name: str, quote: str, meta: str, pos: str, cls: str = '') -> str:
     return f'''<div class="k-card{' k-card-work' if cls == 'run' else ''} qc"><div class="qh"><span class="n">{name}</span><span class="pos">{pos}</span></div><div class="ex">“{quote}”</div><div class="mm">{meta}</div></div>'''
@@ -59,7 +62,7 @@ FOOT = '''  <div class="k-needs">
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Pausing stops new specs starting. search keeps running.</span>
   </div>'''
 css = """

@@ -1,7 +1,9 @@
-from card import card
-from beh import BEZ, TABS
-from comp import vtabs
 import json
+
+from beh import BEZ, TABS
+from card import card
+from comp import vtabs
+
 
 def tabs(opts, on, state=None, ids='', panels=False, label='View'):
     items = []

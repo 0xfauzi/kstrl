@@ -1,8 +1,11 @@
 """Write components/bundle.css: the command-window vocabulary shared by every frame."""
 from __future__ import annotations
+
 from pathlib import Path
 from urllib.parse import quote
-from scale import css_vars, css_classes
+
+from scale import css_classes, css_vars
+
 
 def svg(body: str) -> str:
     s = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">{body}</svg>'

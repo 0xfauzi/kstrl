@@ -8,9 +8,11 @@ its own screen (and, for the two command-window frames, its open window) as its 
 Runs last in build_all: it reads the generators' output and rewrites the frames of each set in place. The table below is
 the whole wiring; every label in it is asserted against the markup, so a generator that renames a crumb fails the build."""
 from __future__ import annotations
+
 import json
 import re
 from pathlib import Path
+
 from beh import SEG, TABS
 
 C = Path('../system/project/components')

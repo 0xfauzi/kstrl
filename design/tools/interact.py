@@ -1,9 +1,13 @@
 """Drive the control cards by keyboard and pointer in real Chromium and assert what a person would check. interact.py [night]"""
 from __future__ import annotations
+
 import sys
 from pathlib import Path
+
 from playwright.sync_api import sync_playwright
+
 from browsers import launch
+
 THEME = 'night' if 'night' in sys.argv else 'day'
 fails: list[str] = []
 def check(name: str, ok: bool, detail: str = '') -> None:

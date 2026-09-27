@@ -5,13 +5,18 @@ real click), and each window opened from the Spec screen against the static fram
 parked first (a focused control draws a ring the static frame does not have). Both renders go through the same browser.
 Usage: python3 probe/frame_pixels.py [night]"""
 from __future__ import annotations
-import json, re, sys
+
+import json
+import re
+import sys
 from pathlib import Path
+
 sys.argv, THEME_ARGS = [sys.argv[0]], sys.argv[1:]
-import render  # builds the tokens + bundle style; renders nothing without arguments
-from playwright.sync_api import sync_playwright
-from browsers import launch
 from PIL import Image, ImageChops
+from playwright.sync_api import sync_playwright
+
+import render  # builds the tokens + bundle style; renders nothing without arguments
+from browsers import launch
 
 THEME = 'night' if 'night' in THEME_ARGS else 'day'
 OUT = Path('out/render/_px'); OUT.mkdir(parents=True, exist_ok=True)
@@ -80,7 +85,7 @@ with sync_playwright() as p:
             if t is None: continue
             t = w['memory'][t[1:]] if t.startswith('@') else t
             out = OUT / f'{f}-{label.replace(" ", "_")}-{THEME}.png'
-            shot(url, out, lambda: pg.click(sel))
+            shot(url, out, lambda sel=sel: pg.click(sel))
             compare(f'{f}: {label}', out, t)
     br.close()
 print(f'[{THEME}] {len(fails)} failed')

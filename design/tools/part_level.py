@@ -2,8 +2,8 @@
 sent back, and the step that is open below. gen_part.py draws search-query with it (the Map2Part frame);
 gen_proto_parts.py draws the other six parts at the same moment, for the prototype."""
 from __future__ import annotations
-from level_common import page
 
+from level_common import page
 
 X0 = 32
 COLS = [('', 64), ('Build', 244), ('Verify', 150), ('Review', 176), ('Security', 150), ('Distill', 150), ('Your approval', 150), ('Merge', 132)]

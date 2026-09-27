@@ -1,6 +1,8 @@
 """Notifications 7a: an ask arrives in the app. The Factory level at 21:28:04, the moment search-index parks."""
 from __future__ import annotations
+
 from pathlib import Path
+
 from comp import notice
 
 src = Path('../system/project/components/Map0Factory/preview.html').read_text()

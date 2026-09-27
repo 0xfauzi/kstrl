@@ -1,0 +1,15 @@
+# The design tools are a program apart from kstrl: their own requirements (requirements.txt), outside CI, run by
+# check_all.sh. They write HTML, CSS and JavaScript from long string templates, and those strings are the output,
+# the same reason pyproject.toml exempts the prompt bodies from E501. So kstrl's lint rules apply here except the
+# layout ones, and the formatter does not run: reflowing these files would change nothing they write and would
+# rewrite all of them.
+extend = "../../pyproject.toml"
+
+[format]
+exclude = ["*"]
+
+[lint]
+# E501 line length, E701/E702 two statements on a line, E402 an import beside the section that uses it or after sys.path is set, E741 a
+# one-letter name, E731 a lambda bound to a name, B007 an unused loop name kept for what it documents, B905 zip()
+# without strict=, UP031 %-formatting in a report line.
+extend-ignore = ["E501", "E701", "E702", "E402", "E741", "E731", "B007", "B905", "UP031"]

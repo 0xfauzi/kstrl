@@ -1,8 +1,11 @@
 """Receipt: search after it finished. What you asked for, what was built, the one thing to know, how much it needed you, what it cost."""
 from __future__ import annotations
+
 from pathlib import Path
-from level_common import page, top
+
 from comp import steps
+from level_common import page, top
+
 CI = {'p': ('pass', 'CI passed'), 'r': ('work', 'CI running')}
 
 parts = [
@@ -68,7 +71,7 @@ body = '    ' + top('<span class="v-human">search</span>', 'finished 22:31 · 7 
 FOOT = '''  <div class="k-needs">
     <span class="k-needs-label">Needs you</span>
     <span class="k-needs-none">Nothing from search</span>
-    
+
     <span class="k-needs-hint">The day finished over its budget, so ks serve paused the queue until midnight.</span>
   </div>'''
 css = """

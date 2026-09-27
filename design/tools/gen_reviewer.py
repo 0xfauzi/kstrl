@@ -1,7 +1,10 @@
 """Step level, one checker: search-query's reviewer on try 2 (21:15, 64s). Its verdict story by story, beside the engineer's claims."""
 from __future__ import annotations
+
 from pathlib import Path
-from level_common import HINT, NEEDS as LC_NEEDS, page, top
+
+from level_common import HINT, page, top
+from level_common import NEEDS as LC_NEEDS
 
 stories = [
   ('US-1', 'Match words in a title or a body', True, [

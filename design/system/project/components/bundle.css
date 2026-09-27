@@ -612,4 +612,3 @@
   .k-cmd-input, .k-cmd-act { transition-duration:1ms; }
   .k-cmd[data-motion="enter"] { animation-name:k-cmd-in-still; } .k-cmd[data-motion="exit"] { animation-name:k-cmd-out-still; }
 }
-

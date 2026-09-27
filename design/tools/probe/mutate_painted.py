@@ -1,8 +1,12 @@
 """Mutation run for the painted, docbase, scroll, type and baseline checks: each mutation breaks one clearing rule or detection step; the self-test must go red.
 Outcomes: caught (self-test exit 1), STILL GREEN (a hole), COULD-NOT-PLANT (anchor not found exactly once)."""
 from __future__ import annotations
-import shutil, subprocess, sys
+
+import shutil
+import subprocess
+import sys
 from pathlib import Path
+
 M = [
  ('collision: inert content not lifted before hit-testing', "inertEls.forEach(e=>{ e.inert=false; });", ""),
  ('pseudo-elements not read', "const PES=[null,'::before','::after'];", "const PES=[null];"),
@@ -44,8 +48,8 @@ M = [
  ('balance: anatomy gets the text limit', "const dead=Math.round(inner-b), limit=anat?80:40;", "const dead=Math.round(inner-b), limit=40;"),
  ('baseline not a failure', "'type', 'baseline') if r[k]}", "'type') if r[k]}"),
  ('baseline: 3px allowed', "const d=b.base-a.base; if(Math.abs(d)<1) continue;", "const d=b.base-a.base; if(Math.abs(d)<4) continue;"),
- ('baseline: every run counts as boxed', "const inBox=(k,te)=>{ if(boxed(k)) return true;", "const inBox=(k,te)=>{ return true;"),
- ('baseline: boxed exemption removed', "const inBox=(k,te)=>{ if(boxed(k)) return true;", "const inBox=(k,te)=>{ return false;"),
+ ('baseline: every run counts as boxed', "const inBox=(k,tgt)=>{ if(boxed(k)) return true;", "const inBox=(k,tgt)=>{ return true;"),
+ ('baseline: boxed exemption removed', "const inBox=(k,tgt)=>{ if(boxed(k)) return true;", "const inBox=(k,tgt)=>{ return false;"),
  ('baseline: size ratio 1.1', "if(Math.max(a.size,b.size)/Math.min(a.size,b.size)>1.5) continue;", "if(Math.max(a.size,b.size)/Math.min(a.size,b.size)>1.1) continue;"),
  ('baseline: size ratio removed', "if(Math.max(a.size,b.size)/Math.min(a.size,b.size)>1.5) continue;", ""),
  ('baseline: two-line limit lifted', "r.height<=2.5*(parseFloat(getComputedStyle(x.f.el).lineHeight)||20)", "r.height<=99*(parseFloat(getComputedStyle(x.f.el).lineHeight)||20)"),

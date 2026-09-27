@@ -1,6 +1,6 @@
-from card import card
 from beh import BEZ
-from comp import ring, steps, chip, stat, keys
+from card import card
+from comp import chip, ring, stat, steps
 
 L = ['verify', 'review', 'security', 'distill']
 
@@ -115,7 +115,6 @@ card('Stat', 'Readouts', 348, 'A measured number with its unit and label; spend 
 
 # ---------------- Ring
 rstates = [(0, 'iteration 1'), (3, 'iteration 4'), (7, 'iteration 8'), (9, 'the last')]
-rrow = ''.join(f'<div class="rc">{ring(d, 10)}<span class="c-cap">{w}</span></div>' for d, w in rrow_src) if False else ''
 rrow = ''.join(f'<div class="rc">{ring(d, 10)}<span class="c-cap">{w}</span></div>' for d, w in rstates) + f'<div class="rc">{ring(10, 10, running=False)}<span class="c-cap">ten used</span></div>'
 sizes = ''.join(f'<div class="rc">{ring(3, 10, s, w)}<span class="c-cap">{s} / {w}</span></div>' for s, w in [(44, 5), (56, 6), (64, 6)])
 dens = f'<div class="rc">{ring(4, 20, 64, 6)}<span class="c-cap">20 at 64: 9.1px each, cut</span></div><div class="rc">{ring(12, 30, 64, 6)}<span class="c-cap">30 at 64: 6.1px, whole</span></div>'
@@ -169,6 +168,7 @@ seqs = [['now', '', '', ''], ['done', 'done', 'work', ''], ['done', 'fail', '', 
 live_seq = [(['now', '', '', ''], 'verify runs the tests'), (['done', 'work', '', ''], 'review reads the diff'), (['done', 'done', 'work', ''], 'security reads it'),
             (['done', 'done', 'done', 'work'], 'the distiller writes facts'), (['done', 'done', 'done', 'done'], 'every check passed')]
 import json
+
 live_html = [steps(s, L) for s, _ in live_seq]
 sbody2 = f'''<div class="c-two">
   <div class="c-tile"><div class="c-lab">A part’s line: Build, Check, Your approval, Merge. Unlabelled, so always beside the mark and word it draws.</div>
@@ -197,6 +197,7 @@ print('ok')
 
 # ---------------- Well
 from comp import cmdline
+
 wmeas = '''<div class="k-well"><div class="wm">
   <span class="k-mk pass"></span><span>verify</span><span class="v-measure">31 passed · typecheck · lint · scope</span>
   <span class="k-mk pass"></span><span>review</span><span class="v-measure">0 blocking · 2 advisory</span>
@@ -239,6 +240,7 @@ card('Well', 'Surfaces', 487, 'A record set into a tile: evidence, a log excerpt
 
 # ---------------- Meter (and Bar)
 from comp import meter
+
 M = [('The queue', 6, '3 open of 50. At 50, ks serve takes no new spec.'), ('Today’s spend', 78, '<span class="v-measure">≥$31.10</span> of <span class="v-measure">$40.00</span>. At the cap the queue pauses.'),
      ('The distiller’s notes', 91, '3,180 of 3,500 tokens')]
 mrows = ''.join(f'<div class="mr"><span class="c-gr">{n}</span><div>{meter(v)}<span class="mw">{w}</span></div></div>' for n, v, w in M)

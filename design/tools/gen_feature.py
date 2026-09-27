@@ -1,7 +1,9 @@
 """A one-off feature run (ks feature) at its only checkpoint: understanding is done, implementation waits for you."""
 from __future__ import annotations
+
 import re
 from pathlib import Path
+
 from level_common import page, top
 
 facts = [('PRD', 'scripts/kstrl/feature/bulk-delete/prd.json'), ('Branch', 'feature/bulk-delete'), ('Stories', 'BD-1, BD-2, BD-3'),
@@ -40,7 +42,7 @@ body = '    ' + top('<span class="nm">bulk-delete</span>', 'ks feature · unders
 FOOT = '''  <div class="k-needs">
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Start bulk-delete?</b><span class="k-need-sub">understanding done · 1m</span></button>
-    
+
     <span class="k-needs-hint">For work that needs review, a commit and a PR, add a spec to the queue instead.</span>
   </div>'''
 css = """

@@ -1,8 +1,11 @@
 """Write tokens.json's type groups from scale.py, so the type foundation, the bundle's --t-* variables and the audit read one scale."""
 from __future__ import annotations
+
 import json
 from pathlib import Path
+
 from scale import SCALE
+
 GROUPS = [('Your voice', 'human'), ('Agent voice', 'agent'), ('Measurement', 'measure')]
 p = Path('../system/project/tokens.json'); tok = json.loads(p.read_text())
 groups = []

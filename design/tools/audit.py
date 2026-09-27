@@ -28,10 +28,15 @@ Static checks on the CSS the card uses (bundle component layer + the card's own 
   hygiene   no page stylesheet redefines an un-namespaced class the bundle defines (grow, sep, q, ...): that restyles it page-wide
 """
 from __future__ import annotations
-import json, re, subprocess, sys
+
+import json
+import re
+import subprocess
+import sys
 from pathlib import Path
 
 from browsers import HEADLESS as B
+
 assert B, 'no Chromium found: set KSTRL_DESIGN_HEADLESS (see browsers.py)'
 ROOT = Path('../system/project').resolve()
 
@@ -281,7 +286,7 @@ for(const row of document.querySelectorAll('.c-two, .c-three')){ const tiles=[..
       const cs=getComputedStyle(p); cv.font=cs.fontWeight+' '+cs.fontSize+' '+cs.fontFamily; const m=cv.measureText('Hxg');
       return {base:rs[0].top+m.fontBoundingBoxAscent, top:rs[0].top, bottom:rs[0].bottom, size:parseFloat(cs.fontSize), el:p, text:t.nodeValue.trim().slice(0,24)}; } return null; };
   const boxed=e=>{ const cs=getComputedStyle(e); return /(^|\s)k-(chip|button|key|keys|seg|tab|toggle|mk|dot|ref|ring|bar|meter|field|kg)/.test(typeof e.className==='string'?e.className:'') || cs.backgroundColor!=='rgba(0, 0, 0, 0)' || cs.backgroundImage!=='none' || ['Top','Right','Bottom','Left'].filter(s=>parseFloat(cs['border'+s+'Width'])>0).length>=2 || e instanceof SVGElement; };
-  const inBox=(k,te)=>{ if(boxed(k)) return true; for(let e=te; e && e!==k; e=e.parentElement){ if(boxed(e)) return true; } return false; };
+  const inBox=(k,tgt)=>{ if(boxed(k)) return true; for(let e=tgt; e && e!==k; e=e.parentElement){ if(boxed(e)) return true; } return false; };
   document.querySelectorAll('body *').forEach(c=>{ const cs=getComputedStyle(c); if(!/flex|grid/.test(cs.display) || c.closest('[data-illustration],[data-audit-film]')) return; if(cs.display.includes('flex') && cs.flexDirection.startsWith('column')) return;
     const kids=[...c.children]; const L=kids.map(k=>({k, f:firstLine(k)})).filter(x=>{ if(!x.f) return false; const r=x.k.getBoundingClientRect(); return r.width>0 && !inBox(x.k,x.f.el) && r.height<=2.5*(parseFloat(getComputedStyle(x.f.el).lineHeight)||20); });
     for(let i=0;i+1<L.length;i++){ const A=L[i], B=L[i+1]; if(kids.indexOf(B.k)-kids.indexOf(A.k)!==1) continue; const a=A.f, b=B.f;
@@ -426,6 +431,7 @@ def static_checks(comp: str) -> dict:
     return {'rawcolor': raw, 'motion_unguarded': sorted(set(animated)), 'hygiene': clash, 'leak_static': leak, 'docbase': docbase}
 
 import os
+
 SHOW = 10 ** 6 if os.environ.get('AUDIT_SHOW_ALL') else 12  # failures printed per check; the self-test prints all, so no plant hides behind the cut
 
 def audit(comp: str) -> bool:
@@ -455,7 +461,8 @@ def audit(comp: str) -> bool:
     return ok
 
 def selftest() -> bool:
-    import contextlib, io
+    import contextlib
+    import io
     global SHOW
     SHOW = 10 ** 6
     buf = io.StringIO()

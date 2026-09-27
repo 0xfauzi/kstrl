@@ -1,6 +1,8 @@
 """Spend: today against the daily budget, what each spec cost this week, the limits and what reaching each does, and how sure the numbers are. Wed 22:40."""
 from __future__ import annotations
+
 from pathlib import Path
+
 from level_common import page, top
 
 CAP, TODAY = 40.0, 42.46
@@ -61,7 +63,7 @@ body = '    ' + top('<span class="nm">Spend</span>', 'Wednesday · over the dail
 FOOT = '''  <div class="k-needs">
     <span class="k-needs-label">Needs you</span>
     <button class="k-need"><span class="k-mk fail"></span><b>Daily budget reached</b><span class="k-need-sub">the queue resumes at 00:00 · tags is next</span></button>
-    
+
     <span class="k-needs-hint">Spend is counted when a phase ends, so a running part’s cost appears in steps.</span>
   </div>'''
 css = """

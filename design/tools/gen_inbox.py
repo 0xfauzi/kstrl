@@ -1,7 +1,10 @@
 """Inbox: every ask and notice kstrl has filed for this repo, at 21:40 in the search run."""
 from __future__ import annotations
+
 from pathlib import Path
+
 from level_common import page, top
+
 
 def row(mark: str, title: str, sub: str, cls: str = '', meta: str = '') -> str:
     m = f'<span class="k-mk {mark}"></span>' if mark else '<span class="k-dot k-dot-ring" aria-hidden="true"></span>'  # a notice waits quietly
@@ -53,7 +56,7 @@ KEYS = '''  <div class="k-needs">
     <span class="kh"><span class="k-keys"><span class="k-key">↑</span><span class="k-key">↓</span></span> move</span>
     <span class="kh"><span class="k-keys"><span class="k-key">↵</span></span> the first action</span>
     <span class="kh"><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> every action and question</span>
-    
+
     <span class="k-needs-hint">Oldest first within each group. A repeat of an open item adds to it rather than filing a new one.</span>
   </div>'''
 css = """

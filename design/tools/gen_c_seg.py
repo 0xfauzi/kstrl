@@ -1,6 +1,8 @@
-from card import card
 from beh import BEZ, SEG
+from card import card
 from glyph_svg import key as K
+
+
 def ik(*chs): return '<span class="k-keys k-keys-inline">' + ''.join(K(c) for c in chs) + '</span>'
 
 def seg(opts, on, state=None, disabled=(), tag='button', label='Zoom level', ids='', sm=False):
@@ -55,7 +57,7 @@ script = BEZ + SEG + r"""
   // Anatomy, measured.
   var host=document.querySelector('.c-anat'), s=document.querySelector('#anatSeg .k-seg'), item=s.querySelectorAll('.k-seg-item')[1], cs=getComputedStyle(s), ci=getComputedStyle(item), cu=getComputedStyle(s.querySelectorAll('.k-seg-item')[0]);
   var last=s.querySelectorAll('.k-seg-item')[3];
-  anat(host, s, [{kind:'h'}, {kind:'hr', of:last, label:Math.round(last.getBoundingClientRect().height)+' item'}, 
+  anat(host, s, [{kind:'h'}, {kind:'hr', of:last, label:Math.round(last.getBoundingClientRect().height)+' item'},
     {kind:'note', row:0, dx:82, label:'radius '+parseFloat(cs.borderTopLeftRadius)+', item '+parseFloat(ci.borderTopLeftRadius)},
     {kind:'note', row:1, dx:82, label:'padding '+parseFloat(cs.paddingLeft)+', gap '+parseFloat(cs.columnGap||cs.gap)},
     {kind:'note', row:2, dx:82, label:'item padding '+parseFloat(ci.paddingLeft)},

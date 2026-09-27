@@ -11,8 +11,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from gen_health import chart_tiles, cost, css as HEALTH_CSS, infra, retry
-from gen_spend import css as SPEND_CSS, lm, spend_bar, week_rows
+from gen_health import chart_tiles, cost, infra, retry
+from gen_health import css as HEALTH_CSS
+from gen_spend import css as SPEND_CSS
+from gen_spend import lm, spend_bar, week_rows
 from level_common import HINT, NEEDS, page, top
 
 OUT = Path('out/static')

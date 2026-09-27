@@ -9,7 +9,7 @@ step() { name=$1; shift; echo "== $name"; if "$@" > "out/logs/$name.txt" 2>&1; t
 step selftest python3 audit.py --selftest
 step audit sh audit_all.sh
 if grep -q '^FAIL' audit_all.txt; then echo "FAILED: audit (audit_all.txt)"; exit 1; fi
-step audit-prototype-frames sh -c 'for f in out/static/Proto*.html; do python3 audit.py $(basename $f .html) || exit 1; done'
+for f in out/static/Proto*.html; do step "audit-$(basename "$f" .html)" python3 audit.py "$(basename "$f" .html)"; done
 step render sh render_all.sh out/shots
 step interact-day python3 interact.py
 step interact-night python3 interact.py night

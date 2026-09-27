@@ -1,7 +1,12 @@
 """Shared chrome for the drill-down levels: header, sprite, zoom control, map CSS."""
 from __future__ import annotations
+
 import re
-from comp import seg, tabs as comp_tabs, ring as comp_ring, steps as comp_steps
+
+from comp import ring as comp_ring
+from comp import seg
+from comp import steps as comp_steps
+from comp import tabs as comp_tabs
 
 LOGO = '<svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg>'
 SPRITE = '''<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
@@ -69,7 +74,7 @@ NEEDS = '''  <div class="k-needs">
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Approve search-index</b><span class="k-need-sub">every check agreed · 12m</span></button>
     <button class="k-need"><span class="k-mk fail"></span><b>search-highlight stopped</b><span class="k-need-sub">retry it, or add guidance first</span></button>
-    
+
     <span class="k-needs-hint">Select a part and press <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> to zoom in · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> to ask why, what it cost, what runs next</span>
   </div>'''
 def page(card: str, title: str, crumbs: list[str], level: int, body: str, extra_css: str = '', needs: str | None = None) -> str:

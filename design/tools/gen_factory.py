@@ -1,8 +1,11 @@
 """Level 0 (Factory): built, building, next. Each planned spec drawn as the shape of its plan."""
 from __future__ import annotations
+
 from pathlib import Path
-from level_common import page, top
+
 from comp import steps
+from level_common import page, top
+
 
 def glyph(tiers: list[list[str]], edges: list[tuple[int, int, int, int]], w: int, h: int, r: float, big: bool = False) -> str:
     """tiers: per tier, node states. edges: (tier_a, i, tier_b, j)."""

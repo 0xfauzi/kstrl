@@ -1,6 +1,8 @@
 """First run: pointing kstrl at a repository. How it will check the work, which agent builds, what it writes, and whether the repo is ready."""
 from __future__ import annotations
+
 from pathlib import Path
+
 from level_common import page, top
 
 verify = [
@@ -72,6 +74,7 @@ css = """
 out = page('<!-- @dsCard group="Frames (proposal)" height=800 width=1280 page subtitle="15 · First run: pointing kstrl at a repository" -->',
            'Set up kstrl', ['Set up'], 0, body, css, FOOT)
 import re
+
 out = re.sub(r'<span class="k-conds">.*?</span></span>', '', out, count=1, flags=re.S)
 out = out.replace('<span class="k-live">live · last event 3s ago</span>', '<span class="k-live">no runs yet</span>').replace('≥$31.10 <small>of $40.00 today</small>', '<span class="t3">no budget is set</span>')
 d = Path('../system/project/components/Setup'); d.mkdir(parents=True, exist_ok=True)

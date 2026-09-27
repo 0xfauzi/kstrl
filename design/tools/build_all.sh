@@ -15,4 +15,6 @@ python3 gen_proto_parts.py > /dev/null || { echo "FAILED gen_proto_parts"; exit 
 python3 gen_proto_step.py > /dev/null || { echo "FAILED gen_proto_step"; exit 1; }
 python3 gen_proto_pages.py > /dev/null || { echo "FAILED gen_proto_pages"; exit 1; }
 python3 build_prototype.py > /dev/null || { echo "FAILED build_prototype"; exit 1; }
+# after everything: the whitespace rules the repository's commit hooks apply, so a commit leaves these files as built
+python3 tidy.py > /dev/null || { echo "FAILED tidy"; exit 1; }
 echo built

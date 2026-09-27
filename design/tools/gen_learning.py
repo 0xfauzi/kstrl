@@ -1,7 +1,10 @@
 """Learning: what an engineer reads before it builds a part, in kstrl's order, and what kstrl has noticed across runs."""
 from __future__ import annotations
+
 from pathlib import Path
-from level_common import HINT, NEEDS as LC_NEEDS, page, top
+
+from level_common import HINT, page, top
+from level_common import NEEDS as LC_NEEDS
 
 layers = [
   ('1', 'Facts from earlier parts', 'kstrl', 'The distiller’s notes on this part, its dependencies, and one line from every other part.', 3180, 3500, 'tokens', ''),

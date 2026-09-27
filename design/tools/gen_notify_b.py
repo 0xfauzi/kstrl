@@ -1,8 +1,10 @@
 """Notifications 7b: one event (search-index parks at 21:28:04) and every place it reaches, with where each lands you."""
 from __future__ import annotations
+
 from pathlib import Path
-from level_common import page, top, LOGO
-from comp import ill_tab, ILL_CSS, notice_compact
+
+from comp import ILL_CSS, ill_tab, notice_compact
+from level_common import LOGO, page, top
 
 ROW_H, GAP, TOP0 = 138, 12, 0
 rows = [

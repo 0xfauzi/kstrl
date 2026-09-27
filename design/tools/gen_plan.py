@@ -1,7 +1,10 @@
 """Spec level, as text: your spec on one sheet, the architect's decisions pinned to the words they resolved."""
 from __future__ import annotations
+
 from pathlib import Path
+
 from level_common import HINT, page, top
+
 
 def pin(n: int) -> str:
     return f'<span class="k-ref pinm">{n}</span>'

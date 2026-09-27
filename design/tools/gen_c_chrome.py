@@ -1,9 +1,10 @@
 """Chrome (header, title row, Needs you) and CommandWindow: the two cards that compose the app's frame."""
 import json
 import re
+
+from beh import FIT, SEG, TABS
 from card import card
-from beh import SEG, TABS, FIT
-from comp import seg, tabs, keys, ikeys, chip
+from comp import chip, ikeys, keys, seg, tabs
 
 LOGO = '<svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg>'
 CONDS = ('<span class="k-conds" data-fit-drop="1"><span>L2 · merges wait for you</span>'
@@ -88,7 +89,7 @@ chrome_js = SEG + TABS + FIT + r"""
   var P=""" + json.dumps(PARTS) + r""", TOP=""" + json.dumps(TOP) + r""", LV=""" + json.dumps(LV) + r""";
   var hd=document.getElementById('hd'), ttl=document.getElementById('ttl'), where=document.getElementById('where'), views=document.getElementById('views');
   var st={level:2, part:'search-query'}, quiet=false, viewsInit=false;
-  var fitH=kFit(hd), fitN=kFit(document.getElementById('needs'));
+  var fitHd=kFit(hd), fitN=kFit(document.getElementById('needs'));
   function names(s){ return ['snippetvault', 'search', s.part, P[s.part].step].slice(0, s.level+1); }
   // Crumbs are updated in place, never rebuilt: the crumb you pressed keeps focus as it becomes the current one.
   function crumbs(s){ var ol=hd.querySelector('.k-crumbs'), want=names(s), lis=[].slice.call(ol.children);
@@ -101,7 +102,7 @@ chrome_js = SEG + TABS + FIT + r"""
     ttl.innerHTML = s.level<2 ? TOP[s.level] : (s.level===2 ? P[s.part].part : P[s.part].stepTitle);
     views.hidden = s.level!==1; if(!views.hidden && !viewsInit){ viewsInit=true; kTabs(views); }
     quiet=true; zoom.select(zoom.items[s.level], false); quiet=false;
-    fitH.update();
+    fitHd.update();
     where.textContent = said || ((s.level<from ? 'Zoomed out to ' : 'Zoomed in to ')+LV[s.level]+': '+names(s)[s.level]+'.'); }
   var zoom=kSeg(document.getElementById('zoom'), function(it){ if(quiet) return; var l=zoom.items.indexOf(it); if(l!==st.level) go({level:l, part:st.part}); });
   hd.addEventListener('click', function(e){ var b=e.target.closest('.k-crumb'); if(!b||b.hasAttribute('aria-current')) return;

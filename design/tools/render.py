@@ -1,6 +1,11 @@
 """Render the design system's previews locally: a tokens.css replica (both themes, fonts) plus bundle.css."""
 from __future__ import annotations
-import json, os, re, subprocess, sys
+
+import json
+import os
+import re
+import subprocess
+import sys
 from pathlib import Path
 
 root = Path('../system/project').resolve()
@@ -31,6 +36,7 @@ css.append((root / 'components/bundle.css').read_text())
 style = '<style>' + '\n'.join(css) + '</style>'
 out = Path('out/render'); out.mkdir(parents=True, exist_ok=True)
 from browsers import HEADLESS as B
+
 assert B, 'no Chromium found: set KSTRL_DESIGN_HEADLESS (see browsers.py)'
 for comp in sys.argv[1:]:
     src = (root / 'components' / comp / 'preview.html').read_text()

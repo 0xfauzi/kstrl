@@ -6,9 +6,11 @@ DAG (consistent with kstrl scheduling: a part starts only when every dependency 
   search-api, search-highlight -> search-cli
 """
 from __future__ import annotations
+
 from pathlib import Path
+
+from comp import pcard, steps
 from level_common import page, top
-from comp import steps, keys, pcard
 
 CW, CH = 236, 108
 TX = [52, 366, 680, 994]          # tier x
@@ -25,7 +27,9 @@ pos = {
   'search-cli': (TX[3], col(1)[0]),
 }
 # segs: build, check, approve, merge -> done | work | you | fail | todo
-from parts import PARTS, SPEC_TOTAL, args as part_args
+from parts import PARTS, SPEC_TOTAL
+from parts import args as part_args
+
 parts = PARTS
 edges = [
   ('search-schema', 'search-index', 'ok'), ('search-schema', 'search-query', 'ok'), ('search-schema', 'search-rank', 'ok'), ('search-schema', 'search-highlight', 'ok'),

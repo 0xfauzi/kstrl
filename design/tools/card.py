@@ -1,5 +1,6 @@
 """One scaffold for every component card, so they share a frame: canvas page, window tiles, 12px labels, the anatomy helper."""
 from __future__ import annotations
+
 from pathlib import Path
 
 BASE_CSS = """

@@ -43,8 +43,8 @@
  },
  "lastChange": {
   "by": "Claude",
-  "at": "2026-09-27T20:10:00Z",
+  "at": "2026-09-27T20:55:00Z",
   "via": "Claude Code",
-  "note": "Frames drawn at the same moment are wired together: crumbs, zoom, views and Needs you move between the screens drawn at that moment (17 frames, two moments), and a need or the ask field opens its window over the screen you are on. Every state reached is the static frame pixel for pixel (55 states per theme); the brand book lists what stays static and why. Map2Part's zoom could not be clicked (its grid covered the title row); Map3Reviewer and Learning now show the moment's two needs."
+  "note": "No change a person sees. The generated files now end as the kstrl repository's commit hooks leave them (no trailing whitespace, one newline at the end), so committing them does not alter them; the pixel checks confirm every frame renders as before. Two names that the spell check read as typos are renamed: a class in Settings (sav to saves) and a variable in Chrome's script (fitH to fitHd); the deliberate [verfy] in Settings is marked as deliberate."
  }
 }

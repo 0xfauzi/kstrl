@@ -1,7 +1,19 @@
 import json
-from card import card
+
 from beh import BEZ
-from comp import ring, steps, chip, stat, keys, ikeys, choices, pcard, notice, notice_compact, ill_tab, ILL_CSS
+from card import card
+from comp import (
+    ILL_CSS,
+    chip,
+    choices,
+    ikeys,
+    ill_tab,
+    keys,
+    notice,
+    notice_compact,
+    pcard,
+)
+
 
 def K(*c): return keys(*c)
 
@@ -193,6 +205,7 @@ card('Row', 'Surfaces', 388, 'One item in a list: the inbox, the queue, the comm
 
 # ---------------- Part card
 from parts import args as part
+
 PC = [part(n) for n in ('search-query', 'search-index', 'search-highlight', 'search-schema', 'search-api')]
 cards = ''.join(pcard(*p, sel=(i == 0), tab=0 if i == 0 else -1) for i, p in enumerate(PC[:4]))
 pcb = f'''<div class="pcg">{cards}</div>

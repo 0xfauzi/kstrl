@@ -1,7 +1,10 @@
 """Planning stopped: the architect planned tags at 00:01, after the daily budget reset, and refused one question. Spec level, as text."""
 from __future__ import annotations
+
 from pathlib import Path
+
 from level_common import page, top
+
 
 def pin(n: str, cls: str = '') -> str:
     return f'<span class="k-ref{" k-ref-ask" if cls == "ask" else ""} pinm">{n}</span>'
@@ -39,7 +42,7 @@ body = '    ' + top('<span class="v-human">tags</span>', 'planned 00:01 to 00:04
 NEEDS = '''  <div class="k-needs">
     <span class="k-needs-label">Needs you</span>
     <button class="k-need k-need-ask"><span class="k-mk you"></span><b>Answer the architect on tags</b><span class="k-need-sub">1 question · 2m</span></button>
-    
+
     <span class="k-needs-hint">One ask, two records: the question, and ks serve’s note that the item stopped. They are shown as one.</span>
   </div>'''
 css = """

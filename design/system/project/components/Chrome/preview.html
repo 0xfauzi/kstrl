@@ -146,7 +146,7 @@ function kFit(row){
   var P={"search-query": {"step": "review, try 3", "part": "<span class=\"k-title-name\">search-query</span><span class=\"k-chip k-chip-checker\">reviewer</span><span class=\"k-title-meta\">try 3 of 4 \u00b7 checking \u00b7 <span class=\"v-measure\">\u2265$9.20</span></span>", "stepTitle": "<span class=\"k-title-name\">search-query</span><span class=\"k-chip k-chip-checker\">reviewer</span><span class=\"k-title-meta\">try 3 of 4 \u00b7 review \u00b7 started 21:12</span>"}, "search-highlight": {"step": "engineer, try 2", "part": "<span class=\"k-title-name\">search-highlight</span><span class=\"k-title-meta\">stopped on try 2 of 4 \u00b7 no progress \u00b7 <span class=\"v-measure\">\u2265$3.22</span></span>", "stepTitle": "<span class=\"k-title-name\">search-highlight</span><span class=\"k-chip\">engineer</span><span class=\"k-title-meta\">try 2 of 4 \u00b7 engineer \u00b7 20:41 to 21:03 \u00b7 stopped</span>"}}, TOP=["<span class=\"k-title-human\">snippetvault</span><span class=\"k-title-meta\">3 specs built this week \u00b7 1 building \u00b7 2 queued</span>", "<span class=\"k-title-human\">search</span><span class=\"k-title-meta\">7 parts \u00b7 3 of 4 slots in use \u00b7 <span class=\"v-measure\">\u2265$21.84</span> since 19:40</span>"], LV=["Factory", "Spec", "Part", "Step"];
   var hd=document.getElementById('hd'), ttl=document.getElementById('ttl'), where=document.getElementById('where'), views=document.getElementById('views');
   var st={level:2, part:'search-query'}, quiet=false, viewsInit=false;
-  var fitH=kFit(hd), fitN=kFit(document.getElementById('needs'));
+  var fitHd=kFit(hd), fitN=kFit(document.getElementById('needs'));
   function names(s){ return ['snippetvault', 'search', s.part, P[s.part].step].slice(0, s.level+1); }
   // Crumbs are updated in place, never rebuilt: the crumb you pressed keeps focus as it becomes the current one.
   function crumbs(s){ var ol=hd.querySelector('.k-crumbs'), want=names(s), lis=[].slice.call(ol.children);
@@ -159,7 +159,7 @@ function kFit(row){
     ttl.innerHTML = s.level<2 ? TOP[s.level] : (s.level===2 ? P[s.part].part : P[s.part].stepTitle);
     views.hidden = s.level!==1; if(!views.hidden && !viewsInit){ viewsInit=true; kTabs(views); }
     quiet=true; zoom.select(zoom.items[s.level], false); quiet=false;
-    fitH.update();
+    fitHd.update();
     where.textContent = said || ((s.level<from ? 'Zoomed out to ' : 'Zoomed in to ')+LV[s.level]+': '+names(s)[s.level]+'.'); }
   var zoom=kSeg(document.getElementById('zoom'), function(it){ if(quiet) return; var l=zoom.items.indexOf(it); if(l!==st.level) go({level:l, part:st.part}); });
   hd.addEventListener('click', function(e){ var b=e.target.closest('.k-crumb'); if(!b||b.hasAttribute('aria-current')) return;

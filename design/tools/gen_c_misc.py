@@ -1,5 +1,5 @@
-from card import card
 from beh import BEZ, TOGGLE
+from card import card
 
 # ---------------- Toggle
 WORD = '<span class="k-toggle-word"><span class="k-toggle-on">on</span><span class="k-toggle-off">off</span></span>'
@@ -98,6 +98,8 @@ card('Field', 'Controls', 456, 'One value, with its reason when it is wrong: sta
 
 # ---------------- Keycap
 from glyph_svg import key as K
+
+
 def keys(*chs, extra=''): return '<span class="k-keys">' + ''.join(K(c, extra) for c in chs) + '</span>'
 legend_row = ''.join(K(c) for c in ['⌘', '⇧', '⌥', '⌃', '↵', '⌫', '↑', '↓', '←', '→', 'esc', 'tab', '/', 'P'])
 pal = [('Add guidance for the engineers', keys('⌘', 'G')), ('Open the engineer’s log', keys('⌘', 'O'))]

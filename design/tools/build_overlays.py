@@ -1,6 +1,8 @@
 """Frames 2 and 3: the command window over the factory view (same page underneath)."""
 from __future__ import annotations
+
 from pathlib import Path
+
 from comp import keys
 
 base = Path('../system/project/components/Map1Spec/preview.html').read_text()
@@ -85,7 +87,7 @@ a_css = """
   .dec { border-left:1px solid var(--line); padding:16px 16px 0; overflow:hidden; }
   .sec2 { display:flex; justify-content:space-between; align-items:baseline; padding:8px 12px; font:var(--t-small); color:var(--text-2); }
 """
-a_overlay = f"""  <div class="k-cmd ov a" role="dialog" aria-modal="true" aria-label="Approve search-index">
+a_overlay = """  <div class="k-cmd ov a" role="dialog" aria-modal="true" aria-label="Approve search-index">
     <div class="k-cmd-input"><span class="k-keys"><span class="k-key">←</span></span><input class="k-cmd-q" value="Approve search-index?" aria-label="Ask or do anything"><span class="k-cmd-context">your approval · waiting 12m</span></div>
     <div class="k-cmd-body">
       <div class="evd">

@@ -1,8 +1,11 @@
 """Health: is the factory working as it usually does? ks health's control charts, safe mode, and ks doctor. Wed 22:40."""
 from __future__ import annotations
+
 import statistics as st
 from pathlib import Path
+
 from level_common import page, top
+
 
 def chart(vals: list[float], fmt, W: int = 356, H: int = 170) -> tuple[str, dict]:
     base = vals[:-3]                                   # ks health: baseline is every run but the last 3
@@ -73,13 +76,13 @@ body = '    ' + top('<span class="nm">Health</span>', 'is the factory working as
 FOOT = '''  <div class="k-needs">
     <span class="k-needs-label">Needs you</span>
     <button class="k-need"><span class="k-mk fail"></span><b>Daily budget reached</b><span class="k-need-sub">the queue resumes at 00:00 · tags is next</span></button>
-    
+
     <span class="k-needs-hint">Limits come from this project’s own runs: every run but the last 3, at least 8 of them.</span>
   </div>'''
 css = """
   .hg { position:absolute; left:32px; right:32px; top:70px; bottom:14px; display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); grid-template-rows:minmax(0,1fr) 220px; gap:14px; }
 
-  
+
   .chh { display:flex; justify-content:space-between; align-items:baseline; }
   .key { font:var(--t-measure-small); font-weight:400; color:var(--text-3); }
   .chv { display:flex; align-items:baseline; gap:10px; margin-top:6px; }

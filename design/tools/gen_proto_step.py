@@ -14,7 +14,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_level import CSS as AGENT_CSS, agent_body
+from agent_level import CSS as AGENT_CSS
+from agent_level import agent_body
 from gen_stage import grid_css, stage_css
 from level_common import HINT, NEEDS, checks, page, ring, top
 

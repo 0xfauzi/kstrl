@@ -1,6 +1,8 @@
 """Notifications 7c: every event kstrl records against every channel that can carry it, with the gaps marked."""
 from __future__ import annotations
+
 from pathlib import Path
+
 from level_common import page, top
 
 I, Q, N, G, D = 'int', 'quiet', 'no', 'gap', 'gh'

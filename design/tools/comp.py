@@ -1,7 +1,10 @@
 """Static markup for the components, as the frames use them (no script: roving tabindex already set, selection painted by CSS)."""
 from __future__ import annotations
+
 import re
+
 from glyph_svg import key
+
 
 def keys(*chs: str, sm: bool = False) -> str:
     return '<span class="k-keys">' + ''.join(key(c, 'k-key-sm' if sm else '') for c in chs) + '</span>'

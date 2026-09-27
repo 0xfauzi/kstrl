@@ -1,8 +1,11 @@
 """Trust: the autonomy ladder, where snippetvault is on it, what the next level needs, and what lowers it."""
 from __future__ import annotations
+
 from pathlib import Path
-from level_common import page, top
+
 from comp import cmdline, steps
+from level_common import page, top
+
 # nine of fifteen clean merges, drawn as a step sequence (the words under it say the numbers)
 TICKS = steps(['done'] * 9 + [''] * 6)
 

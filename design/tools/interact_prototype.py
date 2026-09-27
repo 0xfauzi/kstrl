@@ -15,10 +15,11 @@ import sys
 from pathlib import Path
 
 sys.argv, ARGS = [sys.argv[0]], sys.argv[1:]
-import render  # noqa: E402  the tokens and bundle style for the static references
-from browsers import launch  # noqa: E402
 from PIL import Image, ImageChops  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
+
+import render  # noqa: E402  the tokens and bundle style for the static references
+from browsers import launch  # noqa: E402
 
 THEME = 'night' if 'night' in ARGS else 'day'
 VIEWER = {'day': 'light', 'night': 'dark'}[THEME]

@@ -1,7 +1,9 @@
 """Step level, Grid, at eight agents: the import spec with max_parallel = 8. Thu 10:14."""
 from __future__ import annotations
+
 from pathlib import Path
-from level_common import page, ring, checks, top
+
+from level_common import checks, page, ring, top
 
 agents = [  # (role, part, age, done, total, try, line) ; role 'rv' shows the check sequence instead of a ring
   ('eng', 'import-gist-client', '3s', 5, 10, 1, 'Fetching a gist by id; the API returns files keyed by name.'),
@@ -45,7 +47,7 @@ body = '    ' + top('<span class="v-human">import</span>', '8 agents working · 
 NEEDS = '''  <div class="k-needs">
     <span class="k-needs-label">Needs you</span>
     <span class="k-needs-none">Nothing right now</span>
-    
+
     <span class="k-needs-hint">At eight, a tile keeps its ring and two lines. <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> on any agent opens everything it has written.</span>
   </div>'''
 css = """

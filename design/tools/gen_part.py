@@ -1,6 +1,8 @@
 """Level 2 (Part): search-query's tries as rows across the stations of the line, with the step panel."""
 from __future__ import annotations
+
 from pathlib import Path
+
 from level_common import top
 from part_level import part_page
 

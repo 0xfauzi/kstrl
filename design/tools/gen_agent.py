@@ -1,8 +1,11 @@
 """Step level, one agent: everything search-index's engineer has written in try 1, at 20:46 (the moment of Stage and Grid)."""
 from __future__ import annotations
+
 from pathlib import Path
+
+from agent_level import CSS as css
+from agent_level import agent_body
 from level_common import page
-from agent_level import CSS as css, agent_body
 
 # engineer.log as kstrl writes it: the agent's text, and each tool call reduced to "[Tool] argument".
 # No times and no iteration markers are in the file, so none are drawn in it.
@@ -27,7 +30,7 @@ body = agent_body('<span class="nm">search-index</span><span class="k-chip">engi
 NEEDS = '''  <div class="k-needs">
     <span class="k-needs-label">Needs you</span>
     <span class="k-needs-none">Nothing right now</span>
-    
+
     <span class="k-needs-hint">Notes is its progress.txt · Prompt is exactly what it was sent, per call</span>
   </div>'''
 out = page('<!-- @dsCard group="Frames (proposal)" height=800 width=1280 page subtitle="3c · Step level, one agent: everything it has written" -->',

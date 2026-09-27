@@ -1,10 +1,13 @@
 """Foundation cards on the card scaffold: Marks (one drawn shape per meaning) and Voices (who wrote a piece of text).
 They were hand-written full-bleed panels at 960; the scaffold gives them the canvas, the tile and the width every other card has."""
 from __future__ import annotations
+
 import re
 from pathlib import Path
+
 from card import card
-from scale import SCALE, FAMILY
+from scale import FAMILY, SCALE
+
 
 def body_of(name: str) -> str:
     # the content rows, kept verbatim from the hand-written card (sources/<name>.html)

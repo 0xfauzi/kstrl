@@ -1,6 +1,8 @@
 """Keycap legends the shipped fonts do not draw. 12-unit grid; box 0.72em, so a 1.6-unit stroke is 0.096em: Geist Mono's stem at weight 500."""
 from __future__ import annotations
+
 from urllib.parse import quote
+
 W = 1.6
 GLYPHS = {
     # four loops of r=1.65 on a 3.4-unit centre square, one closed stroke; outer edge inside the grid. Stroke 1.4, not 1.6:

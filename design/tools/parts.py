@@ -3,6 +3,7 @@ command window and the title rows cannot disagree. Spend is what kstrl has count
 so a part whose first phase is still running shows no spend. Parts plus the architect add up to the spec's total:
 2.18 + 4.34 + 9.20 + 3.22 = 18.94, plus the architect's 2.90 = 21.84."""
 from __future__ import annotations
+
 from comp import chip
 
 SPEC_TOTAL = '≥$21.84'
