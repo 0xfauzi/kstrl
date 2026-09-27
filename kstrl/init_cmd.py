@@ -1968,10 +1968,9 @@ def build_manifest_blocker(root: Path, *, read_verify: bool = True) -> str | Non
 
     A build manifest is whatever :func:`_detect_project_context` reads a
     language from, so this and the `Detected language` line `ks init`
-    prints cannot disagree. That set holds every manifest in
-    ``decompose.ROOT_BUILD_MANIFESTS`` and more (go.mod, setup.py,
-    pom.xml, build.gradle), so a Go repository with its go.mod is not
-    refused although go.mod is not on the exclusion list.
+    prints cannot disagree. That set is ``decompose.ROOT_BUILD_MANIFESTS``
+    (#627): every manifest no component may be scoped to is one this
+    reads a language from, so a repository holding it is not refused.
 
     A repository kstrl reads no language from is still let through when
     ``[verify]`` names a command that does not itself depend on that

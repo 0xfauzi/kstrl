@@ -76,6 +76,27 @@ from kstrl.policy import diff_header_path
 #: costs a note, while a false negative silently exempts a file.
 TEST_PATH_RE = re.compile(r"(^|/)(tests?/|test_[^/]*\.py$|[^/]*_test\.py$)")
 
+#: Test paths by the conventions of languages other than Python (#627):
+#: Jest and Vitest ``__tests__/`` and a ``.test.`` or ``.spec.`` infix
+#: (``bulk.test.ts``, ``a.spec.tsx``); Go ``a_test.go`` and any other
+#: ``_test`` stem (``a_test.cc``); RSpec ``spec/`` and ``a_spec.rb``; a
+#: ``test_`` stem as a file or a directory (``test_io.c``, ``test_data/``);
+#: and a bare ``test`` or ``tests`` entry. A Rust or Java test under
+#: ``tests/`` or ``test/`` is already matched by :data:`TEST_PATH_RE`.
+#: Kept apart from :data:`TEST_PATH_RE` so the ``.py`` files
+#: ``test_adequacy`` reads are unchanged; it overlaps it on some ``.py``
+#: names, so a reader either unions the two or filters ``.py`` first. It
+#: is matched against allowedPaths entries too, which are directory
+#: prefixes (ending ``/``) as well as files.
+NON_PYTHON_TEST_PATH_RE = re.compile(
+    r"(^|/)(__tests__|spec)/"
+    r"|(^|/)tests?/*$"
+    r"|(^|/)test_[^/]*/*$"
+    r"|\.(test|spec)\.[^/]+$"
+    r"|_test\.[A-Za-z0-9]+$"
+    r"|_spec\.rb$"
+)
+
 
 class OracleStrength(StrEnum):
     """How much a test file's assertions could actually catch.
