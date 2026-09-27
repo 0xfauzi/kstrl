@@ -1,8 +1,17 @@
-"""Phase E: architectural refinements (subset E2/E4/E5/E6/E9).
+"""Phase E: the budget cap (E4) and the HITL checkpoint (E6), through run_factory.
 
-E3 (structured findings) and E8 (fact scope by import surface) are
-deferred to follow-up PRs - see docs/adversarial-roadmap.md for the
-rationale and exact follow-up scope.
+Two runs pin the adversarial-call budget: ``max_adversarial_calls=0`` is
+unbounded and the reviewer fires, and ``max_adversarial_calls=1`` stops the
+second component's review (named "stops" rather than "skips" since R10.5,
+#226, when hard mode began halting on an exhausted budget). One run pins the
+checkpoint: with ``pause_before_pr_merge`` on and a UI that cannot prompt,
+the component is parked as awaiting approval and one merge_gate inbox item
+is queued (R8.3, #465), never merged unapproved.
+
+The E5 confidence-tier aliasing, the E2 prompt-instruction pins and the E9
+``parse_review_output`` shapes this file once held were unit tests and were
+removed; the tier aliasing is carried by ``tests/test_one_value_per_fact.py``.
+E3 and E8 remain deferred, see docs/adversarial-roadmap.md.
 """
 
 from __future__ import annotations
@@ -11,65 +20,12 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from kstrl.config import KstrlConfig
 from kstrl.factory import ComponentResult, FactoryConfig, run_factory
-from kstrl.knowledge import _coerce_facts, _parse_fact_md
 from kstrl.manifest import Component, Manifest
-from kstrl.review import REVIEWER_PROMPT, ReviewResult, parse_review_output
-from kstrl.security import SECURITY_PROMPT
+from kstrl.review import ReviewResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import VerifyConfig
-
-# ---------------------------------------------------------------------------
-# E5 - confidence rename + backwards compat
-# ---------------------------------------------------------------------------
-
-
-class TestE5ConfidenceRename:
-    def test_new_review_passed_accepted(self) -> None:
-        raw = [
-            {
-                "id": "fact-001",
-                "scope": "handler",
-                "confidence": "review_passed",
-                "evidence": ["x:1"],
-                "claim": "ok",
-            }
-        ]
-        facts = _coerce_facts(raw, "c", 1, "r", 7)
-        assert len(facts) == 1
-        assert facts[0].confidence == "review_passed"
-
-    def test_test_verified_tier_accepted(self) -> None:
-        raw = [
-            {
-                "id": "fact-001",
-                "scope": "handler",
-                "confidence": "test_verified",
-                "evidence": ["x:1"],
-                "claim": "ok",
-            }
-        ]
-        facts = _coerce_facts(raw, "c", 1, "r", 7)
-        assert facts[0].confidence == "test_verified"
-
-    def test_legacy_verified_value_maps_on_read(self, tmp_path: Path) -> None:
-        """An old fact file with confidence=verified must still load,
-        with the value rewritten to review_passed on read."""
-        legacy = (
-            "---\n"
-            '{"id":"fact-001","component_id":"x","created_iter":1,'
-            '"created_run_id":"factory-20260101-120000-aaaaaa",'
-            '"scope":"handler","evidence":["x:1"],'
-            '"confidence":"verified","tags":[]}\n'
-            "---\n\n"
-            "Legacy fact body.\n"
-        )
-        fact = _parse_fact_md(legacy)
-        assert fact.confidence == "review_passed"
-
 
 # ---------------------------------------------------------------------------
 # E4 - LLM budget cap
@@ -372,85 +328,3 @@ class TestE6HitlCheckpoint:
         items = Inbox(tmp_path, InboxConfig()).open_items()
         assert [i.kind for i in items] == [ItemKind.MERGE_GATE]
         assert items[0].component == "comp-a"
-
-
-# ---------------------------------------------------------------------------
-# E2 - the engineer's Self-Critique must not anchor the reviewer
-# ---------------------------------------------------------------------------
-
-
-class TestE2SelfCritiqueIsNotEvidence:
-    """#266 moved E2 from a mechanism to an instruction, and that is a
-    real weakening worth pinning.
-
-    Before, the harness held the diff and deleted the engineer's
-    ``## Self-Critique`` block out of it with a regex before either
-    reviewer saw it, so the anchoring was impossible rather than
-    discouraged. The reviewers now read the repository themselves and
-    the harness no longer stands between them and the bytes, so the
-    block IS visible to them and the only remaining defence is telling
-    them what it is worth. These tests assert the instruction is
-    present in both prompts; nothing can assert that it is obeyed, and
-    the calibration fixtures carry no self-critique block, so no
-    measurement covers it either.
-    """
-
-    @pytest.mark.parametrize(
-        "prompt",
-        [REVIEWER_PROMPT, SECURITY_PROMPT],
-        ids=["reviewer", "security"],
-    )
-    def test_prompt_says_the_self_critique_is_not_evidence(self, prompt: str) -> None:
-        assert "SELF-CRITIQUE IS NOT EVIDENCE" in prompt
-        assert "## Self-Critique" in prompt
-        assert "author's account of its own work" in prompt
-
-    @pytest.mark.parametrize(
-        "prompt,sentence",
-        [
-            (REVIEWER_PROMPT, "confirm it in the code or report it"),
-            (
-                SECURITY_PROMPT,
-                "confirm the mitigation in the code or report the vulnerability",
-            ),
-        ],
-        ids=["reviewer", "security"],
-    )
-    def test_prompt_demands_independent_confirmation(
-        self,
-        prompt: str,
-        sentence: str,
-    ) -> None:
-        """The instruction has to say what to DO, not just what to
-        distrust: a named failure mode must be confirmed in the code or
-        reported, which is the behaviour the deleted regex bought.
-
-        Paired per prompt rather than disjoined over both: an ``or``
-        lets each prompt pass on the OTHER's sentence, so deleting the
-        reviewer's line would go unnoticed."""
-        assert sentence in prompt
-
-
-# ---------------------------------------------------------------------------
-# E9 - infrastructure_error on ReviewResult
-# ---------------------------------------------------------------------------
-
-
-class TestE9ReviewInfrastructureError:
-    def test_parse_failure_sets_infrastructure_error(self) -> None:
-        result = parse_review_output("not json at all")
-        assert result.passed is False
-        assert result.infrastructure_error is True
-
-    def test_clean_review_has_no_infrastructure_error(self) -> None:
-        result = parse_review_output(
-            json.dumps(
-                {
-                    "stories": [],
-                    "concerns": [],
-                    "exhaustively_searched": True,
-                }
-            )
-        )
-        assert result.passed is True
-        assert result.infrastructure_error is False

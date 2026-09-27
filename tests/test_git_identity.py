@@ -56,7 +56,6 @@ EXPECTED_IDENTITY_SPELLINGS: dict[str, int] = {
     # literals.
     "tests/test_harness_integration.py": 2,
     # Prose: one docstring, on the commit `run_scrubbed` makes.
-    "tests/test_verify.py": 1,
 }
 
 #: Layer 2's inventory: every module in ``tests/`` that names a
@@ -81,7 +80,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/helpers/integration_harness.py": 2,
     "tests/helpers/run_config.py": 1,
     "tests/spine_utils.py": 1,
-    "tests/test_adequacy.py": 8,
+    "tests/test_adequacy.py": 7,
     "tests/test_agent_processes_outlive_run.py": 1,
     "tests/test_autonomy_ladder.py": 1,
     # #414/#425: three `git commit` spellings - `_commit_rename`, the
@@ -208,7 +207,6 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # Prose, not a commit: a tuple of literal argv-prefix strings an
     # allowlist test checks a Claude reviewer's permission RULES against
     # ("git commit" among them), never spawned.
-    "tests/test_sandbox.py": 1,
     "tests/test_scheduler.py": 1,
     "tests/test_scope_hardening.py": 4,
     "tests/test_scope_launch_gate.py": 1,
@@ -260,7 +258,6 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # at its own call site (the `tests/conftest.py` row above), and dropped
     # `_repo`/`_commit` from this file entirely - back to 5, this file's
     # value before #399 touched it.
-    "tests/test_verify.py": 5,
     # #416: two `git commit` argv spellings, both into a repository built by
     # this file's own `_repo`, which calls `tests.helpers.gitrepo.set_identity`
     # right after `git init` - the base commit and the undecodable-CONTENT

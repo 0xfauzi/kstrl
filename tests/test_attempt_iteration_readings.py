@@ -2,26 +2,27 @@
 not only the last one, and a strict reader turns that into a verdict on
 #233's entry criterion.
 
-``avg_iterations`` in ``experiments.tsv`` is the LAST attempt's count
-per component (``kstrl/pipeline.py:2276`` assigns rather than
-accumulates), so a run that executed 6 iterations records 3.00. The
-factory already writes a per-attempt journal row at the moment an
-attempt is superseded (``findings_superseded``), correctly tagged with
-the attempt number, but it did not carry the reading and a guard in
-front of it dropped the row entirely when the attempt produced no
-``Finding``. This module tests the fix (``kstrl/pipeline.py``) and the
-strict reader that turns the corrected journal into a verdict
-(``kstrl/evolution.py``), plus the census guard that pins every place
-an attempt boundary is produced, so a future site cannot silently skip
-the journal write.
+``avg_iterations`` in ``experiments.tsv`` is the LAST attempt's count per
+component, so a run that executed 6 iterations records 3.00. The factory
+writes a per-attempt journal row at the moment an attempt is superseded
+(``findings_superseded``), carrying the reading even when the attempt
+produced no ``Finding``. One real ``run_factory`` run (2 attempts x 3
+iterations, by construction) is the fixture: three tests read the journal
+and ``experiments.tsv`` it wrote, and one runs the strict reader
+(``kstrl/evolution.py``) over that journal and measures six. The in-memory
+reader refusals and the verdict clauses this file once held were removed;
+``tests/test_retry_journal_rows.py`` drives ``ks evolve`` over a journal
+with each bad row.
 
-``TestAttemptSiteCensus`` is that guard, closed by construction in the
+``TestAttemptSiteCensus`` is the guard, closed by construction in the
 CLAUDE.md sense: it inventories every place the quantity is OBTAINED
 (every write to a ``retries`` target, every ``_end_attempt`` call), so
 a new shape shows up as an unexplained census delta. Both layers go
 through ``tests/helpers/astwalk`` (#324) and every predicate carries a
 control per disjunct, because a pinned inventory that matches is also
-what a switched-off predicate returns.
+what a switched-off predicate returns. ``TestDisclosedBlindSpots`` is the
+strict xfail for the scheduler backstop's stale reading. ``owner_row`` and
+``_flattened_targets`` are imported by ``tests/test_one_value_per_fact.py``.
 """
 
 from __future__ import annotations
@@ -38,8 +39,6 @@ import pytest
 from kstrl import events as ev
 from kstrl.evolution import (
     FINDINGS_SUPERSEDED_EVENT,
-    IterationReading,
-    iteration_criterion_verdict,
     read_attempt_iterations,
 )
 from kstrl.factory import FactoryConfig, run_factory
@@ -158,293 +157,6 @@ class TestStrictReader:
         assert reading.iterations_total == 6
         assert reading.attempts_total == 2
         assert reading.avg_all_attempts == 6.00
-
-    def test_a_missing_attempt_reading_is_refused(self) -> None:
-        entries = [
-            {
-                "event_type": "component_result",
-                "run_id": "r1",
-                "component_id": "comp-a",
-                "retries": 1,
-                "iteration_count": 1,
-            }
-        ]
-        reading = read_attempt_iterations(entries, "r1", 1)
-        assert reading.measured is False
-        assert "attempts [1] have no reading (expected 1..2)" in reading.reason
-
-    def test_an_entry_without_an_iteration_count_is_refused(self) -> None:
-        entries = [
-            {
-                "event_type": "component_result",
-                "run_id": "r1",
-                "component_id": "comp-a",
-                "retries": 1,
-                "iteration_count": 3,
-            },
-            {
-                "event_type": FINDINGS_SUPERSEDED_EVENT,
-                "run_id": "r1",
-                "component_id": "comp-a",
-                "attempt": 1,
-            },
-        ]
-        reading = read_attempt_iterations(entries, "r1", 1)
-        assert reading.measured is False
-        assert "attempt 1 carries no iteration_count" in reading.reason
-
-    def test_a_component_count_mismatch_is_refused(self) -> None:
-        entries = [
-            {
-                "event_type": "component_result",
-                "run_id": "r1",
-                "component_id": "comp-a",
-                "retries": 0,
-                "iteration_count": 1,
-            },
-            {
-                "event_type": "component_result",
-                "run_id": "r1",
-                "component_id": "comp-b",
-                "retries": 0,
-                "iteration_count": 1,
-            },
-        ]
-        reading = read_attempt_iterations(entries, "r1", 3)
-        assert reading.measured is False
-        assert "2 component_result entries for 3 component(s) in the run" in reading.reason
-
-    def test_a_duplicate_attempt_is_refused(self) -> None:
-        entries = [
-            {
-                "event_type": "component_result",
-                "run_id": "r1",
-                "component_id": "comp-a",
-                "retries": 2,
-                "iteration_count": 1,
-            },
-            {
-                "event_type": FINDINGS_SUPERSEDED_EVENT,
-                "run_id": "r1",
-                "component_id": "comp-a",
-                "attempt": 1,
-                "iteration_count": 1,
-            },
-            {
-                "event_type": FINDINGS_SUPERSEDED_EVENT,
-                "run_id": "r1",
-                "component_id": "comp-a",
-                "attempt": 1,
-                "iteration_count": 1,
-            },
-        ]
-        reading = read_attempt_iterations(entries, "r1", 1)
-        assert reading.measured is False
-        assert "attempt 1 recorded twice" in reading.reason
-
-    def test_a_second_run_in_the_same_journal_does_not_pollute_the_reading(self) -> None:
-        """``.kstrl/evolution.jsonl`` is append-only across runs, so a second
-        run of the same component leaves the first run's rows on disk. The
-        two lines in ``read_attempt_iterations`` that skip an entry whose
-        ``run_id`` does not match the run under read are what keep the
-        second run's reading from seeing the first run's rows too; without
-        them the reader would see attempt 1 recorded twice for every run
-        after the first and refuse every one of them.
-        """
-        entries = []
-        for run in ("r1", "r2"):
-            entries.append(
-                {
-                    "event_type": FINDINGS_SUPERSEDED_EVENT,
-                    "run_id": run,
-                    "component_id": "comp-a",
-                    "attempt": 1,
-                    "iteration_count": 3,
-                }
-            )
-            entries.append(
-                {
-                    "event_type": "component_result",
-                    "run_id": run,
-                    "component_id": "comp-a",
-                    "retries": 1,
-                    "iteration_count": 3,
-                }
-            )
-        for run in ("r1", "r2"):
-            reading = read_attempt_iterations(entries, run, 1)
-            assert reading.measured is True
-            assert reading.iterations_total == 6
-            assert reading.attempts_total == 2
-
-    def test_two_components_in_one_run_do_not_share_superseded_rows(self) -> None:
-        """The ``findings_superseded`` rows are grouped by ``component_id``
-        before ``_component_attempt_readings`` sees them, which is what
-        keeps one component's superseded rows out of another's attempt
-        set. Every existing test above exercises exactly one component per
-        run, so none of them observes the grouping: with a single
-        component there is only one component's rows to hand out, grouped
-        or not. Without the grouping, every multi-component run with a
-        retry reads both components' ``attempt: 1`` rows into the SAME
-        attempt set, ``attempt 1`` is then seen twice, and the run is
-        refused as "attempt 1 recorded twice" even though each component
-        retried exactly once. This test is the minimal shape (two
-        components, one retry each) that would fail that way if the
-        grouping were removed.
-        """
-        entries = []
-        for cid in ("comp-a", "comp-b"):
-            entries.append(
-                {
-                    "event_type": FINDINGS_SUPERSEDED_EVENT,
-                    "run_id": "r1",
-                    "component_id": cid,
-                    "attempt": 1,
-                    "iteration_count": 3,
-                }
-            )
-            entries.append(
-                {
-                    "event_type": "component_result",
-                    "run_id": "r1",
-                    "component_id": cid,
-                    "retries": 1,
-                    "iteration_count": 3,
-                }
-            )
-        reading = read_attempt_iterations(entries, "r1", 2)
-        assert reading.measured is True
-        assert reading.iterations_total == 12
-        assert reading.attempts_total == 4
-        assert reading.components_ran == 2
-
-    def test_a_boolean_iteration_count_is_refused(self) -> None:
-        entries = [
-            {
-                "event_type": "component_result",
-                "run_id": "r1",
-                "component_id": "comp-a",
-                "retries": 0,
-                "iteration_count": True,
-            },
-        ]
-        reading = read_attempt_iterations(entries, "r1", 1)
-        assert reading.measured is False
-        assert "iteration_count is not a non-negative integer" in reading.reason
-
-    def test_a_run_that_inherited_a_retry_counter_is_refused_not_guessed(self) -> None:
-        """A DISCLOSED limitation, pinned so nobody later "fixes" it into a
-        silent pass. ``retries`` is a manifest-lifetime counter, not a
-        per-run one. ``ks retry`` zeroes it through
-        ``Manifest.reset_for_retry`` (``kstrl/manifest.py:687``), but a
-        second ``ks factory`` over a manifest whose component is PENDING
-        with ``retries=1`` records ``retries=2`` while that run's journal
-        holds only that run's superseded rows. The reader must REFUSE, not
-        average what it can see.
-        """
-        entries = [
-            {
-                "event_type": "component_result",
-                "run_id": "r1",
-                "component_id": "comp-a",
-                "retries": 2,
-                "iteration_count": 3,
-            },
-            {
-                "event_type": FINDINGS_SUPERSEDED_EVENT,
-                "run_id": "r1",
-                "component_id": "comp-a",
-                "attempt": 2,
-                "iteration_count": 3,
-            },
-        ]
-        reading = read_attempt_iterations(entries, "r1", 1)
-        assert reading.measured is False
-        assert "attempts [1] have no reading (expected 1..3)" in reading.reason
-
-    def test_a_component_that_ran_no_iterations_is_not_in_the_average_denominator(
-        self,
-    ) -> None:
-        """A cascade-skipped component still gets a ``component_result`` row,
-        with ``iteration_count`` 0 (``record_run``, ``kstrl/evolution.py``,
-        writes one row per ``manifest.components``, skipped ones included).
-        ``avg_all_attempts`` is the mean over components that RAN, not over
-        every row in the run: the denominator is ``components_ran``, never
-        ``len(results)``. Without this test the denominator can be switched
-        to ``len(results)`` with nothing failing, because every other
-        fixture in this module has the two numbers equal.
-        """
-        entries = [
-            {
-                "event_type": "component_result",
-                "run_id": "r1",
-                "component_id": "ran",
-                "retries": 0,
-                "iteration_count": 2,
-            },
-            {
-                "event_type": "component_result",
-                "run_id": "r1",
-                "component_id": "skip-a",
-                "retries": 0,
-                "iteration_count": 0,
-            },
-            {
-                "event_type": "component_result",
-                "run_id": "r1",
-                "component_id": "skip-b",
-                "retries": 0,
-                "iteration_count": 0,
-            },
-        ]
-        reading = read_attempt_iterations(entries, "r1", 3)
-        assert reading.measured is True
-        assert reading.iterations_total == 2
-        assert reading.components_ran == 1
-        assert reading.avg_all_attempts == 2.0
-
-
-class TestVerdict:
-    def test_a_refused_reading_never_yields_a_met_or_not_met_clause_one(self) -> None:
-        rows: list[dict[str, Any]] = [{"project": "a"}, {"project": "a"}, {"project": "a"}]
-        readings = [
-            IterationReading("r1", 6, 2, 1, 6.0, True, "measured"),
-            IterationReading("r2", 6, 2, 1, 6.0, True, "measured"),
-            IterationReading("r3", 0, 0, 0, 0.0, False, "refused"),
-        ]
-        verdict = iteration_criterion_verdict(rows, readings)
-        assert verdict.clause1 == "REFUSED"
-        assert "2 of 3" in verdict.clause1_detail
-
-    def test_clause_one_needs_a_strict_majority(self) -> None:
-        rows: list[dict[str, Any]] = [{"project": "a"}] * 4
-        readings = [
-            IterationReading("r1", 6, 2, 1, 6.0, True, "measured"),
-            IterationReading("r2", 6, 2, 1, 6.0, True, "measured"),
-            IterationReading("r3", 1, 1, 1, 1.0, True, "measured"),
-            IterationReading("r4", 1, 1, 1, 1.0, True, "measured"),
-        ]
-        verdict = iteration_criterion_verdict(rows, readings)
-        assert verdict.clause1 == "NOT MET"
-        assert "a majority needs 3" in verdict.clause1_detail
-
-    def test_clause_two_is_met_when_the_ledger_holds_two_projects(self) -> None:
-        rows: list[dict[str, Any]] = [{"project": "a"}, {"project": "a"}, {"project": "b"}]
-        verdict = iteration_criterion_verdict(rows, [])
-        assert verdict.clause2 == "MET"
-        assert "a" in verdict.clause2_detail
-        assert "b" in verdict.clause2_detail
-
-    def test_clause_two_refuses_rather_than_failing_on_a_single_project_ledger(self) -> None:
-        """One ledger cannot disprove a clause about several projects. Two
-        distinct values in one ledger PROVE it met; fewer prove nothing,
-        and printing NOT MET there would assert a failure the surface
-        cannot see. Same rule as clause 1's refusal, one clause over."""
-        rows: list[dict[str, Any]] = [{"project": "a"}, {"project": "a"}]
-        verdict = iteration_criterion_verdict(rows, [])
-        assert verdict.clause2 == "REFUSED"
-        assert "MET" not in verdict.clause2.replace("REFUSED", "")
-        assert "reads one project root" in verdict.clause2_detail
 
 
 # ---------------------------------------------------------------------------
