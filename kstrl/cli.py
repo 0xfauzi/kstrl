@@ -144,7 +144,7 @@ from kstrl.sandbox import SandboxConfig
 from kstrl.security import _SEVERITY_ORDER, SecurityMode
 from kstrl.serve import ARCHITECT_RUN_KIND, LAUNCHD_MODES
 from kstrl.shutdown import StopController, install_signal_handlers
-from kstrl.timeout import TimeoutConfig
+from kstrl.timeout import TimeoutConfig, limit_seconds
 from kstrl.ui.base import UI
 from kstrl.verify import DEFAULT_LINT_COMMAND, DEFAULT_TEST_COMMAND
 from kstrl.version import stamp_label
@@ -2385,6 +2385,9 @@ def decompose(
     # validate_branch_name, so the flag's None is resolved here rather
     # than deeper, the way `ks check` already resolves --base (#259).
     effective_base = resolve_base_branch(base_branch, root_dir)
+    # #603: the architect runs in this process, so an unset limit lets a
+    # hung call hold the command; kstrl.toml was checked at entry.
+    architect_timeout = limit_seconds(FactoryConfig.load(root_dir).architect_timeout_seconds)
 
     def _decompose_core(core_ui: UI, command_run: CommandRun) -> int:
         try:
@@ -2400,6 +2403,7 @@ def decompose(
                 transcript=command_run.transcript_writer(ARCHITECT_COMPONENT),
                 prompt_call=command_run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
                 force_lock=force_lock,
+                timeout=architect_timeout,
             )
             core_ui.ok(f"Decomposed into {len(manifest.components)} components")
             return 0
@@ -2912,6 +2916,7 @@ def factory(
                     prompt_call=architect_run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
                     force_lock=force_lock,
                     run_lock=run_lock,
+                    timeout=limit_seconds(factory_config.architect_timeout_seconds),
                 )
             except SpecBlockerError as exc:
                 # Architect halted: it escalated a question only the owner

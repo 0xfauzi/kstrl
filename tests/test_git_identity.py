@@ -166,6 +166,11 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # #531: one commit per fixture repo, after set_identity.
     "tests/test_prelaunch_refusal_exit.py": 1,
     "tests/test_progress_scope.py": 9,
+    # #603: `gitrepo.git_in(root, "commit", ...)` seeds each repository right
+    # after `gitrepo.set_identity(root)`, and the STUB string's
+    # `subprocess.run(["git", "commit", ...])` commits a.txt in a worktree
+    # of that same repository.
+    "tests/test_parent_agent_timeouts.py": 2,
     # #532: two real `git("commit", ...)` calls (_initialised_project's seed
     # commit and the architect test's seed commit), each into a repository
     # already through tests.helpers.gitrepo.set_identity, plus two "git
