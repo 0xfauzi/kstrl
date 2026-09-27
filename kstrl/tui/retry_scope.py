@@ -12,7 +12,9 @@ loop:
   recreated from the base branch, except in ``single_pr`` mode where the
   shared branch carries completed work and is kept;
 - what the relaunch runs under (``plan_resume``: the recorded flags and
-  the cost ceiling), or why the TUI cannot carry it.
+  the run limits), the recorded flags it replays, or why the TUI cannot
+  carry it, and each recorded flag the retry does not replay because
+  ``ks factory`` removed it.
 
 A retry restarts the component: ``Manifest.reset_for_retry`` clears its
 phase, iterations, findings and PR, and the branch is recreated, so the
@@ -35,6 +37,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from kstrl.manifest import Manifest
     from kstrl.retry_plan import RetryPreview
+    from kstrl.tui.retry_carry import Carry
 
 UNKNOWN = "unknown"
 
@@ -111,13 +114,13 @@ def retry_scope(
     root_dir: Path,
     manifest: Manifest,
     component_id: str,
-    carry: Callable[[], tuple[str, str]],
+    carry: Callable[[], Carry],
     probe_branch: Callable[[Path, str], int | None] | None = None,
 ) -> RetryScope:
     """The retry's scope, every line known or marked unknown.
 
-    ``carry`` returns ``(runs_under, refusal)``: what the relaunch runs
-    under, or why the TUI cannot carry the recorded run's configuration.
+    ``carry`` says what the relaunch runs under, or why the TUI cannot
+    carry the recorded run's configuration, and what it does not replay.
     """
     from kstrl.retry_plan import preview_retry
 
@@ -125,14 +128,15 @@ def retry_scope(
         preview = preview_retry(manifest, component_id)
     except ValueError as exc:
         return RetryScope(component_id, (), None, refusal=str(exc))
-    runs_under, refusal = carry()
+    carried = carry()
     probe = probe_branch or branch_probe
     resets = ", ".join([component_id, *preview.reset_dependents])
     lines = [
         ScopeLine("starts at", "the beginning: the engineer runs again, then every gate after it"),
         ScopeLine("resets", f"{resets} to pending"),
-        ScopeLine(
-            "stays out", "; ".join(preview.not_in_retry) or "nothing else is failed or skipped"
+        *(
+            ScopeLine("stays out", line)
+            for line in preview.not_in_retry or ["nothing else is failed or skipped"]
         ),
         _worktree_line(preview.evidence_worktree),
         _branch_line(
@@ -145,9 +149,11 @@ def retry_scope(
         ScopeLine(
             "keeps", "the run records under .kstrl/runs, the debug directory, the evolution journal"
         ),
-        ScopeLine("runs under", runs_under or f"cannot be carried here: {refusal}"),
+        ScopeLine("runs under", carried.runs_under or f"cannot be carried here: {carried.refusal}"),
+        *([ScopeLine("replays", carried.replays)] if carried.replays else []),
+        *(ScopeLine("not replayed", line) for line in carried.not_replayed),
         ScopeLine(
-            "plan from", "preview_retry on a copy of the manifest, and the run's launch record"
+            "based on", "the manifest as it is now, and the launch settings the failed run saved"
         ),
     ]
-    return RetryScope(component_id, tuple(lines), preview, refusal=refusal)
+    return RetryScope(component_id, tuple(lines), preview, refusal=carried.refusal)

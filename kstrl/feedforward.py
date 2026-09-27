@@ -13,6 +13,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from kstrl.config_numbers import check_numbers
 from kstrl.jsonread import read_json
 
 # Directories to always skip during tree walks
@@ -149,7 +150,7 @@ class CodebaseScanConfig:
         if "max_context_tokens" in section:
             config.max_context_tokens = int(section["max_context_tokens"])
         _apply_env_overrides(config)
-        return config
+        return check_numbers(config)
 
 
 _ENV_MAP: dict[str, tuple[str, type]] = {

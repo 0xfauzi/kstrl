@@ -1,0 +1,72 @@
+<!-- @dsCard group="Foundations" height=166 width=1120 subtitle="Status marks: drawn shapes, one per meaning" -->
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Marks</title><style>
+  html, body { margin:0; }
+  body { background:var(--canvas); color:var(--text); font:var(--t-body); -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; }
+  .c-wrap { padding:24px; display:grid; gap:14px; }
+  .c-tile { background:var(--window); border-radius:var(--radius-xl); box-shadow:var(--shadow-card); padding:18px 20px; min-width:0; }
+  .c-lab { font:var(--t-label); font-weight:400; color:var(--text-3); margin-bottom:12px; }
+  .c-two { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:14px; }
+  .c-three { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:14px; }
+  .c-row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .c-cap { font:var(--t-label); font-weight:400; color:var(--text-3); }
+  .c-note { font:var(--t-label); font-weight:400; color:var(--text-3); margin-top:12px; }
+  .c-anat { position:relative; }
+  .c-dl { stroke:var(--text-3); stroke-width:1; shape-rendering:crispEdges; }
+  .c-dt { fill:var(--text-2); font:var(--t-measure-small); font-weight:400; }
+  .c-grid { display:grid; align-items:center; row-gap:10px; }
+  .c-gh { font:var(--t-label); font-weight:400; color:var(--text-3); }
+  .c-gr { font:var(--t-small); color:var(--text-2); }
+  .c-ink { background:var(--text); color:var(--window); border-radius:var(--radius-lg); padding:14px 16px; }
+  /* a patch of the app's ground inside a card, for a component shown where it lives (a band, a notice, a window) */
+  .c-stage { background:var(--canvas); border-radius:var(--radius-lg); box-shadow:inset 0 0 0 1px var(--line); }
+  /* a token or command named in a caption is one word: it never breaks at its hyphen */
+  :is(.c-lab, .c-cap, .c-note) .v-measure { white-space:nowrap; }
+
+  .mk { display:grid; grid-template-columns:repeat(8, minmax(0,1fr)); font:var(--t-small); align-items:start; }
+  .mk .c { padding:6px 8px; text-align:center; }
+  .mk .n { margin-top:10px; font-weight:600; }
+  .mk .d { color:var(--text-2); font:var(--t-label); font-weight:400; margin-top:2px; }
+</style></head><body>
+<div class="c-wrap">
+<div class="c-tile"><div class="mk"><div class="c"><span class="k-mk lg you"></span><div class="n">needs you</div><div class="d">an ask</div></div>
+  <div class="c"><span class="k-mk lg work"></span><div class="n">working</div><div class="d">an agent, now</div></div>
+  <div class="c"><span class="k-mk lg wait"></span><div class="n">waiting</div><div class="d">on a dependency</div></div>
+  <div class="c"><span class="k-mk lg pass"></span><div class="n">agreed</div><div class="d">a check passed</div></div>
+  <div class="c"><span class="k-mk lg fail"></span><div class="n">disagreed</div><div class="d">failed or stopped</div></div>
+  <div class="c"><span class="k-mk lg landed"></span><div class="n">merged</div><div class="d">on main</div></div>
+  <div class="c"><span class="k-mk lg skip"></span><div class="n">skipped</div><div class="d">a dependency failed</div></div>
+  <div class="c"><span class="k-mk lg absent"></span><div class="n">not measured</div><div class="d">a check did not run</div></div></div></div>
+</div>
+<script>
+/* Anatomy overlay: measures the real element and draws dimension lines in an SVG, so every number shown is what renders.
+   anat(host, target, specs): specs are {kind:'h'|'w'|'gap'|'pad'|'note', ...}. Lines 1px text-3, end ticks 5px, labels measure-small (11px) at 400 in text-2. */
+function anat(host, target, specs){
+  var H = host.getBoundingClientRect(), T = target.getBoundingClientRect();
+  var ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('class', 'c-anat-svg'); svg.setAttribute('width', H.width); svg.setAttribute('height', H.height); svg.setAttribute('aria-hidden', 'true');
+  svg.style.position = 'absolute'; svg.style.left = '0'; svg.style.top = '0'; svg.style.overflow = 'visible';
+  function el(n, a){ var e = document.createElementNS(ns, n); for (var k in a) e.setAttribute(k, a[k]); svg.appendChild(e); return e; }
+  function line(x1, y1, x2, y2){ el('line', {x1:x1, y1:y1, x2:x2, y2:y2, 'class':'c-dl'}); }
+  function text(x, y, s, anchor){ var t = el('text', {x:x, y:y, 'class':'c-dt', 'text-anchor':anchor || 'middle'}); t.textContent = s; }
+  function rel(r){ return {l:r.left - H.left, t:r.top - H.top, r:r.right - H.left, b:r.bottom - H.top, w:r.width, h:r.height}; }
+  var t = rel(T);
+  specs.forEach(function(s){
+    var r = s.of ? rel(s.of.getBoundingClientRect()) : t, v;
+    if (s.kind === 'h') { var x = r.l - 16; line(x, r.t, x, r.b); line(x - 3, r.t, x + 3, r.t); line(x - 3, r.b, x + 3, r.b); text(x - 8, (r.t + r.b) / 2 + 3.5, s.label || Math.round(r.h) + '', 'end'); }
+    if (s.kind === 'hr') { var xr = r.r + 14; line(xr, r.t, xr, r.b); line(xr - 3, r.t, xr + 3, r.t); line(xr - 3, r.b, xr + 3, r.b); text(xr + 8, (r.t + r.b) / 2 + 3.5, s.label || Math.round(r.h) + '', 'start'); }
+    if (s.kind === 'w') { var y = r.b + 16; line(r.l, y, r.r, y); line(r.l, y - 3, r.l, y + 3); line(r.r, y - 3, r.r, y + 3); text((r.l + r.r) / 2, y + 14, s.label || Math.round(r.w) + ''); }
+    if (s.kind === 'pad') { var y2 = r.t - 12, p = s.value; line(r.l, y2, r.l + p, y2); line(r.l, y2 - 3, r.l, y2 + 3); line(r.l + p, y2 - 3, r.l + p, y2 + 3); text(r.l + p / 2, y2 - 6, s.label || p + ''); }
+    if (s.kind === 'gap') { var a = rel(s.a.getBoundingClientRect()), b = rel(s.b.getBoundingClientRect()), y3 = t.b + 14; line(a.r, y3, b.l, y3); line(a.r, y3 - 3, a.r, y3 + 3); line(b.l, y3 - 3, b.l, y3 + 3); text((a.r + b.l) / 2, y3 + 14, s.label || Math.round(b.l - a.r) + ''); }
+    if (s.kind === 'note') { var nx = t.r + (s.dx || 28), ny = t.t + (s.row || 0) * 16 + 4; if (s.lead) { line(t.r - 2, t.t + 3, nx - 6, ny - 3.5); } text(nx, ny, s.label, 'start'); }
+  });
+  host.appendChild(svg);
+}
+
+// Everything below measures rendered text (thumbs, bars, filmstrips, anatomy), so it runs once the web fonts have loaded:
+// measured earlier, it would size to the fallback font (a thumb 4 to 6px too wide was the measured result).
+(document.fonts ? document.fonts.ready : Promise.resolve()).then(function(){
+
+});
+</script>
+</body></html>

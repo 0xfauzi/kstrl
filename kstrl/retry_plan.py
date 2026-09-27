@@ -3,10 +3,12 @@
 ``preview_retry`` answers "what WOULD a retry do" without touching
 anything - the retry screen renders it in its confirm modal.
 ``prepare_retry`` is the real mutation: reset statuses, remove the
-failed attempt's worktree and branch, save the manifest. Narration
-stays byte-identical to the original command; the only behavior
-change is RetryError instead of sys.exit so a TUI caller can surface
-the failure without the process dying.
+failed attempt's worktree and branch, save the manifest; the "Retry
+plan" section it used to print is now :func:`print_retry_plan`'s (#597),
+called by each caller first, so the two calls together narrate what
+``prepare_retry`` alone used to. The only behavior change from the
+original command is RetryError instead of sys.exit so a TUI caller can
+surface the failure without the process dying.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kstrl.factory import FactoryConfig, validate_cost_ceiling, validate_token_ceiling
+from kstrl.factory import FactoryConfig
 from kstrl.launch_record import (
     REMOVED_OPTIONS,
     FlagValue,
@@ -118,6 +120,23 @@ def preview_retry(manifest: Manifest, component_id: str) -> RetryPreview:
     )
 
 
+def print_retry_plan(ui: UI, preview: RetryPreview, manifest_file: Path) -> None:
+    """The ``Retry plan`` section, printed from a preview (#597).
+
+    ``ks retry`` prints it before its confirmation, and before it takes the
+    run lock, so it is read from :func:`preview_retry`'s copy: nothing may
+    change until the operator has answered and the lock is held.
+    """
+    ui.section("Retry plan")
+    ui.kv("Component", preview.component_id)
+    ui.kv(
+        "Cascade-skipped dependents reset",
+        ", ".join(preview.reset_dependents) if preview.reset_dependents else "(none)",
+    )
+    _print_not_in_retry(ui, preview.not_in_retry)
+    ui.kv("Manifest", str(manifest_file))
+
+
 def failed_branch_probe(root_dir: Path, branch: str) -> int:
     """The exit code of ``git rev-parse --verify --quiet refs/heads/<branch>``.
 
@@ -143,28 +162,27 @@ def prepare_retry(
 ) -> RetryPreview:
     """Mutate the manifest for a retry and clean up the failed attempt.
 
-    Verbatim move of the cli.retry block: reset statuses, narrate the
-    plan, remove the kept evidence worktree, delete the failed branch
-    (never in single_pr mode - the shared branch carries completed
+    Reset statuses, remove the kept evidence worktree, delete the failed
+    branch (never in single_pr mode - the shared branch carries completed
     components' commits), save. ValueError propagates from
     reset_for_retry; a branch-delete failure raises RetryError after
-    narrating the manual fix.
+    narrating the manual fix. `ks retry` holds the run lock (#597) before
+    calling this and has already printed :func:`print_retry_plan`, so
+    this narrates only what it removes; the TUI retry screen calls this
+    without holding it (disclosed, UI work deferred - the only
+    ``unguarded`` row in ``tests/test_manifest_write_sites.py``).
+
+    The return value matches ``preview_retry``'s on the same manifest and
+    is otherwise unused by either caller; it exists so
+    ``test_preview_and_prepare_return_the_same_list`` can assert the two
+    agree.
     """
     comp = manifest.get_component(component_id)
     evidence_worktree = comp.evidence_worktree if comp else ""
     failed_branch = comp.branch_name if comp else ""
 
     reset_dependents = manifest.reset_for_retry(component_id)
-
-    ui.section("Retry plan")
-    ui.kv("Component", component_id)
-    ui.kv(
-        "Cascade-skipped dependents reset",
-        ", ".join(reset_dependents) if reset_dependents else "(none)",
-    )
     not_in_retry = _not_in_retry(manifest)
-    _print_not_in_retry(ui, not_in_retry)
-    ui.kv("Manifest", str(manifest_file))
 
     # The failed attempt's worktree and branch are superseded by the
     # fresh attempt; remove them so provisioning and the stale-branch
@@ -285,6 +303,9 @@ class ResumePlan:
     max_parallel: int
     #: Recorded flags left out because `ks factory` no longer has them (#539).
     dropped: tuple[str, ...]
+    #: The flags ``argv`` spells, by name, so a caller that cannot pass an
+    #: argv can tell which flags it would drop (#433 H5).
+    flags: tuple[tuple[str, FlagValue], ...] = ()
 
 
 def _unkept_limits(
@@ -372,10 +393,6 @@ def plan_resume(
         name: float(flags.get(name, value))
         for name, value in run_limits(loaded, TimeoutConfig.load(root_dir)).items()
     }
-    # The two limits `ks factory` validates in its budget preflight, checked
-    # here too so a bad value is refused before prepare_retry changes anything.
-    validate_cost_ceiling(resolved["max_cost_usd"], "--max-cost-usd")
-    validate_token_ceiling(int(resolved["max_total_tokens"]), "--max-total-tokens")
     unkept = _unkept_limits(record, resolved, overrides.keys())
     if unkept:
         return None, _ceiling_problems(manifest.run_id, unkept), unkept
@@ -386,6 +403,7 @@ def plan_resume(
         limits=tuple(resolved.items()),
         max_parallel=int(flags.get("max_parallel", loaded.max_parallel)),
         dropped=dropped,
+        flags=tuple(flags.items()),
     )
     return plan, [], ()
 
@@ -395,6 +413,15 @@ def limits_line(plan: ResumePlan) -> str:
     options that set them (#526), so the TUI states what the CLI prints."""
     set_ = [f"{_opt(name)} {value:g}" for name, value in plan.limits if value > 0]
     return ", ".join(set_) if set_ else "no run limit"
+
+
+def not_replayed(plan: ResumePlan) -> tuple[str, ...]:
+    """``--option is no longer an option. Why.`` for each recorded flag the
+    retry leaves out (#539): what ``print_resume_plan`` prints, so the TUI
+    says the same (#433)."""
+    return tuple(
+        f"{_opt(name)} is no longer an option. {REMOVED_OPTIONS[name]}" for name in plan.dropped
+    )
 
 
 def print_resume_plan(ui: UI, plan: ResumePlan) -> None:
@@ -407,8 +434,8 @@ def print_resume_plan(ui: UI, plan: ResumePlan) -> None:
             f"No launch record for run {plan.run_id or '(none)'}: "
             "the flags of the run being resumed are not carried over"
         )
-    for name in plan.dropped:
-        ui.warn(f"Not replayed from run {plan.run_id}: {_opt(name)}, {REMOVED_OPTIONS[name]}")
+    for line in not_replayed(plan):
+        ui.warn(f"Not replayed from run {plan.run_id}: {line}")
     for name, value in plan.limits:
         ui.kv(_opt(name), str(value) if value > 0 else NO_LIMIT)
     ui.kv("Max parallel", str(plan.max_parallel))

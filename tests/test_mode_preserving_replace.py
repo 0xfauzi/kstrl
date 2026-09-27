@@ -154,6 +154,9 @@ EXPECTED_UNDECIDED_REPLACE_CALLS: tuple[str, ...] = (
     "statedir.py datetime.now(UTC).replace(microsecond=0).isoformat().replace",
     "tui/app.py initial_screens_for_kind(kind, observe_only=False)",
     "tui/app.py initial_screens_for_kind(kind, observe_only=True)",
+    # #433 inc4: the ledger's own timestamp parse, a datetime's tzinfo,
+    # same shape as observability.py's and inbox.py's `moment` above.
+    "tui/delivery.py datetime.strptime(observed_at, '%Y-%m-%dT%H:%M:%SZ').replace",
     "tui/inbox_consequences.py str(kind).replace",
     "tui/screens/decompose.py key.replace",
     "tui/screens/inbox.py key.replace",

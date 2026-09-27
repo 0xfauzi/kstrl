@@ -199,7 +199,7 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     # is a table cell the drained wait has already painted.
     "tests/test_carried_component_state.py": 4,
     "tests/test_config_guard_survey.py": 4,
-    "tests/test_config_screen.py": 36,
+    "tests/test_config_screen.py": 37,
     "tests/test_decompose_screens.py": 32,
     # 12 since #507 deleted the proposals tab and its three modal tests.
     "tests/test_evolve_screen.py": 12,
@@ -217,19 +217,21 @@ EXPECTED_AWAIT_SITES: dict[str, int] = {
     "tests/test_inbox.py": 4,
     "tests/test_init_wizard.py": 47,
     "tests/test_launch_session.py": 39,
-    # TestRetryScreen split out of test_launch_session.py (#436 B1). Every
-    # await is mounted/drained/settled/pilot.press; #485's one read after
-    # them is `request.header`, which OptionsModal holds from construction.
-    # #433 inc3's two refusal tests read only after `drained`.
-    "tests/test_retry_screen.py": 42,
+    # TestRetryScreen split out of test_launch_session.py (#436 B1). Every await is
+    # mounted/drained/settled/pilot.press; #485's one read after them is `request.header`, which
+    # OptionsModal holds from construction. #433 inc3's two refusal tests read only after `drained`.
+    "tests/test_retry_screen.py": 47,
     "tests/test_settle_helper.py": 47,
-    "tests/test_tui_433_screens.py": 117,
-    # #433 verifier tests: every await is a settle helper or a resize then one.
-    "tests/test_tui_433_verify.py": 11,
-    # #433 increment 3: every await is a settle helper or a push then one.
-    "tests/test_tui_433_inc3.py": 62,
+    "tests/test_tui_433_screens.py": 121,
+    "tests/test_tui_433_verify.py": 11,  # every await is a settle helper or a resize then one
+    "tests/test_tui_433_inc3.py": 62,  # #433 inc3 and inc4: settle helpers, or a push then one
     "tests/test_tui_433_inc3_board.py": 22,
-    "tests/test_tui_app.py": 23,
+    "tests/test_tui_433_inc4.py": 47,
+    "tests/test_tui_433_inc5.py": 59,
+    "tests/test_tui_433_inc6.py": 33,
+    # +6: the overview pilot reads the painted header and cost meter
+    # through settled() and mounted() (the render-helper units folded in).
+    "tests/test_tui_app.py": 29,
     "tests/test_tui_config_guard.py": 13,
     "tests/test_tui_detail.py": 41,  # +2 #433: test_follow_toggle waits on a live run
     "tests/test_tui_embed.py": 52,

@@ -191,8 +191,8 @@ class KstrlTuiApp(App[int]):
                 # Attach HERE, not before app.run(): call_from_thread on
                 # a not-yet-running app raises, which would degrade the
                 # request to its non-interactive default. Until attach,
-                # can_prompt() is False and a checkpoint proceeds
-                # NOT_PROMPTED - exactly the non-TTY semantics.
+                # can_prompt() is False and a checkpoint parks for the
+                # inbox (#594), rather than proceeding as NOT_PROMPTED.
                 self.channel.attach(
                     lambda req: self.call_from_thread(
                         self.on_prompt_request,

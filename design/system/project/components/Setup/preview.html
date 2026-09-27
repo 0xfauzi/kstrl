@@ -1,0 +1,92 @@
+<!-- @dsCard group="Frames (proposal)" height=800 width=1280 page subtitle="15 · First run: pointing kstrl at a repository" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Set up kstrl</title>
+<style>
+  html, body { margin:0; }
+  .scr { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
+  .map { position:relative; min-height:0; }
+  .map > svg { display:block; font-family:var(--font-agent); }
+
+  /* shared language (Stage/Grid): title row, zoom, tabs, chips, rings, checks, tiles */
+  .top { position:absolute; left:32px; right:32px; top:16px; }
+
+  .su { position:absolute; left:32px; right:32px; top:70px; bottom:14px; display:grid; grid-template-columns:minmax(0,1fr) 400px; gap:14px; }
+
+  .sec { display:grid; grid-template-columns:30px 1fr; gap:10px; padding:14px 0; border-bottom:1px solid var(--line); align-items:baseline; }
+  .sec:first-child { padding-top:0; }
+  .n { font:var(--t-measure); font-weight:600; color:var(--text-3); }
+  .sh2 { font:var(--t-input); font-weight:600; letter-spacing:var(--t-input-ls); }
+  .lead { margin:4px 0 0; font:var(--t-small); color:var(--text-2); }
+  .vrs { margin-top:10px; display:flex; flex-direction:column; gap:6px; }
+  .vr { display:grid; grid-template-columns:78px 220px 1fr; align-items:baseline; column-gap:12px; }
+  .vl { font:var(--t-small); color:var(--text-2); }
+  .vs { font:var(--t-label); font-weight:400; color:var(--text-3); }
+  .ag { display:flex; align-items:center; gap:12px; margin-top:8px; }
+  .frs { margin-top:8px; }
+  .fr2 { display:grid; grid-template-columns:58px 150px 1fr; align-items:baseline; column-gap:10px; padding:4px 0; font:var(--t-small); }
+  .act { font:var(--t-measure-small); font-weight:600; letter-spacing:var(--t-measure-small-ls); color:var(--text-2); }
+  .act.keep { color:var(--text-3); }
+  .fp { font:var(--t-measure); }
+  .fd { color:var(--text-3); }
+  .go { display:flex; align-items:center; gap:16px; margin-top:auto; padding-top:16px; }
+
+  .rh { display:flex; align-items:baseline; gap:10px; margin-top:6px; }
+  .rh span:last-child { font:var(--t-small); color:var(--text-3); }
+  .crs2 { margin-top:12px; }
+  .cr2 { display:grid; grid-template-columns:18px 118px 1fr; align-items:baseline; column-gap:8px; padding:6px 0; border-bottom:1px solid var(--line); font:var(--t-small); } .cr2 > .k-mk { align-self:center; }
+  .cn2 { font:var(--t-measure-inline); }
+  .cd { color:var(--text-2); }
+  .ft { margin:auto 0 0; font:var(--t-label); font-weight:400; color:var(--text-3); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="you" viewBox="0 0 16 16"><path d="M8 1.5 14.5 8 8 14.5 1.5 8Z"/></symbol>
+<symbol id="work" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-opacity=".35" stroke-width="2"/><path d="M8 2.5A5.5 5.5 0 0 1 13.5 8" fill="none" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="wait" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-width="1.5" stroke-dasharray="2.2 2.2"/></symbol>
+<symbol id="fail" viewBox="0 0 16 16"><path d="M4 4 12 12M12 4 4 12" fill="none" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="pass" viewBox="0 0 16 16"><path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="skip" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-width="1.5"/><path d="M4.2 11.8 11.8 4.2" stroke-width="1.5"/></symbol>
+<symbol id="landed" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M4.8 8.3 7 10.5 11.3 5.8" fill="none" stroke="var(--window)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</defs></svg>
+<div class="scr">
+  <header class="k-header">
+    <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb" aria-current="page">Set up</button></li></ol></nav>
+
+    <span class="grow"></span>
+    <span class="k-live">no runs yet</span>
+    <span class="k-spend"><span class="t3">no budget is set</span></span>
+    <button class="k-ask" aria-label="Ask or do anything"><span>Ask or do anything</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span></button>
+  </header>
+  <div class="map">
+    <div class="top k-titlerow"><h1 class="k-title"><span class="k-title-name">Set up kstrl</span><span class="k-title-meta">~/code/snippetvault · a Python project, run with uv</span></h1><div class="k-titletools"></div></div>
+    <div class="su">
+      <div class="k-tile stp k-tile-hero">
+        <div class="sec"><span class="n">1</span><div class="sb"><div class="sh2">How kstrl checks the work</div>
+          <p class="lead">Verify runs these on every part before any reviewer reads it. They are what “working” means here.</p>
+          <div class="vrs"><div class="vr"><span class="vl">Tests</span><div class="k-field k-field-measure"><div class="k-field-box"><input class="k-field-input" value="uv run pytest" aria-label="Tests command" autocomplete="off" spellcheck="false"></div></div><span class="vs">kstrl’s default for Python</span></div><div class="vr"><span class="vl">Typecheck</span><div class="k-field k-field-measure"><div class="k-field-box"><input class="k-field-input" value="uv run mypy" aria-label="Typecheck command" autocomplete="off" spellcheck="false"></div></div><span class="vs">pyproject.toml configures mypy, so no path is given</span></div><div class="vr"><span class="vl">Lint</span><div class="k-field k-field-measure"><div class="k-field-box"><input class="k-field-input" value="uv run ruff check ." aria-label="Lint command" autocomplete="off" spellcheck="false"></div></div><span class="vs">kstrl’s default for Python</span></div></div></div></div>
+        <div class="sec"><span class="n">2</span><div class="sb"><div class="sh2">Which agent builds</div>
+          <div class="ag"><div class="k-seg" role="radiogroup" aria-label="Engineer agent"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="true" tabindex="0">Claude Code</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Codex</button></div><span class="t3 ty-small">the model and reasoning its CLI is set to</span></div></div></div>
+        <div class="sec"><span class="n">3</span><div class="sb"><div class="sh2">What kstrl will write</div>
+          <div class="frs"><div class="fr2"><span class="act create">create</span><span class="fp">kstrl.toml</span><span class="fd">[verify] only if you change a command above</span></div><div class="fr2"><span class="act create">create</span><span class="fp">scripts/kstrl/</span><span class="fd">the engineer prompt, your guidance and golden patterns, and 4 more</span></div><div class="fr2"><span class="act append">append</span><span class="fp">CLAUDE.md</span><span class="fd">a block about kstrl at the end</span></div><div class="fr2"><span class="act append">append</span><span class="fp">.gitignore</span><span class="fd">kstrl’s working files</span></div><div class="fr2"><span class="act keep">keep</span><span class="fp">AGENTS.md</span><span class="fd">already has the block</span></div></div></div></div>
+        <div class="go"><button class="k-button k-button-primary">Set up <span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">↵</span></span></button><span class="t2 ty-small">Then write your first spec, in your own words.</span></div>
+      </div>
+      <div class="k-tile rdy k-tile-hero">
+        <div class="k-label">Is this repository ready?</div>
+        <div class="rh"><span class="k-stat-value">8<small>/10</small></span><span>ready now · 2 written by Set up</span></div>
+        <div class="crs2"><div class="cr2"><span class="k-mk sm pass"></span><span class="cn2">git_repo</span><span class="cd">a git repository</span></div><div class="cr2"><span class="k-mk sm pass"></span><span class="cn2">git_clean</span><span class="cd">nothing uncommitted</span></div><div class="cr2"><span class="k-mk sm pass"></span><span class="cn2">github_cli</span><span class="cd">gh is signed in, so PRs can open</span></div><div class="cr2"><span class="k-mk sm wait"></span><span class="cn2">kstrl_config</span><span class="cd">written by Set up</span></div><div class="cr2"><span class="k-mk sm pass"></span><span class="cn2">build_manifest</span><span class="cd">pyproject.toml</span></div><div class="cr2"><span class="k-mk sm pass"></span><span class="cn2">verify_commands</span><span class="cd">all three resolve</span></div><div class="cr2"><span class="k-mk sm pass"></span><span class="cn2">source_root</span><span class="cd">src/snippetvault</span></div><div class="cr2"><span class="k-mk sm pass"></span><span class="cn2">test_root</span><span class="cd">tests/</span></div><div class="cr2"><span class="k-mk sm wait"></span><span class="cn2">gitignore</span><span class="cd">written by Set up</span></div><div class="cr2"><span class="k-mk sm pass"></span><span class="cn2">protected_paths</span><span class="cd">none set</span></div></div>
+        <p class="ft">ks doctor checks only what kstrl reads, and names what reads it. It runs nothing and spends nothing.</p>
+      </div>
+    </div>
+  </div>
+  <div class="k-needs">
+    <span class="k-needs-label">Needs you</span>
+    <span class="k-needs-none">Nothing yet</span>
+    <span class="k-needs-hint">Nothing is written until you press Set up, and nothing that exists is overwritten.</span>
+  </div>
+</div>
+</body>
+</html>

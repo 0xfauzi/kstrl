@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Protocol
@@ -23,6 +23,49 @@ CEILING_AXES: Final[Mapping[str, str]] = {
     "max_cost_usd": "cost",
     "max_total_tokens": "token",
 }
+
+#: Every line ClaudeCodeAgent or ClaudeSdkAgent yields for a tool's OUTPUT
+#: starts with this (#598) - NOT every adapter: CodexAgent and CustomAgent
+#: yield raw CLI/stdout lines with no such marking, so a line that happens
+#: to start with two spaces there is the agent's own text, not a tool's.
+#: Only an agent whose ``marks_tool_output`` attribute is true tags its
+#: lines this way; :func:`model_output_text` is how a consumer that does
+#: not know which adapter produced a line of output is meant to read it.
+TOOL_RESULT_PREFIX: Final = "  | "
+
+
+def model_output_lines(lines: Iterable[str]) -> list[str]:
+    """``lines`` without the tool-output lines: what the model itself said.
+
+    A low-level filter for an adapter that KNOWS its own lines are tagged
+    with :data:`TOOL_RESULT_PREFIX` (ClaudeCodeAgent uses this directly on
+    its own accumulated text). A caller reading another agent's lines -
+    one it did not itself produce - wants :func:`model_output_text`
+    instead, which checks first whether the agent marks tool output at
+    all before filtering by the prefix.
+    """
+    return [line for line in lines if not line.startswith(TOOL_RESULT_PREFIX)]
+
+
+def model_output_text(agent: object, lines: Iterable[str]) -> str:
+    """``lines`` joined as the model's own words, never a tool's output.
+
+    Only an agent whose ``marks_tool_output`` attribute is true (currently
+    ClaudeCodeAgent and ClaudeSdkAgent) tags its tool-output lines with
+    :data:`TOOL_RESULT_PREFIX`; every other adapter's lines are joined
+    as-is. Filtering unconditionally is the #598 defect this guards
+    against: a CustomAgent or CodexAgent reply that happens to hold an
+    indented markdown table row (one starting with two spaces) had that
+    row silently deleted, because nothing marks that line as tool output.
+    ``agent`` is read with ``getattr(..., False)``, so a third-party or
+    predates-this-attribute Agent implementation degrades to "keep every
+    line" rather than raising - the same tolerance :func:`collect_usage`
+    gives ``usage_records``.
+    """
+    kept = list(lines)
+    if getattr(agent, "marks_tool_output", False):
+        kept = model_output_lines(kept)
+    return "\n".join(kept)
 
 
 @dataclass(frozen=True)

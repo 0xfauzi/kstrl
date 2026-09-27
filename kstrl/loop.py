@@ -495,11 +495,17 @@ def build_project_context(
     cwd: Path,
     ui: UI,
     verify_config: VerifyConfig | None = None,
+    *,
+    context_root: Path | None = None,
 ) -> str:
     """Assemble the project-context prefix of the engineer prompt.
 
     Two sections: the project's CLAUDE.md, if it has one, and the
     verification commands the mechanical gate will run.
+
+    ``context_root`` is where CLAUDE.md is read, ``cwd`` when None. The
+    verification commands are still resolved against ``cwd``, where the
+    gate runs; only the factory passes a different root (#569).
 
     #261: the commands come from ``verify.resolve_verify_commands``, the
     same resolver the gate itself calls, against the same directory the
@@ -539,14 +545,15 @@ def build_project_context(
     commands = resolve_verify_commands(verify_config, cwd) if verify_config is not None else None
 
     sections: list[str] = []
-    claude_md_path = cwd / "CLAUDE.md"
+    claude_root = cwd if context_root is None else context_root
+    claude_md_path = claude_root / "CLAUDE.md"
     if claude_md_path.exists():
         claude_md = claude_md_path.read_text(encoding="utf-8")
         if commands is not None:
             # A CLAUDE.md scaffolded before #261 still carries verification
             # bullets that disagree with the gate. Drop the divergent ones
             # from the prompt copy (never from disk) and say so.
-            scrubbed = scrub_project_claude_md(cwd, commands)
+            scrubbed = scrub_project_claude_md(claude_root, commands)
             if scrubbed is not None:
                 for divergence in scrubbed.divergences:
                     ui.warn(divergence)
@@ -579,6 +586,56 @@ def _guard_baseline(
     return baseline
 
 
+def _resolve_iteration_pause(
+    ui: UI,
+    channel: InteractionChannel,
+    config: KstrlConfig,
+    iteration: int,
+    agent: Agent,
+) -> LoopResult | None:
+    """The interactive pause between iterations (PR A: through the
+    interaction seam). Returns a :class:`LoopResult` when the run should
+    stop - Quit, or nobody answered - and ``None`` to continue (mutating
+    ``config.interactive`` on 'Skip interactive').
+
+    #594 D1: a channel that COULD prompt (``can_prompt()`` true) but came
+    back with nobody answering is not consent to keep spending on another
+    paid iteration. It stops the run the same way Quit does, with one log
+    line saying so. A channel that cannot prompt never reaches the
+    request below, so the non-interactive path is unchanged.
+    """
+    if not (config.interactive and channel.can_prompt()):
+        return None
+    response = channel.request(
+        PromptRequest(
+            kind=PromptKind.ITERATION,
+            header="Iteration complete. What next?",
+            options=("Continue", "Skip interactive", "Quit"),
+            default=0,
+        )
+    )
+    if response.answered and response.choice == 1:
+        # Disable interactive for remaining iterations
+        config.interactive = False
+        return None
+    if response.answered and response.choice == 2:
+        return LoopResult(
+            completed=False,
+            iterations=iteration,
+            exit_code=0,
+            usage=collect_usage(agent),
+        )
+    if not response.answered:
+        ui.warn("Iteration pause was interrupted; stopping the run")
+        return LoopResult(
+            completed=False,
+            iterations=iteration,
+            exit_code=0,
+            usage=collect_usage(agent),
+        )
+    return None
+
+
 def run_loop(
     config: KstrlConfig,
     ui: UI,
@@ -605,6 +662,7 @@ def run_loop(
     budget: LoopBudget | None = None,
     on_iteration_usage: Callable[[UsageTotals], None] | None = None,
     verify_config: VerifyConfig | None = None,
+    context_root: Path | None = None,
 ) -> LoopResult:
     """Run the main agentic loop.
 
@@ -625,6 +683,10 @@ def run_loop(
         verify_config: The config the Phase 1 gate will run with, or
             None (the default) when no gate runs. See
             ``build_project_context`` (#261).
+        context_root: The directory whose CLAUDE.md is the project
+            context, or None (the default) for ``cwd``. A factory worker
+            passes the checkout kstrl ran from, because kstrl no longer
+            copies CLAUDE.md into a component worktree (#569).
         on_iteration_usage: Called with this loop's usage-so-far at
             every iteration boundary. The factory uses it to persist a
             durable copy, so a worker killed by a shutdown does not
@@ -702,7 +764,7 @@ def run_loop(
         codebase_map_path=str(config.codebase_map_file),
     )
 
-    project_context = build_project_context(cwd, ui, verify_config)
+    project_context = build_project_context(cwd, ui, verify_config, context_root=context_root)
     if project_context:
         prompt = project_context + "\n\n---\n\n" + prompt
 
@@ -982,25 +1044,9 @@ def run_loop(
             )
 
         # Interactive pause (PR A: through the interaction seam)
-        if config.interactive and channel.can_prompt():
-            response = channel.request(
-                PromptRequest(
-                    kind=PromptKind.ITERATION,
-                    header="Iteration complete. What next?",
-                    options=("Continue", "Skip interactive", "Quit"),
-                    default=0,
-                )
-            )
-            if response.answered and response.choice == 1:
-                # Disable interactive for remaining iterations
-                config.interactive = False
-            elif response.answered and response.choice == 2:
-                return LoopResult(
-                    completed=False,
-                    iterations=iteration,
-                    exit_code=0,
-                    usage=collect_usage(agent),
-                )
+        pause_result = _resolve_iteration_pause(ui, channel, config, iteration, agent)
+        if pause_result is not None:
+            return pause_result
 
         # Sleep before next iteration (except on last)
         if iteration < config.max_iterations:

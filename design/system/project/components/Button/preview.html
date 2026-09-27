@@ -1,0 +1,120 @@
+<!-- @dsCard group="Controls" height=836 width=1120 subtitle="Every kind in every state, two sizes, and a live row" -->
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Button</title><style>
+  html, body { margin:0; }
+  body { background:var(--canvas); color:var(--text); font:var(--t-body); -webkit-font-smoothing:antialiased; }
+  .c-wrap { padding:24px; display:grid; gap:14px; }
+  .c-tile { background:var(--window); border-radius:var(--radius-xl); box-shadow:var(--shadow-card); padding:18px 20px; min-width:0; }
+  .c-lab { font:var(--t-label); font-weight:400; color:var(--text-3); margin-bottom:12px; }
+  .c-grid { display:grid; grid-template-columns:132px repeat(6, minmax(0,1fr)); align-items:center; row-gap:10px; }
+  .g-h { font:var(--t-label); font-weight:400; color:var(--text-3); padding-bottom:2px; }
+  .g-r { font:var(--t-small); color:var(--text-2); }
+  .g-c { display:flex; align-items:center; min-height:40px; }
+  .c-ink { background:var(--text); color:var(--window); border-radius:var(--radius-lg); padding:14px 16px; }
+  .g-ink { display:grid; grid-template-columns:132px repeat(6, minmax(0,1fr)); align-items:center; }
+  .c-ink .g-ri { color:var(--window); }
+  .c-two { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); gap:14px; }
+  .c-sizes { display:grid; grid-template-columns:64px 1fr; row-gap:14px; align-items:baseline; }
+  .c-cap { font:var(--t-label); font-weight:400; color:var(--text-3); }
+  .c-block { display:grid; gap:6px; width:260px; }
+  .c-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .c-anat { position:relative; height:104px; }
+  .c-anat .k-button { position:absolute; left:64px; top:35px; }
+  .c-anat-sm { height:100px; }
+  .c-dl { stroke:var(--text-3); stroke-width:1; shape-rendering:crispEdges; }
+  .c-dt { fill:var(--text-2); font:var(--t-measure-small); font-weight:400; }
+  .c-live { display:flex; gap:10px; align-items:center; }
+  .c-note { font:var(--t-label); font-weight:400; color:var(--text-3); margin-top:12px; }
+</style></head><body>
+<div class="c-wrap">
+  <div class="c-tile">
+    <div class="c-lab">Kinds and states (forced here with data-state; the same rules answer to :hover, :active and :focus-visible)</div>
+    <div class="c-grid"><div class="g-h"></div><div class="g-h">Rest</div><div class="g-h">Hover</div><div class="g-h">Pressed</div><div class="g-h">Focus</div><div class="g-h">Disabled</div><div class="g-h">Busy</div><div class="g-r">Neutral</div><div class="g-c"><button class="k-button" tabindex="-1"><span>Read the log</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button" data-state="hover" tabindex="-1"><span>Read the log</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button" data-state="press" tabindex="-1"><span>Read the log</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button" data-state="focus" tabindex="-1"><span>Read the log</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button" aria-disabled="true" tabindex="-1"><span>Read the log</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button" aria-busy="true" tabindex="-1"><span>Read the log</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-r">Primary</div><div class="g-c"><button class="k-button k-button-primary" tabindex="-1"><span>Approve</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button k-button-primary" data-state="hover" tabindex="-1"><span>Approve</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button k-button-primary" data-state="press" tabindex="-1"><span>Approve</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button k-button-primary" data-state="focus" tabindex="-1"><span>Approve</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button k-button-primary" aria-disabled="true" tabindex="-1"><span>Approve</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button k-button-primary" aria-busy="true" tabindex="-1"><span>Approve</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-r">Quiet</div><div class="g-c"><button class="k-button k-button-quiet" tabindex="-1"><span>Later</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button k-button-quiet" data-state="hover" tabindex="-1"><span>Later</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button k-button-quiet" data-state="press" tabindex="-1"><span>Later</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button k-button-quiet" data-state="focus" tabindex="-1"><span>Later</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button k-button-quiet" aria-disabled="true" tabindex="-1"><span>Later</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button k-button-quiet" aria-busy="true" tabindex="-1"><span>Later</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-r">Danger</div><div class="g-c"><button class="k-button k-button-danger" tabindex="-1"><span>Reject</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button k-button-danger" data-state="hover" tabindex="-1"><span>Reject</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button k-button-danger" data-state="press" tabindex="-1"><span>Reject</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button k-button-danger" data-state="focus" tabindex="-1"><span>Reject</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button k-button-danger" aria-disabled="true" tabindex="-1"><span>Reject</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button k-button-danger" aria-busy="true" tabindex="-1"><span>Reject</span><span class="k-spin" aria-hidden="true"></span></button></div></div>
+    <div class="c-ink k-ink g-ink" style="margin-top:12px"><div class="g-r g-ri">Inverse, on ink</div><div class="g-c"><button class="k-button k-button-inverse" tabindex="-1"><span>Add to guidance</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button k-button-inverse" data-state="hover" tabindex="-1"><span>Add to guidance</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button k-button-inverse" data-state="press" tabindex="-1"><span>Add to guidance</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button k-button-inverse" data-state="focus" tabindex="-1"><span>Add to guidance</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"><button class="k-button k-button-inverse" aria-disabled="true" tabindex="-1"><span>Add to guidance</span><span class="k-spin" aria-hidden="true"></span></button></div><div class="g-c"></div></div>
+  </div>
+  <div class="c-two">
+    <div class="c-tile">
+      <div class="c-lab">Sizes, with a mark and keycaps</div>
+      <div class="c-sizes">
+        <span class="g-r">md 32</span><div class="c-row"><button class="k-button k-button-primary" tabindex="-1"><span>Approve and merge</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">↵</span></span><span class="k-spin" aria-hidden="true"></span></button><button class="k-button" tabindex="-1"><span class="k-mk sm fail"></span><span>Stopped</span><span class="k-spin" aria-hidden="true"></span></button></div>
+        <span class="g-r">sm 28</span><div class="c-row"><button class="k-button k-button-sm k-button-primary" tabindex="-1"><span>Review</span><span class="k-keys"><span class="k-key">↵</span></span><span class="k-spin" aria-hidden="true"></span></button><button class="k-button k-button-sm" tabindex="-1"><span>Copy</span><span class="k-spin" aria-hidden="true"></span></button><button class="k-button k-button-sm k-button-quiet" tabindex="-1"><span>Later</span><span class="k-keys"><span class="k-key">esc</span></span><span class="k-spin" aria-hidden="true"></span></button></div>
+        <span class="g-r">block</span><div class="c-block"><button class="k-button k-button-block" tabindex="-1"><span>Tell the engineers…</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">G</span></span><span class="k-spin" aria-hidden="true"></span></button><button class="k-button k-button-block" tabindex="-1"><span>Read the review log</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">L</span></span><span class="k-spin" aria-hidden="true"></span></button><button class="k-button k-button-block" tabindex="-1"><span>Open decision 1 in the plan</span><span class="k-spin" aria-hidden="true"></span></button><span class="c-cap">in a stack: labels at the start, keys at the end</span></div>
+      </div>
+    </div>
+    <div class="c-tile">
+      <div class="c-lab" style="margin-bottom:8px">Anatomy, md</div>
+      <div class="c-anat" aria-hidden="true">
+        <button class="k-button k-button-primary" tabindex="-1" id="anat"><span>Approve</span><span class="k-keys"><span class="k-key">↵</span></span><span class="k-spin"></span></button>
+      </div>
+      <div class="c-lab" style="margin:14px 0 8px">Anatomy, sm</div>
+      <div class="c-anat c-anat-sm" aria-hidden="true">
+        <button class="k-button k-button-sm k-button-primary" tabindex="-1" id="anatSm"><span>Review</span><span class="k-keys"><span class="k-key">↵</span></span><span class="k-spin"></span></button>
+      </div>
+    </div>
+  </div>
+  <div class="c-tile">
+    <div class="c-lab">Live: Tab to focus, Enter or Space to press. Approve shows the busy state for 1.2 s.</div>
+    <div class="c-live">
+      <button class="k-button k-button-primary" id="go"><span>Approve and merge</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">↵</span></span><span class="k-spin" aria-hidden="true"></span></button>
+      <button class="k-button k-button-danger"><span>Reject</span></button>
+      <button class="k-button"><span>Read the log</span></button>
+      <button class="k-button k-button-quiet"><span>Later</span></button>
+      <button class="k-button" aria-disabled="true" aria-describedby="why"><span>Merge now</span></button>
+      <span class="c-note" id="why" style="margin:0">Merge now is disabled: search is still running.</span>
+    </div>
+  </div>
+</div>
+<script>
+/* Anatomy overlay: measures the real element and draws dimension lines in an SVG, so every number shown is what renders.
+   anat(host, target, specs): specs are {kind:'h'|'w'|'gap'|'pad'|'note', ...}. Lines 1px text-3, end ticks 5px, labels measure-small (11px) at 400 in text-2. */
+function anat(host, target, specs){
+  var H = host.getBoundingClientRect(), T = target.getBoundingClientRect();
+  var ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('class', 'c-anat-svg'); svg.setAttribute('width', H.width); svg.setAttribute('height', H.height); svg.setAttribute('aria-hidden', 'true');
+  svg.style.position = 'absolute'; svg.style.left = '0'; svg.style.top = '0'; svg.style.overflow = 'visible';
+  function el(n, a){ var e = document.createElementNS(ns, n); for (var k in a) e.setAttribute(k, a[k]); svg.appendChild(e); return e; }
+  function line(x1, y1, x2, y2){ el('line', {x1:x1, y1:y1, x2:x2, y2:y2, 'class':'c-dl'}); }
+  function text(x, y, s, anchor){ var t = el('text', {x:x, y:y, 'class':'c-dt', 'text-anchor':anchor || 'middle'}); t.textContent = s; }
+  function rel(r){ return {l:r.left - H.left, t:r.top - H.top, r:r.right - H.left, b:r.bottom - H.top, w:r.width, h:r.height}; }
+  var t = rel(T);
+  specs.forEach(function(s){
+    var r = s.of ? rel(s.of.getBoundingClientRect()) : t, v;
+    if (s.kind === 'h') { var x = r.l - 16; line(x, r.t, x, r.b); line(x - 3, r.t, x + 3, r.t); line(x - 3, r.b, x + 3, r.b); text(x - 8, (r.t + r.b) / 2 + 3.5, s.label || Math.round(r.h) + '', 'end'); }
+    if (s.kind === 'w') { var y = r.b + 16; line(r.l, y, r.r, y); line(r.l, y - 3, r.l, y + 3); line(r.r, y - 3, r.r, y + 3); text((r.l + r.r) / 2, y + 14, s.label || Math.round(r.w) + ''); }
+    if (s.kind === 'pad') { var y2 = r.t - 12, p = s.value; line(r.l, y2, r.l + p, y2); line(r.l, y2 - 3, r.l, y2 + 3); line(r.l + p, y2 - 3, r.l + p, y2 + 3); text(r.l + p / 2, y2 - 6, s.label || p + ''); }
+    if (s.kind === 'gap') { var a = rel(s.a.getBoundingClientRect()), b = rel(s.b.getBoundingClientRect()), y3 = t.b + 14; line(a.r, y3, b.l, y3); line(a.r, y3 - 3, a.r, y3 + 3); line(b.l, y3 - 3, b.l, y3 + 3); text((a.r + b.l) / 2, y3 + 14, s.label || Math.round(b.l - a.r) + ''); }
+    if (s.kind === 'note') { var nx = t.r + 28, ny = t.t + (s.row || 0) * 16 + 4; if (s.lead) { line(t.r - 2, t.t + 3, nx - 6, ny - 3.5); } text(nx, ny, s.label, 'start'); }
+  });
+  host.appendChild(svg);
+}
+
+(document.fonts ? document.fonts.ready : Promise.resolve()).then(function(){
+  // Anatomy: measured from the rendered button, after the web fonts load.
+  var host=document.querySelector('.c-anat'), b=document.getElementById('anat'), cs=getComputedStyle(b);
+  var label=b.querySelector('span'), keys=b.querySelector('.k-keys');
+  anat(host, b, [
+    {kind:'h', label:Math.round(b.getBoundingClientRect().height)+''},
+    {kind:'pad', value:parseFloat(cs.paddingLeft)},
+    {kind:'gap', a:label, b:keys},
+    {kind:'note', row:0, lead:true, label:'radius '+parseFloat(cs.borderTopLeftRadius)},
+    {kind:'note', row:1, label:'label '+parseFloat(cs.fontSize)+' / '+cs.fontWeight},
+    {kind:'note', row:2, label:'keycap '+Math.round(keys.firstElementChild.getBoundingClientRect().height)},
+    {kind:'note', row:3, label:'inset beside keys '+Math.round(b.getBoundingClientRect().right-keys.getBoundingClientRect().right)}
+  ]);
+  var hs=document.querySelector('.c-anat-sm'), s=document.getElementById('anatSm'), ss=getComputedStyle(s), sl=s.querySelector('span'), sk=s.querySelector('.k-keys');
+  anat(hs, s, [
+    {kind:'h', label:Math.round(s.getBoundingClientRect().height)+''},
+    {kind:'pad', value:parseFloat(ss.paddingLeft)},
+    {kind:'gap', a:sl, b:sk},
+    {kind:'note', row:0, lead:true, label:'radius '+parseFloat(ss.borderTopLeftRadius)},
+    {kind:'note', row:1, label:'label '+parseFloat(ss.fontSize)+' / '+ss.fontWeight},
+    {kind:'note', row:2, label:'keycap '+Math.round(sk.firstElementChild.getBoundingClientRect().height)},
+    {kind:'note', row:3, label:'inset beside keys '+Math.round(s.getBoundingClientRect().right-sk.getBoundingClientRect().right)}
+  ]);
+  // Live busy demo
+  var go=document.getElementById('go');
+  go.addEventListener('click', function(){ if(go.getAttribute('aria-busy')==='true') return; go.setAttribute('aria-busy','true'); setTimeout(function(){ go.removeAttribute('aria-busy'); }, 1200); });
+  document.querySelectorAll('[aria-disabled="true"]').forEach(function(d){ d.addEventListener('click', function(e){ e.preventDefault(); }); });
+});
+</script>
+</body></html>

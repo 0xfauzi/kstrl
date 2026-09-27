@@ -1,29 +1,31 @@
-"""#433 increment 2 (PR #552): defects the independent verifier measured.
+"""#433 increment 2 (PR #552): defects the independent verifier measured,
+kept where they reach a real artifact.
 
 Each test was measured red on the PR head and green with the fix beside
-it. The families are the ones increment 1's verifier found: a claim of
-"running" or "alive" from an input that no longer attests it, a join by
-something weaker than the schema's key, and state a refresh throws away.
+it. What remains reads real files under a temporary root: the
+integration review joined per feature (another feature's ``state.json``
+is not this run's disposition, and a status kstrl never writes is
+unknown rather than open); a serve item stranded by a ``kill -9`` of the
+daemon, leased to a pid this test spawned and reaped, is not in flight
+and home does not list it as running; a disabled inbox is not counted as
+nothing waiting; and the failed-branch probe on a real repository asks
+for a branch, not any ref, so a tag named like the branch answers no.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-from kstrl.inbox import Inbox, InboxConfig, InboxScan, ItemKind
-from kstrl.reducer import ComponentState, RunState
-from kstrl.tui.agent_health import UNKNOWN, agent_health
+from kstrl.tui.agent_health import UNKNOWN
 from kstrl.tui.home_data import HomeStats
 from kstrl.tui.home_view import attention_line
 from kstrl.tui.integration_view import FIXED, read_integration_review
-from kstrl.tui.operator_queue import build_queue, newest_finished_factory
-from kstrl.tui.runs import RunRef
+from kstrl.tui.operator_queue import build_queue
 from kstrl.tui.serve_view import read_serve_state
 
 NOW = 1_800_000_000.0
@@ -126,64 +128,6 @@ class TestServeItemAfterTheDaemonDied:
         assert [row.state for row in queue.active] != ["running"], queue.active
 
 
-class TestHeartbeatPidIsEvidenceOnlyWhileFresh:
-    """The heartbeat pid is the WORKER that ran the engineer. In pool mode
-    the worker returns before review and security run in the parent, and
-    ProcessPoolExecutor keeps the worker for the next component, so the
-    pid probe says "alive" about a process that no longer runs this
-    component (or "exited" once the pool shuts down). The pid is evidence
-    only while its heartbeat is recent."""
-
-    def _comp(self, heartbeat_age: float) -> ComponentState:
-        return ComponentState(
-            component_id="api",
-            status="verifying",
-            heartbeat_pid=os.getpid(),
-            last_heartbeat_ts=NOW - heartbeat_age,
-        )
-
-    def test_a_pid_whose_heartbeat_stopped_is_not_probed(self, tmp_path: Path) -> None:
-        for alive in (True, False):
-            health = agent_health(tmp_path, self._comp(600), NOW, probe=lambda _pid, a=alive: a)
-            assert health.process == UNKNOWN, (alive, health)
-
-    def test_a_fresh_heartbeat_is_still_probed(self, tmp_path: Path) -> None:
-        health = agent_health(tmp_path, self._comp(5), NOW, probe=lambda _pid: True)
-        assert health.process == "alive"
-
-
-class TestInboxIsReadOnce:
-    """The needs-you rows and the "nothing waiting" claim came from two
-    separate reads of the inbox log: ``scan()`` for readability, then
-    ``open_items()``, which scans again and returns [] when that second
-    read fails. One read decides both."""
-
-    def test_a_second_read_failing_does_not_count_zero(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        Inbox(tmp_path, InboxConfig()).add(ItemKind.HALTED_RUN, "halted", dedupe_key="h")
-        real_scan = Inbox.scan
-        calls = {"n": 0}
-
-        def flaky(self: Inbox) -> InboxScan:
-            calls["n"] += 1
-            return real_scan(self) if calls["n"] == 1 else InboxScan(unreadable=True)
-
-        monkeypatch.setattr(Inbox, "scan", flaky)
-        queue = build_queue(tmp_path, [], {}, {}, NOW)
-        assert queue.decisions == 1, (queue.decisions, queue.unreadable)
-
-
-# -- tests for the verifier's still-green plants --------------------------------
-
-_REF_ROOT = Path("/nonexistent-root")
-
-
-def _factory_ref(run_id: str) -> RunRef:
-    run_dir = _REF_ROOT / ".kstrl" / "runs" / run_id
-    return RunRef(run_id, run_dir, run_dir / "events.jsonl", NOW, False, kind="factory")
-
-
 class TestPlantsTheSuiteMissed:
     def test_a_disabled_inbox_is_not_counted_as_nothing_waiting(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -233,31 +177,3 @@ class TestPlantsTheSuiteMissed:
             UNKNOWN,
             "status 'dismissed' is not one kstrl writes",
         )
-
-    def test_delivery_skips_a_newer_run_that_delivered_nothing(self) -> None:
-        """Plant P9: home's delivery section described the newest finished
-        factory run even when an older one holds the merges."""
-        newer, older = _factory_ref(RUN_B), _factory_ref(RUN_A)
-        empty = RunState(finished=True)
-        merged = RunState(finished=True)
-        merged.components["api"] = ComponentState(
-            component_id="api", status="completed", pr_state="merged", pr_number=8
-        )
-        chosen = newest_finished_factory([newer, older], {RUN_B: empty, RUN_A: merged})
-        assert chosen is older
-
-    def test_retry_narration_puts_warnings_first_and_raises_the_severity(self) -> None:
-        """Plant P13: the #537 sweep warning shown after the plan lines, as
-        an information toast that times out in 10 s."""
-        from kstrl.tui.screens.retry import _notify_narration
-
-        seen: list[tuple[str, dict[str, object]]] = []
-
-        class _App:
-            def notify(self, message: str, **kwargs: object) -> None:
-                seen.append((message, kwargs))
-
-        _notify_narration(_App(), ["Retry plan", "Component: api", "WARN: killed pid 4242"])
-        message, kwargs = seen[0]
-        assert message.splitlines()[0] == "WARN: killed pid 4242"
-        assert kwargs["severity"] == "warning"

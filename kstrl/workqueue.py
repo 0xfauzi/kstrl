@@ -76,6 +76,7 @@ from typing import IO, Any
 
 from kstrl.appendio import JOURNAL_REPAIR_EVENT, append_records
 from kstrl.atomicio import atomic_write_text
+from kstrl.config_numbers import check_numbers
 from kstrl.jsonread import read_json
 from kstrl.statedir import (
     CONTROL_PAUSE,
@@ -539,9 +540,11 @@ class QueueConfig:
             max_attempts = int(os.environ["KSTRL_QUEUE_MAX_ATTEMPTS"])
         if "KSTRL_QUEUE_LEASE_TTL" in os.environ:
             lease_ttl_seconds = float(os.environ["KSTRL_QUEUE_LEASE_TTL"])
-        return cls(
-            max_attempts=max_attempts,
-            lease_ttl_seconds=lease_ttl_seconds,
+        return check_numbers(
+            cls(
+                max_attempts=max_attempts,
+                lease_ttl_seconds=lease_ttl_seconds,
+            )
         )
 
 

@@ -19,6 +19,7 @@ import pytest
 from kstrl import decompose
 from kstrl.decompose import build_decompose_prompt, decompose_spec
 from kstrl.ui.plain import PlainUI
+from tests.helpers.prompt_calls import architect_call
 from tests.test_decompose import (
     BLOCKER_ISSUE,
     VALID_DECOMPOSE_OUTPUT,
@@ -78,6 +79,7 @@ def _decompose_and_capture(root: Path, spec: Path) -> tuple[str, Path | None]:
         agent=agent,  # type: ignore[arg-type]
         ui=PlainUI(no_color=True, file=io.StringIO()),
         root_dir=root,
+        prompt_call=architect_call(root),
     )
     assert agent.prompts, "decompose_spec never called its agent"
     return agent.prompts[0], agent.cwds[0]
@@ -137,6 +139,7 @@ def _decompose_halting_and_capture(root: Path, spec: Path) -> tuple[str, str]:
             agent=agent,  # type: ignore[arg-type]
             ui=PlainUI(no_color=True, file=buffer),
             root_dir=root,
+            prompt_call=architect_call(root),
         )
     assert agent.prompts, "decompose_spec never called its agent"
     return agent.prompts[0], buffer.getvalue()

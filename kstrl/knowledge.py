@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any
 
 from kstrl.appendio import JOURNAL_REPAIR_EVENT, append_records
 from kstrl.atomicio import atomic_write_text
+from kstrl.config_numbers import check_numbers
 from kstrl.decompose import (
     AgentOutputTooLarge,
     _extract_json,
@@ -130,7 +131,7 @@ class KnowledgeConfig:
             config.dependency_scope = str(section["dependency_scope"])
 
         _apply_knowledge_env_overrides(config)
-        return config
+        return check_numbers(config)
 
     @classmethod
     def from_env(cls, root_dir: Path | None = None) -> KnowledgeConfig:
@@ -805,6 +806,54 @@ def build_knowledge_context(
     return "\n".join(parts).rstrip() + "\n"
 
 
+def retrieve_knowledge_context(
+    manifest: Manifest,
+    component: Component,
+    config: KnowledgeConfig,
+    *,
+    allowed_paths: Sequence[str] | None,
+    worktree: Path,
+    on_failure: Callable[[Exception], None],
+    dependency_paths: Mapping[str, Sequence[str]] | None = None,
+) -> str | None:
+    """The non-fatal, never-silent retrieval policy every engineer-loop
+    caller shares (#599 A3).
+
+    ``factory._submit_args`` and ``feature_cmd._feature_knowledge_prefix``
+    duplicated this exact policy - disabled or a raised exception both
+    mean "the engineer runs with no facts", warned through ``on_failure``
+    on the exception, never on the disabled path (disabled is the
+    operator's own choice, not a degradation to report) - and the
+    feature copy dropped the distinction entirely, calling
+    ``build_knowledge_context`` (which already returns ``""`` when
+    disabled, at the check this duplicated a second time) with no
+    caller left able to tell "off" from "on and empty" apart. Callers
+    that need that distinction, such as the factory's fact-utilization
+    measurement, read it off THIS function's return: ``None`` for
+    disabled-or-failed, the built string otherwise (which may itself be
+    ``""`` - a real empty result, a cold knowledge store, not an
+    absence).
+
+    Never raises: knowledge is a hint the engineer's prompt carries, not
+    a gate any run depends on.
+    """
+    if not config.enabled:
+        return None
+    try:
+        return build_knowledge_context(
+            manifest,
+            component,
+            config.knowledge_root,
+            config,
+            allowed_paths=allowed_paths,
+            dependency_paths=dependency_paths,
+            worktree=worktree,
+        )
+    except Exception as exc:  # noqa: BLE001 - non-fatal, never silent
+        on_failure(exc)
+        return None
+
+
 # ---------------------------------------------------------------------------
 # E8 telemetry: surface "direct scope hid these facts" so silent quality
 # regressions become visible.
@@ -851,7 +900,10 @@ def record_dependency_scope_gap(
     the ORCHESTRATOR process: ``factory._submit_args`` calls it on the
     scheduler thread before ``executor.submit``, so it is never reached
     from a worker, and the run-level ``factory.lock`` excludes a second
-    orchestrator on the same root.
+    orchestrator on the same root. Its other caller,
+    ``feature_cmd._feature_knowledge_prefix`` (#599), passes a
+    one-component manifest with no dependencies, so no dependency is
+    excluded and that path never reaches this writer.
 
     The ``"a+b"`` open widens what can fail - a telemetry log this
     process can write but not read is refused rather than appended to

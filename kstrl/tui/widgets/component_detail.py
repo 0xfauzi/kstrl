@@ -156,17 +156,25 @@ def _failure_line(entry: dict[str, Any]) -> Text:
     return text
 
 
-def render_failure_detail(comp: ComponentState, root_dir: Path | None = None) -> Group | None:
+def render_failure_detail(
+    comp: ComponentState, root_dir: Path | None = None, route: RenderableType | None = None
+) -> Group | None:
     """Each failed phase and its cause, newest first; output only for the newest.
 
     The output path and lines keep their indent when they wrap, so the
     excerpt does not run back under the failure line it belongs to.
+    ``route`` goes right under the newest failure, above its output, so a
+    long excerpt cannot push it out of the pane (#433 H12).
     """
     failed = [entry for entry in comp.phase_history if not entry.get("passed")]
     if not failed:
         return None
     newest, *older = reversed(failed)
-    parts: list[RenderableType] = [_failure_line(newest), *_gate_output(newest, root_dir)]
+    parts: list[RenderableType] = [
+        _failure_line(newest),
+        *([route] if route is not None else []),
+        *_gate_output(newest, root_dir),
+    ]
     parts.extend(_failure_line(entry) for entry in older)
     return Group(*parts)
 

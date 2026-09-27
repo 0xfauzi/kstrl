@@ -27,6 +27,8 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
+from rich.console import Group
+from rich.padding import Padding
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -49,7 +51,8 @@ _DECISIONS = frozenset({"approve", "reject", "snooze"})
 #: Evidence keys in the detail's words; any other key loses its underscores.
 EVIDENCE_LABELS = {
     "pr": "PR",
-    "head_sha": "PR head",
+    # A park records its branch's head before any push: no PR exists yet (#433 K2).
+    "head_sha": "branch head",
     "open_findings": "open findings",
     "evidence": "evidence file",
 }
@@ -69,7 +72,7 @@ def item_age(item: InboxItem, now: float | None = None) -> str:
 
 
 def evidence_line(key: str, value: object) -> str:
-    """``PR head: 87c3e2efbe2c``: a label, and a list as a list (#433 G6)."""
+    """``branch head: 87c3e2efbe2c``: a label, and a list as a list (#433 G6)."""
     label = EVIDENCE_LABELS.get(key, key.replace("_", " "))
     shown = ", ".join(str(v) for v in value) if isinstance(value, list | tuple) else str(value)
     return f"{label}: {shown}"
@@ -228,7 +231,7 @@ class InboxScreen(Screen[None]):
         seen = f" · seen {item.occurrences} times" if item.occurrences > 1 else ""
         lines.append(
             f"{kind_label(item.kind)} · {item.priority} priority · raised {item_age(item)} ago"
-            f"{seen}\n",
+            f"{seen} · id {item.id[:8]}\n",
             style="dim",
         )
         if item.component:
@@ -244,9 +247,10 @@ class InboxScreen(Screen[None]):
             lines.append(f"\n{item.detail}\n")
         for key, value in item.evidence.items():
             lines.append(f"  {evidence_line(key, value)}\n", style="dim")
-        if item.is_open:
-            _append_choices(lines, self._consequences(item))
-        detail.update(lines)
+        if not item.is_open:
+            detail.update(lines)
+            return
+        detail.update(Group(lines, choices_text(self._consequences(item))))
 
     def on_data_table_row_highlighted(self, _event: object) -> None:
         self._render_detail()
@@ -337,17 +341,23 @@ class InboxScreen(Screen[None]):
         )
 
 
-def _append_choices(lines: Text, choices: Consequences) -> None:
-    """What each offered key does, from the code that reads the decision."""
-    lines.append("\nwhat each choice does\n", style=f"bold {theme.MUTED}")
+def choices_text(choices: Consequences) -> Group:
+    """What each offered key does, from the code that reads the decision;
+    each sentence wraps under itself, not back at the left edge (#433 H7)."""
     keys = {"approve": "a", "reject": "r", "snooze": "s"}
-    for choice, sentence in choices.offered:
-        lines.append(f"  {keys[choice]} {choice}: ", style=f"bold {theme.ACCENT}")
-        lines.append(f"{sentence}\n")
-    if choices.withheld:
-        lines.append(f"  {choices.withheld}\n", style=theme.WARNING)
-    if choices.note:
-        lines.append(f"  {choices.note}\n", style=theme.MUTED)
+    rows = [
+        (Text(f"{keys[choice]} {choice}:", style=f"bold {theme.ACCENT}"), Text(sentence))
+        for choice, sentence in choices.offered
+    ]
+    notes = [
+        Text(said, style=style)
+        for said, style in ((choices.withheld, theme.WARNING), (choices.note, theme.MUTED))
+        if said
+    ]
+    return Group(
+        Text("\nwhat each choice does", style=f"bold {theme.MUTED}"),
+        Padding(Group(theme.label_rows(rows), *notes), (0, 0, 0, 2)),
+    )
 
 
 __all__ = ["InboxScreen", "priority_marker"]

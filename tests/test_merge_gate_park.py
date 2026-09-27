@@ -285,6 +285,8 @@ class TestTheParkIsItsOwnOutcome:
         item = _park_item(root)
         assert item.component == HTTP
         assert item.evidence.get("head_sha") == reviewed
+        # #433 H7: the TUI inbox shows this text as it is.
+        assert "pause_before_pr_merge" not in item.detail and "`" not in item.detail, item.detail
         assert _engineer_ran(tmp_path) == [HTTP]
         # The gate withheld the push and the PR; nothing reached GitHub.
         assert not any("pr create" in line for line in _lines(tmp_path / "gh.log"))

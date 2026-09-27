@@ -51,12 +51,8 @@ IDENTITY_KEYS: tuple[str, str] = ("user.name", "user.email")
 EXPECTED_IDENTITY_SPELLINGS: dict[str, int] = {
     # The one home. Two literals, the two key names.
     "tests/helpers/gitrepo.py": 2,
-    # Prose, not configuration: a Python fixture body asserting on a
-    # model's `user.name` / `user.email` attributes, in two string
-    # literals.
-    "tests/test_harness_integration.py": 2,
-    # Prose: one docstring, on the commit `run_scrubbed` makes.
-    "tests/test_verify.py": 1,
+    # (tests/test_harness_integration.py's two prose spellings left with
+    # the file in the test-suite consolidation.)
 }
 
 #: Layer 2's inventory: every module in ``tests/`` that names a
@@ -81,7 +77,7 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/helpers/integration_harness.py": 2,
     "tests/helpers/run_config.py": 1,
     "tests/spine_utils.py": 1,
-    "tests/test_adequacy.py": 8,
+    "tests/test_adequacy.py": 7,
     "tests/test_agent_processes_outlive_run.py": 1,
     "tests/test_autonomy_ladder.py": 1,
     # #414/#425: three `git commit` spellings - `_commit_rename`, the
@@ -122,6 +118,9 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # tests.helpers.gitrepo.set_identity. The third count is prose: the
     # module docstring names "git" and "commit" in one string.
     "tests/test_feature_base.py": 3,
+    # #599: `_initialised_project` makes one seed commit, into the repository
+    # it has just put through `tests.helpers.gitrepo.set_identity`.
+    "tests/test_feature_operator_context_e2e.py": 1,
     "tests/test_feature_verification.py": 1,
     "tests/test_feature_verification_attribution.py": 1,
     "tests/test_git_identity_helper.py": 5,
@@ -168,8 +167,12 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # commit and the architect test's seed commit), each into a repository
     # already through tests.helpers.gitrepo.set_identity, plus two "git
     # commit" spellings inside shell strings the fake agent runs to commit
-    # work.txt into those same repositories.
-    "tests/test_prompt_record.py": 4,
+    # work.txt into those same repositories. #567 adds a third real
+    # `git("commit", ...)` call (`_spec_project`'s own seed commit, always
+    # run, into the repository `_spec_project` sets identity on right
+    # above) and a third shell spelling (`_architect_then_engineer`, which
+    # commits work.txt into a `_spec_project(initialised=True)` repository).
+    "tests/test_prompt_record.py": 6,
     "tests/test_prompt_upgrade.py": 1,
     "tests/test_provisioning.py": 2,
     "tests/test_resume_ergonomics.py": 2,
@@ -180,6 +183,10 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # shared branch, both into repositories built through
     # `tests.helpers.gitrepo.set_identity`.
     "tests/test_merge_gate_park.py": 2,
+    # #584: one base commit, into the repository `_repo` builds through
+    # `tests.helpers.gitrepo.set_identity`. The engineer's commit is the
+    # `ENGINEER` string it imports from test_merge_gate_park.
+    "tests/test_merge_has_one_recorder.py": 1,
     "tests/test_resume_reclaims_own_branch.py": 5,
     "tests/test_retry_carries_flags.py": 1,
     # #498: one base commit, into the repository `_repo` builds through
@@ -187,14 +194,15 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     "tests/test_review_agent_fallback.py": 2,
     "tests/test_review_coverage.py": 2,
     "tests/test_review_gates.py": 1,
-    "tests/test_review_payload.py": 2,
     "tests/test_root_checkout_merge.py": 4,
     "tests/test_run_honesty.py": 1,
+    # #571: `_repo` commits the E2E fixture repo once, after
+    # `tests.helpers.gitrepo.set_identity(root)`.
+    "tests/test_run_limits_refused_before_spend.py": 1,
     "tests/test_run_record_version.py": 1,
     # Prose, not a commit: a tuple of literal argv-prefix strings an
     # allowlist test checks a Claude reviewer's permission RULES against
     # ("git commit" among them), never spawned.
-    "tests/test_sandbox.py": 1,
     "tests/test_scheduler.py": 1,
     "tests/test_scope_hardening.py": 4,
     "tests/test_scope_launch_gate.py": 1,
@@ -246,7 +254,6 @@ EXPECTED_GIT_COMMIT_SPELLINGS: dict[str, int] = {
     # at its own call site (the `tests/conftest.py` row above), and dropped
     # `_repo`/`_commit` from this file entirely - back to 5, this file's
     # value before #399 touched it.
-    "tests/test_verify.py": 5,
     # #416: two `git commit` argv spellings, both into a repository built by
     # this file's own `_repo`, which calls `tests.helpers.gitrepo.set_identity`
     # right after `git init` - the base commit and the undecodable-CONTENT

@@ -1,4 +1,15 @@
-"""Tests for the Phase 2.5 security review module."""
+"""The Phase 2.5 security review, driven through ``run_security_review``
+on a real git repo with a real change on it (#266).
+
+Every test here builds a review repo, hands ``run_security_review`` a
+scripted agent and asserts the result the factory would gate on: skip
+short-circuits, advisory passes with findings, hard mode fails at or
+above ``fail_threshold`` (#524), an agent crash or unparseable reply is
+an infrastructure error that fails hard mode and passes advisory, and
+findings with an unknown category, an unknown severity or an empty
+explanation are dropped while the well-formed one beside them is kept.
+``MockSecurityAgent`` is shared with ``tests/test_security_fail_count.py``.
+"""
 
 from __future__ import annotations
 
@@ -6,16 +17,9 @@ import json
 from collections.abc import Iterator
 from pathlib import Path
 
-import pytest
-
-from kstrl.git import repo_change_source
 from kstrl.security import (
-    SECURITY_PROMPT,
     SecurityConfig,
-    SecurityFinding,
     SecurityMode,
-    SecurityResult,
-    parse_security_output,
     run_security_review,
 )
 from kstrl.ui.plain import PlainUI
@@ -67,167 +71,37 @@ VALID_SECURITY_OUTPUT = json.dumps(
     }
 )
 
-
-# ---------------------------------------------------------------------------
-# SecurityConfig
-# ---------------------------------------------------------------------------
-
-
-class TestSecurityConfigDefaults:
-    def test_defaults(self) -> None:
-        # R2.1: default aligned with the documented product default -
-        # security review is an opt-in extra LLM call.
-        c = SecurityConfig()
-        assert c.mode == "skip"
-        assert c.timeout_seconds == 0.0
-        assert c.fail_threshold == "high"
-
-    def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("KSTRL_SECURITY_MODE", "hard")
-        monkeypatch.setenv("KSTRL_SECURITY_FAIL_THRESHOLD", "critical")
-        monkeypatch.setenv("KSTRL_SECURITY_TIMEOUT", "300")
-        c = SecurityConfig.from_env()
-        assert c.mode == "hard"
-        assert c.fail_threshold == "critical"
-        assert c.timeout_seconds == 300.0
-
-
-# ---------------------------------------------------------------------------
-# parse_security_output
-# ---------------------------------------------------------------------------
-
-
-class TestParseSecurityOutput:
-    def test_valid_output(self) -> None:
-        result = parse_security_output(VALID_SECURITY_OUTPUT, "advisory")
-        assert len(result.findings) == 2
-        assert result.findings[0].severity == "critical"
-        assert result.findings[1].category == "hardcoded_secret"
-        assert result.exhaustively_searched is True
-
-    def test_invalid_json_returns_failed_result(self) -> None:
-        result = parse_security_output("not json", "hard")
-        assert result.passed is False
-        assert "Failed to parse" in result.overall_notes
-
-    def test_invalid_category_dropped(self) -> None:
-        output = json.dumps(
+MALFORMED_FINDINGS_OUTPUT = json.dumps(
+    {
+        "findings": [
             {
-                "findings": [
-                    {
-                        "category": "made_up",
-                        "severity": "high",
-                        "location": "x:1",
-                        "explanation": "x",
-                    }
-                ]
-            }
-        )
-        result = parse_security_output(output, "advisory")
-        assert result.findings == []
-
-    def test_invalid_severity_dropped(self) -> None:
-        output = json.dumps(
+                "category": "made_up",
+                "severity": "high",
+                "location": "x:1",
+                "explanation": "unknown category",
+            },
             {
-                "findings": [
-                    {
-                        "category": "injection",
-                        "severity": "showstopper",
-                        "location": "x:1",
-                        "explanation": "x",
-                    }
-                ]
-            }
-        )
-        result = parse_security_output(output, "advisory")
-        assert result.findings == []
-
-    def test_missing_explanation_dropped(self) -> None:
-        output = json.dumps(
+                "category": "injection",
+                "severity": "showstopper",
+                "location": "x:2",
+                "explanation": "unknown severity",
+            },
             {
-                "findings": [
-                    {
-                        "category": "injection",
-                        "severity": "high",
-                        "location": "x:1",
-                        "explanation": "",
-                    }
-                ]
-            }
-        )
-        result = parse_security_output(output, "advisory")
-        assert result.findings == []
-
-    def test_empty_findings_with_exhaustive_flag(self) -> None:
-        output = json.dumps(
+                "category": "injection",
+                "severity": "high",
+                "location": "x:3",
+                "explanation": "",
+            },
             {
-                "findings": [],
-                "exhaustively_searched": True,
-            }
-        )
-        result = parse_security_output(output, "hard")
-        assert result.findings == []
-        assert result.exhaustively_searched is True
-
-
-# ---------------------------------------------------------------------------
-# SecurityResult.fail_count
-# ---------------------------------------------------------------------------
-
-
-class TestFailCount:
-    """#524: the count run_security_review sets ``passed`` from. Hard mode
-    counts every finding at or above ``fail_threshold``; no other mode
-    fails on a finding, so it counts none."""
-
-    def _result(self, mode: str, threshold: str, *severities: str) -> SecurityResult:
-        return SecurityResult(
-            passed=True,
-            mode=mode,
-            fail_threshold=threshold,
-            findings=[
-                SecurityFinding(
-                    category="injection",
-                    severity=severity,
-                    location="x:1",
-                    explanation="x",
-                )
-                for severity in severities
-            ],
-        )
-
-    def test_skip_counts_nothing(self) -> None:
-        assert self._result(SecurityMode.SKIP.value, "high", "critical").fail_count == 0
-
-    def test_advisory_counts_nothing(self) -> None:
-        assert self._result(SecurityMode.ADVISORY.value, "high", "critical").fail_count == 0
-
-    def test_hard_does_not_count_below_threshold(self) -> None:
-        assert self._result(SecurityMode.HARD.value, "high", "medium").fail_count == 0
-
-    def test_hard_counts_at_threshold(self) -> None:
-        assert self._result(SecurityMode.HARD.value, "high", "high").fail_count == 1
-
-    def test_hard_counts_above_threshold(self) -> None:
-        assert self._result(SecurityMode.HARD.value, "high", "critical").fail_count == 1
-
-    def test_hard_with_critical_only_threshold(self) -> None:
-        assert self._result(SecurityMode.HARD.value, "critical", "high").fail_count == 0
-        assert self._result(SecurityMode.HARD.value, "critical", "critical").fail_count == 1
-
-    def test_an_unknown_severity_or_threshold_is_an_error_not_a_rank(self) -> None:
-        """No default rank (#524): a value outside ``VALID_SEVERITIES``
-        raises instead of ranking as low or as high, which would move the
-        gate with no message."""
-        with pytest.raises(KeyError):
-            _ = self._result(SecurityMode.HARD.value, "high", "severe").fail_count
-        with pytest.raises(KeyError):
-            _ = self._result(SecurityMode.HARD.value, "severe", "critical").fail_count
-
-
-# ---------------------------------------------------------------------------
-# run_security_review
-# ---------------------------------------------------------------------------
+                "category": "injection",
+                "severity": "low",
+                "location": "src/handler.py:42",
+                "explanation": "the one well-formed finding",
+            },
+        ],
+        "exhaustively_searched": True,
+    }
+)
 
 
 class TestRunSecurityReview:
@@ -321,6 +195,33 @@ class TestRunSecurityReview:
         )
         assert result.passed is True
 
+    def test_malformed_findings_are_dropped_and_the_valid_one_kept(self, tmp_path: Path) -> None:
+        """An unknown category, an unknown severity and an empty
+        explanation each drop their finding; the well-formed finding
+        beside them survives, and with only a low left the hard gate
+        passes rather than counting the dropped high."""
+        repo = self._setup_repo(tmp_path)
+        agent = MockSecurityAgent(with_observed_diffstat(MALFORMED_FINDINGS_OUTPUT, repo))
+        config = SecurityConfig(
+            mode=SecurityMode.HARD.value,
+            fail_threshold="high",
+        )
+        ui = PlainUI(no_color=True)
+        result = run_security_review(
+            agent,
+            repo.path / "prd.json",
+            repo.path,
+            repo.base_branch,
+            config,
+            ui,
+        )
+        assert result.passed is True
+        assert result.infrastructure_error is False
+        assert [(f.severity, f.explanation) for f in result.findings] == [
+            ("low", "the one well-formed finding")
+        ]
+        assert result.exhaustively_searched is True
+
     def _boom_agent(self) -> object:
         class _Boom:
             @property
@@ -410,73 +311,3 @@ class TestRunSecurityReview:
         )
         assert result.passed is True
         assert result.infrastructure_error is True
-
-
-# ---------------------------------------------------------------------------
-# Result rendering
-# ---------------------------------------------------------------------------
-
-
-class TestResultFormatting:
-    def test_pr_body_with_findings(self) -> None:
-        r = SecurityResult(
-            passed=False,
-            mode="hard",
-            findings=[
-                SecurityFinding(
-                    category="injection",
-                    severity="critical",
-                    location="src/x.py:1-5",
-                    explanation="shell=True",
-                    suggestion="use list args",
-                ),
-            ],
-        )
-        body = r.as_pr_body_section()
-        assert "Security Review" in body
-        assert "1 critical" in body
-        assert "injection" in body
-
-    def test_pr_body_no_findings(self) -> None:
-        r = SecurityResult(
-            passed=True,
-            mode="hard",
-            exhaustively_searched=True,
-        )
-        body = r.as_pr_body_section()
-        assert "No findings" in body
-        assert "exhaustively" in body
-
-    def test_retry_context_lists_findings(self) -> None:
-        r = SecurityResult(
-            passed=False,
-            mode="hard",
-            findings=[
-                SecurityFinding(
-                    category="auth_bypass",
-                    severity="high",
-                    location="x:1",
-                    explanation="no auth check",
-                    suggestion="add @require_auth",
-                )
-            ],
-        )
-        ctx = r.as_retry_context()
-        assert "auth_bypass" in ctx
-        assert "no auth check" in ctx
-        assert "@require_auth" in ctx
-
-
-def test_prompt_renders_with_placeholders() -> None:
-    """The SECURITY_PROMPT must format cleanly with the three
-    placeholders the runner provides (R5.3 added data_delimiter; #266
-    replaced diff_content with change_source)."""
-    rendered = SECURITY_PROMPT.format(
-        prd_content="some prd",
-        change_source=repo_change_source("origin/main"),
-        data_delimiter="KSTRL-DATA-test",
-    )
-    assert "some prd" in rendered
-    assert "git diff origin/main...HEAD" in rendered
-    # Sanity: the schema example should be intact
-    assert "findings" in rendered

@@ -1,44 +1,69 @@
-"""Stage 3 PR F (TUI rewrite): embedded mode - bridge, modal answering,
-quit flow, notify capture."""
+"""Stage 3 PR F (TUI rewrite): embedded mode driven through a Textual
+pilot and a real notify hook.
+
+A fake orchestrator thread stands in for ``run_factory`` and asks its
+questions through the real ``QueueInteractionChannel``: the checkpoint
+modal answers the channel, the quit flow requests a graceful stop and a
+declined quit keeps running, a pending checkpoint reopens with ``c``, a
+generic prompt uses the request's labels and only its valid choices, the
+custom screen stack is pushed bottom first, and the options modal
+resolves a CONFIRM through the channel (escape leaves it pending).
+``NotifyHooks`` fires a real hook subprocess: captured output writes
+nothing to the terminal and the default keeps the terminal bell path.
+
+``TestRunFactoryEmbeddedHandsTheCallersLockIn`` drives the real
+``run_factory_embedded`` / ``run_embedded`` / ``run_factory`` chain end to
+end against a real git repo and a real stub-engineer subprocess (#597):
+only ``KstrlTuiApp`` (pure rendering, uninvolved in the lock plumbing) is
+swapped for a stand-in that waits on the worker thread rather than
+opening a terminal - driving the real Textual app over a pty was measured
+(``tracer_own2_pty.py``, lane notes) to introduce an unrelated exit-code
+quirk of its own, which would make the assertion about lock discipline
+in this file depend on something this file is not testing.
+"""
 
 from __future__ import annotations
 
-import io
-import logging
+import shlex
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
+import pytest
+
+import kstrl.factory as factory_mod
+import kstrl.tui.embed as embed_mod
 from kstrl import events as ev
-from kstrl.factory import FactoryResult
+from kstrl.config import KstrlConfig
+from kstrl.contract import ContractConfig
+from kstrl.factory import FactoryConfig
 from kstrl.interaction import (
     CheckpointContext,
     PromptKind,
     PromptRequest,
     QueueInteractionChannel,
 )
+from kstrl.manifest import ComponentStatus, Manifest
 from kstrl.observability import NotifyConfig, NotifyHooks
 from kstrl.shutdown import StopController
 from kstrl.tui.app import KstrlTuiApp, Mode
 from kstrl.tui.bridge import (
     OrchestratorHandle,
     start_command_thread,
-    start_orchestrator,
-)
-from kstrl.tui.embed import (
-    _install_exclusive_root_handler,
-    _plain_fallback,
-    _restore_root_handlers,
 )
 from kstrl.tui.screens.checkpoint import CheckpointModal
 from kstrl.tui.screens.component import ComponentScreen
 from kstrl.tui.screens.options import OptionsModal
 from kstrl.tui.screens.overview import OverviewScreen
 from kstrl.tui.screens.quit import QuitModal
+from kstrl.ui.plain import PlainUI
+from kstrl.verify import VerifyConfig
 from tests.helpers.settle import drained, settled
+from tests.test_retry_carries_flags import _repo
+from tests.test_retry_lock_discipline import _LOCK_PROBING_ENGINEER
 
 
 def _write_minimal_run(root: Path, run_id: str) -> Path:
@@ -48,62 +73,6 @@ def _write_minimal_run(root: Path, run_id: str) -> Path:
     bus.emit(ev.ComponentStarted(component="comp-a"))
     bus.close()
     return paths.root
-
-
-class TestBridge:
-    def test_start_orchestrator_runs_and_reports(self, tmp_path: Path) -> None:
-        stop = StopController()
-        channel = QueueInteractionChannel()
-        result = FactoryResult()
-        result.exit_code = 0
-
-        with patch(
-            "kstrl.tui.bridge.run_factory",
-            return_value=result,
-        ) as fake:
-            handle = start_orchestrator(
-                object(),
-                object(),
-                object(),
-                object(),  # type: ignore[arg-type]
-                tmp_path,
-                None,
-                run_id="run-x",
-                stop=stop,
-                channel=channel,
-            )
-            handle.join(timeout=5)
-        assert handle.done()
-        assert handle.exit_code == 0
-        kwargs = fake.call_args.kwargs
-        assert kwargs["run_id"] == "run-x"
-        assert kwargs["interaction"] is channel
-        assert kwargs["stop"] is stop
-        assert kwargs["notify_capture_output"] is True
-
-    def test_orchestrator_exception_lands_in_error_box(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        with patch(
-            "kstrl.tui.bridge.run_factory",
-            side_effect=RuntimeError("boom"),
-        ):
-            handle = start_orchestrator(
-                object(),
-                object(),
-                object(),
-                object(),  # type: ignore[arg-type]
-                tmp_path,
-                None,
-                run_id="run-x",
-                stop=StopController(),
-                channel=QueueInteractionChannel(),
-            )
-            handle.join(timeout=5)
-        assert handle.done()
-        assert handle.error_box
-        assert handle.exit_code == 1
 
 
 def _fake_orchestrator(
@@ -389,39 +358,6 @@ class TestEmbeddedApp:
         assert results == [1]
 
 
-class TestFallbackAndLogging:
-    def test_plain_fallback_accepts_tailer_chunks(self, tmp_path: Path) -> None:
-        run_dir = _write_minimal_run(tmp_path, "factory-20260720-fallback")
-        thread = threading.Thread(target=lambda: None)
-        thread.start()
-        thread.join()
-        handle = OrchestratorHandle(
-            thread=thread,
-            stop=StopController(),
-            result_box=[7],
-        )
-
-        assert _plain_fallback(handle, run_dir) == 7
-
-    def test_root_logging_is_exclusive_and_restored(self) -> None:
-        logger = logging.Logger("embed-test")
-        old_stream = io.StringIO()
-        tui_stream = io.StringIO()
-        old_handler = logging.StreamHandler(old_stream)
-        tui_handler = logging.StreamHandler(tui_stream)
-        logger.addHandler(old_handler)
-
-        previous = _install_exclusive_root_handler(logger, tui_handler)
-        logger.warning("during tui")
-        _restore_root_handlers(logger, tui_handler, previous)
-        logger.warning("after tui")
-
-        assert "during tui" not in old_stream.getvalue()
-        assert "after tui" in old_stream.getvalue()
-        assert "during tui" in tui_stream.getvalue()
-        assert "after tui" not in tui_stream.getvalue()
-
-
 class TestNotifyCapture:
     def test_captured_hook_writes_nothing_to_terminal(
         self,
@@ -484,38 +420,6 @@ def _fake_confirm_worker(
         return 0
 
     return start_command_thread(_target, stop=StopController())
-
-
-class TestCommandThread:
-    def test_returned_code_is_boxed(self) -> None:
-        handle = start_command_thread(lambda: 7, stop=StopController())
-        handle.join(timeout=5)
-        assert handle.done()
-        assert handle.exit_code == 7
-        assert not handle.error_box
-
-    def test_system_exit_codes_are_honored_not_crashes(self) -> None:
-        """A missed sys.exit inside a core must keep its exit code."""
-        import sys
-
-        cases: list[tuple[Any, int]] = [(3, 3), (None, 0), ("boom", 1)]
-        for raised, expected in cases:
-            handle = start_command_thread(
-                lambda code=raised: sys.exit(code),  # type: ignore[misc]
-                stop=StopController(),
-            )
-            handle.join(timeout=5)
-            assert not handle.error_box, f"sys.exit({raised!r}) crashed"
-            assert handle.exit_code == expected
-
-    def test_exception_lands_in_error_box(self) -> None:
-        def _boom() -> int:
-            raise RuntimeError("boom")
-
-        handle = start_command_thread(_boom, stop=StopController())
-        handle.join(timeout=5)
-        assert handle.error_box
-        assert handle.exit_code == 1
 
 
 class TestScreenFactory:
@@ -658,3 +562,116 @@ class TestOptionsModal:
                 what="the finished core to exit the app",
             )
         assert decisions == [0]
+
+
+class TestRunFactoryEmbeddedHandsTheCallersLockIn:
+    """``run_factory_embedded`` must hand its caller's run lock into ``run_factory`` (#597).
+
+    `ks factory --tui` takes the run-level lock before it builds the
+    embedded app (cli.py's own ``_resolve_factory_run_lock``) and hands it
+    to ``run_factory_embedded``, so the worker thread's own ``run_factory``
+    call must use that SAME lock rather than acquire a second one - flock
+    refuses a second acquisition even from another open file descriptor of
+    the SAME process (measured directly, not assumed: opening the already-
+    locked file again and requesting ``LOCK_EX | LOCK_NB`` raises
+    ``OSError`` regardless of thread or process). Dropping
+    ``run_lock=run_lock`` from the ``run_factory(...)`` call inside
+    ``_target`` makes ``run_factory`` try to acquire a fresh lock against
+    the one the CLI is still holding and get refused immediately
+    (``FactoryLockHeldError``, caught inside ``run_factory`` itself, exit
+    code 2) - the run never reaches the engineer at all, which is the
+    observable difference this pins.
+    """
+
+    def test_the_worker_finds_the_callers_lock_still_held(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        root = _repo(tmp_path)
+        manifest_path = root / "scripts" / "kstrl" / "manifest.json"
+        manifest = Manifest.load(manifest_path)
+        prompt_file = root / "scripts" / "kstrl" / "prompt.md"
+        prompt_file.write_text("test prompt", encoding="utf-8")
+
+        # The same lock-probing stub `test_the_retry_takes_the_lock_once_
+        # and_holds_it_into_the_run` uses: it records "held" or "free"
+        # depending on whether `.kstrl/factory.lock` is contested when the
+        # engineer runs, then completes.
+        seen = tmp_path / "lock_seen_by_engineer.txt"
+        engineer = tmp_path / "engineer.py"
+        engineer.write_text(_LOCK_PROBING_ENGINEER, encoding="utf-8")
+        agent_cmd = " ".join(
+            shlex.quote(part)
+            for part in (
+                sys.executable,
+                str(engineer),
+                str(root / ".kstrl" / "factory.lock"),
+                str(seen),
+            )
+        )
+
+        base_config = KstrlConfig(
+            prompt_file=prompt_file,
+            prd_file=root / "scripts" / "kstrl" / "prd.json",
+            sleep_seconds=0,
+            agent_cmd=agent_cmd,
+            kstrl_branch="",
+            kstrl_branch_explicit=True,
+            ui_mode="plain",
+            no_color=True,
+        )
+        factory_config = FactoryConfig(
+            max_parallel=1,
+            max_retries=0,
+            create_prs=False,
+            review_mode="skip",
+            verify_config=VerifyConfig(
+                test_command="true", typecheck_command="true", lint_command="true"
+            ),
+            contract_config=ContractConfig(mode="skip"),
+        )
+
+        class _WaitingApp:
+            """Stands in for KstrlTuiApp: no terminal, just waits for the worker.
+
+            Everything else in the chain - ``run_factory_embedded``,
+            ``run_embedded``, ``start_command_thread`` and ``run_factory``
+            itself - runs for real; only the Textual rendering, which has
+            no part in the lock plumbing under test, is replaced.
+            """
+
+            def __init__(self, **kwargs: Any) -> None:
+                self._handle: Any = kwargs["orchestrator"]
+
+            def run(self) -> int | None:
+                self._handle.join(timeout=60)
+                return None
+
+        monkeypatch.setattr(embed_mod, "KstrlTuiApp", _WaitingApp)
+
+        # Stands in for the lock `ks factory --tui` already took before
+        # calling `run_factory_embedded` (cli.py's own
+        # `_resolve_factory_run_lock`, above the manifest load, #597).
+        cli_lock = factory_mod._acquire_run_lock(root, PlainUI(no_color=True), force=False)
+        try:
+            code = embed_mod.run_factory_embedded(
+                manifest,
+                factory_config,
+                base_config,
+                root,
+                manifest_path,
+                run_lock=cli_lock,
+            )
+        finally:
+            cli_lock.release()
+
+        # `storage`'s PRD still does not pass, so a run that actually
+        # reached the engineer fails it (1), never the self-refusal (2) a
+        # dropped run_lock produces when run_factory tries to acquire a
+        # second lock against the one the CLI still holds.
+        assert code == 1, code
+        assert seen.exists(), "the engineer never ran"
+        assert seen.read_text(encoding="utf-8").split() == ["held"], seen.read_text(
+            encoding="utf-8"
+        )
+        reread = Manifest.load(manifest_path).get_component("storage")
+        assert reread is not None and reread.status == ComponentStatus.FAILED.value, reread

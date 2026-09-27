@@ -1,11 +1,12 @@
-"""R7.3 PR 2: unified scheduling loop regression tests.
+"""R7.3 PR 2: unified scheduling loop regression test.
 
-The sequential and parallel scheduler paths are now ONE loop (an
-_InlineExecutor stands in for the process pool when max_parallel <= 1).
-These tests pin the loop-shape behaviors that a naive unification would
+The sequential and parallel scheduler paths are ONE loop (an inline
+executor stands in for the process pool when max_parallel <= 1). This
+test pins the loop-shape behaviour that a naive unification would
 lose: a pass that transitions components without launching anything
-(provisioning failure, budget gate) must re-derive the ready set
-instead of stopping while schedulable components remain.
+(provisioning failure) must re-derive the ready set instead of
+stopping while schedulable components remain, driven through
+``run_factory`` on a real repo.
 
 The budget-gate fail-all behavior is already pinned by
 tests/test_usage_meter.py (comp-b never launches: the scheduling gate
@@ -27,7 +28,6 @@ from kstrl.config import KstrlConfig
 from kstrl.factory import (
     ComponentResult,
     FactoryConfig,
-    _InlineExecutor,
     run_factory,
 )
 from kstrl.fixtures import FixturesConfig
@@ -122,28 +122,6 @@ def _factory_config(tmp_path: Path, **overrides: Any) -> FactoryConfig:
     )
     defaults.update(overrides)
     return FactoryConfig(**defaults)
-
-
-class TestInlineExecutor:
-    def test_submit_resolves_result(self) -> None:
-        future = _InlineExecutor().submit(lambda: ComponentResult("a", True))
-        assert future.done()
-        assert future.result().component_id == "a"
-
-    def test_submit_captures_exception_for_result_time(self) -> None:
-        def _boom() -> ComponentResult:
-            raise RuntimeError("worker exploded")
-
-        future = _InlineExecutor().submit(_boom)
-        assert future.done()
-        # The exception surfaces at result(), where a pool worker's
-        # would - the shared loop's except Exception handles both.
-        try:
-            future.result()
-        except RuntimeError as exc:
-            assert "worker exploded" in str(exc)
-        else:  # pragma: no cover - the assert above must fire
-            raise AssertionError("expected RuntimeError")
 
 
 class TestUnifiedSchedulingLoop:

@@ -5,13 +5,15 @@
 - **Language**: Python (FastAPI / pytest / uv toolchain)
 - **Project**: kstrl - a software factory for AI coding agents, built as a loop that closes on independent measurement rather than on the agent's own report
 - **Layout**: `kstrl/` is the canonical factory implementation and the only Python package.
+- **Design**: `design/` is the design system for the proposed graphical app (tokens, components, the frames of every screen) and the tools that build and check it. Start at `design/README.md`. It does not govern the Textual TUI, whose rules are `DESIGN.md` and `kstrl/tui/theme.py`.
 
 ## Verification commands
 
-- **Test**: `uv run pytest tests/ -v`
+- **Test**: `uv run pytest tests/ -q -n 8` (pytest-xdist is a dev dependency; on this 10-core machine -n 8 measured 370s against 761s at -n 3 on the same tree under the same load, and CI runs -n 4)
 - **Calibration (opt-in, real LLMs)**: `KSTRL_RUN_CALIBRATION=1 uv run pytest tests/test_calibration.py -v`
 - **Typecheck**: `uv run mypy kstrl/ --strict`
 - **Lint**: `uv run ruff check kstrl/ tests/`
+- **Design system** (only when `design/` changes): `sh design/tools/check_all.sh`, with the tools' own requirements (`design/tools/requirements.txt`)
 
 Note on mypy scope: `pyproject.toml` declares `[tool.mypy] files = ["kstrl"]` so `uv run mypy` (no args) also checks `kstrl/`, keeping it in lockstep with the factory's smart-default typecheck command.
 
@@ -37,6 +39,7 @@ kstrl's factory uses eight distinct roles. Three are LLM-driven adversarial pass
 - **Prompt edits require a version bump AND a hash update.** Every adversarial prompt (including the harness-shipped engineer prompt `DEFAULT_PROMPT`) declares a `*_PROMPT_VERSION` semver constant next to the body. `tests/test_prompt_versions.py` snapshots each prompt as a `(hash, version)` tuple in `_EXPECTED_SNAPSHOTS`; both must move together. The test also AST-walks `kstrl/` for any `*_PROMPT` constant and fails if a new one is not enrolled. The walk is depth-agnostic (a binding inside a function or class body counts) and keys on the target NAME plus a value it cannot prove is a non-string, so a body never bound to a `*_PROMPT` name - returned straight out of a function, or bound to a local called something else - is invisible to it: hoist such text to an enrolled constant and interpolate the run-time values back in (H3, #299). The audit trail is the PR diff with prompt body + version constant + snapshot tuple all moving (H3).
 - **A `DEFAULT_PROMPT` bump also appends a scaffold-ledger row.** `ks init` never overwrites `scripts/kstrl/prompt.md`, so a version bump alone reaches no already-initialised project. `SCAFFOLDED_TEMPLATES` in `kstrl/init_cmd.py` records the SHA-256 of every body each scaffolded template has ever shipped; append the new row, never edit or drop an older one, because an old row is the only thing that can recognise a copy already on someone's disk (H3b).
 - **Be explicit about what was tested vs assumed.** "Smoke passed" without listing what was checked is presence-testing, not behavior-testing (H4).
+- **Only end-to-end tests are committed.** Correctness means the system works end to end, so what lands in `tests/` is an end-to-end test (a `ks` command, a serve cycle, a factory run with a stub agent, a TUI pilot) plus the static guards; an agent that needs a unit test to verify its own change writes it, runs it, and deletes it before committing, and finds or builds an end-to-end test to carry the behaviour. Owner's standing instruction of 2026-09-27; the census that motivated it is in the PR that added this line.
 - **All adversarial-roadmap policies are tracked in `docs/adversarial-roadmap.md`**. Read it before changing the role architecture.
 - **The issue-to-merge process is written down in [docs/coordinator-workflow.md](docs/coordinator-workflow.md)**. It covers triage and priority labels, how to write an issue a weaker model can build, the lane shapes and which model runs each stage, planted mutations and their four outcomes, the simplify pass, the merge gate, and the rules that cost something to learn. Read it before running or changing the process.
 

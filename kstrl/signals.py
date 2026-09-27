@@ -58,6 +58,7 @@ from typing import Any
 from kstrl.appendio import append_records
 from kstrl.atomicio import atomic_write_text
 from kstrl.config import _parse_bool, load_toml_section, resolve_config_file
+from kstrl.config_numbers import check_numbers
 from kstrl.jsonread import read_json
 from kstrl.statedir import CONTROL_SIGNALS, control_file, ensure_control_state
 
@@ -108,8 +109,7 @@ class SignalsConfig:
     tracker's bearer token, read at call time by ``fetch_bugsink`` - the
     same shape ``LinearConfig.token_env`` uses and for the same reason:
     ``kstrl.toml`` is a tracked file gitleaks scans, so there is no
-    ``token`` field here at all, checked by
-    ``tests/test_signals_absence.py``.
+    ``token`` field here at all.
 
     ``new_issue_events`` and ``repeat_growth_events`` are advisory
     thresholds that only ever choose a label
@@ -128,7 +128,9 @@ class SignalsConfig:
 
     def __post_init__(self) -> None:
         if self.http_timeout <= 0:
-            raise ValueError("SignalsConfig.http_timeout must be positive")
+            raise ValueError(
+                f"SignalsConfig.http_timeout must be positive, got {self.http_timeout!r}"
+            )
         if not self.token_env:
             raise ValueError("SignalsConfig.token_env must not be empty")
 
@@ -161,7 +163,7 @@ class SignalsConfig:
         _overlay_toml_section(config, section)
         _overlay_env(config)
         config.__post_init__()
-        return config
+        return check_numbers(config)
 
 
 def _overlay_toml_section(config: SignalsConfig, section: dict[str, Any]) -> None:

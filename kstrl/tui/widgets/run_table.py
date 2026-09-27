@@ -5,7 +5,8 @@ place; structural changes rebuild the row order while retaining the
 selected run. Ref-only columns (kind, liveness, age) render immediately;
 the folded summary columns (state, comps, tok, cost) render the honest dim
 dot until the D2 worker posts SummariesReady, and keep R3.1's "≥"
-lower-bound marker whenever the run had unreported calls.
+lower-bound marker whenever the run had unreported calls. The cost cell
+is the spend against the cap the run recorded (``cost_against_cap``).
 
 #433: the state column says a word (tui.run_status) instead of leaving a
 glyph to carry it, and every cell update widens its column. A cell that
@@ -24,7 +25,7 @@ from textual.widgets import DataTable
 from kstrl.tui import theme
 from kstrl.tui.home_view import fit_rows
 from kstrl.tui.run_status import RUN_STATE_STYLE, RUNNING
-from kstrl.tui.widgets.cost_meter import at_least, format_tokens
+from kstrl.tui.widgets.cost_meter import at_least, cost_against_cap, format_tokens
 
 if TYPE_CHECKING:
     from kstrl.tui.home_data import RunSummary
@@ -86,12 +87,17 @@ def _summary_cells(summary: RunSummary | None) -> tuple[Text, Text, Text]:
         if summary.total_tokens
         else _dot()
     )
-    cost = (
-        Text(at_least(f"${summary.cost_usd:.2f}", summary.cost_lower_bound), justify="right")
-        if summary.cost_usd
-        else _dot()
-    )
-    return comps, tok, cost
+    return comps, tok, _cost_cell(summary)
+
+
+def _cost_cell(summary: RunSummary) -> Text:
+    """The spend against the cap the run recorded, ``$19.30 of $35.00 cap 56%``,
+    by ``cap_percent``'s one rule; ``· no cap`` when it recorded none (#433)."""
+    if not summary.cost_usd:
+        return _dot()
+    cell = cost_against_cap(summary.cost_usd, summary.max_cost_usd, summary.cost_lower_bound)
+    cell.justify = "right"
+    return cell
 
 
 def _row_values(
@@ -120,6 +126,10 @@ def _key(column: str) -> str:
 
 
 class RunTable(DataTable[Text | str]):
+    #: Whether ``update_runs`` shortened a note to fit; home then says
+    #: where the note is whole (#433 H6).
+    notes_cut = False
+
     def on_mount(self) -> None:
         self.cursor_type = "row"
         self.zebra_stripes = False
@@ -159,7 +169,12 @@ class RunTable(DataTable[Text | str]):
         # table's width, never cut at the edge; the preview line under the
         # table carries the whole reason (#433 G9).
         width = self.size.width or self.app.size.width
-        fitted = fit_rows(rows, width, columns.index("note"), headers=columns)
+        note = columns.index("note")
+        whole = [row[note].plain for row in rows]
+        fitted = fit_rows(rows, width, note, headers=columns)
+        self.notes_cut = any(
+            row[note].plain != said for row, said in zip(fitted, whole, strict=True)
+        )
         for ref, values in zip(refs, fitted, strict=True):
             self._put_row(ref.run_id, values, columns)
         if order_changed and selected_before in desired:

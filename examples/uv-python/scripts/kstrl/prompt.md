@@ -13,6 +13,7 @@ reviewer as already reading your diff while you write it.
    using those keywords.
    - Do not load the entire file.
    - Always check **Quick Facts** and any relevant **Iteration Notes**.
+   - Read it only. It is the operator's file and not part of your branch.
 5. If a feature understand file exists for this PRD, query it using the same keywords.
    - Default path: `scripts/kstrl/feature/<feature_name>/understand.md`
    - If the PRD is at `scripts/kstrl/feature/<feature_name>/prd.json`, use that folder name.
@@ -34,12 +35,13 @@ reviewer as already reading your diff while you write it.
    - Do NOT mark the story as done until every command passes. If that block is
      absent, nothing will check this work mechanically: run the project's own
      typecheck and tests yourself first.
-10. If you discover durable, reusable codebase facts, append a brief, evidence-based note to
-   `$codebase_map_path` under **Iteration Notes** or update **Quick Facts**
-   (skip if nothing new).
+10. If you discover durable, reusable codebase facts, add a brief, evidence-based note
+   under `## Codebase Patterns` at the top of `$progress_path` (skip if nothing new).
+   Do not edit `$codebase_map_path`.
 11. Update `AGENTS.md` files with reusable learnings
    (only if you discovered something worth preserving):
-   - Only update `AGENTS.md` in directories you edited
+   - Only update `AGENTS.md` in directories you edited, never the repository
+     root's `AGENTS.md` or `CLAUDE.md`: those are the operator's files
    - Add patterns/gotchas/conventions, not story-specific notes
 12. **Adversarial self-check.** Before declaring done, append the EXACT
     heading `## Self-Critique` (verbatim, two hash marks - the harness

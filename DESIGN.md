@@ -3,6 +3,9 @@
 Terminal UI (Textual). The single source of truth for tokens is
 `kstrl/tui/theme.py` (`KSTRL_THEME`); this file documents intent.
 
+The proposed graphical app has its own design system, separate from this
+one: see `design/README.md`.
+
 ## Theme
 
 Dark, warm near-black ramp. Scene: a developer's terminal, evening

@@ -7,6 +7,7 @@ footer. The feed is what replaced the critique's 85% dead space.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -19,7 +20,15 @@ from textual.screen import Screen
 from textual.widgets import Footer, Static
 
 from kstrl.tui import theme
-from kstrl.tui.delivery import Delivery, integration_summary, merge_summary, merges_of
+from kstrl.tui.delivery import (
+    CI_NOT_READ,
+    Delivery,
+    integration_summary,
+    merge_lines,
+    merges_of,
+    read_ci,
+    release_note,
+)
 from kstrl.tui.integration_view import IntegrationReview, read_integration_review
 from kstrl.tui.messages import DeliveryRead, StateChanged
 from kstrl.tui.serve_view import ServeState, read_serve_state, short_item_id
@@ -31,6 +40,7 @@ from kstrl.tui.widgets.safe_mode_chip import SafeModeBanner
 
 if TYPE_CHECKING:
     from kstrl import events as ev
+    from kstrl.ci_state import CiLedger
     from kstrl.reducer import RunState
     from kstrl.safemode import SafeModeReason
 
@@ -97,6 +107,8 @@ class OverviewScreen(Screen[None]):
         self._pending_feed: list[ev.Event] = []
         self._integration: IntegrationReview | None = None
         self._serve: ServeState | None = None
+        self._ci: CiLedger | None = None
+        self._ci_problem = CI_NOT_READ
         self._delivery_read = False
         self._reading_delivery = False
 
@@ -166,7 +178,9 @@ class OverviewScreen(Screen[None]):
                 review, serve = read_run_delivery(root, run_dir, fix_status)
             except Exception:  # noqa: BLE001 - a broken file must not kill the board
                 review, serve = None, None
-            self.post_message(DeliveryRead(review, serve))
+            # Its own read: an unreadable ledger is every commit's unknown,
+            # and never hides the review (#433 G11).
+            self.post_message(DeliveryRead(review, serve, *read_ci(root)))
 
         self.run_worker(_work, thread=True, group="delivery")
 
@@ -174,6 +188,7 @@ class OverviewScreen(Screen[None]):
         self._reading_delivery = False
         self._integration = message.integration
         self._serve = message.serve
+        self._ci, self._ci_problem = message.ci, message.ci_problem
         self._delivery_read = True
         self.refresh_bindings()
         state = self._store_state()
@@ -185,7 +200,6 @@ class OverviewScreen(Screen[None]):
         if state.kind != "factory" or not self._delivery_read:
             row.display = False
             return
-        compact = self.size.width < 110
         # Glyphs only: the words for each verdict are on the review screen.
         integration = integration_summary(self._integration, short=True)
         if self._integration is not None:
@@ -196,11 +210,15 @@ class OverviewScreen(Screen[None]):
             release_ref=state.release_ref,
             release_withheld=state.release_withheld,
             integration=self._integration,
+            ci=self._ci,
+            ci_problem=self._ci_problem,
         )
         # A section of its own under the board, titled like "activity"
         # (#433 G10), not two lines flush under the table.
         title = Text("delivery", style=f"bold {theme.MUTED}")
-        lines = [integration, merge_summary(delivery, short=compact)]
+        title.append(release_note(delivery), style=theme.MUTED)
+        # #delivery-row pads two cells a side and each line is indented two.
+        lines = [integration, *merge_lines(delivery, time.time(), self.size.width - 6)]
         row.update(Text("\n").join([title, *(Text("  ") + line for line in lines)]))
         row.display = True
 

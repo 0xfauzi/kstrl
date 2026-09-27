@@ -1,0 +1,322 @@
+<!-- @dsCard group="Frames (proposal)" height=800 width=1280 page subtitle="3a · Step level, Stage: the agent speaking takes the stage" -->
+<!doctype html>
+<html lang="en" data-wired-frames="B">
+<head>
+<meta charset="utf-8">
+<title>Step level: Stage</title>
+<style>
+  html, body { margin:0; }
+
+  /* the frame's screens and windows: one screen shows at a time; a window's box is the screen's while it is open */
+  .scr[hidden], [data-overlay][hidden] { display:none; }
+  [data-overlay] { display:contents; }
+
+/* Map3Step */
+.scr:where([data-screen="Map3Step"]) { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
+:where([data-screen="Map3Step"]) .map { position:relative; min-height:0; }
+:where([data-screen="Map3Step"]) .map > svg { display:block; font-family:var(--font-agent); }
+:where([data-screen="Map3Step"]) .top { position:absolute; left:32px; right:32px; top:16px; }
+:where([data-screen="Map3Step"]) .stage { position:absolute; left:32px; right:32px; top:70px; height:382px; }
+:where([data-screen="Map3Step"]) .stage-grid { flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1fr) 340px; column-gap:48px; }
+:where([data-screen="Map3Step"]) .spk { display:flex; flex-direction:column; min-width:0; }
+:where([data-screen="Map3Step"]) .who { display:flex; align-items:center; gap:10px; font:var(--t-small); }
+:where([data-screen="Map3Step"]) .who .p { font:var(--t-body); font-weight:600; }
+:where([data-screen="Map3Step"]) .who .now { margin-left:auto; display:inline-flex; align-items:center; gap:8px; font:var(--t-label); font-weight:600; color:var(--work); }
+:where([data-screen="Map3Step"]) .hist { margin-top:auto; }
+:where([data-screen="Map3Step"]) .hist p { margin:0 0 8px; font:var(--t-body); color:var(--text-3); max-width:44ch; }
+:where([data-screen="Map3Step"]) .hist p:first-child { font:var(--t-body); }
+:where([data-screen="Map3Step"]) .say { margin:8px 0 0; font:var(--t-statement-xl); letter-spacing:var(--t-statement-xl-ls); color:var(--text); max-width:24ch; }
+:where([data-screen="Map3Step"]) .ctx { border-left:1px solid var(--line); padding-left:32px; display:flex; flex-direction:column; }
+:where([data-screen="Map3Step"]) .lbl { font:var(--t-label); font-weight:400; color:var(--text-3); margin-bottom:10px; }
+:where([data-screen="Map3Step"]) .sl { display:flex; justify-content:space-between; gap:10px; font:var(--t-body); padding:7px 0; border-bottom:1px solid var(--line); align-items:baseline; }
+:where([data-screen="Map3Step"]) .sl em { font-style:normal; font:var(--t-label); font-weight:400; color:var(--text-2); white-space:nowrap; }
+:where([data-screen="Map3Step"]) .foot { margin-top:auto; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="Map3Step"]) .tiles { position:absolute; left:32px; right:32px; top:466px; height:192px; display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; }
+:where([data-screen="Map3Step"]) .th { display:flex; align-items:center; gap:8px; }
+:where([data-screen="Map3Step"]) .th .p { font:var(--t-body); font-weight:600; }
+:where([data-screen="Map3Step"]) .th .ag { margin-left:auto; font:var(--t-measure-small); color:var(--text-3); }
+:where([data-screen="Map3Step"]) .tb { display:flex; align-items:center; gap:14px; margin-top:12px; }
+:where([data-screen="Map3Step"]) .num b { display:block; font:var(--t-stat); letter-spacing:var(--t-stat-ls); }
+:where([data-screen="Map3Step"]) .num span { font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="Map3Step"]) .tiles .k-tile p { margin:10px 0 0; font:var(--t-body); color:var(--text-2); }
+:where([data-screen="Map3Step"]) .tf { margin-top:auto; }
+:where([data-screen="Map3Step"]) .il { display:flex; align-items:center; gap:7px; font:var(--t-small); margin-top:9px; }
+:where([data-screen="Map3Step"]) .il em { font-style:normal; margin-left:auto; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="Map3Step"]) .sofar { margin-top:auto; font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="Map3Step"]) .sofar b { font:var(--t-measure); font-weight:600; color:var(--text); }
+/* Map3StepGrid */
+.scr:where([data-screen="Map3StepGrid"]) { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
+:where([data-screen="Map3StepGrid"]) .map { position:relative; min-height:0; }
+:where([data-screen="Map3StepGrid"]) .map > svg { display:block; font-family:var(--font-agent); }
+:where([data-screen="Map3StepGrid"]) .top { position:absolute; left:32px; right:32px; top:16px; }
+:where([data-screen="Map3StepGrid"]) .bento { position:absolute; left:32px; right:32px; top:70px; bottom:14px; display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); grid-template-rows:1fr 1fr 170px; gap:14px; }
+:where([data-screen="Map3StepGrid"]) .b { min-width:0; min-height:0; }
+:where([data-screen="Map3StepGrid"]) .hero { grid-column:1 / span 2; grid-row:1 / span 2; }
+:where([data-screen="Map3StepGrid"]) .hh { display:flex; justify-content:space-between; align-items:flex-start; }
+:where([data-screen="Map3StepGrid"]) .big { font:var(--t-input); color:var(--text-2); }
+:where([data-screen="Map3StepGrid"]) .big b { font:var(--t-stat-lg); letter-spacing:var(--t-stat-lg-ls); color:var(--text); margin-right:8px; }
+:where([data-screen="Map3StepGrid"]) .sub { font:var(--t-small); color:var(--text-3); margin-top:6px; }
+:where([data-screen="Map3StepGrid"]) .live2 { display:inline-flex; gap:8px; align-items:center; font:var(--t-label); font-weight:600; color:var(--work); }
+:where([data-screen="Map3StepGrid"]) .dagw { flex:1; display:flex; align-items:center; justify-content:center; }
+:where([data-screen="Map3StepGrid"]) .dag .e { fill:none; stroke:var(--line-strong); stroke-width:1.5; stroke-dasharray:3 4; }
+:where([data-screen="Map3StepGrid"]) .dag .e.ok { stroke-dasharray:none; }
+:where([data-screen="Map3StepGrid"]) .dag .n.m { fill:var(--pass); }
+:where([data-screen="Map3StepGrid"]) .dag .n.p { fill:var(--window); stroke:var(--text-3); stroke-width:1.5; stroke-dasharray:2 2; }
+:where([data-screen="Map3StepGrid"]) .dag .n.w { fill:var(--work-tint); stroke:var(--work); stroke-width:1.5; }
+:where([data-screen="Map3StepGrid"]) .dag .n.r { fill:var(--text); }
+:where([data-screen="Map3StepGrid"]) .dag .nt { fill:var(--work); font:var(--t-label); font-weight:600; }
+:where([data-screen="Map3StepGrid"]) .dag .nt.r { fill:var(--window); }
+:where([data-screen="Map3StepGrid"]) .dag .lt { fill:var(--text-3); font:var(--t-measure-small); font-weight:400; }
+:where([data-screen="Map3StepGrid"]) .stats { display:grid; grid-template-columns:repeat(4, 1fr); border-top:1px solid var(--line); padding-top:14px; }
+:where([data-screen="Map3StepGrid"]) .stats b { display:block; font:var(--t-stat-sm); letter-spacing:var(--t-stat-sm-ls); }
+:where([data-screen="Map3StepGrid"]) .stats span { font:var(--t-label); font-weight:400; color:var(--text-3); }
+:where([data-screen="Map3StepGrid"]) .th { display:flex; align-items:center; justify-content:space-between; }
+:where([data-screen="Map3StepGrid"]) .ag2 { font:var(--t-measure-small); color:var(--text-3); }
+:where([data-screen="Map3StepGrid"]) .b .p { font:var(--t-body); font-weight:600; margin-top:10px; letter-spacing:var(--t-body-ls); }
+:where([data-screen="Map3StepGrid"]) .tb { display:flex; align-items:center; gap:12px; margin-top:12px; }
+:where([data-screen="Map3StepGrid"]) .num b { font:var(--t-stat); letter-spacing:var(--t-stat-ls); }
+:where([data-screen="Map3StepGrid"]) .num span { font:var(--t-measure); font-weight:500; color:var(--text-3); margin-left:2px; }
+:where([data-screen="Map3StepGrid"]) .ckw { margin-top:16px; }
+:where([data-screen="Map3StepGrid"]) .b > p { margin:auto 0 0; font:var(--t-body); color:var(--text-2); }
+:where([data-screen="Map3StepGrid"]) .quote { grid-column:1 / span 3; }
+:where([data-screen="Map3StepGrid"]) .quote .qh { display:flex; align-items:center; gap:10px; font:var(--t-label); font-weight:400; color:var(--window); opacity:.8; }
+:where([data-screen="Map3StepGrid"]) .quote p { margin:12px 0 0; font:var(--t-statement); letter-spacing:var(--t-statement-ls); color:var(--window); max-width:46ch; }
+:where([data-screen="Map3StepGrid"]) .quote .qf { margin-top:auto; font:var(--t-small); color:var(--window); opacity:.7; }
+:where([data-screen="Map3StepGrid"]) .wait .p { margin-top:0; font:var(--t-body); font-weight:600; }
+:where([data-screen="Map3StepGrid"]) .il { display:flex; align-items:center; gap:7px; font:var(--t-small); margin-top:10px; }
+:where([data-screen="Map3StepGrid"]) .il em { font-style:normal; margin-left:auto; font:var(--t-label); font-weight:400; color:var(--text-3); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="you" viewBox="0 0 16 16"><path d="M8 1.5 14.5 8 8 14.5 1.5 8Z"/></symbol>
+<symbol id="work" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-opacity=".35" stroke-width="2"/><path d="M8 2.5A5.5 5.5 0 0 1 13.5 8" fill="none" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="wait" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-width="1.5" stroke-dasharray="2.2 2.2"/></symbol>
+<symbol id="fail" viewBox="0 0 16 16"><path d="M4 4 12 12M12 4 4 12" fill="none" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="pass" viewBox="0 0 16 16"><path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="skip" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-width="1.5"/><path d="M4.2 11.8 11.8 4.2" stroke-width="1.5"/></symbol>
+<symbol id="landed" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M4.8 8.3 7 10.5 11.3 5.8" fill="none" stroke="var(--window)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</defs></svg>
+<div class="scr" data-screen="Map3Step">
+  <header class="k-header">
+    <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb" aria-current="page">being built</button></li></ol></nav>
+
+    <span class="grow"></span>
+    <span class="k-live">live · last event 2s ago</span>
+    <span class="k-spend">≥$19.40 <small>of $40.00 today</small></span>
+    <button class="k-ask" aria-label="Ask or do anything"><span>Ask or do anything</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span></button>
+  </header>
+  <div class="map">
+    <div class="top k-titlerow"><h1 class="k-title"><span class="k-title-human">search</span><span class="k-title-meta">4 agents working · 20:46</span></h1><div class="k-titletools"><span class="k-hint">follows whoever spoke last · <span class="k-keys"><span class="k-key">P</span></span> pins</span><div class="k-tabs" role="tablist" aria-label="View"><span class="k-tabs-bar" aria-hidden="true"></span><button class="k-tab" role="tab" aria-selected="true" tabindex="0">Stage</button><button class="k-tab" role="tab" aria-selected="false" tabindex="-1">Grid</button></div><div class="k-seg" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Spec</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Part</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="0">Step</button></div></div></div>
+    <div class="k-tile k-tile-hero stage"><div class="stage-grid">
+      <div class="spk">
+        <div class="who"><span class="k-chip k-chip-checker">reviewer</span><span class="p">search-query</span><span class="t3">try 1 of 4 · checking</span><span class="now"><span class="k-typing" aria-hidden="true"><i></i><i></i><i></i></span>speaking</span></div>
+        <div class="hist"><p>Verify passed: 28 tests.</p><p>Stories 1 and 2 look met. The tests cover title and body matches and quoted phrases.</p></div>
+        <p class="say">Criterion 3 asks for 100 ms over 10,000 snippets. The only benchmark in the tests uses 100.</p>
+      </div>
+      <div class="ctx">
+        <div class="lbl">Checking search-query</div>
+        <div class="k-steps-wrap"><ol class="k-steps k-steps-labeled"><li class="k-step" data-step="done"><i class="k-step-bar" aria-hidden="true"></i><span class="k-step-label">verify<span class="k-sr">: passed</span></span></li><li class="k-step" data-step="work"><i class="k-step-bar" aria-hidden="true"></i><span class="k-step-label"><span class="k-mk sm work" aria-hidden="true"></span>review<span class="k-sr">: an agent is working</span></span></li><li class="k-step" data-step=""><i class="k-step-bar" aria-hidden="true"></i><span class="k-step-label">security<span class="k-sr">: not started</span></span></li><li class="k-step" data-step=""><i class="k-step-bar" aria-hidden="true"></i><span class="k-step-label">distill<span class="k-sr">: not started</span></span></li></ol><p class="k-steps-status" aria-hidden="true"><span class="k-mk sm work"></span>review<span>an agent is working</span></p></div>
+        <div class="lbl" style="margin-top:22px">Its stories</div>
+        <div class="sl"><span>Match words in a title or a body</span><em>being checked</em></div>
+        <div class="sl"><span>Quoted phrases match exactly</span><em>being checked</em></div>
+        <div class="sl"><span>Answer in under 100 ms for 10,000 snippets</span><em>being checked</em></div>
+        <div class="foot">built in 7 iterations over 34m · from the plan: decision 1</div>
+      </div>
+    </div></div>
+    <div class="tiles">
+      <div class="k-tile"><div class="th"><span class="k-chip">engineer</span><span class="p">search-index</span><span class="ag">6s</span></div>
+        <div class="tb"><svg class="k-ring" viewBox="0 0 64 64" width="64" height="64" aria-hidden="true" data-total="10" data-done="7" data-slot="18.221"><defs><mask id="Map3Step-kr1" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64"><circle cx="32.0" cy="32.0" r="29.000" fill="none" stroke="white" stroke-width="8" stroke-dasharray="16.221 2.000" stroke-dashoffset="-1.000" transform="rotate(-90 32.0 32.0)"/></mask></defs><g mask="url(#Map3Step-kr1)"><circle class="k-ring-track" cx="32.0" cy="32.0" r="29.000" stroke-width="6"/><circle class="k-ring-done" cx="32.0" cy="32.0" r="29.000" stroke-width="6" stroke-dasharray="127.549 182.212" stroke-dashoffset="0" transform="rotate(-90 32.0 32.0)"/><circle class="k-ring-now" cx="32.0" cy="32.0" r="29.000" stroke-width="6" stroke-dasharray="18.221 182.212" stroke-dashoffset="-127.549" transform="rotate(-90 32.0 32.0)"/></g></svg><div class="num"><b>8</b><span>of 10 iterations</span></div></div>
+        <p>Deletes now remove the index row in the same transaction.</p><div class="tf"><span class="k-typing" aria-hidden="true"><i></i><i></i><i></i></span></div></div>
+      <div class="k-tile"><div class="th"><span class="k-chip">engineer</span><span class="p">search-rank</span><span class="ag">11s</span></div>
+        <div class="tb"><svg class="k-ring" viewBox="0 0 64 64" width="64" height="64" aria-hidden="true" data-total="10" data-done="3" data-slot="18.221"><defs><mask id="Map3Step-kr2" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64"><circle cx="32.0" cy="32.0" r="29.000" fill="none" stroke="white" stroke-width="8" stroke-dasharray="16.221 2.000" stroke-dashoffset="-1.000" transform="rotate(-90 32.0 32.0)"/></mask></defs><g mask="url(#Map3Step-kr2)"><circle class="k-ring-track" cx="32.0" cy="32.0" r="29.000" stroke-width="6"/><circle class="k-ring-done" cx="32.0" cy="32.0" r="29.000" stroke-width="6" stroke-dasharray="54.664 182.212" stroke-dashoffset="0" transform="rotate(-90 32.0 32.0)"/><circle class="k-ring-now" cx="32.0" cy="32.0" r="29.000" stroke-width="6" stroke-dasharray="18.221 182.212" stroke-dashoffset="-54.664" transform="rotate(-90 32.0 32.0)"/></g></svg><div class="num"><b>4</b><span>of 10 iterations</span></div></div>
+        <p>Body repeats still outrank titles. Trying a length-normalised score.</p></div>
+      <div class="k-tile"><div class="th"><span class="k-chip">engineer</span><span class="p">search-highlight</span><span class="ag">38s</span></div>
+        <div class="tb"><svg class="k-ring" viewBox="0 0 64 64" width="64" height="64" aria-hidden="true" data-total="10" data-done="0" data-slot="18.221"><defs><mask id="Map3Step-kr3" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64"><circle cx="32.0" cy="32.0" r="29.000" fill="none" stroke="white" stroke-width="8" stroke-dasharray="16.221 2.000" stroke-dashoffset="-1.000" transform="rotate(-90 32.0 32.0)"/></mask></defs><g mask="url(#Map3Step-kr3)"><circle class="k-ring-track" cx="32.0" cy="32.0" r="29.000" stroke-width="6"/><circle class="k-ring-done" cx="32.0" cy="32.0" r="29.000" stroke-width="6" stroke-dasharray="0.000 182.212" stroke-dashoffset="0" transform="rotate(-90 32.0 32.0)"/><circle class="k-ring-now" cx="32.0" cy="32.0" r="29.000" stroke-width="6" stroke-dasharray="18.221 182.212" stroke-dashoffset="-0.000" transform="rotate(-90 32.0 32.0)"/></g></svg><div class="num"><b>1</b><span>of 10 · try 2</span></div></div>
+        <p>Working through review’s three findings from try 1.</p></div>
+      <div class="k-tile k-tile-idle"><div class="th"><span class="p">Not being worked on</span></div>
+        <div class="il"><span class="k-mk sm landed"></span>search-schema<em>merged</em></div>
+        <div class="il"><span class="k-mk sm wait"></span>search-api<em>needs 3</em></div>
+        <div class="il"><span class="k-mk sm wait"></span>search-cli<em>needs 2</em></div>
+        <div class="sofar"><b>25</b> iterations · <b>1</b> sent back · <b>≥$9.60</b></div></div>
+    </div>
+  </div>
+  <div class="k-needs">
+    <span class="k-needs-label">Needs you</span>
+    <span class="k-needs-none">Nothing right now</span>
+
+    <span class="k-needs-hint"><span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> on an agent opens everything it has written · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> ask</span>
+  </div>
+</div>
+<div class="scr" data-screen="Map3StepGrid" hidden>
+  <header class="k-header">
+    <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb">search</button></li><li><button class="k-crumb" aria-current="page">being built</button></li></ol></nav>
+
+    <span class="grow"></span>
+    <span class="k-live">live · last event 2s ago</span>
+    <span class="k-spend">≥$19.40 <small>of $40.00 today</small></span>
+    <button class="k-ask" aria-label="Ask or do anything"><span>Ask or do anything</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span></button>
+  </header>
+  <div class="map">
+    <div class="top k-titlerow"><h1 class="k-title"><span class="k-title-human">search</span><span class="k-title-meta">4 agents working · 20:46</span></h1><div class="k-titletools"><div class="k-tabs" role="tablist" aria-label="View"><span class="k-tabs-bar" aria-hidden="true"></span><button class="k-tab" role="tab" aria-selected="false" tabindex="-1">Stage</button><button class="k-tab" role="tab" aria-selected="true" tabindex="0">Grid</button></div><div class="k-seg" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Spec</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Part</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="0">Step</button></div></div></div>
+    <div class="bento">
+      <div class="k-tile k-tile-hero b hero">
+        <div class="hh"><div><div class="big"><b>4</b> agents working</div><div class="sub">on 4 of the 7 parts of search · 1 merged</div></div><div class="live2"><span class="k-typing" aria-hidden="true"><i></i><i></i><i></i></span>2 speaking</div></div>
+        <div class="dagw"><svg class="dag" viewBox="0 0 480 190" width="480" height="190" aria-hidden="true">
+  <path d="M60 95 C110 95 110 26 160 26 M60 95 C110 95 110 72 160 72 M60 95 C110 95 110 118 160 118 M60 95 C110 95 110 164 160 164" class="e ok"/>
+  <path d="M300 26 C350 26 350 95 392 95 M300 72 C350 72 350 95 392 95 M300 118 C350 118 350 95 392 95" class="e"/>
+  <path d="M300 164 C380 164 420 130 450 104" class="e"/><path d="M404 95 H438" class="e"/>
+  <circle cx="52" cy="95" r="8" class="n m"/>
+  <rect x="160" y="14" width="140" height="24" rx="12" class="n w"/><text x="174" y="30" class="nt">search-index</text>
+  <rect x="160" y="60" width="140" height="24" rx="12" class="n r"/><text x="174" y="76" class="nt r">search-query</text>
+  <rect x="160" y="106" width="140" height="24" rx="12" class="n w"/><text x="174" y="122" class="nt">search-rank</text>
+  <rect x="160" y="152" width="140" height="24" rx="12" class="n w"/><text x="174" y="168" class="nt">search-highlight</text>
+  <circle cx="398" cy="95" r="7" class="n p"/><circle cx="446" cy="98" r="7" class="n p"/>
+  <text x="40" y="122" class="lt">schema</text><text x="386" y="122" class="lt">api</text><text x="440" y="125" class="lt">cli</text>
+</svg></div>
+        <div class="stats"><div><b>25</b><span>iterations</span></div><div><b>4</b><span>checks</span></div><div><b>1</b><span>sent back</span></div><div><b>≥$9.60</b><span>counted</span></div></div>
+      </div>
+      <div class="k-tile b ag"><div class="th"><span class="k-chip">engineer</span><span class="ag2">6s</span></div><div class="p">search-index</div>
+        <div class="tb"><svg class="k-ring" viewBox="0 0 56 56" width="56" height="56" aria-hidden="true" data-total="10" data-done="7" data-slot="15.708"><defs><mask id="Map3StepGrid-kr4" maskUnits="userSpaceOnUse" x="0" y="0" width="56" height="56"><circle cx="28.0" cy="28.0" r="25.000" fill="none" stroke="white" stroke-width="8" stroke-dasharray="13.708 2.000" stroke-dashoffset="-1.000" transform="rotate(-90 28.0 28.0)"/></mask></defs><g mask="url(#Map3StepGrid-kr4)"><circle class="k-ring-track" cx="28.0" cy="28.0" r="25.000" stroke-width="6"/><circle class="k-ring-done" cx="28.0" cy="28.0" r="25.000" stroke-width="6" stroke-dasharray="109.956 157.080" stroke-dashoffset="0" transform="rotate(-90 28.0 28.0)"/><circle class="k-ring-now" cx="28.0" cy="28.0" r="25.000" stroke-width="6" stroke-dasharray="15.708 157.080" stroke-dashoffset="-109.956" transform="rotate(-90 28.0 28.0)"/></g></svg><div class="num"><b>8</b><span>/10</span></div></div><p>Deletes now remove the index row in the same transaction.</p></div>
+      <div class="k-tile b ag"><div class="th"><span class="k-chip k-chip-checker">reviewer</span><span class="ag2">2s</span></div><div class="p">search-query</div>
+        <div class="ckw"><div class="k-steps-wrap"><ol class="k-steps k-steps-labeled"><li class="k-step" data-step="done"><i class="k-step-bar" aria-hidden="true"></i><span class="k-step-label">verify<span class="k-sr">: passed</span></span></li><li class="k-step" data-step="work"><i class="k-step-bar" aria-hidden="true"></i><span class="k-step-label"><span class="k-mk sm work" aria-hidden="true"></span>review<span class="k-sr">: an agent is working</span></span></li><li class="k-step" data-step=""><i class="k-step-bar" aria-hidden="true"></i><span class="k-step-label">security<span class="k-sr">: not started</span></span></li><li class="k-step" data-step=""><i class="k-step-bar" aria-hidden="true"></i><span class="k-step-label">distill<span class="k-sr">: not started</span></span></li></ol><p class="k-steps-status" aria-hidden="true"><span class="k-mk sm work"></span>review<span>an agent is working</span></p></div></div><p>The only benchmark in the tests uses 100 snippets.</p></div>
+      <div class="k-tile b ag"><div class="th"><span class="k-chip">engineer</span><span class="ag2">11s</span></div><div class="p">search-rank</div>
+        <div class="tb"><svg class="k-ring" viewBox="0 0 56 56" width="56" height="56" aria-hidden="true" data-total="10" data-done="3" data-slot="15.708"><defs><mask id="Map3StepGrid-kr5" maskUnits="userSpaceOnUse" x="0" y="0" width="56" height="56"><circle cx="28.0" cy="28.0" r="25.000" fill="none" stroke="white" stroke-width="8" stroke-dasharray="13.708 2.000" stroke-dashoffset="-1.000" transform="rotate(-90 28.0 28.0)"/></mask></defs><g mask="url(#Map3StepGrid-kr5)"><circle class="k-ring-track" cx="28.0" cy="28.0" r="25.000" stroke-width="6"/><circle class="k-ring-done" cx="28.0" cy="28.0" r="25.000" stroke-width="6" stroke-dasharray="47.124 157.080" stroke-dashoffset="0" transform="rotate(-90 28.0 28.0)"/><circle class="k-ring-now" cx="28.0" cy="28.0" r="25.000" stroke-width="6" stroke-dasharray="15.708 157.080" stroke-dashoffset="-47.124" transform="rotate(-90 28.0 28.0)"/></g></svg><div class="num"><b>4</b><span>/10</span></div></div><p>Trying a length-normalised body score.</p></div>
+      <div class="k-tile b ag"><div class="th"><span class="k-chip">engineer</span><span class="ag2">38s</span></div><div class="p">search-highlight</div>
+        <div class="tb"><svg class="k-ring" viewBox="0 0 56 56" width="56" height="56" aria-hidden="true" data-total="10" data-done="0" data-slot="15.708"><defs><mask id="Map3StepGrid-kr6" maskUnits="userSpaceOnUse" x="0" y="0" width="56" height="56"><circle cx="28.0" cy="28.0" r="25.000" fill="none" stroke="white" stroke-width="8" stroke-dasharray="13.708 2.000" stroke-dashoffset="-1.000" transform="rotate(-90 28.0 28.0)"/></mask></defs><g mask="url(#Map3StepGrid-kr6)"><circle class="k-ring-track" cx="28.0" cy="28.0" r="25.000" stroke-width="6"/><circle class="k-ring-done" cx="28.0" cy="28.0" r="25.000" stroke-width="6" stroke-dasharray="0.000 157.080" stroke-dashoffset="0" transform="rotate(-90 28.0 28.0)"/><circle class="k-ring-now" cx="28.0" cy="28.0" r="25.000" stroke-width="6" stroke-dasharray="15.708 157.080" stroke-dashoffset="-0.000" transform="rotate(-90 28.0 28.0)"/></g></svg><div class="num"><b>1</b><span>/10 · try 2</span></div></div><p>Working through review’s three findings.</p></div>
+      <div class="k-tile k-tile-ink b quote"><div class="qh"><span class="k-chip k-chip-checker">reviewer</span>search-query · just now</div><p>“Criterion 3 asks for 100 ms over 10,000 snippets. The only benchmark in the tests uses 100.”</p><div class="qf">From the plan, decision 1 for search-query: under 100 ms for 10,000 snippets.</div></div>
+      <div class="k-tile k-tile-idle b wait"><div class="p">Not being worked on</div><div class="il"><span class="k-mk sm landed"></span>search-schema<em>merged</em></div><div class="il"><span class="k-mk sm wait"></span>search-api<em>needs 3</em></div><div class="il"><span class="k-mk sm wait"></span>search-cli<em>needs 2</em></div></div>
+    </div>
+  </div>
+  <div class="k-needs">
+    <span class="k-needs-label">Needs you</span>
+    <span class="k-needs-none">Nothing right now</span>
+
+    <span class="k-needs-hint"><span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> on an agent opens everything it has written · <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span> ask</span>
+  </div>
+</div>
+<div class="k-sr" aria-live="polite" data-said></div>
+<script>
+
+// Segmented control: role=radiogroup. Arrow keys move and select (wrapping, skipping disabled), Home/End jump; Tab enters on the checked item.
+function kSeg(root, onChange){
+  root.classList.add('k-seg-js');
+  var thumb=root.querySelector('.k-seg-thumb'), items=[].slice.call(root.querySelectorAll('.k-seg-item'));
+  function enabled(){ return items.filter(function(i){ return i.getAttribute('aria-disabled')!=='true'; }); }
+  function place(it, animate){ if(!animate){ thumb.style.transition='none'; } thumb.style.width=it.offsetWidth+'px'; thumb.style.transform='translateX('+it.offsetLeft+'px)'; if(!animate){ void thumb.offsetWidth; thumb.style.transition=''; } }
+  function current(){ return items.filter(function(i){ return i.getAttribute('aria-checked')==='true'; })[0]; }
+  // A font that finishes loading later changes every item's width: re-place without animating. (Not a ResizeObserver on the
+  // items: the 500 to 600 weight change on select resizes them by a fraction of a pixel and would cancel the slide.)
+  if(document.fonts){ document.fonts.addEventListener('loadingdone', function(){ var c=current(); if(c) place(c,false); }); }
+  // quiet: set the state without the slide and without telling onChange (a caller restoring or preparing a control).
+  function select(it, focus, quiet){ if(it.getAttribute('aria-disabled')==='true') return; items.forEach(function(i){ var on=i===it; i.setAttribute('aria-checked', on?'true':'false'); i.tabIndex=on?0:-1; }); place(it,!quiet); if(focus) it.focus(); if(onChange && !quiet) onChange(it); }
+  items.forEach(function(i){
+    i.addEventListener('click', function(){ select(i,false); });
+    i.addEventListener('keydown', function(e){ var en=enabled(), k=en.indexOf(i), t=null;
+      if(e.key==='ArrowRight'||e.key==='ArrowDown') t=en[(k+1)%en.length]; else if(e.key==='ArrowLeft'||e.key==='ArrowUp') t=en[(k-1+en.length)%en.length];
+      else if(e.key==='Home') t=en[0]; else if(e.key==='End') t=en[en.length-1];
+      if(t){ e.preventDefault(); select(t,true); } });
+  });
+  var cur=items.filter(function(i){ return i.getAttribute('aria-checked')==='true'; })[0]||enabled()[0];
+  items.forEach(function(i){ i.tabIndex=i===cur?0:-1; }); place(cur,false);
+  return {select:select, items:items, place:place};
+}
+
+
+// Tabs: role=tablist. Arrow keys move focus and select (automatic activation: views are cheap to show), Home/End jump.
+// Left and Right, or Up and Down when the list is aria-orientation="vertical".
+function kTabs(root, onChange){
+  root.classList.add('k-tabs-js');
+  var bar=root.querySelector('.k-tabs-bar'), tabs=[].slice.call(root.querySelectorAll('.k-tab'));
+  var vertical=root.getAttribute('aria-orientation')==='vertical', next=vertical?'ArrowDown':'ArrowRight', prev=vertical?'ArrowUp':'ArrowLeft';
+  // Horizontal: the bar is the tab's width along the bottom. Vertical: 20px tall on the left edge, centred on the tab.
+  function place(t, animate){ if(!animate){ bar.style.transition='none'; }
+    if(vertical){ bar.style.height='20px'; bar.style.transform='translateY('+(t.offsetTop+(t.offsetHeight-20)/2)+'px)'; }
+    else { bar.style.width=t.offsetWidth+'px'; bar.style.transform='translateX('+t.offsetLeft+'px)'; }
+    if(!animate){ void bar.offsetWidth; bar.style.transition=''; } }
+  if(document.fonts){ document.fonts.addEventListener('loadingdone', function(){ var c=tabs.filter(function(x){ return x.getAttribute('aria-selected')==='true'; })[0]; if(c) place(c,false); }); }
+  function select(t, focus, quiet){ tabs.forEach(function(x){ var on=x===t; x.setAttribute('aria-selected', on?'true':'false'); x.tabIndex=on?0:-1; var p=x.getAttribute('aria-controls'); if(p){ var el=document.getElementById(p); if(el) el.hidden=!on; } }); place(t,!quiet); if(focus) t.focus(); if(onChange && !quiet) onChange(t); }
+  tabs.forEach(function(t){
+    t.addEventListener('click', function(){ select(t,false); });
+    t.addEventListener('keydown', function(e){ var k=tabs.indexOf(t), n=null;
+      if(e.key===next) n=tabs[(k+1)%tabs.length]; else if(e.key===prev) n=tabs[(k-1+tabs.length)%tabs.length]; else if(e.key==='Home') n=tabs[0]; else if(e.key==='End') n=tabs[tabs.length-1];
+      if(n){ e.preventDefault(); select(n,true); } });
+  });
+  var cur=tabs.filter(function(t){ return t.getAttribute('aria-selected')==='true'; })[0]||tabs[0];
+  tabs.forEach(function(t){ t.tabIndex=t===cur?0:-1; }); place(cur,false);
+  return {select:select, tabs:tabs, place:place};
+}
+
+// Everything below measures rendered text, so it runs once the web fonts have loaded.
+(document.fonts ? document.fonts.ready : Promise.resolve()).then(function(){
+
+// The frame's wiring. W: every screen drawn at this moment and what each of its controls leads to (null: static).
+var W={"start": "Map3Step", "open": null, "memory": {"stage": "Map3Step"}, "groups": {"stage": ["Map3Step", "Map3StepGrid"]}, "screens": {"Map3Step": {"say": "Step level, Stage: search, being built", "level": null, "tab": 0, "zoom": null, "crumbs": [null, null, null], "tabs": ["Map3Step", "Map3StepGrid"], "needs": [], "ask": null}, "Map3StepGrid": {"say": "Step level, Grid: search, being built", "level": null, "tab": 1, "zoom": null, "crumbs": [null, null, null], "tabs": ["Map3Step", "Map3StepGrid"], "needs": [], "ask": null}}};
+var cur=W.start, mem=W.memory, ctl={}, open=null, opener=null, closing=false, said=document.querySelector('[data-said]');
+function scr(id){ return document.querySelector('[data-screen="'+id+'"]'); }
+function resolve(t){ return t && t.charAt(0)==='@' ? mem[t.slice(1)] : t; }
+function remember(id){ for(var g in W.groups){ if(W.groups[g].indexOf(id)>=0) mem[g]=id; } }
+// A screen's controls are set up the first time it is shown, when it has a layout to measure.
+function init(id){
+  if(ctl[id]) return ctl[id];
+  var s=scr(id), c=W.screens[id], o={mute:false}; ctl[id]=o;
+  if(c.zoom){ o.zoom=kSeg(s.querySelector('.k-seg[aria-label="Zoom level"]'), function(it){ if(o.mute) return;
+    var j=o.zoom.items.indexOf(it), t=resolve(c.zoom[j]); if(t && t!==id) go(t, {kind:'zoom', from:c.level, to:j}); }); }
+  if(c.tabs){ o.tabs=kTabs(s.querySelector('.k-titletools .k-tabs'), function(t){ if(o.mute) return;
+    var j=o.tabs.tabs.indexOf(t), g=resolve(c.tabs[j]); if(g && g!==id) go(g, {kind:'tabs', from:c.tab, to:j}); }); }
+  [].forEach.call(s.querySelectorAll('.k-header .k-crumb'), function(b, i){ var t=c.crumbs[i];
+    if(t) b.addEventListener('click', function(){ go(resolve(t), {kind:'crumb', index:i}); }); });
+  [].forEach.call(s.querySelectorAll('.k-needs .k-need'), function(b, i){ var t=c.needs && c.needs[i];
+    if(t) b.addEventListener('click', function(){ show(t, b); }); });
+  var ask=s.querySelector('.k-ask'); if(c.ask) ask.addEventListener('click', function(){ show(c.ask, ask); });
+  return o; }
+// Put a screen's zoom and views back on its own level and view, without a slide (it is being left, or has just appeared).
+function settle(id){ var o=ctl[id], c=W.screens[id]; if(!o) return;
+  if(o.zoom) o.zoom.select(o.zoom.items[c.level], false, true);
+  if(o.tabs) o.tabs.select(o.tabs.tabs[c.tab], false, true); }
+// Move to another screen of this moment. The control you used is in the new screen too: it slides from where it was
+// to where it now is, and it keeps focus, so the keyboard carries on from the same place.
+function go(t, via){
+  if(open) return;
+  var from=cur; settle(from); scr(from).hidden=true; scr(t).hidden=false; cur=t; remember(t);
+  var o=init(t); settle(t);
+  if(via.kind==='zoom' && o.zoom){ o.zoom.place(o.zoom.items[via.from], false); o.mute=true; o.zoom.select(o.zoom.items[via.to], true); o.mute=false; }
+  else if(via.kind==='tabs' && o.tabs){ o.tabs.place(o.tabs.tabs[via.from], false); o.mute=true; o.tabs.select(o.tabs.tabs[via.to], true); o.mute=false; }
+  else if(via.kind==='crumb'){ scr(t).querySelectorAll('.k-header .k-crumb')[via.index].focus(); }
+  said.textContent=W.screens[t].say; }
+// The command window over the screen you are on: the page under it is inert; Tab stays inside; esc or the scrim closes
+// it and focus goes back to what opened it, or to the ask field when that is gone (CommandWindow).
+function ov(name){ return document.querySelector('[data-overlay="'+name+'"]'); }
+function under(on){ [].forEach.call(scr(cur).children, function(ch){ if(!ch.hasAttribute('data-overlay')) ch.inert=on; }); }
+function show(name, from){
+  if(open && !closing){ var q0=ov(open).querySelector('.k-cmd-q'); q0.focus(); q0.select(); return; }
+  var o=ov(name), s=scr(cur); if(o.parentNode!==s) s.appendChild(o);
+  o.hidden=false; open=name; closing=false; opener=from||null; under(true);
+  var win=o.querySelector('.k-cmd'), sc=o.querySelector('.k-scrim'); win.dataset.motion='enter'; sc.dataset.motion='enter';
+  // once it has arrived it rests as drawn: a finished animation left in place keeps the window on its own layer
+  win.addEventListener('animationend', function(){ if(win.dataset.motion==='enter'){ delete win.dataset.motion; delete sc.dataset.motion; } }, {once:true});
+  o.querySelector('.k-cmd-q').focus(); }
+function hide(){
+  if(!open || closing) return; closing=true;
+  var o=ov(open), win=o.querySelector('.k-cmd'), sc=o.querySelector('.k-scrim'), done=false;
+  win.dataset.motion='exit'; sc.dataset.motion='exit';
+  var ms=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--dur-exit'))||200;
+  function end(){ if(done) return; done=true; o.hidden=true; delete win.dataset.motion; delete sc.dataset.motion; under(false); open=null; closing=false;
+    var back=opener && document.contains(opener) && !opener.closest('[hidden]') ? opener : scr(cur).querySelector('.k-ask'); back.focus(); }
+  win.addEventListener('animationend', end, {once:true}); setTimeout(end, ms+80); }
+[].forEach.call(document.querySelectorAll('[data-overlay]'), function(o){
+  o.querySelector('.k-scrim').addEventListener('click', hide);
+  o.addEventListener('keydown', function(e){
+    if(e.key==='Tab'){ var f=[].filter.call(o.querySelectorAll('input, button, [tabindex="0"]'), function(x){ return !x.closest('[hidden]') && !x.disabled; });
+      var i=f.indexOf(document.activeElement); e.preventDefault(); f[(i + (e.shiftKey ? f.length-1 : 1) + f.length) % f.length].focus(); } }); });
+// esc is the document's while a window is open: a frame that opens with its window showing has focus on nothing yet.
+document.addEventListener('keydown', function(e){ if(open && e.key==='Escape'){ e.preventDefault(); hide(); return; }
+  if((e.metaKey||e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase()==='k'){
+  var a=W.screens[cur].ask; if(open){ e.preventDefault(); show(open); } else if(a){ e.preventDefault(); show(a, document.activeElement); } } });
+init(cur);
+if(W.open){ open=W.open; under(true); }
+
+});
+</script>
+</body>
+</html>

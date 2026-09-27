@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from kstrl.config_numbers import check_numbers
 from kstrl.fixtures_snapshot import check_snapshot_regression, save_snapshot
 from kstrl.jsonread import read_json, read_json_file
 from kstrl.prd import PRD
@@ -129,7 +130,7 @@ class FixturesConfig:
             config.timeout = float(os.environ["KSTRL_FIXTURES_TIMEOUT"])
         if not config.snapshot_dir.is_absolute():
             config.snapshot_dir = root_dir / config.snapshot_dir
-        return config
+        return check_numbers(config)
 
 
 def run_cli_fixture(

@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 from kstrl import git
 from kstrl.config import validate_agent_type
+from kstrl.config_numbers import check_numbers
 from kstrl.decompose import (
     AgentOutputTooLarge,
     _extract_json,
@@ -358,7 +359,7 @@ class SecurityConfig:
             config.fail_threshold = os.environ["KSTRL_SECURITY_FAIL_THRESHOLD"]
         # Re-validate after assignment - typos in env or TOML must surface
         config.__post_init__()
-        return config
+        return check_numbers(config)
 
 
 SECURITY_PROMPT_VERSION = "2.0.0"

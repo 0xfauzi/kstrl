@@ -66,6 +66,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl.config import _parse_paths
+from kstrl.config_numbers import SIGNED, check_numbers
 from kstrl.jsonread import read_json
 from kstrl.statedir import (
     CONTROL_GITHUB_PROCESSED,
@@ -205,7 +206,8 @@ class GitHubIntakeConfig:
     #: Upper bound on items admitted per sync, so a label applied to
     #: fifty issues at once cannot enqueue fifty runs.
     max_items_per_sync: int = 5
-    default_priority: int = 0
+    # A queue priority: a negative value runs after the default 0 (#571: SIGNED).
+    default_priority: int = field(default=0, metadata=SIGNED)
     comment_on_result: bool = True
     dry_run: bool = False
     timeout_seconds: float = 60.0
@@ -352,7 +354,7 @@ class GitHubIntakeConfig:
         for var, (name, cast) in env_map.items():
             if var in os.environ:
                 values[name] = cast(os.environ[var])
-        return cls(**values)
+        return check_numbers(cls(**values))
 
 
 @dataclass(frozen=True)

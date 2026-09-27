@@ -167,6 +167,44 @@ def forbid_agent_cli_spend(monkeypatch: pytest.MonkeyPatch) -> None:
     liveness.reset_probe_cache()
 
 
+@pytest.fixture(autouse=True)
+def short_waits(isolate_kstrl_state: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Waits that are not the thing under test are shortened for every test.
+
+    Measured on 2026-09-27 (speed slice) on eight wait-heavy files run
+    serially back to back: 316s before, 259s after, with the two waits
+    below asserting nothing in any test that pays them.
+
+    1. ``FactoryConfig.retry_delay``: ``pipeline.retry_or_fail`` sleeps
+       5s before every retry, so any test whose engineer fails paid up
+       to 15s (two ``ks run`` tests measured 15.5s and 15.2s, 0.4s and
+       0.2s with it zeroed). Set as an env var after the prefix scrub,
+       the door ``FactoryConfig.load`` and ``from_env`` already read, so
+       it also reaches the ``python -m kstrl`` children that tests spawn
+       with an environment derived from this one. A dataclass-level
+       default was tried and reverted: the numeric-config census and the
+       README generator read the shipped field default.
+    2. ``serve.GROUP_TERM_GRACE_SECONDS``: 15s before a serve-run process
+       group is escalated to SIGKILL (one test measured 15.5s -> 0.1s; it
+       asserts the escalation happens and that it takes under the
+       shipped grace, both of which still hold).
+
+    A test that measures one of these waits sets its own value: a
+    ``FactoryConfig(retry_delay=...)`` built in the test is untouched,
+    and ``tests/test_config_show.py`` restores the shipped default where
+    it asserts it. Real timeouts (agent deadlines, term graces, fuses,
+    the coverage sidecar bound) are not touched here. The agent term
+    grace was tried (0.5s in place of 5s, resolved at call time) and
+    moved nothing: the three 12.3s hang tests pay it inside the
+    ``sdk_runner`` child process, which an in-process patch cannot
+    reach, so that lever needs an env knob and its own measurement.
+    """
+    from kstrl import serve
+
+    monkeypatch.setenv("FACTORY_RETRY_DELAY", "0")
+    monkeypatch.setattr(serve, "GROUP_TERM_GRACE_SECONDS", 1.0)
+
+
 def snapshot_kstrl_dir(kstrl_dir: Path) -> dict[str, str]:
     """Fingerprint every entry under ``kstrl_dir``.
 

@@ -281,6 +281,7 @@ def test_the_factory_worker_hands_the_reading_to_the_next_iteration(tmp_path: Pa
         verify_config=VerifyConfig(
             lint_command="test -f fixed.txt", fast_iteration_checks=["linter"]
         ),
+        run_id="test-run",
     )
 
     assert result.success is False

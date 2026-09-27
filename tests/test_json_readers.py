@@ -78,10 +78,26 @@ OWNER = "jsonread.py"
 #: failure. It must be smaller than the pre-change anchor of 38 modules
 #: and 164 nodes, and it must contain a row for ``jsonread.py``.
 EXPECTED_JSON_SPELLINGS: dict[str, int] = {
-    "agents/claude_code.py": 4,
-    "agents/claude_sdk.py": 3,
+    # #598: was 4 (import, one json.dumps in _format_tool_use, two
+    # json.JSONDecodeError catches - _extract_result_text and
+    # _parse_stream_event). +1: a third json.JSONDecodeError catch, in
+    # the new _assistant_text_blocks (the final_message fallback now
+    # parses the raw event itself rather than filtering display lines).
+    # No new parse: it goes through read_json like the other two.
+    "agents/claude_code.py": 5,
+    # #598: was 3 (import, one json.dumps for the runner's stdin config,
+    # one json.JSONDecodeError catch in _parse_contract_line). +1: a
+    # second json.JSONDecodeError catch, in the new _parse_display_line
+    # (decodes a DISPLAY_PREFIX line back into its original text). No new
+    # parse: it goes through read_json like the other one.
+    "agents/claude_sdk.py": 4,
     "agents/liveness.py": 3,
-    "agents/sdk_runner.py": 4,
+    # #598: was 4 (import, two json.dumps - _emit_result and
+    # _emit_result_message's USAGE_PREFIX line - one json.JSONDecodeError
+    # catch in main()). +1: a third json.dumps, in the new _emit (every
+    # display element is now JSON-encoded before it crosses the pipe, so
+    # a multi-line element survives as one physical line). No new parse.
+    "agents/sdk_runner.py": 5,
     "atomicio.py": 2,
     "autonomy.py": 2,
     "calibration_baseline.py": 2,

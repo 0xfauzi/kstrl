@@ -55,7 +55,7 @@ from kstrl.security import SecurityConfig, SecurityResult
 from kstrl.ui.plain import PlainUI
 from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
 from kstrl.worktree_sweep import WorktreeSweep
-from tests.test_context import CURRENT, NOT_REMEASURED, RESOLVED, section
+from tests.helpers.context_sweeps import CURRENT, NOT_REMEASURED, RESOLVED, section
 
 
 class _ChoiceUI(PlainUI):

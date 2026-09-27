@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -50,7 +51,7 @@ from typing import TYPE_CHECKING
 
 from kstrl.agents import get_agent
 from kstrl.agents.logging import LoggingAgent
-from kstrl.agents.prompt_record import AgentCall, recording_prompts
+from kstrl.agents.prompt_record import recording_prompts
 from kstrl.breaker import BreakerConfig
 from kstrl.events import (
     ArtifactWritten,
@@ -67,6 +68,7 @@ from kstrl.events import (
     RunPlan,
     RunStarted,
 )
+from kstrl.factory import _report_operator_files, engineer_context_prefix
 from kstrl.feature_verify import (
     baseline_skip_reason,
     report_verification,
@@ -78,7 +80,9 @@ from kstrl.interaction import (
     PromptRequest,
     UiInteractionChannel,
 )
+from kstrl.knowledge import KnowledgeConfig, retrieve_knowledge_context
 from kstrl.loop import run_loop
+from kstrl.manifest import Component, Manifest
 from kstrl.timeout import TimeoutConfig
 
 if TYPE_CHECKING:
@@ -199,11 +203,105 @@ def _build_repair_prd(
     return repair_path
 
 
-def _agent_call(
-    run: CommandRun | None, component: str, role: str, attempt: int = 1
-) -> AgentCall | None:
-    """Who one phase's prompts are recorded for (#532); None without a run."""
-    return run.agent_call(component, role, attempt) if run is not None else None
+def _feature_knowledge_prefix(params: FeatureParams, root_dir: Path, ui: UI) -> str:
+    """The knowledge facts for a feature loop, as the factory ranks them.
+
+    The feature is one component with no dependencies, so the manifest is
+    built in memory and never written: ``build_knowledge_context`` reads
+    component ids and dependencies off it and nothing else. Core facts
+    are those written under the feature's own name or citing a path in
+    the PRD's own ``allowedPaths``, which is what ``fact_scope.
+    authored_paths`` gives a factory component. ``--implementation-
+    allowed-paths`` is a run-wide override and says nothing about which
+    facts are core, so it is not passed.
+
+    Retrieval itself, the disabled/failed policy and the injected-
+    knowledge record all come from ``knowledge.retrieve_knowledge_
+    context``, the one helper ``factory._submit_args`` also calls (#599
+    A3): this function used to duplicate that policy by hand AND skip
+    the record, so a feature run injected facts with no record of what
+    it injected.
+    """
+    config = KnowledgeConfig.load(root_dir)
+    component = Component(
+        id=params.feature_name,
+        title=params.feature_name,
+        description="",
+        dependencies=[],
+        prd_path=str(params.prd_path),
+        branch_name=params.prd_doc.branch_name,
+    )
+    manifest = Manifest(
+        version="1",
+        spec_file="",
+        project_name=params.feature_name,
+        base_branch="",
+        single_pr=False,
+        components=[component],
+    )
+    injected = retrieve_knowledge_context(
+        manifest,
+        component,
+        config,
+        allowed_paths=params.prd_doc.allowed_paths,
+        worktree=root_dir,
+        on_failure=lambda exc: ui.warn(
+            f"  Knowledge retrieval failed for {params.feature_name}: {exc}"
+        ),
+    )
+    _record_feature_knowledge(params, ui, injected)
+    return injected or ""
+
+
+def _record_feature_knowledge(params: FeatureParams, ui: UI, injected: str | None) -> None:
+    """The audit-trail record #599 A3 asks for: every injection is
+    written down, never a silent code path.
+
+    ``ks feature`` has no ``ComponentPipeline``, so it has nothing like
+    ``pipeline.record_injected_knowledge`` to freeze a per-attempt value
+    into; printing once per loop, the way ``on_failure`` above already
+    reports a failed attempt, is what it has instead. Silent on
+    ``None``: disabled is the operator's own choice, not a degradation
+    to report, and a failed attempt is already named by ``on_failure``
+    - this names what an ACTUAL retrieval returned, not every call.
+    """
+    if injected is None:
+        return
+    if injected:
+        ui.info(f"  Knowledge recorded for {params.feature_name}: {len(injected)} chars injected")
+    else:
+        ui.info(f"  Knowledge recorded for {params.feature_name}: no facts to inject")
+
+
+def _feature_context_prefix(
+    params: FeatureParams, base_config: KstrlConfig, root_dir: Path, ui: UI
+) -> str | None:
+    """The engineer's context for one feature loop, through the factory's assembly.
+
+    Read at each ``run_loop`` call rather than once per run, for parity
+    with ``ks run``: ``factory._run_component`` re-reads the operator
+    files on every attempt regardless of whether a review gate sits
+    between them, and #599 asked for that behaviour, not a new cadence.
+    ``ks feature`` has no review gate at all (no reviewer runs on this
+    path, and ``--implementation-auto-run`` skips the human checkpoint
+    too), so nothing here hands an operator a chance to edit
+    ``memory.md`` between loops the way the factory's cadence assumes.
+    What the per-loop rebuild actually delivers on this path is
+    disclosed in ``TestFeatureEngineerReadsOperatorContext.
+    test_a_memory_line_the_agent_writes_mid_run_reaches_the_next_loop``:
+    a write the AGENT ITSELF makes to its own ``memory.md`` while a run
+    is in progress. A change that closes that channel (building the
+    prefix once per run, say) must change that test on purpose.
+    """
+    return engineer_context_prefix(
+        root_dir,
+        golden_patterns_file=base_config.golden_patterns_file,
+        memory_file=base_config.memory_file,
+        knowledge_prefix=_feature_knowledge_prefix(params, root_dir, ui),
+        decisions_prefix="",  # no architect decisions register on this path
+        codebase_scan_prefix="",  # no Phase 0 codebase scan on this path
+        retry_block="",  # the repair PRD carries the failure; there is no IterationContext
+    )
 
 
 def run_feature(
@@ -214,7 +312,7 @@ def run_feature(
     root_dir: Path,
     *,
     interaction: InteractionChannel | None = None,
-    run: CommandRun | None = None,
+    run: CommandRun,
     stop_check: Callable[[], bool] | None = None,
 ) -> int:
     """Understand -> review gate -> implement -> repair loop.
@@ -222,13 +320,12 @@ def run_feature(
     Returns the flow's exit code. ``interaction`` defaults to the
     terminal channel; ``run`` records the flow as an event-stream run
     projected onto the pseudo-component <feature_name> (phases
-    understand / implement / repair-N; the gate as a checkpoint pair);
-    ``stop_check`` threads into every run_loop. Narration and the
-    legacy .kstrl/logs/feature_* transcripts are byte-identical with
-    or without ``run``.
+    understand / implement / repair-N; the gate as a checkpoint pair)
+    and is who every phase's prompt is recorded for, so it is required
+    (#567); ``stop_check`` threads into every run_loop.
     """
     component = params.feature_name
-    bus = run.bus if run is not None else None
+    bus = run.bus
     # This flow used to hand `run_loop` its own `.kstrl/logs/<feature>/`
     # entry. #274 removed it: every loop below runs with `cwd=root_dir`,
     # `guard_state_root=root_dir` carves out `.kstrl/logs/` as part of
@@ -237,13 +334,12 @@ def run_feature(
     # carve-out and read as wider than it is.
 
     def emit(event: Event) -> None:
-        if bus is not None:
-            bus.emit(event)
+        bus.emit(event)
 
     def wrap(phase_agent: Agent) -> Agent:
         """Tee the phase agent onto the run transcript ON TOP of its
         legacy log (nested LoggingAgent: legacy bytes unchanged)."""
-        transcript = run.transcript_path(component) if run is not None else None
+        transcript = run.transcript_path(component)
         if transcript is None:
             return phase_agent
         return LoggingAgent(phase_agent, transcript)
@@ -274,9 +370,13 @@ def run_feature(
         return "ended before completion"
 
     started = time.monotonic()
-    emit(RunStarted(project=params.feature_name, components=1))
+    emit(RunStarted(project=params.feature_name, components=1, pid=os.getpid()))
     emit(RunPlan(components=({"id": component, "title": f"Feature: {component}", "deps": []},)))
     emit(ComponentStarted(component=component))
+    # #599: the operator's files are reported once per run, as the factory
+    # reports them; every loop below then reads them through the same
+    # assembly the factory engineer does.
+    _report_operator_files(base_config, root_dir, ui)
 
     # Feature understanding phase
     understand_config = copy.deepcopy(base_config)
@@ -306,12 +406,13 @@ def run_feature(
     understand_log = _log_path(params, "understand")
     understand_agent = wrap(LoggingAgent(agent, understand_log))
     try:
-        with recording_prompts(_agent_call(run, component, "understand")):
+        with recording_prompts(run.agent_call(component, "understand")):
             understand_result = run_loop(
                 understand_config,
                 ui,
                 understand_agent,
                 root_dir,
+                context_prefix=_feature_context_prefix(params, base_config, root_dir, ui),
                 timeouts=timeouts,
                 breaker_config=breaker_config,
                 bus=bus,
@@ -470,12 +571,13 @@ def run_feature(
     run_log = _log_path(params, "run")
     run_agent = wrap(LoggingAgent(agent, run_log))
     try:
-        with recording_prompts(_agent_call(run, component, "implement")):
+        with recording_prompts(run.agent_call(component, "implement")):
             result = run_loop(
                 run_config,
                 ui,
                 run_agent,
                 root_dir,
+                context_prefix=_feature_context_prefix(params, base_config, root_dir, ui),
                 timeouts=timeouts,
                 breaker_config=breaker_config,
                 bus=bus,
@@ -596,12 +698,13 @@ def run_feature(
         )
         repair_agent = wrap(LoggingAgent(repair_agent_base, repair_log))
         try:
-            with recording_prompts(_agent_call(run, component, "repair", attempt)):
+            with recording_prompts(run.agent_call(component, "repair", attempt)):
                 repair_result = run_loop(
                     repair_config,
                     ui,
                     repair_agent,
                     root_dir,
+                    context_prefix=_feature_context_prefix(params, base_config, root_dir, ui),
                     timeouts=timeouts,
                     breaker_config=breaker_config,
                     bus=bus,

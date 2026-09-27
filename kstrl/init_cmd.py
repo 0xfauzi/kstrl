@@ -27,8 +27,25 @@ DEFAULT_PRD = {
     "userStories": [],
 }
 
-DEFAULT_PROMPT_VERSION = "1.3.0"
+DEFAULT_PROMPT_VERSION = "1.4.0"
 
+# v1.4.0 (#585): the engineer no longer writes the codebase map. Step 10
+# sent its facts to `$codebase_map_path`, a file every component shares
+# and the operator owns. With `ks init` output uncommitted the base branch
+# does not track the map, so the branch created and committed it and
+# `git merge` refused on the untracked copy in the root checkout. With it
+# committed, two same-tier components that both appended to it made the
+# component depending on both fail `worktree_setup`, because their
+# branches conflict on the map. Step 10 now sends the facts to the
+# component's own `$progress_path`, which its branch already carries and
+# which the knowledge distiller reads as part of the branch diff. The map
+# is read-only in step 4, and the factory substitutes the root checkout's
+# copy for it. Step 11 excludes the repository root's AGENTS.md and
+# CLAUDE.md, which are the operator's files. Measured on 1.3.0: an
+# engineer that appends to the root AGENTS.md fails the component on
+# diff_scope whether or not `ks init` output is committed, and when it is
+# committed the write lands on CLAUDE.md through the AGENTS.md symlink.
+#
 # v1.3.0 (#276): step 9 defers to the verification block the harness
 # injects (verify.VERIFY_COMMANDS_PROMPT) instead of telling the agent to
 # find its own typecheck and test commands. #261 made
@@ -79,6 +96,7 @@ reviewer as already reading your diff while you write it.
    using those keywords.
    - Do not load the entire file.
    - Always check **Quick Facts** and any relevant **Iteration Notes**.
+   - Read it only. It is the operator's file and not part of your branch.
 5. If a feature understand file exists for this PRD, query it using the same keywords.
    - Default path: `scripts/kstrl/feature/<feature_name>/understand.md`
    - If the PRD is at `scripts/kstrl/feature/<feature_name>/prd.json`, use that folder name.
@@ -100,12 +118,13 @@ reviewer as already reading your diff while you write it.
    - Do NOT mark the story as done until every command passes. If that block is
      absent, nothing will check this work mechanically: run the project's own
      typecheck and tests yourself first.
-10. If you discover durable, reusable codebase facts, append a brief, evidence-based note to
-   `$codebase_map_path` under **Iteration Notes** or update **Quick Facts**
-   (skip if nothing new).
+10. If you discover durable, reusable codebase facts, add a brief, evidence-based note
+   under `## Codebase Patterns` at the top of `$progress_path` (skip if nothing new).
+   Do not edit `$codebase_map_path`.
 11. Update `AGENTS.md` files with reusable learnings
    (only if you discovered something worth preserving):
-   - Only update `AGENTS.md` in directories you edited
+   - Only update `AGENTS.md` in directories you edited, never the repository
+     root's `AGENTS.md` or `CLAUDE.md`: those are the operator's files
    - Add patterns/gotchas/conventions, not story-specific notes
 12. **Adversarial self-check.** Before declaring done, append the EXACT
     heading `## Self-Critique` (verbatim, two hash marks - the harness
@@ -782,6 +801,7 @@ SCAFFOLDED_TEMPLATES: tuple[ScaffoldedTemplate, ...] = (
             # have scaffolded from it.
             ("9bde9b20785f3740396906d1d199c2228c553c11ae956dc2f85d8aa2439fb49b", "1.2.0"),
             ("392eb698daf71d486a9d4573698df3bb2b3ca4be87c178657accc8a66c54f384", "1.3.0"),
+            ("f5349c9c2fb1ac1b9bfba54c2fde3cbc266f6a8a59deaf355707504273ddc124", "1.4.0"),
         ),
     ),
     # The understand templates are H3-exempt (they produce documentation,

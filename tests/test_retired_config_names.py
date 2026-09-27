@@ -2,8 +2,8 @@
 name instead of being silently ignored.
 
 An unknown kstrl.toml key is ignored by design
-(``tests/test_config_toml.py::test_from_toml_ignores_unknown_keys`` pins
-that silence for names kstrl never used). A RENAMED key is a different
+(``tests/test_config_preflight.py::TestConfigToml`` pins that an unknown
+name reaches ``collect_config_problems`` rather than the loader). A RENAMED key is a different
 thing: the old spelling parses fine, does nothing, and a blocking gate
 reverts to advisory with no message. So a retired name is REFUSED,
 before the command body runs, and the message says what to rename it
@@ -240,12 +240,9 @@ ALLOWED: dict[tuple[str, str], int] = {
     ("docs/baseline.md", "sense"): 1,
     ("docs/examples/check-baseline.yml", "dampener"): 2,
     ("docs/examples/check-baseline.yml", "sense"): 2,
-    ("tests/test_check_baseline.py", "dampener"): 1,
-    ("tests/test_check_baseline.py", "sense"): 1,
     # RETIRED_STOPPED_MEASURING_CLAIM is a historical string this PR does
     # not reword (the plan names it explicitly); it happens to use the
     # word "sensor" as a metaphor for a check that stopped reporting.
-    ("tests/test_check_baseline.py", "sensor"): 1,
     # A comment recording, for the reader's benefit, which JSON key a v1
     # document used before this PR's schema bump - the old name is the
     # fact being recorded, not a live spelling.
@@ -380,4 +377,4 @@ def test_no_retired_name_survives_in_the_source() -> None:
         )
     assert sum(counts.get(k, 0) for k in ALLOWED) == sum(ALLOWED.values())
     assert len(SKIP_FILES) == 2
-    assert sum(ALLOWED.values()) == 188
+    assert sum(ALLOWED.values()) == 185

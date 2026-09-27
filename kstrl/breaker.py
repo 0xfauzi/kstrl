@@ -29,6 +29,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from kstrl.config_numbers import check_numbers
+
 # Distinct, greppable error prefix. loop.py builds its halt message with
 # it and the factory routes on the typed LoopResult/ComponentResult flag
 # (never on this string - it is for humans and logs).
@@ -101,10 +103,12 @@ class BreakerConfig:
             test_command = os.environ["KSTRL_BREAKER_TEST_CMD"]
         if "KSTRL_BREAKER_TEST_TIMEOUT" in os.environ:
             test_timeout = float(os.environ["KSTRL_BREAKER_TEST_TIMEOUT"])
-        return cls(
-            no_progress_iterations=no_progress_iterations,
-            test_command=test_command,
-            test_timeout=test_timeout,
+        return check_numbers(
+            cls(
+                no_progress_iterations=no_progress_iterations,
+                test_command=test_command,
+                test_timeout=test_timeout,
+            )
         )
 
 

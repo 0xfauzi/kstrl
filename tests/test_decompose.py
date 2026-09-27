@@ -1,4 +1,25 @@
-"""Tests for decompose module."""
+"""``decompose_spec`` driven end to end with a stub architect.
+
+Every test here hands ``decompose_spec`` a real spec file under
+``tmp_path`` and an agent that emits canned JSON, then reads what the
+run left on disk: the manifest, the planned PRDs (#545, #568), the
+``spec-issues.json`` audit (R1.7), the register beside the manifest
+(#260) and the evolution journal. Covered: the successful decomposition
+in single-PR and multi-PR mode, the retry on invalid or vacuous output
+(R1.8) and the terminal failure that leaves no partial files, the halt
+on an escalated blocker and the continuation on a closed issue, a
+register write that cannot land failing the decompose while the halt
+path still halts (#260 round 3), and the Spec Convergence report as the
+operator meets it across runs, renames and projects (#280, #314). The
+``_extract_json`` / ``_validate_decompose_output`` rules are carried by
+``tests/test_decompose_run.py``, where a stub architect emits each bad
+shape.
+
+The agents and payload builders at module level (``MockDecomposeAgent``,
+``SequenceAgent``, ``VALID_DECOMPOSE_OUTPUT``, ``BLOCKER_ISSUE``,
+``_story``, ``_with_ids``, ``_closures_for``, ``_single_component_output``,
+``_run_decompose``) are imported by other test modules.
+"""
 
 from __future__ import annotations
 
@@ -11,34 +32,13 @@ from unittest.mock import patch
 
 import pytest
 
-from kstrl.decompose import (
-    _MAX_RETRY_MESSAGES,
-    DECOMPOSE_PROMPT,
-    AuditSnapshot,
-    ExcludedHistory,
-    SpecBlockerError,
-    SpecConvergence,
-    SpecIssue,
-    _build_convergence,
-    _counted_audits,
-    _excluded_history,
-    _excluded_lines,
-    _excluded_projects,
-    _extract_json,
-    _issue_dicts,
-    _journal_snapshot,
-    _parse_spec_issues,
-    _retry_feedback,
-    _stored_issues,
-    _validate_decompose_output,
-    _write_decompose_artifact,
-    decompose_spec,
-)
+from kstrl.decompose import SpecBlockerError, decompose_spec
 from kstrl.evolution import SPEC_ISSUES_EVENT, EvolutionConfig, EvolutionJournal
 from kstrl.prd import PRD
 from kstrl.statedir import plan_prd_path
 from kstrl.ui.plain import PlainUI
-from tests.helpers.journal import audit, journal_at, tear
+from tests.helpers.journal import journal_at
+from tests.helpers.prompt_calls import architect_call
 
 
 class MockDecomposeAgent:
@@ -117,385 +117,8 @@ VALID_DECOMPOSE_OUTPUT = json.dumps(
 )
 
 
-class TestExtractJson:
-    """Tests for _extract_json."""
-
-    def test_plain_json(self) -> None:
-        result = _extract_json('{"key": "value"}')
-        assert result == {"key": "value"}
-
-    def test_json_with_whitespace(self) -> None:
-        result = _extract_json('  \n  {"key": "value"}  \n  ')
-        assert result == {"key": "value"}
-
-    def test_json_in_code_fence(self) -> None:
-        text = '```json\n{"key": "value"}\n```'
-        result = _extract_json(text)
-        assert result == {"key": "value"}
-
-    def test_json_in_plain_code_fence(self) -> None:
-        text = '```\n{"key": "value"}\n```'
-        result = _extract_json(text)
-        assert result == {"key": "value"}
-
-    def test_json_with_surrounding_text(self) -> None:
-        text = 'Here is the output:\n{"key": "value"}\nDone.'
-        result = _extract_json(text)
-        assert result == {"key": "value"}
-
-    def test_no_json_raises(self) -> None:
-        with pytest.raises(ValueError, match="No valid JSON"):
-            _extract_json("no json here")
-
-    def test_invalid_json_raises(self) -> None:
-        with pytest.raises(ValueError, match="No valid JSON"):
-            _extract_json("{invalid json}")
-
-    def test_nested_json(self) -> None:
-        data = {"components": [{"id": "test", "nested": {"a": 1}}]}
-        result = _extract_json(json.dumps(data))
-        assert result == data
-
-
-class TestValidateDecomposeOutput:
-    """Tests for _validate_decompose_output."""
-
-    def test_valid_output(self) -> None:
-        data = json.loads(VALID_DECOMPOSE_OUTPUT)
-        assert _validate_decompose_output(data) == []
-
-    def test_not_a_dict(self) -> None:
-        errors = _validate_decompose_output("not a dict")
-        assert any("object" in e for e in errors)
-
-    def test_missing_components(self) -> None:
-        errors = _validate_decompose_output({})
-        assert any("components" in e for e in errors)
-
-    def test_components_not_array(self) -> None:
-        errors = _validate_decompose_output({"components": "not array"})
-        assert any("array" in e for e in errors)
-
-    def test_empty_components(self) -> None:
-        errors = _validate_decompose_output({"components": []})
-        assert any("empty" in e for e in errors)
-
-    def test_duplicate_component_id(self) -> None:
-        data = {
-            "components": [
-                {
-                    "id": "same",
-                    "title": "A",
-                    "description": "A",
-                    "dependencies": [],
-                    "userStories": [],
-                },
-                {
-                    "id": "same",
-                    "title": "B",
-                    "description": "B",
-                    "dependencies": [],
-                    "userStories": [],
-                },
-            ]
-        }
-        errors = _validate_decompose_output(data)
-        assert any("duplicate" in e.lower() for e in errors)
-
-    def test_unknown_dependency(self) -> None:
-        data = {
-            "components": [
-                {
-                    "id": "a",
-                    "title": "A",
-                    "description": "A",
-                    "dependencies": ["nonexistent"],
-                    "userStories": [],
-                }
-            ]
-        }
-        errors = _validate_decompose_output(data)
-        assert any("nonexistent" in e for e in errors)
-
-    def test_allowed_paths_required(self) -> None:
-        """DECOMPOSE_PROMPT v1.2.0+ requires allowedPaths on every
-        component. The architect output gate rejects emissions that
-        omit it; the diff-scope check would otherwise be silently
-        disabled at Phase 1."""
-        data = {
-            "components": [
-                {
-                    "id": "a",
-                    "title": "A",
-                    "description": "A",
-                    "dependencies": [],
-                    "userStories": [],
-                }
-            ]
-        }
-        errors = _validate_decompose_output(data)
-        assert any("allowedPaths" in e and "required" in e for e in errors)
-
-    def test_allowed_paths_must_be_array(self) -> None:
-        data = {
-            "components": [
-                {
-                    "id": "a",
-                    "title": "A",
-                    "description": "A",
-                    "dependencies": [],
-                    "allowedPaths": "src/",
-                    "userStories": [],
-                }
-            ]
-        }
-        errors = _validate_decompose_output(data)
-        assert any("allowedPaths" in e and "array" in e for e in errors)
-
-    def test_allowed_paths_empty_rejected(self) -> None:
-        """An empty allowedPaths silently disables the diff-scope check
-        which is worse than not setting it at all; reject explicitly."""
-        data = {
-            "components": [
-                {
-                    "id": "a",
-                    "title": "A",
-                    "description": "A",
-                    "dependencies": [],
-                    "allowedPaths": [],
-                    "userStories": [],
-                }
-            ]
-        }
-        errors = _validate_decompose_output(data)
-        assert any("allowedPaths" in e and "non-empty" in e for e in errors)
-
-    def test_allowed_paths_non_string_item_rejected(self) -> None:
-        data = {
-            "components": [
-                {
-                    "id": "a",
-                    "title": "A",
-                    "description": "A",
-                    "dependencies": [],
-                    "allowedPaths": ["src/", 42],
-                    "userStories": [],
-                }
-            ]
-        }
-        errors = _validate_decompose_output(data)
-        assert any("allowedPaths" in e for e in errors)
-
-    def test_allowed_paths_valid(self) -> None:
-        # userStories must be non-empty since R1.8's vacuous-PRD gate,
-        # so this fixture carries one real story.
-        data: dict[str, object] = {
-            "spec_issues": [],
-            "decisions": [],
-            "components": [
-                {
-                    "id": "comp-a",
-                    "title": "A",
-                    "description": "A",
-                    "dependencies": [],
-                    "allowedPaths": [
-                        "src/",
-                        "tests/",
-                        "scripts/kstrl/feature/comp-a/",
-                    ],
-                    "userStories": [
-                        {
-                            "id": "US-001",
-                            "title": "S1",
-                            "acceptanceCriteria": ["AC1", "AC2"],
-                            "priority": 1,
-                            "passes": False,
-                            "notes": "",
-                        }
-                    ],
-                }
-            ],
-        }
-        errors = _validate_decompose_output(data)
-        assert errors == []
-
-
 class TestSpecIssues:
     """Tests for the red-team / spec-audit surface."""
-
-    def test_parse_typed_issues(self) -> None:
-        data = {
-            "spec_issues": [
-                {
-                    "severity": "blocker",
-                    "kind": "ambiguity",
-                    "summary": "What 'fast' means is not defined",
-                    "location": "Performance section",
-                    "suggestion": "Specify a P95 latency budget",
-                },
-                {
-                    "severity": "major",
-                    "kind": "undefined_failure_mode",
-                    "summary": "No error path for db unavailable",
-                },
-            ],
-        }
-        issues = _parse_spec_issues(data)
-        assert len(issues) == 2
-        assert issues[0].severity == "blocker"
-        assert issues[1].kind == "undefined_failure_mode"
-
-    def test_invalid_severity_dropped(self) -> None:
-        data = {
-            "spec_issues": [
-                {
-                    "severity": "critical",  # not valid
-                    "kind": "ambiguity",
-                    "summary": "x",
-                }
-            ]
-        }
-        assert _parse_spec_issues(data) == []
-
-    def test_invalid_kind_dropped(self) -> None:
-        data = {
-            "spec_issues": [
-                {
-                    "severity": "major",
-                    "kind": "made_up_kind",
-                    "summary": "x",
-                }
-            ]
-        }
-        assert _parse_spec_issues(data) == []
-
-    def test_missing_summary_dropped(self) -> None:
-        data = {
-            "spec_issues": [
-                {
-                    "severity": "minor",
-                    "kind": "ambiguity",
-                    "summary": "",
-                }
-            ]
-        }
-        assert _parse_spec_issues(data) == []
-
-    def test_empty_components_allowed_when_escalated(self) -> None:
-        data = {
-            "components": [],
-            "spec_issues": [
-                {
-                    "id": "too-vague",
-                    "severity": "blocker",
-                    "kind": "ambiguity",
-                    "summary": "spec is too vague",
-                }
-            ],
-            "decisions": [
-                {
-                    "issue": "too-vague",
-                    "question": "which product ships first",
-                    "disposition": "escalated",
-                    "resolution": "the owner must name the smallest slice",
-                }
-            ],
-        }
-        assert _validate_decompose_output(data) == []
-
-    def test_empty_components_rejected_without_escalation(self) -> None:
-        data: dict[str, object] = {"components": [], "spec_issues": [], "decisions": []}
-        errors = _validate_decompose_output(data)
-        assert errors
-        assert "components" in errors[0]
-
-    def test_a_blocker_without_an_escalation_is_rejected(self) -> None:
-        """#260: the halt keys on the escalation, so a blocker with no
-        escalated decision would proceed on a question the architect
-        called un-guessable and never closed. Retryable, not silent."""
-        data = json.loads(
-            _single_component_output([_story()], spec_issues=[BLOCKER_ISSUE], decisions=[])
-        )
-        errors = _validate_decompose_output(data)
-        assert any("was raised and never closed" in e for e in errors)
-
-    def test_an_escalation_without_a_blocker_is_rejected(self) -> None:
-        data = json.loads(
-            _single_component_output(
-                [_story()],
-                spec_issues=[MINOR_ISSUE],
-                decisions=[
-                    {
-                        "issue": "edge-case-unspecified",
-                        "question": "which product ships first",
-                        "disposition": "escalated",
-                        "resolution": "the owner must name the smallest slice",
-                    }
-                ],
-            )
-        )
-        errors = _validate_decompose_output(data)
-        assert any("'escalated' decision needs a" in e for e in errors)
-
-    def test_a_decision_naming_an_unknown_component_is_rejected(self) -> None:
-        """#260: the renderer matches the id exactly, so a typo would
-        silently demote a binding decision to the summary tier for every
-        engineer. Same join the validator already does for deps."""
-        data = json.loads(
-            _single_component_output(
-                [_story()],
-                spec_issues=[MINOR_ISSUE],
-                decisions=[
-                    {
-                        "issue": "edge-case-unspecified",
-                        "question": "what does the serializer emit",
-                        "disposition": "decided",
-                        "resolution": "an empty list",
-                        "component": "comp-typo",
-                    }
-                ],
-            )
-        )
-        errors = _validate_decompose_output(data)
-        assert any("unknown component 'comp-typo'" in e for e in errors)
-
-    def test_a_decision_binding_the_whole_run_names_no_component(self) -> None:
-        data = json.loads(
-            _single_component_output(
-                [_story()],
-                spec_issues=[MINOR_ISSUE],
-                decisions=[
-                    {
-                        "issue": "edge-case-unspecified",
-                        "question": "what does the serializer emit",
-                        "disposition": "decided",
-                        "resolution": "an empty list",
-                        "component": "",
-                    }
-                ],
-            )
-        )
-        assert _validate_decompose_output(data) == []
-
-    def test_a_disposed_issue_needs_no_escalation(self) -> None:
-        """The whole point of #260: an issue the architect closed itself
-        rides along with the components instead of stopping the run."""
-        data = json.loads(
-            _single_component_output(
-                [_story()],
-                spec_issues=[MINOR_ISSUE],
-                decisions=[
-                    {
-                        "issue": "edge-case-unspecified",
-                        "question": "what does the empty-input path do",
-                        "disposition": "assumed",
-                        "resolution": "return an empty list; pinned by AC2",
-                        "component": "comp-a",
-                    }
-                ],
-            )
-        )
-        assert _validate_decompose_output(data) == []
 
     def test_decompose_raises_on_escalation(self, tmp_path: Path) -> None:
         spec_file = tmp_path / "spec.md"
@@ -536,6 +159,7 @@ class TestSpecIssues:
                 agent=agent,
                 ui=ui,
                 root_dir=tmp_path,
+                prompt_call=architect_call(tmp_path),
             )
         assert len(exc_info.value.escalations) == 1
         assert exc_info.value.escalations[0].question == "what is this product for"
@@ -604,6 +228,7 @@ class TestSpecIssues:
             agent=agent,
             ui=ui,
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
         assert len(manifest.components) == 1
         assert manifest.components[0].id == "comp-a"
@@ -630,6 +255,7 @@ class TestDecomposeSpec:
             agent=agent,
             ui=ui,
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
 
         assert len(manifest.components) == 2
@@ -675,6 +301,7 @@ class TestDecomposeSpec:
             agent=agent,
             ui=ui,
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
 
         # All components should share the same branch
@@ -700,6 +327,7 @@ class TestDecomposeSpec:
             agent=agent,
             ui=ui,
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
 
         branches = {c.branch_name for c in manifest.components}
@@ -743,6 +371,7 @@ class TestDecomposeSpec:
             agent=RetryAgent(),
             ui=ui,
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
 
         assert call_count == 2
@@ -768,6 +397,7 @@ class TestDecomposeSpec:
                 ui=ui,
                 root_dir=tmp_path,
                 max_retries=2,
+                prompt_call=architect_call(tmp_path),
             )
 
 
@@ -865,257 +495,6 @@ def _single_component_output(
     return json.dumps(payload)
 
 
-class TestTheJoinKeyIsValidatedRaw:
-    """#260 round 2 (F1). The join is only as good as the ids it joins
-    on, and a mutation that auto-numbered a missing id survived the
-    first pass of this suite: the gate still closed, but one level away,
-    with an error naming `decisions[i].issue` for a fault that was in
-    `spec_issues[i].id`. A retry can only fix the record the message
-    names.
-    """
-
-    def _payload(self, spec_issues: list[dict[str, object]]) -> dict[str, object]:
-        data = json.loads(_single_component_output([_story()], spec_issues=spec_issues))
-        return dict(data)
-
-    def test_an_issue_without_an_id_is_named_and_indexed(self) -> None:
-        data = self._payload([])
-        data["spec_issues"] = [{"severity": "minor", "kind": "missing_detail", "summary": "s"}]
-        data["decisions"] = []
-        errors = _validate_decompose_output(data)
-        assert any(e.startswith("spec_issues[0].id:") for e in errors)
-
-    def test_a_blank_id_is_rejected(self) -> None:
-        data = self._payload([])
-        data["spec_issues"] = [
-            {"id": "   ", "severity": "minor", "kind": "missing_detail", "summary": "s"}
-        ]
-        data["decisions"] = []
-        errors = _validate_decompose_output(data)
-        assert any(e.startswith("spec_issues[0].id:") for e in errors)
-
-    def test_a_non_string_id_is_rejected(self) -> None:
-        data = self._payload([])
-        data["spec_issues"] = [
-            {"id": 7, "severity": "minor", "kind": "missing_detail", "summary": "s"}
-        ]
-        data["decisions"] = []
-        errors = _validate_decompose_output(data)
-        assert any(e.startswith("spec_issues[0].id:") for e in errors)
-
-    def test_a_duplicate_id_is_rejected(self) -> None:
-        entry = {"id": "same", "severity": "minor", "kind": "missing_detail", "summary": "s"}
-        data = self._payload([])
-        data["spec_issues"] = [entry, dict(entry, summary="other")]
-        data["decisions"] = [
-            {"issue": "same", "question": "q", "disposition": "decided", "resolution": "r"}
-        ]
-        errors = _validate_decompose_output(data)
-        assert any("already used by an earlier issue" in e for e in errors)
-
-    def test_an_id_that_names_no_issue_is_rejected(self) -> None:
-        """One of the three rejections DECOMPOSE_PROMPT 3.0.0 promises,
-        and the round-2 /simplify pass measured that nothing tested it:
-        a mutation letting an unknown id through left the whole suite
-        green, 4713 passed."""
-        data = self._payload([])
-        data["spec_issues"] = [
-            {"id": "a", "severity": "minor", "kind": "missing_detail", "summary": "s"}
-        ]
-        data["decisions"] = [
-            {"issue": "a", "question": "q", "disposition": "decided", "resolution": "r"},
-            {"issue": "ghost", "question": "q", "disposition": "decided", "resolution": "r"},
-        ]
-        errors = _validate_decompose_output(data)
-        assert any("'ghost' is not the id of any entry in 'spec_issues'" in e for e in errors)
-
-    def test_a_second_decision_closing_the_same_issue_is_rejected(self) -> None:
-        """The other untested promise. Without it a payload can close one
-        issue twice and leave another unclosed while the counts agree,
-        which is the shape of the round-1 defect."""
-        data = self._payload([])
-        data["spec_issues"] = [
-            {"id": "a", "severity": "minor", "kind": "missing_detail", "summary": "s"}
-        ]
-        data["decisions"] = [
-            {"issue": "a", "question": "q1", "disposition": "decided", "resolution": "r"},
-            {"issue": "a", "question": "q2", "disposition": "assumed", "resolution": "r"},
-        ]
-        errors = _validate_decompose_output(data)
-        assert any("'a' is already closed by decisions[0]" in e for e in errors)
-
-    def test_the_prompt_states_every_rule_the_validator_enforces(self) -> None:
-        """The two statements of the contract must fail together.
-
-        The prompt tells the model; the validator refuses to trust it.
-        That split is deliberate, but the coupling was one-directional:
-        editing the prompt breaks the H3 hash, and editing the validator
-        broke nothing, so the English could quietly become false. It
-        already had: 3.0.0 says field values are matched exactly and
-        ``severity`` was not checked at all.
-        """
-        # Fragments, not sentences: the body is hard-wrapped, so a
-        # sentence-length needle would fail on the line break rather
-        # than on the meaning.
-        for fragment in (
-            "an issue is unclosed",
-            "decisions close the same issue",
-            "names an id that",
-            "is not in `spec_issues`",
-            "Field values are matched EXACTLY",
-            'A "blocker" issue MUST be closed by',
-        ):
-            assert fragment in DECOMPOSE_PROMPT, fragment
-
-    def test_a_non_object_issue_entry_is_rejected(self) -> None:
-        data = self._payload([])
-        data["spec_issues"] = ["not an object"]
-        data["decisions"] = []
-        errors = _validate_decompose_output(data)
-        assert any(e.startswith("spec_issues[0]: must be an object") for e in errors)
-
-    def test_a_non_list_spec_issues_is_rejected(self) -> None:
-        data = self._payload([])
-        data["spec_issues"] = {}
-        data["decisions"] = []
-        errors = _validate_decompose_output(data)
-        assert any("'spec_issues' must be an array" in e for e in errors)
-
-
-class TestAnIssueTheParserWouldDropIsARejection:
-    """#260 round 3. The round-2 /simplify pass found F1's capital
-    letter one field over.
-
-    ``_spec_issue_errors`` took ``severity`` verbatim and compared it
-    only to the literal ``"blocker"``, while ``_parse_spec_issues``
-    checks it against ``_VALID_SEVERITIES``. So the two disagreed about
-    which entries existed. Measured on the round-2 code: a severity of
-    ``"Blocker"`` VALIDATED, was closed by a ``decided`` decision, and
-    then parsed to 0 of 1 issues, so the blocker reached neither the
-    halt gate, nor ``spec-issues.json``, nor ``route_spec_issues``, nor
-    the UI. Five such shapes were accepted.
-
-    The property: anything the validator accepts, the parser reproduces
-    faithfully. There are two ways to break that and the suite covers
-    both. The parser DROPS an entry whose severity or kind is not in the
-    vocabulary, or whose summary is blank. It MANGLES a non-string
-    summary, because it reads it as ``str(entry.get("summary", ""))``
-    and a ``[]`` becomes the two-character summary ``"[]"``, which is
-    not blank and so survives. A fabricated summary is worse than a
-    dropped one, and the validator now refuses both.
-    """
-
-    def _payload(self, issue: dict[str, object], disposition: str) -> dict[str, object]:
-        data = dict(json.loads(_single_component_output([_story()])))
-        data["spec_issues"] = [issue]
-        data["decisions"] = [
-            {"issue": "a", "question": "q", "disposition": disposition, "resolution": "r"}
-        ]
-        return data
-
-    @pytest.mark.parametrize(
-        ("name", "issue", "disposition", "field", "parser"),
-        [
-            (
-                "capitalised severity",
-                {"id": "a", "severity": "Blocker", "kind": "ambiguity", "summary": "s"},
-                "decided",
-                "spec_issues[0].severity:",
-                "drops",
-            ),
-            (
-                "unknown severity word",
-                {"id": "a", "severity": "critical", "kind": "ambiguity", "summary": "s"},
-                "decided",
-                "spec_issues[0].severity:",
-                "drops",
-            ),
-            (
-                "severity absent",
-                {"id": "a", "kind": "ambiguity", "summary": "s"},
-                "decided",
-                "spec_issues[0].severity:",
-                "drops",
-            ),
-            (
-                "non-string severity",
-                {"id": "a", "severity": 3, "kind": "ambiguity", "summary": "s"},
-                "decided",
-                "spec_issues[0].severity:",
-                "drops",
-            ),
-            (
-                "capitalised kind",
-                {"id": "a", "severity": "blocker", "kind": "Ambiguity", "summary": "s"},
-                "escalated",
-                "spec_issues[0].kind:",
-                "drops",
-            ),
-            (
-                "unknown kind",
-                {"id": "a", "severity": "blocker", "kind": "typo", "summary": "s"},
-                "escalated",
-                "spec_issues[0].kind:",
-                "drops",
-            ),
-            (
-                "blank summary",
-                {"id": "a", "severity": "blocker", "kind": "ambiguity", "summary": "   "},
-                "escalated",
-                "spec_issues[0].summary:",
-                "drops",
-            ),
-            (
-                "non-string summary",
-                {"id": "a", "severity": "blocker", "kind": "ambiguity", "summary": []},
-                "escalated",
-                "spec_issues[0].summary:",
-                "mangles",
-            ),
-        ],
-    )
-    def test_the_parser_and_the_validator_cannot_disagree(
-        self,
-        name: str,
-        issue: dict[str, object],
-        disposition: str,
-        field: str,
-        parser: str,
-    ) -> None:
-        data = self._payload(issue, disposition)
-        errors = _validate_decompose_output(data)
-        assert errors, f"{name}: accepted a payload the parser would not reproduce"
-        assert any(e.startswith(field) for e in errors), f"{name}: {errors}"
-        # The premise, stated per case so it cannot rot silently.
-        parsed = _parse_spec_issues(data)
-        if parser == "drops":
-            assert parsed == [], f"{name}: expected the parser to drop this"
-        else:
-            assert parsed and parsed[0].summary != issue["summary"], (
-                f"{name}: expected the parser to mangle this"
-            )
-
-    def test_the_control_still_validates_and_still_parses(self) -> None:
-        data = self._payload(
-            {"id": "a", "severity": "blocker", "kind": "ambiguity", "summary": "s"},
-            "escalated",
-        )
-        assert _validate_decompose_output(data) == []
-        assert len(_parse_spec_issues(data)) == 1
-
-    def test_the_message_names_the_whole_vocabulary(self) -> None:
-        """A retry can only fix what the message spells out."""
-        data = self._payload(
-            {"id": "a", "severity": "Blocker", "kind": "ambiguity", "summary": "s"},
-            "decided",
-        )
-        message = next(
-            e for e in _validate_decompose_output(data) if e.startswith("spec_issues[0].severity:")
-        )
-        assert "'blocker', 'major', 'minor'" in message
-        assert "case-exact" in message
-
-
 class TestARegisterThatDidNotLandFailsTheDecompose:
     """#260 round 3. A swallowed write error silently disabled the whole
     register.
@@ -1134,39 +513,6 @@ class TestARegisterThatDidNotLandFailsTheDecompose:
     not, because the halt reaches the operator through
     ``SpecBlockerError`` whether or not the file landed.
     """
-
-    def _capture(self) -> tuple[PlainUI, io.StringIO]:
-        buffer = io.StringIO()
-        return PlainUI(no_color=True, file=buffer), buffer
-
-    def _boom(self) -> Path:
-        raise OSError("no space left on device")
-
-    def test_an_optional_artifact_is_announced_and_survived(self) -> None:
-        ui, buffer = self._capture()
-        result = _write_decompose_artifact(
-            "spec_issues",
-            "spec issues",
-            self._boom,
-            ui=ui,
-            emit=lambda event: None,
-            rel_display=str,
-        )
-        assert result is None
-        assert "no space left on device" in buffer.getvalue()
-
-    def test_a_required_artifact_raises(self) -> None:
-        ui, _ = self._capture()
-        with pytest.raises(OSError, match="no space left on device"):
-            _write_decompose_artifact(
-                "decisions",
-                "architect decisions",
-                self._boom,
-                ui=ui,
-                emit=lambda event: None,
-                rel_display=str,
-                required=True,
-            )
 
     def test_the_success_path_actually_asks_for_required(self, tmp_path: Path) -> None:
         """Mutation guard, and the reason this class exists.
@@ -1195,6 +541,7 @@ class TestARegisterThatDidNotLandFailsTheDecompose:
                 agent=MockDecomposeAgent(VALID_DECOMPOSE_OUTPUT),
                 ui=PlainUI(no_color=True),
                 root_dir=tmp_path,
+                prompt_call=architect_call(tmp_path),
             )
 
     def test_the_halt_path_still_halts_when_its_register_cannot_land(self, tmp_path: Path) -> None:
@@ -1243,6 +590,7 @@ class TestARegisterThatDidNotLandFailsTheDecompose:
                 agent=MockDecomposeAgent(output),
                 ui=PlainUI(no_color=True),
                 root_dir=tmp_path,
+                prompt_call=architect_call(tmp_path),
             )
         assert len(exc_info.value.escalations) == 1
         # The halt still names what it can: the audit landed, the
@@ -1251,82 +599,9 @@ class TestARegisterThatDidNotLandFailsTheDecompose:
         lines = exc_info.value.artifact_lines()
         assert not any("decisions.json" in line for line in lines)
 
-    def test_a_required_artifact_that_lands_is_announced_like_any_other(
-        self, tmp_path: Path
-    ) -> None:
-        ui, buffer = self._capture()
-        target = tmp_path / "decisions.json"
-        target.write_text("{}", encoding="utf-8")
-        emitted: list[object] = []
-        result = _write_decompose_artifact(
-            "decisions",
-            "architect decisions",
-            lambda: target,
-            ui=ui,
-            emit=emitted.append,
-            rel_display=str,
-            required=True,
-        )
-        assert result == target
-        assert "Architect decisions written" in buffer.getvalue()
-        assert len(emitted) == 1
-
-
-class TestTheRetryFeedbackIsBounded:
-    """#260 round 3. Per-record messages are better feedback and a
-    worse bill.
-
-    Round 1 answered a whole class of malformed decisions with one
-    aggregate line. Round 2 answers with one message per bad record,
-    which is what lets a retry fix the exact entry, but the round-2
-    /simplify pass measured the other side of that: 32 decisions with
-    every field the wrong type produce 224 messages and 11,480
-    characters, pasted verbatim into a prompt that already carries the
-    whole spec, up to max_retries times. Round 1's figure for the same
-    fault was 278 characters.
-    """
-
-    def test_a_short_list_is_passed_through_whole(self) -> None:
-        errors = [f"decisions[{i}].issue: must be a string" for i in range(3)]
-        assert _retry_feedback(errors) == "; ".join(errors)
-
-    def test_a_long_list_is_cut_and_says_how_much_it_cut(self) -> None:
-        errors = [f"decisions[{i}].issue: must be a string" for i in range(224)]
-        feedback = _retry_feedback(errors)
-        assert feedback.count("; ") == _MAX_RETRY_MESSAGES
-        assert feedback.endswith(f"... and {224 - _MAX_RETRY_MESSAGES} more of the same kind")
-        assert len(feedback) < len("; ".join(errors)) // 4
-
-    def test_the_kept_messages_are_the_first_ones_and_keep_their_indices(self) -> None:
-        """Ordered by record, so the prefix is a usable sample and the
-        index in each message still names the record it belongs to."""
-        errors = [f"decisions[{i}].issue: must be a string" for i in range(50)]
-        feedback = _retry_feedback(errors)
-        assert feedback.startswith("decisions[0].issue:")
-        assert f"decisions[{_MAX_RETRY_MESSAGES - 1}].issue:" in feedback
-        assert f"decisions[{_MAX_RETRY_MESSAGES}].issue:" not in feedback
-
-    def test_an_empty_list_is_empty(self) -> None:
-        assert _retry_feedback([]) == ""
-
 
 class TestVacuousPrdRejection:
     """R1.8: vacuous shapes that previously sailed through validation."""
-
-    def test_empty_user_stories_rejected(self) -> None:
-        data = json.loads(_single_component_output([]))
-        errors = _validate_decompose_output(data)
-        assert any("userStories" in e and "must not be empty" in e for e in errors)
-
-    def test_empty_acceptance_criteria_rejected(self) -> None:
-        data = json.loads(_single_component_output([_story(acceptanceCriteria=[])]))
-        errors = _validate_decompose_output(data)
-        assert any("acceptanceCriteria" in e and "must not be empty" in e for e in errors)
-
-    def test_passes_true_rejected(self) -> None:
-        data = json.loads(_single_component_output([_story(passes=True)]))
-        errors = _validate_decompose_output(data)
-        assert any("passes" in e and "must be false" in e for e in errors)
 
     def test_vacuous_output_is_retryable(self, tmp_path: Path) -> None:
         """passes:true fails attempt 1; the retry prompt carries the
@@ -1349,6 +624,7 @@ class TestVacuousPrdRejection:
             agent=agent,
             ui=PlainUI(no_color=True),
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
 
         assert len(agent.prompts) == 2
@@ -1415,17 +691,11 @@ def _run_decompose(
             agent=MockDecomposeAgent(output),
             ui=PlainUI(no_color=True, file=buffer),
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
     except SpecBlockerError:
         pass
     return buffer.getvalue()
-
-
-def _journal_with(tmp_path: Path, entries: list[dict[str, object]]) -> EvolutionJournal:
-    """A real journal on disk holding ``entries``, written its own way."""
-    journal = EvolutionJournal(EvolutionConfig.load(tmp_path))
-    journal.append_entries(entries)
-    return journal
 
 
 def _journal_rows(tmp_path: Path) -> list[dict[str, Any]]:
@@ -1482,6 +752,7 @@ class TestSpecIssuesPersistence:
                 agent=MockDecomposeAgent(output),
                 ui=PlainUI(no_color=True),
                 root_dir=tmp_path,
+                prompt_call=architect_call(tmp_path),
             )
 
         artifact = tmp_path / "scripts" / "kstrl" / "spec-issues.json"
@@ -1549,6 +820,7 @@ class TestSpecIssuesPersistence:
                 agent=MockDecomposeAgent(output),
                 ui=PlainUI(no_color=True),
                 root_dir=tmp_path,
+                prompt_call=architect_call(tmp_path),
             )
 
         assert len(_journal_rows(tmp_path)) == 1, "the writer put more than the audit on disk"
@@ -1628,6 +900,7 @@ class TestPrdValidationInsideRetryLoop:
             agent=agent,
             ui=PlainUI(no_color=True),
             root_dir=tmp_path,
+            prompt_call=architect_call(tmp_path),
         )
 
         assert len(agent.prompts) == 2
@@ -1658,6 +931,7 @@ class TestPrdValidationInsideRetryLoop:
                 ui=PlainUI(no_color=True),
                 root_dir=tmp_path,
                 max_retries=2,
+                prompt_call=architect_call(tmp_path),
             )
 
         assert not (tmp_path / "scripts" / "kstrl" / "feature").exists()
@@ -1710,6 +984,7 @@ class TestPrdValidationInsideRetryLoop:
                 agent=agent,
                 ui=PlainUI(no_color=True),
                 root_dir=tmp_path,
+                prompt_call=architect_call(tmp_path),
             )
 
         assert calls == ["database", "api"]
@@ -1720,454 +995,6 @@ class TestPrdValidationInsideRetryLoop:
         assert not (tmp_path / "scripts" / "kstrl" / "manifest.json").exists()
         # The audit artifact is deliberately kept.
         assert (tmp_path / "scripts" / "kstrl" / "spec-issues.json").exists()
-
-
-class TestSpecConvergenceReport:
-    """#260: what this audit says about the previous one."""
-
-    def _issue(self, severity: str, kind: str, summary: str) -> SpecIssue:
-        return SpecIssue(severity=severity, kind=kind, summary=summary)
-
-    def _entry(
-        self,
-        issues: list[SpecIssue] | None,
-        spec_file: str = "spec.md",
-    ) -> dict[str, object]:
-        """One prior journal entry, in the shape decompose writes."""
-        entry: dict[str, object] = {"event_type": SPEC_ISSUES_EVENT, "spec_file": spec_file}
-        if issues is not None:
-            entry["issues"] = _issue_dicts(issues)
-        return entry
-
-    def test_first_run_has_nothing_to_compare(self) -> None:
-        assert _build_convergence([self._issue("blocker", "ambiguity", "a")], "spec.md", []) is None
-
-    def test_entry_without_an_issue_list_is_not_a_comparison(self) -> None:
-        """An entry that cannot be counted is not evidence, and a
-        journal holding only such entries reads as no history."""
-        assert _build_convergence([], "spec.md", [self._entry(None)]) is None
-
-    def test_counts_and_deltas_against_the_previous_run(self) -> None:
-        report = _build_convergence(
-            [
-                self._issue("blocker", "ambiguity", "new one"),
-                self._issue("blocker", "contradiction", "another"),
-                self._issue("minor", "other", "small"),
-            ],
-            "spec.md",
-            [self._entry([self._issue("blocker", "ambiguity", "old one")])],
-        )
-
-        assert report is not None
-        assert report.current_counts == {"blocker": 2, "major": 0, "minor": 1}
-        assert report.previous_counts == {"blocker": 1, "major": 0, "minor": 0}
-        assert report.previous_total == 1
-
-    def test_repeats_match_on_normalized_text(self) -> None:
-        """Collapsed whitespace and folded case still match, and so does
-        a changed severity; different wording does not."""
-        report = _build_convergence(
-            [
-                self._issue("major", "ambiguity", "What   'FAST' means\nis not defined"),
-                self._issue("blocker", "ambiguity", "What fast means is undefined"),
-            ],
-            "spec.md",
-            [
-                self._entry(
-                    [
-                        self._issue("blocker", "ambiguity", "What 'fast' means is not defined"),
-                        self._issue("minor", "other", "gone"),
-                    ]
-                )
-            ],
-        )
-
-        assert report is not None
-        assert report.repeated == 1
-        assert report.previous_total == 2
-
-    def test_same_summary_under_a_different_kind_is_not_a_repeat(self) -> None:
-        report = _build_convergence(
-            [self._issue("blocker", "contradiction", "same words")],
-            "spec.md",
-            [self._entry([self._issue("blocker", "ambiguity", "same words")])],
-        )
-
-        assert report is not None
-        assert report.repeated == 0
-
-    def test_trend_spans_every_recorded_run_and_ends_with_this_one(self) -> None:
-        history = [
-            self._entry([self._issue("blocker", "ambiguity", f"r1-{n}") for n in range(7)]),
-            self._entry([self._issue("blocker", "ambiguity", f"r2-{n}") for n in range(11)]),
-            self._entry([self._issue("blocker", "ambiguity", "r3-0")]),
-            self._entry([self._issue("blocker", "ambiguity", f"r4-{n}") for n in range(3)]),
-        ]
-
-        report = _build_convergence(
-            [self._issue("blocker", "ambiguity", f"r5-{n}") for n in range(4)],
-            "spec-slice-1.md",
-            history,
-        )
-
-        assert report is not None
-        assert report.blocker_trend == (7, 11, 1, 3, 4)
-
-    def test_previous_spec_file_is_carried_for_the_rename_case(self) -> None:
-        report = _build_convergence(
-            [],
-            "spec-slice-1.md",
-            [self._entry([], spec_file="spec.md")],
-        )
-
-        assert report is not None
-        assert report.previous_spec_file == "spec.md"
-        assert report.current_spec_file == "spec-slice-1.md"
-
-    def test_malformed_stored_issues_do_not_crash_the_reader(self) -> None:
-        """Journals written by older versions, and any entry an
-        operator hand-edited, must read rather than raise."""
-        history: list[dict[str, object]] = [
-            {
-                "event_type": SPEC_ISSUES_EVENT,
-                "issues": [
-                    "not a dict",
-                    {"severity": "blocker"},
-                    {"summary": None, "kind": 7, "severity": "major"},
-                ],
-            }
-        ]
-
-        report = _build_convergence([], "spec.md", history)
-
-        assert report is not None
-        assert report.previous_counts == {"blocker": 1, "major": 1, "minor": 0}
-        assert report.previous_spec_file == ""
-
-    def test_two_current_issues_matching_one_previous_cannot_overcount(self) -> None:
-        """`repeated` is rendered as a statement about the previous
-        run, so it must be counted over that side. Counting the current
-        side let two current issues match one previous issue and made
-        "did not come back" negative: `_issue_identity` drops severity
-        and normalizes text, and `_parse_spec_issues` de-duplicates
-        nothing, so this shape is reachable from real architect output.
-        """
-        report = _build_convergence(
-            [
-                self._issue("blocker", "ambiguity", "What fast means is undefined"),
-                self._issue("major", "ambiguity", "What  FAST  means is undefined"),
-            ],
-            "spec.md",
-            [self._entry([self._issue("blocker", "ambiguity", "What fast means is undefined")])],
-        )
-
-        assert report is not None
-        assert report.previous_total == 1
-        assert report.repeated == 1
-        assert report.previous_total - report.repeated == 0
-
-    def test_a_previous_issue_raised_twice_counts_twice_when_it_returns(self) -> None:
-        """The mirror case, and why this counts the previous list
-        rather than intersecting two identity sets: both of the
-        previous run's issues did come back, so 0 of 2 did not."""
-        duplicated = self._issue("blocker", "ambiguity", "same finding, said twice")
-        report = _build_convergence(
-            [self._issue("blocker", "ambiguity", "same finding, said twice")],
-            "spec.md",
-            [self._entry([duplicated, duplicated])],
-        )
-
-        assert report is not None
-        assert report.previous_total == 2
-        assert report.repeated == 2
-
-
-class TestExcludedHistory:
-    """#280: the audit history the report does not count, named."""
-
-    def _entry(
-        self,
-        project: str,
-        spec_file: str = "spec.md",
-        event_type: str = SPEC_ISSUES_EVENT,
-        timestamp: str = "2026-08-20T00:00:00Z",
-    ) -> dict[str, object]:
-        return {
-            "event_type": event_type,
-            "project": project,
-            "spec_file": spec_file,
-            "timestamp": timestamp,
-        }
-
-    def _history(
-        self,
-        journal: EvolutionJournal,
-        project: str,
-        spec_file: str = "mine.md",
-        lookback: int = 10,
-    ) -> ExcludedHistory:
-        audits = _journal_snapshot(journal, project).audits
-        return _excluded_history(audits, project, spec_file, lookback)
-
-    def _lines(
-        self,
-        journal: EvolutionJournal,
-        project: str,
-        spec_file: str = "mine.md",
-        counted: int = 0,
-    ) -> str:
-        """The rendered note lines for ``project``, joined."""
-        return "\n".join(
-            _excluded_lines(self._history(journal, project, spec_file), project, counted)
-        )
-
-    def test_a_journal_of_one_project_excludes_no_other_project(self) -> None:
-        entries = [self._entry("writers-room"), self._entry("writers-room")]
-
-        assert _excluded_projects(entries, "writers-room", "spec.md") == ()
-
-    def test_another_project_is_counted_with_the_files_it_read(self) -> None:
-        entries = [
-            self._entry("writers-room", "spec.md"),
-            self._entry("writers-room", "spec.md"),
-            self._entry("writers-room-slice1", "spec-slice-1.md"),
-        ]
-
-        excluded = _excluded_projects(entries, "writers-room-slice1", "spec-slice-1.md")
-
-        assert len(excluded) == 1
-        assert excluded[0].project == "writers-room"
-        assert excluded[0].audits == 2
-        assert excluded[0].spec_files == ("spec.md",)
-        assert excluded[0].read_this_spec is False
-        assert excluded[0].last_recorded == "2026-08-20T00:00:00Z"
-
-    def test_only_spec_audits_count(self, tmp_path: Path) -> None:
-        """The journal carries component results and experiments too.
-        Counting those would inflate the number the operator reads.
-
-        Through the snapshot rather than by handing this function a
-        component_result directly: since #314 the selection is
-        ``EvolutionJournal.get_spec_audits``'s, so the end-to-end path
-        is where the claim is still true.
-        """
-        journal = EvolutionJournal(EvolutionConfig.load(tmp_path))
-        journal.append_entries(
-            [
-                self._entry("other", event_type="component_result"),
-                self._entry("other", event_type=SPEC_ISSUES_EVENT),
-            ]
-        )
-
-        audits = _journal_snapshot(journal, "mine").audits
-        excluded = _excluded_projects(audits, "mine", "mine.md")
-
-        assert [(e.project, e.audits) for e in excluded] == [("other", 1)]
-
-    def test_an_entry_without_a_project_is_not_evidence(self) -> None:
-        """An unnamed project cannot be somewhere the operator can go
-        and look, so it is not history worth pointing at."""
-        entries: list[dict[str, object]] = [{"event_type": SPEC_ISSUES_EVENT}]
-
-        assert _excluded_projects(entries, "mine", "mine.md") == ()
-
-    def test_a_json_null_project_is_not_a_project_named_none(self) -> None:
-        """Round 1 of review: ``str(entry.get("project", ""))`` renders
-        a JSON null as the literal "None", which then passes the
-        emptiness guard and prints a phantom project. A null field is
-        an absent field, and ``get_spec_issue_runs`` promises nothing
-        is assumed about an entry beyond it being a JSON object."""
-        entries: list[dict[str, object]] = [
-            {
-                "event_type": SPEC_ISSUES_EVENT,
-                "project": None,
-                "spec_file": None,
-                "timestamp": None,
-            }
-        ]
-
-        assert _excluded_projects(entries, "mine", "mine.md") == ()
-
-    def test_a_non_string_spec_file_and_timestamp_are_dropped_not_stringified(
-        self,
-    ) -> None:
-        """The same rule on the other two fields: a hand-edited journal
-        must not put a file literally named ``None`` or ``7`` in the
-        list, nor a date the operator cannot act on."""
-        entries: list[dict[str, object]] = [
-            {
-                "event_type": SPEC_ISSUES_EVENT,
-                "project": "other",
-                "spec_file": 7,
-                "timestamp": None,
-            }
-        ]
-
-        excluded = _excluded_projects(entries, "mine", "mine.md")
-
-        assert excluded[0].spec_files == ()
-        assert excluded[0].last_recorded == ""
-
-    def test_projects_are_ordered_by_how_much_history_they_hold(self) -> None:
-        entries = [
-            self._entry("a"),
-            self._entry("b"),
-            self._entry("b"),
-            self._entry("c"),
-        ]
-
-        excluded = _excluded_projects(entries, "mine", "mine.md")
-
-        assert [(e.project, e.audits) for e in excluded] == [("b", 2), ("a", 1), ("c", 1)]
-
-    def test_a_project_that_read_this_spec_file_sorts_first(self) -> None:
-        """#280's first arm: the project that audited the file this run
-        audited is the strongest evidence of a plain rename, so it
-        leads even though it holds the least history here."""
-        entries = [self._entry("busy") for _ in range(9)] + [self._entry("renamed", "mine.md")]
-
-        excluded = _excluded_projects(entries, "mine", "mine.md")
-
-        assert [e.project for e in excluded] == ["renamed", "busy"]
-        assert excluded[0].read_this_spec is True
-        assert excluded[1].read_this_spec is False
-
-    def test_the_last_recorded_timestamp_is_the_newest_entry_in_file_order(
-        self,
-    ) -> None:
-        """The journal is append-only, so the last entry for a project
-        is its most recent audit."""
-        entries = [
-            self._entry("other", timestamp="2026-01-01T00:00:00Z"),
-            self._entry("other", timestamp="2026-06-30T12:00:00Z"),
-        ]
-
-        excluded = _excluded_projects(entries, "mine", "mine.md")
-
-        assert excluded[0].last_recorded == "2026-06-30T12:00:00Z"
-
-    def test_distinct_spec_files_are_deduplicated_and_sorted(self) -> None:
-        entries = [
-            self._entry("other", "b.md"),
-            self._entry("other", "a.md"),
-            self._entry("other", "b.md"),
-            self._entry("other", ""),
-        ]
-
-        excluded = _excluded_projects(entries, "mine", "mine.md")
-
-        assert excluded[0].audits == 4
-        assert excluded[0].spec_files == ("a.md", "b.md")
-
-    def test_no_journal_excludes_nothing(self) -> None:
-        assert _excluded_history([], "writers-room", "spec.md", 10).is_empty
-
-    def test_the_read_covers_the_whole_journal(self, tmp_path: Path) -> None:
-        journal = _journal_with(tmp_path, [self._entry("writers-room", "spec.md")] * 2)
-
-        assert self._lines(journal, "writers-room-slice1", "spec-slice-1.md") == (
-            "Note: audits are matched by project name, and this report covers "
-            "'writers-room-slice1'. This journal also records 2 spec audit(s) under "
-            "'writers-room' (2 audit(s), spec.md, last 2026-08-20)."
-        )
-
-    def test_a_journal_holding_only_this_project_names_no_other(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        journal = _journal_with(tmp_path, [self._entry("writers-room")] * 3)
-
-        assert self._history(journal, "writers-room", "spec.md").projects == ()
-
-    def test_this_projects_own_audits_are_counted_unwindowed(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """The count the accounting line rests on. Not windowed by
-        ``lookback_runs``, because a count of what the trend does not
-        cover that was itself windowed would omit history silently."""
-        monkeypatch.setenv("KSTRL_EVOLUTION_LOOKBACK_RUNS", "2")
-        journal = _journal_with(tmp_path, [self._entry("writers-room")] * 6)
-
-        assert self._history(journal, "writers-room", "spec.md", lookback=2).own_recorded == 6
-
-    def test_a_missing_journal_file_excludes_nothing(self, tmp_path: Path) -> None:
-        journal = EvolutionJournal(EvolutionConfig.load(tmp_path))
-
-        assert self._history(journal, "writers-room", "spec.md").is_empty
-
-    def test_a_torn_line_does_not_cost_the_note(self, tmp_path: Path) -> None:
-        """The journal is append-only and a crash mid-write leaves a
-        torn tail; the rest of the history still has to be readable.
-
-        The write side of the same tear is
-        ``tests/test_journal_torn_tail.py`` (#312), and the fragment is
-        shared rather than copied so the two cannot drift apart.
-        """
-        journal = _journal_with(tmp_path, [self._entry("writers-room", "spec.md")])
-        tear(journal.config.journal_path)
-
-        assert "records 1 spec audit(s)" in self._lines(journal, "writers-room-slice1")
-
-    def test_many_projects_are_summarised_rather_than_all_named(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """A display cap on the names, never on the count: the total
-        still covers every audit the report leaves out."""
-        journal = _journal_with(tmp_path, [self._entry(f"p{n}", f"s{n}.md") for n in range(6)])
-
-        line = self._lines(journal, "mine")
-
-        assert "records 6 spec audit(s)" in line
-        assert (
-            "'p0' (1 audit(s), s0.md, last 2026-08-20), "
-            "'p1' (1 audit(s), s1.md, last 2026-08-20), "
-            "'p2' (1 audit(s), s2.md, last 2026-08-20) and 3 more project(s)" in line
-        )
-
-    def test_every_project_that_read_this_spec_file_survives_the_cap(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Round 1 of review: the sort put spec-file matches first but
-        the cap then truncated them, so four projects that had all read
-        the current spec file - a repo that split one spec across
-        several names, which is #280's own shape - printed three and
-        "and 1 more project(s)". The cap now applies only to projects
-        that did NOT read it."""
-        journal = _journal_with(
-            tmp_path,
-            [self._entry(f"p{n}", "mine.md") for n in range(4)]
-            + [self._entry(f"q{n}", "other.md") for n in range(4)],
-        )
-
-        line = self._lines(journal, "mine")
-
-        for name in ("p0", "p1", "p2"):
-            assert f"'{name}' (1 audit(s), mine.md" in line
-        assert "and 1 more project(s) that read this spec file" in line
-        assert "and 1 more project(s)." in line
-        assert "'q3'" not in line
-
-    def test_many_spec_files_under_one_project_are_summarised_too(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        journal = _journal_with(tmp_path, [self._entry("other", f"s{n}.md") for n in range(5)])
-
-        assert "'other' (5 audit(s), s0.md, s1.md, s2.md and 2 more file(s), last " in (
-            self._lines(journal, "mine")
-        )
-
-    def test_an_entry_with_no_timestamp_names_the_project_without_a_date(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        journal = _journal_with(tmp_path, [self._entry("other", "o.md", timestamp="")])
-
-        assert "'other' (1 audit(s), o.md)." in self._lines(journal, "mine")
 
 
 class TestJournalFieldsAreReadNotStringified:
@@ -2229,121 +1056,10 @@ class TestJournalFieldsAreReadNotStringified:
         assert "0, 1 (blockers" not in output
         assert "could not be scored" in output
 
-    def test_a_severity_outside_the_three_is_refused_by_the_rehydrator(self) -> None:
-        entry: dict[str, object] = {
-            "issues": [{"severity": "critical", "kind": "ambiguity", "summary": "x"}]
-        }
-
-        assert _stored_issues(entry) is None
-
-    def test_a_well_formed_issue_list_still_rehydrates(self) -> None:
-        entry: dict[str, object] = {
-            "issues": [{"severity": "minor", "kind": "ambiguity", "summary": "x"}]
-        }
-        stored = _stored_issues(entry)
-
-        assert stored is not None
-        assert [i.severity for i in stored] == ["minor"]
-
-
-class TestUnattributedAudits:
-    """#280 round 2, finding 2: audits belonging to no project name."""
-
-    def test_they_are_counted_by_a_third_bucket(self) -> None:
-        """They satisfy neither ``own_recorded`` nor ``_excluded_projects``,
-        so three audits on disk were reported as one."""
-        entries: list[dict[str, object]] = [
-            {"event_type": SPEC_ISSUES_EVENT, "project": None, "spec_file": "a.md"},
-            {"event_type": SPEC_ISSUES_EVENT, "spec_file": "b.md"},
-            {"event_type": SPEC_ISSUES_EVENT, "project": "other", "spec_file": "c.md"},
-        ]
-
-        history = _excluded_history(entries, "mine", "mine.md", 10)
-
-        assert history.own_recorded == 0
-        assert history.other_audits == 1
-        assert history.unattributed == 2
-
-    def test_every_spec_audit_lands_in_exactly_one_bucket(self, tmp_path: Path) -> None:
-        """The property the accounting docstring claims, checked rather
-        than asserted in prose. Read back through the journal, so the
-        component_result is dropped by the reader that owns that rule
-        (#314) and the buckets still sum to the audits on disk."""
-        entries: list[dict[str, object]] = [
-            {"event_type": SPEC_ISSUES_EVENT, "project": "mine"},
-            {"event_type": SPEC_ISSUES_EVENT, "project": "mine"},
-            {"event_type": SPEC_ISSUES_EVENT, "project": "other"},
-            {"event_type": SPEC_ISSUES_EVENT, "project": None},
-            {"event_type": "component_result", "project": "mine"},
-        ]
-        journal = EvolutionJournal(EvolutionConfig.load(tmp_path))
-        journal.append_entries(entries)
-
-        audits = _journal_snapshot(journal, "mine").audits
-        history = _excluded_history(audits, "mine", "mine.md", 10)
-
-        assert len(audits) == 4
-        assert history.own_recorded + history.other_audits + history.unattributed == len(audits)
-
-    @pytest.mark.parametrize("name", ["", "mine", "nobody", " mine ", "   "])
-    def test_the_partition_holds_for_every_project_name(self, tmp_path: Path, name: str) -> None:
-        """#338: the test above pins the property at one project name,
-        and the two counts were computed by two predicates that agree
-        everywhere except at "". There ``x == project_name`` and
-        ``not x`` are the same question, so an audit with an absent,
-        null or non-string project was counted as this project's AND as
-        unattributed: seven audits, eleven placements.
-
-        The second assertion is the one that fixes WHICH bucket takes
-        it. ``EvolutionJournal.get_spec_issue_runs`` matches a project
-        by the same ``entry_str`` expression, so at "" the trend counts
-        those audits; ``own_recorded`` has to count them too, or the
-        accounting printed under the trend contradicts it and the note
-        saying neither counts them is false.
-        """
-        entries: list[dict[str, Any]] = [
-            audit("mine"),
-            audit("mine", "b.md"),
-            audit("other"),
-            audit(None, "null.md"),
-            audit(7, "int.md"),
-            audit("", "empty.md"),
-            # The helper always writes the key; an absent one is the
-            # shape a journal from an older version carries.
-            {
-                "timestamp": "2026-08-20T00:00:00Z",
-                "event_type": SPEC_ISSUES_EVENT,
-                "spec_file": "absent.md",
-            },
-        ]
-        journal = journal_at(tmp_path)
-        journal.append_entries(entries)
-
-        audits = _journal_snapshot(journal, name).audits
-        history = _excluded_history(audits, name, "mine.md", 10)
-
-        assert len(audits) == len(entries)
-        assert history.own_recorded + history.other_audits + history.unattributed == len(audits)
-        assert history.own_recorded == len(
-            journal.get_spec_issue_runs(name, len(audits), audits=audits)
-        )
-
 
 class TestOneJournalRead:
     """#280 round 2, findings 6 and 7, and #314: one read, taken through
     ``EvolutionJournal`` rather than past it."""
-
-    def _journal(
-        self,
-        tmp_path: Path,
-        entries: list[dict[str, Any]],
-        lookback_runs: int | None = None,
-    ) -> EvolutionJournal:
-        journal = journal_at(tmp_path)
-        if lookback_runs is not None:
-            journal.config.lookback_runs = lookback_runs
-        journal.append_entries(entries)
-        return journal
 
     def test_the_journal_is_parsed_once_per_report(
         self,
@@ -2374,139 +1090,6 @@ class TestOneJournalRead:
         )
 
         assert len(reads) == 1
-
-    def test_the_report_reads_through_the_journal_not_its_storage_path(
-        self,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """#314 item 1. ``_journal_snapshot`` used to open
-        ``journal.config.journal_path`` itself, which works only while
-        the file is the whole story; ``get_spec_audits`` says what that
-        costs when it stops being.
-
-        Proved by giving the journal a reader that answers something
-        the file does not contain. A snapshot that reaches for the path
-        cannot see it, so this fails on the shortcut rather than on the
-        hypothetical second segment nobody has written yet.
-        """
-        journal = self._journal(tmp_path, [audit("mine", "on-disk.md")])
-        elsewhere = [audit("mine", "b.md"), audit("other", "c.md")]
-        monkeypatch.setattr(EvolutionJournal, "get_spec_audits", lambda self: elsewhere)
-
-        snapshot = _journal_snapshot(journal, "mine")
-
-        assert [a["spec_file"] for a in snapshot.audits] == ["b.md", "c.md"]
-        assert [w["spec_file"] for w in snapshot.window] == ["b.md"]
-
-    def test_the_window_is_the_journals_own_over_the_journals_own_lookback(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """#314 item 2. ``_windowed_audits`` was a second copy of the
-        rule ``get_spec_issue_runs`` owns, and two copies of one rule
-        can drift; if they had, the trend and the accounting would have
-        disagreed about the same journal. There is one copy now, and
-        the snapshot has to reach it with the journal's own
-        ``lookback_runs`` rather than a number of its own.
-        """
-        entries = [audit("mine" if n % 2 else "other", f"spec-{n}.md") for n in range(9)]
-
-        for lookback in (1, 3, 10):
-            # A journal of its own per lookback: one file appended to
-            # three times would compare a growing history against
-            # itself and pass whatever the window did.
-            journal = self._journal(tmp_path / f"lookback-{lookback}", entries, lookback)
-            assert _journal_snapshot(journal, "mine").window == journal.get_spec_issue_runs(
-                "mine", last_n=lookback
-            )
-
-    def test_no_journal_reads_nothing_and_windows_nothing(self) -> None:
-        assert _journal_snapshot(None, "mine") == AuditSnapshot(audits=[], window=[], lookback=0)
-
-    def test_the_snapshot_says_unhashable_instead_of_pretending(self) -> None:
-        """A frozen dataclass with ``eq`` on gets a generated
-        ``__hash__``, and this one holds two lists, so the generated one
-        raised ``unhashable type: 'list'`` from a method nobody wrote.
-        Nothing hashes a snapshot; making it hashable is not available
-        either, since tuple fields would still hold ``dict`` elements.
-        So it says so, and names itself when somebody tries.
-
-        Both halves asserted: the message alone would pass on a class
-        that had simply kept the broken generated hash.
-        """
-        snapshot = AuditSnapshot(audits=[{"project": "mine"}], window=[], lookback=3)
-
-        assert AuditSnapshot.__hash__ is None
-        with pytest.raises(TypeError, match="unhashable type: 'AuditSnapshot'"):
-            hash(snapshot)
-        assert snapshot == AuditSnapshot(audits=[{"project": "mine"}], window=[], lookback=3)
-
-
-class TestExcludedAccountingLine:
-    """#280 round 1, finding 2: the same-project half of the accounting."""
-
-    def _history(self, own: int, lookback: int = 10) -> ExcludedHistory:
-        return ExcludedHistory(own_recorded=own, projects=(), lookback=lookback)
-
-    def test_nothing_is_said_when_the_trend_counted_everything(self) -> None:
-        assert _excluded_lines(self._history(3), "mine", 3) == []
-
-    def test_a_windowed_out_audit_is_a_trend_footnote_not_a_warning(self) -> None:
-        """Round 2 of review: once a project has more audits than
-        ``lookback_runs`` this holds on every run forever, so a Note
-        would be permanent noise. It is a footnote on the trend line
-        instead; see ``_surface_trend``."""
-        history = self._history(40, lookback=10)
-
-        assert _excluded_lines(history, "mine", 10) == []
-        assert history.windowed_out(10) == 30
-        assert history.unreadable(10) == 0
-
-    def test_an_audit_the_window_offered_but_could_not_be_scored_is_named(self) -> None:
-        """The anomaly half of the same gap, which does deserve a line."""
-        history = self._history(3, lookback=10)
-
-        assert history.unreadable(0) == 3
-        assert _excluded_lines(history, "mine", 0) == [
-            "Note: 3 earlier audit(s) of 'mine' fall inside the lookback window but "
-            "could not be scored, so the trend does not count them. An audit is "
-            "skipped when it records no issue list, or an issue whose severity is "
-            "not blocker, major or minor."
-        ]
-
-    def test_the_two_causes_are_separated_when_both_apply(self) -> None:
-        history = self._history(40, lookback=10)
-
-        assert history.unreadable(7) == 3
-        assert history.windowed_out(7) == 30
-
-    def test_audits_with_no_project_name_are_their_own_line(self) -> None:
-        """Round 2 of review: an entry whose ``project`` is null or
-        absent was counted by neither axis, so three audits on disk
-        were reported as one."""
-        history = ExcludedHistory(own_recorded=0, projects=(), unattributed=2, lookback=10)
-
-        assert _excluded_lines(history, "mine", 0) == [
-            "Note: 2 spec audit(s) in this journal record no project name, so neither "
-            "the trend nor the line above counts them."
-        ]
-        assert not history.is_empty
-
-    def test_counted_audits_is_read_off_the_rendered_trend(self) -> None:
-        """So the accounting line can never disagree with the trend
-        printed directly above it."""
-        report = SpecConvergence(
-            current_counts={"blocker": 0, "major": 0, "minor": 0},
-            previous_counts={"blocker": 0, "major": 0, "minor": 0},
-            current_spec_file="spec.md",
-            previous_spec_file="spec.md",
-            repeated=0,
-            blocker_trend=(1, 1, 0),
-        )
-
-        assert _counted_audits(report) == 2
-        assert _counted_audits(None) == 0
 
 
 class TestSpecConvergenceThroughDecompose:
@@ -2968,6 +1551,7 @@ class TestSpecConvergenceThroughDecompose:
                 ),
                 ui=PlainUI(no_color=True, file=io.StringIO()),
                 root_dir=tmp_path,
+                prompt_call=architect_call(tmp_path),
             )
 
         assert (tmp_path / "scripts" / "kstrl" / "spec-issues.json").exists()

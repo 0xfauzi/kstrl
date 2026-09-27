@@ -97,6 +97,8 @@ from kstrl.verify import CheckResult, VerificationResult, VerifyConfig
 from tests.helpers.builder_prompts import BUILDER_RENDER_EXEMPT
 from tests.helpers.component_prd import write_component_prd
 from tests.helpers.feedforward_prompts import NOTICE_PROMPTS
+from tests.helpers.prompt_calls import architect_call
+from tests.helpers.recording_agent import RecordingAgent
 from tests.test_prompt_versions import (
     _MARKER_HEAD,
     _MARKER_TAIL,
@@ -106,7 +108,6 @@ from tests.test_prompt_versions import (
     _run_and_capture_prompt,
     _sha256,
 )
-from tests.test_review_payload import RecordingAgent
 from tests.test_verify_command_contract import _engineer_prompt
 
 # ---------------------------------------------------------------------------
@@ -283,8 +284,8 @@ _ROLES: dict[str, _Role] = {
     "engineer": _Role(
         _engineer,
         frozenset({"DEFAULT_PROMPT", "VERIFY_COMMANDS_PROMPT"}),
-        "0ce37b67c9717479aac69ab7428959cd736e703806d6107715946de28f721428",
-        5145,
+        "893a388672aa4fcc4e5b7855258e7c7746aa0ebb02c3ede44c417c70c53760c7",
+        5346,
     ),
     "gepa-reflection": _Role(
         # The template as run_optimization hands it to gepa. The library
@@ -509,6 +510,7 @@ def _run_decompose_and_capture_prompt(tmp_path: Path, monkeypatch: pytest.Monkey
             ui=PlainUI(no_color=True),
             root_dir=tmp_path,
             max_retries=1,
+            prompt_call=architect_call(tmp_path),
         )
     assert agent.prompts, "decompose_spec never called its agent, so this proves nothing."
     return agent.prompts[0]

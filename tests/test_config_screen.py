@@ -255,6 +255,9 @@ class TestConfigScreen:
 
             commands = await mounted(pilot, lambda: app.screen, "#home-commands")
             home = app.screen
+            # The first queue read places focus once; moving it before that
+            # lets the placement land after, and enter goes to history.
+            await settled(pilot, lambda: home._focus_placed, what="the first focus placement")
             commands.focus()
             # Widget.focus routes through call_later, so focus is not
             # in place when it returns and an enter pressed before it

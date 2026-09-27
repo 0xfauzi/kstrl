@@ -49,7 +49,7 @@ from kstrl.ui.plain import PlainUI
 if TYPE_CHECKING:
     from kstrl.agents.base import UsageTotals
     from kstrl.config import KstrlConfig
-    from kstrl.factory import FactoryConfig
+    from kstrl.factory import FactoryConfig, _RunLock
     from kstrl.manifest import Manifest
 
 ANSI_RESTORE = "\x1b[?1049l\x1b[?25h\x1b[0m"
@@ -194,12 +194,20 @@ def run_factory_embedded(
     *,
     poll_interval: float = 0.2,
     architect_usage: UsageTotals | None = None,
+    architect_run_id: str = "",
+    run_lock: _RunLock | None = None,
 ) -> int:
     """`ks factory --tui`: the same run, rendered in the dashboard.
 
     ``architect_usage`` carries the architect's spend the way the plain path
     does (#257); without it the ceiling would bound one fewer role in
     the TUI than on a terminal, for no reason an operator could see.
+    ``architect_run_id`` names the run holding that architect's records,
+    as on the plain path (#587). ``run_lock`` is the lock `ks factory`
+    already took above the manifest load (#597); passed through so the
+    worker thread's ``run_factory`` uses it instead of acquiring a
+    second time, which flock refuses even from another thread of the
+    same process.
     """
     from kstrl.factory import run_factory
 
@@ -216,6 +224,8 @@ def run_factory_embedded(
             run_id=ctx.run_id,
             notify_capture_output=True,
             architect_usage=architect_usage,
+            architect_run_id=architect_run_id,
+            run_lock=run_lock,
         ).exit_code
 
     return run_embedded(

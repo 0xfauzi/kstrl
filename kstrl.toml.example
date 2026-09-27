@@ -38,7 +38,7 @@ auto_checkout = true
 [ui]
 ascii = false
 
-# Timeout limits in seconds (R0.1). A value of 0 or less disables that limit.
+# Timeout limits in seconds (R0.1). 0 disables a limit; a negative value is refused.
 [timeout]
 agent_iteration = 1800.0           # one engineer iteration
 component_total = 7200.0           # wall clock per component across iterations

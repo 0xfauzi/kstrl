@@ -49,6 +49,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from kstrl.config import _parse_bool, load_toml_section, resolve_config_file
+from kstrl.config_numbers import check_numbers
 from kstrl.events import budget_halt_kind
 from kstrl.jsonread import read_json
 
@@ -110,9 +111,14 @@ class LinearConfig:
         if not self.token_env:
             raise ValueError("LinearConfig.token_env must not be empty")
         if self.timeout_seconds <= 0:
-            raise ValueError("LinearConfig.timeout_seconds must be positive")
+            raise ValueError(
+                f"LinearConfig.timeout_seconds must be positive, got {self.timeout_seconds!r}"
+            )
         if self.min_request_interval < 0:
-            raise ValueError("LinearConfig.min_request_interval must not be negative")
+            raise ValueError(
+                "LinearConfig.min_request_interval must not be negative, "
+                f"got {self.min_request_interval!r}"
+            )
 
     @classmethod
     def from_env(cls) -> LinearConfig:
@@ -169,7 +175,7 @@ class LinearConfig:
             config.min_request_interval = float(os.environ["KSTRL_LINEAR_MIN_INTERVAL"])
         # Re-validate after assignment - typos in env or TOML must surface
         config.__post_init__()
-        return config
+        return check_numbers(config)
 
 
 def deterministic_uuid(key: str) -> str:

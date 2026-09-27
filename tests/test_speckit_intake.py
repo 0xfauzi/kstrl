@@ -20,6 +20,7 @@ from kstrl.decompose import (
     load_spec_input,
 )
 from kstrl.ui.plain import PlainUI
+from tests.helpers.prompt_calls import architect_call
 from tests.test_decompose import (
     SequenceAgent,
     _single_component_output,
@@ -119,6 +120,7 @@ class TestDecomposeSpecIntegration:
             agent=agent,
             ui=PlainUI(no_color=True),
             root_dir=root,
+            prompt_call=architect_call(root),
         )
 
         assert len(manifest.components) == 1

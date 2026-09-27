@@ -1,0 +1,50 @@
+{
+ "v": 3,
+ "layout": "files",
+ "createdOnFiles": {
+  "v": 1,
+  "at": "2026-09-26T22:09:33Z"
+ },
+ "title": "kstrl",
+ "namespace": "Kstrl",
+ "libraries": [],
+ "sections": {},
+ "groups": [
+  "Logos"
+ ],
+ "assetGroups": {
+  "Logos": {
+   "name": "Logos",
+   "tile": "m",
+   "order": [
+    "kstrl-mark.svg",
+    "kstrl-mark-dark.svg"
+   ],
+   "files": {
+    "kstrl-mark.svg": {
+     "name": "kstrl-mark.svg",
+     "blob": "5e74987b63e80100826c0bd0e275c503",
+     "size": 381,
+     "type": "image/svg+xml"
+    },
+    "kstrl-mark-dark.svg": {
+     "name": "kstrl-mark-dark.svg",
+     "blob": "f3e8facd8d3c5eac30942df89fc625a0",
+     "size": 381,
+     "type": "image/svg+xml"
+    }
+   }
+  }
+ },
+ "blobs": {},
+ "docs": {
+  "readme": "project/README.md",
+  "sections": []
+ },
+ "lastChange": {
+  "by": "Claude",
+  "at": "2026-09-27T20:55:00Z",
+  "via": "Claude Code",
+  "note": "The generated files now end as the kstrl repository's commit hooks leave them (no trailing whitespace, one newline at the end), so committing them does not alter them. Every card was rendered in both themes before and after: only Marks changed, in its one reworded line. Two names the spell check read as typos are renamed, a class in Settings and a variable in Chrome's script, and the section name Settings mistypes on purpose is marked as deliberate. The only words a reader sees change are the ones the kstrl repository retired in #395, in the brand book, the Marks card and two sections, now said as kstrl says them."
+ }
+}

@@ -52,6 +52,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from kstrl.config_numbers import check_numbers
 from kstrl.jsonread import read_json
 
 # File-tool allow rules for the claude no-network mode: without
@@ -118,7 +119,7 @@ class SandboxConfig:
             enabled = _parse_bool(os.environ.get("KSTRL_SANDBOX_ENABLED"))
         if "KSTRL_SANDBOX_ALLOW_NETWORK" in os.environ:
             allow_network = _parse_bool(os.environ.get("KSTRL_SANDBOX_ALLOW_NETWORK"))
-        return cls(enabled=enabled, allow_network=allow_network)
+        return check_numbers(cls(enabled=enabled, allow_network=allow_network))
 
 
 def codex_sandbox_args(config: SandboxConfig | None) -> list[str]:

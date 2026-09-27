@@ -1,0 +1,114 @@
+<!-- @dsCard group="Frames (proposal)" height=800 width=1280 page subtitle="12 · Spend: today against the budget, the limits, how sure the numbers are" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Spend</title>
+<style>
+  html, body { margin:0; }
+  .scr { width:1280px; height:800px; background:var(--canvas); color:var(--text); font:var(--t-body); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:56px 1fr 72px; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; --sel:0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
+  .map { position:relative; min-height:0; }
+  .map > svg { display:block; font-family:var(--font-agent); }
+
+  /* shared language (Stage/Grid): title row, zoom, tabs, chips, rings, checks, tiles */
+  .top { position:absolute; left:32px; right:32px; top:16px; }
+
+  .sg { position:absolute; left:32px; right:32px; top:70px; bottom:14px; display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); grid-template-rows:minmax(0,1fr) 250px; gap:14px; }
+  .td { grid-column:1 / span 2; }
+  .hero { display:flex; align-items:baseline; gap:10px; margin-top:8px; }
+  .bign2 { font:var(--t-stat-lg); letter-spacing:var(--t-stat-lg-ls); }
+  .bign2.sm { font:var(--t-stat); letter-spacing:var(--t-stat-ls); }
+  .bign2 small { font:var(--t-measure-code); color:var(--text-3); margin-left:2px; letter-spacing:var(--t-measure-code-ls); }
+  .of { font:var(--t-measure-code); color:var(--text-3); }
+  .tb { display:block; margin-top:14px; overflow:visible; }
+  .tb .trk { fill:var(--selected); }
+  .tb .s1 { fill:var(--text-3); } .tb .s2 { fill:var(--text); }
+  .tb .cap { stroke:var(--fail); stroke-width:2; }
+  .tb .capl { fill:var(--text-2); font:var(--t-micro); font-weight:400; }
+  .tb .ax, .tb .ax2 { fill:var(--text-3); font:var(--t-measure-small); font-weight:400; }
+  .tb .ax2 { font:var(--t-micro); font-weight:400; }
+  .lg2 { display:flex; gap:18px; margin-top:12px; font:var(--t-label); font-weight:400; color:var(--text-2); }
+  .lg2 span { display:inline-flex; align-items:center; gap:6px; }
+  /* the legend keys the chart above it, so its swatches are drawn as the chart is, from the same fills */
+  .sw { flex:none; } .sw .s1 { fill:var(--text-3); } .sw .s2 { fill:var(--text); }
+  .ex3 { margin:6px 0 0; font:var(--t-small); color:var(--text-3); max-width:60ch; }
+  .ex { margin:auto 0 0; font:var(--t-body); color:var(--text-2); max-width:56ch; }
+  .lim { grid-column:3 / span 2; }
+  .lr { display:grid; grid-template-columns:1fr auto; column-gap:12px; padding:9px 0; border-bottom:1px solid var(--line); align-items:baseline; }
+  .lr b { font:var(--t-body); font-weight:600; margin-right:8px; }
+  .lr .k { font:var(--t-measure-small); font-weight:400; color:var(--text-3); }
+  .lr .v { font:var(--t-measure); font-weight:600; }
+  .lr .v.off { color:var(--text-3); font:var(--t-small); }
+  .lr p { grid-column:1 / span 2; margin:3px 0 0; font:var(--t-small); color:var(--text-2); }
+  .lf { display:flex; align-items:center; gap:12px; margin-top:auto; padding-top:10px; }
+
+  .wk { grid-column:1 / span 3; }
+  .wrs { margin-top:10px; display:flex; flex-direction:column; gap:9px; }
+  .wr { display:grid; grid-template-columns:130px 1fr 64px 110px; align-items:center; column-gap:12px; font:var(--t-small); }
+  .wn { font:var(--t-intent-sm); }
+  .wb { height:8px; }
+  .wr b { font:var(--t-measure); font-weight:600; text-align:right; }
+  .wr em { font-style:normal; font:var(--t-label); font-weight:400; color:var(--text-3); }
+  .ex2 { margin:auto 0 0; font:var(--t-small); color:var(--text-2); }
+
+  .cov p { margin:6px 0 0; font:var(--t-small); color:var(--text-2); }
+  .t3n { color:var(--text-3) !important; margin-top:auto !important; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="you" viewBox="0 0 16 16"><path d="M8 1.5 14.5 8 8 14.5 1.5 8Z"/></symbol>
+<symbol id="work" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-opacity=".35" stroke-width="2"/><path d="M8 2.5A5.5 5.5 0 0 1 13.5 8" fill="none" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="wait" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-width="1.5" stroke-dasharray="2.2 2.2"/></symbol>
+<symbol id="fail" viewBox="0 0 16 16"><path d="M4 4 12 12M12 4 4 12" fill="none" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="pass" viewBox="0 0 16 16"><path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="skip" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke-width="1.5"/><path d="M4.2 11.8 11.8 4.2" stroke-width="1.5"/></symbol>
+<symbol id="landed" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5"/><path d="M4.8 8.3 7 10.5 11.3 5.8" fill="none" stroke="var(--window)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</defs></svg>
+<div class="scr">
+  <header class="k-header">
+    <svg class="k-logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="var(--text)"><path d="M30 20 L6 4 L9 12 L18 18 L28 27 Z"/><path d="M34 20 L58 4 L55 12 L46 18 L36 27 Z"/><path d="M32 9 L35 15 L36 24 L32 46 L28 24 L29 15 Z"/><path d="M32 44 L24 58 L32 55 L40 58 Z"/></g></svg><nav aria-label="Where you are"><ol class="k-crumbs"><li><button class="k-crumb k-crumb-root">snippetvault</button></li><li><button class="k-crumb" aria-current="page">Spend</button></li></ol></nav>
+    <span class="k-conds"><span>L2 · merges wait for you</span><span><span class="k-mk sm pass"></span>all checks ran</span><span><span class="k-mk sm pass"></span>CI passing</span></span>
+    <span class="grow"></span>
+    <span class="k-live">not live · last event 22:31</span>
+    <span class="k-spend">≥$42.46 <small>of $40.00 today</small></span>
+    <button class="k-ask" aria-label="Ask or do anything"><span>Ask or do anything</span><span class="k-keys"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">K</span></span></button>
+  </header>
+  <div class="map">
+    <div class="top k-titlerow"><h1 class="k-title"><span class="k-title-name">Spend</span><span class="k-title-meta">Wednesday · over the daily budget · the queue is paused until 00:00</span></h1><div class="k-titletools"><div class="k-tabs" role="tablist" aria-label="View"><span class="k-tabs-bar" aria-hidden="true"></span><button class="k-tab" role="tab" aria-selected="true" tabindex="0">Today</button><button class="k-tab" role="tab" aria-selected="false" tabindex="-1">This week</button></div></div></div>
+    <div class="sg">
+      <div class="k-tile td k-tile-hero">
+        <div class="k-label">Spent today</div>
+        <div class="hero"><span class="bign2">≥$42.46</span><span class="of">of $40.00</span></div>
+        <svg class="tb" viewBox="0 0 520 64" width="520" height="64" aria-hidden="true"><rect x="0" y="30" width="520" height="14" rx="4" class="trk"/><rect x="0.0" y="30" width="98.3" height="14" rx="4" class="s1"/><rect x="100.3" y="30" width="359.7" height="14" rx="4" class="s2"/><line x1="433.3" y1="20" x2="433.3" y2="54" class="cap"/><text x="433.3" y="14" text-anchor="middle" class="capl">$40.00 daily budget</text><text x="0" y="62" class="ax">$0</text><text x="104.3" y="62" class="ax2">search started here, at $9.26</text></svg>
+        <div class="lg2"><span><svg class="sw" width="12" height="8" aria-hidden="true"><rect width="12" height="8" rx="3" class="s1"/></svg>export, its last run, 00:12 · $9.26</span><span><svg class="sw" width="12" height="8" aria-hidden="true"><rect width="12" height="8" rx="3" class="s2"/></svg>search, 5 runs · $33.20</span></div>
+        <p class="ex">The budget is checked before a spec starts, not while it runs. search started under it and finished $2.46 over, so ks serve paused the queue until midnight.</p>
+        <p class="ex3">Resuming the queue by hand changes nothing: ks serve checks the budget again within 60 s. Raising daily_budget_usd does.</p>
+      </div>
+      <div class="k-tile lim">
+        <div class="k-label">Limits, and what reaching each one does</div>
+        <div class="lr"><div><b>Daily budget</b><span class="k">[serve] daily_budget_usd</span></div><span class="v ">$40.00</span><p>Checked before each spec starts. At the cap the queue pauses until midnight.</p></div><div class="lr"><div><b>Per run</b><span class="k">[factory] max_cost_usd</span></div><span class="v off">not set</span><p>Checked between phases. At the cap the part fails and the rest are not started.</p></div><div class="lr"><div><b>Checker calls per run</b><span class="k">max_adversarial_calls</span></div><span class="v off">not set</span><p>Review, security and distill. At the cap a hard review refuses and the part fails.</p></div><div class="lr"><div><b>Per part</b><span class="k"></span></div><span class="v off">none</span><p>kstrl has no per-part limit.</p></div>
+        <div class="lf"><button class="k-button">Open kstrl.toml</button><span class="t3 ty-small">No limit is on unless you set it.</span></div>
+      </div>
+      <div class="k-tile wk">
+        <div class="k-label">What each spec cost this week</div>
+        <div class="wrs"><div class="wr"><span class="wn">snippets</span><span class="wb"><i class="k-bar" style="--k-bar:100.0%"></i></span><b>$41.20</b><em>Mon</em></div><div class="wr"><span class="wn">search</span><span class="wb"><i class="k-bar" style="--k-bar:80.6%"></i></span><b>$33.20</b><em>Wed</em></div><div class="wr"><span class="wn">sharing</span><span class="wb"><i class="k-bar" style="--k-bar:42.2%"></i></span><b>$17.40</b><em>Tue</em></div><div class="wr"><span class="wn">export</span><span class="wb"><i class="k-bar" style="--k-bar:28.9%"></i></span><b>$11.90</b><em>Tue to Wed</em></div><div class="wr"><span class="wn">markdown-export</span><span class="wb"><i class="k-bar" style="--k-bar:21.4%"></i></span><b>$8.80</b><em>Tue, poisoned</em></div></div>
+        <p class="ex2">markdown-export spent $8.80 over 3 attempts and delivered nothing.</p>
+      </div>
+      <div class="k-tile cov">
+        <div class="k-label">How sure these numbers are</div>
+        <div class="hero"><span class="bign2 sm">412<small>/418</small></span></div>
+        <p>calls today reported what they cost. The other 6 did not, so every total is a lower bound, written with <span class="v-measure">≥</span>.</p>
+        <p class="t3n">ks serve refuses to spend when no call has reported a cost, unless you allow it.</p>
+      </div>
+    </div>
+  </div>
+  <div class="k-needs">
+    <span class="k-needs-label">Needs you</span>
+    <button class="k-need"><span class="k-mk fail"></span><b>Daily budget reached</b><span class="k-need-sub">the queue resumes at 00:00 · tags is next</span></button>
+
+    <span class="k-needs-hint">Spend is counted when a phase ends, so a running part’s cost appears in steps.</span>
+  </div>
+</div>
+</body>
+</html>

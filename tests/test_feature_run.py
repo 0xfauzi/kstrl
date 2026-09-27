@@ -267,12 +267,8 @@ class TestFeatureRunRecording:
             params = _params(root, repair_max_runs=0)
             stream = io.StringIO()
             ui = PlainUI(no_color=True, file=stream)
-            command_run = (
-                open_command_run(
-                    ui, root, "feature", component="demo", enabled=True, heartbeat=False
-                )
-                if recorded
-                else None
+            command_run = open_command_run(
+                ui, root, "feature", component="demo", enabled=recorded, heartbeat=False
             )
             try:
                 with patch(
@@ -289,8 +285,7 @@ class TestFeatureRunRecording:
                         run=command_run,
                     )
             finally:
-                if command_run is not None:
-                    command_run.close()
+                command_run.close()
             return stream.getvalue()
 
         recorded = run_once(tmp_path / "a", True)

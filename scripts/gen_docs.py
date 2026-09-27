@@ -246,7 +246,7 @@ def _section_specs() -> list[SectionSpec]:
         ),
         SectionSpec(
             "timeout",
-            "Timeout limits (seconds; 0 or less disables)",
+            "Timeout limits (seconds; 0 disables)",
             identity_keys(TimeoutConfig, _all_field_names(TimeoutConfig)),
             lambda root: TimeoutConfig.load(root_dir=root),
             TimeoutConfig(),

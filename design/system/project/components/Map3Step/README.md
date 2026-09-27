@@ -1,0 +1,5 @@
+Proposal, step level mode A (Stage): like the speaker view of a video call, the agent that spoke last takes the stage with its words in large type, and every other working agent sits below as a participant tile.
+
+**Why.** Many agents at once are easiest to follow the way a meeting is: one voice at a time, large, with everyone else visible and quiet. The stage shows the speaking agent's role, part and try, its two previous statements fading above the current one (34px), and on the right the part's context: its checks (verify, review, security, distill) and its stories. Tiles show each other agent's iterations as a ring and a number, and its last line. The stage follows whoever spoke last; `P` pins it.
+
+**Built on**: the tail of each agent's log for its words, with the file's age deciding who spoke last (the log has no per-line times, so "last" means the most recently grown log); `iteration_*` and `phase_*` events for rings and checks; `prd.json` for stories; the plan's decisions for the footnote. This frame is 20:46 in the search run. Stage and Grid are tabs beside the zoom control, as Graph and Text are at the Spec level.

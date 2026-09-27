@@ -31,6 +31,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
+from kstrl.config_numbers import SIGNED, check_numbers
+
 # Enforcement-machinery paths: every lever an agent could pull to weaken
 # the envelope itself. Issue #148 names three surfaces and all three are
 # covered here: the policy FILE that defines the rules, the CI WORKFLOWS
@@ -588,8 +590,9 @@ class PolicyConfig:
 
     enabled: bool = False
     paths_deny: list[str] = field(default_factory=lambda: list(DEFAULT_PATHS_DENY))
-    max_files_changed: int = 40
-    max_lines_changed: int = 1500
+    # A negative cap disables the cap and 0 allows nothing (#571: SIGNED).
+    max_files_changed: int = field(default=40, metadata=SIGNED)
+    max_lines_changed: int = field(default=1500, metadata=SIGNED)
     deps_allow_new: bool = False
     secret_patterns: list[str] = field(default_factory=lambda: list(DEFAULT_SECRET_PATTERNS))
     # ADDITIVE ONLY: extra paths joined to ENFORCEMENT_MACHINERY_PATHS for
@@ -738,19 +741,21 @@ class PolicyConfig:
         if "KSTRL_POLICY_DEPLOY" in os.environ:
             deploy = os.environ["KSTRL_POLICY_DEPLOY"] == "1"
 
-        return cls(
-            enabled=enabled,
-            paths_deny=paths_deny,
-            max_files_changed=max_files_changed,
-            max_lines_changed=max_lines_changed,
-            deps_allow_new=deps_allow_new,
-            secret_patterns=secret_patterns,
-            enforcement_paths_extra=enforcement_paths_extra,
-            license_allow=license_allow,
-            license_deny_partial=license_deny_partial,
-            license_unresolved=license_unresolved,
-            license_use_network=license_use_network,
-            deploy=deploy,
+        return check_numbers(
+            cls(
+                enabled=enabled,
+                paths_deny=paths_deny,
+                max_files_changed=max_files_changed,
+                max_lines_changed=max_lines_changed,
+                deps_allow_new=deps_allow_new,
+                secret_patterns=secret_patterns,
+                enforcement_paths_extra=enforcement_paths_extra,
+                license_allow=license_allow,
+                license_deny_partial=license_deny_partial,
+                license_unresolved=license_unresolved,
+                license_use_network=license_use_network,
+                deploy=deploy,
+            )
         )
 
     def envelope_hash(self) -> str:

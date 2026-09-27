@@ -9,6 +9,7 @@ duplicating them.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -23,6 +24,7 @@ from kstrl.retry_plan import RESUME_REFUSAL
 from kstrl.timeout import TimeoutConfig
 from kstrl.tui.screens.options import OptionsModal
 from kstrl.tui.screens.retry import RetryScreen
+from tests.helpers.rendered import flat
 from tests.helpers.settle import drained, mounted, settled
 from tests.test_launch_session import FakeSession, _home_app, _notified
 
@@ -99,6 +101,11 @@ class TestRetryScreen:
             assert table.row_count == 1  # type: ignore[attr-defined]
             detail = str(detail_widget.content)
             assert "review found blocking issues" in detail
+            await settled(
+                pilot,
+                lambda: app.screen.check_action("retry_selected", ()) is True,
+                what="r to be offered once the carry is read",
+            )
             await pilot.press("r")
             # Weaker than the assertion: r handed over to some other
             # screen, not specifically to the confirm modal.
@@ -158,6 +165,11 @@ class TestRetryScreen:
                 app.screen,
                 what="the retry screen's on_mount to run",
             )
+            await settled(
+                pilot,
+                lambda: app.screen.check_action("retry_selected", ()) is True,
+                what="r to be offered once the carry is read",
+            )
             await pilot.press("r")
             await settled(
                 pilot,
@@ -214,7 +226,7 @@ class TestRetryScreen:
                 # it, names the command, and r is not offered at all.
                 await settled(
                     pilot,
-                    lambda: "ks retry comp-a --max-cost-usd 5" in str(detail.content),  # type: ignore[attr-defined]
+                    lambda: "ks retry comp-a --max-cost-usd 5" in flat(detail),
                     what="the queue to name the command that carries the ceiling",
                 )
                 assert app.screen.check_action("retry_selected", ()) is False
@@ -251,6 +263,11 @@ class TestRetryScreen:
             app.push_screen(RetryScreen())
             await mounted(pilot, lambda: app.screen, "#retry-table")
             await drained(pilot, app.screen, what="on_mount to run")
+            await settled(
+                pilot,
+                lambda: app.screen.check_action("retry_selected", ()) is True,
+                what="r to be offered once the carry is read",
+            )
             await pilot.press("r")
             await settled(
                 pilot,
@@ -273,12 +290,13 @@ class TestRetryScreen:
     ) -> None:
         """B1: a recorded flag (not just a ceiling) has no FactoryLaunch field.
 
-        The run carried --max-parallel 1 with no cost ceiling; FactoryLaunch
-        cannot replay that flag, so the TUI must refuse.
+        The run carried --max-retries 5 with no cost ceiling; FactoryLaunch
+        has no field for it, so the TUI must refuse and name it (#433 H5:
+        --max-parallel, which FactoryLaunch does carry, is no longer refused).
         """
         run_id = "factory-20260101-000000.000000-flags"
         manifest_file = self._failed_manifest(tmp_path, run_id=run_id)
-        flags = (("max_parallel", 1),)
+        flags = (("max_retries", 5),)
         assert write_launch_record(tmp_path, run_id, manifest_file, flags, _limits(0.0)) == []
         app = _home_app(tmp_path)
         specs: list[Any] = []
@@ -291,10 +309,12 @@ class TestRetryScreen:
                 # Increment 3 (#433 G1): withheld before r, not refused after.
                 await settled(
                     pilot,
-                    lambda: "cannot be carried through the TUI" in str(detail.content),  # type: ignore[attr-defined]
-                    what="the queue to say the recorded flags need the CLI",
+                    lambda: (
+                        "with --max-retries 5, which this screen cannot pass on" in flat(detail)
+                    ),
+                    what="the queue to name the recorded flag that needs the CLI",
                 )
-                assert "ks retry comp-a" in str(detail.content)  # type: ignore[attr-defined]
+                assert "ks retry comp-a" in flat(detail)
                 assert app.screen.check_action("retry_selected", ()) is False
                 await pilot.press("r")
                 await drained(pilot, app.screen, what="r to be handled")
@@ -346,6 +366,11 @@ async def test_the_confirmation_names_the_failed_component_it_leaves_out(tmp_pat
         table = await mounted(pilot, lambda: app.screen, "#retry-table")
         await drained(pilot, app.screen, what="the retry screen's on_mount to run")
         assert table.row_count == 2  # type: ignore[attr-defined]
+        await settled(
+            pilot,
+            lambda: app.screen.check_action("retry_selected", ()) is True,
+            what="r to be offered once the carry is read",
+        )
         await pilot.press("r")
         await settled(
             pilot,
@@ -355,6 +380,8 @@ async def test_the_confirmation_names_the_failed_component_it_leaves_out(tmp_pat
         assert isinstance(app.screen, OptionsModal)
         header = app.screen.request.header
         assert header.startswith("Retry 'http-api'?"), header
-        assert "Not in this retry" in header, header
-        assert "cli: FAILED; retry it after this run with ks retry cli" in header, header
-        assert "ks retry http-api" not in header, header
+        body = await mounted(pilot, lambda: app.screen, "#options-detail Static")
+        scope = flat(body)
+        stays_out = r"stays out\s+cli: FAILED; retry it after this run with ks retry cli"
+        assert re.search(stays_out, scope), scope
+        assert "ks retry http-api" not in scope, scope

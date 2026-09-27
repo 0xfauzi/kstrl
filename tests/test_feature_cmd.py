@@ -18,6 +18,7 @@ from kstrl.loop import LoopResult
 from kstrl.prd import PRD, UserStory
 from kstrl.sandbox import SandboxConfig
 from kstrl.ui.plain import PlainUI
+from tests.helpers.prompt_calls import offline_run
 
 
 class StubAgent:
@@ -165,6 +166,7 @@ class TestReviewGate:
                 ui,
                 tmp_path,
                 interaction=channel,
+                run=offline_run(tmp_path, "feature"),
             )
         assert code == 0
         assert "Amend the understand file" in stream.getvalue()
@@ -187,6 +189,7 @@ class TestReviewGate:
                 ui,
                 tmp_path,
                 interaction=ScriptedChannel(0, promptable=False),
+                run=offline_run(tmp_path, "feature"),
             )
         assert code == 2
         assert "Interactive review required" in stream.getvalue()
@@ -204,6 +207,7 @@ class TestReviewGate:
                 ui,
                 tmp_path,
                 interaction=channel,
+                run=offline_run(tmp_path, "feature"),
             )
         assert code == 0
         assert channel.requests == []
@@ -221,6 +225,7 @@ class TestExitCodes:
                 ui,
                 tmp_path,
                 interaction=ScriptedChannel(0),
+                run=offline_run(tmp_path, "feature"),
             )
         assert code == 3
 
@@ -242,6 +247,7 @@ class TestExitCodes:
                 ui,
                 tmp_path,
                 interaction=channel,
+                run=offline_run(tmp_path, "feature"),
             )
         assert code == 0
         assert calls == 1
@@ -257,6 +263,7 @@ class TestExitCodes:
                 ui,
                 tmp_path,
                 interaction=ScriptedChannel(0),
+                run=offline_run(tmp_path, "feature"),
             )
         assert code == 0
         assert "PRD has no user stories" in stream.getvalue()
@@ -277,6 +284,7 @@ class TestExitCodes:
                 ui,
                 tmp_path,
                 interaction=ScriptedChannel(0),
+                run=offline_run(tmp_path, "feature"),
             )
         assert code == 0
         repairs = list((params.feature_dir / "repairs").glob("repair_*.json"))
@@ -297,6 +305,7 @@ class TestExitCodes:
                 ui,
                 tmp_path,
                 interaction=ScriptedChannel(0),
+                run=offline_run(tmp_path, "feature"),
             )
         assert code == 4
 
@@ -336,6 +345,7 @@ class TestControlPropagation:
                 tmp_path,
                 interaction=channel,
                 stop_check=stop_check,
+                run=offline_run(tmp_path, "feature"),
             )
         assert code == 0
         assert seen == [(channel, stop_check)] * 3

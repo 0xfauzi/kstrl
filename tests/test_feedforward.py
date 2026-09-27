@@ -17,7 +17,7 @@ from kstrl.feedforward import (
     extract_conventions,
     extract_public_interfaces,
 )
-from tests.test_context import section
+from tests.helpers.context_sweeps import section
 
 # ---------------------------------------------------------------------------
 # build_module_map

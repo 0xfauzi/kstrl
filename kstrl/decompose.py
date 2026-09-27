@@ -6,6 +6,7 @@ import dataclasses
 import functools
 import json
 import logging
+import os
 import re
 import time
 from collections import Counter
@@ -19,6 +20,7 @@ from kstrl.agents.base import (
     ARCHITECT_ROLE,
     Agent,
     collect_usage,
+    model_output_text,
     print_usage_rollup,
     usage_cursor,
 )
@@ -87,6 +89,7 @@ SPEC_ISSUE_APPLIES_COMPONENT = "component"
 SPEC_ISSUE_APPLIES_SPEC = "spec"
 
 if TYPE_CHECKING:
+    from kstrl.factory import _RunLock
     from kstrl.ui.base import UI
 
 
@@ -677,7 +680,7 @@ def _select_agent_output(agent: Any, output_lines: list[str]) -> str:
     that pass the result through :func:`_extract_json` (e.g. via a
     domain-specific parser) from codex's prompt-echo behavior.
     """
-    streamed = "\n".join(output_lines)
+    streamed = model_output_text(agent, output_lines)
     final = getattr(agent, "final_message", None)
     if not final:
         return streamed
@@ -706,7 +709,7 @@ def _extract_agent_json(agent: Any, output_lines: list[str]) -> Any:
 
     Raises :class:`ValueError` if neither candidate parses.
     """
-    streamed = "\n".join(output_lines)
+    streamed = model_output_text(agent, output_lines)
     final = getattr(agent, "final_message", None)
 
     candidates: list[str] = []
@@ -2336,9 +2339,9 @@ def _report_architect_usage(
     )
 
 
-def _for_attempt(call: AgentCall | None, attempt: int) -> AgentCall | None:
+def _for_attempt(call: AgentCall, attempt: int) -> AgentCall:
     """The architect's record identity for one decompose attempt (#532)."""
-    return None if call is None else dataclasses.replace(call, attempt=attempt)
+    return dataclasses.replace(call, attempt=attempt)
 
 
 def _decompose_spec_impl(
@@ -2353,7 +2356,9 @@ def _decompose_spec_impl(
     *,
     bus: EventBus | None = None,
     transcript: Callable[[str], None] | None = None,
-    prompt_call: AgentCall | None = None,
+    prompt_call: AgentCall,
+    force_lock: bool = False,
+    run_lock: _RunLock | None = None,
 ) -> Manifest:
     """Decompose a spec into components and generate PRDs.
 
@@ -2375,7 +2380,16 @@ def _decompose_spec_impl(
             (the run's transcript file); terminal streaming through
             ``ui`` is unchanged either way.
         prompt_call: Who the architect's prompt is recorded for (#532),
-            with each attempt's number put in; None records nothing.
+            with each attempt's number put in. Required (#567): every
+            caller is inside a run, and the run is what the record names.
+        force_lock: Passed to ``_acquire_run_lock`` when this call takes
+            its own lock (``run_lock`` is None); ignored otherwise, since
+            a caller that already holds one decided ``force`` itself.
+        run_lock: A lock the caller already holds (#597), e.g. `ks
+            factory --spec`, which takes it before this call so the
+            architect's spend and the manifest write share one acquire.
+            None (the `ks decompose` command's own case) means this call
+            takes and releases its own lock around the manifest write.
 
     Returns:
         Manifest with generated components and PRD files
@@ -2392,7 +2406,7 @@ def _decompose_spec_impl(
             return str(path)
 
     run_started = time.monotonic()
-    emit(RunStarted(project=project_name, components=0))
+    emit(RunStarted(project=project_name, components=0, pid=os.getpid()))
     emit(
         RunPlan(
             components=(
@@ -2855,21 +2869,31 @@ def _decompose_spec_impl(
         # Save manifest (atomic write; covered by the cleanup scope so
         # a save failure does not strand PRDs without a manifest)
         manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
-        manifest.save(manifest_path)
-        ui.ok(f"Manifest saved: {manifest_path}")
-        # AFTER the manifest, never before: the register binds engineers
-        # to this manifest, so it must not exist unless this manifest
-        # does. Inside the cleanup scope for the same reason.
-        write_register(
-            lambda: write_decisions(
-                decisions,
-                root_dir=root_dir,
-                project_name=project_name,
-                spec_file=spec_path.name,
-                halted=False,
-            ),
-            required=True,
-        )
+        # #597: a live factory run owns this manifest and saves its whole
+        # in-memory copy, so the manifest and the register are written under
+        # the run lock. `ks factory --spec` already holds it (acquired
+        # before this call, ahead of the architect's spend, #597); `ks
+        # decompose` has no caller's lock and takes its own here. Either
+        # way a held lock raises FactoryLockHeldError inside the cleanup
+        # scope, so a refused decompose leaves no PRDs behind.
+        from kstrl.factory import held_or_acquired_run_lock
+
+        with held_or_acquired_run_lock(run_lock, root_dir, ui, force_lock):
+            manifest.save(manifest_path)
+            ui.ok(f"Manifest saved: {manifest_path}")
+            # AFTER the manifest, never before: the register binds engineers
+            # to this manifest, so it must not exist unless this manifest
+            # does. Inside the cleanup scope for the same reason.
+            write_register(
+                lambda: write_decisions(
+                    decisions,
+                    root_dir=root_dir,
+                    project_name=project_name,
+                    spec_file=spec_path.name,
+                    halted=False,
+                ),
+                required=True,
+            )
     except BaseException:
         for prd_file in written_prds:
             try:
@@ -2950,10 +2974,14 @@ def decompose_spec(
     *,
     bus: EventBus | None = None,
     transcript: Callable[[str], None] | None = None,
-    prompt_call: AgentCall | None = None,
+    prompt_call: AgentCall,
+    force_lock: bool = False,
+    run_lock: _RunLock | None = None,
 ) -> Manifest:
     """Run decomposition, guaranteeing a ``RunCompleted`` and a usage
     capture on every exit.
+
+    ``run_lock``: see :func:`_decompose_spec_impl` (#597).
 
     #257: the capture sits in a ``finally`` because the blocker halt is
     the COMMON outcome on a first spec, and it is the path where the
@@ -2984,6 +3012,8 @@ def decompose_spec(
             bus=bus,
             transcript=transcript,
             prompt_call=prompt_call,
+            force_lock=force_lock,
+            run_lock=run_lock,
         )
     except SpecBlockerError:
         # Blocker halts are deliberately finalized at the audit site so

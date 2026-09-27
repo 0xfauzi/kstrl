@@ -12,8 +12,9 @@ import sys
 import threading
 import time
 from collections import Counter
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Protocol, TextIO
@@ -44,6 +45,8 @@ from kstrl.config import (
     component_progress_path,
     relative_to_root,
 )
+from kstrl.config_numbers import BudgetConfigError as BudgetConfigError
+from kstrl.config_numbers import check_number, check_numbers
 from kstrl.context import IterationContext
 from kstrl.contract import (
     ContractCleanupError,
@@ -91,10 +94,10 @@ from kstrl.interaction import InteractionChannel
 from kstrl.jsonread import read_json
 from kstrl.knowledge import (
     KnowledgeConfig,
-    build_knowledge_context,
     current_run_id,
     distill_facts,
     measure_fact_utilization,
+    retrieve_knowledge_context,
 )
 from kstrl.launch_record import FlagValue, run_limits, write_launch_record
 from kstrl.linear import LinearConfig, build_linear_sink
@@ -177,62 +180,6 @@ IN_LOOP_SCOPE_VIOLATION_PROMPT = (
     "{harness_paths}. "
     "Do not widen allowedPaths."
 )
-
-
-class BudgetConfigError(ValueError):
-    """A budget ceiling was configured with a value that cannot bound
-    anything.
-
-    Raised rather than coerced because these are SAFETY limits and every
-    bad value fails in a different silent direction: ``nan`` makes
-    ``max_cost_usd > 0`` false, so the ceiling disables itself while
-    reading as configured; a negative value disables it the same way;
-    ``inf`` produces a ceiling that is enabled and can never be reached.
-    All three are indistinguishable from "off" at the moment they
-    matter, which is the failure mode a budget cap must never have.
-    """
-
-
-def validate_cost_ceiling(value: float, source: str) -> float:
-    """A cost ceiling must be finite and non-negative. 0 means unbounded.
-
-    Public because the CLI has to reject a bad ``--max-cost-usd`` in
-    preflight, before the architect spends a call - the flag reaches
-    ``run_factory`` without passing any config loader.
-    """
-    import math
-
-    if not math.isfinite(value):
-        raise BudgetConfigError(
-            f"{source} must be a finite number, got {value!r}; use 0 to "
-            "disable the ceiling. A non-finite ceiling silently stops "
-            "bounding anything."
-        )
-    if value < 0:
-        raise BudgetConfigError(
-            f"{source} must be >= 0, got {value!r}; use 0 to disable the "
-            "ceiling rather than a negative value, which disables it "
-            "without saying so."
-        )
-    return value
-
-
-def validate_token_ceiling(value: int, source: str) -> int:
-    """A token ceiling must be non-negative. 0 means unbounded.
-
-    The same defect as :func:`validate_cost_ceiling`, in the knob that
-    predates it: ``max_total_tokens = -5`` made ``max_total_tokens > 0``
-    false, so the ceiling disabled itself while still reading as
-    configured - measured, not assumed. Only the finiteness check is
-    absent, because this one is an int.
-    """
-    if value < 0:
-        raise BudgetConfigError(
-            f"{source} must be >= 0, got {value!r}; use 0 to disable the "
-            "ceiling rather than a negative value, which disables it "
-            "without saying so."
-        )
-    return value
 
 
 #: R10.3: the two settings [factory] claim_agreement accepts.
@@ -491,11 +438,11 @@ class FactoryConfig:
             retry_delay=float(os.environ.get("FACTORY_RETRY_DELAY", "5.0")),
             merge_timeout=float(os.environ.get("FACTORY_MERGE_TIMEOUT", "300.0")),
             max_adversarial_calls=int(os.environ.get("KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS", "0")),
-            max_total_tokens=validate_token_ceiling(
+            max_total_tokens=check_number(
                 int(os.environ.get("KSTRL_FACTORY_MAX_TOTAL_TOKENS", "0")),
                 "KSTRL_FACTORY_MAX_TOTAL_TOKENS",
             ),
-            max_cost_usd=validate_cost_ceiling(
+            max_cost_usd=check_number(
                 float(os.environ.get("KSTRL_FACTORY_MAX_COST_USD", "0")),
                 "KSTRL_FACTORY_MAX_COST_USD",
             ),
@@ -581,12 +528,12 @@ class FactoryConfig:
         if "max_adversarial_calls" in section:
             config.max_adversarial_calls = int(section["max_adversarial_calls"])
         if "max_total_tokens" in section:
-            config.max_total_tokens = validate_token_ceiling(
+            config.max_total_tokens = check_number(
                 int(section["max_total_tokens"]),
                 "[factory] max_total_tokens",
             )
         if "max_cost_usd" in section:
-            config.max_cost_usd = validate_cost_ceiling(
+            config.max_cost_usd = check_number(
                 float(section["max_cost_usd"]),
                 "[factory] max_cost_usd",
             )
@@ -631,11 +578,11 @@ class FactoryConfig:
         if "KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS" in os.environ:
             config.max_adversarial_calls = int(os.environ["KSTRL_FACTORY_MAX_ADVERSARIAL_CALLS"])
         if "KSTRL_FACTORY_MAX_TOTAL_TOKENS" in os.environ:
-            config.max_total_tokens = validate_token_ceiling(
+            config.max_total_tokens = check_number(
                 int(os.environ["KSTRL_FACTORY_MAX_TOTAL_TOKENS"]), "KSTRL_FACTORY_MAX_TOTAL_TOKENS"
             )
         if "KSTRL_FACTORY_MAX_COST_USD" in os.environ:
-            config.max_cost_usd = validate_cost_ceiling(
+            config.max_cost_usd = check_number(
                 float(os.environ["KSTRL_FACTORY_MAX_COST_USD"]), "KSTRL_FACTORY_MAX_COST_USD"
             )
         if "KSTRL_FACTORY_PAUSE_BEFORE_PR_MERGE" in os.environ:
@@ -679,7 +626,7 @@ class FactoryConfig:
                 "KSTRL_FACTORY_CLAIM_AGREEMENT",
                 VALID_CLAIM_AGREEMENT,
             )
-        return config
+        return check_numbers(config)
 
 
 def _validate_max_rounds(value: object, source: str) -> int:
@@ -1358,14 +1305,20 @@ class _RunLock:
     may safely prune state left by previous runs. ``held=False`` means we
     are running WITHOUT exclusion (Windows/no-fcntl degrade, or
     ``--force-lock``): stale-state cleanup must be skipped because another
-    live invocation may own it.
+    live invocation may own it. ``released`` is separate from ``fp is
+    None``: a forced or no-fcntl lock also has ``fp=None`` while still
+    legitimate to hand to `ks factory`, so ``released`` is the only field
+    that says whether ``release()`` has run on this handle (#597).
     """
 
     fp: IO[str] | None
     held: bool
+    released: bool = False
 
     def release(self) -> None:
         if self.fp is None:
+            self.held = False
+            self.released = True
             return
         try:
             import fcntl
@@ -1375,6 +1328,8 @@ class _RunLock:
             pass
         self.fp.close()
         self.fp = None
+        self.held = False
+        self.released = True
 
 
 def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:
@@ -1452,6 +1407,27 @@ def _acquire_run_lock(root_dir: Path, ui: UI, force: bool) -> _RunLock:
     except OSError:
         pass
     return _RunLock(fp=fp, held=True)
+
+
+@contextmanager
+def held_or_acquired_run_lock(
+    run_lock: _RunLock | None, root_dir: Path, ui: UI, force: bool
+) -> Iterator[_RunLock]:
+    """Use ``run_lock`` if the caller already holds one; acquire and release our own otherwise.
+
+    `ks factory --spec` takes the lock before it calls ``decompose_spec``
+    (#597) and keeps holding it after this returns, so a caller passing
+    its own lock keeps owning it: this never releases one it did not
+    acquire. `ks decompose`'s own case passes None and gets a lock this
+    acquires and releases around exactly the block it wraps.
+    """
+    owns = run_lock is None
+    lock = run_lock if run_lock is not None else _acquire_run_lock(root_dir, ui, force=force)
+    try:
+        yield lock
+    finally:
+        if owns:
+            lock.release()
 
 
 def _remove_stale_index_lock(root_dir: Path, component_id: str) -> None:
@@ -2482,6 +2458,76 @@ def _retry_block(previous_context_json: str | None) -> str:
     return formatted if formatted.strip() else ""
 
 
+def engineer_context_prefix(
+    root_dir: Path,
+    *,
+    golden_patterns_file: Path | str,
+    memory_file: Path | str,
+    knowledge_prefix: str,
+    decisions_prefix: str,
+    codebase_scan_prefix: str,
+    retry_block: str,
+) -> str | None:
+    """The block ``run_loop`` puts in front of every engineer prompt, or None.
+
+    The one assembly of the engineer's context, called by
+    ``_run_component`` for every factory engineer and by
+    ``feature_cmd._feature_context_prefix`` for every ``ks feature`` loop
+    (#599). Before #599 this body sat inside ``_run_component``, and
+    ``ks feature`` called ``run_loop`` with no prefix at all, so its
+    engineer read neither operator file nor any knowledge fact.
+
+    Every argument after ``root_dir`` is keyword-only with no default, so
+    each caller states in its own source which blocks it has; "" means
+    the caller has none of that block. None when every block is empty,
+    which is what ``run_loop`` reads as no prefix.
+    """
+    # R10.8 and R10.9: the operator's own files, one call each through
+    # the one resolver. Resolved by `operator_file_spec` against the REPO
+    # ROOT and never against a component worktree: the worktree is the
+    # tree the agent has been writing to, so reading it there would let
+    # one component choose what the next component is told, unfiltered
+    # and under a header saying the operator wrote it (review round 1,
+    # S3). The same function resolves the parent's once-per-run notice,
+    # so the two cannot read different files (review round 2,
+    # should-fix 2). "" when absent, empty, or an unedited `ks init`
+    # scaffold.
+    golden_patterns = load_operator_file(
+        operator_file_spec(GOLDEN_PATTERNS, root_dir, golden_patterns_file)
+    )
+    memory = load_operator_file(operator_file_spec(MEMORY, root_dir, memory_file))
+
+    # ONE literal tuple, so the ORDER is a value a reader can see and a
+    # test can pin rather than a property of statement sequence. Every
+    # block reaches the engineer the same way and differs only in where
+    # it was built, so adding one is a row here and not a branch; the
+    # retry context was an `if` appending to this list until R10.9, and a
+    # second `if` would have made "memory is last" true by accident.
+    #
+    # Repo-standing first (knowledge, then the operator's patterns), then
+    # run-level (the architect's decisions), then tree-computed
+    # (codebase scan), then attempt-level (the retry context), then MEMORY.
+    # Memory is last on purpose: the retry context is the controller's
+    # output for this attempt, and memory is the operator's standing
+    # correction to how that output should be acted on, so it is read
+    # after it (#230). `run_loop` then prepends this whole prefix to
+    # CLAUDE.md plus the templated prompt, so the memory block also sits
+    # before `# Project Context (from CLAUDE.md)`.
+    parts: list[str] = [
+        block
+        for block in (
+            knowledge_prefix,
+            golden_patterns,
+            decisions_prefix,
+            codebase_scan_prefix,
+            retry_block,
+            memory,
+        )
+        if block
+    ]
+    return "\n\n".join(parts) if parts else None
+
+
 def _report_operator_files(base_config: KstrlConfig, root_dir: Path, ui: UI) -> None:
     """Print each ``(subject, message)`` the operator's files produce, once.
 
@@ -2501,18 +2547,20 @@ def _report_operator_files(base_config: KstrlConfig, root_dir: Path, ui: UI) -> 
         ui.warn(f"  {subject}: {message}")
 
 
-def _engineer_call(
-    usage_dir_str: str | None, run_id: str, component_id: str, attempt: int
-) -> AgentCall | None:
+def _engineer_call(root_dir: Path, run_id: str, component_id: str, attempt: int) -> AgentCall:
     """Who the engineer's prompts are recorded for (#532).
 
-    The accounting directory is the run directory, and the factory always
-    passes it; None is a direct caller outside a run, which records nothing.
+    The run directory is ``RunPaths.for_run(root_dir, run_id)``, the same
+    directory the factory hands the worker as its accounting directory.
+    An empty ``run_id`` is a call outside any run, and it is refused
+    rather than left unrecorded (#567).
     """
-    if usage_dir_str is None:
-        return None
+    if not run_id:
+        raise ValueError(
+            f"engineer call for {component_id!r} has no run id to record its prompt under"
+        )
     return AgentCall(
-        run_root=Path(usage_dir_str),
+        run_root=RunPaths.for_run(root_dir, run_id).root,
         run_id=run_id,
         component=component_id,
         role="engineer",
@@ -2627,12 +2675,11 @@ def _run_component(
 
     start = time.monotonic()
     worktree_path = Path(worktree_path_str)
-    # R0.4: every copy source below resolves against root_dir, never the
-    # worker's inherited CWD. prompt.md and the PRD live under gitignored
-    # scripts/kstrl/, so a fresh worktree NEVER contains them via git; if
-    # a CWD-relative lookup missed them (e.g. --root from another
-    # directory) the copies silently no-op'd and the engineer fell back
-    # to the harness DEFAULT_PROMPT (phase-f e2e validation, line 38).
+    # R0.4: every source below (the PRD seed, prompt.md, CLAUDE.md)
+    # resolves against root_dir, never the worker's inherited CWD. A
+    # CWD-relative lookup (e.g. --root from another directory) missed
+    # them and the engineer fell back to the harness DEFAULT_PROMPT
+    # (phase-f e2e validation, line 38).
     root_dir = Path(root_dir_str)
 
     ui: UI
@@ -2668,13 +2715,11 @@ def _run_component(
 
     # Copy PRD into worktree if needed.
     #
-    # shutil.copyfile, not read_text/write_text: these are COPIES, and a
+    # shutil.copyfile, not read_text/write_text: this is a COPY, and a
     # copy that decodes and re-encodes is only byte-exact when the
     # locale's codec round-trips. #291 made the PRD utf-8 on disk, which
-    # under LC_ALL=C a bare read_text cannot decode at all, and #286's
-    # scaffold digests depend on prompt.md copying byte for byte. A byte
-    # copy removes the encoding question rather than answering it four
-    # times.
+    # under LC_ALL=C a bare read_text cannot decode at all. A byte copy
+    # removes the encoding question rather than answering it.
     # The source is the copy the run starts from, which for a planned
     # component is under .kstrl/plan/<plan_id>/ and never at prd_path
     # (#545, #568).
@@ -2689,31 +2734,19 @@ def _run_component(
     # at runtime by loop.py with config.prd_file, so the agent reads the
     # SAME per-component PRD that check_prd_stories re-reads (R2.3, H-11)
     # without overwriting scripts/kstrl/prd.json.
-
-    # Copy prompt into worktree if needed
-    worktree_prompt = worktree_path / prompt_file_str
-    prompt_source = root_dir / prompt_file_str
-    if not worktree_prompt.exists() and prompt_source.exists():
-        worktree_prompt.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(prompt_source, worktree_prompt)
-
-    # Copy CLAUDE.md / AGENTS.md into the worktree from root_dir. When
-    # use_worktrees=False, worktree_path IS the repo root so the files are
-    # already in place - the .exists() guards handle this correctly.
-    claude_dest = worktree_path / "CLAUDE.md"
-    claude_src = root_dir / "CLAUDE.md"
-    if not claude_dest.exists() and claude_src.exists():
-        shutil.copyfile(claude_src, claude_dest)
-    agents_dest = worktree_path / "AGENTS.md"
-    agents_src = root_dir / "AGENTS.md"
-    if not agents_dest.exists():
-        if agents_src.is_symlink() and claude_dest.exists():
-            # Preserve the AGENTS.md -> CLAUDE.md symlink convention.
-            agents_dest.symlink_to("CLAUDE.md")
-        elif agents_src.exists():
-            shutil.copyfile(agents_src, agents_dest)
-        elif claude_dest.exists():
-            agents_dest.symlink_to("CLAUDE.md")
+    #
+    # #569: prompt.md and CLAUDE.md are read from root_dir, the checkout
+    # kstrl ran from, and nothing of kstrl's is copied into the worktree
+    # beside the PRD. A copy there is an untracked file the engineer's
+    # `git add -A` commits, and when the same file is uncommitted in the
+    # root checkout, `git merge` of the component branch refuses on it and
+    # Phase 1 fails the component on diff_scope. They are kstrl's context
+    # for the engineer, not the component's change.
+    prompt_file = root_dir / prompt_file_str
+    # #585: the codebase map is read from root_dir for the same reason.
+    # The engineer only reads it (DEFAULT_PROMPT >= 1.4.0), and in the
+    # worktree it is missing whenever the base branch does not track it.
+    codebase_map_file = root_dir / codebase_map_file_str
 
     # The scaffold command and the Phase 0 scan. Both stay non-fatal; a
     # failure comes back as a note that is warned once `ui` is bound (#486).
@@ -2725,52 +2758,15 @@ def _run_component(
         component_deps,
     )
 
-    # R10.8 and R10.9: the operator's own files, one call each through
-    # the one resolver. Resolved by `operator_file_spec` against the REPO
-    # ROOT and never against `worktree_path`: the worktree is the tree
-    # this agent has been writing to, so reading it there would let one
-    # component choose what the next component is told, unfiltered and
-    # under a header saying the operator wrote it (review round 1, S3).
-    # The same function resolves the parent's once-per-run notice, so the
-    # two cannot read different files (review round 2, should-fix 2). ""
-    # when absent, empty, or an unedited `ks init` scaffold.
-    golden_patterns = load_operator_file(
-        operator_file_spec(GOLDEN_PATTERNS, root_dir, golden_patterns_file_str)
+    context_prefix = engineer_context_prefix(
+        root_dir,
+        golden_patterns_file=golden_patterns_file_str,
+        memory_file=memory_file_str,
+        knowledge_prefix=knowledge_prefix,
+        decisions_prefix=decisions_prefix,
+        codebase_scan_prefix=codebase_scan_prefix,
+        retry_block=_retry_block(previous_context_json),
     )
-    memory = load_operator_file(operator_file_spec(MEMORY, root_dir, memory_file_str))
-
-    # Build context prefix from previous retries
-    context_prefix: str | None = None
-    # ONE literal tuple, so the ORDER is a value a reader can see and a
-    # test can pin rather than a property of statement sequence. Every
-    # block reaches the engineer the same way and differs only in where
-    # it was built, so adding one is a row here and not a branch; the
-    # retry context was an `if` appending to this list until R10.9, and a
-    # second `if` would have made "memory is last" true by accident.
-    #
-    # Repo-standing first (knowledge, then the operator's patterns), then
-    # run-level (the architect's decisions), then tree-computed
-    # (codebase scan), then attempt-level (the retry context), then MEMORY.
-    # Memory is last on purpose: the retry context is the controller's
-    # output for this attempt, and memory is the operator's standing
-    # correction to how that output should be acted on, so it is read
-    # after it (#230). `run_loop` then prepends this whole prefix to
-    # CLAUDE.md plus the templated prompt, so the memory block also sits
-    # before `# Project Context (from CLAUDE.md)`.
-    parts: list[str] = [
-        block
-        for block in (
-            knowledge_prefix,
-            golden_patterns,
-            decisions_prefix,
-            codebase_scan_prefix,
-            _retry_block(previous_context_json),
-            memory,
-        )
-        if block
-    ]
-    if parts:
-        context_prefix = "\n\n".join(parts)
 
     # R2.3 (CRIT-8): max_iterations, interactive, and allowed_paths come
     # from the invoking config via _submit_args. They were previously
@@ -2792,10 +2788,10 @@ def _run_component(
     authored_paths, harness_paths = _worker_scope(scope)
     config = KstrlConfig(
         max_iterations=max_iterations,
-        prompt_file=worktree_prompt,
+        prompt_file=prompt_file,
         prd_file=worktree_prd,
         progress_file=worktree_path / component_progress_rel,
-        codebase_map_file=worktree_path / codebase_map_file_str,
+        codebase_map_file=codebase_map_file,
         sleep_seconds=sleep_seconds,
         interactive=interactive,
         allowed_paths=authored_paths,
@@ -2876,7 +2872,7 @@ def _run_component(
     try:
         for note in setup_notes:
             ui.warn(note)
-        with recording_prompts(_engineer_call(usage_dir_str, run_id, component_id, attempt)):
+        with recording_prompts(_engineer_call(root_dir, run_id, component_id, attempt)):
             result = run_loop(
                 config,
                 ui,
@@ -2897,6 +2893,7 @@ def _run_component(
                 # worktree they differ and the loop carves nothing out, so a
                 # `.kstrl/` the AGENT wrote there stays a violation.
                 guard_state_root=root_dir,
+                context_root=root_dir,
                 verify_config=verify_config,
             )
         # Report which limit fired so the retry/fail path can act on it
@@ -3803,6 +3800,8 @@ def run_factory(
     run_id: str | None = None,
     notify_capture_output: bool = False,
     architect_usage: UsageTotals | None = None,
+    architect_run_id: str = "",
+    run_lock: _RunLock | None = None,
 ) -> FactoryResult:
     """Run the factory orchestrator with 3-phase verification.
 
@@ -3829,26 +3828,38 @@ def run_factory(
     architect unconditionally: a second pre-run role would have to grow
     the signature rather than quietly borrow this one's row. None for
     every caller that resumes from a manifest, which ran no architect.
+
+    ``architect_run_id`` names the run that holds that architect's records
+    (#567), and the run's ``factory_started`` event carries it (#587): an
+    operator follows it to the prompts and transcript, and `ks serve`
+    reads it to leave that run uncharged, since this run carries its spend.
+
+    ``run_lock`` is the run lock a caller already took on this root, so it
+    could change state under it before the run starts (`ks retry`, and
+    `ks inbox approve` on a parked merge, #597). It is used instead of a
+    second acquire, which flock refuses even inside one process, and it
+    is released here at the end like one taken here.
     """
     # The ceilings are validated at every CONFIG path, but a FactoryConfig
     # can also be constructed programmatically (tests, embedders, the SDK
     # path), which bypasses those. Re-check at the boundary: a safety
     # limit that only holds when you came in through the front door is
     # not a safety limit.
-    validate_cost_ceiling(factory_config.max_cost_usd, "max_cost_usd")
-    validate_token_ceiling(factory_config.max_total_tokens, "max_total_tokens")
+    check_number(factory_config.max_cost_usd, "max_cost_usd")
+    check_number(factory_config.max_total_tokens, "max_total_tokens")
 
-    try:
-        run_lock = _acquire_run_lock(
-            root_dir,
-            ui,
-            force=factory_config.force_lock,
-        )
-    except FactoryLockHeldError as exc:
-        ui.err(str(exc))
-        refused = FactoryResult()
-        refused.exit_code = 2
-        return refused
+    if run_lock is None:
+        try:
+            run_lock = _acquire_run_lock(
+                root_dir,
+                ui,
+                force=factory_config.force_lock,
+            )
+        except FactoryLockHeldError as exc:
+            ui.err(str(exc))
+            refused = FactoryResult()
+            refused.exit_code = 2
+            return refused
     try:
         return _run_factory_locked(
             manifest,
@@ -3863,6 +3874,7 @@ def run_factory(
             run_id_override=run_id,
             notify_capture_output=notify_capture_output,
             architect_usage=architect_usage,
+            architect_run_id=architect_run_id,
         )
     finally:
         run_lock.release()
@@ -4069,6 +4081,7 @@ def _run_factory_locked(
     run_id_override: str | None = None,
     notify_capture_output: bool = False,
     architect_usage: UsageTotals | None = None,
+    architect_run_id: str = "",
 ) -> FactoryResult:
     """run_factory body; runs with the run-level lock resolved (held, or
     explicitly degraded via --force-lock / no-fcntl platforms)."""
@@ -4105,16 +4118,10 @@ def _run_factory_locked(
     # (nothing between the sinks and record_architect_usage returns
     # early) is untouched.
     #
-    # What it does to the money, stated rather than left as "there is no
-    # run yet": a refusal inside the `ks factory --spec` architect window
-    # lands on RunSpend.unmetered_phases' blocker-halt path, so `serve`
-    # charges the launch $0 and labels the day's total a floor with
-    # `architect` unmetered. That is the same treatment a spec blocker
-    # already gets. Measured: a launch whose architect spent $4.20 is
-    # charged $4.20 on origin/main, where the malformed [policy] happened
-    # to crash BELOW record_architect_usage, and $0.00 here. Charging it
-    # exactly needs a sink that exists before the run directory does,
-    # which is separate work; see the PR #359 handoff.
+    # What it does to the money: a refusal here leaves no factory run, so
+    # the architect's spend is only in the decompose run it ran as (#567).
+    # `serve` charges that run to the launch whose process wrote it, the
+    # same path a spec blocker takes (#587).
     resolved = RunEnvelope.resolve(
         root_dir,
         policy_override=factory_config.policy_config,
@@ -4220,6 +4227,8 @@ def _run_factory_locked(
         RunStarted(
             project=manifest.project_name,
             components=len(manifest.components),
+            pid=os.getpid(),
+            architect_run_id=architect_run_id,
         )
     )
     # Chunk 4: the component DAG + budget caps as one event, so a
@@ -4677,29 +4686,25 @@ def _run_factory_locked(
         ctx_json = run_state.component_contexts.get(comp.id)
         engineer_usage = pipeline.engineer_usage_totals()
         scope = pipeline.run_scope.for_component(comp.id)
-        knowledge_prefix = ""
-        if knowledge_config.enabled:
-            try:
-                knowledge_prefix = build_knowledge_context(
-                    manifest,
-                    comp,
-                    knowledge_config.knowledge_root,
-                    knowledge_config,
-                    allowed_paths=authored_paths(scope),
-                    dependency_paths=paths_by_component(manifest, pipeline.run_scope),
-                    worktree=wt_path,
-                )
-            except Exception as exc:  # noqa: BLE001 - non-fatal, never silent
-                # Non-fatal, but NOT a metrics detail: the engineer runs
-                # without any of its facts when this fires. That is a
-                # real degradation of the run, and it used to be a bare
-                # `except: pass` that said nothing (#191).
-                ui.warn(f"  Knowledge retrieval failed for {comp.id}: {exc}")
-                pipeline.record_injected_knowledge(comp.id, None)
-            else:
-                pipeline.record_injected_knowledge(comp.id, knowledge_prefix)
-        else:
-            pipeline.record_injected_knowledge(comp.id, None)
+
+        def _warn_knowledge_failure(exc: Exception, comp_id: str = comp.id) -> None:
+            # Non-fatal, but NOT a metrics detail: the engineer runs
+            # without any of its facts when this fires. That is a real
+            # degradation of the run, and it used to be a bare
+            # `except: pass` that said nothing (#191).
+            ui.warn(f"  Knowledge retrieval failed for {comp_id}: {exc}")
+
+        injected_knowledge = retrieve_knowledge_context(
+            manifest,
+            comp,
+            knowledge_config,
+            allowed_paths=authored_paths(scope),
+            dependency_paths=paths_by_component(manifest, pipeline.run_scope),
+            worktree=wt_path,
+            on_failure=_warn_knowledge_failure,
+        )
+        pipeline.record_injected_knowledge(comp.id, injected_knowledge)
+        knowledge_prefix = injected_knowledge or ""
         return (
             comp.id,
             comp.prd_path,

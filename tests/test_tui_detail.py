@@ -21,6 +21,7 @@ from kstrl.tui.widgets.header import RunHeader
 from kstrl.tui.widgets.phase_timeline import render_timeline
 from kstrl.tui.widgets.transcript import TranscriptTail
 from tests.helpers.fake_run import FakeRunSpec, stream_fake_run, write_fake_run
+from tests.helpers.rendered import flat
 from tests.helpers.settle import mounted, settled
 
 
@@ -279,7 +280,7 @@ class TestCheckpointModal:
             summary_widget = await mounted(pilot, lambda: app.screen, "#checkpoint-summary")
             assert isinstance(app.screen, CheckpointModal)
             # The inspection surface is populated:
-            rendered = "".join(str(static.render()) for static in body.query("Static"))
+            rendered = "".join(flat(static) for static in body.query("Static"))
             assert "weak assertion" in rendered
             assert "+added line" in rendered
             summary = str(summary_widget.render())

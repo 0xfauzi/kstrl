@@ -22,6 +22,10 @@ and any future surface agree.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
+from rich.table import Table
+from rich.text import Text
 from textual.theme import Theme
 
 # Warm neutral ramp: oklch(0.16->0.27, ~0.01, h=80).
@@ -94,3 +98,15 @@ def short_run_id(run_id: str) -> str:
     elapsed clock's job."""
     tail = run_id.rsplit("-", 1)[-1]
     return tail if tail else run_id
+
+
+def label_rows(rows: Iterable[tuple[Text, Text]]) -> Table:
+    """Label and value rows whose wrapped lines stay under the value, never
+    back at the left edge (#433 H3, H8). The label column does not wrap; a
+    value word wider than its column (a path) folds rather than being cut."""
+    grid = Table.grid(padding=(0, 2, 0, 0))
+    grid.add_column(no_wrap=True)
+    grid.add_column(overflow="fold")
+    for label, value in rows:
+        grid.add_row(label, value)
+    return grid

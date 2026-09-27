@@ -71,6 +71,7 @@ from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.atomicio import atomic_write_json
+from kstrl.config_numbers import check_numbers
 from kstrl.jsonread import read_json
 from kstrl.manifest import ADVERSARIAL_BUDGET_CHECK, Component, ComponentStatus, Manifest
 from kstrl.observability import read_progress_events
@@ -384,14 +385,16 @@ class ServeConfig:
         # semantics: int() of an int is that int, of a string parses it.
         open_prs = int(os.environ.get("KSTRL_SERVE_MAX_OPEN_PRS", open_prs))
 
-        return cls(
-            poll_interval_seconds=poll,
-            daily_budget_usd=budget,
-            max_consecutive_poison=poison,
-            caffeinate=caffeinate,
-            factory_timeout_seconds=timeout,
-            allow_uncovered_cost=uncovered,
-            max_open_prs=open_prs,
+        return check_numbers(
+            cls(
+                poll_interval_seconds=poll,
+                daily_budget_usd=budget,
+                max_consecutive_poison=poison,
+                caffeinate=caffeinate,
+                factory_timeout_seconds=timeout,
+                allow_uncovered_cost=uncovered,
+                max_open_prs=open_prs,
+            )
         )
 
 
@@ -732,13 +735,18 @@ class RunSpend:
         ``cost_usd``, and naming it unmetered on top of that would call
         a measured figure a floor.
 
+        A blocker halt exits `ks factory` before the factory run's directory
+        exists, so its architect row is in the decompose run the architect
+        ran as (#567), and ``owned_run_spend`` charges that run (#587): the
+        halt reads as exact when the architect reported its usage.
+
         Zero calls does NOT mean zero spend, which is why the fallback is
-        the pessimistic one. Three separate cases land on it and all
-        three deserve it: a blocker halt, which exits `ks factory` before
-        any run directory exists so the decompose bill is nowhere on disk
-        to charge; an adapter that reports no usage; and a resume that
-        ran no architect at all. Naming the role keeps the day's total
-        labelled a floor rather than estimated (#186 F3).
+        the pessimistic one. The cases that land on it deserve it: an
+        adapter that reports no usage, an architect killed before it
+        reported, a progress log turned off (the decompose run then has no
+        event stream to read), and a resume that ran no architect at all.
+        Naming the role keeps the day's total labelled a floor rather than
+        estimated (#186 F3).
         """
         return () if self.architect_calls > 0 else (ARCHITECT_ROLE,)
 
@@ -767,12 +775,12 @@ class LaunchSpend:
     @classmethod
     def over(cls, spends: Sequence[RunSpend]) -> LaunchSpend:
         """Fold each run's reading into the launch's."""
-        # A launch that produced no directory at all is accounted for as
-        # one empty run rather than as nothing: it spent nothing this
-        # code can see, but a blocker halt spends an architect's worth of
-        # money and leaves it nowhere on disk. An empty RunSpend reports
-        # exactly that, so the pessimistic answer arrives by the same
-        # path as every other one.
+        # A launch that produced no directory this code charges is
+        # accounted for as one empty run rather than as nothing: it spent
+        # nothing this code can see, but an architect whose run recorded
+        # no usage may still have spent. An empty RunSpend reports exactly
+        # that, so the pessimistic answer arrives by the same path as
+        # every other one.
         readings = list(spends) or [RunSpend()]
         return cls(
             cost_usd=sum(reading.cost_usd for reading in readings),
@@ -799,7 +807,7 @@ def read_run_spend(root_dir: Path, run_id: str) -> RunSpend:
     reads here as having no architect row, and the day's total is
     reported as a FLOOR rather than exact. That is the pessimistic
     direction, and it is the same answer this function already gives for
-    a resume, a blocker halt and an adapter that reports nothing.
+    a resume and an adapter that reports nothing.
 
     There is deliberately no fallback to the old bare key. It would be
     unsafe rather than merely redundant: on a NEW run whose architect did
@@ -837,10 +845,17 @@ def read_run_spend(root_dir: Path, run_id: str) -> RunSpend:
 #: so a test pins the two together.
 SPAWNED_RUN_KIND: Final = "factory"
 
+#: Run-id kind of the run `ks factory --spec` runs its architect as (#567).
+#: `ks factory` opens it with this constant, so the two cannot drift.
+#: ``owned_run_spend`` charges one only as :func:`_architect_runs` says.
+ARCHITECT_RUN_KIND: Final = "decompose"
+
 
 def owned_run_spend(
     root_dir: Path,
     runs_before: frozenset[str],
+    *,
+    launch_pid: int | None,
 ) -> tuple[list[str], LaunchSpend]:
     """The run dirs a launch produced, and what they add up to.
 
@@ -865,11 +880,63 @@ def owned_run_spend(
     That the window can hold more than one dir is exactly why the return
     is a :class:`LaunchSpend`: see its docstring for what does and does
     not survive being added together.
+
+    The one decompose run a launch does produce is its architect's
+    (#567), and it is charged when no factory run carries its spend
+    (#587). ``launch_pid`` is the launch's `ks factory` process: the child
+    ``serve_cycle`` spawned, whose pid is also the item's lease owner, or
+    this process for an approval run. None charges no decompose run.
     """
-    owned = sorted(
-        rid for rid in run_dir_names(root_dir) - runs_before if run_kind(rid) == SPAWNED_RUN_KIND
-    )
+    new = run_dir_names(root_dir) - runs_before
+    factory_runs = sorted(rid for rid in new if run_kind(rid) == SPAWNED_RUN_KIND)
+    owned = sorted(factory_runs + _architect_runs(root_dir, new, factory_runs, launch_pid))
     return owned, LaunchSpend.over([read_run_spend(root_dir, rid) for rid in owned])
+
+
+def _architect_runs(
+    root_dir: Path,
+    new: frozenset[str],
+    factory_runs: Sequence[str],
+    launch_pid: int | None,
+) -> list[str]:
+    """The decompose runs this launch's architect ran as that no factory run carries.
+
+    A decompose run is the launch's when its ``factory_started`` event
+    names the launch's pid; an operator's `ks decompose` names its own
+    process and stays uncharged (#257 review). A factory run that names
+    it as its ``architect_run_id`` was handed its spend and records it as
+    its own architect row (#257), so charging both would count the
+    architect twice. What is charged here is a launch that stopped
+    between the architect and the factory run: a blocker halt, a failed
+    decompose, a refused lock or configuration.
+    """
+    if launch_pid is None:
+        return []
+    carried = {_opened_with(root_dir, rid)[1] for rid in factory_runs}
+    return [
+        rid
+        for rid in sorted(new)
+        if run_kind(rid) == ARCHITECT_RUN_KIND
+        and rid not in carried
+        and _opened_with(root_dir, rid)[0] == launch_pid
+    ]
+
+
+def _opened_with(root_dir: Path, run_id: str) -> tuple[int, str]:
+    """The pid and ``architect_run_id`` a run's ``factory_started`` recorded.
+
+    ``(0, "")`` for a run with no readable event stream, which
+    ``read_run_spend`` also reads as zero: such a decompose run is not
+    charged, and such a factory run carries no architect row, so the
+    architect is counted at most once either way.
+    """
+    from kstrl.reducer import load_run_state
+
+    try:
+        state, _source = load_run_state(root_dir, run_id)
+    except OSError:
+        return 0, ""
+    return state.pid, state.architect_run_id
 
 
 def run_dir_names(root_dir: Path) -> frozenset[str]:
@@ -3809,8 +3876,12 @@ def serve_cycle(
     # charged or trusted (#186 F2). Without it, an early failure charged a
     # previous run's spend and could be classified from a stale manifest.
     runs_before = run_dir_names(root_dir)
+    # The child's pid: the lease owner, and the process a decompose run of
+    # this launch names (#587). Empty when the runner spawned nothing.
+    spawned: list[int] = []
 
     def _adopt(child_pid: int) -> None:
+        spawned.append(child_pid)
         # The child, not the daemon, owns the lease for the duration of
         # the run (#186 F1).
         try:
@@ -3871,7 +3942,9 @@ def serve_cycle(
     # 7. Charge the spend before deciding anything, so a classification
     #    bug cannot also lose the accounting. NEW run dirs are not enough
     #    to go on; `owned_run_spend` says why.
-    owned_runs, owned = owned_run_spend(root_dir, runs_before)
+    owned_runs, owned = owned_run_spend(
+        root_dir, runs_before, launch_pid=spawned[-1] if spawned else None
+    )
     total = owned.cost_usd
     covered_calls = owned.cost_calls
     total_calls = owned.usage_calls
@@ -4187,6 +4260,28 @@ def _run_id_from_manifest(manifest_path: Path) -> str:
     return run_id if isinstance(run_id, str) else ""
 
 
+def _refresh_ci(root_dir: Path, obs: ServeObserver) -> None:
+    """Re-read the CI state of the merge commits that are due (#570).
+
+    After every cycle, so it never runs while a factory run does, and
+    in ``--once`` too, so an interval-mode LaunchAgent refreshes on each
+    firing. Which commits are due is ``kstrl.ci_state.refresh_due``.
+    Nothing gates on the record, so a refresh that could not read or
+    write it is reported and the daemon carries on: the ledger then
+    holds no new reading, and every surface shows the commit as it
+    last read, with that read's time.
+    """
+    from kstrl.ci_state import refresh_ci
+
+    try:
+        readings = refresh_ci(root_dir)
+    except Exception as exc:  # noqa: BLE001 - a refresh must never stop the daemon
+        obs.err(f"CI state not refreshed: {type(exc).__name__}: {exc}")
+        return
+    for reading in readings:
+        obs.info(f"  CI {reading.sha[:12]} {reading.state}: {reading.reason}")
+
+
 def serve(
     root_dir: Path,
     *,
@@ -4229,6 +4324,7 @@ def serve(
             pr_count_streak=pr_count_streak,
         )
         _save_pr_count_streak(pr_count_streak, root_dir, obs)
+        _refresh_ci(root_dir, obs)
         return result
 
     with serve_lock(root_dir):

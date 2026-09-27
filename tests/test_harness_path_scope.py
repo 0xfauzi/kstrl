@@ -285,6 +285,7 @@ class TestInLoopGuard:
                 sleep_seconds=0.0,
                 scope=_scope(),
                 redirect_output=False,
+                run_id="test-run",
             )
 
         assert seen and seen[0] == HARNESS
@@ -317,6 +318,7 @@ class TestInLoopGuard:
                 sleep_seconds=0.0,
                 scope=_scope(),
                 redirect_output=False,
+                run_id="test-run",
             )
 
         assert result.error is not None
@@ -687,6 +689,7 @@ class TestStandaloneLoops:
             kind="understand",
             bus=EventBus(run_id="run-test"),
             paths=None,
+            run_root=tmp_path / ".kstrl" / "runs" / "run-test",
         )
         with patch("kstrl.cli.run_loop", side_effect=fake_run_loop):
             _understand_core(
@@ -752,6 +755,7 @@ def test_both_guards_judge_the_same_carve_out(tmp_path: Path) -> None:
             ),
             scope=snapshot,
             redirect_output=False,
+            run_id="test-run",
         )
 
     phase1 = _pipeline(tmp_path, comp, wt).run_scope.for_component(comp.id)

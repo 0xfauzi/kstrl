@@ -81,7 +81,7 @@ def kstrl_name_constants(source: str) -> Iterator[str]:
                 yield node.value
 
 
-def _names_read_by_kstrl() -> dict[str, str]:
+def names_read_by_kstrl() -> dict[str, str]:
     """Every name either layer finds, mapped to its first site."""
     found: dict[str, str] = {}
     for path in sorted(KSTRL_DIR.rglob("*.py")):
@@ -120,7 +120,7 @@ def test_the_name_layer_sees_a_constant_wherever_it_sits() -> None:
 def test_the_walk_reaches_the_real_tree() -> None:
     """Both layers run on kstrl/: a prefixed name read through a table,
     an unprefixed literal read, and every listed exception."""
-    found = _names_read_by_kstrl()
+    found = names_read_by_kstrl()
     assert {"KSTRL_SERVE_POLL_INTERVAL", "KSTRL_SERVE_REQUIRE_TIMEOUT", "MAX_ITERATIONS"} <= set(
         found
     )
@@ -131,7 +131,7 @@ def test_every_variable_kstrl_reads_is_documented() -> None:
     doc = ENV_DOC.read_text(encoding="utf-8")
     missing = {
         name: site
-        for name, site in _names_read_by_kstrl().items()
+        for name, site in names_read_by_kstrl().items()
         if name not in NOT_KSTRL_SETTINGS
         and name not in RETIRED_ENV_VARS
         and f"`{name}`" not in doc

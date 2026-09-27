@@ -1,0 +1,42 @@
+<!-- @dsCard group="_test" height=879 width=600 -->
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><style>
+  .layoutwrap .k-chip { margin-left:4px; justify-self:start; }
+  body { margin:0; background:var(--canvas); font:var(--t-body); color:var(--text); }
+  button { font:inherit; }
+  .c-btn { width:80px; height:32px; background:var(--window); color:var(--text); border:0; }
+  .c-btn:focus-visible { outline:2px solid var(--you); outline-offset:2px; }
+  .c-spin { transition:opacity var(--dur-fast, 120ms) linear; }
+  @media (prefers-reduced-motion: reduce) { .c-spin { transition:none; } }
+  .c-under { display:flex; height:32px; } .c-under:focus-within { box-shadow:inset 0 -2px 0 var(--focus); } .c-under input { border:0; outline:none; background:transparent; font:inherit; }
+  .c-tint { display:inline-flex; color:var(--text-2); }
+  .c-ruled { border-bottom:1px solid var(--line); }
+  .c-pill { background:var(--selected); border-radius:8px; padding:0 6px; }
+  .c-ink { background:var(--text); color:var(--window); border-radius:var(--radius-lg); padding:14px 16px; }
+  .c-bl { display:flex; gap:8px; align-items:baseline; margin-top:8px; } .c-bt { display:grid; grid-template-columns:120px 120px; column-gap:12px; align-items:start; margin-top:8px; }
+  .c-bb { display:grid; grid-template-columns:100px 120px; column-gap:12px; align-items:start; margin-top:8px; } .c-lbl { margin-top:0; }
+  .c-bg { display:flex; align-items:center; gap:8px; width:400px; margin-top:8px; } .c-bg > .far { margin-left:auto; }
+  .c-big { display:flex; align-items:flex-start; gap:10px; margin-top:8px; }
+  .c-cc { display:flex; align-items:center; gap:8px; margin-top:8px; } .c-clu { display:inline-flex; align-items:center; gap:6px; } .c-bx { display:flex; align-items:center; gap:8px; margin-top:8px; }
+</style></head><body>
+  <p>ordinary text</p>
+  <div data-illustration="stand-ins for the focus check"><button class="c-btn c-spin">ok</button></div>
+<div style="position:relative;height:40px" data-illustration="a panel over text, for the collision check"><span style="position:absolute;left:0;top:10px">text under a panel</span><div class="c-cover" style="position:absolute;left:0;top:0;width:220px;height:40px;background:var(--window);border-radius:8px;padding:10px;box-sizing:border-box">the panel over it</div></div>
+<div style="position:relative;height:40px" data-illustration="a window over an inert page, for the collision check"><div inert><span style="position:absolute;left:0;top:10px">text under a window</span></div><div class="c-cover" style="position:absolute;left:0;top:0;width:220px;height:40px;background:var(--window);border-radius:8px;padding:10px;box-sizing:border-box">the window over it</div></div>
+<div class="c-srtest" style="display:flex;width:40px"><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap">hidden words for a screen reader</span><span>shown</span></div>
+<div class="c-film" data-audit-film><span style="opacity:0">a fade-in at 0ms</span></div>
+<div style="position:relative;height:20px;overflow:hidden;width:120px"><span style="position:absolute;top:14px;white-space:nowrap">clipped away below</span></div><span>just below</span>
+<div class="c-under"><input aria-label="Ask" value="why did it stop"></div>
+<div class="c-combo"><div class="c-under"><input aria-label="Find" role="combobox" aria-expanded="true" aria-controls="c-lb" aria-activedescendant="c-o1" value="a"></div><div role="listbox" id="c-lb" aria-label="Results"><div role="option" id="c-o1" aria-selected="true" style="height:28px">first</div><div role="option" id="c-o2" aria-selected="false" style="height:28px">second</div></div></div>
+<div class="layoutwrap"><span class="k-chip" style="margin-top:2px">layout</span></div>
+<div class="c-ground" style="position:fixed;left:0;top:0;right:0;bottom:0;z-index:-1;background:var(--canvas)"></div>
+<div style="display:flex;gap:8px;align-items:center"><span class="c-ruled">ruled</span><span data-illustration="a phone notification, drawn"><span class="c-pill">pill</span></span><span class="c-ink">ink</span><span class="c-tint"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span data-audit-film><span class="c-pill">frame</span></span><span class="k-typing" aria-hidden="true"><i></i><i></i><i></i></span></div>
+<div class="c-bl"><span class="ty-body">name</span><span class="ty-label">its caption</span></div>
+<div class="c-bt"><p class="ty-body" style="margin:0">A paragraph that wraps onto several lines in a narrow column.</p><span class="ty-label">beside a block</span></div>
+<div class="c-bb"><span class="ty-small">row caption</span><div><i class="k-bar" style="--k-bar:60%"></i><div class="c-lbl"><span class="ty-label">under a bar</span></div></div></div>
+<div class="c-bg"><span class="ty-body">title</span><span class="ty-label far">far hint</span><span class="ty-label">end</span></div>
+<div class="c-cc"><span class="ty-body">title</span><span class="c-clu"><span class="ty-label">hint</span><span class="k-button k-button-sm" role="button" tabindex="0">Go</span></span></div>
+<div class="c-big"><span class="ty-stat">4</span><span class="ty-label">agents working</span></div>
+<div class="c-two" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;width:420px;margin-top:8px"><div class="k-tile"><div style="height:120px"></div></div><div class="k-tile"><div class="c-anat" style="position:relative;height:60px"></div></div></div>
+<div class="c-bx"><span class="ty-body">name</span><span class="k-chip">engineer</span></div>
+</body></html>

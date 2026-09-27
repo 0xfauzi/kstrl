@@ -1,0 +1,126 @@
+<!-- @dsCard group="Controls" height=746 width=1120 subtitle="An exclusive choice among a few short options: states, live keyboard, anatomy, motion" -->
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Segmented</title><style>
+  html, body { margin:0; }
+  body { background:var(--canvas); color:var(--text); font:var(--t-body); -webkit-font-smoothing:antialiased; font-variant-numeric:tabular-nums; }
+  .c-wrap { padding:24px; display:grid; gap:14px; }
+  .c-tile { background:var(--window); border-radius:var(--radius-xl); box-shadow:var(--shadow-card); padding:18px 20px; min-width:0; }
+  .c-lab { font:var(--t-label); font-weight:400; color:var(--text-3); margin-bottom:12px; }
+  .c-two { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:14px; }
+  .c-three { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:14px; }
+  .c-row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .c-cap { font:var(--t-label); font-weight:400; color:var(--text-3); }
+  .c-note { font:var(--t-label); font-weight:400; color:var(--text-3); margin-top:12px; }
+  .c-anat { position:relative; }
+  .c-dl { stroke:var(--text-3); stroke-width:1; shape-rendering:crispEdges; }
+  .c-dt { fill:var(--text-2); font:var(--t-measure-small); font-weight:400; }
+  .c-grid { display:grid; align-items:center; row-gap:10px; }
+  .c-gh { font:var(--t-label); font-weight:400; color:var(--text-3); }
+  .c-gr { font:var(--t-small); color:var(--text-2); }
+  .c-ink { background:var(--text); color:var(--window); border-radius:var(--radius-lg); padding:14px 16px; }
+  /* a patch of the app's ground inside a card, for a component shown where it lives (a band, a notice, a window) */
+  .c-stage { background:var(--canvas); border-radius:var(--radius-lg); box-shadow:inset 0 0 0 1px var(--line); }
+  /* a token or command named in a caption is one word: it never breaks at its hyphen */
+  :is(.c-lab, .c-cap, .c-note) .v-measure { white-space:nowrap; }
+
+  .fm { display:grid; grid-template-columns:max-content; row-gap:8px; }
+  .fr { display:flex; gap:14px; align-items:center; }
+  .fr .ft { width:96px; }
+  .ft { font:var(--t-measure-small); font-weight:400; }
+</style></head><body>
+<div class="c-wrap">
+<div class="c-tile"><div class="c-lab">States (the checked option paints its own ground until the script adds the sliding thumb)</div>
+  <div class="c-grid" style="grid-template-columns:150px max-content 1fr; column-gap:28px">
+    <span class="c-gr">Rest</span><div class="k-seg" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="-1">Spec</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Part</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Step</button></div><span class="c-cap">Spec is checked: the thumb ground, text 600, card shadow.</span>
+    <span class="c-gr">Hover</span><div class="k-seg" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="-1">Spec</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1" data-state="hover">Part</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Step</button></div><span class="c-cap">Part under the pointer: its label darkens to text.</span>
+    <span class="c-gr">Focus</span><div class="k-seg" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="-1" data-state="focus">Spec</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Part</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Step</button></div><span class="c-cap">Keyboard focus rides on the checked option.</span>
+    <span class="c-gr">An option unavailable</span><div class="k-seg" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="-1">Spec</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Part</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1" aria-disabled="true">Step</button></div><span class="c-cap">Step with nothing running: text-3, skipped by the arrows.</span>
+    <span class="c-gr">Small, k-seg-sm</span><div class="k-seg k-seg-sm" role="radiogroup" aria-label="When it is built"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="true" tabindex="-1">Stop at a PR</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Merge when green</button></div><span class="c-cap">28px, for dense rows: a queue item’s options, a setting’s values.</span>
+  </div></div><div class="c-two"><div class="c-tile"><div class="c-lab">Live: Tab in, then any arrow key moves, Home and End jump. Selection follows focus.</div>
+  <div class="c-row"><div class="k-seg" role="radiogroup" aria-label="Zoom level" id="liveZ"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="-1">Spec</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Part</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Step</button></div><div class="k-seg" role="radiogroup" aria-label="View" id="liveV"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="true" tabindex="-1">Stage</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Grid</button></div><span class="c-cap" id="readout" aria-live="polite">Spec · Stage</span></div><p class="c-note">On the map the zoom control also answers <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">+</span></span> and <span class="k-keys k-keys-inline"><span class="k-key"><span class="k-kg k-kg-cmd" role="img" aria-label="Command"></span></span><span class="k-key">−</span></span> from anywhere, and <span class="k-keys k-keys-inline"><span class="k-key">↵</span></span> on a selection zooms in one level.</p></div><div class="c-tile"><div class="c-lab">Anatomy</div><div class="c-anat" style="height:90px"><div id="anatSeg" style="position:absolute;left:40px;top:13px"><div class="k-seg" role="radiogroup" aria-label="Zoom level"><span class="k-seg-thumb" aria-hidden="true"></span><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Factory</button><button class="k-seg-item" role="radio" aria-checked="true" tabindex="-1">Spec</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Part</button><button class="k-seg-item" role="radio" aria-checked="false" tabindex="-1">Step</button></div></div></div></div></div><div class="c-tile"><div class="c-lab">Motion: Spec to Part, the thumb only, <span class="v-measure">dur-base</span> on <span class="v-measure">ease-standard</span></div><div class="fm" aria-hidden="true" data-audit-film id="film"><div class="fr"><span class="c-cap ft"></span><div class="k-seg k-seg-js"><span class="k-seg-thumb"></span><span class="k-seg-item" aria-checked="false">Factory</span><span class="k-seg-item" aria-checked="false">Spec</span><span class="k-seg-item" aria-checked="true">Part</span><span class="k-seg-item" aria-checked="false">Step</span></div></div><div class="fr"><span class="c-cap ft"></span><div class="k-seg k-seg-js"><span class="k-seg-thumb"></span><span class="k-seg-item" aria-checked="false">Factory</span><span class="k-seg-item" aria-checked="false">Spec</span><span class="k-seg-item" aria-checked="true">Part</span><span class="k-seg-item" aria-checked="false">Step</span></div></div><div class="fr"><span class="c-cap ft"></span><div class="k-seg k-seg-js"><span class="k-seg-thumb"></span><span class="k-seg-item" aria-checked="false">Factory</span><span class="k-seg-item" aria-checked="false">Spec</span><span class="k-seg-item" aria-checked="true">Part</span><span class="k-seg-item" aria-checked="false">Step</span></div></div><div class="fr"><span class="c-cap ft"></span><div class="k-seg k-seg-js"><span class="k-seg-thumb"></span><span class="k-seg-item" aria-checked="false">Factory</span><span class="k-seg-item" aria-checked="false">Spec</span><span class="k-seg-item" aria-checked="true">Part</span><span class="k-seg-item" aria-checked="false">Step</span></div></div><div class="fr"><span class="c-cap ft"></span><div class="k-seg k-seg-js"><span class="k-seg-thumb"></span><span class="k-seg-item" aria-checked="false">Factory</span><span class="k-seg-item" aria-checked="false">Spec</span><span class="k-seg-item" aria-checked="true">Part</span><span class="k-seg-item" aria-checked="false">Step</span></div></div></div></div>
+</div>
+<script>
+/* Anatomy overlay: measures the real element and draws dimension lines in an SVG, so every number shown is what renders.
+   anat(host, target, specs): specs are {kind:'h'|'w'|'gap'|'pad'|'note', ...}. Lines 1px text-3, end ticks 5px, labels measure-small (11px) at 400 in text-2. */
+function anat(host, target, specs){
+  var H = host.getBoundingClientRect(), T = target.getBoundingClientRect();
+  var ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('class', 'c-anat-svg'); svg.setAttribute('width', H.width); svg.setAttribute('height', H.height); svg.setAttribute('aria-hidden', 'true');
+  svg.style.position = 'absolute'; svg.style.left = '0'; svg.style.top = '0'; svg.style.overflow = 'visible';
+  function el(n, a){ var e = document.createElementNS(ns, n); for (var k in a) e.setAttribute(k, a[k]); svg.appendChild(e); return e; }
+  function line(x1, y1, x2, y2){ el('line', {x1:x1, y1:y1, x2:x2, y2:y2, 'class':'c-dl'}); }
+  function text(x, y, s, anchor){ var t = el('text', {x:x, y:y, 'class':'c-dt', 'text-anchor':anchor || 'middle'}); t.textContent = s; }
+  function rel(r){ return {l:r.left - H.left, t:r.top - H.top, r:r.right - H.left, b:r.bottom - H.top, w:r.width, h:r.height}; }
+  var t = rel(T);
+  specs.forEach(function(s){
+    var r = s.of ? rel(s.of.getBoundingClientRect()) : t, v;
+    if (s.kind === 'h') { var x = r.l - 16; line(x, r.t, x, r.b); line(x - 3, r.t, x + 3, r.t); line(x - 3, r.b, x + 3, r.b); text(x - 8, (r.t + r.b) / 2 + 3.5, s.label || Math.round(r.h) + '', 'end'); }
+    if (s.kind === 'hr') { var xr = r.r + 14; line(xr, r.t, xr, r.b); line(xr - 3, r.t, xr + 3, r.t); line(xr - 3, r.b, xr + 3, r.b); text(xr + 8, (r.t + r.b) / 2 + 3.5, s.label || Math.round(r.h) + '', 'start'); }
+    if (s.kind === 'w') { var y = r.b + 16; line(r.l, y, r.r, y); line(r.l, y - 3, r.l, y + 3); line(r.r, y - 3, r.r, y + 3); text((r.l + r.r) / 2, y + 14, s.label || Math.round(r.w) + ''); }
+    if (s.kind === 'pad') { var y2 = r.t - 12, p = s.value; line(r.l, y2, r.l + p, y2); line(r.l, y2 - 3, r.l, y2 + 3); line(r.l + p, y2 - 3, r.l + p, y2 + 3); text(r.l + p / 2, y2 - 6, s.label || p + ''); }
+    if (s.kind === 'gap') { var a = rel(s.a.getBoundingClientRect()), b = rel(s.b.getBoundingClientRect()), y3 = t.b + 14; line(a.r, y3, b.l, y3); line(a.r, y3 - 3, a.r, y3 + 3); line(b.l, y3 - 3, b.l, y3 + 3); text((a.r + b.l) / 2, y3 + 14, s.label || Math.round(b.l - a.r) + ''); }
+    if (s.kind === 'note') { var nx = t.r + (s.dx || 28), ny = t.t + (s.row || 0) * 16 + 4; if (s.lead) { line(t.r - 2, t.t + 3, nx - 6, ny - 3.5); } text(nx, ny, s.label, 'start'); }
+  });
+  host.appendChild(svg);
+}
+
+// Everything below measures rendered text (thumbs, bars, filmstrips, anatomy), so it runs once the web fonts have loaded:
+// measured earlier, it would size to the fallback font (a thumb 4 to 6px too wide was the measured result).
+(document.fonts ? document.fonts.ready : Promise.resolve()).then(function(){
+
+// cubic-bezier(x1,y1,x2,y2) as a function of time, solved by Newton then bisection; read from the easing token itself.
+function bezier(x1,y1,x2,y2){ function cx(t){return 3*x1*t*(1-t)*(1-t)+3*x2*t*t*(1-t)+t*t*t;} function cy(t){return 3*y1*t*(1-t)*(1-t)+3*y2*t*t*(1-t)+t*t*t;}
+  function dx(t){return 3*x1*(1-t)*(1-t)+6*(x2-x1)*t*(1-t)+3*(1-x2)*t*t;}
+  return function(x){ if(x<=0) return 0; if(x>=1) return 1; var t=x; for(var i=0;i<8;i++){ var d=cx(t)-x; if(Math.abs(d)<1e-6) return cy(t); var s=dx(t); if(Math.abs(s)<1e-6) break; t-=d/s; }
+    var lo=0, hi=1; t=x; while(hi-lo>1e-6){ var v=cx(t); if(v<x) lo=t; else hi=t; t=(lo+hi)/2; } return cy(t); }; }
+function tokenEase(name){ var v=getComputedStyle(document.documentElement).getPropertyValue('--'+name).trim(); var m=v.match(/cubic-bezier\(([^)]+)\)/); if(!m) return function(x){return x;}; var p=m[1].split(',').map(parseFloat); return bezier(p[0],p[1],p[2],p[3]); }
+function tokenMs(name){ return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--'+name)); }
+
+// Segmented control: role=radiogroup. Arrow keys move and select (wrapping, skipping disabled), Home/End jump; Tab enters on the checked item.
+function kSeg(root, onChange){
+  root.classList.add('k-seg-js');
+  var thumb=root.querySelector('.k-seg-thumb'), items=[].slice.call(root.querySelectorAll('.k-seg-item'));
+  function enabled(){ return items.filter(function(i){ return i.getAttribute('aria-disabled')!=='true'; }); }
+  function place(it, animate){ if(!animate){ thumb.style.transition='none'; } thumb.style.width=it.offsetWidth+'px'; thumb.style.transform='translateX('+it.offsetLeft+'px)'; if(!animate){ void thumb.offsetWidth; thumb.style.transition=''; } }
+  function current(){ return items.filter(function(i){ return i.getAttribute('aria-checked')==='true'; })[0]; }
+  // A font that finishes loading later changes every item's width: re-place without animating. (Not a ResizeObserver on the
+  // items: the 500 to 600 weight change on select resizes them by a fraction of a pixel and would cancel the slide.)
+  if(document.fonts){ document.fonts.addEventListener('loadingdone', function(){ var c=current(); if(c) place(c,false); }); }
+  // quiet: set the state without the slide and without telling onChange (a caller restoring or preparing a control).
+  function select(it, focus, quiet){ if(it.getAttribute('aria-disabled')==='true') return; items.forEach(function(i){ var on=i===it; i.setAttribute('aria-checked', on?'true':'false'); i.tabIndex=on?0:-1; }); place(it,!quiet); if(focus) it.focus(); if(onChange && !quiet) onChange(it); }
+  items.forEach(function(i){
+    i.addEventListener('click', function(){ select(i,false); });
+    i.addEventListener('keydown', function(e){ var en=enabled(), k=en.indexOf(i), t=null;
+      if(e.key==='ArrowRight'||e.key==='ArrowDown') t=en[(k+1)%en.length]; else if(e.key==='ArrowLeft'||e.key==='ArrowUp') t=en[(k-1+en.length)%en.length];
+      else if(e.key==='Home') t=en[0]; else if(e.key==='End') t=en[en.length-1];
+      if(t){ e.preventDefault(); select(t,true); } });
+  });
+  var cur=items.filter(function(i){ return i.getAttribute('aria-checked')==='true'; })[0]||enabled()[0];
+  items.forEach(function(i){ i.tabIndex=i===cur?0:-1; }); place(cur,false);
+  return {select:select, items:items, place:place};
+}
+
+  var rz=kSeg(document.getElementById('liveZ'), upd), rv=kSeg(document.getElementById('liveV'), upd);
+  function upd(){ var a=[].filter.call(document.querySelectorAll('#liveZ .k-seg-item'), function(i){return i.getAttribute('aria-checked')==='true';})[0];
+    var b=[].filter.call(document.querySelectorAll('#liveV .k-seg-item'), function(i){return i.getAttribute('aria-checked')==='true';})[0];
+    document.getElementById('readout').textContent=a.textContent+' · '+b.textContent; }
+  // Filmstrip: sample the real tokens at 0, 1/4, 1/2, 3/4 and the full duration.
+  var ease=tokenEase('ease-standard'), dur=tokenMs('dur-base');
+  [].forEach.call(document.querySelectorAll('#film .fr'), function(fr, n){
+    var s=fr.querySelector('.k-seg'), th=s.querySelector('.k-seg-thumb'), it=s.querySelectorAll('.k-seg-item'), a=it[1], b=it[2];
+    var t=n/4, p=ease(t), x=a.offsetLeft+(b.offsetLeft-a.offsetLeft)*p, w=a.offsetWidth+(b.offsetWidth-a.offsetWidth)*p;
+    th.style.transition='none'; th.style.transform='translateX('+x+'px)'; th.style.width=w+'px';
+    fr.querySelector('.ft').textContent=Math.round(dur*t)+'ms · '+Math.round(p*100)+'%'; });
+  // Anatomy, measured.
+  var host=document.querySelector('.c-anat'), s=document.querySelector('#anatSeg .k-seg'), item=s.querySelectorAll('.k-seg-item')[1], cs=getComputedStyle(s), ci=getComputedStyle(item), cu=getComputedStyle(s.querySelectorAll('.k-seg-item')[0]);
+  var last=s.querySelectorAll('.k-seg-item')[3];
+  anat(host, s, [{kind:'h'}, {kind:'hr', of:last, label:Math.round(last.getBoundingClientRect().height)+' item'},
+    {kind:'note', row:0, dx:82, label:'radius '+parseFloat(cs.borderTopLeftRadius)+', item '+parseFloat(ci.borderTopLeftRadius)},
+    {kind:'note', row:1, dx:82, label:'padding '+parseFloat(cs.paddingLeft)+', gap '+parseFloat(cs.columnGap||cs.gap)},
+    {kind:'note', row:2, dx:82, label:'item padding '+parseFloat(ci.paddingLeft)},
+    {kind:'note', row:3, dx:82, label:'label '+parseFloat(cu.fontSize)+' / '+cu.fontWeight},
+    {kind:'note', row:4, dx:82, label:'checked '+ci.fontWeight}]);
+
+});
+</script>
+</body></html>

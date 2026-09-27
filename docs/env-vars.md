@@ -38,8 +38,8 @@ to run and tell you which section, key and value to fix.
 | `PRD_FILE` | path | `scripts/kstrl/prd.json` | |
 | `PROGRESS_FILE` | path | `scripts/kstrl/progress.txt` | Setting it forces that path on every factory component; unset, each component's engineer writes `progress.txt` beside its own PRD, inside the component's `allowedPaths` |
 | `CODEBASE_MAP_FILE` | path | `scripts/kstrl/codebase_map.md` | |
-| `KSTRL_GOLDEN_PATTERNS_FILE` | path | `scripts/kstrl/golden-patterns.md` | Operator-authored patterns injected into every factory engineer prompt and every `ks run` prompt (not `ks feature` or `ks understand`); absent, empty, unreadable or still the unedited `ks init` scaffold costs nothing, and past 6000 characters the block keeps the start of the file and drops the end, with an announcement naming both |
-| `KSTRL_MEMORY_FILE` | path | `scripts/kstrl/memory.md` | Operator-authored standing feedback injected into every factory engineer prompt and every `ks run` prompt (not `ks feature` or `ks understand`), AFTER the retry context and before the `CLAUDE.md` prepend; absent, empty, unreadable or still the unedited `ks init` scaffold costs nothing, and past 4000 characters the block keeps the END of the file and drops the start, so the newest entries survive, with an announcement naming both |
+| `KSTRL_GOLDEN_PATTERNS_FILE` | path | `scripts/kstrl/golden-patterns.md` | Operator-authored patterns injected into every engineer prompt of `ks factory`, `ks run`, `ks retry`, `ks serve` and `ks feature` (not `ks understand`); absent, empty, unreadable or still the unedited `ks init` scaffold costs nothing, and past 6000 characters the block keeps the start of the file and drops the end, with an announcement naming both |
+| `KSTRL_MEMORY_FILE` | path | `scripts/kstrl/memory.md` | Operator-authored standing feedback injected into every engineer prompt of `ks factory`, `ks run`, `ks retry`, `ks serve` and `ks feature` (not `ks understand`), AFTER the retry context and before the `CLAUDE.md` prepend; absent, empty, unreadable or still the unedited `ks init` scaffold costs nothing, and past 4000 characters the block keeps the END of the file and drops the start, so the newest entries survive, with an announcement naming both |
 | `SLEEP_SECONDS` | float | 2.0 | Inter-iteration sleep |
 | `INTERACTIVE` | bool | false | Pause between iterations for human input |
 | `ALLOWED_PATHS` | comma-list | empty | Restrict agent writes to these prefixes |
@@ -49,7 +49,7 @@ to run and tell you which section, key and value to fix.
 | `MODEL` | str | unset | Model name passed to the agent |
 | `MODEL_REASONING_EFFORT` | str | unset | `low\|medium\|high\|max` |
 | `KSTRL_AGENT_TYPE` | str | unset | `claude-code\|claude-sdk\|codex\|auto` (`claude-sdk` needs the `sdk` extra: `uv sync --extra sdk`) |
-| `KSTRL_AGENT_BUDGET_USD` | float | unset | In-loop USD budget ceiling; enforced per turn by the `claude-sdk` adapter only (R7.6). Non-positive or unparseable values are ignored |
+| `KSTRL_AGENT_BUDGET_USD` | float | unset | In-loop USD budget ceiling; enforced per turn by the `claude-sdk` adapter only (R7.6). Empty or `0` means no ceiling; a value that is not a number, or is negative or not finite, is refused before the command starts (#583) |
 | `KSTRL_AGENT_PROBE` | bool | true | Liveness-probe the agent CLI before any spend (#262): one trivial turn per model family per process, in a scratch directory so no project config participates. `0` skips it and restores the pre-#262 behaviour of trusting PATH. **Env only** - deliberately no `kstrl.toml` key, because the cross-family probe runs where no config object is in scope. Measured per attempt: claude 4.2s / $0.025 with `--model haiku`, 4.1s / $0.149 for the fallback attempt that drops `--model` (only run when the first fails); codex 6.1s and no cost reported. `ks understand` and `ks feature` probe one family; `ks run`, `ks factory` and `ks retry` probe up to two, and skip the second entirely when no adversarial phase can dispatch. `ks serve` runs a fresh `ks factory` per queue item, so set this to `0` there if the per-item toll matters |
 | `KSTRL_UI` | str | auto | `auto\|rich\|plain` |
 | `KSTRL_NO_TUI` | bool | unset | `1` disables the embedded factory dashboard (plain output) |
@@ -60,7 +60,7 @@ to run and tell you which section, key and value to fix.
 
 ## TimeoutConfig (`[timeout]`)
 
-All values are seconds; 0 or less disables that limit. When a limit on how long kstrl's work may take is not set, there is no limit (#467): every work limit here and in `[verify]`, `[security]`, `[contract]` and `[knowledge]` defaults to 0. The run header and `ks config show` print an unset limit as `no limit`.
+All values are seconds; 0 disables that limit, and a negative or non-finite value is refused before anything runs (#571). When a limit on how long kstrl's work may take is not set, there is no limit (#467): every work limit here and in `[verify]`, `[security]`, `[contract]` and `[knowledge]` defaults to 0. The run header and `ks config show` print an unset limit as `no limit`.
 
 | Env var | Type | Default | Notes |
 |---|---|---|---|
@@ -494,7 +494,7 @@ Invalid mode or threshold raises ValueError (Phase B8). The default mode is `ski
 
 ## NotifyConfig (`[notify]`)
 
-Run-milestone shell hooks (R3.2), each condition fired at most once per run. The hook command runs via the shell with `KSTRL_NOTIFY_EVENT` (`run_complete` | `first_failure` | `merge_pending` | `inbox_<kind>`), `KSTRL_NOTIFY_RUN_ID`, `KSTRL_NOTIFY_PROJECT`, `KSTRL_NOTIFY_COMPONENT` and `KSTRL_NOTIFY_DETAIL` set in its environment.
+Run-milestone shell hooks (R3.2). `on_complete` and `on_first_failure` each fire at most once per run; `on_inbox_item` fires once per opened item, not once per run (see below). The hook command runs via the shell with `KSTRL_NOTIFY_EVENT` (`run_complete` | `first_failure` | `merge_pending` | `inbox_<kind>`), `KSTRL_NOTIFY_RUN_ID`, `KSTRL_NOTIFY_PROJECT`, `KSTRL_NOTIFY_COMPONENT` and `KSTRL_NOTIFY_DETAIL` set in its environment.
 
 | Env var | Type | Default |
 |---|---|---|
@@ -503,7 +503,7 @@ Run-milestone shell hooks (R3.2), each condition fired at most once per run. The
 | `KSTRL_NOTIFY_ON_INBOX_ITEM` | str | unset (hook disabled) |
 | `KSTRL_NOTIFY_HOOK_TIMEOUT` | float | 30 |
 
-`on_inbox_item` (R8.3) fires once per inbox item *kind* raised during a run, and is deliberately NOT a reuse of `on_first_failure`: a failing component fires the failure hook and raises an inbox item for the same event, so one shared command would page twice for one thing. Leave it empty unless you want per-item pushes; see `[inbox]` above for an ntfy.sh example.
+`on_inbox_item` (R8.3) fires when an inbox item that `notifiable()` selects (an action-required kind or a demotion notice) is opened, whichever path files it: a factory run, an architect escalation, an autonomy demotion or `ks serve`. The split is by filing path, not by whether a factory run is under way: the pipeline's own filing passes its run-scoped hooks and fires at most once per item kind within that run; every other path, including an escalation, demotion or health breach raised while a run is active, builds its own hooks per call, fires once per opened item, and leaves `KSTRL_NOTIFY_PROJECT` empty. It never fires for a repeat of an item that is still open or still snoozed, because `ks serve` files the same condition again on every poll. A hook fired through that fallback has its output discarded, because the process filing the item may not own the terminal, so a terminal bell does not ring from those paths. It is deliberately NOT a reuse of `on_first_failure`: a failing component fires the failure hook and raises an inbox item for the same event, so one shared command would page twice for one thing. Leave it empty unless you want per-item pushes; see `[inbox]` above for an ntfy.sh example.
 
 ## LinearConfig (`[linear]`)
 

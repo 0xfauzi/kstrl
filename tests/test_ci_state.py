@@ -91,7 +91,9 @@ def local_clock_is_not_utc() -> Iterator[None]:
 
 
 def _answer(gh_dir: Path, sha: str, reply: dict[str, Any] | str) -> None:
-    text = reply if isinstance(reply, str) else json.dumps(reply)
+    """``reply`` as gh prints it under ``--paginate --slurp``: a document
+    is one page, wrapped in the array of pages; text is written as is."""
+    text = reply if isinstance(reply, str) else json.dumps([reply])
     (gh_dir / f"{sha}.json").write_text(text, encoding="utf-8")
 
 
@@ -174,6 +176,7 @@ class TestEachMergeCommitIsRecorded:
             f"oid={SHA_RUNNING}",
         ]
         assert all(c[:2] == ["api", "graphql"] and f"query={CI_QUERY}" in c for c in calls)
+        assert all("--paginate" in c and "--slurp" in c for c in calls)
         for component_id, state in (("comp-a", "passed"), ("comp-b", "failed")):
             assert re.search(rf"{component_id}\s+\w{{12}}\s+{state}", result.output), result.output
 
@@ -301,7 +304,9 @@ def _no_entries() -> dict[str, Any]:
 UNREADABLE: list[tuple[str, dict[str, Any] | str | None]] = [
     ("gh-fails-unauthenticated", None),
     ("reply-is-not-json", "gh: this is not JSON"),
-    ("reply-is-a-list", "[]"),
+    ("reply-is-no-pages", "[]"),
+    # gh without --slurp prints the page itself, not the array of pages.
+    ("reply-is-a-page-not-the-page-list", json.dumps(_fixture("passed.json"))),
     ("graphql-errors", {"errors": [{"message": "Something went wrong"}], "data": None}),
     # GitHub can answer with partial data AND errors: the errors win even
     # when the data beside them reads as seven passing checks.

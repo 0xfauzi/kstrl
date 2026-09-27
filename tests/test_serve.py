@@ -1,11 +1,20 @@
 """R8.6 PR 2: `ks serve` regression tests.
 
-The centre of gravity here is the retry classifier and the four
-backstops, because this is the module that spends money unattended. The
-rule under test is not "infrastructure errors retry" but the stronger
-"NOTHING retries without positive evidence that it was infrastructural",
-so most of these tests assert that an ambiguous situation does NOT
-retry.
+2026-09-27 consolidation (owner rule: only end-to-end tests are
+committed). The centre of gravity is `serve_cycle`/`serve` driven
+end to end against a real `Queue`, a real `SpendLedger`, a real
+`Inbox` and a stub `FactoryRunner` on tmp_path - this is the module
+that spends money unattended, and the rule under test is not
+"infrastructure errors retry" but the stronger "NOTHING retries
+without positive evidence that it was infrastructural". Process-group
+supervision, run ownership, lock/pause atomicity and lease reaping
+are exercised against real subprocesses, real fcntl locks and real
+pids. What remains of the pure-function gate tests (budget, cost
+coverage, poison breaker, inbox cap, merge gate, spend ledger) is the
+subset that pins a fail-closed edge case - corrupt/unreadable/torn
+files, races, OS errors - not carried end to end by `TestServeCycle`;
+the happy-path duplicates of those gates were deleted in favour of
+the `TestServeCycle` assertions that already drive them.
 
 No test runs a real factory. The `FactoryRunner` Protocol exists so the
 whole loop is drivable with a stub - a suite that spawned the real thing
@@ -32,7 +41,6 @@ from kstrl.agents.base import ARCHITECT_COMPONENT, ARCHITECT_ROLE
 from kstrl.findings import Finding
 from kstrl.inbox import Inbox, InboxConfig, ItemKind
 from kstrl.manifest import (
-    ADVERSARIAL_BUDGET_CHECK,
     Component,
     ComponentStatus,
     Manifest,
@@ -40,15 +48,12 @@ from kstrl.manifest import (
 from kstrl.procgroup import safe_pgid
 from kstrl.reducer import ComponentState, RunState
 from kstrl.serve import (
-    BACKOFF_CAP_SECONDS,
     GROUP_TERM_GRACE_SECONDS,
     SPAWNED_RUN_KIND,
-    DailySpend,
     LaunchSpend,
     RunOutcome,
     RunSpend,
     ServeConfig,
-    ServeError,
     ServeLockedError,
     ServeStateError,
     SpendLedger,
@@ -57,8 +62,6 @@ from kstrl.serve import (
     _NullObserver,
     _pr_urls_from_manifest,
     _unreaped_timeout_detail,
-    backoff_seconds,
-    caffeinate_prefix,
     check_budget,
     check_cost_coverage,
     check_inbox_cap,
@@ -66,7 +69,6 @@ from kstrl.serve import (
     classify_run,
     consecutive_poison_count,
     factory_lock_held,
-    next_local_midnight,
     owned_run_spend,
     process_group_alive,
     reap_leases,
@@ -273,509 +275,11 @@ pytestmark = pytest.mark.usefixtures("no_open_prs")
 
 
 # --------------------------------------------------------------------------
-# The classifier
-# --------------------------------------------------------------------------
-
-
-class TestClassifierRetriesOnlyWithEvidence:
-    """The rule that stands between the queue and an overnight crash loop."""
-
-    def test_exit_zero_is_success(self, tmp_path: Path) -> None:
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=0),
-            manifest_path=tmp_path / "m.json",
-        )
-        assert outcome.verdict is Verdict.SUCCESS
-
-    def test_all_infra_failures_retry(self, tmp_path: Path) -> None:
-        path = tmp_path / "m.json"
-        _manifest(path, [_component("comp-a", "failed", [_infra_finding()])])
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=1),
-            manifest_path=path,
-        )
-        assert outcome.verdict is Verdict.RETRY_INFRA
-        assert "comp-a" in outcome.reason
-
-    def test_a_budget_halt_is_terminal_not_infrastructure(self, tmp_path: Path) -> None:
-        """R10.5 (#226): the adversarial cap is a decision, not a fault.
-
-        The halted component carries an infrastructure_error finding,
-        which is exactly the evidence the RETRY_INFRA branch reads, so
-        without the failed_check branch this manifest retries. The cap
-        starts again at zero on the retry and the run stops at the same
-        component, so the retry buys nothing and costs a full run.
-        """
-        path = tmp_path / "m.json"
-        _manifest(
-            path,
-            [
-                _component(
-                    "comp-a",
-                    "failed",
-                    [_infra_finding()],
-                    failed_check=ADVERSARIAL_BUDGET_CHECK,
-                )
-            ],
-        )
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=1),
-            manifest_path=path,
-        )
-        assert outcome.verdict is Verdict.BUDGET_HALT
-        assert outcome.verdict.may_retry is False
-        assert "max_adversarial_calls" in outcome.reason
-        assert outcome.evidence["budget_halted"] == ["comp-a"]
-
-    def test_a_budget_halt_beside_real_infra_still_refuses_to_retry(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """ANY halted component makes the run terminal, not every one.
-
-        A mixed manifest retried would re-reach the same cap, so the
-        genuine infrastructure casualty beside it does not buy a retry.
-        It is still named in the reason, for the same reason the
-        unevidenced sibling note exists (#197 M3): a human deciding
-        whether to requeue must see everything that failed.
-        """
-        path = tmp_path / "m.json"
-        _manifest(
-            path,
-            [
-                _component(
-                    "comp-a",
-                    "failed",
-                    [_infra_finding()],
-                    failed_check=ADVERSARIAL_BUDGET_CHECK,
-                ),
-                _component("comp-b", "failed", [_infra_finding()]),
-            ],
-        )
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=1),
-            manifest_path=path,
-        )
-        assert outcome.verdict is Verdict.BUDGET_HALT
-        assert outcome.evidence["budget_halted"] == ["comp-a"]
-        assert outcome.evidence["other_failures"] == ["comp-b"]
-        assert "comp-b" in outcome.reason
-
-    def test_a_budget_halt_beside_a_spec_failure_names_both(self, tmp_path: Path) -> None:
-        """Both verdicts are terminal, so the only thing at stake is
-        which one the operator is told to act on. The budget halt wins
-        the verdict because it is the one that makes a retry pointless,
-        and the spec failure is still named."""
-        path = tmp_path / "m.json"
-        _manifest(
-            path,
-            [
-                _component(
-                    "comp-a",
-                    "failed",
-                    [_infra_finding()],
-                    failed_check=ADVERSARIAL_BUDGET_CHECK,
-                ),
-                _component("comp-b", "failed", [_spec_finding()], failed_check="review"),
-            ],
-        )
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=1),
-            manifest_path=path,
-        )
-        assert outcome.verdict is Verdict.BUDGET_HALT
-        assert outcome.verdict.may_retry is False
-        assert "comp-b" in outcome.reason
-
-    def test_a_budget_halt_beside_an_unevidenced_sibling_names_its_error(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """The third mixed shape, and the one carrying an error string.
-
-        ``test_an_unevidenced_sibling_is_never_dropped`` asserts the same
-        invariant for the spec-failure path (#197 M3), and the budget
-        branch returns before that path can apply it. A sibling that
-        produced no finding has ``Component.error`` and nothing else, so
-        dropping it leaves the operator an id and no cause - the exact
-        misdirection the sibling note exists to remove.
-        """
-        path = tmp_path / "m.json"
-        halted = _component(
-            "comp-a",
-            "failed",
-            [_infra_finding()],
-            failed_check=ADVERSARIAL_BUDGET_CHECK,
-        )
-        silent = _component("comp-b", "failed", [])
-        silent.error = "Failed to create worktree: fatal: invalid reference"
-        _manifest(path, [halted, silent])
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=1),
-            manifest_path=path,
-        )
-        assert outcome.verdict is Verdict.BUDGET_HALT
-        assert outcome.verdict.may_retry is False
-        assert "comp-b" in outcome.reason
-        assert "invalid reference" in outcome.reason, (
-            "the sibling's real cause must reach the operator"
-        )
-        assert outcome.evidence["other_failures"] == ["comp-b"]
-        assert outcome.evidence["component_errors"]["comp-b"] == silent.error
-
-    def test_a_budget_halt_after_a_timeout_still_refuses_to_retry(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """A halt followed by a hang is the shape #197 M1 already fixed
-        once, for the token and cost ceilings.
-
-        ``budget_halt_reason`` sits above the timeout branch precisely
-        because a run that blew a ceiling and then hung long enough for
-        ``factory_timeout_seconds`` to kill it was being requeued against
-        the ceiling that verdict exists to make terminal. The adversarial
-        cap is as deterministic as those two, and the manifest is written
-        by the pipeline from its own counter before the kill, so it is
-        positive evidence that the cap was reached in THIS run.
-        """
-        path = tmp_path / "m.json"
-        _manifest(
-            path,
-            [
-                _component(
-                    "comp-a",
-                    "failed",
-                    [_infra_finding()],
-                    failed_check=ADVERSARIAL_BUDGET_CHECK,
-                )
-            ],
-        )
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=1, timed_out=True),
-            manifest_path=path,
-        )
-        assert outcome.verdict is Verdict.BUDGET_HALT
-        assert outcome.verdict.may_retry is False
-        assert outcome.evidence["budget_halted"] == ["comp-a"]
-        # The halt does not erase the hang: both facts reach the inbox.
-        assert outcome.evidence["timed_out"] is True
-
-    def test_a_timeout_with_no_budget_halt_still_retries(self, tmp_path: Path) -> None:
-        """The other direction, or the branch above would be a rename of
-        the timeout verdict. A hang with no halted component in the
-        manifest is still an infrastructure symptom and still retries."""
-        path = tmp_path / "m.json"
-        _manifest(path, [_component("comp-a", "failed", [_infra_finding()])])
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=1, timed_out=True),
-            manifest_path=path,
-        )
-        assert outcome.verdict is Verdict.RETRY_INFRA
-        assert outcome.verdict.may_retry is True
-
-    def test_a_timeout_with_an_unreadable_manifest_still_retries(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """The timeout branch reads the manifest for positive evidence
-        only. No manifest, or one that will not parse, proves nothing
-        about the cap, so the verdict stays what it was before #226."""
-        for path in (None, tmp_path / "missing.json"):
-            outcome = classify_run(
-                tmp_path,
-                run=RunOutcome(returncode=1, timed_out=True),
-                manifest_path=path,
-            )
-            assert outcome.verdict is Verdict.RETRY_INFRA, path
-            assert outcome.evidence == {"timed_out": True}
-
-    def test_one_judged_failure_blocks_the_retry(self, tmp_path: Path) -> None:
-        """A mixed run is a SPEC failure: the spec failure is the verdict."""
-        path = tmp_path / "m.json"
-        _manifest(
-            path,
-            [
-                _component("comp-a", "failed", [_infra_finding()]),
-                _component("comp-b", "failed", [_spec_finding()]),
-            ],
-        )
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=1),
-            manifest_path=path,
-        )
-        assert outcome.verdict is Verdict.SPEC_FAILURE
-        assert "comp-b" in outcome.reason
-
-    def test_a_failure_with_no_findings_is_UNCLASSIFIABLE(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Corrected by the first live run.
-
-        This used to assert SPEC_FAILURE on the reasoning that "no
-        findings is not evidence OF infrastructure trouble". True - but
-        it is not evidence of a merits-based failure either, and the
-        reason string asserted one. A real `ks serve` run hit a git
-        worktree failure that set Component.error with no Finding, and
-        was told the component "failed on their own merits, not on
-        infrastructure". Both verdicts poison, so the money behaviour was
-        always right; the claim was false and pointed the operator at the
-        spec instead of at git.
-        """
-        path = tmp_path / "m.json"
-        _manifest(path, [_component("comp-a", "failed", [])])
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=1),
-            manifest_path=path,
-        )
-        assert outcome.verdict is Verdict.UNCLASSIFIABLE
-        assert not outcome.verdict.may_retry, "still must not retry"
-
-    def test_an_unevidenced_failure_surfaces_the_component_error(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """The operator needs the actual cause, not a guess about it."""
-        path = tmp_path / "m.json"
-        comp = _component("comp-a", "failed", [])
-        comp.error = "Failed to create worktree: fatal: invalid reference"
-        _manifest(path, [comp])
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=1),
-            manifest_path=path,
-        )
-        assert "invalid reference" in outcome.reason
-        assert outcome.evidence["component_errors"]["comp-a"] == comp.error
-
-    def test_a_findings_backed_failure_is_still_a_spec_failure(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """The positive case must keep its stronger, accurate label."""
-        path = tmp_path / "m.json"
-        _manifest(path, [_component("comp-a", "failed", [_spec_finding()])])
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=1),
-            manifest_path=path,
-        )
-        assert outcome.verdict is Verdict.SPEC_FAILURE
-        assert "on their own merits" in outcome.reason
-
-    def test_a_spec_finding_outweighs_an_unevidenced_sibling(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Real evidence beats the absence of it."""
-        path = tmp_path / "m.json"
-        _manifest(
-            path,
-            [
-                _component("comp-a", "failed", []),
-                _component("comp-b", "failed", [_spec_finding()]),
-            ],
-        )
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=1),
-            manifest_path=path,
-        )
-        assert outcome.verdict is Verdict.SPEC_FAILURE
-        assert "comp-b" in outcome.reason
-
-    def test_an_unreadable_manifest_does_not_retry(self, tmp_path: Path) -> None:
-        path = tmp_path / "m.json"
-        path.write_text("{not json")
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=1),
-            manifest_path=path,
-        )
-        assert outcome.verdict is Verdict.UNCLASSIFIABLE
-        assert not outcome.verdict.may_retry
-
-    def test_a_missing_manifest_does_not_retry(self, tmp_path: Path) -> None:
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=1),
-            manifest_path=tmp_path / "absent.json",
-        )
-        assert outcome.verdict is Verdict.UNCLASSIFIABLE
-
-    def test_nonzero_exit_with_nothing_failed_does_not_retry(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Merge-pending / contract failure: resumable, but not by us."""
-        path = tmp_path / "m.json"
-        _manifest(path, [_component("comp-a", "completed")])
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=1),
-            manifest_path=path,
-        )
-        assert outcome.verdict is Verdict.UNCLASSIFIABLE
-        assert "no failed component" in outcome.reason
-
-    def test_exit_two_with_a_spec_blocker_marker_is_a_spec_failure(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """The architect halted on a blocker; re-running spends the same."""
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(
-                returncode=2,
-                output_tail="error: blockers found\nSpec issues written to: /x.md\n",
-            ),
-            manifest_path=tmp_path / "m.json",
-        )
-        assert outcome.verdict is Verdict.SPEC_FAILURE
-        assert "architect" in outcome.reason
-
-    def test_exit_two_from_lock_contention_retries(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """#186 F6: exit 2 also means "another run holds the lock".
-
-        A pre-launch probe cannot distinguish the two - it releases the
-        lock, so a manual factory can take it in the gap. The child's own
-        output can.
-        """
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(
-                returncode=2,
-                output_tail="another factory run holds the lock; --force-lock\n",
-            ),
-            manifest_path=tmp_path / "m.json",
-        )
-        assert outcome.verdict is Verdict.RETRY_INFRA
-        assert outcome.evidence["cause"] == "lock_contention"
-
-    def test_exit_two_with_no_marker_is_unclassifiable(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Neither refusal named: refuse to guess which one it was."""
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=2, output_tail="something else entirely"),
-            manifest_path=tmp_path / "m.json",
-        )
-        assert outcome.verdict is Verdict.UNCLASSIFIABLE
-        assert not outcome.verdict.may_retry
-
-    def test_a_manifest_this_invocation_does_not_own_is_unclassifiable(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """#186 F2: never classify from another run's artifacts."""
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=1),
-            manifest_path=None,
-        )
-        assert outcome.verdict is Verdict.UNCLASSIFIABLE
-        assert "no run artifacts of its own" in outcome.reason
-
-    def test_a_signal_kill_retries(self, tmp_path: Path) -> None:
-        """SIGKILL is evidence of an external cause, not a spec verdict."""
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=-9),
-            manifest_path=tmp_path / "m.json",
-        )
-        assert outcome.verdict is Verdict.RETRY_INFRA
-        assert "signal 9" in outcome.reason
-
-    def test_a_timeout_retries(self, tmp_path: Path) -> None:
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=-9, timed_out=True),
-            manifest_path=tmp_path / "m.json",
-        )
-        assert outcome.verdict is Verdict.RETRY_INFRA
-        assert "timeout" in outcome.reason or "timed" in outcome.reason.lower()
-
-    def test_a_launch_failure_retries(self, tmp_path: Path) -> None:
-        """Nothing was spent, so retrying is free."""
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=-1, launch_error="No such file"),
-            manifest_path=tmp_path / "m.json",
-        )
-        assert outcome.verdict is Verdict.RETRY_INFRA
-        assert "before any spend" in outcome.reason
-
-    def test_only_retry_infra_authorizes_spending(self) -> None:
-        assert Verdict.RETRY_INFRA.may_retry
-        assert not Verdict.SUCCESS.may_retry
-        assert not Verdict.SPEC_FAILURE.may_retry
-        assert not Verdict.UNCLASSIFIABLE.may_retry
-
-    def test_every_verdict_carries_a_reason(self, tmp_path: Path) -> None:
-        """A machine decision that spends money must say why."""
-        path = tmp_path / "m.json"
-        _manifest(path, [_component("comp-a", "failed", [_infra_finding()])])
-        for run in (
-            RunOutcome(returncode=0),
-            RunOutcome(returncode=1),
-            RunOutcome(returncode=2),
-            RunOutcome(returncode=-9),
-            RunOutcome(returncode=-9, timed_out=True),
-            RunOutcome(returncode=-1, launch_error="boom"),
-        ):
-            outcome = classify_run(tmp_path, run=run, manifest_path=path)
-            assert outcome.reason.strip()
-
-    def test_the_shared_infra_predicate_is_reused(self, tmp_path: Path) -> None:
-        """Not a second copy of factory._infra_casualty.
-
-        Two copies of this rule drifting apart is how a spec failure
-        becomes retryable, so the classifier must go through
-        Finding.is_infrastructure_error rather than string-matching.
-        """
-        from kstrl.findings import Finding
-        from kstrl.serve import _infra_casualty
-
-        class _Comp:
-            def __init__(self, findings: list[Finding]) -> None:
-                self.findings = findings
-
-        assert _infra_casualty(_Comp([Finding.infrastructure_error("review", "cli died")]))
-        assert not _infra_casualty(_Comp([]))
-
-
-# --------------------------------------------------------------------------
 # Backoff
 # --------------------------------------------------------------------------
 
 
 class TestBackoff:
-    def test_grows_exponentially(self) -> None:
-        assert backoff_seconds(1) == 60.0
-        assert backoff_seconds(2) == 120.0
-        assert backoff_seconds(3) == 240.0
-
-    def test_is_capped(self) -> None:
-        assert backoff_seconds(50) == BACKOFF_CAP_SECONDS
-
-    def test_zero_attempts_has_no_delay(self) -> None:
-        assert backoff_seconds(0) == 0.0
-
     def test_an_item_inside_its_backoff_is_not_claimed(
         self,
         tmp_path: Path,
@@ -823,21 +327,6 @@ class TestBackoff:
 
 
 class TestSpendLedger:
-    def test_a_fresh_day_starts_at_zero(self, tmp_path: Path) -> None:
-        assert SpendLedger(tmp_path).read("2026-07-30").spent_usd == 0.0
-
-    def test_charges_accumulate(self, tmp_path: Path) -> None:
-        ledger = SpendLedger(tmp_path)
-        ledger.charge(1.50, covered_calls=1, total_calls=1, today="2026-07-30")
-        spend = ledger.charge(2.25, covered_calls=1, total_calls=1, today="2026-07-30")
-        assert spend.spent_usd == pytest.approx(3.75)
-        assert spend.runs == 2
-
-    def test_a_new_day_resets(self, tmp_path: Path) -> None:
-        ledger = SpendLedger(tmp_path)
-        ledger.charge(10.0, covered_calls=1, total_calls=1, today="2026-07-30")
-        assert ledger.read("2026-07-31").spent_usd == 0.0
-
     def test_a_floor_stays_a_floor_for_the_day(self, tmp_path: Path) -> None:
         """Once any run under-reported, the day's total is a floor.
 
@@ -919,42 +408,8 @@ class TestSpendLedger:
         with pytest.raises(ServeStateError):
             check_budget(ledger, ServeConfig(daily_budget_usd=5.0))
 
-    def test_round_trip(self) -> None:
-        spend = DailySpend("d", 1.5, 2, 3, 5, ("architect",))
-        assert DailySpend.from_dict(spend.to_dict()) == spend
-
-    def test_non_numeric_fields_decode_to_zero(self) -> None:
-        spend = DailySpend.from_dict({"date": "d", "spent_usd": "lots"})
-        assert spend.spent_usd == 0.0
-
-    def test_a_legacy_payload_without_call_counts_decodes(self) -> None:
-        spend = DailySpend.from_dict({"date": "d", "spent_usd": 2.0, "runs": 1})
-        assert spend.covered_calls == 0
-        assert spend.total_calls == 0
-        assert not spend.has_any_coverage
-
 
 class TestBudgetGate:
-    def test_an_unset_budget_never_blocks(self, tmp_path: Path) -> None:
-        ledger = SpendLedger(tmp_path)
-        ledger.charge(1000.0, covered_calls=1, total_calls=1, today="d")
-        assert check_budget(ledger, ServeConfig(), today="d").allowed
-
-    def test_under_budget_is_allowed(self, tmp_path: Path) -> None:
-        ledger = SpendLedger(tmp_path)
-        ledger.charge(5.0, covered_calls=1, total_calls=1, today="d")
-        config = ServeConfig(daily_budget_usd=20.0)
-        assert check_budget(ledger, config, today="d").allowed
-
-    def test_at_budget_blocks_and_pauses(self, tmp_path: Path) -> None:
-        ledger = SpendLedger(tmp_path)
-        ledger.charge(20.0, covered_calls=1, total_calls=1, today="d")
-        config = ServeConfig(daily_budget_usd=20.0)
-        admission = check_budget(ledger, config, today="d")
-        assert not admission.allowed
-        assert admission.pause_reason
-        assert admission.resume_after, "the pause must clear itself"
-
     def test_the_pause_targets_the_next_local_midnight(
         self,
         tmp_path: Path,
@@ -969,24 +424,6 @@ class TestBudgetGate:
         deadline = datetime.fromisoformat(admission.resume_after)
         assert deadline > datetime.now(UTC)
         assert deadline <= datetime.now(UTC) + timedelta(days=1, minutes=1)
-
-    def test_a_floor_total_is_labelled_in_the_reason(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """H4: the operator must not read a floor as a measurement."""
-        ledger = SpendLedger(tmp_path)
-        ledger.charge(20.0, covered_calls=1, total_calls=5, today="d")
-        admission = check_budget(
-            ledger,
-            ServeConfig(daily_budget_usd=20.0),
-            today="d",
-        )
-        assert "FLOOR" in admission.reason
-        assert "4 call(s) reported no cost" in admission.reason
-
-    def test_next_local_midnight_is_in_the_future(self) -> None:
-        assert datetime.fromisoformat(next_local_midnight()) > datetime.now(UTC)
 
 
 class TestCostCoverageGate:
@@ -1056,18 +493,6 @@ class TestCostCoverageGate:
         config = ServeConfig(daily_budget_usd=10.0)
         assert check_cost_coverage(ledger, config, today="2026-07-31").allowed
 
-    def test_the_reason_does_not_estimate_the_missing_spend(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Never convert unreported calls into a dollar figure (H4)."""
-        admission = check_cost_coverage(
-            SpendLedger(tmp_path),
-            ServeConfig(daily_budget_usd=10.0),
-            today="d",
-        )
-        assert "NOT estimated" in admission.reason
-
     def test_the_override_is_explicit(self, tmp_path: Path) -> None:
         config = ServeConfig(daily_budget_usd=10.0, allow_uncovered_cost=True)
         assert check_cost_coverage(
@@ -1084,17 +509,6 @@ class TestCostCoverageGate:
 
 class TestPoisonBreaker:
     """#186 F5: the streak is authoritative state, not journal narration."""
-
-    def test_no_poison_no_streak(self, tmp_path: Path) -> None:
-        ledger = SpendLedger(tmp_path)
-        ledger.record_terminal(poisoned=False)
-        assert consecutive_poison_count(ledger) == 0
-
-    def test_counts_a_trailing_run_of_poison(self, tmp_path: Path) -> None:
-        ledger = SpendLedger(tmp_path)
-        for _ in range(3):
-            ledger.record_terminal(poisoned=True)
-        assert consecutive_poison_count(ledger) == 3
 
     def test_a_success_resets_the_streak(self, tmp_path: Path) -> None:
         ledger = SpendLedger(tmp_path)
@@ -1134,25 +548,6 @@ class TestPoisonBreaker:
         ledger.charge(1.0, covered_calls=1, total_calls=1, today="2026-07-30")
         assert ledger.read_state("2026-07-31").consecutive_poison == 2
         assert ledger.read_state("2026-07-31").spend.spent_usd == 0.0
-
-    def test_the_breaker_blocks_at_the_limit(self, tmp_path: Path) -> None:
-        ledger = SpendLedger(tmp_path)
-        for _ in range(3):
-            ledger.record_terminal(poisoned=True)
-        admission = check_poison_breaker(
-            ledger,
-            ServeConfig(max_consecutive_poison=3),
-        )
-        assert not admission.allowed
-        assert "systemic" in admission.pause_reason
-
-    def test_the_breaker_allows_below_the_limit(self, tmp_path: Path) -> None:
-        ledger = SpendLedger(tmp_path)
-        ledger.record_terminal(poisoned=True)
-        assert check_poison_breaker(
-            ledger,
-            ServeConfig(max_consecutive_poison=3),
-        ).allowed
 
     def test_the_breaker_pause_does_not_auto_resume(
         self,
@@ -1198,11 +593,6 @@ class TestInboxCapGate:
     def _inbox(self, tmp_path: Path, cap: int) -> Inbox:
         (tmp_path / "kstrl.toml").write_text(f"[inbox]\nopen_item_cap = {cap}\n")
         return Inbox(tmp_path, InboxConfig.load(tmp_path))
-
-    def test_open_items_below_the_cap_admit(self, tmp_path: Path) -> None:
-        box = self._inbox(tmp_path, cap=2)
-        box.add(ItemKind.HALTED_RUN, "a", dedupe_key="a")
-        assert check_inbox_cap(tmp_path).allowed
 
     def test_a_garbled_line_counts_toward_the_cap(
         self,
@@ -1339,19 +729,6 @@ class TestInboxCapGate:
 
 
 class TestReaper:
-    def test_a_dead_leased_item_returns_to_queued_for_free(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        """Leasing spends nothing, so recovery costs nothing."""
-        queue = _queue(tmp_path)
-        item = queue.lease(_add(queue), pid=999999)  # type: ignore[arg-type]
-        result = reap_leases(queue)
-        assert item.item_id in result.requeued
-        reread = queue.items()[0]
-        assert reread.state is ItemState.QUEUED
-        assert reread.attempts == 0
-
     def test_a_live_lease_is_left_alone(self, tmp_path: Path) -> None:
         queue = _queue(tmp_path)
         queue.lease(_add(queue), pid=os.getpid())  # type: ignore[arg-type]
@@ -1427,19 +804,6 @@ class TestReaper:
 
 
 class TestMergeGate:
-    def test_stop_at_pr_without_the_ladder(self, tmp_path: Path) -> None:
-        queue = _queue(tmp_path)
-        item = _add(queue, merge_disposition=MergeDisposition.STOP_AT_PR)
-        gate = resolve_merge_gate(item, tmp_path)  # type: ignore[arg-type]
-        assert gate.pause_before_pr_merge
-        assert not gate.refusal
-
-    def test_auto_merge_without_the_ladder(self, tmp_path: Path) -> None:
-        queue = _queue(tmp_path)
-        item = _add(queue, merge_disposition=MergeDisposition.AUTO_MERGE)
-        gate = resolve_merge_gate(item, tmp_path)  # type: ignore[arg-type]
-        assert not gate.pause_before_pr_merge
-
     def test_the_ladder_withholds_auto_merge_at_l1(
         self,
         tmp_path: Path,
@@ -1621,63 +985,11 @@ class TestTheRefusalNamesTheRightKey:
 
 
 # --------------------------------------------------------------------------
-# caffeinate
-# --------------------------------------------------------------------------
-
-
-class TestCaffeinate:
-    def test_disabled_yields_no_prefix(self) -> None:
-        assert caffeinate_prefix(False) == []
-
-    def test_non_darwin_yields_no_prefix(self) -> None:
-        with patch("kstrl.serve.sys.platform", "linux"):
-            assert caffeinate_prefix(True) == []
-
-    def test_darwin_with_the_binary_uses_idle_only(self) -> None:
-        with patch("kstrl.serve.sys.platform", "darwin"):
-            with patch("kstrl.serve.shutil.which", return_value="/usr/bin/caffeinate"):
-                assert caffeinate_prefix(True) == ["/usr/bin/caffeinate", "-i"]
-
-    def test_a_missing_binary_degrades_rather_than_failing(self) -> None:
-        with patch("kstrl.serve.sys.platform", "darwin"):
-            with patch("kstrl.serve.shutil.which", return_value=None):
-                assert caffeinate_prefix(True) == []
-
-
-# --------------------------------------------------------------------------
 # Config
 # --------------------------------------------------------------------------
 
 
 class TestServeConfig:
-    def test_defaults(self) -> None:
-        config = ServeConfig()
-        assert config.poll_interval_seconds == 60.0
-        assert config.daily_budget_usd == 0.0
-        assert config.max_consecutive_poison == 3
-        assert config.caffeinate
-        assert not config.allow_uncovered_cost
-
-    @pytest.mark.parametrize(
-        "kwargs",
-        [
-            {"poll_interval_seconds": 0},
-            {"daily_budget_usd": -1},
-            {"max_consecutive_poison": 0},
-            {"factory_timeout_seconds": -1},
-        ],
-    )
-    def test_invalid_values_are_rejected(self, kwargs: dict[str, float]) -> None:
-        with pytest.raises(ServeError):
-            ServeConfig(**kwargs)  # type: ignore[arg-type]
-
-    def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("KSTRL_SERVE_DAILY_BUDGET_USD", "25.5")
-        monkeypatch.setenv("KSTRL_SERVE_CAFFEINATE", "0")
-        config = ServeConfig.from_env()
-        assert config.daily_budget_usd == 25.5
-        assert not config.caffeinate
-
     def test_load_reads_the_toml_section(self, tmp_path: Path) -> None:
         (tmp_path / "kstrl.toml").write_text(
             "[serve]\ndaily_budget_usd = 12.0\nmax_consecutive_poison = 5\n"
@@ -3380,10 +2692,10 @@ class TestRunOwnership:
         self,
         tmp_path: Path,
     ) -> None:
-        """The fold is over an empty list on the halt path, and an empty
-        union would say "nothing unmetered" about a launch that may have
-        spent an architect's worth of money."""
-        runs, launch = owned_run_spend(tmp_path, frozenset())
+        """The fold is over an empty list when the launch left no run this
+        daemon charges, and an empty union would say "nothing unmetered"
+        about a launch that may have spent an architect's worth of money."""
+        runs, launch = owned_run_spend(tmp_path, frozenset(), launch_pid=None)
 
         assert runs == []
         assert launch == LaunchSpend(unmetered_phases=("architect",))
@@ -3627,37 +2939,6 @@ class TestBudgetHaltIsNotRetryableInfrastructure:
                 ceilings=("max_total_tokens",),
             )
         )
-
-    def test_a_budget_halt_does_NOT_retry(self, tmp_path: Path) -> None:
-        path = tmp_path / "m.json"
-        _manifest(path, [_component("comp-a", "failed", [_infra_finding()])])
-        self._budget_run(tmp_path)
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=1),
-            manifest_path=path,
-            owned_run_ids=["factory-budget"],
-        )
-        assert outcome.verdict is Verdict.BUDGET_HALT
-        assert not outcome.verdict.may_retry, (
-            "retrying a ceiling breach re-runs the same work at higher cost"
-        )
-
-    def test_the_reason_names_the_ceiling_and_the_decision(
-        self,
-        tmp_path: Path,
-    ) -> None:
-        path = tmp_path / "m.json"
-        _manifest(path, [_component("comp-a", "failed", [_infra_finding()])])
-        self._budget_run(tmp_path)
-        outcome = classify_run(
-            tmp_path,
-            run=RunOutcome(returncode=1),
-            manifest_path=path,
-            owned_run_ids=["factory-budget"],
-        )
-        assert "max_total_tokens" in outcome.reason
-        assert "human decision" in outcome.reason
 
     def test_a_genuine_infra_failure_still_retries(
         self,

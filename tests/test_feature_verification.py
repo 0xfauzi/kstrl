@@ -122,6 +122,7 @@ def _drive(
         kind="feature",
         bus=ev.EventBus(ev.CallbackSink(captured.append), run_id="test-run", component="demo"),
         paths=None,
+        run_root=tmp_path / ".kstrl" / "runs" / "test-run",
     )
     with (
         patch("kstrl.feature_cmd.run_loop", loop or _loop_results(*codes, iterations=iterations)),

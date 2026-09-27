@@ -1,10 +1,17 @@
-"""Chunk 1 (TUI rewrite): schema-v2 event model, sinks, run layout.
+"""Chunk 1 (TUI rewrite): schema-v2 event model, sinks and run layout, on disk.
 
 The load-bearing test here is golden parity: V1CompatSink fed stamped v2
 events must produce byte-equivalent progress.jsonl lines (modulo ts) to
 calling the real ProgressLog convenience methods directly. That parity
 is what lets the whole migration keep .kstrl/progress.jsonl consumers
-(ks status v1 arm, the Linear ProgressSink) untouched.
+(ks status v1 arm, the Linear ProgressSink) untouched. Beside it: reading
+a missing or torn events.jsonl, a seeded replay of every registered type
+through JsonlSink, a sink added late, the run directory layout, append and
+reopen, and the budget halt and coverage events reaching both sinks with
+every field (the divergence a green suite once shipped). The registry
+census stays so a new event type without a sample fails loudly. The
+in-memory round-trip, tolerant-decode and bus-envelope tests were removed;
+``tests/test_event_stream.py`` drives the dual write through run_factory.
 """
 
 from __future__ import annotations
@@ -13,8 +20,6 @@ import json
 import random
 from pathlib import Path
 from typing import Any
-
-import pytest
 
 from kstrl import events as ev
 from kstrl.observability import ProgressLog, read_progress_events
@@ -188,126 +193,13 @@ def _sample_events() -> list[ev.Event]:
 
 
 class TestRoundTrip:
-    def test_every_registered_type_round_trips(self) -> None:
-        for event in _sample_events():
-            stamped = ev.EventBus(run_id="r1").emit(event)
-            line = stamped.to_json_line()
-            parsed = ev.parse_event_line(line)
-            assert parsed is not None
-            assert type(parsed) is type(event), line
-            assert parsed.to_dict()["data"] == stamped.to_dict()["data"]
-            assert parsed.run_id == "r1"
-            assert parsed.seq == stamped.seq
-            assert parsed.ts == pytest.approx(stamped.ts)
-
     def test_sample_covers_registry(self) -> None:
-        """Every registered type except the UnknownEvent fallback is
-        exercised by the round-trip test; a new event added without a
-        sample here fails loudly."""
+        """Every registered type except the UnknownEvent fallback is in
+        the pool the seeded replay draws from; a new event added without
+        a sample here fails loudly."""
         sampled = {type(e).type for e in _sample_events()}
         registered = set(ev._REGISTRY) - {"unknown"}
         assert sampled == registered
-
-
-class TestTolerantDecode:
-    def test_unknown_event_name(self) -> None:
-        obj = {
-            "schema": 2,
-            "event": "flux_capacitor",
-            "ts": 1.0,
-            "run_id": "r",
-            "component": "c",
-            "source": "orchestrator",
-            "seq": 3,
-            "data": {"x": 1},
-        }
-        event = ev.event_from_dict(obj)
-        assert isinstance(event, ev.UnknownEvent)
-        assert event.type_name == "flux_capacitor"
-        assert event.to_dict() == obj  # lossless re-serialization
-        assert event.component == "c"
-
-    def test_extra_keys_ignored(self) -> None:
-        obj = {"event": "component_failed", "data": {"error": "x", "novel_key": 1}}
-        event = ev.event_from_dict(obj)
-        assert isinstance(event, ev.ComponentFailed)
-        assert event.error == "x"
-
-    def test_missing_keys_default(self) -> None:
-        event = ev.event_from_dict({"event": "component_completed", "data": {}})
-        assert isinstance(event, ev.ComponentCompleted)
-        assert event.duration_seconds == 0.0
-        assert event.iterations == 0
-
-    def test_mistyped_values_degrade_to_defaults(self) -> None:
-        obj = {
-            "event": "component_completed",
-            "data": {"duration_seconds": "fast", "iterations": 3},
-        }
-        event = ev.event_from_dict(obj)
-        assert isinstance(event, ev.ComponentCompleted)
-        assert event.duration_seconds == 0.0  # mistyped -> default
-        assert event.iterations == 3  # well-typed -> kept
-
-    def test_bool_not_accepted_as_int(self) -> None:
-        obj = {"event": "component_completed", "data": {"iterations": True}}
-        event = ev.event_from_dict(obj)
-        assert isinstance(event, ev.ComponentCompleted)
-        assert event.iterations == 0
-
-    def test_int_accepted_for_float_field(self) -> None:
-        obj = {"event": "component_completed", "data": {"duration_seconds": 5}}
-        event = ev.event_from_dict(obj)
-        assert isinstance(event, ev.ComponentCompleted)
-        assert event.duration_seconds == 5.0
-
-    def test_utilization_payload_without_the_flag_is_unmeasured(
-        self,
-    ) -> None:
-        """#191: `measured` gates the counts. A payload that omits it
-        must decode as UNMEASURED, never as a measured zero - reading a
-        default 0 as evidence would make the L2+ gate look permanently
-        unsatisfiable."""
-        obj = {"event": "fact_utilization_measured", "data": {"injected": 3}}
-        event = ev.event_from_dict(obj)
-        assert isinstance(event, ev.FactUtilizationMeasured)
-        assert event.measured is False
-        assert event.referenced == 0
-
-    def test_mistyped_utilization_flag_degrades_to_unmeasured(self) -> None:
-        """The flag degrades toward "no evidence", the safe direction."""
-        obj = {"event": "fact_utilization_measured", "data": {"measured": "yes", "referenced": 4}}
-        event = ev.event_from_dict(obj)
-        assert isinstance(event, ev.FactUtilizationMeasured)
-        assert event.measured is False
-
-    def test_list_becomes_tuple(self) -> None:
-        obj = {"event": "verification_result", "data": {"checks": ["a", "b"]}}
-        event = ev.event_from_dict(obj)
-        assert isinstance(event, ev.VerificationResultEvent)
-        assert event.checks == ("a", "b")
-
-    def test_non_dict_and_torn_lines(self) -> None:
-        assert ev.parse_event_line("") is None
-        assert ev.parse_event_line("   ") is None
-        assert ev.parse_event_line("[1, 2]") is None
-        assert ev.parse_event_line('{"event": "log", "data"') is None  # torn
-
-    def test_mangled_envelope_never_raises(self) -> None:
-        obj: dict[str, Any] = {
-            "event": "log",
-            "ts": "yesterday",
-            "seq": "first",
-            "run_id": 7,
-            "component": None,
-            "source": 3,
-            "data": None,
-        }
-        event = ev.event_from_dict(obj)
-        assert event.ts == 0.0
-        assert event.seq == 0
-        assert event.run_id == ""
-        assert event.component == ""
 
 
 class TestReadEvents:
@@ -338,35 +230,6 @@ class TestReadEvents:
 
 
 class TestEventBus:
-    def test_stamps_envelope(self) -> None:
-        bus = ev.EventBus(run_id="r9", source="worker", component="comp-x")
-        stamped = bus.emit(ev.Log(text="hi"))
-        assert stamped.run_id == "r9"
-        assert stamped.source == "worker"
-        assert stamped.component == "comp-x"
-        assert stamped.seq == 1
-        assert stamped.ts > 0
-
-    def test_explicit_component_wins_over_bus_default(self) -> None:
-        bus = ev.EventBus(component="bus-comp")
-        stamped = bus.emit(ev.ComponentFailed(component="explicit", error="e"))
-        assert stamped.component == "explicit"
-
-    def test_sink_exception_is_isolated_and_counted(self) -> None:
-        class Boom:
-            def emit(self, event: ev.Event) -> None:
-                raise RuntimeError("sink died")
-
-            def close(self) -> None:
-                raise RuntimeError("close died")
-
-        received: list[ev.Event] = []
-        bus = ev.EventBus(Boom(), ev.CallbackSink(received.append))
-        bus.emit(ev.Log(text="x"))
-        bus.close()
-        assert len(received) == 1  # later sink still ran
-        assert bus.dropped == 2  # one emit failure + one close failure
-
     def test_add_sink_late(self, tmp_path: Path) -> None:
         bus = ev.EventBus()
         bus.emit(ev.Log(text="before"))
@@ -685,38 +548,6 @@ class TestBothSinksCarryTheSameBudgetHalt:
         )
         assert durable == progress
         assert progress["coverage"][0]["uncovered_roles"] == ["review"]
-
-    def test_a_legacy_halt_payload_decodes_without_coverage(self) -> None:
-        """events.jsonl is append-only: a payload written before the
-        coverage field must still decode, to an empty tuple rather than
-        to a fabricated claim of full coverage."""
-        event = ev.event_from_dict(
-            {
-                "event": "budget_exceeded",
-                "data": {
-                    "total_tokens": 5,
-                    "max_total_tokens": 10,
-                    "cost_usd": 9.0,
-                    "max_cost_usd": 8.0,
-                    "ceiling": "max_cost_usd",
-                },
-            }
-        )
-        assert isinstance(event, ev.BudgetExceeded)
-        assert event.coverage == ()
-        assert event.ceiling == "max_cost_usd"
-
-    def test_a_legacy_coverage_payload_decodes_with_defaults(self) -> None:
-        event = ev.event_from_dict(
-            {
-                "event": "budget_coverage",
-                "data": {"ceiling": "max_cost_usd"},
-            }
-        )
-        assert isinstance(event, ev.BudgetCoverage)
-        assert event.ceiling == "max_cost_usd"
-        assert event.uncovered_roles == ()
-        assert event.uncovered_tokens == 0
 
     def test_every_coverage_field_survives_the_progress_log(
         self,

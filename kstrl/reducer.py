@@ -152,6 +152,9 @@ class RunState:
     project: str = ""
     #: The kstrl that wrote the run's events (#451); "" before stamping.
     kstrl_version: str = ""
+    #: ``factory_started``'s process and architect run (#587); 0 and "" if unrecorded.
+    pid: int = 0
+    architect_run_id: str = ""
     started_ts: float = 0.0
     last_event_ts: float = 0.0
     finished: bool = False
@@ -404,6 +407,7 @@ def apply(state: RunState, event: ev.Event) -> None:  # noqa: C901 - flat dispat
 
     if isinstance(event, ev.RunStarted):
         state.project = event.project or state.project
+        state.pid, state.architect_run_id = event.pid, event.architect_run_id
         return
     if isinstance(event, ev.RunCompleted):
         state.finished = True
