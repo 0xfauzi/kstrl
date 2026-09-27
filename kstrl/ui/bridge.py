@@ -33,7 +33,10 @@ DEFAULT_TRANSCRIPT_TAGS = frozenset({"AI"})
 class Prompter(Protocol):
     """The interactive sub-surface of the UI protocol."""
 
-    def choose(self, header: str, options: list[str], default: int = 0) -> int: ...
+    def choose(self, header: str, options: list[str], default: int = 0) -> int:
+        """The chosen index, or one outside ``options`` when nobody
+        answered (``PlainUI`` returns -1 on end of input or Ctrl-C)."""
+        ...
 
     def can_prompt(self) -> bool: ...
 

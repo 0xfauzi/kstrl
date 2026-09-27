@@ -15,8 +15,10 @@ gate, factory/retry confirms, evolve apply). Each becomes a
   their non-interactive defaults so a dead TUI can never hang a run.
 
 ``PromptResponse.answered`` is the load-bearing bit: ``False`` means
-"nobody was there to ask" and maps onto today's NOT_PROMPTED /
-skip-the-gate semantics at every call site.
+nobody answered - no one was there to ask, the resolver detached, the
+prompt was interrupted, or the choice was out of range. It is never
+consent: a call site whose question guards an action (the merge gate,
+a run confirm) treats it as a refusal (#594).
 """
 
 from __future__ import annotations
@@ -76,7 +78,7 @@ class PromptRequest:
 class PromptResponse:
     request_id: str
     choice: int
-    answered: bool  # False = non-interactive default (NOT_PROMPTED)
+    answered: bool  # False = nobody answered; never consent (#594)
 
 
 class InteractionChannel(Protocol):

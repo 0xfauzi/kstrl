@@ -448,10 +448,13 @@ class DistillPhaseResult:
 class CheckpointDecision(Enum):
     """E6 human-in-the-loop checkpoint outcome."""
 
+    # The gate is off (pause_before_pr_merge false). Never returned while
+    # the gate is on (#594).
     NOT_PROMPTED = "not_prompted"
     APPROVED = "approved"
-    # R8.3: no interactive UI was available to answer the gate, so the
-    # component is parked for the inbox rather than merged unreviewed.
+    # R8.3: nobody answered the gate (no interactive UI, or #594 a prompt
+    # that went unanswered), so the component is parked for the inbox
+    # rather than merged unreviewed.
     PARKED = "parked"
     REJECTED = "rejected"
     RETRY = "retry"
@@ -2398,8 +2401,8 @@ class ComponentPipeline:
             )
         comp.status = ComponentStatus.AWAITING_APPROVAL.value
         comp.error = (
-            "Parked awaiting merge approval (pause_before_pr_merge, no "
-            "interactive UI); `ks inbox approve <id>` merges it"
+            "Parked awaiting merge approval (pause_before_pr_merge, nobody "
+            "answered the gate); `ks inbox approve <id>` merges it"
         )
         self._end_attempt(comp)
         self.ui.warn(
@@ -4878,7 +4881,11 @@ class ComponentPipeline:
         the prompt is skipped but the gate is NOT: R8.3 returns
         PARKED, which withholds the merge and files a merge_gate
         inbox item - automation fails loudly rather than blocking
-        indefinitely OR merging something nobody approved."""
+        indefinitely OR merging something nobody approved. A prompt
+        that was asked and not answered parks the same way (#594):
+        an unanswered request or a choice outside the three options
+        is not consent. NOT_PROMPTED means the gate is off, and
+        nothing else."""
         if not self.factory_config.pause_before_pr_merge:
             return CheckpointDecision.NOT_PROMPTED
         question = f"Approve PR creation and merge for {comp.id}?"
@@ -4913,79 +4920,84 @@ class ComponentPipeline:
                 branch=comp.branch_name,
             ),
         )
-        if not self.interaction.can_prompt():
+        if self.interaction.can_prompt():
+            self.ui.section(f"Human checkpoint: {comp.id}")
+            self.ui.info(comp.review_findings or "(no review findings)")
+            response = self.interaction.request(request)
+            # #594: only an answered Approve merges. No `.get` default: a
+            # choice outside the three options is not an answer, and an
+            # unanswered request (a TUI that detached, an interrupted
+            # terminal prompt) is not consent. Both park below, through
+            # the same code as the non-interactive gate.
+            decision = (
+                {
+                    0: CheckpointDecision.APPROVED,
+                    1: CheckpointDecision.REJECTED,
+                    2: CheckpointDecision.RETRY,
+                }.get(response.choice)
+                if response.answered
+                else None
+            )
+            if decision is not None:
+                self.bus.emit(
+                    ev.CheckpointResolved(
+                        component=comp.id,
+                        kind="pr_merge",
+                        decision=decision.name.lower(),
+                        decided_by="operator",
+                    )
+                )
+                if decision == CheckpointDecision.REJECTED:
+                    self.ui.warn(f"  Human rejected {comp.id} at PR checkpoint")
+                elif decision == CheckpointDecision.RETRY:
+                    self.ui.warn(f"  Human requested retry for {comp.id} at PR checkpoint")
+                return decision
+            self.ui.warn(
+                f"  the merge gate for {comp.id} got no answer "
+                f"(answered={response.answered}, choice={response.choice}); "
+                f"parking it for approval (see `ks inbox ls`)"
+            )
+        else:
             # R8.3: the merge gate is the whole point of
             # pause_before_pr_merge, and proceeding here silently merged
             # without the approval that was asked for - in exactly the
             # unattended case R8.2's L1/L2 forces the gate ON for. Park
             # the component instead and route the decision to the inbox.
-            # #465: the item records the commit it parked, and
-            # apply_merge_decisions merges exactly that commit once
-            # `ks inbox approve` has answered.
             self.ui.warn(
                 f"  pause_before_pr_merge requested but UI is "
                 f"non-interactive; parking {comp.id} for approval "
                 f"(see `ks inbox ls`)"
             )
-            self.bus.emit(
-                ev.CheckpointResolved(
-                    component=comp.id,
-                    kind="pr_merge",
-                    decision="parked",
-                    decided_by="inbox",
-                )
-            )
-            evidence: dict[str, Any] = {
-                "branch": comp.branch_name,
-                "head_sha": git.branch_sha(comp.branch_name, self.root_dir) or "",
-            }
-            # #450: the review_result event's counts, read from the same
-            # properties. Absent when the review produced no reading, so a
-            # crashed or skipped review is never reported as zero findings.
-            if review.produced_a_reading and review.result is not None:
-                evidence["review_fail_count"] = review.result.fail_count
-                evidence["review_advisory_count"] = review.result.advisory_count
-            self._inbox_add(
-                ItemKind.MERGE_GATE,
-                f"{comp.id} awaiting merge approval",
-                detail=PARK_DETAIL,
-                component=comp.id,
-                dedupe_key=park_dedupe_key(comp.id),
-                evidence=evidence,
-            )
-            return CheckpointDecision.PARKED
-        self.ui.section(f"Human checkpoint: {comp.id}")
-        self.ui.info(comp.review_findings or "(no review findings)")
-        response = self.interaction.request(request)
-        if not response.answered:
-            # The channel lost its resolver between the guard and the
-            # answer (detached TUI): same semantics as non-interactive.
-            self.bus.emit(
-                ev.CheckpointResolved(
-                    component=comp.id,
-                    kind="pr_merge",
-                    decision="not_prompted",
-                    decided_by="auto",
-                )
-            )
-            return CheckpointDecision.NOT_PROMPTED
-        decision = {
-            1: CheckpointDecision.REJECTED,
-            2: CheckpointDecision.RETRY,
-        }.get(response.choice, CheckpointDecision.APPROVED)
+        # #465: the item records the commit it parked, and
+        # apply_merge_decisions merges exactly that commit once
+        # `ks inbox approve` has answered.
         self.bus.emit(
             ev.CheckpointResolved(
                 component=comp.id,
                 kind="pr_merge",
-                decision=decision.name.lower(),
-                decided_by="operator",
+                decision="parked",
+                decided_by="inbox",
             )
         )
-        if decision == CheckpointDecision.REJECTED:
-            self.ui.warn(f"  Human rejected {comp.id} at PR checkpoint")
-        elif decision == CheckpointDecision.RETRY:
-            self.ui.warn(f"  Human requested retry for {comp.id} at PR checkpoint")
-        return decision
+        evidence: dict[str, Any] = {
+            "branch": comp.branch_name,
+            "head_sha": git.branch_sha(comp.branch_name, self.root_dir) or "",
+        }
+        # #450: the review_result event's counts, read from the same
+        # properties. Absent when the review produced no reading, so a
+        # crashed or skipped review is never reported as zero findings.
+        if review.produced_a_reading and review.result is not None:
+            evidence["review_fail_count"] = review.result.fail_count
+            evidence["review_advisory_count"] = review.result.advisory_count
+        self._inbox_add(
+            ItemKind.MERGE_GATE,
+            f"{comp.id} awaiting merge approval",
+            detail=PARK_DETAIL,
+            component=comp.id,
+            dedupe_key=park_dedupe_key(comp.id),
+            evidence=evidence,
+        )
+        return CheckpointDecision.PARKED
 
     def _phase_pr(self, comp: Component) -> PrPhaseResult:
         """Per-component PR create+merge. single_pr mode is exempt
