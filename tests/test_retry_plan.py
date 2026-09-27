@@ -13,7 +13,7 @@ from click.testing import CliRunner
 
 import kstrl.cli as cli_mod
 from kstrl.manifest import Component, ComponentStatus, Manifest
-from kstrl.retry_plan import prepare_retry, preview_retry
+from kstrl.retry_plan import prepare_retry, preview_retry, print_retry_plan
 from kstrl.ui.plain import PlainUI
 from tests.helpers.run_limits import every_limit_argv
 from tests.test_retry_carries_flags import _RecordingChannel
@@ -95,10 +95,26 @@ class TestPrepare:
         reloaded = loaded.get_component("comp-b")
         assert reloaded is not None
         assert reloaded.status == ComponentStatus.PENDING.value
+        # #597: the plan is printed from the preview before the confirmation
+        # and the lock (print_retry_plan); prepare narrates only what it removes.
+        assert "Retry plan" not in stream.getvalue()
+
+    def test_print_retry_plan_prints_the_preview(self, tmp_path: Path) -> None:
+        manifest = _failed_manifest()
+        snapshot = copy.deepcopy(manifest)
+        stream = io.StringIO()
+
+        print_retry_plan(
+            PlainUI(no_color=True, file=stream),
+            preview_retry(manifest, "comp-a"),
+            tmp_path / "manifest.json",
+        )
+
         out = stream.getvalue()
         assert "Retry plan" in out
-        assert "comp-a" in out
-        assert "comp-b" in out
+        assert re.search(r"Component:\s*comp-a\n", out), out
+        assert re.search(r"Cascade-skipped dependents reset:\s*comp-b\n", out), out
+        assert manifest == snapshot
 
     def test_single_pr_leaves_branch_and_warns(
         self,

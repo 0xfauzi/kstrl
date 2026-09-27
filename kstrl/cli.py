@@ -84,8 +84,11 @@ from kstrl.factory import (
     VALID_REVIEW_MODES,
     BudgetConfigError,
     FactoryConfig,
+    FactoryLockHeldError,
+    _acquire_run_lock,
     _cli_family,
     _report_preflight,
+    _RunLock,
     run_factory,
 )
 from kstrl.feature_cmd import FeatureParams, run_feature
@@ -134,6 +137,7 @@ from kstrl.retry_plan import (
     prepare_retry,
     preview_retry,
     print_resume_plan,
+    print_retry_plan,
     retry_confirm_header,
 )
 from kstrl.sandbox import SandboxConfig
@@ -159,6 +163,37 @@ def _load_manifest_or_exit(path: Path, ui: UI) -> Manifest:
         return Manifest.load(path)
     except (OSError, ValueError) as exc:
         ui.err(f"Failed to load manifest {path}: {exc}")
+        sys.exit(2)
+
+
+#: The ``click`` meta key under which `ks retry` and `ks inbox approve` hand
+#: `ks factory` the run lock they took before changing anything (#597).
+#: ``meta`` is one dict shared by every context in the chain.
+_HANDED_RUN_LOCK = "kstrl.handed_run_lock"
+
+
+def _handed_run_lock(ctx: click.Context) -> _RunLock | None:
+    """The run lock the command that re-entered `ks factory` already holds, or None."""
+    held = ctx.meta.get(_HANDED_RUN_LOCK)
+    return held if isinstance(held, _RunLock) else None
+
+
+def _inbox_run_lock(root_dir: Path, ui_impl: UI, *, not_done: str, then: str) -> _RunLock:
+    """The run lock, taken before an inbox command changes anything, or exit 2 (#597).
+
+    A live factory run saves its whole in-memory manifest, so a requeue
+    written under it is undone at its next save, and a merge decision is
+    applied only by the run the command starts, which the live run's lock
+    refuses. `ks inbox` has no --force-lock, so the refusal names only
+    waiting.
+    """
+    try:
+        return _acquire_run_lock(root_dir, ui_impl, force=False)
+    except FactoryLockHeldError:
+        ui_impl.err(
+            f"{not_done}: a factory run holds the run lock on this root. Nothing was changed."
+        )
+        ui_impl.info(then)
         sys.exit(2)
 
 
@@ -1021,6 +1056,12 @@ class _KstrlGroup(click.Group):
     Exit code 2 with an ``error:`` line: a configuration the entry check
     rejects is a command that cannot run, which is what 2 means on every
     command (#452).
+
+    ``FactoryLockHeldError`` is the same contract (#597): a command that
+    takes the run lock before its first change (`ks retry`, and
+    ``decompose_spec`` under `ks decompose` and `ks factory --spec`) is
+    refused here with nothing changed. The message keeps ``--force-lock``,
+    which `ks serve` reads to classify the refusal as lock contention.
     """
 
     command_class = _KstrlCommand
@@ -1035,6 +1076,9 @@ class _KstrlGroup(click.Group):
             click.echo(f"error: {exc}", err=True)
             sys.exit(2)
         except BudgetConfigError as exc:
+            click.echo(f"error: {exc}", err=True)
+            sys.exit(2)
+        except FactoryLockHeldError as exc:
             click.echo(f"error: {exc}", err=True)
             sys.exit(2)
 
@@ -2231,6 +2275,12 @@ def feature(
     help="Use a single branch for all components",
 )
 @click.option(
+    "--force-lock",
+    is_flag=True,
+    help="Proceed even if another kstrl invocation holds "
+    ".kstrl/factory.lock (may corrupt the other run's state)",
+)
+@click.option(
     "--agent-cmd",
     help="Custom agent command (prompt piped to stdin)",
 )
@@ -2273,6 +2323,7 @@ def decompose(
     project_name: str,
     base_branch: str | None,
     single_pr: bool,
+    force_lock: bool,
     agent_cmd: str | None,
     model: str | None,
     reasoning: str | None,
@@ -2328,6 +2379,7 @@ def decompose(
                 bus=command_run.bus,
                 transcript=command_run.transcript_writer(ARCHITECT_COMPONENT),
                 prompt_call=command_run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
+                force_lock=force_lock,
             )
             core_ui.ok(f"Decomposed into {len(manifest.components)} components")
             return 0
@@ -2830,6 +2882,7 @@ def factory(
                 bus=architect_run.bus,
                 transcript=architect_run.transcript_writer(ARCHITECT_COMPONENT),
                 prompt_call=architect_run.agent_call(ARCHITECT_COMPONENT, ARCHITECT_ROLE),
+                force_lock=force_lock,
             )
         except SpecBlockerError as exc:
             # Architect halted: it escalated a question only the owner
@@ -3187,6 +3240,7 @@ def factory(
             stop=stop,
             architect_usage=architect_usage,
             architect_run_id=architect_run_id,
+            run_lock=_handed_run_lock(ctx),
         )
     finally:
         uninstall()
@@ -4566,7 +4620,9 @@ def retry(
     over the recorded ones. A retry that would drop a run limit the run
     it resumes ran under (cost, tokens, adversarial calls, agent and
     component timeouts), or cannot tell whether it did, is refused before
-    anything is changed (#526).
+    anything is changed (#526). Nothing is changed until the confirmation
+    is answered Start and the run lock is taken; a live run's lock is a
+    refusal (exit 2), and the lock is held into the run (#597).
     """
     root_dir = root.resolve() if root else Path.cwd()
     force_rich = os.environ.get("GUM_FORCE") == "1"
@@ -4583,8 +4639,12 @@ def retry(
         sys.exit(2)
     manifest = _load_manifest_or_exit(manifest_file, ui_impl)
 
+    # #597: nothing changes before the confirmation and the run lock. The
+    # plan is printed from a preview on a copy; the reset, the branch
+    # delete, the worktree removal and the save happen under the lock,
+    # which is handed on to the run below.
     try:
-        preview_retry(manifest, component_id)
+        preview = preview_retry(manifest, component_id)
     except ValueError as exc:
         ui_impl.err(str(exc))
         sys.exit(2)
@@ -4607,13 +4667,7 @@ def retry(
         _report_preflight(ui_impl, RESUME_REFUSAL, problems)
         sys.exit(2)
 
-    try:
-        preview = prepare_retry(manifest, component_id, manifest_file, root_dir, ui_impl)
-    except ValueError as exc:
-        ui_impl.err(str(exc))
-        sys.exit(2)
-    except RetryError:
-        sys.exit(2)
+    print_retry_plan(ui_impl, preview, manifest_file)
     print_resume_plan(ui_impl, plan)
 
     _retry_channel = UiInteractionChannel(ui_impl)
@@ -4626,29 +4680,51 @@ def retry(
                 default=0,
             )
         )
-        if response.answered and response.choice != 0:
+        if not response.answered or response.choice != 0:
             sys.exit(0)
 
-    # Re-enter through `ks factory` itself, so config assembly, preflights
-    # and the Execution header are the factory's own and cannot drift.
-    argv = option_argv(
-        factory,
-        {
-            "manifest_path": str(manifest_file),
-            "root": str(root_dir),
-            "yes": True,
-            "tui": False,
-            "ui": ui,
-            "no_color": no_color,
-            "progress_log": str(progress_log) if progress_log is not None else None,
-            "force_lock": force_lock,
-        },
-    )
-    factory_ctx = factory.make_context(
-        "factory", [*argv, *plan.argv], parent=click.get_current_context()
-    )
-    with factory_ctx:
-        factory.invoke(factory_ctx)
+    # A held lock raises FactoryLockHeldError to _KstrlGroup: exit 2.
+    run_lock = _acquire_run_lock(root_dir, ui_impl, force=force_lock)
+    try:
+        # Re-read under the lock: a run may have saved while the question was open.
+        manifest = _load_manifest_or_exit(manifest_file, ui_impl)
+        try:
+            if preview_retry(manifest, component_id) != preview:
+                raise ValueError(
+                    f"{manifest_file} changed while the confirmation was open, so "
+                    f"nothing was changed; run `ks retry {component_id}` again to see "
+                    "the new plan"
+                )
+            prepare_retry(manifest, component_id, manifest_file, root_dir, ui_impl)
+        except ValueError as exc:
+            ui_impl.err(str(exc))
+            sys.exit(2)
+        except RetryError:
+            sys.exit(2)
+
+        # Re-enter through `ks factory` itself, so config assembly, preflights
+        # and the Execution header are the factory's own and cannot drift.
+        argv = option_argv(
+            factory,
+            {
+                "manifest_path": str(manifest_file),
+                "root": str(root_dir),
+                "yes": True,
+                "tui": False,
+                "ui": ui,
+                "no_color": no_color,
+                "progress_log": str(progress_log) if progress_log is not None else None,
+                "force_lock": force_lock,
+            },
+        )
+        factory_ctx = factory.make_context(
+            "factory", [*argv, *plan.argv], parent=click.get_current_context()
+        )
+        factory_ctx.meta[_HANDED_RUN_LOCK] = run_lock
+        with factory_ctx:
+            factory.invoke(factory_ctx)
+    finally:
+        run_lock.release()
 
 
 @cli.command()
@@ -5498,7 +5574,9 @@ def _decide_parked_merge_if_parked(
     records the decision as it always has. For a park it never returns:
     it refuses (exit 2) or hands over to `ks factory`, which exits
     with the run's own code. Every refusal happens before the decision is
-    recorded, so a refused command changes nothing.
+    recorded, so a refused command changes nothing: the run lock is taken
+    before the manifest is read and handed to the run, so a live run's
+    lock is a refusal here rather than after the decision (#597, #596).
     """
     from kstrl.inbox import InboxError
 
@@ -5507,82 +5585,93 @@ def _decide_parked_merge_if_parked(
     if item is None or not item.dedupe_key.startswith(MERGE_GATE_PARK_KEY):
         return
     ui_impl = _autonomy_ui(ui, no_color)
+    said = {"approve": "approved", "reject": "rejected"}[action]
     manifest_file = root_dir / "scripts" / "kstrl" / "manifest.json"
     if not manifest_file.exists():
         ui_impl.err(f"No manifest at {manifest_file}")
         sys.exit(2)
-    manifest = _load_manifest_or_exit(manifest_file, ui_impl)
-    comp = manifest.get_component(item.component)
-    if comp is None or comp.status != ComponentStatus.AWAITING_APPROVAL.value:
-        where = comp.status if comp is not None else "not in the manifest"
-        ui_impl.err(
-            f"{item.id[:8]}: component '{item.component}' is {where}, not awaiting "
-            f"approval in {manifest_file}; there is no parked merge to {action}"
-        )
-        sys.exit(2)
-    plan, problems, _unkept = plan_resume(
+    run_lock = _inbox_run_lock(
         root_dir,
-        manifest,
-        manifest_file,
-        factory,
-        max_cost_usd=None,
-        max_parallel=None,
-        keep_worktrees_on_failure=False,
+        ui_impl,
+        not_done=f"{item.id[:8]} was not {said}",
+        then="When that run has finished, re-run this command: the decision is applied "
+        "by the run it starts.",
     )
-    if plan is None:
-        _report_preflight(ui_impl, RESUME_REFUSAL, problems)
-        sys.exit(2)
-    serve_parked = _serve_parked(root_dir, manifest.run_id, ui_impl)
     try:
-        if action == "approve":
-            box.approve(item.id, actor=_actor(), comment=comment)
-        else:
-            box.reject(item.id, actor=_actor(), comment=comment)
-    except InboxError as exc:
-        ui_impl.err(str(exc))
-        sys.exit(2)
-    said = {"approve": "approved", "reject": "rejected"}[action]
-    ui_impl.ok(f"{said} {item.id[:8]}: {item.title}")
-    print_resume_plan(ui_impl, plan)
-    argv = option_argv(
-        factory,
-        {
-            "manifest_path": str(manifest_file),
-            "root": str(root_dir),
-            "yes": True,
-            "tui": False,
-            "ui": ui,
-            "no_color": no_color,
-        },
-    )
-    factory_ctx = factory.make_context(
-        "factory", [*argv, *plan.argv], parent=click.get_current_context()
-    )
-    from kstrl.serve import run_dir_names
-
-    runs_before = run_dir_names(root_dir)
-    try:
-        with factory_ctx:
-            factory.invoke(factory_ctx)
-    except SystemExit as exc:
-        # `ks factory` always leaves through sys.exit with the run's own
-        # code. Settle the queue item serve parked on this run (#464),
-        # then exit with that code.
-        from kstrl.serve import settle_approval_run
-        from kstrl.workqueue import Queue, QueueConfig
-
-        settle_approval_run(
+        manifest = _load_manifest_or_exit(manifest_file, ui_impl)
+        comp = manifest.get_component(item.component)
+        if comp is None or comp.status != ComponentStatus.AWAITING_APPROVAL.value:
+            where = comp.status if comp is not None else "not in the manifest"
+            ui_impl.err(
+                f"{item.id[:8]}: component '{item.component}' is {where}, not awaiting "
+                f"approval in {manifest_file}; there is no parked merge to {action}"
+            )
+            sys.exit(2)
+        plan, problems, _unkept = plan_resume(
             root_dir,
-            Queue(root_dir, QueueConfig.load(root_dir)),
-            parked_run_id=manifest.run_id,
-            returncode=exc.code if isinstance(exc.code, int) else 1,
-            actor=_actor(),
-            observer=_ServeUiObserver(ui_impl),
+            manifest,
+            manifest_file,
+            factory,
+            max_cost_usd=None,
+            max_parallel=None,
+            keep_worktrees_on_failure=False,
         )
-        raise
+        if plan is None:
+            _report_preflight(ui_impl, RESUME_REFUSAL, problems)
+            sys.exit(2)
+        serve_parked = _serve_parked(root_dir, manifest.run_id, ui_impl)
+        try:
+            if action == "approve":
+                box.approve(item.id, actor=_actor(), comment=comment)
+            else:
+                box.reject(item.id, actor=_actor(), comment=comment)
+        except InboxError as exc:
+            ui_impl.err(str(exc))
+            sys.exit(2)
+        ui_impl.ok(f"{said} {item.id[:8]}: {item.title}")
+        print_resume_plan(ui_impl, plan)
+        argv = option_argv(
+            factory,
+            {
+                "manifest_path": str(manifest_file),
+                "root": str(root_dir),
+                "yes": True,
+                "tui": False,
+                "ui": ui,
+                "no_color": no_color,
+            },
+        )
+        factory_ctx = factory.make_context(
+            "factory", [*argv, *plan.argv], parent=click.get_current_context()
+        )
+        factory_ctx.meta[_HANDED_RUN_LOCK] = run_lock
+        from kstrl.serve import run_dir_names
+
+        runs_before = run_dir_names(root_dir)
+        try:
+            with factory_ctx:
+                factory.invoke(factory_ctx)
+        except SystemExit as exc:
+            # `ks factory` always leaves through sys.exit with the run's own
+            # code. Settle the queue item serve parked on this run (#464),
+            # then exit with that code.
+            from kstrl.serve import settle_approval_run
+            from kstrl.workqueue import Queue, QueueConfig
+
+            settle_approval_run(
+                root_dir,
+                Queue(root_dir, QueueConfig.load(root_dir)),
+                parked_run_id=manifest.run_id,
+                returncode=exc.code if isinstance(exc.code, int) else 1,
+                actor=_actor(),
+                observer=_ServeUiObserver(ui_impl),
+            )
+            raise
+        finally:
+            if serve_parked:
+                _charge_serve_for_approval_run(root_dir, runs_before, ui_impl)
     finally:
-        if serve_parked:
-            _charge_serve_for_approval_run(root_dir, runs_before, ui_impl)
+        run_lock.release()
 
 
 @inbox_group.command(name="snooze")
@@ -5617,7 +5706,8 @@ def inbox_retry(
 
     A real round-trip, not a status change: the component is reset to
     PENDING in the manifest (with its dependents un-skipped), so the next
-    `ks factory` run picks it up.
+    `ks factory` run picks it up. Refused with nothing changed while a
+    factory run holds the run lock, whose next save would undo it (#597).
     """
     root_dir, box = _inbox_for(root)
     ui_impl = _autonomy_ui(ui, no_color)
@@ -5632,20 +5722,34 @@ def inbox_retry(
     if not manifest_path.exists():
         ui_impl.err(f"No manifest at {manifest_path}")
         sys.exit(2)
-    manifest = _load_manifest_or_exit(manifest_path, ui_impl)
+    # #597: the read, the reset, the save and the resolve all happen under
+    # the run lock, so a live run cannot undo the requeue at its next save.
+    run_lock = _inbox_run_lock(
+        root_dir,
+        ui_impl,
+        not_done=f"{item.component} was not requeued",
+        then=(
+            "When that run has finished, re-run this command, or run "
+            f"`ks retry {item.component}` to requeue it and run it at once."
+        ),
+    )
     try:
-        reset = manifest.reset_for_retry(item.component)
-    except (ValueError, KeyError) as exc:
-        ui_impl.err(f"Could not requeue {item.component}: {exc}")
-        if item.dedupe_key.startswith(MERGE_GATE_PARK_KEY):
-            ui_impl.info(
-                f"It is parked at the merge gate: `ks inbox approve {item.id[:8]}` "
-                f"merges its reviewed branch, `ks inbox reject {item.id[:8]} "
-                "--comment ...` fails it."
-            )
-        sys.exit(2)
-    manifest.save(manifest_path)
-    box.resolve(item.id, actor=_actor(), comment="requeued via ks inbox retry")
+        manifest = _load_manifest_or_exit(manifest_path, ui_impl)
+        try:
+            reset = manifest.reset_for_retry(item.component)
+        except (ValueError, KeyError) as exc:
+            ui_impl.err(f"Could not requeue {item.component}: {exc}")
+            if item.dedupe_key.startswith(MERGE_GATE_PARK_KEY):
+                ui_impl.info(
+                    f"It is parked at the merge gate: `ks inbox approve {item.id[:8]}` "
+                    f"merges its reviewed branch, `ks inbox reject {item.id[:8]} "
+                    "--comment ...` fails it."
+                )
+            sys.exit(2)
+        manifest.save(manifest_path)
+        box.resolve(item.id, actor=_actor(), comment="requeued via ks inbox retry")
+    finally:
+        run_lock.release()
     ui_impl.ok(
         f"Requeued {item.component} (reset: {', '.join(reset) or item.component}); "
         "run `ks factory` to pick it up."

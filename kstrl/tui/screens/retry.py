@@ -38,7 +38,13 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static
 
 from kstrl.interaction import PromptKind, PromptRequest
-from kstrl.retry_plan import RESUME_REFUSAL, RetryError, prepare_retry, preview_retry
+from kstrl.retry_plan import (
+    RESUME_REFUSAL,
+    RetryError,
+    prepare_retry,
+    preview_retry,
+    print_retry_plan,
+)
 from kstrl.tui import theme
 from kstrl.tui.home_view import fit_rows
 from kstrl.tui.messages import FailuresRead, ScopeRead
@@ -431,14 +437,10 @@ class RetryScreen(Screen[None]):
         # so a process the sweep killed in the evidence worktree was never
         # shown here. It is kept and shown, warnings first.
         narration = io.StringIO()
+        narrator = PlainUI(no_color=True, file=narration)
+        print_retry_plan(narrator, latest_preview, latest_file)
         try:
-            prepare_retry(
-                latest,
-                component_id,
-                latest_file,
-                self._root_dir(),
-                PlainUI(no_color=True, file=narration),
-            )
+            prepare_retry(latest, component_id, latest_file, self._root_dir(), narrator)
         except (OSError, ValueError, RetryError, subprocess.SubprocessError) as exc:
             said = "\n".join(narration_lines(narration.getvalue()))
             self.app.notify(f"retry failed: {exc}\n{said}".rstrip(), severity="error", timeout=30)

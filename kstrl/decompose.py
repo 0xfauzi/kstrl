@@ -2355,6 +2355,7 @@ def _decompose_spec_impl(
     bus: EventBus | None = None,
     transcript: Callable[[str], None] | None = None,
     prompt_call: AgentCall,
+    force_lock: bool = False,
 ) -> Manifest:
     """Decompose a spec into components and generate PRDs.
 
@@ -2857,21 +2858,31 @@ def _decompose_spec_impl(
         # Save manifest (atomic write; covered by the cleanup scope so
         # a save failure does not strand PRDs without a manifest)
         manifest_path = root_dir / "scripts" / "kstrl" / "manifest.json"
-        manifest.save(manifest_path)
-        ui.ok(f"Manifest saved: {manifest_path}")
-        # AFTER the manifest, never before: the register binds engineers
-        # to this manifest, so it must not exist unless this manifest
-        # does. Inside the cleanup scope for the same reason.
-        write_register(
-            lambda: write_decisions(
-                decisions,
-                root_dir=root_dir,
-                project_name=project_name,
-                spec_file=spec_path.name,
-                halted=False,
-            ),
-            required=True,
-        )
+        # #597: a live factory run owns this manifest and saves its whole
+        # in-memory copy, so the manifest and the register are written under
+        # the run lock. A held lock raises FactoryLockHeldError here, inside
+        # the cleanup scope, so a refused decompose leaves no PRDs behind.
+        from kstrl.factory import _acquire_run_lock
+
+        run_lock = _acquire_run_lock(root_dir, ui, force=force_lock)
+        try:
+            manifest.save(manifest_path)
+            ui.ok(f"Manifest saved: {manifest_path}")
+            # AFTER the manifest, never before: the register binds engineers
+            # to this manifest, so it must not exist unless this manifest
+            # does. Inside the cleanup scope for the same reason.
+            write_register(
+                lambda: write_decisions(
+                    decisions,
+                    root_dir=root_dir,
+                    project_name=project_name,
+                    spec_file=spec_path.name,
+                    halted=False,
+                ),
+                required=True,
+            )
+        finally:
+            run_lock.release()
     except BaseException:
         for prd_file in written_prds:
             try:
@@ -2953,6 +2964,7 @@ def decompose_spec(
     bus: EventBus | None = None,
     transcript: Callable[[str], None] | None = None,
     prompt_call: AgentCall,
+    force_lock: bool = False,
 ) -> Manifest:
     """Run decomposition, guaranteeing a ``RunCompleted`` and a usage
     capture on every exit.
@@ -2986,6 +2998,7 @@ def decompose_spec(
             bus=bus,
             transcript=transcript,
             prompt_call=prompt_call,
+            force_lock=force_lock,
         )
     except SpecBlockerError:
         # Blocker halts are deliberately finalized at the audit site so

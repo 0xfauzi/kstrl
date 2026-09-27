@@ -3738,6 +3738,7 @@ def run_factory(
     notify_capture_output: bool = False,
     architect_usage: UsageTotals | None = None,
     architect_run_id: str = "",
+    run_lock: _RunLock | None = None,
 ) -> FactoryResult:
     """Run the factory orchestrator with 3-phase verification.
 
@@ -3769,6 +3770,12 @@ def run_factory(
     (#567), and the run's ``factory_started`` event carries it (#587): an
     operator follows it to the prompts and transcript, and `ks serve`
     reads it to leave that run uncharged, since this run carries its spend.
+
+    ``run_lock`` is the run lock a caller already took on this root, so it
+    could change state under it before the run starts (`ks retry`, and
+    `ks inbox approve` on a parked merge, #597). It is used instead of a
+    second acquire, which flock refuses even inside one process, and it
+    is released here at the end like one taken here.
     """
     # The ceilings are validated at every CONFIG path, but a FactoryConfig
     # can also be constructed programmatically (tests, embedders, the SDK
@@ -3778,17 +3785,18 @@ def run_factory(
     check_number(factory_config.max_cost_usd, "max_cost_usd")
     check_number(factory_config.max_total_tokens, "max_total_tokens")
 
-    try:
-        run_lock = _acquire_run_lock(
-            root_dir,
-            ui,
-            force=factory_config.force_lock,
-        )
-    except FactoryLockHeldError as exc:
-        ui.err(str(exc))
-        refused = FactoryResult()
-        refused.exit_code = 2
-        return refused
+    if run_lock is None:
+        try:
+            run_lock = _acquire_run_lock(
+                root_dir,
+                ui,
+                force=factory_config.force_lock,
+            )
+        except FactoryLockHeldError as exc:
+            ui.err(str(exc))
+            refused = FactoryResult()
+            refused.exit_code = 2
+            return refused
     try:
         return _run_factory_locked(
             manifest,
