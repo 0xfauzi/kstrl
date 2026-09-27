@@ -168,6 +168,14 @@ class TestTheCensus:
 
 @pytest.mark.parametrize(("section", "field"), _CENSUS, ids=_IDS)
 class TestEveryNumericFieldAtTheTomlDoor:
+    @pytest.fixture(autouse=True)
+    def _toml_door_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """These tests drive the TOML door alone. The suite-wide short_waits
+        fixture (tests/conftest.py) opens the env door for the factory
+        retry delay, which would overlay the toml value under test, so it
+        is closed here."""
+        monkeypatch.delenv("FACTORY_RETRY_DELAY", raising=False)
+
     @pytest.mark.parametrize("value", ["nan", "inf", "-inf"])
     def test_a_non_finite_value_is_refused(
         self, tmp_path: object, section: ConfigSection, field: dataclasses.Field[object], value: str

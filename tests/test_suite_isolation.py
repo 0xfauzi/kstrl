@@ -119,8 +119,14 @@ class TestRedirect:
         assert any(component_dir.rglob("*.md"))
 
     def test_ambient_config_env_is_cleared_for_every_test(self) -> None:
+        # The suite sets exactly one variable under these prefixes on
+        # purpose, after the scrub: FACTORY_RETRY_DELAY=0 from the
+        # short_waits fixture in tests/conftest.py. It is the suite's own,
+        # not ambient, so it is the one name this census does not count.
         for prefix in KSTRL_ENV_PREFIXES:
-            leaked = [var for var in os.environ if var.startswith(prefix)]
+            leaked = [
+                var for var in os.environ if var.startswith(prefix) and var != "FACTORY_RETRY_DELAY"
+            ]
             assert leaked == [], f"ambient {prefix}* env leaked into test"
 
     def test_clear_kstrl_env_covers_every_documented_family(

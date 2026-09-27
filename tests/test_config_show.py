@@ -57,6 +57,10 @@ class TestConfigShowSources:
         (tmp_path / "kstrl.toml").write_text(
             "[run]\nmax_iterations = 42\n\n[factory]\nmax_parallel = 9\n"
         )
+        # This test asserts the SHIPPED retry_delay default and its source;
+        # the suite-wide short_waits fixture (tests/conftest.py) sets the
+        # env var, so it is undone here.
+        monkeypatch.delenv("FACTORY_RETRY_DELAY", raising=False)
         monkeypatch.setenv("SLEEP_SECONDS", "9.5")
         monkeypatch.setenv("FACTORY_MAX_RETRIES", "7")
 
