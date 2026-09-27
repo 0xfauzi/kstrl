@@ -9,7 +9,7 @@ The sections after this one describe how the factory runs underneath (its loops,
 3. **Zoom, do not navigate.** Four levels: Factory (built, building, next), Spec (its parts as a graph, or its text), Part (every try across the line), Step (one check on one try). `⌘+` and `⌘−`, scroll, or `↵` on a selection move one level. Each level shows more about fewer things, with the level above kept in a small map.
 4. **⌘K reaches everything.** Every action, and the questions kstrl can answer from its own records: why did this stop, what is waiting on me, what did it cost, what did the architect decide, what runs next and why not yet, is anything not being checked.
 5. **Every line says who wrote it.** Your words, an agent's words and a measurement each have their own typeface (see Voices). A claim is never set in the measurement voice.
-6. **A claim sits beside the measurement that checks it.** The engineer's per-story claims sit beside what verify, review and security found. A sensor that did not run is drawn as an absence, never as a pass.
+6. **A claim sits beside the measurement that checks it.** The engineer's per-story claims sit beside what verify, review and security found. A check that did not run is drawn as an absence, never as a pass.
 7. **Every action says what it will do before you do it,** naming the parts it affects: "search-index fails and search-api is skipped. Nothing is pushed."
 8. **Rufous is yours.** `you` marks only what waits on you and the one action you are about to take.
 9. **Only what kstrl does.** Every figure is a record kstrl writes and every action calls a path kstrl has. Where kstrl does less than a person would expect, the screen says so at the point it matters ("Your own words are not passed on").
@@ -155,7 +155,7 @@ Notifications connect every screen. Each one is a record kstrl filed (an inbox i
 
 ## Marks
 
-Eight drawn marks, one meaning each, as `.k-mk.<name>` in `bundle.css`, coloured by token: `you` (diamond, needs you), `work` (open arc, an agent is working), `wait` (dashed ring, waiting on a dependency), `pass` (check, a measurement agreed), `fail` (cross, disagreed or stopped), `landed` (filled check, merged), `skip` (slashed ring, a dependency failed), `absent` (dashed square, a sensor did not run). Use `.sm` (12px) inline in text. They replace the TUI's Unicode glyphs on these surfaces.
+Eight drawn marks, one meaning each, as `.k-mk.<name>` in `bundle.css`, coloured by token: `you` (diamond, needs you), `work` (open arc, an agent is working), `wait` (dashed ring, waiting on a dependency), `pass` (check, a measurement agreed), `fail` (cross, disagreed or stopped), `landed` (filled check, merged), `skip` (slashed ring, a dependency failed), `absent` (dashed square, a check did not run). Use `.sm` (12px) inline in text. They replace the TUI's Unicode glyphs on these surfaces.
 
 ## Iconography and the name
 

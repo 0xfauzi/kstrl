@@ -1,6 +1,6 @@
 # The loops
 
-kstrl is a set of nested control loops, not a pipeline. Each loop has a clock, something that acts, and something that measures the result without having produced it. The rule under all of them: what acts never measures its own result.
+kstrl is a set of nested loops, not a pipeline. Each loop has a clock, something that acts, and something that measures the result without having produced it. The rule under all of them: what acts never measures its own result.
 
 Values below are the defaults at `main@33104a9`, with the file that sets them.
 
